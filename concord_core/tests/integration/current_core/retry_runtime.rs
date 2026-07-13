@@ -1,7 +1,8 @@
 use super::common::{
-    MockOutcome, MockResponse, MockTransport, ObservationAuthCx, ObservationAuthVars, TestAuthVars,
-    TestCx, auth_policy, client, request_plan, retry_policy, retry_policy_for_statuses,
-    retry_policy_for_transport_errors,
+    MockOutcome, MockResponse, MockTransport, NativeMockReply, ObservationAuthCx,
+    ObservationAuthVars, ObservationRuntimeHooks, TestAuthVars, TestCx, auth_policy, client,
+    request_plan, retry_policy, retry_policy_for_statuses, retry_policy_for_transport_errors,
+    transport_error_kind,
 };
 use crate::support::assert_error_chain_does_not_contain_any;
 use bytes::Bytes;
@@ -14,6 +15,15 @@ use concord_core::prelude::ApiClientError;
 use http::{HeaderValue, Method, StatusCode};
 use std::sync::Arc;
 use tokio::sync::{Mutex, Semaphore};
+
+fn default_native_client(transport: &MockTransport) -> concord_core::prelude::ApiClient<TestCx> {
+    concord_core::prelude::ApiClient::with_safe_reqwest_builder(
+        (),
+        TestAuthVars::default(),
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("native mock client")
+}
 
 fn retry_plan(
     name: &'static str,
@@ -101,11 +111,7 @@ async fn independently_constructed_default_clients_share_origin_admission_credit
         ],
     );
     let first_sent = first_transport.clone();
-    let first_client = concord_core::prelude::ApiClient::<TestCx, _>::with_transport(
-        (),
-        TestAuthVars::default(),
-        first_transport,
-    );
+    let first_client = default_native_client(&first_transport);
     let mut first_plan = retry_plan(
         "SharedDefaultConsumesReserve",
         Method::GET,
@@ -128,11 +134,7 @@ async fn independently_constructed_default_clients_share_origin_admission_credit
         )],
     );
     let second_sent = second_transport.clone();
-    let second_client = concord_core::prelude::ApiClient::<TestCx, _>::with_transport(
-        (),
-        TestAuthVars::default(),
-        second_transport,
-    );
+    let second_client = default_native_client(&second_transport);
     let mut second_plan = retry_plan(
         "SharedDefaultDenied",
         Method::GET,
@@ -155,11 +157,8 @@ async fn independently_constructed_default_clients_share_origin_admission_credit
             Arc::new(Mutex::new(Vec::new())),
             vec![MockResponse::text(StatusCode::OK, "deposit")],
         );
-        let client = concord_core::prelude::ApiClient::<TestCx, _>::with_transport(
-            (),
-            TestAuthVars::default(),
-            transport,
-        );
+        let server = transport.clone();
+        let client = default_native_client(&transport);
         let policy = ResolvedPolicy {
             retry: RetrySetting::Off,
             ..ResolvedPolicy::default()
@@ -169,6 +168,7 @@ async fn independently_constructed_default_clients_share_origin_admission_credit
         client
             .execute_plan::<concord_core::prelude::Text<String>>(plan)
             .await?;
+        assert_eq!(server.sent_count().await, 1);
     }
 
     let final_transport = MockTransport::new(
@@ -179,11 +179,7 @@ async fn independently_constructed_default_clients_share_origin_admission_credit
         ],
     );
     let final_sent = final_transport.clone();
-    let final_client = concord_core::prelude::ApiClient::<TestCx, _>::with_transport(
-        (),
-        TestAuthVars::default(),
-        final_transport,
-    );
+    let final_client = default_native_client(&final_transport);
     let mut final_plan = retry_plan(
         "SharedDefaultAdmitted",
         Method::GET,
@@ -268,11 +264,13 @@ async fn terminal_auth_rejection_does_not_reserve_or_spend_retry_admission() {
         Arc::new(Mutex::new(Vec::new())),
         vec![MockResponse::text(StatusCode::UNAUTHORIZED, "terminal")],
     );
-    let terminal_client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
-        (),
-        terminal_auth,
-        terminal_transport,
-    );
+    let terminal_client =
+        concord_core::prelude::ApiClient::<ObservationAuthCx>::with_safe_reqwest_builder(
+            (),
+            terminal_auth,
+            |builder| terminal_transport.configure_reqwest(builder),
+        )
+        .expect("native mock client");
     let registry =
         concord_core::advanced::RetryAdmissionRegistry::new(1, std::time::Duration::from_secs(60));
     let mut terminal_client = terminal_client;
@@ -309,11 +307,7 @@ async fn terminal_auth_rejection_does_not_reserve_or_spend_retry_admission() {
         ],
     );
     let retry_sent = retry_transport.clone();
-    let retry_client = concord_core::prelude::ApiClient::<TestCx, _>::with_transport(
-        (),
-        TestAuthVars::default(),
-        retry_transport,
-    );
+    let retry_client = client(TestAuthVars::default(), retry_transport);
     let mut retry_client = retry_client;
     retry_client.configure(|cfg| {
         cfg.retry_admission(registry);
@@ -369,8 +363,8 @@ async fn retryable_status_retries_then_succeeds_and_records_attempt_indexes()
     assert_eq!(sent.sent_count().await, 2);
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 2);
-    assert_eq!(requests[0].meta.attempt, 0);
-    assert_eq!(requests[1].meta.attempt, 1);
+    assert_eq!(requests[0].meta.attempt, Some(0));
+    assert_eq!(requests[1].meta.attempt, Some(1));
     Ok(())
 }
 
@@ -379,10 +373,7 @@ async fn unconfigured_status_does_not_retry() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
-        vec![
-            MockResponse::text(StatusCode::BAD_REQUEST, "bad-request"),
-            MockResponse::text(StatusCode::OK, "should-not-send"),
-        ],
+        vec![MockResponse::text(StatusCode::BAD_REQUEST, "bad-request")],
     );
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
@@ -469,7 +460,7 @@ async fn retryable_transport_error_retries_then_succeeds_and_records_attempt_ind
     let transport = MockTransport::with_outcomes(
         events,
         vec![
-            MockOutcome::TransportError(concord_core::transport::TransportErrorKind::Timeout),
+            MockOutcome::DisconnectAfterRequest,
             MockResponse::text(StatusCode::OK, "ok").into(),
         ],
     );
@@ -483,7 +474,7 @@ async fn retryable_transport_error_retries_then_succeeds_and_records_attempt_ind
             "/retry/transport",
             retry_policy_for_transport_errors(
                 2,
-                vec![concord_core::transport::TransportErrorKind::Timeout],
+                vec![concord_core::advanced::TransportErrorKind::Request],
             ),
             true,
         ))
@@ -493,21 +484,15 @@ async fn retryable_transport_error_retries_then_succeeds_and_records_attempt_ind
     assert_eq!(sent.sent_count().await, 2);
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 2);
-    assert_eq!(requests[0].meta.attempt, 0);
-    assert_eq!(requests[1].meta.attempt, 1);
+    assert_eq!(requests[0].meta.attempt, Some(0));
+    assert_eq!(requests[1].meta.attempt, Some(1));
     Ok(())
 }
 
 #[tokio::test]
 async fn unconfigured_transport_error_does_not_retry() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let transport = MockTransport::with_outcomes(
-        events,
-        vec![
-            MockOutcome::TransportError(concord_core::transport::TransportErrorKind::Connect),
-            MockResponse::text(StatusCode::OK, "should-not-send").into(),
-        ],
-    );
+    let transport = MockTransport::with_outcomes(events, vec![MockOutcome::DisconnectAfterRequest]);
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
 
@@ -518,7 +503,7 @@ async fn unconfigured_transport_error_does_not_retry() {
             "/retry/transport-mismatch",
             retry_policy_for_transport_errors(
                 2,
-                vec![concord_core::transport::TransportErrorKind::Timeout],
+                vec![concord_core::advanced::TransportErrorKind::Timeout],
             ),
             true,
         ))
@@ -527,6 +512,10 @@ async fn unconfigured_transport_error_does_not_retry() {
 
     assert!(matches!(err, ApiClientError::Transport { .. }));
     assert_eq!(err.category(), ErrorCategory::Transport);
+    assert_eq!(
+        transport_error_kind(&err),
+        Some(concord_core::advanced::TransportErrorKind::Request)
+    );
     assert_eq!(err.context().endpoint, "RetryTransportMismatch");
     assert_eq!(err.context().method, Method::GET);
     assert_eq!(sent.sent_count().await, 1);
@@ -540,14 +529,14 @@ async fn transport_error_exhaustion_redacts_request_sentinel_and_reports_context
     let transport = MockTransport::with_outcomes(
         events,
         vec![
-            MockOutcome::TransportError(concord_core::transport::TransportErrorKind::Timeout),
-            MockOutcome::TransportError(concord_core::transport::TransportErrorKind::Timeout),
+            MockOutcome::DisconnectAfterRequest,
+            MockOutcome::DisconnectAfterRequest,
         ],
     );
     let sent = transport.clone();
     let mut policy = retry_policy_for_transport_errors(
         2,
-        vec![concord_core::transport::TransportErrorKind::Timeout],
+        vec![concord_core::advanced::TransportErrorKind::Request],
     );
     policy
         .headers
@@ -566,7 +555,11 @@ async fn transport_error_exhaustion_redacts_request_sentinel_and_reports_context
         .expect_err("retry exhaustion should return a transport error");
 
     assert!(matches!(err, ApiClientError::Transport { .. }));
-    assert_eq!(err.category(), ErrorCategory::Timeout);
+    assert_eq!(err.category(), ErrorCategory::Transport);
+    assert_eq!(
+        transport_error_kind(&err),
+        Some(concord_core::advanced::TransportErrorKind::Request)
+    );
     assert_eq!(err.context().endpoint, "RetryTransportRedacted");
     assert_eq!(err.context().method, Method::GET);
     assert_eq!(sent.sent_count().await, 2);
@@ -590,14 +583,110 @@ async fn transport_error_exhaustion_redacts_request_sentinel_and_reports_context
 }
 
 #[tokio::test]
+async fn native_timeout_transport_error_matches_retry_policy_and_exhausts_exact_attempts() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::from_native_replies(
+        events,
+        [
+            NativeMockReply::disconnect_after_request()
+                .with_delay(std::time::Duration::from_millis(80)),
+            NativeMockReply::disconnect_after_request()
+                .with_delay(std::time::Duration::from_millis(80)),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+    let mut plan = retry_plan(
+        "NativeTimeoutRetry",
+        Method::GET,
+        "/retry/native-timeout",
+        retry_policy_for_transport_errors(
+            2,
+            vec![concord_core::advanced::TransportErrorKind::Timeout],
+        ),
+        true,
+    );
+    plan.overrides.timeout = Some(std::time::Duration::from_millis(15));
+
+    let err = client
+        .execute_plan::<concord_core::prelude::Text<String>>(plan)
+        .await
+        .expect_err("both native attempts should time out");
+
+    assert_eq!(err.category(), ErrorCategory::Timeout);
+    assert_eq!(
+        transport_error_kind(&err),
+        Some(concord_core::advanced::TransportErrorKind::Timeout)
+    );
+    assert_eq!(sent.sent_count().await, 2);
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].meta.attempt, Some(0));
+    assert_eq!(requests[1].meta.attempt, Some(1));
+}
+
+#[tokio::test]
+async fn native_connect_transport_error_does_not_match_timeout_policy_and_sends_once() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("closed loopback bind");
+    let address = listener.local_addr().expect("closed loopback address");
+    drop(listener);
+    let origin = format!("http://{address}/");
+    let guard = Arc::new(());
+    let mut client = concord_core::prelude::ApiClient::<TestCx>::with_safe_reqwest_builder(
+        (),
+        TestAuthVars::default(),
+        |builder| {
+            builder.proxy(
+                concord_core::advanced::SafeProxy::__test_origin_override_with_guard(
+                    &origin, guard,
+                )
+                .expect("closed loopback test origin"),
+            )
+        },
+    )
+    .expect("native client");
+    let events = Arc::new(Mutex::new(Vec::new()));
+    client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+
+    let err = client
+        .execute_plan::<concord_core::prelude::Text<String>>(retry_plan(
+            "NativeConnectMismatch",
+            Method::GET,
+            "/retry/native-connect",
+            retry_policy_for_transport_errors(
+                2,
+                vec![concord_core::advanced::TransportErrorKind::Timeout],
+            ),
+            true,
+        ))
+        .await
+        .expect_err("closed loopback address should refuse the connection");
+
+    assert_eq!(err.category(), ErrorCategory::Transport);
+    assert_eq!(
+        transport_error_kind(&err),
+        Some(concord_core::advanced::TransportErrorKind::Connect)
+    );
+    assert_eq!(
+        events
+            .lock()
+            .await
+            .iter()
+            .filter(|event| event.as_str() == "pre_send")
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
 async fn unsafe_method_without_idempotency_header_does_not_retry() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
-        vec![
-            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "do-not-retry"),
-            MockResponse::text(StatusCode::OK, "should-not-send"),
-        ],
+        vec![MockResponse::text(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "do-not-retry",
+        )],
     );
     let sent = transport.clone();
     let mut policy = retry_policy(2);
@@ -761,8 +850,8 @@ async fn retry_after_header_zero_is_honored_without_sleeping() -> Result<(), Api
     assert_eq!(sent.sent_count().await, 2);
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 2);
-    assert_eq!(requests[0].meta.attempt, 0);
-    assert_eq!(requests[1].meta.attempt, 1);
+    assert_eq!(requests[0].meta.attempt, Some(0));
+    assert_eq!(requests[1].meta.attempt, Some(1));
     Ok(())
 }
 
@@ -803,10 +892,7 @@ async fn inherited_classifier_uses_independent_cap_and_retry_after_setting()
 async fn inherited_attempt_caps_outside_one_through_three_are_rejected() {
     for invalid_cap in [0, 4] {
         let events = Arc::new(Mutex::new(Vec::new()));
-        let transport = MockTransport::new(
-            events,
-            vec![MockResponse::text(StatusCode::OK, "must-not-send")],
-        );
+        let transport = MockTransport::new(events, vec![]);
         let sent = transport.clone();
         let mut client = client(TestAuthVars::default(), transport);
         client.configure(|cfg| {
@@ -862,8 +948,8 @@ async fn replayable_encoded_body_is_preserved_across_retry_attempts() -> Result<
     assert_eq!(sent.sent_count().await, 2);
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 2);
-    assert_eq!(requests[0].meta.attempt, 0);
-    assert_eq!(requests[1].meta.attempt, 1);
+    assert_eq!(requests[0].meta.attempt, Some(0));
+    assert_eq!(requests[1].meta.attempt, Some(1));
     assert_eq!(requests[0].body.as_bytes(), requests[1].body.as_bytes());
     Ok(())
 }
@@ -873,10 +959,10 @@ async fn non_replayable_stream_body_stops_after_the_first_attempt() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
-        vec![
-            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
-            MockResponse::text(StatusCode::OK, "should-not-send"),
-        ],
+        vec![MockResponse::text(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "retry-me",
+        )],
     );
     let sent = transport.clone();
     let mut policy = retry_policy(2);

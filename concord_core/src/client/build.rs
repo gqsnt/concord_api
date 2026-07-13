@@ -34,21 +34,17 @@ impl PublicRequestHead {
 
     pub(super) fn finish(
         self,
+        client: &reqwest::Client,
         body: crate::io::ProducedBody,
         ctx: &ErrorContext,
     ) -> Result<BuiltRequest, ApiClientError> {
-        let uri = self.url.as_str().parse::<http::Uri>().map_err(|_| {
-            ApiClientError::PolicyViolation {
-                ctx: ctx.clone(),
-                msg: "resolved request URI is invalid",
-            }
-        })?;
         let mut headers = self.headers;
-        let (terminal_body, terminal_media_type) =
-            body.into_legacy_transport_parts()
+        let builder = client.request(self.meta.method.clone(), self.url.clone());
+        let (builder, terminal_media_type) =
+            body.apply_to_reqwest(builder)
                 .map_err(|_| ApiClientError::PolicyViolation {
                     ctx: ctx.clone(),
-                    msg: "request body compatibility materialization failed",
+                    msg: "native request body materialization failed",
                 })?;
         crate::io::apply_attempt_media_type(&mut headers, terminal_media_type.as_ref()).map_err(
             |()| ApiClientError::PolicyViolation {
@@ -56,27 +52,31 @@ impl PublicRequestHead {
                 msg: "request Content-Type conflicts with produced body media type",
             },
         )?;
-        let mut message = http::Request::new(terminal_body);
-        *message.method_mut() = self.meta.method.clone();
-        *message.uri_mut() = uri;
-        *message.version_mut() = http::Version::HTTP_11;
-        *message.headers_mut() = headers;
-        message
-            .extensions_mut()
-            .insert(crate::transport::RequestExecutionContext {
-                meta: self.meta,
-                timeout: self.timeout,
-            });
-        message.extensions_mut().insert(self.auth_plan);
+        let mut builder = builder.headers(headers);
+        if let Some(timeout) = self.timeout {
+            builder = builder.timeout(timeout);
+        }
+        let message = builder
+            .build()
+            .map_err(|_| ApiClientError::PolicyViolation {
+                ctx: ctx.clone(),
+                msg: "native request construction failed",
+            })?;
+        let context = crate::transport::RequestExecutionContext {
+            meta: self.meta,
+            timeout: self.timeout,
+        };
         Ok(BuiltRequest {
             message,
+            context,
+            auth_plan: self.auth_plan,
             retry: self.retry,
             rate_limit: self.rate_limit,
         })
     }
 }
 
-impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
+impl<Cx: ClientContext> ApiClient<Cx> {
     pub(super) fn resolve_public_request_head(
         &self,
         plan: &crate::endpoint::RequestPlanView,

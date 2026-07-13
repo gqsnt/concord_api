@@ -1,7 +1,7 @@
 // Client lifecycle phase modules intentionally share one private parent namespace.
 use super::*;
 
-impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
+impl<Cx: ClientContext> ApiClient<Cx> {
     pub(super) async fn run_post_response_hook(&self, ctx: ResponseObservationCtx<'_>) {
         let hook_meta = HookMeta {
             endpoint: ctx.endpoint,
@@ -23,7 +23,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
 
     pub(super) async fn acquire_rate_limit_and_send(
         &self,
-        built: BuiltRequest,
+        mut built: BuiltRequest,
         send_ctx: SendClassifyCtx<'_>,
         stream_request_limit: Option<usize>,
         attempts_used: &mut u32,
@@ -35,7 +35,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             endpoint: request_context.meta.endpoint,
             method: &request_context.meta.method,
             url: send_ctx.url_str,
-            url_host: built.message.uri().host(),
+            url_host: built.message.url().host_str(),
             attempt: request_context.meta.attempt,
             page_index: request_context.meta.page_index,
             idempotent: request_context.meta.idempotent,
@@ -56,7 +56,15 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 )
             })?;
         if let Some(limit) = stream_request_limit {
-            let hint = http_body::Body::size_hint(built.message.body());
+            let hint = built
+                .message
+                .body()
+                .map(http_body::Body::size_hint)
+                .unwrap_or_else(|| {
+                    let mut hint = http_body::SizeHint::new();
+                    hint.set_exact(0);
+                    hint
+                });
             // An advisory upper bound is not a delivered length. Only an exact
             // length, or a lower bound already beyond the limit, can reject
             // before streaming; the body limiter owns every other case.
@@ -71,6 +79,15 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     limit,
                     actual,
                 });
+            }
+            if let Some(body) = built.message.body_mut().take() {
+                if body.as_bytes().is_some() {
+                    *built.message.body_mut() = Some(body);
+                } else {
+                    *built.message.body_mut() = Some(reqwest::Body::wrap(
+                        crate::body::LimitedBody::new(body, limit as u64),
+                    ));
+                }
             }
         }
         self.debug_planned_request(send_ctx.dbg, &built, send_ctx.url_str);
@@ -95,7 +112,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             send_ctx.url_str,
             send_ctx.auth_materials,
             send_ctx.error_ctx,
-            stream_request_limit,
             attempts_used,
             admission,
             origin,
@@ -145,7 +161,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         safe_url: &str,
         auth_materials: &[crate::auth::AuthTransportMaterial],
         ctx: &ErrorContext,
-        stream_request_limit: Option<usize>,
         attempts_used: &mut u32,
         mut admission: Option<AdmissionPermit>,
         origin: &OriginHandle,
@@ -156,22 +171,25 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let attempt = request_context.meta.attempt;
         let page_index = request_context.meta.page_index;
         let idempotent = request_context.meta.idempotent;
-        let request_url = url::Url::parse(built.message.uri().to_string().as_str())
-            .expect("built request URI was validated during construction");
+        let request_url = built.message.url().clone();
         let response_context = crate::transport::ResponseContext {
             meta: request_context.meta.clone(),
             request_url,
             rate_limit: built.rate_limit.clone(),
         };
-        let transport_req = crate::transport::materialize_transport_request(
-            built,
-            auth_materials,
-            stream_request_limit,
-        )
-        .map_err(|source| ApiClientError::Auth {
-            ctx: ctx.clone(),
-            source,
-        })?;
+        let BuiltRequest {
+            message,
+            context,
+            auth_plan,
+            retry: _,
+            rate_limit: _,
+        } = built;
+        let native_request =
+            crate::transport::materialize_authentication(message, &auth_plan, auth_materials)
+                .map_err(|source| ApiClientError::Auth {
+                    ctx: ctx.clone(),
+                    source,
+                })?;
 
         if *attempts_used > 0 && admission.is_none() {
             return Err(ApiClientError::PolicyViolation {
@@ -186,7 +204,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         *attempts_used = attempts_used.checked_add(1).ok_or_else(|| {
             ApiClientError::invalid_param(ctx.clone(), "request attempt counter overflowed")
         })?;
-        let transport_result = self.transport.send(transport_req).await;
+        let transport_result = self
+            .managed_client
+            .execute(native_request, Some(&context))
+            .await;
         if original_attempt {
             origin.deposit_original();
         }

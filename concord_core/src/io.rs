@@ -21,6 +21,7 @@ type BodyFactory = dyn Fn() -> Result<TerminalBody, crate::body::BodyError> + Se
 
 enum PreparedBodyMediaType {
     Fixed(HeaderValue),
+    #[allow(dead_code)]
     Dynamic,
 }
 
@@ -37,8 +38,8 @@ enum ReplayFactory {
     Terminal(std::sync::Arc<BodyFactory>),
 }
 
-/// Per-execution, non-factory body result. This preserves the capability that
-/// P-06 will map to Reqwest natively; it cannot contain another factory.
+/// Per-execution, non-factory body result. Each variant maps directly to a
+/// native Reqwest request capability and cannot contain another factory.
 pub(crate) enum TerminalBody {
     Empty,
     ReusableBytes(Bytes),
@@ -53,31 +54,32 @@ impl TerminalBody {
         matches!(self, Self::Empty | Self::ReusableBytes(_))
     }
 
-    fn into_legacy_transport_body(
+    fn apply_to_reqwest(
         self,
+        builder: reqwest::RequestBuilder,
         exact_length: Option<u64>,
-    ) -> Result<(crate::body::DynBody, Option<HeaderValue>), crate::body::BodyError> {
+    ) -> Result<reqwest::RequestBuilder, crate::body::BodyError> {
         match self {
-            Self::Empty => Ok((
-                materialize_legacy_body(crate::body::DynBody::empty(), exact_length),
-                None,
-            )),
-            Self::ReusableBytes(bytes) => Ok((
-                materialize_legacy_body(crate::body::DynBody::from_bytes(bytes), exact_length),
-                None,
-            )),
-            Self::OneShotByteStream(stream) => Ok((
-                materialize_legacy_body(
-                    crate::body::DynBody::from_stream_body(stream),
-                    exact_length,
-                ),
-                None,
-            )),
-            Self::OneShotHttpBody(body) => Ok((materialize_legacy_body(body, exact_length), None)),
+            Self::Empty => {
+                validate_reusable_exact_length(0, exact_length)?;
+                Ok(builder)
+            }
+            Self::ReusableBytes(bytes) => {
+                validate_reusable_exact_length(bytes.len() as u64, exact_length)?;
+                Ok(builder.body(bytes))
+            }
+            Self::OneShotByteStream(stream) => {
+                let body = reqwest::Body::wrap_stream(stream.into_byte_stream());
+                Ok(builder.body(enforce_native_exact_length(body, exact_length)))
+            }
+            Self::OneShotHttpBody(body) => {
+                let body = reqwest::Body::wrap(body);
+                Ok(builder.body(enforce_native_exact_length(body, exact_length)))
+            }
             #[cfg(feature = "multipart")]
             Self::MultipartRecipe(recipe) => recipe
-                .into_legacy_transport_body()
-                .map(|(media_type, body)| (body, Some(media_type)))
+                .into_form()
+                .map(|form| builder.multipart(form))
                 .map_err(|_| crate::body::BodyError::invalid_configuration()),
         }
     }
@@ -85,9 +87,8 @@ impl TerminalBody {
 
 /// The single logical authority for a request body.
 ///
-/// `DynBody` appears only in the terminal compatibility materializer for the
-/// still-public transport boundary.  In particular, ordinary byte streams are
-/// retained as streams until an attempt is constructed.
+/// Ordinary byte streams and multipart recipes remain in native-capability
+/// form until a Reqwest request is constructed for a physical attempt.
 enum RequestBodyRecipe {
     Empty,
     ReusableBytes(Bytes),
@@ -169,18 +170,35 @@ impl ProducedBody {
 
     #[cfg(test)]
     pub(crate) fn into_dyn_body(self) -> crate::body::DynBody {
-        self.into_legacy_transport_parts()
-            .expect("validated terminal body must materialize for the legacy transport")
-            .0
+        self.try_into_dyn_body()
+            .expect("validated terminal body must materialize natively")
     }
 
-    pub(crate) fn into_legacy_transport_parts(
+    #[cfg(test)]
+    pub(crate) fn try_into_dyn_body(self) -> Result<crate::body::DynBody, crate::body::BodyError> {
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .expect("test Reqwest client");
+        let builder = client.request(
+            http::Method::POST,
+            url::Url::parse("http://example.test/").expect("static URL"),
+        );
+        let (builder, _) = self.apply_to_reqwest(builder)?;
+        let mut request = builder.build().expect("native test request");
+        Ok(request
+            .body_mut()
+            .take()
+            .map(crate::body::DynBody::from_body)
+            .unwrap_or_else(crate::body::DynBody::empty))
+    }
+
+    pub(crate) fn apply_to_reqwest(
         self,
-    ) -> Result<(crate::body::DynBody, Option<HeaderValue>), crate::body::BodyError> {
-        let terminal_media = self
-            .terminal
-            .into_legacy_transport_body(self.exact_length)?;
-        Ok((terminal_media.0, self.media_type.or(terminal_media.1)))
+        builder: reqwest::RequestBuilder,
+    ) -> Result<(reqwest::RequestBuilder, Option<HeaderValue>), crate::body::BodyError> {
+        let builder = self.terminal.apply_to_reqwest(builder, self.exact_length)?;
+        Ok((builder, self.media_type))
     }
 }
 
@@ -374,9 +392,6 @@ impl PreparedBody {
                     .or_else(|| recipe.take());
                 produced
                     .map(|recipe| {
-                        // P-06 deletion point: the generic `Transport` boundary
-                        // still accepts DynBody. Multipart remains authoritative
-                        // as a native Reqwest Form recipe until this narrow bridge.
                         Ok(ProducedBody {
                             terminal: TerminalBody::MultipartRecipe(recipe),
                             media_type: None,
@@ -457,23 +472,36 @@ impl fmt::Debug for PreparedBody {
     }
 }
 
-// Compatibility materializer for the P-06 native-request cutover. It is not a
-// planner: callers can only reach it after a recipe has selected a terminal
-// execution body. Exact length takes precedence over the global streaming
-// limiter, which is installed later by the existing transport path.
-fn materialize_legacy_body(
-    body: crate::body::DynBody,
-    exact_length: Option<u64>,
-) -> crate::body::DynBody {
+// Terminal native-body enforcement. Exact length remains inside the global
+// request limiter installed by the managed execution path.
+fn enforce_native_exact_length(body: reqwest::Body, exact_length: Option<u64>) -> reqwest::Body {
     match exact_length {
-        Some(length) => body.exact_length(length),
+        Some(length) => reqwest::Body::wrap(crate::body::ExactLengthBody::new(body, length)),
         None => body,
     }
 }
 
-fn terminal_exact_length(terminal: &TerminalBody, hint: &SizeHint) -> Option<u64> {
+fn validate_reusable_exact_length(
+    actual: u64,
+    exact_length: Option<u64>,
+) -> Result<(), crate::body::BodyError> {
+    let Some(expected) = exact_length else {
+        return Ok(());
+    };
+    match actual.cmp(&expected) {
+        std::cmp::Ordering::Less => Err(crate::body::BodyError::exact_length_underflow(
+            expected, actual,
+        )),
+        std::cmp::Ordering::Greater => Err(crate::body::BodyError::exact_length_overflow(
+            expected, actual,
+        )),
+        std::cmp::Ordering::Equal => Ok(()),
+    }
+}
+
+fn terminal_exact_length(_terminal: &TerminalBody, hint: &SizeHint) -> Option<u64> {
     #[cfg(feature = "multipart")]
-    if matches!(terminal, TerminalBody::MultipartRecipe(_)) {
+    if matches!(_terminal, TerminalBody::MultipartRecipe(_)) {
         return None;
     }
     hint.exact()
@@ -605,24 +633,22 @@ pub trait ResponseEntity {
 
     fn plan(ctx: ErrorContext) -> Result<ResponseEntityPlan, ApiClientError>;
 
-    fn execute<'a, Cx, T>(
-        client: &'a ApiClient<Cx, T>,
+    fn execute<'a, Cx>(
+        client: &'a ApiClient<Cx>,
         plan: RequestPlan,
     ) -> ResponseEntityFuture<'a, Self::Output>
     where
-        Cx: ClientContext,
-        T: crate::transport::Transport + 'a;
+        Cx: ClientContext;
 }
 
 #[doc(hidden)]
 pub trait ResponseEntityWithMeta: ResponseEntity {
-    fn execute_with_meta<'a, Cx, T>(
-        client: &'a ApiClient<Cx, T>,
+    fn execute_with_meta<'a, Cx>(
+        client: &'a ApiClient<Cx>,
         plan: RequestPlan,
     ) -> ResponseEntityFuture<'a, DecodedResponse<Self::Output>>
     where
-        Cx: ClientContext,
-        T: crate::transport::Transport + 'a;
+        Cx: ClientContext;
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -645,15 +671,14 @@ where
         })
     }
 
-    fn execute<'a, Cx, T>(
-        client: &'a ApiClient<Cx, T>,
+    fn execute<'a, Cx>(
+        client: &'a ApiClient<Cx>,
         plan: RequestPlan,
     ) -> Pin<Box<dyn Future<Output = Result<Self::Output, ApiClientError>> + Send + 'a>>
     where
         Cx: ClientContext,
-        T: crate::transport::Transport + 'a,
     {
-        Box::pin(execute_buffered_codec_response::<Cx, T, C>(client, plan))
+        Box::pin(execute_buffered_codec_response::<Cx, C>(client, plan))
     }
 }
 
@@ -661,17 +686,16 @@ impl<C> ResponseEntityWithMeta for BufferedResponse<C>
 where
     C: ResponseCodec,
 {
-    fn execute_with_meta<'a, Cx, T>(
-        client: &'a ApiClient<Cx, T>,
+    fn execute_with_meta<'a, Cx>(
+        client: &'a ApiClient<Cx>,
         plan: RequestPlan,
     ) -> Pin<
         Box<dyn Future<Output = Result<DecodedResponse<Self::Output>, ApiClientError>> + Send + 'a>,
     >
     where
         Cx: ClientContext,
-        T: crate::transport::Transport + 'a,
     {
-        Box::pin(execute_buffered_codec_response_with_meta::<Cx, T, C>(
+        Box::pin(execute_buffered_codec_response_with_meta::<Cx, C>(
             client, plan,
         ))
     }
@@ -698,28 +722,26 @@ impl ResponseEntity for BytesResponse {
         })
     }
 
-    fn execute<'a, Cx, T>(
-        client: &'a ApiClient<Cx, T>,
+    fn execute<'a, Cx>(
+        client: &'a ApiClient<Cx>,
         plan: RequestPlan,
     ) -> Pin<Box<dyn Future<Output = Result<Self::Output, ApiClientError>> + Send + 'a>>
     where
         Cx: ClientContext,
-        T: crate::transport::Transport + 'a,
     {
         Box::pin(execute_bytes_response(client, plan))
     }
 }
 
 impl ResponseEntityWithMeta for BytesResponse {
-    fn execute_with_meta<'a, Cx, T>(
-        client: &'a ApiClient<Cx, T>,
+    fn execute_with_meta<'a, Cx>(
+        client: &'a ApiClient<Cx>,
         plan: RequestPlan,
     ) -> Pin<
         Box<dyn Future<Output = Result<DecodedResponse<Self::Output>, ApiClientError>> + Send + 'a>,
     >
     where
         Cx: ClientContext,
-        T: crate::transport::Transport + 'a,
     {
         Box::pin(execute_bytes_response_with_meta(client, plan))
     }
@@ -746,28 +768,26 @@ impl ResponseEntity for NoContentResponse {
         })
     }
 
-    fn execute<'a, Cx, T>(
-        client: &'a ApiClient<Cx, T>,
+    fn execute<'a, Cx>(
+        client: &'a ApiClient<Cx>,
         plan: RequestPlan,
     ) -> Pin<Box<dyn Future<Output = Result<Self::Output, ApiClientError>> + Send + 'a>>
     where
         Cx: ClientContext,
-        T: crate::transport::Transport + 'a,
     {
         Box::pin(execute_no_content_response(client, plan))
     }
 }
 
 impl ResponseEntityWithMeta for NoContentResponse {
-    fn execute_with_meta<'a, Cx, T>(
-        client: &'a ApiClient<Cx, T>,
+    fn execute_with_meta<'a, Cx>(
+        client: &'a ApiClient<Cx>,
         plan: RequestPlan,
     ) -> Pin<
         Box<dyn Future<Output = Result<DecodedResponse<Self::Output>, ApiClientError>> + Send + 'a>,
     >
     where
         Cx: ClientContext,
-        T: crate::transport::Transport + 'a,
     {
         Box::pin(execute_no_content_response_with_meta(client, plan))
     }
@@ -800,39 +820,36 @@ where
         })
     }
 
-    fn execute<'a, Cx, T>(
-        client: &'a ApiClient<Cx, T>,
+    fn execute<'a, Cx>(
+        client: &'a ApiClient<Cx>,
         plan: RequestPlan,
     ) -> Pin<Box<dyn Future<Output = Result<Self::Output, ApiClientError>> + Send + 'a>>
     where
         Cx: ClientContext,
-        T: crate::transport::Transport + 'a,
     {
         Box::pin(async move { client.execute_stream_response::<M>(plan).await })
     }
 }
 
-async fn execute_buffered_codec_response<Cx, T, C>(
-    client: &ApiClient<Cx, T>,
+async fn execute_buffered_codec_response<Cx, C>(
+    client: &ApiClient<Cx>,
     plan: RequestPlan,
 ) -> Result<C::Value, ApiClientError>
 where
     Cx: ClientContext,
-    T: crate::transport::Transport,
     C: ResponseCodec,
 {
-    execute_buffered_codec_response_with_meta::<Cx, T, C>(client, plan)
+    execute_buffered_codec_response_with_meta::<Cx, C>(client, plan)
         .await
         .map(|decoded| decoded.value)
 }
 
-async fn execute_buffered_codec_response_with_meta<Cx, T, C>(
-    client: &ApiClient<Cx, T>,
+async fn execute_buffered_codec_response_with_meta<Cx, C>(
+    client: &ApiClient<Cx>,
     plan: RequestPlan,
 ) -> Result<DecodedResponse<C::Value>, ApiClientError>
 where
     Cx: ClientContext,
-    T: crate::transport::Transport,
     C: ResponseCodec,
 {
     let resp = if C::is_no_content() {
@@ -843,51 +860,47 @@ where
     decode_buffered_response_with_meta::<C>(resp)
 }
 
-async fn execute_bytes_response<Cx, T>(
-    client: &ApiClient<Cx, T>,
+async fn execute_bytes_response<Cx>(
+    client: &ApiClient<Cx>,
     plan: RequestPlan,
 ) -> Result<Bytes, ApiClientError>
 where
     Cx: ClientContext,
-    T: crate::transport::Transport,
 {
     execute_bytes_response_with_meta(client, plan)
         .await
         .map(|decoded| decoded.value)
 }
 
-async fn execute_no_content_response<Cx, T>(
-    client: &ApiClient<Cx, T>,
+async fn execute_no_content_response<Cx>(
+    client: &ApiClient<Cx>,
     plan: RequestPlan,
 ) -> Result<(), ApiClientError>
 where
     Cx: ClientContext,
-    T: crate::transport::Transport,
 {
     execute_no_content_response_with_meta(client, plan)
         .await
         .map(|decoded| decoded.value)
 }
 
-async fn execute_bytes_response_with_meta<Cx, T>(
-    client: &ApiClient<Cx, T>,
+async fn execute_bytes_response_with_meta<Cx>(
+    client: &ApiClient<Cx>,
     plan: RequestPlan,
 ) -> Result<DecodedResponse<Bytes>, ApiClientError>
 where
     Cx: ClientContext,
-    T: crate::transport::Transport,
 {
     let resp = client.execute_plan_raw(plan).await?;
     decode_bytes_response_with_meta(resp)
 }
 
-async fn execute_no_content_response_with_meta<Cx, T>(
-    client: &ApiClient<Cx, T>,
+async fn execute_no_content_response_with_meta<Cx>(
+    client: &ApiClient<Cx>,
     plan: RequestPlan,
 ) -> Result<DecodedResponse<()>, ApiClientError>
 where
     Cx: ClientContext,
-    T: crate::transport::Transport,
 {
     let resp = client.execute_plan_raw_skip_body(plan).await?;
     decode_no_content_response_with_meta(resp)
@@ -1003,6 +1016,7 @@ fn validate_buffered_response(
 }
 
 #[cfg(test)]
+#[allow(dead_code, unused_imports)]
 mod tests {
     use super::*;
     use crate::codec::text::Text;
@@ -1010,7 +1024,6 @@ mod tests {
     use crate::media::{OctetStream, TextContentType};
     #[cfg(feature = "multipart")]
     use crate::multipart::MultipartBody;
-    use crate::transport::Transport;
     use http::{HeaderMap, Method, StatusCode};
     use http_body_util::BodyExt;
     #[cfg(feature = "json")]
@@ -1095,57 +1108,6 @@ mod tests {
         }
     }
 
-    #[derive(Clone)]
-    struct StaticTransport {
-        response: StaticResponse,
-    }
-
-    #[derive(Clone)]
-    struct StaticResponse {
-        status: StatusCode,
-        headers: HeaderMap,
-        chunks: Vec<Bytes>,
-        content_length: Option<u64>,
-    }
-
-    impl StaticTransport {
-        fn new(response: StaticResponse) -> Self {
-            Self { response }
-        }
-    }
-
-    impl Transport for StaticTransport {
-        fn send(
-            &self,
-            _req: http::Request<crate::body::DynBody>,
-        ) -> std::pin::Pin<
-            Box<
-                dyn std::future::Future<
-                        Output = Result<
-                            http::Response<crate::body::DynBody>,
-                            crate::transport::TransportError,
-                        >,
-                    > + Send,
-            >,
-        > {
-            let response = self.response.clone();
-            Box::pin(async move {
-                let mut builder = http::Response::builder().status(response.status);
-                *builder.headers_mut().expect("headers") = response.headers;
-                if let Some(length) = response.content_length {
-                    builder.headers_mut().expect("headers").insert(
-                        http::header::CONTENT_LENGTH,
-                        http::HeaderValue::from_str(&length.to_string()).expect("length"),
-                    );
-                }
-                let bytes = Bytes::from(response.chunks.concat());
-                builder
-                    .body(crate::body::DynBody::from_bytes(bytes))
-                    .map_err(crate::transport::TransportError::new)
-            })
-        }
-    }
-
     fn request_plan(response_plan: ResponsePlan) -> RequestPlan {
         RequestPlan {
             endpoint: crate::endpoint::EndpointPlan {
@@ -1178,10 +1140,6 @@ mod tests {
             );
         }
         headers
-    }
-
-    fn transport(response: StaticResponse) -> StaticTransport {
-        StaticTransport::new(response)
     }
 
     #[test]
@@ -1445,12 +1403,10 @@ mod tests {
                         TerminalBody::ReusableBytes(Bytes::copy_from_slice(bytes))
                     }))
                 });
-            let result = body
-                .produce_for_attempt()
-                .unwrap()
-                .into_dyn_body()
-                .collect()
-                .await;
+            let result = match body.produce_for_attempt().unwrap().try_into_dyn_body() {
+                Ok(body) => body.collect().await,
+                Err(error) => Err(error),
+            };
             match kind {
                 Some(kind) => {
                     let error = result.expect_err("mismatch must fail");
@@ -1576,35 +1532,112 @@ mod tests {
         assert!(!one_shot.supports_auth_internal_retries());
     }
 
-    #[tokio::test]
-    #[cfg(feature = "multipart")]
-    async fn multipart_media_type_and_encoded_boundary_share_one_owner() {
-        let mut prepared =
-            MultipartRequest::prepare(MultipartBody::new().text("title", "hello"), ctx())
-                .expect("multipart request")
-                .body;
-        let produced = prepared.produce_for_attempt().expect("multipart body");
-        let (dyn_body, produced_media_type) = produced
-            .into_legacy_transport_parts()
-            .expect("multipart compatibility materialization");
-        let media_type = produced_media_type
-            .as_ref()
-            .and_then(|value| value.to_str().ok())
-            .expect("media type")
-            .to_string();
-        let boundary = media_type
-            .strip_prefix("multipart/form-data; boundary=")
-            .expect("boundary");
-        let encoded = dyn_body.collect().await.expect("collect").to_bytes();
-        assert!(
-            encoded
-                .windows(boundary.len())
-                .any(|part| part == boundary.as_bytes())
+    fn native_request_from_produced(produced: ProducedBody) -> reqwest::Request {
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .expect("test Reqwest client");
+        let builder = client.request(
+            http::Method::POST,
+            url::Url::parse("http://example.test/native").expect("static URL"),
+        );
+        let (builder, media_type) = produced
+            .apply_to_reqwest(builder)
+            .expect("native body materialization");
+        let mut request = builder.build().expect("native request");
+        apply_attempt_media_type(request.headers_mut(), media_type.as_ref()).expect("media type");
+        request
+    }
+
+    #[test]
+    fn reusable_bytes_remain_a_direct_reqwest_byte_body() {
+        let mut prepared = PreparedBody::reusable_bytes(Bytes::from_static(b"direct"), None);
+        let request =
+            native_request_from_produced(prepared.produce_for_attempt().expect("produced bytes"));
+        assert_eq!(
+            request.body().and_then(reqwest::Body::as_bytes),
+            Some(&b"direct"[..])
         );
     }
 
+    #[test]
+    fn empty_stream_and_advanced_terminals_map_to_native_reqwest_capabilities() {
+        let empty = native_request_from_produced(
+            PreparedBody::empty()
+                .produce_for_attempt()
+                .expect("empty terminal"),
+        );
+        assert!(empty.body().is_none());
+
+        let stream = StreamBody::from_byte_stream(TestStream::new([Ok::<
+            _,
+            crate::stream_body::StreamBodyError,
+        >(Bytes::from_static(
+            b"stream",
+        ))]));
+        let streamed = native_request_from_produced(
+            PreparedBody::from_stream_body(stream, None)
+                .produce_for_attempt()
+                .expect("stream terminal"),
+        );
+        assert!(
+            streamed
+                .body()
+                .is_some_and(|body| body.as_bytes().is_none())
+        );
+
+        let advanced = native_request_from_produced(
+            PreparedBody::one_shot(
+                crate::body::DynBody::from_bytes(Bytes::from_static(b"body")),
+                None,
+            )
+            .produce_for_attempt()
+            .expect("advanced terminal"),
+        );
+        assert!(
+            advanced
+                .body()
+                .is_some_and(|body| body.as_bytes().is_none())
+        );
+    }
+
+    #[cfg(feature = "multipart")]
+    #[test]
+    fn multipart_factories_build_fresh_native_forms_and_boundaries() {
+        let mut prepared = PreparedBody::replay_multipart_factory(|| {
+            Ok(MultipartBody::new().text("field", "value"))
+        });
+        let first =
+            native_request_from_produced(prepared.produce_for_attempt().expect("first multipart"));
+        let second =
+            native_request_from_produced(prepared.produce_for_attempt().expect("second multipart"));
+        let first_type = first
+            .headers()
+            .get(http::header::CONTENT_TYPE)
+            .expect("first Content-Type");
+        let second_type = second
+            .headers()
+            .get(http::header::CONTENT_TYPE)
+            .expect("second Content-Type");
+        assert!(
+            first_type
+                .to_str()
+                .expect("header")
+                .starts_with("multipart/form-data; boundary=")
+        );
+        assert!(
+            second_type
+                .to_str()
+                .expect("header")
+                .starts_with("multipart/form-data; boundary=")
+        );
+        assert_ne!(first_type, second_type);
+        assert!(first.body().is_some_and(|body| body.as_bytes().is_none()));
+        assert!(second.body().is_some_and(|body| body.as_bytes().is_none()));
+    }
+
     #[tokio::test]
-    async fn prepared_one_shot_preserves_frames_and_trailers_before_legacy_bridge() {
+    async fn prepared_one_shot_preserves_frames_and_trailers_during_native_adaptation() {
         let mut trailers = HeaderMap::new();
         trailers.insert("x-trailer", http::HeaderValue::from_static("present"));
         let frames = TestStream::new(vec![
@@ -1633,206 +1666,6 @@ mod tests {
             .into_trailers()
             .expect("trailer frame");
         assert_eq!(actual_trailers, trailers);
-    }
-
-    #[tokio::test]
-    async fn buffered_response_execute_returns_decoded_value() {
-        let plan = BufferedResponse::<Text<String>>::plan(ctx()).expect("buffered response");
-        let transport = transport(StaticResponse {
-            status: StatusCode::OK,
-            headers: response_headers(Some("text/plain")),
-            chunks: vec![Bytes::from_static(b"hello")],
-            content_length: None,
-        });
-        let client = ApiClient::<TestCx, _>::with_transport((), (), transport.clone());
-        let response =
-            BufferedResponse::<Text<String>>::execute(&client, request_plan(plan.response_plan))
-                .await
-                .expect("buffered execute");
-        assert_eq!(response, "hello");
-    }
-
-    #[tokio::test]
-    async fn bytes_response_execute_returns_bytes() {
-        let plan = BytesResponse::plan(ctx()).expect("bytes response");
-        let transport = transport(StaticResponse {
-            status: StatusCode::OK,
-            headers: response_headers(None),
-            chunks: vec![Bytes::from_static(b"hello"), Bytes::from_static(b" world")],
-            content_length: None,
-        });
-        let client = ApiClient::<TestCx, _>::with_transport((), (), transport.clone());
-        let response = BytesResponse::execute(&client, request_plan(plan.response_plan))
-            .await
-            .expect("bytes execute");
-        assert_eq!(response, Bytes::from_static(b"hello world"));
-    }
-
-    #[tokio::test]
-    async fn no_content_response_execute_returns_unit() {
-        let plan = NoContentResponse::plan(ctx()).expect("no content response");
-        let transport = transport(StaticResponse {
-            status: StatusCode::NO_CONTENT,
-            headers: response_headers(None),
-            chunks: vec![],
-            content_length: None,
-        });
-        let client = ApiClient::<TestCx, _>::with_transport((), (), transport.clone());
-        NoContentResponse::execute(&client, request_plan(plan.response_plan))
-            .await
-            .expect("no content execute");
-        assert_eq!((), ());
-    }
-
-    #[tokio::test]
-    async fn streaming_response_adapter_executes_through_existing_stream_path() {
-        let plan = RawStreamResponse::<OctetStream>::plan(ctx()).expect("stream response");
-        let transport = transport(StaticResponse {
-            status: StatusCode::OK,
-            headers: response_headers(Some(OctetStream::CONTENT_TYPE)),
-            chunks: vec![Bytes::from_static(b"abc"), Bytes::from_static(b"def")],
-            content_length: None,
-        });
-        let client = ApiClient::<TestCx, _>::with_transport((), (), transport.clone());
-        let mut response =
-            RawStreamResponse::<OctetStream>::execute(&client, request_plan(plan.response_plan))
-                .await
-                .expect("stream execute");
-        let mut out = Vec::new();
-        while let Some(chunk) = response.next_chunk().await.expect("stream chunk") {
-            out.extend_from_slice(&chunk);
-        }
-        assert_eq!(Bytes::from(out), Bytes::from_static(b"abcdef"));
-    }
-
-    #[cfg(feature = "json")]
-    #[tokio::test]
-    async fn buffered_response_json_exposes_buffered_capabilities() {
-        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-        struct Item {
-            id: u32,
-        }
-
-        let plan = BufferedResponse::<crate::codec::json::Json<Item>>::plan(ctx())
-            .expect("buffered response");
-
-        assert_eq!(
-            plan.capabilities,
-            ResponseEntityCapabilities {
-                supports_pagination: true,
-                is_streaming: false,
-                is_no_content: false,
-            }
-        );
-
-        assert_eq!(
-            plan.response_plan.accept,
-            Some(JsonContentType::try_header_value().expect("json content type"))
-        );
-
-        let client = ApiClient::<TestCx, _>::with_transport(
-            (),
-            (),
-            transport(StaticResponse {
-                status: StatusCode::OK,
-                headers: response_headers(Some("application/json")),
-                chunks: vec![Bytes::from_static(br#"{"id":1}"#)],
-                content_length: None,
-            }),
-        );
-
-        let decoded = execute_buffered_codec_response::<_, _, crate::codec::json::Json<Item>>(
-            &client,
-            request_plan(plan.response_plan),
-        )
-        .await
-        .expect("decode");
-
-        assert_eq!(decoded, Item { id: 1 });
-    }
-
-    #[tokio::test]
-    async fn buffered_response_text_is_buffered_and_non_streaming() {
-        let plan = BufferedResponse::<Text<String>>::plan(ctx()).expect("buffered response");
-        assert_eq!(
-            plan.capabilities,
-            ResponseEntityCapabilities {
-                supports_pagination: true,
-                is_streaming: false,
-                is_no_content: false,
-            }
-        );
-        let client = ApiClient::<TestCx, _>::with_transport(
-            (),
-            (),
-            transport(StaticResponse {
-                status: StatusCode::OK,
-                headers: response_headers(Some("text/plain; charset=utf-8")),
-                chunks: vec![Bytes::from_static(b"hello")],
-                content_length: None,
-            }),
-        );
-        let decoded = execute_buffered_codec_response::<_, _, Text<String>>(
-            &client,
-            request_plan(plan.response_plan),
-        )
-        .await
-        .expect("decode");
-        assert_eq!(decoded, "hello");
-    }
-
-    #[tokio::test]
-    async fn bytes_response_exposes_buffered_bytes_capabilities() {
-        let plan = BytesResponse::plan(ctx()).expect("bytes response");
-        assert_eq!(
-            plan.capabilities,
-            ResponseEntityCapabilities {
-                supports_pagination: false,
-                is_streaming: false,
-                is_no_content: false,
-            }
-        );
-        let client = ApiClient::<TestCx, _>::with_transport(
-            (),
-            (),
-            transport(StaticResponse {
-                status: StatusCode::OK,
-                headers: response_headers(None),
-                chunks: vec![Bytes::from_static(b"bytes")],
-                content_length: None,
-            }),
-        );
-        let decoded = BytesResponse::execute(&client, request_plan(plan.response_plan))
-            .await
-            .expect("decode");
-        assert_eq!(decoded, Bytes::from_static(b"bytes"));
-    }
-
-    #[tokio::test]
-    async fn no_content_response_has_no_content_capabilities() {
-        let plan = NoContentResponse::plan(ctx()).expect("no content response");
-        assert_eq!(
-            plan.capabilities,
-            ResponseEntityCapabilities {
-                supports_pagination: false,
-                is_streaming: false,
-                is_no_content: true,
-            }
-        );
-        let client = ApiClient::<TestCx, _>::with_transport(
-            (),
-            (),
-            transport(StaticResponse {
-                status: StatusCode::NO_CONTENT,
-                headers: response_headers(None),
-                chunks: vec![],
-                content_length: None,
-            }),
-        );
-        NoContentResponse::execute(&client, request_plan(plan.response_plan))
-            .await
-            .expect("decode");
-        assert_eq!((), ());
     }
 
     #[test]

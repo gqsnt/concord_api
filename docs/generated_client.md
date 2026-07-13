@@ -20,10 +20,10 @@ let api = session_api::SessionApi::new("upstream-key".to_string());
 
 For example, a client declaring `var tenant`, `var region`, then auth secrets `username` and `password` is constructed as `Example::new(tenant, region, username, password)`. For clients with several same-typed values, the builder API is often clearer.
 
-Default-feature callers can use `new()`, `builder()`, `new_with_transport(...)`, or `new_with_safe_reqwest_builder(...)`. The safe managed constructors expose only `SafeReqwestBuilder`; they never expose raw Reqwest builders, clients, or proxies. Use the infallible constructor for reviewed settings such as timeouts, pooling, protocol preferences, and already validated proxy configuration. Use `new_with_safe_reqwest_builder_fallible(...)` when parsing trusted-root or client-identity PEM data. Generated clients also expose `set_api_headers(...)`, `with_api_headers(...)`, and `api_headers()` for validated client-wide origin headers. No-default builds remain reqwest-backed via `new()`/`builder()` and keep streaming support through Reqwest's `stream` feature, while custom transports continue to work through `new_with_transport(...)`.
+Callers can use `new()`, `builder()`, or `new_with_safe_reqwest_builder(...)`. The safe managed constructors expose only `SafeReqwestBuilder`; they never expose raw Reqwest builders, clients, or proxies. Use the fallible variant when parsing trusted-root or client-identity PEM data. Generated clients also expose validated client-wide API-header methods. All feature profiles execute through the managed Reqwest client.
 
 ```rust
-let api = minimal_api::MinimalApi::new_with_transport(transport);
+let api = minimal_api::MinimalApi::new();
 ```
 
 Concord's managed reqwest transport disables redirects and Reqwest retries. That keeps auth material on the original request and leaves endpoint retries under Concord's runtime. `new_with_safe_reqwest_builder(...)` receives only `SafeReqwestBuilder` for infallible settings; `new_with_safe_reqwest_builder_fallible(...)` additionally permits fallible PEM parsing. Both support reviewed timeout, pool, protocol, TLS, and credential-free explicit-proxy settings while keeping Reqwest defaults, cookies, redirects, and retries unavailable.
@@ -210,7 +210,7 @@ Use advanced endpoints for focused tests, reusable endpoint values, or explicit 
 
 ## Public Name Stability
 
-Generated public names are validated before codegen within their generated namespace. Client facade names are checked against generated client methods such as `new`, `new_with_transport`, `builder`, `configure`, `request`, and `auth_state`. Endpoint-backed auth helper names, auth-state credential accessors, scope facade methods, endpoint methods, generated request-extension traits, endpoint marker types, and support types are also collision-validated in their own namespaces.
+Generated public names are validated before codegen within their generated namespace. Client facade names are checked against generated client methods such as `new`, `builder`, `configure`, `request`, and `auth_state`. Endpoint-backed auth helper names, auth-state credential accessors, scope facade methods, endpoint methods, generated request-extension traits, endpoint marker types, and support types are also collision-validated in their own namespaces.
 
 Raw Rust identifiers such as `r#type` are rejected for public generated names in v1. Use ordinary DSL names or aliases that generate stable public Rust names.
 

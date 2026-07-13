@@ -30,11 +30,58 @@ This repository keeps test ownership split by layer so new coverage lands in the
 ## Runtime
 
 - `concord_core/tests/integration/current_core/` owns runtime behavior.
-- The main suites are request/response entities, attempt pipeline, pagination, auth, retry, rate-limit, redaction, error taxonomy, transport, cancellation, concurrency, and streaming.
+- `native_runtime.rs` owns managed-client execution, native response adaptation,
+  timeout and task cancellation, request-limit preflight, and wire-level auth.
+- `attempt_pipeline.rs`, `runtime_config.rs`, `runtime_order.rs`, and
+  `redaction_matrix.rs` retain their P-05 behavioral matrices on the strict
+  native loopback seam; `public_api.rs` owns the concrete-client positive
+  surface while Trybuild owns removed-transport failures.
+- `pagination.rs`, `retry_runtime.rs`, and `rate_limit.rs` retain their P-05
+  behavioral matrices while executing through native loopback requests.
+- Request recipe, exact-length, limiter, credential-cache concurrency,
+  cancellation, error taxonomy, and redaction primitives are owned by focused
+  unit modules in `concord_core/src/`.
+
+### P-05 to P-06 ownership map
+
+| P-05 suite responsibility | P-06 native owner |
+| --- | --- |
+| Authentication, refresh, invalidation, challenge, cache sharing | `native_runtime.rs`, generated `auth.rs`, `auth::credentials` and `auth::orchestrator` unit tests |
+| Authentication concurrency and cancellation | `auth::credentials` unit tests plus gated native cancellation in `native_runtime.rs` |
+| Status/connection retries and request rebuildability | `retry_runtime.rs`, generated `retry.rs`, and `io` recipe tests |
+| Rate-limit admission, release, feedback, and ordering | `rate_limit.rs` and governor runtime unit tests |
+| Hooks and response-classification ordering | `runtime_order.rs`, `rate_limit.rs`, and generated no-content/runtime tests |
+| Pagination progression, caps, and non-progress | `pagination.rs` and generated `pagination.rs` |
+| Buffered/stream response limits, errors, and cancellation | generated endpoint I/O modules, `body` unit tests, and `native_runtime.rs` |
+| Streaming uploads, exact lengths, and global request limits | generated `endpoint_io_stream.rs`, `body` and `io` unit tests |
+| Multipart construction, reconstruction, limits, and collisions | generated `endpoint_io_multipart.rs`, `io` and `multipart` unit tests |
+| Request/response errors and complete redaction | `attempt_pipeline.rs`, `redaction_matrix.rs`, pagination/retry/rate-limit native suites, generated endpoint I/O/auth suites, and error/redaction unit tests |
+| Runtime configuration propagation | `runtime_config.rs`, `native_runtime.rs`, generated endpoint I/O tests, and runtime config unit tests |
+| Generated-client execution | `concord_macros/tests/integration/generated/` |
+| Example-client execution | `concord_examples/tests/integration/` |
+| Allocation, attempts, auth, pagination, hooks, streaming, smoke | native targets under `perf/benches/` |
+
+### Inventory comparison
+
+- The five high-density P-05 suites that had been removed are compiled again
+  in their original ownership files: attempt pipeline (6), public API (3),
+  redaction matrix (8), runtime configuration (14), and runtime ordering (61),
+  for 92 restored native-loopback cases.
+- The focused native runtime, pagination, retry, and rate-limit suites add 99
+  integration cases. Together with output-model, request-entity, release-gate,
+  and 202 core library tests, the all-feature core run contains 417 tests.
+- Generated runtime integration remains 42 source-level test cases (P-05: 42),
+  example integration remains 23 (P-05: 23), and performance remains nine
+  benchmark targets (P-05: nine).
+- Core integration source attributes are 213 rather than P-05's 420 because
+  transport-fixture permutations were consolidated into native wire tests and
+  focused unit owners. The table above records the replacement owner for each
+  material responsibility; the reduction is not an empty module registry or a
+  retired ownership area.
 
 ## Generated integration and examples
 
-- `concord_macros/tests/integration/generated/` owns feature-owned generated-client integration against the mock runtime.
+- `concord_macros/tests/integration/generated/` owns feature-owned generated-client integration against the strict native loopback runtime.
 - `concord_examples/tests/` owns deterministic example checks. Live smoke paths stay opt-in behind environment variables.
 
 ## Feature and CI validation
@@ -42,8 +89,10 @@ This repository keeps test ownership split by layer so new coverage lands in the
 - The root `justfile` owns the maintained workspace validation dimensions.
 - `just release` is the canonical release gate and does not include deferred perf diagnostics.
 - No-default, individual-feature, and dependency-tree checks are focused diagnostics, not proof supplied by the all-feature release check.
-- Architectural boundaries are maintained through module/crate organization, targeted compile/runtime tests, and review; the historical source-regex audit is retired.
-- `just perf-check`, `just perf-test`, and `just bench-check` are optional diagnostics for the historical perf package.
+- Architectural boundaries are maintained through module/crate organization,
+  compile-fail coverage, native runtime tests, and repository removal searches.
+- `just perf-check`, `just perf-test`, and `just bench-check` validate the native
+  performance fixtures and benchmark targets.
 
 ## Where to add new tests
 

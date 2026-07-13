@@ -91,9 +91,9 @@ cargo test -p concord_core --no-default-features --features json no_default_rate
 
 ## Architecture Boundary Checks
 
-The historical source-regex architecture audit is retired. Architectural
-boundaries are maintained through module and crate organization, targeted
-compile/runtime tests, and review.
+Architecture boundaries are maintained through module and crate organization,
+compile-fail/runtime tests, review, and focused repository searches for removed
+public execution and request-bridge symbols.
 
 The maintained architectural contract includes:
 
@@ -112,9 +112,9 @@ organization instead of weakening the contract.
 
 These tests protect runtime order and should be extended before runtime behavior is refactored.
 
-Auth and redaction tests must cover arbitrary auth names, not only conventional names such as `Authorization` or `api_key`. Basic auth usernames declared as `secret` are secret material too. When auth handling changes, verify that `BuiltRequest`, `BuiltResponse`, `DecodedResponse<T>`, debug sinks, and errors do not contain raw auth material, while the materialized `http::Request<DynBody>` still carries real credentials at `Transport::send`.
+Auth and redaction tests cover arbitrary auth names and verify that response values, debug sinks, and errors do not contain raw auth material while the native request carries credentials only at execution.
 
-Auth preparation boundary tests should verify behavior at the sealed auth boundary: raw material stays out of logical request, debug, and error surfaces and reaches only `http::Request<DynBody>` at send time.
+Auth preparation boundary tests verify that raw material stays out of logical, debug, and error surfaces and reaches only the native request at execution time.
 
 Runtime strictness tests should reject invented policy values and silent saturation through observable behavior. Rate-limit `[host]` keys must fail explicitly when the logical URL has no host. Request and auth attempt counters should return typed overflow errors instead of saturating.
 

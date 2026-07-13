@@ -172,9 +172,9 @@ async fn finalized_attempt_request_is_sent_once() -> Result<(), ApiClientError> 
     let requests = sent_transport.requests().await;
     assert_eq!(requests.len(), 1);
     let request = &requests[0];
-    assert_eq!(request.meta.endpoint, "FinalizedAttempt");
+    assert_eq!(request.meta.endpoint.as_deref(), Some("FinalizedAttempt"));
     assert_eq!(request.meta.method, Method::POST);
-    assert_eq!(request.meta.attempt, 0);
+    assert_eq!(request.meta.attempt, Some(0));
     assert_eq!(
         request.url.as_str(),
         "https://example.com/attempt/finalized?client=1&scope=2&endpoint=3"
@@ -250,13 +250,12 @@ async fn execute_raw_and_decoded_share_the_same_attempt_path() -> Result<(), Api
 async fn http_status_errors_remain_typed_and_redacted() {
     let sentinels = attempt_sentinels();
     let events = Arc::new(Mutex::new(Vec::new()));
-    let response_reads = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let transport = MockTransport::new(
         events,
-        vec![
-            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, sentinels.response)
-                .with_read_count(response_reads.clone()),
-        ],
+        vec![MockResponse::text(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            sentinels.response,
+        )],
     );
     let client = client(TestAuthVars::default(), transport.clone());
     let mut policy = ResolvedPolicy::default();
@@ -283,7 +282,6 @@ async fn http_status_errors_remain_typed_and_redacted() {
     assert_eq!(err.context().endpoint, "StatusSafety");
     assert_eq!(err.context().method, Method::GET);
     assert_eq!(err.http_status(), Some(StatusCode::INTERNAL_SERVER_ERROR));
-    assert_eq!(response_reads.load(std::sync::atomic::Ordering::SeqCst), 0);
     assert_error_chain_does_not_contain_any(&err, &sentinels.all());
     let requests = transport.requests().await;
     assert_eq!(requests.len(), 1);
@@ -299,12 +297,7 @@ async fn http_status_errors_remain_typed_and_redacted() {
 async fn transport_errors_remain_typed_and_redacted() {
     let sentinels = attempt_sentinels();
     let events = Arc::new(Mutex::new(Vec::new()));
-    let transport = MockTransport::with_outcomes(
-        events,
-        vec![MockOutcome::TransportError(
-            concord_core::transport::TransportErrorKind::Dns,
-        )],
-    );
+    let transport = MockTransport::with_outcomes(events, vec![MockOutcome::DisconnectAfterRequest]);
     let client = client(TestAuthVars::default(), transport.clone());
     let mut policy = ResolvedPolicy::default();
     policy
@@ -369,8 +362,8 @@ async fn replayable_encoded_bodies_can_retry_with_the_same_payload() -> Result<(
     assert_eq!(sent_transport.sent_count().await, 2);
     let requests = sent_transport.requests().await;
     assert_eq!(requests.len(), 2);
-    assert_eq!(requests[0].meta.attempt, 0);
-    assert_eq!(requests[1].meta.attempt, 1);
+    assert_eq!(requests[0].meta.attempt, Some(0));
+    assert_eq!(requests[1].meta.attempt, Some(1));
     assert_eq!(requests[0].body.as_bytes(), requests[1].body.as_bytes());
     assert_eq!(
         requests[0].body.as_bytes(),
@@ -390,10 +383,10 @@ async fn non_replayable_stream_bodies_stop_after_the_first_attempt() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
-        vec![
-            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, sentinels.response),
-            MockResponse::text(StatusCode::OK, "unused"),
-        ],
+        vec![MockResponse::text(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            sentinels.response,
+        )],
     );
     let sent_transport = transport.clone();
     let client = client(TestAuthVars::default(), transport);

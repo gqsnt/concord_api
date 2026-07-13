@@ -48,22 +48,15 @@ impl RequestOptions {
     }
 }
 
-pub struct PendingRequest<
-    'a,
-    Cx: ClientContext,
-    E: IntoEndpointPlan<Cx>,
-    T: crate::transport::Transport,
-> {
-    client: &'a ApiClient<Cx, T>,
+pub struct PendingRequest<'a, Cx: ClientContext, E: IntoEndpointPlan<Cx>> {
+    client: &'a ApiClient<Cx>,
     ep: E,
     opts: RequestOptions,
 }
 
-impl<'a, Cx: ClientContext, E: IntoEndpointPlan<Cx>, T: crate::transport::Transport>
-    PendingRequest<'a, Cx, E, T>
-{
+impl<'a, Cx: ClientContext, E: IntoEndpointPlan<Cx>> PendingRequest<'a, Cx, E> {
     #[inline]
-    pub(crate) fn new(client: &'a ApiClient<Cx, T>, ep: E) -> Self {
+    pub(crate) fn new(client: &'a ApiClient<Cx>, ep: E) -> Self {
         Self {
             client,
             ep,
@@ -173,7 +166,7 @@ impl<'a, Cx: ClientContext, E: IntoEndpointPlan<Cx>, T: crate::transport::Transp
     }
 
     #[inline]
-    pub fn paginate(self, termination: PaginationTermination) -> PaginatedRequest<'a, Cx, E, T>
+    pub fn paginate(self, termination: PaginationTermination) -> PaginatedRequest<'a, Cx, E>
     where
         E: PaginatedEndpoint<Cx>,
         E::Response: PageItems,
@@ -182,11 +175,10 @@ impl<'a, Cx: ClientContext, E: IntoEndpointPlan<Cx>, T: crate::transport::Transp
     }
 }
 
-impl<'a, Cx, E, T, M> PendingRequest<'a, Cx, E, T>
+impl<'a, Cx, E, M> PendingRequest<'a, Cx, E>
 where
     Cx: ClientContext + 'a,
     E: IntoEndpointPlan<Cx> + Endpoint<Cx, Response = StreamResponse<M>> + 'a,
-    T: crate::transport::Transport + 'a,
     M: 'a,
 {
     #[inline]
@@ -197,11 +189,10 @@ where
     }
 }
 
-impl<'a, Cx, E, T> IntoFuture for PendingRequest<'a, Cx, E, T>
+impl<'a, Cx, E> IntoFuture for PendingRequest<'a, Cx, E>
 where
     Cx: ClientContext + 'a,
     E: IntoEndpointPlan<Cx> + 'a,
-    T: crate::transport::Transport + 'a,
     E::Response: 'a,
 {
     type Output = Result<E::Response, ApiClientError>;
@@ -213,22 +204,15 @@ where
     }
 }
 
-pub struct PaginatedRequest<
-    'a,
-    Cx: ClientContext,
-    E: ReusableEndpoint<Cx>,
-    T: crate::transport::Transport,
-> {
-    pending: PendingRequest<'a, Cx, E, T>,
+pub struct PaginatedRequest<'a, Cx: ClientContext, E: ReusableEndpoint<Cx>> {
+    pending: PendingRequest<'a, Cx, E>,
     caps: PaginationCaps,
 }
 
-impl<'a, Cx: ClientContext, E: ReusableEndpoint<Cx>, T: crate::transport::Transport>
-    PaginatedRequest<'a, Cx, E, T>
-{
+impl<'a, Cx: ClientContext, E: ReusableEndpoint<Cx>> PaginatedRequest<'a, Cx, E> {
     #[inline]
     pub(crate) fn new(
-        pending: PendingRequest<'a, Cx, E, T>,
+        pending: PendingRequest<'a, Cx, E>,
         termination: PaginationTermination,
     ) -> Self {
         let caps =
@@ -246,7 +230,6 @@ impl<'a, Cx: ClientContext, E: ReusableEndpoint<Cx>, T: crate::transport::Transp
     where
         E: PaginatedEndpoint<Cx>,
         E::Response: PageItems,
-        T: crate::transport::Transport,
     {
         // This intentionally has a dedicated loop instead of delegating to a
         // higher-level callback surface: collection can enforce hard item caps
@@ -284,8 +267,8 @@ impl<'a, Cx: ClientContext, E: ReusableEndpoint<Cx>, T: crate::transport::Transp
         ))
     }
 }
-async fn collect_with_pagination_runtime<'a, Cx, E, T>(
-    mut pending: PendingRequest<'a, Cx, E, T>,
+async fn collect_with_pagination_runtime<'a, Cx, E>(
+    mut pending: PendingRequest<'a, Cx, E>,
     mut runtime: Box<dyn PaginationRuntime<E, E::Response>>,
     caps: PaginationCaps,
     ctx: ErrorContext,
@@ -293,7 +276,6 @@ async fn collect_with_pagination_runtime<'a, Cx, E, T>(
 where
     Cx: ClientContext + 'a,
     E: PaginatedEndpoint<Cx> + 'a,
-    T: crate::transport::Transport + 'a,
     E::Response: PageItems,
 {
     let page_apply_ctx = PageApply {

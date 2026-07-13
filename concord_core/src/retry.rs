@@ -336,4 +336,59 @@ mod tests {
             RetryDecision::Retry
         );
     }
+
+    #[test]
+    fn configured_transport_kinds_match_only_the_primary_classification() {
+        let method = Method::GET;
+        let request_headers = HeaderMap::new();
+        for kind in [
+            TransportErrorKind::Timeout,
+            TransportErrorKind::Connect,
+            TransportErrorKind::Tls,
+            TransportErrorKind::Dns,
+            TransportErrorKind::Io,
+            TransportErrorKind::Request,
+            TransportErrorKind::Other,
+        ] {
+            let error = TransportError::with_kind(kind, std::io::Error::other("classified"));
+            let context = RetryContext {
+                endpoint: "RetryTransportKind",
+                method: &method,
+                url: "https://example.com",
+                attempt: 0,
+                retry_count: 0,
+                page_index: 0,
+                idempotent: true,
+                max_delay: Duration::from_secs(1),
+                request_headers: &request_headers,
+                response_headers: None,
+                outcome: RetryOutcome::Transport(&error),
+            };
+            let matching = RetryClassifierConfig {
+                transport_errors: vec![kind],
+                ..RetryClassifierConfig::default()
+            };
+            assert_eq!(
+                matching.try_decide(&context).expect("matching decision"),
+                RetryDecision::Retry,
+                "{kind:?} must match itself"
+            );
+            let other = if kind == TransportErrorKind::Other {
+                TransportErrorKind::Request
+            } else {
+                TransportErrorKind::Other
+            };
+            let mismatching = RetryClassifierConfig {
+                transport_errors: vec![other],
+                ..RetryClassifierConfig::default()
+            };
+            assert_eq!(
+                mismatching
+                    .try_decide(&context)
+                    .expect("mismatching decision"),
+                RetryDecision::Stop,
+                "{kind:?} must not match {other:?}"
+            );
+        }
+    }
 }

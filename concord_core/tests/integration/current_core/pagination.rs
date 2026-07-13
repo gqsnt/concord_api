@@ -13,7 +13,6 @@ use concord_core::prelude::{
     ApiClientError, CursorPagination, Endpoint, PageItems, PagedPagination, PaginatedEndpoint,
     PaginationTermination, ReusableEndpoint,
 };
-use concord_core::transport::TransportErrorKind;
 use http::{HeaderName, HeaderValue, Method, StatusCode};
 use std::future::Future;
 use std::num::NonZeroUsize;
@@ -41,14 +40,11 @@ struct GeneratedHeaderBoundCustomEndpoint {
 impl Endpoint<TestCx> for GeneratedHeaderBoundCustomEndpoint {
     type Response = Vec<String>;
 
-    fn execute<'a, T>(
-        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
+    fn execute<'a>(
+        client: &'a concord_core::prelude::ApiClient<TestCx>,
         plan: concord_core::internal::RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
-    where
-        T: concord_core::advanced::Transport + 'a,
-    {
-        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>> {
+        execute_buffered::<_, CommaSeparatedItems>(client, plan)
     }
 }
 
@@ -166,14 +162,11 @@ struct HeaderBoundOffsetLimitEndpoint {
 impl Endpoint<TestCx> for HeaderBoundOffsetLimitEndpoint {
     type Response = Vec<String>;
 
-    fn execute<'a, T>(
-        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
+    fn execute<'a>(
+        client: &'a concord_core::prelude::ApiClient<TestCx>,
         plan: concord_core::internal::RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
-    where
-        T: concord_core::advanced::Transport + 'a,
-    {
-        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>> {
+        execute_buffered::<_, CommaSeparatedItems>(client, plan)
     }
 }
 
@@ -242,14 +235,11 @@ struct HeaderBoundPagedEndpoint {
 impl Endpoint<TestCx> for HeaderBoundPagedEndpoint {
     type Response = Vec<String>;
 
-    fn execute<'a, T>(
-        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
+    fn execute<'a>(
+        client: &'a concord_core::prelude::ApiClient<TestCx>,
         plan: concord_core::internal::RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
-    where
-        T: concord_core::advanced::Transport + 'a,
-    {
-        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>> {
+        execute_buffered::<_, CommaSeparatedItems>(client, plan)
     }
 }
 
@@ -318,14 +308,11 @@ struct HeaderBoundCursorEndpoint {
 impl Endpoint<TestCx> for HeaderBoundCursorEndpoint {
     type Response = CursorItems;
 
-    fn execute<'a, T>(
-        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
+    fn execute<'a>(
+        client: &'a concord_core::prelude::ApiClient<TestCx>,
         plan: concord_core::internal::RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
-    where
-        T: concord_core::advanced::Transport + 'a,
-    {
-        execute_buffered::<_, _, CursorItemsCodec>(client, plan)
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>> {
+        execute_buffered::<_, CursorItemsCodec>(client, plan)
     }
 }
 
@@ -398,14 +385,11 @@ struct QueryBoundPagedEndpoint {
 impl Endpoint<TestCx> for QueryBoundPagedEndpoint {
     type Response = Vec<String>;
 
-    fn execute<'a, T>(
-        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
+    fn execute<'a>(
+        client: &'a concord_core::prelude::ApiClient<TestCx>,
         plan: concord_core::internal::RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
-    where
-        T: concord_core::advanced::Transport + 'a,
-    {
-        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>> {
+        execute_buffered::<_, CommaSeparatedItems>(client, plan)
     }
 }
 
@@ -470,14 +454,11 @@ impl<Cx: concord_core::prelude::ClientContext> concord_core::prelude::Endpoint<C
 {
     type Response = Vec<String>;
 
-    fn execute<'a, T>(
-        client: &'a concord_core::prelude::ApiClient<Cx, T>,
+    fn execute<'a>(
+        client: &'a concord_core::prelude::ApiClient<Cx>,
         plan: concord_core::internal::RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
-    where
-        T: concord_core::advanced::Transport + 'a,
-    {
-        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>> {
+        execute_buffered::<_, CommaSeparatedItems>(client, plan)
     }
 }
 
@@ -867,10 +848,7 @@ async fn execute_raw_paginated_endpoint_sends_only_one_request() -> Result<(), A
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
-        vec![
-            MockResponse::text(StatusCode::OK, "raw-page-1"),
-            MockResponse::text(StatusCode::OK, "should-not-send"),
-        ],
+        vec![MockResponse::text(StatusCode::OK, "raw-page-1")],
     );
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
@@ -891,7 +869,7 @@ async fn execute_raw_paginated_endpoint_sends_only_one_request() -> Result<(), A
     assert_eq!(raw.body(), &Bytes::from_static(b"raw-page-1"));
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].meta.page_index, 0);
+    assert_eq!(requests[0].meta.page_index, Some(0));
     assert_eq!(
         query_value(&requests[0].url, "offset"),
         Some("7".to_string())
@@ -907,13 +885,7 @@ async fn execute_raw_paginated_endpoint_sends_only_one_request() -> Result<(), A
 
 async fn pagination_runtime_requires_runtime_support_when_missing() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let transport = MockTransport::new(
-        events,
-        vec![
-            MockResponse::text(StatusCode::OK, "a,b"),
-            MockResponse::text(StatusCode::OK, "c"),
-        ],
-    );
+    let transport = MockTransport::new(events, vec![]);
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
 
@@ -966,8 +938,8 @@ async fn retry_on_page_n_does_not_advance_page_state() -> Result<(), ApiClientEr
     );
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 3);
-    assert_eq!(requests[0].meta.page_index, 0);
-    assert_eq!(requests[1].meta.page_index, 0);
+    assert_eq!(requests[0].meta.page_index, Some(0));
+    assert_eq!(requests[1].meta.page_index, Some(0));
     assert_eq!(
         query_value(&requests[0].url, "offset"),
         Some("0".to_string())
@@ -976,7 +948,7 @@ async fn retry_on_page_n_does_not_advance_page_state() -> Result<(), ApiClientEr
         query_value(&requests[1].url, "offset"),
         Some("0".to_string())
     );
-    assert_eq!(requests[2].meta.page_index, 1);
+    assert_eq!(requests[2].meta.page_index, Some(1));
     assert_eq!(
         query_value(&requests[2].url, "offset"),
         Some("2".to_string())
@@ -996,6 +968,7 @@ async fn offset_pagination_collects_page_items_without_has_next_cursor()
             MockResponse::text(StatusCode::OK, "c"),
         ],
     );
+    let _server = transport.clone();
     let client = client(TestAuthVars::default(), transport);
 
     let endpoint = PageOnlyItemsEndpoint {
@@ -1249,13 +1222,7 @@ async fn cursor_string_pagination_runtime_preserves_empty_cursor() -> Result<(),
 async fn cursor_string_pagination_runtime_requires_runtime_support_when_missing()
 -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let transport = MockTransport::new(
-        events,
-        vec![
-            MockResponse::text(StatusCode::OK, "a,b|next=next-1"),
-            MockResponse::text(StatusCode::OK, "c|next="),
-        ],
-    );
+    let transport = MockTransport::new(events, vec![]);
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
 
@@ -1434,6 +1401,7 @@ async fn paged_pagination_collects_page_items_without_has_next_cursor() -> Resul
             MockResponse::text(StatusCode::OK, "c"),
         ],
     );
+    let _server = transport.clone();
     let client = client(TestAuthVars::default(), transport);
 
     let endpoint = PageOnlyItemsEndpoint {
@@ -1506,7 +1474,7 @@ async fn paged_pagination_uses_page_numbers() -> Result<(), ApiClientError> {
 
 async fn hard_page_cap_zero_errors_before_transport() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "unused")]);
+    let transport = MockTransport::new(events, vec![]);
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
 
@@ -1541,7 +1509,7 @@ async fn hard_page_cap_zero_errors_before_transport() {
 
 async fn hard_item_cap_zero_errors_before_transport() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "unused")]);
+    let transport = MockTransport::new(events, vec![]);
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
 
@@ -1576,7 +1544,7 @@ async fn hard_item_cap_zero_errors_before_transport() {
 
 async fn take_pages_zero_returns_empty_without_transport() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "unused")]);
+    let transport = MockTransport::new(events, vec![]);
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
 
@@ -1606,7 +1574,7 @@ async fn take_pages_zero_returns_empty_without_transport() -> Result<(), ApiClie
 
 async fn take_items_zero_returns_empty_without_transport() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "unused")]);
+    let transport = MockTransport::new(events, vec![]);
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
 
@@ -1642,7 +1610,6 @@ async fn take_items_truncates_final_page() -> Result<(), ApiClientError> {
             MockResponse::text(StatusCode::OK, numbered_items(0, 20)),
             MockResponse::text(StatusCode::OK, numbered_items(20, 20)),
             MockResponse::text(StatusCode::OK, numbered_items(40, 20)),
-            MockResponse::text(StatusCode::OK, "should-not-send"),
         ],
     );
     let sent = transport.clone();
@@ -1678,10 +1645,7 @@ async fn take_items_less_than_first_page_sends_one_page() -> Result<(), ApiClien
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
-        vec![
-            MockResponse::text(StatusCode::OK, numbered_items(0, 20)),
-            MockResponse::text(StatusCode::OK, "should-not-send"),
-        ],
+        vec![MockResponse::text(StatusCode::OK, numbered_items(0, 20))],
     );
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
@@ -1718,7 +1682,6 @@ async fn take_items_exact_boundary_stops_without_extra_page() -> Result<(), ApiC
         vec![
             MockResponse::text(StatusCode::OK, numbered_items(0, 20)),
             MockResponse::text(StatusCode::OK, numbered_items(20, 20)),
-            MockResponse::text(StatusCode::OK, "should-not-send"),
         ],
     );
     let sent = transport.clone();
@@ -1784,7 +1747,6 @@ async fn take_pages_stops_without_error() -> Result<(), ApiClientError> {
         vec![
             MockResponse::text(StatusCode::OK, "a,b"),
             MockResponse::text(StatusCode::OK, "c,d"),
-            MockResponse::text(StatusCode::OK, "should-not-send"),
         ],
     );
     let sent = transport.clone();
@@ -1829,7 +1791,6 @@ async fn hard_page_cap_errors_without_fetching_extra_page() {
         vec![
             MockResponse::text(StatusCode::OK, "a,b"),
             MockResponse::text(StatusCode::OK, "c,d"),
-            MockResponse::text(StatusCode::OK, "should-not-send"),
         ],
     );
     let sent = transport.clone();
@@ -1871,7 +1832,6 @@ async fn hard_item_cap_errors_without_truncating() {
         vec![
             MockResponse::text(StatusCode::OK, numbered_items(0, 20)),
             MockResponse::text(StatusCode::OK, numbered_items(20, 20)),
-            MockResponse::text(StatusCode::OK, "should-not-send"),
         ],
     );
     let sent = transport.clone();
@@ -1912,13 +1872,10 @@ async fn loop_detection_still_default_enabled() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
-        vec![
-            MockResponse::text(
-                StatusCode::OK,
-                format!("a,{}|next={}", sentinels.body, sentinels.response),
-            ),
-            MockResponse::text(StatusCode::OK, format!("c,d|next={}", sentinels.response)),
-        ],
+        vec![MockResponse::text(
+            StatusCode::OK,
+            format!("a,{}|next={}", sentinels.body, sentinels.response),
+        )],
     );
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
@@ -2025,7 +1982,7 @@ async fn later_page_transport_failure_is_typed_and_redacted() -> Result<(), ApiC
                 StatusCode::OK,
                 format!("{},{}", sentinels.response, sentinels.body),
             )),
-            MockOutcome::TransportError(TransportErrorKind::Connect),
+            MockOutcome::DisconnectAfterRequest,
         ],
     );
     let sent = transport.clone();
@@ -2106,6 +2063,7 @@ async fn later_page_decode_failure_is_typed_and_redacted() -> Result<(), ApiClie
 async fn max_items_error_includes_page_context() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "a,b,c")]);
+    let _server = transport.clone();
     let client = client(TestAuthVars::default(), transport);
 
     let endpoint = ItemsEndpoint {
@@ -2452,13 +2410,8 @@ async fn take_items_exact_limit_still_wins_before_short_stop() -> Result<(), Api
 
 async fn max_pages_error_includes_seen_items() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let transport = MockTransport::new(
-        events,
-        vec![
-            MockResponse::text(StatusCode::OK, "a,b"),
-            MockResponse::text(StatusCode::OK, "c,d"),
-        ],
-    );
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "a,b")]);
+    let _server = transport.clone();
     let client = client(TestAuthVars::default(), transport);
 
     let endpoint = ItemsEndpoint {
@@ -2529,8 +2482,8 @@ async fn auth_refresh_on_page_n_preserves_offset() -> Result<(), ApiClientError>
     );
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 3);
-    assert_eq!(requests[1].meta.page_index, 1);
-    assert_eq!(requests[2].meta.page_index, 1);
+    assert_eq!(requests[1].meta.page_index, Some(1));
+    assert_eq!(requests[2].meta.page_index, Some(1));
     assert_eq!(
         query_value(&requests[1].url, "offset"),
         Some("2".to_string())
@@ -2547,10 +2500,7 @@ async fn auth_refresh_on_page_n_preserves_offset() -> Result<(), ApiClientError>
 async fn execute_raw_static_auth_collision_validates_before_rate_limit_and_transport() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let rate_limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![MockResponse::text(StatusCode::OK, "should-not-send")],
-    );
+    let transport = MockTransport::new(events.clone(), vec![]);
     let sent = transport.clone();
     let mut client = client(
         TestAuthVars {

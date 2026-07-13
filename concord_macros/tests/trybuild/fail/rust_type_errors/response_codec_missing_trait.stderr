@@ -75,6 +75,6 @@ note: required by a bound in `concord_core::__private::ResponseEntityWithMeta::e
    |
    | pub trait ResponseEntityWithMeta: ResponseEntity {
    |                                   ^^^^^^^^^^^^^^ required by this bound in `ResponseEntityWithMeta::execute_with_meta`
-   |     fn execute_with_meta<'a, Cx, T>(
+   |     fn execute_with_meta<'a, Cx>(
    |        ----------------- required by a bound in this associated function
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

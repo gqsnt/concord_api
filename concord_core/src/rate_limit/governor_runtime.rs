@@ -614,16 +614,18 @@ mod tests {
         static URL: &str = "https://example.com/a";
         static ENDPOINT: &str = "TestEndpoint";
 
-        let bucket = RateLimitBucketUse::new(
-            "method",
-            "test",
-            RateLimitKey::new(vec![RateLimitKeyPart::static_value("k", "v")]),
-        )
-        .with_windows(vec![RateLimitWindow::new(
-            NonZeroU32::new(10).expect("non-zero"),
-            Duration::from_secs(10),
-        )]);
-        let plan = RateLimitPlan::from_buckets(vec![bucket]);
+        static PLAN: std::sync::LazyLock<RateLimitPlan> = std::sync::LazyLock::new(|| {
+            let bucket = RateLimitBucketUse::new(
+                "method",
+                "test",
+                RateLimitKey::new(vec![RateLimitKeyPart::static_value("k", "v")]),
+            )
+            .with_windows(vec![RateLimitWindow::new(
+                NonZeroU32::new(10).expect("non-zero"),
+                Duration::from_secs(10),
+            )]);
+            RateLimitPlan::from_buckets(vec![bucket])
+        });
         RateLimitContext {
             endpoint: ENDPOINT,
             method: &METHOD,
@@ -633,11 +635,11 @@ mod tests {
             page_index: 0,
             idempotent: true,
             max_cooldown: Duration::from_secs(60),
-            plan: Box::leak(Box::new(plan)),
+            plan: &PLAN,
         }
     }
 
-    fn hostless_context(plan: RateLimitPlan) -> RateLimitContext<'static> {
+    fn hostless_context(plan: &RateLimitPlan) -> RateLimitContext<'_> {
         static METHOD: http::Method = http::Method::GET;
         static URL: &str = "urn:test:hostless";
         static ENDPOINT: &str = "HostlessEndpoint";
@@ -651,7 +653,7 @@ mod tests {
             page_index: 0,
             idempotent: true,
             max_cooldown: Duration::from_secs(60),
-            plan: Box::leak(Box::new(plan)),
+            plan,
         }
     }
 
@@ -680,20 +682,21 @@ mod tests {
         false
     }
 
-    fn request_context_with_url(url: String) -> RateLimitContext<'static> {
+    fn request_context_with_url(url: &str) -> RateLimitContext<'_> {
         static METHOD: http::Method = http::Method::GET;
         static ENDPOINT: &str = "RequestCooldownEndpoint";
-        let plan = Box::leak(Box::new(RateLimitPlan::default()));
+        static PLAN: std::sync::LazyLock<RateLimitPlan> =
+            std::sync::LazyLock::new(RateLimitPlan::default);
         RateLimitContext {
             endpoint: ENDPOINT,
             method: &METHOD,
-            url: Box::leak(url.into_boxed_str()),
+            url,
             url_host: Some("example.com"),
             attempt: 0,
             page_index: 0,
             idempotent: true,
             max_cooldown: Duration::from_secs(60),
-            plan,
+            plan: &PLAN,
         }
     }
 
@@ -712,9 +715,7 @@ mod tests {
     async fn empty_plan_acquire_succeeds_without_creating_governor_state() {
         let limiter = GovernorRateLimiter::new();
         limiter
-            .acquire(request_context_with_url(
-                "https://example.com/empty".to_string(),
-            ))
+            .acquire(request_context_with_url("https://example.com/empty"))
             .await
             .expect("empty plan should acquire");
 
@@ -730,9 +731,7 @@ mod tests {
         poison_mutex(&limiter.windows);
 
         limiter
-            .acquire(request_context_with_url(
-                "https://example.com/empty".to_string(),
-            ))
+            .acquire(request_context_with_url("https://example.com/empty"))
             .await
             .expect("empty plan should bypass window enforcement");
     }
@@ -740,7 +739,7 @@ mod tests {
     #[tokio::test]
     async fn empty_plan_acquire_still_respects_active_cooldown() {
         let limiter = GovernorRateLimiter::new();
-        let ctx = request_context_with_url("https://example.com/cooling".to_string());
+        let ctx = request_context_with_url("https://example.com/cooling");
         {
             let mut guard = limiter.cooldowns.lock().expect("cooldown lock");
             guard.insert(
@@ -794,7 +793,7 @@ mod tests {
         let plan = RateLimitPlan::from_buckets(vec![one_window_bucket(RateLimitKey::new(vec![
             RateLimitKeyPart::url_host(),
         ]))]);
-        let ctx = hostless_context(plan);
+        let ctx = hostless_context(&plan);
         let err = resolve_key(&ctx, &ctx.plan.buckets()[0].key)
             .expect_err("host key should require a request host");
         let msg = err.to_string();
@@ -807,7 +806,7 @@ mod tests {
         let plan = RateLimitPlan::from_buckets(vec![one_window_bucket(RateLimitKey::new(vec![
             RateLimitKeyPart::url_host(),
         ]))]);
-        let ctx = hostless_context(plan);
+        let ctx = hostless_context(&plan);
         let limiter = GovernorRateLimiter::new();
 
         let err = limiter
@@ -874,7 +873,8 @@ mod tests {
         let limiter = GovernorRateLimiter::new().with_max_cooldown_entries(2);
 
         for idx in 0..2 {
-            let ctx = request_context_with_url(format!("https://example.com/request-{idx}"));
+            let url = format!("https://example.com/request-{idx}");
+            let ctx = request_context_with_url(&url);
             let stored = limiter
                 .store_cooldown(
                     &ctx,
@@ -895,7 +895,8 @@ mod tests {
         let limiter = GovernorRateLimiter::new().with_max_cooldown_entries(2);
 
         for idx in 0..2 {
-            let ctx = request_context_with_url(format!("https://example.com/request-{idx}"));
+            let url = format!("https://example.com/request-{idx}");
+            let ctx = request_context_with_url(&url);
             limiter
                 .store_cooldown(
                     &ctx,
@@ -907,7 +908,8 @@ mod tests {
         }
 
         let secret_key_material = "SECRET_RATE_LIMIT_COOLDOWN_KEY_MUST_NOT_APPEAR";
-        let ctx = request_context_with_url(format!("https://example.com/{secret_key_material}"));
+        let url = format!("https://example.com/{secret_key_material}");
+        let ctx = request_context_with_url(&url);
         let err = limiter
             .store_cooldown(
                 &ctx,
@@ -933,7 +935,7 @@ mod tests {
     #[test]
     fn expired_cooldown_entries_are_pruned_before_cap_enforcement() {
         let limiter = GovernorRateLimiter::new().with_max_cooldown_entries(1);
-        let old_ctx = request_context_with_url("https://example.com/old".to_string());
+        let old_ctx = request_context_with_url("https://example.com/old");
         {
             let mut guard = limiter.cooldowns.lock().expect("cooldown lock");
             guard.insert(
@@ -942,7 +944,7 @@ mod tests {
             );
         }
 
-        let new_ctx = request_context_with_url("https://example.com/new".to_string());
+        let new_ctx = request_context_with_url("https://example.com/new");
         limiter
             .store_cooldown(
                 &new_ctx,
@@ -960,7 +962,7 @@ mod tests {
     #[test]
     fn updating_existing_cooldown_key_does_not_consume_new_capacity() {
         let limiter = GovernorRateLimiter::new().with_max_cooldown_entries(1);
-        let ctx = request_context_with_url("https://example.com/repeated".to_string());
+        let ctx = request_context_with_url("https://example.com/repeated");
 
         limiter
             .store_cooldown(
@@ -991,7 +993,7 @@ mod tests {
             one_window_bucket(key.clone()),
             one_window_bucket(key),
         ]);
-        let ctx = hostless_context(plan);
+        let ctx = hostless_context(&plan);
 
         let stored = limiter
             .store_cooldown(
@@ -1031,7 +1033,7 @@ mod tests {
     #[test]
     fn cooldown_targets_remain_distinct_for_request_endpoint_client_and_host() {
         let limiter = GovernorRateLimiter::new().with_max_cooldown_entries(8);
-        let ctx = request_context_with_url("https://example.com/distinct".to_string());
+        let ctx = request_context_with_url("https://example.com/distinct");
         let targets = [
             RateLimitTarget::Request,
             RateLimitTarget::Endpoint,
@@ -1060,7 +1062,7 @@ mod tests {
         let plan = RateLimitPlan::from_buckets(vec![one_window_bucket(RateLimitKey::new(vec![
             RateLimitKeyPart::endpoint(),
         ]))]);
-        let ctx = hostless_context(plan);
+        let ctx = hostless_context(&plan);
         let key = resolve_key(&ctx, &ctx.plan.buckets()[0].key)
             .expect("endpoint key should not require host");
         assert_eq!(
@@ -1074,7 +1076,7 @@ mod tests {
         let plan = RateLimitPlan::from_buckets(vec![one_window_bucket(RateLimitKey::new(vec![
             RateLimitKeyPart::static_value("tenant", "public"),
         ]))]);
-        let ctx = hostless_context(plan);
+        let ctx = hostless_context(&plan);
         let key = resolve_key(&ctx, &ctx.plan.buckets()[0].key)
             .expect("static key should not require host");
         assert_eq!(
@@ -1088,7 +1090,7 @@ mod tests {
         let plan = RateLimitPlan::from_buckets(vec![one_window_bucket(RateLimitKey::new(vec![
             RateLimitKeyPart::method(),
         ]))]);
-        let ctx = hostless_context(plan);
+        let ctx = hostless_context(&plan);
         let key = resolve_key(&ctx, &ctx.plan.buckets()[0].key)
             .expect("method key should not require host");
         assert_eq!(

@@ -79,13 +79,10 @@ impl ItemsEndpoint {
 impl Endpoint<perf::support::PerfCx> for ItemsEndpoint {
     type Response = CursorPage;
 
-    fn execute<'a, T>(
-        client: &'a concord_core::prelude::ApiClient<perf::support::PerfCx, T>,
+    fn execute<'a>(
+        client: &'a concord_core::prelude::ApiClient<perf::support::PerfCx>,
         plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
-    where
-        T: concord_core::advanced::Transport + 'a,
-    {
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>> {
         Box::pin(async move {
             let decoded = client.execute_plan::<Text<String>>(plan).await?;
             Ok(CursorPage::parse(decoded.into_value()))
@@ -305,7 +302,6 @@ fn bench_non_progress(c: &mut Criterion) {
             || {
                 let transport = MockTransport::scripted(vec![
                     MockResponse::text(StatusCode::OK, "item-0|next=BENCH_FAKE_CURSOR"),
-                    MockResponse::text(StatusCode::OK, "item-1|next=BENCH_FAKE_CURSOR"),
                 ]);
                 (client(transport), ItemsEndpoint::non_progress(1))
             },

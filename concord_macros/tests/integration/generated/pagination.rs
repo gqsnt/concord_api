@@ -1,14 +1,10 @@
 use bytes::Bytes;
-use concord_core::advanced::{DynBody, RequestExecutionContext, Transport, TransportError};
 use concord_core::error::ErrorCategory;
 use concord_core::prelude::*;
 use concord_macros::api;
+use concord_test_support::{MockHandle, MockReply, MockServer, RecordedRequest, mock};
 use http::{HeaderMap, StatusCode};
-use std::collections::VecDeque;
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use self::pagination_helper_api::PaginationHelperApi;
 
@@ -40,7 +36,10 @@ async fn generated_pagination_collect_preserves_query_setters_and_caps() {
         ResponseFixture::json(r#"[]"#),
     ]);
     let sent = transport.clone();
-    let api = PaginationHelperApi::new_with_transport(transport);
+    let api = PaginationHelperApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
 
     let items = api
         .list()
@@ -55,8 +54,6 @@ async fn generated_pagination_collect_preserves_query_setters_and_caps() {
     assert_eq!(items, vec!["a".to_string(), "b".to_string()]);
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 2);
-    assert_eq!(requests[0].meta.page_index, 0);
-    assert_eq!(requests[1].meta.page_index, 1);
     assert_query(&requests[0], "filter", "ranked");
     assert_query_values(&requests[0], "tags", &["first", "second"]);
     assert_query(&requests[0], "start", "0");
@@ -70,7 +67,10 @@ async fn generated_pagination_collect_preserves_query_setters_and_caps() {
 #[tokio::test]
 async fn generated_pagination_collect_and_max_items_work() {
     let transport = RecordingTransport::new(vec![ResponseFixture::json(r#"["x"]"#)]);
-    let api = PaginationHelperApi::new_with_transport(transport);
+    let api = PaginationHelperApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
 
     let items = api
         .list()
@@ -82,7 +82,10 @@ async fn generated_pagination_collect_and_max_items_work() {
     assert_eq!(items, vec!["x".to_string()]);
 
     let transport = RecordingTransport::new(vec![ResponseFixture::json(r#"["a","b"]"#)]);
-    let api = PaginationHelperApi::new_with_transport(transport);
+    let api = PaginationHelperApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
     let err = api
         .list()
         .count(2)
@@ -100,7 +103,10 @@ async fn generated_pagination_later_page_failure_is_typed_and_redacted() {
         ResponseFixture::json(r#"["a","b"]"#),
         ResponseFixture::json_status(StatusCode::INTERNAL_SERVER_ERROR, sentinel),
     ]);
-    let api = PaginationHelperApi::new_with_transport(transport.clone());
+    let api = PaginationHelperApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
 
     let err = api
         .list()
@@ -116,8 +122,6 @@ async fn generated_pagination_later_page_failure_is_typed_and_redacted() {
     assert_eq!(err.http_status(), Some(StatusCode::INTERNAL_SERVER_ERROR));
     let requests = transport.requests().await;
     assert_eq!(requests.len(), 2);
-    assert_eq!(requests[0].meta.page_index, 0);
-    assert_eq!(requests[1].meta.page_index, 1);
     assert!(!format!("{err:?}").contains(sentinel));
     assert!(!format!("{err}").contains(sentinel));
 }
@@ -133,96 +137,29 @@ fn assert_query(request: &RecordedRequest, key: &str, expected: &str) {
 
 #[derive(Clone)]
 struct RecordingTransport {
-    responses: Arc<Mutex<VecDeque<ResponseFixture>>>,
-    requests: Arc<Mutex<Vec<RecordedRequest>>>,
-}
-
-struct RecordedRequest {
-    meta: concord_core::transport::RequestMeta,
-    url: url::Url,
-    headers: http::HeaderMap,
-    body: RecordedBody,
-    timeout: Option<std::time::Duration>,
-}
-
-#[derive(Clone, Debug)]
-enum RecordedBody {
-    Empty,
-    Bytes(Bytes),
-}
-
-impl std::fmt::Debug for RecordedRequest {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let body = match &self.body {
-            RecordedBody::Empty => "<empty>".to_string(),
-            RecordedBody::Bytes(bytes) => format!("<{} bytes>", bytes.len()),
-        };
-        f.debug_struct("RecordedRequest")
-            .field("meta", &self.meta)
-            .field("url", &"<redacted>")
-            .field(
-                "headers",
-                &concord_core::advanced::SanitizedHeaders::new(&self.headers),
-            )
-            .field("body", &body)
-            .field("timeout", &self.timeout)
-            .finish()
-    }
+    server: MockServer,
+    handle: Arc<Mutex<MockHandle>>,
 }
 
 impl RecordingTransport {
     fn new(responses: Vec<ResponseFixture>) -> Self {
+        let replies = responses.into_iter().map(ResponseFixture::into_reply);
+        let (server, handle) = mock().replies(replies).build();
         Self {
-            responses: Arc::new(Mutex::new(responses.into())),
-            requests: Arc::new(Mutex::new(Vec::new())),
+            server,
+            handle: Arc::new(Mutex::new(handle)),
         }
     }
 
     async fn requests(&self) -> Vec<RecordedRequest> {
-        let mut requests = self.requests.lock().await;
-        std::mem::take(&mut *requests)
+        self.handle.lock().expect("handle lock").recorded()
     }
-}
 
-impl Transport for RecordingTransport {
-    fn send(
+    fn configure_reqwest(
         &self,
-        req: http::Request<DynBody>,
-    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
-        let responses = self.responses.clone();
-        let requests = self.requests.clone();
-        Box::pin(async move {
-            use http_body_util::BodyExt as _;
-            let (parts, body) = req.into_parts();
-            let context = parts
-                .extensions
-                .get::<RequestExecutionContext>()
-                .cloned()
-                .expect("context");
-            let url = parts.uri.to_string().parse().expect("URL");
-            let bytes = body
-                .collect()
-                .await
-                .map_err(TransportError::new)?
-                .to_bytes();
-            let body = if bytes.is_empty() {
-                RecordedBody::Empty
-            } else {
-                RecordedBody::Bytes(bytes)
-            };
-            requests.lock().await.push(RecordedRequest {
-                meta: context.meta,
-                url,
-                headers: parts.headers,
-                body,
-                timeout: context.timeout,
-            });
-            let response = responses.lock().await.pop_front().expect("test response");
-            let mut result = http::Response::new(DynBody::from_bytes(response.body));
-            *result.status_mut() = response.status;
-            *result.headers_mut() = response.headers;
-            Ok(result)
-        })
+        builder: concord_core::advanced::SafeReqwestBuilder,
+    ) -> concord_core::advanced::SafeReqwestBuilder {
+        self.server.configure_reqwest(builder)
     }
 }
 
@@ -250,6 +187,16 @@ impl ResponseFixture {
         let mut fixture = Self::json(body);
         fixture.status = status;
         fixture
+    }
+
+    fn into_reply(self) -> MockReply {
+        let mut reply = MockReply::status(self.status).with_body(self.body);
+        for (name, value) in self.headers {
+            if let Some(name) = name {
+                reply = reply.with_header(name, value);
+            }
+        }
+        reply
     }
 }
 

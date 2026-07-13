@@ -1,7 +1,6 @@
 use crate::client::{ApiClient, ClientContext};
 use crate::error::ApiClientError;
 use crate::transport::DecodedResponse;
-use crate::transport::Transport;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -29,12 +28,10 @@ pub trait Endpoint<Cx: ClientContext>: Send + Sized + 'static {
     ///
     /// Generated endpoints implement this with their resolved response entity.
     /// Manual endpoints must provide the corresponding typed execution path.
-    fn execute<'a, T>(
-        client: &'a ApiClient<Cx, T>,
+    fn execute<'a>(
+        client: &'a ApiClient<Cx>,
         plan: RequestPlan,
-    ) -> EndpointFuture<'a, Self::Response>
-    where
-        T: Transport + 'a;
+    ) -> EndpointFuture<'a, Self::Response>;
 }
 
 /// Marker for endpoints that expose a metadata-bearing decoded response terminal.
@@ -43,12 +40,10 @@ pub trait Endpoint<Cx: ClientContext>: Send + Sized + 'static {
 /// adapter so callers cannot choose a response codec at the call site.
 #[doc(hidden)]
 pub trait ResponseTerminalEndpoint<Cx: ClientContext>: Endpoint<Cx> {
-    fn execute_response<'a, T>(
-        client: &'a ApiClient<Cx, T>,
+    fn execute_response<'a>(
+        client: &'a ApiClient<Cx>,
         plan: RequestPlan,
-    ) -> EndpointFuture<'a, DecodedResponse<Self::Response>>
-    where
-        T: Transport + 'a;
+    ) -> EndpointFuture<'a, DecodedResponse<Self::Response>>;
 }
 
 /// Endpoint planning for reusable bodyless endpoints.

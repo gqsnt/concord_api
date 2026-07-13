@@ -14,7 +14,7 @@ use concord_core::advanced::{
     EncodedRequest, ErrorContext, RateLimitBucketUse, RateLimitContext, RateLimitErrorKind,
     RateLimitFuture, RateLimitKey, RateLimitKeyPart, RateLimitKeyValue, RateLimitPermit,
     RateLimitPlan, RateLimitResponseAction, RateLimitResponseContext, RateLimiter, ResponseCodec,
-    TextContentType, TransportErrorKind,
+    TextContentType,
 };
 use concord_core::error::ErrorCategory;
 use concord_core::internal::{Format, PreparedBody, RequestEntity, RequestPlan, ResponseEntity};
@@ -447,10 +447,7 @@ async fn http_status_failure_redacts_request_and_response_sentinels() -> Result<
 #[tokio::test]
 async fn transport_failure_redacts_request_material() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let transport = MockTransport::with_outcomes(
-        events,
-        vec![MockOutcome::TransportError(TransportErrorKind::Connect)],
-    );
+    let transport = MockTransport::with_outcomes(events, vec![MockOutcome::DisconnectAfterRequest]);
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
     let policy =
@@ -590,10 +587,7 @@ async fn retry_exhaustion_redacts_request_and_response_sentinels() {
 async fn rate_limit_acquire_failure_redacts_key_material_and_context() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let limiter = Arc::new(RecordingRateLimiter::failing_on_acquire(events.clone(), 1));
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![MockResponse::text(StatusCode::OK, "unused")],
-    );
+    let transport = MockTransport::from_native_replies(events.clone(), std::iter::empty());
     let sent = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
     client.configure(|cfg| {

@@ -20,12 +20,9 @@ use crate::runtime_hooks::{
     HookMeta, PostResponseHookContext, PreSendHookContext, RuntimeHooks, TransportErrorHookContext,
 };
 use crate::runtime_state::ClientRuntimeState;
-use crate::transport::DefaultTransportMarker;
-use crate::transport::ReqwestTransport;
 use crate::transport::{
     AttemptResponse, BuiltRequest, BuiltResponse, DecodedResponse, RequestMeta,
 };
-use crate::transport::{DefaultTransport, Transport};
 use crate::types::RouteBuilder;
 use http::StatusCode;
 use http::header::CONTENT_TYPE;

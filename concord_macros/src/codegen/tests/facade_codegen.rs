@@ -411,7 +411,7 @@ fn generated_client_construction_contains_current_api_only() {
     assert_contains_all(
         &out,
         &[
-            "pub struct ConstructApi < T : :: concord_core :: advanced :: Transport = :: concord_core :: advanced :: DefaultTransport >",
+            "pub struct ConstructApi",
             "pub fn new ( tenant : String , api_key : String ) -> Self",
             "pub fn new_with_safe_reqwest_builder ( tenant : String , api_key : String , configure : impl FnOnce (:: concord_core :: advanced :: SafeReqwestBuilder) -> :: concord_core :: advanced :: SafeReqwestBuilder , ) -> :: core :: result :: Result < Self , :: concord_core :: advanced :: ReqwestClientBuildError >",
             "pub fn new_with_safe_reqwest_builder_fallible ( tenant : String , api_key : String , configure : impl FnOnce (:: concord_core :: advanced :: SafeReqwestBuilder,) -> :: core :: result :: Result < :: concord_core :: advanced :: SafeReqwestBuilder , :: concord_core :: advanced :: ReqwestClientBuildError , > , ) -> :: core :: result :: Result < Self , :: concord_core :: advanced :: ReqwestClientBuildError >",
@@ -419,7 +419,7 @@ fn generated_client_construction_contains_current_api_only() {
             "pub struct ConstructApiBuilder",
             "tenant : :: core :: option :: Option < String >",
             "api_key : :: core :: option :: Option < String >",
-            "pub fn build ( self ) -> :: core :: result :: Result < ConstructApi < :: concord_core :: advanced :: DefaultTransport > , :: concord_core :: prelude :: ApiClientError >",
+            "pub fn build ( self ) -> :: core :: result :: Result < ConstructApi , :: concord_core :: prelude :: ApiClientError >",
             "ApiClientError :: invalid_param (__ctx . clone () , \"builder.tenant\")",
             "ApiClientError :: invalid_param (__ctx . clone () , \"builder.api_key\")",
             "pub fn configure ( mut self , f : impl FnOnce (& mut :: concord_core :: advanced :: RuntimeConfig)) -> Self",
@@ -429,6 +429,7 @@ fn generated_client_construction_contains_current_api_only() {
             "pub fn with_api_headers ( mut self , headers : :: http :: HeaderMap) -> :: core :: result :: Result < Self , :: concord_core :: prelude :: HeaderOwnershipError >",
         ],
     );
+    assert_not_contains_all(&out, &["Transport", "new_with_transport"]);
 }
 
 #[test]

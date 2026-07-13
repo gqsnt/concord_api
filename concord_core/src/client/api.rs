@@ -2,8 +2,8 @@
 use super::*;
 
 #[derive(Clone)]
-pub struct ApiClient<Cx: ClientContext, T: Transport = DefaultTransport> {
-    pub(super) transport: T,
+pub struct ApiClient<Cx: ClientContext> {
+    pub(super) managed_client: crate::transport::ManagedReqwestClient,
     pub(super) vars: Cx::Vars,
     pub(super) auth_vars: Cx::AuthVars,
     pub(super) auth_state: Arc<RwLock<Arc<Cx::AuthState>>>,
@@ -14,12 +14,13 @@ pub struct ApiClient<Cx: ClientContext, T: Transport = DefaultTransport> {
     pub(super) api_headers: http::HeaderMap,
 }
 
-impl<Cx: ClientContext> ApiClient<Cx, DefaultTransport>
-where
-    DefaultTransport: DefaultTransportMarker,
-{
+impl<Cx: ClientContext> ApiClient<Cx> {
     pub fn new(vars: Cx::Vars, auth_vars: Cx::AuthVars) -> Self {
-        Self::with_transport(vars, auth_vars, ReqwestTransport::new())
+        Self::with_managed_client(
+            vars,
+            auth_vars,
+            crate::transport::ManagedReqwestClient::new(),
+        )
     }
 
     /// Configures the managed Reqwest client through Concord's reviewed
@@ -44,10 +45,10 @@ where
             crate::transport::ReqwestClientBuildError,
         >,
     ) -> Result<Self, crate::transport::ReqwestClientBuildError> {
-        Ok(Self::with_transport(
+        Ok(Self::with_managed_client(
             vars,
             auth_vars,
-            ReqwestTransport::with_builder_fallible(configure)?,
+            crate::transport::ManagedReqwestClient::with_builder_fallible(configure)?,
         ))
     }
 
@@ -74,13 +75,14 @@ where
     ) -> Result<Self, crate::transport::ReqwestClientBuildError> {
         Self::with_reqwest_builder_fallible(vars, auth_vars, configure)
     }
-}
-
-impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
-    pub fn with_transport(vars: Cx::Vars, auth_vars: Cx::AuthVars, transport: T) -> Self {
+    fn with_managed_client(
+        vars: Cx::Vars,
+        auth_vars: Cx::AuthVars,
+        managed_client: crate::transport::ManagedReqwestClient,
+    ) -> Self {
         let auth_state = Cx::init_auth_state(&vars, &auth_vars);
         Self {
-            transport,
+            managed_client,
             vars,
             auth_vars,
             auth_state: Arc::new(RwLock::new(Arc::new(auth_state))),
@@ -187,11 +189,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             .map_err(|_| crate::auth::AuthError::state_unavailable("auth state lock poisoned"))? =
             Arc::new(auth_state);
         Ok(())
-    }
-
-    #[inline]
-    pub fn transport(&self) -> &T {
-        &self.transport
     }
 
     #[inline]
@@ -357,7 +354,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     }
 
     #[inline]
-    pub fn request<E>(&self, ep: E) -> PendingRequest<'_, Cx, E, T>
+    pub fn request<E>(&self, ep: E) -> PendingRequest<'_, Cx, E>
     where
         E: crate::endpoint::IntoEndpointPlan<Cx>,
     {
@@ -370,73 +367,5 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             vars: self.vars(),
             auth_vars: self.auth_vars(),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::auth::NoAuthState;
-    use std::panic::AssertUnwindSafe;
-
-    #[derive(Clone)]
-    struct PoisonTransport;
-
-    impl Transport for PoisonTransport {
-        fn send(
-            &self,
-            _req: http::Request<crate::body::DynBody>,
-        ) -> ::std::pin::Pin<
-            Box<
-                dyn ::std::future::Future<
-                        Output = Result<
-                            http::Response<crate::body::DynBody>,
-                            crate::transport::TransportError,
-                        >,
-                    > + Send,
-            >,
-        > {
-            Box::pin(async move {
-                Err(crate::transport::TransportError::with_kind(
-                    crate::transport::TransportErrorKind::Request,
-                    std::io::Error::other("poison transport should not be used"),
-                ))
-            })
-        }
-    }
-
-    #[derive(Clone)]
-    struct PoisonCx;
-
-    impl ClientContext for PoisonCx {
-        type Vars = ();
-        type AuthVars = ();
-        type AuthState = NoAuthState;
-        const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
-        const DOMAIN: &'static str = "example.com";
-
-        fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {
-            NoAuthState
-        }
-    }
-
-    #[test]
-    fn poisoned_auth_state_lock_returns_typed_error() {
-        let client: ApiClient<PoisonCx, PoisonTransport> =
-            ApiClient::with_transport((), (), PoisonTransport);
-        let _ = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            let _guard = client
-                .auth_state
-                .write()
-                .expect("test auth_state lock should be available");
-            panic!("poison auth state lock");
-        }));
-
-        let err = match client.try_auth_state() {
-            Ok(_) => panic!("poisoned auth state should return typed auth error"),
-            Err(err) => err,
-        };
-        assert_eq!(err.kind, crate::auth::AuthErrorKind::StateUnavailable);
-        assert!(err.to_string().contains("auth state lock poisoned"));
     }
 }

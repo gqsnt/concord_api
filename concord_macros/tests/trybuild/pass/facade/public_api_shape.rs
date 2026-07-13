@@ -1,29 +1,10 @@
-use concord_core::advanced::{DynBody, Transport, TransportError};
 use concord_core::prelude::*;
 use concord_macros::api;
-use std::future::Future;
-use std::pin::Pin;
 use self::both_config_api::BothConfigApi;
 use self::declaration_order_api::DeclarationOrderApi;
 use self::o_auth_config_api::OAuthConfigApi;
 use self::secret_config_api::SecretConfigApi;
 use self::vars_config_api::VarsConfigApi;
-
-#[derive(Clone)]
-struct FailingTransport;
-
-impl Transport for FailingTransport {
-    fn send(
-        &self,
-        _req: http::Request<DynBody>,
-    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
-        Box::pin(async {
-            Err(TransportError::new(std::io::Error::other(
-                "intentional test transport",
-            )))
-        })
-    }
-}
 
 api! {
     client VarsConfigApi {
@@ -115,23 +96,11 @@ fn constructor_shape_is_stable() -> Result<(), ApiClientError> {
         .api_key("secret".to_string())
         .build()?;
 
-    let _with_transport = BothConfigApi::new_with_transport(
-        "tenant".to_string(),
-        "secret".to_string(),
-        FailingTransport,
-    );
-
     let _oauth = OAuthConfigApi::new("client-id".to_string(), "client-secret".to_string());
     let _oauth = OAuthConfigApi::builder()
         .client_id("client-id".to_string())
         .client_secret("client-secret".to_string())
         .build()?;
-    let _oauth_with_transport = OAuthConfigApi::new_with_transport(
-        "client-id".to_string(),
-        "client-secret".to_string(),
-        FailingTransport,
-    );
-
     let _ordered = DeclarationOrderApi::new(
         "tenant".to_string(),
         "region".to_string(),
@@ -144,22 +113,14 @@ fn constructor_shape_is_stable() -> Result<(), ApiClientError> {
         .username("username".to_string())
         .password("password".to_string())
         .build()?;
-    let _ordered_with_transport = DeclarationOrderApi::new_with_transport(
-        "tenant".to_string(),
-        "region".to_string(),
-        "username".to_string(),
-        "password".to_string(),
-        FailingTransport,
-    );
-
     Ok(())
 }
 
-fn normal_use_does_not_name_endpoint_markers(api: BothConfigApi<FailingTransport>) {
+fn normal_use_does_not_name_endpoint_markers(api: BothConfigApi) {
     let _pending = api.both_ping();
 }
 
-fn oauth_normal_use_does_not_name_endpoint_markers(api: OAuthConfigApi<FailingTransport>) {
+fn oauth_normal_use_does_not_name_endpoint_markers(api: OAuthConfigApi) {
     let _pending = api.oauth_ping();
 }
 

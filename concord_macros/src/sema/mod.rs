@@ -292,7 +292,6 @@ fn validate_client_method_namespace(
     let mut ns = PublicNameNamespace::new("generated client");
     for name in [
         "new",
-        "new_with_transport",
         "new_with_safe_reqwest_builder",
         "new_with_safe_reqwest_builder_fallible",
         "builder",

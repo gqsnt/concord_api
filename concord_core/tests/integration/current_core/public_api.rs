@@ -6,7 +6,6 @@ fn public_v1_surface_compiles() {
     fn uses_type<T>() {}
     fn uses_endpoint<E: prelude::Endpoint<super::common::TestCx>>() {}
     fn uses_client_context<Cx: prelude::ClientContext>() {}
-    fn uses_transport<T: advanced::Transport>() {}
     fn uses_standard_body<B: http_body::Body<Data = bytes::Bytes, Error = advanced::BodyError>>() {}
     fn uses_rate_limiter<L: advanced::RateLimiter>() {}
     fn uses_hooks<H: advanced::RuntimeHooks>() {}
@@ -14,13 +13,12 @@ fn public_v1_surface_compiles() {
     fn uses_page_items<P: prelude::PageItems>() {}
     fn uses_next_cursor<P: prelude::HasNextCursor>() {}
 
-    uses_type::<prelude::ApiClient<super::common::TestCx, super::common::MockTransport>>();
+    uses_type::<prelude::ApiClient<super::common::TestCx>>();
     uses_type::<prelude::ApiClientError>();
     uses_type::<advanced::RuntimeConfig>();
     uses_type::<prelude::DebugLevel>();
     uses_endpoint::<super::common::TextEndpoint>();
     uses_client_context::<super::common::TestCx>();
-    uses_transport::<super::common::MockTransport>();
     uses_standard_body::<advanced::DynBody>();
     uses_rate_limiter::<advanced::NoopRateLimiter>();
     uses_hooks::<advanced::NoopRuntimeHooks>();
@@ -28,7 +26,6 @@ fn public_v1_surface_compiles() {
     uses_page_items::<Vec<String>>();
     uses_next_cursor::<Vec<String>>();
 
-    uses_type::<http::Request<advanced::DynBody>>();
     uses_type::<http::Response<advanced::DynBody>>();
     uses_type::<advanced::TransportError>();
     uses_type::<advanced::SafeProxyError>();

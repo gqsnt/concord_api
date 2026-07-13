@@ -33,9 +33,9 @@ No-default, individual-feature, and dependency-tree checks are focused
 diagnostics to run when changing feature ownership or optional dependencies;
 they are not part of the canonical release gate.
 
-The historical source-regex architecture audit is retired. Architectural
-boundaries are maintained through module and crate organization, targeted
-compile/runtime tests, and review.
+Architecture boundaries are maintained through module and crate organization,
+compile-fail/runtime tests, review, and focused repository searches for removed
+public execution and request-bridge symbols.
 
 | Crate | v1 default features | Optional features | No-default support |
 | --- | --- | --- | --- |
@@ -74,7 +74,7 @@ commands are diagnostics and are not dependencies of `just release`.
 
 ## Public V1 Surface
 
-The compile surface is checked by `concord_core/tests/integration/current_core/public_api.rs`.
+The compile surface is checked by macro Trybuild public-shape and removed-API fixtures.
 
 The v1-facing core names include:
 
@@ -85,9 +85,6 @@ RuntimeConfig
 DebugLevel
 Endpoint
 ClientContext
-Transport
-http::Request<DynBody>
-http::Response<DynBody>
 DynBody
 TransportError
 TransportErrorKind

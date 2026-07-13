@@ -1,4 +1,4 @@
-error[E0599]: the method `execute_stream` exists for struct `PendingRequest<'_, BufferedEndpointExecuteStreamApiCx, EpUserHa48f81f001b893d2, ReqwestTransport>`, but its trait bounds were not satisfied
+error[E0599]: the method `execute_stream` exists for struct `PendingRequest<'_, BufferedEndpointExecuteStreamApiCx, EpUserHa48f81f001b893d2>`, but its trait bounds were not satisfied
   --> tests/trybuild/fail/codegen_contract/buffered_endpoint_execute_stream.rs:16:24
    |
  5 | / api! {

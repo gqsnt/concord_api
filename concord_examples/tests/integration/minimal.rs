@@ -13,7 +13,9 @@ async fn minimal_api_generated_client_execute_and_direct_await_work() {
             HeaderValue::from_static("req-9"),
         ))
         .build();
-    let api = MinimalApi::new_with_transport(transport);
+    let api =
+        MinimalApi::new_with_safe_reqwest_builder(|builder| transport.configure_reqwest(builder))
+            .expect("mock client");
 
     let via_execute = api.users().get_user(42).execute().await.unwrap();
     assert_eq!(

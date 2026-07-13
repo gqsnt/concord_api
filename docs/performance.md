@@ -24,7 +24,7 @@ an unknown hint while files report their metadata length.
 `RuntimeConfig::default()` sets three finite body limits, each to `16 * 1024 * 1024`, as defined in `concord_core/src/runtime/config.rs` and carried into `ClientRuntimeState` in `concord_core/src/runtime_state.rs`:
 
 - `max_response_body_bytes(...)` protects buffered endpoint responses and raw execution responses.
-- `max_stream_request_body_bytes(...)` protects every request-body category: reusable bytes (including JSON and text), streams, advanced bodies, factory results, and multipart output through the temporary bridge. Exact or inherent known oversize bodies fail before transport; advisory non-exact upper hints do not. Streaming delivery is counted and excess bytes never reach transport.
+- `max_stream_request_body_bytes(...)` protects every request-body category: reusable bytes (including JSON and text), streams, advanced bodies, factory results, and native Reqwest multipart output. Exact or inherent known oversize bodies fail before execution; advisory non-exact upper hints do not. Streaming delivery is counted and excess bytes never reach Reqwest or the server.
 - `max_stream_response_body_bytes(...)` protects streaming responses.
 
 Each limit has an explicit opt-out method: `no_response_body_limit()`, `no_stream_request_body_limit()`, and `no_stream_response_body_limit()`. Raising a limit allows larger payloads through that path; disabling a limit removes the byte cap for that path.

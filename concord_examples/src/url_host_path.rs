@@ -1,13 +1,13 @@
 #![allow(unused_imports)]
 
 use concord_core::advanced::{
-    DebugSink, DynBody, PostResponseHookContext, PreSendHookContext, RateLimitContext,
-    RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
-    RateLimiter, RequestExecutionContext, RuntimeHooks, SanitizedHeaders, Transport,
-    TransportError,
+    DebugSink, PostResponseHookContext, PreSendHookContext, RateLimitContext, RateLimitFuture,
+    RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RuntimeHooks,
+    SanitizedHeaders,
 };
 use concord_core::prelude::*;
 use concord_macros::api;
+use concord_test_support::{MockHandle, MockReply, MockServer, RecordedRequest, mock};
 use http::{HeaderMap, StatusCode};
 use std::future::Future;
 use std::pin::Pin;
@@ -67,61 +67,41 @@ impl RecordingEvents {
     }
 }
 
-struct RecordedRequest {
-    meta: concord_core::transport::RequestMeta,
-    url: url::Url,
-    headers: http::HeaderMap,
-    timeout: Option<std::time::Duration>,
-}
-
 #[derive(Clone)]
 struct RecordingTransport {
     records: RecordingEvents,
-    requests: Arc<StdMutex<Vec<RecordedRequest>>>,
+    server: MockServer,
+    handle: Arc<StdMutex<MockHandle>>,
 }
 
 impl RecordingTransport {
-    fn new(records: RecordingEvents) -> Self {
+    fn new(records: RecordingEvents, expected_requests: usize) -> Self {
+        let replies = (0..expected_requests)
+            .map(|_| MockReply::ok_json(bytes::Bytes::from_static(b"\"ok\"")));
+        let (server, handle) = mock().replies(replies).build();
         Self {
             records,
-            requests: Arc::new(StdMutex::new(Vec::new())),
+            server,
+            handle: Arc::new(StdMutex::new(handle)),
         }
     }
 
     fn requests(&self) -> Vec<RecordedRequest> {
-        std::mem::take(&mut *self.requests.lock().expect("transport requests lock"))
+        let requests = self.handle.lock().expect("mock handle lock").recorded();
+        for request in &requests {
+            let event = format!("transport:{}", request.url.as_str());
+            if !self.records.snapshot().contains(&event) {
+                self.records.push(event);
+            }
+        }
+        requests
     }
-}
 
-impl Transport for RecordingTransport {
-    fn send(
+    fn configure_reqwest(
         &self,
-        req: http::Request<DynBody>,
-    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
-        let records = self.records.clone();
-        let requests = self.requests.clone();
-        Box::pin(async move {
-            let (parts, _body) = req.into_parts();
-            let context = parts
-                .extensions
-                .get::<RequestExecutionContext>()
-                .cloned()
-                .expect("context");
-            let url: url::Url = parts.uri.to_string().parse().expect("URL");
-            records.push(format!("transport:{}", url.as_str()));
-            requests
-                .lock()
-                .expect("transport requests lock")
-                .push(RecordedRequest {
-                    meta: context.meta,
-                    url: url.clone(),
-                    headers: parts.headers,
-                    timeout: context.timeout,
-                });
-            Ok(http::Response::new(DynBody::from_bytes(
-                bytes::Bytes::from_static(b"\"ok\""),
-            )))
-        })
+        builder: concord_core::advanced::SafeReqwestBuilder,
+    ) -> concord_core::advanced::SafeReqwestBuilder {
+        self.server.configure_reqwest(builder)
     }
 }
 
@@ -251,11 +231,11 @@ impl DebugSink for RecordingDebugSink {
 }
 
 fn configure_client(
-    client: UrlHardeningApi<RecordingTransport>,
+    client: UrlHardeningApi,
     rate_limiter: Arc<dyn RateLimiter>,
     hooks: Arc<dyn RuntimeHooks>,
     debug_sink: Arc<dyn DebugSink>,
-) -> UrlHardeningApi<RecordingTransport> {
+) -> UrlHardeningApi {
     client.configure(|cfg| {
         cfg.rate_limiter(rate_limiter);
         cfg.runtime_hooks(hooks);
@@ -271,12 +251,15 @@ async fn dynamic_host_accepts_valid_labels_deterministically() -> Result<(), Api
         ("tenant-1", "tenant-1.api.example.com"),
     ] {
         let records = RecordingEvents::default();
-        let transport = RecordingTransport::new(records.clone());
+        let transport = RecordingTransport::new(records.clone(), 1);
         let rate_limiter = Arc::new(RecordingRateLimiter::new(records.clone()));
         let hooks = Arc::new(RecordingHooks::new(records.clone()));
         let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
         let client = configure_client(
-            UrlHardeningApi::new_with_transport("client".to_string(), transport.clone()),
+            UrlHardeningApi::new_with_safe_reqwest_builder("client".to_string(), |builder| {
+                transport.configure_reqwest(builder)
+            })
+            .expect("mock client"),
             rate_limiter,
             hooks,
             debug_sink,
@@ -341,12 +324,15 @@ async fn dynamic_host_rejects_dangerous_values() {
         "",
     ] {
         let records = RecordingEvents::default();
-        let transport = RecordingTransport::new(records.clone());
+        let transport = RecordingTransport::new(records.clone(), 0);
         let rate_limiter = Arc::new(RecordingRateLimiter::new(records.clone()));
         let hooks = Arc::new(RecordingHooks::new(records.clone()));
         let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
         let client = configure_client(
-            UrlHardeningApi::new_with_transport("client".to_string(), transport.clone()),
+            UrlHardeningApi::new_with_safe_reqwest_builder("client".to_string(), |builder| {
+                transport.configure_reqwest(builder)
+            })
+            .expect("mock client"),
             rate_limiter,
             hooks,
             debug_sink,
@@ -371,12 +357,15 @@ async fn dynamic_host_rejects_dangerous_values() {
 async fn dynamic_path_slash_backslash_rejected_before_side_effects() {
     for bad in ["a/b", "a\\b"] {
         let records = RecordingEvents::default();
-        let transport = RecordingTransport::new(records.clone());
+        let transport = RecordingTransport::new(records.clone(), 0);
         let rate_limiter = Arc::new(RecordingRateLimiter::new(records.clone()));
         let hooks = Arc::new(RecordingHooks::new(records.clone()));
         let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
         let client = configure_client(
-            UrlHardeningApi::new_with_transport("client".to_string(), transport.clone()),
+            UrlHardeningApi::new_with_safe_reqwest_builder("client".to_string(), |builder| {
+                transport.configure_reqwest(builder)
+            })
+            .expect("mock client"),
             rate_limiter,
             hooks,
             debug_sink,
@@ -401,12 +390,15 @@ async fn dynamic_path_slash_backslash_rejected_before_side_effects() {
 async fn dynamic_path_dot_segments_are_safe() {
     for bad in [".", "..", "a/../b"] {
         let records = RecordingEvents::default();
-        let transport = RecordingTransport::new(records.clone());
+        let transport = RecordingTransport::new(records.clone(), 0);
         let rate_limiter = Arc::new(RecordingRateLimiter::new(records.clone()));
         let hooks = Arc::new(RecordingHooks::new(records.clone()));
         let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
         let client = configure_client(
-            UrlHardeningApi::new_with_transport("client".to_string(), transport.clone()),
+            UrlHardeningApi::new_with_safe_reqwest_builder("client".to_string(), |builder| {
+                transport.configure_reqwest(builder)
+            })
+            .expect("mock client"),
             rate_limiter,
             hooks,
             debug_sink,
@@ -431,12 +423,15 @@ async fn dynamic_path_dot_segments_are_safe() {
 async fn fmt_path_interpolation_follows_dynamic_path_safety() {
     for bad in ["a/b", "a\\b"] {
         let records = RecordingEvents::default();
-        let transport = RecordingTransport::new(records.clone());
+        let transport = RecordingTransport::new(records.clone(), 0);
         let rate_limiter = Arc::new(RecordingRateLimiter::new(records.clone()));
         let hooks = Arc::new(RecordingHooks::new(records.clone()));
         let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
         let client = configure_client(
-            UrlHardeningApi::new_with_transport("client".to_string(), transport.clone()),
+            UrlHardeningApi::new_with_safe_reqwest_builder("client".to_string(), |builder| {
+                transport.configure_reqwest(builder)
+            })
+            .expect("mock client"),
             rate_limiter,
             hooks,
             debug_sink,
@@ -458,12 +453,15 @@ async fn fmt_path_interpolation_follows_dynamic_path_safety() {
 
     for bad in [".", "..", "a/b", "a\\b"] {
         let records = RecordingEvents::default();
-        let transport = RecordingTransport::new(records.clone());
+        let transport = RecordingTransport::new(records.clone(), 0);
         let rate_limiter = Arc::new(RecordingRateLimiter::new(records.clone()));
         let hooks = Arc::new(RecordingHooks::new(records.clone()));
         let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
         let client = configure_client(
-            UrlHardeningApi::new_with_transport("client".to_string(), transport.clone()),
+            UrlHardeningApi::new_with_safe_reqwest_builder("client".to_string(), |builder| {
+                transport.configure_reqwest(builder)
+            })
+            .expect("mock client"),
             rate_limiter,
             hooks,
             debug_sink,
@@ -488,12 +486,15 @@ async fn fmt_path_interpolation_follows_dynamic_path_safety() {
         ("\u{00b5}", "https://tenant.api.example.com/v1/fmt/%C2%B5"),
     ] {
         let records = RecordingEvents::default();
-        let transport = RecordingTransport::new(records.clone());
+        let transport = RecordingTransport::new(records.clone(), 1);
         let rate_limiter = Arc::new(RecordingRateLimiter::new(records.clone()));
         let hooks = Arc::new(RecordingHooks::new(records.clone()));
         let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
         let client = configure_client(
-            UrlHardeningApi::new_with_transport("client".to_string(), transport.clone()),
+            UrlHardeningApi::new_with_safe_reqwest_builder("client".to_string(), |builder| {
+                transport.configure_reqwest(builder)
+            })
+            .expect("mock client"),
             rate_limiter,
             hooks,
             debug_sink,
@@ -520,12 +521,15 @@ async fn fmt_path_interpolation_follows_dynamic_path_safety() {
 #[tokio::test]
 async fn execute_raw_obeys_same_url_host_path_validation() {
     let records = RecordingEvents::default();
-    let transport = RecordingTransport::new(records.clone());
+    let transport = RecordingTransport::new(records.clone(), 0);
     let rate_limiter = Arc::new(RecordingRateLimiter::new(records.clone()));
     let hooks = Arc::new(RecordingHooks::new(records.clone()));
     let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
     let client = configure_client(
-        UrlHardeningApi::new_with_transport("client".to_string(), transport.clone()),
+        UrlHardeningApi::new_with_safe_reqwest_builder("client".to_string(), |builder| {
+            transport.configure_reqwest(builder)
+        })
+        .expect("mock client"),
         rate_limiter,
         hooks,
         debug_sink,
@@ -547,12 +551,15 @@ async fn execute_raw_obeys_same_url_host_path_validation() {
 async fn sanitized_url_consistent_for_rate_limit_hooks_debug_transport()
 -> Result<(), ApiClientError> {
     let records = RecordingEvents::default();
-    let transport = RecordingTransport::new(records.clone());
+    let transport = RecordingTransport::new(records.clone(), 1);
     let rate_limiter = Arc::new(RecordingRateLimiter::new(records.clone()));
     let hooks = Arc::new(RecordingHooks::new(records.clone()));
     let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
     let client = configure_client(
-        UrlHardeningApi::new_with_transport("client".to_string(), transport.clone()),
+        UrlHardeningApi::new_with_safe_reqwest_builder("client".to_string(), |builder| {
+            transport.configure_reqwest(builder)
+        })
+        .expect("mock client"),
         rate_limiter,
         hooks,
         debug_sink,
@@ -565,6 +572,8 @@ async fn sanitized_url_consistent_for_rate_limit_hooks_debug_transport()
 
     assert_eq!(decoded, "ok");
     let expected = "https://tenant.api.example.com/v1/items/item/p-prefix";
+    let requests = transport.requests();
+    assert_eq!(requests.len(), 1);
     let events = records.snapshot();
     assert!(
         events
@@ -597,12 +606,15 @@ async fn sanitized_url_consistent_for_rate_limit_hooks_debug_transport()
 #[tokio::test]
 async fn dynamic_path_values_are_percent_encoded_in_final_url() -> Result<(), ApiClientError> {
     let records = RecordingEvents::default();
-    let transport = RecordingTransport::new(records.clone());
+    let transport = RecordingTransport::new(records.clone(), 1);
     let rate_limiter = Arc::new(RecordingRateLimiter::new(records.clone()));
     let hooks = Arc::new(RecordingHooks::new(records.clone()));
     let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
     let client = configure_client(
-        UrlHardeningApi::new_with_transport("client".to_string(), transport.clone()),
+        UrlHardeningApi::new_with_safe_reqwest_builder("client".to_string(), |builder| {
+            transport.configure_reqwest(builder)
+        })
+        .expect("mock client"),
         rate_limiter,
         hooks,
         debug_sink,

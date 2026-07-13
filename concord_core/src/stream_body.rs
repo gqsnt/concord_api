@@ -18,6 +18,7 @@ pub enum StreamBodyErrorKind {
     Transport,
 }
 
+#[derive(Clone, Copy)]
 pub struct StreamBodyError {
     kind: StreamBodyErrorKind,
 }

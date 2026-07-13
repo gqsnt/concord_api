@@ -142,7 +142,8 @@ mod tests {
         static METHOD: Method = Method::GET;
         static URL: &str = "https://example.com/empty";
         static ENDPOINT: &str = "Empty";
-        let plan = Box::leak(Box::new(RateLimitPlan::default()));
+        static PLAN: std::sync::LazyLock<RateLimitPlan> =
+            std::sync::LazyLock::new(RateLimitPlan::default);
         RateLimitContext {
             endpoint: ENDPOINT,
             method: &METHOD,
@@ -152,7 +153,7 @@ mod tests {
             page_index: 0,
             idempotent: true,
             max_cooldown: Duration::from_secs(60),
-            plan,
+            plan: &PLAN,
         }
     }
 
@@ -160,16 +161,18 @@ mod tests {
         static METHOD: Method = Method::GET;
         static URL: &str = "https://example.com/non-empty";
         static ENDPOINT: &str = "NonEmpty";
-        let bucket = RateLimitBucketUse::new(
-            "method",
-            "test",
-            RateLimitKey::new(vec![RateLimitKeyPart::static_value("k", "v")]),
-        )
-        .with_windows(vec![RateLimitWindow::new(
-            NonZeroU32::new(10).expect("non-zero"),
-            Duration::from_secs(10),
-        )]);
-        let plan = Box::leak(Box::new(RateLimitPlan::from_buckets(vec![bucket])));
+        static PLAN: std::sync::LazyLock<RateLimitPlan> = std::sync::LazyLock::new(|| {
+            let bucket = RateLimitBucketUse::new(
+                "method",
+                "test",
+                RateLimitKey::new(vec![RateLimitKeyPart::static_value("k", "v")]),
+            )
+            .with_windows(vec![RateLimitWindow::new(
+                NonZeroU32::new(10).expect("non-zero"),
+                Duration::from_secs(10),
+            )]);
+            RateLimitPlan::from_buckets(vec![bucket])
+        });
         RateLimitContext {
             endpoint: ENDPOINT,
             method: &METHOD,
@@ -179,7 +182,7 @@ mod tests {
             page_index: 0,
             idempotent: true,
             max_cooldown: Duration::from_secs(60),
-            plan,
+            plan: &PLAN,
         }
     }
 

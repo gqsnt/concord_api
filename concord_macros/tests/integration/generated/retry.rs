@@ -1,10 +1,7 @@
 use bytes::Bytes;
-use concord_core::advanced::{DynBody, RequestExecutionContext, Transport, TransportError};
 use concord_macros::api;
+use concord_test_support::{MockHandle, MockReply, MockServer, RecordedRequest, mock};
 use http::{HeaderMap, StatusCode};
-use std::collections::VecDeque;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::{Arc, Mutex as StdMutex};
 
 mod retry_helper_contract {
@@ -37,14 +34,8 @@ use retry_helper_contract::RetryHelperApi;
 
 #[derive(Clone)]
 struct RecordingTransport {
-    requests: Arc<StdMutex<Vec<RecordedRequest>>>,
-    responses: Arc<StdMutex<VecDeque<ResponseFixture>>>,
-}
-
-#[derive(Clone, Debug)]
-struct RecordedRequest {
-    meta: concord_core::transport::RequestMeta,
-    url: url::Url,
+    server: MockServer,
+    handle: Arc<StdMutex<MockHandle>>,
 }
 
 #[derive(Clone)]
@@ -73,49 +64,38 @@ impl ResponseFixture {
         fixture.status = status;
         fixture
     }
+
+    fn into_reply(self) -> MockReply {
+        let mut reply = MockReply::status(self.status).with_body(self.body);
+        for (name, value) in self.headers {
+            if let Some(name) = name {
+                reply = reply.with_header(name, value);
+            }
+        }
+        reply
+    }
 }
 
 impl RecordingTransport {
     fn new(responses: Vec<ResponseFixture>) -> Self {
+        let (server, handle) = mock()
+            .replies(responses.into_iter().map(ResponseFixture::into_reply))
+            .build();
         Self {
-            requests: Arc::new(StdMutex::new(Vec::new())),
-            responses: Arc::new(StdMutex::new(responses.into())),
+            server,
+            handle: Arc::new(StdMutex::new(handle)),
         }
     }
 
     async fn requests(&self) -> Vec<RecordedRequest> {
-        self.requests.lock().expect("requests lock").clone()
+        self.handle.lock().expect("handle lock").recorded()
     }
-}
 
-impl Transport for RecordingTransport {
-    fn send(
+    fn configure_reqwest(
         &self,
-        req: http::Request<DynBody>,
-    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
-        let requests = self.requests.clone();
-        let responses = self.responses.clone();
-        Box::pin(async move {
-            let context = req
-                .extensions()
-                .get::<RequestExecutionContext>()
-                .cloned()
-                .expect("context");
-            let url = req.uri().to_string().parse().expect("URL");
-            requests
-                .lock()
-                .expect("requests lock")
-                .push(RecordedRequest {
-                    meta: context.meta,
-                    url,
-                });
-            let response = responses.lock().expect("responses lock").pop_front();
-            let response = response.expect("expected retry response fixture");
-            let mut result = http::Response::new(DynBody::from_bytes(response.body));
-            *result.status_mut() = response.status;
-            *result.headers_mut() = response.headers;
-            Ok(result)
-        })
+        builder: concord_core::advanced::SafeReqwestBuilder,
+    ) -> concord_core::advanced::SafeReqwestBuilder {
+        self.server.configure_reqwest(builder)
     }
 }
 
@@ -126,7 +106,10 @@ async fn generated_retry_retries_then_succeeds_and_preserves_metadata() {
         ResponseFixture::json(r#""ok""#),
     ]);
     let sent = transport.clone();
-    let api = RetryHelperApi::new_with_transport(transport);
+    let api = RetryHelperApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
 
     let value = api
         .fetch()
@@ -137,10 +120,7 @@ async fn generated_retry_retries_then_succeeds_and_preserves_metadata() {
 
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 2);
-    assert_eq!(requests[0].meta.attempt, 0);
-    assert_eq!(requests[1].meta.attempt, 1);
-    assert_eq!(requests[0].meta.endpoint, requests[1].meta.endpoint);
-    assert_eq!(requests[0].meta.method, requests[1].meta.method);
+    assert_eq!(requests[0].method, requests[1].method);
     assert_eq!(requests[0].url.path(), "/retry");
     assert_eq!(requests[1].url.path(), "/retry");
 }

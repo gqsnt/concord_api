@@ -9,7 +9,10 @@ async fn custom_cursor_pagination_collects_pages() {
         .reply(json_reply(r#"{"items":[{"id":1},{"id":2}]}"#))
         .reply(json_reply(r#"{"items":[{"id":3}]}"#))
         .build();
-    let api = CustomCursorPaginationApi::new_with_transport(transport);
+    let api = CustomCursorPaginationApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
 
     let items = api
         .list_items()

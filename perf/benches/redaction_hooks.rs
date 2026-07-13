@@ -108,24 +108,26 @@ fn plan(name: &'static str, query: usize, headers: usize, mixed_case: bool) -> R
             .push((key, format!("BENCH_FAKE_QUERY_SECRET_{idx}")));
     }
     for idx in 0..headers {
-        let name = if idx % 2 == 0 {
-            if mixed_case {
-                format!("X-Api-Token-{idx}")
-            } else {
-                format!("x-api-token-{idx}")
-            }
+        let value = HeaderValue::from_str(&format!("BENCH_FAKE_HEADER_SECRET_{idx}"))
+            .expect("valid header value");
+        if idx % 2 == 0 {
+            // The exact generic name `key` is treated as sensitive for debug
+            // output without claiming an authentication-owned header.
+            policy
+                .headers
+                .append(HeaderName::from_static("key"), value);
         } else {
+            let name =
             if mixed_case {
                 format!("X-Visible-{idx}")
             } else {
                 format!("x-visible-{idx}")
-            }
-        };
-        policy.headers.insert(
-            HeaderName::from_bytes(name.as_bytes()).expect("valid header"),
-            HeaderValue::from_str(&format!("BENCH_FAKE_HEADER_SECRET_{idx}"))
-                .expect("valid header value"),
-        );
+            };
+            policy.headers.insert(
+                HeaderName::from_bytes(name.as_bytes()).expect("valid header"),
+                value,
+            );
+        }
     }
     request_plan(
         name,

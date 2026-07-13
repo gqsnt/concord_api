@@ -133,6 +133,26 @@ impl BodyError {
             Ok(error) => return (*error).into(),
             Err(error) => error,
         };
+        let error = match error.downcast::<reqwest::Error>() {
+            Ok(error) => {
+                let mut source: &(dyn Error + 'static) = error.as_ref();
+                loop {
+                    if let Some(body_error) = source.downcast_ref::<Self>() {
+                        return *body_error;
+                    }
+                    if let Some(stream_error) =
+                        source.downcast_ref::<crate::stream_body::StreamBodyError>()
+                    {
+                        return (*stream_error).into();
+                    }
+                    let Some(next) = source.source() else {
+                        return Self::input();
+                    };
+                    source = next;
+                }
+            }
+            Err(error) => error,
+        };
         if let Ok(error) = error.downcast::<std::io::Error>() {
             return (*error).into();
         }
@@ -311,13 +331,6 @@ impl DynBody {
         Self::from_body(LimitedBody::new(self, limit))
     }
 
-    /// Structurally enforces an exact delivered length.  This is deliberately
-    /// distinct from a `SizeHint`: a hint is advisory while this wrapper
-    /// rejects underflow and overflow without yielding excess bytes.
-    pub(crate) fn exact_length(self, length: u64) -> Self {
-        Self::from_body(ExactLengthBody::new(self, length))
-    }
-
     /// Converts this body to the upstream data-only stream adapter.
     pub fn into_data_stream(self) -> BodyDataStream<Self> {
         BodyExt::into_data_stream(self)
@@ -439,11 +452,7 @@ pub struct LimitedBody<B> {
     terminal: bool,
 }
 
-/// A one-shot structural exact-length guard used by request-body recipes.
-///
-/// The guard is applied before the legacy `DynBody` transport bridge.  It
-/// keeps exact-length contracts meaningful even while the public transport
-/// boundary remains `http::Request<DynBody>`.
+/// A one-shot structural exact-length guard used by native request bodies.
 pub(crate) struct ExactLengthBody<B> {
     inner: Pin<Box<B>>,
     expected: u64,
@@ -464,7 +473,8 @@ impl<B> ExactLengthBody<B> {
 
 impl<B> Body for ExactLengthBody<B>
 where
-    B: Body<Data = Bytes, Error = BodyError>,
+    B: Body<Data = Bytes>,
+    B::Error: Send + 'static,
 {
     type Data = Bytes;
     type Error = BodyError;
@@ -495,7 +505,7 @@ where
             }
             Poll::Ready(Some(Err(error))) => {
                 this.terminal = true;
-                Poll::Ready(Some(Err(error)))
+                Poll::Ready(Some(Err(BodyError::from_producer(error))))
             }
             Poll::Ready(None) => {
                 this.terminal = true;
@@ -538,7 +548,7 @@ impl<B> LimitedBody<B> {
 
 impl<B> fmt::Debug for LimitedBody<B>
 where
-    B: Body<Data = Bytes, Error = BodyError>,
+    B: Body<Data = Bytes>,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("LimitedBody")
@@ -551,7 +561,8 @@ where
 
 impl<B> Body for LimitedBody<B>
 where
-    B: Body<Data = Bytes, Error = BodyError>,
+    B: Body<Data = Bytes>,
+    B::Error: Send + 'static,
 {
     type Data = Bytes;
     type Error = BodyError;
@@ -594,7 +605,7 @@ where
             }
             Poll::Ready(Some(Err(error))) => {
                 this.terminal = true;
-                Poll::Ready(Some(Err(error)))
+                Poll::Ready(Some(Err(BodyError::from_producer(error))))
             }
             Poll::Ready(None) => {
                 this.terminal = true;

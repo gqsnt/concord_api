@@ -154,7 +154,7 @@ The execution order is fixed:
 4. Produce the physical-attempt body.
 5. Acquire rate-limit permits.
 6. Run sanitized hooks and debug output.
-7. Materialize `http::Request<DynBody>` with raw auth and immediately send it.
+7. Materialize a native `reqwest::Request` with raw auth and immediately execute it through the managed client.
 8. Classify the response or transport failure.
 9. Run response and error hooks.
 10. Observe rate-limit response metadata.

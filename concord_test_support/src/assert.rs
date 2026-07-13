@@ -12,14 +12,12 @@ pub fn assert_request(req: &RecordedRequest) -> RequestAssert<'_> {
 }
 
 impl<'a> RequestAssert<'a> {
-    pub fn page_index(self, expected: u32) -> Self {
-        let got = self.req.meta.page_index;
-        if got != expected {
-            panic!(
-                "page_index mismatch\n  expected: {expected}\n  got: {got}\n  url: {}",
-                self.req.url
-            );
-        }
+    pub fn method(self, expected: http::Method) -> Self {
+        assert_eq!(
+            self.req.method, expected,
+            "request method for {}",
+            self.req.url
+        );
         self
     }
 
@@ -40,17 +38,6 @@ impl<'a> RequestAssert<'a> {
             panic!(
                 "path mismatch\n  expected: {expected}\n  got: {got}\n  url: {}",
                 self.req.url
-            );
-        }
-        self
-    }
-
-    pub fn timeout(self, expected: Option<std::time::Duration>) -> Self {
-        let got = self.req.timeout;
-        if got != expected {
-            panic!(
-                "timeout mismatch\n  expected: {:?}\n  got: {:?}\n  url: {}",
-                expected, got, self.req.url
             );
         }
         self

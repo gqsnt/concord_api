@@ -232,7 +232,7 @@ The validated optimization series preserved the following:
 - no-governor fail-closed behavior remains intact for non-empty plans
 - debug, hooks, and public errors/source chains do not expose raw auth secrets or body bytes
 - pagination remains collect-only
-- mandatory reqwest alignment preserves custom transport polymorphism while keeping `concord_core` reqwest-backed.
+- mandatory Reqwest alignment keeps `concord_core` on one managed native execution path.
 - macro parser, normalization, sema, and codegen boundaries remain intact
 
 ## 8. Open Risks and Next Candidates

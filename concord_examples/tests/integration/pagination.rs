@@ -11,7 +11,10 @@ async fn offset_pagination_collects_items_and_preserves_query_shape() {
         .reply(json_reply(r#"[{"id":1},{"id":2}]"#))
         .reply(json_reply(r#"[{"id":3}]"#))
         .build();
-    let api = PaginationApi::new_with_transport(transport);
+    let api = PaginationApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
 
     let items = api
         .list_offset()
@@ -42,7 +45,10 @@ async fn cursor_pagination_collect_uses_next_cursor() {
         ))
         .reply(json_reply(r#"{"items":[{"id":12}],"next_cursor":null}"#))
         .build();
-    let api = PaginationApi::new_with_transport(transport);
+    let api = PaginationApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
     let items = api
         .list_cursor()
         .paginate(PaginationTermination::hard_page_cap(10))
@@ -71,7 +77,11 @@ async fn session_header_pagination_preserves_offset_and_items() {
         .reply(MockReply::status(StatusCode::UNAUTHORIZED))
         .reply(json_reply(r#"[{"id":3}]"#))
         .build();
-    let api = PaginationAuthApi::new_with_transport("page-token".to_string(), transport);
+    let api =
+        PaginationAuthApi::new_with_safe_reqwest_builder("page-token".to_string(), |builder| {
+            transport.configure_reqwest(builder)
+        })
+        .expect("mock client");
 
     let items = api
         .protected()
@@ -96,8 +106,7 @@ async fn session_header_pagination_preserves_offset_and_items() {
         .path("/protected-items")
         .query_has("start", "2")
         .header(http::header::AUTHORIZATION, "Bearer page-token");
-    assert_eq!(recorded[1].meta.page_index, 1);
-    assert_eq!(recorded[2].meta.page_index, 1);
+    assert_eq!(recorded[1].url, recorded[2].url);
     handle.finish();
 }
 
@@ -115,7 +124,10 @@ async fn generated_custom_pagination_collect_renders_endpoint_fields() {
         .reply(json_reply(r#"{"items":[{"id":1},{"id":2}]}"#))
         .reply(json_reply(r#"{"items":[{"id":3}]}"#))
         .build();
-    let api = CustomPaginationApi::new_with_transport(transport);
+    let api = CustomPaginationApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
 
     let items = api
         .list()

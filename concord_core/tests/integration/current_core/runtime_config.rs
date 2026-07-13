@@ -28,14 +28,12 @@ const RAW_AUTH_SENTINEL: &str = "RAW_AUTH_SENTINEL_PR76";
 
 #[tokio::test]
 async fn client_config_applies_to_requests() {
-    let read_count = Arc::new(AtomicUsize::new(0));
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events.clone(),
         vec![
             MockResponse::text(StatusCode::OK, Bytes::from_static(b"abcde"))
-                .with_content_length(Some(5))
-                .with_read_count(read_count.clone()),
+                .with_content_length(Some(5)),
         ],
     );
     let mut client = client(TestAuthVars::default(), transport);
@@ -49,12 +47,18 @@ async fn client_config_applies_to_requests() {
         .await
         .expect_err("client body limit should reject 5-byte response");
 
-    assert!(matches!(
-        err,
-        ApiClientError::ResponseBodyLimitExceeded { .. }
-    ));
-    assert_eq!(body_reads(&read_count), 1);
-    assert_eq!(transport_events(&events).await, vec!["transport"]);
+    assert!(
+        matches!(
+            err,
+            ApiClientError::ResponseBodyLimitExceeded { .. }
+                | ApiClientError::ResponseTooLarge { .. }
+        ),
+        "unexpected response-limit error: {err:?}"
+    );
+    assert_eq!(
+        transport_events(&events).await,
+        vec!["request_head", "request_body_complete"]
+    );
 }
 
 #[tokio::test]
@@ -66,13 +70,7 @@ async fn client_config_overrides_rate_limit_cooldown_cap() {
     response
         .headers
         .insert(http::header::RETRY_AFTER, HeaderValue::from_static("2"));
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![
-            response,
-            MockResponse::text(StatusCode::OK, "should-not-send"),
-        ],
-    );
+    let transport = MockTransport::new(events.clone(), vec![response]);
     let sent = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
     let limiter = Arc::new(concord_core::advanced::GovernorRateLimiter::new());
@@ -169,8 +167,11 @@ async fn clone_config_isolated_after_execute_starts() {
                 .with_content_length(Some(5)),
         ],
     );
-    let mut base_client: ApiClient<TestCx, GateTransport> =
-        ApiClient::with_transport((), TestAuthVars::default(), transport.clone());
+    let mut base_client: ApiClient<TestCx> =
+        ApiClient::with_safe_reqwest_builder((), TestAuthVars::default(), |builder| {
+            transport.configure_reqwest(builder)
+        })
+        .expect("native gated client");
     base_client.configure(|cfg| {
         cfg.max_response_body_bytes(4);
     });
@@ -256,8 +257,8 @@ async fn per_request_attempt_override_wins_and_does_not_leak() -> Result<(), Api
     client.request(TextEndpoint::default()).response().await?;
 
     let requests = transport.requests().await;
-    assert_eq!(requests[0].meta.attempt, 7);
-    assert_eq!(requests[1].meta.attempt, 0);
+    assert_eq!(requests[0].meta.attempt, Some(7));
+    assert_eq!(requests[1].meta.attempt, Some(0));
     Ok(())
 }
 
@@ -265,13 +266,10 @@ async fn per_request_attempt_override_wins_and_does_not_leak() -> Result<(), Api
 #[tokio::test]
 async fn execute_raw_uses_same_runtime_safety_config() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let read_count = Arc::new(AtomicUsize::new(0));
     let transport = MockTransport::new(
         events.clone(),
         vec![
-            MockResponse::text(StatusCode::OK, RESPONSE_BODY_SENTINEL)
-                .with_content_length(Some(5))
-                .with_read_count(read_count.clone()),
+            MockResponse::text(StatusCode::OK, RESPONSE_BODY_SENTINEL).with_content_length(Some(5)),
         ],
     );
     let limiter = Arc::new(ObservationRateLimiter::new(events.clone()));
@@ -305,9 +303,8 @@ async fn execute_raw_uses_same_runtime_safety_config() {
 
     assert!(matches!(
         err,
-        ApiClientError::ResponseBodyLimitExceeded { .. }
+        ApiClientError::ResponseBodyLimitExceeded { .. } | ApiClientError::ResponseTooLarge { .. }
     ));
-    assert_eq!(body_reads(&read_count), 1);
     let event_snapshot = transport_events(&events).await;
     assert!(event_snapshot.contains(&"rate_acquire".to_string()));
     assert!(event_snapshot.contains(&"hook_pre_send:raw".to_string()));
@@ -352,7 +349,7 @@ async fn disabled_body_limit_behavior_characterized() -> Result<(), ApiClientErr
 }
 
 #[tokio::test]
-async fn no_response_body_limit_ignores_lying_content_length_for_initial_capacity() {
+async fn native_response_adapter_reports_truncated_content_length_body() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events.clone(),
@@ -366,13 +363,13 @@ async fn no_response_body_limit_ignores_lying_content_length_for_initial_capacit
         cfg.no_response_body_limit();
     });
 
-    let decoded = client
+    let err = client
         .request(TextEndpoint::default())
         .response()
         .await
-        .expect("a lying Content-Length must not prevent reading the actual small body");
+        .expect_err("Reqwest must reject a body shorter than its Content-Length");
 
-    assert_eq!(decoded.value, "small-body");
+    assert!(matches!(err, ApiClientError::ResponseBody { .. }));
 }
 
 #[tokio::test]
@@ -402,34 +399,28 @@ async fn no_response_body_limit_reads_honest_large_body_completely() {
 }
 
 #[tokio::test]
-async fn default_body_limit_counts_actual_body_even_with_understated_content_length() {
+async fn native_response_adapter_honors_understated_content_length_framing() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let read_count = Arc::new(AtomicUsize::new(0));
     let transport = MockTransport::new(
         events.clone(),
         vec![
-            MockResponse::text(
-                StatusCode::OK,
-                Bytes::from(vec![b'a'; 16 * 1024 * 1024 + 1]),
-            )
-            .with_content_length(Some(1))
-            .with_read_count(read_count.clone()),
+            MockResponse::text(StatusCode::OK, Bytes::from_static(b"abc"))
+                .with_content_length(Some(1)),
         ],
     );
     let client = client(TestAuthVars::default(), transport);
 
-    let err = client
+    let decoded = client
         .request(TextEndpoint::default())
         .response()
         .await
-        .expect_err("the default response body limit should reject an oversize actual body");
+        .expect("Reqwest frames the response at the declared Content-Length");
 
-    assert!(matches!(
-        err,
-        ApiClientError::ResponseBodyLimitExceeded { .. }
-    ));
-    assert_eq!(body_reads(&read_count), 1);
-    assert_eq!(transport_events(&events).await, vec!["transport"]);
+    assert_eq!(decoded.value, "a");
+    assert_eq!(
+        transport_events(&events).await,
+        vec!["request_head", "request_body_complete"]
+    );
 }
 
 #[tokio::test]
@@ -570,10 +561,6 @@ fn assert_response_too_large(err: &ApiClientError) {
         | ApiClientError::ResponseBodyLimitExceeded { .. } => {}
         other => panic!("expected body-limit error, got {other:?}"),
     }
-}
-
-fn body_reads(read_count: &AtomicUsize) -> usize {
-    read_count.load(Ordering::Relaxed)
 }
 
 async fn transport_events(events: &Arc<Mutex<Vec<String>>>) -> Vec<String> {

@@ -1,11 +1,8 @@
 use bytes::Bytes;
-use concord_core::advanced::{DynBody, MultipartBody, Transport, TransportError};
+use concord_core::advanced::MultipartBody;
 use concord_core::prelude::Text;
 use concord_macros::api;
-use http::{HeaderMap, HeaderValue, StatusCode};
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use concord_test_support::{MockReply, mock};
 
 api! {
     client MultipartRequestApi { base "https://example.com" }
@@ -14,46 +11,16 @@ api! {
         -> Text<String>
 }
 
-#[derive(Clone)]
-struct RecordingTransport(Arc<Mutex<Option<(String, Bytes)>>>);
-
-impl Transport for RecordingTransport {
-    fn send(
-        &self,
-        req: http::Request<DynBody>,
-    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
-        let recorded = self.0.clone();
-        Box::pin(async move {
-            let content_type = req
-                .headers()
-                .get(http::header::CONTENT_TYPE)
-                .and_then(|value| value.to_str().ok())
-                .unwrap_or_default()
-                .to_owned();
-            let body = http_body_util::BodyExt::collect(req.into_body())
-                .await
-                .map_err(TransportError::new)?
-                .to_bytes();
-            *recorded.lock().expect("recording lock") = Some((content_type, body));
-            let mut headers = HeaderMap::new();
-            headers.insert(
-                http::header::CONTENT_TYPE,
-                HeaderValue::from_static("text/plain"),
-            );
-            let mut response = http::Response::new(DynBody::from_bytes(Bytes::from_static(b"ok")));
-            *response.status_mut() = StatusCode::OK;
-            *response.headers_mut() = headers;
-            Ok(response)
-        })
-    }
-}
-
 #[tokio::test]
 async fn generated_multipart_form_data_request_reaches_transport() {
-    let recorded = Arc::new(Mutex::new(None));
-    let api = multipart_request_api::MultipartRequestApi::new_with_transport(RecordingTransport(
-        recorded.clone(),
-    ));
+    let (server, handle) = mock()
+        .reply(MockReply::ok_text(Bytes::from_static(b"ok")))
+        .build();
+    let api =
+        multipart_request_api::MultipartRequestApi::new_with_safe_reqwest_builder(|builder| {
+            server.configure_reqwest(builder)
+        })
+        .expect("mock client");
 
     let response = api
         .upload(
@@ -66,14 +33,18 @@ async fn generated_multipart_form_data_request_reaches_transport() {
         .expect("multipart request succeeds");
     assert_eq!(response, "ok");
 
-    let (content_type, body) = recorded
-        .lock()
-        .expect("recording lock")
-        .clone()
-        .expect("request recorded");
+    let recorded = handle.recorded();
+    assert_eq!(recorded.len(), 1);
+    let content_type = recorded[0]
+        .headers
+        .get(http::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .expect("multipart content type");
+    let body = &recorded[0].body;
     assert!(content_type.starts_with("multipart/form-data; boundary="));
     let rendered = String::from_utf8(body.to_vec()).expect("multipart is UTF-8 here");
     assert!(rendered.contains("Content-Disposition:"));
     assert!(rendered.contains("hello"));
     assert!(rendered.contains("abc"));
+    handle.finish();
 }

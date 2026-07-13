@@ -22,7 +22,7 @@ The generated client should preserve the facade-first API shape. Advanced endpoi
 
 Generated public API names are validated after resolution and before codegen. The validator must use the same naming helpers as codegen for endpoint methods, scope facades, auth helpers, and generated public type names. Public DSL names that would collide with generated methods, generated types, reserved helper names, or raw Rust identifiers are semantic errors rather than Rust duplicate-definition failures.
 
-Constructor shape is stable: generated `new(...)`, `builder()`, and `new_with_transport(...)` keep ordinary vars before auth vars and secrets, each in source declaration order. Normal users should not need to name endpoint marker structs; `endpoints::*` remains an advanced explicit-endpoint surface.
+Constructor shape is stable: generated `new(...)` and `builder()` keep ordinary vars before auth vars and secrets, each in source declaration order. Generated clients are concrete and own a core `ApiClient<Cx>`.
 
 ## Request Plans
 
@@ -50,7 +50,7 @@ Auth endpoints that return credential material directly get acquisition helpers 
 
 Endpoint-backed auth-state handles are exposed under `auth_state().credential_name()` with fallible `set`, `clear`, and `is_set` methods. Acquisition helpers are named from the real generated public credential name.
 
-Generated auth preparation code resolves credential leases and receives an auth-only application request already bound to the runtime slot emitted from semantic `AuthRequirement` placement. Core auth helpers validate and bind material without recreating placement. Raw material is inserted only when a `http::Request<DynBody>` is materialized immediately before send.
+Generated auth preparation resolves credential leases against semantic `AuthRequirement` placement. Core validates and binds material, then inserts it only into the native Reqwest request immediately before managed-client execution.
 
 Generated auth-var and helper paths must propagate lock and state failures as typed `AuthError` / `ApiClientError::Auth` values. They must not unwrap runtime auth locks or assume the state is available because the generated API owns the client.
 

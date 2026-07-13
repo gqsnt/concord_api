@@ -1,16 +1,12 @@
 use bytes::Bytes;
-use concord_core::advanced::{
-    DynBody, OctetStream, StreamBody, StreamResponse, Transport, TransportError,
-};
+use concord_core::advanced::{OctetStream, StreamBody, StreamResponse};
 use concord_core::prelude::*;
 use concord_macros::api;
+use concord_test_support::{MockHandle, MockReply, MockServer, ReplyGate, ResponseStep, mock};
 use http::{HeaderMap, HeaderValue, StatusCode};
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
+use std::time::Duration;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UploadResult {
@@ -63,10 +59,8 @@ impl std::fmt::Debug for CapturedRequest {
 
 #[derive(Clone)]
 struct RecordingTransport {
-    events: Arc<StdMutex<Vec<String>>>,
-    requests: Arc<StdMutex<Vec<CapturedRequest>>>,
-    response: ResponseFixture,
-    send_count: Arc<AtomicUsize>,
+    server: MockServer,
+    handle: Arc<StdMutex<MockHandle>>,
 }
 
 #[derive(Clone)]
@@ -82,7 +76,6 @@ enum ResponseFixture {
         headers: HeaderMap,
         chunks: Vec<Bytes>,
         content_length: Option<u64>,
-        poll_flag: Arc<AtomicBool>,
     },
 }
 
@@ -101,7 +94,7 @@ impl ResponseFixture {
         }
     }
 
-    fn streamed(chunks: Vec<Bytes>, poll_flag: Arc<AtomicBool>) -> Self {
+    fn streamed(chunks: Vec<Bytes>) -> Self {
         let mut headers = HeaderMap::new();
         headers.insert(
             http::header::CONTENT_TYPE,
@@ -113,7 +106,6 @@ impl ResponseFixture {
             headers,
             chunks,
             content_length: Some(content_length),
-            poll_flag,
         }
     }
 
@@ -137,176 +129,101 @@ impl RecordingTransport {
         Self::new(ResponseFixture::buffered_json(body))
     }
 
-    fn streamed_response(chunks: Vec<Bytes>, poll_flag: Arc<AtomicBool>) -> Self {
-        Self::new(ResponseFixture::streamed(chunks, poll_flag))
+    fn streamed_response(chunks: Vec<Bytes>) -> Self {
+        Self::new(ResponseFixture::streamed(chunks))
     }
 
     fn new(response: ResponseFixture) -> Self {
-        Self {
-            events: Arc::new(StdMutex::new(Vec::new())),
-            requests: Arc::new(StdMutex::new(Vec::new())),
-            response,
-            send_count: Arc::new(AtomicUsize::new(0)),
-        }
+        Self::from_replies([response.into_reply()])
     }
 
-    fn events(&self) -> Vec<String> {
-        self.events.lock().expect("events lock").clone()
+    fn empty() -> Self {
+        Self::from_replies([])
+    }
+
+    fn from_replies(replies: impl IntoIterator<Item = MockReply>) -> Self {
+        let (server, handle) = mock().replies(replies).build();
+        Self {
+            server,
+            handle: Arc::new(StdMutex::new(handle)),
+        }
     }
 
     fn requests(&self) -> Vec<CapturedRequest> {
-        self.requests.lock().expect("requests lock").clone()
+        self.handle
+            .lock()
+            .expect("handle lock")
+            .recorded()
+            .into_iter()
+            .map(|request| CapturedRequest {
+                debug: "Request { body: <body>, .. }".to_string(),
+                content_type: request
+                    .headers
+                    .get(http::header::CONTENT_TYPE)
+                    .and_then(|value| value.to_str().ok())
+                    .map(str::to_string),
+                body: CapturedBody(request.body),
+            })
+            .collect()
     }
 
     fn send_count(&self) -> usize {
-        self.send_count.load(Ordering::SeqCst)
+        self.handle.lock().expect("handle lock").recorded_len()
     }
 
-    fn push_event(&self, event: impl Into<String>) {
-        self.events.lock().expect("events lock").push(event.into());
-    }
-}
-
-impl Transport for RecordingTransport {
-    fn send(
+    fn configure_reqwest(
         &self,
-        req: http::Request<DynBody>,
-    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
-        let transport = self.clone();
-        Box::pin(async move {
-            transport.send_count.fetch_add(1, Ordering::SeqCst);
-            transport.push_event("transport_send");
-            let debug = "Request { body: <body>, .. }".to_string();
-            let content_type = req
-                .headers()
-                .get(http::header::CONTENT_TYPE)
-                .and_then(|value| value.to_str().ok())
-                .map(str::to_string);
-            let body = CapturedBody(
-                collect_stream(req.into_body(), &transport.events, "request_stream_poll").await?,
+        builder: concord_core::advanced::SafeReqwestBuilder,
+    ) -> concord_core::advanced::SafeReqwestBuilder {
+        self.server.configure_reqwest(builder)
+    }
+}
+
+impl ResponseFixture {
+    fn into_reply(self) -> MockReply {
+        let (status, headers, body, chunks, content_length) = match self {
+            Self::Buffered {
+                status,
+                headers,
+                body,
+                content_length,
+            } => (status, headers, Some(body), None, content_length),
+            Self::Stream {
+                status,
+                headers,
+                chunks,
+                content_length,
+            } => (status, headers, None, Some(chunks), content_length),
+        };
+        let mut reply = MockReply::status(status);
+        for (name, value) in headers {
+            if let Some(name) = name {
+                reply = reply.with_header(name, value);
+            }
+        }
+        if let Some(length) = content_length {
+            reply = reply.with_header(
+                http::header::CONTENT_LENGTH,
+                HeaderValue::from_str(&length.to_string()).expect("length"),
             );
-            transport
-                .requests
-                .lock()
-                .expect("requests lock")
-                .push(CapturedRequest {
-                    debug,
-                    content_type,
-                    body,
-                });
-
-            match transport.response.clone() {
-                ResponseFixture::Buffered {
-                    status,
-                    headers,
-                    body,
-                    content_length,
-                } => {
-                    let mut response = http::Response::new(DynBody::from_bytes(body));
-                    *response.status_mut() = status;
-                    *response.headers_mut() = headers;
-                    if let Some(length) = content_length {
-                        response.headers_mut().insert(
-                            http::header::CONTENT_LENGTH,
-                            HeaderValue::from_str(&length.to_string()).expect("length"),
-                        );
-                    }
-                    Ok(response)
-                }
-                ResponseFixture::Stream {
-                    status,
-                    headers,
-                    chunks,
-                    content_length,
-                    poll_flag,
-                } => {
-                    let mut response = http::Response::new(DynBody::from_byte_stream(
-                        ChunkBody::new(transport.events.clone(), chunks, poll_flag),
-                    ));
-                    *response.status_mut() = status;
-                    *response.headers_mut() = headers;
-                    if let Some(length) = content_length {
-                        response.headers_mut().insert(
-                            http::header::CONTENT_LENGTH,
-                            HeaderValue::from_str(&length.to_string()).expect("length"),
-                        );
-                    }
-                    Ok(response)
-                }
-            }
-        })
-    }
-}
-
-struct ChunkBody {
-    events: Arc<StdMutex<Vec<String>>>,
-    chunks: VecDeque<Bytes>,
-    poll_flag: Arc<AtomicBool>,
-}
-
-impl ChunkBody {
-    fn new(
-        events: Arc<StdMutex<Vec<String>>>,
-        chunks: Vec<Bytes>,
-        poll_flag: Arc<AtomicBool>,
-    ) -> Self {
-        Self {
-            events,
-            chunks: chunks.into(),
-            poll_flag,
+        }
+        match (body, chunks, content_length) {
+            (Some(body), _, _) => reply.with_body(body),
+            (_, Some(chunks), Some(_)) => reply.with_body(Bytes::from(chunks.concat())),
+            (_, Some(chunks), None) => reply.with_chunks(chunks),
+            _ => reply,
         }
     }
-}
-
-impl futures_core::Stream for ChunkBody {
-    type Item = Result<Bytes, concord_core::advanced::BodyError>;
-    fn poll_next(
-        mut self: Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        let chunk = self.chunks.pop_front();
-        if chunk.is_some() {
-            self.poll_flag.store(true, Ordering::SeqCst);
-            self.events
-                .lock()
-                .expect("response stream events lock")
-                .push("response_stream_poll".to_string());
-        }
-        std::task::Poll::Ready(chunk.map(Ok))
-    }
-}
-
-async fn collect_stream(
-    mut stream: DynBody,
-    events: &Arc<StdMutex<Vec<String>>>,
-    event: &'static str,
-) -> Result<Bytes, TransportError> {
-    let mut out = Vec::new();
-    loop {
-        let next = http_body_util::BodyExt::frame(&mut stream).await;
-        match next {
-            Some(Ok(frame)) => {
-                let Ok(chunk) = frame.into_data() else {
-                    continue;
-                };
-                events
-                    .lock()
-                    .expect("request stream events lock")
-                    .push(event.to_string());
-                out.extend_from_slice(&chunk);
-            }
-            Some(Err(error)) => return Err(TransportError::new(error)),
-            None => break,
-        }
-    }
-    Ok(Bytes::from(out))
 }
 
 #[tokio::test]
 async fn generated_stream_request_reaches_transport() {
     const SENTINEL: &[u8] = b"SECRET_STREAM_REQUEST_SENTINEL_MUST_NOT_APPEAR";
     let transport = RecordingTransport::buffered_response(r#"{"ok":true}"#);
-    let api = StreamHelperApi::new_with_transport(transport.clone());
+    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
 
     let response = api
         .upload(StreamBody::from_bytes(Bytes::from_static(SENTINEL)))
@@ -331,31 +248,20 @@ async fn generated_stream_request_reaches_transport() {
     assert!(
         !format!("{:?}", requests[0]).contains("SECRET_STREAM_REQUEST_SENTINEL_MUST_NOT_APPEAR")
     );
-    let events = transport.events();
-    let transport_idx = events
-        .iter()
-        .position(|event| event == "transport_send")
-        .expect("transport send event");
-    let stream_idx = events
-        .iter()
-        .position(|event| event == "request_stream_poll")
-        .expect("request stream poll event");
-    assert!(transport_idx < stream_idx);
 }
 
 #[tokio::test]
 async fn generated_stream_response_returns_stream_without_buffering() {
     const SENTINEL: &[u8] = b"SECRET_STREAM_RESPONSE_SENTINEL_MUST_NOT_APPEAR";
-    let poll_flag = Arc::new(AtomicBool::new(false));
-    let transport = RecordingTransport::streamed_response(
-        vec![
-            Bytes::from_static(b"hello"),
-            Bytes::from_static(b" "),
-            Bytes::from_static(SENTINEL),
-        ],
-        poll_flag.clone(),
-    );
-    let api = StreamHelperApi::new_with_transport(transport.clone());
+    let transport = RecordingTransport::streamed_response(vec![
+        Bytes::from_static(b"hello"),
+        Bytes::from_static(b" "),
+        Bytes::from_static(SENTINEL),
+    ]);
+    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
 
     let mut response: StreamResponse<OctetStream> = api
         .download()
@@ -372,7 +278,6 @@ async fn generated_stream_response_returns_stream_without_buffering() {
             .and_then(|value| value.to_str().ok()),
         Some("application/octet-stream")
     );
-    assert!(!poll_flag.load(Ordering::SeqCst));
     assert_eq!(
         response.content_length(),
         Some((5 + 1 + SENTINEL.len()) as u64)
@@ -386,40 +291,21 @@ async fn generated_stream_response_returns_stream_without_buffering() {
         received.extend_from_slice(&chunk);
     }
 
-    assert!(poll_flag.load(Ordering::SeqCst));
     assert_eq!(received, [b"hello".as_slice(), b" ", SENTINEL].concat());
-    let events = transport.events();
-    let transport_idx = events
-        .iter()
-        .position(|event| event == "transport_send")
-        .expect("transport send event");
-    let stream_idx = events
-        .iter()
-        .position(|event| event == "response_stream_poll")
-        .expect("response stream poll event");
-    assert!(transport_idx < stream_idx);
-    assert_eq!(
-        events
-            .iter()
-            .filter(|event| event.as_str() == "response_stream_poll")
-            .count(),
-        3
-    );
 }
 
 #[tokio::test]
 async fn generated_stream_response_execute_stream_returns_stream_without_buffering() {
     const SENTINEL: &[u8] = b"SECRET_STREAM_RESPONSE_SENTINEL_MUST_NOT_APPEAR";
-    let poll_flag = Arc::new(AtomicBool::new(false));
-    let transport = RecordingTransport::streamed_response(
-        vec![
-            Bytes::from_static(b"hello"),
-            Bytes::from_static(b" "),
-            Bytes::from_static(SENTINEL),
-        ],
-        poll_flag.clone(),
-    );
-    let api = StreamHelperApi::new_with_transport(transport.clone());
+    let transport = RecordingTransport::streamed_response(vec![
+        Bytes::from_static(b"hello"),
+        Bytes::from_static(b" "),
+        Bytes::from_static(SENTINEL),
+    ]);
+    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
 
     let mut response: StreamResponse<OctetStream> = api
         .download()
@@ -436,7 +322,6 @@ async fn generated_stream_response_execute_stream_returns_stream_without_bufferi
             .and_then(|value| value.to_str().ok()),
         Some("application/octet-stream")
     );
-    assert!(!poll_flag.load(Ordering::SeqCst));
     assert_eq!(
         response.content_length(),
         Some((5 + 1 + SENTINEL.len()) as u64)
@@ -450,32 +335,181 @@ async fn generated_stream_response_execute_stream_returns_stream_without_bufferi
         received.extend_from_slice(&chunk);
     }
 
-    assert!(poll_flag.load(Ordering::SeqCst));
     assert_eq!(received, [b"hello".as_slice(), b" ", SENTINEL].concat());
-    let events = transport.events();
-    let transport_idx = events
-        .iter()
-        .position(|event| event == "transport_send")
-        .expect("transport send event");
-    let stream_idx = events
-        .iter()
-        .position(|event| event == "response_stream_poll")
-        .expect("response stream poll event");
-    assert!(transport_idx < stream_idx);
+}
+
+#[tokio::test]
+async fn generated_stream_response_delivers_first_chunk_before_gated_later_chunk() {
+    let gate = ReplyGate::new();
+    let reply = MockReply::status(StatusCode::OK)
+        .with_header(
+            http::header::CONTENT_TYPE,
+            HeaderValue::from_static("application/octet-stream"),
+        )
+        .with_response_steps([
+            ResponseStep::Chunk(Bytes::from_static(b"first")),
+            ResponseStep::Gate(gate.clone()),
+            ResponseStep::Chunk(Bytes::from_static(b"second")),
+        ]);
+    let transport = RecordingTransport::from_replies([reply]);
+    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
+
+    let mut response = tokio::time::timeout(Duration::from_millis(250), async {
+        api.download().execute_stream().await
+    })
+    .await
+    .expect("stream execution must return before the gated tail")
+    .expect("stream response");
     assert_eq!(
-        events
-            .iter()
-            .filter(|event| event.as_str() == "response_stream_poll")
-            .count(),
-        3
+        response.next_chunk().await.expect("first chunk").as_deref(),
+        Some(b"first".as_slice())
     );
+    gate.wait_until_entered(Duration::from_secs(1));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(25), response.next_chunk())
+            .await
+            .is_err(),
+        "later response chunk must remain gated"
+    );
+    gate.release();
+    assert_eq!(
+        response
+            .next_chunk()
+            .await
+            .expect("second chunk")
+            .as_deref(),
+        Some(b"second".as_slice())
+    );
+    assert!(response.next_chunk().await.expect("stream eof").is_none());
+}
+
+#[tokio::test]
+async fn generated_stream_response_limit_is_enforced_after_gated_chunk_release() {
+    let gate = ReplyGate::new();
+    let reply = MockReply::status(StatusCode::OK)
+        .with_header(
+            http::header::CONTENT_TYPE,
+            HeaderValue::from_static("application/octet-stream"),
+        )
+        .with_response_steps([
+            ResponseStep::Chunk(Bytes::from_static(b"abcd")),
+            ResponseStep::Gate(gate.clone()),
+            ResponseStep::Chunk(Bytes::from_static(b"efgh")),
+        ]);
+    let transport = RecordingTransport::from_replies([reply]);
+    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client")
+    .configure(|config| {
+        config.max_stream_response_body_bytes(5);
+    });
+    let mut response = api
+        .download()
+        .execute_stream()
+        .await
+        .expect("stream response");
+
+    assert_eq!(
+        response.next_chunk().await.expect("first chunk").as_deref(),
+        Some(b"abcd".as_slice())
+    );
+    gate.wait_until_entered(Duration::from_secs(1));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(25), response.next_chunk())
+            .await
+            .is_err()
+    );
+    gate.release();
+    let error = response
+        .next_chunk()
+        .await
+        .expect_err("released second chunk must exceed the client-side limit");
+    assert!(matches!(
+        error,
+        ApiClientError::ResponseBodyLimitExceeded { limit: 5, .. }
+    ));
+}
+
+#[tokio::test]
+async fn generated_stream_response_drop_cancels_gated_tail_without_consuming_it() {
+    let gate = ReplyGate::new();
+    let reply = MockReply::status(StatusCode::OK)
+        .with_header(
+            http::header::CONTENT_TYPE,
+            HeaderValue::from_static("application/octet-stream"),
+        )
+        .with_response_steps([
+            ResponseStep::Chunk(Bytes::from_static(b"first")),
+            ResponseStep::Gate(gate.clone()),
+            ResponseStep::Chunk(Bytes::from_static(b"unconsumed-secret")),
+        ]);
+    let transport = RecordingTransport::from_replies([reply]);
+    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
+    let mut response = api
+        .download()
+        .execute_stream()
+        .await
+        .expect("stream response");
+    assert_eq!(
+        response.next_chunk().await.expect("first chunk").as_deref(),
+        Some(b"first".as_slice())
+    );
+    gate.wait_until_entered(Duration::from_secs(1));
+    drop(response);
+    drop(api);
+    drop(transport);
+}
+
+#[tokio::test]
+async fn generated_stream_response_disconnect_is_safely_categorized_and_redacted() {
+    const SENTINEL: &str = "GATED_STREAM_BODY_FAILURE_SECRET";
+    let reply = MockReply::status(StatusCode::OK)
+        .with_header(
+            http::header::CONTENT_TYPE,
+            HeaderValue::from_static("application/octet-stream"),
+        )
+        .with_response_steps([
+            ResponseStep::Chunk(Bytes::from_static(b"first")),
+            ResponseStep::Disconnect,
+        ]);
+    let transport = RecordingTransport::from_replies([reply]);
+    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
+    let mut response = api
+        .download()
+        .execute_stream()
+        .await
+        .expect("stream response");
+    assert_eq!(
+        response.next_chunk().await.expect("first chunk").as_deref(),
+        Some(b"first".as_slice())
+    );
+    let error = response
+        .next_chunk()
+        .await
+        .expect_err("disconnect must fail the client-side stream");
+    assert_eq!(error.category(), concord_core::error::ErrorCategory::Decode);
+    assert!(!error.to_string().contains(SENTINEL));
+    assert!(!format!("{error:?}").contains(SENTINEL));
 }
 
 #[tokio::test]
 async fn generated_stream_request_enforces_configured_request_limit() {
     const SENTINEL: &[u8] = b"SECRET_STREAM_REQUEST_SENTINEL_MUST_NOT_APPEAR";
-    let transport = RecordingTransport::buffered_response(r#"{"ok":true}"#);
-    let api = StreamHelperApi::new_with_transport(transport.clone());
+    let transport = RecordingTransport::empty();
+    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
     let api = api.configure(|cfg| {
         cfg.max_stream_request_body_bytes(4);
     });
@@ -500,15 +534,17 @@ async fn generated_stream_request_enforces_configured_request_limit() {
 
 #[tokio::test]
 async fn generated_stream_response_enforces_configured_response_limit() {
-    let poll_flag = Arc::new(AtomicBool::new(false));
     let transport = RecordingTransport::new(
-        ResponseFixture::streamed(
-            vec![Bytes::from_static(b"abcd"), Bytes::from_static(b"efgh")],
-            poll_flag.clone(),
-        )
+        ResponseFixture::streamed(vec![
+            Bytes::from_static(b"abcd"),
+            Bytes::from_static(b"efgh"),
+        ])
         .content_length(None),
     );
-    let api = StreamHelperApi::new_with_transport(transport.clone());
+    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
     let api = api.configure(|cfg| {
         cfg.max_stream_response_body_bytes(5);
     });
@@ -521,7 +557,6 @@ async fn generated_stream_response_enforces_configured_response_limit() {
 
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(transport.send_count(), 1);
-    assert!(!poll_flag.load(Ordering::SeqCst));
     assert_eq!(
         response.next_chunk().await.unwrap().as_deref(),
         Some(b"abcd".as_slice())

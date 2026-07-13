@@ -24,10 +24,10 @@ enum PendingResend {
     Auth(AuthResendIntent),
 }
 
-struct AuthRejectionStepCtx<'a, Cx: ClientContext, T: Transport> {
+struct AuthRejectionStepCtx<'a, Cx: ClientContext> {
     plan: &'a crate::endpoint::RequestPlanView,
     auth_state: &'a Cx::AuthState,
-    auth_http: &'a ClientAuthHttpExecutor<'a, Cx, T>,
+    auth_http: &'a ClientAuthHttpExecutor<'a, Cx>,
     response_meta: &'a RequestMeta,
     auth_attempt: &'a crate::auth::AuthAttemptSummary,
     rejection_plan: &'a crate::auth::AuthRejectionPlan,
@@ -61,7 +61,7 @@ impl CachedAuthPreparation {
     }
 }
 
-impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
+impl<Cx: ClientContext> ApiClient<Cx> {
     async fn prepare_auth(
         &self,
         plan: &crate::endpoint::RequestPlanView,
@@ -162,7 +162,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
 
     async fn apply_auth_rejection_step(
         &self,
-        ctx: AuthRejectionStepCtx<'_, Cx, T>,
+        ctx: AuthRejectionStepCtx<'_, Cx>,
         admission: Option<AdmissionPermit>,
     ) -> Result<AuthRejectionStep, ApiClientError> {
         if !ctx.is_replayable && ctx.rejection_plan.requests_refresh() {
@@ -192,7 +192,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
 
     async fn apply_auth_rejection_plan(
         &self,
-        ctx: &AuthRejectionStepCtx<'_, Cx, T>,
+        ctx: &AuthRejectionStepCtx<'_, Cx>,
     ) -> Result<(), ApiClientError> {
         let requirements = &ctx.plan.endpoint.policy.auth.requirements;
         let applied = &ctx.auth_attempt.applied;
@@ -350,7 +350,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let mut auth_placement_plan: Option<crate::auth::AuthPlacementPlan> = None;
         let mut pending_resend: Option<PendingResend> = None;
         // One authoritative request-local count. It is incremented only at
-        // the physical Transport::send invocation in send_flow. Existing
+        // the physical managed-client execution in send_flow. Existing
         // RequestMeta/HookMeta attempt values are derived zero-based indexes.
         let mut attempts_used: u32 = 0;
         // Request-local auth preparation cache.
@@ -456,7 +456,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 prepared
             };
             let attempt_body = self.produce_attempt_body(body, &ctx)?;
-            let mut built = head.finish(attempt_body, &ctx)?;
+            let mut built = head.finish(&self.managed_client.client, attempt_body, &ctx)?;
             let url_str = built.debug_url();
 
             let retry_config = std::mem::take(&mut built.retry);

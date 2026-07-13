@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    DynBody, GovernorRateLimiter, NoopDebugSink, NoopRateLimiter, OffsetLimitPagination,
-    PaginateBinding, PaginationRuntimeAdapter, RateLimiter, StreamBody, Transport, TransportError,
+    GovernorRateLimiter, NoopDebugSink, NoopRateLimiter, OffsetLimitPagination, PaginateBinding,
+    PaginationRuntimeAdapter, RateLimiter, StreamBody,
 };
 use concord_core::internal::{
     ClientPlanContext, EndpointMeta, EndpointPlan, PaginationMarker, PreparedBody,
@@ -205,20 +205,16 @@ fn run_redaction_hooks(rt: &Runtime) {
             Box::pin(async move {
                 let mut policy = ResolvedPolicy::default();
                 policy.headers.insert(
-                    http::header::HeaderName::from_static("x-api-token-0"),
-                    http::HeaderValue::from_static("BENCH_FAKE_HEADER_SECRET_0"),
-                );
-                policy.headers.insert(
                     http::header::HeaderName::from_static("x-visible-1"),
                     http::HeaderValue::from_static("visible"),
                 );
-                let plan = request_plan(
+                let plan = with_bearer_auth(request_plan(
                     "RedactionHooks",
                     Method::GET,
                     "/perf/redaction",
                     policy,
                     PreparedBody::empty(),
-                );
+                ));
                 let response = execute_raw_plan(&client, plan)
                     .await
                     .expect("allocation report redaction hooks");
@@ -228,40 +224,12 @@ fn run_redaction_hooks(rt: &Runtime) {
     );
 }
 
-#[derive(Clone, Default)]
-struct DrainingTransport;
-
-impl Transport for DrainingTransport {
-    fn send(
-        &self,
-        req: http::Request<DynBody>,
-    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
-        Box::pin(async move {
-            use http_body_util::BodyExt as _;
-            let drained_bytes = req
-                .into_body()
-                .collect()
-                .await
-                .expect("allocation report stream should not fail")
-                .to_bytes()
-                .len();
-            let mut response = http::Response::new(DynBody::empty());
-            *response.status_mut() = StatusCode::OK;
-            response.headers_mut().insert(
-                http::header::CONTENT_LENGTH,
-                HeaderValue::from_str(&drained_bytes.to_string()).expect("length"),
-            );
-            Ok(response)
-        })
-    }
-}
-
 fn run_streaming_upload(rt: &Runtime) {
     report_case(
         rt,
         "streaming_upload/async_read/1MiB/chunk_8KiB",
         || {
-            let transport = DrainingTransport;
+            let transport = MockTransport::repeating(MockResponse::empty(StatusCode::OK));
             let client = client(transport);
             // Keep the fixture payload alive until after the snapshot. The measured block
             // clones the payload into the async-read stream body so the case reports request
@@ -301,8 +269,8 @@ fn run_pagination(rt: &Runtime) {
         "pagination/collect_pages",
         || {
             let transport = MockTransport::scripted(vec![
-                MockResponse::text(StatusCode::OK, "item-0"),
-                MockResponse::text(StatusCode::OK, "item-1"),
+                MockResponse::text(StatusCode::OK, "item-0,item-1"),
+                MockResponse::text(StatusCode::OK, "item-2,item-3"),
             ]);
             (client(transport), PaginationEndpoint::new(2))
         },
@@ -353,25 +321,23 @@ fn run_rate_limit_governor(rt: &Runtime) {
 
 #[derive(Clone)]
 struct PaginationEndpoint {
+    offset: u64,
     count: u64,
 }
 
 impl PaginationEndpoint {
     fn new(count: u64) -> Self {
-        Self { count }
+        Self { offset: 0, count }
     }
 }
 
 impl Endpoint<perf::support::PerfCx> for PaginationEndpoint {
     type Response = PaginationPage;
 
-    fn execute<'a, T>(
-        client: &'a concord_core::prelude::ApiClient<perf::support::PerfCx, T>,
+    fn execute<'a>(
+        client: &'a concord_core::prelude::ApiClient<perf::support::PerfCx>,
         plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
-    where
-        T: concord_core::advanced::Transport + 'a,
-    {
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>> {
         Box::pin(async move {
             let decoded = client.execute_plan::<Text<String>>(plan).await?;
             Ok(PaginationPage::parse(decoded.into_value()))
@@ -397,7 +363,13 @@ impl ReusableEndpoint<perf::support::PerfCx> for PaginationEndpoint {
                     "example.com",
                     "/perf/pagination",
                 ),
-                policy: ResolvedPolicy::default(),
+                policy: ResolvedPolicy {
+                    query: vec![
+                        ("offset".to_string(), self.offset.to_string()),
+                        ("limit".to_string(), self.count.to_string()),
+                    ],
+                    ..ResolvedPolicy::default()
+                },
                 response: ResponsePlan {
                     accept: Some(HeaderValue::from_static("text/plain")),
                     no_content: false,
@@ -426,14 +398,14 @@ impl PaginatedEndpoint<perf::support::PerfCx> for PaginationEndpoint {
 impl PaginateBinding<OffsetLimitPagination> for PaginationEndpoint {
     fn load_pagination(&self) -> OffsetLimitPagination {
         OffsetLimitPagination {
-            offset: 0,
+            offset: self.offset,
             limit: self.count,
         }
     }
 
     fn store_pagination(&mut self, pagination: &OffsetLimitPagination) {
+        self.offset = pagination.offset;
         self.count = pagination.limit;
-        let _ = pagination.offset;
     }
 }
 

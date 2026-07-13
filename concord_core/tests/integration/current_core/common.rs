@@ -1,3 +1,5 @@
+#![allow(dead_code, unused_imports)]
+
 use bytes::Bytes;
 use concord_core::advanced::{
     AuthApplicationRequest, AuthAppliedCredential, AuthError, AuthErrorKind, AuthPlacement,
@@ -5,9 +7,9 @@ use concord_core::advanced::{
     DecodeContext, DynBody, OffsetLimitPagination, PagedPagination, PaginateBinding,
     PaginationRuntimeAdapter, PostResponseHookContext, PreSendHookContext, RateLimitContext,
     RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
-    RateLimiter, RequestExecutionContext, RequestMeta, ResponseCodec, ResponseEntity, RetryContext,
-    RetryDecision, RetryPolicy, RuntimeHooks, TextContentType, Transport, TransportError,
-    TransportErrorHookContext, TransportErrorKind, apply_basic_credential,
+    RateLimiter, RequestMeta, ResponseCodec, ResponseEntity, RetryContext, RetryDecision,
+    RetryPolicy, RuntimeHooks, TextContentType, TransportError, TransportErrorHookContext,
+    TransportErrorKind, apply_basic_credential,
 };
 use concord_core::internal::{
     ClientPlanContext, EndpointMeta, EndpointPlan, PaginationMarker, PreparedBody,
@@ -26,15 +28,27 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
-use tokio::sync::{Mutex, Notify, Semaphore, watch};
+use tokio::sync::{Mutex, Notify, Semaphore};
+
+#[path = "../../../../concord_test_support/src/mock.rs"]
+mod native_mock;
+use native_mock::{MockHandle as NativeMockHandle, MockServer};
+pub use native_mock::{MockReply as NativeMockReply, ReplyGate as NativeReplyGate};
 
 pub struct CapturedTransportRequest {
-    pub meta: RequestMeta,
+    pub meta: CapturedRequestMeta,
     pub url: url::Url,
     pub headers: HeaderMap,
     pub body: CapturedBody,
     pub timeout: Option<Duration>,
-    pub auth_plan: concord_core::advanced::AuthPlacementPlan,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CapturedRequestMeta {
+    pub endpoint: Option<String>,
+    pub method: Method,
+    pub attempt: Option<u32>,
+    pub page_index: Option<u32>,
 }
 
 pub enum CapturedBody {
@@ -61,20 +75,6 @@ impl CapturedBody {
 
 impl fmt::Debug for CapturedTransportRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut headers = self.headers.clone();
-        for slot in &self.auth_plan.slots {
-            let name = match &slot.placement {
-                concord_core::advanced::PlannedAuthPlacement::Bearer
-                | concord_core::advanced::PlannedAuthPlacement::Basic => {
-                    Some(http::header::AUTHORIZATION.clone())
-                }
-                concord_core::advanced::PlannedAuthPlacement::Header(name) => Some(name.clone()),
-                concord_core::advanced::PlannedAuthPlacement::Query(_) => None,
-            };
-            if let Some(name) = name {
-                headers.insert(name, HeaderValue::from_static("<redacted>"));
-            }
-        }
         let body = match &self.body {
             CapturedBody::Empty => "<empty>".to_string(),
             CapturedBody::Bytes(bytes) => format!("<{} bytes>", bytes.len()),
@@ -84,7 +84,7 @@ impl fmt::Debug for CapturedTransportRequest {
             .field("url", &"<redacted>")
             .field(
                 "headers",
-                &concord_core::advanced::SanitizedHeaders::new(&headers),
+                &concord_core::advanced::SanitizedHeaders::new(&self.headers),
             )
             .field("body", &body)
             .field("timeout", &self.timeout)
@@ -97,42 +97,6 @@ pub struct CapturedTransportRequestSnapshot {
     pub meta: RequestMeta,
     pub url: url::Url,
     pub headers: HeaderMap,
-}
-
-pub async fn capture_request(
-    req: http::Request<DynBody>,
-) -> Result<CapturedTransportRequest, TransportError> {
-    use http_body_util::BodyExt as _;
-    let (parts, body) = req.into_parts();
-    let context = parts
-        .extensions
-        .get::<RequestExecutionContext>()
-        .cloned()
-        .expect("transport request context");
-    let auth_plan = parts
-        .extensions
-        .get::<concord_core::advanced::AuthPlacementPlan>()
-        .cloned()
-        .unwrap_or_default();
-    let url = parts.uri.to_string().parse().expect("absolute request URI");
-    let bytes = body
-        .collect()
-        .await
-        .map_err(TransportError::new)?
-        .to_bytes();
-    let body = if bytes.is_empty() {
-        CapturedBody::Empty
-    } else {
-        CapturedBody::Bytes(bytes)
-    };
-    Ok(CapturedTransportRequest {
-        meta: context.meta,
-        url,
-        headers: parts.headers,
-        body,
-        timeout: context.timeout,
-        auth_plan,
-    })
 }
 
 #[derive(Clone, Debug)]
@@ -317,14 +281,11 @@ impl Default for TextEndpoint {
 impl Endpoint<TestCx> for TextEndpoint {
     type Response = String;
 
-    fn execute<'a, T>(
-        client: &'a ApiClient<TestCx, T>,
+    fn execute<'a>(
+        client: &'a ApiClient<TestCx>,
         plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
-    where
-        T: Transport + 'a,
-    {
-        execute_buffered::<_, _, concord_core::prelude::Text<String>>(client, plan)
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>> {
+        execute_buffered::<_, concord_core::prelude::Text<String>>(client, plan)
     }
 }
 
@@ -367,14 +328,11 @@ impl Default for ItemsEndpoint {
 impl Endpoint<TestCx> for ItemsEndpoint {
     type Response = Vec<String>;
 
-    fn execute<'a, T>(
-        client: &'a ApiClient<TestCx, T>,
+    fn execute<'a>(
+        client: &'a ApiClient<TestCx>,
         plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
-    where
-        T: Transport + 'a,
-    {
-        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>> {
+        execute_buffered::<_, CommaSeparatedItems>(client, plan)
     }
 }
 
@@ -515,14 +473,11 @@ impl Default for PageOnlyItemsEndpoint {
 impl Endpoint<TestCx> for PageOnlyItemsEndpoint {
     type Response = PageOnlyItems;
 
-    fn execute<'a, T>(
-        client: &'a ApiClient<TestCx, T>,
+    fn execute<'a>(
+        client: &'a ApiClient<TestCx>,
         plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
-    where
-        T: Transport + 'a,
-    {
-        execute_buffered::<_, _, PageOnlyItemsCodec>(client, plan)
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>> {
+        execute_buffered::<_, PageOnlyItemsCodec>(client, plan)
     }
 }
 
@@ -742,14 +697,11 @@ impl Default for CursorItemsEndpoint {
 impl Endpoint<TestCx> for CursorItemsEndpoint {
     type Response = CursorItems;
 
-    fn execute<'a, T>(
-        client: &'a ApiClient<TestCx, T>,
+    fn execute<'a>(
+        client: &'a ApiClient<TestCx>,
         plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
-    where
-        T: Transport + 'a,
-    {
-        execute_buffered::<_, _, CursorItemsCodec>(client, plan)
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>> {
+        execute_buffered::<_, CursorItemsCodec>(client, plan)
     }
 }
 
@@ -876,13 +828,12 @@ pub fn request_plan(
     }
 }
 
-pub fn execute_buffered<'a, Cx, T, C>(
-    client: &'a ApiClient<Cx, T>,
+pub fn execute_buffered<'a, Cx, C>(
+    client: &'a ApiClient<Cx>,
     plan: RequestPlan,
 ) -> Pin<Box<dyn Future<Output = Result<C::Value, ApiClientError>> + Send + 'a>>
 where
     Cx: ClientContext,
-    T: Transport + 'a,
     C: ResponseCodec,
 {
     BufferedResponse::<C>::execute(client, plan)
@@ -890,8 +841,8 @@ where
 
 macro_rules! buffered_endpoint_execute {
     ($cx:ty, $codec:ty) => {
-        fn execute<'a, T>(
-            client: &'a concord_core::prelude::ApiClient<$cx, T>,
+        fn execute<'a>(
+            client: &'a concord_core::prelude::ApiClient<$cx>,
             plan: concord_core::internal::RequestPlan,
         ) -> std::pin::Pin<
             Box<
@@ -900,13 +851,8 @@ macro_rules! buffered_endpoint_execute {
                     > + Send
                     + 'a,
             >,
-        >
-        where
-            T: concord_core::advanced::Transport + 'a,
-        {
-            $crate::integration::current_core::common::execute_buffered::<_, _, $codec>(
-                client, plan,
-            )
+        > {
+            $crate::integration::current_core::common::execute_buffered::<_, $codec>(client, plan)
         }
     };
 }
@@ -916,8 +862,8 @@ pub(crate) use buffered_endpoint_execute;
 macro_rules! buffered_endpoint_response_terminal {
     ($endpoint:ty, $cx:ty, $codec:ty) => {
         impl ::concord_core::internal::ResponseTerminalEndpoint<$cx> for $endpoint {
-            fn execute_response<'a, T>(
-                client: &'a concord_core::prelude::ApiClient<$cx, T>,
+            fn execute_response<'a>(
+                client: &'a concord_core::prelude::ApiClient<$cx>,
                 plan: concord_core::internal::RequestPlan,
             ) -> std::pin::Pin<
                 Box<
@@ -930,8 +876,6 @@ macro_rules! buffered_endpoint_response_terminal {
                         + 'a,
                 >,
             >
-            where
-                T: concord_core::advanced::Transport + 'a,
             {
                 <concord_core::advanced::BufferedResponse<$codec> as ::concord_core::internal::ResponseEntityWithMeta>::execute_with_meta(
                     client,
@@ -1015,6 +959,7 @@ impl ClientContext for ObservationAuthCx {
         Result<concord_core::advanced::PreparedAuthCredential, AuthError>,
     > {
         Box::pin(async move {
+            auth.events.lock().await.push("auth_prepare".to_string());
             let application = match requirement.placement {
                 AuthPlacement::Bearer | AuthPlacement::Header(_) | AuthPlacement::Query(_) => {
                     let token = auth.token.as_deref().ok_or_else(|| {
@@ -1231,17 +1176,24 @@ pub fn retry_policy_for_transport_errors(
     }
 }
 
+pub fn transport_error_kind(error: &ApiClientError) -> Option<TransportErrorKind> {
+    match error {
+        ApiClientError::Transport { source, .. } => Some(source.kind()),
+        _ => None,
+    }
+}
+
 #[derive(Clone)]
 pub struct MockTransport {
-    outcomes: Arc<Mutex<VecDeque<MockOutcome>>>,
+    server: MockServer,
+    handle: Arc<StdMutex<NativeMockHandle>>,
     events: Arc<Mutex<Vec<String>>>,
-    requests: Arc<Mutex<Vec<CapturedTransportRequest>>>,
 }
 
 #[derive(Clone)]
 pub enum MockOutcome {
     Response(MockResponse),
-    TransportError(TransportErrorKind),
+    DisconnectAfterRequest,
 }
 
 impl From<MockResponse> for MockOutcome {
@@ -1257,7 +1209,6 @@ pub struct MockResponse {
     pub body: Bytes,
     pub content_length: Option<u64>,
     pub chunks: Option<Vec<Bytes>>,
-    pub read_count: Option<Arc<AtomicUsize>>,
 }
 
 impl MockResponse {
@@ -1273,7 +1224,6 @@ impl MockResponse {
             body: body.into(),
             content_length: None,
             chunks: None,
-            read_count: None,
         }
     }
 
@@ -1286,34 +1236,6 @@ impl MockResponse {
         self.chunks = Some(chunks);
         self
     }
-
-    pub fn with_read_count(mut self, read_count: Arc<AtomicUsize>) -> Self {
-        self.read_count = Some(read_count);
-        self
-    }
-}
-
-pub fn standard_response(response: MockResponse) -> http::Response<DynBody> {
-    let mut builder = http::Response::builder().status(response.status);
-    *builder.headers_mut().expect("response headers") = response.headers;
-    if let Some(length) = response.content_length.or_else(|| {
-        response
-            .chunks
-            .is_none()
-            .then_some(response.body.len() as u64)
-    }) {
-        builder.headers_mut().expect("response headers").insert(
-            http::header::CONTENT_LENGTH,
-            HeaderValue::from_str(&length.to_string()).expect("content length"),
-        );
-    }
-    let chunks = response.chunks.unwrap_or_else(|| vec![response.body]);
-    builder
-        .body(DynBody::from_byte_stream(ChunkBody {
-            chunks: chunks.into(),
-            read_count: response.read_count,
-        }))
-        .expect("standard response")
 }
 
 impl MockTransport {
@@ -1322,165 +1244,206 @@ impl MockTransport {
     }
 
     pub fn with_outcomes(events: Arc<Mutex<Vec<String>>>, outcomes: Vec<MockOutcome>) -> Self {
+        let replies = outcomes.into_iter().map(|outcome| match outcome {
+            MockOutcome::Response(response) => native_reply(response),
+            MockOutcome::DisconnectAfterRequest => NativeMockReply::disconnect_after_request(),
+        });
+        let head_events = events.clone();
+        let body_events = events.clone();
+        let (server, handle) = native_mock::mock()
+            .replies(replies)
+            .on_request_head(move || {
+                head_events.blocking_lock().push("request_head".to_string());
+            })
+            .on_request_body_complete(move || {
+                body_events
+                    .blocking_lock()
+                    .push("request_body_complete".to_string());
+            })
+            .build();
         Self {
-            outcomes: Arc::new(Mutex::new(outcomes.into())),
+            server,
+            handle: Arc::new(StdMutex::new(handle)),
             events,
-            requests: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    pub fn from_native_replies(
+        events: Arc<Mutex<Vec<String>>>,
+        replies: impl IntoIterator<Item = NativeMockReply>,
+    ) -> Self {
+        let head_events = events.clone();
+        let body_events = events.clone();
+        let (server, handle) = native_mock::mock()
+            .replies(replies)
+            .on_request_head(move || {
+                head_events.blocking_lock().push("request_head".to_string());
+            })
+            .on_request_body_complete(move || {
+                body_events
+                    .blocking_lock()
+                    .push("request_body_complete".to_string());
+            })
+            .build();
+        Self {
+            server,
+            handle: Arc::new(StdMutex::new(handle)),
+            events,
+        }
+    }
+
+    pub fn from_native_replies_with_head_action(
+        events: Arc<Mutex<Vec<String>>>,
+        replies: impl IntoIterator<Item = NativeMockReply>,
+        head_action: impl Fn() + Send + Sync + 'static,
+    ) -> Self {
+        let head_events = events.clone();
+        let body_events = events.clone();
+        let (server, handle) = native_mock::mock()
+            .replies(replies)
+            .on_request_head(move || {
+                head_events.blocking_lock().push("request_head".to_string());
+                head_action();
+            })
+            .on_request_body_complete(move || {
+                body_events
+                    .blocking_lock()
+                    .push("request_body_complete".to_string());
+            })
+            .build();
+        Self {
+            server,
+            handle: Arc::new(StdMutex::new(handle)),
+            events,
+        }
+    }
+
+    pub fn from_native_repeating(events: Arc<Mutex<Vec<String>>>, reply: NativeMockReply) -> Self {
+        let head_events = events.clone();
+        let body_events = events.clone();
+        let (server, handle) = native_mock::mock()
+            .repeating(reply)
+            .on_request_head(move || {
+                head_events.blocking_lock().push("request_head".to_string());
+            })
+            .on_request_body_complete(move || {
+                body_events
+                    .blocking_lock()
+                    .push("request_body_complete".to_string());
+            })
+            .build();
+        Self {
+            server,
+            handle: Arc::new(StdMutex::new(handle)),
+            events,
         }
     }
 
     pub async fn sent_count(&self) -> usize {
-        self.requests.lock().await.len()
+        self.handle
+            .lock()
+            .expect("native handle lock")
+            .recorded_len()
+    }
+
+    pub async fn wait_for_sends(&self, expected: usize) {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while self.sent_count().await < expected {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("timed out waiting for {expected} native requests"));
     }
 
     pub async fn requests(&self) -> Vec<CapturedTransportRequest> {
-        let mut requests = self.requests.lock().await;
-        std::mem::take(&mut *requests)
+        let requests = self.handle.lock().expect("native handle lock").recorded();
+        requests.into_iter().map(captured_native_request).collect()
     }
-}
 
-impl Transport for MockTransport {
-    fn send(
+    pub fn configure_reqwest(
         &self,
-        req: http::Request<DynBody>,
-    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
-        let outcomes = self.outcomes.clone();
-        let events = self.events.clone();
-        let requests = self.requests.clone();
-        Box::pin(async move {
-            events.lock().await.push("transport".to_string());
-            requests.lock().await.push(capture_request(req).await?);
-            let outcome = outcomes
-                .lock()
-                .await
-                .pop_front()
-                .unwrap_or_else(|| MockResponse::text(StatusCode::OK, "ok").into());
-            let response = match outcome {
-                MockOutcome::Response(response) => response,
-                MockOutcome::TransportError(kind) => {
-                    return Err(TransportError::with_kind(
-                        kind,
-                        std::io::Error::other("mock transport error"),
-                    ));
-                }
-            };
-            Ok(standard_response(response))
-        })
+        builder: concord_core::advanced::SafeReqwestBuilder,
+    ) -> concord_core::advanced::SafeReqwestBuilder {
+        self.server.configure_reqwest(builder)
     }
 }
 
 #[derive(Clone)]
 pub struct GateTransport {
-    outcomes: Arc<Mutex<VecDeque<MockOutcome>>>,
-    events: Arc<Mutex<Vec<String>>>,
-    requests: Arc<Mutex<Vec<CapturedTransportRequest>>>,
-    arrived: Arc<Notify>,
-    release: watch::Sender<bool>,
+    inner: MockTransport,
+    gate: NativeReplyGate,
 }
 
 impl GateTransport {
     pub fn new(events: Arc<Mutex<Vec<String>>>, responses: Vec<MockResponse>) -> Self {
-        Self::with_outcomes(events, responses.into_iter().map(Into::into).collect())
-    }
-
-    pub fn with_outcomes(events: Arc<Mutex<Vec<String>>>, outcomes: Vec<MockOutcome>) -> Self {
-        let (release, _) = watch::channel(false);
+        let gate = NativeReplyGate::new();
+        let replies = responses
+            .into_iter()
+            .map(|response| native_reply(response).with_gate(gate.clone()));
         Self {
-            outcomes: Arc::new(Mutex::new(outcomes.into())),
-            events,
-            requests: Arc::new(Mutex::new(Vec::new())),
-            arrived: Arc::new(Notify::new()),
-            release,
+            inner: MockTransport::from_native_replies(events, replies),
+            gate,
         }
     }
 
     pub async fn sent_count(&self) -> usize {
-        self.requests.lock().await.len()
-    }
-
-    pub async fn requests(&self) -> Vec<CapturedTransportRequest> {
-        let mut requests = self.requests.lock().await;
-        std::mem::take(&mut *requests)
+        self.inner.sent_count().await
     }
 
     pub async fn wait_for_sends(&self, expected: usize) {
-        tokio::time::timeout(Duration::from_secs(5), async {
-            loop {
-                let notified = self.arrived.notified();
-                if self.sent_count().await >= expected {
-                    break;
-                }
-                notified.await;
-            }
-        })
-        .await
-        .unwrap_or_else(|_| panic!("timed out waiting for {expected} transport sends"));
+        self.inner.wait_for_sends(expected).await;
     }
 
     pub fn release_all(&self) {
-        let _ = self.release.send(true);
+        self.gate.release();
     }
-}
 
-impl Transport for GateTransport {
-    fn send(
+    pub fn configure_reqwest(
         &self,
-        req: http::Request<DynBody>,
-    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
-        let outcomes = self.outcomes.clone();
-        let events = self.events.clone();
-        let requests = self.requests.clone();
-        let arrived = self.arrived.clone();
-        let mut release = self.release.subscribe();
-        Box::pin(async move {
-            events.lock().await.push("transport".to_string());
-            requests.lock().await.push(capture_request(req).await?);
-            let outcome = outcomes
-                .lock()
-                .await
-                .pop_front()
-                .unwrap_or_else(|| MockResponse::text(StatusCode::OK, "ok").into());
-            arrived.notify_waiters();
-
-            while !*release.borrow() {
-                if release.changed().await.is_err() {
-                    break;
-                }
-            }
-
-            let response = match outcome {
-                MockOutcome::Response(response) => response,
-                MockOutcome::TransportError(kind) => {
-                    return Err(TransportError::with_kind(
-                        kind,
-                        std::io::Error::other("mock transport error"),
-                    ));
-                }
-            };
-            Ok(standard_response(response))
-        })
+        builder: concord_core::advanced::SafeReqwestBuilder,
+    ) -> concord_core::advanced::SafeReqwestBuilder {
+        self.inner.configure_reqwest(builder)
     }
 }
 
-struct ChunkBody {
-    chunks: VecDeque<Bytes>,
-    read_count: Option<Arc<AtomicUsize>>,
+fn native_reply(response: MockResponse) -> NativeMockReply {
+    let mut reply = NativeMockReply::status(response.status);
+    for (name, value) in response.headers {
+        if let Some(name) = name {
+            reply = reply.with_header(name, value);
+        }
+    }
+    if let Some(length) = response.content_length {
+        reply = reply.with_header(
+            http::header::CONTENT_LENGTH,
+            HeaderValue::from_str(&length.to_string()).expect("content length"),
+        );
+    }
+    match response.chunks {
+        Some(chunks) if response.content_length.is_none() => reply.with_chunks(chunks),
+        Some(chunks) => reply.with_body(Bytes::from(chunks.concat())),
+        None => reply.with_body(response.body),
+    }
 }
 
-impl futures_core::Stream for ChunkBody {
-    type Item = Result<Bytes, concord_core::advanced::BodyError>;
-
-    fn poll_next(
-        mut self: Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        let chunk = self.chunks.pop_front();
-        if chunk.is_some()
-            && let Some(read_count) = &self.read_count
-        {
-            read_count.fetch_add(1, AtomicOrdering::Relaxed);
-        }
-        std::task::Poll::Ready(chunk.map(Ok))
+fn captured_native_request(request: native_mock::RecordedRequest) -> CapturedTransportRequest {
+    let body = if request.body.is_empty() {
+        CapturedBody::Empty
+    } else {
+        CapturedBody::Bytes(request.body)
+    };
+    CapturedTransportRequest {
+        meta: CapturedRequestMeta {
+            endpoint: request.endpoint,
+            method: request.method.clone(),
+            attempt: request.attempt,
+            page_index: request.page_index,
+        },
+        url: request.url,
+        headers: request.headers,
+        body,
+        timeout: request.timeout,
     }
 }
 
@@ -1711,8 +1674,11 @@ impl RuntimeHooks for RecordingRuntimeHooks {
     }
 }
 
-pub fn client(auth: TestAuthVars, transport: MockTransport) -> ApiClient<TestCx, MockTransport> {
-    let mut client = ApiClient::with_transport((), auth, transport);
+pub fn client(auth: TestAuthVars, transport: MockTransport) -> ApiClient<TestCx> {
+    let mut client = ApiClient::with_safe_reqwest_builder((), auth, |builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("native mock client");
     client.configure(|cfg| {
         cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
             4096,
@@ -1722,8 +1688,16 @@ pub fn client(auth: TestAuthVars, transport: MockTransport) -> ApiClient<TestCx,
     client
 }
 
-pub fn configure_runtime<Cx: ClientContext, T: Transport>(
-    client: &mut ApiClient<Cx, T>,
+pub fn observation_client(
+    auth: ObservationAuthVars,
+    transport: &MockTransport,
+) -> ApiClient<ObservationAuthCx> {
+    ApiClient::with_safe_reqwest_builder((), auth, |builder| transport.configure_reqwest(builder))
+        .expect("native mock client")
+}
+
+pub fn configure_runtime<Cx: ClientContext>(
+    client: &mut ApiClient<Cx>,
     limiter: Option<Arc<dyn RateLimiter>>,
 ) {
     client.configure(|cfg| {
@@ -2038,213 +2012,6 @@ impl Drop for DropProbeToken {
             events.push(format!("drop:{}", self.inner.label));
         }
         self.inner.notify.notify_waiters();
-    }
-}
-
-#[derive(Clone)]
-pub struct GateableTransport {
-    gate: PhaseGate,
-    outcomes: Arc<Mutex<VecDeque<MockOutcome>>>,
-    events: Arc<Mutex<Vec<String>>>,
-    requests: Arc<Mutex<Vec<CapturedTransportRequest>>>,
-    drop_probe: Option<DropProbe>,
-}
-
-impl GateableTransport {
-    pub fn new(
-        gate: PhaseGate,
-        events: Arc<Mutex<Vec<String>>>,
-        responses: Vec<MockResponse>,
-    ) -> Self {
-        Self::with_outcomes(
-            gate,
-            events,
-            responses.into_iter().map(Into::into).collect(),
-        )
-    }
-
-    pub fn with_outcomes(
-        gate: PhaseGate,
-        events: Arc<Mutex<Vec<String>>>,
-        outcomes: Vec<MockOutcome>,
-    ) -> Self {
-        Self {
-            gate,
-            outcomes: Arc::new(Mutex::new(outcomes.into())),
-            events,
-            requests: Arc::new(Mutex::new(Vec::new())),
-            drop_probe: None,
-        }
-    }
-
-    pub fn with_drop_probe(mut self, probe: DropProbe) -> Self {
-        self.drop_probe = Some(probe);
-        self
-    }
-
-    pub async fn sent_count(&self) -> usize {
-        self.requests.lock().await.len()
-    }
-
-    pub async fn requests(&self) -> Vec<CapturedTransportRequestSnapshot> {
-        self.requests
-            .lock()
-            .await
-            .iter()
-            .map(|request| CapturedTransportRequestSnapshot {
-                meta: request.meta.clone(),
-                url: request.url.clone(),
-                headers: request.headers.clone(),
-            })
-            .collect()
-    }
-}
-
-impl Transport for GateableTransport {
-    fn send(
-        &self,
-        req: http::Request<DynBody>,
-    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
-        let gate = self.gate.clone();
-        let outcomes = self.outcomes.clone();
-        let events = self.events.clone();
-        let requests = self.requests.clone();
-        let drop_token = self.drop_probe.as_ref().map(DropProbe::token);
-        Box::pin(async move {
-            let _drop_token = drop_token;
-            events.lock().await.push("transport_send_start".to_string());
-            requests.lock().await.push(capture_request(req).await?);
-            gate.enter("transport_send").await;
-            let outcome = outcomes
-                .lock()
-                .await
-                .pop_front()
-                .unwrap_or_else(|| MockResponse::text(StatusCode::OK, "ok").into());
-            let response = match outcome {
-                MockOutcome::Response(response) => response,
-                MockOutcome::TransportError(kind) => {
-                    return Err(TransportError::with_kind(
-                        kind,
-                        std::io::Error::other("gateable transport error"),
-                    ));
-                }
-            };
-            Ok(standard_response(response))
-        })
-    }
-}
-
-#[derive(Clone)]
-pub struct GateableBodyTransport {
-    gate: PhaseGate,
-    events: Arc<Mutex<Vec<String>>>,
-    chunks: Arc<Mutex<VecDeque<VecDeque<Bytes>>>>,
-    requests: Arc<Mutex<Vec<CapturedTransportRequest>>>,
-    read_count: Arc<AtomicUsize>,
-    drop_probe: Option<DropProbe>,
-}
-
-impl GateableBodyTransport {
-    pub fn new(gate: PhaseGate, events: Arc<Mutex<Vec<String>>>, chunks: Vec<Bytes>) -> Self {
-        Self {
-            gate,
-            events,
-            chunks: Arc::new(Mutex::new(vec![chunks.into()].into())),
-            requests: Arc::new(Mutex::new(Vec::new())),
-            read_count: Arc::new(AtomicUsize::new(0)),
-            drop_probe: None,
-        }
-    }
-
-    pub fn with_drop_probe(mut self, probe: DropProbe) -> Self {
-        self.drop_probe = Some(probe);
-        self
-    }
-
-    pub fn read_count(&self) -> usize {
-        self.read_count.load(AtomicOrdering::SeqCst)
-    }
-
-    pub async fn requests(&self) -> Vec<CapturedTransportRequestSnapshot> {
-        self.requests
-            .lock()
-            .await
-            .iter()
-            .map(|request| CapturedTransportRequestSnapshot {
-                meta: request.meta.clone(),
-                url: request.url.clone(),
-                headers: request.headers.clone(),
-            })
-            .collect()
-    }
-}
-
-impl Transport for GateableBodyTransport {
-    fn send(
-        &self,
-        req: http::Request<DynBody>,
-    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
-        let gate = self.gate.clone();
-        let events = self.events.clone();
-        let chunks = self.chunks.clone();
-        let requests = self.requests.clone();
-        let read_count = self.read_count.clone();
-        let drop_probe = self.drop_probe.clone();
-        Box::pin(async move {
-            events.lock().await.push("transport_send_start".to_string());
-            requests.lock().await.push(capture_request(req).await?);
-            let body_chunks = chunks
-                .lock()
-                .await
-                .pop_front()
-                .expect("gateable body response should be available");
-            let mut response = http::Response::new(DynBody::from_byte_stream(GateableBody {
-                gate,
-                chunks: body_chunks,
-                read_count,
-                _drop_token: drop_probe.map(|probe| probe.token()),
-                pending: None,
-            }));
-            *response.status_mut() = StatusCode::OK;
-            response.headers_mut().insert(
-                http::header::CONTENT_TYPE,
-                HeaderValue::from_static("text/plain"),
-            );
-            Ok(response)
-        })
-    }
-}
-
-struct GateableBody {
-    gate: PhaseGate,
-    chunks: VecDeque<Bytes>,
-    read_count: Arc<AtomicUsize>,
-    _drop_token: Option<DropProbeToken>,
-    pending: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
-}
-
-impl futures_core::Stream for GateableBody {
-    type Item = Result<Bytes, concord_core::advanced::BodyError>;
-
-    fn poll_next(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        if self.chunks.front().is_some() && self.pending.is_none() {
-            let gate = self.gate.clone();
-            self.pending = Some(Box::pin(async move { gate.enter("body_chunk").await }));
-        }
-        if let Some(pending) = &mut self.pending {
-            if pending.as_mut().poll(cx).is_pending() {
-                return std::task::Poll::Pending;
-            }
-            self.pending = None;
-        }
-        let chunk = self.chunks.pop_front();
-        if chunk.is_some() {
-            self.read_count.fetch_add(1, AtomicOrdering::SeqCst);
-        }
-        std::task::Poll::Ready(chunk.map(Ok))
     }
 }
 

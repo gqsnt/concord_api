@@ -1,16 +1,13 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    BodyCodec, CodecError, ContentType, DecodeContext, DynBody, EncodeContext, EncodedBody,
-    ResponseCodec, Transport, TransportError,
+    BodyCodec, CodecError, ContentType, DecodeContext, EncodeContext, EncodedBody, ResponseCodec,
 };
 use concord_core::prelude::{ApiClientError, Json};
 use concord_macros::api;
-use http::{HeaderMap, HeaderValue, StatusCode};
+use concord_test_support::{MockHandle, MockReply, MockServer, mock};
+use http::{HeaderValue, StatusCode};
 use serde::{Deserialize, Serialize};
-use std::future::Future;
 use std::marker::PhantomData;
-use std::pin::Pin;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -162,92 +159,82 @@ enum ResponseFixture {
 
 #[derive(Clone)]
 struct RecordingTransport {
-    requests: Arc<StdMutex<Vec<CapturedRequest>>>,
-    response: ResponseFixture,
-    send_count: Arc<AtomicUsize>,
+    server: MockServer,
+    handle: Arc<StdMutex<MockHandle>>,
 }
 
 impl RecordingTransport {
     fn new(response: ResponseFixture) -> Self {
+        Self::from_replies([response.into_reply()])
+    }
+
+    fn empty() -> Self {
+        Self::from_replies([])
+    }
+
+    fn from_replies(replies: impl IntoIterator<Item = MockReply>) -> Self {
+        let (server, handle) = mock().replies(replies).build();
         Self {
-            requests: Arc::new(StdMutex::new(Vec::new())),
-            response,
-            send_count: Arc::new(AtomicUsize::new(0)),
+            server,
+            handle: Arc::new(StdMutex::new(handle)),
         }
     }
 
     fn requests(&self) -> Vec<CapturedRequest> {
-        self.requests.lock().expect("requests lock").clone()
+        self.handle
+            .lock()
+            .expect("handle lock")
+            .recorded()
+            .into_iter()
+            .map(|request| CapturedRequest {
+                debug: "Request { body: <body>, .. }".to_string(),
+                content_type: request
+                    .headers
+                    .get(http::header::CONTENT_TYPE)
+                    .and_then(|value| value.to_str().ok())
+                    .map(str::to_string),
+                accept: request
+                    .headers
+                    .get(http::header::ACCEPT)
+                    .and_then(|value| value.to_str().ok())
+                    .map(str::to_string),
+                body: request.body,
+            })
+            .collect()
     }
 
     fn send_count(&self) -> usize {
-        self.send_count.load(Ordering::SeqCst)
+        self.handle.lock().expect("handle lock").recorded_len()
+    }
+
+    fn configure_reqwest(
+        &self,
+        builder: concord_core::advanced::SafeReqwestBuilder,
+    ) -> concord_core::advanced::SafeReqwestBuilder {
+        self.server.configure_reqwest(builder)
     }
 }
 
-impl Transport for RecordingTransport {
-    fn send(
-        &self,
-        req: http::Request<DynBody>,
-    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
-        let transport = self.clone();
-        Box::pin(async move {
-            transport.send_count.fetch_add(1, Ordering::SeqCst);
-            let debug = "Request { body: <body>, .. }".to_string();
-            let content_type = req
-                .headers()
-                .get(http::header::CONTENT_TYPE)
-                .and_then(|value| value.to_str().ok())
-                .map(str::to_string);
-            let accept = req
-                .headers()
-                .get(http::header::ACCEPT)
-                .and_then(|value| value.to_str().ok())
-                .map(str::to_string);
-            let body = http_body_util::BodyExt::collect(req.into_body())
-                .await
-                .map_err(TransportError::new)?
-                .to_bytes();
-            transport
-                .requests
-                .lock()
-                .expect("requests lock")
-                .push(CapturedRequest {
-                    debug,
-                    content_type,
-                    accept,
-                    body,
-                });
-
-            match transport.response.clone() {
-                ResponseFixture::Json { status, body } => {
-                    let mut headers = HeaderMap::new();
-                    headers.insert(
-                        http::header::CONTENT_TYPE,
-                        HeaderValue::from_static("application/json"),
-                    );
-                    let mut response = http::Response::new(DynBody::from_bytes(body));
-                    *response.status_mut() = status;
-                    *response.headers_mut() = headers;
-                    Ok(response)
-                }
-                ResponseFixture::Text {
-                    status,
-                    body,
-                    content_type,
-                } => {
-                    let mut headers = HeaderMap::new();
-                    headers.insert(
-                        http::header::CONTENT_TYPE,
-                        HeaderValue::from_static(content_type),
-                    );
-                    let mut response = http::Response::new(DynBody::from_bytes(body));
-                    *response.status_mut() = status;
-                    *response.headers_mut() = headers;
-                    Ok(response)
-                }
-            }
-        })
+impl ResponseFixture {
+    fn into_reply(self) -> MockReply {
+        match self {
+            Self::Json { status, body } => MockReply::status(status)
+                .with_header(
+                    http::header::CONTENT_TYPE,
+                    HeaderValue::from_static("application/json"),
+                )
+                .with_body(body),
+            Self::Text {
+                status,
+                body,
+                content_type,
+            } => MockReply::status(status)
+                .with_header(
+                    http::header::CONTENT_TYPE,
+                    HeaderValue::from_static(content_type),
+                )
+                .with_body(body),
+        }
     }
 }
 
@@ -257,7 +244,10 @@ async fn generated_request_codec_can_omit_content_type() {
         status: StatusCode::OK,
         body: Bytes::from_static(br#"{"ok":true}"#),
     });
-    let api = CustomCodecHelperApi::new_with_transport(transport.clone());
+    let api = CustomCodecHelperApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
 
     let response = api
         .request_omit("hello".to_string())
@@ -280,7 +270,10 @@ async fn generated_response_codec_can_omit_accept() {
         body: Bytes::from_static(b"hello"),
         content_type: "application/x-response-omit",
     });
-    let api = CustomCodecHelperApi::new_with_transport(transport.clone());
+    let api = CustomCodecHelperApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
 
     let response = api
         .response_omit()
@@ -298,11 +291,11 @@ async fn generated_response_codec_can_omit_accept() {
 
 #[tokio::test]
 async fn invalid_custom_request_content_type_returns_typed_error() {
-    let transport = RecordingTransport::new(ResponseFixture::Json {
-        status: StatusCode::OK,
-        body: Bytes::from_static(br#"{"ok":true}"#),
-    });
-    let api = CustomCodecHelperApi::new_with_transport(transport.clone());
+    let transport = RecordingTransport::empty();
+    let api = CustomCodecHelperApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
 
     let err = api
         .invalid_request("boom".to_string())
@@ -318,11 +311,11 @@ async fn invalid_custom_request_content_type_returns_typed_error() {
 
 #[tokio::test]
 async fn invalid_custom_response_content_type_returns_typed_error() {
-    let transport = RecordingTransport::new(ResponseFixture::Json {
-        status: StatusCode::OK,
-        body: Bytes::from_static(br#"{"ok":true}"#),
-    });
-    let api = CustomCodecHelperApi::new_with_transport(transport.clone());
+    let transport = RecordingTransport::empty();
+    let api = CustomCodecHelperApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
 
     let err = api
         .invalid_response()

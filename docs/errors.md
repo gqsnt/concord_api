@@ -4,7 +4,7 @@ Concord runtime failures surface as `ApiClientError`. The enum is `non_exhaustiv
 
 See [Security Model](security_model.md) for the safe diagnostic boundary and the explicit dangerous exceptions.
 
-`Display`, `Debug`, and `source()` diagnostics are safe metadata surfaces. They must not contain request body bytes, response body bytes, raw bearer tokens, query auth values, header auth values, Basic usernames or passwords, or secret values. Debug sinks, runtime hooks, rate-limit contexts, and retry contexts follow the same boundary. A custom transport or user-authored codec error can still log or return unsafe text if the integration writes it; Concord does not add body or auth material to those diagnostics itself.
+`Display`, `Debug`, and `source()` diagnostics are safe metadata surfaces. They must not contain request or response body bytes, credentials, proxy targets, multipart values, or secret values. Debug sinks, runtime hooks, rate-limit contexts, and retry contexts follow the same boundary. User-authored codec errors remain responsible for their own text.
 
 The advanced standard body foundation uses the typed `BodyError` taxonomy.
 It records only a safe category (`I/O`, input, configuration, exclusive-poll,

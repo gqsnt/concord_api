@@ -7,7 +7,7 @@ license.workspace = true
 
 
 [dependencies]
-concord_core = { path = "../concord_core", version = "0.1.0" }
+concord_core = { path = "../concord_core", version = "0.1.0", features = ["dangerous-dev-tools"] }
 bytes.workspace = true
 http.workspace = true
 http-body-util.workspace = true

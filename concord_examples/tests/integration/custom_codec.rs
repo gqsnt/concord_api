@@ -15,7 +15,10 @@ async fn custom_codec_controls_body_accept_and_decode() {
                 .with_body(Bytes::from_static(b"7:Ada")),
         )
         .build();
-    let api = CustomCodecApi::new_with_transport(transport);
+    let api = CustomCodecApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
 
     let user = api
         .create_user(CreateUser {
@@ -38,9 +41,6 @@ async fn custom_codec_controls_body_accept_and_decode() {
         .header(http::header::ACCEPT, "application/x-concord-compact")
         .header(http::header::CONTENT_TYPE, "application/x-concord-compact")
         .body_present();
-    assert_eq!(
-        recorded[0].body.as_bytes().map(|bytes| bytes.as_ref()),
-        Some(&b"Ada"[..])
-    );
+    assert_eq!(recorded[0].body.as_ref(), &b"Ada"[..]);
     handle.finish();
 }

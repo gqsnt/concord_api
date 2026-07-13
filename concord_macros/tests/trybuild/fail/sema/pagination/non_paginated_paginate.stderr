@@ -13,14 +13,14 @@ help: the trait `PaginatedEndpoint<UsageNonPaginatedApiCx>` is not implemented f
 ...  |
 10 | |     GET Ping
    | |____________^
-note: required by a bound in `PendingRequest::<'a, Cx, E, T>::paginate`
+note: required by a bound in `PendingRequest::<'a, Cx, E>::paginate`
   --> $WORKSPACE/concord_core/src/request.rs
    |
-   |     pub fn paginate(self, termination: PaginationTermination) -> PaginatedRequest<'a, Cx, E, T>
+   |     pub fn paginate(self, termination: PaginationTermination) -> PaginatedRequest<'a, Cx, E>
    |            -------- required by a bound in this associated function
    |     where
    |         E: PaginatedEndpoint<Cx>,
-   |            ^^^^^^^^^^^^^^^^^^^^^ required by this bound in `PendingRequest::<'a, Cx, E, T>::paginate`
+   |            ^^^^^^^^^^^^^^^^^^^^^ required by this bound in `PendingRequest::<'a, Cx, E>::paginate`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `EpPingHe9bee119c6a37b89: PaginatedEndpoint<UsageNonPaginatedApiCx>` is not satisfied
@@ -38,14 +38,14 @@ help: the trait `PaginatedEndpoint<UsageNonPaginatedApiCx>` is not implemented f
 ...  |
 10 | |     GET Ping
    | |____________^
-note: required by a bound in `PaginatedRequest::<'a, Cx, E, T>::collect`
+note: required by a bound in `PaginatedRequest::<'a, Cx, E>::collect`
   --> $WORKSPACE/concord_core/src/request.rs
    |
    |     pub async fn collect(self) -> Result<Vec<<E::Response as PageItems>::Item>, ApiClientError>
    |                  ------- required by a bound in this associated function
    |     where
    |         E: PaginatedEndpoint<Cx>,
-   |            ^^^^^^^^^^^^^^^^^^^^^ required by this bound in `PaginatedRequest::<'a, Cx, E, T>::collect`
+   |            ^^^^^^^^^^^^^^^^^^^^^ required by this bound in `PaginatedRequest::<'a, Cx, E>::collect`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `EpPingHe9bee119c6a37b89: PaginatedEndpoint<UsageNonPaginatedApiCx>` is not satisfied
@@ -67,14 +67,14 @@ help: the trait `PaginatedEndpoint<UsageNonPaginatedApiCx>` is not implemented f
 ...  |
 10 | |     GET Ping
    | |____________^
-note: required by a bound in `PaginatedRequest::<'a, Cx, E, T>::collect`
+note: required by a bound in `PaginatedRequest::<'a, Cx, E>::collect`
   --> $WORKSPACE/concord_core/src/request.rs
    |
    |     pub async fn collect(self) -> Result<Vec<<E::Response as PageItems>::Item>, ApiClientError>
    |                  ------- required by a bound in this associated function
    |     where
    |         E: PaginatedEndpoint<Cx>,
-   |            ^^^^^^^^^^^^^^^^^^^^^ required by this bound in `PaginatedRequest::<'a, Cx, E, T>::collect`
+   |            ^^^^^^^^^^^^^^^^^^^^^ required by this bound in `PaginatedRequest::<'a, Cx, E>::collect`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `EpPingHe9bee119c6a37b89: PaginatedEndpoint<UsageNonPaginatedApiCx>` is not satisfied
@@ -92,12 +92,12 @@ help: the trait `PaginatedEndpoint<UsageNonPaginatedApiCx>` is not implemented f
 ...  |
 10 | |     GET Ping
    | |____________^
-note: required by a bound in `PaginatedRequest::<'a, Cx, E, T>::collect`
+note: required by a bound in `PaginatedRequest::<'a, Cx, E>::collect`
   --> $WORKSPACE/concord_core/src/request.rs
    |
    |     pub async fn collect(self) -> Result<Vec<<E::Response as PageItems>::Item>, ApiClientError>
    |                  ------- required by a bound in this associated function
    |     where
    |         E: PaginatedEndpoint<Cx>,
-   |            ^^^^^^^^^^^^^^^^^^^^^ required by this bound in `PaginatedRequest::<'a, Cx, E, T>::collect`
+   |            ^^^^^^^^^^^^^^^^^^^^^ required by this bound in `PaginatedRequest::<'a, Cx, E>::collect`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

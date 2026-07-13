@@ -43,7 +43,7 @@ Declare an OAuth2 client-credentials provider as a named credential, then attach
 
 OAuth2 client-credentials token URLs must be HTTPS URLs with a host. Userinfo and fragments are rejected, and non-HTTPS schemes are rejected. Validation happens before Concord sends any token request.
 
-Before the first protected request, Concord sends a token request to `token_url` using `POST`, `Authorization: Basic base64(client_id:client_secret)`, `Content-Type: application/x-www-form-urlencoded`, and a body containing `grant_type=client_credentials` plus `scope` when configured. A successful token response becomes `AccessToken` material. Protected requests then materialize `Authorization: Bearer <access_token>` only at the transport boundary.
+Before the first protected request, Concord sends a token request to `token_url` using `POST`, HTTP Basic authentication, form content, and the configured scope. A successful token response becomes `AccessToken` material. Protected requests materialize the bearer header only in the native request immediately before execution.
 
 Valid OAuth tokens are reused through the credential slot. A protected `401` may invalidate the applied token generation and reacquire a token before retrying when the credential is refreshable, the request body is replayable, and the effective absolute attempt cap has remaining capacity. The default `max_attempts = 1` permits no resend. Token endpoint failures stop the protected request before it is sent. OAuth client secrets, access tokens, and refresh tokens are redacted from debug output and errors.
 
@@ -171,4 +171,4 @@ Header-auth placements reserve their header name as well. After auth inheritance
 
 The actual outbound request still contains the credential material required by the remote API. Redaction applies to debug output, diagnostics, and generated documentation, not to the request sent over transport.
 
-Concord's managed reqwest transport disables redirects and Reqwest retries, so bearer, basic, header, and query auth material stays on the original request instead of being forwarded to a remote-selected redirect target. The managed configuration path supports reviewed TLS and credential-free explicit-proxy settings without changing those invariants; persistent cookies are unsupported. `with_reqwest_builder(...)` receives `SafeReqwestBuilder` rather than raw Reqwest configuration, while custom transport implementations remain supported for advanced integrations.
+Concord's managed Reqwest client disables redirects and Reqwest retries, so bearer, basic, header, and query auth material stays on the original request. The managed configuration path supports reviewed TLS and credential-free explicit-proxy settings; persistent cookies and custom production executors are unsupported.

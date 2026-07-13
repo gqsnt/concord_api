@@ -31,7 +31,7 @@ These surfaces are intended for application code. They do not intentionally expo
 
 `concord_core::advanced` is for stable extension and customization points. Typical examples are:
 
-- custom transports;
+- user-authored codecs;
 - custom codecs and entity markers where supported;
 - retry and rate-limit policies or helpers;
 - auth providers and auth materialization helpers where supported;
@@ -39,7 +39,7 @@ These surfaces are intended for application code. They do not intentionally expo
 - pagination controllers and other explicit extension hooks;
 - metadata-bearing response types such as `DecodedResponse` where needed.
 
-Advanced surfaces remain safe only within their contract. They are caller-controlled extension points, so Concord does not promise to prevent every leak once user code inspects metadata, constructs custom codecs, or runs custom transport logic.
+Advanced surfaces remain safe only within their contract. Concord cannot prevent leaks introduced by user-authored codecs or callbacks that inspect metadata.
 
 ### Dangerous escape hatches
 
@@ -111,7 +111,7 @@ Neither feature is enabled by default.
 
 ## Auth Material Handling
 
-Raw auth material is materialized at the transport boundary.
+Raw auth material is materialized only in the native request immediately before managed-client execution.
 
 Core is the authentication lifecycle authority. Generated clients declare
 typed credential identifiers and provider bindings, but core sequences cache

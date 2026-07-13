@@ -1,16 +1,14 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    DebugSink, DynBody, RateLimitContext, RateLimitFuture, RateLimitPermit,
-    RateLimitResponseAction, RateLimitResponseContext, RateLimiter, SanitizedHeaders, Transport,
-    TransportError,
+    DebugSink, RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
+    RateLimitResponseContext, RateLimiter, SanitizedHeaders,
 };
 use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel};
 use concord_macros::api;
+use concord_test_support::{MockReply, mock};
 use http::{Method, StatusCode};
-use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 
 mod no_content_helper_contract {
@@ -179,152 +177,21 @@ impl concord_core::advanced::RuntimeHooks for RecordingHooks {
     }
 }
 
-#[derive(Clone)]
-struct FlagBody {
-    chunks: VecDeque<Bytes>,
-    polled: Arc<AtomicBool>,
-}
-
-impl futures_core::Stream for FlagBody {
-    type Item = Result<Bytes, concord_core::advanced::BodyError>;
-    fn poll_next(
-        mut self: Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        self.polled.store(true, Ordering::SeqCst);
-        std::task::Poll::Ready(self.chunks.pop_front().map(Ok))
-    }
-}
-
-#[derive(Clone)]
-struct NoContentTransport {
-    events: Arc<StdMutex<Vec<String>>>,
-    requests: Arc<StdMutex<Vec<CapturedRequest>>>,
-    responses: Arc<StdMutex<VecDeque<ResponseFixture>>>,
-    send_count: Arc<AtomicUsize>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct CapturedRequest {
-    accept: Option<String>,
-    content_type: Option<String>,
-    body_empty: bool,
-}
-
-#[derive(Clone)]
-struct ResponseFixture {
-    status: StatusCode,
-    body: VecDeque<Bytes>,
-    poll_flag: Arc<AtomicBool>,
-}
-
-impl ResponseFixture {
-    fn ok(body: &'static [u8], poll_flag: Arc<AtomicBool>) -> Self {
-        Self {
-            status: StatusCode::OK,
-            body: VecDeque::from(vec![Bytes::copy_from_slice(body)]),
-            poll_flag,
-        }
-    }
-
-    fn status(status: StatusCode, body: &'static [u8], poll_flag: Arc<AtomicBool>) -> Self {
-        Self {
-            status,
-            body: VecDeque::from(vec![Bytes::copy_from_slice(body)]),
-            poll_flag,
-        }
-    }
-}
-
-impl NoContentTransport {
-    fn new(events: Arc<StdMutex<Vec<String>>>, responses: Vec<ResponseFixture>) -> Self {
-        Self {
-            events,
-            requests: Arc::new(StdMutex::new(Vec::new())),
-            responses: Arc::new(StdMutex::new(VecDeque::from(responses))),
-            send_count: Arc::new(AtomicUsize::new(0)),
-        }
-    }
-
-    fn requests(&self) -> Vec<CapturedRequest> {
-        self.requests.lock().expect("requests lock").clone()
-    }
-
-    fn send_count(&self) -> usize {
-        self.send_count.load(Ordering::SeqCst)
-    }
-
-    fn events(&self) -> Vec<String> {
-        self.events.lock().expect("events lock").clone()
-    }
-}
-
-impl Transport for NoContentTransport {
-    fn send(
-        &self,
-        req: http::Request<DynBody>,
-    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
-        let transport = self.clone();
-        Box::pin(async move {
-            transport
-                .events
-                .lock()
-                .expect("events lock")
-                .push("transport".to_string());
-            transport.send_count.fetch_add(1, Ordering::SeqCst);
-            let accept = req
-                .headers()
-                .get(http::header::ACCEPT)
-                .and_then(|value| value.to_str().ok())
-                .map(str::to_string);
-            let content_type = req
-                .headers()
-                .get(http::header::CONTENT_TYPE)
-                .and_then(|value| value.to_str().ok())
-                .map(str::to_string);
-            let body_empty = http_body::Body::size_hint(req.body()).exact() == Some(0);
-            transport
-                .requests
-                .lock()
-                .expect("requests lock")
-                .push(CapturedRequest {
-                    accept,
-                    content_type,
-                    body_empty,
-                });
-
-            let response = transport
-                .responses
-                .lock()
-                .expect("responses lock")
-                .pop_front()
-                .expect("response fixture");
-            let mut result = http::Response::new(DynBody::from_byte_stream(FlagBody {
-                chunks: response.body,
-                polled: response.poll_flag,
-            }));
-            *result.status_mut() = response.status;
-            Ok(result)
-        })
-    }
-}
-
 #[tokio::test]
 async fn no_content_endpoint_omits_accept_and_returns_unit() -> Result<(), ApiClientError> {
     let events = Arc::new(StdMutex::new(Vec::new()));
-    let polled = Arc::new(AtomicBool::new(false));
-    let transport = NoContentTransport::new(
-        events.clone(),
-        vec![ResponseFixture::ok(
-            b"SECRET_NO_CONTENT_SENTINEL",
-            polled.clone(),
-        )],
-    );
-    let mut client = ApiClient::<NoContentHelperApiCx, _>::with_transport(
+    let (server, handle) = mock()
+        .reply(
+            MockReply::status(StatusCode::OK)
+                .with_body(Bytes::from_static(b"SECRET_NO_CONTENT_SENTINEL")),
+        )
+        .build();
+    let mut client = ApiClient::<NoContentHelperApiCx>::with_safe_reqwest_builder(
         NoContentHelperApiVars::new(),
         NoContentHelperApiAuthVars::new(),
-        transport.clone(),
-    );
+        |builder| server.configure_reqwest(builder),
+    )
+    .expect("mock client");
     client.set_debug_sink(Arc::new(RecordingDebugSink::new(events.clone())));
     client.set_runtime_hooks(Arc::new(RecordingHooks::new(events.clone())));
     client.configure(|cfg| {
@@ -335,22 +202,23 @@ async fn no_content_endpoint_omits_accept_and_returns_unit() -> Result<(), ApiCl
     let value: () = client.request(endpoints::Ping::new()).execute().await?;
     assert_eq!(value, ());
 
-    let requests = transport.requests();
+    let requests = handle.recorded();
     assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].accept.as_deref(), Some("*/*"));
-    assert_eq!(requests[0].content_type, None);
-    assert!(requests[0].body_empty);
-    assert!(!polled.load(Ordering::SeqCst));
+    assert_eq!(
+        requests[0]
+            .headers
+            .get(http::header::ACCEPT)
+            .and_then(|value| value.to_str().ok()),
+        Some("*/*")
+    );
+    assert_eq!(requests[0].headers.get(http::header::CONTENT_TYPE), None);
+    assert!(requests[0].body.is_empty());
 
-    let events = transport.events();
+    let events = events.lock().expect("events lock").clone();
     let rate_limit_idx = events
         .iter()
         .position(|event| event == "rate_limit_acquire")
         .expect("rate limit event");
-    let transport_idx = events
-        .iter()
-        .position(|event| event == "transport")
-        .expect("transport event");
     let pre_send_idx = events
         .iter()
         .position(|event| event == "hook_pre_send:Ping")
@@ -363,32 +231,29 @@ async fn no_content_endpoint_omits_accept_and_returns_unit() -> Result<(), ApiCl
         .iter()
         .position(|event| event == "rate_limit_response")
         .expect("rate-limit response event");
-    assert!(rate_limit_idx < transport_idx);
-    assert!(pre_send_idx < transport_idx);
-    assert!(transport_idx < post_response_idx);
+    assert!(rate_limit_idx < post_response_idx);
+    assert!(pre_send_idx < post_response_idx);
     assert!(post_response_idx < rate_limit_response_idx);
-    assert_eq!(transport.send_count(), 1);
+    handle.finish();
     Ok(())
 }
 
 #[tokio::test]
 async fn no_content_status_failure_is_body_free() {
     let events = Arc::new(StdMutex::new(Vec::new()));
-    let polled = Arc::new(AtomicBool::new(false));
     let sentinel = "SECRET_NO_CONTENT_SENTINEL";
-    let transport = NoContentTransport::new(
-        events.clone(),
-        vec![ResponseFixture::status(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            sentinel.as_bytes(),
-            polled.clone(),
-        )],
-    );
-    let mut client = ApiClient::<NoContentHelperApiCx, _>::with_transport(
+    let (server, handle) = mock()
+        .reply(
+            MockReply::status(StatusCode::INTERNAL_SERVER_ERROR)
+                .with_body(Bytes::copy_from_slice(sentinel.as_bytes())),
+        )
+        .build();
+    let mut client = ApiClient::<NoContentHelperApiCx>::with_safe_reqwest_builder(
         NoContentHelperApiVars::new(),
         NoContentHelperApiAuthVars::new(),
-        transport.clone(),
-    );
+        |builder| server.configure_reqwest(builder),
+    )
+    .expect("mock client");
     client.set_runtime_hooks(Arc::new(RecordingHooks::new(events.clone())));
     client.configure(|cfg| {
         cfg.rate_limiter(Arc::new(RecordingRateLimiter::new(events.clone())));
@@ -402,6 +267,6 @@ async fn no_content_status_failure_is_body_free() {
     assert!(matches!(err, ApiClientError::HttpStatus { .. }));
     assert!(!format!("{err:?}").contains(sentinel));
     assert!(!format!("{err}").contains(sentinel));
-    assert!(!polled.load(Ordering::SeqCst));
-    assert_eq!(transport.send_count(), 1);
+    assert_eq!(handle.recorded_len(), 1);
+    handle.finish();
 }

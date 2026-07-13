@@ -81,7 +81,7 @@ fn with_query_auth(mut plan: RequestPlan) -> RequestPlan {
 fn bench_case<F>(c: &mut Criterion, runtime: &Runtime, name: &str, mut setup: F)
 where
     F: FnMut() -> (
-        concord_core::prelude::ApiClient<perf::support::PerfCx, MockTransport>,
+        concord_core::prelude::ApiClient<perf::support::PerfCx>,
         RequestPlan,
     ),
 {

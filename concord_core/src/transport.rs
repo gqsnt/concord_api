@@ -4,7 +4,6 @@ use crate::retry::RetrySetting;
 use bytes::Bytes;
 use http::{HeaderMap, Method, StatusCode};
 use std::fmt;
-use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
 use url::Url;
@@ -17,20 +16,22 @@ pub struct RequestMeta {
     pub method: Method,
     pub idempotent: bool,
     /// Zero-based metadata index derived from the request-local physical
-    /// attempt count. The first `Transport::send` is physical attempt 1;
-    /// this legacy metadata field remains 0 for that send.
+    /// attempt count. The first managed-client execution is physical attempt
+    /// 1; this metadata field remains 0 for that send.
     pub attempt: u32,
     pub page_index: u32,
 }
 
 #[derive(Clone, Debug)]
-pub struct RequestExecutionContext {
-    pub meta: RequestMeta,
-    pub timeout: Option<Duration>,
+pub(crate) struct RequestExecutionContext {
+    pub(crate) meta: RequestMeta,
+    pub(crate) timeout: Option<Duration>,
 }
 
 pub(crate) struct BuiltRequest {
-    pub(crate) message: http::Request<crate::body::DynBody>,
+    pub(crate) message: reqwest::Request,
+    pub(crate) context: RequestExecutionContext,
+    pub(crate) auth_plan: crate::auth::AuthPlacementPlan,
     pub(crate) retry: RetrySetting,
     pub(crate) rate_limit: RateLimitPlan,
 }
@@ -55,21 +56,12 @@ impl fmt::Debug for BuiltRequest {
 
 impl BuiltRequest {
     pub(crate) fn debug_url(&self) -> String {
-        let url = Url::parse(&self.message.uri().to_string())
-            .unwrap_or_else(|_| Url::parse("http://invalid.invalid/").expect("static URL"));
-        let sensitive = self
-            .message
-            .extensions()
-            .get::<crate::auth::AuthPlacementPlan>()
-            .map(|plan| plan.sensitive_query_keys.iter());
-        crate::redaction::sanitize_url_for_debug(&url, sensitive.into_iter().flatten())
+        let url = self.message.url();
+        crate::redaction::sanitize_url_for_debug(url, self.auth_plan.sensitive_query_keys.iter())
     }
 
     pub(crate) fn context(&self) -> &RequestExecutionContext {
-        self.message
-            .extensions()
-            .get::<RequestExecutionContext>()
-            .expect("built request context is installed during construction")
+        &self.context
     }
 }
 
@@ -123,6 +115,7 @@ impl fmt::Debug for BuiltResponse {
     }
 }
 
+#[allow(dead_code)]
 impl BuiltResponse {
     pub(crate) fn new(message: http::Response<Bytes>, context: ResponseContext) -> Self {
         Self { message, context }
@@ -213,11 +206,11 @@ impl<T: fmt::Debug> fmt::Debug for DecodedResponse<T> {
     }
 }
 
-pub(crate) fn materialize_transport_request(
-    built: BuiltRequest,
+pub(crate) fn materialize_authentication(
+    mut message: reqwest::Request,
+    auth_plan: &crate::auth::AuthPlacementPlan,
     materials: &[crate::auth::AuthTransportMaterial],
-    stream_request_limit: Option<usize>,
-) -> Result<http::Request<crate::body::DynBody>, crate::auth::AuthError> {
+) -> Result<reqwest::Request, crate::auth::AuthError> {
     use base64::Engine;
     use http::header::{AUTHORIZATION, HeaderValue};
     use std::collections::HashMap;
@@ -230,13 +223,6 @@ pub(crate) fn materialize_transport_request(
         };
         by_slot.insert(slot_id, material);
     }
-
-    let BuiltRequest { mut message, .. } = built;
-    let auth_plan = message
-        .extensions()
-        .get::<crate::auth::AuthPlacementPlan>()
-        .cloned()
-        .unwrap_or_default();
 
     for slot in &auth_plan.slots {
         let Some(material) = by_slot.get(&slot.id).copied() else {
@@ -278,20 +264,10 @@ pub(crate) fn materialize_transport_request(
                 PlannedAuthPlacement::Query(name),
                 crate::auth::AuthTransportMaterial::Secret { secret, .. },
             ) => {
-                let mut url = Url::parse(&message.uri().to_string()).map_err(|_| {
-                    crate::auth::AuthError::new(
-                        crate::auth::AuthErrorKind::InvalidConfiguration,
-                        "request URI could not accept query authentication",
-                    )
-                })?;
+                let mut url = message.url().clone();
                 url.query_pairs_mut()
                     .append_pair(name, secret.expose_secret());
-                *message.uri_mut() = url.as_str().parse().map_err(|_| {
-                    crate::auth::AuthError::new(
-                        crate::auth::AuthErrorKind::InvalidConfiguration,
-                        "materialized authentication URI is invalid",
-                    )
-                })?;
+                *message.url_mut() = url;
             }
             (
                 PlannedAuthPlacement::Basic,
@@ -322,14 +298,6 @@ pub(crate) fn materialize_transport_request(
                 ));
             }
         }
-    }
-
-    // One global request-body guard, installed at the final transport
-    // materialization boundary. It covers reusable bytes and every streaming
-    // recipe alike; this remains separate from exact-length enforcement.
-    if let Some(limit) = stream_request_limit {
-        let body = std::mem::replace(message.body_mut(), crate::body::DynBody::empty());
-        *message.body_mut() = body.limited(limit as u64);
     }
 
     Ok(message)
@@ -505,11 +473,14 @@ fn sanitize_error_chain_with_proxies(
     error: &(dyn Error + 'static),
     proxies: &[SafeProxy],
 ) -> crate::error::FxError {
+    if let Some(error) = error.downcast_ref::<crate::body::BodyError>() {
+        return Box::new(*error);
+    }
     // Reqwest may report the resolved proxy socket (rather than the configured
     // origin) in a nested connector error. Once an explicit proxy is active,
     // retain only a stable safe category; marker replacement cannot prove that
     // resolver-produced addresses are harmless.
-    if !proxies.is_empty() {
+    if proxies.iter().any(SafeProxy::is_network_proxy) {
         return Box::new(SanitizedError {
             display: "explicit proxy transport failure".to_string(),
             debug: "explicit proxy transport failure".to_string(),
@@ -543,6 +514,9 @@ fn proxy_redaction_markers(proxies: &[SafeProxy]) -> Vec<String> {
 
     let mut markers = Vec::<String>::new();
     for proxy in proxies {
+        if !proxy.is_network_proxy() {
+            continue;
+        }
         let scheme = proxy.target.scheme();
         let explicit_port = proxy.target.port();
         let default_port = if matches!(scheme, "http") {
@@ -625,45 +599,40 @@ fn classify_reqwest_error(err: &reqwest::Error) -> TransportErrorKind {
     TransportErrorKind::Other
 }
 
-/// Injectable transport layer.
-///
-/// Contract:
-/// - One call represents one physical send.
-/// - Request and response heads use standard HTTP message ownership.
-/// - Must not leak a concrete HTTP client type in its public surface.
-pub trait Transport: Send + Sync + 'static {
-    fn send(
-        &self,
-        request: http::Request<crate::body::DynBody>,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<http::Response<crate::body::DynBody>, TransportError>>
-                + Send,
-        >,
-    >;
-}
-
-#[doc(hidden)]
-pub trait DefaultTransportMarker: Transport + Clone {}
-
-#[doc(hidden)]
-pub type DefaultTransport = ReqwestTransport;
-
-impl DefaultTransportMarker for ReqwestTransport {}
-
 #[derive(Clone)]
-pub struct ReqwestTransport {
-    client: reqwest::Client,
+pub(crate) struct ManagedReqwestClient {
+    pub(crate) client: reqwest::Client,
     configured_proxies: Vec<SafeProxy>,
 }
 
 /// A credential-free explicit proxy target for the managed Reqwest transport.
 /// Only a credential-free HTTP(S) origin is accepted, so a target cannot
 /// become a secret-bearing diagnostic surface.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone)]
 pub struct SafeProxy {
     target: Url,
+    #[cfg(feature = "dangerous-dev-tools")]
+    test_origin_override: bool,
+    #[cfg(feature = "dangerous-dev-tools")]
+    _test_guard: Option<std::sync::Arc<dyn std::any::Any + Send + Sync>>,
 }
+
+impl PartialEq for SafeProxy {
+    fn eq(&self, other: &Self) -> bool {
+        self.target == other.target && {
+            #[cfg(feature = "dangerous-dev-tools")]
+            {
+                self.test_origin_override == other.test_origin_override
+            }
+            #[cfg(not(feature = "dangerous-dev-tools"))]
+            {
+                true
+            }
+        }
+    }
+}
+
+impl Eq for SafeProxy {}
 
 impl SafeProxy {
     pub fn all(target: &str) -> Result<Self, SafeProxyError> {
@@ -681,7 +650,43 @@ impl SafeProxy {
         if cfg!(not(feature = "default-tls")) && target.scheme() == "https" {
             return Err(SafeProxyError::TlsUnavailable);
         }
-        Ok(Self { target })
+        Ok(Self {
+            target,
+            #[cfg(feature = "dangerous-dev-tools")]
+            test_origin_override: false,
+            #[cfg(feature = "dangerous-dev-tools")]
+            _test_guard: None,
+        })
+    }
+
+    fn is_network_proxy(&self) -> bool {
+        #[cfg(feature = "dangerous-dev-tools")]
+        {
+            !self.test_origin_override
+        }
+        #[cfg(not(feature = "dangerous-dev-tools"))]
+        {
+            true
+        }
+    }
+
+    #[doc(hidden)]
+    #[cfg(feature = "dangerous-dev-tools")]
+    pub fn __test_origin_override(target: &str) -> Result<Self, SafeProxyError> {
+        let mut proxy = Self::all(target)?;
+        proxy.test_origin_override = true;
+        Ok(proxy)
+    }
+
+    #[doc(hidden)]
+    #[cfg(feature = "dangerous-dev-tools")]
+    pub fn __test_origin_override_with_guard(
+        target: &str,
+        guard: std::sync::Arc<dyn std::any::Any + Send + Sync>,
+    ) -> Result<Self, SafeProxyError> {
+        let mut proxy = Self::__test_origin_override(target)?;
+        proxy._test_guard = Some(guard);
+        Ok(proxy)
     }
 }
 
@@ -799,6 +804,10 @@ impl SafeReqwestBuilder {
     }
     pub fn proxy(mut self, proxy: SafeProxy) -> Self {
         self.configured_proxies.push(proxy.clone());
+        #[cfg(feature = "dangerous-dev-tools")]
+        if proxy.test_origin_override {
+            return self;
+        }
         match reqwest::Proxy::all(proxy.target) {
             Ok(proxy) => self.builder = self.builder.proxy(proxy),
             // A SafeProxy has already structurally validated its URL. Keep a
@@ -906,7 +915,7 @@ impl Error for ReqwestClientBuildError {
     }
 }
 
-impl ReqwestTransport {
+impl ManagedReqwestClient {
     #[inline]
     pub fn new() -> Self {
         Self::from_managed_build(Self::try_new())
@@ -950,45 +959,88 @@ impl ReqwestTransport {
 
     fn from_managed_build(result: Result<Self, ReqwestClientBuildError>) -> Self {
         match result {
-            Ok(transport) => transport,
+            Ok(client) => client,
             Err(_) => panic!("managed reqwest client construction failed"),
         }
     }
 }
 
-impl Default for ReqwestTransport {
+impl Default for ManagedReqwestClient {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Transport for ReqwestTransport {
-    fn send(
+impl ManagedReqwestClient {
+    pub(crate) async fn execute(
         &self,
-        request: http::Request<crate::body::DynBody>,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<http::Response<crate::body::DynBody>, TransportError>>
-                + Send,
-        >,
-    > {
-        let client = self.client.clone();
-        let configured_proxies = self.configured_proxies.clone();
-        Box::pin(async move {
-            #[cfg(not(feature = "default-tls"))]
-            if request.uri().scheme_str() == Some("https") {
-                return Err(TransportError::with_kind(
-                    TransportErrorKind::Tls,
-                    TlsCapabilityUnavailable,
-                ));
+        request: reqwest::Request,
+        _context: Option<&RequestExecutionContext>,
+    ) -> Result<http::Response<crate::body::DynBody>, TransportError> {
+        #[cfg(feature = "dangerous-dev-tools")]
+        let mut request = request;
+        #[cfg(feature = "dangerous-dev-tools")]
+        if let Some(target) = self
+            .configured_proxies
+            .iter()
+            .find(|proxy| proxy.test_origin_override)
+            .map(|proxy| &proxy.target)
+        {
+            let original = request.url().clone();
+            let mut rewritten = target.clone();
+            rewritten.set_path(original.path());
+            rewritten.set_query(original.query());
+            let original_header = http::HeaderValue::from_str(original.as_str()).map_err(|_| {
+                TransportError::with_kind(
+                    TransportErrorKind::Request,
+                    std::io::Error::other("test origin URL cannot be represented safely"),
+                )
+            })?;
+            request.headers_mut().insert(
+                http::HeaderName::from_static("x-concord-test-original-url"),
+                original_header,
+            );
+            if let Some(context) = _context {
+                let headers = request.headers_mut();
+                if let Ok(value) = http::HeaderValue::from_str(context.meta.endpoint) {
+                    headers.insert(
+                        http::HeaderName::from_static("x-concord-test-endpoint"),
+                        value,
+                    );
+                }
+                headers.insert(
+                    http::HeaderName::from_static("x-concord-test-attempt"),
+                    http::HeaderValue::from_str(&context.meta.attempt.to_string())
+                        .expect("attempt is a valid header value"),
+                );
+                headers.insert(
+                    http::HeaderName::from_static("x-concord-test-page-index"),
+                    http::HeaderValue::from_str(&context.meta.page_index.to_string())
+                        .expect("page index is a valid header value"),
+                );
+                if let Some(timeout) = context.timeout {
+                    headers.insert(
+                        http::HeaderName::from_static("x-concord-test-timeout-ms"),
+                        http::HeaderValue::from_str(&timeout.as_millis().to_string())
+                            .expect("timeout is a valid header value"),
+                    );
+                }
             }
-            let request = reqwest_request_from_http(request)?;
-            let response = client
-                .execute(request)
-                .await
-                .map_err(|error| TransportError::from_reqwest(error, &configured_proxies))?;
-            Ok(http_response_from_reqwest(response, &configured_proxies))
-        })
+            *request.url_mut() = rewritten;
+        }
+        #[cfg(not(feature = "default-tls"))]
+        if request.url().scheme() == "https" {
+            return Err(TransportError::with_kind(
+                TransportErrorKind::Tls,
+                TlsCapabilityUnavailable,
+            ));
+        }
+        let response = self
+            .client
+            .execute(request)
+            .await
+            .map_err(|error| TransportError::from_reqwest(error, &self.configured_proxies))?;
+        Ok(adapt_native_response(response, &self.configured_proxies))
     }
 }
 
@@ -1006,20 +1058,7 @@ impl fmt::Display for TlsCapabilityUnavailable {
 #[cfg(not(feature = "default-tls"))]
 impl Error for TlsCapabilityUnavailable {}
 
-fn reqwest_request_from_http(
-    request: http::Request<crate::body::DynBody>,
-) -> Result<reqwest::Request, TransportError> {
-    let timeout = request
-        .extensions()
-        .get::<RequestExecutionContext>()
-        .and_then(|context| context.timeout);
-    let mut request = reqwest::Request::try_from(request.map(reqwest::Body::wrap))
-        .map_err(TransportError::from)?;
-    *request.timeout_mut() = timeout;
-    Ok(request)
-}
-
-fn http_response_from_reqwest(
+fn adapt_native_response(
     response: reqwest::Response,
     proxies: &[SafeProxy],
 ) -> http::Response<crate::body::DynBody> {
@@ -1068,6 +1107,7 @@ fn sanitized_reqwest_body_error(
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod reqwest_transport_tests {
     use super::*;
     use bytes::Bytes;
@@ -1140,7 +1180,7 @@ mod reqwest_transport_tests {
         let proxy = SafeProxy::all("http://proxy.example.test:8080").expect("safe proxy");
         let mut response = http::Response::new(reqwest::Body::wrap(FailingResponseBody));
         *response.status_mut() = StatusCode::OK;
-        let response = http_response_from_reqwest(reqwest::Response::from(response), &[proxy]);
+        let response = adapt_native_response(reqwest::Response::from(response), &[proxy]);
         let error = response
             .into_body()
             .collect()
@@ -1180,86 +1220,6 @@ mod reqwest_transport_tests {
         }
     }
 
-    #[test]
-    fn whole_request_conversion_preserves_head_extensions_timeout_and_laziness() {
-        let polled = Arc::new(AtomicBool::new(false));
-        let mut request = http::Request::new(crate::body::DynBody::from_byte_stream(PollProbe(
-            polled.clone(),
-        )));
-        *request.method_mut() = Method::POST;
-        *request.uri_mut() = "http://example.test/items?public=ok".parse().expect("URI");
-        *request.version_mut() = http::Version::HTTP_2;
-        request
-            .headers_mut()
-            .insert("x-request", http::HeaderValue::from_static("present"));
-        request.extensions_mut().insert(RequestMarker("request"));
-        request.extensions_mut().insert(RequestExecutionContext {
-            meta: RequestMeta {
-                endpoint: "ReqwestWholeRequest",
-                method: Method::POST,
-                idempotent: false,
-                attempt: 3,
-                page_index: 2,
-            },
-            timeout: Some(Duration::from_secs(7)),
-        });
-
-        let request = reqwest_request_from_http(request).expect("whole conversion should work");
-        assert_eq!(request.method(), Method::POST);
-        assert_eq!(request.version(), http::Version::HTTP_2);
-        assert_eq!(
-            request.headers().get("x-request"),
-            Some(&http::HeaderValue::from_static("present"))
-        );
-        assert_eq!(request.timeout(), Some(&Duration::from_secs(7)));
-        let request = http::Request::<reqwest::Body>::try_from(request)
-            .expect("standard request conversion should be reversible");
-        assert_eq!(request.uri(), "http://example.test/items?public=ok");
-        assert_eq!(
-            request
-                .extensions()
-                .get::<RequestMarker>()
-                .map(|marker| marker.0),
-            Some("request")
-        );
-        assert!(!polled.load(Ordering::SeqCst));
-    }
-
-    #[tokio::test]
-    async fn request_body_wrap_preserves_frames_trailers_and_hint() {
-        let trailers = {
-            let mut trailers = http::HeaderMap::new();
-            trailers.insert("x-trailer", http::HeaderValue::from_static("present"));
-            trailers
-        };
-        let mut hint = SizeHint::new();
-        hint.set_exact(4);
-        let body = crate::body::DynBody::from_frame_stream(FrameSequence {
-            frames: VecDeque::from([
-                Ok(Frame::data(Bytes::from_static(b"data"))),
-                Ok(Frame::trailers(trailers)),
-            ]),
-        })
-        .with_size_hint(hint);
-        let mut request = http::Request::new(body);
-        *request.method_mut() = Method::POST;
-        *request.uri_mut() = "http://example.test/upload".parse().expect("URI");
-
-        let request = reqwest_request_from_http(request).expect("whole conversion should work");
-        let request = http::Request::<reqwest::Body>::try_from(request)
-            .expect("standard request conversion should be reversible");
-        assert_eq!(request.body().size_hint().exact(), Some(4));
-        let collected = request.into_body().collect().await.expect("request body");
-        assert_eq!(
-            collected
-                .trailers()
-                .and_then(|trailers| trailers.get("x-trailer"))
-                .and_then(|value| value.to_str().ok()),
-            Some("present")
-        );
-        assert_eq!(collected.to_bytes(), Bytes::from_static(b"data"));
-    }
-
     #[tokio::test]
     async fn whole_response_conversion_preserves_head_frames_trailers_and_hint() {
         let trailers = {
@@ -1284,7 +1244,7 @@ mod reqwest_transport_tests {
             .insert("x-response", http::HeaderValue::from_static("present"));
         response.extensions_mut().insert(ResponseMarker("response"));
 
-        let response = http_response_from_reqwest(reqwest::Response::from(response), &[]);
+        let response = adapt_native_response(reqwest::Response::from(response), &[]);
         assert_eq!(response.status(), StatusCode::CREATED);
         assert_eq!(response.version(), http::Version::HTTP_2);
         assert_eq!(
@@ -1313,7 +1273,7 @@ mod reqwest_transport_tests {
     #[test]
     fn managed_builder_failures_are_structural_and_url_free() {
         let error = managed_build_error();
-        let _: Result<ReqwestTransport, ReqwestClientBuildError> = Err(error);
+        let _: Result<ManagedReqwestClient, ReqwestClientBuildError> = Err(error);
         let error = managed_build_error();
         let diagnostics = format!("{error}\n{error:?}\n{}", source_chain(&error));
         for sentinel in [
@@ -1337,7 +1297,7 @@ mod reqwest_transport_tests {
         let input = format!(
             "-----BEGIN CERTIFICATE-----\n{marker}\nnot-base64-content\n-----END CERTIFICATE-----"
         );
-        let result = ReqwestTransport::with_builder_fallible(|builder| {
+        let result = ManagedReqwestClient::with_builder_fallible(|builder| {
             builder.add_trusted_root_pem(input.as_bytes())
         });
         let error = match result {
@@ -1363,7 +1323,7 @@ mod reqwest_transport_tests {
         let input = format!(
             "-----BEGIN PRIVATE KEY-----\n{marker}\nnot-a-valid-private-key\n-----END PRIVATE KEY-----"
         );
-        let result = ReqwestTransport::with_builder_fallible(|builder| {
+        let result = ManagedReqwestClient::with_builder_fallible(|builder| {
             builder.client_identity_pem(input.as_bytes())
         });
         let error = match result {
@@ -1384,7 +1344,7 @@ mod reqwest_transport_tests {
     fn infallible_constructor_panic_is_static_and_drops_build_error() {
         let error = managed_build_error();
         let panic = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            ReqwestTransport::from_managed_build(Err(error))
+            ManagedReqwestClient::from_managed_build(Err(error))
         })) {
             Ok(_) => panic!("infallible constructor helper must panic"),
             Err(panic) => panic,
@@ -1415,7 +1375,7 @@ mod reqwest_transport_tests {
     #[test]
     fn safe_proxy_conversion_has_no_panic_path() {
         let proxy = SafeProxy::all("http://proxy.example.test:8080").expect("safe proxy");
-        assert!(ReqwestTransport::with_builder(|builder| builder.proxy(proxy)).is_ok());
+        assert!(ManagedReqwestClient::with_builder(|builder| builder.proxy(proxy)).is_ok());
     }
 
     #[cfg(not(feature = "default-tls"))]
@@ -1456,13 +1416,17 @@ mod reqwest_transport_tests {
             drop(stream);
         });
         let proxy = SafeProxy::all(&format!("http://{proxy_marker}")).expect("safe proxy");
-        let transport = ReqwestTransport::with_builder_fallible(|builder| Ok(builder.proxy(proxy)))
-            .expect("managed transport");
-        let request = http::Request::builder()
-            .uri("http://127.0.0.1:6554/proxy-redaction")
-            .body(crate::body::DynBody::empty())
-            .expect("request");
-        let error = transport.send(request).await.expect_err("proxy must fail");
+        let client =
+            ManagedReqwestClient::with_builder_fallible(|builder| Ok(builder.proxy(proxy)))
+                .expect("managed client");
+        let request = reqwest::Request::new(
+            Method::GET,
+            Url::parse("http://127.0.0.1:6554/proxy-redaction").expect("URL"),
+        );
+        let error = client
+            .execute(request, None)
+            .await
+            .expect_err("proxy must fail");
         let marker = proxy_marker.to_string();
         let diagnostics = format!(
             "{error}\n{error:?}\n{}\n{}",
@@ -1487,15 +1451,66 @@ mod reqwest_transport_tests {
         assert!(diagnostics.contains("explicit proxy transport failure"));
     }
 
+    #[tokio::test]
+    async fn managed_client_executes_native_requests_and_adapts_native_responses() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener");
+        let address = listener.local_addr().expect("address");
+        let server = std::thread::spawn(move || {
+            use std::io::{Read as _, Write as _};
+            let (mut stream, _) = listener.accept().expect("request");
+            let mut request = [0_u8; 2048];
+            let length = stream.read(&mut request).expect("read request");
+            let request = String::from_utf8_lossy(&request[..length]);
+            assert!(request.starts_with("POST /native?visible=yes HTTP/1.1"));
+            assert!(request.to_ascii_lowercase().contains("x-native: present"));
+            stream
+                .write_all(
+                    b"HTTP/1.1 201 Created\r\nContent-Type: text/plain\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
+                )
+                .expect("response");
+        });
+
+        let managed = ManagedReqwestClient::new();
+        let mut request = reqwest::Request::new(
+            Method::POST,
+            Url::parse(&format!("http://{address}/native?visible=yes")).expect("URL"),
+        );
+        request
+            .headers_mut()
+            .insert("x-native", http::HeaderValue::from_static("present"));
+        *request.timeout_mut() = Some(Duration::from_secs(2));
+        *request.body_mut() = Some(reqwest::Body::from(Bytes::from_static(b"hi")));
+
+        let response = managed
+            .execute(request, None)
+            .await
+            .expect("native execution");
+        assert_eq!(response.status(), StatusCode::CREATED);
+        assert_eq!(
+            response.headers().get(http::header::CONTENT_TYPE),
+            Some(&http::HeaderValue::from_static("text/plain"))
+        );
+        assert_eq!(
+            response
+                .into_body()
+                .collect()
+                .await
+                .expect("adapted body")
+                .to_bytes(),
+            Bytes::from_static(b"ok")
+        );
+        server.join().expect("server");
+    }
+
     #[cfg(not(feature = "default-tls"))]
     #[tokio::test]
     async fn https_without_tls_is_rejected_before_reqwest_execution() {
-        let request = http::Request::builder()
-            .uri("https://tls-secret.example.test/path")
-            .body(crate::body::DynBody::empty())
-            .expect("request");
-        let error = ReqwestTransport::new()
-            .send(request)
+        let request = reqwest::Request::new(
+            Method::GET,
+            Url::parse("https://tls-secret.example.test/path").expect("URL"),
+        );
+        let error = ManagedReqwestClient::new()
+            .execute(request, None)
             .await
             .expect_err("HTTPS must be preflighted without TLS support");
         assert_eq!(error.kind(), TransportErrorKind::Tls);
@@ -1518,11 +1533,11 @@ mod reqwest_transport_tests {
                 .write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
                 .expect("response");
         });
-        let request = http::Request::builder()
-            .uri(format!("http://{address}/plain-http"))
-            .body(crate::body::DynBody::empty())
-            .expect("request");
-        let result = ReqwestTransport::new().send(request).await;
+        let request = reqwest::Request::new(
+            Method::GET,
+            Url::parse(&format!("http://{address}/plain-http")).expect("URL"),
+        );
+        let result = ManagedReqwestClient::new().execute(request, None).await;
         let response = match result {
             Ok(response) => response,
             Err(error) => panic!(

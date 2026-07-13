@@ -30,15 +30,15 @@ Before provider invocation, the runtime derives a secret-free placement plan fro
 
 A planned slot records placement, credential and usage identity, step identity, provenance, and a request-local binding identity. Credential generation remains preparation output rather than placement state. Neither structure stores raw credential material.
 
-Raw credential material is kept in a short-lived per-attempt sidecar and is inserted only when the runtime materializes a `http::Request<DynBody>` immediately before `Transport::send`. `BuiltRequest`, `BuiltResponse`, `DecodedResponse<T>`, runtime hooks, and debug sinks must never store raw auth material. Hook and debug metadata redaction applies before callback invocation, so sensitive headers and query values are not exposed through those surfaces.
+Raw credential material is kept in a short-lived per-attempt sidecar and is inserted only into the native `reqwest::Request` immediately before managed-client execution. Response values, hooks, and debug sinks never store raw auth material.
 
-Page and custom pagination mutation happens before auth-collision validation, rate-limit acquisition, and transport materialization. The runtime uses the final mutated logical request as the input to safe metadata construction, then materializes raw auth only into `http::Request<DynBody>`.
+Page and custom pagination mutation happens before auth-collision validation, rate-limit acquisition, and native request materialization.
 
 Query-auth preflight rejects a public query parameter that already uses the auth query key before provider invocation or body production. The typed error may name the key but must not include the public value, complete URL, or secret value.
 
 Header-auth preflight follows the same structural rule: public headers cannot silently collide with bearer, Basic, or custom auth headers, and header matching is case-insensitive. Custom `Authorization` placement shares the bearer/Basic singleton target. Malformed and duplicate runtime placement plans fail before providers.
 
-Custom transports receive the materialized `http::Request<DynBody>`, so they see real credentials at the send boundary. Transport implementations must not log the raw request.
+Only the private managed client receives the credential-bearing native request.
 
 ## Rejection And Refresh
 
@@ -74,6 +74,6 @@ Auth-internal HTTP responses are also bounded. Token and credential-acquisition 
 
 ## Advanced Forms
 
-OAuth2 client credentials are represented as a credential provider that fetches and refreshes bearer access tokens at a high level. Generated clients configure the provider from `oauth2_client { token_url, client_id, client_secret, scope? }`. Acquisition sends `POST` to `token_url` with HTTP Basic client authentication, form body `grant_type=client_credentials`, and optional `scope`. A successful token response becomes `AccessToken` material, is stored in the credential slot, and is materialized as `Authorization: Bearer ...` only when the protected `http::Request<DynBody>` is built.
+OAuth2 client credentials are represented as a credential provider that fetches and refreshes bearer access tokens. A successful token response is stored in the credential slot and materialized only when the protected native request is built.
 
 OAuth token reuse, cancellation safety, and protected `401` refresh use the same `CredentialSlot` path as other refreshable credentials. Token endpoint failure returns an auth error and blocks the protected request from being sent. OAuth client secrets and tokens remain redacted from debug output and errors.

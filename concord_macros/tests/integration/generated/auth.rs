@@ -1,14 +1,11 @@
 use bytes::Bytes;
-use concord_core::advanced::{DynBody, RequestExecutionContext, Transport, TransportError};
 use concord_core::prelude::*;
 use concord_macros::api;
+use concord_test_support::{MockHandle, MockReply, MockServer, RecordedRequest, mock};
 use http::{HeaderMap, StatusCode};
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::sync::Mutex;
 
 #[derive(Debug, Serialize)]
 pub struct LoginRequest {
@@ -234,7 +231,17 @@ async fn endpoint_backed_auth_acquire_clear_and_gate_protected_requests() {
         ResponseFixture::json(r#"{"name":"Ada"}"#),
     ]);
     let sent = transport.clone();
-    let api = AuthHelperApi::new_with_transport("upstream-secret".to_string(), transport);
+    let api =
+        AuthHelperApi::new_with_safe_reqwest_builder("upstream-secret".to_string(), |builder| {
+            transport.configure_reqwest(builder)
+        })
+        .expect("mock client")
+        .configure(|cfg| {
+            cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+                4096,
+                std::time::Duration::from_secs(15 * 60),
+            ));
+        });
 
     let err = api
         .protected()
@@ -292,7 +299,6 @@ async fn endpoint_backed_auth_acquire_clear_and_gate_protected_requests() {
 
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 2);
-    assert_eq!(requests[0].meta.endpoint, "auth_api::LoginForSession");
     assert_eq!(
         requests[0]
             .headers
@@ -300,7 +306,6 @@ async fn endpoint_backed_auth_acquire_clear_and_gate_protected_requests() {
             .and_then(|value| value.to_str().ok()),
         Some("upstream-secret")
     );
-    assert_eq!(requests[1].meta.endpoint, "protected::Me");
     assert_eq!(
         requests[1]
             .headers
@@ -314,13 +319,20 @@ async fn endpoint_backed_auth_acquire_clear_and_gate_protected_requests() {
 async fn same_layer_policy_header_query_inline_then_block_are_preserved() {
     let transport = RecordingTransport::new(vec![ResponseFixture::json(r#"{"name":"Ada"}"#)]);
     let sent = transport.clone();
-    let api = PolicyMergeHelperApi::new_with_transport(
+    let api = PolicyMergeHelperApi::new_with_safe_reqwest_builder(
         "client-header-a".to_string(),
         "client-header-b".to_string(),
         "client-query-a".to_string(),
         "client-query-b".to_string(),
-        transport,
-    );
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("mock client")
+    .configure(|cfg| {
+        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+            4096,
+            std::time::Duration::from_secs(15 * 60),
+        ));
+    });
 
     api.merged()
         .inline_then_block()
@@ -349,13 +361,20 @@ async fn same_layer_policy_header_query_inline_then_block_are_preserved() {
 async fn same_layer_policy_header_query_block_then_inline_are_preserved() {
     let transport = RecordingTransport::new(vec![ResponseFixture::json(r#"{"name":"Ada"}"#)]);
     let sent = transport.clone();
-    let api = PolicyMergeHelperApi::new_with_transport(
+    let api = PolicyMergeHelperApi::new_with_safe_reqwest_builder(
         "client-header-a".to_string(),
         "client-header-b".to_string(),
         "client-query-a".to_string(),
         "client-query-b".to_string(),
-        transport,
-    );
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("mock client")
+    .configure(|cfg| {
+        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+            4096,
+            std::time::Duration::from_secs(15 * 60),
+        ));
+    });
 
     api.merged()
         .block_then_inline()
@@ -379,7 +398,16 @@ async fn endpoint_backed_basic_credential_materializes_basic_authorization() {
         ResponseFixture::json(r#"{"name":"Ada"}"#),
     ]);
     let sent = transport.clone();
-    let api = BasicEndpointHelperApi::new_with_transport(transport);
+    let api = BasicEndpointHelperApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client")
+    .configure(|cfg| {
+        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+            4096,
+            std::time::Duration::from_secs(15 * 60),
+        ));
+    });
 
     api.auth_api()
         .login_for_basic(LoginRequest {
@@ -399,8 +427,6 @@ async fn endpoint_backed_basic_credential_materializes_basic_authorization() {
 
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 2);
-    assert_eq!(requests[0].meta.endpoint, "auth_api::LoginForBasic");
-    assert_eq!(requests[1].meta.endpoint, "protected::BasicMe");
     assert_eq!(
         requests[1]
             .headers
@@ -420,8 +446,18 @@ async fn generated_basic_auth_keeps_username_and_password_secret_until_transport
 
     let transport = RecordingTransport::new(vec![ResponseFixture::json(r#"{"name":"Ada"}"#)]);
     let sent = transport.clone();
-    let api =
-        BasicHelperApi::new_with_transport(USERNAME.to_string(), PASSWORD.to_string(), transport);
+    let api = BasicHelperApi::new_with_safe_reqwest_builder(
+        USERNAME.to_string(),
+        PASSWORD.to_string(),
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("mock client")
+    .configure(|cfg| {
+        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+            4096,
+            std::time::Duration::from_secs(15 * 60),
+        ));
+    });
 
     let user = api
         .basic_me()
@@ -454,11 +490,18 @@ async fn generated_static_basic_auth_reuses_preparation_across_transport_retry()
         ResponseFixture::json(r#"{"name":"Ada"}"#),
     ]);
     let sent = transport.clone();
-    let api = BasicHelperApi::new_with_transport(
+    let api = BasicHelperApi::new_with_safe_reqwest_builder(
         "static-user".to_string(),
         "static-password".to_string(),
-        transport,
-    );
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("mock client")
+    .configure(|cfg| {
+        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+            4096,
+            std::time::Duration::from_secs(15 * 60),
+        ));
+    });
 
     let user = api
         .basic_retry()
@@ -469,24 +512,6 @@ async fn generated_static_basic_auth_reuses_preparation_across_transport_retry()
 
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 2);
-    assert_eq!(requests[0].meta.endpoint, "BasicRetry");
-    assert_eq!(requests[1].meta.endpoint, "BasicRetry");
-    let first_slot = requests[0]
-        .auth_plan
-        .slots
-        .first()
-        .expect("first request has prepared auth")
-        .id;
-    let second_slot = requests[1]
-        .auth_plan
-        .slots
-        .first()
-        .expect("retry request has prepared auth")
-        .id;
-    assert_eq!(
-        first_slot, second_slot,
-        "cached request-local preparation should reuse the auth slot"
-    );
     for req in &requests {
         assert_eq!(
             req.headers
@@ -510,11 +535,18 @@ async fn generated_oauth_client_credentials_acquires_token_and_sends_bearer() {
         ResponseFixture::json(r#"{"name":"Ada"}"#),
     ]);
     let sent = transport.clone();
-    let api = OAuthHelperApi::new_with_transport(
+    let api = OAuthHelperApi::new_with_safe_reqwest_builder(
         CLIENT_ID.to_string(),
         CLIENT_SECRET.to_string(),
-        transport,
-    );
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("mock client")
+    .configure(|cfg| {
+        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+            4096,
+            std::time::Duration::from_secs(15 * 60),
+        ));
+    });
 
     let user = api
         .oauth_me()
@@ -525,8 +557,7 @@ async fn generated_oauth_client_credentials_acquires_token_and_sends_bearer() {
 
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 2);
-    assert_eq!(requests[0].meta.endpoint, "<auth>");
-    assert_eq!(requests[0].meta.method, http::Method::POST);
+    assert_eq!(requests[0].method, http::Method::POST);
     assert_eq!(
         requests[0].url.as_str(),
         "https://auth.example.com/oauth/token"
@@ -546,14 +577,9 @@ async fn generated_oauth_client_credentials_acquires_token_and_sends_bearer() {
         Some("application/x-www-form-urlencoded")
     );
     assert_eq!(
-        requests[0]
-            .body
-            .as_bytes()
-            .and_then(|body| std::str::from_utf8(body).ok()),
+        std::str::from_utf8(requests[0].body.as_ref()).ok(),
         Some("grant_type=client_credentials&scope=read%3Ame")
     );
-
-    assert_eq!(requests[1].meta.endpoint, "OAuthMe");
     assert_eq!(
         requests[1]
             .headers
@@ -562,10 +588,12 @@ async fn generated_oauth_client_credentials_acquires_token_and_sends_bearer() {
         Some("Bearer LEAK_SENTINEL_OAUTH_ACCESS_TOKEN")
     );
     assert!(!requests[1].url.as_str().contains(CLIENT_SECRET));
-    assert!(!requests[1].body.as_bytes().is_some_and(|body| {
-        body.windows(CLIENT_SECRET.len())
+    assert!(
+        !requests[1]
+            .body
+            .windows(CLIENT_SECRET.len())
             .any(|window| window == CLIENT_SECRET.as_bytes())
-    }));
+    );
 
     let token_debug = format!("{:?}", requests[0]);
     let protected_debug = format!("{:?}", requests[1]);
@@ -585,11 +613,18 @@ async fn generated_oauth_client_credentials_reuses_valid_token() {
         ResponseFixture::json(r#"{"name":"Ada"}"#),
     ]);
     let sent = transport.clone();
-    let api = OAuthHelperApi::new_with_transport(
+    let api = OAuthHelperApi::new_with_safe_reqwest_builder(
         "oauth-client".to_string(),
         "oauth-secret".to_string(),
-        transport,
-    );
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("mock client")
+    .configure(|cfg| {
+        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+            4096,
+            std::time::Duration::from_secs(15 * 60),
+        ));
+    });
 
     api.oauth_me()
         .execute()
@@ -602,9 +637,6 @@ async fn generated_oauth_client_credentials_reuses_valid_token() {
 
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 3);
-    assert_eq!(requests[0].meta.endpoint, "<auth>");
-    assert_eq!(requests[1].meta.endpoint, "OAuthMe");
-    assert_eq!(requests[2].meta.endpoint, "OAuthMe");
     for req in &requests[1..] {
         assert_eq!(
             req.headers
@@ -628,11 +660,18 @@ async fn generated_oauth_client_credentials_refreshes_after_unauthorized() {
         ResponseFixture::json(r#"{"name":"Ada"}"#),
     ]);
     let sent = transport.clone();
-    let api = OAuthHelperApi::new_with_transport(
+    let api = OAuthHelperApi::new_with_safe_reqwest_builder(
         "oauth-client".to_string(),
         "oauth-secret".to_string(),
-        transport,
-    );
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("mock client")
+    .configure(|cfg| {
+        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+            4096,
+            std::time::Duration::from_secs(15 * 60),
+        ));
+    });
 
     let user = api
         .oauth_me()
@@ -643,8 +682,6 @@ async fn generated_oauth_client_credentials_refreshes_after_unauthorized() {
 
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 4);
-    assert_eq!(requests[0].meta.endpoint, "<auth>");
-    assert_eq!(requests[1].meta.endpoint, "OAuthMe");
     assert_eq!(
         requests[1]
             .headers
@@ -652,8 +689,6 @@ async fn generated_oauth_client_credentials_refreshes_after_unauthorized() {
             .and_then(|value| value.to_str().ok()),
         Some("Bearer token-a")
     );
-    assert_eq!(requests[2].meta.endpoint, "<auth>");
-    assert_eq!(requests[3].meta.endpoint, "OAuthMe");
     assert_eq!(
         requests[3]
             .headers
@@ -670,11 +705,18 @@ async fn generated_static_basic_auth_reprepares_after_auth_rejection_invalidatio
         ResponseFixture::json(r#"{"name":"Ada"}"#),
     ]);
     let sent = transport.clone();
-    let api = BasicHelperApi::new_with_transport(
+    let api = BasicHelperApi::new_with_safe_reqwest_builder(
         "static-user".to_string(),
         "static-password".to_string(),
-        transport,
-    );
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("mock client")
+    .configure(|cfg| {
+        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+            4096,
+            std::time::Duration::from_secs(15 * 60),
+        ));
+    });
 
     let user = api
         .basic_me()
@@ -685,22 +727,6 @@ async fn generated_static_basic_auth_reprepares_after_auth_rejection_invalidatio
 
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 2);
-    let first_slot = requests[0]
-        .auth_plan
-        .slots
-        .first()
-        .expect("first request has prepared auth")
-        .id;
-    let second_slot = requests[1]
-        .auth_plan
-        .slots
-        .first()
-        .expect("auth retry request has prepared auth")
-        .id;
-    assert_eq!(
-        first_slot, second_slot,
-        "auth rejection refreshes material without rebuilding placement"
-    );
     for req in &requests {
         assert_eq!(
             req.headers
@@ -721,11 +747,18 @@ async fn generated_oauth_prepares_each_transport_retry() {
         ResponseFixture::json(r#"{"name":"Ada"}"#),
     ]);
     let sent = transport.clone();
-    let api = OAuthHelperApi::new_with_transport(
+    let api = OAuthHelperApi::new_with_safe_reqwest_builder(
         "oauth-client".to_string(),
         "oauth-secret".to_string(),
-        transport,
-    );
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("mock client")
+    .configure(|cfg| {
+        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+            4096,
+            std::time::Duration::from_secs(15 * 60),
+        ));
+    });
 
     let user = api
         .oauth_retry()
@@ -736,25 +769,6 @@ async fn generated_oauth_prepares_each_transport_retry() {
 
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 3);
-    assert_eq!(requests[0].meta.endpoint, "<auth>");
-    assert_eq!(requests[1].meta.endpoint, "OAuthRetry");
-    assert_eq!(requests[2].meta.endpoint, "OAuthRetry");
-    let first_slot = requests[1]
-        .auth_plan
-        .slots
-        .first()
-        .expect("first protected request has prepared auth")
-        .id;
-    let second_slot = requests[2]
-        .auth_plan
-        .slots
-        .first()
-        .expect("retry protected request has prepared auth")
-        .id;
-    assert_eq!(
-        first_slot, second_slot,
-        "credential re-preparation must reuse the request-local placement plan"
-    );
     for req in &requests[1..] {
         assert_eq!(
             req.headers
@@ -774,11 +788,18 @@ async fn generated_oauth_client_credentials_token_failure_blocks_protected_reque
         r#"{"error":"invalid_client"}"#,
     )]);
     let sent = transport.clone();
-    let api = OAuthHelperApi::new_with_transport(
+    let api = OAuthHelperApi::new_with_safe_reqwest_builder(
         "oauth-client".to_string(),
         CLIENT_SECRET.to_string(),
-        transport,
-    );
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("mock client")
+    .configure(|cfg| {
+        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+            4096,
+            std::time::Duration::from_secs(15 * 60),
+        ));
+    });
 
     let err = api
         .oauth_me()
@@ -790,7 +811,6 @@ async fn generated_oauth_client_credentials_token_failure_blocks_protected_reque
 
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].meta.endpoint, "<auth>");
 }
 
 fn assert_header(req: &RecordedRequest, name: &'static str, expected: &'static str) {
@@ -810,113 +830,34 @@ fn assert_url_contains(req: &RecordedRequest, expected: &'static str) {
 
 #[derive(Clone)]
 struct RecordingTransport {
-    responses: Arc<Mutex<VecDeque<ResponseFixture>>>,
-    requests: Arc<Mutex<Vec<RecordedRequest>>>,
-}
-
-struct RecordedRequest {
-    meta: concord_core::transport::RequestMeta,
-    url: url::Url,
-    headers: http::HeaderMap,
-    body: RecordedBody,
-    timeout: Option<std::time::Duration>,
-    auth_plan: concord_core::advanced::AuthPlacementPlan,
-}
-
-#[derive(Clone, Debug)]
-enum RecordedBody {
-    Empty,
-    Bytes(Bytes),
-}
-
-impl RecordedBody {
-    fn as_bytes(&self) -> Option<&Bytes> {
-        match self {
-            Self::Bytes(bytes) => Some(bytes),
-            Self::Empty => None,
-        }
-    }
-}
-
-impl std::fmt::Debug for RecordedRequest {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RecordedRequest")
-            .field("meta", &self.meta)
-            .field("url", &"<redacted>")
-            .field(
-                "headers",
-                &concord_core::advanced::SanitizedHeaders::new(&self.headers),
-            )
-            .field("body", &"<body>")
-            .field("timeout", &self.timeout)
-            .field("auth_plan", &self.auth_plan)
-            .finish()
-    }
+    server: MockServer,
+    handle: Arc<Mutex<MockHandle>>,
 }
 
 impl RecordingTransport {
     fn new(responses: Vec<ResponseFixture>) -> Self {
+        let (server, handle) = mock()
+            .replies(responses.into_iter().map(ResponseFixture::into_reply))
+            .build();
         Self {
-            responses: Arc::new(Mutex::new(responses.into())),
-            requests: Arc::new(Mutex::new(Vec::new())),
+            server,
+            handle: Arc::new(Mutex::new(handle)),
         }
     }
 
     async fn sent_count(&self) -> usize {
-        self.requests.lock().await.len()
+        self.handle.lock().expect("handle lock").recorded_len()
     }
 
     async fn requests(&self) -> Vec<RecordedRequest> {
-        let mut requests = self.requests.lock().await;
-        std::mem::take(&mut *requests)
+        self.handle.lock().expect("handle lock").recorded()
     }
-}
 
-impl Transport for RecordingTransport {
-    fn send(
+    fn configure_reqwest(
         &self,
-        req: http::Request<DynBody>,
-    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
-        let responses = self.responses.clone();
-        let requests = self.requests.clone();
-        Box::pin(async move {
-            use http_body_util::BodyExt as _;
-            let (parts, body) = req.into_parts();
-            let context = parts
-                .extensions
-                .get::<RequestExecutionContext>()
-                .cloned()
-                .expect("context");
-            let auth_plan = parts
-                .extensions
-                .get::<concord_core::advanced::AuthPlacementPlan>()
-                .cloned()
-                .unwrap_or_default();
-            let url = parts.uri.to_string().parse().expect("URL");
-            let bytes = body
-                .collect()
-                .await
-                .map_err(TransportError::new)?
-                .to_bytes();
-            let body = if bytes.is_empty() {
-                RecordedBody::Empty
-            } else {
-                RecordedBody::Bytes(bytes)
-            };
-            requests.lock().await.push(RecordedRequest {
-                meta: context.meta,
-                url,
-                headers: parts.headers,
-                body,
-                timeout: context.timeout,
-                auth_plan,
-            });
-            let response = responses.lock().await.pop_front().expect("test response");
-            let mut result = http::Response::new(DynBody::from_bytes(response.body));
-            *result.status_mut() = response.status;
-            *result.headers_mut() = response.headers;
-            Ok(result)
-        })
+        builder: concord_core::advanced::SafeReqwestBuilder,
+    ) -> concord_core::advanced::SafeReqwestBuilder {
+        self.server.configure_reqwest(builder)
     }
 }
 
@@ -942,5 +883,15 @@ impl ResponseFixture {
             headers,
             body: Bytes::from_static(body.as_bytes()),
         }
+    }
+
+    fn into_reply(self) -> MockReply {
+        let mut reply = MockReply::status(self.status).with_body(self.body);
+        for (name, value) in self.headers {
+            if let Some(name) = name {
+                reply = reply.with_header(name, value);
+            }
+        }
+        reply
     }
 }

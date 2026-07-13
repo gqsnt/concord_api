@@ -11,7 +11,10 @@ async fn auth_endpoint_backed_session_flow_acquires_and_uses_credential() {
         .reply(json_reply(r#"{"access_token":"session-token"}"#))
         .reply(json_reply(r#"{"id":7,"username":"ada"}"#))
         .build();
-    let api = SessionApi::new_with_transport("upstream-secret".to_string(), transport);
+    let api = SessionApi::new_with_safe_reqwest_builder("upstream-secret".to_string(), |builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
 
     let missing = api
         .protected()
@@ -73,8 +76,11 @@ async fn auth_endpoint_backed_session_flow_acquires_and_uses_credential() {
 #[tokio::test]
 async fn auth_endpoint_errors_do_not_render_secret_values() {
     let (transport, handle) = mock().build();
-    let api =
-        SessionApi::new_with_transport("super-secret-upstream\ninvalid".to_string(), transport);
+    let api = SessionApi::new_with_safe_reqwest_builder(
+        "super-secret-upstream\ninvalid".to_string(),
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("mock client");
 
     let err = api
         .auth_api()
@@ -103,7 +109,10 @@ async fn endpoint_backed_session_401_does_not_refresh_without_admission() {
                 .with_body(Bytes::from_static(b"expired")),
         )
         .build();
-    let api = SessionApi::new_with_transport("upstream-secret".to_string(), transport);
+    let api = SessionApi::new_with_safe_reqwest_builder("upstream-secret".to_string(), |builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
 
     api.auth_api()
         .login_for_session(SessionLoginRequest {
@@ -162,7 +171,10 @@ async fn endpoint_backed_session_403_does_not_refresh_without_admission() {
             MockReply::status(http::StatusCode::FORBIDDEN).with_body(Bytes::from_static(b"denied")),
         )
         .build();
-    let api = SessionApi::new_with_transport("upstream-secret".to_string(), transport);
+    let api = SessionApi::new_with_safe_reqwest_builder("upstream-secret".to_string(), |builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
 
     api.auth_api()
         .login_for_session(SessionLoginRequest {
@@ -219,7 +231,11 @@ async fn rotating_static_secret_preserves_endpoint_backed_session() {
         .reply(json_reply(r#"{"access_token":"session-token"}"#))
         .reply(json_reply(r#"{"id":7,"username":"ada"}"#))
         .build();
-    let mut api = SessionApi::new_with_transport("upstream-secret".to_string(), transport);
+    let mut api =
+        SessionApi::new_with_safe_reqwest_builder("upstream-secret".to_string(), |builder| {
+            transport.configure_reqwest(builder)
+        })
+        .expect("mock client");
 
     api.auth_api()
         .login_for_session(SessionLoginRequest {

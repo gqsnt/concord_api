@@ -16,7 +16,9 @@ async fn retry_profile_honors_max_attempts() {
         .reply(MockReply::status(StatusCode::INTERNAL_SERVER_ERROR))
         .reply(MockReply::status(StatusCode::INTERNAL_SERVER_ERROR))
         .build();
-    let api = PolicyApi::new_with_transport(transport);
+    let api =
+        PolicyApi::new_with_safe_reqwest_builder(|builder| transport.configure_reqwest(builder))
+            .expect("mock client");
 
     let err = api
         .retry_only()
@@ -41,7 +43,9 @@ async fn retry_after_handled_by_rate_limiter_does_not_sleep_twice() {
         )
         .reply(MockReply::ok_text(Bytes::from_static(b"ok")))
         .build();
-    let mut api = PolicyApi::new_with_transport(transport);
+    let mut api =
+        PolicyApi::new_with_safe_reqwest_builder(|builder| transport.configure_reqwest(builder))
+            .expect("mock client");
     api.configure_mut(|cfg| {
         cfg.rate_limiter(limiter.clone());
     });
@@ -71,7 +75,9 @@ async fn rate_limit_limiter_observes_successful_response() {
     let (transport, handle) = mock()
         .reply(MockReply::ok_text(Bytes::from_static(b"limited-ok")))
         .build();
-    let mut api = PolicyApi::new_with_transport(transport);
+    let mut api =
+        PolicyApi::new_with_safe_reqwest_builder(|builder| transport.configure_reqwest(builder))
+            .expect("mock client");
     api.configure_mut(|cfg| {
         cfg.rate_limiter(limiter.clone());
     });

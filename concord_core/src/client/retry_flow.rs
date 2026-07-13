@@ -1,7 +1,7 @@
 // Client lifecycle phase modules intentionally share one private parent namespace.
 use super::*;
 
-impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
+impl<Cx: ClientContext> ApiClient<Cx> {
     pub(super) fn retry_outcome_from_error(err: &ApiClientError) -> RetryOutcome<'_> {
         match err {
             ApiClientError::Transport { source, .. } => RetryOutcome::Transport(source),

@@ -30,7 +30,7 @@ fn emit_retry_config(config: &RetryConfigResolved) -> TokenStream2 {
         }
     });
     let transport_errors = config.transport_errors.iter().map(|kind| {
-        quote! { ::concord_core::transport::TransportErrorKind::#kind }
+        quote! { ::concord_core::advanced::TransportErrorKind::#kind }
     });
     let respect_retry_after = config.respect_retry_after;
     let idempotency = emit_retry_idempotency(&config.idempotency);
@@ -58,6 +58,5 @@ fn emit_retry_idempotency(idempotency: &RetryIdempotencyResolved) -> TokenStream
         }
     }
 }
-
 
 

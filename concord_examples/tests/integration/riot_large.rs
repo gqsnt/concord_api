@@ -56,7 +56,10 @@ fn riot_account_dto_accepts_riot_id_fields_when_present() {
 #[test]
 fn riot_like_large_fixture_facade_paths_typecheck_cleanly() {
     let (transport, handle) = mock().build();
-    let riot = RiotClient::new_with_transport("riot-secret".to_string(), transport);
+    let riot = RiotClient::new_with_safe_reqwest_builder("riot-secret".to_string(), |builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
 
     let _summoner = riot
         .platform(PlatformRoute::EUW1)
@@ -78,7 +81,10 @@ fn riot_like_large_fixture_facade_paths_typecheck_cleanly() {
 #[test]
 fn ddragon_fixture_facade_paths_typecheck_cleanly() {
     let (transport, handle) = mock().build();
-    let ddragon = DDragonClient::new_with_transport(transport);
+    let ddragon = DDragonClient::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
 
     let _versions = ddragon.ddragon().api().versions();
     let _champions = ddragon

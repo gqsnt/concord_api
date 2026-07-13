@@ -31,13 +31,10 @@ struct ObservationFailureEndpoint {
 impl Endpoint<TestCx> for ObservationFailureEndpoint {
     type Response = String;
 
-    fn execute<'a, T>(
-        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
+    fn execute<'a>(
+        client: &'a concord_core::prelude::ApiClient<TestCx>,
         plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<String, ApiClientError>> + Send + 'a>>
-    where
-        T: concord_core::advanced::Transport + 'a,
-    {
+    ) -> Pin<Box<dyn Future<Output = Result<String, ApiClientError>> + Send + 'a>> {
         Box::pin(
             async move { BufferedResponse::<InvalidJsonResponse>::execute(client, plan).await },
         )
@@ -307,7 +304,8 @@ async fn rate_limit_observation_happens_after_response_classification() -> Resul
         events.clone(),
         vec![MockResponse::text(StatusCode::OK, "ok")],
     );
-    let mut client = client(TestAuthVars::default(), transport);
+    let _server = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport.clone());
     client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
     configure_runtime(&mut client, Some(limiter));
 
@@ -318,10 +316,6 @@ async fn rate_limit_observation_happens_after_response_classification() -> Resul
         .iter()
         .position(|event| event == "rate_acquire")
         .expect("rate limiter acquired");
-    let transport = events
-        .iter()
-        .position(|event| event == "transport")
-        .expect("transport sent");
     let classify = events
         .iter()
         .position(|event| event == "classify_response")
@@ -330,8 +324,8 @@ async fn rate_limit_observation_happens_after_response_classification() -> Resul
         .iter()
         .position(|event| event == "rate_response")
         .expect("rate limiter observed response");
-    assert!(acquire < transport);
-    assert!(transport < classify);
+    assert_eq!(_server.sent_count().await, 1);
+    assert!(acquire < classify);
     assert!(classify < observe);
     Ok(())
 }
@@ -375,11 +369,13 @@ async fn rate_limit_observes_200_before_decode_failure() {
         HeaderValue::from_static("application/json"),
     );
     let transport = MockTransport::new(events.clone(), vec![response]);
-    let mut client = client(TestAuthVars::default(), transport);
+    let _server = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport.clone());
     configure_runtime(
         &mut client,
         Some(Arc::new(ObservationRateLimiter::new(events.clone()))),
     );
+    let _server = transport.clone();
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
 
     let err = client
@@ -430,8 +426,9 @@ async fn rate_limit_observes_retryable_status_before_retry() -> Result<(), ApiCl
             MockResponse::text(StatusCode::OK, SECOND_SENTINEL),
         ],
     );
+    let _server = transport.clone();
     let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
+    let mut client = client(TestAuthVars::default(), transport.clone());
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
     configure_runtime(&mut client, Some(limiter));
 
@@ -468,11 +465,11 @@ async fn rate_limit_observes_auth_rejection_response() -> Result<(), ApiClientEr
         events.clone(),
         vec![MockResponse::text(StatusCode::FORBIDDEN, "forbidden")],
     );
+    let _server = transport.clone();
     let sent_transport = transport.clone();
-    let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
-        (),
+    let mut client = observation_client(
         ObservationAuthVars::bearer("PR65_QUERY_SECRET_DO_NOT_LEAK", "user-a", events.clone()),
-        transport,
+        &transport,
     );
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
     configure_runtime(&mut client, Some(limiter));
@@ -520,13 +517,10 @@ async fn rate_limit_observes_auth_rejection_response() -> Result<(), ApiClientEr
 async fn rate_limit_does_not_observe_transport_error_as_response() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let limiter = Arc::new(ObservationRateLimiter::new(events.clone()));
-    let transport = MockTransport::with_outcomes(
-        events.clone(),
-        vec![MockOutcome::TransportError(
-            concord_core::advanced::TransportErrorKind::Timeout,
-        )],
-    );
-    let mut client = client(TestAuthVars::default(), transport);
+    let transport =
+        MockTransport::with_outcomes(events.clone(), vec![MockOutcome::DisconnectAfterRequest]);
+    let _server = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport.clone());
     configure_runtime(&mut client, Some(limiter));
 
     let err = client
@@ -548,12 +542,10 @@ async fn missing_host_fails_before_rate_limit_acquire() {
         events.clone(),
         RateLimitResponseAction::Continue,
     ));
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![MockResponse::text(StatusCode::OK, "should-not-send")],
-    );
+    let transport = MockTransport::new(events.clone(), vec![]);
+    let _server = transport.clone();
     let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
+    let mut client = client(TestAuthVars::default(), transport.clone());
     configure_runtime(&mut client, Some(limiter));
 
     let err = client
@@ -584,10 +576,10 @@ async fn rate_limit_acquire_context_does_not_expose_bearer_auth() -> Result<(), 
         events.clone(),
         vec![MockResponse::text(StatusCode::OK, "ok")],
     );
-    let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
-        (),
+    let _server = transport.clone();
+    let mut client = observation_client(
         ObservationAuthVars::bearer(BEARER_SENTINEL, "bearer", events.clone()),
-        transport,
+        &transport,
     );
     configure_runtime(&mut client, Some(limiter));
 
@@ -623,6 +615,7 @@ async fn rate_limit_acquire_context_does_not_expose_query_auth() -> Result<(), A
         events.clone(),
         vec![MockResponse::text(StatusCode::OK, "ok")],
     );
+    let _server = transport.clone();
     let mut client = client(
         TestAuthVars {
             token: Some(QUERY_SENTINEL.to_string()),
@@ -666,10 +659,10 @@ async fn rate_limit_acquire_context_does_not_expose_basic_auth_material()
         events.clone(),
         vec![MockResponse::text(StatusCode::OK, "ok")],
     );
-    let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
-        (),
+    let _server = transport.clone();
+    let mut client = observation_client(
         ObservationAuthVars::basic(USER_SENTINEL, PASS_SENTINEL, "basic", events.clone()),
-        transport,
+        &transport,
     );
     configure_runtime(&mut client, Some(limiter));
 
@@ -706,10 +699,10 @@ async fn rate_limit_response_context_does_not_expose_bearer_auth() -> Result<(),
         events.clone(),
         vec![MockResponse::text(StatusCode::OK, "ok")],
     );
-    let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
-        (),
+    let _server = transport.clone();
+    let mut client = observation_client(
         ObservationAuthVars::bearer(BEARER_SENTINEL, "bearer", events.clone()),
-        transport,
+        &transport,
     );
     configure_runtime(&mut client, Some(limiter));
 
@@ -744,6 +737,7 @@ async fn rate_limit_response_context_does_not_expose_query_auth() -> Result<(), 
         events.clone(),
         vec![MockResponse::text(StatusCode::OK, "ok")],
     );
+    let _server = transport.clone();
     let mut client = client(
         TestAuthVars {
             token: Some(QUERY_SENTINEL.to_string()),
@@ -786,10 +780,10 @@ async fn rate_limit_response_context_does_not_expose_basic_auth_material()
         events.clone(),
         vec![MockResponse::text(StatusCode::OK, "ok")],
     );
-    let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
-        (),
+    let _server = transport.clone();
+    let mut client = observation_client(
         ObservationAuthVars::basic(USER_SENTINEL, PASS_SENTINEL, "basic", events.clone()),
-        transport,
+        &transport,
     );
     configure_runtime(&mut client, Some(limiter));
 
@@ -824,7 +818,7 @@ async fn rate_limit_response_huge_delay_returns_typed_error() {
     static METHOD: Method = Method::GET;
     static URL: &str = "https://example.com/text";
     static ENDPOINT: &str = "Text";
-    let plan = Box::leak(Box::new(concord_core::advanced::RateLimitPlan::default()));
+    let plan = concord_core::advanced::RateLimitPlan::default();
     let headers = http::HeaderMap::new();
     let ctx = RateLimitResponseContext {
         meta: RateLimitContext {
@@ -836,7 +830,7 @@ async fn rate_limit_response_huge_delay_returns_typed_error() {
             page_index: 0,
             idempotent: true,
             max_cooldown: Duration::from_secs(1),
-            plan,
+            plan: &plan,
         },
         status: StatusCode::TOO_MANY_REQUESTS,
         headers: concord_core::advanced::SanitizedHeaders::new(&headers),
@@ -871,13 +865,15 @@ async fn rate_limit_response_above_cap_returns_typed_error_before_cooldown_stora
 
     let transport = MockTransport::new(
         Arc::new(Mutex::new(Vec::new())),
-        vec![
-            response_with_retry_after(StatusCode::TOO_MANY_REQUESTS, RESPONSE_SENTINEL, "2"),
-            MockResponse::text(StatusCode::OK, "should-not-send"),
-        ],
+        vec![response_with_retry_after(
+            StatusCode::TOO_MANY_REQUESTS,
+            RESPONSE_SENTINEL,
+            "2",
+        )],
     );
+    let _server = transport.clone();
     let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
+    let mut client = client(TestAuthVars::default(), transport.clone());
     client.configure(|cfg| {
         cfg.max_rate_limit_cooldown(Duration::from_secs(1));
     });
@@ -914,11 +910,11 @@ async fn rate_limit_response_above_cap_does_not_poison_followup_request()
         vec![
             response_with_retry_after(StatusCode::TOO_MANY_REQUESTS, RESPONSE_SENTINEL, "2"),
             MockResponse::text(StatusCode::OK, "ok"),
-            MockResponse::text(StatusCode::OK, "later"),
         ],
     );
+    let _server = transport.clone();
     let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
+    let mut client = client(TestAuthVars::default(), transport.clone());
     client.configure(|cfg| {
         cfg.max_rate_limit_cooldown(Duration::from_secs(1));
     });
@@ -972,8 +968,9 @@ async fn short_rate_limit_cooldown_still_allows_followup_requests() -> Result<()
             MockResponse::text(StatusCode::OK, "ok"),
         ],
     );
+    let _server = transport.clone();
     let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
+    let mut client = client(TestAuthVars::default(), transport.clone());
     client.configure(|cfg| {
         cfg.max_rate_limit_cooldown(Duration::from_secs(1));
     });
@@ -1008,8 +1005,9 @@ async fn rate_limit_response_zero_delay_is_allowed() -> Result<(), ApiClientErro
             MockResponse::text(StatusCode::OK, "ok"),
         ],
     );
+    let _server = transport.clone();
     let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
+    let mut client = client(TestAuthVars::default(), transport.clone());
     configure_runtime(&mut client, Some(rate_limiter));
 
     let decoded = client
@@ -1049,11 +1047,11 @@ async fn rate_limit_response_action_cannot_bypass_auth_rejection() -> Result<(),
         events.clone(),
         vec![MockResponse::text(StatusCode::FORBIDDEN, "forbidden")],
     );
+    let _server = transport.clone();
     let sent_transport = transport.clone();
-    let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
-        (),
+    let mut client = observation_client(
         ObservationAuthVars::bearer("PR67_BEARER_SECRET_DO_NOT_LEAK", "bearer", events.clone()),
-        transport,
+        &transport,
     );
     configure_runtime(&mut client, Some(rate_limiter));
 
@@ -1110,8 +1108,9 @@ async fn rate_limit_response_context_sanitizes_sensitive_response_headers()
             response
         }],
     );
+    let _server = transport.clone();
     let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
+    let mut client = client(TestAuthVars::default(), transport.clone());
     configure_runtime(&mut client, Some(limiter));
 
     let err = client
@@ -1179,13 +1178,13 @@ async fn retry_after_429_does_not_double_sleep_with_rate_limit_observer()
                 body: Bytes::from_static(b"retry-me"),
                 content_length: None,
                 chunks: None,
-                read_count: None,
             },
             MockResponse::text(StatusCode::OK, "ok"),
         ],
     );
+    let _server = transport.clone();
     let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
+    let mut client = client(TestAuthVars::default(), transport.clone());
     configure_runtime(&mut client, Some(rate_limiter));
 
     let handle = tokio::spawn(async move {
@@ -1217,8 +1216,9 @@ async fn retry_after_429_does_not_double_sleep_with_rate_limit_observer()
 async fn no_default_rate_limit_empty_plan_succeeds() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "ok")]);
+    let _server = transport.clone();
     let sent = transport.clone();
-    let client = client(TestAuthVars::default(), transport);
+    let client = client(TestAuthVars::default(), transport.clone());
 
     let decoded = client.request(TextEndpoint::default()).response().await?;
 
@@ -1237,14 +1237,14 @@ async fn no_default_rate_limit_non_empty_plan_fails_closed() {
         events,
         vec![MockResponse::text(StatusCode::OK, "should-not-send")],
     );
+    let _server = transport.clone();
     let sent = transport.clone();
-    let client = concord_core::prelude::ApiClient::<TestCx, _>::with_transport(
-        (),
+    let client = client(
         TestAuthVars {
             token: Some(AUTH_SENTINEL.to_string()),
             identity: "bearer",
         },
-        transport,
+        transport.clone(),
     );
     let mut policy = rate_limit_policy();
     policy.auth = auth_policy(concord_core::advanced::AuthPlacement::Bearer).auth;
@@ -1277,12 +1277,9 @@ async fn no_default_rate_limit_explicit_noop_limiter_opt_out_succeeds() -> Resul
 {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "ok")]);
+    let _server = transport.clone();
     let sent = transport.clone();
-    let mut client = concord_core::prelude::ApiClient::<TestCx, _>::with_transport(
-        (),
-        TestAuthVars::default(),
-        transport,
-    );
+    let mut client = client(TestAuthVars::default(), transport.clone());
     client.configure(|cfg| {
         cfg.rate_limiter(Arc::new(concord_core::advanced::NoopRateLimiter::new()));
     });

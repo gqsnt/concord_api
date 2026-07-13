@@ -204,10 +204,8 @@ fn emit_endpoint_def(
                 #( #pending_setter_decls )*
             }
 
-            impl<'a, T> #pending_ext_trait
-                for ::concord_core::prelude::PendingRequest<'a, super::#cx_ty, #ty_name, T>
-            where
-                T: ::concord_core::advanced::Transport,
+            impl<'a> #pending_ext_trait
+                for ::concord_core::prelude::PendingRequest<'a, super::#cx_ty, #ty_name>
             {
                 #( #pending_setter_impls )*
             }
@@ -667,8 +665,8 @@ fn endpoint_response_plan_tokens(ep: &ResolvedEndpoint, ty_name: &Ident) -> Toke
 fn endpoint_execute_override(ep: &ResolvedEndpoint, ty_name: &Ident, cx_ty: &Ident) -> TokenStream2 {
     let response_entity_adapter_ty = endpoint_response_adapter_ty(ep, ty_name);
     quote! {
-        fn execute<'a, T>(
-            client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
+        fn execute<'a>(
+            client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty>,
             plan: ::concord_core::__private::RequestPlan,
         ) -> ::core::pin::Pin<
             ::std::boxed::Box<
@@ -680,8 +678,6 @@ fn endpoint_execute_override(ep: &ResolvedEndpoint, ty_name: &Ident, cx_ty: &Ide
                     > + Send + 'a,
             >,
         >
-        where
-            T: ::concord_core::advanced::Transport + 'a,
         {
             <#response_entity_adapter_ty as ::concord_core::advanced::ResponseEntity>::execute(
                 client,
@@ -703,8 +699,8 @@ fn endpoint_response_terminal_impl(
     let response_entity_adapter_ty = endpoint_response_adapter_ty(ep, ty_name);
     quote! {
         impl ::concord_core::__private::ResponseTerminalEndpoint<super::#cx_ty> for #ty_name {
-            fn execute_response<'a, T>(
-                client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
+            fn execute_response<'a>(
+                client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty>,
                 plan: ::concord_core::__private::RequestPlan,
             ) -> ::core::pin::Pin<
                 ::std::boxed::Box<
@@ -716,8 +712,6 @@ fn endpoint_response_terminal_impl(
                         > + Send + 'a,
                 >,
             >
-            where
-                T: ::concord_core::advanced::Transport + 'a,
             {
                 <#response_entity_adapter_ty as ::concord_core::__private::ResponseEntityWithMeta>::execute_with_meta(
                     client,

@@ -21,7 +21,7 @@ fn generated_rustdoc_covers_client_endpoint_and_request_builder() {
         &out,
         &[
             "#[doc=\"Generated API client.\"]",
-            "#[doc=\"Create a client with the default reqwest transport.\"]",
+            "#[doc=\"Create a client backed by Concord's managed Reqwest client.\"]",
             "#[doc=\"Builder for required client configuration.\"]",
             "#[doc=\"GET / search\"]",
             "#[doc=\"HTTP:\"]",

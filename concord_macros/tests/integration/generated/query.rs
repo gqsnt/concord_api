@@ -113,11 +113,12 @@ fn reply() -> MockReply {
 #[tokio::test]
 async fn generated_query_replacement_supports_all_cardinalities_and_order() {
     let (transport, handle) = mock().reply(reply()).build();
-    let api = QueryVectorApi::new_with_transport(
+    let api = QueryVectorApi::new_with_safe_reqwest_builder(
         "client".to_string(),
         vec!["client-a".to_string(), "client-b".to_string()],
-        transport,
-    );
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("mock client");
 
     api.grouped(
         "scope".to_string(),
@@ -174,11 +175,12 @@ async fn generated_query_replacement_supports_all_cardinalities_and_order() {
 #[tokio::test]
 async fn generated_query_optional_values_and_empty_vectors_remove_inherited_keys() {
     let (transport, handle) = mock().reply(reply()).build();
-    let api = QueryVectorApi::new_with_transport(
+    let api = QueryVectorApi::new_with_safe_reqwest_builder(
         "client".to_string(),
         vec!["client-a".to_string()],
-        transport,
-    );
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("mock client");
 
     api.grouped("scope".to_string(), vec!["scope-a".to_string()])
         .search("scalar".to_string(), Vec::new())
@@ -198,11 +200,12 @@ async fn generated_query_optional_values_and_empty_vectors_remove_inherited_keys
 #[tokio::test]
 async fn generated_query_optional_vector_some_empty_removes_key() {
     let (transport, handle) = mock().reply(reply()).build();
-    let api = QueryVectorApi::new_with_transport(
+    let api = QueryVectorApi::new_with_safe_reqwest_builder(
         "client".to_string(),
         vec!["client-a".to_string()],
-        transport,
-    );
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("mock client");
 
     api.grouped("scope".to_string(), vec!["scope-a".to_string()])
         .search("scalar".to_string(), vec!["tag".to_string()])
@@ -221,11 +224,12 @@ async fn generated_query_optional_vector_some_empty_removes_key() {
 #[tokio::test]
 async fn generated_nested_scopes_replace_vector_values_and_preserve_unrelated_order() {
     let (transport, handle) = mock().reply(reply()).build();
-    let api = QueryVectorApi::new_with_transport(
+    let api = QueryVectorApi::new_with_safe_reqwest_builder(
         "client".to_string(),
         vec!["client-a".to_string(), "client-b".to_string()],
-        transport,
-    );
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("mock client");
 
     api.grouped("outer".to_string(), vec!["outer-a".to_string()])
         .inner(
@@ -261,11 +265,12 @@ async fn generated_nested_scopes_replace_vector_values_and_preserve_unrelated_or
 #[tokio::test]
 async fn generated_nested_scope_vector_replaces_outer_without_endpoint_override() {
     let (transport, handle) = mock().reply(reply()).build();
-    let api = QueryVectorApi::new_with_transport(
+    let api = QueryVectorApi::new_with_safe_reqwest_builder(
         "client".to_string(),
         vec!["client-a".to_string(), "client-b".to_string()],
-        transport,
-    );
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("mock client");
 
     api.grouped("outer".to_string(), vec!["outer-a".to_string()])
         .inner(
@@ -285,11 +290,12 @@ async fn generated_nested_scope_vector_replaces_outer_without_endpoint_override(
 #[tokio::test]
 async fn generated_custom_vec_named_type_remains_scalar() {
     let (transport, handle) = mock().reply(reply()).build();
-    let api = QueryVectorApi::new_with_transport(
+    let api = QueryVectorApi::new_with_safe_reqwest_builder(
         "client".to_string(),
         vec!["client-a".to_string()],
-        transport,
-    );
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("mock client");
 
     api.custom(custom::Vec("scalar".to_string()))
         .execute()
@@ -305,7 +311,10 @@ async fn generated_custom_vec_named_type_remains_scalar() {
 async fn generated_nonempty_vector_preserves_query_auth_collision_redaction() {
     let secret = "QUERY_VECTOR_AUTH_SECRET";
     let (transport, handle) = mock().build();
-    let api = VectorAuthApi::new_with_transport(secret.to_string(), transport);
+    let api = VectorAuthApi::new_with_safe_reqwest_builder(secret.to_string(), |builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
 
     let err = api
         .protected(vec!["public".to_string()])
@@ -323,7 +332,10 @@ async fn generated_nonempty_vector_preserves_query_auth_collision_redaction() {
 async fn generated_empty_vector_allows_query_auth_without_public_collision() {
     let secret = "QUERY_VECTOR_AUTH_SECRET";
     let (transport, handle) = mock().reply(reply()).build();
-    let api = VectorAuthApi::new_with_transport(secret.to_string(), transport);
+    let api = VectorAuthApi::new_with_safe_reqwest_builder(secret.to_string(), |builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client");
 
     api.protected(Vec::new())
         .execute()

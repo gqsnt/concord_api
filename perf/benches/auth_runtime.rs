@@ -3,8 +3,7 @@ use concord_core::advanced::{
     AuthApplicationRequest, AuthAppliedCredential, AuthError, AuthHttpExecutor, AuthPlacement,
     AuthPreparationReuse, AuthRequirement, CredentialContext, CredentialId, CredentialProvider,
     CredentialRefreshReason, CredentialSlot, NoopDebugSink, NoopRateLimiter,
-    PreparedAuthCredential, RequestMeta, RetryConfig, RetryIdempotency, Transport,
-    apply_secret_credential,
+    PreparedAuthCredential, RequestMeta, RetryConfig, RetryIdempotency, apply_secret_credential,
 };
 use concord_core::internal::{
     ClientPlanContext, PreparedBody, RequestPlan, ResolvedPolicy, RetrySetting,
@@ -256,12 +255,10 @@ struct SlotRawPlanEndpoint {
 impl Endpoint<SlotAuthCx> for SlotRawPlanEndpoint {
     type Response = ();
 
-    fn execute<'a, T>(
-        _client: &'a ApiClient<SlotAuthCx, T>,
+    fn execute<'a>(
+        _client: &'a ApiClient<SlotAuthCx>,
         plan: RequestPlan,
     ) -> Pin<Box<dyn Future<Output = Result<Self::Response, error::ApiClientError>> + Send + 'a>>
-    where
-        T: Transport + 'a,
     {
         let ctx = error::ErrorContext {
             endpoint: plan.endpoint.meta.name,
@@ -286,8 +283,8 @@ impl IntoEndpointPlan<SlotAuthCx> for SlotRawPlanEndpoint {
     }
 }
 
-async fn execute_slot_raw_plan<T: Transport>(
-    client: &ApiClient<SlotAuthCx, T>,
+async fn execute_slot_raw_plan(
+    client: &ApiClient<SlotAuthCx>,
     plan: RequestPlan,
 ) -> Result<dangerous::BuiltResponse, error::ApiClientError> {
     let overrides = raw_plan_overrides(&plan)?;
@@ -304,9 +301,12 @@ async fn execute_slot_raw_plan<T: Transport>(
         .await
 }
 
-fn slot_client(transport: MockTransport) -> ApiClient<SlotAuthCx, MockTransport> {
+fn slot_client(transport: MockTransport) -> ApiClient<SlotAuthCx> {
     let slot = Arc::new(CredentialSlot::new(BenchTokenProvider::default()));
-    let mut client = ApiClient::with_transport((), SlotAuthVars { slot }, transport);
+    let mut client = ApiClient::with_safe_reqwest_builder((), SlotAuthVars { slot }, |builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("native performance client");
     client.configure(|cfg| {
         cfg.debug_sink(Arc::new(NoopDebugSink));
         cfg.rate_limiter(Arc::new(NoopRateLimiter::new()));

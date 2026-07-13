@@ -50,7 +50,7 @@ Request planning keeps a single logical recipe rather than a prebuilt
 `DynBody`: reusable bytes, one-shot byte streams, advanced HTTP bodies,
 terminal factories, and multipart recipes remain distinguishable until an
 attempt is materialized. The current conversion to `DynBody` is a private
-compatibility bridge for the public transport boundary and has a P-06 deletion
+native request materialization path and has no public executor boundary
 point. Exact stream lengths are guards, not `SizeHint` claims; they reject
 underflow and overflow without retaining payload diagnostics.
 

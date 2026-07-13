@@ -395,10 +395,8 @@ fn emit_client_wrapper(
                 >>;
             }
 
-            impl<'a, T> #trait_name<'a>
-                for ::concord_core::prelude::PendingRequest<'a, #cx_ty, #endpoint_type_path, T>
-            where
-                T: ::concord_core::advanced::Transport + 'a,
+            impl<'a> #trait_name<'a>
+                for ::concord_core::prelude::PendingRequest<'a, #cx_ty, #endpoint_type_path>
             {
                 #[inline]
                 fn #method(
@@ -421,14 +419,11 @@ fn emit_client_wrapper(
     quote! {
         #[doc = "Generated API client."]
         #[derive(Clone)]
-        pub struct #client_ty<T: ::concord_core::advanced::Transport = ::concord_core::advanced::DefaultTransport> {
-            inner: ::concord_core::prelude::ApiClient<#cx_ty, T>,
+        pub struct #client_ty {
+            inner: ::concord_core::prelude::ApiClient<#cx_ty>,
         }
-        impl #client_ty<::concord_core::advanced::DefaultTransport>
-        where
-            ::concord_core::advanced::DefaultTransport: ::concord_core::advanced::DefaultTransportMarker,
-        {
-            #[doc = "Create a client with the default reqwest transport."]
+        impl #client_ty {
+            #[doc = "Create a client backed by Concord's managed Reqwest client."]
             #[inline]
             pub fn new( #( #ctor_args ),* ) -> Self {
                let vars = #vars_ty::new( #( #new_pass ),* );
@@ -473,20 +468,6 @@ fn emit_client_wrapper(
                 ::core::result::Result::Ok(Self { inner: __inner })
             }
 
-
-            #[doc = "Create a client with a custom transport."]
-            #[inline]
-            pub fn new_with_transport<T2: ::concord_core::advanced::Transport>(
-                #( #ctor_args, )*
-                transport: T2
-            ) -> #client_ty<T2> {
-                let vars = #vars_ty::new( #( #new_pass ),* );
-                let auth_vars = #auth_vars_ty::new( #( #new_auth_pass ),* );
-                let mut __inner = ::concord_core::prelude::ApiClient::<#cx_ty, T2>::with_transport(vars, auth_vars, transport);
-                #configure_rate_limiter
-                #client_ty { inner: __inner }
-            }
-
             #[doc = "Create a builder for required client configuration."]
             #[inline]
             pub fn builder() -> #builder_ty {
@@ -517,10 +498,7 @@ fn emit_client_wrapper(
 
             #[doc = "Build the generated client."]
             #[inline]
-            pub fn build(self) -> ::core::result::Result<#client_ty<::concord_core::advanced::DefaultTransport>, ::concord_core::prelude::ApiClientError>
-            where
-                ::concord_core::advanced::DefaultTransport: ::concord_core::advanced::DefaultTransportMarker,
-            {
+            pub fn build(self) -> ::core::result::Result<#client_ty, ::concord_core::prelude::ApiClientError> {
                 let __ctx = ::concord_core::error::ErrorContext {
                     endpoint: concat!(stringify!(#client_ty), "::builder"),
                     method: ::http::Method::GET,
@@ -531,7 +509,7 @@ fn emit_client_wrapper(
             }
         }
 
-        impl<T: ::concord_core::advanced::Transport> #client_ty<T> {
+        impl #client_ty {
             #rebuild_auth_state_method
             #( #var_setters )*
             #( #auth_setters )*
@@ -573,7 +551,7 @@ fn emit_client_wrapper(
             pub fn with_api_headers(mut self, headers: ::http::HeaderMap) -> ::core::result::Result<Self, ::concord_core::prelude::HeaderOwnershipError> { self.inner.set_api_headers(headers)?; ::core::result::Result::Ok(self) }
             #[doc = "Create a pending request from an explicit endpoint value."]
             #[inline]
-            pub fn request<E>(&self, ep: E) -> ::concord_core::prelude::PendingRequest<'_, #cx_ty, E, T>
+            pub fn request<E>(&self, ep: E) -> ::concord_core::prelude::PendingRequest<'_, #cx_ty, E>
             where
                 E: ::concord_core::prelude::IntoEndpointPlan<#cx_ty>,
             {
@@ -619,11 +597,11 @@ fn emit_auth_facade(resolved_api: &ResolvedApi, client_ty: &Ident) -> (TokenStre
             name.span(),
         );
         Some(quote! {
-            pub struct #handle_ty<'a, T: ::concord_core::advanced::Transport = ::concord_core::advanced::DefaultTransport> {
-                client: &'a #client_ty<T>,
+            pub struct #handle_ty<'a> {
+                client: &'a #client_ty,
             }
 
-            impl<'a, T: ::concord_core::advanced::Transport> #handle_ty<'a, T> {
+            impl<'a> #handle_ty<'a> {
                 #[inline]
                 pub async fn acquire<R>(
                     &self,
@@ -683,7 +661,7 @@ fn emit_auth_facade(resolved_api: &ResolvedApi, client_ty: &Ident) -> (TokenStre
     } else {
         quote! {
         #[inline]
-        pub fn auth(&self) -> #auth_ty<'_, T> {
+        pub fn auth(&self) -> #auth_ty<'_> {
             #auth_ty { client: self }
         }
         }
@@ -691,16 +669,16 @@ fn emit_auth_facade(resolved_api: &ResolvedApi, client_ty: &Ident) -> (TokenStre
     let methods = quote! {
         #auth_method
         #[inline]
-        pub fn auth_state(&self) -> #auth_ty<'_, T> {
+        pub fn auth_state(&self) -> #auth_ty<'_> {
             #auth_ty { client: self }
         }
     };
     let auth_state_item = quote! {
-        pub struct #auth_ty<'a, T: ::concord_core::advanced::Transport = ::concord_core::advanced::DefaultTransport> {
-            client: &'a #client_ty<T>,
+        pub struct #auth_ty<'a> {
+            client: &'a #client_ty,
         }
 
-        impl<'a, T: ::concord_core::advanced::Transport> #auth_ty<'a, T> {
+        impl<'a> #auth_ty<'a> {
             #auth_methods
         }
     };
@@ -724,7 +702,7 @@ fn emit_auth_accessor_methods(resolved_api: &ResolvedApi, client_ty: &Ident) -> 
         );
         Some(quote! {
             #[inline]
-            pub fn #name(&self) -> #handle_ty<'a, T> {
+            pub fn #name(&self) -> #handle_ty<'a> {
                 #handle_ty { client: self.client }
             }
         })
@@ -845,7 +823,7 @@ fn emit_scope_ctor_method(
     quote! {
         #( #[doc = #docs] )*
         #[inline]
-        pub fn #method(#receiver, #( #args ),*) -> #struct_name<#lifetime, T> {
+        pub fn #method(#receiver, #( #args ),*) -> #struct_name<#lifetime> {
             #struct_name {
                 client: #client_expr,
                 #( #parent_fields, )*
@@ -912,12 +890,12 @@ fn emit_facade_scope_struct(
 
     quote! {
         #( #[doc = #docs] )*
-        pub struct #struct_name<'a, T: ::concord_core::advanced::Transport = ::concord_core::advanced::DefaultTransport> {
-            client: &'a #client_ty<T>,
+        pub struct #struct_name<'a> {
+            client: &'a #client_ty,
             #( #fields, )*
         }
 
-        impl<'a, T: ::concord_core::advanced::Transport> #struct_name<'a, T> {
+        impl<'a> #struct_name<'a> {
             #( #setters )*
             #( #child_methods )*
             #( #endpoint_methods )*
@@ -978,7 +956,7 @@ fn emit_facade_endpoint_method(
     quote! {
         #( #[doc = #docs] )*
         #[inline]
-        pub fn #method(#self_arg, #( #args ),*) -> ::concord_core::prelude::PendingRequest<#lifetime, #cx_ty, #endpoint_path, T> {
+        pub fn #method(#self_arg, #( #args ),*) -> ::concord_core::prelude::PendingRequest<#lifetime, #cx_ty, #endpoint_path> {
             #bind_client
             let mut __ep = #endpoint_path::new( #( #new_args ),* );
             #( #captured_setters )*

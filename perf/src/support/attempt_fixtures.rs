@@ -1,8 +1,9 @@
+use super::MockTransport;
 use concord_core::advanced::{
     AuthApplicationRequest, AuthAppliedCredential, AuthError, AuthErrorKind, AuthPlacement,
     AuthProvenance, AuthRequirement, AuthUsageId, NoopDebugSink, NoopRateLimiter,
     PreparedAuthCredential, RateLimitContext, RateLimitFuture, RateLimitPermit,
-    RateLimitResponseAction, RateLimitResponseContext, RateLimiter, Transport,
+    RateLimitResponseAction, RateLimitResponseContext, RateLimiter,
 };
 use concord_core::auth::{ApiKey, CredentialId, CredentialRef, apply_secret_credential};
 use concord_core::error;
@@ -126,7 +127,7 @@ impl RateLimiter for CountingRateLimiter {
     }
 }
 
-pub fn client<T: Transport>(transport: T) -> ApiClient<PerfCx, T> {
+pub fn client(transport: MockTransport) -> ApiClient<PerfCx> {
     configured_client(
         transport,
         DebugLevel::None,
@@ -134,18 +135,19 @@ pub fn client<T: Transport>(transport: T) -> ApiClient<PerfCx, T> {
     )
 }
 
-pub fn configured_client<T: Transport>(
-    transport: T,
+pub fn configured_client(
+    transport: MockTransport,
     debug_level: DebugLevel,
     rate_limiter: Arc<dyn RateLimiter>,
-) -> ApiClient<PerfCx, T> {
-    let mut client = ApiClient::with_transport(
+) -> ApiClient<PerfCx> {
+    let mut client = ApiClient::with_safe_reqwest_builder(
         (),
         PerfAuthVars {
             token: Some("BENCH_FAKE_TOKEN".to_string()),
         },
-        transport,
-    );
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("native performance client");
     client.configure(|cfg| {
         cfg.debug_sink(Arc::new(NoopDebugSink));
         cfg.debug_level(debug_level);
@@ -184,12 +186,10 @@ impl RawPlanEndpoint {
 impl<Cx: ClientContext> Endpoint<Cx> for RawPlanEndpoint {
     type Response = ();
 
-    fn execute<'a, T>(
-        _client: &'a ApiClient<Cx, T>,
+    fn execute<'a>(
+        _client: &'a ApiClient<Cx>,
         plan: RequestPlan,
     ) -> Pin<Box<dyn Future<Output = Result<Self::Response, error::ApiClientError>> + Send + 'a>>
-    where
-        T: Transport + 'a,
     {
         let ctx = error::ErrorContext {
             endpoint: plan.endpoint.meta.name,
@@ -214,8 +214,8 @@ impl IntoEndpointPlan<PerfCx> for RawPlanEndpoint {
     }
 }
 
-pub async fn execute_raw_plan<T: Transport>(
-    client: &ApiClient<PerfCx, T>,
+pub async fn execute_raw_plan(
+    client: &ApiClient<PerfCx>,
     plan: RequestPlan,
 ) -> Result<concord_core::dangerous::BuiltResponse, error::ApiClientError> {
     let overrides = raw_plan_overrides(&plan)?;
@@ -237,10 +237,7 @@ mod tests {
     use super::*;
     use crate::support::{MockResponse, MockTransport, runtime};
     use bytes::Bytes;
-    use concord_core::advanced::{
-        DebugSink, DynBody, SanitizedHeaders, StreamBody, StreamBodyError, TransportError,
-        TransportErrorKind,
-    };
+    use concord_core::advanced::{DebugSink, SanitizedHeaders, StreamBody, StreamBodyError};
     use futures_util::stream;
     use std::sync::atomic::AtomicU8;
 
@@ -268,49 +265,6 @@ mod tests {
         fn response_headers(&self, _dbg: DebugLevel, _headers: SanitizedHeaders<'_>) {}
     }
 
-    #[derive(Clone)]
-    struct BodyConsumingTransport {
-        chunks: Arc<AtomicUsize>,
-    }
-
-    impl Transport for BodyConsumingTransport {
-        fn send(
-            &self,
-            req: http::Request<DynBody>,
-        ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>>
-        {
-            let chunks = self.chunks.clone();
-            Box::pin(async move {
-                use http_body_util::BodyExt as _;
-                let mut body = req.into_body();
-                while let Some(frame) = body.frame().await {
-                    if frame?.data_ref().is_some() {
-                        chunks.fetch_add(1, Ordering::Relaxed);
-                    }
-                }
-                Ok(http::Response::new(DynBody::empty()))
-            })
-        }
-    }
-
-    #[derive(Clone)]
-    struct FailingTransport;
-
-    impl Transport for FailingTransport {
-        fn send(
-            &self,
-            _req: http::Request<DynBody>,
-        ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>>
-        {
-            Box::pin(async {
-                Err(TransportError::with_kind(
-                    TransportErrorKind::Connect,
-                    std::io::Error::other("perf adapter transport failure"),
-                ))
-            })
-        }
-    }
-
     #[test]
     fn raw_plan_adapter_uses_public_escape_hatch_once() {
         let transport = MockTransport::repeating(MockResponse::text(
@@ -334,8 +288,8 @@ mod tests {
         assert_eq!(response.body().as_ref(), b"ok");
         let requests = transport.recorded_requests();
         assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].meta.endpoint, "RawPlanAdapter");
-        assert_eq!(requests[0].meta.method, Method::GET);
+        assert_eq!(requests[0].endpoint.as_deref(), Some("RawPlanAdapter"));
+        assert_eq!(requests[0].method, Method::GET);
     }
 
     #[test]
@@ -386,7 +340,7 @@ mod tests {
             sink.request_level.load(Ordering::Relaxed),
             DebugLevel::V as u8
         );
-        assert_eq!(request.meta.attempt, 4);
+        assert_eq!(request.attempt, Some(4));
         assert_eq!(request.timeout, Some(std::time::Duration::from_secs(17)));
     }
 
@@ -440,11 +394,8 @@ mod tests {
 
     #[test]
     fn raw_plan_adapter_consumes_a_non_replayable_body_once() {
-        let chunks = Arc::new(AtomicUsize::new(0));
-        let transport = BodyConsumingTransport {
-            chunks: chunks.clone(),
-        };
-        let client = client(transport);
+        let transport = MockTransport::repeating(MockResponse::empty(StatusCode::OK));
+        let client = client(transport.clone());
         let stream = stream::iter(vec![Ok::<Bytes, StreamBodyError>(Bytes::from_static(
             b"one-shot",
         ))]);
@@ -463,12 +414,15 @@ mod tests {
         runtime()
             .block_on(execute_raw_plan(&client, plan))
             .expect("one-shot raw response should succeed");
-        assert_eq!(chunks.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            transport.recorded_requests()[0].body,
+            crate::support::RecordedBody::Bytes { len: 8 }
+        );
     }
 
     #[test]
     fn raw_plan_adapter_propagates_transport_failure() {
-        let client = client(FailingTransport);
+        let client = client(MockTransport::failing());
         let plan = request_plan(
             "RawPlanTransportFailure",
             Method::GET,

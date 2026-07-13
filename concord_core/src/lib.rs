@@ -25,7 +25,7 @@ mod secret;
 mod stream_body;
 mod stream_response;
 mod timeout;
-pub mod transport;
+mod transport;
 mod types;
 
 #[doc(hidden)]
@@ -168,12 +168,9 @@ pub mod advanced {
     pub use crate::runtime_state::ClientRuntimeState;
     pub use crate::stream_body::{StreamBody, StreamBodyError};
     pub use crate::stream_response::StreamResponse;
+    pub use crate::transport::{DecodedResponse, RequestMeta, TransportError, TransportErrorKind};
     pub use crate::transport::{
-        DecodedResponse, DefaultTransport, DefaultTransportMarker, RequestExecutionContext,
-        RequestMeta, Transport, TransportError, TransportErrorKind,
-    };
-    pub use crate::transport::{
-        ReqwestClientBuildError, ReqwestTransport, SafeProxy, SafeProxyError, SafeReqwestBuilder,
+        ReqwestClientBuildError, SafeProxy, SafeProxyError, SafeReqwestBuilder,
     };
     pub use crate::types::{
         HostLabelSource, HostParts as HostMap, HostSpec, RouteBuilder, UrlPath,
