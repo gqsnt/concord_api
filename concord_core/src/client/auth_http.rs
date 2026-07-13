@@ -55,7 +55,7 @@ fn validate_auth_internal_body(
     headers: &mut http::HeaderMap,
     body: &crate::io::PreparedBody,
 ) -> Result<(), AuthError> {
-    if !body.supports_auth_internal_retries() {
+    if !body.is_replayable() {
         return Err(AuthError::new(
             AuthErrorKind::UnsupportedScheme,
             "auth-internal request body category is not supported",

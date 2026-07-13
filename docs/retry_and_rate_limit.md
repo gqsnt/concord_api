@@ -34,11 +34,17 @@ Flat `retry` and `rate_limit` profile declarations remain valid. `policies { ...
 
 ## Retry
 
-`max_attempts` is the total number of send tries, including the first send. `retry_after` honors `Retry-After` response headers for retryable statuses.
+Concord's core physical-attempt state machine is the sole general retry authority. It owns request-local policy, recipe reconstruction, general-attempt capacity, delays, retry admission, rate limiting, hooks, and attempt metadata. The managed Reqwest client is permanently configured with `reqwest::retry::never()`, so each native execution represents exactly one observable Concord physical attempt.
+
+`max_attempts` is the total number of general attempts, including the initial send. The independently bounded authentication-recovery resend does not consume this capacity, and general retries do not consume the one-resend authentication-recovery budget. `retry_after` honors `Retry-After` response headers for retryable statuses.
 
 When an endpoint uses inherited retry settings, `RuntimeConfig::max_attempts(...)` independently supplies the absolute cap and defaults to one. A custom `RetryPolicy` only classifies an outcome as `Stop` or `Retry`; it cannot own or report a ceiling. `RuntimeConfig::respect_retry_after(...)` is the inherited-policy opt-in for bounded server-directed timing.
 
 Retry is a bounded transport/status decision layer. Retry decisions happen after transport-response metadata observation and auth rejection handling, and before endpoint decode. Retry does not handle decode failures.
+
+General retry is available only when the authoritative logical body recipe can construct a fresh terminal body. Empty bodies, reusable bytes (including JSON and text), complete request-body factories, factory-backed streams and advanced bodies, all-reusable direct multipart, and complete multipart factories are replayable. Direct byte streams, direct advanced bodies, and direct multipart containing a one-shot stream are not. Body replayability is independent of HTTP-method idempotency; both recipe reconstruction and the configured idempotency policy must allow a general retry. Concord never uses native request cloneability to make this decision.
+
+Every replay reconstructs the logical request plan. Factories run exactly once for each physical attempt that reaches body production, and every attempt receives fresh exact-length, request-limit, producer, and multipart framing state. Direct reusable multipart creates a fresh native `reqwest::multipart::Form`, fresh parts, and a Reqwest-owned boundary and complete `Content-Type` on every attempt.
 
 Retry policy only classifies an outcome as stop or retry. Ordinary retries do not sleep. When `retry_after` is enabled, a valid server-directed `Retry-After` value may delay an otherwise admitted additional attempt, bounded by `max_rate_limit_cooldown(...)`; malformed or unsafe values do not create a delay. Rate-limit handling shares that same admissible wait so one server signal cannot cause two sleeps.
 
@@ -146,7 +152,9 @@ GET Unmetered
 
 ## Runtime Order
 
-The execution order is fixed:
+The execution order is fixed. A response selected for resend completes post-response hooks and rate-limit feedback before authentication classification and then general retry classification. Its response and origin lease are released before any general-retry delay. The next retry reserves admission only after that delay, then continues through ordinary reconstruction, rate-limit acquisition, hooks, and one native send.
+
+For each physical attempt:
 
 1. Resolve the public request head and body metadata.
 2. Derive secret-free auth placements and validate collisions.
@@ -158,7 +166,7 @@ The execution order is fixed:
 8. Classify the response or transport failure.
 9. Run response and error hooks.
 10. Observe rate-limit response metadata.
-11. Handle auth rejection and bounded auth refresh.
+11. Handle auth rejection and the independently bounded one-resend auth recovery.
 12. Apply normal retry policy.
 13. Decode the endpoint response and return the decoded response entity output.
 14. Return the final value.

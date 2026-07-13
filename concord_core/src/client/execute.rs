@@ -397,8 +397,11 @@ impl<Cx: ClientContext> ApiClient<Cx> {
     ) -> Result<AttemptTransportSuccess, ApiClientError> {
         let dbg_verbose = dbg.is_verbose();
         let dbg_vv = dbg.is_very_verbose();
-        let supports_general_retries = body.supports_general_retries();
-        let auth_rebuildable = body.supports_auth_internal_retries();
+        // The authoritative logical recipe determines reconstruction capacity
+        // for both general retry and bounded authentication recovery. Method
+        // idempotency remains an independent retry-policy condition.
+        let body_replayable = body.is_replayable();
+        let auth_rebuildable = body_replayable;
         if !auth_rebuildable
             && plan
                 .endpoint
@@ -456,6 +459,26 @@ impl<Cx: ClientContext> ApiClient<Cx> {
 
         loop {
             let mut attempt_reason = AttemptReason::Initial;
+            // A discarded response and its origin lease were dropped when the
+            // preceding iteration ended. Delay before preparing attempt
+            // metadata, tracking the next origin, invoking auth providers or
+            // body factories, and reserving retry admission.
+            let mut general_retry_fallback = None;
+            let pending_auth = match pending_resend.take() {
+                Some(PendingResend::Ordinary { error, delay }) => {
+                    if !body_replayable || general_attempts_used >= max_attempts {
+                        return Err(error);
+                    }
+                    if !delay.is_zero() {
+                        tokio::time::sleep(delay).await;
+                    }
+                    attempt_reason = AttemptReason::GeneralRetry;
+                    general_retry_fallback = Some(error);
+                    None
+                }
+                Some(PendingResend::Auth(intent)) => Some(intent),
+                None => None,
+            };
             let current_attempt = checked_attempt(base_attempt, attempts_used, &ctx)?;
             let meta = plan
                 .endpoint
@@ -485,47 +508,38 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             let origin = &origin_handle;
 
             let mut attempt_admission = None;
-            if let Some(resend) = pending_resend.take() {
-                match resend {
-                    PendingResend::Ordinary { error, delay } => {
-                        if !supports_general_retries || general_attempts_used >= max_attempts {
-                            return Err(error);
-                        }
-                        let Some(admission) = origin.reserve() else {
-                            return Err(error);
-                        };
-                        if !delay.is_zero() {
-                            tokio::time::sleep(delay).await;
-                        }
-                        attempt_admission = Some(admission);
-                        attempt_reason = AttemptReason::GeneralRetry;
+            if matches!(attempt_reason, AttemptReason::GeneralRetry) {
+                let Some(admission) = origin.reserve() else {
+                    return Err(general_retry_fallback
+                        .take()
+                        .expect("general retry must retain its terminal fallback"));
+                };
+                attempt_admission = Some(admission);
+            }
+            if let Some(intent) = pending_auth {
+                let fallback = Self::auth_challenge_rejected(&intent.error_ctx);
+                if !auth_rebuildable {
+                    return Err(fallback);
+                }
+                let step = self
+                    .apply_auth_rejection_step(AuthRejectionStepCtx {
+                        plan,
+                        auth_state: &auth_state_snapshot,
+                        auth_http: &auth_http,
+                        response_meta: &intent.response_meta,
+                        auth_attempt: &intent.auth_attempt,
+                        rejection_plan: &intent.rejection_plan,
+                        status: intent.status,
+                        error_ctx: &intent.error_ctx,
+                        auth_rebuildable,
+                    })
+                    .await?;
+                match step {
+                    AuthRejectionStep::Retry => {
+                        cached_auth_preparation = None;
+                        attempt_reason = AttemptReason::AuthenticationRecovery;
                     }
-                    PendingResend::Auth(intent) => {
-                        let fallback = Self::auth_challenge_rejected(&intent.error_ctx);
-                        if !auth_rebuildable {
-                            return Err(fallback);
-                        }
-                        let step = self
-                            .apply_auth_rejection_step(AuthRejectionStepCtx {
-                                plan,
-                                auth_state: &auth_state_snapshot,
-                                auth_http: &auth_http,
-                                response_meta: &intent.response_meta,
-                                auth_attempt: &intent.auth_attempt,
-                                rejection_plan: &intent.rejection_plan,
-                                status: intent.status,
-                                error_ctx: &intent.error_ctx,
-                                auth_rebuildable,
-                            })
-                            .await?;
-                        match step {
-                            AuthRejectionStep::Retry => {
-                                cached_auth_preparation = None;
-                                attempt_reason = AttemptReason::AuthenticationRecovery;
-                            }
-                            AuthRejectionStep::Fail(err) => return Err(err),
-                        }
-                    }
+                    AuthRejectionStep::Fail(err) => return Err(err),
                 }
             }
             let auth_preparation = if cached_auth_preparation.is_none() {
@@ -796,7 +810,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                             None => {}
                         }
                     }
-                    if !supports_general_retries {
+                    if !body_replayable {
                         return Err(err);
                     }
                     let outcome = Self::retry_outcome_from_error(&err);

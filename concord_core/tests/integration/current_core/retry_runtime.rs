@@ -15,7 +15,10 @@ use concord_core::error::ErrorCategory;
 use concord_core::internal::{PreparedBody, ResolvedPolicy, RetrySetting};
 use concord_core::prelude::ApiClientError;
 use http::{HeaderValue, Method, StatusCode};
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
 use tokio::sync::{Mutex, Semaphore};
 
 fn default_native_client(transport: &MockTransport) -> concord_core::prelude::ApiClient<TestCx> {
@@ -69,6 +72,60 @@ fn retry_stream_plan(
         Some(HeaderValue::from_static("application/octet-stream")),
     );
     plan
+}
+
+#[cfg(feature = "multipart")]
+fn retry_multipart_plan(
+    name: &'static str,
+    path: &'static str,
+    policy: ResolvedPolicy,
+    idempotent: bool,
+) -> concord_core::internal::RequestPlan {
+    let mut plan = retry_plan(name, Method::POST, path, policy, idempotent);
+    plan.body = MultipartRequest::prepare(
+        MultipartBody::new()
+            .text("title", "fresh")
+            .bytes("payload", Bytes::from_static(b"multipart-body")),
+        ErrorContext {
+            endpoint: name,
+            method: Method::POST,
+        },
+    )
+    .expect("reconstructible multipart recipe")
+    .body;
+    plan
+}
+
+#[cfg(feature = "multipart")]
+fn assert_fresh_multipart_attempts(
+    requests: &[super::common::CapturedTransportRequest],
+    expected: usize,
+) {
+    assert_eq!(requests.len(), expected);
+    let content_types = requests
+        .iter()
+        .map(|request| {
+            request
+                .headers
+                .get(http::header::CONTENT_TYPE)
+                .expect("multipart content type")
+        })
+        .collect::<Vec<_>>();
+    for pair in content_types.windows(2) {
+        assert_ne!(pair[0], pair[1], "each attempt needs a fresh boundary");
+    }
+    for (index, request) in requests.iter().enumerate() {
+        assert_eq!(request.meta.attempt, Some(index as u32));
+        let body = request.body.as_bytes().expect("captured multipart body");
+        assert!(
+            body.windows(b"multipart-body".len())
+                .any(|window| window == b"multipart-body")
+        );
+        assert!(
+            body.windows(b"fresh".len())
+                .any(|window| window == b"fresh")
+        );
+    }
 }
 
 #[tokio::test]
@@ -171,36 +228,28 @@ async fn auth_recovery_replaces_header_and_query_when_general_retry_is_off() {
 
 #[cfg(feature = "multipart")]
 #[tokio::test]
-async fn auth_recovery_rebuilds_direct_multipart_without_enabling_general_retry() {
+async fn direct_reusable_multipart_preserves_general_retry_and_auth_recovery_budgets() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events.clone(),
         vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry"),
             MockResponse::text(StatusCode::UNAUTHORIZED, "challenge"),
             MockResponse::text(StatusCode::OK, "recovered"),
         ],
     );
     let sent = transport.clone();
     let mut policy = auth_policy(concord_core::advanced::AuthPlacement::Bearer);
-    policy.retry = retry_policy(3).retry;
-    let mut plan = retry_plan(
+    policy.retry = retry_policy(2).retry;
+    if let RetrySetting::Config(config) = &mut policy.retry {
+        config.methods = vec![Method::POST];
+    }
+    let plan = retry_multipart_plan(
         "DirectMultipartAuthRecovery",
-        Method::POST,
         "/auth/direct-multipart",
         policy,
-        false,
+        true,
     );
-    plan.body = MultipartRequest::prepare(
-        MultipartBody::new()
-            .text("title", "fresh")
-            .bytes("payload", Bytes::from_static(b"multipart-body")),
-        ErrorContext {
-            endpoint: "DirectMultipartAuthRecovery",
-            method: Method::POST,
-        },
-    )
-    .expect("reconstructible multipart recipe")
-    .body;
     let client = observation_client(
         ObservationAuthVars::bearer("credential", "refresh", events),
         &transport,
@@ -209,27 +258,137 @@ async fn auth_recovery_rebuilds_direct_multipart_without_enabling_general_retry(
     let response = client
         .execute_plan::<concord_core::prelude::Text<String>>(plan)
         .await
-        .expect("direct reusable multipart must allow authentication recovery");
+        .expect("direct reusable multipart must retain both resend capacities");
 
     assert_eq!(response.value(), "recovered");
     let requests = sent.requests().await;
-    assert_eq!(requests.len(), 2);
-    let first_content_type = requests[0]
-        .headers
-        .get(http::header::CONTENT_TYPE)
-        .expect("first multipart content type");
-    let second_content_type = requests[1]
-        .headers
-        .get(http::header::CONTENT_TYPE)
-        .expect("second multipart content type");
-    assert_ne!(first_content_type, second_content_type);
-    for request in &requests {
-        let body = request.body.as_bytes().expect("captured multipart body");
-        assert!(
-            body.windows(b"multipart-body".len())
-                .any(|window| window == b"multipart-body")
-        );
+    assert_fresh_multipart_attempts(&requests, 3);
+}
+
+#[cfg(feature = "multipart")]
+#[tokio::test]
+async fn direct_reusable_multipart_status_retry_reconstructs_a_fresh_form() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry"),
+            MockResponse::text(StatusCode::OK, "ok"),
+        ],
+    );
+    let sent = transport.clone();
+    let mut policy = retry_policy(2);
+    if let RetrySetting::Config(config) = &mut policy.retry {
+        config.methods = vec![Method::POST];
     }
+    let client = client(TestAuthVars::default(), transport);
+
+    let response = client
+        .execute_plan::<concord_core::prelude::Text<String>>(retry_multipart_plan(
+            "DirectMultipartStatusRetry",
+            "/retry/direct-multipart-status",
+            policy,
+            true,
+        ))
+        .await
+        .expect("direct reusable multipart status retry");
+
+    assert_eq!(response.value(), "ok");
+    assert_fresh_multipart_attempts(&sent.requests().await, 2);
+}
+
+#[cfg(feature = "multipart")]
+#[tokio::test]
+async fn direct_reusable_multipart_transport_retry_reconstructs_a_fresh_form() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::with_outcomes(
+        events,
+        vec![
+            MockOutcome::DisconnectAfterRequest,
+            MockResponse::text(StatusCode::OK, "ok").into(),
+        ],
+    );
+    let sent = transport.clone();
+    let mut policy = retry_policy_for_transport_errors(
+        2,
+        vec![concord_core::advanced::TransportErrorKind::Request],
+    );
+    if let RetrySetting::Config(config) = &mut policy.retry {
+        config.methods = vec![Method::POST];
+    }
+    let client = client(TestAuthVars::default(), transport);
+
+    let response = client
+        .execute_plan::<concord_core::prelude::Text<String>>(retry_multipart_plan(
+            "DirectMultipartTransportRetry",
+            "/retry/direct-multipart-transport",
+            policy,
+            true,
+        ))
+        .await
+        .expect("direct reusable multipart transport retry");
+
+    assert_eq!(response.value(), "ok");
+    assert_fresh_multipart_attempts(&sent.requests().await, 2);
+}
+
+#[cfg(feature = "multipart")]
+#[tokio::test]
+async fn direct_reusable_multipart_obeys_policy_off_and_retry_admission() {
+    let off_transport = MockTransport::new(
+        Arc::new(Mutex::new(Vec::new())),
+        vec![MockResponse::text(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "terminal",
+        )],
+    );
+    let off_sent = off_transport.clone();
+    let off_client = client(TestAuthVars::default(), off_transport);
+    let off_error = off_client
+        .execute_plan::<concord_core::prelude::Text<String>>(retry_multipart_plan(
+            "DirectMultipartRetryOff",
+            "/retry/direct-multipart-off",
+            ResolvedPolicy {
+                retry: RetrySetting::Off,
+                ..ResolvedPolicy::default()
+            },
+            true,
+        ))
+        .await
+        .expect_err("retry off must send direct multipart once");
+    assert!(matches!(off_error, ApiClientError::HttpStatus { .. }));
+    assert_eq!(off_sent.sent_count().await, 1);
+
+    let admission_transport = MockTransport::new(
+        Arc::new(Mutex::new(Vec::new())),
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-once"),
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "denied-next"),
+        ],
+    );
+    let admission_sent = admission_transport.clone();
+    let mut admission_client = client(TestAuthVars::default(), admission_transport);
+    admission_client.configure(|config| {
+        config.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+            4096,
+            std::time::Duration::from_secs(60),
+        ));
+    });
+    let mut policy = retry_policy(3);
+    if let RetrySetting::Config(config) = &mut policy.retry {
+        config.methods = vec![Method::POST];
+    }
+    let admission_error = admission_client
+        .execute_plan::<concord_core::prelude::Text<String>>(retry_multipart_plan(
+            "DirectMultipartAdmission",
+            "/retry/direct-multipart-admission",
+            policy,
+            true,
+        ))
+        .await
+        .expect_err("the second general retry must be denied by depleted credits");
+    assert!(matches!(admission_error, ApiClientError::HttpStatus { .. }));
+    assert_fresh_multipart_attempts(&admission_sent.requests().await, 2);
 }
 
 #[tokio::test]
@@ -1187,6 +1346,85 @@ async fn retry_after_header_zero_is_honored_without_sleeping() -> Result<(), Api
     assert_eq!(requests[0].meta.attempt, Some(0));
     assert_eq!(requests[1].meta.attempt, Some(1));
     Ok(())
+}
+
+#[tokio::test]
+async fn cancellation_during_retry_delay_does_not_prepare_or_admit_the_next_attempt() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            response_with_retry_after(StatusCode::TOO_MANY_REQUESTS, "delayed", "60"),
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "probe-retry"),
+            MockResponse::text(StatusCode::OK, "probe-ok"),
+        ],
+    );
+    let sent = transport.clone();
+    let registry = concord_core::advanced::RetryAdmissionRegistry::new(
+        4096,
+        std::time::Duration::from_secs(120),
+    );
+    let mut client = client(TestAuthVars::default(), transport);
+    client.configure(|config| {
+        config.retry_admission(registry);
+        config.rate_limiter(Arc::new(concord_core::advanced::NoopRateLimiter::new()));
+    });
+
+    let factory_calls = Arc::new(AtomicUsize::new(0));
+    let observed_calls = factory_calls.clone();
+    let mut delayed_plan = retry_plan(
+        "RetryDelayCancellation",
+        Method::GET,
+        "/retry/delay-cancellation",
+        retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
+        true,
+    );
+    delayed_plan.body =
+        PreparedBody::replay_factory(http_body::SizeHint::with_exact(0), None, move || {
+            observed_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(concord_core::advanced::DynBody::empty())
+        });
+    let delayed_client = client.clone();
+    let delayed_task = tokio::spawn(async move {
+        delayed_client
+            .execute_plan::<concord_core::prelude::Text<String>>(delayed_plan)
+            .await
+    });
+
+    while sent.sent_count().await < 1 {
+        tokio::task::yield_now().await;
+    }
+    // Let response classification enter the long retry delay without relying
+    // on wall-clock passage.
+    for _ in 0..8 {
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(factory_calls.load(Ordering::SeqCst), 1);
+
+    // A second request to the same origin can still spend the available retry
+    // credit, proving the delayed request holds neither an origin lease nor an
+    // admission permit.
+    let probe = client
+        .execute_plan::<concord_core::prelude::Text<String>>(retry_plan(
+            "RetryDelayAdmissionProbe",
+            Method::GET,
+            "/retry/delay-admission-probe",
+            retry_policy(2),
+            true,
+        ))
+        .await
+        .expect("retry admission must remain available during another request's delay");
+    assert_eq!(probe.value(), "probe-ok");
+
+    delayed_task.abort();
+    assert!(
+        delayed_task
+            .await
+            .expect_err("delayed task must be cancelled")
+            .is_cancelled()
+    );
+    assert_eq!(factory_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(sent.sent_count().await, 3);
 }
 
 #[tokio::test]

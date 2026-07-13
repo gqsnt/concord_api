@@ -984,6 +984,9 @@ impl ManagedReqwestClient {
         let configured_proxies = configured.configured_proxies.clone();
         let client = configured
             .builder
+            // Permanent architecture invariant: Concord reconstructs and
+            // accounts for every physical attempt. Reqwest executes exactly
+            // one native request and must never perform a hidden resend.
             .retry(reqwest::retry::never())
             .redirect(reqwest::redirect::Policy::none())
             .build()

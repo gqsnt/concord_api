@@ -37,7 +37,7 @@ Retry policy is bounded by configuration. `RetryConfig::max_attempts` is the abs
 
 Rate-limit response handling can also store cooldowns from provider metadata, including `Retry-After`, through the default governor runtime. Those cooldowns are capped by `max_rate_limit_cooldown(...)`. When an HTTP status error already produced a rate-limit action whose delay was stored for the limiter, `drive_attempts` zeroes the normal retry delay before the next attempt. That avoids waiting once in the rate limiter and again in retry sleep.
 
-Authentication refresh resends consume the same `RetryConfig::max_attempts` capacity as transport and status retries. Auth rejection handling invalidates request-local auth preparation before retrying so refreshed credentials are prepared before the next attempt.
+Authentication recovery has an independent one-resend budget and does not consume `RetryConfig::max_attempts`. Auth rejection handling invalidates request-local auth preparation before reconstruction so refreshed credentials are prepared for the recovery send and reused by later general retries.
 
 With the `rate-limit-governor` feature enabled, the default limiter enforces declared plans. Without that feature, the default limiter fails closed for non-empty rate-limit plans. Empty plans still pass. Install `NoopRateLimiter` explicitly when you intentionally want to opt out of enforcement.
 

@@ -45,7 +45,7 @@ Credential acquisition is different from ordinary endpoint execution: `Credentia
 
 Credential slot generations are monotonic across empty, in-flight, ready, and failed states. Older auth rejection handling, older acquisition completion, or cancelled acquisition cleanup must not clear or overwrite newer credential material.
 
-Each `RequestPlan` owns one request-local `PreparedBody`. That capability owns media type, standard `SizeHint`, replayability, and one-shot state, and it produces the body for each physical attempt. Empty and immutable byte bodies are reusable, stream and multipart bodies are one-shot, and custom request entities can supply an explicit replay factory. No endpoint descriptor, request-plan view, retry state, or built request keeps an independent replayability or body-metadata authority.
+Each `RequestPlan` owns one request-local `PreparedBody`. That capability owns media type, standard `SizeHint`, replayability, and one-shot state, and it produces the body for each physical attempt. Empty and immutable byte bodies are reusable; direct streams and advanced bodies are one-shot; complete terminal-body factories are replayable. Direct multipart is replayable when every part is reusable, while multipart containing a direct one-shot stream is not; a complete multipart factory is replayable. No endpoint descriptor, request-plan view, retry state, or built request keeps an independent replayability or body-metadata authority.
 
 `BuiltRequest` is created only after public-head preflight, credential preparation, and attempt-body production. It contains public route, query, and header data, the unchanged secret-free placement plan, and the body produced for that attempt, but it does not contain raw auth material. Request body bytes are not copied into debug, hook, rate-limit, retry, or error metadata.
 
@@ -87,7 +87,9 @@ Semantic numeric state uses explicit failure instead of silent saturation. Reque
 
 Runtime state access should fail explicitly instead of panicking. Request execution maps poisoned auth state, rate-limit window state, cooldown state, and other required runtime state into typed auth or runtime-state errors.
 
-Auth rejection handling happens after response classification but before the normal retry decision. Bounded auth refresh is the first recovery path for configured auth rejection responses, but only when the effective absolute attempt cap has capacity; the default cap of one permits no refresh resend.
+Auth rejection handling happens after response classification but before the normal retry decision. Bounded auth refresh is the first recovery path for configured auth rejection responses and has an independent one-resend budget. It does not consume general retry capacity, and a recognized authentication challenge is not also classified as a general status retry for that response.
+
+The core physical-attempt state machine is the permanent sole authority for transport retries, status retries, delay and `Retry-After`, retry admission, request reconstruction, and physical attempt metadata. Reqwest is permanently configured with `reqwest::retry::never()` and executes exactly one native request per Concord attempt. The single loop distinguishes initial, general-retry, and authentication-recovery sends; generated code, providers, codecs, pagination, and test support do not own retry execution loops.
 
 Auth locks are not held across credential endpoint I/O or token endpoint I/O. Slot state transitions mark an in-flight generation before network work, and completion stores material only if the slot still expects that generation.
 
@@ -95,7 +97,7 @@ Retry exhaustion returns the final transport or status error that caused the ret
 
 Endpoint response bodies are read into memory only through the core-owned bounded native-chunk collector. The default runtime limit is 16 MiB; an authoritative native content length may reject before polling, while every delivered data chunk is counted cumulatively and rejected before retention beyond the bound.
 
-Runtime configuration is client-owned. `RuntimeConfig::default()` starts with no debug output, no-op hooks, no retry policy, the feature-selected default rate limiter, a 60-second rate-limit cooldown cap, pagination loop detection enabled, a 16 MiB endpoint response-body limit, and disabled dev body capture. Client configuration is applied before endpoint policy and pending-request overrides. Pending-request overrides cover request options such as debug level, timeout, and attempt; absolute retry capacity is supplied by endpoint retry configuration and has no separate authentication budget.
+Runtime configuration is client-owned. `RuntimeConfig::default()` starts with no debug output, no-op hooks, no retry policy, the feature-selected default rate limiter, a 60-second rate-limit cooldown cap, pagination loop detection enabled, a 16 MiB endpoint response-body limit, and disabled dev body capture. Client configuration is applied before endpoint policy and pending-request overrides. Pending-request overrides cover request options such as debug level, timeout, and attempt; general retry capacity is supplied by endpoint or inherited runtime retry configuration, while authentication recovery retains its independent one-resend budget.
 
 Runtime configuration is clone-on-write, but auth state is shared across cloned clients. Changing runtime config on one clone does not retroactively change another clone, while auth-state mutation on one clone can be observed by other clones that share the same auth-state handle. Credential isolation requires a separate client instance or separate auth state, not just `clone()`.
 

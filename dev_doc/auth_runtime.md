@@ -49,11 +49,11 @@ The v1 rejection classification is:
 - `401 Unauthorized`: invalidate the applied credential and request refresh for refreshable or runtime-reacquirable credentials when the request has replayable body capacity remaining.
 - `403 Forbidden`: invalidate the applied credential and request refresh for refreshable or runtime-reacquirable credentials when the request has replayable body capacity remaining.
 
-The effective absolute attempt cap controls whether the refresh resend can occur. Its default is `max_attempts = 1`, so the default permits no resend; there is no separate authentication retry budget.
+Authentication recovery is request-local and independently bounded to one resend. It requires a replayable authoritative body recipe, but it does not require or consume general retry capacity.
 
 Endpoint-backed credentials are manual from the protected request's point of view. A protected `401` can invalidate the applied endpoint-backed generation, but protected request retry does not automatically call the auth endpoint again; callers must explicitly reacquire through the auth endpoint before sending another protected call.
 
-Credential refresh resends use the protected request’s absolute `max_attempts` cap. The runtime must not loop indefinitely on repeated auth rejection, and authentication does not have a separate retry ceiling.
+Credential refresh resends reconstruct the same logical request plan and body recipe. A second recognized challenge is terminal: its applied generation is invalidated as configured, and no third challenge send occurs. General retries retain their remaining capacity across recovery and reuse refreshed credentials.
 
 `AuthChallengePolicy::NeverRefresh` is part of the advanced core API. When a requirement uses it, auth rejection does not invalidate or retry for `401` or `403`. It is not exposed as public DSL syntax in v1.
 

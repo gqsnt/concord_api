@@ -40,4 +40,15 @@ fn generated_retry_materializes_resolved_policy() {
             "policy.set_retry(::concord_core::advanced::RetryConfig",
         ],
     );
+    assert_not_contains_all(
+        &out,
+        &[
+            "drive_attempts",
+            "send_and_classify_once",
+            "RetryAdmissionRegistry",
+            "tokio::time::sleep",
+            "should_retry(",
+        ],
+    );
+    assert!(!out.contains(&forbidden_reqwest_request_try_clone()));
 }

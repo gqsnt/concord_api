@@ -70,7 +70,8 @@ pub enum RetrySetting {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RetryConfig {
-    /// Absolute physical endpoint sends, including the initial send.
+    /// General attempts, including the initial send. The independently bounded
+    /// authentication-recovery resend does not consume this capacity.
     pub max_attempts: u32,
     pub methods: Vec<Method>,
     pub statuses: Vec<StatusCode>,
@@ -102,7 +103,7 @@ impl RetryConfig {
     }
 
     /// Computes only the outcome classification. The caller supplies the
-    /// request-local absolute attempt admission and any optional wait.
+    /// request-local general-attempt admission and any optional wait.
     pub fn try_decide(
         &self,
         ctx: &RetryContext<'_>,
@@ -148,7 +149,7 @@ impl RetryIdempotency {
 }
 
 /// Classification-only configuration for an inherited runtime retry policy.
-/// Absolute attempt capacity and server-directed timing are resolved by the
+/// General-attempt capacity and server-directed timing are resolved by the
 /// runtime request configuration, never by this classifier.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RetryClassifierConfig {

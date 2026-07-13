@@ -330,24 +330,6 @@ impl PreparedBody {
         }
     }
 
-    pub(crate) fn supports_auth_internal_retries(&self) -> bool {
-        self.is_replayable()
-    }
-
-    /// Temporary eligibility for the existing general retry executor.  This is
-    /// deliberately narrower than Concord rebuildability: directly supplied
-    /// multipart recipes are reconstructible for bounded authentication
-    /// recovery, but remain excluded from automatic general retries until the
-    /// retry-authority cutover.
-    pub(crate) fn supports_general_retries(&self) -> bool {
-        matches!(
-            self.recipe,
-            RequestBodyRecipe::Empty
-                | RequestBodyRecipe::ReusableBytes(_)
-                | RequestBodyRecipe::RequestBodyFactory(_)
-        )
-    }
-
     pub(crate) fn produce_for_attempt(&mut self) -> Result<ProducedBody, BodyProductionError> {
         let size_hint = self.size_hint.clone();
         match &mut self.recipe {
@@ -1194,12 +1176,11 @@ mod tests {
         )
         .expect("stream request");
         assert!(!prepared.body.is_replayable());
-        assert!(!prepared.body.supports_general_retries());
         assert_eq!(prepared.body.size_hint().exact(), Some(3));
     }
 
     #[test]
-    fn factory_rebuildability_and_general_retry_are_recipe_level() {
+    fn factory_replayability_is_recipe_level() {
         let mut advanced = PreparedBody::one_shot(
             crate::body::DynBody::from_body(crate::body::ExactLengthBody::new(
                 crate::body::DynBody::from_bytes(Bytes::from_static(b"advanced")),
@@ -1208,7 +1189,6 @@ mod tests {
             None,
         );
         assert!(!advanced.is_replayable());
-        assert!(!advanced.supports_general_retries());
         assert!(
             !advanced
                 .produce_for_attempt()
@@ -1222,7 +1202,6 @@ mod tests {
             )))
         });
         assert!(factory.is_replayable());
-        assert!(factory.supports_general_retries());
     }
 
     #[test]
@@ -1235,8 +1214,6 @@ mod tests {
         });
 
         assert!(factory.is_replayable());
-        assert!(factory.supports_general_retries());
-        assert!(factory.supports_auth_internal_retries());
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         for expected_calls in 1..=2 {
             assert!(
@@ -1256,7 +1233,6 @@ mod tests {
             None,
         );
         assert!(!body.is_replayable());
-        assert!(!body.supports_general_retries());
         assert!(
             !body
                 .produce_for_attempt()
@@ -1280,20 +1256,18 @@ mod tests {
         )
         .expect("multipart request");
         assert!(multipart.body.is_replayable());
-        assert!(!multipart.body.supports_general_retries());
         assert!(multipart.body.reserves_content_type());
         assert!(multipart.body.media_type().is_none());
     }
 
     #[test]
     #[cfg(feature = "multipart")]
-    fn multipart_rebuildability_and_general_retry_are_recipe_level() {
+    fn multipart_replayability_is_recipe_level() {
         let mut direct_stream = PreparedBody::multipart(MultipartBody::new().stream(
             "stream",
             StreamBody::from_bytes(Bytes::from_static(b"part")),
         ));
         assert!(!direct_stream.is_replayable());
-        assert!(!direct_stream.supports_general_retries());
         assert!(
             !direct_stream
                 .produce_for_attempt()
@@ -1305,7 +1279,6 @@ mod tests {
             MultipartBody::new().bytes("bytes", Bytes::from_static(b"part")),
         );
         assert!(direct_reusable.is_replayable());
-        assert!(!direct_reusable.supports_general_retries());
         assert!(
             !direct_reusable
                 .produce_for_attempt()
@@ -1320,8 +1293,6 @@ mod tests {
             Ok(MultipartBody::new().bytes("bytes", Bytes::from_static(b"part")))
         });
         assert!(factory.is_replayable());
-        assert!(factory.supports_general_retries());
-        assert!(factory.supports_auth_internal_retries());
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         for expected_calls in 1..=2 {
             assert!(
@@ -1519,17 +1490,17 @@ mod tests {
     }
 
     #[test]
-    fn auth_internal_rebuildability_check_does_not_invoke_factory() {
+    fn recipe_replayability_check_does_not_invoke_factory() {
         let calls = Arc::new(AtomicUsize::new(0));
         let observed = calls.clone();
         let factory = PreparedBody::replay_factory(exact_size_hint(0), None, move || {
             observed.fetch_add(1, Ordering::SeqCst);
             Ok(crate::body::DynBody::empty())
         });
-        assert!(factory.supports_auth_internal_retries());
+        assert!(factory.is_replayable());
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         let one_shot = PreparedBody::one_shot(crate::body::DynBody::empty(), None);
-        assert!(!one_shot.supports_auth_internal_retries());
+        assert!(!one_shot.is_replayable());
     }
 
     fn native_request_from_produced(produced: ProducedBody) -> reqwest::Request {

@@ -64,6 +64,15 @@ encoded once. An explicit exact stream length is structurally guarded against
 both early EOF and excess bytes; the request limit is separately applied at
 the final native request materialization boundary.
 
+Concord's core state machine is the permanent and sole general retry authority.
+Reqwest retry remains disabled with `reqwest::retry::never()`, and each native
+execution is one Concord physical attempt. General retry capacity includes the
+initial send; authentication recovery has a separate one-resend budget. Empty
+and reusable byte recipes, complete terminal-body factories, all-reusable
+direct multipart, and complete multipart factories are replayable. Direct
+one-shot bodies and multipart containing a direct one-shot stream are not.
+Method idempotency remains a separate policy condition.
+
 `DynBody` remains available for advanced public HTTP-body input and for explicit
 body extraction from the public streaming façade. Request execution maps
 terminal recipes directly to `reqwest::Body` or `reqwest::multipart::Form`;

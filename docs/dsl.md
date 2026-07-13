@@ -435,7 +435,7 @@ Endpoint output is exactly the decoded response entity output. Profile names als
 
 ### Auth Keyword Reference
 
-Protected-request refresh profile treats `401 Unauthorized` and `403 Forbidden` as refreshable rejection statuses when the credential can be reacquired. Refresh resends consume the endpoint’s absolute `max_attempts` budget.
+Protected-request refresh profile treats `401 Unauthorized` and `403 Forbidden` as refreshable rejection statuses when the credential can be reacquired and the request body recipe is replayable. Authentication recovery has an independent one-resend budget and does not consume the endpoint's general `max_attempts` capacity.
 
 Secret-bearing auth values are redacted from debug and display output, diagnostics, and generated documentation.
 
