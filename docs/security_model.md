@@ -99,8 +99,9 @@ The standard `DynBody` path preserves HTTP data and trailer frames while using
 adapted with safe exclusive synchronous polling; no unsafe trait adaptation,
 background forwarding task, or unbounded queue is involved. Its reusable
 frame-aware limiter counts data bytes only, so trailer fields do not consume a
-byte budget. Legacy transport conversion is temporary and remains a
-byte-stream-only boundary until the transport migration.
+byte budget. For responses this frame-aware path is used only by explicit
+`StreamResponse::into_body()` extraction; normal buffered and streaming
+processing stays on the native response and does not use `DynBody`.
 
 The dangerous surfaces are the exception:
 

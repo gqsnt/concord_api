@@ -255,7 +255,7 @@ impl<Cx: ClientContext> AuthHttpExecutor for ClientAuthHttpExecutor<'_, Cx> {
                         .managed_client
                         .execute(native_request, Some(&context))
                         .await;
-                    let resp = match resp {
+                    let mut resp = match resp {
                         Ok(resp) => resp,
                         Err(source) => {
                             if attempt >= policy.max_transport_retries {
@@ -269,30 +269,42 @@ impl<Cx: ClientContext> AuthHttpExecutor for ClientAuthHttpExecutor<'_, Cx> {
                         }
                     };
 
-                    let (parts, response_body) = resp.into_parts();
-                    let response_body = crate::body::limit_response_body(
-                        response_body,
-                        Some(policy.max_body_bytes),
-                    )
-                    .map_err(auth_body_limit_error)?;
-                    let body = crate::body::collect_body(response_body)
-                        .await
-                        .map_err(|source| {
-                            if source.kind() == crate::body::BodyErrorKind::LimitExceeded {
-                                auth_body_limit_error(source)
-                            } else {
-                                AuthError::new(
-                                    AuthErrorKind::ResponseBody,
-                                    format!("auth response body read failed ({:?})", source.kind()),
-                                )
-                            }
-                        })?
-                        .to_bytes();
+                    let limit = policy.max_body_bytes as u64;
+                    if let Some(actual) = resp.content_length()
+                        && actual > limit
+                    {
+                        return Err(auth_body_limit_error(
+                            crate::body::BodyError::limit_exceeded(limit, actual),
+                        ));
+                    }
+                    let error_mapper = self.client.managed_client.response_error_mapper();
+                    let mut body = bytes::BytesMut::new();
+                    let mut seen = 0_u64;
+                    loop {
+                        let chunk = resp.chunk().await.map_err(|error| {
+                            let source = error_mapper.map_body_error(error);
+                            AuthError::new(
+                                AuthErrorKind::ResponseBody,
+                                format!("auth response body read failed ({:?})", source.kind()),
+                            )
+                        })?;
+                        let Some(chunk) = chunk else {
+                            break;
+                        };
+                        let actual = seen.saturating_add(chunk.len() as u64);
+                        if actual > limit {
+                            return Err(auth_body_limit_error(
+                                crate::body::BodyError::limit_exceeded(limit, actual),
+                            ));
+                        }
+                        body.extend_from_slice(&chunk);
+                        seen = actual;
+                    }
 
                     return Ok(AuthHttpResponse {
-                        status: parts.status,
-                        headers: parts.headers,
-                        body,
+                        status: resp.status(),
+                        headers: std::mem::take(resp.headers_mut()),
+                        body: body.freeze(),
                     });
                 }
             })

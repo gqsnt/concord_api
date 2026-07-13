@@ -572,3 +572,92 @@ async fn generated_stream_response_enforces_configured_response_limit() {
     ));
     assert!(!format!("{err:?}").contains("SECRET_STREAM_RESPONSE_SENTINEL_MUST_NOT_APPEAR"));
 }
+
+#[tokio::test]
+async fn generated_stream_response_exact_limit_uses_only_stream_policy() {
+    let transport = RecordingTransport::new(
+        ResponseFixture::streamed(vec![Bytes::from_static(b"ab"), Bytes::from_static(b"cde")])
+            .content_length(None),
+    );
+    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client")
+    .configure(|config| {
+        config.max_response_body_bytes(1);
+        config.max_stream_response_body_bytes(5);
+    });
+
+    let mut response = api
+        .download()
+        .execute_stream()
+        .await
+        .expect("stream response");
+    let mut body = Vec::new();
+    while let Some(chunk) = response.next_chunk().await.expect("bounded chunk") {
+        body.extend_from_slice(&chunk);
+    }
+    assert_eq!(body, b"abcde");
+}
+
+#[tokio::test]
+async fn generated_stream_response_known_oversize_fails_before_consumption() {
+    let reply = MockReply::status(StatusCode::OK)
+        .with_header(
+            http::header::CONTENT_TYPE,
+            HeaderValue::from_static("application/octet-stream"),
+        )
+        .with_body(Bytes::from_static(b"oversize"));
+    let transport = RecordingTransport::from_replies([reply]);
+    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client")
+    .configure(|config| {
+        config.max_stream_response_body_bytes(5);
+    });
+
+    let error = api
+        .download()
+        .execute_stream()
+        .await
+        .expect_err("known oversized native response must fail at the head");
+    assert!(matches!(
+        error,
+        ApiClientError::ResponseTooLarge {
+            limit: 5,
+            actual: 8,
+            ..
+        }
+    ));
+    assert!(!format!("{error:?}").contains("oversize"));
+}
+
+#[tokio::test]
+async fn generated_stream_response_disabled_limit_reads_all_chunks() {
+    let transport = RecordingTransport::new(
+        ResponseFixture::streamed(vec![
+            Bytes::from_static(b"first"),
+            Bytes::from_static(b"second"),
+        ])
+        .content_length(None),
+    );
+    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("mock client")
+    .configure(|config| {
+        config.no_stream_response_body_limit();
+    });
+
+    let mut response = api
+        .download()
+        .execute_stream()
+        .await
+        .expect("stream response");
+    let mut body = Vec::new();
+    while let Some(chunk) = response.next_chunk().await.expect("unbounded chunk") {
+        body.extend_from_slice(&chunk);
+    }
+    assert_eq!(body, b"firstsecond");
+}

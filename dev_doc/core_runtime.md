@@ -67,6 +67,18 @@ Auth preparation does not receive `BuiltRequest` directly. Endpoint auth prepara
 
 The native `reqwest::Request` is materialized per physical attempt. It is the boundary where credential values are inserted and is consumed immediately by the managed client. Concord does not retain it in response values.
 
+The managed client returns the native `reqwest::Response` into core without an
+`http::Response<DynBody>` bridge. Core inspects status and headers on the native
+response, then either performs one bounded native-chunk collection or transfers
+the native response into the private state of `StreamResponse`. The public raw
+and decoded response values are constructed only after terminal buffering.
+`StreamResponse::next_chunk()` and `write_to_file()` remain direct, data-only
+native chunk consumers. Only explicit `StreamResponse::into_body()` extracts
+Reqwest's frame-aware body into a narrow private limiter/error wrapper so that
+data frames, trailer frames, frame order, and native size hints remain available
+through the stable public `DynBody` façade. That wrapper is not used by normal
+buffered or streaming execution.
+
 Rate-limit keying is strict. A bucket keyed by `[host]` requires the logical request URL to have a host and fails before permit acquisition or transport if it does not.
 
 There is no fallback key for `[host]`. Hostless logical URLs fail explicitly rather than being grouped under an empty, endpoint, or static key.
@@ -81,7 +93,7 @@ Auth locks are not held across credential endpoint I/O or token endpoint I/O. Sl
 
 Retry exhaustion returns the final transport or status error that caused the retry loop to stop, with retry context attached through safe diagnostics. It does not replace the final failure with a generic retry error.
 
-Endpoint response bodies are read into memory only through the common frame-aware bounded body reader. The default runtime limit is 16 MiB; only the body’s contractual size hint may reject before polling, while every delivered data frame is counted cumulatively.
+Endpoint response bodies are read into memory only through the core-owned bounded native-chunk collector. The default runtime limit is 16 MiB; an authoritative native content length may reject before polling, while every delivered data chunk is counted cumulatively and rejected before retention beyond the bound.
 
 Runtime configuration is client-owned. `RuntimeConfig::default()` starts with no debug output, no-op hooks, no retry policy, the feature-selected default rate limiter, a 60-second rate-limit cooldown cap, pagination loop detection enabled, a 16 MiB endpoint response-body limit, and disabled dev body capture. Client configuration is applied before endpoint policy and pending-request overrides. Pending-request overrides cover request options such as debug level, timeout, and attempt; absolute retry capacity is supplied by endpoint retry configuration and has no separate authentication budget.
 

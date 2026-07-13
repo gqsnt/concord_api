@@ -19,6 +19,7 @@ pub struct RecordedRequest {
     pub attempt: Option<u32>,
     pub page_index: Option<u32>,
     pub timeout: Option<Duration>,
+    body_complete: bool,
 }
 
 impl std::fmt::Debug for RecordedRequest {
@@ -86,6 +87,14 @@ impl ReplyGate {
     pub fn release(&self) {
         let (lock, condition) = &*self.state;
         lock.lock().expect("reply gate lock").released = true;
+        condition.notify_all();
+    }
+
+    fn release_for_shutdown(&self) {
+        let (lock, condition) = &*self.state;
+        if let Ok(mut state) = lock.lock() {
+            state.released = true;
+        }
         condition.notify_all();
     }
 
@@ -186,6 +195,7 @@ struct MockState {
     thread: Mutex<Option<std::thread::JoinHandle<()>>>,
     workers: Mutex<Vec<std::thread::JoinHandle<()>>>,
     stop: AtomicBool,
+    gates: Vec<ReplyGate>,
     request_head_observer: Option<RequestObserver>,
     request_body_complete_observer: Option<RequestObserver>,
 }
@@ -236,6 +246,7 @@ struct MockLifetime {
 
 impl Drop for MockLifetime {
     fn drop(&mut self) {
+        signal_shutdown(&self.state);
         if !std::thread::panicking() {
             join_state(&self.state);
         }
@@ -287,6 +298,12 @@ impl MockBuilder {
             .expect("mock server nonblocking");
         let address = listener.local_addr().expect("mock server address");
         let base_url = url::Url::parse(&format!("http://{address}/")).expect("mock server URL");
+        let gates = self
+            .replies
+            .iter()
+            .chain(self.repeat.iter())
+            .flat_map(reply_gates)
+            .collect();
         let state = Arc::new(MockState {
             recorded: Mutex::new(Vec::new()),
             replies: Mutex::new(self.replies.into_iter().collect()),
@@ -295,6 +312,7 @@ impl MockBuilder {
             thread: Mutex::new(None),
             workers: Mutex::new(Vec::new()),
             stop: AtomicBool::new(false),
+            gates,
             request_head_observer: self.request_head_observer,
             request_body_complete_observer: self.request_body_complete_observer,
         });
@@ -314,6 +332,11 @@ impl MockBuilder {
                         return;
                     }
                 };
+                if let Err(error) = stream.set_nonblocking(false) {
+                    *thread_state.failure.lock().expect("mock failure lock") =
+                        Some(format!("mock accepted socket setup failed: {error}"));
+                    return;
+                }
                 let reply = thread_state
                     .replies
                     .lock()
@@ -378,6 +401,17 @@ impl MockHandle {
             .len()
     }
 
+    pub fn completed_len(&self) -> usize {
+        self.lifetime
+            .state
+            .recorded
+            .lock()
+            .expect("mock recorded lock")
+            .iter()
+            .filter(|request| request.body_complete || !request.body.is_empty())
+            .count()
+    }
+
     pub fn assert_recorded_len(&self, expected: usize) {
         assert_eq!(self.recorded_len(), expected, "recorded request count");
     }
@@ -394,14 +428,39 @@ impl MockHandle {
 
 impl Drop for MockHandle {
     fn drop(&mut self) {
-        if !self.finished && !std::thread::panicking() && Arc::strong_count(&self.lifetime) == 1 {
-            self.join();
+        if !self.finished {
+            if std::thread::panicking() {
+                signal_shutdown(&self.lifetime.state);
+            } else if Arc::strong_count(&self.lifetime) == 1 {
+                self.join();
+            }
         }
     }
 }
 
-fn join_state(state: &MockState) {
+fn reply_gates(reply: &MockReply) -> Vec<ReplyGate> {
+    let mut gates = Vec::new();
+    if let Some(gate) = &reply.gate {
+        gates.push(gate.clone());
+    }
+    if let Some(steps) = &reply.response_steps {
+        gates.extend(steps.iter().filter_map(|step| match step {
+            ResponseStep::Gate(gate) => Some(gate.clone()),
+            ResponseStep::Chunk(_) | ResponseStep::Disconnect => None,
+        }));
+    }
+    gates
+}
+
+fn signal_shutdown(state: &MockState) {
     state.stop.store(true, Ordering::Release);
+    for gate in &state.gates {
+        gate.release_for_shutdown();
+    }
+}
+
+fn join_state(state: &MockState) {
+    signal_shutdown(state);
     if let Some(thread) = state.thread.lock().expect("mock thread lock").take() {
         thread.join().expect("mock server thread");
     }
@@ -470,28 +529,15 @@ fn serve_one(
     if let Some(observer) = &state.request_head_observer {
         (observer.0)();
     }
-    let (body, incomplete_body) = if headers
+    let chunked = headers
         .get(http::header::TRANSFER_ENCODING)
         .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.eq_ignore_ascii_case("chunked"))
-    {
-        read_chunked(&mut reader)
-    } else {
-        let length = headers
-            .get(http::header::CONTENT_LENGTH)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse::<usize>().ok())
-            .unwrap_or(0);
-        read_sized_body(&mut reader, length)
-    };
-    if let Some(observer) = &state.request_body_complete_observer {
-        (observer.0)();
-    }
-    if let Some(error) = incomplete_body.as_ref()
-        && !reply.expect_request_body_failure
-    {
-        return Err(error.clone());
-    }
+        .is_some_and(|value| value.eq_ignore_ascii_case("chunked"));
+    let content_length = headers
+        .get(http::header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(0);
     let original_url_header = http::HeaderName::from_static("x-concord-test-original-url");
     let url = headers
         .remove(&original_url_header)
@@ -513,21 +559,45 @@ fn serve_one(
     let timeout = take_header_string(&mut headers, "x-concord-test-timeout-ms")
         .and_then(|value| value.parse::<u64>().ok())
         .map(Duration::from_millis);
-    let recorded = RecordedRequest {
-        method,
-        url,
-        headers,
-        body: Bytes::from(body),
-        endpoint,
-        attempt,
-        page_index,
-        timeout,
+    let recorded_index = {
+        let mut recorded = state.recorded.lock().expect("mock recorded lock");
+        let index = recorded.len();
+        recorded.push(RecordedRequest {
+            method,
+            url,
+            headers,
+            body: Bytes::new(),
+            endpoint,
+            attempt,
+            page_index,
+            timeout,
+            body_complete: false,
+        });
+        index
     };
-    state
+
+    let (body, incomplete_body) = if chunked {
+        read_chunked(&mut reader, state, recorded_index)
+    } else {
+        read_sized_body(&mut reader, content_length, state, recorded_index)
+    };
+    if let Some(recorded) = state
         .recorded
         .lock()
         .expect("mock recorded lock")
-        .push(recorded);
+        .get_mut(recorded_index)
+    {
+        recorded.body = Bytes::from(body);
+        recorded.body_complete = true;
+    }
+    if let Some(observer) = &state.request_body_complete_observer {
+        (observer.0)();
+    }
+    if let Some(error) = incomplete_body.as_ref()
+        && !reply.expect_request_body_failure
+    {
+        return Err(error.clone());
+    }
     if incomplete_body.is_some() && reply.expect_request_body_failure {
         return Ok(());
     }
@@ -599,7 +669,22 @@ fn take_header_string(headers: &mut HeaderMap, name: &'static str) -> Option<Str
         .and_then(|value| value.to_str().ok().map(str::to_owned))
 }
 
-fn read_chunked(reader: &mut BufReader<TcpStream>) -> (Vec<u8>, Option<String>) {
+fn update_recorded_body(state: &MockState, recorded_index: usize, body: &[u8]) {
+    if let Some(recorded) = state
+        .recorded
+        .lock()
+        .expect("mock recorded lock")
+        .get_mut(recorded_index)
+    {
+        recorded.body = Bytes::copy_from_slice(body);
+    }
+}
+
+fn read_chunked(
+    reader: &mut BufReader<TcpStream>,
+    state: &MockState,
+    recorded_index: usize,
+) -> (Vec<u8>, Option<String>) {
     let mut body = Vec::new();
     loop {
         let mut size = String::new();
@@ -623,6 +708,7 @@ fn read_chunked(reader: &mut BufReader<TcpStream>) -> (Vec<u8>, Option<String>) 
             body.truncate(start);
             return (body, Some(error.to_string()));
         }
+        update_recorded_body(state, recorded_index, &body);
         let mut crlf = [0; 2];
         if let Err(error) = reader.read_exact(&mut crlf) {
             return (body, Some(error.to_string()));
@@ -631,7 +717,12 @@ fn read_chunked(reader: &mut BufReader<TcpStream>) -> (Vec<u8>, Option<String>) 
     (body, None)
 }
 
-fn read_sized_body(reader: &mut BufReader<TcpStream>, length: usize) -> (Vec<u8>, Option<String>) {
+fn read_sized_body(
+    reader: &mut BufReader<TcpStream>,
+    length: usize,
+    state: &MockState,
+    recorded_index: usize,
+) -> (Vec<u8>, Option<String>) {
     let mut body = Vec::with_capacity(length);
     while body.len() < length {
         let mut chunk = vec![0; (length - body.len()).min(8 * 1024)];
@@ -642,7 +733,10 @@ fn read_sized_body(reader: &mut BufReader<TcpStream>, length: usize) -> (Vec<u8>
                     Some("request body ended before Content-Length".to_string()),
                 );
             }
-            Ok(read) => body.extend_from_slice(&chunk[..read]),
+            Ok(read) => {
+                body.extend_from_slice(&chunk[..read]);
+                update_recorded_body(state, recorded_index, &body);
+            }
             Err(error) => return (body, Some(error.to_string())),
         }
     }

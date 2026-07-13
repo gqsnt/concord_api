@@ -1343,7 +1343,7 @@ impl MockTransport {
         self.handle
             .lock()
             .expect("native handle lock")
-            .recorded_len()
+            .completed_len()
     }
 
     pub async fn wait_for_sends(&self, expected: usize) {

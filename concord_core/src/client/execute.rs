@@ -699,13 +699,9 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         }
     }
 
-    fn retain_response_origin(resp: AttemptResponse, origin: OriginHandle) -> AttemptResponse {
-        let AttemptResponse { message, context } = resp;
-        let (parts, body) = message.into_parts();
-        AttemptResponse {
-            message: http::Response::from_parts(parts, crate::body::retain_origin(body, origin)),
-            context,
-        }
+    fn retain_response_origin(mut resp: AttemptResponse, origin: OriginHandle) -> AttemptResponse {
+        resp.origin = Some(origin);
+        resp
     }
 
     pub async fn execute_plan<C>(

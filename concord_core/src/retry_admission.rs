@@ -117,6 +117,13 @@ impl RetryAdmissionRegistry {
         self.inner.state.lock().ok()
     }
 
+    #[cfg(test)]
+    pub(crate) fn active_requests_for(&self, key: &OriginKey) -> usize {
+        self.lock_state()
+            .and_then(|state| state.entries.get(key).map(|entry| entry.active_requests))
+            .unwrap_or_default()
+    }
+
     pub(crate) fn track(&self, key: OriginKey) -> OriginHandle {
         let now = self.inner.clock.now();
         let Some(mut state) = self.lock_state() else {
@@ -259,12 +266,7 @@ fn cleanup_expired(state: &mut RegistryState, now: Instant, idle_ttl: Duration) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bytes::Bytes;
-    use http_body::{Body, Frame, SizeHint};
-    use http_body_util::BodyExt;
-    use std::pin::Pin;
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::task::{Context, Poll};
 
     struct TestClock {
         now: Mutex<Instant>,
@@ -294,28 +296,6 @@ mod tests {
 
     fn can_track(registry: &RetryAdmissionRegistry, origin: &str) -> bool {
         registry.track(key(origin)).tracked
-    }
-
-    struct ErrorBody;
-
-    impl Body for ErrorBody {
-        type Data = Bytes;
-        type Error = crate::body::BodyError;
-
-        fn poll_frame(
-            self: Pin<&mut Self>,
-            _cx: &mut Context<'_>,
-        ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-            Poll::Ready(Some(Err(crate::body::BodyError::input())))
-        }
-
-        fn is_end_stream(&self) -> bool {
-            false
-        }
-
-        fn size_hint(&self) -> SizeHint {
-            SizeHint::default()
-        }
     }
 
     fn credits(registry: &RetryAdmissionRegistry, key: &OriginKey) -> u8 {
@@ -414,56 +394,28 @@ mod tests {
         assert!(third.tracked);
     }
 
-    #[tokio::test]
-    async fn response_body_lease_survives_until_eof_and_drop() {
+    #[test]
+    fn origin_handle_lease_survives_until_drop() {
         let clock = TestClock::new();
-        let registry = RetryAdmissionRegistry::with_clock(1, Duration::ZERO, clock.clone());
+        let registry = RetryAdmissionRegistry::with_clock(1, Duration::ZERO, clock);
         let origin = key("https://held.example");
         let other = "https://other.example";
 
-        let body = crate::body::retain_origin(
-            crate::body::DynBody::from_bytes(Bytes::from_static(b"held")),
-            registry.track(origin.clone()),
-        );
-        clock.advance(Duration::from_secs(1));
+        let handle = registry.track(origin);
         assert!(!can_track(&registry, other));
-        drop(body);
-        assert!(can_track(&registry, other));
-
-        let registry = RetryAdmissionRegistry::with_clock(1, Duration::ZERO, clock);
-        let body = crate::body::retain_origin(
-            crate::body::DynBody::from_bytes(Bytes::from_static(b"held")),
-            registry.track(origin),
-        );
-        let collected = body.collect().await.expect("body collection");
-        assert_eq!(collected.to_bytes(), Bytes::from_static(b"held"));
+        drop(handle);
         assert!(can_track(&registry, other));
     }
 
-    #[tokio::test]
-    async fn response_body_error_releases_origin_lease() {
-        let registry = RetryAdmissionRegistry::new(1, Duration::ZERO);
-        let body = crate::body::retain_origin(
-            crate::body::DynBody::from_body(ErrorBody),
-            registry.track(key("https://error.example")),
-        );
-        assert!(body.collect().await.is_err());
-        assert!(can_track(&registry, "https://other-error.example"));
-    }
-
-    #[tokio::test]
-    async fn response_body_lifecycle_does_not_deposit_again() {
+    #[test]
+    fn origin_handle_lifecycle_does_not_deposit_again() {
         let registry = RetryAdmissionRegistry::new(1, Duration::from_secs(60));
         let origin = key("https://single-deposit.example");
         let handle = registry.track(origin.clone());
         handle.deposit_original();
         assert_eq!(credits(&registry, &origin), 6);
 
-        let body = crate::body::retain_origin(
-            crate::body::DynBody::from_bytes(Bytes::from_static(b"body")),
-            handle,
-        );
-        let _ = body.collect().await.expect("body collection");
+        drop(handle);
         assert_eq!(credits(&registry, &origin), 6);
     }
 

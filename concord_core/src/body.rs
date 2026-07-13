@@ -344,77 +344,6 @@ impl DynBody {
     }
 }
 
-/// Applies the common response-body limiter after response-head decisions.
-///
-/// An upper size hint is safe for an early rejection, but it is only an
-/// optimization: `LimitedBody` still counts every data frame that is yielded.
-pub(crate) fn limit_response_body(
-    body: DynBody,
-    limit: Option<usize>,
-) -> Result<DynBody, BodyError> {
-    let Some(limit) = limit else {
-        return Ok(body);
-    };
-    let limit = u64::try_from(limit).unwrap_or(u64::MAX);
-    if let Some(upper) = body.size_hint().upper()
-        && upper > limit
-    {
-        return Err(BodyError::limit_exceeded(limit, upper));
-    }
-    Ok(body.limited(limit))
-}
-
-/// Collects an already-limited frame-aware body. The returned collection keeps
-/// trailer frames available until its caller explicitly converts it to bytes.
-pub(crate) async fn collect_body(
-    body: DynBody,
-) -> Result<http_body_util::Collected<Bytes>, BodyError> {
-    BodyExt::collect(body).await
-}
-
-/// Keeps the resolved attempt origin active for the lifetime of a response
-/// body. The lease is deliberately outside the response head and is therefore
-/// preserved by every frame-aware body adapter that wraps this body.
-pub(crate) fn retain_origin(
-    body: DynBody,
-    origin: crate::retry_admission::OriginHandle,
-) -> DynBody {
-    DynBody::from_body(OriginLeasedBody {
-        inner: body,
-        origin: Some(origin),
-    })
-}
-
-struct OriginLeasedBody {
-    inner: DynBody,
-    origin: Option<crate::retry_admission::OriginHandle>,
-}
-
-impl Body for OriginLeasedBody {
-    type Data = Bytes;
-    type Error = BodyError;
-
-    fn poll_frame(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let this = self.as_mut().get_mut();
-        let result = Pin::new(&mut this.inner).poll_frame(cx);
-        if matches!(result, Poll::Ready(None) | Poll::Ready(Some(Err(_)))) {
-            this.origin.take();
-        }
-        result
-    }
-
-    fn is_end_stream(&self) -> bool {
-        self.inner.is_end_stream()
-    }
-
-    fn size_hint(&self) -> SizeHint {
-        self.inner.size_hint()
-    }
-}
-
 impl fmt::Debug for DynBody {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DynBody")
@@ -996,36 +925,6 @@ mod tests {
 
         let _ = DynBody::from_frame_stream(PanicFrameStream);
         let _ = DynBody::from_byte_stream(PanicBytesStream);
-    }
-
-    #[test]
-    fn response_limit_hint_rejects_without_polling() {
-        let body = DynBody::from_body(PanicBody).with_size_hint(exact_hint(5));
-        let error = limit_response_body(body, Some(4))
-            .expect_err("an oversized safe upper hint should fail before polling");
-        assert_eq!(error.kind(), BodyErrorKind::LimitExceeded);
-        assert_eq!(error.limit(), Some(4));
-        assert_eq!(error.observed(), Some(5));
-    }
-
-    #[tokio::test]
-    async fn response_collection_keeps_trailers_until_byte_conversion() {
-        let mut trailers = HeaderMap::new();
-        trailers.insert("x-collected-trailer", HeaderValue::from_static("present"));
-        let body = DynBody::from_frame_stream(OneShotFrames::<BodyError>::new(vec![
-            Ok(Frame::data(Bytes::from_static(b"data"))),
-            Ok(Frame::trailers(trailers)),
-        ]));
-        let body = limit_response_body(body, Some(4)).expect("body limit");
-        let collected = collect_body(body).await.expect("bounded collection");
-        assert_eq!(
-            collected
-                .trailers()
-                .and_then(|trailers| trailers.get("x-collected-trailer"))
-                .and_then(|value| value.to_str().ok()),
-            Some("present")
-        );
-        assert_eq!(collected.to_bytes(), Bytes::from_static(b"data"));
     }
 
     #[test]

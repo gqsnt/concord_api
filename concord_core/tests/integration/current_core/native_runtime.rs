@@ -34,6 +34,20 @@ struct FirstChunkThenPending {
     events: Arc<Mutex<Vec<String>>>,
 }
 
+struct HeadGatedChunks {
+    chunks: std::collections::VecDeque<Bytes>,
+    head_gate: Arc<UploadHeadGate>,
+}
+
+impl HeadGatedChunks {
+    fn new(chunks: impl IntoIterator<Item = Bytes>, head_gate: Arc<UploadHeadGate>) -> Self {
+        Self {
+            chunks: chunks.into_iter().collect(),
+            head_gate,
+        }
+    }
+}
+
 #[derive(Default)]
 struct UploadHeadGate {
     released: AtomicBool,
@@ -71,6 +85,22 @@ impl futures_core::Stream for FirstChunkThenPending {
             }
             None => std::task::Poll::Pending,
         }
+    }
+}
+
+impl futures_core::Stream for HeadGatedChunks {
+    type Item = Result<Bytes, StreamBodyError>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        context: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        if !self.head_gate.released.load(Ordering::Acquire) {
+            *self.head_gate.waker.lock().expect("upload gate waker") =
+                Some(context.waker().clone());
+            return std::task::Poll::Pending;
+        }
+        std::task::Poll::Ready(self.chunks.pop_front().map(Ok))
     }
 }
 
@@ -205,8 +235,8 @@ async fn native_auth_challenge_refresh_reconstructs_a_fresh_request() -> Result<
 }
 
 #[tokio::test]
-async fn managed_native_executor_reaches_loopback_and_adapts_response() -> Result<(), ApiClientError>
-{
+async fn managed_native_executor_reaches_loopback_and_processes_native_response()
+-> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
@@ -419,13 +449,18 @@ async fn exact_length_underflow_and_overflow_are_structural_on_the_wire() {
             BodyErrorKind::ExactLengthOverflow,
         ),
     ] {
-        let transport = MockTransport::from_native_repeating(
+        let head_gate = Arc::new(UploadHeadGate::default());
+        let transport = MockTransport::from_native_replies_with_head_action(
             Arc::new(Mutex::new(Vec::new())),
-            NativeMockReply::disconnect_after_request().expect_request_body_failure(),
+            [NativeMockReply::disconnect_after_request().expect_request_body_failure()],
+            {
+                let head_gate = head_gate.clone();
+                move || head_gate.release()
+            },
         );
         let capture = transport.clone();
         let client = client(TestAuthVars::default(), transport);
-        let stream = ByteChunks::new(chunks);
+        let stream = HeadGatedChunks::new(chunks, head_gate);
         let body =
             StreamBody::from_byte_stream(stream).with_size_hint(http_body::SizeHint::with_exact(5));
 
@@ -437,27 +472,38 @@ async fn exact_length_underflow_and_overflow_are_structural_on_the_wire() {
         assert_eq!(error.category(), ErrorCategory::Transport);
         assert_eq!(body_error_kind(&error), Some(expected_kind));
         drop(client);
+        capture.wait_for_sends(1).await;
         let requests = capture.requests().await;
+        assert_eq!(requests.len(), 1, "exact-length failure wire request count");
         assert!(
-            requests
-                .iter()
-                .all(|request| { request.body.as_bytes().is_some_and(|body| body.len() <= 5) })
+            requests[0]
+                .body
+                .as_bytes()
+                .map_or(requests[0].body.is_empty(), |body| body.len() <= 5)
         );
     }
 }
 
 #[tokio::test]
 async fn streaming_limit_stops_excess_before_it_reaches_loopback() {
-    let transport = MockTransport::from_native_repeating(
+    let head_gate = Arc::new(UploadHeadGate::default());
+    let transport = MockTransport::from_native_replies_with_head_action(
         Arc::new(Mutex::new(Vec::new())),
-        NativeMockReply::disconnect_after_request().expect_request_body_failure(),
+        [NativeMockReply::disconnect_after_request().expect_request_body_failure()],
+        {
+            let head_gate = head_gate.clone();
+            move || head_gate.release()
+        },
     );
     let capture = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
     client.configure(|config| {
         config.max_stream_request_body_bytes(5);
     });
-    let stream = ByteChunks::new([Bytes::from_static(b"abcd"), Bytes::from_static(b"efgh")]);
+    let stream = HeadGatedChunks::new(
+        [Bytes::from_static(b"abcd"), Bytes::from_static(b"efgh")],
+        head_gate,
+    );
     let body = StreamBody::from_byte_stream(stream).with_size_hint(http_body::SizeHint::new());
 
     let error = client
@@ -477,26 +523,37 @@ async fn streaming_limit_stops_excess_before_it_reaches_loopback() {
         }
     ));
     drop(client);
+    capture.wait_for_sends(1).await;
+    let requests = capture.requests().await;
+    assert_eq!(
+        requests.len(),
+        1,
+        "request-limit failure wire request count"
+    );
     assert!(
-        capture
-            .requests()
-            .await
-            .iter()
-            .all(|request| { request.body.as_bytes().is_some_and(|body| body.len() <= 5) })
+        requests[0]
+            .body
+            .as_bytes()
+            .map_or(requests[0].body.is_empty(), |body| body.len() <= 5)
     );
 }
 
 #[cfg(feature = "multipart")]
 #[tokio::test]
 async fn multipart_aggregate_limit_is_enforced_during_native_framing() {
-    let transport = MockTransport::from_native_repeating(
+    let head_gate = Arc::new(UploadHeadGate::default());
+    let transport = MockTransport::from_native_replies_with_head_action(
         Arc::new(Mutex::new(Vec::new())),
-        NativeMockReply::disconnect_after_request().expect_request_body_failure(),
+        [NativeMockReply::disconnect_after_request().expect_request_body_failure()],
+        {
+            let head_gate = head_gate.clone();
+            move || head_gate.release()
+        },
     );
     let capture = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
     client.configure(|config| {
-        config.max_stream_request_body_bytes(8);
+        config.max_stream_request_body_bytes(1024);
     });
     let mut plan = request_plan(
         "MultipartAggregateLimit",
@@ -506,7 +563,13 @@ async fn multipart_aggregate_limit_is_enforced_during_native_framing() {
         None,
     );
     plan.body = MultipartRequest::prepare(
-        MultipartBody::new().text("title", "multipart-value"),
+        MultipartBody::new().stream(
+            "upload",
+            StreamBody::from_byte_stream(HeadGatedChunks::new(
+                [Bytes::from(vec![b'a'; 700]), Bytes::from(vec![b'b'; 700])],
+                head_gate,
+            )),
+        ),
         ErrorContext {
             endpoint: "MultipartAggregateLimit",
             method: Method::POST,
@@ -523,18 +586,24 @@ async fn multipart_aggregate_limit_is_enforced_during_native_framing() {
     assert!(matches!(
         error,
         ApiClientError::RequestBodyLimitExceeded {
-            limit: 8,
+            limit: 1024,
             actual,
             ..
-        } if actual > 8
+        } if actual > 1024
     ));
     drop(client);
+    capture.wait_for_sends(1).await;
+    let requests = capture.requests().await;
+    assert_eq!(
+        requests.len(),
+        1,
+        "multipart-limit failure wire request count"
+    );
     assert!(
-        capture
-            .requests()
-            .await
-            .iter()
-            .all(|request| { request.body.as_bytes().is_some_and(|body| body.len() <= 8) })
+        requests[0]
+            .body
+            .as_bytes()
+            .is_some_and(|body| body.len() <= 1024)
     );
 }
 

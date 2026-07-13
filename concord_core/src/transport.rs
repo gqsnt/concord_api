@@ -4,7 +4,6 @@ use crate::retry::RetrySetting;
 use bytes::Bytes;
 use http::{HeaderMap, Method, StatusCode};
 use std::fmt;
-use std::pin::Pin;
 use std::time::Duration;
 use url::Url;
 
@@ -78,8 +77,12 @@ pub(crate) struct ResponseContext {
 }
 
 pub(crate) struct AttemptResponse {
-    pub(crate) message: http::Response<crate::body::DynBody>,
+    pub(crate) message: reqwest::Response,
     pub(crate) context: ResponseContext,
+    pub(crate) error_mapper: NativeResponseErrorMapper,
+    pub(crate) origin: Option<crate::retry_admission::OriginHandle>,
+    pub(crate) body_limit: Option<u64>,
+    pub(crate) body_seen: u64,
 }
 
 impl AttemptResponse {
@@ -89,6 +92,40 @@ impl AttemptResponse {
 
     pub(crate) fn headers(&self) -> &HeaderMap {
         self.message.headers()
+    }
+
+    pub(crate) fn map_body_error(&self, error: reqwest::Error) -> crate::body::BodyError {
+        self.error_mapper.map_body_error(error)
+    }
+
+    pub(crate) fn release_origin(&mut self) {
+        self.origin.take();
+    }
+}
+
+/// Narrow error-mapping context retained with a native response body.
+///
+/// This carries no response metadata or body state; it only preserves the
+/// managed client's proxy-aware redaction policy after `execute` returns.
+#[derive(Clone)]
+pub(crate) struct NativeResponseErrorMapper {
+    proxies: Vec<SafeProxy>,
+}
+
+impl NativeResponseErrorMapper {
+    pub(crate) fn map_body_error(&self, error: reqwest::Error) -> crate::body::BodyError {
+        crate::body::BodyError::from(TransportError::from_reqwest(error, &self.proxies))
+    }
+
+    pub(crate) fn uses_test_origin_override(&self) -> bool {
+        #[cfg(feature = "dangerous-dev-tools")]
+        {
+            self.proxies.iter().any(|proxy| proxy.test_origin_override)
+        }
+        #[cfg(not(feature = "dangerous-dev-tools"))]
+        {
+            false
+        }
     }
 }
 
@@ -976,7 +1013,7 @@ impl ManagedReqwestClient {
         &self,
         request: reqwest::Request,
         _context: Option<&RequestExecutionContext>,
-    ) -> Result<http::Response<crate::body::DynBody>, TransportError> {
+    ) -> Result<reqwest::Response, TransportError> {
         #[cfg(feature = "dangerous-dev-tools")]
         let mut request = request;
         #[cfg(feature = "dangerous-dev-tools")]
@@ -1035,12 +1072,16 @@ impl ManagedReqwestClient {
                 TlsCapabilityUnavailable,
             ));
         }
-        let response = self
-            .client
+        self.client
             .execute(request)
             .await
-            .map_err(|error| TransportError::from_reqwest(error, &self.configured_proxies))?;
-        Ok(adapt_native_response(response, &self.configured_proxies))
+            .map_err(|error| TransportError::from_reqwest(error, &self.configured_proxies))
+    }
+
+    pub(crate) fn response_error_mapper(&self) -> NativeResponseErrorMapper {
+        NativeResponseErrorMapper {
+            proxies: self.configured_proxies.clone(),
+        }
     }
 }
 
@@ -1058,63 +1099,13 @@ impl fmt::Display for TlsCapabilityUnavailable {
 #[cfg(not(feature = "default-tls"))]
 impl Error for TlsCapabilityUnavailable {}
 
-fn adapt_native_response(
-    response: reqwest::Response,
-    proxies: &[SafeProxy],
-) -> http::Response<crate::body::DynBody> {
-    let response: http::Response<reqwest::Body> = response.into();
-    response.map(|body| {
-        crate::body::DynBody::from_body(SanitizedReqwestBody {
-            inner: body,
-            proxies: proxies.to_vec(),
-        })
-    })
-}
-
-struct SanitizedReqwestBody {
-    inner: reqwest::Body,
-    proxies: Vec<SafeProxy>,
-}
-
-impl http_body::Body for SanitizedReqwestBody {
-    type Data = bytes::Bytes;
-    type Error = crate::body::BodyError;
-
-    fn poll_frame(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
-        http_body::Body::poll_frame(Pin::new(&mut self.inner), cx).map(|frame| {
-            let proxies = &self.proxies;
-            frame.map(|result| result.map_err(|error| sanitized_reqwest_body_error(error, proxies)))
-        })
-    }
-
-    fn is_end_stream(&self) -> bool {
-        http_body::Body::is_end_stream(&self.inner)
-    }
-
-    fn size_hint(&self) -> http_body::SizeHint {
-        http_body::Body::size_hint(&self.inner)
-    }
-}
-
-fn sanitized_reqwest_body_error(
-    error: reqwest::Error,
-    proxies: &[SafeProxy],
-) -> crate::body::BodyError {
-    crate::body::BodyError::from(TransportError::from_reqwest(error, proxies))
-}
-
 #[cfg(test)]
 #[allow(dead_code)]
 mod reqwest_transport_tests {
     use super::*;
     use bytes::Bytes;
     use futures_core::Stream;
-    use http_body::{Body as _, Frame, SizeHint};
-    use http_body_util::BodyExt as _;
-    use std::collections::VecDeque;
+    use http_body::{Frame, SizeHint};
     use std::pin::Pin;
     use std::sync::{
         Arc,
@@ -1125,9 +1116,6 @@ mod reqwest_transport_tests {
     #[derive(Clone, Debug)]
     struct RequestMarker(&'static str);
 
-    #[derive(Clone, Debug)]
-    struct ResponseMarker(&'static str);
-
     struct PollProbe(Arc<AtomicBool>);
 
     impl Stream for PollProbe {
@@ -1137,10 +1125,6 @@ mod reqwest_transport_tests {
             self.0.store(true, Ordering::SeqCst);
             Poll::Ready(None)
         }
-    }
-
-    struct FrameSequence {
-        frames: VecDeque<Result<Frame<Bytes>, crate::body::BodyError>>,
     }
 
     struct FailingResponseBody;
@@ -1167,25 +1151,17 @@ mod reqwest_transport_tests {
         }
     }
 
-    impl Stream for FrameSequence {
-        type Item = Result<Frame<Bytes>, crate::body::BodyError>;
-
-        fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-            Poll::Ready(self.frames.pop_front())
-        }
-    }
-
     #[tokio::test]
     async fn response_body_errors_retain_proxy_redaction_context() {
         let proxy = SafeProxy::all("http://proxy.example.test:8080").expect("safe proxy");
         let mut response = http::Response::new(reqwest::Body::wrap(FailingResponseBody));
         *response.status_mut() = StatusCode::OK;
-        let response = adapt_native_response(reqwest::Response::from(response), &[proxy]);
-        let error = response
-            .into_body()
-            .collect()
-            .await
-            .expect_err("body stream must fail");
+        let mut response = reqwest::Response::from(response);
+        let error = response.chunk().await.expect_err("body stream must fail");
+        let error = NativeResponseErrorMapper {
+            proxies: vec![proxy],
+        }
+        .map_body_error(error);
         let diagnostics = format!("{error}\n{error:?}");
         assert!(!diagnostics.contains("proxy.example.test"));
         assert!(!diagnostics.contains("203.0.113.99"));
@@ -1218,56 +1194,6 @@ mod reqwest_transport_tests {
             );
             current = source.source();
         }
-    }
-
-    #[tokio::test]
-    async fn whole_response_conversion_preserves_head_frames_trailers_and_hint() {
-        let trailers = {
-            let mut trailers = http::HeaderMap::new();
-            trailers.insert("x-trailer", http::HeaderValue::from_static("present"));
-            trailers
-        };
-        let mut hint = SizeHint::new();
-        hint.set_exact(4);
-        let body = crate::body::DynBody::from_frame_stream(FrameSequence {
-            frames: VecDeque::from([
-                Ok(Frame::data(Bytes::from_static(b"data"))),
-                Ok(Frame::trailers(trailers)),
-            ]),
-        })
-        .with_size_hint(hint);
-        let mut response = http::Response::new(reqwest::Body::wrap(body));
-        *response.status_mut() = StatusCode::CREATED;
-        *response.version_mut() = http::Version::HTTP_2;
-        response
-            .headers_mut()
-            .insert("x-response", http::HeaderValue::from_static("present"));
-        response.extensions_mut().insert(ResponseMarker("response"));
-
-        let response = adapt_native_response(reqwest::Response::from(response), &[]);
-        assert_eq!(response.status(), StatusCode::CREATED);
-        assert_eq!(response.version(), http::Version::HTTP_2);
-        assert_eq!(
-            response.headers().get("x-response"),
-            Some(&http::HeaderValue::from_static("present"))
-        );
-        assert_eq!(
-            response
-                .extensions()
-                .get::<ResponseMarker>()
-                .map(|marker| marker.0),
-            Some("response")
-        );
-        assert_eq!(response.body().size_hint().exact(), Some(4));
-        let collected = response.into_body().collect().await.expect("response body");
-        assert_eq!(
-            collected
-                .trailers()
-                .and_then(|trailers| trailers.get("x-trailer"))
-                .and_then(|value| value.to_str().ok()),
-            Some("present")
-        );
-        assert_eq!(collected.to_bytes(), Bytes::from_static(b"data"));
     }
 
     #[test]
@@ -1452,7 +1378,7 @@ mod reqwest_transport_tests {
     }
 
     #[tokio::test]
-    async fn managed_client_executes_native_requests_and_adapts_native_responses() {
+    async fn managed_client_executes_native_requests_and_returns_native_responses() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener");
         let address = listener.local_addr().expect("address");
         let server = std::thread::spawn(move || {
@@ -1481,7 +1407,7 @@ mod reqwest_transport_tests {
         *request.timeout_mut() = Some(Duration::from_secs(2));
         *request.body_mut() = Some(reqwest::Body::from(Bytes::from_static(b"hi")));
 
-        let response = managed
+        let mut response = managed
             .execute(request, None)
             .await
             .expect("native execution");
@@ -1491,14 +1417,10 @@ mod reqwest_transport_tests {
             Some(&http::HeaderValue::from_static("text/plain"))
         );
         assert_eq!(
-            response
-                .into_body()
-                .collect()
-                .await
-                .expect("adapted body")
-                .to_bytes(),
-            Bytes::from_static(b"ok")
+            response.chunk().await.expect("native body"),
+            Some(Bytes::from_static(b"ok"))
         );
+        assert_eq!(response.chunk().await.expect("native EOF"), None);
         server.join().expect("server");
     }
 

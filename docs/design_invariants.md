@@ -64,10 +64,17 @@ encoded once. An explicit exact stream length is structurally guarded against
 both early EOF and excess bytes; the request limit is separately applied at
 the final native request materialization boundary.
 
-`DynBody` remains available for advanced public HTTP-body input and for the
-private native-response adapter. Request execution maps terminal recipes
-directly to `reqwest::Body` or `reqwest::multipart::Form`; `DynBody` is not the
-common request representation or multipart execution authority.
+`DynBody` remains available for advanced public HTTP-body input and for explicit
+body extraction from the public streaming façade. Request execution maps
+terminal recipes directly to `reqwest::Body` or `reqwest::multipart::Form`;
+`DynBody` is not the common request or response representation, multipart
+execution authority, or managed response body pipeline.
+
+The managed client returns `reqwest::Response` directly to core. Status/header
+policy inspection happens on that native value. Buffered processing collects
+native chunks through one bounded collector, while streaming processing retains
+the native response and reads it lazily. Only after terminal buffering does core
+construct the stable public Concord response façade.
 
 The deprecated dev body capture path is separate from debug sinks, hooks, stderr debug output, public errors, retry metadata, and rate-limit metadata. It is gated behind `dangerous-dev-tools`, disabled by default, and writes raw selected response bytes without redaction only when explicitly configured. It never captures request bodies and is intended only for controlled local debugging.
 

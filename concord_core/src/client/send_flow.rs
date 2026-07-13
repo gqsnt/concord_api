@@ -212,10 +212,17 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             origin.deposit_original();
         }
         match transport_result {
-            Ok(message) => Ok(AttemptResponse {
-                message,
-                context: response_context,
-            }),
+            Ok(message) => {
+                let error_mapper = self.managed_client.response_error_mapper();
+                Ok(AttemptResponse {
+                    message,
+                    context: response_context,
+                    error_mapper,
+                    origin: None,
+                    body_limit: None,
+                    body_seen: 0,
+                })
+            }
             Err(e) => {
                 if let Some(body_error) = e.body_error()
                     && body_error.kind() == crate::body::BodyErrorKind::LimitExceeded
@@ -376,27 +383,25 @@ impl<Cx: ClientContext> ApiClient<Cx> {
     }
 
     pub(super) fn limit_response_body(
-        resp: AttemptResponse,
+        mut resp: AttemptResponse,
         limit: Option<usize>,
         ctx: &ErrorContext,
     ) -> Result<AttemptResponse, ApiClientError> {
-        let AttemptResponse { message, context } = resp;
-        let (parts, body) = message.into_parts();
-        let body = crate::body::limit_response_body(body, limit).map_err(|source| {
-            if source.kind() == crate::body::BodyErrorKind::LimitExceeded {
-                ApiClientError::ResponseTooLarge {
-                    ctx: ctx.clone(),
-                    limit: source.limit().unwrap_or_default() as usize,
-                    actual: source.observed().unwrap_or_default(),
-                }
-            } else {
-                ApiClientError::response_body_error(ctx.clone(), source)
-            }
-        })?;
-        Ok(AttemptResponse {
-            message: http::Response::from_parts(parts, body),
-            context,
-        })
+        let Some(limit) = limit else {
+            return Ok(resp);
+        };
+        let limit = u64::try_from(limit).unwrap_or(u64::MAX);
+        if let Some(actual) = resp.message.content_length()
+            && actual > limit
+        {
+            return Err(ApiClientError::ResponseTooLarge {
+                ctx: ctx.clone(),
+                limit: limit as usize,
+                actual,
+            });
+        }
+        resp.body_limit = Some(limit);
+        Ok(resp)
     }
 
     pub(super) async fn buffer_response(
@@ -405,41 +410,67 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         limit: Option<usize>,
         ctx: &ErrorContext,
     ) -> Result<BuiltResponse, ApiClientError> {
-        let AttemptResponse { message, context } = resp;
-        let (parts, body) = message.into_parts();
+        let AttemptResponse {
+            mut message,
+            mut context,
+            error_mapper,
+            origin: _origin,
+            body_limit: _,
+            body_seen: _,
+        } = resp;
         let bytes = if skip_body {
             bytes::Bytes::new()
         } else {
-            let body = crate::body::limit_response_body(body, limit).map_err(|source| {
-                if source.kind() == crate::body::BodyErrorKind::LimitExceeded {
-                    ApiClientError::ResponseTooLarge {
+            let limit = limit.map(|limit| u64::try_from(limit).unwrap_or(u64::MAX));
+            if let (Some(limit), Some(actual)) = (limit, message.content_length())
+                && actual > limit
+            {
+                return Err(ApiClientError::ResponseTooLarge {
+                    ctx: ctx.clone(),
+                    limit: limit as usize,
+                    actual,
+                });
+            }
+            let mut collected = bytes::BytesMut::new();
+            let mut seen = 0_u64;
+            loop {
+                let chunk = message.chunk().await.map_err(|error| {
+                    ApiClientError::response_body_error(
+                        ctx.clone(),
+                        error_mapper.map_body_error(error),
+                    )
+                })?;
+                let Some(chunk) = chunk else {
+                    break;
+                };
+                let actual = seen.saturating_add(chunk.len() as u64);
+                if let Some(limit) = limit
+                    && actual > limit
+                {
+                    return Err(ApiClientError::ResponseBodyLimitExceeded {
                         ctx: ctx.clone(),
-                        limit: source.limit().unwrap_or_default() as usize,
-                        actual: source.observed().unwrap_or_default(),
-                    }
-                } else {
-                    ApiClientError::response_body_error(ctx.clone(), source)
+                        limit: limit as usize,
+                    });
                 }
-            })?;
-            let collected = crate::body::collect_body(body).await.map_err(|source| {
-                if source.kind() == crate::body::BodyErrorKind::LimitExceeded {
-                    ApiClientError::ResponseBodyLimitExceeded {
-                        ctx: ctx.clone(),
-                        limit: source.limit().unwrap_or_default() as usize,
-                    }
-                } else {
-                    ApiClientError::response_body_error(ctx.clone(), source)
-                }
-            })?;
-            // `Collected` retains trailers until this explicit buffered/data-only
-            // boundary. BuiltResponse intentionally preserves the existing public
-            // buffered raw-response shape as bytes.
-            collected.to_bytes()
+                collected.extend_from_slice(&chunk);
+                seen = actual;
+            }
+            collected.freeze()
         };
-        Ok(BuiltResponse::new(
-            http::Response::from_parts(parts, bytes),
-            context,
-        ))
+
+        let status = message.status();
+        let version = message.version();
+        if !error_mapper.uses_test_origin_override() {
+            context.request_url = message.url().clone();
+        }
+        let headers = std::mem::take(message.headers_mut());
+        let extensions = std::mem::take(message.extensions_mut());
+        let mut buffered = http::Response::new(bytes);
+        *buffered.status_mut() = status;
+        *buffered.version_mut() = version;
+        *buffered.headers_mut() = headers;
+        *buffered.extensions_mut() = extensions;
+        Ok(BuiltResponse::new(buffered, context))
     }
 
     pub(super) fn response_observation_ctx<'a>(

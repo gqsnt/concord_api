@@ -2036,7 +2036,7 @@ async fn response_exactly_at_limit_succeeds() -> Result<(), ApiClientError> {
 }
 
 #[tokio::test]
-async fn response_below_limit_succeeds() -> Result<(), ApiClientError> {
+async fn buffered_response_below_limit_succeeds() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "abc")]);
     let mut client = client(TestAuthVars::default(), transport);

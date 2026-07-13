@@ -349,7 +349,7 @@ async fn disabled_body_limit_behavior_characterized() -> Result<(), ApiClientErr
 }
 
 #[tokio::test]
-async fn native_response_adapter_reports_truncated_content_length_body() {
+async fn native_response_reports_truncated_content_length_body() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events.clone(),
@@ -399,7 +399,7 @@ async fn no_response_body_limit_reads_honest_large_body_completely() {
 }
 
 #[tokio::test]
-async fn native_response_adapter_honors_understated_content_length_framing() {
+async fn native_response_honors_understated_content_length_framing() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events.clone(),

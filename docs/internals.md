@@ -56,8 +56,9 @@ underflow and overflow without retaining payload diagnostics.
 
 `LimitedBody` is the reusable frame-aware limiter. It counts bytes in data
 frames, leaves trailers uncounted and unchanged, and becomes terminal after a
-typed over-limit error. Custom transports receive this frame-aware body
-directly through standard HTTP requests and responses.
+typed over-limit error. Native streaming responses use direct data chunks for
+normal consumption; the explicit `StreamResponse::into_body()` façade uses a
+narrow private frame-aware wrapper with the same data-only byte accounting.
 
 ## Test Artifacts
 

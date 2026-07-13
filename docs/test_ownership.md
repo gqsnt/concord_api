@@ -30,7 +30,7 @@ This repository keeps test ownership split by layer so new coverage lands in the
 ## Runtime
 
 - `concord_core/tests/integration/current_core/` owns runtime behavior.
-- `native_runtime.rs` owns managed-client execution, native response adaptation,
+- `native_runtime.rs` owns managed-client execution, native response processing,
   timeout and task cancellation, request-limit preflight, and wire-level auth.
 - `attempt_pipeline.rs`, `runtime_config.rs`, `runtime_order.rs`, and
   `redaction_matrix.rs` retain their P-05 behavioral matrices on the strict
