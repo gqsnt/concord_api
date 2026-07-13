@@ -1,47 +1,39 @@
-# Public Errors
+# Errors
 
-Concord runtime failures surface as `ApiClientError`. The enum is `non_exhaustive`, so application code should prefer variant matching for known cases and `ErrorCategory` for broader grouping.
+`Display`, `Debug`, and `source()` diagnostics are safe metadata surfaces. They
+must not contain request/response bodies, credentials, proxy targets,
+multipart values, or secret values. Debug sinks, runtime hooks, and rate-limit
+contexts follow the same boundary. User-authored codec errors remain
+responsible for their own text.
 
-See [Security Model](security_model.md) for the safe diagnostic boundary and the explicit dangerous exceptions.
+| Failure | Public shape | Body read | Retry behavior |
+| --- | --- | ---: | --- |
+| Configuration/build | typed configuration or client-build error | no | none |
+| Auth preparation | `ApiClientError::Auth` | no endpoint body | no visible execution yet |
+| Rate-limit acquire/action | `ApiClientError::RateLimit` | no | no Concord resend |
+| Transport failure | `ApiClientError::Transport` | no response body | final result of the visible Reqwest execution |
+| HTTP status | `ApiClientError::HttpStatus` | no endpoint body in status path | final result after Reqwest-internal retry; `401`/`403` may cause one auth recovery |
+| Response limit | `ResponseTooLarge` or `ResponseBodyLimitExceeded` | bounded | terminal |
+| Decode/codec | `Decode` or `Codec` | bounded | terminal |
+| Pagination | typed pagination error/limit | page-dependent | page state does not advance on failure |
 
-`Display`, `Debug`, and `source()` diagnostics are safe metadata surfaces. They must not contain request or response body bytes, credentials, proxy targets, multipart values, or secret values. Debug sinks, runtime hooks, rate-limit contexts, and retry contexts follow the same boundary. User-authored codec errors remain responsible for their own text.
+There is no retry-exhaustion wrapper, general-attempt counter, or public hidden
+resend count. Reqwest returns the final status or transport result for one
+visible execution. Concord then performs terminal processing or at most one
+authentication recovery.
 
-The advanced standard body foundation uses the typed `BodyError` taxonomy.
-It records only a safe category (`I/O`, input, configuration, exclusive-poll,
-limit, or other) plus bounded numeric limit metadata when applicable. It does
-not retain arbitrary producer errors as a source, so body contents, producer
-messages, credentials, and sensitive URLs cannot appear through its ordinary
-diagnostics. `DynBody` construction and inspection are also non-polling.
+A final `429` can include a sanitized `Retry-After` header and rate-limit
+action. It remains the returned status error; any valid capped delay affects
+future calls only. A configured status-mode `503` retry is hidden inside
+Reqwest and immediate.
 
-## Taxonomy
+`#[cfg(feature = "dangerous-raw-response")]` exposes
+`concord_core::dangerous::BuiltResponse` and `execute_raw_response()`. It skips
+endpoint decode but retains construction, collision checks, authentication,
+rate limiting, hooks, selected Reqwest retry behavior, auth rejection handling,
+and response limits.
 
-| Failure class | Public error variant or kind | Happens before or after transport | Body read? | Retry? | Diagnostic safety notes |
-| --- | --- | --- | --- | --- | --- |
-| URL, host, path, or request parameter validation | `ApiClientError::InvalidParam`, `BuildUrl`, or `InvalidHostLabel`; category `Config` | Before rate-limit or transport when construction fails | No | No | Names the invalid field or label, not body or auth values. |
-| Auth query or header collision | `ApiClientError::Auth`; category `AuthRejected` | Before provider invocation, body production, rate-limit, hooks, debug, or transport | No | No | May name the colliding query or header key; values, complete URLs, and raw auth stay hidden. |
-| Auth rejection (`401` or `403` on protected request) | `ApiClientError::Auth`; category `AuthRejected` | After transport metadata hooks and rate-limit observation | No | Auth refresh may happen under the configured policy and budget | Distinct from ordinary `HttpStatus`; response body is not read. |
-| Rate-limit acquire or response-action failure | `ApiClientError::RateLimit`; category `RateLimit` with a structured `RateLimitErrorKind` | Before transport for acquire, after response metadata for response-action observation | No | No | Acquire/response contexts are request metadata only. |
-| Transport send failure | `ApiClientError::Transport`; category `Transport` or `Timeout` | Transport attempted but no response metadata was classified | No response body | Retry only if retry policy covers the transport error | No rate-limit response observation for pure transport errors. |
-| HTTP status failure | `ApiClientError::HttpStatus`; category `HttpStatus` | After transport response classification and hooks or rate-limit observation | No endpoint body read in the status-error path | Retry if policy covers the status | Public stored headers are sanitized before exposure through `http_headers()` or enum pattern matching. Sensitive response headers are redacted; safe headers such as `retry-after` and `content-type` remain available. Protected `401` and `403` responses are handled as auth rejection first. |
-| Retry exhaustion | No wrapper in v1; the final transport or status error is returned | After bounded retry attempts | Depends on final error class | Budgeted and bounded | Count attempts via policy or transport, not a retry-exhausted variant. |
-| Safe body-hint limit | `ApiClientError::ResponseTooLarge`; category `Decode` | After transport metadata classification, before body chunks are read when the body’s `SizeHint::upper()` exceeds the limit | No | No ordinary retry | Raw `Content-Length` is not an early-limit authority. |
-| Streaming body limit | `ApiClientError::ResponseBodyLimitExceeded`; category `Decode` | During bounded body read | Reads only enough chunks to detect overflow | No ordinary retry | Does not include partial body bytes. |
-| Decode failure under limit | `ApiClientError::Decode` or `Codec`; category `Decode` | After bounded body read | Yes, within limit | No ordinary retry | Context may include status and content type, not payload bytes. |
-| Pagination non-progress or cap failure | `ApiClientError::Pagination` or `PaginationLimit` with a `PaginationErrorKind`; category `Pagination` | Depends on page stage; non-progress happens after a page completes | Depends on completed page | Page retry or auth refresh keeps page identity | Error is page and control metadata only; the kind is machine-readable and the message stays safe. |
-| Runtime config invalid values | Most v1 runtime config setters are infallible; invalid runtime state uses `RuntimeState` or typed subsystem errors | Where the configured subsystem is used | Depends on subsystem | Depends on subsystem | Diagnostics remain body-free and auth-free. |
-
-## Dangerous Raw Response
-
-`#[cfg(feature = "dangerous-raw-response")]` enables `concord_core::dangerous::BuiltResponse` and `execute_raw_response()`. It skips endpoint decode. It still performs logical request construction, auth collision validation, rate-limit acquire and observation, transport send, retry, response classification, auth rejection handling, and runtime response-body limits.
-
-Consequences:
-
-- it can return validation, auth, rate-limit, transport, HTTP status, retry final-error, and body-limit errors;
-- it does not produce endpoint decode or pagination collection errors;
-- diagnostics follow the same body-free and raw-auth-free rules as decoded execution.
-
-HTTP status errors keep the same public shape, but their stored response headers are sanitized before they are exposed. Internal auth, retry, and rate-limit handling may still inspect raw transport headers before the public error is built.
-
-## Testing Guidance
-
-Tests should match `ApiClientError` variants or `ErrorCategory` instead of depending on prose. String checks are appropriate for proving that a sentinel is absent from `Display`, `Debug`, `source()` chains, debug events, hook events, rate-limit events, and retry events.
+HTTP status errors expose only sanitized stored headers. Sensitive response
+headers are redacted; safe metadata such as content type and Retry-After may
+remain. Tests should match variants or `ErrorCategory` and use string checks
+only to prove sentinel absence across error and observer surfaces.

@@ -225,7 +225,7 @@ Generated endpoint methods and endpoint structs include rustdoc with:
 - resolved auth attachments after client default, profile, scope, and endpoint resolution
 - response entity/output type and the applicable terminal method
 - buffered metadata access when `.response().await` is available
-- retry and rate-limit summaries with bounded resolved details
+- client-level retry-mode availability and resolved rate-limit details
 - pagination controller and collect-only usage when present
 - request body summary and replayability when relevant
 - names and metadata only; secret values and raw body bytes are not rendered

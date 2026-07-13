@@ -1,6 +1,6 @@
 use crate::auth::PlannedAuthPlacement;
 use crate::rate_limit::RateLimitPlan;
-use crate::retry::RetrySetting;
+use crate::retry_mode::ReqwestRetryInstall;
 use bytes::Bytes;
 use http::{HeaderMap, Method, StatusCode};
 use std::fmt;
@@ -14,10 +14,6 @@ pub struct RequestMeta {
     pub endpoint: &'static str,
     pub method: Method,
     pub idempotent: bool,
-    /// Zero-based metadata index derived from the request-local physical
-    /// attempt count. The first managed-client execution is physical attempt
-    /// 1; this metadata field remains 0 for that send.
-    pub attempt: u32,
     pub page_index: u32,
 }
 
@@ -31,7 +27,6 @@ pub(crate) struct BuiltRequest {
     pub(crate) message: reqwest::Request,
     pub(crate) context: RequestExecutionContext,
     pub(crate) auth_plan: crate::auth::AuthPlacementPlan,
-    pub(crate) retry: RetrySetting,
     pub(crate) rate_limit: RateLimitPlan,
 }
 
@@ -47,7 +42,6 @@ impl fmt::Debug for BuiltRequest {
             .field("version", &self.message.version())
             .field("body", &self.message.body())
             .field("timeout", &self.context().timeout)
-            .field("retry", &self.retry)
             .field("rate_limit", &self.rate_limit)
             .finish()
     }
@@ -76,16 +70,15 @@ pub(crate) struct ResponseContext {
     pub(crate) rate_limit: RateLimitPlan,
 }
 
-pub(crate) struct AttemptResponse {
+pub(crate) struct ExecutionResponse {
     pub(crate) message: reqwest::Response,
     pub(crate) context: ResponseContext,
     pub(crate) error_mapper: NativeResponseErrorMapper,
-    pub(crate) origin: Option<crate::retry_admission::OriginHandle>,
     pub(crate) body_limit: Option<u64>,
     pub(crate) body_seen: u64,
 }
 
-impl AttemptResponse {
+impl ExecutionResponse {
     pub(crate) fn status(&self) -> StatusCode {
         self.message.status()
     }
@@ -96,10 +89,6 @@ impl AttemptResponse {
 
     pub(crate) fn map_body_error(&self, error: reqwest::Error) -> crate::body::BodyError {
         self.error_mapper.map_body_error(error)
-    }
-
-    pub(crate) fn release_origin(&mut self) {
-        self.origin.take();
     }
 }
 
@@ -963,7 +952,9 @@ impl ManagedReqwestClient {
     }
 
     /// Applies reviewed client-wide settings before Concord installs its
-    /// non-negotiable retry and redirect policies.
+    /// redirect policy. The general retry policy defaults to Reqwest's built-in
+    /// protocol recovery; a different policy is selected through the retry-mode
+    /// aware constructors.
     pub fn with_builder(
         configure: impl FnOnce(SafeReqwestBuilder) -> SafeReqwestBuilder,
     ) -> Result<Self, ReqwestClientBuildError> {
@@ -977,18 +968,34 @@ impl ManagedReqwestClient {
             SafeReqwestBuilder,
         ) -> Result<SafeReqwestBuilder, ReqwestClientBuildError>,
     ) -> Result<Self, ReqwestClientBuildError> {
+        Self::with_builder_fallible_retry(configure, ReqwestRetryInstall::ProtocolRecovery)
+    }
+
+    /// Retry-mode aware managed-client construction. The retry install is the
+    /// single general retry authority; Concord retains no general resend path.
+    pub(crate) fn with_builder_fallible_retry(
+        configure: impl FnOnce(
+            SafeReqwestBuilder,
+        ) -> Result<SafeReqwestBuilder, ReqwestClientBuildError>,
+        retry: ReqwestRetryInstall,
+    ) -> Result<Self, ReqwestClientBuildError> {
         let configured = configure(SafeReqwestBuilder::new())?;
         if let Some(error) = configured.proxy_error {
             return Err(ReqwestClientBuildError::from_safe_proxy(error));
         }
         let configured_proxies = configured.configured_proxies.clone();
-        let client = configured
+        let mut builder = configured
             .builder
-            // Permanent architecture invariant: Concord reconstructs and
-            // accounts for every physical attempt. Reqwest executes exactly
-            // one native request and must never perform a hidden resend.
-            .retry(reqwest::retry::never())
-            .redirect(reqwest::redirect::Policy::none())
+            .redirect(reqwest::redirect::Policy::none());
+        // Reqwest is the sole general HTTP retry executor. ProtocolRecovery
+        // keeps Reqwest's built-in safe protocol recovery; the other modes
+        // replace it entirely.
+        builder = match retry {
+            ReqwestRetryInstall::ProtocolRecovery => builder,
+            ReqwestRetryInstall::Never => builder.retry(reqwest::retry::never()),
+            ReqwestRetryInstall::Custom(policy) => builder.retry(policy),
+        };
+        let client = builder
             .build()
             .map_err(ReqwestClientBuildError::from_reqwest)?;
         Ok(Self {
@@ -1048,11 +1055,6 @@ impl ManagedReqwestClient {
                         value,
                     );
                 }
-                headers.insert(
-                    http::HeaderName::from_static("x-concord-test-attempt"),
-                    http::HeaderValue::from_str(&context.meta.attempt.to_string())
-                        .expect("attempt is a valid header value"),
-                );
                 headers.insert(
                     http::HeaderName::from_static("x-concord-test-page-index"),
                     http::HeaderValue::from_str(&context.meta.page_index.to_string())

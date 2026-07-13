@@ -64,14 +64,12 @@ encoded once. An explicit exact stream length is structurally guarded against
 both early EOF and excess bytes; the request limit is separately applied at
 the final native request materialization boundary.
 
-Concord's core state machine is the permanent and sole general retry authority.
-Reqwest retry remains disabled with `reqwest::retry::never()`, and each native
-execution is one Concord physical attempt. General retry capacity includes the
-initial send; authentication recovery has a separate one-resend budget. Empty
-and reusable byte recipes, complete terminal-body factories, all-reusable
-direct multipart, and complete multipart factories are replayable. Direct
-one-shot bodies and multipart containing a direct one-shot stream are not.
-Method idempotency remains a separate policy condition.
+Reqwest is the sole general retry authority. Retry mode is selected once while
+constructing the managed client: default protocol recovery, disabled, or a
+constrained fixed-origin status policy. Concord owns only one bounded explicit
+authentication recovery. Body-recipe rebuildability controls that recovery;
+Reqwest body cloneability independently controls hidden resends. Materialized
+multipart and streams are not Reqwest-cloneable.
 
 `DynBody` remains available for advanced public HTTP-body input and for explicit
 body extraction from the public streaming façade. Request execution maps
@@ -85,11 +83,11 @@ native chunks through one bounded collector, while streaming processing retains
 the native response and reads it lazily. Only after terminal buffering does core
 construct the stable public Concord response façade.
 
-The deprecated dev body capture path is separate from debug sinks, hooks, stderr debug output, public errors, retry metadata, and rate-limit metadata. It is gated behind `dangerous-dev-tools`, disabled by default, and writes raw selected response bytes without redaction only when explicitly configured. It never captures request bodies and is intended only for controlled local debugging.
+The deprecated dev body capture path is separate from debug sinks, hooks, stderr debug output, public errors, and rate-limit metadata. It is gated behind `dangerous-dev-tools`, disabled by default, and writes raw selected response bytes without redaction only when explicitly configured. It never captures request bodies and is intended only for controlled local debugging.
 
 See [Security Model](security_model.md) for the consumer-facing boundary between safe, advanced, and dangerous surfaces.
 
-Protected auth material is applied only when the runtime materializes the native `reqwest::Request`. Logical request state, debug surfaces, hooks, retry contexts, rate-limit contexts, and error contexts remain free of raw auth material.
+Protected auth material is applied only when the runtime materializes the native `reqwest::Request`. Logical request state, debug surfaces, hooks, rate-limit contexts, and error contexts remain free of raw auth material.
 
 Pagination is a typed runtime state machine. Page loops must either make deterministic progress, stop explicitly, or return a typed pagination error. Repeated logical page identities are treated as non-progress and fail instead of silently looping.
 
@@ -103,7 +101,7 @@ Auth locks are not held across credential endpoint or token endpoint I/O.
 
 The runtime pipeline order is fixed.
 
-DSL improvements should compile to existing semantic concepts such as auth requirements, retry settings, rate-limit profiles, codecs, pagination controller types, and request plans.
+DSL improvements should compile to existing semantic concepts such as auth requirements, rate-limit profiles, codecs, pagination controller types, descriptors, and request plans. Retry remains a client-construction concern outside the endpoint DSL.
 
 Changing runtime order requires dedicated tests and a dedicated PR.
 

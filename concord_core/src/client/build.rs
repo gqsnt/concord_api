@@ -6,7 +6,6 @@ pub(super) struct PublicRequestHead {
     pub(super) url: url::Url,
     pub(super) headers: http::HeaderMap,
     pub(super) timeout: Option<std::time::Duration>,
-    pub(super) retry: RetrySetting,
     pub(super) rate_limit: RateLimitPlan,
     pub(super) auth_plan: crate::auth::AuthPlacementPlan,
     pub(super) reserved_headers: Vec<http::HeaderName>,
@@ -46,7 +45,7 @@ impl PublicRequestHead {
                     ctx: ctx.clone(),
                     msg: "native request body materialization failed",
                 })?;
-        crate::io::apply_attempt_media_type(&mut headers, terminal_media_type.as_ref()).map_err(
+        crate::io::apply_execution_media_type(&mut headers, terminal_media_type.as_ref()).map_err(
             |()| ApiClientError::PolicyViolation {
                 ctx: ctx.clone(),
                 msg: "request Content-Type conflicts with produced body media type",
@@ -70,7 +69,6 @@ impl PublicRequestHead {
             message,
             context,
             auth_plan: self.auth_plan,
-            retry: self.retry,
             rate_limit: self.rate_limit,
         })
     }
@@ -88,20 +86,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             method: plan.endpoint.meta.method.clone(),
         };
         let timeout = plan.overrides.timeout.or(plan.endpoint.policy.timeout);
-        let retry = plan.endpoint.policy.retry.clone();
         let rate_limit = plan.endpoint.policy.rate_limit.clone();
-        let configured_retry_idempotency = match &retry {
-            RetrySetting::Config(config) => Some(&config.idempotency),
-            RetrySetting::Inherit | RetrySetting::Off => None,
-        };
-        if let Some(crate::retry::RetryIdempotency::Header(name)) = configured_retry_idempotency
-            && !crate::header_ownership::is_retry_idempotency_exception_allowed(name)
-        {
-            return Err(ApiClientError::PolicyViolation {
-                ctx: ctx.clone(),
-                msg: "configured retry idempotency header is not permitted",
-            });
-        }
 
         let base = format!(
             "{}://{}",
@@ -140,23 +125,10 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                 }
             }
         };
-        let mut retry_idempotency = None;
-        if let RetrySetting::Config(config) = &retry
-            && let crate::retry::RetryIdempotency::Header(name) = &config.idempotency
-        {
-            retry_idempotency = Some(name.clone());
-        }
-        let retry_idempotency_exceptions = retry_idempotency.into_iter().collect::<Vec<_>>();
-        crate::header_ownership::validate_public_headers_with_exceptions(
-            &self.api_headers,
-            &retry_idempotency_exceptions,
-        )
-        .map_err(|source| public_header_error(source, "client-wide"))?;
-        crate::header_ownership::validate_public_headers_with_exceptions(
-            &plan.endpoint.policy.headers,
-            &retry_idempotency_exceptions,
-        )
-        .map_err(|source| public_header_error(source, "endpoint"))?;
+        crate::header_ownership::validate_public_headers(&self.api_headers)
+            .map_err(|source| public_header_error(source, "client-wide"))?;
+        crate::header_ownership::validate_public_headers(&plan.endpoint.policy.headers)
+            .map_err(|source| public_header_error(source, "endpoint"))?;
         // Resolve client-wide runtime headers first; endpoint headers retain
         // the established replacement semantics.
         let mut headers = self.api_headers.clone();
@@ -184,29 +156,23 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         if body.reserves_content_type() || body.media_type().is_some() {
             reserved_headers.push(http::header::CONTENT_TYPE);
         }
-        if let RetrySetting::Config(config) = &retry
-            && let crate::retry::RetryIdempotency::Header(name) = &config.idempotency
-        {
-            reserved_headers.push(name.clone());
-        }
         Ok(PublicRequestHead {
             meta,
             url,
             headers,
             timeout,
-            retry,
             rate_limit,
             auth_plan: crate::auth::AuthPlacementPlan::default(),
             reserved_headers,
         })
     }
 
-    pub(super) fn produce_attempt_body(
+    pub(super) fn produce_execution_body(
         &self,
         body: &mut crate::io::PreparedBody,
         ctx: &ErrorContext,
     ) -> Result<crate::io::ProducedBody, ApiClientError> {
-        body.produce_for_attempt().map_err(|error| {
+        body.produce_for_execution().map_err(|error| {
             let msg = match error.kind() {
                 crate::io::BodyProductionErrorKind::AlreadyConsumed => {
                     "one-shot request body has already been consumed"
@@ -286,7 +252,6 @@ mod tests {
                     endpoint: "HeaderOwnership",
                     method: http::Method::GET,
                     idempotent: true,
-                    attempt: 0,
                     page_index: 0,
                 },
             )
@@ -336,7 +301,6 @@ mod tests {
                 endpoint: "HeaderOwnership",
                 method: http::Method::GET,
                 idempotent: true,
-                attempt: 0,
                 page_index: 0,
             },
         );
@@ -360,203 +324,10 @@ mod tests {
                 endpoint: "HeaderOwnership",
                 method: http::Method::GET,
                 idempotent: true,
-                attempt: 0,
                 page_index: 0,
             },
         );
         assert!(matches!(result, Err(ApiClientError::Auth { .. })));
-    }
-
-    #[test]
-    fn configured_idempotency_header_is_reserved_before_authentication() {
-        let mut plan = header_test_plan(http::HeaderMap::new());
-        plan.endpoint.policy.retry = RetrySetting::Config(crate::retry::RetryConfig {
-            max_attempts: 2,
-            idempotency: crate::retry::RetryIdempotency::Header(http::HeaderName::from_static(
-                "x-retry-attempt-key",
-            )),
-            ..Default::default()
-        });
-        let mut head = ApiClient::<BuildCx>::new((), ())
-            .resolve_public_request_head(
-                &plan,
-                &crate::io::PreparedBody::empty(),
-                RequestMeta {
-                    endpoint: "HeaderOwnership",
-                    method: http::Method::POST,
-                    idempotent: false,
-                    attempt: 0,
-                    page_index: 0,
-                },
-            )
-            .expect("request head");
-        let auth_plan = crate::auth::AuthPlacementPlan::from_auth_plan(&crate::auth::AuthPlan {
-            requirements: vec![crate::auth::AuthRequirement {
-                credential: crate::auth::CredentialRef {
-                    id: crate::auth::CredentialId::new("test", "token"),
-                },
-                placement: crate::auth::AuthPlacement::Header("x-retry-attempt-key"),
-                usage_id: crate::auth::AuthUsageId::new("idempotency"),
-                step_id: None,
-                provenance: crate::auth::AuthProvenance::default(),
-                challenge: Default::default(),
-            }],
-        })
-        .expect("placement plan");
-        let error_ctx = ErrorContext {
-            endpoint: "HeaderOwnership",
-            method: http::Method::POST,
-        };
-        assert!(head.apply_auth_preflight(&auth_plan, &error_ctx).is_err());
-    }
-
-    #[test]
-    fn configured_idempotency_header_with_suffix_key_is_accepted_as_public_and_reserved() {
-        let configured = http::HeaderName::from_static("request-idempotency-key");
-        let mut plan = header_test_plan(http::HeaderMap::new());
-        plan.endpoint.policy.headers.insert(
-            configured.clone(),
-            http::HeaderValue::from_static("stable-transport-key"),
-        );
-        plan.endpoint.policy.retry = RetrySetting::Config(crate::retry::RetryConfig {
-            max_attempts: 2,
-            idempotency: crate::retry::RetryIdempotency::Header(configured.clone()),
-            ..Default::default()
-        });
-        let head = ApiClient::<BuildCx>::new((), ())
-            .resolve_public_request_head(
-                &plan,
-                &crate::io::PreparedBody::empty(),
-                RequestMeta {
-                    endpoint: "HeaderOwnershipIdempotentSuffix",
-                    method: http::Method::POST,
-                    idempotent: false,
-                    attempt: 0,
-                    page_index: 0,
-                },
-            )
-            .expect("public request head should be prepared");
-        assert_eq!(
-            head.headers.get(&configured),
-            Some(&http::HeaderValue::from_static("stable-transport-key"))
-        );
-        assert_eq!(head.reserved_headers, vec![configured.clone()]);
-        let auth_plan = crate::auth::AuthPlacementPlan::from_auth_plan(&crate::auth::AuthPlan {
-            requirements: vec![crate::auth::AuthRequirement {
-                credential: crate::auth::CredentialRef {
-                    id: crate::auth::CredentialId::new("test", "token"),
-                },
-                placement: crate::auth::AuthPlacement::Header("request-idempotency-key"),
-                usage_id: crate::auth::AuthUsageId::new("idempotency"),
-                step_id: None,
-                provenance: crate::auth::AuthProvenance::default(),
-                challenge: Default::default(),
-            }],
-        })
-        .unwrap_err();
-        assert!(format!("{auth_plan}").contains("reserved"));
-    }
-
-    #[test]
-    fn configured_idempotency_header_is_validated_before_other_header_preflight() {
-        for name in [
-            "authorization",
-            "host",
-            "content-length",
-            "content-type",
-            "user-agent",
-            "proxy-authorization",
-            "cookie",
-            "set-cookie",
-            "www-authenticate",
-            "x-api-key",
-            "x-client-key",
-            "key",
-        ] {
-            let mut plan = header_test_plan(http::HeaderMap::new());
-            plan.endpoint.policy.retry = RetrySetting::Config(crate::retry::RetryConfig {
-                max_attempts: 2,
-                idempotency: crate::retry::RetryIdempotency::Header(http::HeaderName::from_static(
-                    name,
-                )),
-                ..Default::default()
-            });
-            let result = ApiClient::<BuildCx>::new((), ()).resolve_public_request_head(
-                &plan,
-                &crate::io::PreparedBody::empty(),
-                RequestMeta {
-                    endpoint: "ConfiguredRetryIdempotency",
-                    method: http::Method::POST,
-                    idempotent: false,
-                    attempt: 0,
-                    page_index: 0,
-                },
-            );
-            let Err(error) = result else {
-                panic!("invalid configured retry idempotency should fail: {name}");
-            };
-            assert!(
-                matches!(error, ApiClientError::PolicyViolation { .. }),
-                "unexpected error for {name}: {error:?}"
-            );
-        }
-
-        let configured = http::HeaderName::from_static("idempotency-key");
-        let mut plan = header_test_plan(http::HeaderMap::new());
-        plan.endpoint.policy.retry = RetrySetting::Config(crate::retry::RetryConfig {
-            max_attempts: 2,
-            idempotency: crate::retry::RetryIdempotency::Header(configured.clone()),
-            ..Default::default()
-        });
-        let head = ApiClient::<BuildCx>::new((), ())
-            .resolve_public_request_head(
-                &plan,
-                &crate::io::PreparedBody::empty(),
-                RequestMeta {
-                    endpoint: "ConfiguredRetryIdempotency",
-                    method: http::Method::POST,
-                    idempotent: false,
-                    attempt: 0,
-                    page_index: 0,
-                },
-            )
-            .expect("configured idempotency header should be allowed");
-        assert_eq!(
-            head.reserved_headers,
-            vec![http::HeaderName::from_static("idempotency-key")]
-        );
-    }
-
-    #[test]
-    fn configured_request_identity_headers_are_permitted_as_retry_headers() {
-        for name in ["idempotency-key", "request-idempotency-key", "x-request-id"] {
-            let configured = http::HeaderName::from_static(name);
-            let mut plan = header_test_plan(http::HeaderMap::new());
-            plan.endpoint.policy.retry = RetrySetting::Config(crate::retry::RetryConfig {
-                max_attempts: 2,
-                idempotency: crate::retry::RetryIdempotency::Header(configured.clone()),
-                ..Default::default()
-            });
-            let head = ApiClient::<BuildCx>::new((), ())
-                .resolve_public_request_head(
-                    &plan,
-                    &crate::io::PreparedBody::empty(),
-                    RequestMeta {
-                        endpoint: "RequestIdentityRetryHeader",
-                        method: http::Method::POST,
-                        idempotent: false,
-                        attempt: 0,
-                        page_index: 0,
-                    },
-                )
-                .expect("request identity headers must remain valid retry configuration");
-            assert_eq!(head.reserved_headers, vec![configured.clone()]);
-            assert_eq!(
-                head.headers.get(&configured),
-                None,
-                "request identity retry header alone must not inject a default value"
-            );
-        }
     }
 
     #[test]
@@ -575,7 +346,6 @@ mod tests {
                 endpoint: "EndpointScope",
                 method: http::Method::GET,
                 idempotent: true,
-                attempt: 0,
                 page_index: 0,
             },
         );
@@ -600,7 +370,6 @@ mod tests {
                 endpoint: "ClientScope",
                 method: http::Method::GET,
                 idempotent: true,
-                attempt: 0,
                 page_index: 0,
             },
         );
@@ -669,13 +438,11 @@ mod tests {
                 endpoint: "PreflightOneShot",
                 method: http::Method::POST,
                 idempotent: false,
-                attempt: 0,
                 page_index: 0,
             },
             url: "https://example.com/items".parse().expect("url"),
             headers,
             timeout: None,
-            retry: RetrySetting::Off,
             rate_limit: RateLimitPlan::new(),
             auth_plan: Default::default(),
             reserved_headers: Vec::new(),
@@ -701,6 +468,6 @@ mod tests {
 
         head.apply_auth_preflight(&auth_plan, &ctx)
             .expect_err("collision must fail");
-        assert!(body.produce_for_attempt().is_ok());
+        assert!(body.produce_for_execution().is_ok());
     }
 }

@@ -681,11 +681,11 @@ fn facade_endpoint_doc_texts(resolved_api: &ResolvedApi, ep: &ResolvedEndpoint) 
         );
     }
 
-    if let Some(retry) = effective_retry(ep, &resolved_api.client_policy) {
-        push_section(&mut docs, "Retry:", retry_doc_lines(&retry));
-    } else {
-        push_section(&mut docs, "Retry:", vec!["off".to_string()]);
-    }
+    push_section(
+        &mut docs,
+        "Retry:",
+        vec!["selected at client construction through `RetryMode`".to_string()],
+    );
 
     if let Some(rate_limit) = effective_rate_limit(ep, &resolved_api.client_policy) {
         push_section(&mut docs, "Rate limit:", rate_limit_doc_lines(&rate_limit));
@@ -814,82 +814,11 @@ fn response_terminal_method(ep: &ResolvedEndpoint) -> &'static str {
     }
 }
 
-fn retry_doc_lines(retry: &RetryConfigResolved) -> Vec<String> {
-    let mut lines = vec![format!("max attempts: {}", retry.max_attempts)];
-    if !retry.methods.is_empty() {
-        lines.push(format!(
-            "methods: {}",
-            retry
-                .methods
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
-    }
-    if !retry.statuses.is_empty() {
-        lines.push(format!(
-            "statuses: {}",
-            retry
-                .statuses
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
-    }
-    if !retry.transport_errors.is_empty() {
-        lines.push(format!(
-            "transport errors: {}",
-            retry
-                .transport_errors
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
-    }
-    if retry.respect_retry_after {
-        lines.push("retry-after: yes".to_string());
-    }
-    match &retry.idempotency {
-        RetryIdempotencyResolved::SafeMethodsOnly => {
-            lines.push("idempotency: safe methods only".to_string());
-        }
-        RetryIdempotencyResolved::Header(header) => {
-            lines.push(format!("idempotency header: `{}`", header.value()));
-        }
-    }
-    lines
-}
-
 fn pagination_doc_lines(pagination: &PaginateResolved) -> Vec<String> {
     vec![
         format!("Controller: {}", type_to_doc(&pagination.controller_ty)),
         "Collect-only via `.paginate(...).collect()`.".to_string(),
     ]
-}
-
-fn effective_retry(
-    ep: &ResolvedEndpoint,
-    client_policy: &PolicyBlocksResolved,
-) -> Option<RetryConfigResolved> {
-    let mut current = apply_retry_layer(None, &client_policy.retry);
-    for scope in &ep.policy.scopes {
-        current = apply_retry_layer(current, &scope.retry);
-    }
-    apply_retry_layer(current, &ep.policy.endpoint.retry)
-}
-
-fn apply_retry_layer(
-    current: Option<RetryConfigResolved>,
-    layer: &Option<RetryResolved>,
-) -> Option<RetryConfigResolved> {
-    match layer {
-        None => current,
-        Some(RetryResolved::Clear) => None,
-        Some(RetryResolved::Set(config)) => Some(config.clone()),
-    }
 }
 
 fn rate_limit_doc_lines(plan: &RateLimitPlanResolved) -> Vec<String> {

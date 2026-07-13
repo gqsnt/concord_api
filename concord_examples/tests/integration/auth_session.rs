@@ -101,7 +101,7 @@ async fn auth_endpoint_errors_do_not_render_secret_values() {
 }
 
 #[tokio::test]
-async fn endpoint_backed_session_401_does_not_refresh_without_admission() {
+async fn endpoint_backed_session_401_does_not_refresh_without_challenge_recovery() {
     let (transport, handle) = mock()
         .reply(json_reply(r#"{"access_token":"session-token"}"#))
         .reply(
@@ -164,7 +164,7 @@ async fn endpoint_backed_session_401_does_not_refresh_without_admission() {
 }
 
 #[tokio::test]
-async fn endpoint_backed_session_403_does_not_refresh_without_admission() {
+async fn endpoint_backed_session_403_does_not_refresh_without_challenge_recovery() {
     let (transport, handle) = mock()
         .reply(json_reply(r#"{"access_token":"session-token"}"#))
         .reply(

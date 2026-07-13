@@ -16,6 +16,8 @@ fn public_v1_surface_compiles() {
     uses_type::<prelude::ApiClient<super::common::TestCx>>();
     uses_type::<prelude::ApiClientError>();
     uses_type::<advanced::RuntimeConfig>();
+    uses_type::<prelude::RetryMode>();
+    uses_type::<prelude::StatusRetryConfig>();
     uses_type::<prelude::DebugLevel>();
     uses_endpoint::<super::common::TextEndpoint>();
     uses_client_context::<super::common::TestCx>();
@@ -76,16 +78,15 @@ fn prelude_surface_contains_normal_user_api() {
 fn advanced_surface_contains_extension_api() {
     let mut cfg = advanced::RuntimeConfig::default();
     cfg.rate_limiter(Arc::new(advanced::NoopRateLimiter::new()));
-    cfg.retry_policy(Arc::new(advanced::ConfiguredRetryPolicy::new(
-        advanced::RetryClassifierConfig {
-            methods: Vec::new(),
-            statuses: Vec::new(),
-            transport_errors: Vec::new(),
-            idempotency: advanced::RetryIdempotency::SafeMethodsOnly,
-        },
-    )));
     cfg.runtime_hooks(Arc::new(advanced::NoopRuntimeHooks));
-    cfg.max_attempts(2).respect_retry_after(true);
+
+    let status = prelude::StatusRetryConfig::new(2, [http::StatusCode::BAD_GATEWAY])
+        .expect("approved status retry config");
+    let _modes = [
+        prelude::RetryMode::ProtocolRecovery,
+        prelude::RetryMode::Disabled,
+        prelude::RetryMode::Status(status),
+    ];
 
     let _ctx_ty: Option<advanced::RateLimitResponseContext<'_>> = None;
     let _slot_ty: Option<

@@ -85,10 +85,6 @@ pub(super) fn forbidden_endpoint_execute_box_wrapper() -> String {
     ["Box::pin(asyncmove{", "ResponseEntity", ">::execute"].concat()
 }
 
-pub(super) fn forbidden_reqwest_request_try_clone() -> String {
-    ["reqwest", "::Request", "::try_clone"].concat()
-}
-
 pub(super) fn forbidden_response_plan_struct() -> String {
     ["ResponsePlan", " {"].concat()
 }

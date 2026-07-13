@@ -135,18 +135,7 @@ fn emit_resolved(resolved_api: ResolvedApi, facade_ir: &FacadeIr) -> TokenStream
 
 fn emit_api_descriptor(api: &ResolvedApi) -> TokenStream2 {
     let api_name = LitStr::new(&api.client_name.to_string(), api.client_name.span());
-    let origin = match &api.descriptor.origin {
-        ApiOriginIr::FixedSingle(origin) => {
-            let fixed = emit_fixed_origin(origin);
-            quote! { ::concord_core::__private::v1::ApiOriginDescriptor::FixedSingleOrigin(#fixed) }
-        }
-        ApiOriginIr::Dynamic => {
-            quote! { ::concord_core::__private::v1::ApiOriginDescriptor::DynamicOrigin }
-        }
-        ApiOriginIr::Multi => {
-            quote! { ::concord_core::__private::v1::ApiOriginDescriptor::MultiOrigin }
-        }
-    };
+    let origin = emit_origin_descriptor(&api.descriptor.origin);
     let endpoint_refs = api.endpoints.iter().map(|endpoint| {
         let descriptor = endpoint_descriptor_ident(endpoint);
         quote! { &__endpoints::#descriptor }
@@ -159,6 +148,21 @@ fn emit_api_descriptor(api: &ResolvedApi) -> TokenStream2 {
                 origin: #origin,
                 endpoints: &[ #( #endpoint_refs ),* ],
             };
+    }
+}
+
+fn emit_origin_descriptor(origin: &ApiOriginIr) -> TokenStream2 {
+    match origin {
+        ApiOriginIr::FixedSingle(origin) => {
+            let fixed = emit_fixed_origin(origin);
+            quote! { ::concord_core::__private::v1::ApiOriginDescriptor::FixedSingleOrigin(#fixed) }
+        }
+        ApiOriginIr::Dynamic => {
+            quote! { ::concord_core::__private::v1::ApiOriginDescriptor::DynamicOrigin }
+        }
+        ApiOriginIr::Multi => {
+            quote! { ::concord_core::__private::v1::ApiOriginDescriptor::MultiOrigin }
+        }
     }
 }
 

@@ -361,7 +361,6 @@ pub struct PolicyBlocksResolved {
     pub headers: Vec<PolicyOp>,
     pub query: Vec<PolicyOp>,
     pub timeout: Option<PublicValueKind>,
-    pub retry: Option<RetryResolved>,
     pub rate_limit: Option<RateLimitResolved>,
 }
 
@@ -371,19 +370,6 @@ pub enum QueryValueCardinality {
     OptionalScalar,
     Vector,
     OptionalVector,
-}
-
-#[derive(Debug, Clone)]
-pub enum RetryResolved {
-    Set(RetryConfigResolved),
-    Clear,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) enum RetryDirectiveResolved {
-    Set(RetryConfigResolved),
-    Patch(RetryPatchResolved),
-    Clear,
 }
 
 #[derive(Debug, Clone)]
@@ -456,45 +442,6 @@ pub struct RateLimitWindowResolved {
 pub struct RateLimitKeyBindingResolved {
     pub name: String,
     pub field: Ident,
-}
-
-#[derive(Debug, Clone)]
-pub struct RetryConfigResolved {
-    pub max_attempts: u32,
-    pub methods: Vec<Ident>,
-    pub statuses: Vec<u16>,
-    pub transport_errors: Vec<Ident>,
-    pub respect_retry_after: bool,
-    pub idempotency: RetryIdempotencyResolved,
-}
-
-impl Default for RetryConfigResolved {
-    fn default() -> Self {
-        Self {
-            max_attempts: 1,
-            methods: Vec::new(),
-            statuses: Vec::new(),
-            transport_errors: Vec::new(),
-            respect_retry_after: false,
-            idempotency: RetryIdempotencyResolved::SafeMethodsOnly,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct RetryPatchResolved {
-    pub max_attempts: Option<u32>,
-    pub methods: Option<Vec<Ident>>,
-    pub statuses: Option<Vec<u16>>,
-    pub transport_errors: Option<Vec<Ident>>,
-    pub respect_retry_after: Option<bool>,
-    pub idempotency: Option<RetryIdempotencyResolved>,
-}
-
-#[derive(Debug, Clone)]
-pub enum RetryIdempotencyResolved {
-    SafeMethodsOnly,
-    Header(LitStr),
 }
 
 #[derive(Debug, Clone)]

@@ -1,5 +1,4 @@
 use crate::rate_limit::RateLimitPlan;
-use crate::retry::{RetryConfig, RetrySetting};
 use core::time::Duration;
 use http::header::{ACCEPT, CONTENT_TYPE, HeaderName};
 use http::{HeaderMap, HeaderValue};
@@ -15,7 +14,6 @@ pub type PolicySnapshot = (
     HeaderMap,
     Vec<(String, String)>,
     Option<Duration>,
-    RetrySetting,
     RateLimitPlan,
 );
 
@@ -36,7 +34,6 @@ pub struct Policy {
     headers: HeaderMap,
     query: Vec<(String, String)>,
     timeout: Option<Duration>,
-    retry: RetrySetting,
     rate_limit: RateLimitPlan,
     // Current layer used for provenance decisions (not exposed in into_parts()).
     layer: PolicyLayer,
@@ -52,7 +49,6 @@ impl Policy {
             headers: HeaderMap::new(),
             query: Vec::new(),
             timeout: None,
-            retry: RetrySetting::Inherit,
             rate_limit: RateLimitPlan::new(),
             layer: PolicyLayer::Client,
             accept_explicit_by_endpoint: false,
@@ -83,24 +79,6 @@ impl Policy {
     #[inline]
     pub fn clear_timeout(&mut self) {
         self.timeout = None;
-    }
-
-    #[inline]
-    pub fn retry(&self) -> Option<&RetryConfig> {
-        match &self.retry {
-            RetrySetting::Config(config) => Some(config),
-            RetrySetting::Inherit | RetrySetting::Off => None,
-        }
-    }
-
-    #[inline]
-    pub fn set_retry(&mut self, retry: RetryConfig) {
-        self.retry = RetrySetting::Config(retry);
-    }
-
-    #[inline]
-    pub fn clear_retry(&mut self) {
-        self.retry = RetrySetting::Off;
     }
 
     #[inline]
@@ -184,13 +162,7 @@ impl Policy {
     }
 
     pub fn into_parts(self) -> PolicySnapshot {
-        (
-            self.headers,
-            self.query,
-            self.timeout,
-            self.retry,
-            self.rate_limit,
-        )
+        (self.headers, self.query, self.timeout, self.rate_limit)
     }
 }
 
@@ -200,7 +172,6 @@ impl From<ResolvedPolicy> for Policy {
             headers: resolved.headers,
             query: resolved.query,
             timeout: resolved.timeout,
-            retry: resolved.retry,
             rate_limit: resolved.rate_limit,
             layer: PolicyLayer::Runtime,
             accept_explicit_by_endpoint: true,

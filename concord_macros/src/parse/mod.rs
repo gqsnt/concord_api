@@ -59,8 +59,6 @@ impl Parse for RawClient {
         let mut auth_credentials: Vec<AuthCredentialDecl> = Vec::new();
         let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
         let mut default_behavior_uses: Vec<BehaviorUseSpec> = Vec::new();
-        let mut retry_profiles: Option<RetryProfilesBlock> = None;
-        let mut retry: Option<RetrySpec> = None;
         let mut rate_limit: Option<RateLimitProfilesBlock> = None;
         let mut behavior_profiles: Option<BehaviorProfilesBlock> = None;
         let mut policy = PolicyBlocks::default();
@@ -109,15 +107,7 @@ impl Parse for RawClient {
                 parse_client_credential_decl_into(&content, &mut auth_credentials)?;
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::retry) {
-                content.parse::<kw::retry>()?;
-                retry_profiles
-                    .get_or_insert_with(|| RetryProfilesBlock {
-                        profiles: Vec::new(),
-                        default: None,
-                    })
-                    .profiles
-                    .push(parse_retry_profile_decl_after_keyword(&content)?);
-                let _ = content.parse::<Option<Token![,]>>()?;
+                return Err(removed_retry_syntax_error(&content)?);
             } else if content.peek(kw::rate_limit) {
                 content.parse::<kw::rate_limit>()?;
                 rate_limit
@@ -133,7 +123,7 @@ impl Parse for RawClient {
                 content.parse::<kw::policies>()?;
                 let policy_content;
                 braced!(policy_content in content);
-                parse_client_policies_group(&policy_content, &mut retry_profiles, &mut rate_limit)?;
+                parse_client_policies_group(&policy_content, &mut rate_limit)?;
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::profile) {
                 content.parse::<kw::profile>()?;
@@ -194,7 +184,6 @@ impl Parse for RawClient {
                     &mut policy,
                     &mut auth_uses,
                     &mut default_behavior_uses,
-                    &mut retry,
                     &mut rate_limit,
                 )?;
                 let _ = content.parse::<Option<Token![,]>>()?;
@@ -285,8 +274,6 @@ impl Parse for RawClient {
             scheme,
             host,
             policy,
-            retry_profiles,
-            retry,
             rate_limit,
             behavior_profiles,
         })
@@ -369,46 +356,11 @@ fn parse_client_credential_decl_into(
 
 fn parse_client_policies_group(
     input: ParseStream<'_>,
-    retry_profiles: &mut Option<RetryProfilesBlock>,
     rate_limit: &mut Option<RateLimitProfilesBlock>,
 ) -> Result<()> {
     while !input.is_empty() {
         if input.peek(kw::retry) {
-            let fork = input.fork();
-            fork.parse::<kw::retry>()?;
-            if fork.peek(kw::off) {
-                return Err(syn::Error::new(
-                    fork.span(),
-                    "default retry policy is not allowed in policies block; use default { ... }",
-                ));
-            }
-            if !fork.peek(Ident) {
-                let tt: TokenTree = input.parse()?;
-                return Err(syn::Error::new(
-                    tt.span(),
-                    "invalid item in policies block; expected retry, rate_limit, or observe",
-                ));
-            }
-            fork.parse::<Ident>()?;
-            if fork.peek(kw::extends) {
-                fork.parse::<kw::extends>()?;
-                fork.parse::<Ident>()?;
-            }
-            if !fork.peek(token::Brace) {
-                return Err(syn::Error::new(
-                    input.span(),
-                    "default retry policy is not allowed in policies block; use default { ... }",
-                ));
-            }
-
-            input.parse::<kw::retry>()?;
-            retry_profiles
-                .get_or_insert_with(|| RetryProfilesBlock {
-                    profiles: Vec::new(),
-                    default: None,
-                })
-                .profiles
-                .push(parse_retry_profile_decl_after_keyword(input)?);
+            return Err(removed_retry_syntax_error(input)?);
         } else if input.peek(kw::rate_limit) {
             let fork = input.fork();
             fork.parse::<kw::rate_limit>()?;
@@ -422,7 +374,7 @@ fn parse_client_policies_group(
                 let tt: TokenTree = input.parse()?;
                 return Err(syn::Error::new(
                     tt.span(),
-                    "invalid item in policies block; expected retry, rate_limit, or observe",
+                    "invalid item in policies block; expected rate_limit or observe",
                 ));
             }
             fork.parse::<Ident>()?;
@@ -466,7 +418,7 @@ fn parse_client_policies_group(
             let tt: TokenTree = input.parse()?;
             return Err(syn::Error::new(
                 tt.span(),
-                "invalid item in policies block; expected retry, rate_limit, or observe",
+                "invalid item in policies block; expected rate_limit or observe",
             ));
         }
 
@@ -481,7 +433,6 @@ fn parse_client_default_block(
     policy: &mut PolicyBlocks,
     auth_uses: &mut Vec<AuthUseDecl>,
     default_behavior_uses: &mut Vec<BehaviorUseSpec>,
-    retry: &mut Option<RetrySpec>,
     rate_limit: &mut Option<RateLimitProfilesBlock>,
 ) -> Result<()> {
     while !input.is_empty() {
@@ -522,15 +473,7 @@ fn parse_client_default_block(
             let legacy: kw::behavior = input.parse()?;
             return Err(legacy_behavior_keyword_error(legacy.span));
         } else if input.peek(kw::retry) {
-            if retry.is_some() {
-                return Err(syn::Error::new(
-                    input.span(),
-                    "duplicate default retry policy",
-                ));
-            }
-            match parse_retry_decl(input)? {
-                RetryDecl::Spec(spec) => *retry = Some(spec),
-            }
+            return Err(removed_retry_syntax_error(input)?);
         } else if input.peek(kw::rate_limit) {
             let spec = parse_rate_limit_spec(input)?;
             let RateLimitSpec::Profiles {
@@ -567,6 +510,14 @@ fn parse_client_default_block(
     Ok(())
 }
 
+fn removed_retry_syntax_error(input: ParseStream<'_>) -> Result<syn::Error> {
+    let retry: kw::retry = input.parse()?;
+    Ok(syn::Error::new(
+        retry.span,
+        "retry DSL was removed; configure client-level `RetryMode` when constructing the client",
+    ))
+}
+
 fn legacy_behavior_keyword_error(span: Span) -> syn::Error {
     syn::Error::new(
         span,
@@ -591,7 +542,6 @@ fn legacy_defaults_keyword_error(span: Span) -> syn::Error {
 // Keep feature-domain macro chunks in separate files without widening helper visibility.
 include!("auth.rs");
 include!("endpoints.rs");
-include!("retry.rs");
 include!("rate_limit.rs");
 include!("behavior.rs");
 include!("items.rs");

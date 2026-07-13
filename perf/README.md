@@ -1,74 +1,17 @@
 # Perf Harness
 
-`perf/` is a standalone benchmark package that is excluded from the root workspace on purpose.
+`perf/` is a standalone benchmark package excluded from the root workspace so
+benchmark-only dependencies do not affect ordinary workspace checks.
 
-Reasons:
+Current targets measure:
 
-- The repository root is a virtual Cargo workspace, so root-level `benches/` would not be discovered reliably.
-- Benchmarks are not part of the normal correctness release gate.
-- Keeping perf in its own excluded package prevents workspace-wide checks from pulling benchmark-only dependencies into the standard gate.
+- managed-client construction for `ProtocolRecovery`, `Disabled`, and `Status`;
+- visible native execution and allocation counts;
+- one bounded authentication recovery and credential caching;
+- pagination, streaming upload/response, rate-limit governor/cooldown, and
+  redaction hooks.
 
-The consolidated post-optimization summary lives in [`../docs/perf_post_optimization_report.md`](../docs/perf_post_optimization_report.md).
-The allocation-measurement design note lives in [`../docs/allocation_measurement_design.md`](../docs/allocation_measurement_design.md).
-The runtime allocation-count report lives in [`../docs/allocation_runtime_hot_paths_report.md`](../docs/allocation_runtime_hot_paths_report.md).
-
-Run the allocation-count prototype with:
-
-```bash
-cargo bench --manifest-path perf/Cargo.toml --bench allocation_counts
-```
-
-This target prints allocation counts for a very small set of hot-path scenarios. The counts are report-only, local to the process, exclude fixture teardown by keeping setup-owned state alive until after the snapshot, and may still include async runtime and library overhead around the measured operation. For consumed-input cases, the measured block owns the consumed input so the report reflects the operation rather than setup teardown.
-
-Run the smoke benchmark with:
-
-```bash
-cargo bench --manifest-path perf/Cargo.toml --bench smoke
-```
-
-The `auth_runtime` bench's `cached_preparation/*` scenario exercises the typed request-local auth-preparation reuse opt-in used for retry-stable credential paths; see the PERF-PR 18 status detail in [`../docs/perf_post_optimization_report.md`](../docs/perf_post_optimization_report.md).
-
-Run future benches with the same pattern:
-
-```bash
-cargo bench --manifest-path perf/Cargo.toml --bench <bench_name>
-```
-
-Current benchmark entry points:
-
-```bash
-cargo bench --manifest-path perf/Cargo.toml --bench smoke
-cargo bench --manifest-path perf/Cargo.toml --bench streaming_upload
-cargo bench --manifest-path perf/Cargo.toml --bench rate_limit_governor
-cargo bench --manifest-path perf/Cargo.toml --bench attempt_pipeline
-cargo bench --manifest-path perf/Cargo.toml --bench auth_runtime
-cargo bench --manifest-path perf/Cargo.toml --bench pagination
-cargo bench --manifest-path perf/Cargo.toml --bench redaction_hooks
-cargo bench --manifest-path perf/Cargo.toml --bench streaming_response
-cargo bench --manifest-path perf/Cargo.toml --bench allocation_counts
-```
-
-Benchmark output is machine-local. Treat it as a comparative signal on one machine and one build, not as universal truth.
-
-Benchmarks report timing only. They are not pass/fail gates for release automation.
-
-The default rate-limit suite measures insertion and acquisition overhead. Active cooldown waiting is intentionally not timed in the default suite because it reflects timer behavior rather than governor lookup overhead. The joined-futures cases are labeled explicitly; the larger fixture remains deferred with the historical report tooling.
-
-The pagination full suite adds 1,000-page offset and cursor collect fixtures. The streaming response full suite adds larger raw-drain fixtures.
-
-Criterion does not provide allocation counts by itself. If allocation measurement is added later, it will need a separate profiler or counting allocator.
-
-Benchmark helpers must stay in-memory and deterministic:
-
-- no live network access
-- no real credentials
-- no filesystem timing dependencies
-
-## Deferred performance diagnostics
-
-The historical footprint, macro-scale, and release-timing scripts were retired.
-
-Available diagnostics:
+Run the maintained checks with:
 
 ```bash
 just perf-check
@@ -76,57 +19,23 @@ just perf-test
 just bench-check
 ```
 
-<<<<<<< HEAD
-To write the same report to a file as well:
+Or run individual targets:
 
 ```bash
-CONCORD_PERF_OUT=target/perf-footprint.txt ./scripts/perf_footprint.sh
+cargo bench --manifest-path perf/Cargo.toml --bench retry_modes
+cargo bench --manifest-path perf/Cargo.toml --bench auth_runtime
+cargo bench --manifest-path perf/Cargo.toml --bench allocation_counts
+cargo bench --manifest-path perf/Cargo.toml --bench streaming_upload
+cargo bench --manifest-path perf/Cargo.toml --bench streaming_response
+cargo bench --manifest-path perf/Cargo.toml --bench rate_limit_governor
+cargo bench --manifest-path perf/Cargo.toml --bench pagination
+cargo bench --manifest-path perf/Cargo.toml --bench redaction_hooks
+cargo bench --manifest-path perf/Cargo.toml --bench smoke
 ```
 
-Set `CONCORD_PERF_CLEAN=1` for an opt-in clean run before the report. The report is machine-local, report-only, and not part of the release gates.
+Benchmarks use deterministic in-memory or loopback fixtures: no live services,
+real credentials, or filesystem timing dependencies. Results are comparative
+machine-local signals, not release thresholds.
 
-## Macro Scale Report
-
-Generate temporary macro-scale fixtures under `target/perf-macro-scale/` and measure `cargo check` time with:
-
-```bash
-./scripts/perf_macro_scale.sh
-```
-
-Optional variants:
-
-```bash
-CONCORD_PERF_OUT=target/perf-macro-scale.txt ./scripts/perf_macro_scale.sh
-CONCORD_PERF_FULL=1 ./scripts/perf_macro_scale.sh
-CONCORD_PERF_CLEAN=1 ./scripts/perf_macro_scale.sh
-```
-
-The generated fixtures are local and report-only. By default they remain under `target/perf-macro-scale/` for inspection. `CONCORD_PERF_CLEAN=1` removes old generated fixtures before regenerating the current run. The report is not a release-gate threshold.
-
-## Release-Gate Timing Report
-
-Time the existing local release/check commands with:
-
-```bash
-./scripts/perf_gate_timing.sh
-```
-
-To write the same report to a file as well:
-
-```bash
-CONCORD_PERF_OUT=target/perf-gate-timing.txt ./scripts/perf_gate_timing.sh
-```
-
-Set `CONCORD_PERF_STRICT=1` to treat missing optional external tools such as `cargo-nextest` or `cargo-deny` as failures instead of report skips.
-
-This report is machine-local, report-only, and not a release-gate threshold. It does not run benchmarks and should not produce committed timing output.
-=======
-`bench-check` may currently fail because historical benchmarks still use
-pre-migration internal APIs. Perf diagnostics are deferred and are not part of
-`just release`.
-These benchmarks are migration baseline scaffolding. The old transport-body path and
-the frame-fixture path are not yet two production implementations, and results must
-not be treated as proof that either final adapter is superior. One-byte and
-production-like chunk shapes are intentionally included. `perf` remains an
-independent package excluded from the root workspace.
->>>>>>> 72af991 (6.2.5)
+Historical reports under `docs/` may describe the removed Concord attempt loop
+and admission system. They are migration baselines, not current APIs.

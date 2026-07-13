@@ -33,7 +33,7 @@ These surfaces are intended for application code. They do not intentionally expo
 
 - user-authored codecs;
 - custom codecs and entity markers where supported;
-- retry and rate-limit policies or helpers;
+- client-level retry modes and rate-limit policies or helpers;
 - auth providers and auth materialization helpers where supported;
 - hooks and debug sinks that intentionally receive sanitized metadata views;
 - pagination controllers and other explicit extension hooks;
@@ -87,7 +87,7 @@ The following surfaces are metadata-only or body-free by design:
 
 - debug sinks;
 - runtime hooks;
-- retry contexts;
+- execution hook metadata;
 - rate-limit contexts;
 - public errors;
 - generated endpoint rustdoc.
@@ -131,24 +131,30 @@ Concord's runtime order is fixed at a high level:
 
 1. plan the request;
 2. derive secret-free auth placements and validate public collisions;
-3. acquire credentials and produce the attempt body;
+3. acquire credentials and materialize the execution body;
 4. acquire any rate-limit resources;
 5. run sanitized hooks and debug output;
 6. materialize authentication and immediately invoke transport;
-7. classify the response or transport failure;
-8. handle auth rejection;
-9. observe retry and rate-limit behavior;
-10. decode the endpoint response.
+7. observe rate-limit feedback;
+8. optionally perform one authentication recovery through the same visible-execution sequence;
+9. decode or return the terminal response.
 
 The exact implementation is intentionally internal, but the order above is the contract to rely on.
 
 ## Retry And Rate-Limit Safety
 
-Retry and rate-limit behavior remain bounded.
+Reqwest is the sole general retry executor. `RetryMode` is fixed when the
+managed client is constructed: protocol recovery uses Reqwest defaults,
+disabled mode installs `retry::never()`, and status mode permits only bounded
+502/503/504 retries for GET, HEAD, and OPTIONS on verified fixed-origin APIs.
+Hidden Reqwest resends reuse the materialized native request and do not rerun
+Concord hooks, authentication preparation, or rate-limit acquisition.
 
-- retries are bounded by the configured policy and runtime caps;
-- non-empty declared rate-limit plans fail closed when the governor cannot provide enforcement;
-- retry and rate-limit metadata stay body-free and auth-secret-free.
+Concord retains one bounded, visible authentication recovery when the logical
+body can be rebuilt. Non-empty declared rate-limit plans fail closed when the
+governor cannot enforce them. A final 429 may install capped cooldown for a
+future call, but never causes Concord to resend the current call. Execution and
+rate-limit metadata remain body-free and auth-secret-free.
 
 ## Generated Rustdoc Safety
 

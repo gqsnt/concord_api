@@ -31,8 +31,8 @@ note: if you're trying to build a new `ApiClient<Cx>` consider using one of the 
       ApiClient::<Cx>::new
       ApiClient::<Cx>::with_reqwest_builder
       ApiClient::<Cx>::with_reqwest_builder_fallible
-      ApiClient::<Cx>::with_safe_reqwest_builder
-      ApiClient::<Cx>::with_safe_reqwest_builder_fallible
+      ApiClient::<Cx>::with_retry_mode
+      and $N others
   --> $WORKSPACE/concord_core/src/client/api.rs
    |
    |       pub fn new(vars: Cx::Vars, auth_vars: Cx::AuthVars) -> Self {
@@ -56,20 +56,9 @@ note: if you're trying to build a new `ApiClient<Cx>` consider using one of the 
    | |     ) -> Result<Self, crate::transport::ReqwestClientBuildError> {
    | |________________________________________________________________^
 ...
-   | /     pub fn with_safe_reqwest_builder(
+   | /     pub fn with_retry_mode(
    | |         vars: Cx::Vars,
    | |         auth_vars: Cx::AuthVars,
-   | |         configure: impl FnOnce(
-   | |             crate::transport::SafeReqwestBuilder,
-   | |         ) -> crate::transport::SafeReqwestBuilder,
-   | |     ) -> Result<Self, crate::transport::ReqwestClientBuildError> {
-   | |________________________________________________________________^
-...
-   | /     pub fn with_safe_reqwest_builder_fallible(
-   | |         vars: Cx::Vars,
-   | |         auth_vars: Cx::AuthVars,
-   | |         configure: impl FnOnce(
-...  |
-   | |         >,
-   | |     ) -> Result<Self, crate::transport::ReqwestClientBuildError> {
-   | |________________________________________________________________^
+   | |         retry_mode: crate::retry_mode::RetryMode,
+   | |     ) -> Result<Self, crate::retry_mode::RetryModeError> {
+   | |________________________________________________________^

@@ -45,7 +45,7 @@ OAuth2 client-credentials token URLs must be HTTPS URLs with a host. Userinfo an
 
 Before the first protected request, Concord sends a token request to `token_url` using `POST`, HTTP Basic authentication, form content, and the configured scope. A successful token response becomes `AccessToken` material. Protected requests materialize the bearer header only in the native request immediately before execution.
 
-Valid OAuth tokens are reused through the credential slot. A protected `401` may invalidate exactly the applied token generation, reacquire a token, and resend once when the credential is refreshable and the request body recipe is replayable. This authentication-recovery budget is independent of general retry capacity. Token endpoint failures stop the protected request before it is resent. OAuth client secrets, access tokens, and refresh tokens are redacted from debug output and errors.
+Valid OAuth tokens are reused through the credential slot. A protected `401` may invalidate exactly the applied token generation, reacquire a token, and resend once when the credential is refreshable and the request body recipe is rebuildable. This authentication recovery is a second visible execution and independently receives the client-level Reqwest retry mode. Token endpoint failures stop the protected request before it is resent. OAuth client secrets, access tokens, and refresh tokens are redacted from debug output and errors.
 
 Unsupported OAuth token-type failures are reported with a sanitized message. Public diagnostics do not render the raw remote `token_type`, access token, refresh token, or response body contents from the token endpoint.
 
@@ -131,9 +131,7 @@ Cloned clients share auth state. Runtime configuration uses clone-on-write, but 
 
 ## Rejection And Refresh
 
-Protected requests may refresh runtime-reacquirable credentials after `401 Unauthorized` or `403 Forbidden` when the credential is refreshable and the authoritative body recipe is replayable. Authentication recovery is bounded to one resend per protected request.
-
-Credential refresh resends do not consume `RetryConfig::max_attempts`. That setting counts the initial general attempt and general retries only; general retries likewise do not consume the independent authentication-recovery budget.
+Protected requests may refresh runtime-reacquirable credentials after `401 Unauthorized` or `403 Forbidden` when the credential is refreshable and the authoritative body recipe is rebuildable. Authentication recovery is bounded to one resend per protected request. A non-rebuildable body is not rejected before execution; if challenged, it follows the original status path without a second execution.
 
 Default rejection behavior:
 
@@ -153,7 +151,7 @@ Default rejection behavior:
 
 Endpoint-backed credentials are manual from the protected request's point of view. A protected `401` or `403` can invalidate the applied endpoint-backed generation, but it does not automatically call the auth endpoint again. Reacquire through the auth endpoint explicitly before sending another protected call.
 
-Normal retry policy still runs separately. Auth rejection handling happens after response classification but before the normal retry decision, so a protected `401` or `403` refresh path is tried before any ordinary retry decision.
+Reqwest owns general retry inside each visible execution. Hidden resends do not rerun authentication preparation. Auth rejection handling sees only the final result returned by Reqwest, then may schedule the single visible authentication recovery.
 
 `AuthChallengePolicy::NeverRefresh` is available in the advanced core API for runtime integrations that must never refresh on a protected response. It is not a public DSL clause in v1. With `NeverRefresh`, protected `401` and `403` responses do not invalidate, refresh, or retry.
 
@@ -163,7 +161,7 @@ Secret values are wrapped before storage. User-facing errors and diagnostics sho
 
 Concord redacts secret values from debug and diagnostic output. Header values, bearer tokens, Basic auth usernames and passwords declared through `secret`, OAuth client secrets, and query-auth values are not rendered directly. Runtime hooks and debug sinks receive sanitized metadata views, so they do not see raw header maps or body bytes. Auth collision checks happen before rate-limit acquisition, hooks, debug, and transport side effects.
 
-HTTP-status errors also store sanitized response headers only. That keeps cookies, auth challenges, token-like headers, and other credential-bearing response headers out of public error accessors while preserving safe headers such as `retry-after` for retry handling.
+HTTP-status errors also store sanitized response headers only. That keeps cookies, auth challenges, token-like headers, and other credential-bearing response headers out of public error accessors while preserving safe headers such as `retry-after` for rate-limit cooldown handling.
 
 If a public query parameter already uses the same key as a query-auth credential, Concord rejects the request before transport with a typed auth configuration error. It does not append a duplicate credential query key or materialize the raw query-auth secret before reporting the collision.
 
@@ -171,4 +169,4 @@ Header-auth placements reserve their header name as well. After auth inheritance
 
 The actual outbound request still contains the credential material required by the remote API. Redaction applies to debug output, diagnostics, and generated documentation, not to the request sent over transport.
 
-Concord's managed Reqwest client disables redirects and Reqwest retries, so bearer, basic, header, and query auth material stays on the original request. The managed configuration path supports reviewed TLS and credential-free explicit-proxy settings; persistent cookies and custom production executors are unsupported.
+Concord's managed Reqwest client disables redirects. Reqwest hidden retries, when selected, clone the already materialized request and therefore do not rerun credential preparation or hooks. The managed configuration path supports reviewed TLS and credential-free explicit-proxy settings; persistent cookies, arbitrary retry builders, and custom production executors are unsupported.

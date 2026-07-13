@@ -40,15 +40,6 @@ api! {
         }
 
         policies {
-            retry write {
-                max_attempts 3
-                methods [POST, PUT]
-                on [409, 429, 500]
-                on transport [Timeout, Connect]
-                retry_after
-                idempotency header "Idempotency-Key"
-            }
-
             rate_limit tenant {
                 bucket method by [host, endpoint, method, "tenant", tenant_key] {
                     cost 2
@@ -62,7 +53,6 @@ api! {
         profiles {
             profile basic_write {
                 auth basic basic_login
-                retry write
             }
 
             profile tenant_read {

@@ -38,7 +38,6 @@ pub enum RecordedBody {
 pub struct RecordedRequest {
     pub endpoint: Option<String>,
     pub method: Method,
-    pub attempt: Option<u32>,
     pub page_index: Option<u32>,
     pub url: url::Url,
     pub headers: HeaderMap,
@@ -63,7 +62,6 @@ impl fmt::Debug for RecordedRequest {
             .debug_struct("RecordedRequest")
             .field("endpoint", &self.endpoint)
             .field("method", &self.method)
-            .field("attempt", &self.attempt)
             .field("page_index", &self.page_index)
             .field("url", &"<redacted>")
             .field(
@@ -213,7 +211,6 @@ impl MockTransport {
                 RecordedRequest {
                     endpoint: request.endpoint,
                     method: request.method,
-                    attempt: request.attempt,
                     page_index: request.page_index,
                     url: request.url,
                     headers: request.headers,

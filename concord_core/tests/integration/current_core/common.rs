@@ -7,9 +7,8 @@ use concord_core::advanced::{
     DecodeContext, DynBody, OffsetLimitPagination, PagedPagination, PaginateBinding,
     PaginationRuntimeAdapter, PostResponseHookContext, PreSendHookContext, RateLimitContext,
     RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
-    RateLimiter, RequestMeta, ResponseCodec, ResponseEntity, RetryContext, RetryDecision,
-    RetryPolicy, RuntimeHooks, TextContentType, TransportError, TransportErrorHookContext,
-    TransportErrorKind, apply_basic_credential,
+    RateLimiter, RequestMeta, ResponseCodec, ResponseEntity, RuntimeHooks, TextContentType,
+    TransportError, TransportErrorHookContext, TransportErrorKind, apply_basic_credential,
 };
 use concord_core::internal::{
     ClientPlanContext, EndpointMeta, EndpointPlan, PaginationMarker, PreparedBody,
@@ -31,7 +30,7 @@ use std::time::Duration;
 use tokio::sync::{Mutex, Notify, Semaphore};
 
 #[path = "../../../../concord_test_support/src/mock.rs"]
-mod native_mock;
+pub(super) mod native_mock;
 use native_mock::{MockHandle as NativeMockHandle, MockServer};
 pub use native_mock::{MockReply as NativeMockReply, ReplyGate as NativeReplyGate};
 
@@ -47,7 +46,6 @@ pub struct CapturedTransportRequest {
 pub struct CapturedRequestMeta {
     pub endpoint: Option<String>,
     pub method: Method,
-    pub attempt: Option<u32>,
     pub page_index: Option<u32>,
 }
 
@@ -1054,6 +1052,10 @@ impl ClientContext for ObservationAuthCx {
         status: StatusCode,
         _headers: &HeaderMap,
     ) -> Result<concord_core::advanced::AuthRejectionAction, AuthError> {
+        auth.events
+            .try_lock()
+            .expect("auth classification events lock")
+            .push(format!("auth_classify:{status}"));
         if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)
             && auth.identity == "refresh"
         {
@@ -1083,6 +1085,13 @@ impl ClientContext for ObservationAuthCx {
     ) -> concord_core::advanced::AuthFuture<'a, Result<(), AuthError>> {
         let events = auth.events.clone();
         Box::pin(async move {
+            // Core invokes terminal challenge handling only after releasing
+            // the response/error that carried the challenge.
+            events.lock().await.push("response_released".to_string());
+            events
+                .lock()
+                .await
+                .push("generation_invalidation".to_string());
             events.lock().await.push(format!("auth_rejection:{status}"));
             events.lock().await.push("auth_fail".to_string());
             if let Some(started) = auth.terminal_started.as_ref() {
@@ -1111,6 +1120,10 @@ impl ClientContext for ObservationAuthCx {
     ) -> concord_core::advanced::AuthFuture<'a, Result<(), AuthError>> {
         let events = auth.events.clone();
         Box::pin(async move {
+            // Recovery is entered after the challenged response has left the
+            // execution scope.
+            events.lock().await.push("response_released".to_string());
+            events.lock().await.push("provider_refresh".to_string());
             events.lock().await.push(format!("auth_rejection:{status}"));
             events.lock().await.push("auth_retry".to_string());
             Ok(())
@@ -1159,49 +1172,6 @@ pub fn auth_policy(placement: AuthPlacement) -> ResolvedPolicy {
                 challenge: Default::default(),
             }],
         },
-        retry: concord_core::internal::RetrySetting::Config(concord_core::advanced::RetryConfig {
-            max_attempts: 2,
-            methods: vec![Method::GET],
-            statuses: Vec::new(),
-            transport_errors: Vec::new(),
-            respect_retry_after: false,
-            idempotency: concord_core::advanced::RetryIdempotency::SafeMethodsOnly,
-        }),
-        ..Default::default()
-    }
-}
-
-pub fn retry_policy(max_attempts: u32) -> ResolvedPolicy {
-    retry_policy_for_statuses(max_attempts, vec![StatusCode::INTERNAL_SERVER_ERROR])
-}
-
-pub fn retry_policy_for_statuses(max_attempts: u32, statuses: Vec<StatusCode>) -> ResolvedPolicy {
-    ResolvedPolicy {
-        retry: concord_core::internal::RetrySetting::Config(concord_core::advanced::RetryConfig {
-            max_attempts,
-            methods: vec![Method::GET],
-            statuses,
-            transport_errors: Vec::new(),
-            respect_retry_after: true,
-            idempotency: concord_core::advanced::RetryIdempotency::SafeMethodsOnly,
-        }),
-        ..Default::default()
-    }
-}
-
-pub fn retry_policy_for_transport_errors(
-    max_attempts: u32,
-    transport_errors: Vec<TransportErrorKind>,
-) -> ResolvedPolicy {
-    ResolvedPolicy {
-        retry: concord_core::internal::RetrySetting::Config(concord_core::advanced::RetryConfig {
-            max_attempts,
-            methods: vec![Method::GET],
-            statuses: Vec::new(),
-            transport_errors,
-            respect_retry_after: true,
-            idempotency: concord_core::advanced::RetryIdempotency::SafeMethodsOnly,
-        }),
         ..Default::default()
     }
 }
@@ -1467,7 +1437,6 @@ fn captured_native_request(request: native_mock::RecordedRequest) -> CapturedTra
         meta: CapturedRequestMeta {
             endpoint: request.endpoint,
             method: request.method.clone(),
-            attempt: request.attempt,
             page_index: request.page_index,
         },
         url: request.url,
@@ -1543,12 +1512,11 @@ impl RateLimiter for ObservationRateLimiter {
         Box::pin(async move {
             let mut events = events.lock().await;
             events.push(format!(
-                "rate_meta:{}:{}:{}:{}:{}:{}",
+                "rate_meta:{}:{}:{}:{}:{}",
                 meta.endpoint,
                 meta.method,
                 meta.url,
                 meta.url_host.unwrap_or("<none>"),
-                meta.attempt,
                 meta.page_index
             ));
             events.push(format!("rate_idempotent:{}", meta.idempotent));
@@ -1556,50 +1524,6 @@ impl RateLimiter for ObservationRateLimiter {
             events.push(format!("rate_headers:{headers:?}"));
             Ok(RateLimitResponseAction::Continue)
         })
-    }
-}
-
-pub struct RecordingRetryPolicy {
-    pub events: Arc<Mutex<Vec<String>>>,
-    pub decision: RetryDecision,
-}
-
-impl RecordingRetryPolicy {
-    pub fn new(
-        events: Arc<Mutex<Vec<String>>>,
-        decision: RetryDecision,
-        _attempt_budget_fixture: u32,
-    ) -> Self {
-        Self { events, decision }
-    }
-}
-
-impl RetryPolicy for RecordingRetryPolicy {
-    fn should_retry_checked(
-        &self,
-        ctx: &RetryContext<'_>,
-    ) -> Result<RetryDecision, ApiClientError> {
-        let events = self.events.clone();
-        let endpoint = ctx.endpoint;
-        let method = ctx.method.clone();
-        let url = ctx.url.to_string();
-        let attempt = ctx.attempt;
-        let retry_count = ctx.retry_count;
-        let page_index = ctx.page_index;
-        let idempotent = ctx.idempotent;
-        let outcome = format!("{:?}", ctx.outcome);
-        let request_headers = format!("{:?}", ctx.request_headers);
-        let response_headers = format!("{:?}", ctx.response_headers);
-        let decision = self.decision;
-        let mut events = events.try_lock().expect("retry events lock");
-        events.push(format!(
-            "retry_ctx:{endpoint}:{method}:{url}:{attempt}:{retry_count}:{page_index}:{idempotent}"
-        ));
-        events.push(format!("retry_outcome:{outcome}"));
-        events.push(format!("retry_request_headers:{request_headers}"));
-        events.push(format!("retry_response_headers:{response_headers}"));
-        events.push(format!("retry_decision:{decision:?}"));
-        Ok(self.decision)
     }
 }
 
@@ -1637,8 +1561,8 @@ impl RuntimeHooks for ObservationRuntimeHooks {
         Box::pin(async move {
             let mut events = events.lock().await;
             events.push(format!(
-                "hook_meta:{}:{}:{}:{}:{}",
-                meta.endpoint, meta.method, meta.url, meta.attempt, meta.page_index
+                "hook_meta:{}:{}:{}:{}",
+                meta.endpoint, meta.method, meta.url, meta.page_index
             ));
             events.push(format!("hook_idempotent:{}", meta.idempotent));
             events.push(format!("hook_status:{status}"));
@@ -1705,17 +1629,8 @@ impl RuntimeHooks for RecordingRuntimeHooks {
 }
 
 pub fn client(auth: TestAuthVars, transport: MockTransport) -> ApiClient<TestCx> {
-    let mut client = ApiClient::with_safe_reqwest_builder((), auth, |builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("native mock client");
-    client.configure(|cfg| {
-        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
-            4096,
-            std::time::Duration::from_secs(15 * 60),
-        ));
-    });
-    client
+    ApiClient::with_safe_reqwest_builder((), auth, |builder| transport.configure_reqwest(builder))
+        .expect("native mock client")
 }
 
 pub fn observation_client(
@@ -1731,10 +1646,6 @@ pub fn configure_runtime<Cx: ClientContext>(
     limiter: Option<Arc<dyn RateLimiter>>,
 ) {
     client.configure(|cfg| {
-        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
-            4096,
-            std::time::Duration::from_secs(15 * 60),
-        ));
         cfg.debug(concord_core::prelude::DebugLevel::V);
         cfg.pagination_detect_loops(true);
         if let Some(limiter) = limiter {

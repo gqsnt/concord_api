@@ -8,6 +8,16 @@ pub trait ClientContext: Sized + Send + Sync + 'static {
     const SCHEME: Scheme;
     const DOMAIN: &'static str;
 
+    /// Static origin classification used to gate [`crate::retry_mode::RetryMode::Status`].
+    ///
+    /// Generated APIs emit their descriptor-derived classification. Hand-written
+    /// contexts default to
+    /// [`ApiOriginDescriptor::DynamicOrigin`](crate::__private::v1::ApiOriginDescriptor::DynamicOrigin), so status
+    /// retry is rejected unless they supply verified fixed single-origin
+    /// metadata.
+    const ORIGIN: crate::__private::v1::ApiOriginDescriptor =
+        crate::__private::v1::ApiOriginDescriptor::DynamicOrigin;
+
     fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState;
 
     fn apply_internal_auth<'a>(
@@ -117,8 +127,6 @@ pub trait ClientContext: Sized + Send + Sync + 'static {
 #[derive(Clone, Copy)]
 pub(super) struct SendClassifyCtx<'a> {
     pub(super) dbg: DebugLevel,
-    pub(super) dbg_verbose: bool,
-    pub(super) dbg_vv: bool,
     pub(super) url_str: &'a str,
     pub(super) error_ctx: &'a ErrorContext,
     pub(super) auth_materials: &'a [crate::auth::AuthTransportMaterial],
@@ -159,7 +167,6 @@ pub(super) struct ResponseObservationCtx<'a> {
     pub(super) method: &'a http::Method,
     pub(super) url: &'a str,
     pub(super) url_host: Option<&'a str>,
-    pub(super) attempt: u32,
     pub(super) page_index: u32,
     pub(super) idempotent: bool,
     pub(super) plan: &'a RateLimitPlan,

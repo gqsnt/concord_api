@@ -69,13 +69,6 @@ api! {
     client PaginationAuthApi {
         base "https://example.com"
 
-        policies {
-            retry auth_refresh {
-                max_attempts 2
-                methods [GET]
-            }
-        }
-
         secret token: String
         credential session = bearer(secret.token)
     }
@@ -86,7 +79,6 @@ api! {
         GET ListProtected(start: u64 = 0, count: u64 = 2)
             as list_protected
             path ["protected-items"]
-            retry auth_refresh
             query {
                 start
                 count

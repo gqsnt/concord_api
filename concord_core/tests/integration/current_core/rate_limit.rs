@@ -140,13 +140,12 @@ impl RateLimiter for RecordingRateLimitContextLimiter {
         let method = ctx.method.clone();
         let url = ctx.url.to_string();
         let url_host = ctx.url_host.map(str::to_string);
-        let attempt = ctx.attempt;
         let page_index = ctx.page_index;
         let idempotent = ctx.idempotent;
         Box::pin(async move {
             let mut events = events.lock().await;
             events.push(format!(
-                "rate_acquire_meta:{endpoint}:{method}:{url}:{}:{attempt}:{page_index}:{idempotent}",
+                "rate_acquire_meta:{endpoint}:{method}:{url}:{}:{page_index}:{idempotent}",
                 url_host.as_deref().unwrap_or("<none>")
             ));
             Ok(RateLimitPermit)
@@ -166,14 +165,8 @@ impl RateLimiter for RecordingRateLimitContextLimiter {
         Box::pin(async move {
             let mut events = events.lock().await;
             events.push(format!(
-                "rate_response_meta:{}:{}:{}:{}:{}:{}:{}",
-                meta.endpoint,
-                meta.method,
-                meta.url,
-                url_host,
-                meta.attempt,
-                meta.page_index,
-                meta.idempotent,
+                "rate_response_meta:{}:{}:{}:{}:{}:{}",
+                meta.endpoint, meta.method, meta.url, url_host, meta.page_index, meta.idempotent,
             ));
             events.push(format!("rate_response_status:{status}"));
             events.push(format!("rate_response_headers:{headers}"));
@@ -214,12 +207,11 @@ impl RateLimitObserver for RecordingRateLimitObserver {
     fn observe(&self, ctx: RateLimitResponseContext<'_>) -> RateLimitObservation {
         let mut events = self.events.try_lock().expect("rate limit observer lock");
         events.push(format!(
-            "rate_observe_meta:{}:{}:{}:{}:{}:{}:{}",
+            "rate_observe_meta:{}:{}:{}:{}:{}:{}",
             ctx.meta.endpoint,
             ctx.meta.method,
             ctx.meta.url,
             ctx.meta.url_host.unwrap_or("<none>"),
-            ctx.meta.attempt,
             ctx.meta.page_index,
             ctx.meta.idempotent
         ));
@@ -413,18 +405,17 @@ async fn rate_limit_observes_200_before_decode_failure() {
 }
 
 #[tokio::test]
-async fn rate_limit_observes_retryable_status_before_retry() -> Result<(), ApiClientError> {
+async fn rate_limit_observes_final_429_without_resending() -> Result<(), ApiClientError> {
     const FIRST_SENTINEL: &str = "PR65_RATE_LIMIT_FIRST_BODY_DO_NOT_LEAK";
-    const SECOND_SENTINEL: &str = "PR65_RATE_LIMIT_SECOND_BODY_DO_NOT_LEAK";
 
     let events = Arc::new(Mutex::new(Vec::new()));
     let limiter = Arc::new(ObservationRateLimiter::new(events.clone()));
     let transport = MockTransport::new(
         events.clone(),
-        vec![
-            MockResponse::text(StatusCode::TOO_MANY_REQUESTS, FIRST_SENTINEL),
-            MockResponse::text(StatusCode::OK, SECOND_SENTINEL),
-        ],
+        vec![MockResponse::text(
+            StatusCode::TOO_MANY_REQUESTS,
+            FIRST_SENTINEL,
+        )],
     );
     let _server = transport.clone();
     let sent_transport = transport.clone();
@@ -432,20 +423,19 @@ async fn rate_limit_observes_retryable_status_before_retry() -> Result<(), ApiCl
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
     configure_runtime(&mut client, Some(limiter));
 
-    let decoded = client
+    let err = client
         .request(TextEndpoint {
-            policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
+            policy: ResolvedPolicy::default(),
             ..Default::default()
         })
         .response()
-        .await?;
+        .await
+        .expect_err("429 is terminal for the visible execution");
 
-    assert_eq!(decoded.value(), SECOND_SENTINEL);
-    assert_eq!(sent_transport.sent_count().await, 2);
+    assert!(matches!(err, ApiClientError::HttpStatus { .. }));
+    assert_eq!(sent_transport.sent_count().await, 1);
     let events = events.lock().await.clone();
-    let first = first_event_with_prefix(&events, "rate_status:429 Too Many Requests");
-    let second = first_event_with_prefix(&events, "rate_status:200 OK");
-    assert!(first < second);
+    first_event_with_prefix(&events, "rate_status:429 Too Many Requests");
     assert!(events.iter().any(|event| event.starts_with("rate_meta:")));
     assert!(
         events
@@ -453,7 +443,6 @@ async fn rate_limit_observes_retryable_status_before_retry() -> Result<(), ApiCl
             .any(|event| event.starts_with("rate_headers:"))
     );
     assert!(!events.iter().any(|event| event.contains(FIRST_SENTINEL)));
-    assert!(!events.iter().any(|event| event.contains(SECOND_SENTINEL)));
     Ok(())
 }
 
@@ -807,7 +796,7 @@ async fn rate_limit_response_context_does_not_expose_basic_auth_material()
 }
 
 #[tokio::test]
-async fn rate_limit_response_huge_delay_returns_typed_error() {
+async fn rate_limit_response_huge_delay_is_capped_before_storage() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let observer = Arc::new(RecordingRateLimitObserver::fixed(
         events.clone(),
@@ -826,7 +815,6 @@ async fn rate_limit_response_huge_delay_returns_typed_error() {
             method: &METHOD,
             url: URL,
             url_host: Some("example.com"),
-            attempt: 0,
             page_index: 0,
             idempotent: true,
             max_cooldown: Duration::from_secs(1),
@@ -837,20 +825,13 @@ async fn rate_limit_response_huge_delay_returns_typed_error() {
         max_cooldown: Duration::from_secs(1),
     };
 
-    let err = rate_limiter
+    let action = rate_limiter
         .on_response(ctx)
         .await
-        .expect_err("overflowing rate-limit delay should return a typed error");
+        .expect("the configured maximum caps an unsafe delay");
 
-    assert_eq!(
-        err.category(),
-        concord_core::error::ErrorCategory::RateLimit
-    );
-    assert_eq!(
-        err.rate_limit_error().map(|err| err.kind()),
-        Some(concord_core::advanced::RateLimitErrorKind::InvalidConfiguration)
-    );
-    assert!(err.to_string().contains("configured maximum"));
+    assert_eq!(action.retry_after(), Some(Duration::from_secs(1)));
+    assert!(action.cooldown_stored());
     let events = events.lock().await.clone();
     assert!(
         events
@@ -860,7 +841,7 @@ async fn rate_limit_response_huge_delay_returns_typed_error() {
 }
 
 #[tokio::test]
-async fn rate_limit_response_above_cap_returns_typed_error_before_cooldown_storage() {
+async fn rate_limit_response_above_cap_is_terminal_and_not_resent() {
     const RESPONSE_SENTINEL: &str = "PRSEC7_RATE_LIMIT_RESPONSE_SENTINEL";
 
     let transport = MockTransport::new(
@@ -880,28 +861,20 @@ async fn rate_limit_response_above_cap_returns_typed_error_before_cooldown_stora
 
     let err = client
         .request(TextEndpoint {
-            policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
+            policy: ResolvedPolicy::default(),
             ..Default::default()
         })
         .response()
         .await
-        .expect_err("over-cap cooldown should fail closed");
+        .expect_err("the final 429 should remain terminal");
 
-    assert_eq!(
-        err.category(),
-        concord_core::error::ErrorCategory::RateLimit
-    );
-    assert_eq!(
-        err.rate_limit_error().map(|err| err.kind()),
-        Some(concord_core::advanced::RateLimitErrorKind::InvalidConfiguration)
-    );
-    assert!(err.to_string().contains("configured maximum"));
+    assert!(matches!(err, ApiClientError::HttpStatus { .. }));
     assert_eq!(sent_transport.sent_count().await, 1);
     assert_error_chain_does_not_contain_any(&err, &[RESPONSE_SENTINEL]);
 }
 
 #[tokio::test]
-async fn rate_limit_response_above_cap_does_not_poison_followup_request()
+async fn rate_limit_response_above_cap_delays_only_the_followup_request()
 -> Result<(), ApiClientError> {
     const RESPONSE_SENTINEL: &str = "PRSEC7_RATE_LIMIT_POISON_SENTINEL";
 
@@ -916,34 +889,31 @@ async fn rate_limit_response_above_cap_does_not_poison_followup_request()
     let sent_transport = transport.clone();
     let mut client = client(TestAuthVars::default(), transport.clone());
     client.configure(|cfg| {
-        cfg.max_rate_limit_cooldown(Duration::from_secs(1));
+        cfg.max_rate_limit_cooldown(Duration::from_millis(20));
     });
 
     let err = client
         .request(TextEndpoint {
-            policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
+            policy: ResolvedPolicy::default(),
             ..Default::default()
         })
         .response()
         .await
-        .expect_err("over-cap cooldown should fail closed");
-    assert_eq!(
-        err.rate_limit_error().map(|err| err.kind()),
-        Some(concord_core::advanced::RateLimitErrorKind::InvalidConfiguration)
-    );
+        .expect_err("the final 429 should remain terminal");
+    assert!(matches!(err, ApiClientError::HttpStatus { .. }));
     assert_eq!(sent_transport.sent_count().await, 1);
 
     let later = tokio::time::timeout(
         Duration::from_millis(250),
         client
             .request(TextEndpoint {
-                policy: retry_policy(2),
+                policy: ResolvedPolicy::default(),
                 ..Default::default()
             })
             .response(),
     )
     .await
-    .expect("follow-up request should not sleep on poisoned cooldown")
+    .expect("the capped future-call cooldown should complete")
     .expect("follow-up request should succeed");
 
     assert_eq!(later.value(), "ok");
@@ -976,9 +946,19 @@ async fn short_rate_limit_cooldown_still_allows_followup_requests() -> Result<()
     });
     configure_runtime(&mut client, Some(rate_limiter));
 
+    let first = client
+        .request(TextEndpoint {
+            policy: ResolvedPolicy::default(),
+            ..Default::default()
+        })
+        .response()
+        .await
+        .expect_err("429 remains terminal for the current call");
+    assert!(matches!(first, ApiClientError::HttpStatus { .. }));
+
     let decoded = client
         .request(TextEndpoint {
-            policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
+            policy: ResolvedPolicy::default(),
             ..Default::default()
         })
         .response()
@@ -1010,9 +990,19 @@ async fn rate_limit_response_zero_delay_is_allowed() -> Result<(), ApiClientErro
     let mut client = client(TestAuthVars::default(), transport.clone());
     configure_runtime(&mut client, Some(rate_limiter));
 
+    let first = client
+        .request(TextEndpoint {
+            policy: ResolvedPolicy::default(),
+            ..Default::default()
+        })
+        .response()
+        .await
+        .expect_err("500 remains terminal for the current call");
+    assert!(matches!(first, ApiClientError::HttpStatus { .. }));
+
     let decoded = client
         .request(TextEndpoint {
-            policy: retry_policy(2),
+            policy: ResolvedPolicy::default(),
             ..Default::default()
         })
         .response()
@@ -1160,8 +1150,7 @@ async fn rate_limit_response_context_sanitizes_sensitive_response_headers()
 }
 
 #[tokio::test]
-async fn retry_after_429_does_not_double_sleep_with_rate_limit_observer()
--> Result<(), ApiClientError> {
+async fn retry_after_429_delays_only_a_future_call() -> Result<(), ApiClientError> {
     let started = std::time::Instant::now();
     let events = Arc::new(Mutex::new(Vec::new()));
     let observer = Arc::new(RecordingRateLimitObserver::retry_after_429(events.clone()));
@@ -1187,21 +1176,31 @@ async fn retry_after_429_does_not_double_sleep_with_rate_limit_observer()
     let mut client = client(TestAuthVars::default(), transport.clone());
     configure_runtime(&mut client, Some(rate_limiter));
 
-    let handle = tokio::spawn(async move {
+    let first = client
+        .request(TextEndpoint {
+            policy: ResolvedPolicy::default(),
+            ..Default::default()
+        })
+        .response()
+        .await
+        .expect_err("429 remains terminal for the current call");
+    assert!(matches!(first, ApiClientError::HttpStatus { .. }));
+    assert_eq!(sent_transport.sent_count().await, 1);
+
+    let decoded = tokio::time::timeout(
+        Duration::from_secs(3),
         client
             .request(TextEndpoint {
-                policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
+                policy: ResolvedPolicy::default(),
                 ..Default::default()
             })
-            .response()
-            .await
-    });
-    let decoded = tokio::time::timeout(Duration::from_secs(3), handle)
-        .await
-        .expect("request should finish without double sleeping")
-        .expect("join handle should succeed")?;
+            .response(),
+    )
+    .await
+    .expect("future call should finish after one cooldown")?;
 
     assert_eq!(decoded.value(), "ok");
+    assert!(started.elapsed() >= Duration::from_millis(900));
     assert!(started.elapsed() < Duration::from_secs(2));
     assert_eq!(sent_transport.sent_count().await, 2);
     let events = events.lock().await.clone();

@@ -21,11 +21,6 @@ fn trybuild_auth_contract_fixtures() {
 }
 
 #[test]
-fn trybuild_retry_contract_fixtures() {
-    support::run_trybuild_pass(&["tests/trybuild/pass/retry/*.rs"]);
-}
-
-#[test]
 fn trybuild_route_contract_fixtures() {
     support::run_trybuild_pass(&["tests/trybuild/pass/route/*.rs"]);
 }

@@ -76,7 +76,6 @@ pub fn context<'a>(
         method,
         url,
         url_host,
-        attempt: 0,
         page_index: 0,
         idempotent: *method == Method::GET || *method == Method::HEAD,
         max_cooldown: Duration::from_secs(1),

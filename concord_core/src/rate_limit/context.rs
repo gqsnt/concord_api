@@ -10,7 +10,6 @@ pub struct RateLimitContext<'a> {
     pub method: &'a Method,
     pub url: &'a str,
     pub url_host: Option<&'a str>,
-    pub attempt: u32,
     pub page_index: u32,
     pub idempotent: bool,
     pub max_cooldown: Duration,

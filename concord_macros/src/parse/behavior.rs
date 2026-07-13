@@ -22,15 +22,7 @@ fn parse_behavior_patch_body(input: ParseStream<'_>) -> Result<BehaviorPatch> {
             input.parse::<kw::auth>()?;
             patch.auth_uses.push(parse_auth_use_decl_after_auth_keyword(input)?);
         } else if input.peek(kw::retry) {
-            if patch.retry.is_some() {
-                return Err(syn::Error::new(
-                    input.span(),
-                    "duplicate retry policy in profile",
-                ));
-            }
-            match parse_retry_decl(input)? {
-                RetryDecl::Spec(spec) => patch.retry = Some(spec),
-            }
+            return Err(removed_retry_syntax_error(input)?);
         } else if input.peek(kw::rate_limit) {
             if patch.rate_limit.is_some() {
                 return Err(syn::Error::new(
@@ -43,7 +35,7 @@ fn parse_behavior_patch_body(input: ParseStream<'_>) -> Result<BehaviorPatch> {
             let tt: TokenTree = input.parse()?;
             return Err(syn::Error::new(
                 tt.span(),
-                "invalid item in profile; expected auth, retry, or rate_limit",
+                "invalid item in profile; expected auth or rate_limit",
             ));
         }
         let _ = input.parse::<Option<Token![,]>>()?;

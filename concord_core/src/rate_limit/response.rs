@@ -314,4 +314,22 @@ mod tests {
         let delay = parse_retry_after(&headers).expect("retry-after delay");
         assert!(delay <= Duration::from_secs(3));
     }
+
+    #[test]
+    fn retry_after_ignores_malformed_values() {
+        let mut headers = HeaderMap::new();
+        headers.insert(RETRY_AFTER, HeaderValue::from_static("not-a-delay"));
+        assert_eq!(parse_retry_after(&headers), None);
+    }
+
+    #[test]
+    fn retry_after_past_date_has_no_positive_delay() {
+        let mut headers = HeaderMap::new();
+        let value = httpdate::fmt_http_date(SystemTime::UNIX_EPOCH);
+        headers.insert(
+            RETRY_AFTER,
+            HeaderValue::from_str(&value).expect("valid retry-after header value"),
+        );
+        assert_eq!(parse_retry_after(&headers), Some(Duration::ZERO));
+    }
 }

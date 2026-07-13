@@ -24,7 +24,6 @@ struct EndpointBlockParts {
     policy: PolicyBlocks,
     behavior_uses: Vec<BehaviorUseSpec>,
     auth_uses: Vec<AuthUseDecl>,
-    retry: Option<RetrySpec>,
     rate_limit: Option<RateLimitSpec>,
     rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
     paginate: Option<PaginateSpec>,
@@ -37,7 +36,6 @@ impl EndpointBlockParts {
             policy: PolicyBlocks::default(),
             behavior_uses: Vec::new(),
             auth_uses: Vec::new(),
-            retry: None,
             rate_limit: None,
             rate_limit_keys: Vec::new(),
             paginate: None,
@@ -65,12 +63,6 @@ impl EndpointBlockParts {
         }
         self.auth_uses.extend(other.auth_uses);
         self.behavior_uses.extend(other.behavior_uses);
-        if other.retry.is_some() {
-            if self.retry.is_some() {
-                return Err(syn::Error::new(name.span(), "duplicate retry policy in endpoint"));
-            }
-            self.retry = other.retry;
-        }
         if other.rate_limit.is_some() {
             if self.rate_limit.is_some() {
                 return Err(syn::Error::new(name.span(), "duplicate rate_limit policy in endpoint"));
@@ -187,14 +179,7 @@ fn parse_endpoint_inline_parts(input: ParseStream<'_>, name: &Ident) -> Result<E
             input.parse::<kw::auth>()?;
             parts.auth_uses.push(parse_auth_use_decl_after_auth_keyword(input)?);
         } else if input.peek(kw::retry) {
-            match parse_retry_decl(input)? {
-                RetryDecl::Spec(spec) => {
-                    if parts.retry.is_some() {
-                        return Err(syn::Error::new(name.span(), "duplicate retry policy in endpoint"));
-                    }
-                    parts.retry = Some(spec);
-                }
-            }
+            return Err(removed_retry_syntax_error(input)?);
         } else if input.peek(kw::rate_limit) {
             let fork = input.fork();
             fork.parse::<kw::rate_limit>()?;

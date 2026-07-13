@@ -5,9 +5,7 @@ api! {
         base "https://example.com"
 
         profiles {
-            profile read {
-                retry off
-            }
+            profile read {}
         }
 
         default {

@@ -44,16 +44,6 @@ fn success_transport() -> MockTransport {
     ))
 }
 
-fn retry_transport() -> MockTransport {
-    MockTransport::scripted(vec![
-        MockResponse::text(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Bytes::from_static(b"retry"),
-        ),
-        MockResponse::text(StatusCode::OK, Bytes::from_static(b"ok")),
-    ])
-}
-
 fn report_case<T, Setup, Run>(rt: &Runtime, label: &'static str, setup: Setup, mut run: Run)
 where
     Setup: FnOnce() -> T,
@@ -122,23 +112,10 @@ fn with_bearer_auth(mut plan: RequestPlan) -> RequestPlan {
     plan
 }
 
-fn with_retry(mut plan: RequestPlan, max_attempts: u32) -> RequestPlan {
-    plan.endpoint.policy.retry =
-        concord_core::internal::RetrySetting::Config(concord_core::advanced::RetryConfig {
-            max_attempts,
-            methods: vec![Method::GET],
-            statuses: vec![StatusCode::INTERNAL_SERVER_ERROR],
-            transport_errors: Vec::new(),
-            respect_retry_after: false,
-            idempotency: concord_core::advanced::RetryIdempotency::SafeMethodsOnly,
-        });
-    plan
-}
-
-fn run_attempt_pipeline(rt: &Runtime) {
+fn run_visible_execution(rt: &Runtime) {
     report_case(
         rt,
-        "attempt_pipeline/mock_transport_success/minimal_get",
+        "visible_execution/mock_transport_success/minimal_get",
         || client(success_transport()),
         |client| {
             Box::pin(async move {
@@ -146,21 +123,6 @@ fn run_attempt_pipeline(rt: &Runtime) {
                 let response = execute_raw_plan(&client, plan)
                     .await
                     .expect("allocation report request");
-                black_box((response.status(), response.body().len()));
-            })
-        },
-    );
-
-    report_case(
-        rt,
-        "attempt_pipeline/retry_once_then_success",
-        || client(retry_transport()),
-        |client| {
-            Box::pin(async move {
-                let plan = with_retry(base_plan("RetryOnce", "/perf/retry-once"), 2);
-                let response = execute_raw_plan(&client, plan)
-                    .await
-                    .expect("allocation report retry");
                 black_box((response.status(), response.body().len()));
             })
         },
@@ -442,7 +404,7 @@ fn main() {
     sanity_check_counter();
     println!("allocation_counts_report report_only=true note=counts_are_local_to_this_process");
     reset_allocation_counts();
-    run_attempt_pipeline(&rt);
+    run_visible_execution(&rt);
     run_auth_runtime(&rt);
     run_redaction_hooks(&rt);
     run_streaming_upload(&rt);

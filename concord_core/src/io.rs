@@ -88,7 +88,7 @@ impl TerminalBody {
 /// The single logical authority for a request body.
 ///
 /// Ordinary byte streams and multipart recipes remain in native-capability
-/// form until a Reqwest request is constructed for a physical attempt.
+/// form until a Reqwest request is constructed for a visible execution.
 enum RequestBodyRecipe {
     Empty,
     ReusableBytes(Bytes),
@@ -330,7 +330,7 @@ impl PreparedBody {
         }
     }
 
-    pub(crate) fn produce_for_attempt(&mut self) -> Result<ProducedBody, BodyProductionError> {
+    pub(crate) fn produce_for_execution(&mut self) -> Result<ProducedBody, BodyProductionError> {
         let size_hint = self.size_hint.clone();
         match &mut self.recipe {
             RequestBodyRecipe::Empty => Ok(ProducedBody {
@@ -413,7 +413,7 @@ pub(crate) fn apply_prepared_body_media_type(
     }
 }
 
-pub(crate) fn apply_attempt_media_type(
+pub(crate) fn apply_execution_media_type(
     headers: &mut http::HeaderMap,
     media_type: Option<&HeaderValue>,
 ) -> Result<(), ()> {
@@ -1147,7 +1147,7 @@ mod tests {
         );
         let bytes = prepared
             .body
-            .produce_for_attempt()
+            .produce_for_execution()
             .expect("body")
             .into_dyn_body()
             .collect()
@@ -1191,7 +1191,7 @@ mod tests {
         assert!(!advanced.is_replayable());
         assert!(
             !advanced
-                .produce_for_attempt()
+                .produce_for_execution()
                 .expect("direct advanced terminal")
                 .is_reqwest_cloneable()
         );
@@ -1218,7 +1218,7 @@ mod tests {
         for expected_calls in 1..=2 {
             assert!(
                 !factory
-                    .produce_for_attempt()
+                    .produce_for_execution()
                     .expect("factory terminal")
                     .is_reqwest_cloneable()
             );
@@ -1235,12 +1235,12 @@ mod tests {
         assert!(!body.is_replayable());
         assert!(
             !body
-                .produce_for_attempt()
+                .produce_for_execution()
                 .expect("first stream terminal")
                 .is_reqwest_cloneable()
         );
         assert_eq!(
-            body.produce_for_attempt()
+            body.produce_for_execution()
                 .expect_err("consumed direct stream cannot rematerialize")
                 .kind(),
             BodyProductionErrorKind::AlreadyConsumed
@@ -1270,7 +1270,7 @@ mod tests {
         assert!(!direct_stream.is_replayable());
         assert!(
             !direct_stream
-                .produce_for_attempt()
+                .produce_for_execution()
                 .expect("direct streamed multipart terminal")
                 .is_reqwest_cloneable()
         );
@@ -1281,7 +1281,7 @@ mod tests {
         assert!(direct_reusable.is_replayable());
         assert!(
             !direct_reusable
-                .produce_for_attempt()
+                .produce_for_execution()
                 .expect("direct multipart terminal")
                 .is_reqwest_cloneable()
         );
@@ -1297,7 +1297,7 @@ mod tests {
         for expected_calls in 1..=2 {
             assert!(
                 !factory
-                    .produce_for_attempt()
+                    .produce_for_execution()
                     .expect("factory multipart terminal")
                     .is_reqwest_cloneable()
             );
@@ -1316,12 +1316,12 @@ mod tests {
         assert!(!prepared.is_replayable());
         assert_eq!(polls.load(Ordering::SeqCst), 0);
         let first = prepared
-            .produce_for_attempt()
+            .produce_for_execution()
             .expect("first body")
             .into_dyn_body();
         assert_eq!(polls.load(Ordering::SeqCst), 0);
         let error = prepared
-            .produce_for_attempt()
+            .produce_for_execution()
             .expect_err("second body production must fail");
         assert_eq!(error.kind(), BodyProductionErrorKind::AlreadyConsumed);
         assert_eq!(polls.load(Ordering::SeqCst), 0);
@@ -1334,7 +1334,7 @@ mod tests {
             StreamBody::from_bytes(Bytes::from_static(b"abc")).with_size_hint(exact_size_hint(4));
         let mut prepared = PreparedBody::from_stream_body(stream, None);
         let error = prepared
-            .produce_for_attempt()
+            .produce_for_execution()
             .expect("terminal body")
             .into_dyn_body()
             .collect()
@@ -1374,7 +1374,7 @@ mod tests {
                         TerminalBody::ReusableBytes(Bytes::copy_from_slice(bytes))
                     }))
                 });
-            let result = match body.produce_for_attempt().unwrap().try_into_dyn_body() {
+            let result = match body.produce_for_execution().unwrap().try_into_dyn_body() {
                 Ok(body) => body.collect().await,
                 Err(error) => Err(error),
             };
@@ -1407,7 +1407,7 @@ mod tests {
 
         for expected_calls in 1..=2 {
             let bytes = factory
-                .produce_for_attempt()
+                .produce_for_execution()
                 .expect("fresh factory execution")
                 .into_dyn_body()
                 .collect()
@@ -1420,11 +1420,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reusable_bytes_and_replay_factory_produce_fresh_attempt_bodies() {
+    async fn reusable_bytes_and_replay_factory_produce_fresh_execution_bodies() {
         let mut bytes_body = PreparedBody::reusable_bytes(Bytes::from_static(b"repeat"), None);
         for _ in 0..2 {
             let bytes = bytes_body
-                .produce_for_attempt()
+                .produce_for_execution()
                 .expect("reusable body")
                 .into_dyn_body()
                 .collect()
@@ -1445,20 +1445,20 @@ mod tests {
         assert!(factory.is_replayable());
         assert!(
             bytes_body
-                .produce_for_attempt()
+                .produce_for_execution()
                 .expect("reusable terminal")
                 .is_reqwest_cloneable()
         );
         assert!(
             !factory
-                .produce_for_attempt()
+                .produce_for_execution()
                 .expect("factory terminal")
                 .is_reqwest_cloneable()
         );
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         for expected_calls in 2..=3 {
             let body = factory
-                .produce_for_attempt()
+                .produce_for_execution()
                 .expect("factory body")
                 .into_dyn_body();
             assert_eq!(calls.load(Ordering::SeqCst), expected_calls);
@@ -1477,7 +1477,7 @@ mod tests {
             Err(crate::body::BodyError::invalid_configuration())
         });
         let error = factory
-            .produce_for_attempt()
+            .produce_for_execution()
             .expect_err("factory should fail");
         assert_eq!(error.kind(), BodyProductionErrorKind::FactoryFailure);
         assert_eq!(
@@ -1516,7 +1516,7 @@ mod tests {
             .apply_to_reqwest(builder)
             .expect("native body materialization");
         let mut request = builder.build().expect("native request");
-        apply_attempt_media_type(request.headers_mut(), media_type.as_ref()).expect("media type");
+        apply_execution_media_type(request.headers_mut(), media_type.as_ref()).expect("media type");
         request
     }
 
@@ -1524,7 +1524,7 @@ mod tests {
     fn reusable_bytes_remain_a_direct_reqwest_byte_body() {
         let mut prepared = PreparedBody::reusable_bytes(Bytes::from_static(b"direct"), None);
         let request =
-            native_request_from_produced(prepared.produce_for_attempt().expect("produced bytes"));
+            native_request_from_produced(prepared.produce_for_execution().expect("produced bytes"));
         assert_eq!(
             request.body().and_then(reqwest::Body::as_bytes),
             Some(&b"direct"[..])
@@ -1535,7 +1535,7 @@ mod tests {
     fn empty_stream_and_advanced_terminals_map_to_native_reqwest_capabilities() {
         let empty = native_request_from_produced(
             PreparedBody::empty()
-                .produce_for_attempt()
+                .produce_for_execution()
                 .expect("empty terminal"),
         );
         assert!(empty.body().is_none());
@@ -1548,7 +1548,7 @@ mod tests {
         ))]));
         let streamed = native_request_from_produced(
             PreparedBody::from_stream_body(stream, None)
-                .produce_for_attempt()
+                .produce_for_execution()
                 .expect("stream terminal"),
         );
         assert!(
@@ -1562,7 +1562,7 @@ mod tests {
                 crate::body::DynBody::from_bytes(Bytes::from_static(b"body")),
                 None,
             )
-            .produce_for_attempt()
+            .produce_for_execution()
             .expect("advanced terminal"),
         );
         assert!(
@@ -1578,10 +1578,12 @@ mod tests {
         let mut prepared = PreparedBody::replay_multipart_factory(|| {
             Ok(MultipartBody::new().text("field", "value"))
         });
-        let first =
-            native_request_from_produced(prepared.produce_for_attempt().expect("first multipart"));
-        let second =
-            native_request_from_produced(prepared.produce_for_attempt().expect("second multipart"));
+        let first = native_request_from_produced(
+            prepared.produce_for_execution().expect("first multipart"),
+        );
+        let second = native_request_from_produced(
+            prepared.produce_for_execution().expect("second multipart"),
+        );
         let first_type = first
             .headers()
             .get(http::header::CONTENT_TYPE)
@@ -1618,7 +1620,7 @@ mod tests {
         let mut prepared =
             PreparedBody::one_shot(crate::body::DynBody::from_frame_stream(frames), None);
         let mut body = prepared
-            .produce_for_attempt()
+            .produce_for_execution()
             .expect("body")
             .into_dyn_body();
         let data = body

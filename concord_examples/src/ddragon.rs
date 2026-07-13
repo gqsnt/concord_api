@@ -12,18 +12,6 @@ api! {
             "user-agent" = "ConcordDDragonExample/1.0"
         }
 
-        policies {
-            retry read {
-                max_attempts 2
-                methods [GET]
-                on [429, 500, 502, 503, 504]
-                retry_after
-            }
-        }
-
-        default {
-            retry read
-        }
     }
 
     scope ddragon {

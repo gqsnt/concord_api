@@ -6,4 +6,3 @@ mod endpoint_io_no_content;
 mod endpoint_io_stream;
 mod pagination;
 mod query;
-mod retry;

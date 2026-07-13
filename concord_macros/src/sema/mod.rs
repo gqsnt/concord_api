@@ -10,7 +10,7 @@ use crate::ast::{
     BehaviorUseSpec, FmtPiece, FmtSpec, KeySpec, PaginateSpec, PolicyBlock, PolicyBlocks,
     PolicyStmt, PolicyValue, RateLimitDurationUnit, RateLimitKeyBindingSpec, RateLimitKeySpec,
     RateLimitPlanSpec, RateLimitProfilesBlock, RateLimitSpec, RawIoSpec, RawResponseIo, RefScope,
-    RetryIdempotencySpec, RetryPatch, RetryProfilesBlock, RetrySpec, RouteAtom, SecretRef,
+    RouteAtom, SecretRef,
 };
 use crate::emit_helpers;
 use crate::model::facade::{
@@ -126,13 +126,9 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApiPipeline> {
         .map(|c| (c.name.to_string(), c.clone()))
         .collect();
 
-    let retry_profiles = resolve_retry_profiles(norm.client.retry_profiles.as_ref())?;
     let rate_limit_profiles = resolve_rate_limit_profiles(norm.client.rate_limit.as_ref())?;
-    let behavior_profiles = resolve_behavior_profiles(
-        norm.client.behavior_profiles.as_ref(),
-        &retry_profiles,
-        &rate_limit_profiles,
-    )?;
+    let behavior_profiles =
+        resolve_behavior_profiles(norm.client.behavior_profiles.as_ref(), &rate_limit_profiles)?;
     validate_behavior_uses_unique_at_site(&norm.client.default_behavior_uses)?;
     let client_default_behavior_names = behavior_use_names(&norm.client.default_behavior_uses);
     let default_behavior =
@@ -160,17 +156,6 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApiPipeline> {
         &auth_vars_map,
         None,
     )?;
-    let explicit_client_retry = resolve_client_retry(
-        norm.client.retry.as_ref(),
-        norm.client
-            .retry_profiles
-            .as_ref()
-            .and_then(|block| block.default.as_ref()),
-        &retry_profiles,
-    )?;
-    let client_retry_directive = explicit_client_retry.or(default_behavior.retry.clone());
-    let (client_retry, inherited_retry) = materialize_retry_directive(None, client_retry_directive);
-    client_policy.retry = client_retry;
     let explicit_default_rate_limit = resolve_client_rate_limit(
         norm.client.rate_limit.as_ref(),
         &rate_limit_profiles,
@@ -193,19 +178,12 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApiPipeline> {
         auth_credentials: &auth_credential_map,
         client_auth: &client_auth,
         client_default_behavior_names: &client_default_behavior_names,
-        retry_profiles: &retry_profiles,
         rate_limit_profiles: &rate_limit_profiles,
         behavior_profiles: &behavior_profiles,
         layers: &mut layers,
         endpoints: &mut endpoints,
     };
-    walk_items(
-        &norm.items,
-        &mut ancestry,
-        &mut walk_ctx,
-        inherited_retry,
-        0,
-    )?;
+    walk_items(&norm.items, &mut ancestry, &mut walk_ctx, 0)?;
     let client_query_cardinalities = collect_client_query_cardinalities(&client_policy, &endpoints);
     let descriptor = ApiDescriptorIr {
         origin: classify_api_origin(&endpoints),
@@ -292,8 +270,10 @@ fn validate_client_method_namespace(
     let mut ns = PublicNameNamespace::new("generated client");
     for name in [
         "new",
+        "new_with_retry_mode",
         "new_with_safe_reqwest_builder",
         "new_with_safe_reqwest_builder_fallible",
+        "new_with_safe_reqwest_builder_and_retry_mode",
         "builder",
         "debug_level",
         "set_debug_level",
@@ -751,14 +731,12 @@ mod common;
 mod items;
 mod policy;
 mod rate_limit;
-mod retry;
 
 pub(crate) use self::auth::*;
 
 use self::common::*;
 use self::items::*;
 use self::rate_limit::*;
-use self::retry::*;
 
 #[cfg(test)]
 fn debug_resolved_endpoints(resolved_api: &ResolvedApi) -> String {
@@ -769,12 +747,11 @@ fn debug_resolved_endpoints(resolved_api: &ResolvedApi) -> String {
             ep.prefix_pieces, ep.scope_path_pieces, ep.route_pieces
         );
         let policy = format!(
-            "scopes={} headers={} query={} auth={} retry={} rate_limit={}",
+            "scopes={} headers={} query={} auth={} rate_limit={}",
             ep.policy.scopes.len(),
             ep.policy.endpoint.headers.len(),
             ep.policy.endpoint.query.len(),
             ep.policy.auth.len(),
-            ep.policy.endpoint.retry.is_some(),
             ep.policy.endpoint.rate_limit.is_some()
         );
         let params = ep
@@ -817,7 +794,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn retry_attempts_rejected_before_resolution() {
+    fn removed_retry_dsl_is_rejected_before_resolution() {
         let err = syn::parse_str::<crate::ast::RawApi>(
             r#"
             api! {
@@ -831,9 +808,11 @@ mod tests {
             }
             "#,
         )
-        .expect_err("attempts syntax must fail");
+        .expect_err("removed retry syntax must fail");
 
-        assert!(err.to_string().contains("`attempts` is not supported"));
+        assert!(err.to_string().contains(
+            "retry DSL was removed; configure client-level `RetryMode` when constructing the client"
+        ));
     }
 
     #[test]
@@ -1076,15 +1055,7 @@ mod tests {
                 credential key = api_key(secret.token)
 
                 default {
-                    retry read
                     rate_limit app
-                }
-
-                retry read {
-                    max_attempts 2
-                    methods [GET]
-                    on [429]
-                    retry_after
                 }
 
                 rate_limit app {

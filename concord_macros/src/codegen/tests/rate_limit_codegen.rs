@@ -44,13 +44,6 @@ fn generated_rate_limit_materializes_resolved_policy() {
         client SnapshotPolicy {
             base "https://example.com"
 
-            retry read {
-                max_attempts 2
-                methods [GET]
-                on [401, 403]
-                retry_after
-            }
-
             rate_limit app {
                 bucket application by [host] {
                     10 / 1s
@@ -58,7 +51,6 @@ fn generated_rate_limit_materializes_resolved_policy() {
             }
 
             default {
-                retry read
                 rate_limit app
             }
         }

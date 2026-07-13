@@ -23,6 +23,4 @@ mod policy_codegen;
 #[cfg(test)]
 mod rate_limit_codegen;
 #[cfg(test)]
-mod retry_codegen;
-#[cfg(test)]
 mod route_codegen;

@@ -37,7 +37,6 @@ impl Parse for RawScopeTaggedScope {
         let mut policy = PolicyBlocks::default();
         let mut behavior_uses = Vec::new();
         let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
-        let mut retry: Option<RetrySpec> = None;
         let mut rate_limit: Option<RateLimitSpec> = None;
         let mut rate_limit_keys = Vec::new();
         let mut host_route: Option<RouteExpr> = None;
@@ -112,18 +111,7 @@ impl Parse for RawScopeTaggedScope {
                 auth_uses.push(parse_auth_use_decl_after_auth_keyword(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::retry) {
-                match parse_retry_decl(&content)? {
-                    RetryDecl::Spec(spec) => {
-                        if retry.is_some() {
-                            return Err(syn::Error::new(
-                                content.span(),
-                                "duplicate retry policy in scope",
-                            ));
-                        }
-                        retry = Some(spec);
-                    }
-                }
-                let _ = content.parse::<Option<Token![,]>>()?;
+                return Err(removed_retry_syntax_error(&content)?);
             } else if content.peek(kw::rate_limit) {
                 let fork = content.fork();
                 fork.parse::<kw::rate_limit>()?;
@@ -159,7 +147,6 @@ impl Parse for RawScopeTaggedScope {
             policy,
             behavior_uses,
             auth_uses,
-            retry,
             rate_limit,
             rate_limit_keys,
             items,
@@ -220,7 +207,6 @@ impl Parse for RawEndpoint {
                 inline_parts.policy,
                 inline_parts.behavior_uses,
                 inline_parts.auth_uses,
-                inline_parts.retry,
                 inline_parts.rate_limit,
                 inline_parts.rate_limit_keys,
                 inline_parts.paginate,
@@ -246,7 +232,6 @@ impl Parse for RawEndpoint {
             inline_parts.policy,
             inline_parts.behavior_uses,
             inline_parts.auth_uses,
-            inline_parts.retry,
             inline_parts.rate_limit,
             inline_parts.rate_limit_keys,
             inline_parts.paginate,
@@ -267,7 +252,6 @@ fn raw_endpoint(
     policy: PolicyBlocks,
     behavior_uses: Vec<BehaviorUseSpec>,
     auth_uses: Vec<AuthUseDecl>,
-    retry: Option<RetrySpec>,
     rate_limit: Option<RateLimitSpec>,
     rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
     paginate: Option<PaginateSpec>,
@@ -290,7 +274,6 @@ fn raw_endpoint(
         policy,
         behavior_uses,
         auth_uses,
-        retry,
         rate_limit,
         rate_limit_keys,
         paginate,

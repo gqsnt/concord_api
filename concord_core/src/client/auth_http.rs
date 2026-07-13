@@ -72,7 +72,7 @@ fn validate_auth_internal_body(
 fn produce_auth_internal_body(
     body: &mut crate::io::PreparedBody,
 ) -> Result<crate::io::ProducedBody, AuthError> {
-    body.produce_for_attempt().map_err(|error| {
+    body.produce_for_execution().map_err(|error| {
         let message = match error.kind() {
             crate::io::BodyProductionErrorKind::AlreadyConsumed => {
                 "auth-internal one-shot request body was already consumed"
@@ -116,7 +116,6 @@ impl<Cx: ClientContext> AuthHttpExecutor for ClientAuthHttpExecutor<'_, Cx> {
                     endpoint: "<auth>",
                     method,
                     idempotent: false,
-                    attempt: 0,
                     page_index: 0,
                 };
 
@@ -125,7 +124,6 @@ impl<Cx: ClientContext> AuthHttpExecutor for ClientAuthHttpExecutor<'_, Cx> {
                     url,
                     headers,
                     timeout: policy.timeout,
-                    retry: RetrySetting::Inherit,
                     rate_limit: RateLimitPlan::new(),
                     auth_plan,
                     reserved_headers: Vec::new(),
@@ -135,7 +133,6 @@ impl<Cx: ClientContext> AuthHttpExecutor for ClientAuthHttpExecutor<'_, Cx> {
                     client: &reqwest::Client,
                     base_request: &super::build::PublicRequestHead,
                     body: &mut crate::io::PreparedBody,
-                    attempt: u32,
                 ) -> Result<BuiltRequest, AuthError> {
                     let body = produce_auth_internal_body(body)?;
                     let ctx = ErrorContext {
@@ -143,14 +140,10 @@ impl<Cx: ClientContext> AuthHttpExecutor for ClientAuthHttpExecutor<'_, Cx> {
                         method: base_request.meta.method.clone(),
                     };
                     let head = super::build::PublicRequestHead {
-                        meta: RequestMeta {
-                            attempt,
-                            ..base_request.meta.clone()
-                        },
+                        meta: base_request.meta.clone(),
                         url: base_request.url.clone(),
                         headers: base_request.headers.clone(),
                         timeout: base_request.timeout,
-                        retry: RetrySetting::Inherit,
                         rate_limit: RateLimitPlan::new(),
                         auth_plan: base_request.auth_plan.clone(),
                         reserved_headers: base_request.reserved_headers.clone(),
@@ -204,13 +197,12 @@ impl<Cx: ClientContext> AuthHttpExecutor for ClientAuthHttpExecutor<'_, Cx> {
                 }
 
                 let auth_url = base_request.url.as_str().to_string();
-                let mut attempt: u32 = 0;
+                let mut transport_retry_count: u32 = 0;
                 loop {
                     let built = make_built_request(
                         &self.client.managed_client.client,
                         &base_request,
                         &mut body,
-                        attempt,
                     )?;
 
                     if policy.use_rate_limiter {
@@ -223,7 +215,6 @@ impl<Cx: ClientContext> AuthHttpExecutor for ClientAuthHttpExecutor<'_, Cx> {
                                 method: &built.context().meta.method,
                                 url: &auth_url,
                                 url_host: built.message.url().host_str(),
-                                attempt,
                                 page_index: 0,
                                 idempotent: built.context().meta.idempotent,
                                 max_cooldown: self.client.runtime_state.max_rate_limit_cooldown(),
@@ -239,7 +230,6 @@ impl<Cx: ClientContext> AuthHttpExecutor for ClientAuthHttpExecutor<'_, Cx> {
                         message,
                         context,
                         auth_plan,
-                        retry: _,
                         rate_limit: _,
                     } = built;
                     let native_request = crate::transport::materialize_authentication(
@@ -258,13 +248,14 @@ impl<Cx: ClientContext> AuthHttpExecutor for ClientAuthHttpExecutor<'_, Cx> {
                     let mut resp = match resp {
                         Ok(resp) => resp,
                         Err(source) => {
-                            if attempt >= policy.max_transport_retries {
+                            if transport_retry_count >= policy.max_transport_retries {
                                 return Err(AuthError::new(
                                     AuthErrorKind::AcquireFailed,
                                     source.to_string(),
                                 ));
                             }
-                            attempt = next_auth_transport_attempt(attempt)?;
+                            transport_retry_count =
+                                next_auth_transport_retry_count(transport_retry_count)?;
                             continue;
                         }
                     };
@@ -323,11 +314,11 @@ fn auth_body_limit_error(error: crate::body::BodyError) -> AuthError {
     )
 }
 
-fn next_auth_transport_attempt(attempt: u32) -> Result<u32, AuthError> {
-    attempt.checked_add(1).ok_or_else(|| {
+fn next_auth_transport_retry_count(retry_count: u32) -> Result<u32, AuthError> {
+    retry_count.checked_add(1).ok_or_else(|| {
         AuthError::new(
             AuthErrorKind::AcquireFailed,
-            "auth transport attempt counter overflowed",
+            "auth transport retry counter overflowed",
         )
     })
 }

@@ -163,10 +163,6 @@ pub(crate) fn assert_policy_error_contains(source: &str, expected: &str) {
     assert_error_contains(&err, expected);
 }
 
-pub(crate) fn behavior_names(endpoint: &ResolvedEndpoint) -> &[String] {
-    &endpoint.behavior_doc.names
-}
-
 pub(crate) fn assert_behavior_error_contains(source: &str, expected: &str) {
     let err = analyze_err(source);
     assert_error_contains(&err, expected);

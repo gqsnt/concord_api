@@ -12,7 +12,6 @@ fn current_fixture_directories_exist() {
         "tests/trybuild/pass/endpoint_io",
         "tests/trybuild/pass/pagination",
         "tests/trybuild/pass/auth",
-        "tests/trybuild/pass/retry",
         "tests/trybuild/pass/route",
         "tests/trybuild/fail/parser/route",
         "tests/trybuild/fail/parser/fmt",

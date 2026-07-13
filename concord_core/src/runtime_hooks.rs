@@ -13,8 +13,6 @@ pub struct HookMeta<'a> {
     pub endpoint: &'static str,
     pub method: &'a Method,
     pub url: &'a str,
-    /// Zero-based metadata index; physical attempt numbering starts at 1.
-    pub attempt: u32,
     pub page_index: u32,
     pub idempotent: bool,
 }

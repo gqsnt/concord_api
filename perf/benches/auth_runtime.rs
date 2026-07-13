@@ -3,11 +3,9 @@ use concord_core::advanced::{
     AuthApplicationRequest, AuthAppliedCredential, AuthError, AuthHttpExecutor, AuthPlacement,
     AuthPreparationReuse, AuthRequirement, CredentialContext, CredentialId, CredentialProvider,
     CredentialRefreshReason, CredentialSlot, NoopDebugSink, NoopRateLimiter,
-    PreparedAuthCredential, RequestMeta, RetryConfig, RetryIdempotency, apply_secret_credential,
+    PreparedAuthCredential, RequestMeta, apply_secret_credential,
 };
-use concord_core::internal::{
-    ClientPlanContext, PreparedBody, RequestPlan, ResolvedPolicy, RetrySetting,
-};
+use concord_core::internal::{ClientPlanContext, PreparedBody, RequestPlan, ResolvedPolicy};
 use concord_core::prelude::{AccessToken, ApiClient, ClientContext, Endpoint, IntoEndpointPlan};
 use concord_core::{dangerous, error};
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
@@ -41,18 +39,6 @@ fn with_auth(mut plan: RequestPlan, placement: AuthPlacement, label: &'static st
     plan
 }
 
-fn with_retry(mut plan: RequestPlan) -> RequestPlan {
-    plan.endpoint.policy.retry = RetrySetting::Config(RetryConfig {
-        max_attempts: 2,
-        methods: vec![Method::GET],
-        statuses: vec![StatusCode::INTERNAL_SERVER_ERROR],
-        transport_errors: Vec::new(),
-        respect_retry_after: false,
-        idempotency: RetryIdempotency::SafeMethodsOnly,
-    });
-    plan
-}
-
 fn success_transport() -> MockTransport {
     MockTransport::repeating(MockResponse::text(
         StatusCode::OK,
@@ -60,12 +46,9 @@ fn success_transport() -> MockTransport {
     ))
 }
 
-fn retry_transport() -> MockTransport {
+fn auth_recovery_transport() -> MockTransport {
     MockTransport::scripted(vec![
-        MockResponse::text(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Bytes::from_static(b"retry"),
-        ),
+        MockResponse::text(StatusCode::UNAUTHORIZED, Bytes::from_static(b"expired")),
         MockResponse::text(StatusCode::OK, Bytes::from_static(b"ok")),
     ])
 }
@@ -115,45 +98,22 @@ fn bench_collision(c: &mut Criterion) {
     });
 }
 
-fn bench_repeated_credential(c: &mut Criterion) {
+fn bench_authentication_recovery(c: &mut Criterion) {
     let rt = runtime();
-    c.bench_function("repeated_credential/retry_reuses_material", |b| {
+    c.bench_function("authentication_recovery/one_bounded_recovery", |b| {
         b.to_async(&rt).iter_batched(
             || {
-                let plan = with_retry(with_auth(
+                let plan = with_auth(
                     base_plan("AuthRetry", "/perf/auth-retry"),
                     AuthPlacement::Bearer,
                     "bearer",
-                ));
-                (client(retry_transport()), plan)
+                );
+                (client(auth_recovery_transport()), plan)
             },
             |(client, plan)| async move {
                 let response = execute_raw_plan(&client, plan)
                     .await
-                    .expect("auth retry bench");
-                black_box((response.status(), response.body().len()));
-            },
-            BatchSize::SmallInput,
-        )
-    });
-}
-
-fn bench_cached_preparation(c: &mut Criterion) {
-    let rt = runtime();
-    c.bench_function("cached_preparation/slot_retry_reuses_preparation", |b| {
-        b.to_async(&rt).iter_batched(
-            || {
-                let plan = with_retry(with_auth(
-                    base_plan("CachedPreparation", "/perf/cached-preparation"),
-                    AuthPlacement::Bearer,
-                    "bearer",
-                ));
-                (slot_client(retry_transport()), plan)
-            },
-            |(client, plan)| async move {
-                let response = execute_slot_raw_plan(&client, plan)
-                    .await
-                    .expect("slot auth retry bench");
+                    .expect("authentication recovery bench");
                 black_box((response.status(), response.body().len()));
             },
             BatchSize::SmallInput,
@@ -295,10 +255,7 @@ async fn execute_slot_raw_plan(
     if let Some(timeout) = overrides.timeout {
         pending = pending.timeout(timeout);
     }
-    pending
-        .attempt(overrides.attempt)
-        .execute_raw_response()
-        .await
+    pending.execute_raw_response().await
 }
 
 fn slot_client(transport: MockTransport) -> ApiClient<SlotAuthCx> {
@@ -384,8 +341,7 @@ fn auth_runtime(c: &mut Criterion) {
         )
     });
     bench_collision(c);
-    bench_repeated_credential(c);
-    bench_cached_preparation(c);
+    bench_authentication_recovery(c);
     bench_cached_slot(c);
 }
 

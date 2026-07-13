@@ -78,7 +78,7 @@ The `concord_examples` crate contains current examples for:
 - offset and cursor pagination
 - custom pagination
 - custom codecs
-- retry and rate-limit policy profiles
+- client-level Reqwest retry modes and rate-limit policy profiles
 - explicit endpoint requests
 - compile-checked endpoint I/O examples covering Json, Text, generic streams, multipart/form-data requests, NoContent, and Bytes surfaces
 - a compiled public DSL guide example in `concord_examples/src/docs_dsl.rs`

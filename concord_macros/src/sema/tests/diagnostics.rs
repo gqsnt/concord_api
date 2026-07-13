@@ -22,7 +22,6 @@ fn nested_raw_scope(depth: usize) -> RawScope {
         policy: Default::default(),
         behavior_uses: Vec::new(),
         auth_uses: Vec::new(),
-        retry: None,
         rate_limit: None,
         rate_limit_keys: Vec::new(),
         items,

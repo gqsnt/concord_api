@@ -11,28 +11,29 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 #[tokio::test]
-async fn retry_profile_honors_max_attempts() {
+async fn disabled_mode_keeps_visible_and_wire_execution_one_to_one() {
     let (transport, handle) = mock()
         .reply(MockReply::status(StatusCode::INTERNAL_SERVER_ERROR))
-        .reply(MockReply::status(StatusCode::INTERNAL_SERVER_ERROR))
         .build();
-    let api =
-        PolicyApi::new_with_safe_reqwest_builder(|builder| transport.configure_reqwest(builder))
-            .expect("mock client");
+    let api = PolicyApi::new_with_safe_reqwest_builder_and_retry_mode(
+        concord_core::prelude::RetryMode::Disabled,
+        |builder| Ok(transport.configure_reqwest(builder)),
+    )
+    .expect("mock client");
 
     let err = api
-        .retry_only()
+        .unrated()
         .execute()
         .await
-        .expect_err("max_attempts=2 should stop after two 500s");
+        .expect_err("disabled mode must return the first 500");
 
     assert_eq!(err.http_status(), Some(StatusCode::INTERNAL_SERVER_ERROR));
-    handle.assert_recorded_len(2);
+    handle.assert_recorded_len(1);
     handle.finish();
 }
 
 #[tokio::test]
-async fn retry_after_handled_by_rate_limiter_does_not_sleep_twice() {
+async fn retry_after_is_terminal_and_does_not_resend_current_call() {
     let limiter = Arc::new(RecordingLimiter::limited_with_cooldown(
         Duration::from_secs(5),
     ));
@@ -41,7 +42,6 @@ async fn retry_after_handled_by_rate_limiter_does_not_sleep_twice() {
             MockReply::status(StatusCode::TOO_MANY_REQUESTS)
                 .with_header(RETRY_AFTER, HeaderValue::from_static("5")),
         )
-        .reply(MockReply::ok_text(Bytes::from_static(b"ok")))
         .build();
     let mut api =
         PolicyApi::new_with_safe_reqwest_builder(|builder| transport.configure_reqwest(builder))
@@ -50,22 +50,14 @@ async fn retry_after_handled_by_rate_limiter_does_not_sleep_twice() {
         cfg.rate_limiter(limiter.clone());
     });
 
-    let value = tokio::time::timeout(Duration::from_millis(250), api.rate_limited().execute())
+    let error = tokio::time::timeout(Duration::from_millis(250), api.rate_limited().execute())
         .await
-        .expect("rate limiter handled retry-after; client must not sleep for header duration")
-        .expect("retry after 429 succeeds");
+        .expect("the final 429 must not sleep the current call")
+        .expect_err("the final 429 remains terminal");
 
-    assert_eq!(value, "ok");
-    assert_eq!(
-        limiter.events(),
-        vec![
-            "rate_acquire",
-            "rate_response:429",
-            "rate_acquire",
-            "rate_response:200",
-        ]
-    );
-    handle.assert_recorded_len(2);
+    assert_eq!(error.http_status(), Some(StatusCode::TOO_MANY_REQUESTS));
+    assert_eq!(limiter.events(), vec!["rate_acquire", "rate_response:429",]);
+    handle.assert_recorded_len(1);
     handle.finish();
 }
 

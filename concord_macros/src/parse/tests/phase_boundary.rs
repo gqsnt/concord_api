@@ -1,9 +1,9 @@
 use super::helpers::{endpoint_at_top_level, parse_ok};
-use crate::ast::{AuthUseDecl, AuthUseKind, PolicyStmt, PolicyValue, RateLimitSpec, RetrySpec};
+use crate::ast::{AuthUseDecl, AuthUseKind, PolicyStmt, PolicyValue, RateLimitSpec};
 use syn::Expr;
 
 #[test]
-fn parser_preserves_raw_names_for_auth_retry_and_rate_limit() {
+fn parser_preserves_raw_names_for_auth_and_rate_limit() {
     let ast = parse_ok(
         r#"
         api! {
@@ -14,7 +14,6 @@ fn parser_preserves_raw_names_for_auth_retry_and_rate_limit() {
             GET Ping
                 path ["ping"]
                 auth bearer missing_credential
-                retry missing_retry
                 rate_limit missing_rate_limit
                 -> Json<String>
         }
@@ -29,11 +28,6 @@ fn parser_preserves_raw_names_for_auth_retry_and_rate_limit() {
             }
             other => panic!("expected bearer auth use, got {other:?}"),
         },
-    }
-
-    match endpoint.retry.as_ref().expect("retry") {
-        RetrySpec::Profile(profile) => assert_eq!(profile.to_string(), "missing_retry"),
-        other => panic!("expected raw retry profile, got {other:?}"),
     }
 
     match endpoint.rate_limit.as_ref().expect("rate_limit") {

@@ -43,7 +43,6 @@ fn normalize_routes_splits_scope_host_and_path_in_order() {
     assert!(inner.policy.headers.is_none());
     assert!(inner.policy.query.is_none());
     assert!(inner.auth_uses.is_empty());
-    assert!(inner.retry.is_none());
     assert!(inner.rate_limit.is_none());
 
     let endpoint = single_child_endpoint(inner);
@@ -164,7 +163,6 @@ fn normalize_route_layer_ownership_does_not_copy_outer_state_to_synthetic_path_l
                 headers {
                     "x-scope" = tenant_id
                 }
-                retry read
                 rate_limit api
                 rate_limit key tenant_key = tenant_id
                 profile audit
@@ -182,7 +180,6 @@ fn normalize_route_layer_ownership_does_not_copy_outer_state_to_synthetic_path_l
     assert_eq!(outer.auth_uses.len(), 1);
     assert!(outer.policy.headers.is_some());
     assert!(outer.policy.query.is_some());
-    assert!(outer.retry.is_some());
     assert!(outer.rate_limit.is_some());
     assert_eq!(outer.rate_limit_keys.len(), 1);
     assert_eq!(outer.behavior_uses.len(), 1);
@@ -193,7 +190,6 @@ fn normalize_route_layer_ownership_does_not_copy_outer_state_to_synthetic_path_l
     assert!(inner.auth_uses.is_empty());
     assert!(inner.policy.headers.is_none());
     assert!(inner.policy.query.is_none());
-    assert!(inner.retry.is_none());
     assert!(inner.rate_limit.is_none());
     assert!(inner.rate_limit_keys.is_empty());
     assert!(inner.behavior_uses.is_empty());

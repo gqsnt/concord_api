@@ -8,7 +8,6 @@ pub(super) struct WalkItemsCtx<'a> {
     pub(super) auth_credentials: &'a BTreeMap<String, AuthCredentialIr>,
     pub(super) client_auth: &'a [AuthUsePlanIr],
     pub(super) client_default_behavior_names: &'a [String],
-    pub(super) retry_profiles: &'a BTreeMap<String, RetryConfigResolved>,
     pub(super) rate_limit_profiles: &'a BTreeMap<String, RateLimitPlanTemplate>,
     pub(super) behavior_profiles: &'a BTreeMap<String, BehaviorResolved>,
     pub(super) layers: &'a mut Vec<LayerIr>,
@@ -23,7 +22,6 @@ pub(super) struct EndpointAnalysisCtx<'a> {
     auth_credentials: &'a BTreeMap<String, AuthCredentialIr>,
     client_auth: &'a [AuthUsePlanIr],
     client_default_behavior_names: &'a [String],
-    retry_profiles: &'a BTreeMap<String, RetryConfigResolved>,
     rate_limit_profiles: &'a BTreeMap<String, RateLimitPlanTemplate>,
     behavior_profiles: &'a BTreeMap<String, BehaviorResolved>,
     layers: &'a [LayerIr],
@@ -46,7 +44,6 @@ pub(super) fn walk_items(
     items: &[NormNode],
     ancestry: &mut Vec<usize>,
     ctx: &mut WalkItemsCtx<'_>,
-    inherited_retry: Option<RetryConfigResolved>,
     scope_depth: usize,
 ) -> Result<()> {
     for it in items {
@@ -81,14 +78,6 @@ pub(super) fn walk_items(
                     ctx.auth_vars,
                     Some(&layer_vars),
                 )?;
-                let retry_directive = if ld.retry.is_some() {
-                    resolve_retry_spec(ld.retry.as_ref(), ctx.retry_profiles)?
-                } else {
-                    behavior.retry.clone()
-                };
-                let (retry, next_retry) =
-                    materialize_retry_directive(inherited_retry.clone(), retry_directive);
-                policy.retry = retry;
                 let mut visible_keys = rate_limit_key_bindings_for_ancestry(ancestry, ctx.layers);
                 for binding in &key_bindings {
                     visible_keys.insert(binding.name.clone(), binding.clone());
@@ -130,7 +119,7 @@ pub(super) fn walk_items(
                 });
 
                 ancestry.push(id);
-                walk_items(&ld.items, ancestry, ctx, next_retry, next_scope_depth)?;
+                walk_items(&ld.items, ancestry, ctx, next_scope_depth)?;
                 ancestry.pop();
             }
             NormNode::Endpoint(ed) => {
@@ -142,13 +131,11 @@ pub(super) fn walk_items(
                     auth_credentials: ctx.auth_credentials,
                     client_auth: ctx.client_auth,
                     client_default_behavior_names: ctx.client_default_behavior_names,
-                    retry_profiles: ctx.retry_profiles,
                     rate_limit_profiles: ctx.rate_limit_profiles,
                     behavior_profiles: ctx.behavior_profiles,
                     layers: ctx.layers.as_slice(),
                 };
-                let endpoint_ir =
-                    analyze_endpoint(ed, ancestry, &analysis_ctx, inherited_retry.clone())?;
+                let endpoint_ir = analyze_endpoint(ed, ancestry, &analysis_ctx)?;
                 ctx.endpoints.push(endpoint_ir);
             }
         }
@@ -574,7 +561,6 @@ pub(super) fn analyze_endpoint(
     ed: &NormEndpoint,
     ancestry: &[usize],
     ctx: &EndpointAnalysisCtx<'_>,
-    inherited_retry: Option<RetryConfigResolved>,
 ) -> syn::Result<ResolvedEndpoint> {
     use std::collections::BTreeMap;
 
@@ -664,13 +650,6 @@ pub(super) fn analyze_endpoint(
     )?;
     validate_behavior_uses_unique_at_site(&ed.behavior_uses)?;
     let behavior = resolve_behavior_uses(&ed.behavior_uses, ctx.behavior_profiles)?;
-    let retry_directive = if ed.retry.is_some() {
-        resolve_retry_spec(ed.retry.as_ref(), ctx.retry_profiles)?
-    } else {
-        behavior.retry.clone()
-    };
-    let (retry, _next_retry) = materialize_retry_directive(inherited_retry, retry_directive);
-    policy.retry = retry;
     let endpoint_decls = ep_var_order
         .iter()
         .filter_map(|key| ep_vars.get(key))

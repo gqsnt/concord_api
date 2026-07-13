@@ -1,5 +1,5 @@
 error: duplicate profile `read` at this attachment site
-  --> tests/trybuild/fail/sema/policy/same_layer_duplicate_behavior.rs:15:21
+  --> tests/trybuild/fail/sema/policy/same_layer_duplicate_behavior.rs:13:21
    |
-15 |             profile read
+13 |             profile read
    |                     ^^^^

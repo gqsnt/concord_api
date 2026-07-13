@@ -50,15 +50,6 @@ api! {
             "user-agent" = "ClientApiExample/1.0",
             "x-client-trace" = vars.client_trace
         }
-        default {
-            retry read
-        }
-        retry read {
-                max_attempts 2
-                methods [GET, HEAD]
-                on [429, 500, 502, 503, 504]
-                retry_after
-        }
     }
 
     scope jsonplaceholder {

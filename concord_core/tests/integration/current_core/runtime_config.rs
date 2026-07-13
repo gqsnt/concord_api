@@ -2,8 +2,7 @@
 
 use super::common::{
     GateTransport, MockResponse, MockTransport, ObservationRateLimiter, RecordingRateLimiter,
-    TestAuthVars, TestCx, TextEndpoint, auth_policy, client, retry_policy,
-    retry_policy_for_statuses,
+    TestAuthVars, TestCx, TextEndpoint, auth_policy, client,
 };
 use crate::support::assert_error_chain_does_not_contain_any;
 use bytes::Bytes;
@@ -62,7 +61,7 @@ async fn client_config_applies_to_requests() {
 }
 
 #[tokio::test]
-async fn client_config_overrides_rate_limit_cooldown_cap() {
+async fn client_config_caps_retry_after_and_preserves_terminal_429() {
     const RESPONSE_SENTINEL: &str = "PRSEC7_RUNTIME_CONFIG_RATE_LIMIT_SENTINEL";
 
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -81,22 +80,14 @@ async fn client_config_overrides_rate_limit_cooldown_cap() {
 
     let err = client
         .request(TextEndpoint {
-            policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
+            policy: ResolvedPolicy::default(),
             ..Default::default()
         })
         .response()
         .await
-        .expect_err("rate-limit cooldown cap override should fail closed");
+        .expect_err("the terminal 429 must be returned without a resend");
 
-    assert_eq!(
-        err.category(),
-        concord_core::error::ErrorCategory::RateLimit
-    );
-    assert_eq!(
-        err.rate_limit_error().map(|err| err.kind()),
-        Some(concord_core::advanced::RateLimitErrorKind::InvalidConfiguration)
-    );
-    assert!(err.to_string().contains("configured maximum"));
+    assert!(matches!(err, ApiClientError::HttpStatus { .. }));
     assert_eq!(sent.sent_count().await, 1);
     assert_error_chain_does_not_contain_any(&err, &[RESPONSE_SENTINEL]);
 }
@@ -234,31 +225,6 @@ async fn per_request_timeout_override_wins_and_does_not_leak() -> Result<(), Api
     let requests = transport.requests().await;
     assert_eq!(requests[0].timeout, Some(Duration::from_secs(2)));
     assert_eq!(requests[1].timeout, Some(Duration::from_secs(5)));
-    Ok(())
-}
-
-#[tokio::test]
-async fn per_request_attempt_override_wins_and_does_not_leak() -> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let transport = MockTransport::new(
-        events,
-        vec![
-            MockResponse::text(StatusCode::OK, "one"),
-            MockResponse::text(StatusCode::OK, "two"),
-        ],
-    );
-    let client = client(TestAuthVars::default(), transport.clone());
-
-    client
-        .request(TextEndpoint::default())
-        .attempt(7)
-        .response()
-        .await?;
-    client.request(TextEndpoint::default()).response().await?;
-
-    let requests = transport.requests().await;
-    assert_eq!(requests[0].meta.attempt, Some(7));
-    assert_eq!(requests[1].meta.attempt, Some(0));
     Ok(())
 }
 

@@ -21,9 +21,6 @@ fn emit_policy_apply_fn(policy: &PolicyBlocksResolved, ctx: PolicyEmitCtx) -> To
         let ex = emit_value_expr(t, ctx);
         ops.push(quote! { policy.set_timeout(#ex); });
     }
-    if let Some(retry) = emit_retry_op(&policy.retry) {
-        ops.push(retry);
-    }
     if let Some(rate_limit) = emit_rate_limit_op(&policy.rate_limit, ctx) {
         ops.push(rate_limit);
     }

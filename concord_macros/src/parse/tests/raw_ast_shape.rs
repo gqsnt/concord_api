@@ -8,10 +8,6 @@ fn parses_current_api_into_raw_ast_with_endpoint_line_metadata() {
         r#"
         client Api {
             base "https://example.com"
-            retry read {
-                max_attempts 2
-                methods [GET]
-            }
         }
 
         scope users(id: u64) {

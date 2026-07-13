@@ -229,6 +229,6 @@ Rules:
 - Without an expected page size, Concord cannot generically detect a short page before `advance()`.
 - `progress_key` is used for loop detection when enabled.
 - Pagination loop diagnostics keep the progress key internal; public errors report only safe metadata such as page index and key kind/length, not raw cursor or byte contents.
-- Runtime retry, auth, rate-limit, and redaction behavior still follow the fixed pipeline.
+- Runtime auth, rate-limit, execution, and redaction behavior still follow the fixed pipeline; retry mode is fixed during managed-client construction.
 
 Complete examples live in `concord_examples/src/custom_codec.rs` and `concord_examples/src/custom_pagination.rs`.

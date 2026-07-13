@@ -52,6 +52,43 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         ))
     }
 
+    /// Constructs a client whose managed Reqwest transport uses the selected
+    /// general [`RetryMode`](crate::retry_mode::RetryMode).
+    ///
+    /// Retry policy is a client-construction decision. Selecting
+    /// [`RetryMode::Status`](crate::retry_mode::RetryMode::Status) is only
+    /// permitted when this context is classified as a fixed single origin by
+    /// the versioned descriptor ABI; otherwise this fails before any request,
+    /// provider, or body side effect.
+    pub fn with_retry_mode(
+        vars: Cx::Vars,
+        auth_vars: Cx::AuthVars,
+        retry_mode: crate::retry_mode::RetryMode,
+    ) -> Result<Self, crate::retry_mode::RetryModeError> {
+        Self::with_reqwest_builder_and_retry_mode(vars, auth_vars, retry_mode, |builder| {
+            Ok(builder)
+        })
+    }
+
+    /// Retry-mode aware form of [`Self::with_reqwest_builder_fallible`].
+    pub fn with_reqwest_builder_and_retry_mode(
+        vars: Cx::Vars,
+        auth_vars: Cx::AuthVars,
+        retry_mode: crate::retry_mode::RetryMode,
+        configure: impl FnOnce(
+            crate::transport::SafeReqwestBuilder,
+        ) -> Result<
+            crate::transport::SafeReqwestBuilder,
+            crate::transport::ReqwestClientBuildError,
+        >,
+    ) -> Result<Self, crate::retry_mode::RetryModeError> {
+        let install = retry_mode.resolve(Cx::ORIGIN)?;
+        let managed_client = crate::transport::ManagedReqwestClient::with_builder_fallible_retry(
+            configure, install,
+        )?;
+        Ok(Self::with_managed_client(vars, auth_vars, managed_client))
+    }
+
     /// Clearer spelling for [`Self::with_reqwest_builder`].
     pub fn with_safe_reqwest_builder(
         vars: Cx::Vars,
@@ -234,54 +271,6 @@ impl<Cx: ClientContext> ApiClient<Cx> {
     }
 
     #[inline]
-    pub fn retry_policy(&self) -> &Arc<dyn RetryPolicy> {
-        self.runtime_state.retry_policy()
-    }
-
-    #[inline]
-    pub fn set_retry_policy(&mut self, retry_policy: Arc<dyn RetryPolicy>) {
-        Arc::make_mut(&mut self.runtime_state).set_retry_policy(retry_policy);
-    }
-
-    #[inline]
-    pub fn with_retry_policy(mut self, retry_policy: Arc<dyn RetryPolicy>) -> Self {
-        Arc::make_mut(&mut self.runtime_state).set_retry_policy(retry_policy);
-        self
-    }
-
-    #[inline]
-    pub fn max_attempts(&self) -> u32 {
-        self.runtime_state.max_attempts()
-    }
-
-    #[inline]
-    pub fn set_max_attempts(&mut self, max_attempts: u32) {
-        Arc::make_mut(&mut self.runtime_state).set_max_attempts(max_attempts);
-    }
-
-    #[inline]
-    pub fn with_max_attempts(mut self, max_attempts: u32) -> Self {
-        Arc::make_mut(&mut self.runtime_state).set_max_attempts(max_attempts);
-        self
-    }
-
-    #[inline]
-    pub fn respect_retry_after(&self) -> bool {
-        self.runtime_state.respect_retry_after()
-    }
-
-    #[inline]
-    pub fn set_respect_retry_after(&mut self, enabled: bool) {
-        Arc::make_mut(&mut self.runtime_state).set_respect_retry_after(enabled);
-    }
-
-    #[inline]
-    pub fn with_respect_retry_after(mut self, enabled: bool) -> Self {
-        Arc::make_mut(&mut self.runtime_state).set_respect_retry_after(enabled);
-        self
-    }
-
-    #[inline]
     pub fn rate_limiter(&self) -> &Arc<dyn RateLimiter> {
         self.runtime_state.rate_limiter()
     }
@@ -329,10 +318,6 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         let mut config = crate::runtime::RuntimeConfig {
             hooks: self.runtime_state.hooks().clone(),
             rate_limiter: self.runtime_state.rate_limiter().clone(),
-            retry_policy: self.runtime_state.retry_policy().clone(),
-            retry_admission: self.runtime_state.retry_admission().clone(),
-            max_attempts: self.runtime_state.max_attempts(),
-            respect_retry_after: self.runtime_state.respect_retry_after(),
             max_rate_limit_cooldown: self.runtime_state.max_rate_limit_cooldown(),
             pagination_detect_loops: self.pagination_detect_loops,
             debug: crate::runtime::DebugConfig {

@@ -37,6 +37,13 @@ impl ClientContext for PerfCx {
     type AuthState = ();
     const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
     const DOMAIN: &'static str = "example.com";
+    const ORIGIN: concord_core::__private::v1::ApiOriginDescriptor =
+        concord_core::__private::v1::ApiOriginDescriptor::FixedSingleOrigin(
+            concord_core::__private::v1::FixedOriginDescriptor {
+                scheme: concord_core::__private::v1::OriginScheme::Https,
+                authority: "example.com",
+            },
+        );
 
     fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {}
 
@@ -74,6 +81,30 @@ impl ClientContext for PerfCx {
             };
             Ok(PreparedAuthCredential::new(applied, application))
         })
+    }
+
+    fn plan_auth_response(
+        requirement: &AuthRequirement,
+        applied: &AuthAppliedCredential,
+        _vars: &Self::Vars,
+        _auth: &Self::AuthVars,
+        _meta: &concord_core::advanced::RequestMeta,
+        status: http::StatusCode,
+        _headers: &http::HeaderMap,
+    ) -> Result<concord_core::advanced::AuthRejectionAction, AuthError> {
+        if status == http::StatusCode::UNAUTHORIZED {
+            return Ok(concord_core::advanced::AuthRejectionAction::refresh(
+                requirement,
+                applied,
+                concord_core::advanced::AuthRetryReason::Unauthorized,
+                None,
+            ));
+        }
+        Ok(concord_core::advanced::AuthRejectionAction::terminal(
+            requirement,
+            applied,
+            None,
+        ))
     }
 }
 
@@ -226,10 +257,7 @@ pub async fn execute_raw_plan(
     if let Some(timeout) = overrides.timeout {
         pending = pending.timeout(timeout);
     }
-    pending
-        .attempt(overrides.attempt)
-        .execute_raw_response()
-        .await
+    pending.execute_raw_response().await
 }
 
 #[cfg(test)]
@@ -297,9 +325,9 @@ mod tests {
         let transport = MockTransport::repeating(MockResponse::empty(StatusCode::OK));
         let client = client(transport.clone());
         let plan = request_plan(
-            "RawPlanTypedAttempt",
+            "RawPlanTypedExecution",
             Method::GET,
-            "/perf/raw-plan-typed-attempt",
+            "/perf/raw-plan-typed-execution",
             ResolvedPolicy::default(),
             PreparedBody::empty(),
         );
@@ -314,7 +342,7 @@ mod tests {
     }
 
     #[test]
-    fn raw_plan_adapter_preserves_debug_timeout_and_attempt_overrides() {
+    fn raw_plan_adapter_preserves_debug_and_timeout_overrides() {
         let transport = MockTransport::repeating(MockResponse::empty(StatusCode::OK));
         let sink = Arc::new(RecordingDebugSink::default());
         let mut client = client(transport.clone());
@@ -329,7 +357,6 @@ mod tests {
         );
         plan.overrides.debug_level = Some(DebugLevel::V);
         plan.overrides.timeout = Some(std::time::Duration::from_secs(17));
-        plan.overrides.attempt = 4;
 
         runtime()
             .block_on(execute_raw_plan(&client, plan))
@@ -340,7 +367,6 @@ mod tests {
             sink.request_level.load(Ordering::Relaxed),
             DebugLevel::V as u8
         );
-        assert_eq!(request.attempt, Some(4));
         assert_eq!(request.timeout, Some(std::time::Duration::from_secs(17)));
     }
 
@@ -399,7 +425,7 @@ mod tests {
         let stream = stream::iter(vec![Ok::<Bytes, StreamBodyError>(Bytes::from_static(
             b"one-shot",
         ))]);
-        let mut plan = request_plan(
+        let plan = request_plan(
             "RawPlanOneShot",
             Method::POST,
             "/perf/raw-plan-one-shot",
@@ -409,8 +435,6 @@ mod tests {
                 Some(HeaderValue::from_static("application/octet-stream")),
             ),
         );
-        plan.overrides.attempt = 2;
-
         runtime()
             .block_on(execute_raw_plan(&client, plan))
             .expect("one-shot raw response should succeed");

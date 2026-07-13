@@ -185,6 +185,12 @@ fn valid_dns_label(label: &str) -> bool {
 pub(super) fn classify_api_origin(endpoints: &[ResolvedEndpoint]) -> ApiOriginIr {
     let mut origins = std::collections::BTreeSet::new();
     for endpoint in endpoints {
+        // A pagination binding that can alter a host component makes the API
+        // ineligible for client-wide fixed-origin status retry even when the
+        // initial endpoint origin was otherwise classified as fixed.
+        if endpoint.descriptor.pagination_can_change_origin {
+            return ApiOriginIr::Dynamic;
+        }
         match &endpoint.descriptor.origin {
             EndpointOriginIr::Fixed(origin) => {
                 origins.insert(origin.clone());

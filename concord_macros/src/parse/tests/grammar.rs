@@ -11,10 +11,6 @@ fn parses_compact_current_dsl_fixture() {
                 var trace_id: String
                 secret api_key: String
 
-                retry read {
-                    max_attempts 2
-                }
-
                 rate_limit api {
                     bucket request by [endpoint] {
                         10 / 1s
@@ -22,7 +18,6 @@ fn parses_compact_current_dsl_fixture() {
                 }
 
                 default {
-                    retry read
                     rate_limit api
                 }
             }
@@ -43,7 +38,6 @@ fn parses_compact_current_dsl_fixture() {
     assert_eq!(ast.client.vars.as_ref().unwrap().decls.len(), 1);
     assert!(ast.client.auth_vars.is_some());
     assert_eq!(ast.client.auth_vars.as_ref().unwrap().decls.len(), 1);
-    assert!(ast.client.retry.is_some());
     assert_eq!(ast.client.rate_limit.as_ref().unwrap().default.len(), 1);
     assert_eq!(
         ast.client.rate_limit.as_ref().unwrap().default[0].to_string(),
@@ -144,7 +138,7 @@ fn parses_current_nested_scopes() {
 }
 
 #[test]
-fn parses_current_policy_profiles() {
+fn parses_current_rate_limit_profiles() {
     let ast = parse_ok(
         r#"
         api! {
@@ -152,13 +146,7 @@ fn parses_current_policy_profiles() {
                 base "https://example.com"
 
                 default {
-                    retry read
                     rate_limit app
-                }
-
-                retry read {
-                    max_attempts 2
-                    methods [GET]
                 }
 
                 rate_limit app {
@@ -171,9 +159,7 @@ fn parses_current_policy_profiles() {
         "#,
     );
 
-    assert!(ast.client.retry_profiles.is_some());
     assert!(ast.client.rate_limit.is_some());
-    assert!(ast.client.retry.is_some());
     assert_eq!(ast.client.rate_limit.as_ref().unwrap().default.len(), 1);
     assert_eq!(
         ast.client.rate_limit.as_ref().unwrap().default[0].to_string(),
@@ -190,11 +176,6 @@ fn parses_grouped_policy_profiles() {
                 base "https://example.com"
 
                 policies {
-                    retry read {
-                        max_attempts 2
-                        methods [GET]
-                    }
-
                     rate_limit app {
                         bucket application by [host] {
                             10 / 1s
@@ -208,7 +189,6 @@ fn parses_grouped_policy_profiles() {
         "#,
     );
 
-    assert!(ast.client.retry_profiles.is_some());
     assert!(ast.client.rate_limit.is_some());
 }
 
@@ -221,9 +201,7 @@ fn parses_grouped_profiles_and_singular_default_profile() {
                 base "https://example.com"
 
                 profiles {
-                    profile protected_read {
-                        retry off
-                    }
+                    profile protected_read {}
                 }
 
                 default {

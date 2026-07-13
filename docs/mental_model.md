@@ -20,7 +20,10 @@ client root
 - `scope` is a branch and can add host, path, auth, and policy context.
 - An endpoint stanza is a leaf and describes one HTTP operation.
 
-For larger clients, client configuration is usually grouped into `auth { ... }`, `policies { ... }`, `profiles { ... }`, and `default { ... }`. Profiles give semantic names to repeated auth, retry, and rate-limit combinations while lowering to ordinary policy data before code generation.
+For larger clients, client configuration is usually grouped into `auth { ... }`,
+`policies { ... }`, `profiles { ... }`, and `default { ... }`. Profiles give
+semantic names to repeated auth and rate-limit combinations. Retry mode is
+selected once while constructing the managed client, outside the endpoint DSL.
 
 Profiles may extend other profiles; inheritance is resolved during semantic analysis before code generation.
 
@@ -29,10 +32,12 @@ Profiles may extend other profiles; inheritance is resolved during semantic anal
 Generated endpoint code creates a request plan. The core runtime executes that plan with fixed ordering:
 
 ```text
-public head -> auth preflight -> credentials -> attempt body -> rate-limit -> sanitized observers -> auth materialization -> transport -> classify -> retry -> decode
+logical call -> collision preflight -> provider preparation -> rate-limit -> sanitized hook -> secret materialization -> execution -> optional authentication recovery -> decode
 ```
 
-The runtime receives resolved semantic data. It does not need to know the DSL syntax that produced the plan.
+The runtime receives resolved semantic data. It does not need to know the DSL
+syntax that produced the plan. Reqwest-internal resends occur inside an
+execution and are not visible Concord executions.
 
 Concord does not coalesce ordinary endpoint requests in v1. Two identical requests remain two request executions unless the application chooses a higher-level reuse strategy outside Concord.
 

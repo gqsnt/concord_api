@@ -3,13 +3,11 @@ use super::*;
 #[derive(Clone, Debug, Default)]
 pub(crate) struct BehaviorResolved {
     pub auth_uses: Vec<NormAuthUse>,
-    pub retry: Option<RetryDirectiveResolved>,
     pub rate_limit_specs: Vec<RateLimitSpec>,
 }
 
 pub(super) fn resolve_behavior_profiles(
     block: Option<&BehaviorProfilesBlock>,
-    retry_profiles: &BTreeMap<String, RetryConfigResolved>,
     rate_limit_profiles: &BTreeMap<String, RateLimitPlanTemplate>,
 ) -> Result<BTreeMap<String, BehaviorResolved>> {
     let Some(block) = block else {
@@ -35,7 +33,6 @@ pub(super) fn resolve_behavior_profiles(
             &raw_profiles,
             &mut visiting,
             &mut resolved,
-            retry_profiles,
             rate_limit_profiles,
         )?;
     }
@@ -51,7 +48,6 @@ pub(super) fn resolve_behavior_profile(
     raw_profiles: &BTreeMap<String, &BehaviorProfileDef>,
     visiting: &mut std::collections::BTreeSet<String>,
     resolved: &mut BTreeMap<String, BehaviorResolved>,
-    retry_profiles: &BTreeMap<String, RetryConfigResolved>,
     rate_limit_profiles: &BTreeMap<String, RateLimitPlanTemplate>,
 ) -> Result<BehaviorResolved> {
     if let Some(value) = resolved.get(name) {
@@ -87,7 +83,6 @@ pub(super) fn resolve_behavior_profile(
             raw_profiles,
             visiting,
             resolved,
-            retry_profiles,
             rate_limit_profiles,
         )?
     } else {
@@ -101,7 +96,6 @@ pub(super) fn resolve_behavior_profile(
 
     let current = BehaviorResolved {
         auth_uses: normalize_auth_uses(profile.patch.auth_uses.clone())?,
-        retry: resolve_retry_spec(profile.patch.retry.as_ref(), retry_profiles)?,
         rate_limit_specs,
     };
 
@@ -182,9 +176,6 @@ pub(super) fn merge_behavior(
     child: BehaviorResolved,
 ) -> BehaviorResolved {
     parent.auth_uses.extend(child.auth_uses);
-    if child.retry.is_some() {
-        parent.retry = child.retry;
-    }
     parent.rate_limit_specs.extend(child.rate_limit_specs);
     parent
 }

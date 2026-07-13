@@ -433,6 +433,23 @@ fn emit_client_wrapper(
                 Self { inner: __inner }
             }
 
+            #[doc = "Create a client with one of Concord's three client-level Reqwest retry modes."]
+            #[inline]
+            pub fn new_with_retry_mode(
+                #( #ctor_args, )*
+                retry_mode: ::concord_core::prelude::RetryMode,
+            ) -> ::core::result::Result<Self, ::concord_core::prelude::RetryModeError> {
+                let vars = #vars_ty::new( #( #new_pass ),* );
+                let auth_vars = #auth_vars_ty::new( #( #new_auth_pass ),* );
+                let mut __inner = ::concord_core::prelude::ApiClient::<#cx_ty>::with_retry_mode(
+                    vars,
+                    auth_vars,
+                    retry_mode,
+                )?;
+                #configure_rate_limiter
+                ::core::result::Result::Ok(Self { inner: __inner })
+            }
+
             #[doc = "Create a client with Concord's safe managed Reqwest configuration surface."]
             #[inline]
             pub fn new_with_safe_reqwest_builder(
@@ -462,6 +479,30 @@ fn emit_client_wrapper(
                 let mut __inner = ::concord_core::prelude::ApiClient::<#cx_ty>::with_safe_reqwest_builder_fallible(
                     vars,
                     auth_vars,
+                    configure,
+                )?;
+                #configure_rate_limiter
+                ::core::result::Result::Ok(Self { inner: __inner })
+            }
+
+            #[doc = "Create a retry-mode client with Concord's safe managed Reqwest configuration surface."]
+            #[inline]
+            pub fn new_with_safe_reqwest_builder_and_retry_mode(
+                #( #ctor_args, )*
+                retry_mode: ::concord_core::prelude::RetryMode,
+                configure: impl FnOnce(
+                    ::concord_core::advanced::SafeReqwestBuilder,
+                ) -> ::core::result::Result<
+                    ::concord_core::advanced::SafeReqwestBuilder,
+                    ::concord_core::advanced::ReqwestClientBuildError,
+                >,
+            ) -> ::core::result::Result<Self, ::concord_core::prelude::RetryModeError> {
+                let vars = #vars_ty::new( #( #new_pass ),* );
+                let auth_vars = #auth_vars_ty::new( #( #new_auth_pass ),* );
+                let mut __inner = ::concord_core::prelude::ApiClient::<#cx_ty>::with_reqwest_builder_and_retry_mode(
+                    vars,
+                    auth_vars,
+                    retry_mode,
                     configure,
                 )?;
                 #configure_rate_limiter

@@ -904,21 +904,20 @@ async fn pagination_runtime_requires_runtime_support_when_missing() -> Result<()
 
 #[tokio::test]
 
-async fn retry_on_page_n_does_not_advance_page_state() -> Result<(), ApiClientError> {
+async fn terminal_status_on_page_n_does_not_advance_page_state() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
-        vec![
-            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
-            MockResponse::text(StatusCode::OK, "a,b"),
-            MockResponse::text(StatusCode::OK, "c"),
-        ],
+        vec![MockResponse::text(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "terminal",
+        )],
     );
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
 
     let endpoint = ItemsEndpoint {
-        policy: retry_policy(2),
+        policy: ResolvedPolicy::default(),
         pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 2,
@@ -926,32 +925,20 @@ async fn retry_on_page_n_does_not_advance_page_state() -> Result<(), ApiClientEr
         ..Default::default()
     };
 
-    let items = client
+    let err = client
         .request(endpoint)
         .paginate(PaginationTermination::hard_page_cap(4))
         .collect()
-        .await?;
+        .await
+        .expect_err("a terminal status must not advance pagination");
 
-    assert_eq!(
-        items,
-        vec!["a".to_string(), "b".to_string(), "c".to_string()]
-    );
+    assert_eq!(err.http_status(), Some(StatusCode::INTERNAL_SERVER_ERROR));
     let requests = sent.requests().await;
-    assert_eq!(requests.len(), 3);
+    assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].meta.page_index, Some(0));
-    assert_eq!(requests[1].meta.page_index, Some(0));
     assert_eq!(
         query_value(&requests[0].url, "offset"),
         Some("0".to_string())
-    );
-    assert_eq!(
-        query_value(&requests[1].url, "offset"),
-        Some("0".to_string())
-    );
-    assert_eq!(requests[2].meta.page_index, Some(1));
-    assert_eq!(
-        query_value(&requests[2].url, "offset"),
-        Some("2".to_string())
     );
     Ok(())
 }

@@ -6,13 +6,6 @@ api! {
         base "https://example.com"
 
         policies {
-            retry read {
-                max_attempts 2
-                methods [GET]
-                on [429, 500]
-                retry_after
-            }
-
             rate_limit app {
                 bucket application by [host] {
                     100 / 1s
@@ -23,13 +16,11 @@ api! {
 
         profiles {
             profile read {
-                retry read
                 rate_limit app
             }
         }
 
         default {
-            retry read
             rate_limit app
         }
     }
@@ -39,9 +30,9 @@ api! {
         path ["text"]
         -> Text<String>
 
-    GET RetryOnly
-        as retry_only
-        path ["retry"]
+    GET Unrated
+        as unrated
+        path ["unrated"]
         rate_limit off
         -> Text<String>
 

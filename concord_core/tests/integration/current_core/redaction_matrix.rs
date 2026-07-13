@@ -2,7 +2,7 @@
 
 use super::common::{
     CapturedTransportRequest, ItemsEndpoint, MockOutcome, MockResponse, MockTransport,
-    PaginationVariant, TestAuthVars, auth_policy, client, request_plan, retry_policy,
+    PaginationVariant, TestAuthVars, auth_policy, client, request_plan,
 };
 use crate::support::{
     RedactionSentinels, assert_error_chain_does_not_contain_any, assert_text_does_not_contain_any,
@@ -539,18 +539,18 @@ async fn auth_rejection_redacts_auth_sentinel_and_context() {
 }
 
 #[tokio::test]
-async fn retry_exhaustion_redacts_request_and_response_sentinels() {
+async fn terminal_status_redacts_request_and_response_sentinels() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
-        vec![
-            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, RESPONSE_BODY_SENTINEL),
-            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, RESPONSE_BODY_SENTINEL),
-        ],
+        vec![MockResponse::text(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            RESPONSE_BODY_SENTINEL,
+        )],
     );
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
-    let mut policy = retry_policy(2);
+    let mut policy = concord_core::internal::ResolvedPolicy::default();
     policy.headers.insert(
         HeaderName::from_static("x-redaction-matrix"),
         HeaderValue::from_static(REQUEST_HEADER_SENTINEL),
@@ -560,16 +560,16 @@ async fn retry_exhaustion_redacts_request_and_response_sentinels() {
     let err = client
         .execute_plan::<Text<String>>(plan)
         .await
-        .expect_err("retry exhaustion should surface as a status error");
+        .expect_err("terminal status should surface as a status error");
 
     assert!(matches!(err, ApiClientError::HttpStatus { .. }));
     assert_eq!(err.category(), ErrorCategory::HttpStatus);
     assert_eq!(err.context().endpoint, "RetryMatrix");
     assert_eq!(err.context().method, Method::GET);
     assert_eq!(err.http_status(), Some(StatusCode::INTERNAL_SERVER_ERROR));
-    assert_eq!(sent.sent_count().await, 2);
+    assert_eq!(sent.sent_count().await, 1);
     let requests = sent.requests().await;
-    assert_eq!(requests.len(), 2);
+    assert_eq!(requests.len(), 1);
     for request in &requests {
         assert_header_matches_sentinel(
             request,

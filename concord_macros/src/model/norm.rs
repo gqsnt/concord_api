@@ -3,7 +3,7 @@
 use crate::ast::{
     AuthCredentials, AuthUseKind, BehaviorProfilesBlock, BehaviorUseSpec, PaginateSpec,
     PolicyBlocks, RateLimitKeyBindingSpec, RateLimitProfilesBlock, RateLimitSpec, RawRequestIo,
-    RawResponseIo, RetryProfilesBlock, RetrySpec, RouteExpr, VarDeclNoWire,
+    RawResponseIo, RouteExpr, VarDeclNoWire,
 };
 use crate::model::Scheme;
 use proc_macro2::Span;
@@ -33,8 +33,6 @@ pub(crate) struct NormClient {
     pub auth: Option<AuthCredentials>,
     pub auth_uses: Vec<NormAuthUse>,
     pub default_behavior_uses: Vec<BehaviorUseSpec>,
-    pub retry_profiles: Option<RetryProfilesBlock>,
-    pub retry: Option<RetrySpec>,
     pub rate_limit: Option<RateLimitProfilesBlock>,
     pub behavior_profiles: Option<BehaviorProfilesBlock>,
 }
@@ -63,7 +61,6 @@ pub(crate) struct NormScope {
     pub policy: PolicyBlocks,
     pub behavior_uses: Vec<BehaviorUseSpec>,
     pub auth_uses: Vec<NormAuthUse>,
-    pub retry: Option<RetrySpec>,
     pub rate_limit: Option<RateLimitSpec>,
     pub rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
     pub items: Vec<NormNode>,
@@ -87,7 +84,6 @@ pub(crate) struct NormEndpoint {
     pub policy: PolicyBlocks,
     pub behavior_uses: Vec<BehaviorUseSpec>,
     pub auth_uses: Vec<NormAuthUse>,
-    pub retry: Option<RetrySpec>,
     pub rate_limit: Option<RateLimitSpec>,
     pub rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
     pub paginate: Option<PaginateSpec>,
@@ -118,8 +114,6 @@ mod tests {
             auth: None,
             auth_uses: Vec::new(),
             default_behavior_uses: Vec::new(),
-            retry_profiles: None,
-            retry: None,
             rate_limit: None,
             behavior_profiles: None,
         };
@@ -143,7 +137,6 @@ mod tests {
             policy: PolicyBlocks::default(),
             behavior_uses: Vec::new(),
             auth_uses: Vec::new(),
-            retry: None,
             rate_limit: None,
             rate_limit_keys: Vec::new(),
             paginate: None,

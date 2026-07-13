@@ -23,8 +23,6 @@ pub struct RawClient {
     pub auth: Option<AuthCredentials>,
     pub auth_uses: Vec<AuthUseDecl>,
     pub default_behavior_uses: Vec<BehaviorUseSpec>,
-    pub retry_profiles: Option<RetryProfilesBlock>,
-    pub retry: Option<RetrySpec>,
     pub rate_limit: Option<RateLimitProfilesBlock>,
     pub behavior_profiles: Option<BehaviorProfilesBlock>,
 }
@@ -49,7 +47,6 @@ pub struct RawScope {
     pub policy: PolicyBlocks,
     pub behavior_uses: Vec<BehaviorUseSpec>,
     pub auth_uses: Vec<AuthUseDecl>,
-    pub retry: Option<RetrySpec>,
     pub rate_limit: Option<RateLimitSpec>,
     pub rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
     pub items: Vec<RawItem>,
@@ -78,7 +75,6 @@ pub struct RawEndpoint {
     pub policy: PolicyBlocks,
     pub behavior_uses: Vec<BehaviorUseSpec>,
     pub auth_uses: Vec<AuthUseDecl>,
-    pub retry: Option<RetrySpec>,
     pub rate_limit: Option<RateLimitSpec>,
     pub rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
 

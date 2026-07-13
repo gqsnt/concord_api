@@ -34,10 +34,6 @@ name = "rate_limit_governor"
 harness = false
 
 [[bench]]
-name = "attempt_pipeline"
-harness = false
-
-[[bench]]
 name = "auth_runtime"
 harness = false
 
@@ -55,4 +51,8 @@ harness = false
 
 [[bench]]
 name = "allocation_counts"
+harness = false
+
+[[bench]]
+name = "retry_modes"
 harness = false

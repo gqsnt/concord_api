@@ -20,7 +20,10 @@ tokens
 
 Code generation consumes resolved semantic data. Parser structures stay on the parsing and normalization side of the boundary.
 
-Profile use names are preserved as endpoint documentation metadata even though profile semantics are lowered into ordinary auth, retry, and rate-limit policy data.
+Profile use names are preserved as endpoint documentation metadata even though
+profile semantics are lowered into ordinary auth and rate-limit policy data.
+Retry mode is a managed-client construction choice and is absent from endpoint
+semantic IR.
 
 Generated client code targets `concord_core::__private` for plan and plumbing internals. `concord_core::internal` remains a deprecated hidden compatibility alias during the transition, but it is not the intended user import path.
 
@@ -30,7 +33,10 @@ Generated client code targets `concord_core::__private` for plan and plumbing in
 Endpoint::plan -> RequestPlan -> execute_plan
 ```
 
-The core runtime is syntax-neutral. It executes request plans with fixed ordering for auth preparation, rate limiting, transport, response classification, retry, and decoding.
+The core runtime is syntax-neutral. It executes request plans with fixed
+ordering for auth preparation, rate limiting, hooks, native execution,
+optional one-time authentication recovery, and decoding. Reqwest owns hidden
+protocol or status resends inside each native execution.
 
 ## Standard Body Foundation
 
@@ -49,7 +55,7 @@ buffering queue, and body construction is lazy.
 Request planning keeps a single logical recipe rather than a prebuilt
 `DynBody`: reusable bytes, one-shot byte streams, advanced HTTP bodies,
 terminal factories, and multipart recipes remain distinguishable until an
-attempt is materialized. The current conversion to `DynBody` is a private
+execution is materialized. The current conversion to `DynBody` is a private
 native request materialization path and has no public executor boundary
 point. Exact stream lengths are guards, not `SizeHint` claims; they reject
 underflow and overflow without retaining payload diagnostics.

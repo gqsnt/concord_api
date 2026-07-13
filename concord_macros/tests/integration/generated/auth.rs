@@ -66,27 +66,13 @@ mod basic_helper_contract {
             secret username: String
             secret password: String
             credential login = basic(secret.username, secret.password)
-
-            policies {
-                retry once {
-                    max_attempts 2
-                    methods [GET]
-                    on [500]
-                }
-            }
         }
 
         GET BasicMe
             path ["basic-me"]
-            retry once
             auth basic login
             -> Json<User>
 
-        GET BasicRetry
-            path ["basic-retry"]
-            retry once
-            auth basic login
-            -> Json<User>
     }
 
     pub(super) use basic_helper_api::BasicHelperApi;
@@ -135,27 +121,13 @@ mod o_auth_helper_contract {
                 client_secret: secret.client_secret,
                 scope: "read:me",
             }
-
-            policies {
-                retry once {
-                    max_attempts 2
-                    methods [GET]
-                    on [500]
-                }
-            }
         }
 
         GET OAuthMe
             path ["oauth-me"]
-            retry once
             auth bearer oauth
             -> Json<User>
 
-        GET OAuthRetry
-            path ["oauth-retry"]
-            retry once
-            auth bearer oauth
-            -> Json<User>
     }
 
     pub(super) use o_auth_helper_api::OAuthHelperApi;
@@ -235,13 +207,7 @@ async fn endpoint_backed_auth_acquire_clear_and_gate_protected_requests() {
         AuthHelperApi::new_with_safe_reqwest_builder("upstream-secret".to_string(), |builder| {
             transport.configure_reqwest(builder)
         })
-        .expect("mock client")
-        .configure(|cfg| {
-            cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
-                4096,
-                std::time::Duration::from_secs(15 * 60),
-            ));
-        });
+        .expect("mock client");
 
     let err = api
         .protected()
@@ -326,13 +292,7 @@ async fn same_layer_policy_header_query_inline_then_block_are_preserved() {
         "client-query-b".to_string(),
         |builder| transport.configure_reqwest(builder),
     )
-    .expect("mock client")
-    .configure(|cfg| {
-        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
-            4096,
-            std::time::Duration::from_secs(15 * 60),
-        ));
-    });
+    .expect("mock client");
 
     api.merged()
         .inline_then_block()
@@ -368,13 +328,7 @@ async fn same_layer_policy_header_query_block_then_inline_are_preserved() {
         "client-query-b".to_string(),
         |builder| transport.configure_reqwest(builder),
     )
-    .expect("mock client")
-    .configure(|cfg| {
-        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
-            4096,
-            std::time::Duration::from_secs(15 * 60),
-        ));
-    });
+    .expect("mock client");
 
     api.merged()
         .block_then_inline()
@@ -401,13 +355,7 @@ async fn endpoint_backed_basic_credential_materializes_basic_authorization() {
     let api = BasicEndpointHelperApi::new_with_safe_reqwest_builder(|builder| {
         transport.configure_reqwest(builder)
     })
-    .expect("mock client")
-    .configure(|cfg| {
-        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
-            4096,
-            std::time::Duration::from_secs(15 * 60),
-        ));
-    });
+    .expect("mock client");
 
     api.auth_api()
         .login_for_basic(LoginRequest {
@@ -451,13 +399,7 @@ async fn generated_basic_auth_keeps_username_and_password_secret_until_transport
         PASSWORD.to_string(),
         |builder| transport.configure_reqwest(builder),
     )
-    .expect("mock client")
-    .configure(|cfg| {
-        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
-            4096,
-            std::time::Duration::from_secs(15 * 60),
-        ));
-    });
+    .expect("mock client");
 
     let user = api
         .basic_me()
@@ -484,45 +426,6 @@ async fn generated_basic_auth_keeps_username_and_password_secret_until_transport
 }
 
 #[tokio::test]
-async fn generated_static_basic_auth_reuses_preparation_across_transport_retry() {
-    let transport = RecordingTransport::new(vec![
-        ResponseFixture::status_json(StatusCode::INTERNAL_SERVER_ERROR, r#"{"error":"retry"}"#),
-        ResponseFixture::json(r#"{"name":"Ada"}"#),
-    ]);
-    let sent = transport.clone();
-    let api = BasicHelperApi::new_with_safe_reqwest_builder(
-        "static-user".to_string(),
-        "static-password".to_string(),
-        |builder| transport.configure_reqwest(builder),
-    )
-    .expect("mock client")
-    .configure(|cfg| {
-        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
-            4096,
-            std::time::Duration::from_secs(15 * 60),
-        ));
-    });
-
-    let user = api
-        .basic_retry()
-        .execute()
-        .await
-        .expect("static basic retry request succeeds");
-    assert_eq!(user.name, "Ada");
-
-    let requests = sent.requests().await;
-    assert_eq!(requests.len(), 2);
-    for req in &requests {
-        assert_eq!(
-            req.headers
-                .get(http::header::AUTHORIZATION)
-                .and_then(|value| value.to_str().ok()),
-            Some("Basic c3RhdGljLXVzZXI6c3RhdGljLXBhc3N3b3Jk")
-        );
-    }
-}
-
-#[tokio::test]
 async fn generated_oauth_client_credentials_acquires_token_and_sends_bearer() {
     const CLIENT_ID: &str = "oauth-client";
     const CLIENT_SECRET: &str = "LEAK_SENTINEL_OAUTH_CLIENT_SECRET";
@@ -540,13 +443,7 @@ async fn generated_oauth_client_credentials_acquires_token_and_sends_bearer() {
         CLIENT_SECRET.to_string(),
         |builder| transport.configure_reqwest(builder),
     )
-    .expect("mock client")
-    .configure(|cfg| {
-        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
-            4096,
-            std::time::Duration::from_secs(15 * 60),
-        ));
-    });
+    .expect("mock client");
 
     let user = api
         .oauth_me()
@@ -618,13 +515,7 @@ async fn generated_oauth_client_credentials_reuses_valid_token() {
         "oauth-secret".to_string(),
         |builder| transport.configure_reqwest(builder),
     )
-    .expect("mock client")
-    .configure(|cfg| {
-        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
-            4096,
-            std::time::Duration::from_secs(15 * 60),
-        ));
-    });
+    .expect("mock client");
 
     api.oauth_me()
         .execute()
@@ -665,13 +556,7 @@ async fn generated_oauth_client_credentials_refreshes_after_unauthorized() {
         "oauth-secret".to_string(),
         |builder| transport.configure_reqwest(builder),
     )
-    .expect("mock client")
-    .configure(|cfg| {
-        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
-            4096,
-            std::time::Duration::from_secs(15 * 60),
-        ));
-    });
+    .expect("mock client");
 
     let user = api
         .oauth_me()
@@ -721,13 +606,7 @@ async fn generated_auth_recovery_second_challenge_invalidates_replacement_withou
         "oauth-secret".to_string(),
         |builder| transport.configure_reqwest(builder),
     )
-    .expect("mock client")
-    .configure(|cfg| {
-        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
-            4096,
-            std::time::Duration::from_secs(15 * 60),
-        ));
-    });
+    .expect("mock client");
 
     let warm = api
         .oauth_me()
@@ -797,13 +676,7 @@ async fn generated_static_basic_auth_reprepares_after_auth_rejection_invalidatio
         "static-password".to_string(),
         |builder| transport.configure_reqwest(builder),
     )
-    .expect("mock client")
-    .configure(|cfg| {
-        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
-            4096,
-            std::time::Duration::from_secs(15 * 60),
-        ));
-    });
+    .expect("mock client");
 
     let user = api
         .basic_me()
@@ -825,48 +698,6 @@ async fn generated_static_basic_auth_reprepares_after_auth_rejection_invalidatio
 }
 
 #[tokio::test]
-async fn generated_oauth_prepares_each_transport_retry() {
-    let transport = RecordingTransport::new(vec![
-        ResponseFixture::json(
-            r#"{"access_token":"oauth-retry-token","token_type":"Bearer","expires_in":3600}"#,
-        ),
-        ResponseFixture::status_json(StatusCode::INTERNAL_SERVER_ERROR, r#"{"error":"retry"}"#),
-        ResponseFixture::json(r#"{"name":"Ada"}"#),
-    ]);
-    let sent = transport.clone();
-    let api = OAuthHelperApi::new_with_safe_reqwest_builder(
-        "oauth-client".to_string(),
-        "oauth-secret".to_string(),
-        |builder| transport.configure_reqwest(builder),
-    )
-    .expect("mock client")
-    .configure(|cfg| {
-        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
-            4096,
-            std::time::Duration::from_secs(15 * 60),
-        ));
-    });
-
-    let user = api
-        .oauth_retry()
-        .execute()
-        .await
-        .expect("oauth retry request succeeds");
-    assert_eq!(user.name, "Ada");
-
-    let requests = sent.requests().await;
-    assert_eq!(requests.len(), 3);
-    for req in &requests[1..] {
-        assert_eq!(
-            req.headers
-                .get(http::header::AUTHORIZATION)
-                .and_then(|value| value.to_str().ok()),
-            Some("Bearer oauth-retry-token")
-        );
-    }
-}
-
-#[tokio::test]
 async fn generated_oauth_client_credentials_token_failure_blocks_protected_request() {
     const CLIENT_SECRET: &str = "LEAK_SENTINEL_OAUTH_FAILURE_SECRET";
 
@@ -880,13 +711,7 @@ async fn generated_oauth_client_credentials_token_failure_blocks_protected_reque
         CLIENT_SECRET.to_string(),
         |builder| transport.configure_reqwest(builder),
     )
-    .expect("mock client")
-    .configure(|cfg| {
-        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
-            4096,
-            std::time::Duration::from_secs(15 * 60),
-        ));
-    });
+    .expect("mock client");
 
     let err = api
         .oauth_me()

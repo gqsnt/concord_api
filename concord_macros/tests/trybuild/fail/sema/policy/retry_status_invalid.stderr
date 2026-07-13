@@ -1,8 +1,8 @@
-error: retry status must be an HTTP status code in 100..=599
-  --> tests/trybuild/fail/sema/policy/retry_status_invalid.rs:11:17
-   |
-11 |             on [99]
-   |                 ^^
+error: retry DSL was removed; configure client-level `RetryMode` when constructing the client
+ --> tests/trybuild/fail/sema/policy/retry_status_invalid.rs:8:9
+  |
+8 |         retry read {
+  |         ^^^^^
 
 warning: unused import: `concord_core::prelude::*`
  --> tests/trybuild/fail/sema/policy/retry_status_invalid.rs:1:5

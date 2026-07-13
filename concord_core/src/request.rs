@@ -23,14 +23,12 @@ use std::time::Duration;
 pub(crate) struct RequestOptions {
     pub debug_level: Option<DebugLevel>,
     pub timeout_override: TimeoutOverride,
-    pub attempt: u32,
 }
 impl Default for RequestOptions {
     fn default() -> Self {
         Self {
             debug_level: None,
             timeout_override: TimeoutOverride::Inherit,
-            attempt: 0,
         }
     }
 }
@@ -43,7 +41,6 @@ impl RequestOptions {
             TimeoutOverride::Set(d) => Some(d),
         };
         plan.overrides.debug_level = self.debug_level;
-        plan.overrides.attempt = self.attempt;
         plan.overrides.page_index = page_index;
     }
 }
@@ -91,12 +88,6 @@ impl<'a, Cx: ClientContext, E: IntoEndpointPlan<Cx>> PendingRequest<'a, Cx, E> {
     #[inline]
     pub fn inherit_timeout(mut self) -> Self {
         self.opts.timeout_override = TimeoutOverride::Inherit;
-        self
-    }
-
-    #[inline]
-    pub fn attempt(mut self, v: u32) -> Self {
-        self.opts.attempt = v;
         self
     }
 

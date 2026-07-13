@@ -1,13 +1,17 @@
 // Client lifecycle phase modules intentionally share one private parent namespace.
 use super::*;
 
+pub(super) struct ObservedExecutionResponse {
+    pub(super) response: ExecutionResponse,
+    pub(super) rate_limit_action: RateLimitResponseAction,
+}
+
 impl<Cx: ClientContext> ApiClient<Cx> {
     pub(super) async fn run_post_response_hook(&self, ctx: ResponseObservationCtx<'_>) {
         let hook_meta = HookMeta {
             endpoint: ctx.endpoint,
             method: ctx.method,
             url: ctx.url,
-            attempt: ctx.attempt,
             page_index: ctx.page_index,
             idempotent: ctx.idempotent,
         };
@@ -21,24 +25,18 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             .await;
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(super) async fn acquire_rate_limit_and_send(
         &self,
         mut built: BuiltRequest,
         send_ctx: SendClassifyCtx<'_>,
         stream_request_limit: Option<usize>,
-        attempts_used: &mut u32,
-        admission: Option<AdmissionPermit>,
-        origin: &OriginHandle,
-        requires_retry_admission: bool,
-    ) -> Result<AttemptResponse, ApiClientError> {
+    ) -> Result<ExecutionResponse, ApiClientError> {
         let request_context = built.context();
         let rate_limit_meta = RateLimitContext {
             endpoint: request_context.meta.endpoint,
             method: &request_context.meta.method,
             url: send_ctx.url_str,
             url_host: built.message.url().host_str(),
-            attempt: request_context.meta.attempt,
             page_index: request_context.meta.page_index,
             idempotent: request_context.meta.idempotent,
             max_cooldown: self.runtime_state.max_rate_limit_cooldown(),
@@ -98,7 +96,6 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             endpoint: request_context.meta.endpoint,
             method: &request_context.meta.method,
             url: send_ctx.url_str,
-            attempt: request_context.meta.attempt,
             page_index: request_context.meta.page_index,
             idempotent: request_context.meta.idempotent,
         };
@@ -114,10 +111,6 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             send_ctx.url_str,
             send_ctx.auth_materials,
             send_ctx.error_ctx,
-            attempts_used,
-            admission,
-            origin,
-            requires_retry_admission,
         )
         .await
     }
@@ -132,7 +125,6 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             method: ctx.method,
             url: ctx.url,
             url_host: ctx.url_host,
-            attempt: ctx.attempt,
             page_index: ctx.page_index,
             idempotent: ctx.idempotent,
             max_cooldown: self.runtime_state.max_rate_limit_cooldown(),
@@ -157,22 +149,16 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             })
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(super) async fn send_built_request(
         &self,
         built: BuiltRequest,
         safe_url: &str,
         auth_materials: &[crate::auth::AuthTransportMaterial],
         ctx: &ErrorContext,
-        attempts_used: &mut u32,
-        mut admission: Option<AdmissionPermit>,
-        origin: &OriginHandle,
-        requires_retry_admission: bool,
-    ) -> Result<AttemptResponse, ApiClientError> {
+    ) -> Result<ExecutionResponse, ApiClientError> {
         let request_context = built.context();
         let endpoint = request_context.meta.endpoint;
         let method = request_context.meta.method.clone();
-        let attempt = request_context.meta.attempt;
         let page_index = request_context.meta.page_index;
         let idempotent = request_context.meta.idempotent;
         let request_url = built.message.url().clone();
@@ -185,7 +171,6 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             message,
             context,
             auth_plan,
-            retry: _,
             rate_limit: _,
         } = built;
         let native_request =
@@ -195,34 +180,20 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                     source,
                 })?;
 
-        if requires_retry_admission && admission.is_none() {
-            return Err(ApiClientError::PolicyViolation {
-                ctx: ctx.clone(),
-                msg: "retry admission permit missing",
-            });
-        }
-        if let Some(permit) = admission.as_mut() {
-            permit.commit();
-        }
-        let original_attempt = *attempts_used == 0;
-        *attempts_used = attempts_used.checked_add(1).ok_or_else(|| {
-            ApiClientError::invalid_param(ctx.clone(), "request attempt counter overflowed")
-        })?;
+        // One visible execution: exactly one call to reqwest::Client::execute.
+        // Reqwest owns any hidden protocol/status resend internally; it does not
+        // rerun Concord hooks, rate limiting, or authentication preparation.
         let transport_result = self
             .managed_client
             .execute(native_request, Some(&context))
             .await;
-        if original_attempt {
-            origin.deposit_original();
-        }
         match transport_result {
             Ok(message) => {
                 let error_mapper = self.managed_client.response_error_mapper();
-                Ok(AttemptResponse {
+                Ok(ExecutionResponse {
                     message,
                     context: response_context,
                     error_mapper,
-                    origin: None,
                     body_limit: None,
                     body_seen: 0,
                 })
@@ -241,7 +212,6 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                     endpoint,
                     method: &method,
                     url: safe_url,
-                    attempt,
                     page_index,
                     idempotent,
                 };
@@ -260,120 +230,64 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         }
     }
 
-    // Lifecycle classification carries request metadata separately to preserve
-    // the fixed attempt ordering; grouping it would be a behavioral refactor.
-    #[allow(clippy::too_many_arguments)]
-    pub(super) async fn classify_transport_response(
+    pub(super) async fn send_and_observe_once(
         &self,
-        resp: AttemptResponse,
-        dbg: DebugLevel,
-        dbg_verbose: bool,
-        _dbg_vv: bool,
+        built: BuiltRequest,
+        send_ctx: SendClassifyCtx<'_>,
+    ) -> Result<ObservedExecutionResponse, ApiClientError> {
+        let resp = self
+            .acquire_rate_limit_and_send(
+                built,
+                send_ctx,
+                self.runtime_state.max_stream_request_body_bytes(),
+            )
+            .await?;
+        self.observe_transport_response(resp, send_ctx.url_str, send_ctx.error_ctx)
+            .await
+    }
+
+    pub(super) async fn observe_transport_response(
+        &self,
+        response: ExecutionResponse,
         url_str: &str,
         ctx: &ErrorContext,
-    ) -> Result<AttemptResponse, ApiClientError> {
-        self.observe_and_classify_transport_response(
-            resp,
-            dbg,
-            dbg_verbose,
-            _dbg_vv,
-            url_str,
-            ctx,
-            false,
-        )
-        .await
+    ) -> Result<ObservedExecutionResponse, ApiClientError> {
+        let observe_ctx = Self::response_observation_ctx(&response, url_str);
+        self.run_post_response_hook(observe_ctx).await;
+        let rate_limit_action = self.observe_rate_limit_response(observe_ctx, ctx).await?;
+        Ok(ObservedExecutionResponse {
+            response,
+            rate_limit_action,
+        })
     }
 
-    pub(super) async fn send_and_classify_once(
+    pub(super) fn classify_observed_transport_response(
         &self,
-        built: BuiltRequest,
-        send_ctx: SendClassifyCtx<'_>,
-        attempts_used: &mut u32,
-        admission: Option<AdmissionPermit>,
-        origin: &OriginHandle,
-        requires_retry_admission: bool,
-    ) -> Result<AttemptResponse, ApiClientError> {
-        let transport_resp = self
-            .acquire_rate_limit_and_send(
-                built,
-                send_ctx,
-                self.runtime_state.max_stream_request_body_bytes(),
-                attempts_used,
-                admission,
-                origin,
-                requires_retry_admission,
-            )
-            .await?;
-        self.classify_transport_response(
-            transport_resp,
-            send_ctx.dbg,
-            send_ctx.dbg_verbose,
-            send_ctx.dbg_vv,
-            send_ctx.url_str,
-            send_ctx.error_ctx,
-        )
-        .await
-    }
-
-    pub(super) async fn send_and_classify_transport_once(
-        &self,
-        built: BuiltRequest,
-        send_ctx: SendClassifyCtx<'_>,
-        attempts_used: &mut u32,
-        admission: Option<AdmissionPermit>,
-        origin: &OriginHandle,
-        requires_retry_admission: bool,
-    ) -> Result<AttemptResponse, ApiClientError> {
-        let transport_resp = self
-            .acquire_rate_limit_and_send(
-                built,
-                send_ctx,
-                self.runtime_state.max_stream_request_body_bytes(),
-                attempts_used,
-                admission,
-                origin,
-                requires_retry_admission,
-            )
-            .await?;
-        self.observe_and_classify_transport_response(
-            transport_resp,
-            send_ctx.dbg,
-            send_ctx.dbg_verbose,
-            send_ctx.dbg_vv,
-            send_ctx.url_str,
-            send_ctx.error_ctx,
-            true,
-        )
-        .await
-    }
-
-    // All response families use this metadata-only classification path.
-    #[allow(clippy::too_many_arguments)]
-    pub(super) async fn observe_and_classify_transport_response(
-        &self,
-        resp: AttemptResponse,
+        observed: ObservedExecutionResponse,
         dbg: DebugLevel,
         dbg_verbose: bool,
-        _dbg_vv: bool,
         url_str: &str,
         ctx: &ErrorContext,
         emit_success_debug: bool,
-    ) -> Result<AttemptResponse, ApiClientError> {
-        let observe_ctx = Self::response_observation_ctx(&resp, url_str);
-        self.run_post_response_hook(observe_ctx).await;
-        let rate_limit_action = self.observe_rate_limit_response(observe_ctx, ctx).await?;
-        match classify_status(resp.status()) {
+    ) -> Result<ExecutionResponse, ApiClientError> {
+        let ObservedExecutionResponse {
+            response,
+            rate_limit_action,
+        } = observed;
+        match classify_status(response.status()) {
             ResponseClass::HttpStatusError => {
                 if dbg_verbose {
                     self.debug_sink
-                        .response_status(dbg, resp.status(), url_str, false);
-                    self.debug_sink
-                        .response_headers(dbg, crate::debug::SanitizedHeaders::new(resp.headers()));
+                        .response_status(dbg, response.status(), url_str, false);
+                    self.debug_sink.response_headers(
+                        dbg,
+                        crate::debug::SanitizedHeaders::new(response.headers()),
+                    );
                 }
                 Err(ApiClientError::HttpStatus {
                     ctx: ctx.clone(),
-                    status: resp.status(),
-                    headers: Box::new(crate::redaction::sanitize_header_map(resp.headers())),
+                    status: response.status(),
+                    headers: Box::new(crate::redaction::sanitize_header_map(response.headers())),
                     rate_limit: (!matches!(rate_limit_action, RateLimitResponseAction::Continue))
                         .then_some(Box::new(rate_limit_action)),
                 })
@@ -381,20 +295,22 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             ResponseClass::Success => {
                 if emit_success_debug && dbg_verbose {
                     self.debug_sink
-                        .response_status(dbg, resp.status(), url_str, true);
-                    self.debug_sink
-                        .response_headers(dbg, crate::debug::SanitizedHeaders::new(resp.headers()));
+                        .response_status(dbg, response.status(), url_str, true);
+                    self.debug_sink.response_headers(
+                        dbg,
+                        crate::debug::SanitizedHeaders::new(response.headers()),
+                    );
                 }
-                Ok(resp)
+                Ok(response)
             }
         }
     }
 
     pub(super) fn limit_response_body(
-        mut resp: AttemptResponse,
+        mut resp: ExecutionResponse,
         limit: Option<usize>,
         ctx: &ErrorContext,
-    ) -> Result<AttemptResponse, ApiClientError> {
+    ) -> Result<ExecutionResponse, ApiClientError> {
         let Some(limit) = limit else {
             return Ok(resp);
         };
@@ -413,16 +329,15 @@ impl<Cx: ClientContext> ApiClient<Cx> {
     }
 
     pub(super) async fn buffer_response(
-        resp: AttemptResponse,
+        resp: ExecutionResponse,
         skip_body: bool,
         limit: Option<usize>,
         ctx: &ErrorContext,
     ) -> Result<BuiltResponse, ApiClientError> {
-        let AttemptResponse {
+        let ExecutionResponse {
             mut message,
             mut context,
             error_mapper,
-            origin: _origin,
             body_limit: _,
             body_seen: _,
         } = resp;
@@ -482,7 +397,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
     }
 
     pub(super) fn response_observation_ctx<'a>(
-        resp: &'a AttemptResponse,
+        resp: &'a ExecutionResponse,
         url_str: &'a str,
     ) -> ResponseObservationCtx<'a> {
         ResponseObservationCtx {
@@ -490,7 +405,6 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             method: &resp.context.meta.method,
             url: url_str,
             url_host: resp.context.request_url.host_str(),
-            attempt: resp.context.meta.attempt,
             page_index: resp.context.meta.page_index,
             idempotent: resp.context.meta.idempotent,
             plan: &resp.context.rate_limit,

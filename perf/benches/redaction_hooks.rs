@@ -113,12 +113,9 @@ fn plan(name: &'static str, query: usize, headers: usize, mixed_case: bool) -> R
         if idx % 2 == 0 {
             // The exact generic name `key` is treated as sensitive for debug
             // output without claiming an authentication-owned header.
-            policy
-                .headers
-                .append(HeaderName::from_static("key"), value);
+            policy.headers.append(HeaderName::from_static("key"), value);
         } else {
-            let name =
-            if mixed_case {
+            let name = if mixed_case {
                 format!("X-Visible-{idx}")
             } else {
                 format!("x-visible-{idx}")

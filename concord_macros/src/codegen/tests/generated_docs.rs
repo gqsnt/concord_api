@@ -53,15 +53,12 @@ fn generated_rustdoc_includes_profile_names() {
             base "https://example.com"
 
             profile client_read {
-                retry off
             }
 
             profile scope_read {
-                retry off
             }
 
             profile endpoint_read {
-                retry off
             }
 
             default {
@@ -241,13 +238,7 @@ fn generated_rustdoc_includes_endpoint_contract_without_secret_values() {
             credential key = api_key(secret.api_key)
 
             default {
-                retry read
                 rate_limit app
-            }
-
-            retry read {
-                max_attempts 2
-                methods [GET, POST]
             }
 
             rate_limit app {
@@ -303,8 +294,7 @@ fn generated_rustdoc_includes_endpoint_contract_without_secret_values() {
             "#[doc=\"Auth:\"]",
             "#[doc=\"- header `X-Api-Key` = `key`\"]",
             "#[doc=\"Retry:\"]",
-            "#[doc=\"- max attempts: 2\"]",
-            "#[doc=\"- methods: GET, POST\"]",
+            "#[doc=\"- selected at client construction through `RetryMode`\"]",
             "#[doc=\"Rate limit:\"]",
             "#[doc=\"- bucket `application` key [host] cost 1 windows [10 / 1s]\"]",
             "#[doc=\"Pagination:\"]",
@@ -468,7 +458,7 @@ fn generated_rustdoc_rate_limit_clear_removes_inherited_configuration() {
 }
 
 #[test]
-fn generated_rustdoc_includes_no_auth_retry_rate_limit_sections() {
+fn generated_rustdoc_includes_no_auth_or_rate_limit_sections() {
     let out = expanded(quote! {
         client EmptyContractDocs {
             base "https://example.com"
@@ -488,7 +478,7 @@ fn generated_rustdoc_includes_no_auth_retry_rate_limit_sections() {
             "#[doc=\"Auth:\"]",
             "#[doc=\"- none\"]",
             "#[doc=\"Retry:\"]",
-            "#[doc=\"- off\"]",
+            "#[doc=\"- selected at client construction through `RetryMode`\"]",
             "#[doc=\"Rate limit:\"]",
             "#[doc=\"- none\"]",
             "#[doc=\"Safety:\"]",

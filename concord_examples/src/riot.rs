@@ -27,13 +27,6 @@ api! {
         }
 
         policies {
-            retry read {
-                max_attempts 2
-                methods [GET]
-                on [429, 500, 502, 503, 504]
-                retry_after
-            }
-
             observe rate_limit RiotRateLimitHeaders
 
             rate_limit app {
@@ -166,7 +159,6 @@ api! {
         profiles {
             profile riot_read {
                 auth header "X-Riot-Token" = riot_api_key
-                retry read
                 rate_limit app
             }
 

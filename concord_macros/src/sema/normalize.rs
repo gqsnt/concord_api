@@ -19,8 +19,6 @@ pub(super) fn normalize_api(raw: crate::ast::RawApi) -> Result<NormApiTree> {
             auth: raw.client.auth,
             auth_uses: client_auth_uses,
             default_behavior_uses: raw.client.default_behavior_uses,
-            retry_profiles: raw.client.retry_profiles,
-            retry: raw.client.retry,
             rate_limit: raw.client.rate_limit,
             behavior_profiles: raw.client.behavior_profiles,
         },
@@ -59,7 +57,6 @@ pub(super) fn normalize_scope(raw: crate::ast::RawScope, scope_depth: usize) -> 
     let params = raw.params;
     let policy = raw.policy;
     let behavior_uses = raw.behavior_uses;
-    let retry = raw.retry;
     let rate_limit = raw.rate_limit;
     let rate_limit_keys = raw.rate_limit_keys;
 
@@ -73,7 +70,6 @@ pub(super) fn normalize_scope(raw: crate::ast::RawScope, scope_depth: usize) -> 
             policy,
             behavior_uses,
             auth_uses,
-            retry,
             rate_limit,
             rate_limit_keys,
             items: vec![NormNode::Layer(Box::new(NormScope {
@@ -85,7 +81,6 @@ pub(super) fn normalize_scope(raw: crate::ast::RawScope, scope_depth: usize) -> 
                 policy: PolicyBlocks::default(),
                 behavior_uses: Vec::new(),
                 auth_uses: Vec::new(),
-                retry: None,
                 rate_limit: None,
                 rate_limit_keys: Vec::new(),
                 items,
@@ -100,7 +95,6 @@ pub(super) fn normalize_scope(raw: crate::ast::RawScope, scope_depth: usize) -> 
             policy,
             behavior_uses,
             auth_uses,
-            retry,
             rate_limit,
             rate_limit_keys,
             items,
@@ -114,7 +108,6 @@ pub(super) fn normalize_scope(raw: crate::ast::RawScope, scope_depth: usize) -> 
             policy,
             behavior_uses,
             auth_uses,
-            retry,
             rate_limit,
             rate_limit_keys,
             items,
@@ -128,7 +121,6 @@ pub(super) fn normalize_scope(raw: crate::ast::RawScope, scope_depth: usize) -> 
             policy,
             behavior_uses,
             auth_uses,
-            retry,
             rate_limit,
             rate_limit_keys,
             items,
@@ -148,7 +140,6 @@ pub(super) fn normalize_endpoint(raw: crate::ast::RawEndpoint) -> Result<NormEnd
         policy: raw.policy,
         behavior_uses: raw.behavior_uses,
         auth_uses,
-        retry: raw.retry,
         rate_limit: raw.rate_limit,
         rate_limit_keys: raw.rate_limit_keys,
         paginate: raw.paginate,

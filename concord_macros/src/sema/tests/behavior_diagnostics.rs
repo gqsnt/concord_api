@@ -29,11 +29,11 @@ fn behavior_diagnostics_reject_duplicate_behavior_names() {
 
                 profiles {
                     profile read {
-                        retry off
+                        rate_limit off
                     }
 
                     profile read {
-                        retry off
+                        rate_limit off
                     }
                 }
             }
@@ -52,7 +52,7 @@ fn behavior_diagnostics_reject_duplicate_behavior_at_same_attachment_site() {
                 base "https://example.com"
 
                 profile read {
-                    retry off
+                    rate_limit off
                 }
 
                 default {
@@ -76,11 +76,11 @@ fn behavior_diagnostics_reject_behavior_cycles() {
 
                 profiles {
                     profile read extends write {
-                        retry off
+                        rate_limit off
                     }
 
                     profile write extends read {
-                        retry off
+                        rate_limit off
                     }
                 }
             }

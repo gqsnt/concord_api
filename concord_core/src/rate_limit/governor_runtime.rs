@@ -259,10 +259,18 @@ impl GovernorRateLimiter {
     fn store_observation(
         &self,
         ctx: &RateLimitResponseContext<'_>,
-        observation: RateLimitObservation,
+        mut observation: RateLimitObservation,
     ) -> Result<RateLimitResponseAction, ApiClientError> {
         if !observation.limited {
             return Ok(RateLimitResponseAction::Continue);
+        }
+
+        // Retry-After controls future-call cooldown only. Treat the runtime
+        // maximum as a cap on a positive parsed delay, not as a reason to fail
+        // processing of the terminal response.
+        if let Some(delay) = observation.delay.as_mut() {
+            *delay = (*delay).min(ctx.max_cooldown);
+            observation.retry_after = Some(*delay);
         }
 
         if observation.delay.is_none_or(|delay| delay.is_zero())
@@ -631,7 +639,6 @@ mod tests {
             method: &METHOD,
             url: URL,
             url_host: Some("example.com"),
-            attempt: 0,
             page_index: 0,
             idempotent: true,
             max_cooldown: Duration::from_secs(60),
@@ -649,7 +656,6 @@ mod tests {
             method: &METHOD,
             url: URL,
             url_host: None,
-            attempt: 0,
             page_index: 0,
             idempotent: true,
             max_cooldown: Duration::from_secs(60),
@@ -692,7 +698,6 @@ mod tests {
             method: &METHOD,
             url,
             url_host: Some("example.com"),
-            attempt: 0,
             page_index: 0,
             idempotent: true,
             max_cooldown: Duration::from_secs(60),

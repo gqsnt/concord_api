@@ -90,7 +90,7 @@ fn examples_cover_v1_usage_surface() {
 
     let policy = read_repo_file("concord_examples/tests/integration/policy_stack.rs");
     assert!(policy.contains("rate_limiter"));
-    assert!(policy.contains("retry_only"));
+    assert!(policy.contains("unrated"));
 
     let pagination = read_repo_file("concord_examples/tests/integration/pagination.rs");
     assert!(pagination.contains(".paginate("));

@@ -213,6 +213,7 @@ fn pagination_origin_capability_comes_from_resolved_host_bindings() {
             .descriptor
             .pagination_can_change_origin
     );
+    assert_eq!(api.descriptor.origin, ApiOriginIr::Dynamic);
 }
 
 #[test]

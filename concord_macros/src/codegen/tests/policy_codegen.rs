@@ -39,7 +39,7 @@ fn generated_policy_materializes_resolved_policy() {
             "HeaderValue :: from_static (\"search\")",
             ":: concord_core :: advanced :: AuthRequirement",
             "policy.ensure_accept",
-            "let (headers , query , timeout , retry , mut rate_limit) = policy.into_parts()",
+            "let (headers , query , timeout , mut rate_limit) = policy.into_parts()",
             "rate_limit.canonicalize()",
             "let __resolved_policy = :: concord_core :: __private :: ResolvedPolicy",
             "auth : __auth_plan",
@@ -64,13 +64,6 @@ fn behavior_profiles_do_not_reach_runtime_codegen() {
             secret token: String
             credential session = api_key(secret.token)
 
-            retry read {
-                max_attempts 2
-                methods [GET]
-                on [401, 403]
-                retry_after
-            }
-
             rate_limit app {
                 bucket application by [host] {
                     1 / 1s
@@ -80,7 +73,6 @@ fn behavior_profiles_do_not_reach_runtime_codegen() {
             profiles {
                     profile alpha {
                         auth header "X-Profile-Token" = session
-                        retry read
                         rate_limit app
                     }
             }
@@ -100,13 +92,6 @@ fn behavior_profiles_do_not_reach_runtime_codegen() {
             secret token: String
             credential session = api_key(secret.token)
 
-            retry read {
-                max_attempts 2
-                methods [GET]
-                on [401, 403]
-                retry_after
-            }
-
             rate_limit app {
                 bucket application by [host] {
                     1 / 1s
@@ -116,7 +101,6 @@ fn behavior_profiles_do_not_reach_runtime_codegen() {
             profiles {
                     profile beta {
                         auth header "X-Profile-Token" = session
-                        retry read
                         rate_limit app
                     }
             }
@@ -133,19 +117,11 @@ fn behavior_profiles_do_not_reach_runtime_codegen() {
 
     assert_contains_all(
         &alpha,
-        &[
-            "#[doc=\"Profile: `alpha`\"]",
-            "policy.set_retry",
-            "policy.add_rate_limit",
-        ],
+        &["#[doc=\"Profile: `alpha`\"]", "policy.add_rate_limit"],
     );
     assert_contains_all(
         &beta,
-        &[
-            "#[doc=\"Profile: `beta`\"]",
-            "policy.set_retry",
-            "policy.add_rate_limit",
-        ],
+        &["#[doc=\"Profile: `beta`\"]", "policy.add_rate_limit"],
     );
     assert_eq!(without_doc_attrs(&alpha), without_doc_attrs(&beta));
 }
@@ -156,11 +132,6 @@ fn rustdoc_behavior_label_dedup_does_not_affect_policy() {
         client LabelDedup {
             base "https://example.com"
 
-            retry read {
-                max_attempts 2
-                methods [GET]
-            }
-
             rate_limit read_limit {
                 bucket read by [host] {
                     1 / 1s
@@ -169,7 +140,6 @@ fn rustdoc_behavior_label_dedup_does_not_affect_policy() {
 
             profiles {
                 profile read {
-                    retry read
                     rate_limit read_limit
                 }
             }
@@ -190,7 +160,7 @@ fn rustdoc_behavior_label_dedup_does_not_affect_policy() {
         }
     });
 
-    assert_contains_all(&out, &["#[doc=\"Profile: `read`\"]", "policy.set_retry"]);
+    assert_contains_all(&out, &["#[doc=\"Profile: `read`\"]"]);
     assert_contains_all(&out, &["policy.add_rate_limit"]);
     let profile_doc_lines = generated_doc_attrs(&out)
         .into_iter()

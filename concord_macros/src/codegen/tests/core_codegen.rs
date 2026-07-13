@@ -89,13 +89,6 @@ fn codegen_uses_resolved_ir() {
             credential session = bearer(secret.token)
 
             policies {
-                retry read {
-                    max_attempts 2
-                    methods [GET]
-                    on [401, 403]
-                    retry_after
-                }
-
                 rate_limit app {
                     bucket application by [host] {
                         10 / 1s
@@ -106,13 +99,10 @@ fn codegen_uses_resolved_ir() {
             profiles {
                 profile shared {
                     auth bearer session
-                    retry read
                     rate_limit app
                 }
 
-                profile endpoint_override {
-                    retry off
-                }
+                profile endpoint_override {}
             }
 
             default {
@@ -126,18 +116,6 @@ fn codegen_uses_resolved_ir() {
             -> Json<String>
     });
 
-    match &resolved.client_policy.retry {
-        Some(RetryResolved::Set(config)) => {
-            let expected_methods: Vec<syn::Ident> = vec![syn::parse_quote!(GET)];
-            assert_eq!(config.max_attempts, 2);
-            assert_eq!(config.methods, expected_methods);
-            assert_eq!(config.statuses, vec![401, 403]);
-            assert!(config.respect_retry_after);
-        }
-        other => {
-            panic!("expected resolved client retry from profile/default lowering, got {other:?}")
-        }
-    }
     match &resolved.client_policy.rate_limit {
         Some(RateLimitResolved::Add(plan)) => {
             assert_eq!(plan.buckets.len(), 1);
@@ -159,13 +137,6 @@ fn codegen_uses_resolved_ir() {
         endpoint.behavior_doc.names,
         vec!["shared".to_string(), "endpoint_override".to_string()]
     );
-    match &endpoint.policy.endpoint.retry {
-        Some(RetryResolved::Clear) => {}
-        other => {
-            panic!("expected endpoint retry override to clear inherited retry, got {other:?}")
-        }
-    }
-
     let out = emit(resolved)
         .to_string()
         .chars()
@@ -175,18 +146,22 @@ fn codegen_uses_resolved_ir() {
     assert_contains_all(
         &out,
         &[
-            "policy.set_retry(::concord_core::advanced::RetryConfig{max_attempts:2u32",
-            "::http::Method::GET",
-            "::http::StatusCode::from_u16(401u16)",
-            "::http::StatusCode::from_u16(403u16)",
-            "policy.clear_retry();",
             "policy.add_rate_limit(::concord_core::advanced::RateLimitPlan::from_buckets",
             "RateLimitBucketUse::new(\"application\",\"app_0\"",
         ],
     );
-    assert!(!out.contains("policy.retry().cloned().unwrap_or_default()"));
-    assert!(!out.contains("__retry.max_attempts"));
-    assert!(!out.contains("__retry.methods"));
+    for removed in [
+        "RetryConfig",
+        "RetryPolicy",
+        "set_retry",
+        "clear_retry",
+        "max_attempts",
+    ] {
+        assert!(
+            !out.contains(removed),
+            "generated source retained {removed}"
+        );
+    }
 }
 
 #[test]

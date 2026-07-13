@@ -16,12 +16,11 @@ pub struct EndpointMeta {
 
 impl EndpointMeta {
     #[inline]
-    pub fn request_meta(&self, attempt: u32, page_index: u32) -> RequestMeta {
+    pub fn request_meta(&self, page_index: u32) -> RequestMeta {
         RequestMeta {
             endpoint: self.name,
             method: self.method.clone(),
             idempotent: self.idempotent,
-            attempt,
             page_index,
         }
     }
@@ -40,7 +39,6 @@ pub struct EndpointPlan {
 pub struct RequestOverrides {
     pub debug_level: Option<crate::debug::DebugLevel>,
     pub timeout: Option<std::time::Duration>,
-    pub attempt: u32,
     pub page_index: u32,
 }
 
@@ -55,13 +53,6 @@ pub struct RequestPlan {
 pub struct RequestPlanView {
     pub endpoint: EndpointPlan,
     pub overrides: RequestOverrides,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct AttemptState {
-    pub attempt: u32,
-    pub page_index: u32,
-    pub auth_attempt: crate::auth::AuthAttemptSummary,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -355,6 +355,7 @@ fn emit_client_context(ctx: ClientContextEmit<'_>) -> TokenStream2 {
         cx_ty,
     } = ctx;
     let base_policy = emit_policy_fn_base(policy);
+    let origin = emit_origin_descriptor(&resolved_api.descriptor.origin);
     let (auth_state_assoc_ty, init_auth_state) = emit_client_auth_state_init(resolved_api, auth_state_ty);
     let auth_binding = emit_client_auth_binding_fn(resolved_api);
 
@@ -368,6 +369,7 @@ fn emit_client_context(ctx: ClientContextEmit<'_>) -> TokenStream2 {
             type AuthState = #auth_state_assoc_ty;
             const SCHEME: ::http::uri::Scheme = #scheme;
             const DOMAIN: &'static str = #domain;
+            const ORIGIN: ::concord_core::__private::v1::ApiOriginDescriptor = #origin;
 
             fn init_auth_state(
                 vars: &Self::Vars,
@@ -405,9 +407,6 @@ fn emit_policy_fn_base(policy: &PolicyBlocksResolved) -> TokenStream2 {
     if let Some(t) = &policy.timeout {
         let ex = emit_value_expr(t, PolicyEmitCtx::ClientBase);
         ops.push(quote! { policy.set_timeout(#ex); });
-    }
-    if let Some(retry) = emit_retry_op(&policy.retry) {
-        ops.push(retry);
     }
     if let Some(rate_limit) = emit_rate_limit_op(&policy.rate_limit, PolicyEmitCtx::ClientBase) {
         ops.push(rate_limit);

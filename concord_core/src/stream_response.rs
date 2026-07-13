@@ -2,7 +2,7 @@ use crate::body::{BodyError, BodyErrorKind, DynBody};
 use crate::codec::ContentType;
 use crate::error::{ApiClientError, ErrorContext};
 use crate::transport::{
-    AttemptResponse, NativeResponseErrorMapper, TransportError, TransportErrorKind,
+    ExecutionResponse, NativeResponseErrorMapper, TransportError, TransportErrorKind,
 };
 use bytes::Bytes;
 use http::{HeaderMap, StatusCode, Version, header::CONTENT_LENGTH};
@@ -20,13 +20,13 @@ use tokio::io::AsyncWriteExt;
 /// data-only conveniences. [`StreamResponse::into_body`] is the explicit
 /// frame-aware escape hatch and retains native data and trailer frames.
 pub struct StreamResponse<M> {
-    resp: AttemptResponse,
+    resp: ExecutionResponse,
     terminal: bool,
     _media: PhantomData<fn() -> M>,
 }
 
 impl<M> StreamResponse<M> {
-    pub(crate) fn new(resp: AttemptResponse) -> Self {
+    pub(crate) fn new(resp: ExecutionResponse) -> Self {
         Self {
             resp,
             terminal: false,
@@ -81,11 +81,10 @@ impl<M> StreamResponse<M> {
     /// consumption already reached EOF or failed, the extracted body is terminal.
     pub fn into_body(self) -> DynBody {
         let terminal = self.terminal;
-        let AttemptResponse {
+        let ExecutionResponse {
             message,
             context: _,
             error_mapper,
-            origin,
             body_limit,
             body_seen,
         } = self.resp;
@@ -93,7 +92,6 @@ impl<M> StreamResponse<M> {
         DynBody::from_body(NativeFrameBody {
             inner: Box::pin(inner),
             error_mapper,
-            origin,
             limit: body_limit,
             seen: body_seen,
             terminal,
@@ -119,13 +117,11 @@ impl<M: ContentType> StreamResponse<M> {
             Err(error) => {
                 self.terminal = true;
                 let source = self.resp.map_body_error(error);
-                self.resp.release_origin();
                 return Err(Self::sanitize_body_error(ctx, source));
             }
         };
         let Some(chunk) = chunk else {
             self.terminal = true;
-            self.resp.release_origin();
             return Ok(None);
         };
         let actual = self.resp.body_seen.saturating_add(chunk.len() as u64);
@@ -133,7 +129,6 @@ impl<M: ContentType> StreamResponse<M> {
             && actual > limit
         {
             self.terminal = true;
-            self.resp.release_origin();
             return Err(Self::sanitize_body_error(
                 ctx,
                 BodyError::limit_exceeded(limit, actual),
@@ -177,7 +172,6 @@ impl<M: ContentType> StreamResponse<M> {
 struct NativeFrameBody {
     inner: Pin<Box<reqwest::Body>>,
     error_mapper: NativeResponseErrorMapper,
-    origin: Option<crate::retry_admission::OriginHandle>,
     limit: Option<u64>,
     seen: u64,
     terminal: bool,
@@ -199,12 +193,10 @@ impl Body for NativeFrameBody {
             Poll::Pending => Poll::Pending,
             Poll::Ready(None) => {
                 this.terminal = true;
-                this.origin.take();
                 Poll::Ready(None)
             }
             Poll::Ready(Some(Err(error))) => {
                 this.terminal = true;
-                this.origin.take();
                 Poll::Ready(Some(Err(this.error_mapper.map_body_error(error))))
             }
             Poll::Ready(Some(Ok(frame))) => {
@@ -214,7 +206,6 @@ impl Body for NativeFrameBody {
                         && actual > limit
                     {
                         this.terminal = true;
-                        this.origin.take();
                         return Poll::Ready(Some(Err(BodyError::limit_exceeded(limit, actual))));
                     }
                     this.seen = actual;
@@ -243,12 +234,6 @@ impl Body for NativeFrameBody {
         }
         hint.set_upper(inner.upper().unwrap_or(remaining).min(remaining));
         hint
-    }
-}
-
-impl Drop for NativeFrameBody {
-    fn drop(&mut self) {
-        self.origin.take();
     }
 }
 
@@ -321,13 +306,11 @@ mod tests {
     use super::*;
     use crate::media::OctetStream;
     use crate::rate_limit::RateLimitPlan;
-    use crate::retry_admission::{OriginHandle, OriginKey, RetryAdmissionRegistry};
     use crate::transport::{ManagedReqwestClient, RequestMeta, ResponseContext, SafeProxy};
     use http::HeaderValue;
     use http_body_util::BodyExt;
     use std::collections::VecDeque;
     use std::error::Error;
-    use std::time::Duration;
 
     struct ScriptedNativeBody {
         frames: VecDeque<Result<Frame<Bytes>, NativeTestError>>,
@@ -403,7 +386,6 @@ mod tests {
     fn response(
         body: ScriptedNativeBody,
         limit: Option<u64>,
-        origin: Option<OriginHandle>,
         error_mapper: NativeResponseErrorMapper,
     ) -> StreamResponse<OctetStream> {
         let native_body = reqwest::Body::wrap(body);
@@ -413,35 +395,22 @@ mod tests {
                 .body(native_body)
                 .expect("native response"),
         );
-        StreamResponse::new(AttemptResponse {
+        StreamResponse::new(ExecutionResponse {
             message,
             context: ResponseContext {
                 meta: RequestMeta {
                     endpoint: "FrameAwareStream",
                     method: http::Method::GET,
                     idempotent: true,
-                    attempt: 0,
                     page_index: 0,
                 },
                 request_url: url::Url::parse("http://example.invalid/stream").expect("request URL"),
                 rate_limit: RateLimitPlan::new(),
             },
             error_mapper,
-            origin,
             body_limit: limit,
             body_seen: 0,
         })
-    }
-
-    fn tracked_origin() -> (RetryAdmissionRegistry, OriginKey, OriginHandle) {
-        let registry = RetryAdmissionRegistry::new(4, Duration::from_secs(60));
-        let key = OriginKey::from_url(
-            &url::Url::parse("http://frame-origin.invalid/stream").expect("origin URL"),
-        )
-        .expect("origin key");
-        let origin = registry.track(key.clone());
-        assert_eq!(registry.active_requests_for(&key), 1);
-        (registry, key, origin)
     }
 
     fn data(value: &'static [u8]) -> Result<Frame<Bytes>, NativeTestError> {
@@ -482,7 +451,6 @@ mod tests {
                 trailers("x-native-trailer"),
             ]),
             None,
-            None,
             mapper(),
         )
         .into_body();
@@ -508,7 +476,6 @@ mod tests {
         let unknown = response(
             ScriptedNativeBody::unknown(vec![data(b"unknown")]),
             None,
-            None,
             mapper(),
         )
         .into_body();
@@ -518,7 +485,6 @@ mod tests {
         let limited = response(
             ScriptedNativeBody::exact(vec![data(b"ten-bytes!")]),
             Some(6),
-            None,
             mapper(),
         )
         .into_body();
@@ -532,7 +498,6 @@ mod tests {
                 data(b"de"),
             ]),
             Some(5),
-            None,
             mapper(),
         )
         .into_body();
@@ -567,7 +532,6 @@ mod tests {
                 data(b"de"),
             ]),
             Some(5),
-            None,
             mapper(),
         )
         .into_body();
@@ -590,7 +554,6 @@ mod tests {
                 data(b"def"),
             ]),
             Some(5),
-            None,
             mapper(),
         )
         .into_body();
@@ -633,7 +596,6 @@ mod tests {
                 )),
             ]),
             None,
-            None,
             proxy_mapper(),
         )
         .into_body();
@@ -656,53 +618,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn into_body_retry_admission_releases_origin_on_eof_error_limit_and_drop() {
-        let (registry, key, origin) = tracked_origin();
-        let mut eof = response(
-            ScriptedNativeBody::exact(Vec::new()),
-            None,
-            Some(origin),
-            mapper(),
-        )
-        .into_body();
-        assert!(eof.frame().await.is_none());
-        assert_eq!(registry.active_requests_for(&key), 0);
-
-        let (registry, key, origin) = tracked_origin();
-        let mut failed = response(
-            ScriptedNativeBody::unknown(vec![Err(NativeTestError("native failure"))]),
-            None,
-            Some(origin),
-            mapper(),
-        )
-        .into_body();
-        assert!(failed.frame().await.expect("error").is_err());
-        assert_eq!(registry.active_requests_for(&key), 0);
-
-        let (registry, key, origin) = tracked_origin();
-        let mut limited = response(
-            ScriptedNativeBody::exact(vec![data(b"too-large")]),
-            Some(2),
-            Some(origin),
-            mapper(),
-        )
-        .into_body();
-        assert!(limited.frame().await.expect("limit error").is_err());
-        assert_eq!(registry.active_requests_for(&key), 0);
-
-        let (registry, key, origin) = tracked_origin();
-        let dropped = response(
-            ScriptedNativeBody::exact(vec![data(b"unpolled")]),
-            None,
-            Some(origin),
-            mapper(),
-        )
-        .into_body();
-        drop(dropped);
-        assert_eq!(registry.active_requests_for(&key), 0);
-    }
-
-    #[tokio::test]
     async fn next_chunk_and_write_to_file_remain_data_only() {
         let mut chunks = response(
             ScriptedNativeBody::exact(vec![
@@ -710,7 +625,6 @@ mod tests {
                 trailers("x-data-only"),
                 data(b"second"),
             ]),
-            None,
             None,
             mapper(),
         );
@@ -730,7 +644,6 @@ mod tests {
                 trailers("x-file-trailer"),
                 data(b"second"),
             ]),
-            None,
             None,
             mapper(),
         );
@@ -755,11 +668,9 @@ mod tests {
 
     #[tokio::test]
     async fn next_chunk_response_body_limit_failure_is_permanently_terminal() {
-        let (registry, key, origin) = tracked_origin();
         let mut response = response(
             ScriptedNativeBody::exact(vec![data(b"abc"), data(b"def"), data(b"tail")]),
             Some(5),
-            Some(origin),
             mapper(),
         );
 
@@ -772,7 +683,6 @@ mod tests {
             error,
             ApiClientError::ResponseBodyLimitExceeded { limit: 5, .. }
         ));
-        assert_eq!(registry.active_requests_for(&key), 0);
         assert_eq!(response.next_chunk().await.expect("terminal"), None);
         assert_eq!(response.next_chunk().await.expect("terminal again"), None);
 
@@ -780,14 +690,12 @@ mod tests {
         assert!(extracted.frame().await.is_none());
         assert!(extracted.frame().await.is_none());
         assert_eq!(extracted.size_hint().exact(), Some(0));
-        assert_eq!(registry.active_requests_for(&key), 0);
     }
 
     #[tokio::test]
     async fn next_chunk_redaction_native_error_is_mapped_once_and_permanently_terminal() {
         const BODY_SENTINEL: &str = "body-after-native-error-sentinel";
         const PROXY_SENTINEL: &str = "proxy-sentinel.invalid";
-        let (registry, key, origin) = tracked_origin();
         let mut response = response(
             ScriptedNativeBody::unknown(vec![
                 data(b"valid"),
@@ -797,7 +705,6 @@ mod tests {
                 data(b"additional"),
             ]),
             None,
-            Some(origin),
             proxy_mapper(),
         );
 
@@ -812,22 +719,18 @@ mod tests {
         let diagnostics = format!("{error} {error:?}");
         assert!(!diagnostics.contains(BODY_SENTINEL));
         assert!(!diagnostics.contains(PROXY_SENTINEL));
-        assert_eq!(registry.active_requests_for(&key), 0);
         assert_eq!(response.next_chunk().await.expect("terminal"), None);
 
         let mut extracted = response.into_body();
         assert!(extracted.frame().await.is_none());
         assert!(extracted.frame().await.is_none());
-        assert_eq!(registry.active_requests_for(&key), 0);
     }
 
     #[tokio::test]
-    async fn next_chunk_eof_releases_origin_and_into_body_remains_terminal() {
-        let (registry, key, origin) = tracked_origin();
+    async fn next_chunk_eof_and_into_body_remain_terminal() {
         let mut response = response(
             ScriptedNativeBody::exact(vec![data(b"complete")]),
             None,
-            Some(origin),
             mapper(),
         );
 
@@ -835,21 +738,17 @@ mod tests {
             response.next_chunk().await.expect("data"),
             Some(Bytes::from_static(b"complete"))
         );
-        assert_eq!(registry.active_requests_for(&key), 1);
         assert_eq!(response.next_chunk().await.expect("EOF"), None);
-        assert_eq!(registry.active_requests_for(&key), 0);
         assert_eq!(response.next_chunk().await.expect("repeated EOF"), None);
 
         let mut extracted = response.into_body();
         assert!(extracted.frame().await.is_none());
         assert!(extracted.frame().await.is_none());
         assert_eq!(extracted.size_hint().exact(), Some(0));
-        assert_eq!(registry.active_requests_for(&key), 0);
     }
 
     #[tokio::test]
-    async fn partial_next_chunk_then_into_body_preserves_frames_hint_limit_and_origin() {
-        let (registry, key, origin) = tracked_origin();
+    async fn partial_next_chunk_then_into_body_preserves_frames_hint_and_limit() {
         let mut response = response(
             ScriptedNativeBody::exact(vec![
                 data(b"abc"),
@@ -858,7 +757,6 @@ mod tests {
                 data(b"x"),
             ]),
             Some(5),
-            Some(origin),
             mapper(),
         );
 
@@ -866,7 +764,6 @@ mod tests {
             response.next_chunk().await.expect("first chunk"),
             Some(Bytes::from_static(b"abc"))
         );
-        assert_eq!(registry.active_requests_for(&key), 1);
 
         let mut body = response.into_body();
         assert_eq!(body.size_hint().lower(), 0);
@@ -889,7 +786,6 @@ mod tests {
                 .expect("data frame"),
             Bytes::from_static(b"de")
         );
-        assert_eq!(registry.active_requests_for(&key), 1);
         let error = body
             .frame()
             .await
@@ -898,7 +794,6 @@ mod tests {
         assert_eq!(error.kind(), BodyErrorKind::LimitExceeded);
         assert_eq!(error.limit(), Some(5));
         assert_eq!(error.observed(), Some(6));
-        assert_eq!(registry.active_requests_for(&key), 0);
         assert!(body.frame().await.is_none());
     }
 }

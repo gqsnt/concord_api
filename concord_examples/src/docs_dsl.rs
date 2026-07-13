@@ -64,13 +64,6 @@ api! {
         }
 
         policies {
-            retry read {
-                max_attempts 2
-                methods [GET]
-                on [429, 500, 502, 503, 504]
-                retry_after
-            }
-
             rate_limit app {
                 bucket application by [host] {
                     100 / 1m
@@ -87,13 +80,10 @@ api! {
         profiles {
             profile read {
                 auth bearer api_token
-                retry read
                 rate_limit app
             }
 
-            profile scoped_read {
-                retry read
-            }
+            profile scoped_read {}
 
             profile match_read {
                 rate_limit match_bucket

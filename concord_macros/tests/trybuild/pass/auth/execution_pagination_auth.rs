@@ -62,7 +62,6 @@ async fn execution_usage(api: UsageExecutionApi) -> Result<(), ApiClientError> {
         .timeout(Duration::from_secs(2))
         .clear_timeout()
         .inherit_timeout()
-        .attempt(1)
         .response()
         .await?;
     #[cfg(feature = "dangerous-raw-response")]

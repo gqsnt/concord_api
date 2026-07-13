@@ -7,7 +7,7 @@ The runtime treats pagination as a deterministic page loop:
 1. build the logical page request
 2. apply pagination for that page
 3. validate auth collisions and acquire rate-limit permits
-4. send the page request through the normal transport, classification, auth, retry, and decode path
+4. perform one visible execution, with at most one authentication recovery, then decode
 5. use the exact item count to apply common page-content stop rules before controller advance
 6. ask the pagination controller whether to continue or stop only when the runtime has not already stopped
 7. derive the next page request or return
@@ -122,9 +122,11 @@ Structured pagination failures use `ApiClientError::Pagination` or `PaginationLi
 
 `collect()` supports all four termination modes. Item collection, exact `TakeItems` truncation, and final hard-item-cap validation use the items returned by `PageItems::into_items()`. Pre-advance empty-page stop, hard-item-cap overflow, and provable `TakeItems` completion use the exact item count, because `into_items()` consumes the page while cursor and custom advance logic may need to borrow it. Generic pre-advance short-page stop also requires an expected page size from built-ins or `EndpointPagination::expected_items_per_page()`. `HardItemCap` never truncates.
 
-Retry and auth refresh preserve the current page state. A retry for page `N` retries page `N`, not page `N + 1`.
+Reqwest applies the selected client retry mode independently to each page's
+visible execution. Any hidden resend remains part of page `N`. Authentication
+recovery also reconstructs page `N` and never advances page state.
 
-Successful page responses are checked for common content termination before the controller can advance. A hard-item-cap overflow or completed `TakeItems` request also prevents advance. Decode failure and retry for a page never advance controller state.
+Successful page responses are checked for common content termination before the controller can advance. A hard-item-cap overflow or completed `TakeItems` request also prevents advance. Decode failure never advances controller state.
 
 Cursor pagination follows the same per-page runtime order. `stop_when_cursor_missing` stops when a cursor is absent; if pagination continues without changing the next request identity, Concord raises a typed non-progress error rather than reissuing the same page.
 

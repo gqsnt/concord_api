@@ -300,9 +300,10 @@ fn bench_non_progress(c: &mut Criterion) {
     c.bench_function("non_progress/error_path", |b| {
         b.to_async(&rt).iter_batched(
             || {
-                let transport = MockTransport::scripted(vec![
-                    MockResponse::text(StatusCode::OK, "item-0|next=BENCH_FAKE_CURSOR"),
-                ]);
+                let transport = MockTransport::scripted(vec![MockResponse::text(
+                    StatusCode::OK,
+                    "item-0|next=BENCH_FAKE_CURSOR",
+                )]);
                 (client(transport), ItemsEndpoint::non_progress(1))
             },
             |(client, endpoint)| async move {

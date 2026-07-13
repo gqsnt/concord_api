@@ -16,8 +16,7 @@ mod rate_limit;
 mod redaction;
 mod request;
 mod response_classify;
-mod retry;
-mod retry_admission;
+pub mod retry_mode;
 pub mod runtime;
 mod runtime_hooks;
 mod runtime_state;
@@ -70,7 +69,6 @@ pub mod __private {
         ProgressKey,
     };
     pub use crate::policy::{Policy, PolicyLayer, PolicySnapshot, ResolvedPolicy};
-    pub use crate::retry::RetrySetting;
 }
 #[doc(hidden)]
 #[deprecated(note = "use concord_core::__private for generated-code internals")]
@@ -95,6 +93,7 @@ pub mod prelude {
         RateLimitResponseContext,
     };
     pub use crate::request::{PaginatedRequest, PendingRequest};
+    pub use crate::retry_mode::{RetryMode, RetryModeError, StatusRetryConfig};
     pub use crate::secret::SecretString;
 }
 
@@ -154,11 +153,7 @@ pub mod advanced {
         RateLimitResponsePolicy, RateLimitScopeHint, RateLimitSetting, RateLimitWindow,
         RateLimiter, parse_retry_after,
     };
-    pub use crate::retry::{
-        ConfiguredRetryPolicy, NoRetryPolicy, RetryClassifierConfig, RetryConfig, RetryContext,
-        RetryDecision, RetryIdempotency, RetryOutcome, RetryPolicy,
-    };
-    pub use crate::retry_admission::RetryAdmissionRegistry;
+    pub use crate::retry_mode::{RetryMode, RetryModeError, StatusRetryConfig};
     #[allow(deprecated)]
     pub use crate::runtime::{DebugConfig, RuntimeConfig};
     pub use crate::runtime_hooks::{

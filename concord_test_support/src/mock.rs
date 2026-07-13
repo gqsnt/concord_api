@@ -16,7 +16,6 @@ pub struct RecordedRequest {
     pub headers: HeaderMap,
     pub body: Bytes,
     pub endpoint: Option<String>,
-    pub attempt: Option<u32>,
     pub page_index: Option<u32>,
     pub timeout: Option<Duration>,
     body_complete: bool,
@@ -401,6 +400,15 @@ impl MockHandle {
             .len()
     }
 
+    /// Number of physical HTTP requests observed on the loopback wire.
+    ///
+    /// This deliberately differs from a Concord visible-execution count:
+    /// Reqwest-internal retries increase this value without rerunning Concord
+    /// hooks or rate-limit acquisition.
+    pub fn wire_request_count(&self) -> usize {
+        self.recorded_len()
+    }
+
     pub fn completed_len(&self) -> usize {
         self.lifetime
             .state
@@ -552,8 +560,6 @@ fn serve_one(
                 .expect("captured request target")
         });
     let endpoint = take_header_string(&mut headers, "x-concord-test-endpoint");
-    let attempt = take_header_string(&mut headers, "x-concord-test-attempt")
-        .and_then(|value| value.parse().ok());
     let page_index = take_header_string(&mut headers, "x-concord-test-page-index")
         .and_then(|value| value.parse().ok());
     let timeout = take_header_string(&mut headers, "x-concord-test-timeout-ms")
@@ -568,7 +574,6 @@ fn serve_one(
             headers,
             body: Bytes::new(),
             endpoint,
-            attempt,
             page_index,
             timeout,
             body_complete: false,

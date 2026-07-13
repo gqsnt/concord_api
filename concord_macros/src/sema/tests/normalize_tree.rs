@@ -16,12 +16,7 @@ fn normalized_tree_preserves_client_and_top_level_endpoint_fields() {
                 credential key = api_key(secret.token)
 
                 default {
-                    retry read
                     rate_limit api
-                }
-
-                retry read {
-                    max_attempts 2
                 }
 
                 rate_limit api {
@@ -42,7 +37,6 @@ fn normalized_tree_preserves_client_and_top_level_endpoint_fields() {
                 headers {
                     "x-trace" = vars.tenant
                 }
-                retry read
                 rate_limit api
                 -> Json<ShowResponse>
         }
@@ -66,7 +60,6 @@ fn normalized_tree_preserves_client_and_top_level_endpoint_fields() {
         1
     );
     assert!(norm.client.default_behavior_uses.is_empty());
-    assert!(norm.client.retry_profiles.is_some());
     assert!(norm.client.rate_limit.is_some());
     assert_eq!(norm.items.len(), 1);
 
@@ -89,7 +82,6 @@ fn normalized_tree_preserves_client_and_top_level_endpoint_fields() {
     ));
     assert!(endpoint.policy.query.is_some());
     assert!(endpoint.policy.headers.is_some());
-    assert!(endpoint.retry.is_some());
     assert!(endpoint.rate_limit.is_some());
     assert!(endpoint.paginate.is_none());
 
@@ -227,10 +219,6 @@ fn normalized_tree_preserves_client_shape_without_raw_auth_groups() {
                 secret token: String
                 credential key = api_key(secret.token)
 
-                retry read {
-                    max_attempts 2
-                }
-
                 rate_limit api {
                     bucket request by [endpoint] {
                         10 / 1s
@@ -260,7 +248,6 @@ fn normalized_tree_preserves_client_shape_without_raw_auth_groups() {
     assert!(norm.client.vars.is_some());
     assert!(norm.client.auth_vars.is_some());
     assert_eq!(norm.client.auth_uses.len(), 1);
-    assert!(norm.client.retry_profiles.is_some());
     assert!(norm.client.rate_limit.is_some());
 
     let scope = top_scope(&norm, 0);
