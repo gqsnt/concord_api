@@ -17,6 +17,17 @@ pub struct MacroAbi<const VERSION: u32>;
 #[doc(hidden)]
 pub const MACRO_ABI: MacroAbi<1> = MacroAbi;
 
+/// Opaque typed provider binding used by generated client contexts.
+///
+/// This adapter only associates a generated credential identifier with an
+/// existing core-owned provider slot. Authentication execution and mutable
+/// cache state remain outside this ABI module.
+#[doc(hidden)]
+pub use crate::auth::{
+    AuthChallengeMode, AuthPreparationMode, AuthProvenance, AuthProviderBinding, AuthUsageId,
+    CredentialId,
+};
+
 /// A protocol scheme known without consulting generated client values.
 #[doc(hidden)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -169,5 +180,23 @@ mod tests {
     fn descriptor_method_adapter_is_metadata_only() {
         assert_eq!(HttpMethod::Get.as_http_method(), http::Method::GET);
         let _: MacroAbi<1> = MACRO_ABI;
+    }
+
+    #[test]
+    fn versioned_surface_contains_no_auth_engine_or_mutable_cache_implementation() {
+        let source = include_str!("v1.rs");
+        for forbidden in [
+            concat!("Mu", "tex<"),
+            concat!("Rw", "Lock<"),
+            concat!("Credential", "SlotState"),
+            concat!("get_or_", "refresh"),
+            concat!("invalidate_", "generation"),
+            concat!("AuthHttp", "Executor"),
+            concat!("Req", "west"),
+            concat!("Trans", "port"),
+            concat!("Dyn", "Body"),
+        ] {
+            assert!(!source.contains(forbidden), "v1 contained {forbidden}");
+        }
     }
 }

@@ -4,6 +4,7 @@ mod future;
 mod http;
 mod ids;
 mod materials;
+mod orchestrator;
 mod plan;
 mod providers;
 
@@ -22,6 +23,9 @@ pub use http::{
 };
 pub use ids::{AuthProvenance, AuthUsageId, CredentialId};
 pub use materials::{AccessToken, ApiKey, BasicCredential};
+#[doc(hidden)]
+pub use orchestrator::{AuthChallengeMode, AuthPreparationMode, AuthProviderBinding};
+pub(crate) use orchestrator::{apply_rejection, plan_rejection, prepare};
 pub(crate) use plan::AuthRejectionPlan;
 pub(crate) use plan::AuthTransportMaterial;
 pub use plan::{

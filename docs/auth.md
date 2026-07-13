@@ -106,6 +106,15 @@ Endpoint-backed material can be `AccessToken` or `BasicCredential` when attached
 
 ## Auth State
 
+Authentication execution is core-owned. Generated clients retain their typed
+secret arguments, provider setup, endpoint-backed acquisition helpers, and
+auth-state facades, while emitting only credential identifiers and narrow
+`concord_core::__private::v1` provider bindings. Cache coordination, provider
+acquisition and refresh, invalidation, challenge planning, and secret
+materialization are sequenced by `concord_core` on the existing request path.
+The versioned binding ABI is generated-only and is not a public middleware or
+authentication-executor extension point.
+
 Generated auth-state accessors expose explicit checks and clearing.
 
 ```rust

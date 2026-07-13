@@ -26,6 +26,16 @@ pub trait ClientContext: Sized + Send + Sync + 'static {
         })
     }
 
+    /// Resolves secret-free generated binding metadata for one credential.
+    /// Core owns every lifecycle operation performed through the binding.
+    fn auth_provider_binding<'a>(
+        _credential: &crate::auth::CredentialId,
+        _auth_state: &'a Self::AuthState,
+    ) -> Option<crate::__private::v1::AuthProviderBinding<'a, Self>> {
+        None
+    }
+
+    #[doc(hidden)]
     fn prepare_auth_requirement<'a>(
         _requirement: &'a crate::auth::AuthRequirement,
         _request: &'a mut crate::auth::AuthApplicationRequest<'_>,
@@ -43,11 +53,9 @@ pub trait ClientContext: Sized + Send + Sync + 'static {
         })
     }
 
-    /// Derives one authentication rejection action for this exact requirement
-    /// and applied credential pair without performing any credential,
-    /// provider, or network operation. Core validates and aggregates it.
+    #[doc(hidden)]
     fn plan_auth_response(
-        _requirement: &crate::auth::AuthRequirement,
+        requirement: &crate::auth::AuthRequirement,
         applied: &crate::auth::AuthAppliedCredential,
         _vars: &Self::Vars,
         _auth: &Self::AuthVars,
@@ -56,14 +64,13 @@ pub trait ClientContext: Sized + Send + Sync + 'static {
         _headers: &http::HeaderMap,
     ) -> Result<crate::auth::AuthRejectionAction, AuthError> {
         Ok(crate::auth::AuthRejectionAction::terminal(
-            _requirement,
+            requirement,
             applied,
             None,
         ))
     }
 
-    /// Applies one terminal action using only local credential state. This
-    /// hook has no executor and cannot acquire or refresh credentials.
+    #[doc(hidden)]
     #[allow(clippy::too_many_arguments)]
     fn apply_terminal_auth_action<'a>(
         _action: &'a crate::auth::AuthRejectionAction,
@@ -78,8 +85,7 @@ pub trait ClientContext: Sized + Send + Sync + 'static {
         Box::pin(async { Ok(()) })
     }
 
-    /// Applies the selected refresh action. Core calls this only after a
-    /// retry-admission permit has been reserved.
+    #[doc(hidden)]
     #[allow(clippy::too_many_arguments)]
     fn apply_refresh_auth_action<'a>(
         _action: &'a crate::auth::AuthRejectionAction,
@@ -138,8 +144,9 @@ pub(super) struct AuthPreparation {
     pub(super) cache_policy: AuthPreparationCachePolicy,
 }
 
-pub(super) struct AuthRejectionCtx<'a> {
+pub(super) struct AuthRejectionCtx<'a, Cx: ClientContext> {
     pub(super) plan: &'a crate::endpoint::RequestPlanView,
+    pub(super) auth_state: &'a Cx::AuthState,
     pub(super) meta: &'a RequestMeta,
     pub(super) status: StatusCode,
     pub(super) headers: &'a http::HeaderMap,

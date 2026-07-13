@@ -75,7 +75,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
 
     fn classify_auth_rejection(
         &self,
-        ctx: AuthRejectionCtx<'_>,
+        ctx: AuthRejectionCtx<'_, Cx>,
     ) -> Result<Option<crate::auth::AuthRejectionPlan>, ApiClientError> {
         if !Self::is_protected_auth_rejection(ctx.plan, ctx.status) {
             return Ok(None);
@@ -100,11 +100,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     "authentication requirement use was not applied",
                 ));
             };
-            let action = Cx::plan_auth_response(
+            let action = crate::auth::plan_rejection::<Cx>(
                 requirement,
                 applied,
                 self.vars(),
                 self.auth_vars(),
+                ctx.auth_state,
                 ctx.meta,
                 ctx.status,
                 ctx.headers,
@@ -236,32 +237,18 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             let action = &ctx.rejection_plan.actions()[action_index];
             let requirement = &requirements[requirement_index];
             let applied = &applied[applied_index];
-            let result = if action.requests_refresh() {
-                Cx::apply_refresh_auth_action(
-                    action,
-                    requirement,
-                    applied,
-                    self.vars(),
-                    self.auth_vars(),
-                    ctx.auth_state,
-                    ctx.auth_http,
-                    ctx.response_meta,
-                    ctx.status,
-                )
-                .await
-            } else {
-                Cx::apply_terminal_auth_action(
-                    action,
-                    requirement,
-                    applied,
-                    self.vars(),
-                    self.auth_vars(),
-                    ctx.auth_state,
-                    ctx.response_meta,
-                    ctx.status,
-                )
-                .await
-            };
+            let result = crate::auth::apply_rejection::<Cx>(
+                action,
+                requirement,
+                applied,
+                self.vars(),
+                self.auth_vars(),
+                ctx.auth_state,
+                ctx.auth_http,
+                ctx.response_meta,
+                ctx.status,
+            )
+            .await;
             result.map_err(|source| ApiClientError::Auth {
                 ctx: ErrorContext {
                     endpoint: ctx.response_meta.endpoint,
@@ -528,6 +515,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     };
                     let classification = self.classify_auth_rejection(AuthRejectionCtx {
                         plan,
+                        auth_state: &auth_state_snapshot,
                         meta: response_meta,
                         status: response_status,
                         headers: response_headers,
@@ -625,6 +613,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                             .request_meta(current_attempt, plan.overrides.page_index);
                         let classification = self.classify_auth_rejection(AuthRejectionCtx {
                             plan,
+                            auth_state: &auth_state_snapshot,
                             meta: &response_meta,
                             status: *status,
                             headers: headers.as_ref(),
@@ -900,9 +889,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             .iter()
             .zip(&head.auth_plan.slots)
         {
-            let auth_meta = head.meta.clone();
             let mut auth_request = crate::auth::AuthApplicationRequest::new(slot);
-            let prepared = Cx::prepare_auth_requirement(
+            let auth_meta = head.meta.clone();
+            let prepared = crate::auth::prepare::<Cx>(
                 requirement,
                 &mut auth_request,
                 self.vars(),

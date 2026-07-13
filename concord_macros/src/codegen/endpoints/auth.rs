@@ -27,12 +27,12 @@ fn emit_auth_requirement(
     quote! {
         ::concord_core::advanced::AuthRequirement {
             credential: ::concord_core::advanced::CredentialRef {
-                id: ::concord_core::advanced::CredentialId::new(#client_ns, #credential_name),
+                id: ::concord_core::__private::v1::CredentialId::new(#client_ns, #credential_name),
             },
             placement: #placement,
-            usage_id: ::concord_core::advanced::AuthUsageId::new(#usage_id),
+            usage_id: ::concord_core::__private::v1::AuthUsageId::new(#usage_id),
             step_id: ::core::option::Option::Some(#step_id),
-            provenance: ::concord_core::advanced::AuthProvenance::new(#provenance),
+            provenance: ::concord_core::__private::v1::AuthProvenance::new(#provenance),
             challenge: ::concord_core::advanced::AuthChallengePolicy::Default,
         }
     }

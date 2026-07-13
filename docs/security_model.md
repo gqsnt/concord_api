@@ -59,7 +59,11 @@ These features are intended for controlled diagnostics, protocol testing, and lo
 
 ### Generated-code-only plumbing
 
-`concord_core::__private` is generated-code-only plumbing.
+`concord_core::__private` is generated-code-only plumbing. New descriptor and
+authentication-binding integration uses the narrow, versioned
+`concord_core::__private::v1` surface. That module is not a stable reflection,
+transport, middleware, or authentication-executor API; its public visibility
+exists only so macro expansions compile across crate boundaries.
 
 It exists so macro-generated code has stable paths for request planning, response planning, endpoint internals, and other implementation details that are not intended as a public user API. Normal application code should not import it.
 
@@ -108,6 +112,13 @@ Neither feature is enabled by default.
 ## Auth Material Handling
 
 Raw auth material is materialized at the transport boundary.
+
+Core is the authentication lifecycle authority. Generated clients declare
+typed credential identifiers and provider bindings, but core sequences cache
+lookup, coalesced acquisition or refresh, generation-aware invalidation,
+secret material planning, and final header/query insertion. Generated code
+does not run provider or credential-cache loops. Provider HTTP remains a
+bounded, separate operation from the protected endpoint transport call.
 
 The runtime checks auth collisions before rate-limit acquisition, hooks, debug, and transport side effects. Protected auth responses stay out of normal diagnostics, and auth-specific handling remains separate from ordinary metadata surfaces.
 

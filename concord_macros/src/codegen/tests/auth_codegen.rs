@@ -21,7 +21,7 @@ fn generated_auth_plan_uses_resolved_requirements() {
         &[
             "::concord_core::advanced::AuthRequirement",
             "::concord_core::advanced::AuthPlacement::Header",
-            "::concord_core::advanced::AuthUsageId::new(\"header\")",
+            "::concord_core::__private::v1::AuthUsageId::new(\"header\")",
             "AuthProvenance::new(\"endpoint\")",
             "step_id: ::core::option::Option::Some(\"Search:0:key\")",
         ],
@@ -37,7 +37,7 @@ fn generated_auth_plan_uses_resolved_requirements() {
 }
 
 #[test]
-fn generated_auth_dispatch_uses_direct_match_on_credential_ids() {
+fn generated_auth_dispatch_emits_bindings_without_lifecycle_orchestration() {
     let out = expanded(quote! {
         client AuthDispatchApi {
             base "https://example.com"
@@ -57,14 +57,34 @@ fn generated_auth_dispatch_uses_direct_match_on_credential_ids() {
     assert_contains_all(
         &out,
         &[
-            "match(requirement.credential.id.namespace(),requirement.credential.id.name())",
-            "(\"AuthDispatchApi\",\"upstream\")=>{",
-            "(\"AuthDispatchApi\",\"session\")=>{",
+            "fnauth_provider_binding<'a>",
+            "match(credential.namespace(),credential.name())",
+            "(\"AuthDispatchApi\",\"upstream\")=>",
+            "(\"AuthDispatchApi\",\"session\")=>",
+            "::concord_core::__private::v1::AuthProviderBinding::secret",
+            "::concord_core::__private::v1::AuthPreparationMode::RequestLocal",
+            "::concord_core::__private::v1::AuthChallengeMode::Refresh",
         ],
     );
     assert_not_contains_all(
         &out,
-        &["ifrequirement.credential.id==::concord_core::advanced::CredentialId::new"],
+        &[
+            "ifrequirement.credential.id==::concord_core::__private::v1::CredentialId::new",
+            "get_or_refresh",
+            "prepare_auth_requirement",
+            "plan_auth_response",
+            "apply_terminal_auth_action",
+            "apply_refresh_auth_action",
+            "invalidate_rejected_credential",
+            "auth_decision_for_status",
+            "apply_secret_credential",
+            "apply_basic_credential",
+            "CredentialContext",
+            "CredentialRefreshReason",
+            "::concord_core::advanced::CredentialId",
+            "::concord_core::advanced::AuthUsageId",
+            "::concord_core::advanced::AuthProvenance",
+        ],
     );
 }
 
