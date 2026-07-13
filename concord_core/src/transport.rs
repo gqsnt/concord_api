@@ -33,7 +33,6 @@ pub(crate) struct BuiltRequest {
     pub(crate) message: http::Request<crate::body::DynBody>,
     pub(crate) retry: RetrySetting,
     pub(crate) rate_limit: RateLimitPlan,
-    pub(crate) stream_like: bool,
 }
 
 impl fmt::Debug for BuiltRequest {
@@ -50,7 +49,6 @@ impl fmt::Debug for BuiltRequest {
             .field("timeout", &self.context().timeout)
             .field("retry", &self.retry)
             .field("rate_limit", &self.rate_limit)
-            .field("stream_like", &self.stream_like)
             .finish()
     }
 }
@@ -233,11 +231,7 @@ pub(crate) fn materialize_transport_request(
         by_slot.insert(slot_id, material);
     }
 
-    let BuiltRequest {
-        mut message,
-        stream_like,
-        ..
-    } = built;
+    let BuiltRequest { mut message, .. } = built;
     let auth_plan = message
         .extensions()
         .get::<crate::auth::AuthPlacementPlan>()
@@ -330,7 +324,10 @@ pub(crate) fn materialize_transport_request(
         }
     }
 
-    if stream_like && let Some(limit) = stream_request_limit {
+    // One global request-body guard, installed at the final transport
+    // materialization boundary. It covers reusable bytes and every streaming
+    // recipe alike; this remains separate from exact-length enforcement.
+    if let Some(limit) = stream_request_limit {
         let body = std::mem::replace(message.body_mut(), crate::body::DynBody::empty());
         *message.body_mut() = body.limited(limit as u64);
     }

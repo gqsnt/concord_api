@@ -471,7 +471,7 @@ mod test {
     }
 
     #[test]
-    fn unsupported_auth_bodies_are_rejected_without_production() {
+    fn auth_rebuildability_is_recipe_derived_without_factory_invocation() {
         let invocations = Arc::new(AtomicUsize::new(0));
         let observed = Arc::clone(&invocations);
         let factory = crate::io::PreparedBody::replay_factory(
@@ -484,9 +484,8 @@ mod test {
         );
         let mut headers = http::HeaderMap::new();
 
-        let error = validate_auth_internal_body(&mut headers, &factory)
-            .expect_err("auth replay factories are unsupported");
-        assert_eq!(error.kind, AuthErrorKind::UnsupportedScheme);
+        validate_auth_internal_body(&mut headers, &factory)
+            .expect("complete factories are rebuildable for auth recovery");
         assert_eq!(invocations.load(Ordering::SeqCst), 0);
 
         let one_shot = crate::io::PreparedBody::one_shot(crate::body::DynBody::empty(), None);

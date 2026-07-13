@@ -15,9 +15,9 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
 
-type BodyFactory = dyn Fn() -> Result<crate::body::DynBody, crate::body::BodyError> + Send + Sync;
-type MediaBodyFactory =
-    dyn Fn() -> Result<(crate::body::DynBody, HeaderValue), crate::body::BodyError> + Send + Sync;
+// A factory deliberately returns a terminal body, never another recipe. This
+// makes recursive/factory-bearing output structurally impossible.
+type BodyFactory = dyn Fn() -> Result<TerminalBody, crate::body::BodyError> + Send + Sync;
 
 enum PreparedBodyMediaType {
     Fixed(HeaderValue),
@@ -34,15 +34,68 @@ impl PreparedBodyMediaType {
 }
 
 enum ReplayFactory {
-    Fixed(std::sync::Arc<BodyFactory>),
-    Dynamic(std::sync::Arc<MediaBodyFactory>),
+    Terminal(std::sync::Arc<BodyFactory>),
 }
 
-enum PreparedBodySource {
+/// Per-execution, non-factory body result. This preserves the capability that
+/// P-06 will map to Reqwest natively; it cannot contain another factory.
+pub(crate) enum TerminalBody {
     Empty,
     ReusableBytes(Bytes),
-    OneShot(Option<crate::body::DynBody>),
-    ReplayFactory(ReplayFactory),
+    OneShotByteStream(StreamBody),
+    OneShotHttpBody(crate::body::DynBody),
+    #[cfg(feature = "multipart")]
+    MultipartRecipe(MultipartBody),
+}
+
+impl TerminalBody {
+    fn reqwest_cloneable(&self) -> bool {
+        matches!(self, Self::Empty | Self::ReusableBytes(_))
+    }
+
+    fn into_legacy_transport_body(
+        self,
+        exact_length: Option<u64>,
+    ) -> Result<(crate::body::DynBody, Option<HeaderValue>), crate::body::BodyError> {
+        match self {
+            Self::Empty => Ok((
+                materialize_legacy_body(crate::body::DynBody::empty(), exact_length),
+                None,
+            )),
+            Self::ReusableBytes(bytes) => Ok((
+                materialize_legacy_body(crate::body::DynBody::from_bytes(bytes), exact_length),
+                None,
+            )),
+            Self::OneShotByteStream(stream) => Ok((
+                materialize_legacy_body(
+                    crate::body::DynBody::from_stream_body(stream),
+                    exact_length,
+                ),
+                None,
+            )),
+            Self::OneShotHttpBody(body) => Ok((materialize_legacy_body(body, exact_length), None)),
+            #[cfg(feature = "multipart")]
+            Self::MultipartRecipe(recipe) => recipe
+                .into_legacy_transport_body()
+                .map(|(media_type, body)| (body, Some(media_type)))
+                .map_err(|_| crate::body::BodyError::invalid_configuration()),
+        }
+    }
+}
+
+/// The single logical authority for a request body.
+///
+/// `DynBody` appears only in the terminal compatibility materializer for the
+/// still-public transport boundary.  In particular, ordinary byte streams are
+/// retained as streams until an attempt is constructed.
+enum RequestBodyRecipe {
+    Empty,
+    ReusableBytes(Bytes),
+    OneShotByteStream(Option<StreamBody>),
+    OneShotHttpBody(Option<crate::body::DynBody>),
+    RequestBodyFactory(ReplayFactory),
+    #[cfg(feature = "multipart")]
+    MultipartRecipe(Option<MultipartBody>),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -97,36 +150,44 @@ impl std::error::Error for BodyProductionError {}
 
 /// Request-local owner of request body production, metadata, and replayability.
 pub struct PreparedBody {
-    source: PreparedBodySource,
+    recipe: RequestBodyRecipe,
     media_type: Option<PreparedBodyMediaType>,
     size_hint: SizeHint,
 }
 
 pub(crate) struct ProducedBody {
-    body: crate::body::DynBody,
-    stream_like: bool,
+    terminal: TerminalBody,
     media_type: Option<HeaderValue>,
+    exact_length: Option<u64>,
 }
 
 impl ProducedBody {
-    pub(crate) fn is_stream(&self) -> bool {
-        self.stream_like
+    #[cfg(test)]
+    pub(crate) fn is_reqwest_cloneable(&self) -> bool {
+        self.terminal.reqwest_cloneable()
     }
 
+    #[cfg(test)]
     pub(crate) fn into_dyn_body(self) -> crate::body::DynBody {
-        self.body
+        self.into_legacy_transport_parts()
+            .expect("validated terminal body must materialize for the legacy transport")
+            .0
     }
 
-    pub(crate) fn media_type(&self) -> Option<&HeaderValue> {
-        self.media_type.as_ref()
+    pub(crate) fn into_legacy_transport_parts(
+        self,
+    ) -> Result<(crate::body::DynBody, Option<HeaderValue>), crate::body::BodyError> {
+        let terminal_media = self
+            .terminal
+            .into_legacy_transport_body(self.exact_length)?;
+        Ok((terminal_media.0, self.media_type.or(terminal_media.1)))
     }
 }
 
 impl fmt::Debug for ProducedBody {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProducedBody")
-            .field("body", &self.body)
-            .field("stream_like", &self.stream_like)
+            .field("reqwest_cloneable", &self.terminal.reqwest_cloneable())
             .field("has_media_type", &self.media_type.is_some())
             .finish()
     }
@@ -135,7 +196,7 @@ impl fmt::Debug for ProducedBody {
 impl PreparedBody {
     pub fn empty() -> Self {
         Self {
-            source: PreparedBodySource::Empty,
+            recipe: RequestBodyRecipe::Empty,
             media_type: None,
             size_hint: exact_size_hint(0),
         }
@@ -144,7 +205,7 @@ impl PreparedBody {
     pub fn reusable_bytes(bytes: Bytes, media_type: Option<HeaderValue>) -> Self {
         let size_hint = exact_size_hint(bytes.len() as u64);
         Self {
-            source: PreparedBodySource::ReusableBytes(bytes),
+            recipe: RequestBodyRecipe::ReusableBytes(bytes),
             media_type: media_type.map(PreparedBodyMediaType::Fixed),
             size_hint,
         }
@@ -153,7 +214,7 @@ impl PreparedBody {
     pub fn one_shot(body: crate::body::DynBody, media_type: Option<HeaderValue>) -> Self {
         let size_hint = body.size_hint();
         Self {
-            source: PreparedBodySource::OneShot(Some(body)),
+            recipe: RequestBodyRecipe::OneShotHttpBody(Some(body)),
             media_type: media_type.map(PreparedBodyMediaType::Fixed),
             size_hint,
         }
@@ -167,33 +228,62 @@ impl PreparedBody {
     where
         F: Fn() -> Result<crate::body::DynBody, crate::body::BodyError> + Send + Sync + 'static,
     {
+        Self::replay_factory_terminal(size_hint, media_type, move || {
+            factory().map(TerminalBody::OneShotHttpBody)
+        })
+    }
+
+    /// Private terminal-recipe factory used by core-owned body producers.
+    /// Public legacy factories above adapt into this API but never become the
+    /// stored factory authority.
+    pub(crate) fn replay_factory_terminal<F>(
+        size_hint: SizeHint,
+        media_type: Option<HeaderValue>,
+        factory: F,
+    ) -> Self
+    where
+        F: Fn() -> Result<TerminalBody, crate::body::BodyError> + Send + Sync + 'static,
+    {
         Self {
-            source: PreparedBodySource::ReplayFactory(ReplayFactory::Fixed(std::sync::Arc::new(
-                factory,
-            ))),
+            recipe: RequestBodyRecipe::RequestBodyFactory(ReplayFactory::Terminal(
+                std::sync::Arc::new(factory),
+            )),
             media_type: media_type.map(PreparedBodyMediaType::Fixed),
             size_hint,
         }
     }
 
-    pub fn replay_factory_with_media<F>(size_hint: SizeHint, factory: F) -> Self
+    #[cfg(feature = "multipart")]
+    pub(crate) fn replay_multipart_factory<F>(factory: F) -> Self
     where
-        F: Fn() -> Result<(crate::body::DynBody, HeaderValue), crate::body::BodyError>
-            + Send
-            + Sync
-            + 'static,
+        F: Fn() -> Result<MultipartBody, crate::body::BodyError> + Send + Sync + 'static,
     {
         Self {
-            source: PreparedBodySource::ReplayFactory(ReplayFactory::Dynamic(std::sync::Arc::new(
-                factory,
-            ))),
+            recipe: RequestBodyRecipe::RequestBodyFactory(ReplayFactory::Terminal(
+                std::sync::Arc::new(move || factory().map(TerminalBody::MultipartRecipe)),
+            )),
             media_type: Some(PreparedBodyMediaType::Dynamic),
-            size_hint,
+            size_hint: SizeHint::new(),
         }
     }
 
     pub fn from_stream_body(body: StreamBody, media_type: Option<HeaderValue>) -> Self {
-        Self::one_shot(crate::body::DynBody::from_stream_body(body), media_type)
+        let size_hint = body.size_hint();
+        Self {
+            recipe: RequestBodyRecipe::OneShotByteStream(Some(body)),
+            media_type: media_type.map(PreparedBodyMediaType::Fixed),
+            size_hint,
+        }
+    }
+
+    #[cfg(feature = "multipart")]
+    pub(crate) fn multipart(recipe: MultipartBody) -> Self {
+        Self {
+            recipe: RequestBodyRecipe::MultipartRecipe(Some(recipe)),
+            // Reqwest owns the complete multipart value including boundary.
+            media_type: Some(PreparedBodyMediaType::Dynamic),
+            size_hint: SizeHint::new(),
+        }
     }
 
     pub fn media_type(&self) -> Option<&HeaderValue> {
@@ -202,7 +292,8 @@ impl PreparedBody {
             .and_then(PreparedBodyMediaType::as_fixed)
     }
 
-    pub(crate) fn reserves_content_type(&self) -> bool {
+    #[doc(hidden)]
+    pub fn reserves_content_type(&self) -> bool {
         matches!(self.media_type, Some(PreparedBodyMediaType::Dynamic))
     }
 
@@ -211,61 +302,89 @@ impl PreparedBody {
     }
 
     pub fn is_replayable(&self) -> bool {
-        matches!(
-            self.source,
-            PreparedBodySource::Empty
-                | PreparedBodySource::ReusableBytes(_)
-                | PreparedBodySource::ReplayFactory(_)
-        )
+        match &self.recipe {
+            RequestBodyRecipe::Empty
+            | RequestBodyRecipe::ReusableBytes(_)
+            | RequestBodyRecipe::RequestBodyFactory(_) => true,
+            #[cfg(feature = "multipart")]
+            RequestBodyRecipe::MultipartRecipe(Some(recipe)) => recipe.is_reconstructible(),
+            _ => false,
+        }
     }
 
     pub(crate) fn supports_auth_internal_retries(&self) -> bool {
+        self.is_replayable()
+    }
+
+    /// Temporary eligibility for the existing general retry executor.  This is
+    /// deliberately narrower than Concord rebuildability: directly supplied
+    /// multipart recipes are reconstructible for bounded authentication
+    /// recovery, but remain excluded from automatic general retries until the
+    /// retry-authority cutover.
+    pub(crate) fn supports_general_retries(&self) -> bool {
         matches!(
-            self.source,
-            PreparedBodySource::Empty | PreparedBodySource::ReusableBytes(_)
+            self.recipe,
+            RequestBodyRecipe::Empty
+                | RequestBodyRecipe::ReusableBytes(_)
+                | RequestBodyRecipe::RequestBodyFactory(_)
         )
     }
 
     pub(crate) fn produce_for_attempt(&mut self) -> Result<ProducedBody, BodyProductionError> {
         let size_hint = self.size_hint.clone();
-        match &mut self.source {
-            PreparedBodySource::Empty => Ok(ProducedBody {
-                body: crate::body::DynBody::empty(),
-                stream_like: false,
+        match &mut self.recipe {
+            RequestBodyRecipe::Empty => Ok(ProducedBody {
+                terminal: TerminalBody::Empty,
                 media_type: None,
+                exact_length: None,
             }),
-            PreparedBodySource::ReusableBytes(bytes) => Ok(ProducedBody {
-                body: crate::body::DynBody::from_bytes(bytes.clone()),
-                stream_like: false,
+            RequestBodyRecipe::ReusableBytes(bytes) => Ok(ProducedBody {
+                terminal: TerminalBody::ReusableBytes(bytes.clone()),
                 media_type: self.media_type().cloned(),
+                exact_length: None,
             }),
-            PreparedBodySource::OneShot(body) => body
+            RequestBodyRecipe::OneShotByteStream(body) => body
                 .take()
-                .map(|body| ProducedBody {
-                    body,
-                    stream_like: true,
+                .map(|stream| ProducedBody {
+                    terminal: TerminalBody::OneShotByteStream(stream),
                     media_type: self.media_type().cloned(),
+                    exact_length: size_hint.exact(),
                 })
                 .ok_or_else(BodyProductionError::already_consumed),
-            PreparedBodySource::ReplayFactory(factory) => match factory {
-                ReplayFactory::Fixed(factory) => factory()
-                    .map(|body| ProducedBody {
-                        body: body.with_size_hint(size_hint),
-                        stream_like: true,
-                        media_type: self.media_type().cloned(),
+            RequestBodyRecipe::OneShotHttpBody(body) => body
+                .take()
+                .map(|body| ProducedBody {
+                    terminal: TerminalBody::OneShotHttpBody(body),
+                    media_type: self.media_type().cloned(),
+                    exact_length: size_hint.exact(),
+                })
+                .ok_or_else(BodyProductionError::already_consumed),
+            RequestBodyRecipe::RequestBodyFactory(ReplayFactory::Terminal(factory)) => factory()
+                .map(|terminal| ProducedBody {
+                    exact_length: terminal_exact_length(&terminal, &size_hint),
+                    terminal,
+                    media_type: self.media_type().cloned(),
+                })
+                .map_err(BodyProductionError::factory_failure),
+            #[cfg(feature = "multipart")]
+            RequestBodyRecipe::MultipartRecipe(recipe) => {
+                let produced = recipe
+                    .as_ref()
+                    .and_then(MultipartBody::clone_if_reconstructible)
+                    .or_else(|| recipe.take());
+                produced
+                    .map(|recipe| {
+                        // P-06 deletion point: the generic `Transport` boundary
+                        // still accepts DynBody. Multipart remains authoritative
+                        // as a native Reqwest Form recipe until this narrow bridge.
+                        Ok(ProducedBody {
+                            terminal: TerminalBody::MultipartRecipe(recipe),
+                            media_type: None,
+                            exact_length: None,
+                        })
                     })
-                    .map_err(BodyProductionError::factory_failure),
-                ReplayFactory::Dynamic(factory) => factory()
-                    .map(|(body, media_type)| ProducedBody {
-                        // The form owns its per-attempt hint.  In particular,
-                        // never replace it with a planning hint (which is
-                        // intentionally unknown for multipart replay).
-                        body,
-                        stream_like: true,
-                        media_type: Some(media_type),
-                    })
-                    .map_err(BodyProductionError::factory_failure),
-            },
+                    .unwrap_or_else(|| Err(BodyProductionError::already_consumed()))
+            }
         }
     }
 }
@@ -297,11 +416,11 @@ pub(crate) fn apply_prepared_body_media_type(
     }
 }
 
-pub(crate) fn apply_attempt_body_media_type(
+pub(crate) fn apply_attempt_media_type(
     headers: &mut http::HeaderMap,
-    body: &ProducedBody,
+    media_type: Option<&HeaderValue>,
 ) -> Result<(), ()> {
-    let Some(media_type) = body.media_type() else {
+    let Some(media_type) = media_type else {
         return Ok(());
     };
     match headers.get(http::header::CONTENT_TYPE) {
@@ -316,12 +435,18 @@ pub(crate) fn apply_attempt_body_media_type(
 
 impl fmt::Debug for PreparedBody {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let category = match self.source {
-            PreparedBodySource::Empty => "Empty",
-            PreparedBodySource::ReusableBytes(_) => "ReusableBytes",
-            PreparedBodySource::OneShot(Some(_)) => "OneShot",
-            PreparedBodySource::OneShot(None) => "OneShotConsumed",
-            PreparedBodySource::ReplayFactory(_) => "ReplayFactory",
+        let category = match self.recipe {
+            RequestBodyRecipe::Empty => "Empty",
+            RequestBodyRecipe::ReusableBytes(_) => "ReusableBytes",
+            RequestBodyRecipe::OneShotByteStream(Some(_)) => "OneShotByteStream",
+            RequestBodyRecipe::OneShotByteStream(None) => "OneShotByteStreamConsumed",
+            RequestBodyRecipe::OneShotHttpBody(Some(_)) => "OneShotHttpBody",
+            RequestBodyRecipe::OneShotHttpBody(None) => "OneShotHttpBodyConsumed",
+            RequestBodyRecipe::RequestBodyFactory(_) => "RequestBodyFactory",
+            #[cfg(feature = "multipart")]
+            RequestBodyRecipe::MultipartRecipe(Some(_)) => "MultipartRecipe",
+            #[cfg(feature = "multipart")]
+            RequestBodyRecipe::MultipartRecipe(None) => "MultipartRecipeConsumed",
         };
         f.debug_struct("PreparedBody")
             .field("category", &category)
@@ -330,6 +455,28 @@ impl fmt::Debug for PreparedBody {
             .field("replayable", &self.is_replayable())
             .finish()
     }
+}
+
+// Compatibility materializer for the P-06 native-request cutover. It is not a
+// planner: callers can only reach it after a recipe has selected a terminal
+// execution body. Exact length takes precedence over the global streaming
+// limiter, which is installed later by the existing transport path.
+fn materialize_legacy_body(
+    body: crate::body::DynBody,
+    exact_length: Option<u64>,
+) -> crate::body::DynBody {
+    match exact_length {
+        Some(length) => body.exact_length(length),
+        None => body,
+    }
+}
+
+fn terminal_exact_length(terminal: &TerminalBody, hint: &SizeHint) -> Option<u64> {
+    #[cfg(feature = "multipart")]
+    if matches!(terminal, TerminalBody::MultipartRecipe(_)) {
+        return None;
+    }
+    hint.exact()
 }
 
 fn exact_size_hint(len: u64) -> SizeHint {
@@ -425,11 +572,13 @@ impl RequestEntity for MultipartRequest {
         input: Self::Input,
         ctx: ErrorContext,
     ) -> Result<PreparedRequestEntity, ApiClientError> {
-        let (content_type, body) = input
-            .into_prepared()
+        // Validate syntax now, but defer native Form/Part construction until
+        // after auth collision preflight and hooks have completed.
+        input
+            .validate()
             .map_err(|source| ApiClientError::codec_error(ctx.clone(), source))?;
         Ok(PreparedRequestEntity {
-            body: PreparedBody::one_shot(body, Some(content_type)),
+            body: PreparedBody::multipart(input),
         })
     }
 }
@@ -1087,7 +1236,81 @@ mod tests {
         )
         .expect("stream request");
         assert!(!prepared.body.is_replayable());
+        assert!(!prepared.body.supports_general_retries());
         assert_eq!(prepared.body.size_hint().exact(), Some(3));
+    }
+
+    #[test]
+    fn factory_rebuildability_and_general_retry_are_recipe_level() {
+        let mut advanced = PreparedBody::one_shot(
+            crate::body::DynBody::from_body(crate::body::ExactLengthBody::new(
+                crate::body::DynBody::from_bytes(Bytes::from_static(b"advanced")),
+                8,
+            )),
+            None,
+        );
+        assert!(!advanced.is_replayable());
+        assert!(!advanced.supports_general_retries());
+        assert!(
+            !advanced
+                .produce_for_attempt()
+                .expect("direct advanced terminal")
+                .is_reqwest_cloneable()
+        );
+
+        let factory = PreparedBody::replay_factory_terminal(SizeHint::new(), None, || {
+            Ok(TerminalBody::OneShotByteStream(StreamBody::from_bytes(
+                Bytes::from_static(b"fresh"),
+            )))
+        });
+        assert!(factory.is_replayable());
+        assert!(factory.supports_general_retries());
+    }
+
+    #[test]
+    fn rebuildability_inspection_never_invokes_stream_factory_and_terminals_are_uncloneable() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&calls);
+        let mut factory = PreparedBody::replay_factory(exact_size_hint(2), None, move || {
+            observed.fetch_add(1, Ordering::SeqCst);
+            Ok(crate::body::DynBody::from_bytes(Bytes::from_static(b"ok")))
+        });
+
+        assert!(factory.is_replayable());
+        assert!(factory.supports_general_retries());
+        assert!(factory.supports_auth_internal_retries());
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        for expected_calls in 1..=2 {
+            assert!(
+                !factory
+                    .produce_for_attempt()
+                    .expect("factory terminal")
+                    .is_reqwest_cloneable()
+            );
+            assert_eq!(calls.load(Ordering::SeqCst), expected_calls);
+        }
+    }
+
+    #[test]
+    fn one_shot_rematerialization_fails_after_consuming_direct_stream() {
+        let mut body = PreparedBody::from_stream_body(
+            StreamBody::from_bytes(Bytes::from_static(b"one-shot")),
+            None,
+        );
+        assert!(!body.is_replayable());
+        assert!(!body.supports_general_retries());
+        assert!(
+            !body
+                .produce_for_attempt()
+                .expect("first stream terminal")
+                .is_reqwest_cloneable()
+        );
+        assert_eq!(
+            body.produce_for_attempt()
+                .expect_err("consumed direct stream cannot rematerialize")
+                .kind(),
+            BodyProductionErrorKind::AlreadyConsumed
+        );
     }
 
     #[test]
@@ -1098,8 +1321,59 @@ mod tests {
             ctx(),
         )
         .expect("multipart request");
-        assert!(!multipart.body.is_replayable());
-        assert!(multipart.body.media_type().is_some());
+        assert!(multipart.body.is_replayable());
+        assert!(!multipart.body.supports_general_retries());
+        assert!(multipart.body.reserves_content_type());
+        assert!(multipart.body.media_type().is_none());
+    }
+
+    #[test]
+    #[cfg(feature = "multipart")]
+    fn multipart_rebuildability_and_general_retry_are_recipe_level() {
+        let mut direct_stream = PreparedBody::multipart(MultipartBody::new().stream(
+            "stream",
+            StreamBody::from_bytes(Bytes::from_static(b"part")),
+        ));
+        assert!(!direct_stream.is_replayable());
+        assert!(!direct_stream.supports_general_retries());
+        assert!(
+            !direct_stream
+                .produce_for_attempt()
+                .expect("direct streamed multipart terminal")
+                .is_reqwest_cloneable()
+        );
+
+        let mut direct_reusable = PreparedBody::multipart(
+            MultipartBody::new().bytes("bytes", Bytes::from_static(b"part")),
+        );
+        assert!(direct_reusable.is_replayable());
+        assert!(!direct_reusable.supports_general_retries());
+        assert!(
+            !direct_reusable
+                .produce_for_attempt()
+                .expect("direct multipart terminal")
+                .is_reqwest_cloneable()
+        );
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&calls);
+        let mut factory = PreparedBody::replay_multipart_factory(move || {
+            observed.fetch_add(1, Ordering::SeqCst);
+            Ok(MultipartBody::new().bytes("bytes", Bytes::from_static(b"part")))
+        });
+        assert!(factory.is_replayable());
+        assert!(factory.supports_general_retries());
+        assert!(factory.supports_auth_internal_retries());
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        for expected_calls in 1..=2 {
+            assert!(
+                !factory
+                    .produce_for_attempt()
+                    .expect("factory multipart terminal")
+                    .is_reqwest_cloneable()
+            );
+            assert_eq!(calls.load(Ordering::SeqCst), expected_calls);
+        }
     }
 
     #[tokio::test]
@@ -1126,6 +1400,99 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn declared_stream_exact_length_is_structurally_enforced() {
+        let stream =
+            StreamBody::from_bytes(Bytes::from_static(b"abc")).with_size_hint(exact_size_hint(4));
+        let mut prepared = PreparedBody::from_stream_body(stream, None);
+        let error = prepared
+            .produce_for_attempt()
+            .expect("terminal body")
+            .into_dyn_body()
+            .collect()
+            .await
+            .expect_err("short stream must fail its exact contract");
+        assert_eq!(
+            error.kind(),
+            crate::body::BodyErrorKind::ExactLengthUnderflow
+        );
+        assert!(!format!("{error:?}").contains("abc"));
+    }
+
+    #[tokio::test]
+    async fn factory_terminal_exact_lengths_are_enforced_without_payload_diagnostics() {
+        for (expected, bytes, kind) in [
+            (0, None, None),
+            (
+                1,
+                None,
+                Some(crate::body::BodyErrorKind::ExactLengthUnderflow),
+            ),
+            (3, Some(b"abc".as_slice()), None),
+            (
+                4,
+                Some(b"abc".as_slice()),
+                Some(crate::body::BodyErrorKind::ExactLengthUnderflow),
+            ),
+            (
+                2,
+                Some(b"abc".as_slice()),
+                Some(crate::body::BodyErrorKind::ExactLengthOverflow),
+            ),
+        ] {
+            let mut body =
+                PreparedBody::replay_factory_terminal(exact_size_hint(expected), None, move || {
+                    Ok(bytes.map_or(TerminalBody::Empty, |bytes| {
+                        TerminalBody::ReusableBytes(Bytes::copy_from_slice(bytes))
+                    }))
+                });
+            let result = body
+                .produce_for_attempt()
+                .unwrap()
+                .into_dyn_body()
+                .collect()
+                .await;
+            match kind {
+                Some(kind) => {
+                    let error = result.expect_err("mismatch must fail");
+                    assert_eq!(error.kind(), kind);
+                    assert!(!format!("{error:?}").contains("abc"));
+                }
+                None => assert!(result.is_ok()),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn exact_length_factory_executions_keep_byte_counters_independent() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&calls);
+        let mut factory = PreparedBody::replay_factory(exact_size_hint(3), None, move || {
+            observed.fetch_add(1, Ordering::SeqCst);
+            Ok(crate::body::DynBody::from_frame_stream(TestStream::new(
+                vec![
+                    Ok::<_, crate::body::BodyError>(http_body::Frame::data(Bytes::from_static(
+                        b"a",
+                    ))),
+                    Ok(http_body::Frame::data(Bytes::from_static(b"bc"))),
+                ],
+            )))
+        });
+
+        for expected_calls in 1..=2 {
+            let bytes = factory
+                .produce_for_attempt()
+                .expect("fresh factory execution")
+                .into_dyn_body()
+                .collect()
+                .await
+                .expect("independent exact counter")
+                .to_bytes();
+            assert_eq!(bytes, Bytes::from_static(b"abc"));
+            assert_eq!(calls.load(Ordering::SeqCst), expected_calls);
+        }
+    }
+
+    #[tokio::test]
     async fn reusable_bytes_and_replay_factory_produce_fresh_attempt_bodies() {
         let mut bytes_body = PreparedBody::reusable_bytes(Bytes::from_static(b"repeat"), None);
         for _ in 0..2 {
@@ -1148,8 +1515,21 @@ mod tests {
                 b"fresh",
             )))
         });
-        assert_eq!(calls.load(Ordering::SeqCst), 0);
-        for expected_calls in 1..=2 {
+        assert!(factory.is_replayable());
+        assert!(
+            bytes_body
+                .produce_for_attempt()
+                .expect("reusable terminal")
+                .is_reqwest_cloneable()
+        );
+        assert!(
+            !factory
+                .produce_for_attempt()
+                .expect("factory terminal")
+                .is_reqwest_cloneable()
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        for expected_calls in 2..=3 {
             let body = factory
                 .produce_for_attempt()
                 .expect("factory body")
@@ -1183,14 +1563,14 @@ mod tests {
     }
 
     #[test]
-    fn auth_internal_support_check_does_not_invoke_unsupported_factory() {
+    fn auth_internal_rebuildability_check_does_not_invoke_factory() {
         let calls = Arc::new(AtomicUsize::new(0));
         let observed = calls.clone();
         let factory = PreparedBody::replay_factory(exact_size_hint(0), None, move || {
             observed.fetch_add(1, Ordering::SeqCst);
             Ok(crate::body::DynBody::empty())
         });
-        assert!(!factory.supports_auth_internal_retries());
+        assert!(factory.supports_auth_internal_retries());
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         let one_shot = PreparedBody::one_shot(crate::body::DynBody::empty(), None);
         assert!(!one_shot.supports_auth_internal_retries());
@@ -1203,22 +1583,19 @@ mod tests {
             MultipartRequest::prepare(MultipartBody::new().text("title", "hello"), ctx())
                 .expect("multipart request")
                 .body;
-        let media_type = prepared
-            .media_type()
+        let produced = prepared.produce_for_attempt().expect("multipart body");
+        let (dyn_body, produced_media_type) = produced
+            .into_legacy_transport_parts()
+            .expect("multipart compatibility materialization");
+        let media_type = produced_media_type
+            .as_ref()
             .and_then(|value| value.to_str().ok())
             .expect("media type")
             .to_string();
         let boundary = media_type
             .strip_prefix("multipart/form-data; boundary=")
             .expect("boundary");
-        let encoded = prepared
-            .produce_for_attempt()
-            .expect("multipart body")
-            .into_dyn_body()
-            .collect()
-            .await
-            .expect("collect")
-            .to_bytes();
+        let encoded = dyn_body.collect().await.expect("collect").to_bytes();
         assert!(
             encoded
                 .windows(boundary.len())

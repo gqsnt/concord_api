@@ -38,6 +38,9 @@ fn emit_uses_stream_request_and_response_codegen() {
             &forbidden_stream_exec_call(),
             &forbidden_endpoint_execute_box_wrapper(),
             &["Stream", "ResponseEndpoint"].concat(),
+            "DynBody",
+            "poll_frame",
+            "wrap_stream",
         ],
     );
 }
@@ -139,6 +142,10 @@ fn emit_uses_multipart_request_codegen() {
             &forbidden_request_args_with_multipart_body(),
             &forbidden_content_type_check_name(),
             &forbidden_endpoint_execute_box_wrapper(),
+            "DynBody",
+            "into_stream",
+            "boundary()",
+            "poll_frame",
         ],
     );
 }

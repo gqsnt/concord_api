@@ -32,6 +32,10 @@ pub enum BodyErrorKind {
     ExclusivePoll,
     /// A frame would exceed the configured byte limit.
     LimitExceeded,
+    /// A body ended before a declared exact byte length was delivered.
+    ExactLengthUnderflow,
+    /// A body attempted to deliver bytes beyond a declared exact byte length.
+    ExactLengthOverflow,
     /// A producer failed without a more specific safe category.
     Other,
 }
@@ -65,6 +69,25 @@ impl BodyError {
         Self {
             kind: BodyErrorKind::LimitExceeded,
             limit: Some(limit),
+            observed: Some(observed),
+        }
+    }
+
+    /// Creates a safe exact-length underflow error.  Lengths are safe numeric
+    /// metadata; body contents and producer diagnostics are never retained.
+    pub const fn exact_length_underflow(expected: u64, observed: u64) -> Self {
+        Self {
+            kind: BodyErrorKind::ExactLengthUnderflow,
+            limit: Some(expected),
+            observed: Some(observed),
+        }
+    }
+
+    /// Creates a safe exact-length overflow error.
+    pub const fn exact_length_overflow(expected: u64, observed: u64) -> Self {
+        Self {
+            kind: BodyErrorKind::ExactLengthOverflow,
+            limit: Some(expected),
             observed: Some(observed),
         }
     }
@@ -139,6 +162,18 @@ impl fmt::Display for BodyError {
             BodyErrorKind::LimitExceeded => write!(
                 f,
                 "body byte limit exceeded (limit {}, observed {})",
+                self.limit.unwrap_or(0),
+                self.observed.unwrap_or(0)
+            ),
+            BodyErrorKind::ExactLengthUnderflow => write!(
+                f,
+                "body ended before declared exact length (expected {}, observed {})",
+                self.limit.unwrap_or(0),
+                self.observed.unwrap_or(0)
+            ),
+            BodyErrorKind::ExactLengthOverflow => write!(
+                f,
+                "body exceeded declared exact length (expected {}, observed {})",
                 self.limit.unwrap_or(0),
                 self.observed.unwrap_or(0)
             ),
@@ -276,6 +311,13 @@ impl DynBody {
         Self::from_body(LimitedBody::new(self, limit))
     }
 
+    /// Structurally enforces an exact delivered length.  This is deliberately
+    /// distinct from a `SizeHint`: a hint is advisory while this wrapper
+    /// rejects underflow and overflow without yielding excess bytes.
+    pub(crate) fn exact_length(self, length: u64) -> Self {
+        Self::from_body(ExactLengthBody::new(self, length))
+    }
+
     /// Converts this body to the upstream data-only stream adapter.
     pub fn into_data_stream(self) -> BodyDataStream<Self> {
         BodyExt::into_data_stream(self)
@@ -395,6 +437,91 @@ pub struct LimitedBody<B> {
     limit: u64,
     seen: u64,
     terminal: bool,
+}
+
+/// A one-shot structural exact-length guard used by request-body recipes.
+///
+/// The guard is applied before the legacy `DynBody` transport bridge.  It
+/// keeps exact-length contracts meaningful even while the public transport
+/// boundary remains `http::Request<DynBody>`.
+pub(crate) struct ExactLengthBody<B> {
+    inner: Pin<Box<B>>,
+    expected: u64,
+    seen: u64,
+    terminal: bool,
+}
+
+impl<B> ExactLengthBody<B> {
+    pub(crate) fn new(inner: B, expected: u64) -> Self {
+        Self {
+            inner: Box::pin(inner),
+            expected,
+            seen: 0,
+            terminal: false,
+        }
+    }
+}
+
+impl<B> Body for ExactLengthBody<B>
+where
+    B: Body<Data = Bytes, Error = BodyError>,
+{
+    type Data = Bytes;
+    type Error = BodyError;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        let this = self.as_mut().get_mut();
+        if this.terminal {
+            return Poll::Ready(None);
+        }
+        match this.inner.as_mut().poll_frame(cx) {
+            Poll::Ready(Some(Ok(frame))) => {
+                if let Some(data) = frame.data_ref() {
+                    let len = u64::try_from(data.len()).unwrap_or(u64::MAX);
+                    let observed = this.seen.saturating_add(len);
+                    if observed > this.expected {
+                        this.terminal = true;
+                        return Poll::Ready(Some(Err(BodyError::exact_length_overflow(
+                            this.expected,
+                            observed,
+                        ))));
+                    }
+                    this.seen = observed;
+                }
+                Poll::Ready(Some(Ok(frame)))
+            }
+            Poll::Ready(Some(Err(error))) => {
+                this.terminal = true;
+                Poll::Ready(Some(Err(error)))
+            }
+            Poll::Ready(None) => {
+                this.terminal = true;
+                if this.seen == this.expected {
+                    Poll::Ready(None)
+                } else {
+                    Poll::Ready(Some(Err(BodyError::exact_length_underflow(
+                        this.expected,
+                        this.seen,
+                    ))))
+                }
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.terminal
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        if self.terminal {
+            return exact_hint(0);
+        }
+        exact_hint(self.expected.saturating_sub(self.seen))
+    }
 }
 
 impl<B> LimitedBody<B> {
@@ -713,6 +840,13 @@ mod tests {
     }
 
     fn poll_limited<B>(body: &mut LimitedBody<B>) -> Poll<Option<Result<Frame<Bytes>, BodyError>>>
+    where
+        B: Body<Data = Bytes, Error = BodyError>,
+    {
+        poll_with_waker(|cx| Body::poll_frame(Pin::new(body), cx))
+    }
+
+    fn poll_exact<B>(body: &mut ExactLengthBody<B>) -> Poll<Option<Result<Frame<Bytes>, BodyError>>>
     where
         B: Body<Data = Bytes, Error = BodyError>,
     {
@@ -1187,6 +1321,122 @@ mod tests {
     }
 
     #[test]
+    fn exact_length_guard_rejects_premature_eof_and_never_yields_excess() {
+        let mut underflow =
+            ExactLengthBody::new(DynBody::from_bytes(Bytes::from_static(b"abc")), 4);
+        assert!(matches!(
+            poll_exact(&mut underflow),
+            Poll::Ready(Some(Ok(_)))
+        ));
+        assert!(matches!(
+            poll_exact(&mut underflow),
+            Poll::Ready(Some(Err(error))) if error.kind() == BodyErrorKind::ExactLengthUnderflow
+        ));
+
+        let mut overflow =
+            ExactLengthBody::new(DynBody::from_bytes(Bytes::from_static(b"abcd")), 3);
+        assert!(matches!(
+            poll_exact(&mut overflow),
+            Poll::Ready(Some(Err(error))) if error.kind() == BodyErrorKind::ExactLengthOverflow
+        ));
+        assert!(matches!(poll_exact(&mut overflow), Poll::Ready(None)));
+    }
+
+    #[test]
+    fn exact_length_lifecycle_covers_multiframe_success_and_all_terminal_failures() {
+        let mut zero = ExactLengthBody::new(ScriptedBody::new(Vec::new()), 0);
+        assert!(matches!(poll_exact(&mut zero), Poll::Ready(None)));
+
+        let mut success = ExactLengthBody::new(
+            ScriptedBody::new(vec![
+                Ok(Frame::data(Bytes::from_static(b"ab"))),
+                Ok(Frame::data(Bytes::from_static(b"cde"))),
+            ]),
+            5,
+        );
+        for expected in [Bytes::from_static(b"ab"), Bytes::from_static(b"cde")] {
+            match poll_exact(&mut success) {
+                Poll::Ready(Some(Ok(frame))) => {
+                    assert_eq!(frame.into_data().expect("data"), expected)
+                }
+                other => panic!("unexpected exact-length success result: {other:?}"),
+            }
+        }
+        assert!(matches!(poll_exact(&mut success), Poll::Ready(None)));
+
+        let mut underflow = ExactLengthBody::new(
+            ScriptedBody::new(vec![Ok(Frame::data(Bytes::from_static(b"ab")))]),
+            3,
+        );
+        assert!(matches!(
+            poll_exact(&mut underflow),
+            Poll::Ready(Some(Ok(_)))
+        ));
+        assert!(matches!(
+            poll_exact(&mut underflow),
+            Poll::Ready(Some(Err(error))) if error.kind() == BodyErrorKind::ExactLengthUnderflow
+        ));
+        assert!(matches!(poll_exact(&mut underflow), Poll::Ready(None)));
+
+        let mut overflow = ExactLengthBody::new(
+            ScriptedBody::new(vec![
+                Ok(Frame::data(Bytes::from_static(b"ab"))),
+                Ok(Frame::data(Bytes::from_static(b"cd"))),
+            ]),
+            3,
+        );
+        match poll_exact(&mut overflow) {
+            Poll::Ready(Some(Ok(frame))) => {
+                assert_eq!(frame.into_data().expect("data"), Bytes::from_static(b"ab"))
+            }
+            other => panic!("unexpected first overflow result: {other:?}"),
+        }
+        assert!(matches!(
+            poll_exact(&mut overflow),
+            Poll::Ready(Some(Err(error))) if error.kind() == BodyErrorKind::ExactLengthOverflow
+        ));
+        assert!(matches!(poll_exact(&mut overflow), Poll::Ready(None)));
+
+        for (items, expected) in [
+            (vec![Err(BodyError::input())], BodyErrorKind::Input),
+            (
+                vec![
+                    Ok(Frame::data(Bytes::from_static(b"abc"))),
+                    Err(BodyError::invalid_configuration()),
+                ],
+                BodyErrorKind::InvalidConfiguration,
+            ),
+        ] {
+            let mut body = ExactLengthBody::new(ScriptedBody::new(items), 3);
+            if expected == BodyErrorKind::InvalidConfiguration {
+                assert!(matches!(poll_exact(&mut body), Poll::Ready(Some(Ok(_)))));
+            }
+            assert!(matches!(
+                poll_exact(&mut body),
+                Poll::Ready(Some(Err(error))) if error.kind() == expected
+            ));
+            assert!(matches!(poll_exact(&mut body), Poll::Ready(None)));
+        }
+    }
+
+    #[test]
+    fn exact_length_cancellation_drops_upstream_before_and_after_partial_delivery() {
+        for poll_once in [false, true] {
+            let dropped = Arc::new(AtomicBool::new(false));
+            let inner = DropCountingBody {
+                inner: ScriptedBody::new(vec![Ok(Frame::data(Bytes::from_static(b"partial")))]),
+                dropped: Arc::clone(&dropped),
+            };
+            let mut body = ExactLengthBody::new(inner, 7);
+            if poll_once {
+                assert!(matches!(poll_exact(&mut body), Poll::Ready(Some(Ok(_)))));
+            }
+            drop(body);
+            assert!(dropped.load(Ordering::SeqCst));
+        }
+    }
+
+    #[test]
     fn dropping_body_drops_source_without_polling() {
         let dropped = Arc::new(AtomicBool::new(false));
         let source = DropSource {
@@ -1384,6 +1634,29 @@ mod tests {
         items: VecDeque<Result<Frame<Bytes>, BodyError>>,
         lower: u64,
         upper: Option<u64>,
+    }
+
+    struct DropCountingBody {
+        inner: ScriptedBody,
+        dropped: Arc<AtomicBool>,
+    }
+
+    impl Drop for DropCountingBody {
+        fn drop(&mut self) {
+            self.dropped.store(true, Ordering::SeqCst);
+        }
+    }
+
+    impl Body for DropCountingBody {
+        type Data = Bytes;
+        type Error = BodyError;
+
+        fn poll_frame(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+            Pin::new(&mut self.inner).poll_frame(cx)
+        }
     }
 
     impl ScriptedBody {

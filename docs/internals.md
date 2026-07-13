@@ -46,6 +46,14 @@ exclusive-poll adapter that holds a standard-library mutex only during the
 synchronous poll operation. It does not use `unsafe`, a forwarding task, or a
 buffering queue, and body construction is lazy.
 
+Request planning keeps a single logical recipe rather than a prebuilt
+`DynBody`: reusable bytes, one-shot byte streams, advanced HTTP bodies,
+terminal factories, and multipart recipes remain distinguishable until an
+attempt is materialized. The current conversion to `DynBody` is a private
+compatibility bridge for the public transport boundary and has a P-06 deletion
+point. Exact stream lengths are guards, not `SizeHint` claims; they reject
+underflow and overflow without retaining payload diagnostics.
+
 `LimitedBody` is the reusable frame-aware limiter. It counts bytes in data
 frames, leaves trailers uncounted and unchanged, and becomes terminal after a
 typed over-limit error. Custom transports receive this frame-aware body

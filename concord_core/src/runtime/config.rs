@@ -256,12 +256,17 @@ impl RuntimeConfig {
         self
     }
 
+    /// Sets the request-body limit for reusable bytes, encoded JSON/text,
+    /// streams, advanced bodies, factory results, and multipart bridge output.
+    /// Exact/inherent oversize may fail early; advisory upper hints do not.
     #[inline]
     pub fn max_stream_request_body_bytes(&mut self, bytes: usize) -> &mut Self {
         self.max_stream_request_body_bytes = Some(bytes);
         self
     }
 
+    /// Disables the all-request-body limit despite this method's historical
+    /// stream-oriented name.
     #[inline]
     pub fn no_stream_request_body_limit(&mut self) -> &mut Self {
         self.max_stream_request_body_bytes = None;

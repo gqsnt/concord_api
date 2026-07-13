@@ -329,7 +329,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     ) -> Result<AttemptTransportSuccess, ApiClientError> {
         let dbg_verbose = dbg.is_verbose();
         let dbg_vv = dbg.is_very_verbose();
-        let is_replayable = body.is_replayable();
+        let is_replayable = body.supports_general_retries();
         if let RetrySetting::Config(config) = &plan.endpoint.policy.retry {
             config.validate(ctx.clone())?;
         }

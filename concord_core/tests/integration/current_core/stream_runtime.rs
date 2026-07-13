@@ -964,6 +964,32 @@ async fn stream_request_size_hint_exceeds_limit_before_transport() {
 }
 
 #[tokio::test]
+async fn non_exact_upper_hint_does_not_preemptively_fail_request_limit()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = StreamTransport::success(events, MockResponse::text(StatusCode::OK, "ok"));
+    let mut client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    client.configure(|cfg| {
+        cfg.max_stream_request_body_bytes(4);
+    });
+    let mut hint = http_body::SizeHint::new();
+    hint.set_upper(99);
+    client
+        .execute_plan::<concord_core::prelude::Text<String>>(stream_request_plan(
+            "AdvisoryUpperHint",
+            Method::POST,
+            "/advisory-upper-hint",
+            ResolvedPolicy::default(),
+            StreamBody::from_bytes(Bytes::from_static(b"ok")).with_size_hint(hint),
+            HeaderValue::from_static("application/octet-stream"),
+        ))
+        .await?;
+    assert_eq!(transport.send_count(), 1);
+    Ok(())
+}
+
+#[tokio::test]
 async fn stream_request_is_counted_while_transport_consumes_it() {
     let events = Arc::new(StdMutex::new(Vec::new()));
     let transport =
@@ -1034,7 +1060,8 @@ async fn stream_request_is_counted_while_transport_consumes_it() {
 }
 
 #[tokio::test]
-async fn buffered_bytes_are_not_subject_to_stream_request_limit() -> Result<(), ApiClientError> {
+async fn buffered_bytes_are_subject_to_the_global_request_body_limit() -> Result<(), ApiClientError>
+{
     let events = Arc::new(StdMutex::new(Vec::new()));
     let transport = StreamTransport::success(events, MockResponse::text(StatusCode::OK, "ok"));
     let mut client =
@@ -1055,14 +1082,19 @@ async fn buffered_bytes_are_not_subject_to_stream_request_limit() -> Result<(), 
         Some(HeaderValue::from_static("application/octet-stream")),
     );
 
-    client
+    let err = client
         .execute_plan::<concord_core::prelude::Text<String>>(plan)
-        .await?;
-    assert_eq!(transport.send_count(), 1);
+        .await
+        .expect_err("known oversized reusable bytes must be rejected before transport");
     assert!(matches!(
-        &transport.captured()[0].body,
-        CapturedBody::Bytes(bytes) if bytes == &Bytes::from_static(b"buffered-body")
+        err,
+        ApiClientError::RequestBodyLimitExceeded {
+            limit: 4,
+            actual: 13,
+            ..
+        }
     ));
+    assert_eq!(transport.send_count(), 0);
     Ok(())
 }
 

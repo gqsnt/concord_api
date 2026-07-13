@@ -55,16 +55,23 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     err,
                 )
             })?;
-        if built.stream_like
-            && let Some(limit) = stream_request_limit
-            && let Some(actual) = http_body::Body::size_hint(built.message.body()).upper()
-            && actual > limit as u64
-        {
-            return Err(ApiClientError::RequestBodyLimitExceeded {
-                ctx: send_ctx.error_ctx.clone(),
-                limit,
-                actual,
-            });
+        if let Some(limit) = stream_request_limit {
+            let hint = http_body::Body::size_hint(built.message.body());
+            // An advisory upper bound is not a delivered length. Only an exact
+            // length, or a lower bound already beyond the limit, can reject
+            // before streaming; the body limiter owns every other case.
+            let known_oversize = hint
+                .exact()
+                .or_else(|| (hint.lower() > limit as u64).then_some(hint.lower()));
+            if let Some(actual) = known_oversize
+                && actual > limit as u64
+            {
+                return Err(ApiClientError::RequestBodyLimitExceeded {
+                    ctx: send_ctx.error_ctx.clone(),
+                    limit,
+                    actual,
+                });
+            }
         }
         self.debug_planned_request(send_ctx.dbg, &built, send_ctx.url_str);
         let request_context = built.context();

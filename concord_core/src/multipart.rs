@@ -157,6 +157,14 @@ impl RawPartBody {
             Self::Stream(_) => "stream",
         }
     }
+
+    fn clone_if_reconstructible(&self) -> Option<Self> {
+        match self {
+            Self::Text(value) => Some(Self::Text(value.clone())),
+            Self::Bytes(value) => Some(Self::Bytes(value.clone())),
+            Self::Stream(_) => None,
+        }
+    }
 }
 
 pub struct MultipartBody {
@@ -211,7 +219,48 @@ impl MultipartBody {
         self
     }
 
-    pub(crate) fn into_prepared(self) -> Result<(HeaderValue, DynBody), MultipartBodyError> {
+    pub(crate) fn is_reconstructible(&self) -> bool {
+        self.parts
+            .iter()
+            .all(|part| !matches!(&part.body, RawPartBody::Stream(_)))
+    }
+
+    pub(crate) fn clone_if_reconstructible(&self) -> Option<Self> {
+        let mut parts = Vec::with_capacity(self.parts.len());
+        for part in &self.parts {
+            parts.push(RawPart {
+                name: part.name.clone(),
+                file_name: part.file_name.clone(),
+                content_type: part.content_type.clone(),
+                body: part.body.clone_if_reconstructible()?,
+            });
+        }
+        Some(Self { parts })
+    }
+
+    /// Validates recipe metadata without constructing or consuming part bodies.
+    pub(crate) fn validate(&self) -> Result<(), MultipartBodyError> {
+        for part in &self.parts {
+            validate_part_name(&part.name)?;
+            if let Some(file_name) = &part.file_name {
+                validate_part_file_name(file_name)?;
+            }
+            if let Some(content_type) = &part.content_type {
+                validate_part_content_type(content_type)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// P-06 compatibility bridge for the legacy generic transport boundary.
+    ///
+    /// The recipe's production representation is `Form`/`Part`; this is the
+    /// only place where that native form is flattened for `Transport`'s
+    /// historic `DynBody` request type. Delete when native request construction
+    /// can call `RequestBuilder::multipart` directly.
+    pub(crate) fn into_legacy_transport_body(
+        self,
+    ) -> Result<(HeaderValue, DynBody), MultipartBodyError> {
         let form = self.into_form()?;
         let boundary = form.boundary();
         let media_type =
@@ -219,7 +268,7 @@ impl MultipartBody {
                 |_| MultipartBodyError::new(MultipartBodyErrorKind::InvalidMultipartContentType),
             )?;
 
-        let stream = FormStream::new(form.into_stream());
+        let stream = LegacyFormStream::new(form.into_stream());
         let body = DynBody::from_byte_stream(stream);
 
         Ok((media_type, body))
@@ -240,36 +289,29 @@ impl MultipartReplayFactory {
     }
 
     pub fn into_prepared_body(self) -> Result<crate::io::PreparedBody, MultipartBodyError> {
-        // Multipart framing is owned by Reqwest and its aggregate size is not
-        // known until a form is produced.  Keep planning metadata unknown and
-        // use each produced body's own safe hint for the physical attempt.
-        let size_hint = http_body::SizeHint::new();
         let factory = self.factory;
-        Ok(crate::io::PreparedBody::replay_factory_with_media(
-            size_hint,
-            move || {
-                let body =
-                    factory().map_err(|_| crate::body::BodyError::invalid_configuration())?;
-                let (media_type, body) = body
-                    .into_prepared()
-                    .map_err(|_| crate::body::BodyError::invalid_configuration())?;
-                Ok((body, media_type))
-            },
+        // Keep multipart identifiable until the P-06 compatibility bridge.
+        // Each factory call supplies a wholly fresh recipe, never a flattened
+        // form or a partial replacement for a consumed streamed part.
+        Ok(crate::io::PreparedBody::replay_multipart_factory(
+            move || factory().map_err(|_| crate::body::BodyError::invalid_configuration()),
         ))
     }
 }
 
-struct FormStream<S> {
+// This adapter belongs solely to the P-06 compatibility bridge above. It is
+// not part of `MultipartBody` recipe construction.
+struct LegacyFormStream<S> {
     inner: S,
 }
 
-impl<S> FormStream<S> {
+impl<S> LegacyFormStream<S> {
     fn new(inner: S) -> Self {
         Self { inner }
     }
 }
 
-impl<S> Stream for FormStream<S>
+impl<S> Stream for LegacyFormStream<S>
 where
     S: futures_core::Stream<Item = Result<Bytes, reqwest::Error>> + Unpin,
 {
@@ -299,6 +341,9 @@ fn build_part(part: RawPart) -> Result<(String, Part), MultipartBodyError> {
     validate_part_name(&name)?;
     let mut body = match part.body {
         RawPartBody::Text(text) => Part::text(text),
+        // Reqwest's `Part::bytes` requires an owned `'static` byte cow and
+        // cannot accept `Bytes` without copying. Preserve the existing shared
+        // immutable buffer through Reqwest's native Body instead.
         RawPartBody::Bytes(bytes) => Part::stream(reqwest::Body::from(bytes)),
         RawPartBody::Stream(stream) => {
             let source = DynBody::from_stream_body(stream);
@@ -313,15 +358,27 @@ fn build_part(part: RawPart) -> Result<(String, Part), MultipartBodyError> {
     }
 
     if let Some(content_type) = part.content_type {
-        let content_type = content_type
-            .to_str()
-            .map_err(|_| MultipartBodyError::new(MultipartBodyErrorKind::InvalidPartContentType))?;
+        let content_type = validate_part_content_type(&content_type)?;
         body = body
             .mime_str(content_type)
             .map_err(|_| MultipartBodyError::new(MultipartBodyErrorKind::InvalidPartContentType))?;
     }
 
     Ok((name, body))
+}
+
+/// Applies Reqwest's multipart MIME acceptance rule without materializing any
+/// recipe part or form. The empty probe is discarded immediately; it neither
+/// observes nor consumes the caller's body. Keep this as the sole validator so
+/// preparation and defensive native construction cannot drift apart.
+fn validate_part_content_type(content_type: &HeaderValue) -> Result<&str, MultipartBodyError> {
+    let content_type = content_type
+        .to_str()
+        .map_err(|_| MultipartBodyError::new(MultipartBodyErrorKind::InvalidPartContentType))?;
+    Part::text("")
+        .mime_str(content_type)
+        .map(|_| content_type)
+        .map_err(|_| MultipartBodyError::new(MultipartBodyErrorKind::InvalidPartContentType))
 }
 
 impl MultipartBody {
@@ -390,7 +447,8 @@ mod tests {
         let body = MultipartBody::new()
             .text("title", "hello")
             .bytes("file", Bytes::from_static(b"abc"));
-        let (media_type, prepared_body) = body.into_prepared().expect("multipart body");
+        let (media_type, prepared_body) =
+            body.into_legacy_transport_body().expect("multipart body");
         let content_type = media_type.to_str().expect("multipart content type");
         let boundary = content_type
             .strip_prefix("multipart/form-data; boundary=")
@@ -440,7 +498,9 @@ mod tests {
     #[test]
     fn multipart_invalid_metadata_is_rejected_body_safely() {
         let body = MultipartBody::new().text("bad\r\nname", "value");
-        let err = body.into_prepared().expect_err("invalid name should fail");
+        let err = body
+            .into_legacy_transport_body()
+            .expect_err("invalid name should fail");
         assert_eq!(err.kind(), MultipartBodyErrorKind::InvalidPartName);
         assert!(!err.to_string().contains("bad\r\nname"));
     }
@@ -454,7 +514,8 @@ mod tests {
             Some(http::HeaderValue::from_static("application/json")),
             Bytes::from_static(b"{}"),
         );
-        let (media_type, prepared_body) = body.into_prepared().expect("multipart body");
+        let (media_type, prepared_body) =
+            body.into_legacy_transport_body().expect("multipart body");
         let content_type = media_type.to_str().expect("multipart content type");
         let boundary = content_type
             .strip_prefix("multipart/form-data; boundary=")
@@ -479,7 +540,7 @@ mod tests {
                 Some(http::HeaderValue::from_static("application/json")),
                 Bytes::from_static(b"{}"),
             )
-            .into_prepared()
+            .into_legacy_transport_body()
             .expect_err("invalid file name should fail");
         assert_eq!(err.kind(), MultipartBodyErrorKind::InvalidPartFileName);
         assert!(!err.to_string().contains("bad\\name"));
@@ -487,6 +548,21 @@ mod tests {
 
     #[test]
     fn multipart_invalid_content_type_is_rejected_body_safely() {
+        let body = MultipartBody::new().bytes_with(
+            "upload",
+            None,
+            Some(http::HeaderValue::from_static("not a mime")),
+            Bytes::from_static(b"{}"),
+        );
+        let err = body
+            .validate()
+            .expect_err("invalid part content type must fail recipe validation");
+        assert_eq!(err.kind(), MultipartBodyErrorKind::InvalidPartContentType);
+        assert!(!err.to_string().contains("not a mime"));
+        assert!(!format!("{err:?}").contains("not a mime"));
+        assert!(err.source().is_none());
+
+        // Native Part construction retains the same shared check defensively.
         let err = MultipartBody::new()
             .bytes_with(
                 "upload",
@@ -494,10 +570,25 @@ mod tests {
                 Some(http::HeaderValue::from_static("not a mime")),
                 Bytes::from_static(b"{}"),
             )
-            .into_prepared()
+            .into_legacy_transport_body()
             .expect_err("invalid part content type should fail");
         assert_eq!(err.kind(), MultipartBodyErrorKind::InvalidPartContentType);
         assert!(!err.to_string().contains("not a mime"));
+    }
+
+    #[test]
+    fn multipart_valid_content_type_passes_shared_reqwest_validation() {
+        MultipartBody::new()
+            .bytes_with(
+                "upload",
+                None,
+                Some(http::HeaderValue::from_static(
+                    "application/vnd.concord+json; charset=utf-8",
+                )),
+                Bytes::from_static(b"{}"),
+            )
+            .validate()
+            .expect("Reqwest-valid MIME must remain valid during preparation");
     }
 
     struct ErrorStream {
@@ -525,7 +616,8 @@ mod tests {
             "upload",
             StreamBody::from_byte_stream(ErrorStream { polled: false }),
         );
-        let (_media_type, prepared_body) = body.into_prepared().expect("multipart body");
+        let (_media_type, prepared_body) =
+            body.into_legacy_transport_body().expect("multipart body");
         let err = prepared_body
             .collect()
             .await

@@ -116,13 +116,11 @@ fn multipart_request_prepares_stream_body_and_content_type() {
     )
     .expect("multipart request");
 
-    let rendered = prepared
-        .body
-        .media_type()
-        .and_then(|value| value.to_str().ok())
-        .expect("multipart content type should be valid");
-    assert!(rendered.starts_with("multipart/form-data; boundary="));
-    assert!(!prepared.body.is_replayable());
+    // The recipe reserves this Concord-owned header before auth preflight;
+    // Reqwest chooses the boundary only when the native form is materialized.
+    assert!(prepared.body.reserves_content_type());
+    assert!(prepared.body.media_type().is_none());
+    assert!(prepared.body.is_replayable());
 }
 
 #[test]

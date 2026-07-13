@@ -622,7 +622,7 @@ async fn multipart_request_is_not_retried_or_replayed() {
             MultipartBody::new().bytes("file", Bytes::from_static(b"abc")),
         ))
         .await
-        .expect_err("multipart bodies must not be retried");
+        .expect_err("the first transport error remains terminal");
 
     assert_eq!(transport.send_count(), 1);
     assert!(!format!("{err:?}").contains("abc"));
@@ -705,6 +705,71 @@ async fn multipart_invalid_part_metadata_is_rejected_body_safely() {
     assert!(!err.to_string().contains("bad\r\nname"));
     assert!(!polled.load(Ordering::SeqCst));
     let _ = client;
+}
+
+#[tokio::test]
+async fn multipart_invalid_mime_is_rejected_during_preparation_before_side_effects() {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport =
+        MultipartTransport::success(events.clone(), MockResponse::text(StatusCode::OK, "ok"));
+    let mut client = ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars {
+            token: Some("provider-sentinel".to_string()),
+            identity: "invalid-mime",
+        },
+        transport.clone(),
+    );
+    client.configure(|cfg| {
+        cfg.rate_limiter(Arc::new(RecordingRateLimiter::new(events.clone())));
+    });
+    client.set_runtime_hooks(Arc::new(RecordingHooks::new(events.clone())));
+
+    let polled = Arc::new(AtomicBool::new(false));
+    let hostile_mime = "not a mime MIME_SENTINEL_MUST_NOT_APPEAR";
+    let body = MultipartBody::new().stream_with(
+        "upload",
+        None,
+        Some(HeaderValue::from_static(
+            "not a mime MIME_SENTINEL_MUST_NOT_APPEAR",
+        )),
+        StreamBody::from_byte_stream(PollFlagStream::new(
+            Arc::clone(&polled),
+            Bytes::from_static(b"multipart-body-sentinel"),
+        )),
+    );
+
+    let err = MultipartRequest::prepare(
+        body,
+        ErrorContext {
+            endpoint: "InvalidMultipartMime",
+            method: Method::POST,
+        },
+    )
+    .expect_err("text-representable invalid MIME must fail during preparation");
+    match &err {
+        ApiClientError::Codec { source, .. } => assert_eq!(
+            source
+                .downcast_ref::<concord_core::advanced::MultipartBodyError>()
+                .expect("multipart source")
+                .kind(),
+            concord_core::advanced::MultipartBodyErrorKind::InvalidPartContentType
+        ),
+        other => panic!("expected multipart codec error, got {other:?}"),
+    }
+    assert!(!polled.load(Ordering::SeqCst));
+    assert_eq!(transport.send_count(), 0);
+    let events = events.lock().expect("events lock").clone();
+    assert!(!events.iter().any(|event| event == "provider"));
+    assert!(!events.iter().any(|event| event == "rate_limit_acquire"));
+    assert!(
+        !events
+            .iter()
+            .any(|event| event.starts_with("hook_pre_send:"))
+    );
+    assert!(!events.iter().any(|event| event == "transport"));
+    assert!(!err.to_string().contains(hostile_mime));
+    assert!(!format!("{err:?}").contains(hostile_mime));
 }
 
 #[tokio::test]

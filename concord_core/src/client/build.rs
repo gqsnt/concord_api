@@ -43,15 +43,20 @@ impl PublicRequestHead {
                 msg: "resolved request URI is invalid",
             }
         })?;
-        let stream_like = body.is_stream();
         let mut headers = self.headers;
-        crate::io::apply_attempt_body_media_type(&mut headers, &body).map_err(|()| {
-            ApiClientError::PolicyViolation {
+        let (terminal_body, terminal_media_type) =
+            body.into_legacy_transport_parts()
+                .map_err(|_| ApiClientError::PolicyViolation {
+                    ctx: ctx.clone(),
+                    msg: "request body compatibility materialization failed",
+                })?;
+        crate::io::apply_attempt_media_type(&mut headers, terminal_media_type.as_ref()).map_err(
+            |()| ApiClientError::PolicyViolation {
                 ctx: ctx.clone(),
                 msg: "request Content-Type conflicts with produced body media type",
-            }
-        })?;
-        let mut message = http::Request::new(body.into_dyn_body());
+            },
+        )?;
+        let mut message = http::Request::new(terminal_body);
         *message.method_mut() = self.meta.method.clone();
         *message.uri_mut() = uri;
         *message.version_mut() = http::Version::HTTP_11;
@@ -67,7 +72,6 @@ impl PublicRequestHead {
             message,
             retry: self.retry,
             rate_limit: self.rate_limit,
-            stream_like,
         })
     }
 }
