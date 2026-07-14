@@ -1,4 +1,7 @@
-use concord_core::__development::{CredentialGenerationSnapshot, CredentialLifecycleEvent};
+use concord_core::__development::{
+    CapturedNativeRequest, CredentialGenerationSnapshot, CredentialLifecycleEvent,
+    DeterministicNativeExecutor, ScriptedNativeResponse, UnsafeCredentialPlacementExpectations,
+};
 
 fn inspect(event: CredentialLifecycleEvent) {
     if let CredentialLifecycleEvent::GenerationInvalidated {
@@ -17,5 +20,9 @@ fn inspect(event: CredentialLifecycleEvent) {
 fn main() {
     let _ = core::mem::size_of::<CredentialGenerationSnapshot>();
     let _ = core::mem::size_of::<CredentialLifecycleEvent>();
+    let _ = core::mem::size_of::<CapturedNativeRequest>();
+    let _ = core::mem::size_of::<DeterministicNativeExecutor>();
+    let _ = core::mem::size_of::<ScriptedNativeResponse>();
+    let _ = core::mem::size_of::<UnsafeCredentialPlacementExpectations>();
     let _ = inspect as fn(CredentialLifecycleEvent);
 }

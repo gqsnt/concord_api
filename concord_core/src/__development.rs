@@ -1,7 +1,16 @@
 //! Explicitly enabled deterministic-development observation support.
 //!
 //! This module is unstable, is absent unless `dangerous-dev-tools` is
-//! selected, and is not a runtime-engine or generated-integration API.
+//! selected, and is not a runtime-engine or generated-integration API. The
+//! deterministic executor is test infrastructure only: Reqwest remains the
+//! sole executor in ordinary builds and generated clients never depend on it.
+
+pub use crate::development_executor::{
+    CapturedBodyCategory, CapturedNativeRequest, DeterministicBodyGate, DeterministicExecutionKind,
+    DeterministicExecutorInstallationError, DeterministicFakeCredential,
+    DeterministicNativeExecutor, ScriptedNativeResponse, SyntheticExecutionFailure,
+    UnsafeCredentialPlacementExpectations, install_application_executor, install_provider_executor,
+};
 
 /// Authentication lifecycle observations used to verify deterministic
 /// challenge ordering without exposing credential storage or execution types.

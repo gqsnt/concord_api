@@ -272,6 +272,79 @@ fn development_boundary_is_explicit_narrow_and_not_generated() {
     }
 }
 
+#[test]
+fn deterministic_native_executor_remains_a_private_feature_gated_reqwest_seam() {
+    let lib = read_repo_file("concord_core/src/lib.rs");
+    let prelude = lib
+        .split("pub mod prelude")
+        .nth(1)
+        .expect("prelude")
+        .split("pub mod advanced")
+        .next()
+        .expect("prelude body");
+    let advanced = lib
+        .split("pub mod advanced")
+        .nth(1)
+        .expect("advanced")
+        .split("pub mod dangerous")
+        .next()
+        .expect("advanced body");
+    for exported in [
+        "DeterministicNativeExecutor",
+        "ScriptedNativeResponse",
+        "UnsafeCredentialPlacementExpectations",
+        "install_application_executor",
+        "install_provider_executor",
+    ] {
+        assert!(!prelude.contains(exported), "prelude exported {exported}");
+        assert!(!advanced.contains(exported), "advanced exported {exported}");
+    }
+
+    let manifest = read_repo_file("concord_core/Cargo.toml");
+    let defaults = manifest
+        .lines()
+        .find(|line| line.starts_with("default ="))
+        .expect("default features");
+    assert!(!defaults.contains("dangerous-dev-tools"));
+    for forbidden_dependency in ["hyper =", "hyper-util", "tower ="] {
+        assert!(
+            !manifest.contains(forbidden_dependency),
+            "executor seam added forbidden dependency {forbidden_dependency}"
+        );
+    }
+
+    let implementation = read_repo_file("concord_core/src/development_executor.rs");
+    let capture = implementation
+        .split("fn sanitize_capture(")
+        .nth(1)
+        .expect("sanitized capture")
+        .split("fn body_category(")
+        .next()
+        .expect("sanitized capture body");
+    assert!(capture.contains("context.logical_url.clone()"));
+    assert!(!capture.contains("request.url()"));
+    assert!(!capture.contains("as_bytes()"));
+    assert!(!implementation.contains("pub trait"));
+
+    let transport = read_repo_file("concord_core/src/transport.rs");
+    assert!(transport.contains("client\n        .execute(request)"));
+    assert!(transport.contains("if let Some(executor) = &self.development_executor"));
+    assert!(transport.contains("#[cfg(feature = \"dangerous-dev-tools\")]"));
+    assert_eq!(
+        transport.matches("development_executor: Option<").count(),
+        2,
+        "application and provider must own independent handles"
+    );
+
+    let api = read_repo_file("concord_core/src/client/api.rs");
+    assert!(!api.contains("pub fn with_executor"));
+    assert!(!api.contains("ApiClient<Cx,"));
+    let generated = read_repo_file("concord_core/src/__private/mod.rs");
+    assert!(!generated.contains("DeterministicNativeExecutor"));
+    assert!(!generated.contains("install_application_executor"));
+    assert!(!generated.contains("install_provider_executor"));
+}
+
 fn read_repo_file(path: impl AsRef<Path>) -> String {
     let path = repo_root().join(path);
     fs::read_to_string(&path)

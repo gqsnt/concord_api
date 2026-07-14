@@ -54,7 +54,7 @@ The dangerous feature gates are:
 These enable, respectively:
 
 - raw response access through `BuiltResponse` and `.execute_raw_response()`, which can return raw response headers and body bytes before endpoint decode;
-  - the narrow `__development` lifecycle-observation seam used by deterministic tests.
+- the narrow `__development` lifecycle-observation and native deterministic-executor seam used by maintained tests.
 
 These features are intended for controlled diagnostics, protocol testing, and local debugging. They should not be treated as the default application surface, and they should not be enabled in production unless that risk is intentionally accepted.
 
@@ -63,7 +63,18 @@ These features are intended for controlled diagnostics, protocol testing, and lo
 deterministic tests, not an alternate transport or a normal debug-build API.
 Without the explicit feature it does not exist—even under `debug_assertions`.
 Its narrow observations do not make credential cache, body engine, response
-entity, or request execution error types public.
+entity, or request execution error types public. The feature-gated executor
+can be installed only through `__development`, after normal client
+construction, and only on its explicitly selected application or provider
+channel. There is no default-feature or production constructor selector.
+
+Ordinary deterministic capture is sanitized by construction: it uses the
+logical pre-authentication URL, omits contract-defined authentication query
+keys, retains only public header values, records protected header names without
+values, and never returns request body bytes. Native credential placement can
+be checked only through the explicitly unsafe expectation builder with
+deterministic fake credentials. Those values are compared internally and are
+redacted from `Debug`, `Display`, and mismatch diagnostics.
 
 ### Generated-code-only plumbing
 

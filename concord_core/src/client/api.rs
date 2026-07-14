@@ -15,6 +15,24 @@ pub struct ApiClient<Cx: ClientContext> {
 }
 
 impl<Cx: ClientContext> ApiClient<Cx> {
+    #[cfg(feature = "dangerous-dev-tools")]
+    pub(crate) fn install_development_application_executor(
+        &mut self,
+        executor: crate::development_executor::DeterministicNativeExecutor,
+    ) {
+        self.managed_client
+            .install_development_application_executor(executor);
+    }
+
+    #[cfg(feature = "dangerous-dev-tools")]
+    pub(crate) fn install_development_provider_executor(
+        &mut self,
+        executor: crate::development_executor::DeterministicNativeExecutor,
+    ) {
+        self.managed_client
+            .install_development_provider_executor(executor);
+    }
+
     pub fn new(vars: Cx::Vars, auth_vars: Cx::AuthVars) -> Self {
         Self::with_managed_client(
             vars,

@@ -22,6 +22,10 @@ pub(crate) struct RequestExecutionContext {
     pub(crate) logical_url: Url,
     pub(crate) timeout: Option<Duration>,
     pub(crate) body_errors: crate::body::RequestBodyErrorSlot,
+    #[cfg(feature = "dangerous-dev-tools")]
+    pub(crate) auth_query_keys: Vec<String>,
+    #[cfg(feature = "dangerous-dev-tools")]
+    pub(crate) protected_header_names: Vec<http::HeaderName>,
 }
 
 pub(crate) struct BuiltRequest {
@@ -816,6 +820,8 @@ pub(crate) struct ManagedReqwestClient {
     pub(crate) client: reqwest::Client,
     configured_proxies: Vec<SafeProxy>,
     provider: ManagedProviderReqwestClient,
+    #[cfg(feature = "dangerous-dev-tools")]
+    development_executor: Option<crate::development_executor::DeterministicNativeExecutor>,
 }
 
 /// The separately managed Reqwest authority used only for credential-provider
@@ -824,6 +830,8 @@ pub(crate) struct ManagedReqwestClient {
 pub(crate) struct ManagedProviderReqwestClient {
     pub(crate) client: reqwest::Client,
     configured_proxies: Vec<SafeProxy>,
+    #[cfg(feature = "dangerous-dev-tools")]
+    development_executor: Option<crate::development_executor::DeterministicNativeExecutor>,
 }
 
 /// A credential-free explicit proxy target for the managed Reqwest transport.
@@ -1283,7 +1291,11 @@ impl ManagedReqwestClient {
             provider: ManagedProviderReqwestClient {
                 client: provider_client,
                 configured_proxies: provider_proxies,
+                #[cfg(feature = "dangerous-dev-tools")]
+                development_executor: None,
             },
+            #[cfg(feature = "dangerous-dev-tools")]
+            development_executor: None,
         })
     }
 
@@ -1307,7 +1319,27 @@ impl ManagedReqwestClient {
         request: reqwest::Request,
         context: Option<&RequestExecutionContext>,
     ) -> Result<reqwest::Response, ReqwestError> {
+        #[cfg(feature = "dangerous-dev-tools")]
+        if let Some(executor) = &self.development_executor {
+            return executor.execute_native(request, context).await;
+        }
         execute_managed(&self.client, &self.configured_proxies, request, context).await
+    }
+
+    #[cfg(feature = "dangerous-dev-tools")]
+    pub(crate) fn install_development_application_executor(
+        &mut self,
+        executor: crate::development_executor::DeterministicNativeExecutor,
+    ) {
+        self.development_executor = Some(executor);
+    }
+
+    #[cfg(feature = "dangerous-dev-tools")]
+    pub(crate) fn install_development_provider_executor(
+        &mut self,
+        executor: crate::development_executor::DeterministicNativeExecutor,
+    ) {
+        self.provider.development_executor = Some(executor);
     }
 
     pub(crate) fn provider(&self) -> &ManagedProviderReqwestClient {
@@ -1327,6 +1359,10 @@ impl ManagedProviderReqwestClient {
         request: reqwest::Request,
         context: Option<&RequestExecutionContext>,
     ) -> Result<reqwest::Response, ReqwestError> {
+        #[cfg(feature = "dangerous-dev-tools")]
+        if let Some(executor) = &self.development_executor {
+            return executor.execute_native(request, context).await;
+        }
         execute_managed(&self.client, &self.configured_proxies, request, context).await
     }
 

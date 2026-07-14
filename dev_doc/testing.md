@@ -138,6 +138,34 @@ Response body limit tests should cover `Content-Length` precheck, unknown-length
 
 ## Deterministic Async Harness
 
+The F-05 deterministic native executor foundation is available only with
+`dangerous-dev-tools`. Install a handle created for either application or
+provider execution through `concord_core::__development`; channel mismatch is
+rejected. Scripts provide native status, headers, buffered or chunked bodies,
+trailers, body gates, partial body failure, and focused synthetic execution
+failure categories. Successful scripts always enter Core as
+`reqwest::Response` values and therefore exercise the normal response pipeline.
+
+Default captures expose logical pre-auth request metadata and body shape only.
+Use `UnsafeCredentialPlacementExpectations` solely with deterministic fake
+credentials when a test must prove native header/query placement. It compares
+values inside the executor and returns only a redacted request-category failure
+on mismatch; no raw native request accessor exists.
+
+Focused foundation diagnostics are:
+
+```bash
+cargo test -p concord_core --all-features development
+cargo test -p concord_core --all-features executor
+cargo test -p concord_core --all-features capture
+cargo test -p concord_core --all-features provider
+```
+
+`tests/development_boundary.rs` performs an external offline compile check: the
+fixture fails without `dangerous-dev-tools` and compiles when the feature is
+enabled. Repository boundary checks also keep executor symbols out of `prelude`,
+`advanced`, generated integration, and ordinary client constructors.
+
 Native wire tests use the loopback helpers in `concord_test_support/src/mock.rs` instead of an injected transport abstraction or live external services.
 
 The native helpers start a bounded loopback HTTP server, configure Concord's
@@ -145,8 +173,7 @@ safe Reqwest builder to reach it, serve queued `MockReply` values, expose
 `ReplyGate` for deterministic response release, and record `RecordedRequest`
 wire observations. They exercise the managed Reqwest path directly.
 
-The dangerous development feature exposes only lifecycle observations and
-opaque credential-generation snapshots. It does not persist response bodies.
+The dangerous development feature does not persist request or response bodies.
 
 Every harness wait is bounded through `wait_bounded`, `PhaseGate::wait_for`, or `PhaseGate::try_wait_for`. Tests that assert a task is still blocked may use a short bounded negative wait such as `assert_still_pending`, but the phase event must be the synchronization point. Do not make correctness depend on arbitrary wall-clock sleeps.
 

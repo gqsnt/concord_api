@@ -11,6 +11,20 @@ observation, bounded body handling, and terminal decode. A `401` or `403` may
 trigger one generation-safe authentication recovery when the logical body can
 be rebuilt. No other Concord resend loop exists.
 
+With the explicit non-default `dangerous-dev-tools` feature, the final managed
+native boundary may instead consume one script from a deterministic executor.
+The switch is stored only on the private managed clients; it is not a client,
+endpoint, request, or generated-code generic. Application and provider clients
+have independent handles. Without the feature, the branch and storage do not
+compile and execution always reaches `reqwest::Client::execute`.
+
+Scripted successes are converted from `http::Response<reqwest::Body>` into a
+native `reqwest::Response`. No alternate response model exists: response
+observation, classification, release ordering, `BoundedResponseStream`,
+buffering, streaming, and codec decode are unchanged. The only synthetic
+execution errors are the focused timeout, connect, request, and body categories
+needed when public Reqwest APIs cannot construct an equivalent failure.
+
 `RetryMode` is fixed at client construction. Reqwest owns hidden protocol or
 status resends, so those sends do not rerun hooks, rate limiting, credential
 preparation, or body factories. Use `RetryMode::Disabled` when exact

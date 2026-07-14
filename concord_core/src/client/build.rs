@@ -62,11 +62,29 @@ impl PublicRequestHead {
                 msg: "native request construction failed",
             })?;
         let logical_url = message.url().clone();
+        #[cfg(feature = "dangerous-dev-tools")]
+        let auth_query_keys = self.auth_plan.sensitive_query_keys.clone();
+        #[cfg(feature = "dangerous-dev-tools")]
+        let protected_header_names = self
+            .auth_plan
+            .slots
+            .iter()
+            .filter_map(|slot| match &slot.placement {
+                crate::auth::PlannedAuthPlacement::Bearer
+                | crate::auth::PlannedAuthPlacement::Basic => Some(http::header::AUTHORIZATION),
+                crate::auth::PlannedAuthPlacement::Header(name) => Some(name.clone()),
+                crate::auth::PlannedAuthPlacement::Query(_) => None,
+            })
+            .collect();
         let context = crate::transport::RequestExecutionContext {
             meta: self.meta,
             logical_url,
             timeout: self.timeout,
             body_errors,
+            #[cfg(feature = "dangerous-dev-tools")]
+            auth_query_keys,
+            #[cfg(feature = "dangerous-dev-tools")]
+            protected_header_names,
         };
         Ok(BuiltRequest {
             message,

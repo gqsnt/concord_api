@@ -92,8 +92,14 @@ authority for ordinary buffered, streaming, hook, rate-limit, pagination,
 debug, and error metadata. Native response URLs never replace it.
 
 The `dangerous-dev-tools` feature is separate from debug sinks, hooks, stderr
-debug output, public errors, and rate-limit metadata. It exposes only the
-observation seam used by deterministic tests and is disabled by default.
+debug output, public errors, and rate-limit metadata. It exposes only narrow
+deterministic test infrastructure and is disabled by default. Its native
+executor branch exists at the final managed Reqwest boundary, after pre-send
+hooks and authentication materialization. Application and provider managed
+clients retain separate executor handles and queues. Synthetic success uses a
+real `reqwest::Response`, so response hooks, rate-limit feedback, status/auth
+classification, bounded response streaming, and decode remain the production
+pipeline.
 
 See [Security Model](security_model.md) for the consumer-facing boundary between safe, advanced, and dangerous surfaces.
 

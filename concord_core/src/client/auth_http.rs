@@ -502,6 +502,77 @@ mod tests {
         assert_eq!(limiter.responses.load(Ordering::SeqCst), 0);
     }
 
+    #[cfg(feature = "dangerous-dev-tools")]
+    #[tokio::test]
+    async fn deterministic_provider_and_application_executor_scripts_are_isolated() {
+        use crate::__development::{
+            DeterministicExecutionKind, DeterministicNativeExecutor, ScriptedNativeResponse,
+            install_application_executor, install_provider_executor,
+        };
+
+        let application = DeterministicNativeExecutor::application();
+        application.script_response(
+            ScriptedNativeResponse::bytes(
+                http::StatusCode::OK,
+                bytes::Bytes::from_static(b"application"),
+            )
+            .with_header(
+                http::header::CONTENT_TYPE,
+                http::HeaderValue::from_static("text/plain"),
+            ),
+        );
+        let provider = DeterministicNativeExecutor::provider();
+        provider.script_response(ScriptedNativeResponse::bytes(
+            http::StatusCode::CREATED,
+            bytes::Bytes::from_static(b"provider"),
+        ));
+
+        let mut client = ApiClient::<ProviderHttpTestCx>::new((), ());
+        install_application_executor(&mut client, application.clone())
+            .expect("application installation");
+        install_provider_executor(&mut client, provider.clone()).expect("provider installation");
+
+        let provider_response = send_provider(
+            &client,
+            provider_request(
+                "http://provider-http.example/token"
+                    .parse()
+                    .expect("provider URL"),
+                AuthInternalPolicy::default(),
+            ),
+        )
+        .await
+        .expect("provider synthetic response");
+        assert_eq!(provider_response.status, http::StatusCode::CREATED);
+        assert_eq!(provider_response.body, "provider");
+        assert_eq!(provider.captures().len(), 1);
+        assert_eq!(
+            provider.captures()[0].execution_kind(),
+            DeterministicExecutionKind::Provider
+        );
+        assert_eq!(application.captures().len(), 0);
+        assert_eq!(application.remaining_scripts(), 1);
+
+        let application_response = client
+            .execute_plan::<crate::prelude::Text<String>>(crate::regression_tests::request_plan(
+                "DeterministicApplicationAfterProvider",
+                http::Method::GET,
+                "/application",
+                Default::default(),
+                None,
+            ))
+            .await
+            .expect("application synthetic response");
+        assert_eq!(application_response.value(), "application");
+        assert_eq!(application.captures().len(), 1);
+        assert_eq!(
+            application.captures()[0].execution_kind(),
+            DeterministicExecutionKind::Application
+        );
+        assert_eq!(provider.captures().len(), 1);
+        assert_eq!(provider.remaining_scripts(), 0);
+    }
+
     #[tokio::test]
     async fn provider_timeout_is_enforced_and_sanitized() {
         const URL_SECRET: &str = "PROVIDER_TIMEOUT_URL_SECRET";

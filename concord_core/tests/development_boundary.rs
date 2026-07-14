@@ -57,6 +57,10 @@ fn __development_types_compile_in_the_feature_enabled_test_crate() {
 
     uses_type::<concord_core::__development::CredentialGenerationSnapshot>();
     uses_type::<concord_core::__development::CredentialLifecycleEvent>();
+    uses_type::<concord_core::__development::CapturedNativeRequest>();
+    uses_type::<concord_core::__development::DeterministicNativeExecutor>();
+    uses_type::<concord_core::__development::ScriptedNativeResponse>();
+    uses_type::<concord_core::__development::UnsafeCredentialPlacementExpectations>();
 }
 
 fn write_manifest(work: &Path, core: &Path, enabled: bool) {

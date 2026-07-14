@@ -66,19 +66,24 @@ supply-chain, performance-package, and benchmark-compilation gate.
 
 ## Explicit Development Seam
 
-`concord_core::__development` is an unstable deterministic-test observation
-seam. It is compiled only when `dangerous-dev-tools` is explicitly selected;
+`concord_core::__development` is unstable deterministic-test infrastructure.
+It is compiled only when `dangerous-dev-tools` is explicitly selected;
 ordinary downstream debug builds do not expose it, and the feature is not in
 `concord_core`'s defaults. The module exposes purpose-specific lifecycle
-observations and opaque snapshots, not credential slots, request/response
-planning types, body engines, or request execution errors. Generated clients and
-normal examples never import it. Snapshot identities support cloning and
-equality comparison only; their constructors, numeric representation, and
-ordering are private, and their diagnostics render only an opaque label.
+observations plus a narrow scripted native-Reqwest executor for maintained
+tests. The executor has distinct application and credential-provider channels;
+it accepts the already materialized native request and returns a real
+`reqwest::Response` built from `http::Response<reqwest::Body>`. Generated
+clients and normal examples never import it, and `prelude` and `advanced` do
+not re-export it.
 
-The feature provides only the narrow lifecycle observation seam used by
-deterministic tests. It does not expose body persistence or runtime planning
-types and is not enabled by default.
+Default executor capture records the pre-auth logical URL, execution metadata,
+public headers, protected header names, and body shape/known length. It never
+returns the materialized URL, credential values, or request body bytes. Exact
+credential-placement checks require the separately named unsafe expectation
+builder and deterministic fake values; expectation diagnostics remain
+redacted. The feature does not expose runtime planning types or a production
+executor selector.
 
 ## Extending The Surface
 
