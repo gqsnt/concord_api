@@ -58,11 +58,11 @@ pub(super) struct AuthPreparation {
     pub(super) summary: crate::auth::AuthAttemptSummary,
     pub(super) materials: Vec<crate::auth::AuthTransportMaterial>,
     pub(super) cache_policy: AuthPreparationCachePolicy,
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     pub(super) lifecycle_observation_targets: Vec<AuthLifecycleObservationTarget>,
 }
 
-#[cfg(feature = "dangerous-dev-tools")]
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
 #[derive(Clone)]
 pub(super) struct AuthLifecycleObservationTarget {
     pub(super) credential_id: crate::auth::CredentialId,
@@ -71,7 +71,7 @@ pub(super) struct AuthLifecycleObservationTarget {
     pub(super) target: crate::auth::CredentialLifecycleObservationTarget,
 }
 
-#[cfg(feature = "dangerous-dev-tools")]
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
 impl AuthLifecycleObservationTarget {
     pub(super) fn matches(&self, action: &crate::auth::AuthRejectionAction) -> bool {
         action.matches_use_identity(&self.credential_id, &self.usage_id, self.step_id)

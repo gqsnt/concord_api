@@ -2,7 +2,10 @@ use bytes::Bytes;
 use concord_core::advanced::{OctetStream, StreamBody, StreamResponse};
 use concord_core::prelude::*;
 use concord_macros::api;
-use concord_test_support::{MockHandle, MockReply, MockServer, ReplyGate, ResponseStep, mock};
+use concord_test_support::{
+    DeterministicMock, MockExecutionHandle, ResponseGate, ScriptedReply, ScriptedResponseStep,
+    deterministic_mock,
+};
 use http::{HeaderMap, HeaderValue, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex as StdMutex};
@@ -36,31 +39,29 @@ mod stream_helper_contract {
 
 use stream_helper_contract::StreamHelperApi;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct CapturedBody(Bytes);
-
 #[derive(Clone, PartialEq, Eq)]
 struct CapturedRequest {
     debug: String,
     content_type: Option<String>,
-    body: CapturedBody,
+    body_category: concord_core::__development::CapturedBodyCategory,
+    known_body_length: Option<u64>,
 }
 
 impl std::fmt::Debug for CapturedRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let body = format!("<stream:{} bytes>", self.body.0.len());
         f.debug_struct("CapturedRequest")
             .field("debug", &self.debug)
             .field("content_type", &self.content_type)
-            .field("body", &body)
+            .field("body_category", &self.body_category)
+            .field("known_body_length", &self.known_body_length)
             .finish()
     }
 }
 
 #[derive(Clone)]
 struct RecordingTransport {
-    server: MockServer,
-    handle: Arc<StdMutex<MockHandle>>,
+    server: DeterministicMock,
+    handle: Arc<StdMutex<MockExecutionHandle>>,
 }
 
 #[derive(Clone)]
@@ -125,8 +126,10 @@ impl ResponseFixture {
 }
 
 impl RecordingTransport {
-    fn buffered_response(body: &'static str) -> Self {
-        Self::new(ResponseFixture::buffered_json(body))
+    fn buffered_response_expecting_request(body: &'static str, expected: Bytes) -> Self {
+        Self::from_replies([ResponseFixture::buffered_json(body)
+            .into_reply()
+            .expect_body(expected)])
     }
 
     fn streamed_response(chunks: Vec<Bytes>) -> Self {
@@ -141,8 +144,8 @@ impl RecordingTransport {
         Self::from_replies([])
     }
 
-    fn from_replies(replies: impl IntoIterator<Item = MockReply>) -> Self {
-        let (server, handle) = mock().replies(replies).build();
+    fn from_replies(replies: impl IntoIterator<Item = ScriptedReply>) -> Self {
+        let (server, handle) = deterministic_mock().replies(replies).build();
         Self {
             server,
             handle: Arc::new(StdMutex::new(handle)),
@@ -162,7 +165,8 @@ impl RecordingTransport {
                     .get(http::header::CONTENT_TYPE)
                     .and_then(|value| value.to_str().ok())
                     .map(str::to_string),
-                body: CapturedBody(request.body),
+                body_category: request.body_category,
+                known_body_length: request.known_body_length,
             })
             .collect()
     }
@@ -171,16 +175,16 @@ impl RecordingTransport {
         self.handle.lock().expect("handle lock").recorded_len()
     }
 
-    fn configure_reqwest(
-        &self,
-        builder: concord_core::advanced::SafeReqwestBuilder,
-    ) -> concord_core::advanced::SafeReqwestBuilder {
-        self.server.configure_reqwest(builder)
+    fn client(&self) -> StreamHelperApi {
+        StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
+            self.server.configure_application(builder)
+        })
+        .expect("deterministic generated stream client")
     }
 }
 
 impl ResponseFixture {
-    fn into_reply(self) -> MockReply {
+    fn into_reply(self) -> ScriptedReply {
         let (status, headers, body, chunks, content_length) = match self {
             Self::Buffered {
                 status,
@@ -195,7 +199,7 @@ impl ResponseFixture {
                 content_length,
             } => (status, headers, None, Some(chunks), content_length),
         };
-        let mut reply = MockReply::status(status);
+        let mut reply = ScriptedReply::status(status);
         for (name, value) in headers {
             if let Some(name) = name {
                 reply = reply.with_header(name, value);
@@ -219,11 +223,11 @@ impl ResponseFixture {
 #[tokio::test]
 async fn generated_stream_request_reaches_transport() {
     const SENTINEL: &[u8] = b"SECRET_STREAM_REQUEST_SENTINEL_MUST_NOT_APPEAR";
-    let transport = RecordingTransport::buffered_response(r#"{"ok":true}"#);
-    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client");
+    let transport = RecordingTransport::buffered_response_expecting_request(
+        r#"{"ok":true}"#,
+        Bytes::from_static(SENTINEL),
+    );
+    let api = transport.client();
 
     let response = api
         .upload(StreamBody::from_bytes(Bytes::from_static(SENTINEL)))
@@ -239,7 +243,11 @@ async fn generated_stream_request_reaches_transport() {
         requests[0].content_type.as_deref(),
         Some("application/octet-stream")
     );
-    assert_eq!(requests[0].body.0.as_ref(), SENTINEL);
+    assert_eq!(
+        requests[0].body_category,
+        concord_core::__development::CapturedBodyCategory::Streaming
+    );
+    assert_eq!(requests[0].known_body_length, Some(SENTINEL.len() as u64));
     assert!(
         !requests[0]
             .debug
@@ -258,10 +266,7 @@ async fn generated_stream_response_returns_stream_without_buffering() {
         Bytes::from_static(b" "),
         Bytes::from_static(SENTINEL),
     ]);
-    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client");
+    let api = transport.client();
 
     let mut response: StreamResponse<OctetStream> = api
         .download()
@@ -302,10 +307,7 @@ async fn generated_stream_response_execute_stream_returns_stream_without_bufferi
         Bytes::from_static(b" "),
         Bytes::from_static(SENTINEL),
     ]);
-    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client");
+    let api = transport.client();
 
     let mut response: StreamResponse<OctetStream> = api
         .download()
@@ -340,22 +342,19 @@ async fn generated_stream_response_execute_stream_returns_stream_without_bufferi
 
 #[tokio::test]
 async fn generated_stream_response_delivers_first_chunk_before_gated_later_chunk() {
-    let gate = ReplyGate::new();
-    let reply = MockReply::status(StatusCode::OK)
+    let gate = ResponseGate::new();
+    let reply = ScriptedReply::status(StatusCode::OK)
         .with_header(
             http::header::CONTENT_TYPE,
             HeaderValue::from_static("application/octet-stream"),
         )
         .with_response_steps([
-            ResponseStep::Chunk(Bytes::from_static(b"first")),
-            ResponseStep::Gate(gate.clone()),
-            ResponseStep::Chunk(Bytes::from_static(b"second")),
+            ScriptedResponseStep::Chunk(Bytes::from_static(b"first")),
+            ScriptedResponseStep::Gate(gate.clone()),
+            ScriptedResponseStep::Chunk(Bytes::from_static(b"second")),
         ]);
     let transport = RecordingTransport::from_replies([reply]);
-    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client");
+    let api = transport.client();
 
     let mut response = tokio::time::timeout(Duration::from_millis(250), async {
         api.download().execute_stream().await
@@ -367,13 +366,13 @@ async fn generated_stream_response_delivers_first_chunk_before_gated_later_chunk
         response.next_chunk().await.expect("first chunk").as_deref(),
         Some(b"first".as_slice())
     );
-    gate.wait_until_entered(Duration::from_secs(1));
     assert!(
         tokio::time::timeout(Duration::from_millis(25), response.next_chunk())
             .await
             .is_err(),
         "later response chunk must remain gated"
     );
+    gate.wait_until_entered(Duration::from_secs(1));
     gate.release();
     assert_eq!(
         response
@@ -388,23 +387,19 @@ async fn generated_stream_response_delivers_first_chunk_before_gated_later_chunk
 
 #[tokio::test]
 async fn generated_stream_response_limit_is_enforced_after_gated_chunk_release() {
-    let gate = ReplyGate::new();
-    let reply = MockReply::status(StatusCode::OK)
+    let gate = ResponseGate::new();
+    let reply = ScriptedReply::status(StatusCode::OK)
         .with_header(
             http::header::CONTENT_TYPE,
             HeaderValue::from_static("application/octet-stream"),
         )
         .with_response_steps([
-            ResponseStep::Chunk(Bytes::from_static(b"abcd")),
-            ResponseStep::Gate(gate.clone()),
-            ResponseStep::Chunk(Bytes::from_static(b"efgh")),
+            ScriptedResponseStep::Chunk(Bytes::from_static(b"abcd")),
+            ScriptedResponseStep::Gate(gate.clone()),
+            ScriptedResponseStep::Chunk(Bytes::from_static(b"efgh")),
         ]);
     let transport = RecordingTransport::from_replies([reply]);
-    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client")
-    .configure(|config| {
+    let api = transport.client().configure(|config| {
         config.max_stream_response_body_bytes(5);
     });
     let mut response = api
@@ -417,12 +412,12 @@ async fn generated_stream_response_limit_is_enforced_after_gated_chunk_release()
         response.next_chunk().await.expect("first chunk").as_deref(),
         Some(b"abcd".as_slice())
     );
-    gate.wait_until_entered(Duration::from_secs(1));
     assert!(
         tokio::time::timeout(Duration::from_millis(25), response.next_chunk())
             .await
             .is_err()
     );
+    gate.wait_until_entered(Duration::from_secs(1));
     gate.release();
     let error = response
         .next_chunk()
@@ -436,22 +431,19 @@ async fn generated_stream_response_limit_is_enforced_after_gated_chunk_release()
 
 #[tokio::test]
 async fn generated_stream_response_drop_cancels_gated_tail_without_consuming_it() {
-    let gate = ReplyGate::new();
-    let reply = MockReply::status(StatusCode::OK)
+    let gate = ResponseGate::new();
+    let reply = ScriptedReply::status(StatusCode::OK)
         .with_header(
             http::header::CONTENT_TYPE,
             HeaderValue::from_static("application/octet-stream"),
         )
         .with_response_steps([
-            ResponseStep::Chunk(Bytes::from_static(b"first")),
-            ResponseStep::Gate(gate.clone()),
-            ResponseStep::Chunk(Bytes::from_static(b"unconsumed-secret")),
+            ScriptedResponseStep::Chunk(Bytes::from_static(b"first")),
+            ScriptedResponseStep::Gate(gate.clone()),
+            ScriptedResponseStep::Chunk(Bytes::from_static(b"unconsumed-secret")),
         ]);
     let transport = RecordingTransport::from_replies([reply]);
-    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client");
+    let api = transport.client();
     let mut response = api
         .download()
         .execute_stream()
@@ -460,6 +452,11 @@ async fn generated_stream_response_drop_cancels_gated_tail_without_consuming_it(
     assert_eq!(
         response.next_chunk().await.expect("first chunk").as_deref(),
         Some(b"first".as_slice())
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_millis(25), response.next_chunk())
+            .await
+            .is_err()
     );
     gate.wait_until_entered(Duration::from_secs(1));
     drop(response);
@@ -470,20 +467,17 @@ async fn generated_stream_response_drop_cancels_gated_tail_without_consuming_it(
 #[tokio::test]
 async fn generated_stream_response_disconnect_is_safely_categorized_and_redacted() {
     const SENTINEL: &str = "GATED_STREAM_BODY_FAILURE_SECRET";
-    let reply = MockReply::status(StatusCode::OK)
+    let reply = ScriptedReply::status(StatusCode::OK)
         .with_header(
             http::header::CONTENT_TYPE,
             HeaderValue::from_static("application/octet-stream"),
         )
         .with_response_steps([
-            ResponseStep::Chunk(Bytes::from_static(b"first")),
-            ResponseStep::Disconnect,
+            ScriptedResponseStep::Chunk(Bytes::from_static(b"first")),
+            ScriptedResponseStep::Failure,
         ]);
     let transport = RecordingTransport::from_replies([reply]);
-    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client");
+    let api = transport.client();
     let mut response = api
         .download()
         .execute_stream()
@@ -506,11 +500,7 @@ async fn generated_stream_response_disconnect_is_safely_categorized_and_redacted
 async fn generated_stream_request_enforces_configured_request_limit() {
     const SENTINEL: &[u8] = b"SECRET_STREAM_REQUEST_SENTINEL_MUST_NOT_APPEAR";
     let transport = RecordingTransport::empty();
-    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client");
-    let api = api.configure(|cfg| {
+    let api = transport.client().configure(|cfg| {
         cfg.max_request_body_bytes(4);
     });
 
@@ -541,11 +531,7 @@ async fn generated_stream_response_enforces_configured_response_limit() {
         ])
         .content_length(None),
     );
-    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client");
-    let api = api.configure(|cfg| {
+    let api = transport.client().configure(|cfg| {
         cfg.max_stream_response_body_bytes(5);
     });
 
@@ -579,11 +565,7 @@ async fn generated_stream_response_exact_limit_uses_only_stream_policy() {
         ResponseFixture::streamed(vec![Bytes::from_static(b"ab"), Bytes::from_static(b"cde")])
             .content_length(None),
     );
-    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client")
-    .configure(|config| {
+    let api = transport.client().configure(|config| {
         config.max_response_body_bytes(1);
         config.max_stream_response_body_bytes(5);
     });
@@ -602,18 +584,14 @@ async fn generated_stream_response_exact_limit_uses_only_stream_policy() {
 
 #[tokio::test]
 async fn generated_stream_response_known_oversize_fails_before_consumption() {
-    let reply = MockReply::status(StatusCode::OK)
+    let reply = ScriptedReply::status(StatusCode::OK)
         .with_header(
             http::header::CONTENT_TYPE,
             HeaderValue::from_static("application/octet-stream"),
         )
         .with_body(Bytes::from_static(b"oversize"));
     let transport = RecordingTransport::from_replies([reply]);
-    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client")
-    .configure(|config| {
+    let api = transport.client().configure(|config| {
         config.max_stream_response_body_bytes(5);
     });
 
@@ -642,11 +620,7 @@ async fn generated_stream_response_disabled_limit_reads_all_chunks() {
         ])
         .content_length(None),
     );
-    let api = StreamHelperApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client")
-    .configure(|config| {
+    let api = transport.client().configure(|config| {
         config.no_stream_response_body_limit();
     });
 

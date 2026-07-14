@@ -296,7 +296,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
-    use crate::regression_tests::native_mock;
+    use crate::regression_tests::deterministic_mock;
 
     #[derive(Clone)]
     struct ProviderHttpTestCx;
@@ -330,53 +330,62 @@ mod tests {
         ClientAuthHttpExecutor { client }.send(request).await
     }
 
-    fn fixed_loopback_origin(
-        server: &native_mock::MockServer,
-    ) -> crate::retry_mode::ApiOriginDescriptor {
-        let authority = server.base_url().authority().to_string().leak();
+    fn fixed_test_origin() -> crate::retry_mode::ApiOriginDescriptor {
         crate::retry_mode::ApiOriginDescriptor::FixedSingleOrigin(
             crate::retry_mode::FixedOriginDescriptor {
                 scheme: crate::retry_mode::OriginScheme::Http,
-                authority,
+                authority: "provider-http.example",
             },
         )
     }
 
+    fn provider_url() -> url::Url {
+        "http://provider-http.example/token"
+            .parse()
+            .expect("fixed provider URL")
+    }
+
     #[tokio::test]
     async fn provider_protocol_recovery_submits_once_and_returns_status_for_classification() {
-        let (server, handle) = native_mock::mock()
+        let (mock, handle) = deterministic_mock::deterministic_mock()
+            .provider()
             .repeating(
-                native_mock::MockReply::status(http::StatusCode::SERVICE_UNAVAILABLE)
+                deterministic_mock::ScriptedReply::status(http::StatusCode::SERVICE_UNAVAILABLE)
                     .with_body(bytes::Bytes::from_static(b"provider unavailable")),
             )
             .build();
-        let client = ApiClient::<ProviderHttpTestCx>::new((), ());
+        let client =
+            ApiClient::<ProviderHttpTestCx>::with_safe_reqwest_builder((), (), |builder| {
+                mock.configure_provider(builder)
+            })
+            .expect("provider deterministic client");
         let response = send_provider(
             &client,
-            provider_request(server.base_url().clone(), AuthInternalPolicy::default()),
+            provider_request(provider_url(), AuthInternalPolicy::default()),
         )
         .await
         .expect("status responses remain available to provider logic");
 
         assert_eq!(response.status, http::StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(response.body, "provider unavailable");
-        assert_eq!(handle.wire_request_count(), 1);
+        assert_eq!(handle.recorded_len(), 1);
     }
 
     #[tokio::test]
     async fn provider_disabled_submits_once_without_concord_resend() {
         const URL_SECRET: &str = "PROVIDER_REQUEST_URL_SECRET";
-        let (server, handle) = native_mock::mock()
-            .repeating(native_mock::MockReply::disconnect_after_request())
+        let (mock, handle) = deterministic_mock::deterministic_mock()
+            .provider()
+            .repeating(deterministic_mock::ScriptedReply::disconnect_after_request_body())
             .build();
         let client =
             ApiClient::<ProviderHttpTestCx>::with_safe_reqwest_builder((), (), |builder| {
-                builder.provider_operation_retry_mode(
+                mock.configure_provider(builder.provider_operation_retry_mode(
                     crate::retry_mode::ProviderOperationRetryMode::Disabled,
-                )
+                ))
             })
             .expect("disabled provider retry client");
-        let mut url = server.base_url().clone();
+        let mut url = provider_url();
         url.query_pairs_mut().append_pair("credential", URL_SECRET);
         let error = send_provider(
             &client,
@@ -388,14 +397,15 @@ mod tests {
         assert_eq!(error.kind, AuthErrorKind::AcquireFailed);
         let rendered = format!("{error:?}\n{error}");
         assert!(!rendered.contains(URL_SECRET), "{rendered}");
-        assert!(!rendered.contains(server.base_url().as_str()), "{rendered}");
-        assert_eq!(handle.wire_request_count(), 1);
+        assert!(!rendered.contains("provider-http.example"), "{rendered}");
+        assert_eq!(handle.recorded_len(), 1);
     }
 
     #[tokio::test]
     async fn application_status_retry_does_not_govern_provider_http() {
-        let (server, handle) = native_mock::mock()
-            .repeating(native_mock::MockReply::status(
+        let (mock, handle) = deterministic_mock::deterministic_mock()
+            .provider()
+            .repeating(deterministic_mock::ScriptedReply::status(
                 http::StatusCode::SERVICE_UNAVAILABLE,
             ))
             .build();
@@ -403,23 +413,23 @@ mod tests {
             crate::retry_mode::RetryMode::status(2, [http::StatusCode::SERVICE_UNAVAILABLE])
                 .expect("valid application status mode");
         let client = ApiClient::<ProviderHttpTestCx>::with_generated_descriptor_retry_mode(
-            Some(fixed_loopback_origin(&server)),
+            Some(fixed_test_origin()),
             (),
             (),
             retry_mode,
-            Ok,
+            |builder| Ok(mock.configure_provider(builder)),
         )
         .expect("application status-retry client");
 
         let response = send_provider(
             &client,
-            provider_request(server.base_url().clone(), AuthInternalPolicy::default()),
+            provider_request(provider_url(), AuthInternalPolicy::default()),
         )
         .await
         .expect("provider status remains a response");
 
         assert_eq!(response.status, http::StatusCode::SERVICE_UNAVAILABLE);
-        assert_eq!(handle.wire_request_count(), 1);
+        assert_eq!(handle.recorded_len(), 1);
     }
 
     #[derive(Default)]
@@ -481,18 +491,25 @@ mod tests {
 
     #[tokio::test]
     async fn provider_http_bypasses_application_hooks_and_rate_limiter() {
-        let (server, _handle) = native_mock::mock()
-            .reply(native_mock::MockReply::status(http::StatusCode::OK))
+        let (mock, _handle) = deterministic_mock::deterministic_mock()
+            .provider()
+            .reply(deterministic_mock::ScriptedReply::status(
+                http::StatusCode::OK,
+            ))
             .build();
         let hooks = Arc::new(CountingHooks::default());
         let limiter = Arc::new(CountingRateLimiter::default());
-        let mut client = ApiClient::<ProviderHttpTestCx>::new((), ());
+        let mut client =
+            ApiClient::<ProviderHttpTestCx>::with_safe_reqwest_builder((), (), |builder| {
+                mock.configure_provider(builder)
+            })
+            .expect("provider deterministic client");
         client.set_runtime_hooks(hooks.clone());
         client.set_rate_limiter(limiter.clone());
 
         send_provider(
             &client,
-            provider_request(server.base_url().clone(), AuthInternalPolicy::default()),
+            provider_request(provider_url(), AuthInternalPolicy::default()),
         )
         .await
         .expect("provider request succeeds independently");
@@ -502,7 +519,7 @@ mod tests {
         assert_eq!(limiter.responses.load(Ordering::SeqCst), 0);
     }
 
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     #[tokio::test]
     async fn deterministic_provider_and_application_executor_scripts_are_isolated() {
         use crate::__development::{
@@ -574,17 +591,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn provider_timeout_is_enforced_and_sanitized() {
+    async fn provider_timeout_is_captured_and_synthetic_mapping_is_sanitized() {
         const URL_SECRET: &str = "PROVIDER_TIMEOUT_URL_SECRET";
-        let (server, _handle) = native_mock::mock()
-            .reply(
-                native_mock::MockReply::status(http::StatusCode::OK)
-                    .with_delay(Duration::from_millis(100)),
-            )
+        let (mock, handle) = deterministic_mock::deterministic_mock()
+            .provider()
+            .reply(deterministic_mock::ScriptedReply::timeout_before_request_body())
             .build();
-        let mut url = server.base_url().clone();
+        let mut url = provider_url();
         url.query_pairs_mut().append_pair("credential", URL_SECRET);
-        let client = ApiClient::<ProviderHttpTestCx>::new((), ());
+        let client =
+            ApiClient::<ProviderHttpTestCx>::with_safe_reqwest_builder((), (), |builder| {
+                mock.configure_provider(builder)
+            })
+            .expect("provider deterministic client");
         let error = send_provider(
             &client,
             provider_request(
@@ -596,27 +615,36 @@ mod tests {
             ),
         )
         .await
-        .expect_err("provider timeout must be enforced");
+        .expect_err("synthetic provider timeout must map stably");
 
         assert_eq!(error.kind, AuthErrorKind::AcquireFailed);
         let rendered = format!("{error:?}\n{error}");
         assert!(!rendered.contains(URL_SECRET), "{rendered}");
-        assert!(!rendered.contains(server.base_url().as_str()), "{rendered}");
+        assert!(!rendered.contains("provider-http.example"), "{rendered}");
+        assert_eq!(
+            handle.recorded()[0].timeout,
+            Some(Duration::from_millis(10))
+        );
     }
 
     #[tokio::test]
     async fn provider_response_body_limit_is_enforced_separately_from_timeout() {
-        let (server, _handle) = native_mock::mock()
+        let (mock, _handle) = deterministic_mock::deterministic_mock()
+            .provider()
             .reply(
-                native_mock::MockReply::status(http::StatusCode::OK)
+                deterministic_mock::ScriptedReply::status(http::StatusCode::OK)
                     .with_body(bytes::Bytes::from_static(b"12345")),
             )
             .build();
-        let client = ApiClient::<ProviderHttpTestCx>::new((), ());
+        let client =
+            ApiClient::<ProviderHttpTestCx>::with_safe_reqwest_builder((), (), |builder| {
+                mock.configure_provider(builder)
+            })
+            .expect("provider deterministic client");
         let error = send_provider(
             &client,
             provider_request(
-                server.base_url().clone(),
+                provider_url(),
                 AuthInternalPolicy {
                     max_body_bytes: 4,
                     ..AuthInternalPolicy::default()
@@ -739,19 +767,24 @@ mod tests {
 
     #[tokio::test]
     async fn provider_recursion_is_rejected_before_network_io() {
-        let (server, handle) = native_mock::mock()
-            .repeating(native_mock::MockReply::status(http::StatusCode::OK))
+        let (mock, handle) = deterministic_mock::deterministic_mock()
+            .provider()
+            .repeating(deterministic_mock::ScriptedReply::status(
+                http::StatusCode::OK,
+            ))
             .build();
-        let client = ApiClient::<RecursiveCx>::new(
+        let client = ApiClient::<RecursiveCx>::with_safe_reqwest_builder(
             (),
             RecursiveAuthVars {
-                provider_url: server.base_url().clone(),
+                provider_url: provider_url(),
             },
-        );
+            |builder| mock.configure_provider(builder),
+        )
+        .expect("recursive provider deterministic client");
         let error = ClientAuthHttpExecutor { client: &client }
             .send(AuthHttpRequest {
                 method: http::Method::POST,
-                url: server.base_url().clone(),
+                url: provider_url(),
                 headers: http::HeaderMap::new(),
                 body: crate::io::PreparedBody::empty(),
                 mode: AuthMode::use_auth(
@@ -764,6 +797,6 @@ mod tests {
             .expect_err("recursive provider authentication must fail");
 
         assert_eq!(error.kind, AuthErrorKind::RecursionDetected);
-        assert_eq!(handle.wire_request_count(), 0);
+        assert_eq!(handle.recorded_len(), 0);
     }
 }

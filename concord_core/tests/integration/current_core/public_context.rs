@@ -1,8 +1,11 @@
-use super::native_harness::native_mock;
+#![allow(unused_imports)]
+
+#[cfg(feature = "dangerous-dev-tools")]
+use super::native_harness::deterministic_support;
 use concord_core::advanced::{
     AuthChallengeMode, AuthChallengePolicy, AuthFuture, AuthPreparationMode, AuthProviderBinding,
     CredentialContext, CredentialId, CredentialProvider, CredentialProviderState, InvalidateReason,
-    PreparedBody, PreparedEndpoint, PreparedRequestEntity, RequestAuthentication, SafeProxy,
+    PreparedBody, PreparedEndpoint, PreparedRequestEntity, RequestAuthentication,
 };
 use concord_core::prelude::{ApiClient, ApiKey, ClientContext, RetryMode, Text};
 use http::{HeaderValue, Method, StatusCode};
@@ -115,11 +118,16 @@ fn hand_written_context_rejects_status_retry_mode() {
 }
 
 #[tokio::test]
+#[cfg(feature = "dangerous-dev-tools")]
 async fn authenticated_fixed_origin_context_uses_only_supported_public_modules() {
-    let (server, handle) = native_mock::mock()
+    let (mock, handle) = deterministic_support::deterministic_mock()
         .replies([
-            native_mock::MockReply::status(StatusCode::UNAUTHORIZED),
-            native_mock::MockReply::ok_text(bytes::Bytes::from_static(b"authenticated")),
+            deterministic_support::ScriptedReply::status(StatusCode::UNAUTHORIZED)
+                .expect_header(http::header::AUTHORIZATION, "Bearer public-token-1"),
+            deterministic_support::ScriptedReply::ok_text(bytes::Bytes::from_static(
+                b"authenticated",
+            ))
+            .expect_header(http::header::AUTHORIZATION, "Bearer public-token-2"),
         ])
         .build();
     let acquired = Arc::new(AtomicUsize::new(0));
@@ -130,12 +138,11 @@ async fn authenticated_fixed_origin_context_uses_only_supported_public_modules()
             invalidated: invalidated.clone(),
         },
     };
-    let proxy = SafeProxy::all(server.base_url().as_str()).expect("loopback proxy");
     let client = ApiClient::<PublicContext>::with_safe_reqwest_builder_and_retry_mode(
         (),
         auth,
         RetryMode::ProtocolRecovery,
-        |builder| Ok(builder.proxy(proxy)),
+        |builder| Ok(mock.configure_application(builder)),
     )
     .expect("public fixed-origin context");
     let value = PreparedEndpoint::<Text<String>>::new(
@@ -158,22 +165,21 @@ async fn authenticated_fixed_origin_context_uses_only_supported_public_modules()
 
     let requests = handle.recorded();
     assert_eq!(requests.len(), 2);
-    assert_eq!(
-        requests[0].headers.get(http::header::AUTHORIZATION),
-        Some(&HeaderValue::from_static("Bearer public-token-1"))
-    );
-    assert_eq!(
-        requests[1].headers.get(http::header::AUTHORIZATION),
-        Some(&HeaderValue::from_static("Bearer public-token-2"))
-    );
+    assert!(requests.iter().all(|request| {
+        !request.headers.contains_key(http::header::AUTHORIZATION)
+            && request
+                .protected_header_names
+                .contains(&http::header::AUTHORIZATION)
+    }));
 }
 
 #[tokio::test]
+#[cfg(feature = "dangerous-dev-tools")]
 async fn prepared_endpoint_explicit_policy_recovers_forbidden_once() {
-    let (server, handle) = native_mock::mock()
+    let (mock, handle) = deterministic_support::deterministic_mock()
         .replies([
-            native_mock::MockReply::status(StatusCode::FORBIDDEN),
-            native_mock::MockReply::ok_text(bytes::Bytes::from_static(b"recovered")),
+            deterministic_support::ScriptedReply::status(StatusCode::FORBIDDEN),
+            deterministic_support::ScriptedReply::ok_text(bytes::Bytes::from_static(b"recovered")),
         ])
         .build();
     let acquired = Arc::new(AtomicUsize::new(0));
@@ -184,12 +190,11 @@ async fn prepared_endpoint_explicit_policy_recovers_forbidden_once() {
             invalidated: invalidated.clone(),
         },
     };
-    let proxy = SafeProxy::all(server.base_url().as_str()).expect("loopback proxy");
     let client = ApiClient::<PublicContext>::with_safe_reqwest_builder_and_retry_mode(
         (),
         auth,
         RetryMode::ProtocolRecovery,
-        |builder| Ok(builder.proxy(proxy)),
+        |builder| Ok(mock.configure_application(builder)),
     )
     .expect("client");
 
@@ -216,9 +221,12 @@ async fn prepared_endpoint_explicit_policy_recovers_forbidden_once() {
 }
 
 #[tokio::test]
+#[cfg(feature = "dangerous-dev-tools")]
 async fn prepared_endpoint_default_policy_keeps_forbidden_terminal() {
-    let (server, handle) = native_mock::mock()
-        .replies([native_mock::MockReply::status(StatusCode::FORBIDDEN)])
+    let (mock, handle) = deterministic_support::deterministic_mock()
+        .replies([deterministic_support::ScriptedReply::status(
+            StatusCode::FORBIDDEN,
+        )])
         .build();
     let acquired = Arc::new(AtomicUsize::new(0));
     let invalidated = Arc::new(AtomicUsize::new(0));
@@ -228,12 +236,11 @@ async fn prepared_endpoint_default_policy_keeps_forbidden_terminal() {
             invalidated: invalidated.clone(),
         },
     };
-    let proxy = SafeProxy::all(server.base_url().as_str()).expect("loopback proxy");
     let client = ApiClient::<PublicContext>::with_safe_reqwest_builder_and_retry_mode(
         (),
         auth,
         RetryMode::ProtocolRecovery,
-        |builder| Ok(builder.proxy(proxy)),
+        |builder| Ok(mock.configure_application(builder)),
     )
     .expect("client");
 

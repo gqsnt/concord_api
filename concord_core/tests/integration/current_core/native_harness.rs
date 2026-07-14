@@ -1,2 +1,2 @@
-#[path = "../../../../concord_test_support/src/mock.rs"]
-pub(super) mod native_mock;
+#[path = "../../../../concord_test_support/src/deterministic.rs"]
+pub(super) mod deterministic_support;

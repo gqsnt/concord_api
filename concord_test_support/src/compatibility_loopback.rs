@@ -1,3 +1,8 @@
+//! Temporary F-07 compatibility for `concord_examples` and `perf` only.
+//!
+//! Maintained Core, macro, public-extension, and support tests use the
+//! deterministic executor. Delete this entire module during F-07.
+
 #![allow(dead_code)]
 
 use bytes::Bytes;
@@ -804,7 +809,7 @@ fn reason(status: StatusCode) -> &'static str {
     status.canonical_reason().unwrap_or("Response")
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "loopback-compat")))]
 mod tests {
     use super::*;
 

@@ -1,7 +1,7 @@
 #![allow(unused_imports)]
 
 use super::common::{
-    GatedNativeMockHarness, MockResponse, NativeMockHarness, ObservationRateLimiter,
+    DeterministicHarness, GatedDeterministicHarness, MockResponse, ObservationRateLimiter,
     RecordingRateLimiter, TestAuthVars, TestCx, TextEndpoint, auth_policy, client,
 };
 use crate::regression_tests::test_api::ResolvedPolicy;
@@ -28,7 +28,7 @@ const RAW_AUTH_SENTINEL: &str = "RAW_AUTH_SENTINEL_PR76";
 #[tokio::test]
 async fn client_config_applies_to_requests() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![
             MockResponse::text(StatusCode::OK, Bytes::from_static(b"abcde"))
@@ -69,7 +69,7 @@ async fn client_config_caps_retry_after_and_preserves_terminal_429() {
     response
         .headers
         .insert(http::header::RETRY_AFTER, HeaderValue::from_static("2"));
-    let harness = NativeMockHarness::new(events.clone(), vec![response]);
+    let harness = DeterministicHarness::new(events.clone(), vec![response]);
     let sent = harness.clone();
     let mut client = client(TestAuthVars::default(), harness);
     let limiter = Arc::new(concord_core::advanced::GovernorRateLimiter::new());
@@ -95,7 +95,7 @@ async fn client_config_caps_retry_after_and_preserves_terminal_429() {
 #[tokio::test]
 async fn per_request_debug_override_wins_and_does_not_leak() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![
             MockResponse::text(StatusCode::OK, "ok"),
@@ -149,7 +149,7 @@ async fn per_request_debug_override_wins_and_does_not_leak() -> Result<(), ApiCl
 #[tokio::test]
 async fn clone_config_isolated_after_execute_starts() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = GatedNativeMockHarness::new(
+    let harness = GatedDeterministicHarness::new(
         events.clone(),
         vec![
             MockResponse::text(StatusCode::OK, Bytes::from_static(b"abcde"))
@@ -160,9 +160,9 @@ async fn clone_config_isolated_after_execute_starts() {
     );
     let inner: ApiClient<TestCx> =
         ApiClient::with_safe_reqwest_builder((), TestAuthVars::default(), |builder| {
-            harness.configure_reqwest(builder)
+            harness.configure_application(builder)
         })
-        .expect("native gated client");
+        .expect("deterministic runtime-config client");
     let mut base_client = super::common::RegressionClient::from_inner(inner, None);
     base_client.configure(|cfg| {
         cfg.max_response_body_bytes(4);
@@ -198,7 +198,7 @@ async fn clone_config_isolated_after_execute_starts() {
 #[tokio::test]
 async fn per_request_timeout_override_wins_and_does_not_leak() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![
             MockResponse::text(StatusCode::OK, "one"),
@@ -225,7 +225,7 @@ async fn per_request_timeout_override_wins_and_does_not_leak() -> Result<(), Api
 
     let requests = harness.requests().await;
     assert_eq!(requests.len(), 2);
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     {
         assert_eq!(requests[0].timeout, Some(Duration::from_secs(2)));
         assert_eq!(requests[1].timeout, Some(Duration::from_secs(5)));
@@ -237,7 +237,7 @@ async fn per_request_timeout_override_wins_and_does_not_leak() -> Result<(), Api
 #[tokio::test]
 async fn execute_raw_uses_same_runtime_safety_config() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![
             MockResponse::text(StatusCode::OK, RESPONSE_BODY_SENTINEL).with_content_length(Some(5)),
@@ -289,7 +289,7 @@ async fn execute_raw_uses_same_runtime_safety_config() {
 #[tokio::test]
 async fn disabled_body_limit_behavior_characterized() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![MockResponse::text(StatusCode::OK, RESPONSE_BODY_SENTINEL)],
     );
@@ -320,9 +320,9 @@ async fn disabled_body_limit_behavior_characterized() -> Result<(), ApiClientErr
 }
 
 #[tokio::test]
-async fn native_response_reports_truncated_content_length_body() {
+async fn deterministic_response_content_length_is_metadata_not_network_framing() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![
             MockResponse::text(StatusCode::OK, Bytes::from_static(b"small-body"))
@@ -334,13 +334,14 @@ async fn native_response_reports_truncated_content_length_body() {
         cfg.no_response_body_limit();
     });
 
-    let err = client
+    let decoded = client
         .request(TextEndpoint::default())
         .response()
         .await
-        .expect_err("Reqwest must reject a body shorter than its Content-Length");
+        .expect("the native synthetic response delivers its scripted body");
 
-    assert!(matches!(err, ApiClientError::ResponseBody { .. }));
+    assert_eq!(decoded.value, "small-body");
+    assert_eq!(decoded.headers[http::header::CONTENT_LENGTH], "10000000000");
 }
 
 #[tokio::test]
@@ -348,7 +349,7 @@ async fn no_response_body_limit_reads_honest_large_body_completely() {
     // Larger than NO_LIMIT_INITIAL_CAP (1 MiB) so the read loop must grow the buffer.
     let large_body: String = "A".repeat(3 * 1024 * 1024);
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![MockResponse::text(
             StatusCode::OK,
@@ -370,9 +371,9 @@ async fn no_response_body_limit_reads_honest_large_body_completely() {
 }
 
 #[tokio::test]
-async fn native_response_honors_understated_content_length_framing() {
+async fn deterministic_response_does_not_fabricate_network_content_length_framing() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![
             MockResponse::text(StatusCode::OK, Bytes::from_static(b"abc"))
@@ -385,9 +386,10 @@ async fn native_response_honors_understated_content_length_framing() {
         .request(TextEndpoint::default())
         .response()
         .await
-        .expect("Reqwest frames the response at the declared Content-Length");
+        .expect("the deterministic executor returns a native synthetic response");
 
-    assert_eq!(decoded.value, "a");
+    assert_eq!(decoded.value, "abc");
+    assert_eq!(decoded.headers[http::header::CONTENT_LENGTH], "1");
     assert_eq!(
         wire_events(&events).await,
         vec!["request_head", "request_body_complete"]
@@ -412,7 +414,7 @@ async fn debug_level_changes_metadata_volume_not_body_or_auth_exposure()
 #[tokio::test]
 async fn runtime_hooks_config_is_request_scoped() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![
             MockResponse::text(StatusCode::OK, "one"),
@@ -441,7 +443,7 @@ async fn runtime_hooks_config_is_request_scoped() -> Result<(), ApiClientError> 
 #[tokio::test]
 async fn rate_limiter_config_is_request_scoped() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![
             MockResponse::text(StatusCode::OK, "one"),
@@ -499,7 +501,7 @@ fn rate_limit_policy() -> ResolvedPolicy {
 
 async fn run_debug_safety_request(level: DebugLevel) -> Result<Vec<String>, ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![MockResponse::text(StatusCode::OK, RESPONSE_BODY_SENTINEL)],
     );

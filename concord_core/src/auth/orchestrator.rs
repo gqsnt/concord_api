@@ -31,7 +31,7 @@ trait ErasedCredentialSlot<Cx: ClientContext>: Send + Sync {
 
     fn invalidate_local(&self, generation: Option<u64>) -> Result<(), AuthError>;
 
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     fn lifecycle_observation_target(&self) -> Option<super::CredentialLifecycleObservationTarget>;
 }
 
@@ -71,7 +71,7 @@ where
         self.invalidate_generation_local(generation)
     }
 
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     fn lifecycle_observation_target(&self) -> Option<super::CredentialLifecycleObservationTarget> {
         self.lifecycle_observation_target()
     }
@@ -203,7 +203,7 @@ impl<'a, Cx: ClientContext> AuthProviderBinding<'a, Cx> {
         Ok(())
     }
 
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     fn lifecycle_observation_target(&self) -> Option<super::CredentialLifecycleObservationTarget> {
         self.slot.lifecycle_observation_target()
     }
@@ -274,7 +274,7 @@ where
         self.slot.has_value().await
     }
 
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     pub(crate) fn install_lifecycle_observer(
         &self,
         observer: std::sync::Arc<dyn Fn(super::CredentialLifecycleEvent) + Send + Sync>,
@@ -282,7 +282,7 @@ where
         self.slot.install_lifecycle_observer(observer);
     }
 
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     pub(crate) async fn generation_snapshot(&self) -> Option<super::CredentialGenerationSnapshot> {
         self.slot
             .get_cached()
@@ -323,7 +323,7 @@ async fn prepare_binding<Cx: ClientContext>(
     };
     let prepared =
         super::PreparedAuthCredential::new(applied, application).with_reuse(binding.reuse);
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     let prepared =
         prepared.with_lifecycle_observation_target(binding.lifecycle_observation_target());
     Ok(prepared)

@@ -159,52 +159,52 @@ pub struct CredentialSlot<Cx: ClientContext, P: CredentialProvider<Cx>> {
     provider: Option<P>,
     init_error: Option<AuthError>,
     inner: Arc<Mutex<CredentialSlotInner<P::Credential>>>,
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     observer: Mutex<Option<CredentialLifecycleObserver>>,
     _cx: PhantomData<Cx>,
 }
 
-#[cfg(feature = "dangerous-dev-tools")]
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
 type CredentialLifecycleObserver = Arc<dyn Fn(CredentialLifecycleEvent) + Send + Sync>;
 
 /// Equality-only identity for one credential-cache generation.
-#[cfg(feature = "dangerous-dev-tools")]
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
 #[derive(Clone, Eq, PartialEq)]
 pub struct CredentialGenerationSnapshot(u64);
 
-#[cfg(feature = "dangerous-dev-tools")]
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
 impl CredentialGenerationSnapshot {
     pub(crate) fn from_generation(generation: u64) -> Self {
         Self(generation)
     }
 }
 
-#[cfg(feature = "dangerous-dev-tools")]
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
 impl std::fmt::Debug for CredentialGenerationSnapshot {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str("CredentialGenerationSnapshot(<opaque>)")
     }
 }
 
-#[cfg(feature = "dangerous-dev-tools")]
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
 impl std::fmt::Display for CredentialGenerationSnapshot {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str("<opaque credential generation>")
     }
 }
 
-#[cfg(feature = "dangerous-dev-tools")]
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
 #[derive(Clone)]
 pub(crate) struct CredentialLifecycleObservationTarget(CredentialLifecycleObserver);
 
-#[cfg(feature = "dangerous-dev-tools")]
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
 impl CredentialLifecycleObservationTarget {
     pub(crate) fn emit(&self, event: CredentialLifecycleEvent) {
         (self.0)(event);
     }
 }
 
-#[cfg(feature = "dangerous-dev-tools")]
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
 impl std::fmt::Debug for CredentialLifecycleObservationTarget {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str("CredentialLifecycleObservationTarget(<opaque>)")
@@ -212,7 +212,7 @@ impl std::fmt::Debug for CredentialLifecycleObservationTarget {
 }
 
 /// Development-only observations from the core-owned credential lifecycle.
-#[cfg(feature = "dangerous-dev-tools")]
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CredentialLifecycleEvent {
     ChallengeClassified {
@@ -338,7 +338,7 @@ where
                 state: CredentialSlotState::Empty { generation: 0 },
                 next_owner: 1,
             })),
-            #[cfg(feature = "dangerous-dev-tools")]
+            #[cfg(any(test, feature = "dangerous-dev-tools"))]
             observer: Mutex::new(None),
             _cx: PhantomData,
         }
@@ -358,7 +358,7 @@ where
                 state: CredentialSlotState::Empty { generation: 0 },
                 next_owner: 1,
             })),
-            #[cfg(feature = "dangerous-dev-tools")]
+            #[cfg(any(test, feature = "dangerous-dev-tools"))]
             observer: Mutex::new(None),
             _cx: PhantomData,
         }
@@ -594,7 +594,7 @@ where
         })
     }
 
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     pub(crate) fn install_lifecycle_observer(&self, observer: CredentialLifecycleObserver) {
         *self
             .observer
@@ -602,7 +602,7 @@ where
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(observer);
     }
 
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     pub(crate) fn observe_lifecycle(&self, event: CredentialLifecycleEvent) {
         let observer = self
             .observer
@@ -614,7 +614,7 @@ where
         }
     }
 
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     pub(crate) fn lifecycle_observation_target(
         &self,
     ) -> Option<CredentialLifecycleObservationTarget> {
@@ -625,7 +625,7 @@ where
             .map(CredentialLifecycleObservationTarget)
     }
 
-    #[cfg(not(feature = "dangerous-dev-tools"))]
+    #[cfg(all(not(test), not(feature = "dangerous-dev-tools")))]
     fn observe_generation_invalidation(
         &self,
         _requested: Option<u64>,
@@ -634,7 +634,7 @@ where
     ) {
     }
 
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     fn observe_generation_invalidation(
         &self,
         requested: Option<u64>,
@@ -904,7 +904,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     #[tokio::test]
     async fn lifecycle_invalidation_compares_opaque_generation_identities() {
         let slot = CredentialSlot::<TestCx, _>::new(TestProvider::new());

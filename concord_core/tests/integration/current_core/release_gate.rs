@@ -103,6 +103,7 @@ fn final_public_extension_boundary_has_no_private_planning_leaks() {
     let fixture = read_repo_file("concord_core/tests/public_extension.rs");
     assert!(!fixture.contains("concord_core::__private"));
     assert!(!fixture.contains("concord_core::__development"));
+    assert!(!fixture.contains("crate::"));
     for anchor in [
         "PreparedEndpoint",
         "PreparedStreamEndpoint",
@@ -195,7 +196,7 @@ fn development_boundary_is_explicit_narrow_and_not_generated() {
         .rsplit_once("#[doc(hidden)]")
         .expect("hidden development declaration")
         .0;
-    assert!(declaration.ends_with("#[cfg(feature = \"dangerous-dev-tools\")]\n"));
+    assert!(declaration.ends_with("#[cfg(any(test, feature = \"dangerous-dev-tools\"))]\n"));
     assert!(!lib.contains("cfg(debug_assertions)"));
 
     let manifest = read_repo_file("concord_core/Cargo.toml");
@@ -329,7 +330,7 @@ fn deterministic_native_executor_remains_a_private_feature_gated_reqwest_seam() 
     let transport = read_repo_file("concord_core/src/transport.rs");
     assert!(transport.contains("client\n        .execute(request)"));
     assert!(transport.contains("if let Some(executor) = &self.development_executor"));
-    assert!(transport.contains("#[cfg(feature = \"dangerous-dev-tools\")]"));
+    assert!(transport.contains("#[cfg(any(test, feature = \"dangerous-dev-tools\"))]"));
     assert_eq!(
         transport.matches("development_executor: Option<").count(),
         2,
@@ -343,6 +344,30 @@ fn deterministic_native_executor_remains_a_private_feature_gated_reqwest_seam() 
     assert!(!generated.contains("DeterministicNativeExecutor"));
     assert!(!generated.contains("install_application_executor"));
     assert!(!generated.contains("install_provider_executor"));
+    for forbidden in [
+        "GeneratedDevelopmentClient",
+        "__development_core_client",
+        "install_generated_application_executor",
+        "install_generated_provider_executor",
+    ] {
+        assert!(
+            !generated.contains(forbidden),
+            "generated contract exposed {forbidden}"
+        );
+    }
+    let wrapper = read_repo_file("concord_macros/src/codegen/endpoints/wrapper.rs");
+    for forbidden in [
+        "GeneratedDevelopmentClient",
+        "__development_core_client",
+        "DeterministicNativeExecutor",
+    ] {
+        assert!(
+            !wrapper.contains(forbidden),
+            "generated wrapper exposed {forbidden}"
+        );
+    }
+    let support = read_repo_file("concord_test_support/src/deterministic.rs");
+    assert!(!support.contains("DeterministicInstallTarget"));
 }
 
 fn read_repo_file(path: impl AsRef<Path>) -> String {

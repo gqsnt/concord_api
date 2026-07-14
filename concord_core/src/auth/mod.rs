@@ -8,13 +8,13 @@ mod orchestrator;
 mod plan;
 mod providers;
 
-#[cfg(feature = "dangerous-dev-tools")]
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
 pub(crate) use credentials::CredentialLifecycleObservationTarget;
 pub use credentials::{
     AuthStepPolicy, CredentialContext, CredentialLease, CredentialMaterial, CredentialProvider,
     CredentialSlot, SecretCredential,
 };
-#[cfg(feature = "dangerous-dev-tools")]
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
 pub use credentials::{CredentialGenerationSnapshot, CredentialLifecycleEvent};
 pub use errors::{
     AuthError, AuthErrorKind, CredentialRefreshReason, InvalidateReason, write_auth_lock,

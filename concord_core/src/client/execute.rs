@@ -15,7 +15,7 @@ struct AuthResendIntent {
     response_meta: RequestExecutionMeta,
     auth_attempt: crate::auth::AuthAttemptSummary,
     error_ctx: ErrorContext,
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     lifecycle_observation_targets: Vec<AuthLifecycleObservationTarget>,
 }
 
@@ -319,9 +319,9 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         intent: &AuthResendIntent,
         terminal_status: Option<ChallengeTerminalStatusCtx<'_>>,
     ) -> Option<ApiClientError> {
-        #[cfg(not(feature = "dangerous-dev-tools"))]
+        #[cfg(all(not(test), not(feature = "dangerous-dev-tools")))]
         let _ = intent;
-        #[cfg(feature = "dangerous-dev-tools")]
+        #[cfg(any(test, feature = "dangerous-dev-tools"))]
         let matched_targets = intent
             .lifecycle_observation_targets
             .iter()
@@ -334,7 +334,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             })
             .collect::<Vec<_>>();
 
-        #[cfg(feature = "dangerous-dev-tools")]
+        #[cfg(any(test, feature = "dangerous-dev-tools"))]
         for target in &matched_targets {
             target
                 .target
@@ -373,7 +373,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         // transition. No body frame is polled before credential mutation.
         drop(response);
 
-        #[cfg(feature = "dangerous-dev-tools")]
+        #[cfg(any(test, feature = "dangerous-dev-tools"))]
         for target in matched_targets {
             target
                 .target
@@ -548,7 +548,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                                 response_meta: response_meta.clone(),
                                 auth_attempt: auth_attempt.summary.clone(),
                                 error_ctx: ctx.clone(),
-                                #[cfg(feature = "dangerous-dev-tools")]
+                                #[cfg(any(test, feature = "dangerous-dev-tools"))]
                                 lifecycle_observation_targets: auth_attempt
                                     .lifecycle_observation_targets
                                     .clone(),
@@ -609,7 +609,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                                 response_meta: response_meta.clone(),
                                 auth_attempt: auth_attempt.summary.clone(),
                                 error_ctx: ctx.clone(),
-                                #[cfg(feature = "dangerous-dev-tools")]
+                                #[cfg(any(test, feature = "dangerous-dev-tools"))]
                                 lifecycle_observation_targets: auth_attempt
                                     .lifecycle_observation_targets
                                     .clone(),
@@ -840,7 +840,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
     ) -> Result<AuthPreparation, ApiClientError> {
         let mut summary = crate::auth::AuthAttemptSummary::default();
         let mut materials = Vec::new();
-        #[cfg(feature = "dangerous-dev-tools")]
+        #[cfg(any(test, feature = "dangerous-dev-tools"))]
         let mut lifecycle_observation_targets = Vec::new();
         let mut cacheable = !plan.endpoint.policy.auth.requirements.is_empty();
         for (requirement, slot) in plan
@@ -882,7 +882,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             if prepared.reuse != crate::auth::AuthPreparationReuse::RequestLocal {
                 cacheable = false;
             }
-            #[cfg(feature = "dangerous-dev-tools")]
+            #[cfg(any(test, feature = "dangerous-dev-tools"))]
             if let Some(target) = prepared.lifecycle_observation_target {
                 lifecycle_observation_targets.push(AuthLifecycleObservationTarget {
                     credential_id: prepared.applied.credential_id.clone(),
@@ -904,7 +904,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             summary,
             materials,
             cache_policy,
-            #[cfg(feature = "dangerous-dev-tools")]
+            #[cfg(any(test, feature = "dangerous-dev-tools"))]
             lifecycle_observation_targets,
         })
     }

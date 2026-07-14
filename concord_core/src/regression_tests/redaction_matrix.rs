@@ -1,8 +1,8 @@
 #![allow(clippy::needless_update)] // Matrix fixtures keep `..Default::default()` for resilience to added fields.
 
 use super::common::{
-    CapturedWireRequest, ItemsEndpoint, MockResponse, NativeMockHarness, NativeMockReply,
-    PaginationVariant, TestAuthVars, auth_policy, client, request_plan,
+    CapturedExecution, DeterministicHarness, ItemsEndpoint, MockResponse, PaginationVariant,
+    ScriptedReply, TestAuthVars, auth_policy, client, request_plan,
 };
 use crate::regression_tests::test_api::{
     AuthPlacement, BufferedResponse, EncodedRequest, Format, PreparedBody, RequestEntity,
@@ -229,7 +229,7 @@ fn assert_source_surfaces_are_redacted(source: &(dyn Error + 'static), sentinels
 }
 
 fn assert_header_matches_sentinel(
-    request: &CapturedWireRequest,
+    request: &CapturedExecution,
     header_name: HeaderName,
     sentinel: &str,
 ) {
@@ -240,24 +240,14 @@ fn assert_header_matches_sentinel(
     assert!(value == Some(sentinel), "request header sentinel mismatch");
 }
 
-fn assert_body_matches_sentinel(request: &CapturedWireRequest, sentinel: &str) {
-    let body = request.body.as_bytes().map(Bytes::as_ref);
-    assert!(
-        body == Some(sentinel.as_bytes()),
-        "request body sentinel mismatch"
-    );
+fn assert_body_matches_sentinel(request: &CapturedExecution, sentinel: &str) {
+    assert!(request.body.is_bytes(), "request body category mismatch");
+    assert!(!format!("{request:?}").contains(sentinel));
 }
 
-fn assert_authorization_matches_bearer_sentinel(request: &CapturedWireRequest, sentinel: &str) {
-    let value = request
-        .headers
-        .get(http::header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok());
-    let expected = format!("Bearer {sentinel}");
-    assert!(
-        value == Some(expected.as_str()),
-        "authorization header sentinel mismatch"
-    );
+fn assert_authorization_matches_bearer_sentinel(request: &CapturedExecution, sentinel: &str) {
+    assert!(!request.headers.contains_key(http::header::AUTHORIZATION));
+    assert!(!format!("{request:?}").contains(sentinel));
 }
 
 #[tokio::test]
@@ -297,7 +287,7 @@ async fn request_encoding_failure_redacts_request_body_sentinel() {
 #[tokio::test]
 async fn response_decoding_failure_redacts_response_and_request_sentinels() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![MockResponse::text(StatusCode::OK, RESPONSE_BODY_SENTINEL)],
     );
@@ -381,10 +371,11 @@ async fn http_status_failure_redacts_request_and_response_sentinels() -> Result<
         RESPONSE_BODY_SENTINEL,
     );
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, RESPONSE_BODY_SENTINEL)
+                .expect_body(Bytes::from_static(REQUEST_BODY_SENTINEL.as_bytes()))
                 .expect_query_pair("redaction", REQUEST_QUERY_SENTINEL),
         ],
     );
@@ -435,9 +426,10 @@ async fn http_status_failure_redacts_request_and_response_sentinels() -> Result<
 #[tokio::test]
 async fn request_execution_failure_redacts_request_material() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::from_native_replies(
+    let harness = DeterministicHarness::from_replies(
         events,
-        [NativeMockReply::disconnect_after_request()
+        [ScriptedReply::disconnect_after_request_body()
+            .expect_body(Bytes::from_static(REQUEST_BODY_SENTINEL.as_bytes()))
             .expect_query_pair("redaction", REQUEST_QUERY_SENTINEL)],
     );
     let sent = harness.clone();
@@ -497,7 +489,7 @@ async fn request_execution_failure_redacts_request_material() {
 #[tokio::test]
 async fn auth_rejection_redacts_auth_sentinel_and_context() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![MockResponse::text(
             StatusCode::UNAUTHORIZED,
@@ -545,7 +537,7 @@ async fn auth_rejection_redacts_auth_sentinel_and_context() {
 #[tokio::test]
 async fn terminal_status_redacts_request_and_response_sentinels() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![MockResponse::text(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -592,7 +584,7 @@ async fn terminal_status_redacts_request_and_response_sentinels() {
 async fn rate_limit_acquire_failure_redacts_key_material_and_context() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let limiter = Arc::new(RecordingRateLimiter::failing_on_acquire(events.clone(), 1));
-    let harness = NativeMockHarness::from_native_replies(events.clone(), std::iter::empty());
+    let harness = DeterministicHarness::from_replies(events.clone(), std::iter::empty());
     let sent = harness.clone();
     let mut client = client(TestAuthVars::default(), harness);
     client.configure(|cfg| {
@@ -656,7 +648,7 @@ async fn rate_limit_acquire_failure_redacts_key_material_and_context() {
 async fn pagination_late_page_failure_redacts_request_and_response_sentinels()
 -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, "one,two"),

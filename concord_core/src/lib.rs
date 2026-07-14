@@ -6,7 +6,7 @@ mod body;
 mod client;
 mod codec;
 mod debug;
-#[cfg(feature = "dangerous-dev-tools")]
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
 mod development_executor;
 mod endpoint;
 pub mod error;
@@ -46,7 +46,7 @@ pub mod __private;
 /// This unstable test-observation surface is unavailable unless the
 /// `dangerous-dev-tools` feature is selected. Generated clients never
 /// reference it.
-#[cfg(feature = "dangerous-dev-tools")]
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
 #[doc(hidden)]
 pub mod __development;
 

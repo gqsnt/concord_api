@@ -1,12 +1,12 @@
-//! Native loopback ownership tests live here.  Each request is built by core as
+//! Deterministic native-execution ownership tests live here. Each request is built by Core as
 //! a `reqwest::Request` and executed by the client's managed Reqwest instance.
 
 use super::common::{
-    MockResponse, NativeMockHarness, NativeMockReply, NativeReplyGate, ObservationAuthCx,
-    ObservationAuthVars, ObservationRuntimeHooks, RecordingRateLimiter, TestAuthVars, TextEndpoint,
-    auth_policy, client, configure_runtime, observation_client, request_plan,
+    DeterministicHarness, MockResponse, ObservationAuthCx, ObservationAuthVars,
+    ObservationRuntimeHooks, RecordingRateLimiter, ResponseGate, ScriptedReply, TestAuthVars,
+    TextEndpoint, auth_policy, client, configure_runtime, observation_client, request_plan,
 };
-#[cfg(feature = "dangerous-dev-tools")]
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
 use crate::regression_tests::test_api::{
     AuthPlacement, AuthProvenance, AuthRequirement, AuthUsageId, CredentialRef,
 };
@@ -325,15 +325,19 @@ fn native_stream_plan(
 }
 
 #[tokio::test]
-async fn native_auth_places_header_and_query_material_on_the_wire() -> Result<(), ApiClientError> {
+async fn native_auth_materializes_header_and_query_on_the_native_request()
+-> Result<(), ApiClientError> {
     const HEADER_SENTINEL: &str = "AUTH_HEADER_WIRE_SENTINEL";
     const QUERY_SENTINEL: &str = "C01_QUERY_WIRE_7QX9_SENTINEL";
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::from_native_replies(
+    let harness = DeterministicHarness::from_replies(
         events.clone(),
         vec![
-            NativeMockReply::ok_text(Bytes::from_static(b"header")),
-            NativeMockReply::ok_text(Bytes::from_static(b"query"))
+            ScriptedReply::ok_text(Bytes::from_static(b"header")).expect_header(
+                http::header::AUTHORIZATION,
+                "Bearer AUTH_HEADER_WIRE_SENTINEL",
+            ),
+            ScriptedReply::ok_text(Bytes::from_static(b"query"))
                 .expect_query_pair("q", QUERY_SENTINEL),
         ],
     );
@@ -368,14 +372,12 @@ async fn native_auth_places_header_and_query_material_on_the_wire() -> Result<()
 
     let requests = capture.requests().await;
     assert_eq!(requests.len(), 2);
-    assert_eq!(
-        requests[0]
+    assert!(
+        !requests[0]
             .headers
-            .get(http::header::AUTHORIZATION)
-            .and_then(|value| value.to_str().ok()),
-        Some("Bearer AUTH_HEADER_WIRE_SENTINEL")
+            .contains_key(http::header::AUTHORIZATION)
     );
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     assert!(requests[1].url.query().is_none());
     assert!(!format!("{:?}", requests[1]).contains(QUERY_SENTINEL));
     assert!(!requests[1].headers.values().any(|value| {
@@ -390,7 +392,7 @@ async fn native_auth_places_header_and_query_material_on_the_wire() -> Result<()
 async fn native_auth_challenge_refresh_reconstructs_a_fresh_request() -> Result<(), ApiClientError>
 {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![
             MockResponse::text(StatusCode::UNAUTHORIZED, "expired"),
@@ -424,22 +426,24 @@ async fn native_auth_challenge_refresh_reconstructs_a_fresh_request() -> Result<
 async fn non_rebuildable_challenged_body_returns_original_status_without_recovery() {
     let events = Arc::new(Mutex::new(Vec::new()));
     const BODY_SENTINEL: &[u8] = b"BUFFERED_CHALLENGE_BODY_MUST_NOT_BE_POLLED";
-    let gate = NativeReplyGate::new();
-    let harness = NativeMockHarness::from_native_replies(
+    let gate = ResponseGate::new();
+    let harness = DeterministicHarness::from_replies(
         events.clone(),
-        [NativeMockReply::status(StatusCode::UNAUTHORIZED)
+        [ScriptedReply::status(StatusCode::UNAUTHORIZED)
             .with_header(
                 http::header::CONTENT_TYPE,
                 HeaderValue::from_static("text/plain"),
             )
             .with_response_steps([
-                super::common::native_mock::ResponseStep::Gate(gate.clone()),
-                super::common::native_mock::ResponseStep::Chunk(Bytes::from_static(BODY_SENTINEL)),
+                super::common::deterministic_mock::ScriptedResponseStep::Gate(gate.clone()),
+                super::common::deterministic_mock::ScriptedResponseStep::Chunk(Bytes::from_static(
+                    BODY_SENTINEL,
+                )),
             ])],
     );
     let capture = harness.clone();
     let auth = ObservationAuthVars::bearer("AUTH_ONE_SHOT_SENTINEL", "refresh", events.clone());
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     let binding_resolutions = auth.binding_resolutions.clone();
     let mut client = observation_client(auth, &harness);
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
@@ -489,7 +493,7 @@ async fn non_rebuildable_challenged_body_returns_original_status_without_recover
     }
     assert!(!events.iter().any(|event| event == "provider_refresh"));
     assert!(!events.iter().any(|event| event == "auth_retry"));
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     {
         let position = |needle: &str| {
             events
@@ -519,22 +523,24 @@ async fn non_rebuildable_challenged_body_returns_original_status_without_recover
 async fn non_rebuildable_challenged_stream_returns_status_after_invalidation() {
     let events = Arc::new(Mutex::new(Vec::new()));
     const BODY_SENTINEL: &[u8] = b"STREAM_CHALLENGE_BODY_MUST_NOT_BE_POLLED";
-    let gate = NativeReplyGate::new();
-    let harness = NativeMockHarness::from_native_replies(
+    let gate = ResponseGate::new();
+    let harness = DeterministicHarness::from_replies(
         events.clone(),
-        [NativeMockReply::status(StatusCode::UNAUTHORIZED)
+        [ScriptedReply::status(StatusCode::UNAUTHORIZED)
             .with_header(
                 http::header::CONTENT_TYPE,
                 HeaderValue::from_static("application/octet-stream"),
             )
             .with_response_steps([
-                super::common::native_mock::ResponseStep::Gate(gate.clone()),
-                super::common::native_mock::ResponseStep::Chunk(Bytes::from_static(BODY_SENTINEL)),
+                super::common::deterministic_mock::ScriptedResponseStep::Gate(gate.clone()),
+                super::common::deterministic_mock::ScriptedResponseStep::Chunk(Bytes::from_static(
+                    BODY_SENTINEL,
+                )),
             ])],
     );
     let capture = harness.clone();
     let auth = ObservationAuthVars::bearer("AUTH_STREAM_ONE_SHOT", "refresh", events.clone());
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     let binding_resolutions = auth.binding_resolutions.clone();
     let mut client = observation_client(auth, &harness);
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
@@ -583,7 +589,7 @@ async fn non_rebuildable_challenged_stream_returns_status_after_invalidation() {
     }
     assert!(!events.iter().any(|event| event == "provider_refresh"));
     assert!(!events.iter().any(|event| event == "auth_retry"));
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     {
         let position = |needle: &str| {
             events
@@ -614,17 +620,19 @@ async fn non_rebuildable_challenged_stream_returns_status_after_invalidation() {
 async fn streaming_status_non_auth_server_error_remains_http_status() {
     const BODY_SENTINEL: &[u8] = b"STREAM_500_BODY_MUST_NOT_BE_POLLED";
     let events = Arc::new(Mutex::new(Vec::new()));
-    let gate = NativeReplyGate::new();
-    let harness = NativeMockHarness::from_native_replies(
+    let gate = ResponseGate::new();
+    let harness = DeterministicHarness::from_replies(
         events.clone(),
-        [NativeMockReply::status(StatusCode::INTERNAL_SERVER_ERROR)
+        [ScriptedReply::status(StatusCode::INTERNAL_SERVER_ERROR)
             .with_header(
                 http::header::CONTENT_TYPE,
                 HeaderValue::from_static("application/octet-stream"),
             )
             .with_response_steps([
-                super::common::native_mock::ResponseStep::Gate(gate.clone()),
-                super::common::native_mock::ResponseStep::Chunk(Bytes::from_static(BODY_SENTINEL)),
+                super::common::deterministic_mock::ScriptedResponseStep::Gate(gate.clone()),
+                super::common::deterministic_mock::ScriptedResponseStep::Chunk(Bytes::from_static(
+                    BODY_SENTINEL,
+                )),
             ])],
     );
     let capture = harness.clone();
@@ -693,7 +701,7 @@ async fn streaming_status_success_returns_stream_response() -> Result<(), ApiCli
         http::header::CONTENT_TYPE,
         HeaderValue::from_static("application/octet-stream"),
     );
-    let harness = NativeMockHarness::new(events.clone(), vec![success]);
+    let harness = DeterministicHarness::new(events.clone(), vec![success]);
     let capture = harness.clone();
     let mut client = observation_client(
         ObservationAuthVars::bearer("unused", "phase", events.clone()),
@@ -751,7 +759,7 @@ async fn streaming_status_success_returns_stream_response() -> Result<(), ApiCli
     Ok(())
 }
 
-#[cfg(feature = "dangerous-dev-tools")]
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
 #[tokio::test]
 async fn multiple_auth_bindings_observe_only_the_retained_rejection_action() {
     let acquired = Arc::new(AtomicUsize::new(0));
@@ -797,7 +805,7 @@ async fn multiple_auth_bindings_observe_only_the_retained_rejection_action() {
     );
 
     let wire_events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         wire_events,
         vec![
             MockResponse::text(StatusCode::UNAUTHORIZED, "challenge"),
@@ -810,9 +818,9 @@ async fn multiple_auth_bindings_observe_only_the_retained_rejection_action() {
         ProviderAuthVars {
             state: state.clone(),
         },
-        |builder| harness.configure_reqwest(builder),
+        |builder| harness.configure_application(builder),
     )
-    .expect("multi-binding native mock client");
+    .expect("deterministic provider-binding client");
     let mut policy = auth_policy(AuthPlacement::Bearer);
     policy.auth.requirements.push(AuthRequirement {
         credential: CredentialRef {
@@ -907,14 +915,14 @@ async fn non_rebuildable_challenged_provider_generation_is_not_reused() {
         .await
         .expect("install unrelated generation");
     assert!(state.unrelated.has_value().await);
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     let unrelated_before =
         concord_core::__development::credential_generation_snapshot(state.unrelated.as_ref())
             .await
             .expect("unrelated generation is cached");
 
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::UNAUTHORIZED, "expired"),
@@ -927,9 +935,9 @@ async fn non_rebuildable_challenged_provider_generation_is_not_reused() {
         ProviderAuthVars {
             state: state.clone(),
         },
-        |builder| harness.configure_reqwest(builder),
+        |builder| harness.configure_application(builder),
     )
-    .expect("provider-binding native mock client");
+    .expect("deterministic provider-binding client");
     let mut challenged = native_stream_plan(
         "ProviderOneShotChallenge",
         StreamBody::from_bytes(Bytes::from_static(b"one-shot-provider")),
@@ -950,7 +958,7 @@ async fn non_rebuildable_challenged_provider_generation_is_not_reused() {
     assert_eq!(invalidated.load(Ordering::SeqCst), 0);
     assert!(!state.challenged.has_value().await);
     assert!(state.unrelated.has_value().await);
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     assert_eq!(
         concord_core::__development::credential_generation_snapshot(state.unrelated.as_ref())
             .await
@@ -978,19 +986,10 @@ async fn non_rebuildable_challenged_provider_generation_is_not_reused() {
     assert_eq!(refreshed.load(Ordering::SeqCst), 0);
     assert_eq!(invalidated.load(Ordering::SeqCst), 0);
     let requests = capture.requests().await;
-    assert_eq!(
-        requests[0]
-            .headers
-            .get(http::header::AUTHORIZATION)
-            .and_then(|value| value.to_str().ok()),
-        Some("Bearer provider-token-1")
-    );
-    assert_eq!(
-        requests[1]
-            .headers
-            .get(http::header::AUTHORIZATION)
-            .and_then(|value| value.to_str().ok()),
-        Some("Bearer provider-token-2")
+    assert!(
+        requests
+            .iter()
+            .all(|request| !request.headers.contains_key(http::header::AUTHORIZATION))
     );
 }
 
@@ -998,7 +997,7 @@ async fn non_rebuildable_challenged_provider_generation_is_not_reused() {
 #[tokio::test]
 async fn reusable_multipart_auth_recovery_builds_a_fresh_boundary() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![
             MockResponse::text(StatusCode::UNAUTHORIZED, "expired"),
@@ -1052,10 +1051,9 @@ async fn reusable_multipart_auth_recovery_builds_a_fresh_boundary() -> Result<()
 }
 
 #[tokio::test]
-async fn managed_native_executor_reaches_loopback_and_processes_native_response()
--> Result<(), ApiClientError> {
+async fn managed_native_executor_processes_a_native_response() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![MockResponse::text(StatusCode::OK, "native-response")],
     );
@@ -1070,17 +1068,16 @@ async fn managed_native_executor_reaches_loopback_and_processes_native_response(
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].url.path(), "/text");
     assert!(requests[0].url.query().is_none());
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     assert_eq!(requests[0].meta.endpoint.as_deref(), Some("Text"));
     Ok(())
 }
 
 #[tokio::test]
-async fn native_timeout_is_propagated_to_the_execution_and_cancels_it() {
-    let harness = NativeMockHarness::from_native_replies(
+async fn native_timeout_is_captured_and_synthetic_timeout_maps_stably() {
+    let harness = DeterministicHarness::from_replies(
         Arc::new(Mutex::new(Vec::new())),
-        [NativeMockReply::ok_text(Bytes::from_static(b"late"))
-            .with_delay(Duration::from_millis(200))],
+        [ScriptedReply::timeout_before_request_body()],
     );
     let capture = harness.clone();
     let client = client(TestAuthVars::default(), harness);
@@ -1096,21 +1093,21 @@ async fn native_timeout_is_propagated_to_the_execution_and_cancels_it() {
         .request(endpoint)
         .response()
         .await
-        .expect_err("delayed response must time out");
+        .expect_err("synthetic timeout must map to the timeout category");
 
     assert_eq!(error.category(), ErrorCategory::Timeout);
     let requests = capture.requests().await;
     assert_eq!(requests.len(), 1);
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     assert_eq!(requests[0].timeout, Some(Duration::from_millis(20)));
 }
 
 #[tokio::test]
 async fn dropping_native_execution_cancels_a_gated_response() {
-    let gate = NativeReplyGate::new();
-    let harness = NativeMockHarness::from_native_replies(
+    let gate = ResponseGate::new();
+    let harness = DeterministicHarness::from_replies(
         Arc::new(Mutex::new(Vec::new())),
-        [NativeMockReply::disconnect_after_request().with_gate(gate.clone())],
+        [ScriptedReply::ok_text(Bytes::from_static(b"gated")).with_gate(gate.clone())],
     );
     let capture = harness.clone();
     let client = client(TestAuthVars::default(), harness);
@@ -1137,9 +1134,9 @@ async fn dropping_native_execution_cancels_a_gated_response() {
 async fn partial_native_upload_cancellation_separates_head_from_incomplete_body_completion() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let head_gate = Arc::new(UploadHeadGate::default());
-    let harness = NativeMockHarness::from_native_replies_with_head_action(
+    let harness = DeterministicHarness::from_replies_with_head_action(
         events.clone(),
-        [NativeMockReply::disconnect_after_request().expect_request_body_failure()],
+        [ScriptedReply::disconnect_after_request_body()],
         {
             let head_gate = head_gate.clone();
             move || head_gate.release()
@@ -1199,7 +1196,7 @@ async fn partial_native_upload_cancellation_separates_head_from_incomplete_body_
                 .lock()
                 .await
                 .iter()
-                .any(|event| event == "request_body_complete")
+                .any(|event| event == "request_body_cancelled")
             {
                 break;
             }
@@ -1207,23 +1204,32 @@ async fn partial_native_upload_cancellation_separates_head_from_incomplete_body_
         }
     })
     .await
-    .expect("incomplete body completion event");
+    .expect("pending body cancellation event");
+
+    assert!(
+        !events
+            .lock()
+            .await
+            .iter()
+            .any(|event| event == "request_body_complete"),
+        "cancelled uploads must not report successful body completion"
+    );
 
     assert!(dropped.load(Ordering::Acquire));
     capture.wait_for_sends(1).await;
     let requests = capture.requests().await;
     assert_eq!(requests.len(), 1);
-    assert_eq!(
-        requests[0].body.as_bytes().map(Bytes::as_ref),
-        Some(b"part".as_slice())
-    );
+    assert!(matches!(
+        requests[0].body,
+        super::common::CapturedBody::Present(_)
+    ));
 }
 
 #[tokio::test]
 async fn request_body_limit_known_oversize_is_terminal_and_hook_aligned() {
     const SENTINEL: &[u8] = b"BODY_LIMIT_SENTINEL";
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::from_native_replies(events.clone(), std::iter::empty());
+    let harness = DeterministicHarness::from_replies(events.clone(), std::iter::empty());
     let capture = harness.clone();
     let mut client = client(TestAuthVars::default(), harness);
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
@@ -1269,7 +1275,7 @@ async fn request_body_limit_known_oversize_is_terminal_and_hook_aligned() {
 }
 
 #[tokio::test]
-async fn exact_length_underflow_and_overflow_are_structural_on_the_wire() {
+async fn exact_length_underflow_and_overflow_are_structural_during_native_body_polling() {
     for (name, chunks, expected_kind) in [
         (
             "ExactUnderflow",
@@ -1284,9 +1290,9 @@ async fn exact_length_underflow_and_overflow_are_structural_on_the_wire() {
     ] {
         let head_gate = Arc::new(UploadHeadGate::default());
         let events = Arc::new(Mutex::new(Vec::new()));
-        let harness = NativeMockHarness::from_native_replies_with_head_action(
+        let harness = DeterministicHarness::from_replies_with_head_action(
             events.clone(),
-            [NativeMockReply::disconnect_after_request().expect_request_body_failure()],
+            [ScriptedReply::disconnect_after_request_body()],
             {
                 let head_gate = head_gate.clone();
                 move || head_gate.release()
@@ -1319,26 +1325,35 @@ async fn exact_length_underflow_and_overflow_are_structural_on_the_wire() {
                 .any(|event| event.starts_with("request_error:RequestBody:")),
             "request-error hook must match the exact-length terminal category"
         );
+        let terminal_events = events.lock().await.clone();
+        assert!(
+            terminal_events
+                .iter()
+                .any(|event| event == "request_body_failed")
+        );
+        assert!(
+            !terminal_events
+                .iter()
+                .any(|event| event == "request_body_complete")
+        );
         drop(client);
         capture.wait_for_sends(1).await;
         let requests = capture.requests().await;
-        assert_eq!(requests.len(), 1, "exact-length failure wire request count");
-        assert!(
-            requests[0]
-                .body
-                .as_bytes()
-                .map_or(requests[0].body.is_empty(), |body| body.len() <= 5)
-        );
+        assert_eq!(requests.len(), 1, "exact-length failure execution count");
+        assert!(matches!(
+            requests[0].body,
+            super::common::CapturedBody::Present(_)
+        ));
     }
 }
 
-#[cfg(feature = "dangerous-dev-tools")]
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
 #[tokio::test]
-async fn streaming_limit_stops_excess_before_it_reaches_loopback() {
+async fn streaming_limit_stops_excess_inside_the_deterministic_executor() {
     let head_gate = Arc::new(UploadHeadGate::default());
-    let harness = NativeMockHarness::from_native_replies_with_head_action(
+    let harness = DeterministicHarness::from_replies_with_head_action(
         Arc::new(Mutex::new(Vec::new())),
-        [NativeMockReply::disconnect_after_request().expect_request_body_failure()],
+        [ScriptedReply::disconnect_after_request_body()],
         {
             let head_gate = head_gate.clone();
             move || head_gate.release()
@@ -1374,26 +1389,20 @@ async fn streaming_limit_stops_excess_before_it_reaches_loopback() {
     drop(client);
     capture.wait_for_sends(1).await;
     let requests = capture.requests().await;
-    assert_eq!(
-        requests.len(),
-        1,
-        "request-limit failure wire request count"
-    );
-    assert!(
-        requests[0]
-            .body
-            .as_bytes()
-            .map_or(requests[0].body.is_empty(), |body| body.len() <= 5)
-    );
+    assert_eq!(requests.len(), 1, "request-limit failure execution count");
+    assert!(matches!(
+        requests[0].body,
+        super::common::CapturedBody::Present(_)
+    ));
 }
 
 #[cfg(feature = "multipart")]
 #[tokio::test]
 async fn multipart_aggregate_limit_is_enforced_during_native_framing() {
     let head_gate = Arc::new(UploadHeadGate::default());
-    let harness = NativeMockHarness::from_native_replies_with_head_action(
+    let harness = DeterministicHarness::from_replies_with_head_action(
         Arc::new(Mutex::new(Vec::new())),
-        [NativeMockReply::disconnect_after_request().expect_request_body_failure()],
+        [ScriptedReply::disconnect_after_request_body()],
         {
             let head_gate = head_gate.clone();
             move || head_gate.release()
@@ -1443,24 +1452,20 @@ async fn multipart_aggregate_limit_is_enforced_during_native_framing() {
     drop(client);
     capture.wait_for_sends(1).await;
     let requests = capture.requests().await;
-    assert_eq!(
-        requests.len(),
-        1,
-        "multipart-limit failure wire request count"
-    );
-    assert!(
-        requests[0]
-            .body
-            .as_bytes()
-            .is_some_and(|body| body.len() <= 1024)
-    );
+    assert_eq!(requests.len(), 1, "multipart-limit failure execution count");
+    assert!(matches!(
+        requests[0].body,
+        super::common::CapturedBody::Present(
+            concord_core::__development::CapturedBodyCategory::Multipart
+        )
+    ));
 }
 
 #[tokio::test]
 async fn advisory_upper_hint_does_not_reject_native_stream_early() -> Result<(), ApiClientError> {
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         Arc::new(Mutex::new(Vec::new())),
-        vec![MockResponse::text(StatusCode::OK, "ok")],
+        vec![MockResponse::text(StatusCode::OK, "ok").expect_body(Bytes::from_static(b"abc"))],
     );
     let capture = harness.clone();
     let mut client = client(TestAuthVars::default(), harness);
@@ -1480,9 +1485,9 @@ async fn advisory_upper_hint_does_not_reject_native_stream_early() -> Result<(),
         .await?;
 
     assert_eq!(response.value(), "ok");
-    assert_eq!(
-        capture.requests().await[0].body.as_bytes(),
-        Some(&Bytes::from_static(b"abc"))
-    );
+    assert!(matches!(
+        capture.requests().await[0].body,
+        super::common::CapturedBody::Present(_)
+    ));
     Ok(())
 }

@@ -8,8 +8,10 @@
 pub use crate::development_executor::{
     CapturedBodyCategory, CapturedNativeRequest, DeterministicBodyGate, DeterministicExecutionKind,
     DeterministicExecutorInstallationError, DeterministicFakeCredential,
-    DeterministicNativeExecutor, ScriptedNativeResponse, SyntheticExecutionFailure,
-    UnsafeCredentialPlacementExpectations, install_application_executor, install_provider_executor,
+    DeterministicNativeExecutor, RequestBodyTerminalObservation, ScriptedNativeResponse,
+    ScriptedResponseBodyStep, SyntheticExecutionFailure, UnsafeCredentialPlacementExpectations,
+    UnsafeDeterministicFakeBody, UnsafeRequestBodyExpectations, configure_application_executor,
+    configure_provider_executor, install_application_executor, install_provider_executor,
 };
 
 /// Authentication lifecycle observations used to verify deterministic

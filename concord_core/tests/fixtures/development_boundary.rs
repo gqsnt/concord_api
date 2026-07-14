@@ -1,7 +1,17 @@
 use concord_core::__development::{
     CapturedNativeRequest, CredentialGenerationSnapshot, CredentialLifecycleEvent,
     DeterministicNativeExecutor, ScriptedNativeResponse, UnsafeCredentialPlacementExpectations,
+    configure_application_executor, configure_provider_executor,
 };
+
+fn configure_builders(
+    builder: concord_core::advanced::SafeReqwestBuilder,
+) -> concord_core::advanced::SafeReqwestBuilder {
+    let builder = configure_application_executor(builder, DeterministicNativeExecutor::application())
+        .expect("application channel");
+    configure_provider_executor(builder, DeterministicNativeExecutor::provider())
+        .expect("provider channel")
+}
 
 fn inspect(event: CredentialLifecycleEvent) {
     if let CredentialLifecycleEvent::GenerationInvalidated {
@@ -25,4 +35,7 @@ fn main() {
     let _ = core::mem::size_of::<ScriptedNativeResponse>();
     let _ = core::mem::size_of::<UnsafeCredentialPlacementExpectations>();
     let _ = inspect as fn(CredentialLifecycleEvent);
+    let _ = configure_builders
+        as fn(concord_core::advanced::SafeReqwestBuilder)
+            -> concord_core::advanced::SafeReqwestBuilder;
 }

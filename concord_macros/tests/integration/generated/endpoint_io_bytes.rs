@@ -2,7 +2,9 @@ use bytes::Bytes;
 use concord_core::error::ErrorCategory;
 use concord_core::prelude::ApiClientError;
 use concord_macros::api;
-use concord_test_support::{MockHandle, MockReply, MockServer, mock};
+use concord_test_support::{
+    DeterministicMock, MockExecutionHandle, ScriptedReply, deterministic_mock,
+};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
 use std::sync::{Arc, Mutex as StdMutex};
 
@@ -27,8 +29,8 @@ use bytes_response_contract::BytesResponseApi;
 
 #[derive(Clone)]
 struct RecordingBytesTransport {
-    server: MockServer,
-    handle: Arc<StdMutex<MockHandle>>,
+    server: DeterministicMock,
+    handle: Arc<StdMutex<MockExecutionHandle>>,
 }
 
 #[derive(Debug, Clone)]
@@ -57,7 +59,7 @@ impl RecordingBytesTransport {
             content_length,
             ..
         } = fixture;
-        let mut reply = MockReply::status(status);
+        let mut reply = ScriptedReply::status(status);
         for (name, value) in headers {
             if let Some(name) = name {
                 reply = reply.with_header(name, value);
@@ -73,7 +75,7 @@ impl RecordingBytesTransport {
         } else {
             reply.with_chunks(chunks)
         };
-        let (server, handle) = mock().reply(reply).build();
+        let (server, handle) = deterministic_mock().reply(reply).build();
         Self {
             server,
             handle: Arc::new(StdMutex::new(handle)),
@@ -106,11 +108,11 @@ impl RecordingBytesTransport {
         self.handle.lock().expect("handle lock").recorded_len()
     }
 
-    fn configure_reqwest(
+    fn configure(
         &self,
         builder: concord_core::advanced::SafeReqwestBuilder,
     ) -> concord_core::advanced::SafeReqwestBuilder {
-        self.server.configure_reqwest(builder)
+        self.server.configure_application(builder)
     }
 }
 
@@ -118,23 +120,20 @@ impl RecordingBytesTransport {
 async fn generated_client_exposes_client_wide_headers_and_safe_reqwest_constructor() {
     let fixture = buffered_fixture(StatusCode::OK, vec![Bytes::from_static(b"hello")]);
     let transport = RecordingBytesTransport::new(fixture);
-    let mut api = BytesResponseApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client");
+    let mut api = BytesResponseApi::new_with_safe_reqwest_builder(|builder| builder)
+        .expect("safe builder client");
     let mut headers = HeaderMap::new();
     headers.insert("x-client-wide", HeaderValue::from_static("present"));
     api.set_api_headers(headers)
         .expect("generated header facade");
-    let api = BytesResponseApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client")
-    .with_api_headers(HeaderMap::from_iter([(
-        http::header::HeaderName::from_static("x-client-wide"),
-        HeaderValue::from_static("present"),
-    )]))
-    .expect("generated header with facade");
+    let api =
+        BytesResponseApi::new_with_safe_reqwest_builder(|builder| transport.configure(builder))
+            .expect("mock client")
+            .with_api_headers(HeaderMap::from_iter([(
+                http::header::HeaderName::from_static("x-client-wide"),
+                HeaderValue::from_static("present"),
+            )]))
+            .expect("generated header with facade");
     assert_eq!(
         api.api_headers().get("x-client-wide"),
         Some(&HeaderValue::from_static("present"))
@@ -206,10 +205,9 @@ async fn generated_bytes_response_reads_body_without_accept_header() {
         vec![Bytes::from_static(b"hel"), Bytes::from_static(b"lo")],
     );
     let transport = RecordingBytesTransport::new(fixture);
-    let api = BytesResponseApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client");
+    let api =
+        BytesResponseApi::new_with_safe_reqwest_builder(|builder| transport.configure(builder))
+            .expect("deterministic generated client");
 
     let response = api
         .download()
@@ -232,13 +230,12 @@ async fn generated_bytes_limit_failure_is_body_limited() {
         vec![Bytes::from_static(b"abcd"), Bytes::from_static(b"efgh")],
     );
     let transport = RecordingBytesTransport::new(fixture);
-    let api = BytesResponseApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client")
-    .configure(|cfg| {
-        cfg.max_response_body_bytes(4);
-    });
+    let api =
+        BytesResponseApi::new_with_safe_reqwest_builder(|builder| transport.configure(builder))
+            .expect("deterministic generated client")
+            .configure(|cfg| {
+                cfg.max_response_body_bytes(4);
+            });
 
     let err = api
         .download()
@@ -257,10 +254,9 @@ async fn generated_bytes_status_failure_is_body_free() {
     let sentinel = Bytes::from_static(b"SECRET_BYTES_STATUS_SENTINEL_MUST_NOT_APPEAR");
     let fixture = buffered_fixture(StatusCode::INTERNAL_SERVER_ERROR, vec![sentinel.clone()]);
     let transport = RecordingBytesTransport::new(fixture);
-    let api = BytesResponseApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client");
+    let api =
+        BytesResponseApi::new_with_safe_reqwest_builder(|builder| transport.configure(builder))
+            .expect("deterministic generated client");
 
     let err = api
         .download()
@@ -291,10 +287,9 @@ async fn generated_bytes_response_includes_metadata_and_value() {
         content_length: Some(5),
     };
     let transport = RecordingBytesTransport::new(fixture);
-    let api = BytesResponseApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client");
+    let api =
+        BytesResponseApi::new_with_safe_reqwest_builder(|builder| transport.configure(builder))
+            .expect("deterministic generated client");
 
     let response = api
         .download()

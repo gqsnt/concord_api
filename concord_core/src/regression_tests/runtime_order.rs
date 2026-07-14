@@ -1,5 +1,5 @@
 use super::common::{
-    MockResponse, NativeMockHarness, ObservationAuthVars, ObservationRuntimeHooks,
+    DeterministicHarness, MockResponse, ObservationAuthVars, ObservationRuntimeHooks,
     RecordingRateLimiter, RecordingRuntimeHooks, TextEndpoint, auth_policy, configure_runtime,
     observation_client,
 };
@@ -7,7 +7,7 @@ use crate::regression_tests::test_api::AuthPlacement;
 use concord_core::prelude::ApiClientError;
 use http::StatusCode;
 use std::sync::Arc;
-#[cfg(feature = "dangerous-dev-tools")]
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
 use std::sync::atomic::Ordering;
 use tokio::sync::Mutex;
 
@@ -29,7 +29,7 @@ fn first(events: &[String], needle: &str) -> usize {
 #[tokio::test]
 async fn runtime_order_auth_recovery_visible_execution_sequence() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![
             MockResponse::text(StatusCode::UNAUTHORIZED, "challenge"),
@@ -43,7 +43,7 @@ async fn runtime_order_auth_recovery_visible_execution_sequence() -> Result<(), 
         "refresh",
         events.clone(),
     );
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     let binding_resolutions = auth.binding_resolutions.clone();
     let mut client = observation_client(auth, &harness);
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
@@ -76,7 +76,7 @@ async fn runtime_order_auth_recovery_visible_execution_sequence() -> Result<(), 
     assert!(auth < rate && rate < pre && pre < head, "{events:?}");
     assert!(head < body && body < post && post < feedback, "{events:?}");
     assert!(feedback < refresh, "{events:?}");
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     {
         let classified = first(&events, "auth_classification:401 Unauthorized");
         let released = first(&events, "auth_response_released");
@@ -108,7 +108,7 @@ async fn runtime_order_auth_recovery_visible_execution_sequence() -> Result<(), 
 #[tokio::test]
 async fn runtime_order_terminal_second_challenge_releases_then_invalidates_without_third_send() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![
             MockResponse::text(StatusCode::UNAUTHORIZED, "first-challenge"),
@@ -122,7 +122,7 @@ async fn runtime_order_terminal_second_challenge_releases_then_invalidates_witho
         "refresh",
         events.clone(),
     );
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     let binding_resolutions = auth.binding_resolutions.clone();
     let mut client = observation_client(auth, &harness);
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
@@ -148,7 +148,7 @@ async fn runtime_order_terminal_second_challenge_releases_then_invalidates_witho
     assert_eq!(posts.len(), 2);
     assert_eq!(feedback.len(), 2);
     assert!(posts[1] < feedback[1], "{events:?}");
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     {
         let classifications = positions(&events, "auth_classification:401 Unauthorized");
         let releases = positions(&events, "auth_response_released");
@@ -182,7 +182,7 @@ async fn runtime_order_terminal_second_challenge_releases_then_invalidates_witho
 #[tokio::test]
 async fn runtime_order_invalidate_only_releases_before_terminal_invalidation() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![MockResponse::text(
             StatusCode::UNAUTHORIZED,
@@ -191,7 +191,7 @@ async fn runtime_order_invalidate_only_releases_before_terminal_invalidation() {
     );
     let sent = harness.clone();
     let auth = ObservationAuthVars::bearer("terminal-token", "invalidate-only", events.clone());
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     let binding_resolutions = auth.binding_resolutions.clone();
     let mut client = observation_client(auth, &harness);
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
@@ -221,7 +221,7 @@ async fn runtime_order_invalidate_only_releases_before_terminal_invalidation() {
     assert_eq!(positions(&events, "rate_response").len(), 1);
     assert_eq!(positions(&events, "provider_refresh").len(), 0);
     assert_eq!(positions(&events, "auth_retry").len(), 0);
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     {
         let classified = first(&events, "auth_classification:401 Unauthorized");
         let released = first(&events, "auth_response_released");
@@ -248,7 +248,7 @@ async fn runtime_order_invalidate_only_releases_before_terminal_invalidation() {
 #[tokio::test]
 async fn runtime_order_success_runs_post_hook_before_rate_feedback() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![MockResponse::text(StatusCode::OK, "ok")],
     );

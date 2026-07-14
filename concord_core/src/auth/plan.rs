@@ -271,7 +271,7 @@ pub struct PreparedAuthCredential {
     pub applied: AuthAppliedCredential,
     pub(crate) reuse: AuthPreparationReuse,
     pub(crate) material: AuthTransportMaterial,
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     pub(crate) lifecycle_observation_target: Option<super::CredentialLifecycleObservationTarget>,
 }
 
@@ -282,7 +282,7 @@ impl PreparedAuthCredential {
             applied,
             reuse: AuthPreparationReuse::Never,
             material: application.material,
-            #[cfg(feature = "dangerous-dev-tools")]
+            #[cfg(any(test, feature = "dangerous-dev-tools"))]
             lifecycle_observation_target: None,
         }
     }
@@ -293,7 +293,7 @@ impl PreparedAuthCredential {
         self
     }
 
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     pub(crate) fn with_lifecycle_observation_target(
         mut self,
         target: Option<super::CredentialLifecycleObservationTarget>,
@@ -500,7 +500,7 @@ impl AuthRejectionAction {
         matches!(self, Self::Recover { .. })
     }
 
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     pub(crate) fn matches_use_identity(
         &self,
         credential_id: &CredentialId,

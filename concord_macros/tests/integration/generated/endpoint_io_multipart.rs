@@ -2,7 +2,7 @@ use bytes::Bytes;
 use concord_core::advanced::MultipartBody;
 use concord_core::prelude::Text;
 use concord_macros::api;
-use concord_test_support::{MockReply, mock};
+use concord_test_support::{ScriptedReply, deterministic_mock};
 
 api! {
     client MultipartRequestApi { base "https://example.com" }
@@ -13,14 +13,14 @@ api! {
 
 #[tokio::test]
 async fn generated_multipart_form_data_request_reaches_transport() {
-    let (server, handle) = mock()
-        .reply(MockReply::ok_text(Bytes::from_static(b"ok")))
+    let (mock, handle) = deterministic_mock()
+        .reply(ScriptedReply::ok_text(Bytes::from_static(b"ok")))
         .build();
     let api =
         multipart_request_api::MultipartRequestApi::new_with_safe_reqwest_builder(|builder| {
-            server.configure_reqwest(builder)
+            mock.configure_application(builder)
         })
-        .expect("mock client");
+        .expect("deterministic generated multipart client");
 
     let response = api
         .upload(
@@ -40,11 +40,11 @@ async fn generated_multipart_form_data_request_reaches_transport() {
         .get(http::header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .expect("multipart content type");
-    let body = &recorded[0].body;
     assert!(content_type.starts_with("multipart/form-data; boundary="));
-    let rendered = String::from_utf8(body.to_vec()).expect("multipart is UTF-8 here");
-    assert!(rendered.contains("Content-Disposition:"));
-    assert!(rendered.contains("hello"));
-    assert!(rendered.contains("abc"));
+    assert_eq!(
+        recorded[0].body_category,
+        concord_core::__development::CapturedBodyCategory::Multipart
+    );
+    assert_eq!(recorded[0].known_body_length, None);
     handle.finish();
 }

@@ -1,5 +1,5 @@
 use super::common::{
-    NativeMockHarness, NativeMockOutcome, NativeMockReply, NativeReplyGate, ObservationAuthVars,
+    DeterministicHarness, DeterministicOutcome, ObservationAuthVars, ResponseGate, ScriptedReply,
     TestAuthVars, client, observation_client, request_plan,
 };
 use bytes::Bytes;
@@ -45,9 +45,9 @@ fn assert_aligned(error: &ApiClientError, hooks: &CategoryHooks) {
 
 #[tokio::test]
 async fn ordinary_request_execution_hook_matches_terminal_error() {
-    let harness = NativeMockHarness::with_outcomes(
+    let harness = DeterministicHarness::with_outcomes(
         Arc::new(tokio::sync::Mutex::new(Vec::new())),
-        vec![NativeMockOutcome::DisconnectAfterRequest],
+        vec![DeterministicOutcome::DisconnectAfterRequest],
     );
     let mut client = client(TestAuthVars::default(), harness);
     let hooks = Arc::new(CategoryHooks::default());
@@ -69,11 +69,13 @@ async fn ordinary_request_execution_hook_matches_terminal_error() {
 
 #[tokio::test]
 async fn timeout_hook_matches_terminal_error() {
-    let gate = NativeReplyGate::new();
-    let harness = NativeMockHarness::from_native_replies(
+    let harness = DeterministicHarness::from_replies(
         Arc::new(tokio::sync::Mutex::new(Vec::new())),
-        [NativeMockReply::ok_text(Bytes::from_static(b"late")).with_gate(gate.clone())],
+        [ScriptedReply::failure_before_request_body(
+            concord_core::__development::SyntheticExecutionFailure::Timeout,
+        )],
     );
+    let capture = harness.clone();
     let mut client = client(TestAuthVars::default(), harness);
     let hooks = Arc::new(CategoryHooks::default());
     client.set_runtime_hooks(hooks.clone());
@@ -90,33 +92,28 @@ async fn timeout_hook_matches_terminal_error() {
         .execute_plan::<Text<String>>(plan)
         .await
         .expect_err("request timeout is terminal");
-    gate.release();
     assert_eq!(error.category(), ErrorCategory::Timeout);
     assert_aligned(&error, &hooks);
+    let requests = capture.requests().await;
+    assert_eq!(requests[0].timeout, Some(Duration::from_millis(20)));
 }
 
 #[tokio::test]
 async fn connect_hook_matches_terminal_error() {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("reserve loopback port");
-    let authority = listener.local_addr().expect("loopback address").to_string();
-    drop(listener);
-    let mut client = concord_core::prelude::ApiClient::<super::common::TestCx>::with_retry_mode(
-        (),
-        TestAuthVars::default(),
-        RetryMode::Disabled,
-    )
-    .expect("managed client");
+    let harness = DeterministicHarness::with_outcomes(
+        Arc::new(tokio::sync::Mutex::new(Vec::new())),
+        vec![DeterministicOutcome::ConnectFailure],
+    );
+    let mut client = client(TestAuthVars::default(), harness);
     let hooks = Arc::new(CategoryHooks::default());
     client.set_runtime_hooks(hooks.clone());
-    let mut plan = request_plan(
+    let plan = request_plan(
         "RequestErrorConnect",
         Method::GET,
         "/connect",
         Default::default(),
         None,
     );
-    plan.endpoint.route.scheme = http::uri::Scheme::HTTP;
-    plan.endpoint.route.host = authority;
     let error = client
         .execute_plan::<Text<String>>(plan)
         .await
@@ -185,9 +182,9 @@ impl std::error::Error for ProducerSentinel {}
 #[tokio::test]
 async fn body_producer_hook_matches_terminal_error_and_chain_is_sanitized() {
     let producer_gate = Arc::new(ProducerGate::default());
-    let harness = NativeMockHarness::from_native_replies_with_head_action(
+    let harness = DeterministicHarness::from_replies_with_head_action(
         Arc::new(tokio::sync::Mutex::new(Vec::new())),
-        [NativeMockReply::disconnect_after_request().expect_request_body_failure()],
+        [ScriptedReply::disconnect_after_request_body()],
         {
             let producer_gate = producer_gate.clone();
             move || producer_gate.release()

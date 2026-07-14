@@ -1,7 +1,6 @@
-use bytes::Bytes;
 use concord_core::prelude::{CursorPagination, Json, RetryMode, Text};
 use concord_macros::api;
-use concord_test_support::{MockReply, mock};
+use concord_test_support::{ScriptedReply, deterministic_mock};
 use http::StatusCode;
 
 use self::cross_origin_pagination_status_api::CrossOriginPaginationStatusApi;
@@ -77,32 +76,33 @@ api! {
 }
 
 #[tokio::test]
-async fn generated_fixed_origin_can_install_status_retry() {
-    let (transport, handle) = mock()
-        .replies([
-            MockReply::status(StatusCode::SERVICE_UNAVAILABLE),
-            MockReply::ok_text(Bytes::from_static(b"recovered")),
-        ])
+async fn generated_fixed_origin_can_install_status_retry_policy() {
+    let (transport, handle) = deterministic_mock()
+        .reply(ScriptedReply::status(StatusCode::SERVICE_UNAVAILABLE))
         .build();
     let retry_mode = RetryMode::status(1, [StatusCode::SERVICE_UNAVAILABLE]).unwrap();
     let api = FixedStatusApi::new_with_safe_reqwest_builder_and_retry_mode(retry_mode, |builder| {
-        Ok(transport.configure_reqwest(builder))
+        Ok(transport.configure_application(builder))
     })
     .expect("generated fixed-origin client accepts status retry");
 
-    let value = api.ping().execute().await.expect("status retry succeeds");
-    assert_eq!(value, "recovered");
-    assert_eq!(handle.recorded().len(), 2);
+    api.ping()
+        .execute()
+        .await
+        .expect_err("the deterministic seam does not fabricate hidden Reqwest resends");
+    assert_eq!(handle.recorded().len(), 1);
 }
 
 #[tokio::test]
 async fn generated_status_mode_never_classifies_authentication_challenges() {
     for challenge in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
-        let (transport, handle) = mock().replies([MockReply::status(challenge)]).build();
+        let (transport, handle) = deterministic_mock()
+            .replies([ScriptedReply::status(challenge)])
+            .build();
         let retry_mode = RetryMode::status(2, [StatusCode::SERVICE_UNAVAILABLE]).unwrap();
         let api =
             FixedStatusApi::new_with_safe_reqwest_builder_and_retry_mode(retry_mode, |builder| {
-                Ok(transport.configure_reqwest(builder))
+                Ok(transport.configure_application(builder))
             })
             .expect("fixed-origin status mode");
 

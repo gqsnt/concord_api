@@ -1,24 +1,28 @@
+#![cfg_attr(not(feature = "dangerous-dev-tools"), allow(dead_code, unused_imports))]
+
 use bytes::Bytes;
 use concord_core::advanced::{
     AdvancedRequestBody, AuthChallengeMode, AuthError, AuthFuture, AuthPreparationMode,
     AuthProviderBinding, CredentialContext, CredentialId, CredentialProvider,
     CredentialProviderState, InvalidateReason, OctetStream, PreparedBody, PreparedEndpoint,
-    PreparedRequestEntity, PreparedStreamEndpoint, RequestAuthentication, RequestEntity, SafeProxy,
+    PreparedRequestEntity, PreparedStreamEndpoint, RequestAuthentication, RequestEntity,
 };
 use concord_core::prelude::{
     ApiClient, ApiClientError, ApiKey, ClientContext, RequestExecutionMeta, RetryMode, Text,
 };
-use http::{HeaderMap, Method, StatusCode};
+use http::{Method, StatusCode};
 use http_body::{Body, Frame, SizeHint};
 use std::convert::Infallible;
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll};
-use std::thread;
-use std::time::Duration;
+
+#[cfg(feature = "dangerous-dev-tools")]
+#[path = "../../concord_test_support/src/deterministic.rs"]
+mod deterministic_mock;
+#[cfg(feature = "dangerous-dev-tools")]
+use deterministic_mock::{ScriptedReply, deterministic_mock};
 
 struct LocalRequestEntity;
 
@@ -168,162 +172,6 @@ impl CredentialProvider<PublicContext> for PublicProvider {
     }
 }
 
-struct Reply {
-    status: StatusCode,
-    content_type: &'static str,
-    body: &'static [u8],
-}
-
-impl Reply {
-    fn text(status: StatusCode, body: &'static [u8]) -> Self {
-        Self {
-            status,
-            content_type: "text/plain",
-            body,
-        }
-    }
-
-    fn bytes(body: &'static [u8]) -> Self {
-        Self {
-            status: StatusCode::OK,
-            content_type: "application/octet-stream",
-            body,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-struct CapturedRequest {
-    headers: HeaderMap,
-    body: Bytes,
-}
-
-struct ScriptedServer {
-    address: String,
-    requests: Arc<Mutex<Vec<CapturedRequest>>>,
-    stop: Arc<AtomicBool>,
-    thread: Option<thread::JoinHandle<()>>,
-}
-
-impl ScriptedServer {
-    fn start(replies: Vec<Reply>) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("loopback bind");
-        listener
-            .set_nonblocking(true)
-            .expect("nonblocking loopback");
-        let address = listener.local_addr().expect("loopback address").to_string();
-        let requests = Arc::new(Mutex::new(Vec::new()));
-        let captured = requests.clone();
-        let stop = Arc::new(AtomicBool::new(false));
-        let thread_stop = stop.clone();
-        let thread = thread::spawn(move || {
-            for reply in replies {
-                let mut stream = loop {
-                    match listener.accept() {
-                        Ok((stream, _)) => break stream,
-                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                            if thread_stop.load(Ordering::Acquire) {
-                                return;
-                            }
-                            thread::sleep(Duration::from_millis(2));
-                        }
-                        Err(error) => panic!("loopback accept failed: {error}"),
-                    }
-                };
-                stream
-                    .set_nonblocking(false)
-                    .expect("blocking request stream");
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(2)))
-                    .expect("request timeout");
-                let request = read_request(&mut stream);
-                captured.lock().expect("captured requests").push(request);
-                write_reply(&mut stream, reply);
-            }
-        });
-        Self {
-            address,
-            requests,
-            stop,
-            thread: Some(thread),
-        }
-    }
-
-    fn proxy(&self) -> SafeProxy {
-        let url = format!("http://{}", self.address);
-        SafeProxy::all(&url).expect("safe loopback proxy")
-    }
-
-    fn finish(mut self) -> Vec<CapturedRequest> {
-        self.join();
-        self.requests.lock().expect("captured requests").clone()
-    }
-
-    fn join(&mut self) {
-        self.stop.store(true, Ordering::Release);
-        if let Some(thread) = self.thread.take() {
-            let result = thread.join();
-            if !thread::panicking() {
-                result.expect("loopback thread");
-            }
-        }
-    }
-}
-
-impl Drop for ScriptedServer {
-    fn drop(&mut self) {
-        self.join();
-    }
-}
-
-fn read_request(stream: &mut TcpStream) -> CapturedRequest {
-    let mut reader = BufReader::new(stream);
-    let mut request_line = String::new();
-    reader.read_line(&mut request_line).expect("request line");
-    assert!(!request_line.is_empty(), "request line");
-    let mut headers = HeaderMap::new();
-    let mut content_length = 0usize;
-    loop {
-        let mut line = String::new();
-        reader.read_line(&mut line).expect("request header");
-        if line == "\r\n" {
-            break;
-        }
-        let (name, value) = line.trim_end().split_once(':').expect("header syntax");
-        let name = http::HeaderName::from_bytes(name.as_bytes()).expect("header name");
-        let value = http::HeaderValue::from_str(value.trim()).expect("header value");
-        if name == http::header::CONTENT_LENGTH {
-            content_length = value
-                .to_str()
-                .expect("content length text")
-                .parse()
-                .expect("content length number");
-        }
-        headers.append(name, value);
-    }
-    let mut body = vec![0; content_length];
-    reader.read_exact(&mut body).expect("request body");
-    CapturedRequest {
-        headers,
-        body: Bytes::from(body),
-    }
-}
-
-fn write_reply(stream: &mut TcpStream, reply: Reply) {
-    let reason = reply.status.canonical_reason().unwrap_or("Response");
-    write!(
-        stream,
-        "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-        reply.status.as_u16(),
-        reason,
-        reply.content_type,
-        reply.body.len()
-    )
-    .expect("response head");
-    stream.write_all(reply.body).expect("response body");
-    stream.flush().expect("response flush");
-}
-
 fn advanced_body(bytes: &'static [u8]) -> AdvancedRequestBody {
     AdvancedRequestBody::new(LocalBody::new(bytes))
 }
@@ -337,19 +185,32 @@ fn endpoint(
         .expect("public request entity")
 }
 
+#[cfg(feature = "dangerous-dev-tools")]
 #[tokio::test]
 async fn downstream_public_extension_executes_without_generated_integration_modules() {
-    let server = ScriptedServer::start(vec![
-        Reply::text(StatusCode::OK, b"one-shot"),
-        Reply::text(StatusCode::OK, b"factory"),
-        Reply::text(StatusCode::UNAUTHORIZED, b"challenge"),
-        Reply::text(StatusCode::OK, b"authenticated"),
-        Reply::text(StatusCode::OK, b"metadata"),
-        Reply::bytes(b"stream"),
-    ]);
+    let (mock, handle) = deterministic_mock()
+        .replies([
+            ScriptedReply::ok_text(Bytes::from_static(b"one-shot"))
+                .expect_body(Bytes::from_static(b"one-shot-body")),
+            ScriptedReply::ok_text(Bytes::from_static(b"factory"))
+                .expect_body(Bytes::from_static(b"factory-body")),
+            ScriptedReply::status(StatusCode::UNAUTHORIZED)
+                .expect_body(Bytes::from_static(b"recovery-body"))
+                .expect_header(http::header::AUTHORIZATION, "Bearer fixture-token-1"),
+            ScriptedReply::ok_text(Bytes::from_static(b"authenticated"))
+                .expect_body(Bytes::from_static(b"recovery-body"))
+                .expect_header(http::header::AUTHORIZATION, "Bearer fixture-token-2"),
+            ScriptedReply::ok_text(Bytes::from_static(b"metadata")),
+            ScriptedReply::status(StatusCode::OK)
+                .with_header(
+                    http::header::CONTENT_TYPE,
+                    http::HeaderValue::from_static("application/octet-stream"),
+                )
+                .with_body(Bytes::from_static(b"stream")),
+        ])
+        .build();
     let acquired = Arc::new(AtomicUsize::new(0));
     let invalidated = Arc::new(AtomicUsize::new(0));
-    let proxy = server.proxy();
     let client = ApiClient::<PublicContext>::with_safe_reqwest_builder_and_retry_mode(
         (),
         PublicAuthVars {
@@ -357,7 +218,7 @@ async fn downstream_public_extension_executes_without_generated_integration_modu
             invalidated: invalidated.clone(),
         },
         RetryMode::ProtocolRecovery,
-        |builder| Ok(builder.proxy(proxy)),
+        |builder| Ok(mock.configure_application(builder)),
     )
     .expect("fixed-origin managed client");
 
@@ -432,24 +293,19 @@ async fn downstream_public_extension_executes_without_generated_integration_modu
         Some(Bytes::from_static(b"stream"))
     );
 
-    let requests = server.finish();
+    let requests = handle.recorded();
     assert_eq!(requests.len(), 6);
-    assert_eq!(requests[0].body, Bytes::from_static(b"one-shot-body"));
-    assert_eq!(requests[1].body, Bytes::from_static(b"factory-body"));
-    assert_eq!(requests[2].body, Bytes::from_static(b"recovery-body"));
-    assert_eq!(requests[3].body, Bytes::from_static(b"recovery-body"));
-    assert_eq!(
+    assert_eq!(requests[0].known_body_length, Some(13));
+    assert_eq!(requests[1].known_body_length, Some(12));
+    assert!(
         requests[2]
-            .headers
-            .get(http::header::AUTHORIZATION)
-            .expect("first authorization"),
-        "Bearer fixture-token-1"
+            .protected_header_names
+            .contains(&http::header::AUTHORIZATION)
     );
-    assert_eq!(
+    assert!(
         requests[3]
-            .headers
-            .get(http::header::AUTHORIZATION)
-            .expect("second authorization"),
-        "Bearer fixture-token-2"
+            .protected_header_names
+            .contains(&http::header::AUTHORIZATION)
     );
+    handle.finish();
 }

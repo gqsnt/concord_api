@@ -1,9 +1,8 @@
-use super::common::{TestAuthState, TestAuthVars, native_mock};
+use super::common::{TestAuthState, TestAuthVars, deterministic_mock};
 use super::test_api::{
     EndpointMeta, EndpointPlan, PreparedBody, RequestOverrides, RequestPlan, ResolvedPolicy,
     ResolvedRoute, ResponsePlan,
 };
-use crate::advanced::SafeProxy;
 use crate::prelude::{ApiClient, ClientContext, RetryMode, Text};
 use http::{HeaderValue, Method, StatusCode};
 
@@ -54,18 +53,17 @@ fn disabled_retry_plan() -> RequestPlan {
 }
 
 #[tokio::test]
-async fn disabled_retry_mode_has_one_physical_request_per_visible_execution() {
-    let (server, handle) = native_mock::mock()
-        .reply(native_mock::MockReply::status(
+async fn disabled_retry_mode_installs_without_a_concord_resend() {
+    let (mock, handle) = deterministic_mock::deterministic_mock()
+        .reply(deterministic_mock::ScriptedReply::status(
             StatusCode::SERVICE_UNAVAILABLE,
         ))
         .build();
-    let proxy = SafeProxy::all(server.base_url().as_str()).expect("loopback HTTP proxy is safe");
     let client = ApiClient::<DisabledRetryCx>::with_safe_reqwest_builder_and_retry_mode(
         (),
         TestAuthVars::default(),
         RetryMode::Disabled,
-        |builder| Ok(builder.proxy(proxy)),
+        |builder| Ok(mock.configure_application(builder)),
     )
     .expect("disabled retry client");
 
@@ -78,5 +76,5 @@ async fn disabled_retry_mode_has_one_physical_request_per_visible_execution() {
         error,
         crate::prelude::ApiClientError::HttpStatus { .. }
     ));
-    assert_eq!(handle.wire_request_count(), 1);
+    assert_eq!(handle.recorded_len(), 1);
 }

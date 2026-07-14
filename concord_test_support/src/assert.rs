@@ -1,4 +1,4 @@
-use crate::mock::RecordedRequest;
+use crate::compatibility_loopback::RecordedRequest;
 use http::header::HeaderName;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;

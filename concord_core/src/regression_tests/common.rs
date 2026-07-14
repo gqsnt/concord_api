@@ -29,12 +29,12 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 use tokio::sync::{Mutex, Notify};
 
-#[path = "../../../concord_test_support/src/mock.rs"]
-pub(crate) mod native_mock;
-use native_mock::{MockHandle as NativeMockHandle, MockServer};
-pub use native_mock::{MockReply as NativeMockReply, ReplyGate as NativeReplyGate};
+#[path = "../../../concord_test_support/src/deterministic.rs"]
+pub(crate) mod deterministic_mock;
+use deterministic_mock::{DeterministicMock, MockExecutionHandle};
+pub use deterministic_mock::{ResponseGate, ScriptedReply};
 
-pub struct CapturedWireRequest {
+pub struct CapturedExecution {
     pub meta: CapturedRequestExecutionMeta,
     pub url: url::Url,
     pub headers: HeaderMap,
@@ -51,33 +51,32 @@ pub struct CapturedRequestExecutionMeta {
 
 pub enum CapturedBody {
     Empty,
-    Bytes(Bytes),
+    Present(concord_core::__development::CapturedBodyCategory),
 }
 
 impl CapturedBody {
     pub fn as_bytes(&self) -> Option<&Bytes> {
         match self {
-            Self::Bytes(bytes) => Some(bytes),
-            _ => None,
+            Self::Empty | Self::Present(_) => None,
         }
     }
 
     #[allow(dead_code)]
     pub fn is_bytes(&self) -> bool {
-        matches!(self, Self::Bytes(_))
+        matches!(self, Self::Present(_))
     }
     pub fn is_empty(&self) -> bool {
         matches!(self, Self::Empty)
     }
 }
 
-impl fmt::Debug for CapturedWireRequest {
+impl fmt::Debug for CapturedExecution {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let body = match &self.body {
             CapturedBody::Empty => "<empty>".to_string(),
-            CapturedBody::Bytes(bytes) => format!("<{} bytes>", bytes.len()),
+            CapturedBody::Present(category) => format!("<{category:?} body>"),
         };
-        f.debug_struct("CapturedWireRequest")
+        f.debug_struct("CapturedExecution")
             .field("meta", &self.meta)
             .field("url", &"<redacted>")
             .field(
@@ -91,7 +90,7 @@ impl fmt::Debug for CapturedWireRequest {
 }
 
 #[derive(Clone, Debug)]
-pub struct CapturedWireRequestSnapshot {
+pub struct CapturedExecutionSnapshot {
     pub meta: RequestExecutionMeta,
     pub url: url::Url,
     pub headers: HeaderMap,
@@ -1076,7 +1075,7 @@ impl ClientContext for ObservationAuthCx {
     fn init_auth_state(_vars: &Self::Vars, auth: &Self::AuthVars) -> Self::AuthState {
         let secret = Arc::new(CredentialProviderState::new(ObservationSecretProvider));
         let basic = Arc::new(CredentialProviderState::new(ObservationBasicProvider));
-        #[cfg(feature = "dangerous-dev-tools")]
+        #[cfg(any(test, feature = "dangerous-dev-tools"))]
         {
             let events = auth.events.clone();
             concord_core::__development::observe_credential_provider_state(
@@ -1200,21 +1199,22 @@ pub fn auth_policy(placement: AuthPlacement) -> ResolvedPolicy {
 }
 
 #[derive(Clone)]
-pub struct NativeMockHarness {
-    server: MockServer,
-    handle: Arc<StdMutex<NativeMockHandle>>,
+pub struct DeterministicHarness {
+    mock: DeterministicMock,
+    handle: Arc<StdMutex<MockExecutionHandle>>,
     events: Arc<Mutex<Vec<String>>>,
 }
 
 #[derive(Clone)]
-pub enum NativeMockOutcome {
-    Response(MockResponse),
+pub enum DeterministicOutcome {
+    Response(Box<MockResponse>),
     DisconnectAfterRequest,
+    ConnectFailure,
 }
 
-impl From<MockResponse> for NativeMockOutcome {
+impl From<MockResponse> for DeterministicOutcome {
     fn from(value: MockResponse) -> Self {
-        Self::Response(value)
+        Self::Response(Box::new(value))
     }
 }
 
@@ -1226,6 +1226,7 @@ pub struct MockResponse {
     pub content_length: Option<u64>,
     pub chunks: Option<Vec<Bytes>>,
     expected_query_pairs: Vec<(String, String)>,
+    expected_body: Option<Bytes>,
 }
 
 impl MockResponse {
@@ -1242,11 +1243,17 @@ impl MockResponse {
             content_length: None,
             chunks: None,
             expected_query_pairs: Vec::new(),
+            expected_body: None,
         }
     }
 
     pub fn expect_query_pair(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.expected_query_pairs.push((name.into(), value.into()));
+        self
+    }
+
+    pub fn expect_body(mut self, body: impl Into<Bytes>) -> Self {
+        self.expected_body = Some(body.into());
         self
     }
 
@@ -1266,107 +1273,102 @@ impl MockResponse {
     }
 }
 
-impl NativeMockHarness {
+impl DeterministicHarness {
     pub fn new(events: Arc<Mutex<Vec<String>>>, responses: Vec<MockResponse>) -> Self {
         Self::with_outcomes(events, responses.into_iter().map(Into::into).collect())
     }
 
     pub fn with_outcomes(
         events: Arc<Mutex<Vec<String>>>,
-        outcomes: Vec<NativeMockOutcome>,
+        outcomes: Vec<DeterministicOutcome>,
     ) -> Self {
         let replies = outcomes.into_iter().map(|outcome| match outcome {
-            NativeMockOutcome::Response(response) => native_reply(response),
-            NativeMockOutcome::DisconnectAfterRequest => {
-                NativeMockReply::disconnect_after_request()
+            DeterministicOutcome::Response(response) => scripted_reply(*response),
+            DeterministicOutcome::DisconnectAfterRequest => {
+                ScriptedReply::disconnect_after_request_body()
             }
+            DeterministicOutcome::ConnectFailure => ScriptedReply::failure_before_request_body(
+                concord_core::__development::SyntheticExecutionFailure::Connect,
+            ),
         });
         let head_events = events.clone();
         let body_events = events.clone();
-        let (server, handle) = native_mock::mock()
+        let (mock, handle) = deterministic_mock::deterministic_mock()
             .replies(replies)
             .on_request_head(move || {
-                head_events.blocking_lock().push("request_head".to_string());
+                record_harness_event(&head_events, "request_head");
             })
-            .on_request_body_complete(move || {
-                body_events
-                    .blocking_lock()
-                    .push("request_body_complete".to_string());
+            .on_request_body_terminal(move |observation| {
+                record_body_terminal_event(&body_events, observation);
             })
             .build();
         Self {
-            server,
+            mock,
             handle: Arc::new(StdMutex::new(handle)),
             events,
         }
     }
 
-    pub fn from_native_replies(
+    pub fn from_replies(
         events: Arc<Mutex<Vec<String>>>,
-        replies: impl IntoIterator<Item = NativeMockReply>,
+        replies: impl IntoIterator<Item = ScriptedReply>,
     ) -> Self {
         let head_events = events.clone();
         let body_events = events.clone();
-        let (server, handle) = native_mock::mock()
+        let (mock, handle) = deterministic_mock::deterministic_mock()
             .replies(replies)
             .on_request_head(move || {
-                head_events.blocking_lock().push("request_head".to_string());
+                record_harness_event(&head_events, "request_head");
             })
-            .on_request_body_complete(move || {
-                body_events
-                    .blocking_lock()
-                    .push("request_body_complete".to_string());
+            .on_request_body_terminal(move |observation| {
+                record_body_terminal_event(&body_events, observation);
             })
             .build();
         Self {
-            server,
+            mock,
             handle: Arc::new(StdMutex::new(handle)),
             events,
         }
     }
 
-    pub fn from_native_replies_with_head_action(
+    pub fn from_replies_with_head_action(
         events: Arc<Mutex<Vec<String>>>,
-        replies: impl IntoIterator<Item = NativeMockReply>,
+        replies: impl IntoIterator<Item = ScriptedReply>,
         head_action: impl Fn() + Send + Sync + 'static,
     ) -> Self {
         let head_events = events.clone();
         let body_events = events.clone();
-        let (server, handle) = native_mock::mock()
+        let (mock, handle) = deterministic_mock::deterministic_mock()
             .replies(replies)
             .on_request_head(move || {
-                head_events.blocking_lock().push("request_head".to_string());
+                record_harness_event(&head_events, "request_head");
                 head_action();
             })
-            .on_request_body_complete(move || {
-                body_events
-                    .blocking_lock()
-                    .push("request_body_complete".to_string());
+            .on_request_body_terminal(move |observation| {
+                record_body_terminal_event(&body_events, observation);
             })
             .build();
         Self {
-            server,
+            mock,
             handle: Arc::new(StdMutex::new(handle)),
             events,
         }
     }
 
-    pub fn from_native_repeating(events: Arc<Mutex<Vec<String>>>, reply: NativeMockReply) -> Self {
+    pub fn from_repeating(events: Arc<Mutex<Vec<String>>>, reply: ScriptedReply) -> Self {
         let head_events = events.clone();
         let body_events = events.clone();
-        let (server, handle) = native_mock::mock()
+        let (mock, handle) = deterministic_mock::deterministic_mock()
             .repeating(reply)
             .on_request_head(move || {
-                head_events.blocking_lock().push("request_head".to_string());
+                record_harness_event(&head_events, "request_head");
             })
-            .on_request_body_complete(move || {
-                body_events
-                    .blocking_lock()
-                    .push("request_body_complete".to_string());
+            .on_request_body_terminal(move |observation| {
+                record_body_terminal_event(&body_events, observation);
             })
             .build();
         Self {
-            server,
+            mock,
             handle: Arc::new(StdMutex::new(handle)),
             events,
         }
@@ -1376,7 +1378,7 @@ impl NativeMockHarness {
         self.handle
             .lock()
             .expect("native handle lock")
-            .completed_len()
+            .recorded_len()
     }
 
     pub async fn wait_for_sends(&self, expected: usize) {
@@ -1389,33 +1391,57 @@ impl NativeMockHarness {
         .unwrap_or_else(|_| panic!("timed out waiting for {expected} native requests"));
     }
 
-    pub async fn requests(&self) -> Vec<CapturedWireRequest> {
+    pub async fn requests(&self) -> Vec<CapturedExecution> {
         let requests = self.handle.lock().expect("native handle lock").recorded();
-        requests.into_iter().map(captured_native_request).collect()
+        requests.into_iter().map(captured_execution).collect()
     }
 
-    pub fn configure_reqwest(
+    pub fn configure_application(
         &self,
         builder: concord_core::advanced::SafeReqwestBuilder,
     ) -> concord_core::advanced::SafeReqwestBuilder {
-        self.server.configure_reqwest(builder)
+        self.mock.configure_application(builder)
     }
 }
 
-#[derive(Clone)]
-pub struct GatedNativeMockHarness {
-    inner: NativeMockHarness,
-    gate: NativeReplyGate,
+fn record_harness_event(events: &Mutex<Vec<String>>, event: &'static str) {
+    loop {
+        if let Ok(mut events) = events.try_lock() {
+            events.push(event.to_string());
+            return;
+        }
+        std::thread::yield_now();
+    }
 }
 
-impl GatedNativeMockHarness {
+fn record_body_terminal_event(
+    events: &Mutex<Vec<String>>,
+    observation: concord_core::__development::RequestBodyTerminalObservation,
+) {
+    use concord_core::__development::RequestBodyTerminalObservation;
+    let event = match observation {
+        RequestBodyTerminalObservation::Completed => "request_body_complete",
+        RequestBodyTerminalObservation::Failed => "request_body_failed",
+        RequestBodyTerminalObservation::CancelledOrDropped => "request_body_cancelled",
+        RequestBodyTerminalObservation::NeverPolled => "request_body_never_polled",
+    };
+    record_harness_event(events, event);
+}
+
+#[derive(Clone)]
+pub struct GatedDeterministicHarness {
+    inner: DeterministicHarness,
+    gate: ResponseGate,
+}
+
+impl GatedDeterministicHarness {
     pub fn new(events: Arc<Mutex<Vec<String>>>, responses: Vec<MockResponse>) -> Self {
-        let gate = NativeReplyGate::new();
+        let gate = ResponseGate::new();
         let replies = responses
             .into_iter()
-            .map(|response| native_reply(response).with_gate(gate.clone()));
+            .map(|response| scripted_reply(response).with_gate(gate.clone()));
         Self {
-            inner: NativeMockHarness::from_native_replies(events, replies),
+            inner: DeterministicHarness::from_replies(events, replies),
             gate,
         }
     }
@@ -1432,16 +1458,19 @@ impl GatedNativeMockHarness {
         self.gate.release();
     }
 
-    pub fn configure_reqwest(
+    pub fn configure_application(
         &self,
         builder: concord_core::advanced::SafeReqwestBuilder,
     ) -> concord_core::advanced::SafeReqwestBuilder {
-        self.inner.configure_reqwest(builder)
+        self.inner.configure_application(builder)
     }
 }
 
-fn native_reply(response: MockResponse) -> NativeMockReply {
-    let mut reply = NativeMockReply::status(response.status);
+fn scripted_reply(response: MockResponse) -> ScriptedReply {
+    let mut reply = ScriptedReply::status(response.status);
+    if let Some(expected) = response.expected_body {
+        reply = reply.expect_body(expected);
+    }
     for (name, value) in response.expected_query_pairs {
         reply = reply.expect_query_pair(name, value);
     }
@@ -1463,19 +1492,20 @@ fn native_reply(response: MockResponse) -> NativeMockReply {
     }
 }
 
-fn captured_native_request(request: native_mock::RecordedRequest) -> CapturedWireRequest {
-    let body = if request.body.is_empty() {
+fn captured_execution(request: deterministic_mock::RecordedExecution) -> CapturedExecution {
+    let body = if request.body_category == concord_core::__development::CapturedBodyCategory::Empty
+    {
         CapturedBody::Empty
     } else {
-        CapturedBody::Bytes(request.body)
+        CapturedBody::Present(request.body_category)
     };
-    CapturedWireRequest {
+    CapturedExecution {
         meta: CapturedRequestExecutionMeta {
             endpoint: request.endpoint,
             method: request.method.clone(),
             page_index: request.page_index,
         },
-        url: request.url,
+        url: request.logical_url,
         headers: request.headers,
         body,
         timeout: request.timeout,
@@ -1667,11 +1697,11 @@ impl RuntimeHooks for RecordingRuntimeHooks {
 #[derive(Clone)]
 pub struct RegressionClient<Cx: ClientContext> {
     inner: ApiClient<Cx>,
-    _harness: Option<NativeMockHarness>,
+    _harness: Option<DeterministicHarness>,
 }
 
 impl<Cx: ClientContext> RegressionClient<Cx> {
-    pub fn from_inner(inner: ApiClient<Cx>, harness: Option<NativeMockHarness>) -> Self {
+    pub fn from_inner(inner: ApiClient<Cx>, harness: Option<DeterministicHarness>) -> Self {
         Self {
             inner,
             _harness: harness,
@@ -1705,22 +1735,22 @@ impl<Cx: ClientContext> std::ops::DerefMut for RegressionClient<Cx> {
 
 pub type TestClient = RegressionClient<TestCx>;
 
-pub fn client(auth: TestAuthVars, harness: NativeMockHarness) -> TestClient {
+pub fn client(auth: TestAuthVars, harness: DeterministicHarness) -> TestClient {
     let inner = ApiClient::with_safe_reqwest_builder((), auth, |builder| {
-        harness.configure_reqwest(builder)
+        harness.configure_application(builder)
     })
-    .expect("native mock client");
+    .expect("deterministic test client construction");
     TestClient::from_inner(inner, Some(harness))
 }
 
 pub fn observation_client(
     auth: ObservationAuthVars,
-    harness: &NativeMockHarness,
+    harness: &DeterministicHarness,
 ) -> RegressionClient<ObservationAuthCx> {
     let inner = ApiClient::with_safe_reqwest_builder((), auth, |builder| {
-        harness.configure_reqwest(builder)
+        harness.configure_application(builder)
     })
-    .expect("native mock client");
+    .expect("deterministic observation client construction");
     RegressionClient::from_inner(inner, None)
 }
 

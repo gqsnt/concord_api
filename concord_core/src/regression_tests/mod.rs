@@ -1,8 +1,8 @@
 #![allow(dead_code, unused_imports)]
 
 mod common;
-pub(crate) use common::{native_mock, request_plan};
-#[cfg(feature = "dangerous-dev-tools")]
+pub(crate) use common::{deterministic_mock, request_plan};
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
 mod deterministic_executor;
 mod native_runtime;
 mod output_model;

@@ -2,7 +2,9 @@ use bytes::Bytes;
 use concord_core::error::ErrorCategory;
 use concord_core::prelude::*;
 use concord_macros::api;
-use concord_test_support::{MockHandle, MockReply, MockServer, RecordedRequest, mock};
+use concord_test_support::{
+    DeterministicMock, MockExecutionHandle, RecordedExecution, ScriptedReply, deterministic_mock,
+};
 use http::{HeaderMap, StatusCode};
 use std::sync::{Arc, Mutex};
 
@@ -36,10 +38,7 @@ async fn generated_pagination_collect_preserves_query_setters_and_caps() {
         ResponseFixture::json(r#"[]"#),
     ]);
     let sent = transport.clone();
-    let api = PaginationHelperApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client");
+    let api = transport.client();
 
     let items = api
         .list()
@@ -67,10 +66,7 @@ async fn generated_pagination_collect_preserves_query_setters_and_caps() {
 #[tokio::test]
 async fn generated_pagination_collect_and_max_items_work() {
     let transport = RecordingTransport::new(vec![ResponseFixture::json(r#"["x"]"#)]);
-    let api = PaginationHelperApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client");
+    let api = transport.client();
 
     let items = api
         .list()
@@ -82,10 +78,7 @@ async fn generated_pagination_collect_and_max_items_work() {
     assert_eq!(items, vec!["x".to_string()]);
 
     let transport = RecordingTransport::new(vec![ResponseFixture::json(r#"["a","b"]"#)]);
-    let api = PaginationHelperApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client");
+    let api = transport.client();
     let err = api
         .list()
         .count(2)
@@ -103,10 +96,7 @@ async fn generated_pagination_later_page_failure_is_typed_and_redacted() {
         ResponseFixture::json(r#"["a","b"]"#),
         ResponseFixture::json_status(StatusCode::INTERNAL_SERVER_ERROR, sentinel),
     ]);
-    let api = PaginationHelperApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client");
+    let api = transport.client();
 
     let err = api
         .list()
@@ -126,9 +116,9 @@ async fn generated_pagination_later_page_failure_is_typed_and_redacted() {
     assert!(!format!("{err}").contains(sentinel));
 }
 
-fn assert_query(request: &RecordedRequest, key: &str, expected: &str) {
+fn assert_query(request: &RecordedExecution, key: &str, expected: &str) {
     let value = request
-        .url
+        .logical_url
         .query_pairs()
         .find(|(candidate, _)| candidate == key)
         .map(|(_, value)| value.into_owned());
@@ -137,29 +127,29 @@ fn assert_query(request: &RecordedRequest, key: &str, expected: &str) {
 
 #[derive(Clone)]
 struct RecordingTransport {
-    server: MockServer,
-    handle: Arc<Mutex<MockHandle>>,
+    server: DeterministicMock,
+    handle: Arc<Mutex<MockExecutionHandle>>,
 }
 
 impl RecordingTransport {
     fn new(responses: Vec<ResponseFixture>) -> Self {
         let replies = responses.into_iter().map(ResponseFixture::into_reply);
-        let (server, handle) = mock().replies(replies).build();
+        let (server, handle) = deterministic_mock().replies(replies).build();
         Self {
             server,
             handle: Arc::new(Mutex::new(handle)),
         }
     }
 
-    async fn requests(&self) -> Vec<RecordedRequest> {
+    async fn requests(&self) -> Vec<RecordedExecution> {
         self.handle.lock().expect("handle lock").recorded()
     }
 
-    fn configure_reqwest(
-        &self,
-        builder: concord_core::advanced::SafeReqwestBuilder,
-    ) -> concord_core::advanced::SafeReqwestBuilder {
-        self.server.configure_reqwest(builder)
+    fn client(&self) -> PaginationHelperApi {
+        PaginationHelperApi::new_with_safe_reqwest_builder(|builder| {
+            self.server.configure_application(builder)
+        })
+        .expect("deterministic generated pagination client")
     }
 }
 
@@ -189,8 +179,8 @@ impl ResponseFixture {
         fixture
     }
 
-    fn into_reply(self) -> MockReply {
-        let mut reply = MockReply::status(self.status).with_body(self.body);
+    fn into_reply(self) -> ScriptedReply {
+        let mut reply = ScriptedReply::status(self.status).with_body(self.body);
         for (name, value) in self.headers {
             if let Some(name) = name {
                 reply = reply.with_header(name, value);
@@ -200,9 +190,9 @@ impl ResponseFixture {
     }
 }
 
-fn assert_query_values(request: &RecordedRequest, key: &str, expected: &[&str]) {
+fn assert_query_values(request: &RecordedExecution, key: &str, expected: &[&str]) {
     let values: Vec<String> = request
-        .url
+        .logical_url
         .query_pairs()
         .filter(|(candidate, _)| candidate == key)
         .map(|(_, value)| value.into_owned())

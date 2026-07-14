@@ -298,7 +298,7 @@ async fn rate_limit_observation_happens_after_response_classification() -> Resul
 {
     let events = Arc::new(Mutex::new(Vec::new()));
     let limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![MockResponse::text(StatusCode::OK, "ok")],
     );
@@ -359,7 +359,7 @@ async fn rate_limit_observes_200_before_decode_failure() {
         http::header::CONTENT_TYPE,
         HeaderValue::from_static("application/json"),
     );
-    let harness = NativeMockHarness::new(events.clone(), vec![response]);
+    let harness = DeterministicHarness::new(events.clone(), vec![response]);
     let _server = harness.clone();
     let mut client = client(TestAuthVars::default(), harness.clone());
     configure_runtime(
@@ -409,7 +409,7 @@ async fn rate_limit_observes_final_429_without_resending() -> Result<(), ApiClie
 
     let events = Arc::new(Mutex::new(Vec::new()));
     let limiter = Arc::new(ObservationRateLimiter::new(events.clone()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![MockResponse::text(
             StatusCode::TOO_MANY_REQUESTS,
@@ -449,7 +449,7 @@ async fn rate_limit_observes_final_429_without_resending() -> Result<(), ApiClie
 async fn rate_limit_observes_auth_rejection_response() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let limiter = Arc::new(ObservationRateLimiter::new(events.clone()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![MockResponse::text(StatusCode::FORBIDDEN, "forbidden")],
     );
@@ -499,9 +499,9 @@ async fn rate_limit_observes_auth_rejection_response() -> Result<(), ApiClientEr
 async fn rate_limit_does_not_observe_request_error_as_response() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let limiter = Arc::new(ObservationRateLimiter::new(events.clone()));
-    let harness = NativeMockHarness::with_outcomes(
+    let harness = DeterministicHarness::with_outcomes(
         events.clone(),
-        vec![NativeMockOutcome::DisconnectAfterRequest],
+        vec![DeterministicOutcome::DisconnectAfterRequest],
     );
     let _server = harness.clone();
     let mut client = client(TestAuthVars::default(), harness.clone());
@@ -526,7 +526,7 @@ async fn missing_host_fails_before_rate_limit_acquire() {
         events.clone(),
         RateLimitResponseAction::Continue,
     ));
-    let harness = NativeMockHarness::new(events.clone(), vec![]);
+    let harness = DeterministicHarness::new(events.clone(), vec![]);
     let _server = harness.clone();
     let sent_harness = harness.clone();
     let mut client = client(TestAuthVars::default(), harness.clone());
@@ -556,7 +556,7 @@ async fn rate_limit_acquire_context_does_not_expose_bearer_auth() -> Result<(), 
         events.clone(),
         RateLimitResponseAction::Continue,
     ));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![MockResponse::text(StatusCode::OK, "ok")],
     );
@@ -595,7 +595,7 @@ async fn rate_limit_acquire_context_does_not_expose_query_auth() -> Result<(), A
         events.clone(),
         RateLimitResponseAction::Continue,
     ));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![MockResponse::text(StatusCode::OK, "ok")],
     );
@@ -642,7 +642,7 @@ async fn rate_limit_acquire_context_does_not_expose_basic_auth_material()
         events.clone(),
         RateLimitResponseAction::Continue,
     ));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![MockResponse::text(StatusCode::OK, "ok")],
     );
@@ -682,7 +682,7 @@ async fn rate_limit_response_context_does_not_expose_bearer_auth() -> Result<(),
         events.clone(),
         RateLimitResponseAction::Continue,
     ));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![MockResponse::text(StatusCode::OK, "ok")],
     );
@@ -720,7 +720,7 @@ async fn rate_limit_response_context_does_not_expose_query_auth() -> Result<(), 
         events.clone(),
         RateLimitResponseAction::Continue,
     ));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![MockResponse::text(StatusCode::OK, "ok")],
     );
@@ -765,7 +765,7 @@ async fn rate_limit_response_context_does_not_expose_basic_auth_material()
         events.clone(),
         RateLimitResponseAction::Continue,
     ));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![MockResponse::text(StatusCode::OK, "ok")],
     );
@@ -844,7 +844,7 @@ async fn rate_limit_response_huge_delay_is_capped_before_storage() {
 async fn rate_limit_response_above_cap_is_terminal_and_not_resent() {
     const RESPONSE_SENTINEL: &str = "PRSEC7_RATE_LIMIT_RESPONSE_SENTINEL";
 
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         Arc::new(Mutex::new(Vec::new())),
         vec![response_with_retry_after(
             StatusCode::TOO_MANY_REQUESTS,
@@ -879,7 +879,7 @@ async fn rate_limit_response_above_cap_delays_only_the_followup_request()
 -> Result<(), ApiClientError> {
     const RESPONSE_SENTINEL: &str = "PRSEC7_RATE_LIMIT_POISON_SENTINEL";
 
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         Arc::new(Mutex::new(Vec::new())),
         vec![
             response_with_retry_after(StatusCode::TOO_MANY_REQUESTS, RESPONSE_SENTINEL, "2"),
@@ -932,7 +932,7 @@ async fn short_rate_limit_cooldown_still_allows_followup_requests() -> Result<()
     ));
     let rate_limiter =
         Arc::new(concord_core::advanced::GovernorRateLimiter::new().with_response_policy(observer));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![
             MockResponse::text(StatusCode::TOO_MANY_REQUESTS, "retry-me"),
@@ -980,7 +980,7 @@ async fn rate_limit_response_zero_delay_is_allowed() -> Result<(), ApiClientErro
     ));
     let rate_limiter =
         Arc::new(concord_core::advanced::GovernorRateLimiter::new().with_response_policy(observer));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![
             MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
@@ -1035,7 +1035,7 @@ async fn rate_limit_response_action_cannot_bypass_auth_rejection() -> Result<(),
     ));
     let rate_limiter =
         Arc::new(concord_core::advanced::GovernorRateLimiter::new().with_response_policy(observer));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![MockResponse::text(StatusCode::FORBIDDEN, "forbidden")],
     );
@@ -1076,7 +1076,7 @@ async fn rate_limit_response_context_sanitizes_sensitive_response_headers()
 
     let events = Arc::new(Mutex::new(Vec::new()));
     let limiter = Arc::new(SanitizedResponseHeaderRateLimiter::new(events.clone()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![{
             let mut response = MockResponse::text(StatusCode::TOO_MANY_REQUESTS, "retry-me");
@@ -1162,7 +1162,7 @@ async fn retry_after_429_delays_only_a_future_call() -> Result<(), ApiClientErro
         Arc::new(concord_core::advanced::GovernorRateLimiter::new().with_response_policy(observer));
     let mut headers = http::HeaderMap::new();
     headers.insert(http::header::RETRY_AFTER, HeaderValue::from_static("1"));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![
             MockResponse::text(StatusCode::TOO_MANY_REQUESTS, "retry-me").with_headers(headers),
@@ -1212,7 +1212,7 @@ async fn retry_after_429_delays_only_a_future_call() -> Result<(), ApiClientErro
 #[tokio::test]
 async fn no_default_rate_limit_empty_plan_succeeds() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(events, vec![MockResponse::text(StatusCode::OK, "ok")]);
+    let harness = DeterministicHarness::new(events, vec![MockResponse::text(StatusCode::OK, "ok")]);
     let _server = harness.clone();
     let sent = harness.clone();
     let client = client(TestAuthVars::default(), harness.clone());
@@ -1230,7 +1230,7 @@ async fn no_default_rate_limit_non_empty_plan_fails_closed() {
     const AUTH_SENTINEL: &str = "PRSEC8_NO_DEFAULT_AUTH_SENTINEL";
 
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![MockResponse::text(StatusCode::OK, "should-not-send")],
     );
@@ -1273,7 +1273,7 @@ async fn no_default_rate_limit_non_empty_plan_fails_closed() {
 async fn no_default_rate_limit_explicit_noop_limiter_opt_out_succeeds() -> Result<(), ApiClientError>
 {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(events, vec![MockResponse::text(StatusCode::OK, "ok")]);
+    let harness = DeterministicHarness::new(events, vec![MockResponse::text(StatusCode::OK, "ok")]);
     let _server = harness.clone();
     let sent = harness.clone();
     let mut client = client(TestAuthVars::default(), harness.clone());

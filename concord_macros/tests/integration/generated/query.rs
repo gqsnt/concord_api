@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use concord_core::prelude::*;
 use concord_macros::api;
-use concord_test_support::{MockReply, assert_request, mock};
+use concord_test_support::{ScriptedReply, assert_execution, deterministic_mock};
 
 use self::query_vector_api::QueryVectorApi;
 use self::vector_auth_api::VectorAuthApi;
@@ -106,19 +106,19 @@ api! {
             -> Json<String>
 }
 
-fn reply() -> MockReply {
-    MockReply::ok_json(Bytes::from_static(br#""ok""#))
+fn reply() -> ScriptedReply {
+    ScriptedReply::ok_json(Bytes::from_static(br#""ok""#))
 }
 
 #[tokio::test]
 async fn generated_query_replacement_supports_all_cardinalities_and_order() {
-    let (transport, handle) = mock().reply(reply()).build();
+    let (transport, handle) = deterministic_mock().reply(reply()).build();
     let api = QueryVectorApi::new_with_safe_reqwest_builder(
         "client".to_string(),
         vec!["client-a".to_string(), "client-b".to_string()],
-        |builder| transport.configure_reqwest(builder),
+        |builder| transport.configure_application(builder),
     )
-    .expect("mock client");
+    .expect("deterministic generated query client");
 
     api.grouped(
         "scope".to_string(),
@@ -145,7 +145,7 @@ async fn generated_query_replacement_supports_all_cardinalities_and_order() {
     handle.finish();
     assert_eq!(requests.len(), 1);
     let pairs: Vec<(String, String)> = requests[0]
-        .url
+        .logical_url
         .query_pairs()
         .map(|(key, value)| (key.into_owned(), value.into_owned()))
         .collect();
@@ -167,20 +167,20 @@ async fn generated_query_replacement_supports_all_cardinalities_and_order() {
             ("later".into(), "scalar".into()),
         ]
     );
-    assert_request(&requests[0])
+    assert_execution(&requests[0])
         .query_values("tags", &["space value", "+", "&", "=", "/", "é"])
         .query_values("optional_tags", &["optional-a", "optional-b"]);
 }
 
 #[tokio::test]
 async fn generated_query_optional_values_and_empty_vectors_remove_inherited_keys() {
-    let (transport, handle) = mock().reply(reply()).build();
+    let (transport, handle) = deterministic_mock().reply(reply()).build();
     let api = QueryVectorApi::new_with_safe_reqwest_builder(
         "client".to_string(),
         vec!["client-a".to_string()],
-        |builder| transport.configure_reqwest(builder),
+        |builder| transport.configure_application(builder),
     )
-    .expect("mock client");
+    .expect("deterministic generated query client");
 
     api.grouped("scope".to_string(), vec!["scope-a".to_string()])
         .search("scalar".to_string(), Vec::new())
@@ -190,7 +190,7 @@ async fn generated_query_optional_values_and_empty_vectors_remove_inherited_keys
 
     let requests = handle.recorded();
     handle.finish();
-    assert_request(&requests[0])
+    assert_execution(&requests[0])
         .query_values("query", &["scalar"])
         .query_absent("tags")
         .query_absent("maybe")
@@ -199,13 +199,13 @@ async fn generated_query_optional_values_and_empty_vectors_remove_inherited_keys
 
 #[tokio::test]
 async fn generated_query_optional_vector_some_empty_removes_key() {
-    let (transport, handle) = mock().reply(reply()).build();
+    let (transport, handle) = deterministic_mock().reply(reply()).build();
     let api = QueryVectorApi::new_with_safe_reqwest_builder(
         "client".to_string(),
         vec!["client-a".to_string()],
-        |builder| transport.configure_reqwest(builder),
+        |builder| transport.configure_application(builder),
     )
-    .expect("mock client");
+    .expect("deterministic generated query client");
 
     api.grouped("scope".to_string(), vec!["scope-a".to_string()])
         .search("scalar".to_string(), vec!["tag".to_string()])
@@ -216,20 +216,20 @@ async fn generated_query_optional_vector_some_empty_removes_key() {
 
     let requests = handle.recorded();
     handle.finish();
-    assert_request(&requests[0])
+    assert_execution(&requests[0])
         .query_values("tags", &["tag"])
         .query_absent("optional_tags");
 }
 
 #[tokio::test]
 async fn generated_nested_scopes_replace_vector_values_and_preserve_unrelated_order() {
-    let (transport, handle) = mock().reply(reply()).build();
+    let (transport, handle) = deterministic_mock().reply(reply()).build();
     let api = QueryVectorApi::new_with_safe_reqwest_builder(
         "client".to_string(),
         vec!["client-a".to_string(), "client-b".to_string()],
-        |builder| transport.configure_reqwest(builder),
+        |builder| transport.configure_application(builder),
     )
-    .expect("mock client");
+    .expect("deterministic generated query client");
 
     api.grouped("outer".to_string(), vec!["outer-a".to_string()])
         .inner(
@@ -244,7 +244,7 @@ async fn generated_nested_scopes_replace_vector_values_and_preserve_unrelated_or
     let requests = handle.recorded();
     handle.finish();
     let pairs: Vec<(String, String)> = requests[0]
-        .url
+        .logical_url
         .query_pairs()
         .map(|(key, value)| (key.into_owned(), value.into_owned()))
         .collect();
@@ -264,13 +264,13 @@ async fn generated_nested_scopes_replace_vector_values_and_preserve_unrelated_or
 
 #[tokio::test]
 async fn generated_nested_scope_vector_replaces_outer_without_endpoint_override() {
-    let (transport, handle) = mock().reply(reply()).build();
+    let (transport, handle) = deterministic_mock().reply(reply()).build();
     let api = QueryVectorApi::new_with_safe_reqwest_builder(
         "client".to_string(),
         vec!["client-a".to_string(), "client-b".to_string()],
-        |builder| transport.configure_reqwest(builder),
+        |builder| transport.configure_application(builder),
     )
-    .expect("mock client");
+    .expect("deterministic generated query client");
 
     api.grouped("outer".to_string(), vec!["outer-a".to_string()])
         .inner(
@@ -284,18 +284,18 @@ async fn generated_nested_scope_vector_replaces_outer_without_endpoint_override(
 
     let requests = handle.recorded();
     handle.finish();
-    assert_request(&requests[0]).query_values("tags", &["inner-a", "inner-b"]);
+    assert_execution(&requests[0]).query_values("tags", &["inner-a", "inner-b"]);
 }
 
 #[tokio::test]
 async fn generated_custom_vec_named_type_remains_scalar() {
-    let (transport, handle) = mock().reply(reply()).build();
+    let (transport, handle) = deterministic_mock().reply(reply()).build();
     let api = QueryVectorApi::new_with_safe_reqwest_builder(
         "client".to_string(),
         vec!["client-a".to_string()],
-        |builder| transport.configure_reqwest(builder),
+        |builder| transport.configure_application(builder),
     )
-    .expect("mock client");
+    .expect("deterministic generated query client");
 
     api.custom(custom::Vec("scalar".to_string()))
         .execute()
@@ -304,17 +304,17 @@ async fn generated_custom_vec_named_type_remains_scalar() {
 
     let requests = handle.recorded();
     handle.finish();
-    assert_request(&requests[0]).query_values("custom", &["scalar"]);
+    assert_execution(&requests[0]).query_values("custom", &["scalar"]);
 }
 
 #[tokio::test]
 async fn generated_nonempty_vector_preserves_query_auth_collision_redaction() {
     let secret = "QUERY_VECTOR_AUTH_SECRET";
-    let (transport, handle) = mock().build();
+    let (transport, handle) = deterministic_mock().build();
     let api = VectorAuthApi::new_with_safe_reqwest_builder(secret.to_string(), |builder| {
-        transport.configure_reqwest(builder)
+        transport.configure_application(builder)
     })
-    .expect("mock client");
+    .expect("deterministic generated auth-query client");
 
     let err = api
         .protected(vec!["public".to_string()])
@@ -331,13 +331,13 @@ async fn generated_nonempty_vector_preserves_query_auth_collision_redaction() {
 #[tokio::test]
 async fn generated_empty_vector_allows_query_auth_without_public_collision() {
     let secret = "QUERY_VECTOR_AUTH_SECRET";
-    let (transport, handle) = mock()
+    let (transport, handle) = deterministic_mock()
         .reply(reply().expect_query_pair("auth_key", secret))
         .build();
     let api = VectorAuthApi::new_with_safe_reqwest_builder(secret.to_string(), |builder| {
-        transport.configure_reqwest(builder)
+        transport.configure_application(builder)
     })
-    .expect("mock client");
+    .expect("deterministic generated auth-query client");
 
     api.protected(Vec::new())
         .execute()
@@ -346,6 +346,6 @@ async fn generated_empty_vector_allows_query_auth_without_public_collision() {
 
     let requests = handle.recorded();
     handle.finish();
-    assert!(requests[0].url.query().is_none());
+    assert!(requests[0].logical_url.query().is_none());
     assert!(!format!("{:?}", requests[0]).contains(secret));
 }

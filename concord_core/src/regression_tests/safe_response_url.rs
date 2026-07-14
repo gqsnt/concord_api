@@ -1,5 +1,5 @@
 use super::common::{
-    ItemsEndpoint, NativeMockHarness, NativeMockReply, PaginationVariant, TestAuthVars, TestCx,
+    DeterministicHarness, ItemsEndpoint, PaginationVariant, ScriptedReply, TestAuthVars, TestCx,
     TextEndpoint, auth_policy, client,
 };
 use crate::regression_tests::test_api::{
@@ -168,8 +168,8 @@ fn text_endpoint() -> TextEndpoint {
     }
 }
 
-fn expected_text_reply(status: StatusCode, body: &'static [u8]) -> NativeMockReply {
-    NativeMockReply::status(status)
+fn expected_text_reply(status: StatusCode, body: &'static [u8]) -> ScriptedReply {
+    ScriptedReply::status(status)
         .with_header(
             http::header::CONTENT_TYPE,
             HeaderValue::from_static("text/plain"),
@@ -179,25 +179,25 @@ fn expected_text_reply(status: StatusCode, body: &'static [u8]) -> NativeMockRep
 }
 
 fn configured_client(
-    replies: Vec<NativeMockReply>,
+    replies: Vec<ScriptedReply>,
 ) -> (
     super::common::TestClient,
-    NativeMockHarness,
+    DeterministicHarness,
     Arc<Mutex<UrlObservations>>,
 ) {
     configured_client_with_identity(replies, "safe-logical-url")
 }
 
 fn configured_client_with_identity(
-    replies: Vec<NativeMockReply>,
+    replies: Vec<ScriptedReply>,
     identity: &'static str,
 ) -> (
     super::common::TestClient,
-    NativeMockHarness,
+    DeterministicHarness,
     Arc<Mutex<UrlObservations>>,
 ) {
     let harness =
-        NativeMockHarness::from_native_replies(Arc::new(AsyncMutex::new(Vec::new())), replies);
+        DeterministicHarness::from_replies(Arc::new(AsyncMutex::new(Vec::new())), replies);
     let capture = harness.clone();
     let observations = Arc::new(Mutex::new(UrlObservations::default()));
     let mut client = client(
@@ -253,9 +253,9 @@ fn assert_observations_safe(observations: &UrlObservations, expected_path: &str)
     }
 }
 
-#[cfg(feature = "dangerous-dev-tools")]
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
 async fn assert_development_captures_safe(
-    capture: &NativeMockHarness,
+    capture: &DeterministicHarness,
     expected_count: usize,
     expected_path: &str,
 ) {
@@ -310,9 +310,9 @@ async fn buffered_response_status_hooks_rate_limit_and_debug_use_logical_url()
         assert_observations_safe(&observations, "/text");
     }
 
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     assert_development_captures_safe(&capture, 2, "/text").await;
-    #[cfg(not(feature = "dangerous-dev-tools"))]
+    #[cfg(all(not(test), not(feature = "dangerous-dev-tools")))]
     let _ = capture;
     Ok(())
 }
@@ -333,9 +333,9 @@ async fn feature_gated_built_response_keeps_logical_url() -> Result<(), ApiClien
         &observations.lock().expect("URL observations lock"),
         "/text",
     );
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     assert_development_captures_safe(&capture, 1, "/text").await;
-    #[cfg(not(feature = "dangerous-dev-tools"))]
+    #[cfg(all(not(test), not(feature = "dangerous-dev-tools")))]
     let _ = capture;
     Ok(())
 }
@@ -384,7 +384,7 @@ impl RegressionReusableEndpoint<TestCx> for QueryStreamEndpoint {
 
 #[tokio::test]
 async fn streaming_response_url_and_debug_use_logical_url() -> Result<(), ApiClientError> {
-    let reply = NativeMockReply::status(StatusCode::OK)
+    let reply = ScriptedReply::status(StatusCode::OK)
         .with_header(
             http::header::CONTENT_TYPE,
             HeaderValue::from_static("application/octet-stream"),
@@ -403,17 +403,17 @@ async fn streaming_response_url_and_debug_use_logical_url() -> Result<(), ApiCli
         &observations.lock().expect("URL observations lock"),
         "/stream",
     );
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     assert_development_captures_safe(&capture, 1, "/stream").await;
-    #[cfg(not(feature = "dangerous-dev-tools"))]
+    #[cfg(all(not(test), not(feature = "dangerous-dev-tools")))]
     let _ = capture;
     Ok(())
 }
 
 #[tokio::test]
 async fn request_error_hook_and_source_chain_use_logical_url() {
-    let reply =
-        NativeMockReply::disconnect_after_request().expect_query_pair(QUERY_NAME, QUERY_SENTINEL);
+    let reply = ScriptedReply::disconnect_after_request_body()
+        .expect_query_pair(QUERY_NAME, QUERY_SENTINEL);
     let (client, capture, observations) = configured_client(vec![reply]);
     let error = client
         .request(text_endpoint())
@@ -430,9 +430,9 @@ async fn request_error_hook_and_source_chain_use_logical_url() {
         assert!(observations.rate_response.is_empty());
         assert_observations_safe(&observations, "/text");
     }
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     assert_development_captures_safe(&capture, 1, "/text").await;
-    #[cfg(not(feature = "dangerous-dev-tools"))]
+    #[cfg(all(not(test), not(feature = "dangerous-dev-tools")))]
     let _ = capture;
 }
 
@@ -464,7 +464,7 @@ async fn authentication_recovery_rebuilds_native_query_but_second_challenge_is_t
         assert_eq!(observations.rate_response.len(), 2);
         assert_observations_safe(&observations, "/text");
     }
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     assert_development_captures_safe(&capture, 2, "/text").await;
 }
 
@@ -543,7 +543,7 @@ async fn pagination_observations_state_and_later_page_error_keep_logical_urls()
         );
     }
 
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     {
         let requests = capture.requests().await;
         assert_eq!(requests.len(), 2);
@@ -553,7 +553,7 @@ async fn pagination_observations_state_and_later_page_error_keep_logical_urls()
             assert!(!format!("{request:?}").contains(QUERY_SENTINEL));
         }
     }
-    #[cfg(not(feature = "dangerous-dev-tools"))]
+    #[cfg(all(not(test), not(feature = "dangerous-dev-tools")))]
     let _ = capture;
     Ok(())
 }

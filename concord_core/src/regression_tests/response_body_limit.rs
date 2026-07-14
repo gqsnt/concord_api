@@ -1,6 +1,6 @@
 use super::common::{
-    MockResponse, NativeMockHarness, NativeMockReply, ObservationRateLimiter,
-    ObservationRuntimeHooks, SafeRecordingDebugSink, TestAuthVars, TestCx, TextEndpoint,
+    DeterministicHarness, MockResponse, ObservationRateLimiter, ObservationRuntimeHooks,
+    SafeRecordingDebugSink, ScriptedReply, TestAuthVars, TestCx, TextEndpoint,
     buffered_endpoint_response_terminal, client, configure_runtime, execute_buffered,
 };
 use crate::regression_tests::test_api::{
@@ -179,7 +179,7 @@ impl RegressionReusableEndpoint<TestCx> for CountingDecodeEndpoint {
 #[tokio::test]
 async fn response_body_limit_authoritative_content_length_over_limit() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![MockResponse::text(StatusCode::OK, "123456789").with_content_length(Some(9))],
     );
@@ -199,7 +199,7 @@ async fn response_body_limit_authoritative_content_length_over_limit() {
 #[tokio::test]
 async fn response_body_limit_zero_accepts_empty_and_rejects_delivered_data() {
     let empty_events = Arc::new(Mutex::new(Vec::new()));
-    let empty_harness = NativeMockHarness::new(
+    let empty_harness = DeterministicHarness::new(
         empty_events,
         vec![MockResponse::text(StatusCode::OK, Bytes::new())],
     );
@@ -215,7 +215,7 @@ async fn response_body_limit_zero_accepts_empty_and_rejects_delivered_data() {
     assert_eq!(empty.value(), "");
 
     let nonempty_events = Arc::new(Mutex::new(Vec::new()));
-    let nonempty_harness = NativeMockHarness::new(
+    let nonempty_harness = DeterministicHarness::new(
         nonempty_events,
         vec![MockResponse::text(StatusCode::OK, "x")],
     );
@@ -234,7 +234,7 @@ async fn response_body_limit_zero_accepts_empty_and_rejects_delivered_data() {
 #[tokio::test]
 async fn response_body_limit_unknown_length_exceeds_during_collection() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, Bytes::new())
@@ -258,7 +258,8 @@ async fn response_body_limit_unknown_length_exceeds_during_collection() {
 #[tokio::test]
 async fn response_body_limit_exact_boundary_succeeds() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(events, vec![MockResponse::text(StatusCode::OK, "abcd")]);
+    let harness =
+        DeterministicHarness::new(events, vec![MockResponse::text(StatusCode::OK, "abcd")]);
     let mut client = client(TestAuthVars::default(), harness);
     client.configure(|config| {
         config.max_response_body_bytes(4);
@@ -272,7 +273,8 @@ async fn response_body_limit_exact_boundary_succeeds() -> Result<(), ApiClientEr
 #[tokio::test]
 async fn response_body_limit_plus_one_fails() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(events, vec![MockResponse::text(StatusCode::OK, "abcde")]);
+    let harness =
+        DeterministicHarness::new(events, vec![MockResponse::text(StatusCode::OK, "abcde")]);
     let mut client = client(TestAuthVars::default(), harness);
     client.configure(|config| {
         config.max_response_body_bytes(4);
@@ -299,7 +301,7 @@ async fn response_body_limit_stream_fails_before_excess_delivery() {
         http::header::CONTENT_TYPE,
         http::HeaderValue::from_static("application/octet-stream"),
     );
-    let harness = NativeMockHarness::new(events, vec![response]);
+    let harness = DeterministicHarness::new(events, vec![response]);
     let mut client = client(TestAuthVars::default(), harness);
     client.configure(|config| {
         config.max_stream_response_body_bytes(4);
@@ -330,7 +332,7 @@ async fn response_body_limit_stream_zero_accepts_empty_and_rejects_data() {
         http::header::CONTENT_TYPE,
         HeaderValue::from_static("application/octet-stream"),
     );
-    let empty_harness = NativeMockHarness::new(empty_events, vec![empty_harness]);
+    let empty_harness = DeterministicHarness::new(empty_events, vec![empty_harness]);
     let mut empty_client = client(TestAuthVars::default(), empty_harness);
     empty_client.configure(|config| {
         config.max_stream_response_body_bytes(0);
@@ -350,7 +352,7 @@ async fn response_body_limit_stream_zero_accepts_empty_and_rejects_data() {
         http::header::CONTENT_TYPE,
         HeaderValue::from_static("application/octet-stream"),
     );
-    let harness = NativeMockHarness::new(events, vec![nonempty]);
+    let harness = DeterministicHarness::new(events, vec![nonempty]);
     let mut client = client(TestAuthVars::default(), harness);
     client.configure(|config| {
         config.max_stream_response_body_bytes(0);
@@ -381,7 +383,7 @@ async fn response_body_limit_counts_decompressed_output_bytes() {
         http::header::CONTENT_ENCODING,
         HeaderValue::from_static("gzip"),
     );
-    let harness = NativeMockHarness::new(events, vec![response]);
+    let harness = DeterministicHarness::new(events, vec![response]);
     let mut client = client(TestAuthVars::default(), harness);
     client.configure(|config| {
         config.max_response_body_bytes(4);
@@ -398,16 +400,18 @@ async fn response_body_limit_counts_decompressed_output_bytes() {
 #[tokio::test]
 async fn response_body_limit_terminal_body_producer_failure_is_typed_and_redacted() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::from_native_replies(
+    let harness = DeterministicHarness::from_replies(
         events,
-        [NativeMockReply::status(StatusCode::OK)
+        [ScriptedReply::status(StatusCode::OK)
             .with_header(
                 http::header::CONTENT_TYPE,
                 HeaderValue::from_static("application/octet-stream"),
             )
             .with_response_steps([
-                super::common::native_mock::ResponseStep::Chunk(Bytes::from_static(b"abc")),
-                super::common::native_mock::ResponseStep::Disconnect,
+                super::common::deterministic_mock::ScriptedResponseStep::Chunk(Bytes::from_static(
+                    b"abc",
+                )),
+                super::common::deterministic_mock::ScriptedResponseStep::Failure,
             ])],
     );
     let client = client(TestAuthVars::default(), harness);
@@ -433,16 +437,18 @@ async fn response_body_limit_terminal_body_producer_failure_is_typed_and_redacte
 async fn response_body_limit_buffered_partial_body_failure_precedes_decode() {
     DECODE_CALLS.store(0, Ordering::SeqCst);
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::from_native_replies(
+    let harness = DeterministicHarness::from_replies(
         events,
-        [NativeMockReply::status(StatusCode::OK)
+        [ScriptedReply::status(StatusCode::OK)
             .with_header(
                 http::header::CONTENT_TYPE,
                 HeaderValue::from_static("text/plain"),
             )
             .with_response_steps([
-                super::common::native_mock::ResponseStep::Chunk(Bytes::from_static(b"abc")),
-                super::common::native_mock::ResponseStep::Disconnect,
+                super::common::deterministic_mock::ScriptedResponseStep::Chunk(Bytes::from_static(
+                    b"abc",
+                )),
+                super::common::deterministic_mock::ScriptedResponseStep::Failure,
             ])],
     );
     let client = client(TestAuthVars::default(), harness);
@@ -460,7 +466,8 @@ async fn response_body_limit_buffered_partial_body_failure_precedes_decode() {
 async fn response_body_limit_prevents_endpoint_decode() {
     DECODE_CALLS.store(0, Ordering::SeqCst);
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(events, vec![MockResponse::text(StatusCode::OK, "abcde")]);
+    let harness =
+        DeterministicHarness::new(events, vec![MockResponse::text(StatusCode::OK, "abcde")]);
     let mut client = client(TestAuthVars::default(), harness);
     client.configure(|config| {
         config.max_response_body_bytes(4);
@@ -480,9 +487,12 @@ async fn response_body_limit_redacts_request_and_response_from_all_observers() {
     const REQUEST: &str = "REQUEST_BODY_SENTINEL_DO_NOT_OBSERVE";
     const RESPONSE: &str = "RESPONSE_BODY_SENTINEL_DO_NOT_OBSERVE";
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
-        vec![MockResponse::text(StatusCode::OK, RESPONSE)],
+        vec![
+            MockResponse::text(StatusCode::OK, RESPONSE)
+                .expect_body(Bytes::from_static(REQUEST.as_bytes())),
+        ],
     );
     let sent = harness.clone();
     let mut client = client(TestAuthVars::default(), harness);
@@ -514,10 +524,7 @@ async fn response_body_limit_redacts_request_and_response_from_all_observers() {
     assert!(!rendered_events.contains(RESPONSE));
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 1);
-    assert_eq!(
-        requests[0].body.as_bytes().map(Bytes::as_ref),
-        Some(REQUEST.as_bytes())
-    );
+    assert!(requests[0].body.is_bytes());
     assert!(!format!("{:?}", requests[0]).contains(REQUEST));
 }
 
@@ -525,7 +532,7 @@ async fn response_body_limit_redacts_request_and_response_from_all_observers() {
 #[tokio::test]
 async fn response_body_limit_raw_and_decoded_paths_are_equivalent() {
     let decoded_events = Arc::new(Mutex::new(Vec::new()));
-    let decoded_harness = NativeMockHarness::new(
+    let decoded_harness = DeterministicHarness::new(
         decoded_events,
         vec![MockResponse::text(StatusCode::OK, "abcde")],
     );
@@ -540,7 +547,7 @@ async fn response_body_limit_raw_and_decoded_paths_are_equivalent() {
         .expect_err("decoded path enforces response limit");
 
     let raw_events = Arc::new(Mutex::new(Vec::new()));
-    let raw_harness = NativeMockHarness::new(
+    let raw_harness = DeterministicHarness::new(
         raw_events,
         vec![MockResponse::text(StatusCode::OK, "abcde")],
     );
@@ -561,7 +568,8 @@ async fn response_body_limit_raw_and_decoded_paths_are_equivalent() {
 #[tokio::test]
 async fn response_body_limit_empty_request_body_executes_as_empty() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(events, vec![MockResponse::text(StatusCode::OK, "empty")]);
+    let harness =
+        DeterministicHarness::new(events, vec![MockResponse::text(StatusCode::OK, "empty")]);
     let sent = harness.clone();
     let client = client(TestAuthVars::default(), harness);
 

@@ -15,7 +15,7 @@ pub struct ApiClient<Cx: ClientContext> {
 }
 
 impl<Cx: ClientContext> ApiClient<Cx> {
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     pub(crate) fn install_development_application_executor(
         &mut self,
         executor: crate::development_executor::DeterministicNativeExecutor,
@@ -24,7 +24,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             .install_development_application_executor(executor);
     }
 
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     pub(crate) fn install_development_provider_executor(
         &mut self,
         executor: crate::development_executor::DeterministicNativeExecutor,

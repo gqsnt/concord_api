@@ -22,9 +22,9 @@ pub(crate) struct RequestExecutionContext {
     pub(crate) logical_url: Url,
     pub(crate) timeout: Option<Duration>,
     pub(crate) body_errors: crate::body::RequestBodyErrorSlot,
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     pub(crate) auth_query_keys: Vec<String>,
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     pub(crate) protected_header_names: Vec<http::HeaderName>,
 }
 
@@ -589,6 +589,7 @@ impl ReqwestError {
 
     #[inline]
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn source_error(&self) -> &(dyn Error + Send + Sync + 'static) {
         &*self.source
     }
@@ -820,7 +821,7 @@ pub(crate) struct ManagedReqwestClient {
     pub(crate) client: reqwest::Client,
     configured_proxies: Vec<SafeProxy>,
     provider: ManagedProviderReqwestClient,
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     development_executor: Option<crate::development_executor::DeterministicNativeExecutor>,
 }
 
@@ -830,7 +831,7 @@ pub(crate) struct ManagedReqwestClient {
 pub(crate) struct ManagedProviderReqwestClient {
     pub(crate) client: reqwest::Client,
     configured_proxies: Vec<SafeProxy>,
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     development_executor: Option<crate::development_executor::DeterministicNativeExecutor>,
 }
 
@@ -840,20 +841,20 @@ pub(crate) struct ManagedProviderReqwestClient {
 #[derive(Clone)]
 pub struct SafeProxy {
     target: Url,
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     test_origin_override: bool,
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     _test_guard: Option<std::sync::Arc<dyn std::any::Any + Send + Sync>>,
 }
 
 impl PartialEq for SafeProxy {
     fn eq(&self, other: &Self) -> bool {
         self.target == other.target && {
-            #[cfg(feature = "dangerous-dev-tools")]
+            #[cfg(any(test, feature = "dangerous-dev-tools"))]
             {
                 self.test_origin_override == other.test_origin_override
             }
-            #[cfg(not(feature = "dangerous-dev-tools"))]
+            #[cfg(all(not(test), not(feature = "dangerous-dev-tools")))]
             {
                 true
             }
@@ -881,26 +882,26 @@ impl SafeProxy {
         }
         Ok(Self {
             target,
-            #[cfg(feature = "dangerous-dev-tools")]
+            #[cfg(any(test, feature = "dangerous-dev-tools"))]
             test_origin_override: false,
-            #[cfg(feature = "dangerous-dev-tools")]
+            #[cfg(any(test, feature = "dangerous-dev-tools"))]
             _test_guard: None,
         })
     }
 
     fn is_network_proxy(&self) -> bool {
-        #[cfg(feature = "dangerous-dev-tools")]
+        #[cfg(any(test, feature = "dangerous-dev-tools"))]
         {
             !self.test_origin_override
         }
-        #[cfg(not(feature = "dangerous-dev-tools"))]
+        #[cfg(all(not(test), not(feature = "dangerous-dev-tools")))]
         {
             true
         }
     }
 
     #[doc(hidden)]
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     pub fn __test_origin_override(target: &str) -> Result<Self, SafeProxyError> {
         let mut proxy = Self::all(target)?;
         proxy.test_origin_override = true;
@@ -908,7 +909,7 @@ impl SafeProxy {
     }
 
     #[doc(hidden)]
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     pub fn __test_origin_override_with_guard(
         target: &str,
         guard: std::sync::Arc<dyn std::any::Any + Send + Sync>,
@@ -957,6 +958,11 @@ pub struct SafeReqwestBuilder {
     provider_retry_mode: crate::retry_mode::ProviderOperationRetryMode,
     configured_proxies: Vec<SafeProxy>,
     proxy_error: Option<SafeProxyError>,
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
+    development_application_executor:
+        Option<crate::development_executor::DeterministicNativeExecutor>,
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
+    development_provider_executor: Option<crate::development_executor::DeterministicNativeExecutor>,
 }
 
 impl SafeReqwestBuilder {
@@ -970,94 +976,80 @@ impl SafeReqwestBuilder {
             provider_retry_mode: Default::default(),
             configured_proxies: Vec::new(),
             proxy_error: None,
+            #[cfg(any(test, feature = "dangerous-dev-tools"))]
+            development_application_executor: None,
+            #[cfg(any(test, feature = "dangerous-dev-tools"))]
+            development_provider_executor: None,
         }
     }
 
-    pub fn connect_timeout(self, timeout: Duration) -> Self {
-        Self {
-            builder: self.builder.connect_timeout(timeout),
-            provider_builder: self.provider_builder.connect_timeout(timeout),
-            provider_retry_mode: self.provider_retry_mode,
-            configured_proxies: self.configured_proxies,
-            proxy_error: self.proxy_error,
-        }
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
+    pub(crate) fn with_development_application_executor(
+        mut self,
+        executor: crate::development_executor::DeterministicNativeExecutor,
+    ) -> Self {
+        self.development_application_executor = Some(executor);
+        self
     }
-    pub fn read_timeout(self, timeout: Duration) -> Self {
-        Self {
-            builder: self.builder.read_timeout(timeout),
-            provider_builder: self.provider_builder.read_timeout(timeout),
-            provider_retry_mode: self.provider_retry_mode,
-            configured_proxies: self.configured_proxies,
-            proxy_error: self.proxy_error,
-        }
+
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
+    pub(crate) fn with_development_provider_executor(
+        mut self,
+        executor: crate::development_executor::DeterministicNativeExecutor,
+    ) -> Self {
+        self.development_provider_executor = Some(executor);
+        self
     }
-    pub fn pool_idle_timeout(self, timeout: Option<Duration>) -> Self {
-        Self {
-            builder: self.builder.pool_idle_timeout(timeout),
-            provider_builder: self.provider_builder.pool_idle_timeout(timeout),
-            provider_retry_mode: self.provider_retry_mode,
-            configured_proxies: self.configured_proxies,
-            proxy_error: self.proxy_error,
-        }
+
+    pub fn connect_timeout(mut self, timeout: Duration) -> Self {
+        self.builder = self.builder.connect_timeout(timeout);
+        self.provider_builder = self.provider_builder.connect_timeout(timeout);
+        self
     }
-    pub fn pool_max_idle_per_host(self, maximum: usize) -> Self {
-        Self {
-            builder: self.builder.pool_max_idle_per_host(maximum),
-            provider_builder: self.provider_builder.pool_max_idle_per_host(maximum),
-            provider_retry_mode: self.provider_retry_mode,
-            configured_proxies: self.configured_proxies,
-            proxy_error: self.proxy_error,
-        }
+    pub fn read_timeout(mut self, timeout: Duration) -> Self {
+        self.builder = self.builder.read_timeout(timeout);
+        self.provider_builder = self.provider_builder.read_timeout(timeout);
+        self
     }
-    pub fn tcp_keepalive(self, interval: Option<Duration>) -> Self {
-        Self {
-            builder: self.builder.tcp_keepalive(interval),
-            provider_builder: self.provider_builder.tcp_keepalive(interval),
-            provider_retry_mode: self.provider_retry_mode,
-            configured_proxies: self.configured_proxies,
-            proxy_error: self.proxy_error,
-        }
+    pub fn pool_idle_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.builder = self.builder.pool_idle_timeout(timeout);
+        self.provider_builder = self.provider_builder.pool_idle_timeout(timeout);
+        self
     }
-    pub fn tcp_nodelay(self, enabled: bool) -> Self {
-        Self {
-            builder: self.builder.tcp_nodelay(enabled),
-            provider_builder: self.provider_builder.tcp_nodelay(enabled),
-            provider_retry_mode: self.provider_retry_mode,
-            configured_proxies: self.configured_proxies,
-            proxy_error: self.proxy_error,
-        }
+    pub fn pool_max_idle_per_host(mut self, maximum: usize) -> Self {
+        self.builder = self.builder.pool_max_idle_per_host(maximum);
+        self.provider_builder = self.provider_builder.pool_max_idle_per_host(maximum);
+        self
     }
-    pub fn https_only(self, enabled: bool) -> Self {
-        Self {
-            builder: self.builder.https_only(enabled),
-            provider_builder: self.provider_builder.https_only(enabled),
-            provider_retry_mode: self.provider_retry_mode,
-            configured_proxies: self.configured_proxies,
-            proxy_error: self.proxy_error,
-        }
+    pub fn tcp_keepalive(mut self, interval: Option<Duration>) -> Self {
+        self.builder = self.builder.tcp_keepalive(interval);
+        self.provider_builder = self.provider_builder.tcp_keepalive(interval);
+        self
     }
-    pub fn http1_only(self) -> Self {
-        Self {
-            builder: self.builder.http1_only(),
-            provider_builder: self.provider_builder.http1_only(),
-            provider_retry_mode: self.provider_retry_mode,
-            configured_proxies: self.configured_proxies,
-            proxy_error: self.proxy_error,
-        }
+    pub fn tcp_nodelay(mut self, enabled: bool) -> Self {
+        self.builder = self.builder.tcp_nodelay(enabled);
+        self.provider_builder = self.provider_builder.tcp_nodelay(enabled);
+        self
+    }
+    pub fn https_only(mut self, enabled: bool) -> Self {
+        self.builder = self.builder.https_only(enabled);
+        self.provider_builder = self.provider_builder.https_only(enabled);
+        self
+    }
+    pub fn http1_only(mut self) -> Self {
+        self.builder = self.builder.http1_only();
+        self.provider_builder = self.provider_builder.http1_only();
+        self
     }
     #[cfg(feature = "http2")]
-    pub fn http2_prior_knowledge(self) -> Self {
-        Self {
-            builder: self.builder.http2_prior_knowledge(),
-            provider_builder: self.provider_builder.http2_prior_knowledge(),
-            provider_retry_mode: self.provider_retry_mode,
-            configured_proxies: self.configured_proxies,
-            proxy_error: self.proxy_error,
-        }
+    pub fn http2_prior_knowledge(mut self) -> Self {
+        self.builder = self.builder.http2_prior_knowledge();
+        self.provider_builder = self.provider_builder.http2_prior_knowledge();
+        self
     }
     pub fn proxy(mut self, proxy: SafeProxy) -> Self {
         self.configured_proxies.push(proxy.clone());
-        #[cfg(feature = "dangerous-dev-tools")]
+        #[cfg(any(test, feature = "dangerous-dev-tools"))]
         if proxy.test_origin_override {
             return self;
         }
@@ -1077,58 +1069,38 @@ impl SafeReqwestBuilder {
         self
     }
     #[cfg(feature = "default-tls")]
-    pub fn add_trusted_root_pem(self, pem: &[u8]) -> Result<Self, ReqwestClientBuildError> {
+    pub fn add_trusted_root_pem(mut self, pem: &[u8]) -> Result<Self, ReqwestClientBuildError> {
         let certificate = reqwest::Certificate::from_pem(pem)
             .map_err(ReqwestClientBuildError::from_builder_reqwest)?;
-        Ok(Self {
-            builder: self.builder.tls_certs_merge([certificate.clone()]),
-            provider_builder: self.provider_builder.tls_certs_merge([certificate]),
-            provider_retry_mode: self.provider_retry_mode,
-            configured_proxies: self.configured_proxies,
-            proxy_error: self.proxy_error,
-        })
+        self.builder = self.builder.tls_certs_merge([certificate.clone()]);
+        self.provider_builder = self.provider_builder.tls_certs_merge([certificate]);
+        Ok(self)
     }
     #[cfg(feature = "default-tls")]
-    pub fn client_identity_pem(self, pem: &[u8]) -> Result<Self, ReqwestClientBuildError> {
+    pub fn client_identity_pem(mut self, pem: &[u8]) -> Result<Self, ReqwestClientBuildError> {
         let identity = reqwest::Identity::from_pem(pem)
             .map_err(ReqwestClientBuildError::from_builder_reqwest)?;
-        Ok(Self {
-            builder: self.builder.identity(identity.clone()),
-            provider_builder: self.provider_builder.identity(identity),
-            provider_retry_mode: self.provider_retry_mode,
-            configured_proxies: self.configured_proxies,
-            proxy_error: self.proxy_error,
-        })
+        self.builder = self.builder.identity(identity.clone());
+        self.provider_builder = self.provider_builder.identity(identity);
+        Ok(self)
     }
     #[cfg(feature = "gzip")]
-    pub fn disable_gzip(self) -> Self {
-        Self {
-            builder: self.builder.no_gzip(),
-            provider_builder: self.provider_builder.no_gzip(),
-            provider_retry_mode: self.provider_retry_mode,
-            configured_proxies: self.configured_proxies,
-            proxy_error: self.proxy_error,
-        }
+    pub fn disable_gzip(mut self) -> Self {
+        self.builder = self.builder.no_gzip();
+        self.provider_builder = self.provider_builder.no_gzip();
+        self
     }
     #[cfg(feature = "brotli")]
-    pub fn disable_brotli(self) -> Self {
-        Self {
-            builder: self.builder.no_brotli(),
-            provider_builder: self.provider_builder.no_brotli(),
-            provider_retry_mode: self.provider_retry_mode,
-            configured_proxies: self.configured_proxies,
-            proxy_error: self.proxy_error,
-        }
+    pub fn disable_brotli(mut self) -> Self {
+        self.builder = self.builder.no_brotli();
+        self.provider_builder = self.provider_builder.no_brotli();
+        self
     }
     #[cfg(feature = "deflate")]
-    pub fn disable_deflate(self) -> Self {
-        Self {
-            builder: self.builder.no_deflate(),
-            provider_builder: self.provider_builder.no_deflate(),
-            provider_retry_mode: self.provider_retry_mode,
-            configured_proxies: self.configured_proxies,
-            proxy_error: self.proxy_error,
-        }
+    pub fn disable_deflate(mut self) -> Self {
+        self.builder = self.builder.no_deflate();
+        self.provider_builder = self.provider_builder.no_deflate();
+        self
     }
 
     /// Selects the native retry policy for credential-provider operations.
@@ -1256,6 +1228,10 @@ impl ManagedReqwestClient {
         if let Some(error) = configured.proxy_error {
             return Err(ReqwestClientBuildError::from_safe_proxy(error));
         }
+        #[cfg(any(test, feature = "dangerous-dev-tools"))]
+        let development_application_executor = configured.development_application_executor.clone();
+        #[cfg(any(test, feature = "dangerous-dev-tools"))]
+        let development_provider_executor = configured.development_provider_executor.clone();
         let configured_proxies = configured.configured_proxies.clone();
         let provider_proxies = configured.configured_proxies;
         let provider_retry = configured.provider_retry_mode.resolve();
@@ -1291,11 +1267,11 @@ impl ManagedReqwestClient {
             provider: ManagedProviderReqwestClient {
                 client: provider_client,
                 configured_proxies: provider_proxies,
-                #[cfg(feature = "dangerous-dev-tools")]
-                development_executor: None,
+                #[cfg(any(test, feature = "dangerous-dev-tools"))]
+                development_executor: development_provider_executor,
             },
-            #[cfg(feature = "dangerous-dev-tools")]
-            development_executor: None,
+            #[cfg(any(test, feature = "dangerous-dev-tools"))]
+            development_executor: development_application_executor,
         })
     }
 
@@ -1319,14 +1295,14 @@ impl ManagedReqwestClient {
         request: reqwest::Request,
         context: Option<&RequestExecutionContext>,
     ) -> Result<reqwest::Response, ReqwestError> {
-        #[cfg(feature = "dangerous-dev-tools")]
+        #[cfg(any(test, feature = "dangerous-dev-tools"))]
         if let Some(executor) = &self.development_executor {
             return executor.execute_native(request, context).await;
         }
         execute_managed(&self.client, &self.configured_proxies, request, context).await
     }
 
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     pub(crate) fn install_development_application_executor(
         &mut self,
         executor: crate::development_executor::DeterministicNativeExecutor,
@@ -1334,7 +1310,7 @@ impl ManagedReqwestClient {
         self.development_executor = Some(executor);
     }
 
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     pub(crate) fn install_development_provider_executor(
         &mut self,
         executor: crate::development_executor::DeterministicNativeExecutor,
@@ -1359,7 +1335,7 @@ impl ManagedProviderReqwestClient {
         request: reqwest::Request,
         context: Option<&RequestExecutionContext>,
     ) -> Result<reqwest::Response, ReqwestError> {
-        #[cfg(feature = "dangerous-dev-tools")]
+        #[cfg(any(test, feature = "dangerous-dev-tools"))]
         if let Some(executor) = &self.development_executor {
             return executor.execute_native(request, context).await;
         }
@@ -1379,9 +1355,9 @@ async fn execute_managed(
     request: reqwest::Request,
     _context: Option<&RequestExecutionContext>,
 ) -> Result<reqwest::Response, ReqwestError> {
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     let mut request = request;
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     if let Some(target) = configured_proxies
         .iter()
         .find(|proxy| proxy.test_origin_override)
@@ -1697,82 +1673,68 @@ mod reqwest_transport_tests {
         assert!(SafeProxy::all("https://proxy.example.test:443").is_ok());
     }
 
-    #[tokio::test]
-    async fn failing_proxy_target_is_absent_from_reqwest_diagnostics() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("proxy sink bind");
-        let proxy_marker = listener.local_addr().expect("proxy marker");
-        let proxy_server = std::thread::spawn(move || {
-            let (stream, _) = listener.accept().expect("proxy accept");
-            drop(stream);
-        });
-        let proxy = SafeProxy::all(&format!("http://{proxy_marker}")).expect("safe proxy");
-        let client =
-            ManagedReqwestClient::with_builder_fallible(|builder| Ok(builder.proxy(proxy)))
-                .expect("managed client");
-        let request = reqwest::Request::new(
-            Method::GET,
-            Url::parse("http://127.0.0.1:6554/proxy-redaction").expect("URL"),
-        );
-        let error = client
-            .execute(request, None)
-            .await
-            .expect_err("proxy must fail");
-        let marker = proxy_marker.to_string();
-        let diagnostics = format!(
-            "{error}\n{error:?}\n{}\n{}",
-            error.source_error(),
-            source_chain(&error)
-        );
-        assert!(!diagnostics.contains(&marker), "{diagnostics}");
-        assert_absent_in_error_chain(&error, &marker);
-        proxy_server.join().expect("proxy thread");
+    #[test]
+    fn failing_proxy_target_is_absent_from_sanitized_diagnostics() {
+        let marker = "proxy-secret.example.test:49152";
+        let proxy = SafeProxy::all(&format!("http://{marker}")).expect("safe proxy");
+        let source = std::io::Error::other(format!("connect {marker} failed"));
+        let error = sanitize_error_chain_with_proxies(&source, &[proxy]);
+        let diagnostics = format!("{error}\n{error:?}\n{}", source_chain(error.as_ref()));
+        assert!(!diagnostics.contains(marker), "{diagnostics}");
+        assert_absent_in_error_chain(error.as_ref(), marker);
     }
 
     #[test]
     fn proxy_redaction_handles_default_port_without_network_access() {
-        let proxy = SafeProxy::all("http://127.0.0.1").expect("safe proxy");
+        let proxy = SafeProxy::all("http://proxy-marker.example.test").expect("safe proxy");
         let source = std::io::Error::other(
-            "connect 127.0.0.1:80 failed; unrelated UTF-8 ✓ text remains meaningful",
+            "connect proxy-marker.example.test:80 failed; unrelated UTF-8 ✓ text remains meaningful",
         );
         let sanitized = sanitize_error_chain_with_proxies(&source, &[proxy]);
         let diagnostics = format!("{sanitized}\n{sanitized:?}");
-        assert!(!diagnostics.contains("127.0.0.1"));
-        assert!(!diagnostics.contains("127.0.0.1:80"));
+        assert!(!diagnostics.contains("proxy-marker.example.test"));
+        assert!(!diagnostics.contains("proxy-marker.example.test:80"));
         assert!(diagnostics.contains("explicit proxy transport failure"));
     }
 
     #[tokio::test]
     async fn managed_client_executes_native_requests_and_returns_native_responses() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener");
-        let address = listener.local_addr().expect("address");
-        let server = std::thread::spawn(move || {
-            use std::io::{Read as _, Write as _};
-            let (mut stream, _) = listener.accept().expect("request");
-            let mut request = [0_u8; 2048];
-            let length = stream.read(&mut request).expect("read request");
-            let request = String::from_utf8_lossy(&request[..length]);
-            assert!(request.starts_with("POST /native?visible=yes HTTP/1.1"));
-            assert!(request.to_ascii_lowercase().contains("x-native: present"));
-            stream
-                .write_all(
-                    b"HTTP/1.1 201 Created\r\nContent-Type: text/plain\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
-                )
-                .expect("response");
-        });
-
-        let managed = ManagedReqwestClient::new();
-        let mut request = reqwest::Request::new(
-            Method::POST,
-            Url::parse(&format!("http://{address}/native?visible=yes")).expect("URL"),
+        let executor = crate::development_executor::DeterministicNativeExecutor::application();
+        executor.script_response(
+            crate::development_executor::ScriptedNativeResponse::bytes(
+                StatusCode::CREATED,
+                Bytes::from_static(b"ok"),
+            )
+            .with_header(
+                http::header::CONTENT_TYPE,
+                http::HeaderValue::from_static("text/plain"),
+            ),
         );
+        let mut managed = ManagedReqwestClient::new();
+        managed.install_development_application_executor(executor.clone());
+        let logical_url = Url::parse("http://example.com/native?visible=yes").expect("URL");
+        let mut request = reqwest::Request::new(Method::POST, logical_url.clone());
         request
             .headers_mut()
             .insert("x-native", http::HeaderValue::from_static("present"));
         *request.timeout_mut() = Some(Duration::from_secs(2));
         *request.body_mut() = Some(reqwest::Body::from(Bytes::from_static(b"hi")));
 
+        let context = RequestExecutionContext {
+            meta: crate::execution_meta::RequestExecutionMeta {
+                endpoint: "NativeManaged",
+                method: Method::POST,
+                idempotent: false,
+                page_index: 0,
+            },
+            logical_url,
+            timeout: Some(Duration::from_secs(2)),
+            body_errors: crate::body::RequestBodyErrorSlot::default(),
+            auth_query_keys: Vec::new(),
+            protected_header_names: Vec::new(),
+        };
         let mut response = managed
-            .execute(request, None)
+            .execute(request, Some(&context))
             .await
             .expect("native execution");
         assert_eq!(response.status(), StatusCode::CREATED);
@@ -1785,7 +1747,9 @@ mod reqwest_transport_tests {
             Some(Bytes::from_static(b"ok"))
         );
         assert_eq!(response.chunk().await.expect("native EOF"), None);
-        server.join().expect("server");
+        let captures = executor.captures();
+        assert_eq!(captures.len(), 1);
+        assert_eq!(captures[0].logical_target(), &context.logical_url);
     }
 
     #[cfg(not(feature = "default-tls"))]
@@ -1808,22 +1772,29 @@ mod reqwest_transport_tests {
     #[cfg(not(feature = "default-tls"))]
     #[tokio::test]
     async fn http_without_tls_reaches_reqwest_execution() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener");
-        let address = listener.local_addr().expect("address");
-        let server = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().expect("request");
-            use std::io::{Read as _, Write as _};
-            let mut request = [0_u8; 1024];
-            let _ = stream.read(&mut request).expect("read request");
-            stream
-                .write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
-                .expect("response");
-        });
-        let request = reqwest::Request::new(
-            Method::GET,
-            Url::parse(&format!("http://{address}/plain-http")).expect("URL"),
-        );
-        let result = ManagedReqwestClient::new().execute(request, None).await;
+        let executor = crate::development_executor::DeterministicNativeExecutor::application();
+        executor.script_response(crate::development_executor::ScriptedNativeResponse::bytes(
+            StatusCode::NO_CONTENT,
+            Bytes::new(),
+        ));
+        let logical_url = Url::parse("http://plain-http.example.test/path").expect("URL");
+        let request = reqwest::Request::new(Method::GET, logical_url.clone());
+        let mut managed = ManagedReqwestClient::new();
+        managed.install_development_application_executor(executor);
+        let context = RequestExecutionContext {
+            meta: crate::execution_meta::RequestExecutionMeta {
+                endpoint: "PlainHttp",
+                method: Method::GET,
+                idempotent: true,
+                page_index: 0,
+            },
+            logical_url,
+            timeout: None,
+            body_errors: crate::body::RequestBodyErrorSlot::default(),
+            auth_query_keys: Vec::new(),
+            protected_header_names: Vec::new(),
+        };
+        let result = managed.execute(request, Some(&context)).await;
         let response = match result {
             Ok(response) => response,
             Err(error) => panic!(
@@ -1832,6 +1803,5 @@ mod reqwest_transport_tests {
             ),
         };
         assert_eq!(response.status(), StatusCode::NO_CONTENT);
-        server.join().expect("server");
     }
 }

@@ -62,9 +62,9 @@ impl PublicRequestHead {
                 msg: "native request construction failed",
             })?;
         let logical_url = message.url().clone();
-        #[cfg(feature = "dangerous-dev-tools")]
+        #[cfg(any(test, feature = "dangerous-dev-tools"))]
         let auth_query_keys = self.auth_plan.sensitive_query_keys.clone();
-        #[cfg(feature = "dangerous-dev-tools")]
+        #[cfg(any(test, feature = "dangerous-dev-tools"))]
         let protected_header_names = self
             .auth_plan
             .slots
@@ -81,9 +81,9 @@ impl PublicRequestHead {
             logical_url,
             timeout: self.timeout,
             body_errors,
-            #[cfg(feature = "dangerous-dev-tools")]
+            #[cfg(any(test, feature = "dangerous-dev-tools"))]
             auth_query_keys,
-            #[cfg(feature = "dangerous-dev-tools")]
+            #[cfg(any(test, feature = "dangerous-dev-tools"))]
             protected_header_names,
         };
         Ok(BuiltRequest {

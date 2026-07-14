@@ -18,3 +18,4 @@ serde_json.workspace = true
 [features]
 default = []
 dangerous-dev-tools = ["concord_core/dangerous-dev-tools"]
+loopback-compat = ["dangerous-dev-tools"]

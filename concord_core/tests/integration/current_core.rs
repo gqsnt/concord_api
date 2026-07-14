@@ -1,3 +1,4 @@
+#[cfg(feature = "dangerous-dev-tools")]
 #[path = "current_core/native_harness.rs"]
 pub(super) mod native_harness;
 #[path = "current_core/public_api.rs"]

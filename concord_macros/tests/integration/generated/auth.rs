@@ -2,7 +2,9 @@ use bytes::Bytes;
 use concord_core::advanced::{OctetStream, StreamBody};
 use concord_core::prelude::*;
 use concord_macros::api;
-use concord_test_support::{MockHandle, MockReply, MockServer, RecordedRequest, mock};
+use concord_test_support::{
+    DeterministicMock, MockExecutionHandle, RecordedExecution, ScriptedReply, deterministic_mock,
+};
 use http::{HeaderMap, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -265,12 +267,13 @@ mod policy_merge_helper_contract {
 async fn endpoint_backed_auth_acquire_clear_and_gate_protected_requests() {
     let transport = RecordingTransport::new(vec![
         ResponseFixture::json(r#"{"access_token":"session-token"}"#),
-        ResponseFixture::json(r#"{"name":"Ada"}"#),
+        ResponseFixture::json(r#"{"name":"Ada"}"#)
+            .expect_header(http::header::AUTHORIZATION, "Bearer session-token"),
     ]);
     let sent = transport.clone();
     let api =
         AuthHelperApi::new_with_safe_reqwest_builder("upstream-secret".to_string(), |builder| {
-            transport.configure_reqwest(builder)
+            transport.configure(builder)
         })
         .expect("mock client");
 
@@ -330,19 +333,15 @@ async fn endpoint_backed_auth_acquire_clear_and_gate_protected_requests() {
 
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 2);
-    assert_eq!(
+    assert!(
         requests[0]
-            .headers
-            .get("X-Upstream-Key")
-            .and_then(|value| value.to_str().ok()),
-        Some("upstream-secret")
+            .protected_header_names
+            .contains(&http::HeaderName::from_static("x-upstream-key"))
     );
-    assert_eq!(
+    assert!(
         requests[1]
-            .headers
-            .get(http::header::AUTHORIZATION)
-            .and_then(|value| value.to_str().ok()),
-        Some("Bearer session-token")
+            .protected_header_names
+            .contains(&http::header::AUTHORIZATION)
     );
 }
 
@@ -355,7 +354,7 @@ async fn same_layer_policy_header_query_inline_then_block_are_preserved() {
         "client-header-b".to_string(),
         "client-query-a".to_string(),
         "client-query-b".to_string(),
-        |builder| transport.configure_reqwest(builder),
+        |builder| transport.configure(builder),
     )
     .expect("mock client");
 
@@ -391,7 +390,7 @@ async fn same_layer_policy_header_query_block_then_inline_are_preserved() {
         "client-header-b".to_string(),
         "client-query-a".to_string(),
         "client-query-b".to_string(),
-        |builder| transport.configure_reqwest(builder),
+        |builder| transport.configure(builder),
     )
     .expect("mock client");
 
@@ -414,13 +413,16 @@ async fn same_layer_policy_header_query_block_then_inline_are_preserved() {
 async fn endpoint_backed_basic_credential_materializes_basic_authorization() {
     let transport = RecordingTransport::new(vec![
         ResponseFixture::json(r#"{"username":"endpoint-user","password":"endpoint-password"}"#),
-        ResponseFixture::json(r#"{"name":"Ada"}"#),
+        ResponseFixture::json(r#"{"name":"Ada"}"#).expect_header(
+            http::header::AUTHORIZATION,
+            "Basic ZW5kcG9pbnQtdXNlcjplbmRwb2ludC1wYXNzd29yZA==",
+        ),
     ]);
     let sent = transport.clone();
     let api = BasicEndpointHelperApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
+        transport.configure(builder)
     })
-    .expect("mock client");
+    .expect("deterministic generated basic-auth client");
 
     api.auth_api()
         .login_for_basic(LoginRequest {
@@ -440,12 +442,10 @@ async fn endpoint_backed_basic_credential_materializes_basic_authorization() {
 
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 2);
-    assert_eq!(
+    assert!(
         requests[1]
-            .headers
-            .get(http::header::AUTHORIZATION)
-            .and_then(|value| value.to_str().ok()),
-        Some("Basic ZW5kcG9pbnQtdXNlcjplbmRwb2ludC1wYXNzd29yZA==")
+            .protected_header_names
+            .contains(&http::header::AUTHORIZATION)
     );
     let debug_output = format!("{:?}", requests[1]);
     assert!(!debug_output.contains("endpoint-user"));
@@ -457,12 +457,16 @@ async fn generated_basic_auth_keeps_username_and_password_secret_until_transport
     const USERNAME: &str = "LEAK_SENTINEL_GENERATED_BASIC_USER";
     const PASSWORD: &str = "LEAK_SENTINEL_GENERATED_BASIC_PASSWORD";
 
-    let transport = RecordingTransport::new(vec![ResponseFixture::json(r#"{"name":"Ada"}"#)]);
+    let transport = RecordingTransport::new(vec![ResponseFixture::json(r#"{"name":"Ada"}"#)
+        .expect_header(
+            http::header::AUTHORIZATION,
+            "Basic TEVBS19TRU5USU5FTF9HRU5FUkFURURfQkFTSUNfVVNFUjpMRUFLX1NFTlRJTkVMX0dFTkVSQVRFRF9CQVNJQ19QQVNTV09SRA==",
+        )]);
     let sent = transport.clone();
     let api = BasicHelperApi::new_with_safe_reqwest_builder(
         USERNAME.to_string(),
         PASSWORD.to_string(),
-        |builder| transport.configure_reqwest(builder),
+        |builder| transport.configure(builder),
     )
     .expect("mock client");
 
@@ -479,14 +483,10 @@ async fn generated_basic_auth_keeps_username_and_password_secret_until_transport
     assert!(!debug_output.contains(USERNAME));
     assert!(!debug_output.contains(PASSWORD));
 
-    let header = requests[0]
-        .headers
-        .get(http::header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .expect("basic auth header materialized");
-    assert_eq!(
-        header,
-        "Basic TEVBS19TRU5USU5FTF9HRU5FUkFURURfQkFTSUNfVVNFUjpMRUFLX1NFTlRJTkVMX0dFTkVSQVRFRF9CQVNJQ19QQVNTV09SRA=="
+    assert!(
+        requests[0]
+            .protected_header_names
+            .contains(&http::header::AUTHORIZATION)
     );
 }
 
@@ -499,14 +499,24 @@ async fn generated_oauth_client_credentials_acquires_token_and_sends_bearer() {
     let transport = RecordingTransport::new(vec![
         ResponseFixture::json(
             r#"{"access_token":"LEAK_SENTINEL_OAUTH_ACCESS_TOKEN","token_type":"Bearer","expires_in":3600}"#,
+        )
+        .expect_header(
+            http::header::AUTHORIZATION,
+            "Basic b2F1dGgtY2xpZW50OkxFQUtfU0VOVElORUxfT0FVVEhfQ0xJRU5UX1NFQ1JFVA==",
+        )
+        .expect_body(Bytes::from_static(
+            b"grant_type=client_credentials&scope=read%3Ame",
+        )),
+        ResponseFixture::json(r#"{"name":"Ada"}"#).expect_header(
+            http::header::AUTHORIZATION,
+            "Bearer LEAK_SENTINEL_OAUTH_ACCESS_TOKEN",
         ),
-        ResponseFixture::json(r#"{"name":"Ada"}"#),
     ]);
     let sent = transport.clone();
     let api = OAuthHelperApi::new_with_safe_reqwest_builder(
         CLIENT_ID.to_string(),
         CLIENT_SECRET.to_string(),
-        |builder| transport.configure_reqwest(builder),
+        |builder| transport.configure(builder),
     )
     .expect("mock client");
 
@@ -521,15 +531,13 @@ async fn generated_oauth_client_credentials_acquires_token_and_sends_bearer() {
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[0].method, http::Method::POST);
     assert_eq!(
-        requests[0].url.as_str(),
+        requests[0].logical_url.as_str(),
         "https://auth.example.com/oauth/token"
     );
-    assert_eq!(
+    assert!(
         requests[0]
-            .headers
-            .get(http::header::AUTHORIZATION)
-            .and_then(|value| value.to_str().ok()),
-        Some("Basic b2F1dGgtY2xpZW50OkxFQUtfU0VOVElORUxfT0FVVEhfQ0xJRU5UX1NFQ1JFVA==")
+            .protected_header_names
+            .contains(&http::header::AUTHORIZATION)
     );
     assert_eq!(
         requests[0]
@@ -539,22 +547,18 @@ async fn generated_oauth_client_credentials_acquires_token_and_sends_bearer() {
         Some("application/x-www-form-urlencoded")
     );
     assert_eq!(
-        std::str::from_utf8(requests[0].body.as_ref()).ok(),
-        Some("grant_type=client_credentials&scope=read%3Ame")
+        requests[0].body_category,
+        concord_core::__development::CapturedBodyCategory::Buffered
     );
-    assert_eq!(
-        requests[1]
-            .headers
-            .get(http::header::AUTHORIZATION)
-            .and_then(|value| value.to_str().ok()),
-        Some("Bearer LEAK_SENTINEL_OAUTH_ACCESS_TOKEN")
-    );
-    assert!(!requests[1].url.as_str().contains(CLIENT_SECRET));
     assert!(
-        !requests[1]
-            .body
-            .windows(CLIENT_SECRET.len())
-            .any(|window| window == CLIENT_SECRET.as_bytes())
+        requests[1]
+            .protected_header_names
+            .contains(&http::header::AUTHORIZATION)
+    );
+    assert!(!requests[1].logical_url.as_str().contains(CLIENT_SECRET));
+    assert_eq!(
+        requests[1].body_category,
+        concord_core::__development::CapturedBodyCategory::Empty
     );
 
     let token_debug = format!("{:?}", requests[0]);
@@ -578,7 +582,7 @@ async fn generated_oauth_client_credentials_reuses_valid_token() {
     let api = OAuthHelperApi::new_with_safe_reqwest_builder(
         "oauth-client".to_string(),
         "oauth-secret".to_string(),
-        |builder| transport.configure_reqwest(builder),
+        |builder| transport.configure(builder),
     )
     .expect("mock client");
 
@@ -594,12 +598,7 @@ async fn generated_oauth_client_credentials_reuses_valid_token() {
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 3);
     for req in &requests[1..] {
-        assert_eq!(
-            req.headers
-                .get(http::header::AUTHORIZATION)
-                .and_then(|value| value.to_str().ok()),
-            Some("Bearer reuse-token")
-        );
+        assert_protected_authorization(req);
     }
 }
 
@@ -619,7 +618,7 @@ async fn generated_oauth_client_credentials_refreshes_after_unauthorized() {
     let api = OAuthHelperApi::new_with_safe_reqwest_builder(
         "oauth-client".to_string(),
         "oauth-secret".to_string(),
-        |builder| transport.configure_reqwest(builder),
+        |builder| transport.configure(builder),
     )
     .expect("mock client");
 
@@ -632,20 +631,8 @@ async fn generated_oauth_client_credentials_refreshes_after_unauthorized() {
 
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 4);
-    assert_eq!(
-        requests[1]
-            .headers
-            .get(http::header::AUTHORIZATION)
-            .and_then(|value| value.to_str().ok()),
-        Some("Bearer token-a")
-    );
-    assert_eq!(
-        requests[3]
-            .headers
-            .get(http::header::AUTHORIZATION)
-            .and_then(|value| value.to_str().ok()),
-        Some("Bearer token-b")
-    );
+    assert_protected_authorization(&requests[1]);
+    assert_protected_authorization(&requests[3]);
 }
 
 #[tokio::test]
@@ -660,7 +647,7 @@ async fn generated_default_forbidden_is_terminal_without_reacquisition() {
     let api = OAuthHelperApi::new_with_safe_reqwest_builder(
         "oauth-client".to_string(),
         "oauth-secret".to_string(),
-        |builder| transport.configure_reqwest(builder),
+        |builder| transport.configure(builder),
     )
     .expect("mock client");
 
@@ -675,7 +662,7 @@ async fn generated_default_forbidden_is_terminal_without_reacquisition() {
     assert_eq!(
         requests
             .iter()
-            .filter(|r| r.url.host_str() == Some("auth.example.com"))
+            .filter(|r| r.logical_url.host_str() == Some("auth.example.com"))
             .count(),
         1
     );
@@ -697,7 +684,7 @@ async fn generated_explicit_forbidden_recovers_once_and_second_challenge_is_term
     let api = ChallengePolicyApi::new_with_safe_reqwest_builder(
         "oauth-client".to_string(),
         "oauth-secret".to_string(),
-        |builder| transport.configure_reqwest(builder),
+        |builder| transport.configure(builder),
     )
     .expect("mock client");
 
@@ -712,24 +699,12 @@ async fn generated_explicit_forbidden_recovers_once_and_second_challenge_is_term
     assert_eq!(
         requests
             .iter()
-            .filter(|r| r.url.host_str() == Some("auth.example.com"))
+            .filter(|r| r.logical_url.host_str() == Some("auth.example.com"))
             .count(),
         2
     );
-    assert_eq!(
-        requests[1]
-            .headers
-            .get(http::header::AUTHORIZATION)
-            .and_then(|v| v.to_str().ok()),
-        Some("Bearer token-a")
-    );
-    assert_eq!(
-        requests[3]
-            .headers
-            .get(http::header::AUTHORIZATION)
-            .and_then(|v| v.to_str().ok()),
-        Some("Bearer token-b")
-    );
+    assert_protected_authorization(&requests[1]);
+    assert_protected_authorization(&requests[3]);
 }
 
 #[tokio::test]
@@ -745,7 +720,7 @@ async fn generated_never_recover_keeps_401_and_403_terminal() {
         let api = NeverRecoverApi::new_with_safe_reqwest_builder(
             "oauth-client".to_string(),
             "oauth-secret".to_string(),
-            |builder| transport.configure_reqwest(builder),
+            |builder| transport.configure(builder),
         )
         .expect("mock client");
 
@@ -760,7 +735,7 @@ async fn generated_never_recover_keeps_401_and_403_terminal() {
         assert_eq!(
             requests
                 .iter()
-                .filter(|r| r.url.host_str() == Some("auth.example.com"))
+                .filter(|r| r.logical_url.host_str() == Some("auth.example.com"))
                 .count(),
             1
         );
@@ -779,7 +754,7 @@ async fn generated_non_rebuildable_body_never_executes_a_second_protected_reques
     let api = OneShotChallengeApi::new_with_safe_reqwest_builder(
         "oauth-client".to_string(),
         "oauth-secret".to_string(),
-        |builder| transport.configure_reqwest(builder),
+        |builder| transport.configure(builder),
     )
     .expect("mock client");
 
@@ -792,14 +767,14 @@ async fn generated_non_rebuildable_body_never_executes_a_second_protected_reques
     assert_eq!(
         requests
             .iter()
-            .filter(|r| r.url.host_str() == Some("auth.example.com"))
+            .filter(|r| r.logical_url.host_str() == Some("auth.example.com"))
             .count(),
         1
     );
     assert_eq!(
         requests
             .iter()
-            .filter(|r| r.url.host_str() == Some("api.example.com"))
+            .filter(|r| r.logical_url.host_str() == Some("api.example.com"))
             .count(),
         1
     );
@@ -826,7 +801,7 @@ async fn generated_auth_recovery_second_challenge_invalidates_replacement_withou
     let api = OAuthHelperApi::new_with_safe_reqwest_builder(
         "oauth-client".to_string(),
         "oauth-secret".to_string(),
-        |builder| transport.configure_reqwest(builder),
+        |builder| transport.configure(builder),
     )
     .expect("mock client");
 
@@ -846,24 +821,12 @@ async fn generated_auth_recovery_second_challenge_invalidates_replacement_withou
 
     let challenged_requests = sent.requests().await;
     assert_eq!(challenged_requests.len(), 5);
-    assert_eq!(
-        challenged_requests[2]
-            .headers
-            .get(http::header::AUTHORIZATION)
-            .and_then(|value| value.to_str().ok()),
-        Some("Bearer token-n")
-    );
-    assert_eq!(
-        challenged_requests[4]
-            .headers
-            .get(http::header::AUTHORIZATION)
-            .and_then(|value| value.to_str().ok()),
-        Some("Bearer token-n-plus-1")
-    );
+    assert_protected_authorization(&challenged_requests[2]);
+    assert_protected_authorization(&challenged_requests[4]);
     assert_eq!(
         challenged_requests[2..]
             .iter()
-            .filter(|request| request.url.host_str() == Some("auth.example.com"))
+            .filter(|request| request.logical_url.host_str() == Some("auth.example.com"))
             .count(),
         1,
         "the challenged execution performs exactly one provider acquisition"
@@ -877,13 +840,7 @@ async fn generated_auth_recovery_second_challenge_invalidates_replacement_withou
     assert_eq!(later.name, "Later");
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 7);
-    assert_eq!(
-        requests[6]
-            .headers
-            .get(http::header::AUTHORIZATION)
-            .and_then(|value| value.to_str().ok()),
-        Some("Bearer token-n-plus-2")
-    );
+    assert_protected_authorization(&requests[6]);
 }
 
 #[tokio::test]
@@ -896,7 +853,7 @@ async fn generated_static_basic_auth_reprepares_after_auth_rejection_invalidatio
     let api = BasicHelperApi::new_with_safe_reqwest_builder(
         "static-user".to_string(),
         "static-password".to_string(),
-        |builder| transport.configure_reqwest(builder),
+        |builder| transport.configure(builder),
     )
     .expect("mock client");
 
@@ -910,12 +867,7 @@ async fn generated_static_basic_auth_reprepares_after_auth_rejection_invalidatio
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 2);
     for req in &requests {
-        assert_eq!(
-            req.headers
-                .get(http::header::AUTHORIZATION)
-                .and_then(|value| value.to_str().ok()),
-            Some("Basic c3RhdGljLXVzZXI6c3RhdGljLXBhc3N3b3Jk")
-        );
+        assert_protected_authorization(req);
     }
 }
 
@@ -931,7 +883,7 @@ async fn generated_oauth_client_credentials_token_failure_blocks_protected_reque
     let api = OAuthHelperApi::new_with_safe_reqwest_builder(
         "oauth-client".to_string(),
         CLIENT_SECRET.to_string(),
-        |builder| transport.configure_reqwest(builder),
+        |builder| transport.configure(builder),
     )
     .expect("mock client");
 
@@ -947,30 +899,38 @@ async fn generated_oauth_client_credentials_token_failure_blocks_protected_reque
     assert_eq!(requests.len(), 1);
 }
 
-fn assert_header(req: &RecordedRequest, name: &'static str, expected: &'static str) {
+fn assert_header(req: &RecordedExecution, name: &'static str, expected: &'static str) {
     assert_eq!(
         req.headers.get(name).and_then(|value| value.to_str().ok()),
         Some(expected)
     );
 }
 
-fn assert_url_contains(req: &RecordedRequest, expected: &'static str) {
+fn assert_protected_authorization(req: &RecordedExecution) {
+    assert!(!req.headers.contains_key(http::header::AUTHORIZATION));
     assert!(
-        req.url.as_str().contains(expected),
+        req.protected_header_names
+            .contains(&http::header::AUTHORIZATION)
+    );
+}
+
+fn assert_url_contains(req: &RecordedExecution, expected: &'static str) {
+    assert!(
+        req.logical_url.as_str().contains(expected),
         "expected URL `{}` to contain `{expected}`",
-        req.url
+        req.logical_url
     );
 }
 
 #[derive(Clone)]
 struct RecordingTransport {
-    server: MockServer,
-    handle: Arc<Mutex<MockHandle>>,
+    server: DeterministicMock,
+    handle: Arc<Mutex<MockExecutionHandle>>,
 }
 
 impl RecordingTransport {
     fn new(responses: Vec<ResponseFixture>) -> Self {
-        let (server, handle) = mock()
+        let (server, handle) = deterministic_mock()
             .replies(responses.into_iter().map(ResponseFixture::into_reply))
             .build();
         Self {
@@ -983,15 +943,15 @@ impl RecordingTransport {
         self.handle.lock().expect("handle lock").recorded_len()
     }
 
-    async fn requests(&self) -> Vec<RecordedRequest> {
+    async fn requests(&self) -> Vec<RecordedExecution> {
         self.handle.lock().expect("handle lock").recorded()
     }
 
-    fn configure_reqwest(
+    fn configure(
         &self,
         builder: concord_core::advanced::SafeReqwestBuilder,
     ) -> concord_core::advanced::SafeReqwestBuilder {
-        self.server.configure_reqwest(builder)
+        self.server.configure_both(builder)
     }
 }
 
@@ -999,6 +959,9 @@ struct ResponseFixture {
     status: StatusCode,
     headers: HeaderMap,
     body: Bytes,
+    expected_headers: Vec<(http::HeaderName, String)>,
+    expected_body: Option<Bytes>,
+    provider: bool,
 }
 
 impl ResponseFixture {
@@ -1016,15 +979,37 @@ impl ResponseFixture {
             status,
             headers,
             body: Bytes::from_static(body.as_bytes()),
+            expected_headers: Vec::new(),
+            expected_body: None,
+            provider: body.contains("token_type") || body.contains("invalid_client"),
         }
     }
 
-    fn into_reply(self) -> MockReply {
-        let mut reply = MockReply::status(self.status).with_body(self.body);
+    fn expect_header(mut self, name: http::HeaderName, value: impl Into<String>) -> Self {
+        self.expected_headers.push((name, value.into()));
+        self
+    }
+
+    fn expect_body(mut self, body: Bytes) -> Self {
+        self.expected_body = Some(body);
+        self
+    }
+
+    fn into_reply(self) -> ScriptedReply {
+        let mut reply = ScriptedReply::status(self.status).with_body(self.body);
         for (name, value) in self.headers {
             if let Some(name) = name {
                 reply = reply.with_header(name, value);
             }
+        }
+        for (name, value) in self.expected_headers {
+            reply = reply.expect_header(name, value);
+        }
+        if let Some(body) = self.expected_body {
+            reply = reply.expect_body(body);
+        }
+        if self.provider {
+            reply = reply.provider();
         }
         reply
     }

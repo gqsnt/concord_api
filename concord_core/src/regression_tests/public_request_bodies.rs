@@ -1,4 +1,4 @@
-use super::common::{MockResponse, NativeMockHarness, ObservationAuthVars, observation_client};
+use super::common::{DeterministicHarness, MockResponse, ObservationAuthVars, observation_client};
 use bytes::Bytes;
 #[cfg(feature = "multipart")]
 use concord_core::advanced::MultipartBody;
@@ -34,7 +34,7 @@ fn public_body_endpoint(body: PreparedBody, authenticated: bool) -> PreparedEndp
 #[tokio::test]
 async fn custom_one_shot_standard_body_is_public_and_not_auth_recoverable() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![MockResponse::text(StatusCode::UNAUTHORIZED, "challenge")],
     );
@@ -64,11 +64,13 @@ async fn custom_one_shot_standard_body_is_public_and_not_auth_recoverable() {
 #[tokio::test]
 async fn complete_advanced_factory_runs_once_per_visible_execution_and_recovers_auth() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events.clone(),
         vec![
-            MockResponse::text(StatusCode::UNAUTHORIZED, "challenge"),
-            MockResponse::text(StatusCode::OK, "recovered"),
+            MockResponse::text(StatusCode::UNAUTHORIZED, "challenge")
+                .expect_body(Bytes::from_static(b"factory")),
+            MockResponse::text(StatusCode::OK, "recovered")
+                .expect_body(Bytes::from_static(b"factory")),
         ],
     );
     let client = observation_client(
@@ -96,14 +98,7 @@ async fn complete_advanced_factory_runs_once_per_visible_execution_and_recovers_
     assert_eq!(calls.load(Ordering::SeqCst), 2);
     assert_eq!(harness.sent_count().await, 2);
     let requests = harness.requests().await;
-    assert_eq!(
-        requests[0].body.as_bytes(),
-        Some(&Bytes::from_static(b"factory"))
-    );
-    assert_eq!(
-        requests[1].body.as_bytes(),
-        Some(&Bytes::from_static(b"factory"))
-    );
+    assert!(requests.iter().all(|request| request.body.is_bytes()));
 }
 
 #[test]
@@ -122,7 +117,7 @@ fn public_factory_accepts_safe_producer_failures_without_invoking_eligibility_ch
 #[cfg(feature = "multipart")]
 async fn complete_multipart_factory_creates_a_fresh_reqwest_boundary() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::UNAUTHORIZED, "challenge"),

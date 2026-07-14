@@ -512,7 +512,7 @@ fn custom_expected_items_per_page_zero_is_unrepresentable() {
 
 async fn pagination_runtime_state_drives_endpoint_planning_order() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, "a,b"),
@@ -658,7 +658,7 @@ async fn pagination_runtime_loads_and_stores_endpoint_state() -> Result<(), ApiC
 async fn generated_custom_endpoint_state_collect_renders_endpoint_fields()
 -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, "a,b"),
@@ -726,7 +726,7 @@ async fn generated_custom_endpoint_state_collect_renders_endpoint_fields()
 
 async fn offset_limit_pagination_runtime_advances_offset() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, "a,b"),
@@ -787,7 +787,7 @@ async fn offset_limit_pagination_runtime_advances_offset() -> Result<(), ApiClie
 
 async fn paged_pagination_runtime_advances_page() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, "a,b"),
@@ -849,7 +849,7 @@ async fn paged_pagination_runtime_advances_page() -> Result<(), ApiClientError> 
 #[tokio::test]
 async fn execute_raw_paginated_endpoint_sends_only_one_request() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![MockResponse::text(StatusCode::OK, "raw-page-1")],
     );
@@ -872,7 +872,7 @@ async fn execute_raw_paginated_endpoint_sends_only_one_request() -> Result<(), A
     assert_eq!(raw.body(), &Bytes::from_static(b"raw-page-1"));
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 1);
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     assert_eq!(requests[0].meta.page_index, Some(0));
     assert_eq!(
         query_value(&requests[0].url, "offset"),
@@ -889,7 +889,7 @@ async fn execute_raw_paginated_endpoint_sends_only_one_request() -> Result<(), A
 
 async fn pagination_runtime_requires_runtime_support_when_missing() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(events, vec![]);
+    let harness = DeterministicHarness::new(events, vec![]);
     let sent = harness.clone();
     let client = client(TestAuthVars::default(), harness);
 
@@ -910,7 +910,7 @@ async fn pagination_runtime_requires_runtime_support_when_missing() -> Result<()
 
 async fn terminal_status_on_page_n_does_not_advance_page_state() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "terminal")
@@ -940,7 +940,7 @@ async fn terminal_status_on_page_n_does_not_advance_page_state() -> Result<(), A
     assert_eq!(err.http_status(), Some(StatusCode::INTERNAL_SERVER_ERROR));
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 1);
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     assert_eq!(requests[0].meta.page_index, Some(0));
     Ok(())
 }
@@ -950,7 +950,7 @@ async fn terminal_status_on_page_n_does_not_advance_page_state() -> Result<(), A
 async fn offset_pagination_collects_page_items_without_has_next_cursor()
 -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, "a,b"),
@@ -988,7 +988,7 @@ async fn offset_pagination_collects_page_items_without_has_next_cursor()
 async fn cursor_pagination_runtime_omits_initial_cursor_when_send_cursor_on_first_false()
 -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, "a,b|next=next-1"),
@@ -1043,7 +1043,7 @@ async fn cursor_pagination_runtime_omits_initial_cursor_when_send_cursor_on_firs
 async fn cursor_pagination_runtime_sends_initial_cursor_when_send_cursor_on_first_true()
 -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, "a,b|next=next-1"),
@@ -1100,7 +1100,7 @@ async fn cursor_pagination_runtime_sends_initial_cursor_when_send_cursor_on_firs
 
 async fn cursor_string_pagination_runtime_advances_cursor() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, "a,b|next=next-1"),
@@ -1213,7 +1213,7 @@ async fn cursor_string_pagination_runtime_preserves_empty_cursor() -> Result<(),
 async fn cursor_string_pagination_runtime_requires_runtime_support_when_missing()
 -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(events, vec![]);
+    let harness = DeterministicHarness::new(events, vec![]);
     let sent = harness.clone();
     let client = client(TestAuthVars::default(), harness);
 
@@ -1248,7 +1248,7 @@ async fn cursor_string_pagination_runtime_requires_runtime_support_when_missing(
 
 async fn cursor_pagination_repeated_cursor_returns_non_progress_error() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, "a,b|next=next-1")
@@ -1297,7 +1297,7 @@ async fn cursor_pagination_repeated_cursor_returns_non_progress_error() {
 
 async fn cursor_pagination_cyclic_cursor_returns_non_progress_error() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, "a,b|next=start-b")
@@ -1342,7 +1342,8 @@ async fn cursor_pagination_cyclic_cursor_returns_non_progress_error() {
 
 async fn cursor_pagination_missing_cursor_without_stop_is_non_progress_error() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(events, vec![MockResponse::text(StatusCode::OK, "a,b")]);
+    let harness =
+        DeterministicHarness::new(events, vec![MockResponse::text(StatusCode::OK, "a,b")]);
     let sent = harness.clone();
     let client = client(TestAuthVars::default(), harness);
 
@@ -1377,7 +1378,7 @@ async fn cursor_pagination_missing_cursor_without_stop_is_non_progress_error() {
 async fn paged_pagination_collects_page_items_without_has_next_cursor() -> Result<(), ApiClientError>
 {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, "a,b"),
@@ -1415,7 +1416,7 @@ async fn paged_pagination_collects_page_items_without_has_next_cursor() -> Resul
 
 async fn paged_pagination_uses_page_numbers() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, "a,b")
@@ -1459,7 +1460,7 @@ async fn paged_pagination_uses_page_numbers() -> Result<(), ApiClientError> {
 
 async fn hard_page_cap_zero_errors_before_harness() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(events, vec![]);
+    let harness = DeterministicHarness::new(events, vec![]);
     let sent = harness.clone();
     let client = client(TestAuthVars::default(), harness);
 
@@ -1494,7 +1495,7 @@ async fn hard_page_cap_zero_errors_before_harness() {
 
 async fn hard_item_cap_zero_errors_before_harness() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(events, vec![]);
+    let harness = DeterministicHarness::new(events, vec![]);
     let sent = harness.clone();
     let client = client(TestAuthVars::default(), harness);
 
@@ -1529,7 +1530,7 @@ async fn hard_item_cap_zero_errors_before_harness() {
 
 async fn take_pages_zero_returns_empty_without_harness() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(events, vec![]);
+    let harness = DeterministicHarness::new(events, vec![]);
     let sent = harness.clone();
     let client = client(TestAuthVars::default(), harness);
 
@@ -1559,7 +1560,7 @@ async fn take_pages_zero_returns_empty_without_harness() -> Result<(), ApiClient
 
 async fn take_items_zero_returns_empty_without_harness() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(events, vec![]);
+    let harness = DeterministicHarness::new(events, vec![]);
     let sent = harness.clone();
     let client = client(TestAuthVars::default(), harness);
 
@@ -1589,7 +1590,7 @@ async fn take_items_zero_returns_empty_without_harness() -> Result<(), ApiClient
 
 async fn take_items_truncates_final_page() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, numbered_items(0, 20)),
@@ -1628,7 +1629,7 @@ async fn take_items_truncates_final_page() -> Result<(), ApiClientError> {
 
 async fn take_items_less_than_first_page_sends_one_page() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![MockResponse::text(StatusCode::OK, numbered_items(0, 20))],
     );
@@ -1662,7 +1663,7 @@ async fn take_items_less_than_first_page_sends_one_page() -> Result<(), ApiClien
 
 async fn take_items_exact_boundary_stops_without_extra_page() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, numbered_items(0, 20)),
@@ -1728,7 +1729,7 @@ fn paged_pagination_runtime_rejects_zero_page() {
 
 async fn take_pages_stops_without_error() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, "a,b"),
@@ -1772,7 +1773,7 @@ async fn take_pages_stops_without_error() -> Result<(), ApiClientError> {
 
 async fn hard_page_cap_errors_without_fetching_extra_page() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, "a,b"),
@@ -1813,7 +1814,7 @@ async fn hard_page_cap_errors_without_fetching_extra_page() {
 
 async fn hard_item_cap_errors_without_truncating() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, numbered_items(0, 20)),
@@ -1856,7 +1857,7 @@ async fn loop_detection_still_default_enabled() {
         "LEAK_SENTINEL_CURSOR_TOKEN",
     );
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![MockResponse::text(
             StatusCode::OK,
@@ -1919,7 +1920,7 @@ fn policy_with_request_sentinel(sentinel: &'static str) -> ResolvedPolicy {
 async fn later_page_http_status_failure_is_typed_and_redacted() -> Result<(), ApiClientError> {
     let sentinels = pagination_sentinels();
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, "a,b"),
@@ -1962,14 +1963,14 @@ async fn later_page_http_status_failure_is_typed_and_redacted() -> Result<(), Ap
 async fn later_page_harness_failure_is_typed_and_redacted() -> Result<(), ApiClientError> {
     let sentinels = pagination_sentinels();
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::with_outcomes(
+    let harness = DeterministicHarness::with_outcomes(
         events,
         vec![
-            NativeMockOutcome::Response(MockResponse::text(
+            DeterministicOutcome::Response(Box::new(MockResponse::text(
                 StatusCode::OK,
                 format!("{},{}", sentinels.response, sentinels.body),
-            )),
-            NativeMockOutcome::DisconnectAfterRequest,
+            ))),
+            DeterministicOutcome::DisconnectAfterRequest,
         ],
     );
     let sent = harness.clone();
@@ -2012,7 +2013,7 @@ async fn later_page_harness_failure_is_typed_and_redacted() -> Result<(), ApiCli
 async fn later_page_decode_failure_is_typed_and_redacted() -> Result<(), ApiClientError> {
     let sentinels = pagination_sentinels();
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, "a,b"),
@@ -2054,7 +2055,8 @@ async fn later_page_decode_failure_is_typed_and_redacted() -> Result<(), ApiClie
 
 async fn max_items_error_includes_page_context() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(events, vec![MockResponse::text(StatusCode::OK, "a,b,c")]);
+    let harness =
+        DeterministicHarness::new(events, vec![MockResponse::text(StatusCode::OK, "a,b,c")]);
     let _server = harness.clone();
     let client = client(TestAuthVars::default(), harness);
 
@@ -2088,7 +2090,8 @@ async fn max_items_error_includes_page_context() {
 
 async fn collect_offset_short_first_page_stops_via_runtime() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(events, vec![MockResponse::text(StatusCode::OK, "a,b,c")]);
+    let harness =
+        DeterministicHarness::new(events, vec![MockResponse::text(StatusCode::OK, "a,b,c")]);
     let sent = harness.clone();
     let client = client(TestAuthVars::default(), harness);
 
@@ -2118,7 +2121,7 @@ async fn collect_offset_short_first_page_stops_via_runtime() -> Result<(), ApiCl
 
 async fn collect_offset_empty_first_page_stops_via_runtime() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(events, vec![MockResponse::text(StatusCode::OK, "")]);
+    let harness = DeterministicHarness::new(events, vec![MockResponse::text(StatusCode::OK, "")]);
     let sent = harness.clone();
     let client = client(TestAuthVars::default(), harness);
 
@@ -2148,7 +2151,8 @@ async fn collect_offset_empty_first_page_stops_via_runtime() -> Result<(), ApiCl
 
 async fn collect_paged_short_page_stops_via_runtime() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(events, vec![MockResponse::text(StatusCode::OK, "a,b")]);
+    let harness =
+        DeterministicHarness::new(events, vec![MockResponse::text(StatusCode::OK, "a,b")]);
     let sent = harness.clone();
     let client = client(TestAuthVars::default(), harness);
 
@@ -2179,7 +2183,7 @@ async fn collect_paged_short_page_stops_via_runtime() -> Result<(), ApiClientErr
 
 async fn collect_cursor_short_page_stops_even_with_next_cursor() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![MockResponse::text(StatusCode::OK, "a,b|next=next-page")],
     );
@@ -2214,7 +2218,7 @@ async fn collect_cursor_short_page_stops_even_with_next_cursor() -> Result<(), A
 
 async fn collect_cursor_empty_page_stops_even_with_next_cursor() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![MockResponse::text(StatusCode::OK, "|next=next-page")],
     );
@@ -2249,7 +2253,7 @@ async fn collect_cursor_empty_page_stops_even_with_next_cursor() -> Result<(), A
 
 async fn collect_exact_count_empty_page_stops_after_consumption() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(events, vec![MockResponse::text(StatusCode::OK, "")]);
+    let harness = DeterministicHarness::new(events, vec![MockResponse::text(StatusCode::OK, "")]);
     let sent = harness.clone();
     let client = client(TestAuthVars::default(), harness);
 
@@ -2278,7 +2282,8 @@ async fn collect_exact_count_empty_page_stops_after_consumption() -> Result<(), 
 async fn take_items_short_page_returns_short_page_under_limit() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
 
-    let harness = NativeMockHarness::new(events, vec![MockResponse::text(StatusCode::OK, "a,b,c")]);
+    let harness =
+        DeterministicHarness::new(events, vec![MockResponse::text(StatusCode::OK, "a,b,c")]);
     let sent = harness.clone();
     let client = client(TestAuthVars::default(), harness);
 
@@ -2308,7 +2313,8 @@ async fn take_items_short_page_returns_short_page_under_limit() -> Result<(), Ap
 
 async fn hard_item_cap_short_page_success_under_cap() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(events, vec![MockResponse::text(StatusCode::OK, "a,b,c")]);
+    let harness =
+        DeterministicHarness::new(events, vec![MockResponse::text(StatusCode::OK, "a,b,c")]);
     let sent = harness.clone();
     let client = client(TestAuthVars::default(), harness);
 
@@ -2338,7 +2344,7 @@ async fn hard_item_cap_short_page_success_under_cap() -> Result<(), ApiClientErr
 
 async fn hard_item_cap_still_errors_before_short_stop_when_page_exceeds_cap() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, numbered_items(0, 90)),
@@ -2376,7 +2382,8 @@ async fn hard_item_cap_still_errors_before_short_stop_when_page_exceeds_cap() {
 
 async fn take_items_exact_limit_still_wins_before_short_stop() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(events, vec![MockResponse::text(StatusCode::OK, "a,b,c")]);
+    let harness =
+        DeterministicHarness::new(events, vec![MockResponse::text(StatusCode::OK, "a,b,c")]);
     let sent = harness.clone();
     let client = client(TestAuthVars::default(), harness);
 
@@ -2404,7 +2411,8 @@ async fn take_items_exact_limit_still_wins_before_short_stop() -> Result<(), Api
 
 async fn max_pages_error_includes_seen_items() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(events, vec![MockResponse::text(StatusCode::OK, "a,b")]);
+    let harness =
+        DeterministicHarness::new(events, vec![MockResponse::text(StatusCode::OK, "a,b")]);
     let _server = harness.clone();
     let client = client(TestAuthVars::default(), harness);
 
@@ -2438,7 +2446,7 @@ async fn max_pages_error_includes_seen_items() {
 
 async fn auth_refresh_on_page_n_preserves_offset() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = DeterministicHarness::new(
         events,
         vec![
             MockResponse::text(StatusCode::OK, "a,b")
@@ -2482,7 +2490,7 @@ async fn auth_refresh_on_page_n_preserves_offset() -> Result<(), ApiClientError>
     );
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 3);
-    #[cfg(feature = "dangerous-dev-tools")]
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
     {
         assert_eq!(requests[1].meta.page_index, Some(1));
         assert_eq!(requests[2].meta.page_index, Some(1));
@@ -2495,7 +2503,7 @@ async fn auth_refresh_on_page_n_preserves_offset() -> Result<(), ApiClientError>
 async fn execute_raw_static_auth_collision_validates_before_rate_limit_and_harness() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let rate_limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
-    let harness = NativeMockHarness::new(events.clone(), vec![]);
+    let harness = DeterministicHarness::new(events.clone(), vec![]);
     let sent = harness.clone();
     let mut client = client(
         TestAuthVars {

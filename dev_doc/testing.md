@@ -139,9 +139,11 @@ Response body limit tests should cover `Content-Length` precheck, unknown-length
 ## Deterministic Async Harness
 
 The F-05 deterministic native executor foundation is available only with
-`dangerous-dev-tools`. Install a handle created for either application or
-provider execution through `concord_core::__development`; channel mismatch is
-rejected. Scripts provide native status, headers, buffered or chunked bodies,
+`dangerous-dev-tools`. Configure a `SafeReqwestBuilder` with a handle created
+for either application or provider execution through
+`concord_core::__development`; channel mismatch is rejected. The managed
+application and provider handles are consumed during client construction.
+Scripts provide native status, headers, buffered or chunked bodies,
 trailers, body gates, partial body failure, and focused synthetic execution
 failure categories. Successful scripts always enter Core as
 `reqwest::Response` values and therefore exercise the normal response pipeline.
@@ -151,6 +153,21 @@ Use `UnsafeCredentialPlacementExpectations` solely with deterministic fake
 credentials when a test must prove native header/query placement. It compares
 values inside the executor and returns only a redacted request-category failure
 on mismatch; no raw native request accessor exists.
+
+The executor consumes native request bodies through the same `reqwest::Body`
+adaptation used by production execution. `UnsafeRequestBodyExpectations` may
+compare explicitly fake bytes inside the executor, but values are never
+returned or formatted. Ordinary captures expose only body category and known
+length. Request-head observations and the mutually exclusive body terminal
+states (`completed`, `failed`, `cancelled/dropped`, and `never polled`) cover
+producer polling, limits, exact-length errors, gating, and cancellation
+without a second request pipeline. Successful completion is emitted only at
+terminal EOF, and each execution emits at most one body terminal state.
+
+Synthetic timeout scripts prove configured timeout propagation through
+`CapturedNativeRequest::timeout()` and stable Concord error mapping. They do
+not introduce a wall-clock delay or claim to test Reqwest's deadline
+enforcement; actual deadline behavior remains upstream Reqwest behavior.
 
 Focused foundation diagnostics are:
 
@@ -166,12 +183,17 @@ fixture fails without `dangerous-dev-tools` and compiles when the feature is
 enabled. Repository boundary checks also keep executor symbols out of `prelude`,
 `advanced`, generated integration, and ordinary client constructors.
 
-Native wire tests use the loopback helpers in `concord_test_support/src/mock.rs` instead of an injected transport abstraction or live external services.
+Maintained Core, macro-generated, public-extension, and test-support tests use
+`concord_test_support::DeterministicMock`, `ScriptedReply`,
+`MockExecutionHandle`, and `ResponseGate`. They open no listener, rewrite no
+URL, and install no proxy. Generated clients remain concrete; their ordinary
+safe-builder constructor is configured by the feature-gated harness, with no
+generated development trait, selector, field, or executor generic.
 
-The native helpers start a bounded loopback HTTP server, configure Concord's
-safe Reqwest builder to reach it, serve queued `MockReply` values, expose
-`ReplyGate` for deterministic response release, and record `RecordedRequest`
-wire observations. They exercise the managed Reqwest path directly.
+The temporary `loopback-compat` feature is isolated to
+`compatibility_loopback.rs` for the F-07 examples and performance slice. New
+tests must not use it. F-07 deletes that module together with the remaining
+test-origin proxy rewrite and internal logical-URL header.
 
 The dangerous development feature does not persist request or response bodies.
 
