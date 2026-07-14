@@ -163,7 +163,7 @@ enum ResponseFixture {
 
 #[derive(Clone)]
 struct RecordingTransport {
-    server: DeterministicMock,
+    script: DeterministicMock,
     handle: Arc<StdMutex<MockExecutionHandle>>,
 }
 
@@ -181,9 +181,9 @@ impl RecordingTransport {
     }
 
     fn from_replies(replies: impl IntoIterator<Item = ScriptedReply>) -> Self {
-        let (server, handle) = deterministic_mock().replies(replies).build();
+        let (script, handle) = deterministic_mock().replies(replies).build();
         Self {
-            server,
+            script,
             handle: Arc::new(StdMutex::new(handle)),
         }
     }
@@ -220,7 +220,7 @@ impl RecordingTransport {
         &self,
         builder: concord_core::advanced::SafeReqwestBuilder,
     ) -> concord_core::advanced::SafeReqwestBuilder {
-        self.server.configure_application(builder)
+        self.script.configure_application(builder)
     }
 }
 

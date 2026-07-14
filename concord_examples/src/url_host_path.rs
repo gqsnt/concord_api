@@ -72,7 +72,7 @@ impl RecordingEvents {
 #[derive(Clone)]
 struct RecordingTransport {
     records: RecordingEvents,
-    server: DeterministicMock,
+    script: DeterministicMock,
     handle: Arc<StdMutex<MockExecutionHandle>>,
 }
 
@@ -80,10 +80,10 @@ impl RecordingTransport {
     fn new(records: RecordingEvents, expected_requests: usize) -> Self {
         let replies = (0..expected_requests)
             .map(|_| ScriptedReply::ok_json(bytes::Bytes::from_static(b"\"ok\"")));
-        let (server, handle) = deterministic_mock().replies(replies).build();
+        let (script, handle) = deterministic_mock().replies(replies).build();
         Self {
             records,
-            server,
+            script,
             handle: Arc::new(StdMutex::new(handle)),
         }
     }
@@ -103,7 +103,7 @@ impl RecordingTransport {
         &self,
         builder: concord_core::advanced::SafeReqwestBuilder,
     ) -> concord_core::advanced::SafeReqwestBuilder {
-        self.server.configure_both(builder)
+        self.script.configure_both(builder)
     }
 }
 

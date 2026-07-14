@@ -748,28 +748,6 @@ impl fmt::Display for DeterministicExecutorInstallationError {
 
 impl std::error::Error for DeterministicExecutorInstallationError {}
 
-pub fn install_application_executor<Cx: crate::client::ClientContext>(
-    client: &mut crate::client::ApiClient<Cx>,
-    executor: DeterministicNativeExecutor,
-) -> Result<(), DeterministicExecutorInstallationError> {
-    if executor.kind() != DeterministicExecutionKind::Application {
-        return Err(DeterministicExecutorInstallationError);
-    }
-    client.install_development_application_executor(executor);
-    Ok(())
-}
-
-pub fn install_provider_executor<Cx: crate::client::ClientContext>(
-    client: &mut crate::client::ApiClient<Cx>,
-    executor: DeterministicNativeExecutor,
-) -> Result<(), DeterministicExecutorInstallationError> {
-    if executor.kind() != DeterministicExecutionKind::Provider {
-        return Err(DeterministicExecutorInstallationError);
-    }
-    client.install_development_provider_executor(executor);
-    Ok(())
-}
-
 pub fn configure_application_executor(
     builder: crate::transport::SafeReqwestBuilder,
     executor: DeterministicNativeExecutor,

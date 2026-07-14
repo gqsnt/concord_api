@@ -37,6 +37,10 @@ impl PublicRequestHead {
         body: crate::io::ProducedBody,
         ctx: &ErrorContext,
     ) -> Result<BuiltRequest, ApiClientError> {
+        // Preserve the pre-authentication logical target as the sole URL
+        // authority. The native request is a materialized execution detail and
+        // must never become the source of public or observational metadata.
+        let logical_url = self.url.clone();
         let mut headers = self.headers;
         let builder = client.request(self.meta.method.clone(), self.url.clone());
         let (builder, terminal_media_type, body_errors) =
@@ -61,7 +65,6 @@ impl PublicRequestHead {
                 ctx: ctx.clone(),
                 msg: "native request construction failed",
             })?;
-        let logical_url = message.url().clone();
         #[cfg(any(test, feature = "dangerous-dev-tools"))]
         let auth_query_keys = self.auth_plan.sensitive_query_keys.clone();
         #[cfg(any(test, feature = "dangerous-dev-tools"))]

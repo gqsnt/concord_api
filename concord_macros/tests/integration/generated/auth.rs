@@ -924,17 +924,17 @@ fn assert_url_contains(req: &RecordedExecution, expected: &'static str) {
 
 #[derive(Clone)]
 struct RecordingTransport {
-    server: DeterministicMock,
+    script: DeterministicMock,
     handle: Arc<Mutex<MockExecutionHandle>>,
 }
 
 impl RecordingTransport {
     fn new(responses: Vec<ResponseFixture>) -> Self {
-        let (server, handle) = deterministic_mock()
+        let (script, handle) = deterministic_mock()
             .replies(responses.into_iter().map(ResponseFixture::into_reply))
             .build();
         Self {
-            server,
+            script,
             handle: Arc::new(Mutex::new(handle)),
         }
     }
@@ -951,7 +951,7 @@ impl RecordingTransport {
         &self,
         builder: concord_core::advanced::SafeReqwestBuilder,
     ) -> concord_core::advanced::SafeReqwestBuilder {
-        self.server.configure_both(builder)
+        self.script.configure_both(builder)
     }
 }
 

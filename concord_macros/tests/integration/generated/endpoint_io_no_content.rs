@@ -180,7 +180,7 @@ impl concord_core::advanced::RuntimeHooks for RecordingHooks {
 #[tokio::test]
 async fn no_content_endpoint_omits_accept_and_returns_unit() -> Result<(), ApiClientError> {
     let events = Arc::new(StdMutex::new(Vec::new()));
-    let (server, handle) = deterministic_mock()
+    let (script, handle) = deterministic_mock()
         .reply(
             ScriptedReply::status(StatusCode::OK)
                 .with_body(Bytes::from_static(b"SECRET_NO_CONTENT_SENTINEL")),
@@ -189,7 +189,7 @@ async fn no_content_endpoint_omits_accept_and_returns_unit() -> Result<(), ApiCl
     let mut client = ApiClient::<NoContentHelperApiCx>::with_safe_reqwest_builder(
         NoContentHelperApiVars::new(),
         NoContentHelperApiAuthVars::new(),
-        |builder| server.configure_application(builder),
+        |builder| script.configure_application(builder),
     )
     .expect("deterministic no-content client");
     client.set_debug_sink(Arc::new(RecordingDebugSink::new(events.clone())));
@@ -245,7 +245,7 @@ async fn no_content_endpoint_omits_accept_and_returns_unit() -> Result<(), ApiCl
 async fn no_content_status_failure_is_body_free() {
     let events = Arc::new(StdMutex::new(Vec::new()));
     let sentinel = "SECRET_NO_CONTENT_SENTINEL";
-    let (server, handle) = deterministic_mock()
+    let (script, handle) = deterministic_mock()
         .reply(
             ScriptedReply::status(StatusCode::INTERNAL_SERVER_ERROR)
                 .with_body(Bytes::copy_from_slice(sentinel.as_bytes())),
@@ -254,7 +254,7 @@ async fn no_content_status_failure_is_body_free() {
     let mut client = ApiClient::<NoContentHelperApiCx>::with_safe_reqwest_builder(
         NoContentHelperApiVars::new(),
         NoContentHelperApiAuthVars::new(),
-        |builder| server.configure_application(builder),
+        |builder| script.configure_application(builder),
     )
     .expect("deterministic no-content client");
     client.set_runtime_hooks(Arc::new(RecordingHooks::new(events.clone())));

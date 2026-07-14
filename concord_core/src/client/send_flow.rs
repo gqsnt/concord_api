@@ -36,7 +36,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             endpoint: request_context.meta.endpoint,
             method: &request_context.meta.method,
             url: send_ctx.url_str,
-            url_host: built.message.url().host_str(),
+            url_host: request_context.logical_url.host_str(),
             page_index: request_context.meta.page_index,
             idempotent: request_context.meta.idempotent,
             max_cooldown: self.runtime_state.max_rate_limit_cooldown(),

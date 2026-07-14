@@ -15,13 +15,13 @@ fn runtime() -> tokio::runtime::Runtime {
 
 fn bench(c: &mut Criterion) {
     let runtime = runtime();
-    let (server, _handle) = deterministic_mock()
+    let (script, _handle) = deterministic_mock()
         .repeating(ScriptedReply::ok_text(Bytes::from_static(b"ok")))
         .build();
     let client =
-        BenchmarkClient::new_with_safe_reqwest_builder(|builder| server.configure_both(builder))
+        BenchmarkClient::new_with_safe_reqwest_builder(|builder| script.configure_both(builder))
             .expect("deterministic managed client");
-    let (download_server, _download_handle) = deterministic_mock()
+    let (download_script, _download_handle) = deterministic_mock()
         .repeating(
             ScriptedReply::status(StatusCode::OK)
                 .with_header(
@@ -32,7 +32,7 @@ fn bench(c: &mut Criterion) {
         )
         .build();
     let download_client = BenchmarkClient::new_with_safe_reqwest_builder(|builder| {
-        download_server.configure_both(builder)
+        download_script.configure_both(builder)
     })
     .expect("deterministic streaming client");
 
@@ -91,7 +91,7 @@ fn bench(c: &mut Criterion) {
 
     c.bench_function("native_path/authentication_recovery_end_to_end", |b| {
         b.iter(|| {
-            let (server, handle) = deterministic_mock()
+            let (script, handle) = deterministic_mock()
                 .replies([
                     ScriptedReply::status(StatusCode::UNAUTHORIZED),
                     ScriptedReply::ok_text(Bytes::from_static(b"recovered")),
@@ -99,7 +99,7 @@ fn bench(c: &mut Criterion) {
                 .build();
             let client = AuthBenchmarkClient::new_with_safe_reqwest_builder(
                 "benchmark-token".to_string(),
-                |builder| server.configure_both(builder),
+                |builder| script.configure_both(builder),
             )
             .expect("auth benchmark client");
             runtime.block_on(async {
@@ -114,7 +114,7 @@ fn bench(c: &mut Criterion) {
 
     c.bench_function("native_path/retry_after_future_call_end_to_end", |b| {
         b.iter(|| {
-            let (server, handle) = deterministic_mock()
+            let (script, handle) = deterministic_mock()
                 .replies([
                     ScriptedReply::status(StatusCode::TOO_MANY_REQUESTS)
                         .with_header(http::header::RETRY_AFTER, HeaderValue::from_static("0")),
@@ -122,7 +122,7 @@ fn bench(c: &mut Criterion) {
                 ])
                 .build();
             let client = BenchmarkClient::new_with_safe_reqwest_builder(|builder| {
-                server.configure_both(builder)
+                script.configure_both(builder)
             })
             .expect("cooldown benchmark client");
             runtime.block_on(async {

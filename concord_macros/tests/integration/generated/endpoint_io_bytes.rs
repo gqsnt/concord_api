@@ -29,7 +29,7 @@ use bytes_response_contract::BytesResponseApi;
 
 #[derive(Clone)]
 struct RecordingBytesTransport {
-    server: DeterministicMock,
+    script: DeterministicMock,
     handle: Arc<StdMutex<MockExecutionHandle>>,
 }
 
@@ -75,9 +75,9 @@ impl RecordingBytesTransport {
         } else {
             reply.with_chunks(chunks)
         };
-        let (server, handle) = deterministic_mock().reply(reply).build();
+        let (script, handle) = deterministic_mock().reply(reply).build();
         Self {
-            server,
+            script,
             handle: Arc::new(StdMutex::new(handle)),
         }
     }
@@ -112,7 +112,7 @@ impl RecordingBytesTransport {
         &self,
         builder: concord_core::advanced::SafeReqwestBuilder,
     ) -> concord_core::advanced::SafeReqwestBuilder {
-        self.server.configure_application(builder)
+        self.script.configure_application(builder)
     }
 }
 

@@ -74,11 +74,11 @@ mod tests {
 
     #[test]
     fn generated_visible_execution_is_deterministic() {
-        let (server, handle) = deterministic_mock()
+        let (script, handle) = deterministic_mock()
             .repeating(ScriptedReply::ok_text(Bytes::from_static(b"pong")))
             .build();
         let client = BenchmarkClient::new_with_safe_reqwest_builder(|builder| {
-            server.configure_both(builder)
+            script.configure_both(builder)
         })
         .expect("deterministic managed client");
         runtime().block_on(async {
@@ -100,11 +100,11 @@ mod tests {
 
     #[test]
     fn generated_response_limit_remains_structural() {
-        let (server, _handle) = deterministic_mock()
+        let (script, _handle) = deterministic_mock()
             .reply(ScriptedReply::ok_text(Bytes::from_static(b"oversized")))
             .build();
         let mut client = BenchmarkClient::new_with_safe_reqwest_builder(|builder| {
-            server.configure_both(builder)
+            script.configure_both(builder)
         })
         .expect("deterministic managed client");
         client.configure_mut(|config| {

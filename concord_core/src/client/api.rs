@@ -15,24 +15,6 @@ pub struct ApiClient<Cx: ClientContext> {
 }
 
 impl<Cx: ClientContext> ApiClient<Cx> {
-    #[cfg(any(test, feature = "dangerous-dev-tools"))]
-    pub(crate) fn install_development_application_executor(
-        &mut self,
-        executor: crate::development_executor::DeterministicNativeExecutor,
-    ) {
-        self.managed_client
-            .install_development_application_executor(executor);
-    }
-
-    #[cfg(any(test, feature = "dangerous-dev-tools"))]
-    pub(crate) fn install_development_provider_executor(
-        &mut self,
-        executor: crate::development_executor::DeterministicNativeExecutor,
-    ) {
-        self.managed_client
-            .install_development_provider_executor(executor);
-    }
-
     #[cfg(test)]
     pub(crate) fn set_application_tls_capability_for_test(
         &mut self,

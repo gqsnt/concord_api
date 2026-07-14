@@ -5,7 +5,7 @@ use super::common::{
 use crate::__development::{
     CapturedBodyCategory, DeterministicBodyGate, DeterministicFakeCredential,
     DeterministicNativeExecutor, ScriptedNativeResponse, SyntheticExecutionFailure,
-    UnsafeCredentialPlacementExpectations, install_application_executor,
+    UnsafeCredentialPlacementExpectations, configure_application_executor,
 };
 use crate::advanced::{
     AuthRequirement, CredentialId, OctetStream, PreSendHookContext, RequestErrorHookContext,
@@ -33,9 +33,11 @@ fn text_response(body: &'static [u8]) -> ScriptedNativeResponse {
 }
 
 fn client_with(executor: &DeterministicNativeExecutor, auth: TestAuthVars) -> ApiClient<TestCx> {
-    let mut client = ApiClient::<TestCx>::new((), auth);
-    install_application_executor(&mut client, executor.clone()).expect("application executor");
-    client
+    ApiClient::<TestCx>::with_safe_reqwest_builder((), auth, |builder| {
+        configure_application_executor(builder, executor.clone())
+            .expect("application executor configuration")
+    })
+    .expect("managed deterministic client")
 }
 
 #[derive(Default)]
@@ -465,13 +467,12 @@ async fn synthetic_execution_failure_matches_request_error_hook_and_terminal_err
 }
 
 #[test]
-fn production_constructor_has_no_executor_selector_and_channel_mismatch_is_rejected() {
-    let mut client = ApiClient::<TestCx>::new((), TestAuthVars::default());
-    let provider = DeterministicNativeExecutor::provider();
-    assert!(install_application_executor(&mut client, provider).is_err());
-
+fn production_constructor_has_no_executor_selector_or_post_construction_installation() {
     let source = include_str!("../client/api.rs");
     assert!(!source.contains("pub fn with_executor"));
     assert!(!source.contains("pub fn new_with_executor"));
     assert!(!source.contains("ApiClient<Cx,"));
+    let development = include_str!("../__development.rs");
+    assert!(!development.contains("install_application_executor"));
+    assert!(!development.contains("install_provider_executor"));
 }

@@ -377,8 +377,12 @@ mod tests {
             http::StatusCode::OK,
             bytes::Bytes::from_static(b"unused"),
         ));
-        let mut client = ApiClient::<ProviderHttpTestCx>::new((), ());
-        client.install_development_provider_executor(provider.clone());
+        let mut client =
+            ApiClient::<ProviderHttpTestCx>::with_safe_reqwest_builder((), (), |builder| {
+                crate::__development::configure_provider_executor(builder, provider.clone())
+                    .expect("provider executor configuration")
+            })
+            .expect("managed deterministic client");
         client.set_provider_tls_capability_for_test(crate::transport::TlsCapability::Unavailable);
         let hooks = Arc::new(CountingHooks::default());
         let limiter = Arc::new(CountingRateLimiter::default());
@@ -444,8 +448,12 @@ mod tests {
                 http::StatusCode::OK,
                 bytes::Bytes::copy_from_slice(expected.as_bytes()),
             ));
-            let mut client = ApiClient::<ProviderHttpTestCx>::new((), ());
-            client.install_development_provider_executor(provider.clone());
+            let mut client =
+                ApiClient::<ProviderHttpTestCx>::with_safe_reqwest_builder((), (), |builder| {
+                    crate::__development::configure_provider_executor(builder, provider.clone())
+                        .expect("provider executor configuration")
+                })
+                .expect("managed deterministic client");
             client.set_provider_tls_capability_for_test(capability);
             let response = send_provider(
                 &client,
@@ -582,7 +590,7 @@ mod tests {
         let provider_calls = Arc::new(AtomicUsize::new(0));
         let provider_body_factories = Arc::new(AtomicUsize::new(0));
         let application_body_factories = Arc::new(AtomicUsize::new(0));
-        let mut client = ApiClient::<ProviderTlsCx>::new(
+        let mut client = ApiClient::<ProviderTlsCx>::with_safe_reqwest_builder(
             (),
             ProviderTlsAuthVars {
                 provider_url: "https://provider-http.example/token"
@@ -591,9 +599,17 @@ mod tests {
                 provider_calls: provider_calls.clone(),
                 provider_body_factories: provider_body_factories.clone(),
             },
-        );
-        client.install_development_application_executor(application.clone());
-        client.install_development_provider_executor(provider.clone());
+            |builder| {
+                let builder = crate::__development::configure_application_executor(
+                    builder,
+                    application.clone(),
+                )
+                .expect("application executor configuration");
+                crate::__development::configure_provider_executor(builder, provider.clone())
+                    .expect("provider executor configuration")
+            },
+        )
+        .expect("managed deterministic client");
         client.set_provider_tls_capability_for_test(crate::transport::TlsCapability::Unavailable);
         let hooks = Arc::new(CountingHooks::default());
         let limiter = Arc::new(CountingRateLimiter::default());
@@ -825,7 +841,7 @@ mod tests {
     async fn deterministic_provider_and_application_executor_scripts_are_isolated() {
         use crate::__development::{
             DeterministicExecutionKind, DeterministicNativeExecutor, ScriptedNativeResponse,
-            install_application_executor, install_provider_executor,
+            configure_application_executor, configure_provider_executor,
         };
 
         let application = DeterministicNativeExecutor::application();
@@ -845,10 +861,14 @@ mod tests {
             bytes::Bytes::from_static(b"provider"),
         ));
 
-        let mut client = ApiClient::<ProviderHttpTestCx>::new((), ());
-        install_application_executor(&mut client, application.clone())
-            .expect("application installation");
-        install_provider_executor(&mut client, provider.clone()).expect("provider installation");
+        let client =
+            ApiClient::<ProviderHttpTestCx>::with_safe_reqwest_builder((), (), |builder| {
+                let builder = configure_application_executor(builder, application.clone())
+                    .expect("application executor configuration");
+                configure_provider_executor(builder, provider.clone())
+                    .expect("provider executor configuration")
+            })
+            .expect("managed deterministic client");
 
         let provider_response = send_provider(
             &client,

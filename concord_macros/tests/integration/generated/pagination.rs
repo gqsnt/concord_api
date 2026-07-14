@@ -127,16 +127,16 @@ fn assert_query(request: &RecordedExecution, key: &str, expected: &str) {
 
 #[derive(Clone)]
 struct RecordingTransport {
-    server: DeterministicMock,
+    script: DeterministicMock,
     handle: Arc<Mutex<MockExecutionHandle>>,
 }
 
 impl RecordingTransport {
     fn new(responses: Vec<ResponseFixture>) -> Self {
         let replies = responses.into_iter().map(ResponseFixture::into_reply);
-        let (server, handle) = deterministic_mock().replies(replies).build();
+        let (script, handle) = deterministic_mock().replies(replies).build();
         Self {
-            server,
+            script,
             handle: Arc::new(Mutex::new(handle)),
         }
     }
@@ -147,7 +147,7 @@ impl RecordingTransport {
 
     fn client(&self) -> PaginationHelperApi {
         PaginationHelperApi::new_with_safe_reqwest_builder(|builder| {
-            self.server.configure_application(builder)
+            self.script.configure_application(builder)
         })
         .expect("deterministic generated pagination client")
     }

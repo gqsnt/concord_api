@@ -138,7 +138,7 @@ Response body limit tests should cover `Content-Length` precheck, unknown-length
 
 ## Deterministic Async Harness
 
-The F-05 deterministic native executor foundation is available only with
+The deterministic native executor is available only with
 `dangerous-dev-tools`. Configure a `SafeReqwestBuilder` with a handle created
 for either application or provider execution through
 `concord_core::__development`; channel mismatch is rejected. The managed

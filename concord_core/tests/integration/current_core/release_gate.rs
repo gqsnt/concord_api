@@ -207,6 +207,8 @@ fn development_boundary_is_explicit_narrow_and_not_generated() {
     assert!(!defaults.contains("dangerous-dev-tools"));
 
     let development = read_repo_file("concord_core/src/__development.rs");
+    assert!(!development.contains("install_application_executor"));
+    assert!(!development.contains("install_provider_executor"));
     for forbidden in [
         "CredentialSlot",
         "AuthApplicationRequest",

@@ -1300,22 +1300,6 @@ impl ManagedReqwestClient {
         execute_managed(&self.client, &self.configured_proxies, request, context).await
     }
 
-    #[cfg(any(test, feature = "dangerous-dev-tools"))]
-    pub(crate) fn install_development_application_executor(
-        &mut self,
-        executor: crate::development_executor::DeterministicNativeExecutor,
-    ) {
-        self.development_executor = Some(executor);
-    }
-
-    #[cfg(any(test, feature = "dangerous-dev-tools"))]
-    pub(crate) fn install_development_provider_executor(
-        &mut self,
-        executor: crate::development_executor::DeterministicNativeExecutor,
-    ) {
-        self.provider.development_executor = Some(executor);
-    }
-
     pub(crate) fn provider(&self) -> &ManagedProviderReqwestClient {
         &self.provider
     }
@@ -1645,8 +1629,10 @@ mod reqwest_transport_tests {
                 http::HeaderValue::from_static("text/plain"),
             ),
         );
-        let mut managed = ManagedReqwestClient::new();
-        managed.install_development_application_executor(executor.clone());
+        let managed = ManagedReqwestClient::with_builder(|builder| {
+            builder.with_development_application_executor(executor.clone())
+        })
+        .expect("managed deterministic client");
         let logical_url = Url::parse("http://example.com/native?visible=yes").expect("URL");
         let mut request = reqwest::Request::new(Method::POST, logical_url.clone());
         request
@@ -1709,8 +1695,10 @@ mod reqwest_transport_tests {
         ));
         let logical_url = Url::parse("http://plain-http.example.test/path").expect("URL");
         let request = reqwest::Request::new(Method::GET, logical_url.clone());
-        let mut managed = ManagedReqwestClient::new();
-        managed.install_development_application_executor(executor);
+        let managed = ManagedReqwestClient::with_builder(|builder| {
+            builder.with_development_application_executor(executor)
+        })
+        .expect("managed deterministic client");
         let context = RequestExecutionContext {
             meta: crate::execution_meta::RequestExecutionMeta {
                 endpoint: "PlainHttp",
