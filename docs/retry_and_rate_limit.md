@@ -17,6 +17,10 @@ classification unchanged.
 Generated clients expose `new_with_retry_mode(...)` and
 `new_with_safe_reqwest_builder_and_retry_mode(...)`. The public modes are:
 
+In a no-TLS build, both constructors reject a fixed HTTPS API during client
+construction before authentication-state initialization. This capability
+preflight does not change the selected retry mode's execution semantics.
+
 - `RetryMode::ProtocolRecovery` (default): installs no custom Reqwest retry
   policy and preserves Reqwest 0.13.4's built-in safe protocol recovery.
   Concord does not promise its internal budget or physical-send count.

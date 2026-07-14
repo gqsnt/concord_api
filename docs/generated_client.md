@@ -33,6 +33,13 @@ bounded safe-method status retry for verified fixed-origin APIs.
 infallible settings; the fallible variant additionally permits PEM parsing.
 Neither constructor exposes a raw Reqwest builder or client.
 
+In a no-TLS build, `builder().build()`, both safe Reqwest constructors, and
+both retry-mode constructors return a TLS-capability error during construction
+for a fixed HTTPS API, before authentication-state initialization. Dynamic,
+multi-origin, pagination-derived, and other runtime URLs remain checked during
+request preparation. The infallible generated `Client::new` retains its
+existing request-time validation behavior.
+
 Credential-provider operations use a second managed Reqwest client. Reviewed
 safe builder settings apply to both clients, while provider retry selection is
 independent and limited to `ProviderOperationRetryMode::ProtocolRecovery` or

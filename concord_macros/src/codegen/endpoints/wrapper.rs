@@ -427,6 +427,7 @@ fn emit_client_wrapper(
             }
 
             #[doc = "Create a client with one of Concord's three client-level Reqwest retry modes."]
+            #[doc = "In a no-TLS build, fixed HTTPS APIs return a TLS-capability error during construction."]
             #[inline]
             pub fn new_with_retry_mode(
                 #( #ctor_args, )*
@@ -446,6 +447,7 @@ fn emit_client_wrapper(
             }
 
             #[doc = "Create a client with Concord's safe managed Reqwest configuration surface."]
+            #[doc = "In a no-TLS build, fixed HTTPS APIs return a TLS-capability error during construction."]
             #[inline]
             pub fn new_with_safe_reqwest_builder(
                 #( #ctor_args, )*
@@ -453,12 +455,18 @@ fn emit_client_wrapper(
             ) -> ::core::result::Result<Self, ::concord_core::advanced::ReqwestClientBuildError> {
                 let vars = #vars_ty::new( #( #new_pass ),* );
                 let auth_vars = #auth_vars_ty::new( #( #new_auth_pass ),* );
-                let mut __inner = ::concord_core::prelude::ApiClient::<#cx_ty>::with_safe_reqwest_builder(vars, auth_vars, configure)?;
+                let mut __inner = ::concord_core::__private::create_generated_client_with_safe_reqwest_builder::<#cx_ty, _>(
+                    &API_DESCRIPTOR,
+                    vars,
+                    auth_vars,
+                    |builder| Ok(configure(builder)),
+                )?;
                 #configure_rate_limiter
                 ::core::result::Result::Ok(Self { inner: __inner })
             }
 
             #[doc = "Create a client with Concord's safe managed Reqwest configuration surface (fallible)."]
+            #[doc = "In a no-TLS build, fixed HTTPS APIs return a TLS-capability error during construction."]
             #[inline]
             pub fn new_with_safe_reqwest_builder_fallible(
                 #( #ctor_args, )*
@@ -471,7 +479,8 @@ fn emit_client_wrapper(
             ) -> ::core::result::Result<Self, ::concord_core::advanced::ReqwestClientBuildError> {
                 let vars = #vars_ty::new( #( #new_pass ),* );
                 let auth_vars = #auth_vars_ty::new( #( #new_auth_pass ),* );
-                let mut __inner = ::concord_core::prelude::ApiClient::<#cx_ty>::with_safe_reqwest_builder_fallible(
+                let mut __inner = ::concord_core::__private::create_generated_client_with_safe_reqwest_builder::<#cx_ty, _>(
+                    &API_DESCRIPTOR,
                     vars,
                     auth_vars,
                     configure,
@@ -481,6 +490,7 @@ fn emit_client_wrapper(
             }
 
             #[doc = "Create a retry-mode client with Concord's safe managed Reqwest configuration surface."]
+            #[doc = "In a no-TLS build, fixed HTTPS APIs return a TLS-capability error during construction."]
             #[inline]
             pub fn new_with_safe_reqwest_builder_and_retry_mode(
                 #( #ctor_args, )*
@@ -534,6 +544,7 @@ fn emit_client_wrapper(
             #( #builder_auth_setters )*
 
             #[doc = "Build the generated client."]
+            #[doc = "In a no-TLS build, fixed HTTPS APIs return a TLS-capability error during construction."]
             #[inline]
             pub fn build(self) -> ::core::result::Result<#client_ty, ::concord_core::prelude::ApiClientError> {
                 let __ctx = ::concord_core::error::ErrorContext {
@@ -542,7 +553,16 @@ fn emit_client_wrapper(
                 };
                 #( #builder_var_unwraps )*
                 #( #builder_auth_unwraps )*
-                ::core::result::Result::Ok(#client_ty::new( #( #builder_var_args, )* #( #builder_auth_args ),* ))
+                let vars = #vars_ty::new( #( #builder_var_args ),* );
+                let auth_vars = #auth_vars_ty::new( #( #builder_auth_args ),* );
+                let mut __inner = ::concord_core::__private::create_generated_client_for_builder::<#cx_ty>(
+                    &API_DESCRIPTOR,
+                    vars,
+                    auth_vars,
+                    __ctx,
+                )?;
+                #configure_rate_limiter
+                ::core::result::Result::Ok(#client_ty { inner: __inner })
             }
         }
 

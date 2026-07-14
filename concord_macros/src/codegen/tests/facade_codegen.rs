@@ -422,6 +422,8 @@ fn generated_client_construction_contains_current_api_only() {
             "pub fn build ( self ) -> :: core :: result :: Result < ConstructApi , :: concord_core :: prelude :: ApiClientError >",
             "ApiClientError :: invalid_param (__ctx . clone () , \"builder.tenant\")",
             "ApiClientError :: invalid_param (__ctx . clone () , \"builder.api_key\")",
+            "create_generated_client_for_builder :: < ConstructApiCx > (& API_DESCRIPTOR",
+            "create_generated_client_with_safe_reqwest_builder :: < ConstructApiCx , _ > (& API_DESCRIPTOR",
             "pub fn configure ( mut self , f : impl FnOnce (& mut :: concord_core :: advanced :: RuntimeConfig)) -> Self",
             "pub fn configure_mut (& mut self , f : impl FnOnce (& mut :: concord_core :: advanced :: RuntimeConfig)) -> & mut Self",
             "pub fn api_headers (& self) -> & :: http :: HeaderMap",
@@ -431,6 +433,28 @@ fn generated_client_construction_contains_current_api_only() {
             ":: concord_core :: __private :: GeneratedPreparedCall",
             ":: concord_core :: __private :: prepare_generated_endpoint",
         ],
+    );
+
+    assert_eq!(
+        out.matches("create_generated_client_for_builder").count(),
+        1,
+        "the normal fallible builder must use descriptor-aware construction"
+    );
+    assert_eq!(
+        out.matches("create_generated_client_with_safe_reqwest_builder")
+            .count(),
+        2,
+        "both safe Reqwest construction forms must use the same descriptor-aware path"
+    );
+    let tls_doc =
+        "In a no-TLS build, fixed HTTPS APIs return a TLS-capability error during construction."
+            .chars()
+            .filter(|ch| !ch.is_whitespace())
+            .collect::<String>();
+    assert_eq!(
+        out.matches(&tls_doc).count(),
+        5,
+        "every generated fallible constructor must document fixed-HTTPS TLS failure"
     );
 }
 

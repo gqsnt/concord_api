@@ -856,11 +856,15 @@ impl TlsCapability {
         }
     }
 
-    pub(crate) fn preflight_url(self, url: &Url) -> Result<(), TlsCapabilityError> {
-        if url.scheme() == "https" && self == Self::Unavailable {
+    fn preflight_scheme(self, scheme: &str) -> Result<(), TlsCapabilityError> {
+        if scheme == "https" && self == Self::Unavailable {
             return Err(TlsCapabilityError);
         }
         Ok(())
+    }
+
+    pub(crate) fn preflight_url(self, url: &Url) -> Result<(), TlsCapabilityError> {
+        self.preflight_scheme(url.scheme())
     }
 }
 
@@ -1148,6 +1152,13 @@ impl ReqwestClientBuildError {
         }
     }
 
+    pub(crate) fn from_tls_capability(error: TlsCapabilityError) -> Self {
+        Self {
+            kind: crate::error::ClientBuildErrorKind::Builder,
+            source: Box::new(error),
+        }
+    }
+
     /// Returns the safe structural category of the client-build failure.
     pub fn kind(&self) -> crate::error::ClientBuildErrorKind {
         self.kind
@@ -1156,6 +1167,13 @@ impl ReqwestClientBuildError {
 
 impl fmt::Display for ReqwestClientBuildError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.source.downcast_ref::<TlsCapabilityError>().is_some() {
+            return write!(
+                f,
+                "managed reqwest client construction failed: {}",
+                self.source
+            );
+        }
         write!(
             f,
             "managed reqwest client construction failed ({:?})",
@@ -1284,6 +1302,10 @@ impl Default for ManagedReqwestClient {
 }
 
 impl ManagedReqwestClient {
+    pub(crate) fn preflight_scheme(&self, scheme: &str) -> Result<(), TlsCapabilityError> {
+        self.tls_capability.preflight_scheme(scheme)
+    }
+
     pub(crate) fn preflight_url(&self, url: &Url) -> Result<(), TlsCapabilityError> {
         self.tls_capability.preflight_url(url)
     }

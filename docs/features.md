@@ -38,7 +38,9 @@ The dependency-tree invariants are documented here for focused diagnosis when
 feature ownership changes:
 
 - the `concord_core` default tree contains `default-tls`, `http2`, and `rate-limit-governor`;
-- `concord_core --no-default-features` keeps a reqwest-backed transport with `stream` and omits optional HTTP transport capabilities (`default-tls`, `http2`, `gzip`, `brotli`, `deflate`, and `multipart`); HTTP remains usable, while each HTTPS logical target is rejected after structural collision validation and before credential, limiter, hook, body, or executor side effects.
+- `concord_core --no-default-features` keeps a reqwest-backed transport with `stream` and omits optional HTTP transport capabilities (`default-tls`, `http2`, `gzip`, `brotli`, `deflate`, and `multipart`); HTTP remains usable.
+- a fixed single-origin HTTPS generated API is rejected by its fallible constructors before authentication-state initialization;
+- dynamic, multi-origin, pagination-derived, and other runtime HTTPS URLs are rejected during request preparation, after structural collision validation and before provider, body, limiter, hook, authentication-materialization, or executor side effects. The infallible generated `Client::new` retains this request-time validation behavior.
 - the `concord_core --no-default-features` tree omits the default `governor` feature edge;
 - the `concord_macros` default and `--no-default-features` trees are identical and omit runtime-only crates such as `serde_json`.
 

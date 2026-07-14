@@ -401,6 +401,50 @@ where
     )
 }
 
+/// Construct a generated client through its required-value builder.
+#[doc(hidden)]
+pub fn create_generated_client_for_builder<Cx>(
+    descriptor: &'static GeneratedApiDescriptor,
+    vars: Cx::Vars,
+    auth_vars: Cx::AuthVars,
+    ctx: crate::error::ErrorContext,
+) -> Result<crate::client::ApiClient<Cx>, crate::error::ApiClientError>
+where
+    Cx: crate::client::ClientContext,
+{
+    crate::client::ApiClient::<Cx>::with_generated_descriptor_builder(
+        Some(descriptor.origin.into_runtime()),
+        vars,
+        auth_vars,
+        ctx,
+    )
+}
+
+/// Construct a generated client through the safe managed Reqwest builder.
+#[doc(hidden)]
+pub fn create_generated_client_with_safe_reqwest_builder<Cx, F>(
+    descriptor: &'static GeneratedApiDescriptor,
+    vars: Cx::Vars,
+    auth_vars: Cx::AuthVars,
+    configure: F,
+) -> Result<crate::client::ApiClient<Cx>, crate::transport::ReqwestClientBuildError>
+where
+    Cx: crate::client::ClientContext,
+    F: FnOnce(
+        crate::transport::SafeReqwestBuilder,
+    ) -> Result<
+        crate::transport::SafeReqwestBuilder,
+        crate::transport::ReqwestClientBuildError,
+    >,
+{
+    crate::client::ApiClient::<Cx>::with_generated_descriptor_safe_reqwest_builder_fallible(
+        Some(descriptor.origin.into_runtime()),
+        vars,
+        auth_vars,
+        configure,
+    )
+}
+
 #[doc(hidden)]
 pub struct PreparedEndpointRoute(crate::endpoint::ResolvedRoute);
 
@@ -996,6 +1040,157 @@ pub use crate::types::HostLabelSource;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    const FIXED_AUTHORITY: &str = "fixed-tls-secret-sentinel.example.test";
+    #[cfg(not(feature = "default-tls"))]
+    const FIXED_HTTPS_URL: &str =
+        "https://fixed-tls-secret-sentinel.example.test/?query=QUERY_SECRET_SENTINEL";
+    #[cfg(not(feature = "default-tls"))]
+    const QUERY_MATERIAL: &str = "query=QUERY_SECRET_SENTINEL";
+    #[cfg(not(feature = "default-tls"))]
+    const PROXY_TARGET: &str = "http://proxy-secret-sentinel.example.test";
+    #[cfg(not(feature = "default-tls"))]
+    const AUTH_MATERIAL: &str = "Bearer AUTH_SECRET_SENTINEL";
+
+    struct ConstructionCx;
+
+    impl crate::client::ClientContext for ConstructionCx {
+        type Vars = ();
+        type AuthVars = Arc<AtomicUsize>;
+        type AuthState = ();
+        const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTP;
+        const DOMAIN: &'static str = "runtime.invalid";
+
+        fn init_auth_state(_: &Self::Vars, calls: &Self::AuthVars) -> Self::AuthState {
+            calls.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[cfg(not(feature = "default-tls"))]
+    #[derive(Clone)]
+    struct RetryConstructionAuthVars {
+        initializations: Arc<AtomicUsize>,
+        query_material: String,
+        auth_material: String,
+    }
+
+    #[cfg(not(feature = "default-tls"))]
+    struct RetryConstructionCx;
+
+    #[cfg(not(feature = "default-tls"))]
+    impl crate::client::ClientContext for RetryConstructionCx {
+        type Vars = ();
+        type AuthVars = RetryConstructionAuthVars;
+        type AuthState = ();
+        const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
+        const DOMAIN: &'static str = FIXED_AUTHORITY;
+
+        fn init_auth_state(_: &Self::Vars, auth: &Self::AuthVars) -> Self::AuthState {
+            let _ = (&auth.query_material, &auth.auth_material);
+            auth.initializations.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[cfg(not(feature = "default-tls"))]
+    static FIXED_HTTP_DESCRIPTOR: GeneratedApiDescriptor = GeneratedApiDescriptor::new(
+        "FixedHttpConstruction",
+        GeneratedApiOriginDescriptor::FixedSingleOrigin(GeneratedFixedOriginDescriptor::new(
+            GeneratedOriginScheme::Http,
+            "http.example.test",
+        )),
+        &[],
+    );
+
+    static FIXED_SECRET_HTTPS_DESCRIPTOR: GeneratedApiDescriptor = GeneratedApiDescriptor::new(
+        "FixedHttpsConstruction",
+        GeneratedApiOriginDescriptor::FixedSingleOrigin(GeneratedFixedOriginDescriptor::new(
+            GeneratedOriginScheme::Https,
+            FIXED_AUTHORITY,
+        )),
+        &[],
+    );
+
+    #[cfg(not(feature = "default-tls"))]
+    static DYNAMIC_DESCRIPTOR: GeneratedApiDescriptor = GeneratedApiDescriptor::new(
+        "DynamicConstruction",
+        GeneratedApiOriginDescriptor::DynamicOrigin,
+        &[],
+    );
+
+    fn construction_context() -> crate::error::ErrorContext {
+        crate::error::ErrorContext {
+            endpoint: "ConstructionClient::builder",
+            method: http::Method::GET,
+        }
+    }
+
+    #[cfg(not(feature = "default-tls"))]
+    fn retry_auth_vars(initializations: Arc<AtomicUsize>) -> RetryConstructionAuthVars {
+        RetryConstructionAuthVars {
+            initializations,
+            query_material: QUERY_MATERIAL.to_string(),
+            auth_material: AUTH_MATERIAL.to_string(),
+        }
+    }
+
+    #[cfg(not(feature = "default-tls"))]
+    fn error_chain_diagnostics(error: &(dyn std::error::Error + 'static)) -> String {
+        let mut diagnostics = format!("{error}\n{error:?}");
+        let mut source = error.source();
+        while let Some(current) = source {
+            diagnostics.push_str(&format!("\n{current}\n{current:?}"));
+            source = current.source();
+        }
+        diagnostics
+    }
+
+    #[cfg(not(feature = "default-tls"))]
+    fn assert_tls_diagnostics_sanitized(error: &(dyn std::error::Error + 'static)) {
+        let diagnostics = error_chain_diagnostics(error);
+        assert!(diagnostics.contains("HTTPS requires an available TLS capability"));
+        for secret in [
+            FIXED_AUTHORITY,
+            FIXED_HTTPS_URL,
+            "fixed-tls-secret-sentinel",
+            "FIXED_TLS_SECRET_SENTINEL",
+            QUERY_MATERIAL,
+            "QUERY_SECRET_SENTINEL",
+            PROXY_TARGET,
+            "proxy-secret-sentinel",
+            AUTH_MATERIAL,
+            "AUTH_SECRET_SENTINEL",
+        ] {
+            assert!(
+                !diagnostics.contains(secret),
+                "leaked {secret}: {diagnostics}"
+            );
+        }
+    }
+
+    #[cfg(not(feature = "default-tls"))]
+    fn retry_construction_error(
+        retry_mode: crate::retry_mode::RetryMode,
+        initializations: Arc<AtomicUsize>,
+        configure: impl FnOnce(
+            crate::transport::SafeReqwestBuilder,
+        ) -> Result<
+            crate::transport::SafeReqwestBuilder,
+            crate::transport::ReqwestClientBuildError,
+        >,
+    ) -> crate::retry_mode::RetryModeError {
+        match create_generated_client::<RetryConstructionCx, _>(
+            &FIXED_SECRET_HTTPS_DESCRIPTOR,
+            (),
+            retry_auth_vars(initializations),
+            retry_mode,
+            configure,
+        ) {
+            Ok(_) => panic!("fixed HTTPS retry-mode construction must fail without TLS"),
+            Err(error) => error,
+        }
+    }
 
     #[test]
     fn descriptor_method_adapter_is_metadata_only() {
@@ -1020,5 +1215,125 @@ mod tests {
                 "__private contained {forbidden}"
             );
         }
+    }
+
+    #[cfg(not(feature = "default-tls"))]
+    #[test]
+    fn no_tls_fixed_http_and_dynamic_generated_construction_remain_available() {
+        for descriptor in [&FIXED_HTTP_DESCRIPTOR, &DYNAMIC_DESCRIPTOR] {
+            let auth_initializations = Arc::new(AtomicUsize::new(0));
+            create_generated_client_for_builder::<ConstructionCx>(
+                descriptor,
+                (),
+                auth_initializations.clone(),
+                construction_context(),
+            )
+            .expect("HTTP-fixed and dynamic clients do not require TLS at construction");
+            assert_eq!(auth_initializations.load(Ordering::SeqCst), 1);
+        }
+    }
+
+    #[cfg(not(feature = "default-tls"))]
+    #[test]
+    fn no_tls_fixed_https_generated_builder_fails_before_auth_state_initialization() {
+        let auth_initializations = Arc::new(AtomicUsize::new(0));
+        let error = match create_generated_client_for_builder::<ConstructionCx>(
+            &FIXED_SECRET_HTTPS_DESCRIPTOR,
+            (),
+            auth_initializations.clone(),
+            construction_context(),
+        ) {
+            Ok(_) => panic!("fixed HTTPS must fail during fallible generated construction"),
+            Err(error) => error,
+        };
+
+        assert!(matches!(
+            error,
+            crate::error::ApiClientError::TlsCapabilityUnavailable { .. }
+        ));
+        assert_eq!(auth_initializations.load(Ordering::SeqCst), 0);
+        assert_eq!(error.category(), crate::error::ErrorCategory::Config);
+        assert!(std::error::Error::source(&error).is_none());
+
+        assert_tls_diagnostics_sanitized(&error);
+    }
+
+    #[cfg(not(feature = "default-tls"))]
+    #[test]
+    fn no_tls_fixed_https_safe_reqwest_construction_has_sanitized_source_chain() {
+        let auth_initializations = Arc::new(AtomicUsize::new(0));
+        let error = match create_generated_client_with_safe_reqwest_builder::<ConstructionCx, _>(
+            &FIXED_SECRET_HTTPS_DESCRIPTOR,
+            (),
+            auth_initializations.clone(),
+            Ok,
+        ) {
+            Ok(_) => panic!("fixed HTTPS safe construction must reject unavailable TLS"),
+            Err(error) => error,
+        };
+
+        assert_eq!(auth_initializations.load(Ordering::SeqCst), 0);
+        assert!(std::error::Error::source(&error).is_some());
+        assert_tls_diagnostics_sanitized(&error);
+    }
+
+    #[cfg(not(feature = "default-tls"))]
+    #[test]
+    fn no_tls_fixed_https_protocol_recovery_constructor_fails_before_auth_state_initialization() {
+        let initializations = Arc::new(AtomicUsize::new(0));
+        let error = retry_construction_error(
+            crate::retry_mode::RetryMode::ProtocolRecovery,
+            initializations.clone(),
+            Ok,
+        );
+
+        assert!(matches!(error, crate::retry_mode::RetryModeError::Build(_)));
+        assert_eq!(initializations.load(Ordering::SeqCst), 0);
+        assert_tls_diagnostics_sanitized(&error);
+    }
+
+    #[cfg(not(feature = "default-tls"))]
+    #[test]
+    fn no_tls_fixed_https_disabled_constructor_fails_before_auth_state_initialization() {
+        let initializations = Arc::new(AtomicUsize::new(0));
+        let error = retry_construction_error(
+            crate::retry_mode::RetryMode::Disabled,
+            initializations.clone(),
+            Ok,
+        );
+
+        assert!(matches!(error, crate::retry_mode::RetryModeError::Build(_)));
+        assert_eq!(initializations.load(Ordering::SeqCst), 0);
+        assert_tls_diagnostics_sanitized(&error);
+    }
+
+    #[cfg(not(feature = "default-tls"))]
+    #[test]
+    fn no_tls_fixed_https_safe_builder_retry_constructor_is_fully_sanitized() {
+        let initializations = Arc::new(AtomicUsize::new(0));
+        let proxy = crate::transport::SafeProxy::all(PROXY_TARGET).expect("safe HTTP proxy");
+        let error = retry_construction_error(
+            crate::retry_mode::RetryMode::Disabled,
+            initializations.clone(),
+            move |builder| Ok(builder.proxy(proxy)),
+        );
+
+        assert!(matches!(error, crate::retry_mode::RetryModeError::Build(_)));
+        assert_eq!(initializations.load(Ordering::SeqCst), 0);
+        assert_tls_diagnostics_sanitized(&error);
+    }
+
+    #[cfg(feature = "default-tls")]
+    #[test]
+    fn tls_enabled_fixed_https_generated_builder_construction_succeeds() {
+        let auth_initializations = Arc::new(AtomicUsize::new(0));
+        create_generated_client_for_builder::<ConstructionCx>(
+            &FIXED_SECRET_HTTPS_DESCRIPTOR,
+            (),
+            auth_initializations.clone(),
+            construction_context(),
+        )
+        .expect("compiled TLS permits fixed HTTPS construction without network I/O");
+        assert_eq!(auth_initializations.load(Ordering::SeqCst), 1);
     }
 }

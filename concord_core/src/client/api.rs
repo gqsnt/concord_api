@@ -92,6 +92,38 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         let managed_client = crate::transport::ManagedReqwestClient::with_builder_fallible_retry(
             configure, install,
         )?;
+        preflight_generated_origin(&managed_client, origin)
+            .map_err(crate::transport::ReqwestClientBuildError::from_tls_capability)?;
+        Ok(Self::with_managed_client(vars, auth_vars, managed_client))
+    }
+
+    pub(crate) fn with_generated_descriptor_builder(
+        origin: Option<crate::retry_mode::ApiOriginDescriptor>,
+        vars: Cx::Vars,
+        auth_vars: Cx::AuthVars,
+        ctx: ErrorContext,
+    ) -> Result<Self, ApiClientError> {
+        let managed_client = crate::transport::ManagedReqwestClient::new();
+        preflight_generated_origin(&managed_client, origin)
+            .map_err(|_| ApiClientError::TlsCapabilityUnavailable { ctx })?;
+        Ok(Self::with_managed_client(vars, auth_vars, managed_client))
+    }
+
+    pub(crate) fn with_generated_descriptor_safe_reqwest_builder_fallible(
+        origin: Option<crate::retry_mode::ApiOriginDescriptor>,
+        vars: Cx::Vars,
+        auth_vars: Cx::AuthVars,
+        configure: impl FnOnce(
+            crate::transport::SafeReqwestBuilder,
+        ) -> Result<
+            crate::transport::SafeReqwestBuilder,
+            crate::transport::ReqwestClientBuildError,
+        >,
+    ) -> Result<Self, crate::transport::ReqwestClientBuildError> {
+        let managed_client =
+            crate::transport::ManagedReqwestClient::with_builder_fallible(configure)?;
+        preflight_generated_origin(&managed_client, origin)
+            .map_err(crate::transport::ReqwestClientBuildError::from_tls_capability)?;
         Ok(Self::with_managed_client(vars, auth_vars, managed_client))
     }
 
@@ -357,4 +389,18 @@ impl<Cx: ClientContext> ApiClient<Cx> {
     pub fn plan_context(&self) -> crate::__private::GeneratedPlanContext<'_, Cx> {
         crate::__private::GeneratedPlanContext::new(self.vars(), self.auth_vars())
     }
+}
+
+fn preflight_generated_origin(
+    managed_client: &crate::transport::ManagedReqwestClient,
+    origin: Option<crate::retry_mode::ApiOriginDescriptor>,
+) -> Result<(), crate::transport::TlsCapabilityError> {
+    let Some(crate::retry_mode::ApiOriginDescriptor::FixedSingleOrigin(origin)) = origin else {
+        return Ok(());
+    };
+    let scheme = match origin.scheme {
+        crate::retry_mode::OriginScheme::Http => "http",
+        crate::retry_mode::OriginScheme::Https => "https",
+    };
+    managed_client.preflight_scheme(scheme)
 }

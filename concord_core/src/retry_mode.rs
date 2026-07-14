@@ -312,7 +312,7 @@ impl fmt::Display for RetryModeError {
             Self::InvalidFixedOriginMetadata => {
                 f.write_str("status retry mode requires valid verified fixed-origin metadata")
             }
-            Self::Build(_) => f.write_str("managed reqwest client construction failed"),
+            Self::Build(source) => source.fmt(f),
         }
     }
 }
