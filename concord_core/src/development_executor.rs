@@ -1491,6 +1491,39 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn protected_credential_mismatch_is_generic_and_redacted() {
+        const EXPECTED: &str = "F07_EXPECTED_CREDENTIAL_SENTINEL";
+        const OBSERVED: &str = "F07_OBSERVED_CREDENTIAL_SENTINEL";
+        let executor = DeterministicNativeExecutor::application();
+        executor.script_response(
+            ScriptedNativeResponse::bytes(StatusCode::OK, Bytes::new())
+                .with_unsafe_credential_placement_expectations(
+                    UnsafeCredentialPlacementExpectations::new().expect_header(
+                        http::header::AUTHORIZATION,
+                        DeterministicFakeCredential::new(EXPECTED),
+                    ),
+                ),
+        );
+        let mut request = native_request(None);
+        request.headers_mut().insert(
+            http::header::AUTHORIZATION,
+            http::HeaderValue::from_static(OBSERVED),
+        );
+        let error = executor
+            .execute_native(request, Some(&execution_context()))
+            .await
+            .expect_err("wrong protected credential must fail");
+        for diagnostic in [format!("{error}"), format!("{error:?}"), format!("{executor:?}")] {
+            assert!(!diagnostic.contains(EXPECTED), "{diagnostic}");
+            assert!(!diagnostic.contains(OBSERVED), "{diagnostic}");
+        }
+        let capture = executor.captures().pop().expect("sanitized capture");
+        let recorded = format!("{capture:?}");
+        assert!(!recorded.contains(EXPECTED), "{recorded}");
+        assert!(!recorded.contains(OBSERVED), "{recorded}");
+    }
+
     #[test]
     fn synthetic_success_is_a_native_reqwest_response() {
         let response =
