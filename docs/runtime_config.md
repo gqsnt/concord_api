@@ -56,6 +56,11 @@ initial execution, one authentication recovery, and each pagination page.
 Reqwest-internal protocol or status retries do not rerun hooks, rate-limit
 acquisition, or credential preparation.
 
+An unsupported HTTPS logical target fails before the hook phase. The runtime
+does not invoke `pre_send` merely to report that failure, and the established
+`request_error` contract remains limited to failures from a visible native
+execution.
+
 ## Retry-After cooldown
 
 A final `429` may install a future-call cooldown through the rate limiter. A

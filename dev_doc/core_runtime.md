@@ -4,8 +4,9 @@ The runtime has one production executor: the managed Reqwest client. Redirects
 are disabled, cookies are unsupported, and raw Reqwest clients/builders are
 not exposed.
 
-For each visible execution core performs collision validation, credential
-preparation, rate-limit acquisition, sanitized pre-send observation, final
+For each visible execution core performs collision validation, a logical-URL
+TLS-capability preflight, credential preparation, rate-limit acquisition,
+sanitized pre-send observation, final
 native request materialization, one `reqwest::Client::execute` call, response
 observation, bounded body handling, and terminal decode. A `401` or `403` may
 trigger one generation-safe authentication recovery when the logical body can
@@ -17,6 +18,14 @@ The switch is stored only on the private managed clients; it is not a client,
 endpoint, request, or generated-code generic. Application and provider clients
 have independent handles. Without the feature, the branch and storage do not
 compile and execution always reaches `reqwest::Client::execute`.
+
+Each application and provider managed Reqwest client carries a private TLS
+capability derived from the compiled Reqwest feature path. HTTP is always
+eligible. HTTPS without that capability fails before credentials, limiter,
+hooks, body factories or polling, and deterministic/native execution. The
+provider client checks its own provider URL before producing its body. The
+test-only unavailable-capability override is compiled only for Core unit
+tests; `dangerous-dev-tools` exposes no capability switch.
 
 Scripted successes are converted from `http::Response<reqwest::Body>` into a
 native `reqwest::Response`. No alternate response model exists: response

@@ -9,6 +9,7 @@ responsible for their own text.
 | Failure | Public shape | Body read | Reqwest/recovery handling |
 | --- | --- | ---: | --- |
 | Configuration/build | typed configuration or client-build error | no | none |
+| HTTPS without managed TLS capability | `ApiClientError::TlsCapabilityUnavailable` (`Config`) | no | rejected before provider, limiter, hooks, body, or execution |
 | Auth preparation | `ApiClientError::Auth` | no endpoint body | no visible execution yet |
 | Rate-limit acquire/action | `ApiClientError::RateLimit` | no | no Concord resend |
 | Timeout | `ApiClientError::Timeout` | no response body | final visible Reqwest result |
@@ -25,6 +26,13 @@ Reqwest returns the final status or request result for one visible execution;
 hidden Reqwest resends are not exposed as additional Concord response objects.
 Concord then performs terminal processing or at most one authentication
 recovery.
+
+The TLS-capability failure is URL-free and has no source payload. It reports
+only that HTTPS is unsupported by the managed client. Because it occurs before
+the hook phase, `pre_send` and `request_error` are not invoked for this
+preflight failure. Credential-provider HTTP applies the same private check to
+its separately managed client and reports
+`AuthErrorKind::TlsCapabilityUnavailable`.
 
 A final `429` can include a sanitized `Retry-After` header and rate-limit
 action. It remains the returned status error; any valid capped delay affects

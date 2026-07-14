@@ -101,7 +101,6 @@ impl<Cx: ClientContext> AuthHttpExecutor for ClientAuthHttpExecutor<'_, Cx> {
                     policy,
                 } = req;
 
-                validate_auth_internal_body(&mut headers, &body)?;
                 let auth_plan = match &mode {
                     AuthMode::SkipAuth => crate::auth::AuthPlacementPlan::default(),
                     AuthMode::UseAuth { requirement, .. } => {
@@ -111,6 +110,14 @@ impl<Cx: ClientContext> AuthHttpExecutor for ClientAuthHttpExecutor<'_, Cx> {
                     }
                 };
                 auth_plan.validate_public_request(&headers, &url)?;
+                let provider_client = self.client.managed_client.provider();
+                provider_client.preflight_url(&url).map_err(|_| {
+                    AuthError::new(
+                        AuthErrorKind::TlsCapabilityUnavailable,
+                        "HTTPS requires an available TLS capability",
+                    )
+                })?;
+                validate_auth_internal_body(&mut headers, &body)?;
 
                 let meta = RequestExecutionMeta {
                     endpoint: "<auth>",
@@ -202,7 +209,6 @@ impl<Cx: ClientContext> AuthHttpExecutor for ClientAuthHttpExecutor<'_, Cx> {
                     }
                 }
 
-                let provider_client = self.client.managed_client.provider();
                 let built = make_built_request(&provider_client.client, &base_request, &mut body)?;
 
                 let BuiltRequest {
@@ -343,6 +349,301 @@ mod tests {
         "http://provider-http.example/token"
             .parse()
             .expect("fixed provider URL")
+    }
+
+    struct ProviderPollCountingBody {
+        polls: Arc<AtomicUsize>,
+    }
+
+    impl http_body::Body for ProviderPollCountingBody {
+        type Data = bytes::Bytes;
+        type Error = std::convert::Infallible;
+
+        fn poll_frame(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
+            self.polls.fetch_add(1, Ordering::SeqCst);
+            std::task::Poll::Ready(None)
+        }
+    }
+
+    #[tokio::test]
+    async fn provider_tls_preflight_preserves_script_capture_and_one_shot_body() {
+        const QUERY_SECRET: &str = "PROVIDER_TLS_QUERY_SECRET";
+        const FRAGMENT_SECRET: &str = "PROVIDER_TLS_FRAGMENT_SECRET";
+        let provider = crate::__development::DeterministicNativeExecutor::provider();
+        provider.script_response(crate::__development::ScriptedNativeResponse::bytes(
+            http::StatusCode::OK,
+            bytes::Bytes::from_static(b"unused"),
+        ));
+        let mut client = ApiClient::<ProviderHttpTestCx>::new((), ());
+        client.install_development_provider_executor(provider.clone());
+        client.set_provider_tls_capability_for_test(crate::transport::TlsCapability::Unavailable);
+        let hooks = Arc::new(CountingHooks::default());
+        let limiter = Arc::new(CountingRateLimiter::default());
+        client.set_runtime_hooks(hooks.clone());
+        client.set_rate_limiter(limiter.clone());
+        let polls = Arc::new(AtomicUsize::new(0));
+        let mut url: url::Url = "https://provider-http.example/token"
+            .parse()
+            .expect("provider HTTPS URL");
+        url.query_pairs_mut()
+            .append_pair("credential", QUERY_SECRET);
+        url.set_fragment(Some(FRAGMENT_SECRET));
+        let mut request = provider_request(url, AuthInternalPolicy::default());
+        request.body = crate::io::PreparedBody::one_shot(
+            crate::io::AdvancedRequestBody::new(ProviderPollCountingBody {
+                polls: polls.clone(),
+            }),
+            None,
+        );
+
+        let error = send_provider(&client, request)
+            .await
+            .expect_err("provider HTTPS requires its own TLS capability");
+        assert_eq!(error.kind, AuthErrorKind::TlsCapabilityUnavailable);
+        assert_eq!(polls.load(Ordering::SeqCst), 0);
+        assert!(provider.captures().is_empty());
+        assert_eq!(provider.remaining_scripts(), 1);
+        assert_eq!(hooks.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 0);
+        assert_eq!(limiter.responses.load(Ordering::SeqCst), 0);
+        let rendered = format!("{error}\n{error:?}");
+        for sentinel in [
+            QUERY_SECRET,
+            FRAGMENT_SECRET,
+            "provider-http.example",
+            "reqwest",
+            "rustls",
+            "native-tls",
+        ] {
+            assert!(
+                !rendered.contains(sentinel),
+                "leaked {sentinel}: {rendered}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn provider_http_without_tls_and_https_with_tls_use_the_bounded_synthetic_path() {
+        for (scheme, capability, expected) in [
+            (
+                "http",
+                crate::transport::TlsCapability::Unavailable,
+                "provider-http",
+            ),
+            (
+                "https",
+                crate::transport::TlsCapability::Available,
+                "provider-https",
+            ),
+        ] {
+            let provider = crate::__development::DeterministicNativeExecutor::provider();
+            provider.script_response(crate::__development::ScriptedNativeResponse::bytes(
+                http::StatusCode::OK,
+                bytes::Bytes::copy_from_slice(expected.as_bytes()),
+            ));
+            let mut client = ApiClient::<ProviderHttpTestCx>::new((), ());
+            client.install_development_provider_executor(provider.clone());
+            client.set_provider_tls_capability_for_test(capability);
+            let response = send_provider(
+                &client,
+                provider_request(
+                    format!("{scheme}://provider-http.example/token")
+                        .parse()
+                        .expect("provider URL"),
+                    AuthInternalPolicy::default(),
+                ),
+            )
+            .await
+            .expect("supported provider request reaches bounded response handling");
+            assert_eq!(response.body, expected);
+            assert_eq!(provider.captures().len(), 1);
+            assert_eq!(provider.remaining_scripts(), 0);
+        }
+    }
+
+    #[derive(Clone)]
+    struct ProviderTlsAuthVars {
+        provider_url: url::Url,
+        provider_calls: Arc<AtomicUsize>,
+        provider_body_factories: Arc<AtomicUsize>,
+    }
+
+    #[derive(Clone)]
+    struct ProviderTlsCredentialProvider {
+        vars: ProviderTlsAuthVars,
+    }
+
+    #[derive(Clone)]
+    struct ProviderTlsAuthState {
+        provider:
+            Arc<crate::auth::CredentialProviderState<ProviderTlsCx, ProviderTlsCredentialProvider>>,
+    }
+
+    #[derive(Clone)]
+    struct ProviderTlsCx;
+
+    fn provider_tls_requirement() -> crate::auth::AuthRequirement {
+        crate::auth::AuthRequirement {
+            credential: crate::auth::CredentialRef {
+                id: crate::auth::CredentialId::new("provider-tls", "token"),
+            },
+            placement: crate::auth::AuthPlacement::Bearer,
+            usage_id: crate::auth::AuthUsageId::new("provider-tls-token"),
+            step_id: Some("provider-tls"),
+            provenance: crate::auth::AuthProvenance::new("provider-tls"),
+            challenge: Default::default(),
+        }
+    }
+
+    impl ClientContext for ProviderTlsCx {
+        type Vars = ();
+        type AuthVars = ProviderTlsAuthVars;
+        type AuthState = ProviderTlsAuthState;
+
+        const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTP;
+        const DOMAIN: &'static str = "application-http.example";
+
+        fn init_auth_state(_vars: &Self::Vars, auth: &Self::AuthVars) -> Self::AuthState {
+            Self::AuthState {
+                provider: Arc::new(crate::auth::CredentialProviderState::new(
+                    ProviderTlsCredentialProvider { vars: auth.clone() },
+                )),
+            }
+        }
+
+        fn auth_provider_binding<'a>(
+            credential: &crate::auth::CredentialId,
+            auth_state: &'a Self::AuthState,
+        ) -> Option<crate::auth::AuthProviderBinding<'a, Self>> {
+            (credential == &crate::auth::CredentialId::new("provider-tls", "token")).then(|| {
+                auth_state.provider.secret_binding(
+                    crate::auth::AuthPreparationMode::PerExecution,
+                    crate::auth::AuthChallengeMode::Refresh,
+                )
+            })
+        }
+    }
+
+    impl crate::auth::CredentialProvider<ProviderTlsCx> for ProviderTlsCredentialProvider {
+        type Credential = crate::auth::ApiKey;
+
+        fn id(&self) -> crate::auth::CredentialId {
+            crate::auth::CredentialId::new("provider-tls", "token")
+        }
+
+        fn acquire<'a>(
+            &'a self,
+            ctx: crate::auth::CredentialContext<'a, ProviderTlsCx>,
+        ) -> crate::auth::AuthFuture<'a, Result<Self::Credential, AuthError>> {
+            Box::pin(async move {
+                self.vars.provider_calls.fetch_add(1, Ordering::SeqCst);
+                let calls = self.vars.provider_body_factories.clone();
+                ctx.executor
+                    .send(AuthHttpRequest {
+                        method: http::Method::POST,
+                        url: self.vars.provider_url.clone(),
+                        headers: http::HeaderMap::new(),
+                        body: crate::io::PreparedBody::factory(
+                            http_body::SizeHint::new(),
+                            None,
+                            move || {
+                                calls.fetch_add(1, Ordering::SeqCst);
+                                Ok(crate::io::AdvancedRequestBody::new(http_body_util::Full::<
+                                    bytes::Bytes,
+                                >::new(
+                                    bytes::Bytes::new()
+                                )))
+                            },
+                        ),
+                        mode: AuthMode::SkipAuth,
+                        policy: AuthInternalPolicy::default(),
+                    })
+                    .await?;
+                Ok(crate::auth::ApiKey::new("provider-result"))
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn application_http_with_provider_https_preflights_before_application_side_effects() {
+        let application = crate::__development::DeterministicNativeExecutor::application();
+        application.script_response(crate::__development::ScriptedNativeResponse::bytes(
+            http::StatusCode::OK,
+            bytes::Bytes::from_static(b"unused-application"),
+        ));
+        let provider = crate::__development::DeterministicNativeExecutor::provider();
+        provider.script_response(crate::__development::ScriptedNativeResponse::bytes(
+            http::StatusCode::OK,
+            bytes::Bytes::from_static(b"unused-provider"),
+        ));
+        let provider_calls = Arc::new(AtomicUsize::new(0));
+        let provider_body_factories = Arc::new(AtomicUsize::new(0));
+        let application_body_factories = Arc::new(AtomicUsize::new(0));
+        let mut client = ApiClient::<ProviderTlsCx>::new(
+            (),
+            ProviderTlsAuthVars {
+                provider_url: "https://provider-http.example/token"
+                    .parse()
+                    .expect("provider HTTPS URL"),
+                provider_calls: provider_calls.clone(),
+                provider_body_factories: provider_body_factories.clone(),
+            },
+        );
+        client.install_development_application_executor(application.clone());
+        client.install_development_provider_executor(provider.clone());
+        client.set_provider_tls_capability_for_test(crate::transport::TlsCapability::Unavailable);
+        let hooks = Arc::new(CountingHooks::default());
+        let limiter = Arc::new(CountingRateLimiter::default());
+        client.set_runtime_hooks(hooks.clone());
+        client.set_rate_limiter(limiter.clone());
+        let state = client.auth_state();
+        let generation_before =
+            crate::__development::credential_generation_snapshot(state.provider.as_ref()).await;
+        let mut plan = crate::regression_tests::request_plan(
+            "ApplicationHttpProviderHttps",
+            http::Method::POST,
+            "/application",
+            Default::default(),
+            None,
+        );
+        plan.endpoint.policy.auth.requirements = vec![provider_tls_requirement()];
+        let calls = application_body_factories.clone();
+        plan.body = crate::io::PreparedBody::factory(http_body::SizeHint::new(), None, move || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok(crate::io::AdvancedRequestBody::new(http_body_util::Full::<
+                bytes::Bytes,
+            >::new(
+                bytes::Bytes::new()
+            )))
+        });
+
+        let error = client
+            .execute_plan::<crate::prelude::Text<String>>(plan)
+            .await
+            .expect_err("provider HTTPS preflight must fail the application preparation");
+        assert!(matches!(
+            &error,
+            ApiClientError::Auth { source, .. }
+                if source.kind == AuthErrorKind::TlsCapabilityUnavailable
+        ));
+        assert_eq!(error.category(), crate::error::ErrorCategory::Config);
+        assert_eq!(provider_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(provider_body_factories.load(Ordering::SeqCst), 0);
+        assert_eq!(application_body_factories.load(Ordering::SeqCst), 0);
+        assert!(provider.captures().is_empty());
+        assert_eq!(provider.remaining_scripts(), 1);
+        assert!(application.captures().is_empty());
+        assert_eq!(application.remaining_scripts(), 1);
+        assert_eq!(hooks.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 0);
+        assert_eq!(limiter.responses.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            crate::__development::credential_generation_snapshot(state.provider.as_ref()).await,
+            generation_before
+        );
     }
 
     #[tokio::test]

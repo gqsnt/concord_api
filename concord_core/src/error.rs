@@ -132,6 +132,9 @@ pub enum ApiClientError {
         source: url::ParseError,
     },
 
+    #[error("{ctx}: HTTPS requires an available TLS capability")]
+    TlsCapabilityUnavailable { ctx: ErrorContext },
+
     #[error("{ctx}: request timed out")]
     Timeout {
         ctx: ErrorContext,
@@ -285,6 +288,10 @@ impl Debug for ApiClientError {
                 .debug_struct("BuildUrl")
                 .field("ctx", ctx)
                 .field("source", source)
+                .finish(),
+            Self::TlsCapabilityUnavailable { ctx } => f
+                .debug_struct("TlsCapabilityUnavailable")
+                .field("ctx", ctx)
                 .finish(),
             Self::Timeout { ctx, source } => f
                 .debug_struct("Timeout")
@@ -681,6 +688,7 @@ impl ApiClientError {
         match self {
             ApiClientError::InvalidParam { ctx, .. }
             | ApiClientError::BuildUrl { ctx, .. }
+            | ApiClientError::TlsCapabilityUnavailable { ctx }
             | ApiClientError::Timeout { ctx, .. }
             | ApiClientError::Connect { ctx, .. }
             | ApiClientError::RequestExecution { ctx, .. }
@@ -711,6 +719,7 @@ impl ApiClientError {
         match self {
             ApiClientError::InvalidParam { .. }
             | ApiClientError::BuildUrl { .. }
+            | ApiClientError::TlsCapabilityUnavailable { .. }
             | ApiClientError::InvalidHostLabel { .. } => ErrorCategory::Config,
             ApiClientError::Timeout { .. } => ErrorCategory::Timeout,
             ApiClientError::Connect { .. } => ErrorCategory::Connect,
@@ -742,6 +751,11 @@ impl ApiClientError {
                 if source.kind == crate::auth::AuthErrorKind::RejectedCredential =>
             {
                 ErrorCategory::AuthRejected
+            }
+            ApiClientError::Auth { source, .. }
+                if source.kind == crate::auth::AuthErrorKind::TlsCapabilityUnavailable =>
+            {
+                ErrorCategory::Config
             }
             ApiClientError::Auth { .. } => ErrorCategory::AuthRejected,
             ApiClientError::PolicyViolation { .. } | ApiClientError::RuntimeState { .. } => {

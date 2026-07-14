@@ -43,6 +43,7 @@ pub enum AuthErrorKind {
     RefreshFailed,
     RejectedCredential,
     UnsupportedScheme,
+    TlsCapabilityUnavailable,
     RecursionDetected,
     ProviderRejected,
     ResponseTooLarge,

@@ -182,9 +182,11 @@ mod tests {
             method: Method::GET,
             logical_url: "https://example.test/path".parse().unwrap(),
             headers,
-            protected_header_names: protected
-                .then(|| vec![HeaderName::from_static("authorization")])
-                .unwrap_or_default(),
+            protected_header_names: if protected {
+                vec![HeaderName::from_static("authorization")]
+            } else {
+                Vec::new()
+            },
             body_category: CapturedBodyCategory::Empty,
             known_body_length: None,
             endpoint: None,

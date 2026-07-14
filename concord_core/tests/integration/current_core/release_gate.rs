@@ -217,6 +217,7 @@ fn development_boundary_is_explicit_narrow_and_not_generated() {
         "LimitedBody",
         "ReqwestError",
         "ReqwestErrorKind",
+        "TlsCapability",
         "GeneratedResponseEntity",
         "GeneratedRequestEntity",
     ] {
@@ -336,9 +337,19 @@ fn deterministic_native_executor_remains_a_private_feature_gated_reqwest_seam() 
         2,
         "application and provider must own independent handles"
     );
+    assert!(
+        transport
+            .contains("#[cfg(test)]\n    pub(crate) fn set_application_tls_capability_for_test")
+    );
+    assert!(
+        transport.contains("#[cfg(test)]\n    pub(crate) fn set_provider_tls_capability_for_test")
+    );
+    assert!(!transport.contains("pub fn set_application_tls_capability"));
+    assert!(!transport.contains("pub fn set_provider_tls_capability"));
 
     let api = read_repo_file("concord_core/src/client/api.rs");
     assert!(!api.contains("pub fn with_executor"));
+    assert!(!api.contains("pub fn with_tls_capability"));
     assert!(!api.contains("ApiClient<Cx,"));
     let generated = read_repo_file("concord_core/src/__private/mod.rs");
     assert!(!generated.contains("DeterministicNativeExecutor"));
@@ -360,6 +371,7 @@ fn deterministic_native_executor_remains_a_private_feature_gated_reqwest_seam() 
         "GeneratedDevelopmentClient",
         "__development_core_client",
         "DeterministicNativeExecutor",
+        "TlsCapability",
     ] {
         assert!(
             !wrapper.contains(forbidden),

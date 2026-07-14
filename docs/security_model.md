@@ -151,15 +151,21 @@ Concord's runtime order is fixed at a high level:
 
 1. plan the request;
 2. derive secret-free auth placements and validate public collisions;
-3. acquire credentials and materialize the execution body;
-4. acquire any rate-limit resources;
-5. run sanitized hooks and debug output;
-6. materialize authentication and immediately invoke transport;
-7. observe rate-limit feedback;
-8. optionally perform one authentication recovery through the same visible-execution sequence;
-9. decode or return the terminal response.
+3. validate the logical URL against the application managed client's private TLS capability;
+4. acquire credentials and materialize the execution body;
+5. acquire any rate-limit resources;
+6. run sanitized hooks and debug output;
+7. materialize authentication and immediately invoke transport;
+8. observe rate-limit feedback;
+9. optionally perform one authentication recovery through the same visible-execution sequence;
+10. decode or return the terminal response.
 
 The exact implementation is intentionally internal, but the order above is the contract to rely on.
+
+Credential-provider HTTP has its own managed Reqwest client and performs its
+own logical-URL TLS preflight before provider request-body production or
+submission. Application and provider capabilities and deterministic executor
+channels are never substituted for one another.
 
 ## Retry And Rate-Limit Safety
 

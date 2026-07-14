@@ -1514,7 +1514,11 @@ mod tests {
             .execute_native(request, Some(&execution_context()))
             .await
             .expect_err("wrong protected credential must fail");
-        for diagnostic in [format!("{error}"), format!("{error:?}"), format!("{executor:?}")] {
+        for diagnostic in [
+            format!("{error}"),
+            format!("{error:?}"),
+            format!("{executor:?}"),
+        ] {
             assert!(!diagnostic.contains(EXPECTED), "{diagnostic}");
             assert!(!diagnostic.contains(OBSERVED), "{diagnostic}");
         }

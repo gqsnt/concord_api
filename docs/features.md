@@ -38,7 +38,7 @@ The dependency-tree invariants are documented here for focused diagnosis when
 feature ownership changes:
 
 - the `concord_core` default tree contains `default-tls`, `http2`, and `rate-limit-governor`;
-- `concord_core --no-default-features` keeps a reqwest-backed transport with `stream` and omits optional HTTP transport capabilities (`default-tls`, `http2`, `gzip`, `brotli`, `deflate`, and `multipart`); HTTPS is rejected before execution in this mode.
+- `concord_core --no-default-features` keeps a reqwest-backed transport with `stream` and omits optional HTTP transport capabilities (`default-tls`, `http2`, `gzip`, `brotli`, `deflate`, and `multipart`); HTTP remains usable, while each HTTPS logical target is rejected after structural collision validation and before credential, limiter, hook, body, or executor side effects.
 - the `concord_core --no-default-features` tree omits the default `governor` feature edge;
 - the `concord_macros` default and `--no-default-features` trees are identical and omit runtime-only crates such as `serde_json`.
 
@@ -84,6 +84,11 @@ credential-placement checks require the separately named unsafe expectation
 builder and deterministic fake values; expectation diagnostics remain
 redacted. The feature does not expose runtime planning types or a production
 executor selector.
+
+Installing a deterministic executor never changes the managed client's TLS
+capability. The capability is private, derived when the application and
+provider Reqwest clients are constructed, and has no development or
+production public override.
 
 ## Extending The Surface
 

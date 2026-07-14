@@ -961,7 +961,7 @@ impl ObservationAuthVars {
 pub struct ObservationAuthCx;
 
 #[derive(Clone)]
-struct ObservationSecretProvider;
+pub(crate) struct ObservationSecretProvider;
 
 impl CredentialProvider<ObservationAuthCx> for ObservationSecretProvider {
     type Credential = ApiKey;
@@ -1046,7 +1046,7 @@ impl CredentialProvider<ObservationAuthCx> for ObservationBasicProvider {
 }
 
 pub struct ObservationAuthState {
-    secret: Arc<CredentialProviderState<ObservationAuthCx, ObservationSecretProvider>>,
+    pub(crate) secret: Arc<CredentialProviderState<ObservationAuthCx, ObservationSecretProvider>>,
     basic: Arc<CredentialProviderState<ObservationAuthCx, ObservationBasicProvider>>,
     use_basic: bool,
     refresh_on_challenge: bool,

@@ -33,6 +33,24 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             .install_development_provider_executor(executor);
     }
 
+    #[cfg(test)]
+    pub(crate) fn set_application_tls_capability_for_test(
+        &mut self,
+        capability: crate::transport::TlsCapability,
+    ) {
+        self.managed_client
+            .set_application_tls_capability_for_test(capability);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_provider_tls_capability_for_test(
+        &mut self,
+        capability: crate::transport::TlsCapability,
+    ) {
+        self.managed_client
+            .set_provider_tls_capability_for_test(capability);
+    }
+
     pub fn new(vars: Cx::Vars, auth_vars: Cx::AuthVars) -> Self {
         Self::with_managed_client(
             vars,

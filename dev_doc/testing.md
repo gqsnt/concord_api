@@ -178,6 +178,13 @@ cargo test -p concord_core --all-features capture
 cargo test -p concord_core --all-features provider
 ```
 
+TLS preflight coverage includes application and provider ordering, HTTP in a
+no-TLS build, TLS-enabled synthetic HTTPS, dynamic-origin and later-page
+changes, body-factory/non-polling assertions, error redaction, and untouched
+executor scripts. The no-default feature-boundary fixture is run with
+`dangerous-dev-tools` only to provide offline deterministic native execution;
+that feature does not alter or override the managed TLS capability.
+
 `tests/development_boundary.rs` performs an external offline compile check: the
 fixture fails without `dangerous-dev-tools` and compiles when the feature is
 enabled. Repository boundary checks also keep executor symbols out of `prelude`,

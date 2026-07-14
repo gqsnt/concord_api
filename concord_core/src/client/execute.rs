@@ -443,12 +443,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         // because a challenge could occur; instead a challenge simply cannot
         // trigger a second execution.
         let auth_rebuildable = body.is_replayable();
-        let auth_state_snapshot = self
-            .try_auth_state()
-            .map_err(|source| ApiClientError::Auth {
-                ctx: ctx.clone(),
-                source,
-            })?;
+        let mut auth_state_snapshot = None;
         let auth_http = ClientAuthHttpExecutor { client: self };
         let mut auth_placement_plan: Option<crate::auth::AuthPlacementPlan> = None;
         // At most one bounded authentication recovery. When set, the next
@@ -461,13 +456,42 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         let mut cached_auth_preparation: Option<CachedAuthPreparation> = None;
 
         loop {
+            let meta = plan.endpoint.meta.request_meta(plan.overrides.page_index);
+            let mut head = self.resolve_public_request_head(plan, body, meta)?;
+            let auth_plan = match auth_placement_plan.as_ref() {
+                Some(existing) => existing,
+                None => auth_placement_plan.insert(
+                    crate::auth::AuthPlacementPlan::from_auth_plan(&plan.endpoint.policy.auth)
+                        .map_err(|source| ApiClientError::Auth {
+                            ctx: ctx.clone(),
+                            source,
+                        })?,
+                ),
+            };
+            head.apply_auth_preflight(auth_plan, &ctx)?;
+            self.managed_client
+                .preflight_url(&head.url)
+                .map_err(|_| ApiClientError::TlsCapabilityUnavailable { ctx: ctx.clone() })?;
+            if auth_state_snapshot.is_none() {
+                auth_state_snapshot =
+                    Some(
+                        self.try_auth_state()
+                            .map_err(|source| ApiClientError::Auth {
+                                ctx: ctx.clone(),
+                                source,
+                            })?,
+                    );
+            }
+            let auth_state_snapshot = auth_state_snapshot
+                .as_ref()
+                .expect("TLS preflight initializes the authentication state snapshot");
             if let Some(intent) = pending_auth.take() {
                 // pending_auth is only ever set for a rebuildable body, so the
                 // credential refresh below always has a reconstructable request.
                 let step = self
                     .apply_auth_rejection_step(AuthRejectionStepCtx {
                         plan,
-                        auth_state: &auth_state_snapshot,
+                        auth_state: auth_state_snapshot,
                         auth_http: &auth_http,
                         response_meta: &intent.response_meta,
                         auth_attempt: &intent.auth_attempt,
@@ -484,22 +508,9 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                     AuthRejectionStep::Fail(err) => return Err(err),
                 }
             }
-            let meta = plan.endpoint.meta.request_meta(plan.overrides.page_index);
-            let mut head = self.resolve_public_request_head(plan, body, meta)?;
-            let auth_plan = match auth_placement_plan.as_ref() {
-                Some(existing) => existing,
-                None => auth_placement_plan.insert(
-                    crate::auth::AuthPlacementPlan::from_auth_plan(&plan.endpoint.policy.auth)
-                        .map_err(|source| ApiClientError::Auth {
-                            ctx: ctx.clone(),
-                            source,
-                        })?,
-                ),
-            };
-            head.apply_auth_preflight(auth_plan, &ctx)?;
             let auth_preparation = if cached_auth_preparation.is_none() {
                 Some(
-                    self.prepare_auth(plan, &auth_state_snapshot, &auth_http, &head)
+                    self.prepare_auth(plan, auth_state_snapshot, &auth_http, &head)
                         .await?,
                 )
             } else {
@@ -534,7 +545,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                     let response_headers = observed.response.headers();
                     let classification = self.classify_auth_rejection(AuthRejectionCtx {
                         plan,
-                        auth_state: &auth_state_snapshot,
+                        auth_state: auth_state_snapshot,
                         meta: response_meta,
                         status: response_status,
                         headers: response_headers,
@@ -572,7 +583,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                                 // before returning its original status path.
                                 self.invalidate_auth_challenge_only(
                                     plan,
-                                    &auth_state_snapshot,
+                                    auth_state_snapshot,
                                     &auth_http,
                                     &intent,
                                     auth_rebuildable,
@@ -591,7 +602,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                                         let terminal = self
                                             .invalidate_exhausted_auth_challenge(
                                                 plan,
-                                                &auth_state_snapshot,
+                                                auth_state_snapshot,
                                                 &auth_http,
                                                 &intent,
                                                 auth_rebuildable,
@@ -618,7 +629,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                             match self
                                 .apply_auth_rejection_step(AuthRejectionStepCtx {
                                     plan,
-                                    auth_state: &auth_state_snapshot,
+                                    auth_state: auth_state_snapshot,
                                     auth_http: &auth_http,
                                     response_meta: &intent.response_meta,
                                     auth_attempt: &auth_attempt.summary,

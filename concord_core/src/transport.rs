@@ -819,6 +819,7 @@ fn classify_reqwest_error(err: &reqwest::Error) -> ReqwestErrorKind {
 #[derive(Clone)]
 pub(crate) struct ManagedReqwestClient {
     pub(crate) client: reqwest::Client,
+    tls_capability: TlsCapability,
     configured_proxies: Vec<SafeProxy>,
     provider: ManagedProviderReqwestClient,
     #[cfg(any(test, feature = "dangerous-dev-tools"))]
@@ -830,10 +831,50 @@ pub(crate) struct ManagedReqwestClient {
 #[derive(Clone)]
 pub(crate) struct ManagedProviderReqwestClient {
     pub(crate) client: reqwest::Client,
+    tls_capability: TlsCapability,
     configured_proxies: Vec<SafeProxy>,
     #[cfg(any(test, feature = "dangerous-dev-tools"))]
     development_executor: Option<crate::development_executor::DeterministicNativeExecutor>,
 }
+
+/// HTTPS capability carried by each concrete managed Reqwest client.
+///
+/// Concord's safe builder does not expose a TLS selector, so this is derived
+/// once from the Reqwest feature path selected by this crate's feature graph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TlsCapability {
+    Available,
+    Unavailable,
+}
+
+impl TlsCapability {
+    const fn compiled() -> Self {
+        if cfg!(feature = "default-tls") {
+            Self::Available
+        } else {
+            Self::Unavailable
+        }
+    }
+
+    pub(crate) fn preflight_url(self, url: &Url) -> Result<(), TlsCapabilityError> {
+        if url.scheme() == "https" && self == Self::Unavailable {
+            return Err(TlsCapabilityError);
+        }
+        Ok(())
+    }
+}
+
+/// Secret-free private source used when adapting provider-side TLS failures.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct TlsCapabilityError;
+
+impl fmt::Display for TlsCapabilityError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("HTTPS requires an available TLS capability")
+    }
+}
+
+impl Error for TlsCapabilityError {}
 
 /// A credential-free explicit proxy target for the managed Reqwest transport.
 /// Only a credential-free HTTP(S) origin is accepted, so a target cannot
@@ -1214,9 +1255,11 @@ impl ManagedReqwestClient {
             .map_err(ReqwestClientBuildError::from_reqwest)?;
         Ok(Self {
             client,
+            tls_capability: TlsCapability::compiled(),
             configured_proxies,
             provider: ManagedProviderReqwestClient {
                 client: provider_client,
+                tls_capability: TlsCapability::compiled(),
                 configured_proxies: provider_proxies,
                 #[cfg(any(test, feature = "dangerous-dev-tools"))]
                 development_executor: development_provider_executor,
@@ -1241,6 +1284,10 @@ impl Default for ManagedReqwestClient {
 }
 
 impl ManagedReqwestClient {
+    pub(crate) fn preflight_url(&self, url: &Url) -> Result<(), TlsCapabilityError> {
+        self.tls_capability.preflight_url(url)
+    }
+
     pub(crate) async fn execute(
         &self,
         request: reqwest::Request,
@@ -1273,6 +1320,16 @@ impl ManagedReqwestClient {
         &self.provider
     }
 
+    #[cfg(test)]
+    pub(crate) fn set_application_tls_capability_for_test(&mut self, capability: TlsCapability) {
+        self.tls_capability = capability;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_provider_tls_capability_for_test(&mut self, capability: TlsCapability) {
+        self.provider.tls_capability = capability;
+    }
+
     pub(crate) fn response_error_mapper(&self) -> NativeResponseErrorMapper {
         NativeResponseErrorMapper {
             proxies: self.configured_proxies.clone(),
@@ -1281,6 +1338,10 @@ impl ManagedReqwestClient {
 }
 
 impl ManagedProviderReqwestClient {
+    pub(crate) fn preflight_url(&self, url: &Url) -> Result<(), TlsCapabilityError> {
+        self.tls_capability.preflight_url(url)
+    }
+
     pub(crate) async fn execute(
         &self,
         request: reqwest::Request,
@@ -1306,32 +1367,11 @@ async fn execute_managed(
     request: reqwest::Request,
     _context: Option<&RequestExecutionContext>,
 ) -> Result<reqwest::Response, ReqwestError> {
-    #[cfg(not(feature = "default-tls"))]
-    if request.url().scheme() == "https" {
-        return Err(ReqwestError::with_kind(
-            ReqwestErrorKind::Tls,
-            TlsCapabilityUnavailable,
-        ));
-    }
     client
         .execute(request)
         .await
         .map_err(|error| ReqwestError::from_reqwest(error, configured_proxies))
 }
-
-#[cfg(not(feature = "default-tls"))]
-#[derive(Debug)]
-struct TlsCapabilityUnavailable;
-
-#[cfg(not(feature = "default-tls"))]
-impl fmt::Display for TlsCapabilityUnavailable {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("HTTPS execution requires Concord's `default-tls` feature")
-    }
-}
-
-#[cfg(not(feature = "default-tls"))]
-impl Error for TlsCapabilityUnavailable {}
 
 #[cfg(test)]
 #[allow(dead_code)]
@@ -1648,19 +1688,14 @@ mod reqwest_transport_tests {
     }
 
     #[cfg(not(feature = "default-tls"))]
-    #[tokio::test]
-    async fn https_without_tls_is_rejected_before_reqwest_execution() {
-        let request = reqwest::Request::new(
-            Method::GET,
-            Url::parse("https://tls-secret.example.test/path").expect("URL"),
-        );
+    #[test]
+    fn https_without_tls_is_rejected_by_managed_capability() {
+        let url = Url::parse("https://tls-secret.example.test/path").expect("URL");
         let error = ManagedReqwestClient::new()
-            .execute(request, None)
-            .await
+            .preflight_url(&url)
             .expect_err("HTTPS must be preflighted without TLS support");
-        assert_eq!(error.kind(), ReqwestErrorKind::Tls);
-        let diagnostics = format!("{error}\n{error:?}\n{}", error.source_error());
-        assert!(diagnostics.contains("default-tls"));
+        let diagnostics = format!("{error}\n{error:?}");
+        assert!(diagnostics.contains("TLS capability"));
         assert!(!diagnostics.contains("tls-secret.example.test"));
     }
 
