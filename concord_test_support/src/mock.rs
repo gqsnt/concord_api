@@ -46,6 +46,23 @@ pub struct MockReply {
     delay: Option<Duration>,
     gate: Option<ReplyGate>,
     expect_request_body_failure: bool,
+    expected_query_pairs: Vec<ExpectedQueryPair>,
+}
+
+#[derive(Clone)]
+struct ExpectedQueryPair {
+    name: String,
+    value: String,
+}
+
+impl std::fmt::Debug for ExpectedQueryPair {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ExpectedQueryPair")
+            .field("name", &self.name)
+            .field("value", &"<redacted>")
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -139,6 +156,7 @@ impl MockReply {
             delay: None,
             gate: None,
             expect_request_body_failure: false,
+            expected_query_pairs: Vec::new(),
         }
     }
 
@@ -181,6 +199,16 @@ impl MockReply {
 
     pub fn expect_request_body_failure(mut self) -> Self {
         self.expect_request_body_failure = true;
+        self
+    }
+
+    /// Verifies a query pair against the native request target without copying
+    /// that target or value into recorded request metadata or diagnostics.
+    pub fn expect_query_pair(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.expected_query_pairs.push(ExpectedQueryPair {
+            name: name.into(),
+            value: value.into(),
+        });
         self
     }
 }
@@ -516,6 +544,17 @@ fn serve_one(
     let target = words
         .next()
         .ok_or_else(|| "missing request target".to_string())?;
+    let native_url = base
+        .join(target.trim_start_matches('/'))
+        .map_err(|_| "native request target could not be parsed".to_string())?;
+    for expected in &reply.expected_query_pairs {
+        if !native_url
+            .query_pairs()
+            .any(|(name, value)| name == expected.name.as_str() && value == expected.value.as_str())
+        {
+            return Err("expected native query authentication was absent".to_string());
+        }
+    }
     let mut headers = HeaderMap::new();
     loop {
         let mut line = String::new();
@@ -549,19 +588,12 @@ fn serve_one(
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(0);
-    let original_url_header = http::HeaderName::from_static("x-concord-test-original-url");
-    let url = headers
-        .remove(&original_url_header)
-        .and_then(|value| {
-            value
-                .to_str()
-                .ok()
-                .and_then(|value| url::Url::parse(value).ok())
-        })
-        .unwrap_or_else(|| {
-            base.join(target.trim_start_matches('/'))
-                .expect("captured request target")
-        });
+    let logical_url_header = http::HeaderName::from_static("x-concord-test-logical-url");
+    let url = captured_url(
+        base,
+        &native_url,
+        headers.remove(&logical_url_header).as_ref(),
+    );
     let endpoint = take_header_string(&mut headers, "x-concord-test-endpoint");
     let page_index = take_header_string(&mut headers, "x-concord-test-page-index")
         .and_then(|value| value.parse().ok());
@@ -671,6 +703,23 @@ fn serve_one(
     }
 }
 
+fn captured_url(
+    base: &url::Url,
+    native_url: &url::Url,
+    logical_url_header: Option<&http::HeaderValue>,
+) -> url::Url {
+    logical_url_header
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| url::Url::parse(value).ok())
+        .unwrap_or_else(|| {
+            let mut safe_fallback = base.clone();
+            safe_fallback.set_path(native_url.path());
+            safe_fallback.set_query(None);
+            safe_fallback.set_fragment(None);
+            safe_fallback
+        })
+}
+
 fn take_header_string(headers: &mut HeaderMap, name: &'static str) -> Option<String> {
     headers
         .remove(http::HeaderName::from_static(name))
@@ -758,6 +807,10 @@ fn reason(status: StatusCode) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const QUERY_NAME: &str = "credential_parameter_without_sensitive_words";
+    const EXPECTED_SECRET: &str = "C01_TEST_SUPPORT_EXPECTED_4P7_SENTINEL";
+    const ACTUAL_SECRET: &str = "C01_TEST_SUPPORT_ACTUAL_9K2_SENTINEL";
 
     #[test]
     #[should_panic(expected = "mock scripted replies remain unused")]
@@ -915,6 +968,131 @@ mod tests {
         drop(requests);
         assert_eq!(owned, "OwnedEndpoint");
         handle.finish();
+    }
+
+    #[test]
+    fn missing_logical_url_header_records_query_free_origin_local_fallback() {
+        let reply =
+            MockReply::status(StatusCode::OK).expect_query_pair(QUERY_NAME, EXPECTED_SECRET);
+        let reply_debug = format!("{reply:?}");
+        assert!(!reply_debug.contains(EXPECTED_SECRET));
+        let (server, handle) = mock().reply(reply).build();
+
+        send_raw_request(
+            &server,
+            &format!("/protected/items?{QUERY_NAME}={EXPECTED_SECRET}&visible=wire-only"),
+            &[],
+        );
+
+        let requests = handle.recorded();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].url.origin(), server.base_url().origin());
+        assert_eq!(requests[0].url.path(), "/protected/items");
+        assert_eq!(requests[0].url.query(), None);
+        assert_eq!(requests[0].url.fragment(), None);
+        assert!(!format!("{:?}", requests[0]).contains(EXPECTED_SECRET));
+        drop(requests);
+        handle.finish();
+    }
+
+    #[test]
+    fn malformed_logical_url_header_records_query_free_origin_local_fallback() {
+        let (server, handle) = mock()
+            .reply(MockReply::status(StatusCode::OK).expect_query_pair(QUERY_NAME, EXPECTED_SECRET))
+            .build();
+
+        send_raw_request(
+            &server,
+            &format!("http://native.example.test/protected/items?{QUERY_NAME}={EXPECTED_SECRET}"),
+            &[(
+                "X-Concord-Test-Logical-Url",
+                &format!("not-a-url-{EXPECTED_SECRET}"),
+            )],
+        );
+
+        let requests = handle.recorded();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].url.origin(), server.base_url().origin());
+        assert_eq!(requests[0].url.path(), "/protected/items");
+        assert_eq!(requests[0].url.query(), None);
+        assert_eq!(requests[0].url.fragment(), None);
+        assert!(!format!("{:?}", requests[0]).contains(EXPECTED_SECRET));
+        drop(requests);
+        handle.finish();
+    }
+
+    #[test]
+    fn expected_query_mismatch_failure_does_not_render_query_secrets() {
+        let (server, handle) = mock()
+            .reply(MockReply::status(StatusCode::OK).expect_query_pair(QUERY_NAME, EXPECTED_SECRET))
+            .build();
+
+        send_raw_request(
+            &server,
+            &format!("/protected?{QUERY_NAME}={ACTUAL_SECRET}"),
+            &[],
+        );
+        drop(server);
+
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| handle.finish()))
+            .expect_err("query mismatch must fail the mock");
+        let diagnostic = panic_message(panic);
+        assert!(diagnostic.contains("expected native query authentication was absent"));
+        assert!(!diagnostic.contains(EXPECTED_SECRET));
+        assert!(!diagnostic.contains(ACTUAL_SECRET));
+    }
+
+    #[test]
+    fn valid_logical_url_header_is_authoritative_and_keeps_public_query() {
+        let (server, handle) = mock()
+            .reply(MockReply::status(StatusCode::OK).expect_query_pair(QUERY_NAME, EXPECTED_SECRET))
+            .build();
+        let logical_url = "https://api.example.test/public/items?visible=ordinary-value";
+
+        send_raw_request(
+            &server,
+            &format!("/protected/items?{QUERY_NAME}={EXPECTED_SECRET}"),
+            &[("X-Concord-Test-Logical-Url", logical_url)],
+        );
+
+        let requests = handle.recorded();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].url.as_str(), logical_url);
+        assert_eq!(
+            requests[0].url.query_pairs().collect::<Vec<_>>(),
+            [("visible".into(), "ordinary-value".into())]
+        );
+        assert!(
+            !requests[0]
+                .url
+                .query_pairs()
+                .any(|(name, _)| name == QUERY_NAME)
+        );
+        assert!(!format!("{:?}", requests[0]).contains(EXPECTED_SECRET));
+        drop(requests);
+        handle.finish();
+    }
+
+    fn send_raw_request(server: &MockServer, target: &str, headers: &[(&str, &str)]) {
+        let address = server.base_url().socket_addrs(|| None).expect("address")[0];
+        let mut stream = TcpStream::connect(address).expect("connect");
+        write!(stream, "GET {target} HTTP/1.1\r\nHost: example.test\r\n").expect("request line");
+        for (name, value) in headers {
+            write!(stream, "{name}: {value}\r\n").expect("request header");
+        }
+        stream.write_all(b"\r\n").expect("request end");
+        let mut response = String::new();
+        stream.read_to_string(&mut response).expect("response");
+    }
+
+    fn panic_message(panic: Box<dyn std::any::Any + Send>) -> String {
+        if let Some(message) = panic.downcast_ref::<String>() {
+            message.clone()
+        } else if let Some(message) = panic.downcast_ref::<&str>() {
+            (*message).to_owned()
+        } else {
+            "non-string panic".to_owned()
+        }
     }
 
     fn wait_until(timeout: Duration, predicate: impl Fn() -> bool) {

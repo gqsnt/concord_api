@@ -35,7 +35,7 @@ let items = api
 
 The `.paginate(...)` builder is available only for endpoint structs generated from DSL endpoints that declare `paginate ...`, and it requires an explicit `PaginationTermination`.
 
-Use `#[cfg(feature = "dangerous-raw-response")]` with `concord_core::dangerous::BuiltResponse` and `.execute_raw_response()` when a test or diagnostic needs the classified raw response before endpoint decoding. This dangerous escape hatch lives under `concord_core::dangerous`, and it still enforces the same bounded response-body limit as decoded execution, so oversized responses fail before raw body material is returned.
+Use `#[cfg(feature = "dangerous-raw-response")]` with `concord_core::dangerous::BuiltResponse` and `.execute_raw_response()` when a test or diagnostic needs classified raw response headers and body bytes before endpoint decoding. This dangerous escape hatch lives under `concord_core::dangerous`, and it still enforces the same bounded response-body limit as decoded execution, so oversized responses fail before raw body material is returned. Its `url()` is still the logical pre-authentication URL; it does not expose the native Reqwest response URL. Treat raw headers and bytes as potentially sensitive.
 
 Raw execution still applies logical request construction, auth collision validation, rate-limit acquisition, transport materialization, visible execution, response classification, hook observation, and bounded auth rejection handling. Reqwest may perform hidden resends according to the client-level mode.
 
@@ -71,7 +71,7 @@ The generated advanced surfaces are family-specific and keep runtime values free
 - `Bytes` is response-only, returns `bytes::Bytes`, uses the ordinary bounded buffered response path that materializes payloads in memory, and omits `Accept`; request-side `Bytes` remains invalid. Use `Stream<OctetStream>` for unbounded byte transfer.
 - `NoContent` is response-only, returns `()`, and omits `Accept`; request-side `NoContent` remains invalid. The core `NoContent` buffered codec intentionally omits request and response content headers.
 - `Stream<M>` has the dedicated `.execute_stream()` helper; `.execute()` also returns its stream response.
-- `StreamResponse<M>` keeps the native response as its authority. `next_chunk()` and `write_to_file()` consume data chunks lazily; EOF, a native body error, or a streaming-limit error permanently terminates consumption.
+- `StreamResponse<M>` keeps the native response body and head for lazy delivery, while its public URL authority is the logical pre-authentication request URL. `next_chunk()` and `write_to_file()` consume data chunks lazily; EOF, a native body error, or a streaming-limit error permanently terminates consumption.
 - `BodyCodec::try_content_type()` and `ResponseCodec::try_accept()` are the codec-level override points for buffered codecs. `content_type()` and `accept()` are the convenience forms.
 - General retry is selected at client construction. Reqwest hidden retries use only Reqwest-cloneable materialized bodies. A complete `concord_core::advanced::PreparedBody` factory can make a body rebuildable for Concord authentication recovery, but does not make a stream, advanced body, or multipart cloneable by Reqwest.
 - Pagination remains buffered-response-only and is rejected for `Stream` and `NoContent` endpoint responses. `Bytes` rejects pagination.

@@ -326,32 +326,41 @@ fn native_stream_plan(
 
 #[tokio::test]
 async fn native_auth_places_header_and_query_material_on_the_wire() -> Result<(), ApiClientError> {
+    const HEADER_SENTINEL: &str = "AUTH_HEADER_WIRE_SENTINEL";
+    const QUERY_SENTINEL: &str = "C01_QUERY_WIRE_7QX9_SENTINEL";
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness = NativeMockHarness::new(
+    let harness = NativeMockHarness::from_native_replies(
         events.clone(),
         vec![
-            MockResponse::text(StatusCode::OK, "header"),
-            MockResponse::text(StatusCode::OK, "query"),
+            NativeMockReply::ok_text(Bytes::from_static(b"header")),
+            NativeMockReply::ok_text(Bytes::from_static(b"query"))
+                .expect_query_pair("q", QUERY_SENTINEL),
         ],
     );
     let capture = harness.clone();
-    let client = observation_client(
-        ObservationAuthVars::bearer("AUTH_WIRE_SENTINEL", "wire", events),
+    let header_client = observation_client(
+        ObservationAuthVars::bearer(HEADER_SENTINEL, "wire", events),
         &harness,
     );
 
-    client
+    header_client
         .request(TextEndpoint {
             policy: auth_policy(crate::regression_tests::test_api::AuthPlacement::Bearer),
             ..TextEndpoint::default()
         })
         .response()
         .await?;
-    client
+    let query_client = observation_client(
+        ObservationAuthVars::bearer(
+            QUERY_SENTINEL,
+            "wire-query",
+            Arc::new(Mutex::new(Vec::new())),
+        ),
+        &harness,
+    );
+    query_client
         .request(TextEndpoint {
-            policy: auth_policy(crate::regression_tests::test_api::AuthPlacement::Query(
-                "api_key",
-            )),
+            policy: auth_policy(crate::regression_tests::test_api::AuthPlacement::Query("q")),
             ..TextEndpoint::default()
         })
         .response()
@@ -364,16 +373,16 @@ async fn native_auth_places_header_and_query_material_on_the_wire() -> Result<()
             .headers
             .get(http::header::AUTHORIZATION)
             .and_then(|value| value.to_str().ok()),
-        Some("Bearer AUTH_WIRE_SENTINEL")
+        Some("Bearer AUTH_HEADER_WIRE_SENTINEL")
     );
-    assert_eq!(
-        requests[1]
-            .url
-            .query_pairs()
-            .find(|(name, _)| name == "api_key")
-            .map(|(_, value)| value.into_owned()),
-        Some("AUTH_WIRE_SENTINEL".to_string())
-    );
+    #[cfg(feature = "dangerous-dev-tools")]
+    assert!(requests[1].url.query().is_none());
+    assert!(!format!("{:?}", requests[1]).contains(QUERY_SENTINEL));
+    assert!(!requests[1].headers.values().any(|value| {
+        value
+            .to_str()
+            .is_ok_and(|value| value.contains(QUERY_SENTINEL))
+    }));
     Ok(())
 }
 

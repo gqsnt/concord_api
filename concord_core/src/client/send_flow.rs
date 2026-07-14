@@ -177,10 +177,9 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         let method = request_context.meta.method.clone();
         let page_index = request_context.meta.page_index;
         let idempotent = request_context.meta.idempotent;
-        let request_url = built.message.url().clone();
         let response_context = crate::transport::ResponseContext {
             meta: request_context.meta.clone(),
-            request_url,
+            logical_url: request_context.logical_url.clone(),
             rate_limit: built.rate_limit.clone(),
         };
         let BuiltRequest {
@@ -356,7 +355,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
     ) -> Result<BuiltResponse, ApiClientError> {
         let ExecutionResponse {
             mut message,
-            mut context,
+            context,
             error_mapper,
             body_limit: _,
             body_seen: _,
@@ -403,9 +402,6 @@ impl<Cx: ClientContext> ApiClient<Cx> {
 
         let status = message.status();
         let version = message.version();
-        if !error_mapper.uses_test_origin_override() {
-            context.request_url = message.url().clone();
-        }
         let headers = std::mem::take(message.headers_mut());
         let extensions = std::mem::take(message.extensions_mut());
         let mut buffered = http::Response::new(bytes);
@@ -424,7 +420,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             endpoint: resp.context.meta.endpoint,
             method: &resp.context.meta.method,
             url: url_str,
-            url_host: resp.context.request_url.host_str(),
+            url_host: resp.logical_url().host_str(),
             page_index: resp.context.meta.page_index,
             idempotent: resp.context.meta.idempotent,
             plan: &resp.context.rate_limit,

@@ -18,7 +18,9 @@ Buffered response read failures are sanitized into structured response-body erro
 
 Raw response access is an explicit dangerous extension behind the
 `dangerous-raw-response` feature. Keep it out of production and shared
-diagnostic artifacts unless raw response bytes are intentionally handled.
+diagnostic artifacts unless raw response headers and bytes are intentionally
+handled. `BuiltResponse::url()` remains the logical pre-authentication URL and
+the current capability does not expose the native Reqwest response URL.
 
 ## Custom Codecs
 

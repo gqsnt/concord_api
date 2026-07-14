@@ -331,7 +331,9 @@ async fn generated_nonempty_vector_preserves_query_auth_collision_redaction() {
 #[tokio::test]
 async fn generated_empty_vector_allows_query_auth_without_public_collision() {
     let secret = "QUERY_VECTOR_AUTH_SECRET";
-    let (transport, handle) = mock().reply(reply()).build();
+    let (transport, handle) = mock()
+        .reply(reply().expect_query_pair("auth_key", secret))
+        .build();
     let api = VectorAuthApi::new_with_safe_reqwest_builder(secret.to_string(), |builder| {
         transport.configure_reqwest(builder)
     })
@@ -344,10 +346,6 @@ async fn generated_empty_vector_allows_query_auth_without_public_collision() {
 
     let requests = handle.recorded();
     handle.finish();
-    let pairs: Vec<(String, String)> = requests[0]
-        .url
-        .query_pairs()
-        .map(|(key, value)| (key.into_owned(), value.into_owned()))
-        .collect();
-    assert_eq!(pairs, vec![("auth_key".to_string(), secret.to_string())]);
+    assert!(requests[0].url.query().is_none());
+    assert!(!format!("{:?}", requests[0]).contains(secret));
 }

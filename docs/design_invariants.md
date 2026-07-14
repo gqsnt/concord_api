@@ -81,6 +81,10 @@ native chunks through one bounded collector, while streaming processing retains
 the native response and reads it lazily. Only after terminal buffering does core
 construct the stable public Concord response façade.
 
+The logical URL captured before authentication materialization is the sole URL
+authority for ordinary buffered, streaming, hook, rate-limit, pagination,
+debug, and error metadata. Native response URLs never replace it.
+
 The `dangerous-dev-tools` feature is separate from debug sinks, hooks, stderr
 debug output, public errors, and rate-limit metadata. It exposes only the
 observation seam used by deterministic tests and is disabled by default.

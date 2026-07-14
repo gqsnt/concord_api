@@ -14,6 +14,9 @@ use std::error::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct RequestExecutionContext {
     pub(crate) meta: crate::execution_meta::RequestExecutionMeta,
+    /// The authoritative request URL before authentication transport material
+    /// is applied to the native Reqwest request.
+    pub(crate) logical_url: Url,
     pub(crate) timeout: Option<Duration>,
     pub(crate) body_errors: crate::body::RequestBodyErrorSlot,
 }
@@ -44,8 +47,10 @@ impl fmt::Debug for BuiltRequest {
 
 impl BuiltRequest {
     pub(crate) fn debug_url(&self) -> String {
-        let url = self.message.url();
-        crate::redaction::sanitize_url_for_debug(url, self.auth_plan.sensitive_query_keys.iter())
+        crate::redaction::sanitize_url_for_debug(
+            &self.context.logical_url,
+            self.auth_plan.sensitive_query_keys.iter(),
+        )
     }
 
     pub(crate) fn context(&self) -> &RequestExecutionContext {
@@ -53,6 +58,12 @@ impl BuiltRequest {
     }
 }
 
+/// Feature-gated buffered raw-response escape hatch.
+///
+/// Raw response headers and body bytes have a reduced secrecy guarantee and
+/// must be handled as potentially sensitive. Its URL accessor remains the
+/// logical pre-authentication request URL; this type does not expose the native
+/// Reqwest response or its materialized URL.
 pub struct BuiltResponse {
     message: http::Response<bytes::Bytes>,
     context: ResponseContext,
@@ -61,7 +72,7 @@ pub struct BuiltResponse {
 #[derive(Clone, Debug)]
 pub(crate) struct ResponseContext {
     pub(crate) meta: crate::execution_meta::RequestExecutionMeta,
-    pub(crate) request_url: Url,
+    pub(crate) logical_url: Url,
     pub(crate) rate_limit: RateLimitPlan,
 }
 
@@ -74,6 +85,10 @@ pub(crate) struct ExecutionResponse {
 }
 
 impl ExecutionResponse {
+    pub(crate) fn logical_url(&self) -> &Url {
+        &self.context.logical_url
+    }
+
     pub(crate) fn status(&self) -> StatusCode {
         self.message.status()
     }
@@ -100,17 +115,6 @@ impl NativeResponseErrorMapper {
     pub(crate) fn map_body_error(&self, error: reqwest::Error) -> crate::body::BodyError {
         crate::body::BodyError::from(ReqwestError::from_reqwest(error, &self.proxies))
     }
-
-    pub(crate) fn uses_test_origin_override(&self) -> bool {
-        #[cfg(feature = "dangerous-dev-tools")]
-        {
-            self.proxies.iter().any(|proxy| proxy.test_origin_override)
-        }
-        #[cfg(not(feature = "dangerous-dev-tools"))]
-        {
-            false
-        }
-    }
 }
 
 impl fmt::Debug for BuiltResponse {
@@ -120,7 +124,7 @@ impl fmt::Debug for BuiltResponse {
             .field(
                 "url",
                 &crate::redaction::sanitize_url_for_debug(
-                    &self.context.request_url,
+                    &self.context.logical_url,
                     [] as [&str; 0],
                 ),
             )
@@ -153,7 +157,7 @@ impl BuiltResponse {
             message,
             ResponseContext {
                 meta,
-                request_url,
+                logical_url: request_url,
                 rate_limit,
             },
         )
@@ -163,8 +167,10 @@ impl BuiltResponse {
         &self.context.meta
     }
 
+    /// Returns the logical request URL captured before authentication material
+    /// is placed on the native request.
     pub fn url(&self) -> &Url {
-        &self.context.request_url
+        &self.context.logical_url
     }
 
     pub fn status(&self) -> StatusCode {
@@ -341,6 +347,8 @@ impl<T> DecodedResponse<T> {
     }
 
     #[inline]
+    /// Returns the logical request URL captured before authentication material
+    /// is placed on the native request.
     pub fn url(&self) -> &Url {
         &self.url
     }
@@ -1043,19 +1051,31 @@ impl ManagedReqwestClient {
             .find(|proxy| proxy.test_origin_override)
             .map(|proxy| &proxy.target)
         {
-            let original = request.url().clone();
+            let native_url = request.url().clone();
             let mut rewritten = target.clone();
-            rewritten.set_path(original.path());
-            rewritten.set_query(original.query());
-            let original_header = http::HeaderValue::from_str(original.as_str()).map_err(|_| {
-                ReqwestError::with_kind(
-                    ReqwestErrorKind::Request,
-                    std::io::Error::other("test origin URL cannot be represented safely"),
-                )
-            })?;
+            rewritten.set_path(native_url.path());
+            rewritten.set_query(native_url.query());
+            let logical_url = _context
+                .map(|context| context.logical_url.clone())
+                .unwrap_or_else(|| {
+                    // Direct internal transport tests can execute without a
+                    // Concord request context. In that case retain only an
+                    // origin-local, query-free routing representation.
+                    let mut opaque = target.clone();
+                    opaque.set_path(native_url.path());
+                    opaque.set_query(None);
+                    opaque
+                });
+            let logical_header =
+                http::HeaderValue::from_str(logical_url.as_str()).map_err(|_| {
+                    ReqwestError::with_kind(
+                        ReqwestErrorKind::Request,
+                        std::io::Error::other("logical test URL cannot be represented safely"),
+                    )
+                })?;
             request.headers_mut().insert(
-                http::HeaderName::from_static("x-concord-test-original-url"),
-                original_header,
+                http::HeaderName::from_static("x-concord-test-logical-url"),
+                logical_header,
             );
             if let Some(context) = _context {
                 let headers = request.headers_mut();

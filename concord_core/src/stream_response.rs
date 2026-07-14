@@ -42,12 +42,10 @@ impl<M> StreamResponse<M> {
         &self.resp.context.meta
     }
 
+    /// Returns the logical request URL captured before authentication material
+    /// is placed on the retained native request.
     pub fn url(&self) -> &url::Url {
-        if self.resp.error_mapper.uses_test_origin_override() {
-            &self.resp.context.request_url
-        } else {
-            self.resp.message.url()
-        }
+        self.resp.logical_url()
     }
 
     pub fn status(&self) -> StatusCode {
@@ -384,7 +382,7 @@ mod tests {
                     idempotent: true,
                     page_index: 0,
                 },
-                request_url: url::Url::parse("http://example.invalid/stream").expect("request URL"),
+                logical_url: url::Url::parse("http://example.invalid/stream").expect("request URL"),
                 rate_limit: RateLimitPlan::new(),
             },
             error_mapper,

@@ -950,7 +950,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         })?;
         Ok(DecodedResponse {
             meta: response_context.meta,
-            url: response_context.request_url,
+            url: response_context.logical_url,
             status,
             headers: parts.headers,
             value,

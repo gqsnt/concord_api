@@ -61,8 +61,10 @@ impl PublicRequestHead {
                 ctx: ctx.clone(),
                 msg: "native request construction failed",
             })?;
+        let logical_url = message.url().clone();
         let context = crate::transport::RequestExecutionContext {
             meta: self.meta,
+            logical_url,
             timeout: self.timeout,
             body_errors,
         };

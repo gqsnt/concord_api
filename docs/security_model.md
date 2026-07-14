@@ -53,7 +53,7 @@ The dangerous feature gates are:
 
 These enable, respectively:
 
-- raw response access through `BuiltResponse` and `.execute_raw_response()`, which can return raw response body bytes before endpoint decode;
+- raw response access through `BuiltResponse` and `.execute_raw_response()`, which can return raw response headers and body bytes before endpoint decode;
   - the narrow `__development` lifecycle-observation seam used by deterministic tests.
 
 These features are intended for controlled diagnostics, protocol testing, and local debugging. They should not be treated as the default application surface, and they should not be enabled in production unless that risk is intentionally accepted.
@@ -110,8 +110,12 @@ to their native Reqwest capabilities. Buffered responses use bounded native
 collection and streaming responses retain native lazy delivery. No universal
 public body or response bridge is part of the final surface.
 
-The dangerous surface is raw response execution, which can expose raw response
-body bytes through the returned built response.
+The dangerous surface is raw response execution, which can expose sensitive raw
+response headers and body bytes through the returned built response. Its
+`url()` remains Concord's logical pre-authentication request URL. The current
+escape hatch does not expose `reqwest::Response` or its native materialized URL;
+any future capability that does so must be separately feature-gated and treated
+as able to reveal redirect/native URL state and authentication query values.
 
 Neither feature is enabled by default.
 

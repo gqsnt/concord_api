@@ -1453,7 +1453,7 @@ where
     };
     Ok(DecodedResponse {
         meta: context.meta,
-        url: context.request_url,
+        url: context.logical_url,
         status,
         headers: parts.headers,
         value,
@@ -1469,7 +1469,7 @@ fn decode_bytes_response_with_meta(
     let (parts, body) = message.into_parts();
     Ok(DecodedResponse {
         meta: context.meta,
-        url: context.request_url,
+        url: context.logical_url,
         status,
         headers: parts.headers,
         value: body,
@@ -1485,7 +1485,7 @@ fn decode_no_content_response_with_meta(
     let (parts, _) = message.into_parts();
     Ok(DecodedResponse {
         meta: context.meta,
-        url: context.request_url,
+        url: context.logical_url,
         status,
         headers: parts.headers,
         value: (),

@@ -144,7 +144,7 @@ let user = response.into_value();
 
 ## Dangerous Raw Response
 
-`#[cfg(feature = "dangerous-raw-response")]` enables `concord_core::dangerous::BuiltResponse` and `.execute_raw_response()`, which returns the classified raw response before endpoint decoding. It still observes the configured response-body limit.
+`#[cfg(feature = "dangerous-raw-response")]` enables `concord_core::dangerous::BuiltResponse` and `.execute_raw_response()`, which returns classified raw response headers and body bytes before endpoint decoding. It still observes the configured response-body limit. `BuiltResponse::url()` remains the logical pre-authentication URL; the escape hatch does not expose the native Reqwest response URL. Raw headers and bytes may themselves contain sensitive material and therefore carry a reduced secrecy guarantee.
 
 ```rust
 #[cfg(feature = "dangerous-raw-response")]
