@@ -205,13 +205,12 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         match transport_result {
             Ok(message) => {
                 let error_mapper = self.managed_client.response_error_mapper();
-                Ok(ExecutionResponse {
+                Ok(ExecutionResponse::new(
                     message,
-                    context: response_context,
+                    response_context,
                     error_mapper,
-                    body_limit: None,
-                    body_seen: 0,
-                })
+                    None,
+                ))
             }
             Err(e) => {
                 let e = context
@@ -334,7 +333,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             return Ok(resp);
         };
         let limit = u64::try_from(limit).unwrap_or(u64::MAX);
-        if let Some(actual) = resp.message.content_length()
+        if let Some(actual) = resp.body.content_length()
             && actual > limit
         {
             return Err(ApiClientError::ResponseTooLarge {
@@ -343,67 +342,32 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                 actual,
             });
         }
-        resp.body_limit = Some(limit);
+        resp.set_body_limit(limit);
         Ok(resp)
     }
 
     pub(super) async fn buffer_response(
         resp: ExecutionResponse,
         skip_body: bool,
-        limit: Option<usize>,
         ctx: &ErrorContext,
     ) -> Result<BuiltResponse, ApiClientError> {
-        let ExecutionResponse {
-            mut message,
-            context,
-            error_mapper,
-            body_limit: _,
-            body_seen: _,
-        } = resp;
+        let ExecutionResponse { mut body, context } = resp;
         let bytes = if skip_body {
             bytes::Bytes::new()
         } else {
-            let limit = limit.map(|limit| u64::try_from(limit).unwrap_or(u64::MAX));
-            if let (Some(limit), Some(actual)) = (limit, message.content_length())
-                && actual > limit
-            {
-                return Err(ApiClientError::ResponseTooLarge {
-                    ctx: ctx.clone(),
-                    limit: limit as usize,
-                    actual,
-                });
-            }
-            let mut collected = bytes::BytesMut::new();
-            let mut seen = 0_u64;
-            loop {
-                let chunk = message.chunk().await.map_err(|error| {
-                    ApiClientError::response_body_error(
-                        ctx.clone(),
-                        error_mapper.map_body_error(error),
-                    )
-                })?;
-                let Some(chunk) = chunk else {
-                    break;
-                };
-                let actual = seen.saturating_add(chunk.len() as u64);
-                if let Some(limit) = limit
-                    && actual > limit
-                {
-                    return Err(ApiClientError::ResponseBodyLimitExceeded {
+            body.collect_bytes().await.map_err(|source| {
+                if source.kind() == crate::body::BodyErrorKind::LimitExceeded {
+                    ApiClientError::ResponseBodyLimitExceeded {
                         ctx: ctx.clone(),
-                        limit: limit as usize,
-                    });
+                        limit: source.limit().unwrap_or_default() as usize,
+                    }
+                } else {
+                    ApiClientError::response_body_error(ctx.clone(), source)
                 }
-                collected.extend_from_slice(&chunk);
-                seen = actual;
-            }
-            collected.freeze()
+            })?
         };
 
-        let status = message.status();
-        let version = message.version();
-        let headers = std::mem::take(message.headers_mut());
-        let extensions = std::mem::take(message.extensions_mut());
+        let (status, version, headers, extensions) = body.into_head();
         let mut buffered = http::Response::new(bytes);
         *buffered.status_mut() = status;
         *buffered.version_mut() = version;

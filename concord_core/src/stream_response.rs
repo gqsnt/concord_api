@@ -1,5 +1,3 @@
-#[cfg(test)]
-use crate::body::DynBody;
 use crate::body::{BodyError, BodyErrorKind};
 use crate::codec::ContentType;
 use crate::error::{ApiClientError, ErrorContext};
@@ -7,7 +5,7 @@ use crate::transport::ExecutionResponse;
 #[cfg(test)]
 use crate::transport::NativeResponseErrorMapper;
 use bytes::Bytes;
-use http::{HeaderMap, StatusCode, Version, header::CONTENT_LENGTH};
+use http::{HeaderMap, StatusCode, Version};
 #[cfg(test)]
 use http_body::{Body, Frame, SizeHint};
 use std::fmt;
@@ -25,7 +23,6 @@ use tokio::io::AsyncWriteExt;
 /// data-only conveniences over the native Reqwest response stream.
 pub struct StreamResponse<M> {
     resp: ExecutionResponse,
-    terminal: bool,
     _media: PhantomData<fn() -> M>,
 }
 
@@ -33,7 +30,6 @@ impl<M> StreamResponse<M> {
     pub(crate) fn new(resp: ExecutionResponse) -> Self {
         Self {
             resp,
-            terminal: false,
             _media: PhantomData,
         }
     }
@@ -49,26 +45,23 @@ impl<M> StreamResponse<M> {
     }
 
     pub fn status(&self) -> StatusCode {
-        self.resp.message.status()
+        self.resp.status()
     }
 
     pub fn version(&self) -> Version {
-        self.resp.message.version()
+        self.resp.body.version()
     }
 
     pub fn headers(&self) -> &HeaderMap {
-        self.resp.message.headers()
+        self.resp.headers()
     }
 
     pub fn extensions(&self) -> &http::Extensions {
-        self.resp.message.extensions()
+        self.resp.body.extensions()
     }
 
     pub fn content_length(&self) -> Option<u64> {
-        self.headers()
-            .get(CONTENT_LENGTH)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse().ok())
+        self.resp.body.content_length()
     }
 
     pub fn rate_limit(&self) -> &crate::rate_limit::RateLimitPlan {
@@ -76,23 +69,8 @@ impl<M> StreamResponse<M> {
     }
 
     #[cfg(test)]
-    pub(crate) fn into_body(self) -> DynBody {
-        let terminal = self.terminal;
-        let ExecutionResponse {
-            message,
-            context: _,
-            error_mapper,
-            body_limit,
-            body_seen,
-        } = self.resp;
-        let inner: reqwest::Body = message.into();
-        DynBody::from_body(NativeFrameBody {
-            inner: Box::pin(inner),
-            error_mapper,
-            limit: body_limit,
-            seen: body_seen,
-            terminal,
-        })
+    pub(crate) fn into_body(self) -> crate::body::DynBody {
+        crate::body::DynBody::from_body(self.resp.into_body())
     }
 }
 
@@ -105,34 +83,12 @@ impl<M: ContentType> StreamResponse<M> {
     /// EOF, a native body error, or a limit error permanently terminates this
     /// stream; subsequent calls return `Ok(None)` without polling again.
     pub async fn next_chunk(&mut self) -> Result<Option<Bytes>, ApiClientError> {
-        if self.terminal {
-            return Ok(None);
-        }
         let ctx = self.error_context();
-        let chunk = match self.resp.message.chunk().await {
+        let chunk = match self.resp.body_mut().next_chunk().await {
             Ok(chunk) => chunk,
-            Err(error) => {
-                self.terminal = true;
-                let source = self.resp.map_body_error(error);
-                return Err(Self::sanitize_body_error(ctx, source));
-            }
+            Err(source) => return Err(Self::sanitize_body_error(ctx, source)),
         };
-        let Some(chunk) = chunk else {
-            self.terminal = true;
-            return Ok(None);
-        };
-        let actual = self.resp.body_seen.saturating_add(chunk.len() as u64);
-        if let Some(limit) = self.resp.body_limit
-            && actual > limit
-        {
-            self.terminal = true;
-            return Err(Self::sanitize_body_error(
-                ctx,
-                BodyError::limit_exceeded(limit, actual),
-            ));
-        }
-        self.resp.body_seen = actual;
-        Ok(Some(chunk))
+        Ok(chunk)
     }
 
     /// Writes data chunks to a file; trailer frames are not written.
@@ -160,76 +116,6 @@ impl<M: ContentType> StreamResponse<M> {
             Self::io_error(ctx, "failed to flush stream response output file", source)
         })?;
         Ok(())
-    }
-}
-
-#[cfg(test)]
-struct NativeFrameBody {
-    inner: Pin<Box<reqwest::Body>>,
-    error_mapper: NativeResponseErrorMapper,
-    limit: Option<u64>,
-    seen: u64,
-    terminal: bool,
-}
-
-#[cfg(test)]
-impl Body for NativeFrameBody {
-    type Data = Bytes;
-    type Error = BodyError;
-
-    fn poll_frame(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let this = self.as_mut().get_mut();
-        if this.terminal {
-            return Poll::Ready(None);
-        }
-        match this.inner.as_mut().poll_frame(cx) {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(None) => {
-                this.terminal = true;
-                Poll::Ready(None)
-            }
-            Poll::Ready(Some(Err(error))) => {
-                this.terminal = true;
-                Poll::Ready(Some(Err(this.error_mapper.map_body_error(error))))
-            }
-            Poll::Ready(Some(Ok(frame))) => {
-                if let Some(data) = frame.data_ref() {
-                    let actual = this.seen.saturating_add(data.len() as u64);
-                    if let Some(limit) = this.limit
-                        && actual > limit
-                    {
-                        this.terminal = true;
-                        return Poll::Ready(Some(Err(BodyError::limit_exceeded(limit, actual))));
-                    }
-                    this.seen = actual;
-                }
-                Poll::Ready(Some(Ok(frame)))
-            }
-        }
-    }
-
-    fn is_end_stream(&self) -> bool {
-        self.terminal || self.inner.is_end_stream()
-    }
-
-    fn size_hint(&self) -> SizeHint {
-        if self.terminal {
-            return SizeHint::with_exact(0);
-        }
-        let inner = self.inner.size_hint();
-        let Some(limit) = self.limit else {
-            return inner;
-        };
-        let remaining = limit.saturating_sub(self.seen);
-        let mut hint = SizeHint::new();
-        if inner.lower() <= remaining {
-            hint.set_lower(inner.lower());
-        }
-        hint.set_upper(inner.upper().unwrap_or(remaining).min(remaining));
-        hint
     }
 }
 
@@ -373,9 +259,9 @@ mod tests {
                 .body(native_body)
                 .expect("native response"),
         );
-        StreamResponse::new(ExecutionResponse {
+        StreamResponse::new(ExecutionResponse::new(
             message,
-            context: ResponseContext {
+            ResponseContext {
                 meta: RequestExecutionMeta {
                     endpoint: "FrameAwareStream",
                     method: http::Method::GET,
@@ -386,9 +272,8 @@ mod tests {
                 rate_limit: RateLimitPlan::new(),
             },
             error_mapper,
-            body_limit: limit,
-            body_seen: 0,
-        })
+            limit,
+        ))
     }
 
     fn data(value: &'static [u8]) -> Result<Frame<Bytes>, NativeTestError> {

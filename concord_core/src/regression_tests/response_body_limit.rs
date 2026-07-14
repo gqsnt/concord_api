@@ -197,6 +197,41 @@ async fn response_body_limit_authoritative_content_length_over_limit() {
 }
 
 #[tokio::test]
+async fn response_body_limit_zero_accepts_empty_and_rejects_delivered_data() {
+    let empty_events = Arc::new(Mutex::new(Vec::new()));
+    let empty_harness = NativeMockHarness::new(
+        empty_events,
+        vec![MockResponse::text(StatusCode::OK, Bytes::new())],
+    );
+    let mut empty_client = client(TestAuthVars::default(), empty_harness);
+    empty_client.configure(|config| {
+        config.max_response_body_bytes(0);
+    });
+    let empty = empty_client
+        .request(TextEndpoint::default())
+        .response()
+        .await
+        .expect("empty body is valid at a zero-byte limit");
+    assert_eq!(empty.value(), "");
+
+    let nonempty_events = Arc::new(Mutex::new(Vec::new()));
+    let nonempty_harness = NativeMockHarness::new(
+        nonempty_events,
+        vec![MockResponse::text(StatusCode::OK, "x")],
+    );
+    let mut nonempty_client = client(TestAuthVars::default(), nonempty_harness);
+    nonempty_client.configure(|config| {
+        config.max_response_body_bytes(0);
+    });
+    let error = nonempty_client
+        .request(TextEndpoint::default())
+        .response()
+        .await
+        .expect_err("any delivered byte must exceed a zero-byte limit");
+    assert_limit(&error, 0);
+}
+
+#[tokio::test]
 async fn response_body_limit_unknown_length_exceeds_during_collection() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let harness = NativeMockHarness::new(
@@ -288,6 +323,79 @@ async fn response_body_limit_stream_fails_before_excess_delivery() {
 }
 
 #[tokio::test]
+async fn response_body_limit_stream_zero_accepts_empty_and_rejects_data() {
+    let empty_events = Arc::new(Mutex::new(Vec::new()));
+    let mut empty_harness = MockResponse::text(StatusCode::OK, Bytes::new());
+    empty_harness.headers.insert(
+        http::header::CONTENT_TYPE,
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    let empty_harness = NativeMockHarness::new(empty_events, vec![empty_harness]);
+    let mut empty_client = client(TestAuthVars::default(), empty_harness);
+    empty_client.configure(|config| {
+        config.max_stream_response_body_bytes(0);
+    });
+    let mut empty = empty_client
+        .request(StreamEndpoint)
+        .execute()
+        .await
+        .expect("empty stream head succeeds at a zero-byte limit");
+    assert_eq!(empty.next_chunk().await.expect("EOF"), None);
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let mut nonempty = MockResponse::text(StatusCode::OK, Bytes::new())
+        .with_content_length(None)
+        .with_chunks(vec![Bytes::from_static(b"x")]);
+    nonempty.headers.insert(
+        http::header::CONTENT_TYPE,
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    let harness = NativeMockHarness::new(events, vec![nonempty]);
+    let mut client = client(TestAuthVars::default(), harness);
+    client.configure(|config| {
+        config.max_stream_response_body_bytes(0);
+    });
+    let mut response = client
+        .request(StreamEndpoint)
+        .execute()
+        .await
+        .expect("nonempty stream head succeeds before polling");
+    let error = response
+        .next_chunk()
+        .await
+        .expect_err("data must exceed a zero-byte stream limit");
+    assert_limit(&error, 0);
+}
+
+#[cfg(feature = "gzip")]
+#[tokio::test]
+async fn response_body_limit_counts_decompressed_output_bytes() {
+    const GZIP_HELLO: &[u8] = &[
+        0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x0a, 0xcb, 0x48, 0xcd, 0xc9, 0xc9,
+        0x07, 0x00, 0x86, 0xa6, 0x10, 0x36, 0x05, 0x00, 0x00, 0x00,
+    ];
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let mut response = MockResponse::text(StatusCode::OK, Bytes::from_static(GZIP_HELLO))
+        .with_content_length(None);
+    response.headers.insert(
+        http::header::CONTENT_ENCODING,
+        HeaderValue::from_static("gzip"),
+    );
+    let harness = NativeMockHarness::new(events, vec![response]);
+    let mut client = client(TestAuthVars::default(), harness);
+    client.configure(|config| {
+        config.max_response_body_bytes(4);
+    });
+
+    let error = client
+        .request(TextEndpoint::default())
+        .response()
+        .await
+        .expect_err("decompressed output must be counted against the response limit");
+    assert_limit(&error, 4);
+}
+
+#[tokio::test]
 async fn response_body_limit_terminal_body_producer_failure_is_typed_and_redacted() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let harness = NativeMockHarness::from_native_replies(
@@ -319,6 +427,33 @@ async fn response_body_limit_terminal_body_producer_failure_is_typed_and_redacte
         .expect_err("disconnect must become a terminal body error");
     assert!(matches!(error, ApiClientError::ResponseBody { .. }));
     assert!(!format!("{error:?}").contains("abc"));
+}
+
+#[tokio::test]
+async fn response_body_limit_buffered_partial_body_failure_precedes_decode() {
+    DECODE_CALLS.store(0, Ordering::SeqCst);
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let harness = NativeMockHarness::from_native_replies(
+        events,
+        [NativeMockReply::status(StatusCode::OK)
+            .with_header(
+                http::header::CONTENT_TYPE,
+                HeaderValue::from_static("text/plain"),
+            )
+            .with_response_steps([
+                super::common::native_mock::ResponseStep::Chunk(Bytes::from_static(b"abc")),
+                super::common::native_mock::ResponseStep::Disconnect,
+            ])],
+    );
+    let client = client(TestAuthVars::default(), harness);
+
+    let error = client
+        .request(CountingDecodeEndpoint)
+        .response()
+        .await
+        .expect_err("buffered collection must retain native body failures");
+    assert!(matches!(error, ApiClientError::ResponseBody { .. }));
+    assert_eq!(DECODE_CALLS.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]

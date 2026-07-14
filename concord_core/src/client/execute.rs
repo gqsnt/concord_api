@@ -67,8 +67,13 @@ struct AuthRejectionStepCtx<'a, Cx: ClientContext> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ExecutionFamily {
-    Buffered { skip_body: bool },
-    Stream { response_limit: Option<usize> },
+    Buffered {
+        skip_body: bool,
+        response_limit: Option<usize>,
+    },
+    Stream {
+        response_limit: Option<usize>,
+    },
 }
 
 enum ExecutionTransportSuccess {
@@ -647,8 +652,14 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                         emit_success_debug,
                     )?;
                     let resp = match family {
-                        ExecutionFamily::Buffered { .. } => {
-                            ExecutionTransportSuccess::Buffered(resp)
+                        ExecutionFamily::Buffered {
+                            skip_body,
+                            response_limit,
+                        } => {
+                            let limit = (!skip_body).then_some(response_limit).flatten();
+                            ExecutionTransportSuccess::Buffered(Self::limit_response_body(
+                                resp, limit, &ctx,
+                            )?)
                         }
                         ExecutionFamily::Stream { response_limit } => {
                             ExecutionTransportSuccess::Transport(Self::limit_response_body(
@@ -693,6 +704,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                 dbg,
                 ExecutionFamily::Buffered {
                     skip_body: plan.endpoint.response.no_content,
+                    response_limit: self.runtime_state.max_response_body_bytes(),
                 },
             )
             .await?
@@ -700,13 +712,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             ExecutionTransportSuccess::Buffered(resp) => resp,
             _ => unreachable!(),
         };
-        let resp = Self::buffer_response(
-            resp,
-            plan.endpoint.response.no_content,
-            self.runtime_state.max_response_body_bytes(),
-            &ctx,
-        )
-        .await?;
+        let resp = Self::buffer_response(resp, plan.endpoint.response.no_content, &ctx).await?;
         self.debug_planned_response(dbg, &resp, resp.url().as_str());
         Self::decode_planned_response::<C>(&plan, resp, ctx.clone())
     }
@@ -744,20 +750,17 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                 &mut body,
                 ctx.clone(),
                 dbg,
-                ExecutionFamily::Buffered { skip_body },
+                ExecutionFamily::Buffered {
+                    skip_body,
+                    response_limit: self.runtime_state.max_response_body_bytes(),
+                },
             )
             .await?
         {
             ExecutionTransportSuccess::Buffered(resp) => resp,
             _ => unreachable!(),
         };
-        let resp = Self::buffer_response(
-            resp,
-            skip_body,
-            self.runtime_state.max_response_body_bytes(),
-            &ctx,
-        )
-        .await?;
+        let resp = Self::buffer_response(resp, skip_body, &ctx).await?;
         self.debug_planned_response(dbg, &resp, resp.url().as_str());
         Ok(resp)
     }

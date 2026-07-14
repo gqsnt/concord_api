@@ -5,7 +5,10 @@ use bytes::Bytes;
 #[cfg(test)]
 use http::Method;
 use http::{HeaderMap, StatusCode};
+use http_body::{Body, Frame, SizeHint};
 use std::fmt;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::time::Duration;
 use url::Url;
 
@@ -77,28 +80,213 @@ pub(crate) struct ResponseContext {
 }
 
 pub(crate) struct ExecutionResponse {
-    pub(crate) message: reqwest::Response,
+    pub(crate) body: BoundedResponseStream,
     pub(crate) context: ResponseContext,
-    pub(crate) error_mapper: NativeResponseErrorMapper,
-    pub(crate) body_limit: Option<u64>,
-    pub(crate) body_seen: u64,
 }
 
 impl ExecutionResponse {
+    pub(crate) fn new(
+        message: reqwest::Response,
+        context: ResponseContext,
+        error_mapper: NativeResponseErrorMapper,
+        limit: Option<u64>,
+    ) -> Self {
+        Self {
+            body: BoundedResponseStream::new(message, error_mapper, limit),
+            context,
+        }
+    }
+
     pub(crate) fn logical_url(&self) -> &Url {
         &self.context.logical_url
     }
 
     pub(crate) fn status(&self) -> StatusCode {
-        self.message.status()
+        self.body.status()
     }
 
     pub(crate) fn headers(&self) -> &HeaderMap {
-        self.message.headers()
+        self.body.headers()
     }
 
-    pub(crate) fn map_body_error(&self, error: reqwest::Error) -> crate::body::BodyError {
-        self.error_mapper.map_body_error(error)
+    pub(crate) fn set_body_limit(&mut self, limit: u64) {
+        self.body.set_limit(limit);
+    }
+
+    pub(crate) fn body_mut(&mut self) -> &mut BoundedResponseStream {
+        &mut self.body
+    }
+
+    #[cfg(test)]
+    pub(crate) fn into_body(self) -> BoundedResponseStream {
+        self.body
+    }
+}
+
+/// The sole native response-byte accounting and error-mapping authority.
+///
+/// Consumers either call [`BoundedResponseStream::next_chunk`] (which skips
+/// trailers) or use this type as an `http_body::Body` (which preserves frames).
+/// Both paths execute the same `poll_frame` implementation.
+pub(crate) struct BoundedResponseStream {
+    body: reqwest::Body,
+    status: StatusCode,
+    version: http::Version,
+    headers: HeaderMap,
+    extensions: http::Extensions,
+    limit: Option<u64>,
+    seen: u64,
+    terminal: bool,
+    error_mapper: NativeResponseErrorMapper,
+}
+
+impl BoundedResponseStream {
+    fn new(
+        mut response: reqwest::Response,
+        error_mapper: NativeResponseErrorMapper,
+        limit: Option<u64>,
+    ) -> Self {
+        let status = response.status();
+        let version = response.version();
+        let headers = std::mem::take(response.headers_mut());
+        let extensions = std::mem::take(response.extensions_mut());
+        let body = response.into();
+        Self {
+            body,
+            status,
+            version,
+            headers,
+            extensions,
+            limit,
+            seen: 0,
+            terminal: false,
+            error_mapper,
+        }
+    }
+
+    fn set_limit(&mut self, limit: u64) {
+        self.limit = Some(limit);
+    }
+
+    pub(crate) fn status(&self) -> StatusCode {
+        self.status
+    }
+
+    pub(crate) fn version(&self) -> http::Version {
+        self.version
+    }
+
+    pub(crate) fn headers(&self) -> &HeaderMap {
+        &self.headers
+    }
+
+    pub(crate) fn extensions(&self) -> &http::Extensions {
+        &self.extensions
+    }
+
+    pub(crate) fn content_length(&self) -> Option<u64> {
+        self.headers
+            .get(http::header::CONTENT_LENGTH)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse().ok())
+    }
+
+    /// Polls until a data frame, terminal EOF, or terminal body/limit error.
+    /// After an error, subsequent calls return `Ok(None)` without polling the
+    /// native body again; dropping this value cancels any remaining work.
+    pub(crate) async fn next_chunk(&mut self) -> Result<Option<Bytes>, crate::body::BodyError> {
+        use http_body_util::BodyExt;
+
+        loop {
+            let Some(frame) = self.frame().await else {
+                return Ok(None);
+            };
+            let frame = frame?;
+            if let Ok(data) = frame.into_data() {
+                return Ok(Some(data));
+            }
+        }
+    }
+
+    pub(crate) async fn collect_bytes(&mut self) -> Result<Bytes, crate::body::BodyError> {
+        let mut collected = bytes::BytesMut::new();
+        while let Some(chunk) = self.next_chunk().await? {
+            collected.extend_from_slice(&chunk);
+        }
+        Ok(collected.freeze())
+    }
+
+    pub(crate) fn into_head(self) -> (StatusCode, http::Version, HeaderMap, http::Extensions) {
+        let Self {
+            status,
+            version,
+            headers,
+            extensions,
+            ..
+        } = self;
+        (status, version, headers, extensions)
+    }
+}
+
+impl Body for BoundedResponseStream {
+    type Data = Bytes;
+    type Error = crate::body::BodyError;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        let this = self.as_mut().get_mut();
+        if this.terminal {
+            return Poll::Ready(None);
+        }
+        match Pin::new(&mut this.body).poll_frame(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(None) => {
+                this.terminal = true;
+                Poll::Ready(None)
+            }
+            Poll::Ready(Some(Err(error))) => {
+                this.terminal = true;
+                Poll::Ready(Some(Err(this.error_mapper.map_body_error(error))))
+            }
+            Poll::Ready(Some(Ok(frame))) => {
+                if let Some(data) = frame.data_ref() {
+                    let actual = this.seen.saturating_add(data.len() as u64);
+                    if let Some(limit) = this.limit
+                        && actual > limit
+                    {
+                        this.terminal = true;
+                        return Poll::Ready(Some(Err(crate::body::BodyError::limit_exceeded(
+                            limit, actual,
+                        ))));
+                    }
+                    this.seen = actual;
+                }
+                Poll::Ready(Some(Ok(frame)))
+            }
+        }
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.terminal || self.body.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        if self.terminal {
+            return SizeHint::with_exact(0);
+        }
+        let inner = self.body.size_hint();
+        let Some(limit) = self.limit else {
+            return inner;
+        };
+        let remaining = limit.saturating_sub(self.seen);
+        let mut hint = SizeHint::new();
+        if inner.lower() <= remaining {
+            hint.set_lower(inner.lower());
+        }
+        hint.set_upper(inner.upper().unwrap_or(remaining).min(remaining));
+        hint
     }
 }
 
