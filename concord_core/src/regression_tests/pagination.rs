@@ -912,10 +912,11 @@ async fn terminal_status_on_page_n_does_not_advance_page_state() -> Result<(), A
     let events = Arc::new(Mutex::new(Vec::new()));
     let harness = NativeMockHarness::new(
         events,
-        vec![MockResponse::text(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "terminal",
-        )],
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "terminal")
+                .expect_query_pair("offset", "0")
+                .expect_query_pair("limit", "2"),
+        ],
     );
     let sent = harness.clone();
     let client = client(TestAuthVars::default(), harness);
@@ -941,10 +942,6 @@ async fn terminal_status_on_page_n_does_not_advance_page_state() -> Result<(), A
     assert_eq!(requests.len(), 1);
     #[cfg(feature = "dangerous-dev-tools")]
     assert_eq!(requests[0].meta.page_index, Some(0));
-    assert_eq!(
-        query_value(&requests[0].url, "offset"),
-        Some("0".to_string())
-    );
     Ok(())
 }
 
@@ -1254,8 +1251,12 @@ async fn cursor_pagination_repeated_cursor_returns_non_progress_error() {
     let harness = NativeMockHarness::new(
         events,
         vec![
-            MockResponse::text(StatusCode::OK, "a,b|next=next-1"),
-            MockResponse::text(StatusCode::OK, "c,d|next=next-1"),
+            MockResponse::text(StatusCode::OK, "a,b|next=next-1")
+                .expect_query_pair("cursor", "start")
+                .expect_query_pair("per_page", "2"),
+            MockResponse::text(StatusCode::OK, "c,d|next=next-1")
+                .expect_query_pair("cursor", "next-1")
+                .expect_query_pair("per_page", "2"),
         ],
     );
     let sent = harness.clone();
@@ -1290,14 +1291,6 @@ async fn cursor_pagination_repeated_cursor_returns_non_progress_error() {
     assert!(err.to_string().contains("non-progress"));
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 2);
-    assert_eq!(
-        query_value(&requests[0].url, "cursor"),
-        Some("start".to_string())
-    );
-    assert_eq!(
-        query_value(&requests[1].url, "cursor"),
-        Some("next-1".to_string())
-    );
 }
 
 #[tokio::test]
@@ -1307,8 +1300,12 @@ async fn cursor_pagination_cyclic_cursor_returns_non_progress_error() {
     let harness = NativeMockHarness::new(
         events,
         vec![
-            MockResponse::text(StatusCode::OK, "a,b|next=start-b"),
-            MockResponse::text(StatusCode::OK, "c,d|next=start-a"),
+            MockResponse::text(StatusCode::OK, "a,b|next=start-b")
+                .expect_query_pair("cursor", "start-a")
+                .expect_query_pair("per_page", "2"),
+            MockResponse::text(StatusCode::OK, "c,d|next=start-a")
+                .expect_query_pair("cursor", "start-b")
+                .expect_query_pair("per_page", "2"),
         ],
     );
     let sent = harness.clone();
@@ -1339,14 +1336,6 @@ async fn cursor_pagination_cyclic_cursor_returns_non_progress_error() {
     assert!(err.to_string().contains("non-progress"));
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 2);
-    assert_eq!(
-        query_value(&requests[0].url, "cursor"),
-        Some("start-a".to_string())
-    );
-    assert_eq!(
-        query_value(&requests[1].url, "cursor"),
-        Some("start-b".to_string())
-    );
 }
 
 #[tokio::test]
@@ -1429,8 +1418,12 @@ async fn paged_pagination_uses_page_numbers() -> Result<(), ApiClientError> {
     let harness = NativeMockHarness::new(
         events,
         vec![
-            MockResponse::text(StatusCode::OK, "a,b"),
-            MockResponse::text(StatusCode::OK, "c"),
+            MockResponse::text(StatusCode::OK, "a,b")
+                .expect_query_pair("page", "1")
+                .expect_query_pair("per_page", "2"),
+            MockResponse::text(StatusCode::OK, "c")
+                .expect_query_pair("page", "2")
+                .expect_query_pair("per_page", "2"),
         ],
     );
     let sent = harness.clone();
@@ -1459,8 +1452,6 @@ async fn paged_pagination_uses_page_numbers() -> Result<(), ApiClientError> {
     );
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 2);
-    assert_eq!(query_value(&requests[0].url, "page"), Some("1".to_string()));
-    assert_eq!(query_value(&requests[1].url, "page"), Some("2".to_string()));
     Ok(())
 }
 
@@ -2450,9 +2441,15 @@ async fn auth_refresh_on_page_n_preserves_offset() -> Result<(), ApiClientError>
     let harness = NativeMockHarness::new(
         events,
         vec![
-            MockResponse::text(StatusCode::OK, "a,b"),
-            MockResponse::text(StatusCode::UNAUTHORIZED, "expired"),
-            MockResponse::text(StatusCode::OK, "c"),
+            MockResponse::text(StatusCode::OK, "a,b")
+                .expect_query_pair("offset", "0")
+                .expect_query_pair("limit", "2"),
+            MockResponse::text(StatusCode::UNAUTHORIZED, "expired")
+                .expect_query_pair("offset", "2")
+                .expect_query_pair("limit", "2"),
+            MockResponse::text(StatusCode::OK, "c")
+                .expect_query_pair("offset", "2")
+                .expect_query_pair("limit", "2"),
         ],
     );
     let sent = harness.clone();
@@ -2490,14 +2487,6 @@ async fn auth_refresh_on_page_n_preserves_offset() -> Result<(), ApiClientError>
         assert_eq!(requests[1].meta.page_index, Some(1));
         assert_eq!(requests[2].meta.page_index, Some(1));
     }
-    assert_eq!(
-        query_value(&requests[1].url, "offset"),
-        Some("2".to_string())
-    );
-    assert_eq!(
-        query_value(&requests[2].url, "offset"),
-        Some("2".to_string())
-    );
     Ok(())
 }
 

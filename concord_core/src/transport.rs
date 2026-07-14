@@ -1,6 +1,6 @@
 use crate::auth::PlannedAuthPlacement;
 use crate::rate_limit::RateLimitPlan;
-use crate::retry_mode::ReqwestRetryInstall;
+use crate::retry_mode::{ProviderReqwestRetryInstall, ReqwestRetryInstall};
 use bytes::Bytes;
 #[cfg(test)]
 use http::Method;
@@ -627,6 +627,15 @@ fn classify_reqwest_error(err: &reqwest::Error) -> ReqwestErrorKind {
 pub(crate) struct ManagedReqwestClient {
     pub(crate) client: reqwest::Client,
     configured_proxies: Vec<SafeProxy>,
+    provider: ManagedProviderReqwestClient,
+}
+
+/// The separately managed Reqwest authority used only for credential-provider
+/// HTTP operations.
+#[derive(Clone)]
+pub(crate) struct ManagedProviderReqwestClient {
+    pub(crate) client: reqwest::Client,
+    configured_proxies: Vec<SafeProxy>,
 }
 
 /// A credential-free explicit proxy target for the managed Reqwest transport.
@@ -742,10 +751,14 @@ impl fmt::Display for SafeProxyError {
 impl Error for SafeProxyError {}
 
 /// Concord's deliberately small managed Reqwest configuration surface.
-/// Raw builders/clients, default headers, cookies, redirects, retries, unsafe
-/// TLS, verbose wire logging, and unrestricted proxy objects are absent.
+/// Raw builders/clients, default headers, cookies, redirects, application
+/// retry policies, unsafe TLS, verbose wire logging, and unrestricted proxy
+/// objects are absent. Provider retry selection is exposed only through its
+/// narrow provider-operation mode.
 pub struct SafeReqwestBuilder {
     builder: reqwest::ClientBuilder,
+    provider_builder: reqwest::ClientBuilder,
+    provider_retry_mode: crate::retry_mode::ProviderOperationRetryMode,
     configured_proxies: Vec<SafeProxy>,
     proxy_error: Option<SafeProxyError>,
 }
@@ -757,6 +770,8 @@ impl SafeReqwestBuilder {
         // managed client's proxy policy.
         Self {
             builder: reqwest::Client::builder().no_proxy(),
+            provider_builder: reqwest::Client::builder().no_proxy(),
+            provider_retry_mode: Default::default(),
             configured_proxies: Vec::new(),
             proxy_error: None,
         }
@@ -765,6 +780,8 @@ impl SafeReqwestBuilder {
     pub fn connect_timeout(self, timeout: Duration) -> Self {
         Self {
             builder: self.builder.connect_timeout(timeout),
+            provider_builder: self.provider_builder.connect_timeout(timeout),
+            provider_retry_mode: self.provider_retry_mode,
             configured_proxies: self.configured_proxies,
             proxy_error: self.proxy_error,
         }
@@ -772,6 +789,8 @@ impl SafeReqwestBuilder {
     pub fn read_timeout(self, timeout: Duration) -> Self {
         Self {
             builder: self.builder.read_timeout(timeout),
+            provider_builder: self.provider_builder.read_timeout(timeout),
+            provider_retry_mode: self.provider_retry_mode,
             configured_proxies: self.configured_proxies,
             proxy_error: self.proxy_error,
         }
@@ -779,6 +798,8 @@ impl SafeReqwestBuilder {
     pub fn pool_idle_timeout(self, timeout: Option<Duration>) -> Self {
         Self {
             builder: self.builder.pool_idle_timeout(timeout),
+            provider_builder: self.provider_builder.pool_idle_timeout(timeout),
+            provider_retry_mode: self.provider_retry_mode,
             configured_proxies: self.configured_proxies,
             proxy_error: self.proxy_error,
         }
@@ -786,6 +807,8 @@ impl SafeReqwestBuilder {
     pub fn pool_max_idle_per_host(self, maximum: usize) -> Self {
         Self {
             builder: self.builder.pool_max_idle_per_host(maximum),
+            provider_builder: self.provider_builder.pool_max_idle_per_host(maximum),
+            provider_retry_mode: self.provider_retry_mode,
             configured_proxies: self.configured_proxies,
             proxy_error: self.proxy_error,
         }
@@ -793,6 +816,8 @@ impl SafeReqwestBuilder {
     pub fn tcp_keepalive(self, interval: Option<Duration>) -> Self {
         Self {
             builder: self.builder.tcp_keepalive(interval),
+            provider_builder: self.provider_builder.tcp_keepalive(interval),
+            provider_retry_mode: self.provider_retry_mode,
             configured_proxies: self.configured_proxies,
             proxy_error: self.proxy_error,
         }
@@ -800,6 +825,8 @@ impl SafeReqwestBuilder {
     pub fn tcp_nodelay(self, enabled: bool) -> Self {
         Self {
             builder: self.builder.tcp_nodelay(enabled),
+            provider_builder: self.provider_builder.tcp_nodelay(enabled),
+            provider_retry_mode: self.provider_retry_mode,
             configured_proxies: self.configured_proxies,
             proxy_error: self.proxy_error,
         }
@@ -807,6 +834,8 @@ impl SafeReqwestBuilder {
     pub fn https_only(self, enabled: bool) -> Self {
         Self {
             builder: self.builder.https_only(enabled),
+            provider_builder: self.provider_builder.https_only(enabled),
+            provider_retry_mode: self.provider_retry_mode,
             configured_proxies: self.configured_proxies,
             proxy_error: self.proxy_error,
         }
@@ -814,6 +843,8 @@ impl SafeReqwestBuilder {
     pub fn http1_only(self) -> Self {
         Self {
             builder: self.builder.http1_only(),
+            provider_builder: self.provider_builder.http1_only(),
+            provider_retry_mode: self.provider_retry_mode,
             configured_proxies: self.configured_proxies,
             proxy_error: self.proxy_error,
         }
@@ -822,6 +853,8 @@ impl SafeReqwestBuilder {
     pub fn http2_prior_knowledge(self) -> Self {
         Self {
             builder: self.builder.http2_prior_knowledge(),
+            provider_builder: self.provider_builder.http2_prior_knowledge(),
+            provider_retry_mode: self.provider_retry_mode,
             configured_proxies: self.configured_proxies,
             proxy_error: self.proxy_error,
         }
@@ -832,8 +865,14 @@ impl SafeReqwestBuilder {
         if proxy.test_origin_override {
             return self;
         }
-        match reqwest::Proxy::all(proxy.target) {
-            Ok(proxy) => self.builder = self.builder.proxy(proxy),
+        match reqwest::Proxy::all(proxy.target.clone()) {
+            Ok(application_proxy) => match reqwest::Proxy::all(proxy.target) {
+                Ok(provider_proxy) => {
+                    self.builder = self.builder.proxy(application_proxy);
+                    self.provider_builder = self.provider_builder.proxy(provider_proxy);
+                }
+                Err(_) => self.proxy_error = Some(SafeProxyError::InvalidOrigin),
+            },
             // A SafeProxy has already structurally validated its URL. Keep a
             // sanitized configuration failure rather than asserting that
             // Reqwest conversion cannot fail.
@@ -846,7 +885,9 @@ impl SafeReqwestBuilder {
         let certificate = reqwest::Certificate::from_pem(pem)
             .map_err(ReqwestClientBuildError::from_builder_reqwest)?;
         Ok(Self {
-            builder: self.builder.tls_certs_merge([certificate]),
+            builder: self.builder.tls_certs_merge([certificate.clone()]),
+            provider_builder: self.provider_builder.tls_certs_merge([certificate]),
+            provider_retry_mode: self.provider_retry_mode,
             configured_proxies: self.configured_proxies,
             proxy_error: self.proxy_error,
         })
@@ -856,7 +897,9 @@ impl SafeReqwestBuilder {
         let identity = reqwest::Identity::from_pem(pem)
             .map_err(ReqwestClientBuildError::from_builder_reqwest)?;
         Ok(Self {
-            builder: self.builder.identity(identity),
+            builder: self.builder.identity(identity.clone()),
+            provider_builder: self.provider_builder.identity(identity),
+            provider_retry_mode: self.provider_retry_mode,
             configured_proxies: self.configured_proxies,
             proxy_error: self.proxy_error,
         })
@@ -865,6 +908,8 @@ impl SafeReqwestBuilder {
     pub fn disable_gzip(self) -> Self {
         Self {
             builder: self.builder.no_gzip(),
+            provider_builder: self.provider_builder.no_gzip(),
+            provider_retry_mode: self.provider_retry_mode,
             configured_proxies: self.configured_proxies,
             proxy_error: self.proxy_error,
         }
@@ -873,6 +918,8 @@ impl SafeReqwestBuilder {
     pub fn disable_brotli(self) -> Self {
         Self {
             builder: self.builder.no_brotli(),
+            provider_builder: self.provider_builder.no_brotli(),
+            provider_retry_mode: self.provider_retry_mode,
             configured_proxies: self.configured_proxies,
             proxy_error: self.proxy_error,
         }
@@ -881,9 +928,21 @@ impl SafeReqwestBuilder {
     pub fn disable_deflate(self) -> Self {
         Self {
             builder: self.builder.no_deflate(),
+            provider_builder: self.provider_builder.no_deflate(),
+            provider_retry_mode: self.provider_retry_mode,
             configured_proxies: self.configured_proxies,
             proxy_error: self.proxy_error,
         }
+    }
+
+    /// Selects the native retry policy for credential-provider operations.
+    /// This setting is independent of the protected application's retry mode.
+    pub fn provider_operation_retry_mode(
+        mut self,
+        mode: crate::retry_mode::ProviderOperationRetryMode,
+    ) -> Self {
+        self.provider_retry_mode = mode;
+        self
     }
 }
 
@@ -1002,8 +1061,13 @@ impl ManagedReqwestClient {
             return Err(ReqwestClientBuildError::from_safe_proxy(error));
         }
         let configured_proxies = configured.configured_proxies.clone();
+        let provider_proxies = configured.configured_proxies;
+        let provider_retry = configured.provider_retry_mode.resolve();
         let mut builder = configured
             .builder
+            .redirect(reqwest::redirect::Policy::none());
+        let mut provider_builder = configured
+            .provider_builder
             .redirect(reqwest::redirect::Policy::none());
         // Reqwest is the sole general HTTP retry executor. ProtocolRecovery
         // keeps Reqwest's built-in safe protocol recovery; the other modes
@@ -1016,9 +1080,22 @@ impl ManagedReqwestClient {
         let client = builder
             .build()
             .map_err(ReqwestClientBuildError::from_reqwest)?;
+        // Provider retry selection is deliberately narrower than application
+        // retry selection: status policies cannot be represented here.
+        provider_builder = match provider_retry {
+            ProviderReqwestRetryInstall::ProtocolRecovery => provider_builder,
+            ProviderReqwestRetryInstall::Never => provider_builder.retry(reqwest::retry::never()),
+        };
+        let provider_client = provider_builder
+            .build()
+            .map_err(ReqwestClientBuildError::from_reqwest)?;
         Ok(Self {
             client,
             configured_proxies,
+            provider: ManagedProviderReqwestClient {
+                client: provider_client,
+                configured_proxies: provider_proxies,
+            },
         })
     }
 
@@ -1040,77 +1117,13 @@ impl ManagedReqwestClient {
     pub(crate) async fn execute(
         &self,
         request: reqwest::Request,
-        _context: Option<&RequestExecutionContext>,
+        context: Option<&RequestExecutionContext>,
     ) -> Result<reqwest::Response, ReqwestError> {
-        #[cfg(feature = "dangerous-dev-tools")]
-        let mut request = request;
-        #[cfg(feature = "dangerous-dev-tools")]
-        if let Some(target) = self
-            .configured_proxies
-            .iter()
-            .find(|proxy| proxy.test_origin_override)
-            .map(|proxy| &proxy.target)
-        {
-            let native_url = request.url().clone();
-            let mut rewritten = target.clone();
-            rewritten.set_path(native_url.path());
-            rewritten.set_query(native_url.query());
-            let logical_url = _context
-                .map(|context| context.logical_url.clone())
-                .unwrap_or_else(|| {
-                    // Direct internal transport tests can execute without a
-                    // Concord request context. In that case retain only an
-                    // origin-local, query-free routing representation.
-                    let mut opaque = target.clone();
-                    opaque.set_path(native_url.path());
-                    opaque.set_query(None);
-                    opaque
-                });
-            let logical_header =
-                http::HeaderValue::from_str(logical_url.as_str()).map_err(|_| {
-                    ReqwestError::with_kind(
-                        ReqwestErrorKind::Request,
-                        std::io::Error::other("logical test URL cannot be represented safely"),
-                    )
-                })?;
-            request.headers_mut().insert(
-                http::HeaderName::from_static("x-concord-test-logical-url"),
-                logical_header,
-            );
-            if let Some(context) = _context {
-                let headers = request.headers_mut();
-                if let Ok(value) = http::HeaderValue::from_str(context.meta.endpoint) {
-                    headers.insert(
-                        http::HeaderName::from_static("x-concord-test-endpoint"),
-                        value,
-                    );
-                }
-                headers.insert(
-                    http::HeaderName::from_static("x-concord-test-page-index"),
-                    http::HeaderValue::from_str(&context.meta.page_index.to_string())
-                        .expect("page index is a valid header value"),
-                );
-                if let Some(timeout) = context.timeout {
-                    headers.insert(
-                        http::HeaderName::from_static("x-concord-test-timeout-ms"),
-                        http::HeaderValue::from_str(&timeout.as_millis().to_string())
-                            .expect("timeout is a valid header value"),
-                    );
-                }
-            }
-            *request.url_mut() = rewritten;
-        }
-        #[cfg(not(feature = "default-tls"))]
-        if request.url().scheme() == "https" {
-            return Err(ReqwestError::with_kind(
-                ReqwestErrorKind::Tls,
-                TlsCapabilityUnavailable,
-            ));
-        }
-        self.client
-            .execute(request)
-            .await
-            .map_err(|error| ReqwestError::from_reqwest(error, &self.configured_proxies))
+        execute_managed(&self.client, &self.configured_proxies, request, context).await
+    }
+
+    pub(crate) fn provider(&self) -> &ManagedProviderReqwestClient {
+        &self.provider
     }
 
     pub(crate) fn response_error_mapper(&self) -> NativeResponseErrorMapper {
@@ -1118,6 +1131,97 @@ impl ManagedReqwestClient {
             proxies: self.configured_proxies.clone(),
         }
     }
+}
+
+impl ManagedProviderReqwestClient {
+    pub(crate) async fn execute(
+        &self,
+        request: reqwest::Request,
+        context: Option<&RequestExecutionContext>,
+    ) -> Result<reqwest::Response, ReqwestError> {
+        execute_managed(&self.client, &self.configured_proxies, request, context).await
+    }
+
+    pub(crate) fn response_error_mapper(&self) -> NativeResponseErrorMapper {
+        NativeResponseErrorMapper {
+            proxies: self.configured_proxies.clone(),
+        }
+    }
+}
+
+async fn execute_managed(
+    client: &reqwest::Client,
+    configured_proxies: &[SafeProxy],
+    request: reqwest::Request,
+    _context: Option<&RequestExecutionContext>,
+) -> Result<reqwest::Response, ReqwestError> {
+    #[cfg(feature = "dangerous-dev-tools")]
+    let mut request = request;
+    #[cfg(feature = "dangerous-dev-tools")]
+    if let Some(target) = configured_proxies
+        .iter()
+        .find(|proxy| proxy.test_origin_override)
+        .map(|proxy| &proxy.target)
+    {
+        let native_url = request.url().clone();
+        let mut rewritten = target.clone();
+        rewritten.set_path(native_url.path());
+        rewritten.set_query(native_url.query());
+        let logical_url = _context
+            .map(|context| context.logical_url.clone())
+            .unwrap_or_else(|| {
+                // Direct internal transport tests can execute without a
+                // Concord request context. In that case retain only an
+                // origin-local, query-free routing representation.
+                let mut opaque = target.clone();
+                opaque.set_path(native_url.path());
+                opaque.set_query(None);
+                opaque
+            });
+        let logical_header = http::HeaderValue::from_str(logical_url.as_str()).map_err(|_| {
+            ReqwestError::with_kind(
+                ReqwestErrorKind::Request,
+                std::io::Error::other("logical test URL cannot be represented safely"),
+            )
+        })?;
+        request.headers_mut().insert(
+            http::HeaderName::from_static("x-concord-test-logical-url"),
+            logical_header,
+        );
+        if let Some(context) = _context {
+            let headers = request.headers_mut();
+            if let Ok(value) = http::HeaderValue::from_str(context.meta.endpoint) {
+                headers.insert(
+                    http::HeaderName::from_static("x-concord-test-endpoint"),
+                    value,
+                );
+            }
+            headers.insert(
+                http::HeaderName::from_static("x-concord-test-page-index"),
+                http::HeaderValue::from_str(&context.meta.page_index.to_string())
+                    .expect("page index is a valid header value"),
+            );
+            if let Some(timeout) = context.timeout {
+                headers.insert(
+                    http::HeaderName::from_static("x-concord-test-timeout-ms"),
+                    http::HeaderValue::from_str(&timeout.as_millis().to_string())
+                        .expect("timeout is a valid header value"),
+                );
+            }
+        }
+        *request.url_mut() = rewritten;
+    }
+    #[cfg(not(feature = "default-tls"))]
+    if request.url().scheme() == "https" {
+        return Err(ReqwestError::with_kind(
+            ReqwestErrorKind::Tls,
+            TlsCapabilityUnavailable,
+        ));
+    }
+    client
+        .execute(request)
+        .await
+        .map_err(|error| ReqwestError::from_reqwest(error, configured_proxies))
 }
 
 #[cfg(not(feature = "default-tls"))]

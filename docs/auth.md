@@ -47,6 +47,13 @@ Before the first protected request, Concord sends a token request to `token_url`
 
 Valid OAuth tokens are reused through the credential slot. A protected `401` may invalidate exactly the applied token generation, reacquire a token, and resend once when the credential is refreshable and the request body recipe is rebuildable. This authentication recovery is a second visible execution and independently receives the client-level Reqwest retry mode. Token endpoint failures stop the protected request before it is resent. OAuth client secrets, access tokens, and refresh tokens are redacted from debug output and errors.
 
+Token and credential-provider requests use a separate managed Reqwest client.
+Concord submits each provider operation once; the provider client can preserve
+Reqwest native protocol recovery or install `reqwest::retry::never()`, but it
+cannot inherit application status retry. Provider responses are bounded and
+retain their status for provider classification. Provider execution bypasses
+application hooks, protected endpoint rate limiting, and pagination state.
+
 Unsupported OAuth token-type failures are reported with a sanitized message. Public diagnostics do not render the raw remote `token_type`, access token, refresh token, or response body contents from the token endpoint.
 
 ## Endpoint-Backed Credentials
@@ -206,4 +213,4 @@ Header-auth placements reserve their header name as well. After auth inheritance
 
 The actual outbound request still contains the credential material required by the remote API. Redaction applies to debug output, diagnostics, and generated documentation, not to the request sent over transport.
 
-Concord's managed Reqwest client disables redirects. Reqwest hidden retries, when selected, clone the already materialized request and therefore do not rerun credential preparation or hooks. The managed configuration path supports reviewed TLS and credential-free explicit-proxy settings; persistent cookies, arbitrary retry builders, and custom production executors are unsupported.
+Concord's managed Reqwest clients disable redirects. Reqwest hidden retries, when selected, clone the already materialized request and therefore do not rerun credential preparation or hooks. The managed configuration path supports reviewed TLS and credential-free explicit-proxy settings; persistent cookies, arbitrary retry builders, and custom production executors are unsupported.

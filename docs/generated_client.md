@@ -33,6 +33,12 @@ bounded safe-method status retry for verified fixed-origin APIs.
 infallible settings; the fallible variant additionally permits PEM parsing.
 Neither constructor exposes a raw Reqwest builder or client.
 
+Credential-provider operations use a second managed Reqwest client. Reviewed
+safe builder settings apply to both clients, while provider retry selection is
+independent and limited to `ProviderOperationRetryMode::ProtocolRecovery` or
+`Disabled`. Protected application status retry, hooks, and rate limiting do not
+govern provider HTTP.
+
 When you configure runtime hooks or debug sinks, those callbacks receive sanitized metadata views. Sensitive request and response headers and sensitive query values are redacted before callback invocation, and neither surface receives request or response body bytes or raw secret material. High-volume debug can add measurable overhead.
 
 Generated clients inherit Concord's runtime response-body limit. Endpoint responses are read under a finite 16 MiB default before decode. Advanced callers can adjust this with `configure(|cfg| cfg.max_response_body_bytes(bytes))`; `no_response_body_limit()` disables the endpoint read limit explicitly.

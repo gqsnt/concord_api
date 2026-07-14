@@ -1065,9 +1065,11 @@ async fn managed_native_executor_reaches_loopback_and_processes_native_response(
     let response = client.request(TextEndpoint::default()).response().await?;
 
     assert_eq!(response.value(), "native-response");
+    assert_eq!(response.url().as_str(), "http://example.com/text");
     let requests = capture.requests().await;
     assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].url.as_str(), "http://example.com/text");
+    assert_eq!(requests[0].url.path(), "/text");
+    assert!(requests[0].url.query().is_none());
     #[cfg(feature = "dangerous-dev-tools")]
     assert_eq!(requests[0].meta.endpoint.as_deref(), Some("Text"));
     Ok(())

@@ -35,6 +35,10 @@ Generated endpoint code creates a request plan. The core runtime executes that p
 logical call -> collision preflight -> provider preparation -> rate-limit -> sanitized hook -> secret materialization -> execution -> optional authentication recovery -> decode
 ```
 
+Provider preparation may perform a separately bounded provider HTTP operation
+through its own managed Reqwest client. That operation is outside the protected
+endpoint's retry, hook, rate-limit, and pagination stages.
+
 The runtime receives resolved semantic data. It does not need to know the DSL
 syntax that produced the plan. Reqwest-internal resends occur inside an
 execution and are not visible Concord executions.

@@ -30,7 +30,7 @@ use std::time::Duration;
 use tokio::sync::{Mutex, Notify};
 
 #[path = "../../../concord_test_support/src/mock.rs"]
-pub(super) mod native_mock;
+pub(crate) mod native_mock;
 use native_mock::{MockHandle as NativeMockHandle, MockServer};
 pub use native_mock::{MockReply as NativeMockReply, ReplyGate as NativeReplyGate};
 
@@ -1225,6 +1225,7 @@ pub struct MockResponse {
     pub body: Bytes,
     pub content_length: Option<u64>,
     pub chunks: Option<Vec<Bytes>>,
+    expected_query_pairs: Vec<(String, String)>,
 }
 
 impl MockResponse {
@@ -1240,7 +1241,18 @@ impl MockResponse {
             body: body.into(),
             content_length: None,
             chunks: None,
+            expected_query_pairs: Vec::new(),
         }
+    }
+
+    pub fn expect_query_pair(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.expected_query_pairs.push((name.into(), value.into()));
+        self
+    }
+
+    pub fn with_headers(mut self, headers: HeaderMap) -> Self {
+        self.headers = headers;
+        self
     }
 
     pub fn with_content_length(mut self, content_length: Option<u64>) -> Self {
@@ -1430,6 +1442,9 @@ impl GatedNativeMockHarness {
 
 fn native_reply(response: MockResponse) -> NativeMockReply {
     let mut reply = NativeMockReply::status(response.status);
+    for (name, value) in response.expected_query_pairs {
+        reply = reply.expect_query_pair(name, value);
+    }
     for (name, value) in response.headers {
         if let Some(name) = name {
             reply = reply.with_header(name, value);

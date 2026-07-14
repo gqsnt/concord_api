@@ -1,7 +1,7 @@
 #![allow(clippy::needless_update)] // Matrix fixtures keep `..Default::default()` for resilience to added fields.
 
 use super::common::{
-    CapturedWireRequest, ItemsEndpoint, MockResponse, NativeMockHarness, NativeMockOutcome,
+    CapturedWireRequest, ItemsEndpoint, MockResponse, NativeMockHarness, NativeMockReply,
     PaginationVariant, TestAuthVars, auth_policy, client, request_plan,
 };
 use crate::regression_tests::test_api::{
@@ -240,15 +240,6 @@ fn assert_header_matches_sentinel(
     assert!(value == Some(sentinel), "request header sentinel mismatch");
 }
 
-fn assert_query_matches_sentinel(request: &CapturedWireRequest, key: &str, sentinel: &str) {
-    let value = request
-        .url
-        .query_pairs()
-        .find(|(query_key, _)| query_key == key)
-        .map(|(_, value)| value.into_owned());
-    assert!(value.as_deref() == Some(sentinel), "request query mismatch");
-}
-
 fn assert_body_matches_sentinel(request: &CapturedWireRequest, sentinel: &str) {
     let body = request.body.as_bytes().map(Bytes::as_ref);
     assert!(
@@ -392,10 +383,10 @@ async fn http_status_failure_redacts_request_and_response_sentinels() -> Result<
     let events = Arc::new(Mutex::new(Vec::new()));
     let harness = NativeMockHarness::new(
         events,
-        vec![MockResponse::text(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            RESPONSE_BODY_SENTINEL,
-        )],
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, RESPONSE_BODY_SENTINEL)
+                .expect_query_pair("redaction", REQUEST_QUERY_SENTINEL),
+        ],
     );
     let sent = harness.clone();
     let client = client(TestAuthVars::default(), harness);
@@ -428,7 +419,6 @@ async fn http_status_failure_redacts_request_and_response_sentinels() -> Result<
         HeaderName::from_static("x-redaction-matrix"),
         REQUEST_HEADER_SENTINEL,
     );
-    assert_query_matches_sentinel(request, "redaction", REQUEST_QUERY_SENTINEL);
     assert_body_matches_sentinel(request, REQUEST_BODY_SENTINEL);
     assert_error_chain_does_not_contain_any(
         &err,
@@ -445,8 +435,11 @@ async fn http_status_failure_redacts_request_and_response_sentinels() -> Result<
 #[tokio::test]
 async fn request_execution_failure_redacts_request_material() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let harness =
-        NativeMockHarness::with_outcomes(events, vec![NativeMockOutcome::DisconnectAfterRequest]);
+    let harness = NativeMockHarness::from_native_replies(
+        events,
+        [NativeMockReply::disconnect_after_request()
+            .expect_query_pair("redaction", REQUEST_QUERY_SENTINEL)],
+    );
     let sent = harness.clone();
     let client = client(TestAuthVars::default(), harness);
     let policy =
@@ -490,7 +483,6 @@ async fn request_execution_failure_redacts_request_material() {
         HeaderName::from_static("x-redaction-matrix"),
         REQUEST_HEADER_SENTINEL,
     );
-    assert_query_matches_sentinel(request, "redaction", REQUEST_QUERY_SENTINEL);
     assert_body_matches_sentinel(request, REQUEST_BODY_SENTINEL);
     assert_error_chain_does_not_contain_any(
         &err,

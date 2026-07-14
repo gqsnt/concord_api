@@ -72,6 +72,29 @@ pub enum RetryMode {
     Status(StatusRetryConfig),
 }
 
+/// Native retry behavior for credential-provider HTTP operations.
+///
+/// Provider acquisition is a separate logical operation from a protected API
+/// request. It therefore has its own narrow policy and cannot select status
+/// retry, arbitrary retry counts, or an application retry configuration.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ProviderOperationRetryMode {
+    /// Preserve Reqwest's built-in protocol-recovery policy.
+    #[default]
+    ProtocolRecovery,
+    /// Install [`reqwest::retry::never`] for provider HTTP.
+    Disabled,
+}
+
+impl ProviderOperationRetryMode {
+    pub(crate) fn resolve(self) -> ProviderReqwestRetryInstall {
+        match self {
+            Self::ProtocolRecovery => ProviderReqwestRetryInstall::ProtocolRecovery,
+            Self::Disabled => ProviderReqwestRetryInstall::Never,
+        }
+    }
+}
+
 impl RetryMode {
     /// Convenience constructor for [`RetryMode::Status`].
     pub fn status(
@@ -236,6 +259,14 @@ pub(crate) enum ReqwestRetryInstall {
     Custom(reqwest::retry::Builder),
 }
 
+/// The resolved retry install for the separately managed provider client.
+pub(crate) enum ProviderReqwestRetryInstall {
+    /// Install no custom policy; keep Reqwest's built-in protocol recovery.
+    ProtocolRecovery,
+    /// Install [`reqwest::retry::never`].
+    Never,
+}
+
 /// A retry-mode configuration or eligibility failure.
 #[derive(Debug)]
 pub enum RetryModeError {
@@ -326,6 +357,22 @@ mod tests {
             .resolve(Some(ApiOriginDescriptor::MultiOrigin))
             .expect("disabled always resolves");
         assert!(matches!(install, ReqwestRetryInstall::Never));
+    }
+
+    #[test]
+    fn provider_protocol_recovery_installs_no_custom_policy() {
+        assert!(matches!(
+            ProviderOperationRetryMode::ProtocolRecovery.resolve(),
+            ProviderReqwestRetryInstall::ProtocolRecovery
+        ));
+    }
+
+    #[test]
+    fn provider_disabled_installs_never() {
+        assert!(matches!(
+            ProviderOperationRetryMode::Disabled.resolve(),
+            ProviderReqwestRetryInstall::Never
+        ));
     }
 
     #[test]

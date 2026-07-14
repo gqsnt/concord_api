@@ -202,108 +202,69 @@ impl<Cx: ClientContext> AuthHttpExecutor for ClientAuthHttpExecutor<'_, Cx> {
                     }
                 }
 
-                let auth_url = base_request.url.as_str().to_string();
-                let mut transport_retry_count: u32 = 0;
-                loop {
-                    let built = make_built_request(
-                        &self.client.managed_client.client,
-                        &base_request,
-                        &mut body,
-                    )?;
+                let provider_client = self.client.managed_client.provider();
+                let built = make_built_request(&provider_client.client, &base_request, &mut body)?;
 
-                    if policy.use_rate_limiter {
-                        let _permit = self
-                            .client
-                            .runtime_state
-                            .rate_limiter()
-                            .acquire(RateLimitContext {
-                                endpoint: "<auth>",
-                                method: &built.context().meta.method,
-                                url: &auth_url,
-                                url_host: built.message.url().host_str(),
-                                page_index: 0,
-                                idempotent: built.context().meta.idempotent,
-                                max_cooldown: self.client.runtime_state.max_rate_limit_cooldown(),
-                                plan: &built.rate_limit,
-                            })
-                            .await
-                            .map_err(|source| {
-                                AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
-                            })?;
-                    }
-
-                    let BuiltRequest {
-                        message,
-                        context,
-                        auth_plan,
-                        rate_limit: _,
-                    } = built;
-                    let native_request = crate::transport::materialize_authentication(
-                        message,
-                        &auth_plan,
-                        &auth_materials,
-                    )
+                let BuiltRequest {
+                    message,
+                    context,
+                    auth_plan,
+                    rate_limit: _,
+                } = built;
+                let native_request = crate::transport::materialize_authentication(
+                    message,
+                    &auth_plan,
+                    &auth_materials,
+                )
+                .map_err(|source| {
+                    AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
+                })?;
+                // One Concord submission. Any approved protocol recovery is
+                // internal to this separately managed provider Reqwest client.
+                let mut resp = provider_client
+                    .execute(native_request, Some(&context))
+                    .await
                     .map_err(|source| {
                         AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
                     })?;
-                    let resp = self
-                        .client
-                        .managed_client
-                        .execute(native_request, Some(&context))
-                        .await;
-                    let mut resp = match resp {
-                        Ok(resp) => resp,
-                        Err(source) => {
-                            if transport_retry_count >= policy.max_transport_retries {
-                                return Err(AuthError::new(
-                                    AuthErrorKind::AcquireFailed,
-                                    source.to_string(),
-                                ));
-                            }
-                            transport_retry_count =
-                                next_auth_transport_retry_count(transport_retry_count)?;
-                            continue;
-                        }
-                    };
 
-                    let limit = policy.max_body_bytes as u64;
-                    if let Some(actual) = resp.content_length()
-                        && actual > limit
-                    {
+                let limit = policy.max_body_bytes as u64;
+                if let Some(actual) = resp.content_length()
+                    && actual > limit
+                {
+                    return Err(auth_body_limit_error(
+                        crate::body::BodyError::limit_exceeded(limit, actual),
+                    ));
+                }
+                let error_mapper = provider_client.response_error_mapper();
+                let mut body = bytes::BytesMut::new();
+                let mut seen = 0_u64;
+                loop {
+                    let chunk = resp.chunk().await.map_err(|error| {
+                        let source = error_mapper.map_body_error(error);
+                        AuthError::new(
+                            AuthErrorKind::ResponseBody,
+                            format!("auth response body read failed ({:?})", source.kind()),
+                        )
+                    })?;
+                    let Some(chunk) = chunk else {
+                        break;
+                    };
+                    let actual = seen.saturating_add(chunk.len() as u64);
+                    if actual > limit {
                         return Err(auth_body_limit_error(
                             crate::body::BodyError::limit_exceeded(limit, actual),
                         ));
                     }
-                    let error_mapper = self.client.managed_client.response_error_mapper();
-                    let mut body = bytes::BytesMut::new();
-                    let mut seen = 0_u64;
-                    loop {
-                        let chunk = resp.chunk().await.map_err(|error| {
-                            let source = error_mapper.map_body_error(error);
-                            AuthError::new(
-                                AuthErrorKind::ResponseBody,
-                                format!("auth response body read failed ({:?})", source.kind()),
-                            )
-                        })?;
-                        let Some(chunk) = chunk else {
-                            break;
-                        };
-                        let actual = seen.saturating_add(chunk.len() as u64);
-                        if actual > limit {
-                            return Err(auth_body_limit_error(
-                                crate::body::BodyError::limit_exceeded(limit, actual),
-                            ));
-                        }
-                        body.extend_from_slice(&chunk);
-                        seen = actual;
-                    }
-
-                    return Ok(AuthHttpResponse {
-                        status: resp.status(),
-                        headers: std::mem::take(resp.headers_mut()),
-                        body: body.freeze(),
-                    });
+                    body.extend_from_slice(&chunk);
+                    seen = actual;
                 }
+
+                Ok(AuthHttpResponse {
+                    status: resp.status(),
+                    headers: std::mem::take(resp.headers_mut()),
+                    body: body.freeze(),
+                })
             })
             .await
         })
@@ -320,11 +281,418 @@ fn auth_body_limit_error(error: crate::body::BodyError) -> AuthError {
     )
 }
 
-fn next_auth_transport_retry_count(retry_count: u32) -> Result<u32, AuthError> {
-    retry_count.checked_add(1).ok_or_else(|| {
-        AuthError::new(
-            AuthErrorKind::AcquireFailed,
-            "auth transport retry counter overflowed",
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::AuthInternalPolicy;
+    use crate::rate_limit::{
+        RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
+        RateLimiter,
+    };
+    use crate::runtime_hooks::{
+        PostResponseHookContext, PreSendHookContext, RequestErrorHookContext, RuntimeHooks,
+    };
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    use crate::regression_tests::native_mock;
+
+    #[derive(Clone)]
+    struct ProviderHttpTestCx;
+
+    impl ClientContext for ProviderHttpTestCx {
+        type Vars = ();
+        type AuthVars = ();
+        type AuthState = ();
+
+        const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTP;
+        const DOMAIN: &'static str = "provider-http.example";
+
+        fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {}
+    }
+
+    fn provider_request(url: url::Url, policy: AuthInternalPolicy) -> AuthHttpRequest {
+        AuthHttpRequest {
+            method: http::Method::POST,
+            url,
+            headers: http::HeaderMap::new(),
+            body: crate::io::PreparedBody::empty(),
+            mode: AuthMode::SkipAuth,
+            policy,
+        }
+    }
+
+    async fn send_provider(
+        client: &ApiClient<ProviderHttpTestCx>,
+        request: AuthHttpRequest,
+    ) -> Result<AuthHttpResponse, AuthError> {
+        ClientAuthHttpExecutor { client }.send(request).await
+    }
+
+    fn fixed_loopback_origin(
+        server: &native_mock::MockServer,
+    ) -> crate::retry_mode::ApiOriginDescriptor {
+        let authority = server.base_url().authority().to_string().leak();
+        crate::retry_mode::ApiOriginDescriptor::FixedSingleOrigin(
+            crate::retry_mode::FixedOriginDescriptor {
+                scheme: crate::retry_mode::OriginScheme::Http,
+                authority,
+            },
         )
-    })
+    }
+
+    #[tokio::test]
+    async fn provider_protocol_recovery_submits_once_and_returns_status_for_classification() {
+        let (server, handle) = native_mock::mock()
+            .repeating(
+                native_mock::MockReply::status(http::StatusCode::SERVICE_UNAVAILABLE)
+                    .with_body(bytes::Bytes::from_static(b"provider unavailable")),
+            )
+            .build();
+        let client = ApiClient::<ProviderHttpTestCx>::new((), ());
+        let response = send_provider(
+            &client,
+            provider_request(server.base_url().clone(), AuthInternalPolicy::default()),
+        )
+        .await
+        .expect("status responses remain available to provider logic");
+
+        assert_eq!(response.status, http::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(response.body, "provider unavailable");
+        assert_eq!(handle.wire_request_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn provider_disabled_submits_once_without_concord_resend() {
+        const URL_SECRET: &str = "PROVIDER_REQUEST_URL_SECRET";
+        let (server, handle) = native_mock::mock()
+            .repeating(native_mock::MockReply::disconnect_after_request())
+            .build();
+        let client =
+            ApiClient::<ProviderHttpTestCx>::with_safe_reqwest_builder((), (), |builder| {
+                builder.provider_operation_retry_mode(
+                    crate::retry_mode::ProviderOperationRetryMode::Disabled,
+                )
+            })
+            .expect("disabled provider retry client");
+        let mut url = server.base_url().clone();
+        url.query_pairs_mut().append_pair("credential", URL_SECRET);
+        let error = send_provider(
+            &client,
+            provider_request(url, AuthInternalPolicy::default()),
+        )
+        .await
+        .expect_err("disconnect remains a provider request failure");
+
+        assert_eq!(error.kind, AuthErrorKind::AcquireFailed);
+        let rendered = format!("{error:?}\n{error}");
+        assert!(!rendered.contains(URL_SECRET), "{rendered}");
+        assert!(!rendered.contains(server.base_url().as_str()), "{rendered}");
+        assert_eq!(handle.wire_request_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn application_status_retry_does_not_govern_provider_http() {
+        let (server, handle) = native_mock::mock()
+            .repeating(native_mock::MockReply::status(
+                http::StatusCode::SERVICE_UNAVAILABLE,
+            ))
+            .build();
+        let retry_mode =
+            crate::retry_mode::RetryMode::status(2, [http::StatusCode::SERVICE_UNAVAILABLE])
+                .expect("valid application status mode");
+        let client = ApiClient::<ProviderHttpTestCx>::with_generated_descriptor_retry_mode(
+            Some(fixed_loopback_origin(&server)),
+            (),
+            (),
+            retry_mode,
+            Ok,
+        )
+        .expect("application status-retry client");
+
+        let response = send_provider(
+            &client,
+            provider_request(server.base_url().clone(), AuthInternalPolicy::default()),
+        )
+        .await
+        .expect("provider status remains a response");
+
+        assert_eq!(response.status, http::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(handle.wire_request_count(), 1);
+    }
+
+    #[derive(Default)]
+    struct CountingHooks {
+        calls: AtomicUsize,
+    }
+
+    impl RuntimeHooks for CountingHooks {
+        fn pre_send<'a>(
+            &'a self,
+            _ctx: PreSendHookContext<'a>,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<(), ApiClientError>> + Send + 'a>,
+        > {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Ok(()) })
+        }
+
+        fn post_response<'a>(
+            &'a self,
+            _ctx: PostResponseHookContext<'a>,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async {})
+        }
+
+        fn request_error<'a>(
+            &'a self,
+            _ctx: RequestErrorHookContext<'a>,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async {})
+        }
+    }
+
+    #[derive(Default)]
+    struct CountingRateLimiter {
+        acquisitions: AtomicUsize,
+        responses: AtomicUsize,
+    }
+
+    impl RateLimiter for CountingRateLimiter {
+        fn acquire<'a>(
+            &'a self,
+            _ctx: RateLimitContext<'a>,
+        ) -> RateLimitFuture<'a, Result<RateLimitPermit, ApiClientError>> {
+            self.acquisitions.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Ok(RateLimitPermit) })
+        }
+
+        fn on_response<'a>(
+            &'a self,
+            _ctx: RateLimitResponseContext<'a>,
+        ) -> RateLimitFuture<'a, Result<RateLimitResponseAction, ApiClientError>> {
+            self.responses.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Ok(RateLimitResponseAction::Continue) })
+        }
+    }
+
+    #[tokio::test]
+    async fn provider_http_bypasses_application_hooks_and_rate_limiter() {
+        let (server, _handle) = native_mock::mock()
+            .reply(native_mock::MockReply::status(http::StatusCode::OK))
+            .build();
+        let hooks = Arc::new(CountingHooks::default());
+        let limiter = Arc::new(CountingRateLimiter::default());
+        let mut client = ApiClient::<ProviderHttpTestCx>::new((), ());
+        client.set_runtime_hooks(hooks.clone());
+        client.set_rate_limiter(limiter.clone());
+
+        send_provider(
+            &client,
+            provider_request(server.base_url().clone(), AuthInternalPolicy::default()),
+        )
+        .await
+        .expect("provider request succeeds independently");
+
+        assert_eq!(hooks.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 0);
+        assert_eq!(limiter.responses.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn provider_timeout_is_enforced_and_sanitized() {
+        const URL_SECRET: &str = "PROVIDER_TIMEOUT_URL_SECRET";
+        let (server, _handle) = native_mock::mock()
+            .reply(
+                native_mock::MockReply::status(http::StatusCode::OK)
+                    .with_delay(Duration::from_millis(100)),
+            )
+            .build();
+        let mut url = server.base_url().clone();
+        url.query_pairs_mut().append_pair("credential", URL_SECRET);
+        let client = ApiClient::<ProviderHttpTestCx>::new((), ());
+        let error = send_provider(
+            &client,
+            provider_request(
+                url,
+                AuthInternalPolicy {
+                    timeout: Some(Duration::from_millis(10)),
+                    ..AuthInternalPolicy::default()
+                },
+            ),
+        )
+        .await
+        .expect_err("provider timeout must be enforced");
+
+        assert_eq!(error.kind, AuthErrorKind::AcquireFailed);
+        let rendered = format!("{error:?}\n{error}");
+        assert!(!rendered.contains(URL_SECRET), "{rendered}");
+        assert!(!rendered.contains(server.base_url().as_str()), "{rendered}");
+    }
+
+    #[tokio::test]
+    async fn provider_response_body_limit_is_enforced_separately_from_timeout() {
+        let (server, _handle) = native_mock::mock()
+            .reply(
+                native_mock::MockReply::status(http::StatusCode::OK)
+                    .with_body(bytes::Bytes::from_static(b"12345")),
+            )
+            .build();
+        let client = ApiClient::<ProviderHttpTestCx>::new((), ());
+        let error = send_provider(
+            &client,
+            provider_request(
+                server.base_url().clone(),
+                AuthInternalPolicy {
+                    max_body_bytes: 4,
+                    ..AuthInternalPolicy::default()
+                },
+            ),
+        )
+        .await
+        .expect_err("provider response limit must be enforced");
+
+        assert_eq!(error.kind, AuthErrorKind::ResponseTooLarge);
+        assert_eq!(
+            error.message,
+            "auth response body exceeded configured limit 4 bytes"
+        );
+    }
+
+    #[derive(Clone)]
+    struct RecursiveAuthVars {
+        provider_url: url::Url,
+    }
+
+    #[derive(Clone)]
+    struct RecursiveProvider {
+        provider_url: url::Url,
+    }
+
+    struct RecursiveAuthState {
+        provider: Arc<crate::auth::CredentialProviderState<RecursiveCx, RecursiveProvider>>,
+    }
+
+    impl Clone for RecursiveAuthState {
+        fn clone(&self) -> Self {
+            Self {
+                provider: self.provider.clone(),
+            }
+        }
+    }
+
+    #[derive(Clone)]
+    struct RecursiveCx;
+
+    fn recursive_requirement() -> crate::auth::AuthRequirement {
+        crate::auth::AuthRequirement {
+            credential: crate::auth::CredentialRef {
+                id: crate::auth::CredentialId::new("provider-test", "recursive"),
+            },
+            placement: crate::auth::AuthPlacement::Bearer,
+            usage_id: crate::auth::AuthUsageId::new("provider-recursion"),
+            step_id: Some("recursive-provider"),
+            provenance: crate::auth::AuthProvenance::new("provider-test"),
+            challenge: Default::default(),
+        }
+    }
+
+    impl ClientContext for RecursiveCx {
+        type Vars = ();
+        type AuthVars = RecursiveAuthVars;
+        type AuthState = RecursiveAuthState;
+
+        const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTP;
+        const DOMAIN: &'static str = "provider-recursion.example";
+
+        fn init_auth_state(_vars: &Self::Vars, auth: &Self::AuthVars) -> Self::AuthState {
+            Self::AuthState {
+                provider: Arc::new(crate::auth::CredentialProviderState::new(
+                    RecursiveProvider {
+                        provider_url: auth.provider_url.clone(),
+                    },
+                )),
+            }
+        }
+
+        fn auth_provider_binding<'a>(
+            credential: &crate::auth::CredentialId,
+            auth_state: &'a Self::AuthState,
+        ) -> Option<crate::auth::AuthProviderBinding<'a, Self>> {
+            (credential == &crate::auth::CredentialId::new("provider-test", "recursive")).then(
+                || {
+                    auth_state.provider.secret_binding(
+                        crate::auth::AuthPreparationMode::PerExecution,
+                        crate::auth::AuthChallengeMode::InvalidateOnly,
+                    )
+                },
+            )
+        }
+    }
+
+    impl crate::auth::CredentialProvider<RecursiveCx> for RecursiveProvider {
+        type Credential = crate::auth::ApiKey;
+
+        fn id(&self) -> crate::auth::CredentialId {
+            crate::auth::CredentialId::new("provider-test", "recursive")
+        }
+
+        fn acquire<'a>(
+            &'a self,
+            ctx: crate::auth::CredentialContext<'a, RecursiveCx>,
+        ) -> crate::auth::AuthFuture<'a, Result<Self::Credential, AuthError>> {
+            Box::pin(async move {
+                ctx.executor
+                    .send(AuthHttpRequest {
+                        method: http::Method::POST,
+                        url: self.provider_url.clone(),
+                        headers: http::HeaderMap::new(),
+                        body: crate::io::PreparedBody::empty(),
+                        mode: AuthMode::use_auth(
+                            crate::auth::AuthRequirementId::new(
+                                "provider-test",
+                                "recursive-operation",
+                            ),
+                            recursive_requirement(),
+                        ),
+                        policy: AuthInternalPolicy::default(),
+                    })
+                    .await?;
+                Ok(crate::auth::ApiKey::new("unreachable"))
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn provider_recursion_is_rejected_before_network_io() {
+        let (server, handle) = native_mock::mock()
+            .repeating(native_mock::MockReply::status(http::StatusCode::OK))
+            .build();
+        let client = ApiClient::<RecursiveCx>::new(
+            (),
+            RecursiveAuthVars {
+                provider_url: server.base_url().clone(),
+            },
+        );
+        let error = ClientAuthHttpExecutor { client: &client }
+            .send(AuthHttpRequest {
+                method: http::Method::POST,
+                url: server.base_url().clone(),
+                headers: http::HeaderMap::new(),
+                body: crate::io::PreparedBody::empty(),
+                mode: AuthMode::use_auth(
+                    crate::auth::AuthRequirementId::new("provider-test", "recursive-operation"),
+                    recursive_requirement(),
+                ),
+                policy: AuthInternalPolicy::default(),
+            })
+            .await
+            .expect_err("recursive provider authentication must fail");
+
+        assert_eq!(error.kind, AuthErrorKind::RecursionDetected);
+        assert_eq!(handle.wire_request_count(), 0);
+    }
 }

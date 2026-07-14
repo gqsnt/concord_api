@@ -1,6 +1,7 @@
 #![allow(dead_code, unused_imports)]
 
 mod common;
+pub(crate) use common::native_mock;
 mod native_runtime;
 mod output_model;
 mod pagination;

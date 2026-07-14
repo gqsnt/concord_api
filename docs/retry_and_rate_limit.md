@@ -5,6 +5,13 @@ only general retry executor; Concord configures no separate request loop or
 endpoint retry policy. The selected Reqwest protocol or constrained status
 processing is configured once for the managed client.
 
+Credential-provider HTTP uses a different managed Reqwest client. Its
+`ProviderOperationRetryMode` is limited to `ProtocolRecovery` (default) and
+`Disabled`; application `RetryMode::Status` and `StatusRetryConfig` cannot be
+installed on it. Concord submits each provider operation once and owns no
+provider resend loop. Provider status responses are returned to provider
+classification unchanged.
+
 ## Retry modes
 
 Generated clients expose `new_with_retry_mode(...)` and
@@ -44,6 +51,17 @@ let mode = RetryMode::Status(StatusRetryConfig::new(
 )?);
 ```
 
+Advanced safe-client configuration can disable native recovery for provider
+operations without changing the application mode:
+
+```rust,ignore
+use concord_core::prelude::ProviderOperationRetryMode;
+
+let api = MyApi::new_with_safe_reqwest_builder(|builder| {
+    builder.provider_operation_retry_mode(ProviderOperationRetryMode::Disabled)
+})?;
+```
+
 ## Visible executions and physical sends
 
 A visible execution is one Concord call to `reqwest::Client::execute`.
@@ -68,6 +86,10 @@ Physical-send bounds are:
 
 Pagination applies the same rules independently to each page. Hidden-send
 counters and resend indices are not public API.
+
+These physical-send bounds describe protected application requests. Provider
+operations have one Concord submission; Reqwest may perform native protocol
+recovery only when their separate provider mode is `ProtocolRecovery`.
 
 Concord rebuildability is used only for authentication recovery. Reusable
 bytes are both rebuildable and Reqwest-cloneable. Factory streams, advanced
@@ -114,4 +136,5 @@ profiles {
 Rate-limit acquisition follows credential preparation and precedes sanitized
 pre-send hooks and secret materialization. Response observers receive
 sanitized headers and may install future-call cooldowns; they cannot authorize
-a resend of the current call.
+a resend of the current call. Provider HTTP does not acquire or report through
+the protected endpoint limiter and does not invoke application runtime hooks.

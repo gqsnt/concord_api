@@ -71,6 +71,12 @@ authentication recovery. Body-recipe rebuildability controls that recovery;
 Reqwest body cloneability independently controls hidden resends. Materialized
 multipart and streams are not Reqwest-cloneable.
 
+Credential-provider HTTP uses a separate managed Reqwest client and one
+Concord submission per provider operation. Its native retry mode is limited to
+protocol recovery or disabled; application status retry cannot be inherited.
+Provider execution does not consume protected endpoint hooks, rate limiting,
+pagination state, or application retry eligibility.
+
 Request execution maps logical recipes directly to `reqwest::Body` or
 `reqwest::multipart::Form`. There is no public universal-body bridge and no
 common request or response abstraction.

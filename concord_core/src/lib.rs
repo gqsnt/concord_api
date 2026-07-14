@@ -71,7 +71,9 @@ pub mod prelude {
         RateLimitResponseContext,
     };
     pub use crate::request::{PaginatedRequest, PendingRequest};
-    pub use crate::retry_mode::{RetryMode, RetryModeError, StatusRetryConfig};
+    pub use crate::retry_mode::{
+        ProviderOperationRetryMode, RetryMode, RetryModeError, StatusRetryConfig,
+    };
     pub use crate::secret::SecretString;
     pub use crate::transport::DecodedResponse;
 }
@@ -126,7 +128,9 @@ pub mod advanced {
         RateLimitResponsePolicy, RateLimitScopeHint, RateLimitSetting, RateLimitWindow,
         RateLimiter, parse_retry_after,
     };
-    pub use crate::retry_mode::{RetryMode, RetryModeError, StatusRetryConfig};
+    pub use crate::retry_mode::{
+        ProviderOperationRetryMode, RetryMode, RetryModeError, StatusRetryConfig,
+    };
     pub use crate::runtime::{DebugConfig, RuntimeConfig};
     pub use crate::runtime_hooks::{
         HookMeta, NoopRuntimeHooks, PostResponseHookContext, PreSendHookContext,

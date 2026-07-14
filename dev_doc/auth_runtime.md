@@ -74,6 +74,14 @@ Auth-internal requests use recursion guards so an auth refresh request does not 
 
 Auth-internal HTTP responses are also bounded. Token and credential-acquisition responses use `AuthInternalPolicy::DEFAULT_MAX_BODY_BYTES` as their default read limit. The auth executor checks `Content-Length` before reading when present and enforces the same limit while reading unknown-length bodies. Oversized auth responses return `AuthErrorKind::ResponseTooLarge`; they are not treated as retryable transport read failures by default.
 
+Credential-provider HTTP owns a separate managed Reqwest client built from the
+same reviewed safe transport settings as the application client. Its retry
+selection is independently limited to native protocol recovery or
+`reqwest::retry::never()`. Concord submits a provider request once: there is no
+provider attempt counter, transport budget, request-reconstruction branch, or
+status retry. Application retry mode, hooks, pagination, and protected endpoint
+rate limiting do not participate in provider execution.
+
 ## Advanced Forms
 
 OAuth2 client credentials are represented as a credential provider that fetches and refreshes bearer access tokens. A successful token response is stored in the credential slot and materialized only when the protected native request is built.

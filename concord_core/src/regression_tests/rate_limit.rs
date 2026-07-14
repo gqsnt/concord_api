@@ -1165,13 +1165,7 @@ async fn retry_after_429_delays_only_a_future_call() -> Result<(), ApiClientErro
     let harness = NativeMockHarness::new(
         events.clone(),
         vec![
-            MockResponse {
-                status: StatusCode::TOO_MANY_REQUESTS,
-                headers,
-                body: Bytes::from_static(b"retry-me"),
-                content_length: None,
-                chunks: None,
-            },
+            MockResponse::text(StatusCode::TOO_MANY_REQUESTS, "retry-me").with_headers(headers),
             MockResponse::text(StatusCode::OK, "ok"),
         ],
     );
