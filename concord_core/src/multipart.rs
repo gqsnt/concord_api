@@ -1,11 +1,14 @@
-use crate::body::DynBody;
+use crate::body::BodyError;
 use crate::stream_body::StreamBody;
 use bytes::Bytes;
+use futures_core::Stream;
 use http::HeaderValue;
 use reqwest::multipart::{Form, Part};
 use std::error::Error;
 use std::fmt;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct FormData;
@@ -290,9 +293,15 @@ fn build_part(part: RawPart) -> Result<(String, Part), MultipartBodyError> {
         // immutable buffer through Reqwest's native Body instead.
         RawPartBody::Bytes(bytes) => Part::stream(reqwest::Body::from(bytes)),
         RawPartBody::Stream(stream) => {
-            let source = DynBody::from_stream_body(stream);
-            let body = reqwest::Body::wrap(source);
-            Part::stream(body)
+            let exact_length = stream.size_hint().exact();
+            let body = reqwest::Body::wrap_stream(MultipartByteStream::new(
+                stream.into_byte_stream(),
+                exact_length,
+            ));
+            match exact_length {
+                Some(length) => Part::stream_with_length(body, length),
+                None => Part::stream(body),
+            }
         }
     };
 
@@ -309,6 +318,73 @@ fn build_part(part: RawPart) -> Result<(String, Part), MultipartBodyError> {
     }
 
     Ok((name, body))
+}
+
+/// Native byte-stream adapter for ordinary multipart streamed parts.
+///
+/// This deliberately keeps the source as a native byte stream. It is also the
+/// structural exact-length authority for a part:
+/// the declared length is only a hint until the producer reaches EOF, and an
+/// overrun is rejected before the excess bytes can reach Reqwest.
+struct MultipartByteStream {
+    inner: crate::stream_body::StreamByteSource,
+    expected: Option<u64>,
+    seen: u64,
+    terminal: bool,
+}
+
+impl MultipartByteStream {
+    fn new(inner: crate::stream_body::StreamByteSource, expected: Option<u64>) -> Self {
+        Self {
+            inner,
+            expected,
+            seen: 0,
+            terminal: false,
+        }
+    }
+}
+
+impl Stream for MultipartByteStream {
+    type Item = Result<Bytes, BodyError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if self.terminal {
+            return Poll::Ready(None);
+        }
+
+        match self.inner.as_mut().poll_next(cx) {
+            Poll::Ready(Some(Ok(bytes))) => {
+                let len = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+                let observed = self.seen.saturating_add(len);
+                if let Some(expected) = self.expected
+                    && observed > expected
+                {
+                    self.terminal = true;
+                    return Poll::Ready(Some(Err(BodyError::exact_length_overflow(
+                        expected, observed,
+                    ))));
+                }
+                self.seen = observed;
+                Poll::Ready(Some(Ok(bytes)))
+            }
+            Poll::Ready(Some(Err(error))) => {
+                self.terminal = true;
+                Poll::Ready(Some(Err(error.into())))
+            }
+            Poll::Ready(None) => {
+                self.terminal = true;
+                if let Some(expected) = self.expected
+                    && self.seen != expected
+                {
+                    return Poll::Ready(Some(Err(BodyError::exact_length_underflow(
+                        expected, self.seen,
+                    ))));
+                }
+                Poll::Ready(None)
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
 }
 
 /// Applies Reqwest's multipart MIME acceptance rule without materializing any
@@ -362,4 +438,103 @@ fn is_valid_disposition_value(value: &str) -> bool {
         && value.bytes().all(|byte| {
             matches!(byte, 0x20..=0x7E) && !matches!(byte, b'\\' | b'\"' | b'\r' | b'\n')
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http_body::SizeHint;
+    use std::collections::VecDeque;
+    use std::task::{RawWaker, RawWakerVTable, Waker};
+
+    struct TestStream {
+        items: VecDeque<Result<Bytes, crate::stream_body::StreamBodyError>>,
+    }
+
+    impl Stream for TestStream {
+        type Item = Result<Bytes, crate::stream_body::StreamBodyError>;
+
+        fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            Poll::Ready(self.items.pop_front())
+        }
+    }
+
+    fn noop_waker() -> Waker {
+        // SAFETY: all vtable functions are no-ops and the data pointer is
+        // never dereferenced.
+        unsafe fn clone(_: *const ()) -> RawWaker {
+            RawWaker::new(std::ptr::null(), &VTABLE)
+        }
+        unsafe fn wake(_: *const ()) {}
+        unsafe fn wake_by_ref(_: *const ()) {}
+        unsafe fn drop(_: *const ()) {}
+        static VTABLE: RawWakerVTable = RawWakerVTable::new(clone, wake, wake_by_ref, drop);
+        // SAFETY: the static vtable and null data pointer satisfy RawWaker's
+        // ownership contract for this synchronous test poll.
+        unsafe { Waker::from_raw(RawWaker::new(std::ptr::null(), &VTABLE)) }
+    }
+
+    fn poll_next_now(body: &mut MultipartByteStream) -> Option<Result<Bytes, BodyError>> {
+        let waker = noop_waker();
+        let mut cx = Context::from_waker(&waker);
+        match Pin::new(body).poll_next(&mut cx) {
+            Poll::Ready(value) => value,
+            Poll::Pending => panic!("test stream unexpectedly pending"),
+        }
+    }
+
+    fn exact_stream(
+        items: Vec<Result<Bytes, crate::stream_body::StreamBodyError>>,
+        expected: u64,
+    ) -> MultipartByteStream {
+        let body = StreamBody::from_byte_stream(TestStream {
+            items: items.into(),
+        })
+        .with_size_hint(SizeHint::with_exact(expected));
+        MultipartByteStream::new(body.into_byte_stream(), Some(expected))
+    }
+
+    #[test]
+    fn direct_stream_adapter_accepts_exact_length() {
+        let mut body = exact_stream(vec![Ok(Bytes::from_static(b"ab"))], 2);
+        assert_eq!(
+            poll_next_now(&mut body).unwrap().unwrap(),
+            Bytes::from_static(b"ab")
+        );
+        assert!(poll_next_now(&mut body).is_none());
+    }
+
+    #[test]
+    fn direct_stream_adapter_rejects_underflow_and_overflow() {
+        let mut underflow = exact_stream(vec![Ok(Bytes::from_static(b"a"))], 2);
+        assert!(poll_next_now(&mut underflow).unwrap().is_ok());
+        let error = poll_next_now(&mut underflow).unwrap().unwrap_err();
+        assert_eq!(
+            error.kind(),
+            crate::body::BodyErrorKind::ExactLengthUnderflow
+        );
+        assert!(poll_next_now(&mut underflow).is_none());
+
+        let mut overflow = exact_stream(vec![Ok(Bytes::from_static(b"abc"))], 2);
+        let error = poll_next_now(&mut overflow).unwrap().unwrap_err();
+        assert_eq!(
+            error.kind(),
+            crate::body::BodyErrorKind::ExactLengthOverflow
+        );
+        assert!(poll_next_now(&mut overflow).is_none());
+    }
+
+    #[test]
+    fn direct_stream_adapter_sanitizes_producer_failures() {
+        let mut body = exact_stream(
+            vec![Err(crate::stream_body::StreamBodyError::producer(
+                std::io::Error::other("multipart producer sentinel"),
+            ))],
+            0,
+        );
+        let error = poll_next_now(&mut body).unwrap().unwrap_err();
+        assert_eq!(error.kind(), crate::body::BodyErrorKind::Input);
+        assert!(!error.to_string().contains("multipart producer sentinel"));
+        assert!(poll_next_now(&mut body).is_none());
+    }
 }
