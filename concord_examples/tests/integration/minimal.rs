@@ -1,11 +1,11 @@
 use bytes::Bytes;
 use concord_examples::minimal::{MinimalApi, User};
-use concord_test_support::{MockReply, assert_request, mock};
+use concord_test_support::{ScriptedReply, assert_execution, deterministic_mock};
 use http::{HeaderValue, StatusCode};
 
 #[tokio::test]
 async fn minimal_api_generated_client_execute_and_direct_await_work() {
-    let (transport, handle) = mock()
+    let (transport, handle) = deterministic_mock()
         .reply(user_reply(42, "Ada"))
         .reply(user_reply(7, "Grace"))
         .reply(user_reply(9, "Linus").with_header(
@@ -14,7 +14,7 @@ async fn minimal_api_generated_client_execute_and_direct_await_work() {
         ))
         .build();
     let api =
-        MinimalApi::new_with_safe_reqwest_builder(|builder| transport.configure_reqwest(builder))
+        MinimalApi::new_with_safe_reqwest_builder(|builder| transport.configure_both(builder))
             .expect("mock client");
 
     let via_execute = api.users().get_user(42).execute().await.unwrap();
@@ -44,21 +44,21 @@ async fn minimal_api_generated_client_execute_and_direct_await_work() {
 
     let recorded = handle.recorded();
     assert_eq!(recorded.len(), 3);
-    assert_request(&recorded[0])
+    assert_execution(&recorded[0])
         .host("api.example.com")
         .path("/users/42")
         .body_absent();
-    assert_request(&recorded[1])
+    assert_execution(&recorded[1])
         .host("api.example.com")
         .path("/users/7")
         .body_absent();
-    assert_request(&recorded[2])
+    assert_execution(&recorded[2])
         .host("api.example.com")
         .path("/users/9")
         .body_absent();
     handle.finish();
 }
 
-fn user_reply(id: u64, name: &str) -> MockReply {
-    MockReply::ok_json(Bytes::from(format!(r#"{{"id":{id},"name":"{name}"}}"#)))
+fn user_reply(id: u64, name: &str) -> ScriptedReply {
+    ScriptedReply::ok_json(Bytes::from(format!(r#"{{"id":{id},"name":"{name}"}}"#)))
 }

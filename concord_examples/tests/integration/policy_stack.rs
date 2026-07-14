@@ -4,7 +4,7 @@ use concord_core::advanced::{
     RateLimitResponseContext, RateLimiter,
 };
 use concord_examples::policy_stack::PolicyApi;
-use concord_test_support::{MockReply, mock};
+use concord_test_support::{ScriptedReply, deterministic_mock};
 use http::header::RETRY_AFTER;
 use http::{HeaderValue, StatusCode};
 use std::sync::{Arc, Mutex};
@@ -12,12 +12,12 @@ use std::time::Duration;
 
 #[tokio::test]
 async fn disabled_mode_keeps_visible_and_wire_execution_one_to_one() {
-    let (transport, handle) = mock()
-        .reply(MockReply::status(StatusCode::INTERNAL_SERVER_ERROR))
+    let (transport, handle) = deterministic_mock()
+        .reply(ScriptedReply::status(StatusCode::INTERNAL_SERVER_ERROR))
         .build();
     let api = PolicyApi::new_with_safe_reqwest_builder_and_retry_mode(
         concord_core::prelude::RetryMode::Disabled,
-        |builder| Ok(transport.configure_reqwest(builder)),
+        |builder| Ok(transport.configure_both(builder)),
     )
     .expect("mock client");
 
@@ -37,14 +37,14 @@ async fn retry_after_is_terminal_and_does_not_resend_current_call() {
     let limiter = Arc::new(RecordingLimiter::limited_with_cooldown(
         Duration::from_secs(5),
     ));
-    let (transport, handle) = mock()
+    let (transport, handle) = deterministic_mock()
         .reply(
-            MockReply::status(StatusCode::TOO_MANY_REQUESTS)
+            ScriptedReply::status(StatusCode::TOO_MANY_REQUESTS)
                 .with_header(RETRY_AFTER, HeaderValue::from_static("5")),
         )
         .build();
     let mut api =
-        PolicyApi::new_with_safe_reqwest_builder(|builder| transport.configure_reqwest(builder))
+        PolicyApi::new_with_safe_reqwest_builder(|builder| transport.configure_both(builder))
             .expect("mock client");
     api.configure_mut(|cfg| {
         cfg.rate_limiter(limiter.clone());
@@ -64,11 +64,11 @@ async fn retry_after_is_terminal_and_does_not_resend_current_call() {
 #[tokio::test]
 async fn rate_limit_limiter_observes_successful_response() {
     let limiter = Arc::new(RecordingLimiter::default());
-    let (transport, handle) = mock()
-        .reply(MockReply::ok_text(Bytes::from_static(b"limited-ok")))
+    let (transport, handle) = deterministic_mock()
+        .reply(ScriptedReply::ok_text(Bytes::from_static(b"limited-ok")))
         .build();
     let mut api =
-        PolicyApi::new_with_safe_reqwest_builder(|builder| transport.configure_reqwest(builder))
+        PolicyApi::new_with_safe_reqwest_builder(|builder| transport.configure_both(builder))
             .expect("mock client");
     api.configure_mut(|cfg| {
         cfg.rate_limiter(limiter.clone());

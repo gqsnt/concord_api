@@ -7,7 +7,9 @@ use concord_core::advanced::{
 };
 use concord_core::prelude::*;
 use concord_macros::api;
-use concord_test_support::{MockHandle, MockReply, MockServer, RecordedRequest, mock};
+use concord_test_support::{
+    DeterministicMock, MockExecutionHandle, RecordedExecution, ScriptedReply, deterministic_mock,
+};
 use http::{HeaderMap, StatusCode};
 use std::future::Future;
 use std::pin::Pin;
@@ -70,15 +72,15 @@ impl RecordingEvents {
 #[derive(Clone)]
 struct RecordingTransport {
     records: RecordingEvents,
-    server: MockServer,
-    handle: Arc<StdMutex<MockHandle>>,
+    server: DeterministicMock,
+    handle: Arc<StdMutex<MockExecutionHandle>>,
 }
 
 impl RecordingTransport {
     fn new(records: RecordingEvents, expected_requests: usize) -> Self {
         let replies = (0..expected_requests)
-            .map(|_| MockReply::ok_json(bytes::Bytes::from_static(b"\"ok\"")));
-        let (server, handle) = mock().replies(replies).build();
+            .map(|_| ScriptedReply::ok_json(bytes::Bytes::from_static(b"\"ok\"")));
+        let (server, handle) = deterministic_mock().replies(replies).build();
         Self {
             records,
             server,
@@ -86,10 +88,10 @@ impl RecordingTransport {
         }
     }
 
-    fn requests(&self) -> Vec<RecordedRequest> {
+    fn requests(&self) -> Vec<RecordedExecution> {
         let requests = self.handle.lock().expect("mock handle lock").recorded();
         for request in &requests {
-            let event = format!("transport:{}", request.url.as_str());
+            let event = format!("transport:{}", request.logical_url.as_str());
             if !self.records.snapshot().contains(&event) {
                 self.records.push(event);
             }
@@ -97,11 +99,11 @@ impl RecordingTransport {
         requests
     }
 
-    fn configure_reqwest(
+    fn configure_both(
         &self,
         builder: concord_core::advanced::SafeReqwestBuilder,
     ) -> concord_core::advanced::SafeReqwestBuilder {
-        self.server.configure_reqwest(builder)
+        self.server.configure_both(builder)
     }
 }
 
@@ -257,7 +259,7 @@ async fn dynamic_host_accepts_valid_labels_deterministically() -> Result<(), Api
         let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
         let client = configure_client(
             UrlHardeningApi::new_with_safe_reqwest_builder("client".to_string(), |builder| {
-                transport.configure_reqwest(builder)
+                transport.configure_both(builder)
             })
             .expect("mock client"),
             rate_limiter,
@@ -273,9 +275,9 @@ async fn dynamic_host_accepts_valid_labels_deterministically() -> Result<(), Api
         assert_eq!(decoded, "ok");
         let requests = transport.requests();
         assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].url.host_str(), Some(expected_host));
+        assert_eq!(requests[0].logical_url.host_str(), Some(expected_host));
         assert_eq!(
-            requests[0].url.as_str(),
+            requests[0].logical_url.as_str(),
             format!("https://{expected_host}/api/items/item/p-prefix")
         );
 
@@ -328,7 +330,7 @@ async fn dynamic_host_rejects_dangerous_values() {
         let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
         let client = configure_client(
             UrlHardeningApi::new_with_safe_reqwest_builder("client".to_string(), |builder| {
-                transport.configure_reqwest(builder)
+                transport.configure_both(builder)
             })
             .expect("mock client"),
             rate_limiter,
@@ -361,7 +363,7 @@ async fn dynamic_path_slash_backslash_rejected_before_side_effects() {
         let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
         let client = configure_client(
             UrlHardeningApi::new_with_safe_reqwest_builder("client".to_string(), |builder| {
-                transport.configure_reqwest(builder)
+                transport.configure_both(builder)
             })
             .expect("mock client"),
             rate_limiter,
@@ -394,7 +396,7 @@ async fn dynamic_path_dot_segments_are_safe() {
         let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
         let client = configure_client(
             UrlHardeningApi::new_with_safe_reqwest_builder("client".to_string(), |builder| {
-                transport.configure_reqwest(builder)
+                transport.configure_both(builder)
             })
             .expect("mock client"),
             rate_limiter,
@@ -427,7 +429,7 @@ async fn fmt_path_interpolation_follows_dynamic_path_safety() {
         let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
         let client = configure_client(
             UrlHardeningApi::new_with_safe_reqwest_builder("client".to_string(), |builder| {
-                transport.configure_reqwest(builder)
+                transport.configure_both(builder)
             })
             .expect("mock client"),
             rate_limiter,
@@ -457,7 +459,7 @@ async fn fmt_path_interpolation_follows_dynamic_path_safety() {
         let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
         let client = configure_client(
             UrlHardeningApi::new_with_safe_reqwest_builder("client".to_string(), |builder| {
-                transport.configure_reqwest(builder)
+                transport.configure_both(builder)
             })
             .expect("mock client"),
             rate_limiter,
@@ -490,7 +492,7 @@ async fn fmt_path_interpolation_follows_dynamic_path_safety() {
         let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
         let client = configure_client(
             UrlHardeningApi::new_with_safe_reqwest_builder("client".to_string(), |builder| {
-                transport.configure_reqwest(builder)
+                transport.configure_both(builder)
             })
             .expect("mock client"),
             rate_limiter,
@@ -505,7 +507,7 @@ async fn fmt_path_interpolation_follows_dynamic_path_safety() {
             .expect("valid fmt segment should succeed");
 
         assert_eq!(decoded, "ok");
-        assert_eq!(transport.requests()[0].url.as_str(), expected);
+        assert_eq!(transport.requests()[0].logical_url.as_str(), expected);
         assert!(
             records
                 .snapshot()
@@ -525,7 +527,7 @@ async fn execute_raw_obeys_same_url_host_path_validation() {
     let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
     let client = configure_client(
         UrlHardeningApi::new_with_safe_reqwest_builder("client".to_string(), |builder| {
-            transport.configure_reqwest(builder)
+            transport.configure_both(builder)
         })
         .expect("mock client"),
         rate_limiter,
@@ -555,7 +557,7 @@ async fn sanitized_url_consistent_for_rate_limit_hooks_debug_transport()
     let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
     let client = configure_client(
         UrlHardeningApi::new_with_safe_reqwest_builder("client".to_string(), |builder| {
-            transport.configure_reqwest(builder)
+            transport.configure_both(builder)
         })
         .expect("mock client"),
         rate_limiter,
@@ -610,7 +612,7 @@ async fn dynamic_path_values_are_percent_encoded_in_final_url() -> Result<(), Ap
     let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
     let client = configure_client(
         UrlHardeningApi::new_with_safe_reqwest_builder("client".to_string(), |builder| {
-            transport.configure_reqwest(builder)
+            transport.configure_both(builder)
         })
         .expect("mock client"),
         rate_limiter,
@@ -625,7 +627,7 @@ async fn dynamic_path_values_are_percent_encoded_in_final_url() -> Result<(), Ap
 
     assert_eq!(decoded, "ok");
     let expected = "https://tenant.api.example.com/api/items/item%201/p-%C2%B5";
-    assert_eq!(transport.requests()[0].url.as_str(), expected);
+    assert_eq!(transport.requests()[0].logical_url.as_str(), expected);
     assert!(
         records
             .snapshot()

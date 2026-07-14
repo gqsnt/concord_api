@@ -10,7 +10,7 @@
 - Confirm generic clients cannot install status retry and generated status
   eligibility is derived from the emitted API descriptor without a global
   capability token.
-- Confirm loopback execution support remains development-only.
+- Confirm deterministic execution support remains development-only.
 - Review documentation, examples, feature topology, and performance targets
   for current terminology and contracts.
 - Review lockfile changes and retain them only for demonstrated dependency

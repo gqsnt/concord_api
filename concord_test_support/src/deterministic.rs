@@ -18,7 +18,7 @@ use std::time::Duration;
 /// A sanitized record of one deterministic native execution.
 #[derive(Clone)]
 pub struct RecordedExecution {
-    sequence: u64,
+    pub(crate) sequence: u64,
     pub method: Method,
     pub logical_url: url::Url,
     pub headers: HeaderMap,

@@ -33,6 +33,6 @@ cargo bench --manifest-path perf/Cargo.toml --bench redaction_hooks
 cargo bench --manifest-path perf/Cargo.toml --bench smoke
 ```
 
-Benchmarks use deterministic in-memory or loopback fixtures: no live services,
-real credentials, or filesystem timing dependencies. Results are comparative
-machine-local signals, not release thresholds.
+Benchmarks use deterministic in-process native-executor fixtures: no live
+services, real credentials, or network latency measurement. Results measure
+local preparation, polling, buffering, and orchestration costs only.

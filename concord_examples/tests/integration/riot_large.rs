@@ -1,7 +1,7 @@
 use concord_core::prelude::PaginationTermination;
 use concord_examples::ddragon::DDragonClient;
 use concord_examples::riot::{PlatformRoute, RegionalRoute, RiotClient};
-use concord_test_support::mock;
+use concord_test_support::deterministic_mock;
 
 #[test]
 fn riot_summoner_dto_accepts_current_puuid_shape() {
@@ -55,9 +55,9 @@ fn riot_account_dto_accepts_riot_id_fields_when_present() {
 
 #[test]
 fn riot_like_large_fixture_facade_paths_typecheck_cleanly() {
-    let (transport, handle) = mock().build();
+    let (transport, handle) = deterministic_mock().build();
     let riot = RiotClient::new_with_safe_reqwest_builder("riot-secret".to_string(), |builder| {
-        transport.configure_reqwest(builder)
+        transport.configure_both(builder)
     })
     .expect("mock client");
 
@@ -80,11 +80,10 @@ fn riot_like_large_fixture_facade_paths_typecheck_cleanly() {
 
 #[test]
 fn ddragon_fixture_facade_paths_typecheck_cleanly() {
-    let (transport, handle) = mock().build();
-    let ddragon = DDragonClient::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client");
+    let (transport, handle) = deterministic_mock().build();
+    let ddragon =
+        DDragonClient::new_with_safe_reqwest_builder(|builder| transport.configure_both(builder))
+            .expect("mock client");
 
     let _versions = ddragon.ddragon().api().versions();
     let _champions = ddragon

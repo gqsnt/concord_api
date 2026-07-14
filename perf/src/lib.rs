@@ -63,7 +63,7 @@ mod tests {
     use super::*;
     use bytes::Bytes;
     use concord_core::prelude::{ApiClientError, RetryMode, StatusRetryConfig};
-    use concord_test_support::{MockReply, mock};
+    use concord_test_support::{ScriptedReply, deterministic_mock};
 
     fn runtime() -> tokio::runtime::Runtime {
         tokio::runtime::Builder::new_current_thread()
@@ -74,16 +74,16 @@ mod tests {
 
     #[test]
     fn generated_visible_execution_is_deterministic() {
-        let (server, handle) = mock()
-            .repeating(MockReply::ok_text(Bytes::from_static(b"pong")))
+        let (server, handle) = deterministic_mock()
+            .repeating(ScriptedReply::ok_text(Bytes::from_static(b"pong")))
             .build();
         let client = BenchmarkClient::new_with_safe_reqwest_builder(|builder| {
-            server.configure_reqwest(builder)
+            server.configure_both(builder)
         })
-        .expect("loopback managed client");
+        .expect("deterministic managed client");
         runtime().block_on(async {
             assert_eq!(client.ping().await.expect("generated response"), "pong");
-            assert_eq!(handle.wire_request_count(), 1);
+            assert_eq!(handle.recorded_len(), 1);
         });
     }
 
@@ -100,13 +100,13 @@ mod tests {
 
     #[test]
     fn generated_response_limit_remains_structural() {
-        let (server, _handle) = mock()
-            .reply(MockReply::ok_text(Bytes::from_static(b"oversized")))
+        let (server, _handle) = deterministic_mock()
+            .reply(ScriptedReply::ok_text(Bytes::from_static(b"oversized")))
             .build();
         let mut client = BenchmarkClient::new_with_safe_reqwest_builder(|builder| {
-            server.configure_reqwest(builder)
+            server.configure_both(builder)
         })
-        .expect("loopback managed client");
+        .expect("deterministic managed client");
         client.configure_mut(|config| {
             config.max_response_body_bytes(4);
         });

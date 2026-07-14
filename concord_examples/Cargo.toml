@@ -23,4 +23,4 @@ dangerous-dev-tools = ["concord_core/dangerous-dev-tools"]
 
 [dev-dependencies]
 trybuild = "1"
-concord_test_support = { path = "../concord_test_support", version = "0.1.0", features = ["dangerous-dev-tools", "loopback-compat"] }
+concord_test_support = { path = "../concord_test_support", version = "0.1.0", features = ["dangerous-dev-tools"] }

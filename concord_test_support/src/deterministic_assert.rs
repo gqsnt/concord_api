@@ -42,6 +42,10 @@ impl ExecutionAssert<'_> {
 
     pub fn header(self, name: impl RecordedHeaderName, expected: &str) -> Self {
         let name = name.into_header_name();
+        assert!(
+            !self.execution.protected_header_names.contains(&name),
+            "header {name} is protected; use protected_header() and a scripted fake credential expectation"
+        );
         assert_eq!(
             self.execution
                 .headers
@@ -49,6 +53,15 @@ impl ExecutionAssert<'_> {
                 .and_then(|v| v.to_str().ok()),
             Some(expected),
             "public execution header {name}"
+        );
+        self
+    }
+
+    pub fn protected_header(self, name: impl RecordedHeaderName) -> Self {
+        let name = name.into_header_name();
+        assert!(
+            self.execution.protected_header_names.contains(&name),
+            "missing protected execution header {name}"
         );
         self
     }
@@ -138,7 +151,7 @@ impl RecordedHeaderName for &'static HeaderName {
 
 impl RecordedHeaderName for &'static str {
     fn into_header_name(self) -> HeaderName {
-        HeaderName::from_static(self)
+        HeaderName::from_bytes(self.as_bytes()).expect("valid assertion header name")
     }
 }
 
@@ -152,4 +165,47 @@ fn format_pairs(pairs: &[(String, String)]) -> String {
         let _ = write!(output, "{name}={value}");
     }
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::deterministic::RecordedExecution;
+    use concord_core::__development::CapturedBodyCategory;
+    use http::{HeaderMap, HeaderName, HeaderValue, Method};
+
+    fn execution(protected: bool) -> RecordedExecution {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-public", HeaderValue::from_static("value"));
+        RecordedExecution {
+            sequence: 0,
+            method: Method::GET,
+            logical_url: "https://example.test/path".parse().unwrap(),
+            headers,
+            protected_header_names: protected
+                .then(|| vec![HeaderName::from_static("authorization")])
+                .unwrap_or_default(),
+            body_category: CapturedBodyCategory::Empty,
+            known_body_length: None,
+            endpoint: None,
+            page_index: None,
+            timeout: None,
+        }
+    }
+
+    #[test]
+    fn public_header_is_exact() {
+        assert_execution(&execution(false)).header("x-public", "value");
+    }
+
+    #[test]
+    fn protected_header_is_name_only() {
+        assert_execution(&execution(true)).protected_header(http::header::AUTHORIZATION);
+    }
+
+    #[test]
+    #[should_panic(expected = "is protected")]
+    fn protected_header_cannot_use_public_value_assertion() {
+        assert_execution(&execution(true)).header(http::header::AUTHORIZATION, "secret");
+    }
 }

@@ -3,16 +3,24 @@ use concord_core::prelude::{ApiClientError, ErrorCategory};
 use concord_examples::auth_session::{
     SessionApi, SessionApiAcquireAsSessionExt, SessionLoginRequest,
 };
-use concord_test_support::{MockReply, assert_request, mock};
+use concord_test_support::{ScriptedReply, assert_execution, deterministic_mock};
 
 #[tokio::test]
 async fn auth_endpoint_backed_session_flow_acquires_and_uses_credential() {
-    let (transport, handle) = mock()
-        .reply(json_reply(r#"{"access_token":"session-token"}"#))
-        .reply(json_reply(r#"{"id":7,"username":"ada"}"#))
+    let (transport, handle) = deterministic_mock()
+        .reply(
+            json_reply(r#"{"access_token":"session-token"}"#).expect_header(
+                http::HeaderName::from_static("x-upstream-key"),
+                "upstream-secret",
+            ),
+        )
+        .reply(
+            json_reply(r#"{"id":7,"username":"ada"}"#)
+                .expect_header(http::header::AUTHORIZATION, "Bearer session-token"),
+        )
         .build();
     let api = SessionApi::new_with_safe_reqwest_builder("upstream-secret".to_string(), |builder| {
-        transport.configure_reqwest(builder)
+        transport.configure_both(builder)
     })
     .expect("mock client");
 
@@ -60,25 +68,25 @@ async fn auth_endpoint_backed_session_flow_acquires_and_uses_credential() {
 
     let recorded = handle.recorded();
     assert_eq!(recorded.len(), 2);
-    assert_request(&recorded[0])
+    assert_execution(&recorded[0])
         .host("example.com")
         .path("/login")
-        .header("X-Upstream-Key", "upstream-secret")
+        .protected_header("X-Upstream-Key")
         .body_present();
-    assert_request(&recorded[1])
+    assert_execution(&recorded[1])
         .host("example.com")
         .path("/me")
-        .header(http::header::AUTHORIZATION, "Bearer session-token")
+        .protected_header(http::header::AUTHORIZATION)
         .body_absent();
     handle.finish();
 }
 
 #[tokio::test]
 async fn auth_endpoint_errors_do_not_render_secret_values() {
-    let (transport, handle) = mock().build();
+    let (transport, handle) = deterministic_mock().build();
     let api = SessionApi::new_with_safe_reqwest_builder(
         "super-secret-upstream\ninvalid".to_string(),
-        |builder| transport.configure_reqwest(builder),
+        |builder| transport.configure_both(builder),
     )
     .expect("mock client");
 
@@ -102,15 +110,21 @@ async fn auth_endpoint_errors_do_not_render_secret_values() {
 
 #[tokio::test]
 async fn endpoint_backed_session_401_does_not_refresh_without_challenge_recovery() {
-    let (transport, handle) = mock()
-        .reply(json_reply(r#"{"access_token":"session-token"}"#))
+    let (transport, handle) = deterministic_mock()
         .reply(
-            MockReply::status(http::StatusCode::UNAUTHORIZED)
+            json_reply(r#"{"access_token":"session-token"}"#).expect_header(
+                http::HeaderName::from_static("x-upstream-key"),
+                "upstream-secret",
+            ),
+        )
+        .reply(
+            ScriptedReply::status(http::StatusCode::UNAUTHORIZED)
+                .expect_header(http::header::AUTHORIZATION, "Bearer session-token")
                 .with_body(Bytes::from_static(b"expired")),
         )
         .build();
     let api = SessionApi::new_with_safe_reqwest_builder("upstream-secret".to_string(), |builder| {
-        transport.configure_reqwest(builder)
+        transport.configure_both(builder)
     })
     .expect("mock client");
 
@@ -143,13 +157,13 @@ async fn endpoint_backed_session_401_does_not_refresh_without_challenge_recovery
 
     let recorded = handle.recorded();
     assert_eq!(recorded.len(), 2);
-    assert_request(&recorded[0])
+    assert_execution(&recorded[0])
         .host("example.com")
         .path("/login");
-    assert_request(&recorded[1])
+    assert_execution(&recorded[1])
         .host("example.com")
         .path("/me")
-        .header(http::header::AUTHORIZATION, "Bearer session-token");
+        .protected_header(http::header::AUTHORIZATION);
     let missing = api
         .protected()
         .me()
@@ -165,14 +179,21 @@ async fn endpoint_backed_session_401_does_not_refresh_without_challenge_recovery
 
 #[tokio::test]
 async fn endpoint_backed_session_403_is_terminal_without_recovery() {
-    let (transport, handle) = mock()
-        .reply(json_reply(r#"{"access_token":"session-token"}"#))
+    let (transport, handle) = deterministic_mock()
         .reply(
-            MockReply::status(http::StatusCode::FORBIDDEN).with_body(Bytes::from_static(b"denied")),
+            json_reply(r#"{"access_token":"session-token"}"#).expect_header(
+                http::HeaderName::from_static("x-upstream-key"),
+                "upstream-secret",
+            ),
+        )
+        .reply(
+            ScriptedReply::status(http::StatusCode::FORBIDDEN)
+                .expect_header(http::header::AUTHORIZATION, "Bearer session-token")
+                .with_body(Bytes::from_static(b"denied")),
         )
         .build();
     let api = SessionApi::new_with_safe_reqwest_builder("upstream-secret".to_string(), |builder| {
-        transport.configure_reqwest(builder)
+        transport.configure_both(builder)
     })
     .expect("mock client");
 
@@ -205,26 +226,34 @@ async fn endpoint_backed_session_403_is_terminal_without_recovery() {
 
     let recorded = handle.recorded();
     assert_eq!(recorded.len(), 2);
-    assert_request(&recorded[0])
+    assert_execution(&recorded[0])
         .host("example.com")
         .path("/login");
-    assert_request(&recorded[1])
+    assert_execution(&recorded[1])
         .host("example.com")
         .path("/me")
-        .header(http::header::AUTHORIZATION, "Bearer session-token");
+        .protected_header(http::header::AUTHORIZATION);
     handle.assert_recorded_len(2);
     handle.finish();
 }
 
 #[tokio::test]
 async fn rotating_static_secret_preserves_endpoint_backed_session() {
-    let (transport, handle) = mock()
-        .reply(json_reply(r#"{"access_token":"session-token"}"#))
-        .reply(json_reply(r#"{"id":7,"username":"ada"}"#))
+    let (transport, handle) = deterministic_mock()
+        .reply(
+            json_reply(r#"{"access_token":"session-token"}"#).expect_header(
+                http::HeaderName::from_static("x-upstream-key"),
+                "upstream-secret",
+            ),
+        )
+        .reply(
+            json_reply(r#"{"id":7,"username":"ada"}"#)
+                .expect_header(http::header::AUTHORIZATION, "Bearer session-token"),
+        )
         .build();
     let mut api =
         SessionApi::new_with_safe_reqwest_builder("upstream-secret".to_string(), |builder| {
-            transport.configure_reqwest(builder)
+            transport.configure_both(builder)
         })
         .expect("mock client");
 
@@ -264,19 +293,19 @@ async fn rotating_static_secret_preserves_endpoint_backed_session() {
 
     let recorded = handle.recorded();
     assert_eq!(recorded.len(), 2);
-    assert_request(&recorded[0])
+    assert_execution(&recorded[0])
         .host("example.com")
         .path("/login")
-        .header("X-Upstream-Key", "upstream-secret");
-    assert_request(&recorded[1])
+        .protected_header("X-Upstream-Key");
+    assert_execution(&recorded[1])
         .host("example.com")
         .path("/me")
-        .header(http::header::AUTHORIZATION, "Bearer session-token");
+        .protected_header(http::header::AUTHORIZATION);
     handle.finish();
 }
 
-fn json_reply(body: &'static str) -> MockReply {
-    MockReply::ok_json(Bytes::from_static(body.as_bytes()))
+fn json_reply(body: &'static str) -> ScriptedReply {
+    ScriptedReply::ok_json(Bytes::from_static(body.as_bytes()))
 }
 
 fn rendered_error(err: &ApiClientError) -> String {

@@ -34,6 +34,6 @@ rate-limit interfaces, retry modes, and safe managed-client configuration.
 Runtime state containers, request plans, resolved policies, response-entity
 plans, and credential-cache internals are not public extensions.
 
-Concord's deterministic loopback machinery exists only in test support and a
+Concord's deterministic native-executor machinery exists only in test support and a
 development-build seam. It cannot replace production execution in generated
 clients.

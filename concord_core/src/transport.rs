@@ -841,30 +841,21 @@ pub(crate) struct ManagedProviderReqwestClient {
 #[derive(Clone)]
 pub struct SafeProxy {
     target: Url,
-    #[cfg(any(test, feature = "dangerous-dev-tools"))]
-    test_origin_override: bool,
-    #[cfg(any(test, feature = "dangerous-dev-tools"))]
-    _test_guard: Option<std::sync::Arc<dyn std::any::Any + Send + Sync>>,
 }
 
 impl PartialEq for SafeProxy {
     fn eq(&self, other: &Self) -> bool {
-        self.target == other.target && {
-            #[cfg(any(test, feature = "dangerous-dev-tools"))]
-            {
-                self.test_origin_override == other.test_origin_override
-            }
-            #[cfg(all(not(test), not(feature = "dangerous-dev-tools")))]
-            {
-                true
-            }
-        }
+        self.target == other.target
     }
 }
 
 impl Eq for SafeProxy {}
 
 impl SafeProxy {
+    fn is_network_proxy(&self) -> bool {
+        true
+    }
+
     pub fn all(target: &str) -> Result<Self, SafeProxyError> {
         let target = Url::parse(target).map_err(|_| SafeProxyError::InvalidOrigin)?;
         if !matches!(target.scheme(), "http" | "https")
@@ -880,43 +871,7 @@ impl SafeProxy {
         if cfg!(not(feature = "default-tls")) && target.scheme() == "https" {
             return Err(SafeProxyError::TlsUnavailable);
         }
-        Ok(Self {
-            target,
-            #[cfg(any(test, feature = "dangerous-dev-tools"))]
-            test_origin_override: false,
-            #[cfg(any(test, feature = "dangerous-dev-tools"))]
-            _test_guard: None,
-        })
-    }
-
-    fn is_network_proxy(&self) -> bool {
-        #[cfg(any(test, feature = "dangerous-dev-tools"))]
-        {
-            !self.test_origin_override
-        }
-        #[cfg(all(not(test), not(feature = "dangerous-dev-tools")))]
-        {
-            true
-        }
-    }
-
-    #[doc(hidden)]
-    #[cfg(any(test, feature = "dangerous-dev-tools"))]
-    pub fn __test_origin_override(target: &str) -> Result<Self, SafeProxyError> {
-        let mut proxy = Self::all(target)?;
-        proxy.test_origin_override = true;
-        Ok(proxy)
-    }
-
-    #[doc(hidden)]
-    #[cfg(any(test, feature = "dangerous-dev-tools"))]
-    pub fn __test_origin_override_with_guard(
-        target: &str,
-        guard: std::sync::Arc<dyn std::any::Any + Send + Sync>,
-    ) -> Result<Self, SafeProxyError> {
-        let mut proxy = Self::__test_origin_override(target)?;
-        proxy._test_guard = Some(guard);
-        Ok(proxy)
+        Ok(Self { target })
     }
 }
 
@@ -1049,10 +1004,6 @@ impl SafeReqwestBuilder {
     }
     pub fn proxy(mut self, proxy: SafeProxy) -> Self {
         self.configured_proxies.push(proxy.clone());
-        #[cfg(any(test, feature = "dangerous-dev-tools"))]
-        if proxy.test_origin_override {
-            return self;
-        }
         match reqwest::Proxy::all(proxy.target.clone()) {
             Ok(application_proxy) => match reqwest::Proxy::all(proxy.target) {
                 Ok(provider_proxy) => {
@@ -1355,62 +1306,6 @@ async fn execute_managed(
     request: reqwest::Request,
     _context: Option<&RequestExecutionContext>,
 ) -> Result<reqwest::Response, ReqwestError> {
-    #[cfg(any(test, feature = "dangerous-dev-tools"))]
-    let mut request = request;
-    #[cfg(any(test, feature = "dangerous-dev-tools"))]
-    if let Some(target) = configured_proxies
-        .iter()
-        .find(|proxy| proxy.test_origin_override)
-        .map(|proxy| &proxy.target)
-    {
-        let native_url = request.url().clone();
-        let mut rewritten = target.clone();
-        rewritten.set_path(native_url.path());
-        rewritten.set_query(native_url.query());
-        let logical_url = _context
-            .map(|context| context.logical_url.clone())
-            .unwrap_or_else(|| {
-                // Direct internal transport tests can execute without a
-                // Concord request context. In that case retain only an
-                // origin-local, query-free routing representation.
-                let mut opaque = target.clone();
-                opaque.set_path(native_url.path());
-                opaque.set_query(None);
-                opaque
-            });
-        let logical_header = http::HeaderValue::from_str(logical_url.as_str()).map_err(|_| {
-            ReqwestError::with_kind(
-                ReqwestErrorKind::Request,
-                std::io::Error::other("logical test URL cannot be represented safely"),
-            )
-        })?;
-        request.headers_mut().insert(
-            http::HeaderName::from_static("x-concord-test-logical-url"),
-            logical_header,
-        );
-        if let Some(context) = _context {
-            let headers = request.headers_mut();
-            if let Ok(value) = http::HeaderValue::from_str(context.meta.endpoint) {
-                headers.insert(
-                    http::HeaderName::from_static("x-concord-test-endpoint"),
-                    value,
-                );
-            }
-            headers.insert(
-                http::HeaderName::from_static("x-concord-test-page-index"),
-                http::HeaderValue::from_str(&context.meta.page_index.to_string())
-                    .expect("page index is a valid header value"),
-            );
-            if let Some(timeout) = context.timeout {
-                headers.insert(
-                    http::HeaderName::from_static("x-concord-test-timeout-ms"),
-                    http::HeaderValue::from_str(&timeout.as_millis().to_string())
-                        .expect("timeout is a valid header value"),
-                );
-            }
-        }
-        *request.url_mut() = rewritten;
-    }
     #[cfg(not(feature = "default-tls"))]
     if request.url().scheme() == "https" {
         return Err(ReqwestError::with_kind(

@@ -190,10 +190,9 @@ URL, and install no proxy. Generated clients remain concrete; their ordinary
 safe-builder constructor is configured by the feature-gated harness, with no
 generated development trait, selector, field, or executor generic.
 
-The temporary `loopback-compat` feature is isolated to
-`compatibility_loopback.rs` for the F-07 examples and performance slice. New
-tests must not use it. F-07 deletes that module together with the remaining
-test-origin proxy rewrite and internal logical-URL header.
+Examples and performance fixtures use the same feature-gated deterministic
+native executor. No maintained test or benchmark opens a local listener,
+rewrites request origins, or counts hidden Reqwest protocol sends.
 
 The dangerous development feature does not persist request or response bodies.
 

@@ -2,19 +2,18 @@ use bytes::Bytes;
 use concord_core::prelude::PaginationTermination;
 use concord_examples::custom_pagination::{CustomPaginationApi, Item as CustomPaginationItem};
 use concord_examples::pagination::{Item, PaginationApi, PaginationAuthApi};
-use concord_test_support::{MockReply, assert_request, mock};
+use concord_test_support::{ScriptedReply, assert_execution, deterministic_mock};
 use http::StatusCode;
 
 #[tokio::test]
 async fn offset_pagination_collects_items_and_preserves_query_shape() {
-    let (transport, handle) = mock()
+    let (transport, handle) = deterministic_mock()
         .reply(json_reply(r#"[{"id":1},{"id":2}]"#))
         .reply(json_reply(r#"[{"id":3}]"#))
         .build();
-    let api = PaginationApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client");
+    let api =
+        PaginationApi::new_with_safe_reqwest_builder(|builder| transport.configure_both(builder))
+            .expect("mock client");
 
     let items = api
         .list_offset()
@@ -26,11 +25,11 @@ async fn offset_pagination_collects_items_and_preserves_query_shape() {
     assert_eq!(ids(&items), vec![1, 2, 3]);
     let recorded = handle.recorded();
     assert_eq!(recorded.len(), 2);
-    assert_request(&recorded[0])
+    assert_execution(&recorded[0])
         .path("/offset-items")
         .query_has("start", "0")
         .query_has("count", "2");
-    assert_request(&recorded[1])
+    assert_execution(&recorded[1])
         .path("/offset-items")
         .query_has("start", "2")
         .query_has("count", "2");
@@ -39,16 +38,15 @@ async fn offset_pagination_collects_items_and_preserves_query_shape() {
 
 #[tokio::test]
 async fn cursor_pagination_collect_uses_next_cursor() {
-    let (transport, handle) = mock()
+    let (transport, handle) = deterministic_mock()
         .reply(json_reply(
             r#"{"items":[{"id":10},{"id":11}],"next_cursor":"next-page"}"#,
         ))
         .reply(json_reply(r#"{"items":[{"id":12}],"next_cursor":null}"#))
         .build();
-    let api = PaginationApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
-    })
-    .expect("mock client");
+    let api =
+        PaginationApi::new_with_safe_reqwest_builder(|builder| transport.configure_both(builder))
+            .expect("mock client");
     let items = api
         .list_cursor()
         .paginate(PaginationTermination::hard_page_cap(10))
@@ -59,11 +57,11 @@ async fn cursor_pagination_collect_uses_next_cursor() {
     assert_eq!(ids(&items), vec![10, 11, 12]);
     let recorded = handle.recorded();
     assert_eq!(recorded.len(), 2);
-    assert_request(&recorded[0])
+    assert_execution(&recorded[0])
         .path("/cursor-items")
         .query_absent("cursor")
         .query_has("count", "2");
-    assert_request(&recorded[1])
+    assert_execution(&recorded[1])
         .path("/cursor-items")
         .query_has("cursor", "next-page")
         .query_has("count", "2");
@@ -72,14 +70,17 @@ async fn cursor_pagination_collect_uses_next_cursor() {
 
 #[tokio::test]
 async fn session_header_pagination_preserves_offset_and_items() {
-    let (transport, handle) = mock()
+    let (transport, handle) = deterministic_mock()
         .reply(json_reply(r#"[{"id":1},{"id":2}]"#))
-        .reply(MockReply::status(StatusCode::UNAUTHORIZED))
+        .reply(
+            ScriptedReply::status(StatusCode::UNAUTHORIZED)
+                .expect_header(http::header::AUTHORIZATION, "Bearer page-token"),
+        )
         .reply(json_reply(r#"[{"id":3}]"#))
         .build();
     let api =
         PaginationAuthApi::new_with_safe_reqwest_builder("page-token".to_string(), |builder| {
-            transport.configure_reqwest(builder)
+            transport.configure_both(builder)
         })
         .expect("mock client");
 
@@ -94,19 +95,19 @@ async fn session_header_pagination_preserves_offset_and_items() {
     assert_eq!(ids(&items), vec![1, 2, 3]);
     let recorded = handle.recorded();
     assert_eq!(recorded.len(), 3);
-    assert_request(&recorded[0])
+    assert_execution(&recorded[0])
         .path("/protected-items")
         .query_has("start", "0")
-        .header(http::header::AUTHORIZATION, "Bearer page-token");
-    assert_request(&recorded[1])
+        .protected_header(http::header::AUTHORIZATION);
+    assert_execution(&recorded[1])
         .path("/protected-items")
         .query_has("start", "2")
-        .header(http::header::AUTHORIZATION, "Bearer page-token");
-    assert_request(&recorded[2])
+        .protected_header(http::header::AUTHORIZATION);
+    assert_execution(&recorded[2])
         .path("/protected-items")
         .query_has("start", "2")
-        .header(http::header::AUTHORIZATION, "Bearer page-token");
-    assert_eq!(recorded[1].url, recorded[2].url);
+        .protected_header(http::header::AUTHORIZATION);
+    assert_eq!(recorded[1].logical_url, recorded[2].logical_url);
     handle.finish();
 }
 
@@ -114,18 +115,18 @@ fn ids(items: &[Item]) -> Vec<u64> {
     items.iter().map(|item| item.id).collect()
 }
 
-fn json_reply(body: &'static str) -> MockReply {
-    MockReply::ok_json(Bytes::from_static(body.as_bytes()))
+fn json_reply(body: &'static str) -> ScriptedReply {
+    ScriptedReply::ok_json(Bytes::from_static(body.as_bytes()))
 }
 
 #[tokio::test]
 async fn generated_custom_pagination_collect_renders_endpoint_fields() {
-    let (transport, handle) = mock()
+    let (transport, handle) = deterministic_mock()
         .reply(json_reply(r#"{"items":[{"id":1},{"id":2}]}"#))
         .reply(json_reply(r#"{"items":[{"id":3}]}"#))
         .build();
     let api = CustomPaginationApi::new_with_safe_reqwest_builder(|builder| {
-        transport.configure_reqwest(builder)
+        transport.configure_both(builder)
     })
     .expect("mock client");
 
@@ -146,11 +147,11 @@ async fn generated_custom_pagination_collect_renders_endpoint_fields() {
     );
     let recorded = handle.recorded();
     assert_eq!(recorded.len(), 2);
-    assert_request(&recorded[0])
+    assert_execution(&recorded[0])
         .path("/")
         .header("x-page", "1")
         .header("x-count", "2");
-    assert_request(&recorded[1])
+    assert_execution(&recorded[1])
         .path("/")
         .header("x-page", "2")
         .header("x-count", "2");
