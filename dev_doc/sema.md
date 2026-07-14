@@ -12,7 +12,7 @@ Sema resolves:
 - endpoint and scope arguments
 - route atoms in `host`, `path`, and `fmt[...]`
 - query and header values
-- retry, rate-limit, and behavior profile references
+- rate-limit and profile references
 - pagination controller types and assignment values
 - auth endpoint references
 - endpoint aliases and facade names
@@ -32,9 +32,9 @@ Sema also enforces the supported maximum DSL scope nesting depth of 64 while nor
 
 ## Profiles And Inheritance
 
-Retry, rate-limit, and behavior profiles can use `extends`. Sema resolves parents before children, detects self-extension and cycles, and reports unknown parent names.
+Profiles and rate-limit profiles can use `extends`. Sema resolves parents before children, detects self-extension and cycles, and reports unknown parent names.
 
-Unknown profile references are semantic errors. Keep messages explicit, for example `unknown retry profile` or `unknown rate_limit profile`.
+Unknown profile references are semantic errors. Keep messages explicit, for example `unknown profile` or `unknown rate_limit profile`.
 
 ## Policy Inheritance
 
@@ -47,35 +47,33 @@ client defaults
 -> endpoint
 ```
 
-At each attachment site, behavior is applied before explicit local clauses. That lets local clauses override or refine behavior-provided policy.
+At each attachment site, profile is applied before explicit local clauses. That lets local clauses override or refine profile-provided policy.
 
 ## Merge Rules
 
-- Explicit `retry` overrides behavior-provided `retry` at the same attachment site.
-- `retry off` clears inherited policy.
 - Rate-limit profiles combine.
 - `rate_limit off` clears inherited rate-limit policy.
 - `only` replaces the local inherited profile set where applicable.
 - Auth uses append in inherited and source order.
 - Query and header operations preserve order after resolution.
 
-Final endpoint auth requirements are validated after inheritance and behavior expansion, using the materialization target as the collision key. Header targets compare case-insensitively, query targets compare by exact key, and bearer/basic/custom `Authorization` header auth share the singleton `Authorization` target.
+Final endpoint auth requirements are validated after inheritance and profile expansion, using the materialization target as the collision key. Header targets compare case-insensitively, query targets compare by exact key, and bearer/basic/custom `Authorization` header auth share the singleton `Authorization` target.
 
-## Behavior Expansion
+## Profile Expansion
 
-Behavior profiles are resolved in sema and lowered into normal auth, retry, and rate-limit policy data. Behavior is not emitted as a runtime concept.
+Profiles are resolved in sema and lowered into normal auth and rate-limit policy data. Profiles are not emitted as a runtime concept.
 
-Behavior rate-limit specs are intentionally resolved at the attachment site, not at declaration time. This is required because `rate_limit key name = arg` bindings are contextual and may be visible only at a scope or endpoint.
+Profile rate-limit specs are intentionally resolved at the attachment site, not at declaration time. This is required because `rate_limit key name = arg` bindings are contextual and may be visible only at a scope or endpoint.
 
-Sema rejects duplicate behavior names across multiple `behavior` clauses at one attachment site: one client defaults block, one scope body, or one endpoint body. The parser already rejects duplicates inside a single `behavior [...]` list. Cross-layer reuse remains valid. Behavior clauses at one site apply in source order, and behavior names are preserved only for rustdoc labels.
+Sema rejects duplicate profile names across multiple `profile` clauses at one attachment site: one client defaults block, one scope body, or one endpoint body. The parser already rejects duplicates inside a single `profile [...]` list. Cross-layer reuse remains valid. Profile clauses at one site apply in source order, and profile names are preserved only for rustdoc labels.
 
-Behavior use order is:
+Profile use order is:
 
 ```text
-client default behavior names
--> outer scope behavior names
--> inner scope behavior names
--> endpoint behavior names
+client default profile names
+-> outer scope profile names
+-> inner scope profile names
+-> endpoint profile names
 ```
 
-Behavior rustdoc labels are deduped in stable first-seen order. Deduping affects documentation metadata only, not policy semantics.
+Profile rustdoc labels are deduped in stable first-seen order. Deduping affects documentation metadata only, not policy semantics.

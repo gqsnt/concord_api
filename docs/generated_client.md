@@ -20,13 +20,13 @@ let api = session_api::SessionApi::new("upstream-key".to_string());
 
 For example, a client declaring `var tenant`, `var region`, then auth secrets `username` and `password` is constructed as `Example::new(tenant, region, username, password)`. For clients with several same-typed values, the builder API is often clearer.
 
-Callers can use `new()`, `builder()`, or `new_with_safe_reqwest_builder(...)`. The safe managed constructors expose only `SafeReqwestBuilder`; they never expose raw Reqwest builders, clients, or proxies. Use the fallible variant when parsing trusted-root or client-identity PEM data. Generated clients also expose validated client-wide API-header methods. All feature profiles execute through the managed Reqwest client.
+Callers can use `new()`, `builder()`, or `new_with_safe_reqwest_builder(...)`. The safe managed constructors expose only `SafeReqwestBuilder`; they never expose raw Reqwest builders, clients, or proxies. Use the fallible variant when parsing trusted-root or client-identity PEM data. Generated clients also expose validated client-wide API-header methods. All generated clients execute through the managed Reqwest client.
 
 ```rust
 let api = minimal_api::MinimalApi::new();
 ```
 
-Concord's managed Reqwest client disables redirects and cookies. Retry behavior
+Concord's managed Reqwest client disables redirects and cookies. Retry mode
 is selected once with client-level `RetryMode`: protocol recovery, disabled, or
 bounded safe-method status retry for verified fixed-origin APIs.
 `new_with_safe_reqwest_builder(...)` receives only `SafeReqwestBuilder` for

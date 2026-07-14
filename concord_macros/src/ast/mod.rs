@@ -14,7 +14,7 @@ include!("common.rs");
 include!("auth.rs");
 include!("routing.rs");
 include!("rate_limit.rs");
-include!("behavior.rs");
+include!("profile.rs");
 include!("pagination.rs");
 include!("policy.rs");
 include!("raw.rs");

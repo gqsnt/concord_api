@@ -628,7 +628,7 @@ fn facade_endpoint_doc_texts(resolved_api: &ResolvedApi, ep: &ResolvedEndpoint) 
         details: Vec::new(),
     });
 
-    if let Some(profile_line) = profile_doc_line(&ep.behavior_doc.names) {
+    if let Some(profile_line) = profile_doc_line(&ep.profile_doc.names) {
         docs.push(FacadeDoc {
             summary: profile_line,
             details: Vec::new(),

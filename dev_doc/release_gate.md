@@ -10,8 +10,9 @@ Focused diagnosis starts with `just test-core`, `just test-macros`, and
 `just test-ui`. The separate performance package is checked with
 `just perf-check`, `just perf-test`, and `just bench-check`.
 
-The final source audit rejects numeric private namespaces, the removed
-`internal` alias, generated reliance on runtime implementation modules, public
+The final source audit checks the unversioned private namespace, generated
+output for runtime-plan names or struct literals, generated reliance on
+runtime implementation modules, public
 transport polymorphism, duplicate retry execution, automatic
 `Retry-After` resend, manual multipart framing, and direct Hyper/Tower-family
 manifest dependencies.
@@ -20,3 +21,7 @@ The source and compile-fixture audits also require the hidden development seam
 to be absent from ordinary debug builds, explicitly gated by
 `dangerous-dev-tools`, narrow enough to avoid runtime-engine re-exports, and
 unused by generated clients and normal examples.
+
+The `__private` namespace is publicly reachable only because macro expansion
+crosses crate boundaries. It is an unstable, unsupported generated-integration
+surface, not a Rust privacy or security boundary.

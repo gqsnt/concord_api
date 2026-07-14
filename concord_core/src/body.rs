@@ -1,5 +1,5 @@
 use crate::stream_body::{AsyncReadByteStream, StreamBody, StreamBodyErrorKind};
-use crate::transport::{TransportError, TransportErrorKind};
+use crate::transport::{ReqwestError, ReqwestErrorKind};
 use bytes::Bytes;
 use futures_core::Stream;
 use http_body::{Body, Frame, SizeHint};
@@ -129,7 +129,7 @@ impl BodyError {
             Ok(error) => return (*error).into(),
             Err(error) => error,
         };
-        let error = match error.downcast::<TransportError>() {
+        let error = match error.downcast::<ReqwestError>() {
             Ok(error) => return (*error).into(),
             Err(error) => error,
         };
@@ -291,10 +291,10 @@ impl From<crate::stream_body::StreamBodyError> for BodyError {
     }
 }
 
-impl From<TransportError> for BodyError {
-    fn from(error: TransportError) -> Self {
+impl From<ReqwestError> for BodyError {
+    fn from(error: ReqwestError) -> Self {
         match error.kind() {
-            TransportErrorKind::Io => Self::new(BodyErrorKind::Io),
+            ReqwestErrorKind::Io => Self::new(BodyErrorKind::Io),
             _ => Self::input(),
         }
     }
@@ -379,7 +379,7 @@ impl DynBody {
         Ok(body.with_size_hint(exact_hint(length)))
     }
 
-    /// Converts the legacy stream body while retaining its useful size hint.
+    /// Converts a stream body while retaining its useful size hint.
     pub fn from_stream_body(body: StreamBody) -> Self {
         let hint = body.size_hint();
         Self::from_byte_stream(body.into_byte_stream()).with_size_hint(hint)

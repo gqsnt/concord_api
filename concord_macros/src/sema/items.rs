@@ -7,9 +7,9 @@ pub(super) struct WalkItemsCtx<'a> {
     pub(super) auth_vars: &'a BTreeMap<String, VarInfo>,
     pub(super) auth_credentials: &'a BTreeMap<String, AuthCredentialIr>,
     pub(super) client_auth: &'a [AuthUsePlanIr],
-    pub(super) client_default_behavior_names: &'a [String],
+    pub(super) client_default_profile_names: &'a [String],
     pub(super) rate_limit_profiles: &'a BTreeMap<String, RateLimitPlanTemplate>,
-    pub(super) behavior_profiles: &'a BTreeMap<String, BehaviorResolved>,
+    pub(super) profiles: &'a BTreeMap<String, ProfileResolved>,
     pub(super) layers: &'a mut Vec<LayerIr>,
     pub(super) endpoints: &'a mut Vec<ResolvedEndpoint>,
 }
@@ -21,9 +21,9 @@ pub(super) struct EndpointAnalysisCtx<'a> {
     auth_vars: &'a BTreeMap<String, VarInfo>,
     auth_credentials: &'a BTreeMap<String, AuthCredentialIr>,
     client_auth: &'a [AuthUsePlanIr],
-    client_default_behavior_names: &'a [String],
+    client_default_profile_names: &'a [String],
     rate_limit_profiles: &'a BTreeMap<String, RateLimitPlanTemplate>,
-    behavior_profiles: &'a BTreeMap<String, BehaviorResolved>,
+    profiles: &'a BTreeMap<String, ProfileResolved>,
     layers: &'a [LayerIr],
 }
 
@@ -68,9 +68,9 @@ pub(super) fn walk_items(
                     layer_vars.insert(var.rust.to_string(), var.clone());
                 }
                 let key_bindings = resolve_rate_limit_key_bindings(&ld.rate_limit_keys, &decls)?;
-                validate_behavior_uses_unique_at_site(&ld.behavior_uses)?;
-                let behavior = resolve_behavior_uses(&ld.behavior_uses, ctx.behavior_profiles)?;
-                let behavior_names = behavior_use_names(&ld.behavior_uses);
+                validate_profile_uses_unique_at_site(&ld.profile_uses)?;
+                let profile = resolve_profile_uses(&ld.profile_uses, ctx.profiles)?;
+                let profile_names = profile_use_names(&ld.profile_uses);
                 let mut policy = resolve_policy_blocks(
                     &ld.policy,
                     PolicyOwner::Layer,
@@ -82,8 +82,8 @@ pub(super) fn walk_items(
                 for binding in &key_bindings {
                     visible_keys.insert(binding.name.clone(), binding.clone());
                 }
-                let behavior_rate_limit = resolve_behavior_rate_limit_specs(
-                    &behavior.rate_limit_specs,
+                let profile_rate_limit = resolve_profile_rate_limit_specs(
+                    &profile.rate_limit_specs,
                     ctx.rate_limit_profiles,
                     &visible_keys,
                     None,
@@ -97,8 +97,8 @@ pub(super) fn walk_items(
                     RateLimitAttachmentContext::Layer,
                 )?;
                 policy.rate_limit =
-                    merge_rate_limit_resolved(behavior_rate_limit, explicit_rate_limit);
-                let mut auth_uses = behavior.auth_uses;
+                    merge_rate_limit_resolved(profile_rate_limit, explicit_rate_limit);
+                let mut auth_uses = profile.auth_uses;
                 auth_uses.extend(ld.auth_uses.iter().cloned());
                 let auth = resolve_auth_requirements(
                     &auth_uses,
@@ -114,7 +114,7 @@ pub(super) fn walk_items(
                     policy,
                     auth,
                     rate_limit_key_bindings: key_bindings,
-                    behavior_names,
+                    profile_names,
                     decls,
                 });
 
@@ -130,9 +130,9 @@ pub(super) fn walk_items(
                     auth_vars: ctx.auth_vars,
                     auth_credentials: ctx.auth_credentials,
                     client_auth: ctx.client_auth,
-                    client_default_behavior_names: ctx.client_default_behavior_names,
+                    client_default_profile_names: ctx.client_default_profile_names,
                     rate_limit_profiles: ctx.rate_limit_profiles,
-                    behavior_profiles: ctx.behavior_profiles,
+                    profiles: ctx.profiles,
                     layers: ctx.layers.as_slice(),
                 };
                 let endpoint_ir = analyze_endpoint(ed, ancestry, &analysis_ctx)?;
@@ -231,7 +231,7 @@ pub(super) fn endpoint_public_output_ty(endpoint: &NormEndpoint) -> Result<Type>
 pub(super) fn request_entity_plan_ir(request_io: &ResolvedRequestBodyIo) -> RequestEntityPlanIr {
     match request_io {
         ResolvedRequestBodyIo::None => RequestEntityPlanIr {
-            adapter_ty: syn::parse_quote!(::concord_core::__private::NoRequestBody),
+            adapter_ty: syn::parse_quote!(::concord_core::__private::GeneratedNoRequestBody),
             public_input_ty: None,
             body_field_ty: None,
             doc: IoDocIr {
@@ -247,7 +247,7 @@ pub(super) fn request_entity_plan_ir(request_io: &ResolvedRequestBodyIo) -> Requ
         ResolvedRequestBodyIo::BufferedCodec(io) => {
             let marker = &io.marker;
             RequestEntityPlanIr {
-                adapter_ty: syn::parse_quote!(::concord_core::__private::EncodedRequest<#marker>),
+                adapter_ty: syn::parse_quote!(::concord_core::__private::GeneratedEncodedRequest<#marker>),
                 public_input_ty: Some(io.value_ty.clone()),
                 body_field_ty: Some(io.value_ty.clone()),
                 doc: IoDocIr {
@@ -268,7 +268,7 @@ pub(super) fn request_entity_plan_ir(request_io: &ResolvedRequestBodyIo) -> Requ
             }
         }
         ResolvedRequestBodyIo::RawStream { media_ty } => RequestEntityPlanIr {
-            adapter_ty: syn::parse_quote!(::concord_core::__private::RawStreamRequest<#media_ty>),
+            adapter_ty: syn::parse_quote!(::concord_core::__private::GeneratedRawStreamRequest<#media_ty>),
             public_input_ty: Some(syn::parse_quote!(StreamBody)),
             body_field_ty: Some(syn::parse_quote!(StreamBody)),
             doc: IoDocIr {
@@ -282,7 +282,7 @@ pub(super) fn request_entity_plan_ir(request_io: &ResolvedRequestBodyIo) -> Requ
             },
         },
         ResolvedRequestBodyIo::Multipart { value_ty } => RequestEntityPlanIr {
-            adapter_ty: syn::parse_quote!(::concord_core::__private::MultipartRequest),
+            adapter_ty: syn::parse_quote!(::concord_core::__private::GeneratedMultipartRequest),
             public_input_ty: Some(syn::parse_quote!(::concord_core::advanced::MultipartBody)),
             body_field_ty: Some(syn::parse_quote!(::concord_core::advanced::MultipartBody)),
             doc: IoDocIr {
@@ -305,7 +305,7 @@ pub(super) fn response_entity_plan_ir(
         ResolvedResponseBodyIo::BufferedCodec(io) => {
             let marker = &io.marker;
             ResponseEntityPlanIr {
-                adapter_ty: syn::parse_quote!(::concord_core::__private::BufferedResponse<#marker>),
+                adapter_ty: syn::parse_quote!(::concord_core::__private::GeneratedBufferedResponse<#marker>),
                 public_output_ty: response_public_output_ty(response_io),
                 doc: IoDocIr {
                     summary: format!(
@@ -325,7 +325,7 @@ pub(super) fn response_entity_plan_ir(
             }
         }
         ResolvedResponseBodyIo::BufferedBytes => ResponseEntityPlanIr {
-            adapter_ty: syn::parse_quote!(::concord_core::__private::BytesResponse),
+            adapter_ty: syn::parse_quote!(::concord_core::__private::GeneratedBytesResponse),
             public_output_ty: response_public_output_ty(response_io),
             doc: IoDocIr {
                 summary: "Buffered bytes response.".to_string(),
@@ -338,7 +338,7 @@ pub(super) fn response_entity_plan_ir(
             },
         },
         ResolvedResponseBodyIo::NoContent => ResponseEntityPlanIr {
-            adapter_ty: syn::parse_quote!(::concord_core::__private::NoContentResponse),
+            adapter_ty: syn::parse_quote!(::concord_core::__private::GeneratedNoContentResponse),
             public_output_ty: response_public_output_ty(response_io),
             doc: IoDocIr {
                 summary: "No response body.".to_string(),
@@ -351,7 +351,7 @@ pub(super) fn response_entity_plan_ir(
             },
         },
         ResolvedResponseBodyIo::RawStream { media_ty } => ResponseEntityPlanIr {
-            adapter_ty: syn::parse_quote!(::concord_core::__private::RawStreamResponse<#media_ty>),
+            adapter_ty: syn::parse_quote!(::concord_core::__private::GeneratedRawStreamResponse<#media_ty>),
             public_output_ty: response_public_output_ty(response_io),
             doc: IoDocIr {
                 summary: "Streaming response body.".to_string(),
@@ -648,8 +648,8 @@ pub(super) fn analyze_endpoint(
         ctx.auth_vars,
         Some(&ep_vars),
     )?;
-    validate_behavior_uses_unique_at_site(&ed.behavior_uses)?;
-    let behavior = resolve_behavior_uses(&ed.behavior_uses, ctx.behavior_profiles)?;
+    validate_profile_uses_unique_at_site(&ed.profile_uses)?;
+    let profile = resolve_profile_uses(&ed.profile_uses, ctx.profiles)?;
     let endpoint_decls = ep_var_order
         .iter()
         .filter_map(|key| ep_vars.get(key))
@@ -661,8 +661,8 @@ pub(super) fn analyze_endpoint(
     for binding in endpoint_key_bindings {
         visible_keys.insert(binding.name.clone(), binding);
     }
-    let behavior_rate_limit = resolve_behavior_rate_limit_specs(
-        &behavior.rate_limit_specs,
+    let profile_rate_limit = resolve_profile_rate_limit_specs(
+        &profile.rate_limit_specs,
         ctx.rate_limit_profiles,
         &visible_keys,
         Some(&ep_vars),
@@ -675,7 +675,7 @@ pub(super) fn analyze_endpoint(
         Some(&ep_vars),
         RateLimitAttachmentContext::Endpoint,
     )?;
-    policy.rate_limit = merge_rate_limit_resolved(behavior_rate_limit, explicit_rate_limit);
+    policy.rate_limit = merge_rate_limit_resolved(profile_rate_limit, explicit_rate_limit);
     let mut scope_modules = Vec::new();
     let mut facade_param_groups = Vec::new();
     let mut prefix_pieces = Vec::new();
@@ -702,7 +702,7 @@ pub(super) fn analyze_endpoint(
     for &lid in ancestry {
         auth_plans.extend(ctx.layers[lid].auth.iter().cloned());
     }
-    let mut auth_uses = behavior.auth_uses;
+    let mut auth_uses = profile.auth_uses;
     auth_uses.extend(ed.auth_uses.iter().cloned());
     auth_plans.extend(resolve_auth_requirements(
         &auth_uses,
@@ -766,7 +766,7 @@ pub(super) fn analyze_endpoint(
     if request_entity.capabilities.has_body && ed.paginate.is_some() {
         return Err(syn::Error::new(
             ed.name.span(),
-            "paginated endpoints with request bodies are not supported in v1",
+            "paginated endpoints with request bodies are not supported",
         ));
     }
     let paginate = match &ed.paginate {
@@ -786,14 +786,14 @@ pub(super) fn analyze_endpoint(
         &response_io,
         paginate.as_ref(),
     );
-    let mut behavior_doc_names = Vec::new();
-    behavior_doc_names.extend(ctx.client_default_behavior_names.iter().cloned());
+    let mut profile_doc_names = Vec::new();
+    profile_doc_names.extend(ctx.client_default_profile_names.iter().cloned());
     for &lid in ancestry {
-        behavior_doc_names.extend(ctx.layers[lid].behavior_names.iter().cloned());
+        profile_doc_names.extend(ctx.layers[lid].profile_names.iter().cloned());
     }
-    behavior_doc_names.extend(behavior_use_names(&ed.behavior_uses));
-    let mut seen_behavior_doc_names = std::collections::BTreeSet::new();
-    behavior_doc_names.retain(|name| seen_behavior_doc_names.insert(name.clone()));
+    profile_doc_names.extend(profile_use_names(&ed.profile_uses));
+    let mut seen_profile_doc_names = std::collections::BTreeSet::new();
+    profile_doc_names.retain(|name| seen_profile_doc_names.insert(name.clone()));
 
     // 5) Produce final resolved_api.
     Ok(ResolvedEndpoint {
@@ -820,8 +820,8 @@ pub(super) fn analyze_endpoint(
             endpoint: policy,
             auth,
         },
-        behavior_doc: BehaviorDocMeta {
-            names: behavior_doc_names,
+        profile_doc: ProfileDocMeta {
+            names: profile_doc_names,
         },
         descriptor,
         paginate,

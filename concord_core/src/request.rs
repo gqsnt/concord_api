@@ -1,7 +1,8 @@
 use crate::client::{ApiClient, ClientContext};
 use crate::debug::DebugLevel;
 use crate::endpoint::{
-    Endpoint, IntoEndpointPlan, PaginatedEndpoint, ResponseTerminalEndpoint, ReusableEndpoint,
+    GeneratedEndpoint, GeneratedIntoPreparedCall, GeneratedPaginatedEndpoint,
+    GeneratedResponseTerminalEndpoint, GeneratedReusableEndpoint,
 };
 use crate::error::{ApiClientError, ErrorContext, PaginationErrorKind};
 use crate::pagination::{
@@ -45,13 +46,13 @@ impl RequestOptions {
     }
 }
 
-pub struct PendingRequest<'a, Cx: ClientContext, E: IntoEndpointPlan<Cx>> {
+pub struct PendingRequest<'a, Cx: ClientContext, E: GeneratedIntoPreparedCall<Cx>> {
     client: &'a ApiClient<Cx>,
     ep: E,
     opts: RequestOptions,
 }
 
-impl<'a, Cx: ClientContext, E: IntoEndpointPlan<Cx>> PendingRequest<'a, Cx, E> {
+impl<'a, Cx: ClientContext, E: GeneratedIntoPreparedCall<Cx>> PendingRequest<'a, Cx, E> {
     #[inline]
     pub(crate) fn new(client: &'a ApiClient<Cx>, ep: E) -> Self {
         Self {
@@ -94,8 +95,7 @@ impl<'a, Cx: ClientContext, E: IntoEndpointPlan<Cx>> PendingRequest<'a, Cx, E> {
     #[inline]
     pub async fn execute(self) -> Result<E::Response, ApiClientError> {
         let client = self.client;
-        let plan = self.request_plan()?;
-        E::execute(client, plan).await
+        self.prepared_call()?.execute(client).await
     }
 
     pub async fn execute_and_store_manual<F>(self, slot: F) -> Result<(), ApiClientError>
@@ -109,12 +109,13 @@ impl<'a, Cx: ClientContext, E: IntoEndpointPlan<Cx>> PendingRequest<'a, Cx, E> {
         >,
     {
         let client = self.client;
-        let plan = self.request_plan()?;
+        let call = self.prepared_call()?;
+        let plan = call.plan();
         let ctx = ErrorContext {
             endpoint: plan.endpoint.meta.name,
             method: plan.endpoint.meta.method.clone(),
         };
-        let value = E::execute(client, plan).await?;
+        let value = call.execute(client).await?;
         let auth_state = client
             .try_auth_state()
             .map_err(|source| ApiClientError::Auth {
@@ -132,11 +133,10 @@ impl<'a, Cx: ClientContext, E: IntoEndpointPlan<Cx>> PendingRequest<'a, Cx, E> {
     #[inline]
     pub async fn response(self) -> Result<DecodedResponse<E::Response>, ApiClientError>
     where
-        E: ResponseTerminalEndpoint<Cx>,
+        E: GeneratedResponseTerminalEndpoint<Cx>,
     {
         let client = self.client;
-        let plan = self.request_plan()?;
-        E::execute_response(client, plan).await
+        self.prepared_call()?.execute_with_meta(client).await
     }
 
     #[cfg(feature = "dangerous-raw-response")]
@@ -144,22 +144,24 @@ impl<'a, Cx: ClientContext, E: IntoEndpointPlan<Cx>> PendingRequest<'a, Cx, E> {
         self,
     ) -> Result<crate::dangerous::BuiltResponse, ApiClientError> {
         let client = self.client;
-        let plan = self.request_plan()?;
-        client.execute_plan_raw(plan).await
+        let call = self.prepared_call()?;
+        client.execute_plan_raw(call.into_plan()).await
     }
 
-    fn request_plan(self) -> Result<crate::endpoint::RequestPlan, ApiClientError> {
+    fn prepared_call(
+        self,
+    ) -> Result<crate::__private::GeneratedPreparedCall<Cx, E::Response>, ApiClientError> {
         let Self { client, ep, opts } = self;
         let plan_ctx = client.plan_context();
         let mut plan = ep.into_plan(&plan_ctx)?;
-        opts.apply_to(&mut plan, 0);
+        opts.apply_to(plan.plan_mut(), 0);
         Ok(plan)
     }
 
     #[inline]
     pub fn paginate(self, termination: PaginationTermination) -> PaginatedRequest<'a, Cx, E>
     where
-        E: PaginatedEndpoint<Cx>,
+        E: GeneratedPaginatedEndpoint<Cx>,
         E::Response: PageItems,
     {
         PaginatedRequest::new(self, termination)
@@ -169,21 +171,20 @@ impl<'a, Cx: ClientContext, E: IntoEndpointPlan<Cx>> PendingRequest<'a, Cx, E> {
 impl<'a, Cx, E, M> PendingRequest<'a, Cx, E>
 where
     Cx: ClientContext + 'a,
-    E: IntoEndpointPlan<Cx> + Endpoint<Cx, Response = StreamResponse<M>> + 'a,
+    E: GeneratedIntoPreparedCall<Cx> + GeneratedEndpoint<Cx, Response = StreamResponse<M>> + 'a,
     M: 'a,
 {
     #[inline]
     pub async fn execute_stream(self) -> Result<StreamResponse<M>, ApiClientError> {
         let client = self.client;
-        let plan = self.request_plan()?;
-        E::execute(client, plan).await
+        self.prepared_call()?.execute(client).await
     }
 }
 
 impl<'a, Cx, E> IntoFuture for PendingRequest<'a, Cx, E>
 where
     Cx: ClientContext + 'a,
-    E: IntoEndpointPlan<Cx> + 'a,
+    E: GeneratedIntoPreparedCall<Cx> + 'a,
     E::Response: 'a,
 {
     type Output = Result<E::Response, ApiClientError>;
@@ -195,12 +196,12 @@ where
     }
 }
 
-pub struct PaginatedRequest<'a, Cx: ClientContext, E: ReusableEndpoint<Cx>> {
+pub struct PaginatedRequest<'a, Cx: ClientContext, E: GeneratedReusableEndpoint<Cx>> {
     pending: PendingRequest<'a, Cx, E>,
     caps: PaginationCaps,
 }
 
-impl<'a, Cx: ClientContext, E: ReusableEndpoint<Cx>> PaginatedRequest<'a, Cx, E> {
+impl<'a, Cx: ClientContext, E: GeneratedReusableEndpoint<Cx>> PaginatedRequest<'a, Cx, E> {
     #[inline]
     pub(crate) fn new(
         pending: PendingRequest<'a, Cx, E>,
@@ -219,7 +220,7 @@ impl<'a, Cx: ClientContext, E: ReusableEndpoint<Cx>> PaginatedRequest<'a, Cx, E>
 
     pub async fn collect(self) -> Result<Vec<<E::Response as PageItems>::Item>, ApiClientError>
     where
-        E: PaginatedEndpoint<Cx>,
+        E: GeneratedPaginatedEndpoint<Cx>,
         E::Response: PageItems,
     {
         // This intentionally has a dedicated loop instead of delegating to a
@@ -229,7 +230,8 @@ impl<'a, Cx: ClientContext, E: ReusableEndpoint<Cx>> PaginatedRequest<'a, Cx, E>
         // pagination execution paths.
         let caps = self.caps;
         let pending = self.pending;
-        let first_plan = pending.ep.plan(&pending.client.plan_context())?;
+        let first_call = pending.ep.plan(&pending.client.plan_context())?;
+        let first_plan = first_call.plan();
         let ctx = crate::error::ErrorContext {
             endpoint: first_plan.endpoint.meta.name,
             method: first_plan.endpoint.meta.method.clone(),
@@ -266,7 +268,7 @@ async fn collect_with_pagination_runtime<'a, Cx, E>(
 ) -> Result<Vec<<E::Response as PageItems>::Item>, ApiClientError>
 where
     Cx: ClientContext + 'a,
-    E: PaginatedEndpoint<Cx> + 'a,
+    E: GeneratedPaginatedEndpoint<Cx> + 'a,
     E::Response: PageItems,
 {
     let page_apply_ctx = PageApply {
@@ -311,11 +313,11 @@ where
             },
         )?;
         let expected_items = runtime.expected_items_per_page();
-        let mut plan = pending.ep.plan(&pending.client.plan_context())?;
-        pending.opts.apply_to(&mut plan, page_index);
-        let request_identity = pagination_request_identity(&plan);
+        let mut call = pending.ep.plan(&pending.client.plan_context())?;
+        pending.opts.apply_to(call.plan_mut(), page_index);
+        let request_identity = pagination_request_identity(call.plan());
         progress_state.ensure_progress(request_identity, &ctx, page_index)?;
-        let page = E::execute(pending.client, plan).await?;
+        let page = call.execute(pending.client).await?;
         let page_len = page.item_count();
         let pre_advance = pre_advance_decision(
             caps.termination,

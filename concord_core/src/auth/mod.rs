@@ -37,8 +37,8 @@ pub(crate) use plan::AuthTransportMaterial;
 pub use plan::{
     AuthApplication, AuthApplicationRequest, AuthAppliedCredential, AuthAttemptSummary,
     AuthChallengePolicy, AuthPlacement, AuthPlacementPlan, AuthPlan, AuthPreparationReuse,
-    AuthRejectionAction, AuthRequirement, CredentialRef, PlannedAuthPlacement,
-    PreparedAuthCredential, apply_basic_credential, apply_secret_credential,
+    AuthRecoveryReason, AuthRejectionAction, AuthRejectionDecision, AuthRequirement, CredentialRef,
+    PlannedAuthPlacement, PreparedAuthCredential, apply_basic_credential, apply_secret_credential,
     auth_decision_for_status,
 };
 #[cfg(feature = "json")]

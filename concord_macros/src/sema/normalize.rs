@@ -18,9 +18,9 @@ pub(super) fn normalize_api(raw: crate::ast::RawApi) -> Result<NormApiTree> {
                 .map(|vars| NormVars { decls: vars.decls }),
             auth: raw.client.auth,
             auth_uses: client_auth_uses,
-            default_behavior_uses: raw.client.default_behavior_uses,
+            default_profile_uses: raw.client.default_profile_uses,
             rate_limit: raw.client.rate_limit,
-            behavior_profiles: raw.client.behavior_profiles,
+            profiles: raw.client.profiles,
         },
         items: normalize_items(raw.items, 0)?,
     })
@@ -56,7 +56,7 @@ pub(super) fn normalize_scope(raw: crate::ast::RawScope, scope_depth: usize) -> 
     let scope_name = raw.scope_name;
     let params = raw.params;
     let policy = raw.policy;
-    let behavior_uses = raw.behavior_uses;
+    let profile_uses = raw.profile_uses;
     let rate_limit = raw.rate_limit;
     let rate_limit_keys = raw.rate_limit_keys;
 
@@ -68,7 +68,7 @@ pub(super) fn normalize_scope(raw: crate::ast::RawScope, scope_depth: usize) -> 
             route: host,
             params,
             policy,
-            behavior_uses,
+            profile_uses,
             auth_uses,
             rate_limit,
             rate_limit_keys,
@@ -79,7 +79,7 @@ pub(super) fn normalize_scope(raw: crate::ast::RawScope, scope_depth: usize) -> 
                 route: path,
                 params: Vec::new(),
                 policy: PolicyBlocks::default(),
-                behavior_uses: Vec::new(),
+                profile_uses: Vec::new(),
                 auth_uses: Vec::new(),
                 rate_limit: None,
                 rate_limit_keys: Vec::new(),
@@ -93,7 +93,7 @@ pub(super) fn normalize_scope(raw: crate::ast::RawScope, scope_depth: usize) -> 
             route: host,
             params,
             policy,
-            behavior_uses,
+            profile_uses,
             auth_uses,
             rate_limit,
             rate_limit_keys,
@@ -106,7 +106,7 @@ pub(super) fn normalize_scope(raw: crate::ast::RawScope, scope_depth: usize) -> 
             route: path,
             params,
             policy,
-            behavior_uses,
+            profile_uses,
             auth_uses,
             rate_limit,
             rate_limit_keys,
@@ -119,7 +119,7 @@ pub(super) fn normalize_scope(raw: crate::ast::RawScope, scope_depth: usize) -> 
             route: crate::ast::RouteExpr { atoms: Vec::new() },
             params,
             policy,
-            behavior_uses,
+            profile_uses,
             auth_uses,
             rate_limit,
             rate_limit_keys,
@@ -138,7 +138,7 @@ pub(super) fn normalize_endpoint(raw: crate::ast::RawEndpoint) -> Result<NormEnd
         route: raw.route,
         params: raw.params,
         policy: raw.policy,
-        behavior_uses: raw.behavior_uses,
+        profile_uses: raw.profile_uses,
         auth_uses,
         rate_limit: raw.rate_limit,
         rate_limit_keys: raw.rate_limit_keys,

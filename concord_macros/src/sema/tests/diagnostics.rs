@@ -20,7 +20,7 @@ fn nested_raw_scope(depth: usize) -> RawScope {
         path_route: None,
         params: Vec::new(),
         policy: Default::default(),
-        behavior_uses: Vec::new(),
+        profile_uses: Vec::new(),
         auth_uses: Vec::new(),
         rate_limit: None,
         rate_limit_keys: Vec::new(),

@@ -19,15 +19,12 @@ fn emit_uses_stream_request_and_response_codegen() {
         &expanded,
         &[
             "StreamBody",
-            "RequestEntity",
-            "RawStreamRequest",
-            "prepare(",
-            "__prepared_request_entity.body",
-            "body: __prepared_body",
+            "prepare_generated_request_body",
+            "GeneratedRawStreamRequest",
+            "__prepared_body",
             "StreamResponse<OctetStream>",
-            "ResponseEntity",
-            "RawStreamResponse",
-            "ResponseEntity>::execute",
+            "prepare_generated_response",
+            "GeneratedRawStreamResponse",
         ],
     );
     assert_not_contains_all(
@@ -62,11 +59,9 @@ fn emit_uses_buffered_request_entity_codegen() {
     assert_contains_all(
         &expanded,
         &[
-            "RequestEntity",
-            "EncodedRequest",
-            "prepare(",
-            "__prepared_request_entity.body",
-            "body: __prepared_body",
+            "prepare_generated_request_body",
+            "GeneratedEncodedRequest",
+            "__prepared_body",
             "CreateBody",
             "CreateResponse",
         ],
@@ -99,11 +94,9 @@ fn emit_uses_no_request_body_entity_codegen() {
     assert_contains_all(
         &expanded,
         &[
-            "NoRequestBody",
-            "RequestEntity",
-            "prepare(",
-            "__prepared_request_entity.body",
-            "body: __prepared_body",
+            "GeneratedNoRequestBody",
+            "prepare_generated_request_body",
+            "__prepared_body",
             "StatusResponse",
         ],
     );
@@ -128,11 +121,9 @@ fn emit_uses_multipart_request_codegen() {
         &expanded,
         &[
             "MultipartBody",
-            "RequestEntity",
-            "MultipartRequest",
-            "prepare(",
-            "__prepared_request_entity.body",
-            "body: __prepared_body",
+            "prepare_generated_request_body",
+            "GeneratedMultipartRequest",
+            "__prepared_body",
         ],
     );
     assert_not_contains_all(

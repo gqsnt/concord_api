@@ -98,7 +98,7 @@ pub(crate) struct NativeResponseErrorMapper {
 
 impl NativeResponseErrorMapper {
     pub(crate) fn map_body_error(&self, error: reqwest::Error) -> crate::body::BodyError {
-        crate::body::BodyError::from(TransportError::from_reqwest(error, &self.proxies))
+        crate::body::BodyError::from(ReqwestError::from_reqwest(error, &self.proxies))
     }
 
     pub(crate) fn uses_test_origin_override(&self) -> bool {
@@ -357,7 +357,8 @@ impl<T> DecodedResponse<T> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TransportErrorKind {
+#[allow(dead_code)]
+pub(crate) enum ReqwestErrorKind {
     Timeout,
     Connect,
     Tls,
@@ -367,25 +368,14 @@ pub enum TransportErrorKind {
     Other,
 }
 
-pub struct TransportError {
-    kind: TransportErrorKind,
+pub(crate) struct ReqwestError {
+    kind: ReqwestErrorKind,
     source: crate::error::FxError,
 }
 
-impl TransportError {
+impl ReqwestError {
     #[inline]
-    pub fn new(e: impl Error + Send + Sync + 'static) -> Self {
-        let source: crate::error::FxError = Box::new(e);
-        let kind = if source.downcast_ref::<std::io::Error>().is_some() {
-            TransportErrorKind::Io
-        } else {
-            TransportErrorKind::Other
-        };
-        Self { kind, source }
-    }
-
-    #[inline]
-    pub fn with_kind(kind: TransportErrorKind, e: impl Error + Send + Sync + 'static) -> Self {
+    pub(crate) fn with_kind(kind: ReqwestErrorKind, e: impl Error + Send + Sync + 'static) -> Self {
         Self {
             kind,
             source: Box::new(e),
@@ -393,12 +383,13 @@ impl TransportError {
     }
 
     #[inline]
-    pub fn kind(&self) -> TransportErrorKind {
+    pub(crate) fn kind(&self) -> ReqwestErrorKind {
         self.kind
     }
 
     #[inline]
-    pub fn source_error(&self) -> &(dyn Error + Send + Sync + 'static) {
+    #[cfg(test)]
+    pub(crate) fn source_error(&self) -> &(dyn Error + Send + Sync + 'static) {
         &*self.source
     }
 
@@ -417,27 +408,27 @@ impl TransportError {
     }
 }
 
-impl fmt::Display for TransportError {
+impl fmt::Display for ReqwestError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "transport error: {:?}", self.kind)
+        write!(f, "request execution error: {:?}", self.kind)
     }
 }
 
-impl fmt::Debug for TransportError {
+impl fmt::Debug for ReqwestError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TransportError")
+        f.debug_struct("ReqwestError")
             .field("kind", &self.kind)
             .finish_non_exhaustive()
     }
 }
 
-impl Error for TransportError {
+impl Error for ReqwestError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         Some(&*self.source)
     }
 }
 
-impl From<reqwest::Error> for TransportError {
+impl From<reqwest::Error> for ReqwestError {
     fn from(e: reqwest::Error) -> Self {
         let e = e.without_url();
         let kind = classify_reqwest_error(&e);
@@ -448,7 +439,7 @@ impl From<reqwest::Error> for TransportError {
     }
 }
 
-impl TransportError {
+impl ReqwestError {
     fn from_reqwest(error: reqwest::Error, proxies: &[SafeProxy]) -> Self {
         let e = error.without_url();
         let kind = classify_reqwest_error(&e);
@@ -600,28 +591,28 @@ fn proxy_redaction_markers(proxies: &[SafeProxy]) -> Vec<String> {
     markers
 }
 
-impl From<crate::body::BodyError> for TransportError {
+impl From<crate::body::BodyError> for ReqwestError {
     fn from(error: crate::body::BodyError) -> Self {
         let kind = match error.kind() {
-            crate::body::BodyErrorKind::Io => TransportErrorKind::Io,
-            crate::body::BodyErrorKind::LimitExceeded => TransportErrorKind::Request,
-            _ => TransportErrorKind::Other,
+            crate::body::BodyErrorKind::Io => ReqwestErrorKind::Io,
+            crate::body::BodyErrorKind::LimitExceeded => ReqwestErrorKind::Request,
+            _ => ReqwestErrorKind::Other,
         };
         Self::with_kind(kind, error)
     }
 }
 
-fn classify_reqwest_error(err: &reqwest::Error) -> TransportErrorKind {
+fn classify_reqwest_error(err: &reqwest::Error) -> ReqwestErrorKind {
     if err.is_timeout() {
-        return TransportErrorKind::Timeout;
+        return ReqwestErrorKind::Timeout;
     }
     if err.is_connect() {
-        return TransportErrorKind::Connect;
+        return ReqwestErrorKind::Connect;
     }
     if err.is_request() {
-        return TransportErrorKind::Request;
+        return ReqwestErrorKind::Request;
     }
-    TransportErrorKind::Other
+    ReqwestErrorKind::Other
 }
 
 #[derive(Clone)]
@@ -844,8 +835,8 @@ impl SafeReqwestBuilder {
     }
     #[cfg(feature = "default-tls")]
     pub fn add_trusted_root_pem(self, pem: &[u8]) -> Result<Self, ReqwestClientBuildError> {
-        let certificate =
-            reqwest::Certificate::from_pem(pem).map_err(ReqwestClientBuildError::from_reqwest)?;
+        let certificate = reqwest::Certificate::from_pem(pem)
+            .map_err(ReqwestClientBuildError::from_builder_reqwest)?;
         Ok(Self {
             builder: self.builder.tls_certs_merge([certificate]),
             configured_proxies: self.configured_proxies,
@@ -854,8 +845,8 @@ impl SafeReqwestBuilder {
     }
     #[cfg(feature = "default-tls")]
     pub fn client_identity_pem(self, pem: &[u8]) -> Result<Self, ReqwestClientBuildError> {
-        let identity =
-            reqwest::Identity::from_pem(pem).map_err(ReqwestClientBuildError::from_reqwest)?;
+        let identity = reqwest::Identity::from_pem(pem)
+            .map_err(ReqwestClientBuildError::from_builder_reqwest)?;
         Ok(Self {
             builder: self.builder.identity(identity),
             configured_proxies: self.configured_proxies,
@@ -890,28 +881,48 @@ impl SafeReqwestBuilder {
 
 /// A sanitized managed-Reqwest client construction failure.
 pub struct ReqwestClientBuildError {
-    kind: TransportErrorKind,
+    kind: crate::error::ClientBuildErrorKind,
     source: crate::error::FxError,
 }
 
 impl ReqwestClientBuildError {
+    #[cfg(feature = "default-tls")]
+    fn from_builder_reqwest(error: reqwest::Error) -> Self {
+        let mut result = Self::from_reqwest(error);
+        result.kind = crate::error::ClientBuildErrorKind::Builder;
+        result
+    }
+
     fn from_reqwest(error: reqwest::Error) -> Self {
         let source = error.without_url();
+        let kind = if source.is_builder() {
+            crate::error::ClientBuildErrorKind::Builder
+        } else {
+            match classify_reqwest_error(&source) {
+                ReqwestErrorKind::Timeout => crate::error::ClientBuildErrorKind::Timeout,
+                ReqwestErrorKind::Connect => crate::error::ClientBuildErrorKind::Connect,
+                ReqwestErrorKind::Request => crate::error::ClientBuildErrorKind::Request,
+                ReqwestErrorKind::Io => crate::error::ClientBuildErrorKind::Body,
+                ReqwestErrorKind::Tls | ReqwestErrorKind::Dns | ReqwestErrorKind::Other => {
+                    crate::error::ClientBuildErrorKind::Other
+                }
+            }
+        };
         Self {
-            kind: classify_reqwest_error(&source),
+            kind,
             source: Box::new(source),
         }
     }
 
     fn from_safe_proxy(error: SafeProxyError) -> Self {
         Self {
-            kind: TransportErrorKind::Request,
+            kind: crate::error::ClientBuildErrorKind::Builder,
             source: Box::new(error),
         }
     }
 
     /// Returns the safe structural category of the client-build failure.
-    pub fn kind(&self) -> TransportErrorKind {
+    pub fn kind(&self) -> crate::error::ClientBuildErrorKind {
         self.kind
     }
 }
@@ -1022,7 +1033,7 @@ impl ManagedReqwestClient {
         &self,
         request: reqwest::Request,
         _context: Option<&RequestExecutionContext>,
-    ) -> Result<reqwest::Response, TransportError> {
+    ) -> Result<reqwest::Response, ReqwestError> {
         #[cfg(feature = "dangerous-dev-tools")]
         let mut request = request;
         #[cfg(feature = "dangerous-dev-tools")]
@@ -1037,8 +1048,8 @@ impl ManagedReqwestClient {
             rewritten.set_path(original.path());
             rewritten.set_query(original.query());
             let original_header = http::HeaderValue::from_str(original.as_str()).map_err(|_| {
-                TransportError::with_kind(
-                    TransportErrorKind::Request,
+                ReqwestError::with_kind(
+                    ReqwestErrorKind::Request,
                     std::io::Error::other("test origin URL cannot be represented safely"),
                 )
             })?;
@@ -1071,15 +1082,15 @@ impl ManagedReqwestClient {
         }
         #[cfg(not(feature = "default-tls"))]
         if request.url().scheme() == "https" {
-            return Err(TransportError::with_kind(
-                TransportErrorKind::Tls,
+            return Err(ReqwestError::with_kind(
+                ReqwestErrorKind::Tls,
                 TlsCapabilityUnavailable,
             ));
         }
         self.client
             .execute(request)
             .await
-            .map_err(|error| TransportError::from_reqwest(error, &self.configured_proxies))
+            .map_err(|error| ReqwestError::from_reqwest(error, &self.configured_proxies))
     }
 
     pub(crate) fn response_error_mapper(&self) -> NativeResponseErrorMapper {
@@ -1203,6 +1214,7 @@ mod reqwest_transport_tests {
     #[test]
     fn managed_builder_failures_are_structural_and_url_free() {
         let error = managed_build_error();
+        assert_eq!(error.kind(), crate::error::ClientBuildErrorKind::Builder);
         let _: Result<ManagedReqwestClient, ReqwestClientBuildError> = Err(error);
         let error = managed_build_error();
         let diagnostics = format!("{error}\n{error:?}\n{}", source_chain(&error));
@@ -1338,7 +1350,7 @@ mod reqwest_transport_tests {
     }
 
     #[tokio::test]
-    async fn failing_proxy_target_is_absent_from_transport_diagnostics() {
+    async fn failing_proxy_target_is_absent_from_reqwest_diagnostics() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("proxy sink bind");
         let proxy_marker = listener.local_addr().expect("proxy marker");
         let proxy_server = std::thread::spawn(move || {
@@ -1439,7 +1451,7 @@ mod reqwest_transport_tests {
             .execute(request, None)
             .await
             .expect_err("HTTPS must be preflighted without TLS support");
-        assert_eq!(error.kind(), TransportErrorKind::Tls);
+        assert_eq!(error.kind(), ReqwestErrorKind::Tls);
         let diagnostics = format!("{error}\n{error:?}\n{}", error.source_error());
         assert!(diagnostics.contains("default-tls"));
         assert!(!diagnostics.contains("tls-secret.example.test"));

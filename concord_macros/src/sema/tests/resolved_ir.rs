@@ -13,7 +13,7 @@ fn resolved_endpoint_debug_includes_inherited_tree_state() {
 
         scope protected {
             host ["tenant"]
-            path ["v1"]
+            path ["api"]
             auth header "X-Token" = key
 
             GET Me
@@ -40,7 +40,7 @@ fn resolved_endpoint_debug_includes_inherited_tree_state() {
     ));
     assert!(matches!(
         endpoint.scope_path_pieces.as_slice(),
-        [PathPiece::Static(path)] if path == "v1"
+        [PathPiece::Static(path)] if path == "api"
     ));
     assert!(matches!(
         endpoint.route_pieces.as_slice(),
@@ -71,7 +71,7 @@ fn body_signature_response_resolve_into_endpoint_model() {
     );
     assert_eq!(
         ty_string(&endpoint.io.request_entity.adapter_ty),
-        "::concord_core::__private::EncodedRequest<Json<CreateBody>>"
+        "::concord_core::__private::GeneratedEncodedRequest<Json<CreateBody>>"
     );
     assert_eq!(
         ty_string(
@@ -86,7 +86,7 @@ fn body_signature_response_resolve_into_endpoint_model() {
     );
     assert_eq!(
         ty_string(&endpoint.io.response_entity.adapter_ty),
-        "::concord_core::__private::BufferedResponse<Json<CreateResponse>>"
+        "::concord_core::__private::GeneratedBufferedResponse<Json<CreateResponse>>"
     );
     assert_eq!(
         ty_string(&endpoint.io.response_entity.public_output_ty),

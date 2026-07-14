@@ -142,7 +142,7 @@ fn parses_scope_with_host_and_path_preserves_raw_shape() {
 
             scope tenant(tenant_id: String) {
                 host [fmt["tenant-", tenant_id], "api"]
-                path ["v1"]
+                path ["api"]
 
                 GET Ping
                     path ["ping"]
@@ -161,7 +161,7 @@ fn parses_scope_with_host_and_path_preserves_raw_shape() {
             [RouteAtom::Static(path_atom)],
         ) => {
             assert_eq!(host_tail.value(), "api");
-            assert_eq!(path_atom.value(), "v1");
+            assert_eq!(path_atom.value(), "api");
             assert_eq!(host_fmt.pieces.len(), 2);
             assert!(matches!(host_fmt.pieces[0], FmtPiece::Lit(_)));
             assert!(matches!(host_fmt.pieces[1], FmtPiece::Ref(_)));

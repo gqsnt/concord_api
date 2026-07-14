@@ -1,8 +1,9 @@
 # Retry And Rate Limit
 
 General HTTP retry is a managed-client construction choice. Reqwest is the
-only general retry executor; Concord owns no status/transport attempt loop,
-retry classifier, delay, admission registry, or endpoint retry policy.
+only general retry executor; Concord configures no separate request loop or
+endpoint retry policy. The selected Reqwest protocol or constrained status
+processing is configured once for the managed client.
 
 ## Retry modes
 
@@ -30,8 +31,8 @@ the hidden resend.
 Status mode is rejected before request, provider, or body side effects unless
 the generated descriptor says the whole API is fixed single-origin.
 Dynamic hosts, multiple origins, hostless origins, cross-origin-capable
-pagination, and hand-written contexts without equivalent verified metadata are
-ineligible. Redirects remain disabled.
+pagination, and hand-written contexts are ineligible. Redirects remain
+disabled.
 
 ```rust
 use concord_core::prelude::{RetryMode, StatusRetryConfig};
@@ -42,11 +43,6 @@ let mode = RetryMode::Status(StatusRetryConfig::new(
     [StatusCode::BAD_GATEWAY, StatusCode::SERVICE_UNAVAILABLE],
 )?);
 ```
-
-Retry syntax is not part of the API DSL. Removed `retry`, `max_attempts`,
-method/status/transport lists, idempotency declarations, and `retry_after`
-retry switches produce a compile error directing callers to client-level
-`RetryMode`.
 
 ## Visible executions and physical sends
 

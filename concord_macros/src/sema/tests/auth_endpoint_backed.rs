@@ -185,7 +185,7 @@ fn endpoint_backed_credential_rejects_inherited_client_auth_self_use() {
 }
 
 #[test]
-fn endpoint_backed_credential_rejects_inherited_behavior_auth_self_use() {
+fn endpoint_backed_credential_rejects_inherited_profile_auth_self_use() {
     let err = analyze_err(
         r#"
         api! {

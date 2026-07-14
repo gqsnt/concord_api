@@ -342,12 +342,12 @@ fn plan_binding_rejection<Cx: ClientContext>(
         return Ok(AuthRejectionAction::terminal(requirement, applied, None));
     };
     if binding.refresh_on_challenge
-        && let Some(retry_reason) = decision.retry_reason
+        && let Some(recovery_reason) = decision.recovery_reason
     {
-        return Ok(AuthRejectionAction::refresh(
+        return Ok(AuthRejectionAction::recover(
             requirement,
             applied,
-            retry_reason,
+            recovery_reason,
             decision.invalidate_reason,
         ));
     }
@@ -380,7 +380,7 @@ async fn apply_binding_rejection<Cx: ClientContext>(
     let Some(reason) = rejection_invalidation_reason(action, status) else {
         return Ok(());
     };
-    if action.requests_refresh() {
+    if action.requests_recovery() {
         let credential_ctx = CredentialContext {
             vars,
             auth,
@@ -403,7 +403,7 @@ fn rejection_invalidation_reason(
     status: http::StatusCode,
 ) -> Option<InvalidateReason> {
     action.invalidate_reason().or_else(|| {
-        action.requests_refresh().then_some(match status {
+        action.requests_recovery().then_some(match status {
             http::StatusCode::FORBIDDEN => InvalidateReason::Forbidden,
             _ => InvalidateReason::Unauthorized,
         })
@@ -640,7 +640,7 @@ mod tests {
             usage_id: AuthUsageId::new("bearer"),
             step_id: Some("test:0:token"),
             provenance: AuthProvenance::new("endpoint"),
-            challenge: super::super::AuthChallengePolicy::Default,
+            challenge: super::super::AuthChallengePolicy::Unauthorized,
         }
     }
 
@@ -699,7 +699,7 @@ mod tests {
             http::StatusCode::UNAUTHORIZED,
         )
         .expect("challenge plan");
-        assert!(action.requests_refresh());
+        assert!(action.requests_recovery());
         apply_binding_rejection(
             binding,
             &action,
@@ -947,7 +947,7 @@ mod tests {
             http::StatusCode::UNAUTHORIZED,
         )
         .expect("manual challenge plan");
-        assert!(!action.requests_refresh());
+        assert!(!action.requests_recovery());
         assert_eq!(
             action.invalidate_reason(),
             Some(InvalidateReason::Unauthorized)

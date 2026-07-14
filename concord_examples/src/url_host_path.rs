@@ -35,7 +35,7 @@ api! {
 
     scope regional(tenant_id: String) {
         host [tenant_id, "api"]
-        path ["v1"]
+        path ["api"]
 
         GET Show(id: String, prefix: String)
             as show
@@ -276,25 +276,23 @@ async fn dynamic_host_accepts_valid_labels_deterministically() -> Result<(), Api
         assert_eq!(requests[0].url.host_str(), Some(expected_host));
         assert_eq!(
             requests[0].url.as_str(),
-            format!("https://{expected_host}/v1/items/item/p-prefix")
+            format!("https://{expected_host}/api/items/item/p-prefix")
         );
 
         let events = records.snapshot();
         assert!(events.iter().any(|event| event
             == &format!(
-                "rate_acquire:https://{expected_host}/v1/items/item/p-prefix:{expected_host}"
+                "rate_acquire:https://{expected_host}/api/items/item/p-prefix:{expected_host}"
             )));
         assert!(
             events.iter().any(|event| event
-                == &format!("hook_pre:https://{expected_host}/v1/items/item/p-prefix"))
+                == &format!("hook_pre:https://{expected_host}/api/items/item/p-prefix"))
         );
+        assert!(events.iter().any(|event| event
+            == &format!("debug_start:https://{expected_host}/api/items/item/p-prefix")));
         assert!(
             events.iter().any(|event| event
-                == &format!("debug_start:https://{expected_host}/v1/items/item/p-prefix"))
-        );
-        assert!(
-            events.iter().any(|event| event
-                == &format!("transport:https://{expected_host}/v1/items/item/p-prefix"))
+                == &format!("transport:https://{expected_host}/api/items/item/p-prefix"))
         );
         assert!(
             !events
@@ -482,8 +480,8 @@ async fn fmt_path_interpolation_follows_dynamic_path_safety() {
     }
 
     for (value, expected) in [
-        ("a b", "https://tenant.api.example.com/v1/fmt/a%20b"),
-        ("\u{00b5}", "https://tenant.api.example.com/v1/fmt/%C2%B5"),
+        ("a b", "https://tenant.api.example.com/api/fmt/a%20b"),
+        ("\u{00b5}", "https://tenant.api.example.com/api/fmt/%C2%B5"),
     ] {
         let records = RecordingEvents::default();
         let transport = RecordingTransport::new(records.clone(), 1);
@@ -571,7 +569,7 @@ async fn sanitized_url_consistent_for_rate_limit_hooks_debug_transport()
         .await?;
 
     assert_eq!(decoded, "ok");
-    let expected = "https://tenant.api.example.com/v1/items/item/p-prefix";
+    let expected = "https://tenant.api.example.com/api/items/item/p-prefix";
     let requests = transport.requests();
     assert_eq!(requests.len(), 1);
     let events = records.snapshot();
@@ -626,7 +624,7 @@ async fn dynamic_path_values_are_percent_encoded_in_final_url() -> Result<(), Ap
         .await?;
 
     assert_eq!(decoded, "ok");
-    let expected = "https://tenant.api.example.com/v1/items/item%201/p-%C2%B5";
+    let expected = "https://tenant.api.example.com/api/items/item%201/p-%C2%B5";
     assert_eq!(transport.requests()[0].url.as_str(), expected);
     assert!(
         records

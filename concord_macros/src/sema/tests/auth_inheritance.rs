@@ -53,7 +53,7 @@ fn auth_requirements_combine_in_client_scope_endpoint_order() {
 }
 
 #[test]
-fn auth_inheritance_combines_client_scope_behavior_and_endpoint_in_order() {
+fn auth_inheritance_combines_client_scope_profile_and_endpoint_in_order() {
     let api = analyze_ok(
         r#"
         api! {
@@ -70,31 +70,31 @@ fn auth_inheritance_combines_client_scope_behavior_and_endpoint_in_order() {
                 credential direct_auth = api_key(secret.direct_token)
 
                 profiles {
-                    profile client_behavior {
+                    profile client_profile {
                         auth bearer client_auth
                     }
 
-                    profile scope_behavior {
+                    profile scope_profile {
                         auth header "X-Scope" = scope_auth
                     }
 
-                    profile endpoint_behavior {
+                    profile endpoint_profile {
                         auth query "X-Endpoint" = endpoint_auth
                     }
                 }
 
                 default {
-                    profile client_behavior
+                    profile client_profile
                 }
             }
 
             scope protected {
                 path ["protected"]
-                profile scope_behavior
+                profile scope_profile
 
                 GET Show
                     path ["show"]
-                    profile endpoint_behavior
+                    profile endpoint_profile
                     auth header "X-Direct" = direct_auth
                     -> Json<()>
             }

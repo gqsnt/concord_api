@@ -111,11 +111,11 @@ fn emit_client_auth_state(resolved_api: &ResolvedApi, auth_state_ty: &Ident, cx_
 fn emit_client_auth_state_init(resolved_api: &ResolvedApi, auth_state_ty: &Ident) -> (TokenStream2, TokenStream2) {
     if resolved_api.client_auth_credentials.is_empty() {
         return (
-            quote! { ::concord_core::__private::NoAuthState },
+            quote! { ::concord_core::__private::GeneratedNoAuthState },
             quote! {
                 let _ = vars;
                 let _ = auth;
-                ::concord_core::__private::NoAuthState
+                ::concord_core::__private::GeneratedNoAuthState
             },
         );
     }
@@ -165,19 +165,19 @@ fn emit_client_auth_state_init(resolved_api: &ResolvedApi, auth_state_ty: &Ident
 fn emit_auth_provider_ty(kind: &AuthCredentialKindIr) -> TokenStream2 {
     match kind {
         AuthCredentialKindIr::ApiKey { .. } => {
-            quote! { ::concord_core::__private::StaticApiKeyProvider }
+            quote! { ::concord_core::__private::GeneratedStaticApiKeyProvider }
         }
         AuthCredentialKindIr::StaticBearer { .. } => {
-            quote! { ::concord_core::__private::StaticBearerProvider }
+            quote! { ::concord_core::__private::GeneratedStaticBearerProvider }
         }
         AuthCredentialKindIr::Basic { .. } => {
-            quote! { ::concord_core::__private::StaticBasicProvider }
+            quote! { ::concord_core::__private::GeneratedStaticBasicProvider }
         }
         AuthCredentialKindIr::OAuth2ClientCredentials { .. } => {
             quote! { ::concord_core::__private::OAuth2ClientCredentialsProvider }
         }
         AuthCredentialKindIr::Endpoint { output_ty, .. } => {
-            quote! { ::concord_core::__private::ManualCredentialProvider<#output_ty> }
+            quote! { ::concord_core::__private::GeneratedManualCredentialProvider<#output_ty> }
         }
     }
 }
@@ -190,19 +190,19 @@ fn emit_auth_provider_init(client_ns: &LitStr, credential: &AuthCredentialIr) ->
 
     match &credential.kind {
         AuthCredentialKindIr::ApiKey { secret } => quote! {
-            ::concord_core::__private::StaticApiKeyProvider::new(
+            ::concord_core::__private::GeneratedStaticApiKeyProvider::new(
                 #credential_id,
                 ::concord_core::prelude::ApiKey::new(auth.#secret.clone()),
             )
         },
         AuthCredentialKindIr::StaticBearer { secret } => quote! {
-            ::concord_core::__private::StaticBearerProvider::new(
+            ::concord_core::__private::GeneratedStaticBearerProvider::new(
                 #credential_id,
                 ::concord_core::prelude::AccessToken::new(auth.#secret.clone()),
             )
         },
         AuthCredentialKindIr::Basic { username, password } => quote! {
-            ::concord_core::__private::StaticBasicProvider::new(
+            ::concord_core::__private::GeneratedStaticBasicProvider::new(
                 #credential_id,
                 ::concord_core::prelude::BasicCredential::new(
                     auth.#username.clone(),
@@ -240,7 +240,7 @@ fn emit_auth_provider_init(client_ns: &LitStr, credential: &AuthCredentialIr) ->
             let acquire_name = emit_helpers::ident(&format!("acquire_auth_{name}"), name.span());
             let hint = LitStr::new(&format!("client.{acquire_name}(...)"), Span::call_site());
             quote! {
-                ::concord_core::__private::ManualCredentialProvider::new(#credential_id)
+                ::concord_core::__private::GeneratedManualCredentialProvider::new(#credential_id)
                     .with_missing_hint(#hint)
             }
         }
@@ -354,7 +354,6 @@ fn emit_client_context(ctx: ClientContextEmit<'_>) -> TokenStream2 {
         cx_ty,
     } = ctx;
     let base_policy = emit_policy_fn_base(policy);
-    let origin = emit_origin_descriptor(&resolved_api.descriptor.origin);
     let (auth_state_assoc_ty, init_auth_state) = emit_client_auth_state_init(resolved_api, auth_state_ty);
     let auth_binding = emit_client_auth_binding_fn(resolved_api);
 
@@ -368,8 +367,6 @@ fn emit_client_context(ctx: ClientContextEmit<'_>) -> TokenStream2 {
             type AuthState = #auth_state_assoc_ty;
             const SCHEME: ::http::uri::Scheme = #scheme;
             const DOMAIN: &'static str = #domain;
-            const ORIGIN: ::concord_core::__private::ApiOriginDescriptor = #origin;
-
             fn init_auth_state(
                 vars: &Self::Vars,
                 auth: &Self::AuthVars,
@@ -383,7 +380,7 @@ fn emit_client_context(ctx: ClientContextEmit<'_>) -> TokenStream2 {
                 vars: &Self::Vars,
                 __concord_auth_vars: &Self::AuthVars,
                 ctx: &::concord_core::error::ErrorContext,
-            ) -> ::core::result::Result<::concord_core::__private::Policy, ::concord_core::prelude::ApiClientError> {
+            ) -> ::core::result::Result<::concord_core::advanced::ClientPolicyBuilder, ::concord_core::prelude::ApiClientError> {
                 let _ = __concord_auth_vars;
                 #base_policy
             }
@@ -412,7 +409,7 @@ fn emit_policy_fn_base(policy: &PolicyBlocksResolved) -> TokenStream2 {
     }
 
     quote! {
-        let mut policy = ::concord_core::__private::Policy::new();
+        let mut policy = ::concord_core::advanced::ClientPolicyBuilder::new();
         let ctx = ctx.clone();
         #[allow(unused_variables)]
         let cx = vars;

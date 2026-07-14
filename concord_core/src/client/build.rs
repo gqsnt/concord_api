@@ -406,14 +406,15 @@ mod tests {
 
     #[cfg(feature = "default-tls")]
     #[test]
-    fn with_reqwest_builder_fallible_rejects_invalid_pem_without_leaking_sentinels() {
+    fn with_safe_reqwest_builder_fallible_rejects_invalid_pem_without_leaking_sentinels() {
         let marker = "BUILD_PEM_SENTINEL";
         let pem = format!(
             "-----BEGIN CERTIFICATE-----\n{marker}\nnot-base64-content\n-----END CERTIFICATE-----"
         );
-        let result = ApiClient::<BuildCx>::with_reqwest_builder_fallible((), (), move |builder| {
-            builder.add_trusted_root_pem(pem.as_bytes())
-        });
+        let result =
+            ApiClient::<BuildCx>::with_safe_reqwest_builder_fallible((), (), move |builder| {
+                builder.add_trusted_root_pem(pem.as_bytes())
+            });
         let error = match result {
             Ok(_) => panic!("invalid cert must fail"),
             Err(error) => error,
@@ -423,8 +424,8 @@ mod tests {
     }
 
     #[test]
-    fn with_reqwest_builder_fallible_is_accessible_with_infallible_configuration() {
-        let _client = ApiClient::<BuildCx>::with_reqwest_builder_fallible((), (), |builder| {
+    fn with_safe_reqwest_builder_fallible_is_accessible_with_infallible_configuration() {
+        let _client = ApiClient::<BuildCx>::with_safe_reqwest_builder_fallible((), (), |builder| {
             Ok(builder.connect_timeout(std::time::Duration::from_millis(50)))
         })
         .expect("infallible reqwest configuration should remain ergonomic");

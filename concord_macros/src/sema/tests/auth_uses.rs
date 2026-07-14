@@ -1,5 +1,45 @@
 use super::helpers::{analyze_err, analyze_ok, assert_auth_error_contains, auth_for_endpoint};
-use crate::sema::AuthPlacementIr;
+use crate::sema::{AuthChallengePolicyIr, AuthPlacementIr};
+
+#[test]
+fn auth_challenge_policy_is_resolved_and_defaults_to_unauthorized() {
+    let api = analyze_ok(
+        r#"
+        api! {
+            client Api {
+                base "https://example.com"
+                secret token: String
+                credential session = bearer(secret.token)
+            }
+
+            GET Default
+                auth bearer session
+                -> Json<()>
+
+            GET Explicit
+                auth bearer session challenge unauthorized_or_forbidden
+                -> Json<()>
+
+            GET Never
+                auth bearer session challenge never_recover
+                -> Json<()>
+        }
+        "#,
+    );
+
+    assert_eq!(
+        auth_for_endpoint(&api, "Default")[0].challenge,
+        AuthChallengePolicyIr::Unauthorized
+    );
+    assert_eq!(
+        auth_for_endpoint(&api, "Explicit")[0].challenge,
+        AuthChallengePolicyIr::UnauthorizedOrForbidden
+    );
+    assert_eq!(
+        auth_for_endpoint(&api, "Never")[0].challenge,
+        AuthChallengePolicyIr::NeverRecover
+    );
+}
 
 #[test]
 fn auth_uses_resolve_all_current_placements() {

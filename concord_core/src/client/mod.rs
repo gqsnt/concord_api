@@ -2,10 +2,9 @@ use crate::auth::{
     AuthError, AuthErrorKind, AuthHttpExecutor, AuthHttpRequest, AuthHttpResponse, AuthMode,
 };
 use crate::debug::{DebugLevel, DebugSink, StderrDebugSink};
-use crate::endpoint::{ClientPlanContext, RequestPlan};
+use crate::endpoint::RequestPlan;
 use crate::error::{ApiClientError, ErrorContext};
 use crate::execution_meta::RequestExecutionMeta;
-use crate::policy::Policy;
 use crate::rate_limit::{
     RateLimitContext, RateLimitPlan, RateLimitResponseAction, RateLimitResponseContext, RateLimiter,
 };

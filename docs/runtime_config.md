@@ -13,11 +13,9 @@ Runtime configuration includes:
 - pagination loop detection and limits;
 - request, response, streaming, and auth-internal body limits;
 - `max_rate_limit_cooldown`;
-- dangerous local development capture when its feature is explicitly enabled.
 
-It does not include `retry_policy`, `max_attempts`,
-endpoint retry policy, retry budgets, resend numbering, or
-per-endpoint retry configuration.
+Retry configuration is selected through the managed client constructor and is
+not part of mutable runtime state.
 
 ## Retry construction
 
@@ -89,10 +87,3 @@ Reqwest hidden retries clone only materialized bodies that Reqwest itself can
 clone. Concord body factories do not run for hidden resends. Authentication
 recovery reconstructs from the logical body recipe and runs a fresh factory
 where applicable.
-
-## Dangerous local capture
-
-Development body capture is separate from errors, debug sinks, hooks, and
-rate-limit metadata. It is feature-gated, disabled by default, and unsuitable
-for production or shared artifacts. It never changes retry authority or body
-limits.

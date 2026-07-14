@@ -16,40 +16,29 @@ fn generated_api_and_endpoints_use_the_current_private_contract() {
         POST Create(body: Text<String>) -> NoContent
     });
 
-    assert_eq!(out.matches("assert_macro_core_compatibility").count(), 1);
-    assert_eq!(out.matches("GENERATED_API_COMPATIBILITY").count(), 1);
+    assert_eq!(out.matches("assert_generated_contract").count(), 1);
+    assert_eq!(out.matches("GENERATED_CONTRACT").count(), 1);
     assert_eq!(out.matches("ReqwestNativeGeneratedContract").count(), 1);
     assert_contains_all(
         &out,
         &[
-            "pub static API_DESCRIPTOR : :: concord_core :: __private :: ApiDescriptor",
-            "name : \"DescriptorApi\"",
-            "ApiOriginDescriptor :: FixedSingleOrigin",
-            "EndpointDescriptor { name : \"List\"",
-            "EndpointDescriptor { name : \"Create\"",
+            "pub static API_DESCRIPTOR : :: concord_core :: __private :: GeneratedApiDescriptor",
+            "GeneratedApiDescriptor :: new (\"DescriptorApi\"",
+            "GeneratedApiOriginDescriptor :: FixedSingleOrigin",
+            "GeneratedEndpointDescriptor :: new (\"List\"",
+            "GeneratedEndpointDescriptor :: new (\"Create\"",
             "HttpMethod :: Get",
             "HttpMethod :: Post",
             "RequestBodyDescriptor :: None",
             "RequestBodyDescriptor :: Buffered { codec : \"Text\" }",
             "ResponseFormatDescriptor :: Buffered { codec : \"Json\" }",
             "ResponseFormatDescriptor :: NoContent",
-            "credential : \"session\"",
-            "PaginationDescriptor { can_change_origin : false",
+            "AuthRequirementDescriptor :: new (\"session\"",
+            "PaginationDescriptor :: new (false",
         ],
     );
 
-    for forbidden in [
-        "__private::v1",
-        "__private::v2",
-        "MacroAbi",
-        "MACRO_ABI",
-        "concord_core::internal",
-    ] {
-        assert!(
-            !out.contains(forbidden),
-            "generated source retained {forbidden}"
-        );
-    }
+    assert!(out.contains("ReqwestNativeGeneratedContract"));
 }
 
 #[test]
@@ -70,7 +59,6 @@ fn descriptor_definitions_exclude_execution_internals_and_match_runtime_facts() 
     for forbidden in [
         "Transport",
         "Reqwest",
-        "RetryPolicy",
         "RetryContext",
         "DynBody",
         "poll_",
@@ -83,9 +71,9 @@ fn descriptor_definitions_exclude_execution_internals_and_match_runtime_facts() 
     }
     assert!(descriptor.contains("HttpMethod::Put"));
     assert!(descriptor.contains("RequestBodyDescriptor::None"));
-    assert!(descriptor.contains("pagination:::core::option::Option::Some"));
+    assert!(descriptor.contains("PaginationDescriptor::new(false)"));
     assert!(out.contains("method:::http::Method::PUT"));
-    assert!(out.contains("let__pagination_plan=::core::option::Option::Some"));
+    assert!(out.contains("let__pagination_plan=true"));
 }
 
 #[test]

@@ -13,7 +13,7 @@ Generated code includes:
 - facade methods
 - scope facade structs
 - endpoint structs under `endpoints::*`
-- request plan construction
+- resolved request-fact preparation
 - policy application functions
 - pagination helpers
 - endpoint-backed credential acquisition methods
@@ -24,9 +24,15 @@ Generated public API names are validated after resolution and before codegen. Th
 
 Constructor shape is stable: generated `new(...)` and `builder()` keep ordinary vars before auth vars and secrets, each in source declaration order. Generated clients are concrete and own a core `ApiClient<Cx>`.
 
-## Request Plans
+## Generated Preparation
 
-Endpoint builders collect field values, route pieces, query and header policy, auth requirements, body codec information, response codec information, retry and rate-limit plans, pagination controller types and bindings, and endpoint metadata. They build `concord_core` request plans.
+Endpoint builders collect resolved field values, route pieces, public query and
+header values, authentication requirement descriptors, body and response
+adapter inputs, rate-limit descriptors, pagination bindings, and endpoint
+metadata. They pass those facts through the narrow `__private` preparation
+API. Core constructs the runtime policy and request plan and returns an opaque
+`GeneratedPreparedCall<Cx, Output>`; generated code never constructs, mutates,
+returns, or receives a Core runtime plan.
 
 ## Policies And Routes
 
@@ -42,7 +48,10 @@ Body codec encoding is emitted from the endpoint signature `body: Codec<T>`. Res
 
 ## Pagination
 
-For endpoints with a resolved `paginate` block, codegen implements the core `PaginatedEndpoint` marker. The runtime request builder exposes `.paginate(PaginationTermination::...)` only for endpoints with that marker and a `PageItems` response. Codegen must not mark non-paginated endpoints just because their response type can expose items.
+For endpoints with a resolved `paginate` block, codegen implements the hidden
+generated pagination marker. Core owns the runtime adapter. The request builder
+exposes `.paginate(PaginationTermination::...)` only for endpoints with that
+descriptor and a `PageItems` response.
 
 ## Endpoint-Backed Credentials
 
@@ -58,6 +67,6 @@ Generated endpoint and auth-internal response handling must preserve the core bo
 
 ## Rustdoc
 
-Rustdoc is generated from resolved endpoint metadata. Behavior labels attached through defaults, scopes, and endpoints are emitted as a concise `Behavior: ...` line. Do not render secrets or secret values in rustdoc.
+Rustdoc is generated from resolved endpoint metadata. Profile labels attached through defaults, scopes, and endpoints are emitted as a concise `Profile: ...` line. Do not render secrets or secret values in rustdoc.
 
 Semantic logic should stay in sema where possible. Codegen mainly turns resolved model data into Rust.

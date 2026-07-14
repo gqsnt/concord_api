@@ -6,17 +6,19 @@ See [Security Model](security_model.md) for how `prelude`, `advanced`, and `dang
 
 Use these extension points when the protocol is part of your API contract. Do not use them to change runtime pipeline order or to bypass redaction.
 
-Concord's managed Reqwest client is the sole executor. Redirects and system-proxy discovery are disabled. General retry behavior is selected at client construction: `ProtocolRecovery` installs no custom Reqwest policy, `Disabled` installs `reqwest::retry::never()`, and `Status` installs the constrained host-scoped status policy. Generated and direct clients expose reviewed `SafeReqwestBuilder` configuration without exposing a raw builder or client. Origin API headers belong in generated policy or `set_api_headers(...)` and are materialized per native request.
+Concord's managed Reqwest client is the sole executor. Redirects and system-proxy discovery are disabled. General retry mode is selected at client construction: `ProtocolRecovery` installs no custom Reqwest policy, `Disabled` installs `reqwest::retry::never()`, and `Status` installs the constrained host-scoped status policy. Generated and direct clients expose reviewed `SafeReqwestBuilder` configuration without exposing a raw builder or client. Origin API headers belong in generated policy or `set_api_headers(...)` and are materialized per native request.
 
 Runtime hooks and debug sinks also sit on a security boundary. They receive sanitized metadata views, not raw header maps, and they never receive request or response body bytes or raw auth material. `pre_send` runs after rate-limit acquisition and before raw auth transport materialization, `post_response` runs after the final result of one visible Reqwest execution and before response body read and endpoint decode, and `request_error` observes the final terminal request error for that visible execution. Hidden Reqwest resends are not hook or rate-limit events. Sensitive header names and sensitive query values are redacted before callback invocation. High-volume debug can add measurable overhead.
 
-Generated Rustdoc for defaulted setters describes the declared default/reset behavior without rendering the source default expression value. Runtime defaults and `Option` reset semantics are unchanged.
+Generated Rustdoc for defaulted setters describes the declared default and reset behavior without rendering the source default expression value. Runtime defaults and `Option` reset semantics are unchanged.
 
 Buffered response read failures are sanitized into structured response-body errors. Timeout, connect, request-execution, and request-body failures remain distinct. Their public `RequestErrorSource` is opaque and retains only Concord-controlled categories plus a URL-free, proxy-aware sanitized source chain. Response body-size limit errors remain structured, and buffered response decode failures are sanitized separately.
 
-## Dangerous Dev Body Capture
+## Dangerous Raw Response Access
 
-Dev body capture is not part of the debug, hook, or error surface. The deprecated `concord_core::dangerous::DevBodyCaptureConfig` is behind `dangerous-dev-tools`, disabled by default, dev-only, and local-file-only. Enabling the feature does not start capture by itself. When explicitly configured, it writes raw selected response bytes to disk with no redaction, never captures request bodies, skips protected auth-bearing requests and auth endpoint traffic by default, and treats `max_bytes` as a capture-size filter rather than redaction or a truncation guarantee. Do not enable it in production, CI logs, CI artifacts, shared directories, user-visible support bundles, or any environment without controlled local filesystem permissions.
+Raw response access is an explicit dangerous extension behind the
+`dangerous-raw-response` feature. Keep it out of production and shared
+diagnostic artifacts unless raw response bytes are intentionally handled.
 
 ## Custom Codecs
 
@@ -87,7 +89,7 @@ api! {
 }
 ```
 
-Dynamic path segments are validated before transport. Required dynamic path values must stringify to a non-empty segment, and optional dynamic path values reject `Some("")` while preserving the existing `None`-omits-segment behavior where supported. The empty-string rule does not apply to query parameter values.
+Dynamic path segments are validated before execution. Required dynamic path values must stringify to a non-empty segment, and optional dynamic path values reject `Some("")` while preserving the rule that `None` omits the segment where supported. The empty-string rule does not apply to query parameter values.
 
 Codec rules:
 
@@ -229,6 +231,6 @@ Rules:
 - Without an expected page size, Concord cannot generically detect a short page before `advance()`.
 - `progress_key` is used for loop detection when enabled.
 - Pagination loop diagnostics keep the progress key internal; public errors report only safe metadata such as page index and key kind/length, not raw cursor or byte contents.
-- Runtime auth, rate-limit, execution, and redaction behavior still follow the fixed pipeline; retry mode is fixed during managed-client construction.
+- Runtime authentication, rate-limit, execution, and redaction behavior still follows the fixed pipeline; retry mode is fixed during managed-client construction.
 
 Complete examples live in `concord_examples/src/custom_codec.rs` and `concord_examples/src/custom_pagination.rs`.

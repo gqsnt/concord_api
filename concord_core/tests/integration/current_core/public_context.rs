@@ -1,9 +1,8 @@
-use super::common::native_mock;
+use super::native_harness::native_mock;
 use concord_core::advanced::{
-    ApiOriginDescriptor, AuthChallengeMode, AuthFuture, AuthPreparationMode, AuthProviderBinding,
-    CredentialContext, CredentialId, CredentialProvider, CredentialProviderState,
-    FixedOriginDescriptor, InvalidateReason, OriginScheme, PreparedBody, PreparedEndpoint,
-    PreparedRequestEntity, RequestAuthentication, SafeProxy,
+    AuthChallengeMode, AuthChallengePolicy, AuthFuture, AuthPreparationMode, AuthProviderBinding,
+    CredentialContext, CredentialId, CredentialProvider, CredentialProviderState, InvalidateReason,
+    PreparedBody, PreparedEndpoint, PreparedRequestEntity, RequestAuthentication, SafeProxy,
 };
 use concord_core::prelude::{ApiClient, ApiKey, ClientContext, RetryMode, Text};
 use http::{HeaderValue, Method, StatusCode};
@@ -30,12 +29,6 @@ impl ClientContext for PublicContext {
 
     const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTP;
     const DOMAIN: &'static str = "example.com";
-    const ORIGIN: ApiOriginDescriptor =
-        ApiOriginDescriptor::FixedSingleOrigin(FixedOriginDescriptor {
-            scheme: OriginScheme::Http,
-            authority: "example.com",
-        });
-
     fn init_auth_state(_vars: &Self::Vars, auth: &Self::AuthVars) -> Self::AuthState {
         PublicAuthState {
             provider: Arc::new(CredentialProviderState::new(auth.provider.clone())),
@@ -91,6 +84,36 @@ impl CredentialProvider<PublicContext> for PublicProvider {
     }
 }
 
+#[test]
+fn hand_written_context_rejects_status_retry_mode() {
+    let auth = PublicAuthVars {
+        provider: PublicProvider {
+            acquired: Arc::new(AtomicUsize::new(0)),
+            invalidated: Arc::new(AtomicUsize::new(0)),
+        },
+    };
+    let status = RetryMode::status(1, [StatusCode::SERVICE_UNAVAILABLE]).unwrap();
+    let error = match ApiClient::<PublicContext>::with_retry_mode((), auth, status) {
+        Ok(_) => panic!("hand-written contexts cannot install status retry"),
+        Err(error) => error,
+    };
+    assert!(matches!(
+        error,
+        concord_core::prelude::RetryModeError::NotFixedOrigin
+    ));
+
+    let auth = PublicAuthVars {
+        provider: PublicProvider {
+            acquired: Arc::new(AtomicUsize::new(0)),
+            invalidated: Arc::new(AtomicUsize::new(0)),
+        },
+    };
+    ApiClient::<PublicContext>::with_retry_mode((), auth.clone(), RetryMode::ProtocolRecovery)
+        .expect("hand-written contexts retain protocol recovery");
+    ApiClient::<PublicContext>::with_retry_mode((), auth, RetryMode::Disabled)
+        .expect("hand-written contexts retain disabled mode");
+}
+
 #[tokio::test]
 async fn authenticated_fixed_origin_context_uses_only_supported_public_modules() {
     let (server, handle) = native_mock::mock()
@@ -108,10 +131,10 @@ async fn authenticated_fixed_origin_context_uses_only_supported_public_modules()
         },
     };
     let proxy = SafeProxy::all(server.base_url().as_str()).expect("loopback proxy");
-    let client = ApiClient::<PublicContext>::with_reqwest_builder_and_retry_mode(
+    let client = ApiClient::<PublicContext>::with_safe_reqwest_builder_and_retry_mode(
         (),
         auth,
-        RetryMode::status(1, [StatusCode::SERVICE_UNAVAILABLE]).expect("fixed status mode"),
+        RetryMode::ProtocolRecovery,
         |builder| Ok(builder.proxy(proxy)),
     )
     .expect("public fixed-origin context");
@@ -143,4 +166,97 @@ async fn authenticated_fixed_origin_context_uses_only_supported_public_modules()
         requests[1].headers.get(http::header::AUTHORIZATION),
         Some(&HeaderValue::from_static("Bearer public-token-2"))
     );
+}
+
+#[tokio::test]
+async fn prepared_endpoint_explicit_policy_recovers_forbidden_once() {
+    let (server, handle) = native_mock::mock()
+        .replies([
+            native_mock::MockReply::status(StatusCode::FORBIDDEN),
+            native_mock::MockReply::ok_text(bytes::Bytes::from_static(b"recovered")),
+        ])
+        .build();
+    let acquired = Arc::new(AtomicUsize::new(0));
+    let invalidated = Arc::new(AtomicUsize::new(0));
+    let auth = PublicAuthVars {
+        provider: PublicProvider {
+            acquired: acquired.clone(),
+            invalidated: invalidated.clone(),
+        },
+    };
+    let proxy = SafeProxy::all(server.base_url().as_str()).expect("loopback proxy");
+    let client = ApiClient::<PublicContext>::with_safe_reqwest_builder_and_retry_mode(
+        (),
+        auth,
+        RetryMode::ProtocolRecovery,
+        |builder| Ok(builder.proxy(proxy)),
+    )
+    .expect("client");
+
+    let value = PreparedEndpoint::<Text<String>>::new(
+        "ExplicitForbidden",
+        Method::GET,
+        "/forbidden",
+        PreparedRequestEntity {
+            body: PreparedBody::empty(),
+        },
+    )
+    .authentication(
+        RequestAuthentication::bearer(CredentialId::new("test", "token"))
+            .challenge_policy(AuthChallengePolicy::UnauthorizedOrForbidden),
+    )
+    .execute(&client)
+    .await
+    .expect("explicit forbidden recovery");
+
+    assert_eq!(value, "recovered");
+    assert_eq!(acquired.load(Ordering::SeqCst), 2);
+    assert_eq!(invalidated.load(Ordering::SeqCst), 1);
+    assert_eq!(handle.recorded().len(), 2);
+}
+
+#[tokio::test]
+async fn prepared_endpoint_default_policy_keeps_forbidden_terminal() {
+    let (server, handle) = native_mock::mock()
+        .replies([native_mock::MockReply::status(StatusCode::FORBIDDEN)])
+        .build();
+    let acquired = Arc::new(AtomicUsize::new(0));
+    let invalidated = Arc::new(AtomicUsize::new(0));
+    let auth = PublicAuthVars {
+        provider: PublicProvider {
+            acquired: acquired.clone(),
+            invalidated: invalidated.clone(),
+        },
+    };
+    let proxy = SafeProxy::all(server.base_url().as_str()).expect("loopback proxy");
+    let client = ApiClient::<PublicContext>::with_safe_reqwest_builder_and_retry_mode(
+        (),
+        auth,
+        RetryMode::ProtocolRecovery,
+        |builder| Ok(builder.proxy(proxy)),
+    )
+    .expect("client");
+
+    let error = PreparedEndpoint::<Text<String>>::new(
+        "DefaultForbidden",
+        Method::GET,
+        "/forbidden",
+        PreparedRequestEntity {
+            body: PreparedBody::empty(),
+        },
+    )
+    .authentication(RequestAuthentication::bearer(CredentialId::new(
+        "test", "token",
+    )))
+    .execute(&client)
+    .await
+    .expect_err("default 403 is terminal");
+
+    assert!(matches!(
+        error,
+        concord_core::prelude::ApiClientError::Auth { .. }
+    ));
+    assert_eq!(acquired.load(Ordering::SeqCst), 1);
+    assert_eq!(invalidated.load(Ordering::SeqCst), 0);
+    assert_eq!(handle.recorded().len(), 1);
 }

@@ -87,7 +87,7 @@ truncation after `into_items()`. Because that method consumes the page while
 cursor/custom advance can require a page reference, a page without an item
 count hint may be advanced before exact post-consumption termination or a hard
 item-cap error is known. No additional request is sent after the exact result is
-known. This limitation is part of the v1 `PageItems` contract. Without an
+known. This limitation is part of the  `PageItems` contract. Without an
 expected page size, Concord cannot generically detect a short page before
 advance.
 

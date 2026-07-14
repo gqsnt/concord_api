@@ -10,13 +10,13 @@ fn emit_rate_limit_op(
         RateLimitResolved::Add(plan) => {
             let plan = emit_rate_limit_plan(plan, ctx);
             quote! {
-                policy.add_rate_limit(#plan);
+            policy.add_generated_rate_limit(#plan);
             }
         }
         RateLimitResolved::Replace(plan) => {
             let plan = emit_rate_limit_plan(plan, ctx);
             quote! {
-                policy.replace_rate_limit(#plan);
+            policy.replace_generated_rate_limit(#plan);
             }
         }
     })
@@ -32,7 +32,7 @@ fn emit_rate_limit_plan(plan: &RateLimitPlanResolved, ctx: PolicyEmitCtx) -> Tok
                 let max = window.max;
                 let per_secs = window.per_secs;
                 quote! {
-                    ::concord_core::__private::RateLimitWindow::new(
+                    ::concord_core::__private::GeneratedRateLimitWindowDescriptor::new(
                         ::std::num::NonZeroU32::new(#max).ok_or_else(|| {
                             ::concord_core::prelude::ApiClientError::rate_limit(
                                 ctx.clone(),
@@ -45,7 +45,7 @@ fn emit_rate_limit_plan(plan: &RateLimitPlanResolved, ctx: PolicyEmitCtx) -> Tok
                 }
             });
         quote! {
-            ::concord_core::__private::RateLimitBucketUse::new(#kind, #name, #key)
+            ::concord_core::__private::GeneratedRateLimitBucketDescriptor::new(#kind, #name, #key)
                 .with_cost(::std::num::NonZeroU32::new(#cost).ok_or_else(|| {
                     ::concord_core::prelude::ApiClientError::rate_limit(
                         ctx.clone(),
@@ -57,20 +57,20 @@ fn emit_rate_limit_plan(plan: &RateLimitPlanResolved, ctx: PolicyEmitCtx) -> Tok
         }
     });
     quote! {
-        ::concord_core::__private::RateLimitPlan::from_buckets(::std::vec![ #( #buckets ),* ])
+        ::concord_core::__private::GeneratedRateLimitDescriptor::from_buckets(::std::vec![ #( #buckets ),* ])
     }
 }
 
 fn emit_rate_limit_key(keys: &[RateLimitKeyResolved], ctx: PolicyEmitCtx) -> TokenStream2 {
     let parts = keys.iter().map(|key| match key {
         RateLimitKeyResolved::RouteHost => {
-            quote! { ::concord_core::__private::RateLimitKeyPart::url_host() }
+            quote! { ::concord_core::__private::GeneratedRateLimitKeyPartDescriptor::url_host() }
         }
         RateLimitKeyResolved::Endpoint => {
-            quote! { ::concord_core::__private::RateLimitKeyPart::endpoint() }
+            quote! { ::concord_core::__private::GeneratedRateLimitKeyPartDescriptor::endpoint() }
         }
         RateLimitKeyResolved::Method => {
-            quote! { ::concord_core::__private::RateLimitKeyPart::method() }
+            quote! { ::concord_core::__private::GeneratedRateLimitKeyPartDescriptor::method() }
         }
         RateLimitKeyResolved::EpField { name, field } => {
             let name = LitStr::new(name, field.span());
@@ -80,7 +80,7 @@ fn emit_rate_limit_key(keys: &[RateLimitKeyResolved], ctx: PolicyEmitCtx) -> Tok
                     field.span(),
                 ),
                 PolicyEmitCtx::Layer | PolicyEmitCtx::Endpoint => quote! {
-                    ::concord_core::__private::RateLimitKeyPart::static_value(
+                    ::concord_core::__private::GeneratedRateLimitKeyPartDescriptor::static_value(
                         #name,
                         ::std::string::ToString::to_string(&ep.#field),
                     )
@@ -91,12 +91,12 @@ fn emit_rate_limit_key(keys: &[RateLimitKeyResolved], ctx: PolicyEmitCtx) -> Tok
             let name = LitStr::new(name, Span::call_site());
             let value = LitStr::new(value, Span::call_site());
             quote! {
-                ::concord_core::__private::RateLimitKeyPart::static_value(#name, #value)
+                ::concord_core::__private::GeneratedRateLimitKeyPartDescriptor::static_value(#name, #value)
             }
         }
     });
     quote! {
-        ::concord_core::__private::RateLimitKey::new(::std::vec![ #( #parts ),* ])
+        ::concord_core::__private::GeneratedRateLimitKeyDescriptor::new(::std::vec![ #( #parts ),* ])
     }
 }
 

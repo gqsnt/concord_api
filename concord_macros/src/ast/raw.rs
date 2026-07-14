@@ -22,9 +22,9 @@ pub struct RawClient {
     pub auth_vars: Option<VarsBlock>,
     pub auth: Option<AuthCredentials>,
     pub auth_uses: Vec<AuthUseDecl>,
-    pub default_behavior_uses: Vec<BehaviorUseSpec>,
+    pub default_profile_uses: Vec<ProfileUseSpec>,
     pub rate_limit: Option<RateLimitProfilesBlock>,
-    pub behavior_profiles: Option<BehaviorProfilesBlock>,
+    pub profiles: Option<ProfilesBlock>,
 }
 
 #[derive(Debug)]
@@ -45,7 +45,7 @@ pub struct RawScope {
     pub path_route: Option<RouteExpr>,
     pub params: Vec<VarDeclNoWire>,
     pub policy: PolicyBlocks,
-    pub behavior_uses: Vec<BehaviorUseSpec>,
+    pub profile_uses: Vec<ProfileUseSpec>,
     pub auth_uses: Vec<AuthUseDecl>,
     pub rate_limit: Option<RateLimitSpec>,
     pub rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
@@ -73,7 +73,7 @@ pub struct RawEndpoint {
     pub params: Vec<VarDeclNoWire>,
 
     pub policy: PolicyBlocks,
-    pub behavior_uses: Vec<BehaviorUseSpec>,
+    pub profile_uses: Vec<ProfileUseSpec>,
     pub auth_uses: Vec<AuthUseDecl>,
     pub rate_limit: Option<RateLimitSpec>,
     pub rate_limit_keys: Vec<RateLimitKeyBindingSpec>,

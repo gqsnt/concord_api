@@ -13,7 +13,7 @@ fn normalize_spans_preserve_client_scope_and_endpoint_spans() {
 
             scope tenant(tenant_id: String) {
                 host [fmt["tenant-", tenant_id]]
-                path ["v1"]
+                path ["api"]
 
                 GET Show
                     path ["profile"]

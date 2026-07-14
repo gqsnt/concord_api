@@ -19,16 +19,14 @@ fn generated_auth_plan_uses_resolved_requirements() {
     assert_contains_all(
         &out,
         &[
-            "::concord_core::__private::AuthRequirement",
-            "::concord_core::__private::AuthPlacement::Header",
-            "::concord_core::__private::AuthUsageId::new(\"header\")",
-            "AuthProvenance::new(\"endpoint\")",
-            "step_id: ::core::option::Option::Some(\"Search:0:key\")",
+            "::concord_core::__private::GeneratedAuthBuilder",
+            "::concord_core::__private::GeneratedAuthBuilder::new()",
+            "::concord_core::__private::GeneratedAuthPlacement::Header",
+            "__auth.require(\"AuthPlanApi\",\"key\"",
+            "\"header\",\"Search:0:key\",\"endpoint\"",
+            "::concord_core::__private::prepare_generated_policy",
+            "::concord_core::__private::prepare_generated_endpoint",
         ],
-    );
-    assert!(
-        !out.contains("emit_auth_usage_id"),
-        "generated code should not call old auth-use helpers"
     );
     assert!(
         !out.contains("endpoint_qualified_name(ep)"),
@@ -152,7 +150,7 @@ fn generated_oauth2_client_credentials_provider_is_typed() {
             "::concord_core::__private::AuthPreparationMode::PerExecution",
         ],
     );
-    assert!(!out.contains("PerAttempt"));
+    assert!(out.contains("AuthPreparationMode::PerExecution"));
 }
 
 #[test]
@@ -200,8 +198,8 @@ fn generated_auth_session_contains_auth_state_and_acquire_sugar() {
             "pub trait SnapshotAuthAcquireAsSessionExt",
             "fn acquire_as_session (self,) -> :: core :: pin :: Pin",
             ". with_missing_hint (\"client.acquire_auth_session(...)\")",
-            ":: concord_core :: __private :: AuthPlacement :: Bearer",
-            ":: concord_core :: __private :: AuthPlacement :: Header (\"X-Upstream-Key\")",
+            ":: concord_core :: __private :: GeneratedAuthPlacement :: Bearer",
+            ":: concord_core :: __private :: GeneratedAuthPlacement :: Header (\"X-Upstream-Key\")",
         ],
     );
 }

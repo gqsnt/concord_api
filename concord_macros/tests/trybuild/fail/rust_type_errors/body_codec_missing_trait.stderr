@@ -34,5 +34,5 @@ help: the following other types implement trait `BodyCodec`
    | | where
    | |     T: Serialize + Send + Sync + 'static,
    | |_________________________________________^ `concord_core::prelude::Json<T>`
-   = note: required for `concord_core::__private::EncodedRequest<MissingBody<CreateUser>>` to implement `RequestEntity`
+   = note: required for `concord_core::__private::GeneratedEncodedRequest<MissingBody<CreateUser>>` to implement `concord_core::__private::generated_request_sealed::Adapter`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

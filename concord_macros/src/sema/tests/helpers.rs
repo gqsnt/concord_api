@@ -163,7 +163,7 @@ pub(crate) fn assert_policy_error_contains(source: &str, expected: &str) {
     assert_error_contains(&err, expected);
 }
 
-pub(crate) fn assert_behavior_error_contains(source: &str, expected: &str) {
+pub(crate) fn assert_profile_error_contains(source: &str, expected: &str) {
     let err = analyze_err(source);
     assert_error_contains(&err, expected);
 }

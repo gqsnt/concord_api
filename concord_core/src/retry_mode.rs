@@ -1,7 +1,6 @@
 //! Client-level general retry authority.
 //!
-//! Concord no longer owns a general HTTP retry loop. General retries are a
-//! property of the managed Reqwest client, selected once at construction time
+//! General retries are a property of the managed Reqwest client, selected once at construction time
 //! through [`RetryMode`]. Exactly three modes are supported:
 //!
 //! * [`RetryMode::ProtocolRecovery`] — the default. Concord installs no custom
@@ -37,6 +36,7 @@ pub struct FixedOriginDescriptor {
 
 /// Static origin classification used to validate client-level status retry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(clippy::enum_variant_names)]
 pub enum ApiOriginDescriptor {
     FixedSingleOrigin(FixedOriginDescriptor),
     DynamicOrigin,
@@ -86,15 +86,16 @@ impl RetryMode {
     /// permitted for a fixed single-origin API.
     pub(crate) fn resolve(
         &self,
-        origin: ApiOriginDescriptor,
+        origin: Option<ApiOriginDescriptor>,
     ) -> Result<ReqwestRetryInstall, RetryModeError> {
         match self {
             RetryMode::ProtocolRecovery => Ok(ReqwestRetryInstall::ProtocolRecovery),
             RetryMode::Disabled => Ok(ReqwestRetryInstall::Never),
             RetryMode::Status(config) => {
                 let authority = match origin {
-                    ApiOriginDescriptor::FixedSingleOrigin(fixed) => fixed.authority,
-                    ApiOriginDescriptor::DynamicOrigin | ApiOriginDescriptor::MultiOrigin => {
+                    Some(ApiOriginDescriptor::FixedSingleOrigin(fixed)) => fixed.authority,
+                    Some(ApiOriginDescriptor::DynamicOrigin | ApiOriginDescriptor::MultiOrigin)
+                    | None => {
                         return Err(RetryModeError::NotFixedOrigin);
                     }
                 };
@@ -109,8 +110,8 @@ impl RetryMode {
 
 fn fixed_origin_host(authority: &'static str) -> Result<String, RetryModeError> {
     // Generated descriptors have already passed the semantic URL validator.
-    // Repeat the narrow structural check here because hand-written
-    // `ClientContext` implementations can provide equivalent metadata.
+    // Repeat the narrow structural check defensively before the descriptor is
+    // allowed to authorize status mode in the managed Reqwest client.
     if authority.is_empty()
         || authority.contains('@')
         || authority
@@ -143,7 +144,7 @@ fn fixed_origin_host(authority: &'static str) -> Result<String, RetryModeError> 
 /// Constrained controls for [`RetryMode::Status`].
 ///
 /// Only the approved controls are exposed. Arbitrary classifiers, retry
-/// budgets, budget percentages, transport-error lists, method lists,
+/// budgets, budget percentages, error lists, method lists,
 /// idempotency modes, and `Retry-After` retry switches are intentionally
 /// absent.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -244,10 +245,10 @@ pub enum RetryModeError {
     EmptyStatusSet,
     /// A configured status was not one of `502`, `503`, or `504`.
     UnsupportedStatus(u16),
-    /// [`RetryMode::Status`] was selected for an API that is not classified as
-    /// fixed single-origin by the generated integration contract.
+    /// [`RetryMode::Status`] was selected without generated fixed-origin
+    /// capability.
     NotFixedOrigin,
-    /// A hand-written fixed-origin descriptor did not contain a structurally
+    /// The generated fixed-origin descriptor did not contain a structurally
     /// valid HTTP authority.
     InvalidFixedOriginMetadata,
     /// The managed Reqwest client could not be constructed.
@@ -314,7 +315,7 @@ mod tests {
     #[test]
     fn protocol_recovery_installs_no_custom_policy() {
         let install = RetryMode::ProtocolRecovery
-            .resolve(ApiOriginDescriptor::DynamicOrigin)
+            .resolve(Some(ApiOriginDescriptor::DynamicOrigin))
             .expect("protocol recovery always resolves");
         assert!(matches!(install, ReqwestRetryInstall::ProtocolRecovery));
     }
@@ -322,7 +323,7 @@ mod tests {
     #[test]
     fn disabled_installs_never() {
         let install = RetryMode::Disabled
-            .resolve(ApiOriginDescriptor::MultiOrigin)
+            .resolve(Some(ApiOriginDescriptor::MultiOrigin))
             .expect("disabled always resolves");
         assert!(matches!(install, ReqwestRetryInstall::Never));
     }
@@ -379,30 +380,30 @@ mod tests {
     fn status_requires_fixed_single_origin() {
         let mode = RetryMode::status(2, [StatusCode::SERVICE_UNAVAILABLE]).unwrap();
         assert!(matches!(
-            mode.resolve(ApiOriginDescriptor::DynamicOrigin),
+            mode.resolve(Some(ApiOriginDescriptor::DynamicOrigin)),
             Err(RetryModeError::NotFixedOrigin)
         ));
         assert!(matches!(
-            mode.resolve(ApiOriginDescriptor::MultiOrigin),
+            mode.resolve(Some(ApiOriginDescriptor::MultiOrigin)),
             Err(RetryModeError::NotFixedOrigin)
         ));
         assert!(matches!(
-            mode.resolve(fixed("example.com")),
+            mode.resolve(Some(fixed("example.com"))),
             Ok(ReqwestRetryInstall::Custom(_))
         ));
     }
 
     #[test]
-    fn status_validates_hand_written_fixed_origin_metadata() {
+    fn status_validates_fixed_origin_metadata() {
         let mode = RetryMode::status(1, [StatusCode::BAD_GATEWAY]).expect("valid status mode");
         for authority in ["", "user@example.com", "example.com:not-a-port"] {
             assert!(matches!(
-                mode.resolve(fixed(authority)),
+                mode.resolve(Some(fixed(authority))),
                 Err(RetryModeError::InvalidFixedOriginMetadata)
             ));
         }
-        assert!(mode.resolve(fixed("example.com:8443")).is_ok());
-        assert!(mode.resolve(fixed("[::1]:8443")).is_ok());
+        assert!(mode.resolve(Some(fixed("example.com:8443"))).is_ok());
+        assert!(mode.resolve(Some(fixed("[::1]:8443"))).is_ok());
     }
 
     #[test]

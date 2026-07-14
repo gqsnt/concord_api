@@ -145,7 +145,7 @@ fn rate_limit_keys_resolve_route_host_and_endpoint_fields() {
 }
 
 #[test]
-fn rate_limit_keys_resolve_scope_behavior_key_binding() {
+fn rate_limit_keys_resolve_scope_profile_key_binding() {
     let api = analyze_ok(
         r#"
         api! {
@@ -193,7 +193,7 @@ fn rate_limit_keys_resolve_scope_behavior_key_binding() {
 }
 
 #[test]
-fn rate_limit_keys_resolve_endpoint_behavior_key_binding() {
+fn rate_limit_keys_resolve_endpoint_profile_key_binding() {
     let api = analyze_ok(
         r#"
         api! {

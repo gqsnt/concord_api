@@ -8,16 +8,6 @@ pub trait ClientContext: Sized + Send + Sync + 'static {
     const SCHEME: Scheme;
     const DOMAIN: &'static str;
 
-    /// Static origin classification used to gate [`crate::retry_mode::RetryMode::Status`].
-    ///
-    /// Generated APIs emit their descriptor-derived classification. Hand-written
-    /// contexts default to
-    /// [`ApiOriginDescriptor::DynamicOrigin`](crate::advanced::ApiOriginDescriptor::DynamicOrigin), so status
-    /// retry is rejected unless they supply verified fixed single-origin
-    /// metadata.
-    const ORIGIN: crate::retry_mode::ApiOriginDescriptor =
-        crate::retry_mode::ApiOriginDescriptor::DynamicOrigin;
-
     fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState;
 
     /// Resolves an opaque provider binding for one credential.
@@ -37,8 +27,8 @@ pub trait ClientContext: Sized + Send + Sync + 'static {
         _vars: &Self::Vars,
         _auth: &Self::AuthVars,
         _ctx: &ErrorContext,
-    ) -> Result<Policy, ApiClientError> {
-        Ok(Policy::new())
+    ) -> Result<crate::policy::ClientPolicyBuilder, ApiClientError> {
+        Ok(crate::policy::ClientPolicyBuilder::new())
     }
 }
 

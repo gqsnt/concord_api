@@ -4,22 +4,6 @@ use crate::runtime_hooks::{NoopRuntimeHooks, RuntimeHooks};
 use std::sync::Arc;
 use std::time::Duration;
 
-#[cfg(feature = "dangerous-dev-tools")]
-use bytes::Bytes;
-#[cfg(feature = "dangerous-dev-tools")]
-use http::{Method, StatusCode};
-#[cfg(feature = "dangerous-dev-tools")]
-use std::fs::{self, OpenOptions};
-#[cfg(feature = "dangerous-dev-tools")]
-use std::io::Write;
-#[cfg(feature = "dangerous-dev-tools")]
-use std::path::{Path, PathBuf};
-#[cfg(feature = "dangerous-dev-tools")]
-use std::sync::atomic::{AtomicU64, Ordering};
-
-#[cfg(feature = "dangerous-dev-tools")]
-static DEV_BODY_CAPTURE_COUNTER: AtomicU64 = AtomicU64::new(0);
-
 #[derive(Clone)]
 pub struct DebugConfig {
     pub(crate) level: DebugLevel,
@@ -35,89 +19,6 @@ impl Default for DebugConfig {
     }
 }
 
-#[cfg(feature = "dangerous-dev-tools")]
-#[deprecated(
-    note = "dev-only diagnostic body capture; disabled by default; may persist sensitive response bytes to local disk; do not use in production"
-)]
-#[derive(Clone, Debug)]
-pub struct DevBodyCaptureConfig {
-    pub(crate) dir: PathBuf,
-    pub(crate) max_bytes: usize,
-}
-
-#[cfg(feature = "dangerous-dev-tools")]
-#[allow(deprecated)]
-impl DevBodyCaptureConfig {
-    pub const DEFAULT_MAX_BYTES: usize = 64 * 1024;
-
-    #[inline]
-    pub fn response_dir(dir: impl Into<PathBuf>) -> Self {
-        Self {
-            dir: dir.into(),
-            max_bytes: Self::DEFAULT_MAX_BYTES,
-        }
-    }
-
-    #[inline]
-    pub fn max_bytes(mut self, max_bytes: usize) -> Self {
-        self.max_bytes = max_bytes;
-        self
-    }
-
-    pub(crate) fn capture_response(
-        &self,
-        endpoint: &'static str,
-        method: &Method,
-        status: StatusCode,
-        body: &Bytes,
-    ) {
-        let _ = self.try_capture_response(endpoint, method, status, body);
-    }
-
-    fn try_capture_response(
-        &self,
-        endpoint: &'static str,
-        method: &Method,
-        status: StatusCode,
-        body: &Bytes,
-    ) -> std::io::Result<()> {
-        fs::create_dir_all(&self.dir)?;
-        let counter = DEV_BODY_CAPTURE_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let filename = format!(
-            "{}-{}-{}-{counter}.body",
-            sanitize_path_component(endpoint),
-            sanitize_path_component(method.as_str()),
-            status.as_u16()
-        );
-        if body.len() > self.max_bytes {
-            return Ok(());
-        }
-        let path = safe_capture_path(&self.dir, &filename);
-        let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
-        file.write_all(body)?;
-        Ok(())
-    }
-}
-
-#[cfg(feature = "dangerous-dev-tools")]
-fn sanitize_path_component(value: &str) -> String {
-    let mut out = String::with_capacity(value.len().max(1));
-    for ch in value.chars() {
-        if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') {
-            out.push(ch);
-        } else {
-            out.push('_');
-        }
-    }
-    if out.is_empty() { "_".to_string() } else { out }
-}
-
-#[cfg(feature = "dangerous-dev-tools")]
-fn safe_capture_path(dir: &Path, filename: &str) -> PathBuf {
-    debug_assert!(!filename.contains('/') && !filename.contains('\\'));
-    dir.join(filename)
-}
-
 #[derive(Clone)]
 pub struct RuntimeConfig {
     pub(crate) hooks: Arc<dyn RuntimeHooks>,
@@ -126,26 +27,21 @@ pub struct RuntimeConfig {
     pub(crate) pagination_detect_loops: bool,
     pub(crate) debug: DebugConfig,
     pub(crate) max_response_body_bytes: Option<usize>,
-    pub(crate) max_stream_request_body_bytes: Option<usize>,
+    pub(crate) max_request_body_bytes: Option<usize>,
     pub(crate) max_stream_response_body_bytes: Option<usize>,
-    #[cfg(feature = "dangerous-dev-tools")]
-    #[allow(deprecated)]
-    pub(crate) dev_body_capture: Option<DevBodyCaptureConfig>,
 }
 
 impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
             hooks: Arc::new(NoopRuntimeHooks),
-            rate_limiter: Arc::new(DefaultRateLimiter::default()),
+            rate_limiter: Arc::new(DefaultRateLimiter::new()),
             max_rate_limit_cooldown: Duration::from_secs(60),
             pagination_detect_loops: true,
             debug: DebugConfig::default(),
             max_response_body_bytes: Some(16 * 1024 * 1024),
-            max_stream_request_body_bytes: Some(16 * 1024 * 1024),
+            max_request_body_bytes: Some(16 * 1024 * 1024),
             max_stream_response_body_bytes: Some(16 * 1024 * 1024),
-            #[cfg(feature = "dangerous-dev-tools")]
-            dev_body_capture: None,
         }
     }
 }
@@ -165,17 +61,6 @@ impl RuntimeConfig {
     #[inline]
     pub fn debug_sink(&mut self, sink: Arc<dyn DebugSink>) -> &mut Self {
         self.debug.sink = sink;
-        self
-    }
-
-    #[cfg(feature = "dangerous-dev-tools")]
-    #[deprecated(
-        note = "dev-only diagnostic body capture; disabled by default; may persist sensitive response bytes to local disk; do not use in production"
-    )]
-    #[allow(deprecated)]
-    #[inline]
-    pub fn dev_body_capture(&mut self, capture: DevBodyCaptureConfig) -> &mut Self {
-        self.dev_body_capture = Some(capture);
         self
     }
 
@@ -219,16 +104,15 @@ impl RuntimeConfig {
     /// streams, advanced bodies, factory results, and multipart bridge output.
     /// Exact/inherent oversize may fail early; advisory upper hints do not.
     #[inline]
-    pub fn max_stream_request_body_bytes(&mut self, bytes: usize) -> &mut Self {
-        self.max_stream_request_body_bytes = Some(bytes);
+    pub fn max_request_body_bytes(&mut self, bytes: usize) -> &mut Self {
+        self.max_request_body_bytes = Some(bytes);
         self
     }
 
-    /// Disables the all-request-body limit despite this method's historical
-    /// stream-oriented name.
+    /// Disables the all-request-body limit.
     #[inline]
-    pub fn no_stream_request_body_limit(&mut self) -> &mut Self {
-        self.max_stream_request_body_bytes = None;
+    pub fn no_request_body_limit(&mut self) -> &mut Self {
+        self.max_request_body_bytes = None;
         self
     }
 
@@ -261,12 +145,9 @@ mod tests {
         assert!(cfg.pagination_detect_loops);
         assert_eq!(cfg.debug.level, DebugLevel::None);
         assert_eq!(cfg.max_response_body_bytes, Some(16 * 1024 * 1024));
-        assert_eq!(cfg.max_stream_request_body_bytes, Some(16 * 1024 * 1024));
+        assert_eq!(cfg.max_request_body_bytes, Some(16 * 1024 * 1024));
         assert_eq!(cfg.max_stream_response_body_bytes, Some(16 * 1024 * 1024));
         assert_eq!(cfg.max_rate_limit_cooldown, Duration::from_secs(60));
-        #[cfg(feature = "dangerous-dev-tools")]
-        assert!(cfg.dev_body_capture.is_none());
-
         assert_eq!(Arc::strong_count(&cfg.hooks), 1);
         assert_eq!(Arc::strong_count(&cfg.rate_limiter), 1);
         assert_eq!(Arc::strong_count(&cfg.debug.sink), 1);

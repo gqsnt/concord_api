@@ -13,7 +13,7 @@ fn normalize_routes_splits_scope_host_and_path_in_order() {
 
             scope tenant(tenant_id: String) {
                 host [fmt["tenant-", tenant_id], "api"]
-                path ["v1"]
+                path ["api"]
 
                 GET Show
                     path ["profile"]
@@ -35,7 +35,7 @@ fn normalize_routes_splits_scope_host_and_path_in_order() {
     let inner = single_child_scope(outer);
     assert!(matches!(inner.kind, RouteLayerKind::Path));
     match inner.route.atoms.as_slice() {
-        [RouteAtom::Static(atom)] => assert_eq!(atom.value(), "v1"),
+        [RouteAtom::Static(atom)] => assert_eq!(atom.value(), "api"),
         other => panic!("expected canonical path route atoms, got {other:?}"),
     }
     assert!(inner.scope_name.is_none());
@@ -94,7 +94,7 @@ fn normalize_routes_keeps_single_path_scope_as_path_layer() {
             }
 
             scope tenant {
-                path ["v1"]
+                path ["api"]
 
                 GET Show
                     path ["profile"]
@@ -107,7 +107,7 @@ fn normalize_routes_keeps_single_path_scope_as_path_layer() {
     let outer = top_scope(&norm, 0);
     assert!(matches!(outer.kind, RouteLayerKind::Path));
     match outer.route.atoms.as_slice() {
-        [RouteAtom::Static(atom)] => assert_eq!(atom.value(), "v1"),
+        [RouteAtom::Static(atom)] => assert_eq!(atom.value(), "api"),
         other => panic!("expected single path route atom, got {other:?}"),
     }
     assert!(outer.scope_name.as_ref().is_some());
@@ -155,7 +155,7 @@ fn normalize_route_layer_ownership_does_not_copy_outer_state_to_synthetic_path_l
 
             scope tenant(tenant_id: String) {
                 host [fmt["tenant-", tenant_id]]
-                path ["v1"]
+                path ["api"]
                 auth header "X-Token" = key
                 query {
                     "trace" = tenant_id
@@ -182,7 +182,7 @@ fn normalize_route_layer_ownership_does_not_copy_outer_state_to_synthetic_path_l
     assert!(outer.policy.query.is_some());
     assert!(outer.rate_limit.is_some());
     assert_eq!(outer.rate_limit_keys.len(), 1);
-    assert_eq!(outer.behavior_uses.len(), 1);
+    assert_eq!(outer.profile_uses.len(), 1);
 
     let inner = single_child_scope(outer);
     assert!(inner.scope_name.is_none());
@@ -192,5 +192,5 @@ fn normalize_route_layer_ownership_does_not_copy_outer_state_to_synthetic_path_l
     assert!(inner.policy.query.is_none());
     assert!(inner.rate_limit.is_none());
     assert!(inner.rate_limit_keys.is_empty());
-    assert!(inner.behavior_uses.is_empty());
+    assert!(inner.profile_uses.is_empty());
 }

@@ -663,6 +663,7 @@ pub trait RequestEntity {
 pub struct RequestAuthentication {
     credential: crate::auth::CredentialId,
     placement: PreparedAuthenticationPlacement,
+    challenge: crate::auth::AuthChallengePolicy,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -678,6 +679,7 @@ impl RequestAuthentication {
         Self {
             credential,
             placement: PreparedAuthenticationPlacement::Bearer,
+            challenge: crate::auth::AuthChallengePolicy::Unauthorized,
         }
     }
 
@@ -685,6 +687,7 @@ impl RequestAuthentication {
         Self {
             credential,
             placement: PreparedAuthenticationPlacement::Basic,
+            challenge: crate::auth::AuthChallengePolicy::Unauthorized,
         }
     }
 
@@ -692,6 +695,7 @@ impl RequestAuthentication {
         Self {
             credential,
             placement: PreparedAuthenticationPlacement::Header(name),
+            challenge: crate::auth::AuthChallengePolicy::Unauthorized,
         }
     }
 
@@ -699,7 +703,15 @@ impl RequestAuthentication {
         Self {
             credential,
             placement: PreparedAuthenticationPlacement::Query(name),
+            challenge: crate::auth::AuthChallengePolicy::Unauthorized,
         }
+    }
+
+    /// Selects the HTTP challenge statuses that may trigger the single
+    /// bounded authentication recovery.
+    pub fn challenge_policy(mut self, policy: crate::auth::AuthChallengePolicy) -> Self {
+        self.challenge = policy;
+        self
     }
 
     fn into_requirement(self) -> crate::auth::AuthRequirement {
@@ -719,8 +731,31 @@ impl RequestAuthentication {
             usage_id: crate::auth::AuthUsageId::new("prepared-endpoint"),
             step_id: None,
             provenance: crate::auth::AuthProvenance::new("advanced"),
-            challenge: crate::auth::AuthChallengePolicy::Default,
+            challenge: self.challenge,
         }
+    }
+}
+
+#[cfg(test)]
+mod request_authentication_tests {
+    use super::*;
+
+    #[test]
+    fn challenge_policy_defaults_to_401_and_can_explicitly_include_403() {
+        let credential = crate::auth::CredentialId::new("test", "credential");
+        assert_eq!(
+            RequestAuthentication::bearer(credential.clone())
+                .into_requirement()
+                .challenge,
+            crate::auth::AuthChallengePolicy::Unauthorized
+        );
+        assert_eq!(
+            RequestAuthentication::header(credential, "X-Key")
+                .challenge_policy(crate::auth::AuthChallengePolicy::UnauthorizedOrForbidden)
+                .into_requirement()
+                .challenge,
+            crate::auth::AuthChallengePolicy::UnauthorizedOrForbidden
+        );
     }
 }
 
@@ -796,7 +831,7 @@ impl PreparedEndpointCore {
         }
 
         let plan_ctx = client.plan_context();
-        let mut route = Cx::base_route(plan_ctx.vars, plan_ctx.auth_vars);
+        let mut route = Cx::base_route(plan_ctx.vars(), plan_ctx.auth_vars());
         route.path_mut().push_raw(self.path);
         route.host().validate(ctx.clone())?;
         let resolved_route = crate::endpoint::ResolvedRoute {
@@ -805,7 +840,7 @@ impl PreparedEndpointCore {
             path: route.path().as_str().to_string(),
         };
 
-        let mut policy = Cx::base_policy(plan_ctx.vars, plan_ctx.auth_vars, &ctx)?;
+        let mut policy = Cx::base_policy(plan_ctx.vars(), plan_ctx.auth_vars(), &ctx)?.into_inner();
         policy.set_layer(crate::policy::PolicyLayer::Runtime);
         if self.method != Method::HEAD
             && !response.no_content

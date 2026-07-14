@@ -40,31 +40,33 @@ Header-auth preflight follows the same structural rule: public headers cannot si
 
 Only the private managed client receives the credential-bearing native request.
 
-## Rejection And Refresh
+## Rejection And Recovery
 
-Auth rejection handling runs after response classification but before normal retry. If configured, the runtime can invalidate rejected credential material and perform bounded auth refresh before retrying the protected request for credentials the runtime can reacquire.
-
-The v1 rejection classification is:
-
-- `401 Unauthorized`: invalidate the applied credential and request refresh for refreshable or runtime-reacquirable credentials when the request has replayable body capacity remaining.
-- `403 Forbidden`: invalidate the applied credential and request refresh for refreshable or runtime-reacquirable credentials when the request has replayable body capacity remaining.
+Auth rejection handling runs after response classification and before terminal
+status processing. The default challenge policy recognizes `401 Unauthorized`:
+it may invalidate the applied credential and perform one bounded recovery when
+the credential can be reacquired and the request body recipe is rebuildable.
+`403 Forbidden` is terminal under the default policy. A generated declaration
+may use `challenge unauthorized_or_forbidden`, and a public prepared endpoint
+may select `AuthChallengePolicy::UnauthorizedOrForbidden` with
+`RequestAuthentication::challenge_policy`. `NeverRecover` disables
+invalidation and recovery.
 
 Authentication recovery is request-local and independently bounded to one resend. It requires a replayable authoritative body recipe, but it does not require or consume general retry capacity.
 
-Endpoint-backed credentials are manual from the protected request's point of view. A protected `401` can invalidate the applied endpoint-backed generation, but protected request retry does not automatically call the auth endpoint again; callers must explicitly reacquire through the auth endpoint before sending another protected call.
+Endpoint-backed credentials are manual from the protected request's point of view. A protected `401` can invalidate the applied endpoint-backed generation, but protected request recovery does not automatically call the auth endpoint again; callers must explicitly reacquire through the auth endpoint before sending another protected call.
 
-Credential refresh resends reconstruct the same logical request plan and body recipe. A second recognized challenge is terminal: its applied generation is invalidated as configured, and no third challenge send occurs. General retries retain their remaining capacity across recovery and reuse refreshed credentials.
+Credential recovery reconstructs the same logical request and body recipe. A second recognized challenge is terminal: its applied generation is invalidated as configured, and no third challenge send occurs. Reqwest-owned request processing remains responsible for its own hidden protocol or status resends.
 
-`AuthChallengePolicy::NeverRefresh` is part of the advanced core API. When a requirement uses it, auth rejection does not invalidate or retry for `401` or `403`. It is not exposed as public DSL syntax in v1.
+`AuthStepPolicy` controls recovery and invalidation independently for advanced
+providers:
 
-`AuthStepPolicy` is still the v1 bool matrix:
-
-| retry | invalidate | Meaning |
+| recover | invalidate | Meaning |
 | --- | --- | --- |
 | `true` | `true` | Default path. Invalidate the applied generation and retry if the credential can be reacquired. |
-| `true` | `false` | Retry without clearing the applied generation first. The provider may still return the same material. |
+| `true` | `false` | Recover without clearing the applied generation first. The provider may still return the same material. |
 | `false` | `true` | Invalidate the applied generation, then return a terminal auth rejection for the protected request. |
-| `false` | `false` | Terminal auth rejection with no invalidation and no retry. |
+| `false` | `false` | Terminal auth rejection with no invalidation or recovery. |
 
 Credential slots carry monotonic generation counters. Invalidating a rejected credential targets the generation that was applied to the failed request, so an older invalidation cannot clear newer credential material that was acquired after the request was sent. Credential acquisition and refresh transition the slot into an in-flight generation while the auth lock is not held across network I/O. Completion stores the result only if the slot is still in that in-flight generation; older completions are discarded. If the acquiring future is dropped or cancelled, the in-flight guard rolls the slot forward to a safe state and wakes waiters instead of leaving the slot permanently in flight.
 

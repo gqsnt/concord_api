@@ -71,15 +71,14 @@ seam. It is compiled only when `dangerous-dev-tools` is explicitly selected;
 ordinary downstream debug builds do not expose it, and the feature is not in
 `concord_core`'s defaults. The module exposes purpose-specific lifecycle
 observations and opaque snapshots, not credential slots, request/response
-planning types, body engines, or transport errors. Generated clients and
+planning types, body engines, or request execution errors. Generated clients and
 normal examples never import it. Snapshot identities support cloning and
 equality comparison only; their constructors, numeric representation, and
 ordering are private, and their diagnostics render only an opaque label.
 
-The same feature also owns the deprecated local response-capture diagnostic.
-Enabling the feature makes these development capabilities available but does
-not activate capture or instrumentation by itself. Treat the whole feature as
-unstable test tooling and do not enable it in production dependencies.
+The feature provides only the narrow lifecycle observation seam used by
+deterministic tests. It does not expose body persistence or runtime planning
+types and is not enabled by default.
 
 ## Extending The Surface
 

@@ -10,14 +10,13 @@
 #[derive(Clone, Copy, Debug)]
 pub struct ReqwestNativeGeneratedContract(());
 
-/// Compatibility value referenced by every generated API module.
+/// Current-contract value referenced by every generated API module.
 #[doc(hidden)]
-pub const GENERATED_API_COMPATIBILITY: ReqwestNativeGeneratedContract =
-    ReqwestNativeGeneratedContract(());
+pub const GENERATED_CONTRACT: ReqwestNativeGeneratedContract = ReqwestNativeGeneratedContract(());
 
 /// Validate the generated integration contract during constant evaluation.
 #[doc(hidden)]
-pub const fn assert_macro_core_compatibility(_: ReqwestNativeGeneratedContract) {}
+pub const fn assert_generated_contract(_: ReqwestNativeGeneratedContract) {}
 
 /// Opaque typed provider binding used by generated client contexts.
 ///
@@ -124,13 +123,59 @@ where
 }
 
 #[doc(hidden)]
-pub use crate::retry_mode::{ApiOriginDescriptor, FixedOriginDescriptor, OriginScheme};
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GeneratedOriginScheme {
+    Http,
+    Https,
+}
+
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GeneratedFixedOriginDescriptor {
+    scheme: GeneratedOriginScheme,
+    authority: &'static str,
+}
+
+impl GeneratedFixedOriginDescriptor {
+    #[doc(hidden)]
+    pub const fn new(scheme: GeneratedOriginScheme, authority: &'static str) -> Self {
+        Self { scheme, authority }
+    }
+}
+
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GeneratedApiOriginDescriptor {
+    FixedSingleOrigin(GeneratedFixedOriginDescriptor),
+    DynamicOrigin,
+    MultiOrigin,
+}
+
+impl GeneratedApiOriginDescriptor {
+    fn into_runtime(self) -> crate::retry_mode::ApiOriginDescriptor {
+        match self {
+            Self::FixedSingleOrigin(origin) => {
+                crate::retry_mode::ApiOriginDescriptor::FixedSingleOrigin(
+                    crate::retry_mode::FixedOriginDescriptor {
+                        scheme: match origin.scheme {
+                            GeneratedOriginScheme::Http => crate::retry_mode::OriginScheme::Http,
+                            GeneratedOriginScheme::Https => crate::retry_mode::OriginScheme::Https,
+                        },
+                        authority: origin.authority,
+                    },
+                )
+            }
+            Self::DynamicOrigin => crate::retry_mode::ApiOriginDescriptor::DynamicOrigin,
+            Self::MultiOrigin => crate::retry_mode::ApiOriginDescriptor::MultiOrigin,
+        }
+    }
+}
 
 /// Static origin relationship for one endpoint.
 #[doc(hidden)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EndpointOriginDescriptor {
-    Fixed(FixedOriginDescriptor),
+    Fixed(GeneratedFixedOriginDescriptor),
     Dynamic,
 }
 
@@ -177,7 +222,14 @@ pub enum RequestBodyDescriptor {
 #[doc(hidden)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RequestDescriptor {
-    pub body: RequestBodyDescriptor,
+    body: RequestBodyDescriptor,
+}
+
+impl RequestDescriptor {
+    #[doc(hidden)]
+    pub const fn new(body: RequestBodyDescriptor) -> Self {
+        Self { body }
+    }
 }
 
 /// Response contract resolved by the macro.
@@ -195,15 +247,32 @@ pub enum ResponseFormatDescriptor {
 #[doc(hidden)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ResponseDescriptor {
-    pub format: ResponseFormatDescriptor,
+    format: ResponseFormatDescriptor,
+}
+
+impl ResponseDescriptor {
+    #[doc(hidden)]
+    pub const fn new(format: ResponseFormatDescriptor) -> Self {
+        Self { format }
+    }
 }
 
 /// One secret-free authentication requirement identity.
 #[doc(hidden)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AuthRequirementDescriptor {
-    pub credential: &'static str,
-    pub usage_id: &'static str,
+    credential: &'static str,
+    usage_id: &'static str,
+}
+
+impl AuthRequirementDescriptor {
+    #[doc(hidden)]
+    pub const fn new(credential: &'static str, usage_id: &'static str) -> Self {
+        Self {
+            credential,
+            usage_id,
+        }
+    }
 }
 
 /// Static authentication metadata. Providers, credentials, and caches are
@@ -211,37 +280,679 @@ pub struct AuthRequirementDescriptor {
 #[doc(hidden)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AuthDescriptor {
-    pub requirements: &'static [AuthRequirementDescriptor],
+    requirements: &'static [AuthRequirementDescriptor],
+}
+
+impl AuthDescriptor {
+    #[doc(hidden)]
+    pub const fn new(requirements: &'static [AuthRequirementDescriptor]) -> Self {
+        Self { requirements }
+    }
 }
 
 /// Pagination facts known before runtime execution.
 #[doc(hidden)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PaginationDescriptor {
-    pub can_change_origin: bool,
+    can_change_origin: bool,
+}
+
+impl PaginationDescriptor {
+    #[doc(hidden)]
+    pub const fn new(can_change_origin: bool) -> Self {
+        Self { can_change_origin }
+    }
 }
 
 /// Static endpoint descriptor emitted once for every generated endpoint.
 #[doc(hidden)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct EndpointDescriptor {
-    pub name: &'static str,
-    pub api_name: &'static str,
-    pub method: HttpMethod,
-    pub origin: EndpointOriginDescriptor,
-    pub request: RequestDescriptor,
-    pub response: ResponseDescriptor,
-    pub auth: AuthDescriptor,
-    pub pagination: Option<PaginationDescriptor>,
+pub struct GeneratedEndpointDescriptor {
+    name: &'static str,
+    api_name: &'static str,
+    method: HttpMethod,
+    origin: EndpointOriginDescriptor,
+    request: RequestDescriptor,
+    response: ResponseDescriptor,
+    auth: AuthDescriptor,
+    pagination: Option<PaginationDescriptor>,
+}
+
+impl GeneratedEndpointDescriptor {
+    #[doc(hidden)]
+    #[allow(clippy::too_many_arguments)]
+    pub const fn new(
+        name: &'static str,
+        api_name: &'static str,
+        method: HttpMethod,
+        origin: EndpointOriginDescriptor,
+        request: RequestDescriptor,
+        response: ResponseDescriptor,
+        auth: AuthDescriptor,
+        pagination: Option<PaginationDescriptor>,
+    ) -> Self {
+        Self {
+            name,
+            api_name,
+            method,
+            origin,
+            request,
+            response,
+            auth,
+            pagination,
+        }
+    }
 }
 
 /// Static API descriptor emitted once for every generated API.
 #[doc(hidden)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ApiDescriptor {
-    pub name: &'static str,
-    pub origin: ApiOriginDescriptor,
-    pub endpoints: &'static [&'static EndpointDescriptor],
+pub struct GeneratedApiDescriptor {
+    name: &'static str,
+    origin: GeneratedApiOriginDescriptor,
+    endpoints: &'static [&'static GeneratedEndpointDescriptor],
+}
+
+impl GeneratedApiDescriptor {
+    #[doc(hidden)]
+    pub const fn new(
+        name: &'static str,
+        origin: GeneratedApiOriginDescriptor,
+        endpoints: &'static [&'static GeneratedEndpointDescriptor],
+    ) -> Self {
+        Self {
+            name,
+            origin,
+            endpoints,
+        }
+    }
+}
+
+/// Construct a generated client from the macro-emitted API descriptor.
+///
+/// `__private` is a cross-crate macro integration surface, not a Rust privacy
+/// or security boundary. Manually calling this unsupported function is outside
+/// the application API contract. Status eligibility is derived only from the
+/// descriptor emitted for the generated wrapper; there is no reusable global
+/// capability and no generic-client status constructor.
+#[doc(hidden)]
+pub fn create_generated_client<Cx, F>(
+    descriptor: &'static GeneratedApiDescriptor,
+    vars: Cx::Vars,
+    auth_vars: Cx::AuthVars,
+    retry_mode: crate::retry_mode::RetryMode,
+    configure: F,
+) -> Result<crate::client::ApiClient<Cx>, crate::retry_mode::RetryModeError>
+where
+    Cx: crate::client::ClientContext,
+    F: FnOnce(
+        crate::transport::SafeReqwestBuilder,
+    ) -> Result<
+        crate::transport::SafeReqwestBuilder,
+        crate::transport::ReqwestClientBuildError,
+    >,
+{
+    crate::client::ApiClient::<Cx>::with_generated_descriptor_retry_mode(
+        Some(descriptor.origin.into_runtime()),
+        vars,
+        auth_vars,
+        retry_mode,
+        configure,
+    )
+}
+
+#[doc(hidden)]
+pub struct PreparedEndpointRoute(crate::endpoint::ResolvedRoute);
+
+#[doc(hidden)]
+pub struct PreparedEndpointPolicy(crate::policy::ResolvedPolicy);
+
+#[doc(hidden)]
+pub struct GeneratedRequestBody(crate::io::PreparedBody);
+
+/// Borrowed typed inputs used only while a generated endpoint is prepared.
+#[doc(hidden)]
+pub struct GeneratedPlanContext<'a, Cx: crate::client::ClientContext> {
+    vars: &'a Cx::Vars,
+    auth_vars: &'a Cx::AuthVars,
+}
+
+impl<'a, Cx: crate::client::ClientContext> GeneratedPlanContext<'a, Cx> {
+    pub(crate) fn new(vars: &'a Cx::Vars, auth_vars: &'a Cx::AuthVars) -> Self {
+        Self { vars, auth_vars }
+    }
+
+    #[doc(hidden)]
+    pub fn vars(&self) -> &'a Cx::Vars {
+        self.vars
+    }
+
+    #[doc(hidden)]
+    pub fn auth_vars(&self) -> &'a Cx::AuthVars {
+        self.auth_vars
+    }
+}
+
+/// Resolved authentication placement emitted by the macro.
+#[doc(hidden)]
+#[derive(Clone, Copy)]
+pub enum GeneratedAuthPlacement {
+    Bearer,
+    Basic,
+    Header(&'static str),
+    Query(&'static str),
+}
+
+/// Opaque authentication descriptor builder. Generated code can add resolved
+/// requirements but cannot construct or inspect Core's runtime auth plan.
+#[doc(hidden)]
+#[derive(Default)]
+pub struct GeneratedAuthBuilder {
+    requirements: Vec<crate::auth::AuthRequirement>,
+}
+
+#[doc(hidden)]
+pub struct GeneratedRateLimitDescriptor(crate::rate_limit::RateLimitPlan);
+#[doc(hidden)]
+pub struct GeneratedRateLimitBucketDescriptor(crate::rate_limit::RateLimitBucketUse);
+#[doc(hidden)]
+pub struct GeneratedRateLimitKeyDescriptor(crate::rate_limit::RateLimitKey);
+#[doc(hidden)]
+pub struct GeneratedRateLimitKeyPartDescriptor(crate::rate_limit::RateLimitKeyPart);
+#[doc(hidden)]
+pub struct GeneratedRateLimitWindowDescriptor(crate::rate_limit::RateLimitWindow);
+
+impl GeneratedRateLimitDescriptor {
+    #[doc(hidden)]
+    pub fn from_buckets(buckets: Vec<GeneratedRateLimitBucketDescriptor>) -> Self {
+        Self(crate::rate_limit::RateLimitPlan::from_buckets(
+            buckets.into_iter().map(|bucket| bucket.0).collect(),
+        ))
+    }
+
+    pub(crate) fn into_plan(self) -> crate::rate_limit::RateLimitPlan {
+        self.0
+    }
+}
+
+impl GeneratedRateLimitBucketDescriptor {
+    #[doc(hidden)]
+    pub fn new(
+        kind: &'static str,
+        name: &'static str,
+        key: GeneratedRateLimitKeyDescriptor,
+    ) -> Self {
+        Self(crate::rate_limit::RateLimitBucketUse::new(
+            kind, name, key.0,
+        ))
+    }
+
+    #[doc(hidden)]
+    pub fn with_cost(mut self, cost: std::num::NonZeroU32) -> Self {
+        self.0 = self.0.with_cost(cost);
+        self
+    }
+
+    #[doc(hidden)]
+    pub fn with_windows(mut self, windows: Vec<GeneratedRateLimitWindowDescriptor>) -> Self {
+        self.0 = self
+            .0
+            .with_windows(windows.into_iter().map(|window| window.0).collect());
+        self
+    }
+}
+
+impl GeneratedRateLimitKeyDescriptor {
+    #[doc(hidden)]
+    pub fn new(parts: Vec<GeneratedRateLimitKeyPartDescriptor>) -> Self {
+        Self(crate::rate_limit::RateLimitKey::new(
+            parts.into_iter().map(|part| part.0).collect(),
+        ))
+    }
+}
+
+impl GeneratedRateLimitKeyPartDescriptor {
+    #[doc(hidden)]
+    pub fn static_value(
+        name: &'static str,
+        value: impl Into<std::borrow::Cow<'static, str>>,
+    ) -> Self {
+        Self(crate::rate_limit::RateLimitKeyPart::static_value(
+            name, value,
+        ))
+    }
+
+    #[doc(hidden)]
+    pub fn endpoint() -> Self {
+        Self(crate::rate_limit::RateLimitKeyPart::endpoint())
+    }
+
+    #[doc(hidden)]
+    pub fn method() -> Self {
+        Self(crate::rate_limit::RateLimitKeyPart::method())
+    }
+
+    #[doc(hidden)]
+    pub fn url_host() -> Self {
+        Self(crate::rate_limit::RateLimitKeyPart::url_host())
+    }
+}
+
+impl GeneratedRateLimitWindowDescriptor {
+    #[doc(hidden)]
+    pub fn new(max: std::num::NonZeroU32, per: std::time::Duration) -> Self {
+        Self(crate::rate_limit::RateLimitWindow::new(max, per))
+    }
+}
+
+impl GeneratedAuthBuilder {
+    #[doc(hidden)]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[doc(hidden)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn require(
+        &mut self,
+        client_namespace: &'static str,
+        credential: &'static str,
+        placement: GeneratedAuthPlacement,
+        usage_id: &'static str,
+        step_id: &'static str,
+        provenance: &'static str,
+        challenge: crate::auth::AuthChallengePolicy,
+    ) {
+        let placement = match placement {
+            GeneratedAuthPlacement::Bearer => crate::auth::AuthPlacement::Bearer,
+            GeneratedAuthPlacement::Basic => crate::auth::AuthPlacement::Basic,
+            GeneratedAuthPlacement::Header(name) => crate::auth::AuthPlacement::Header(name),
+            GeneratedAuthPlacement::Query(name) => crate::auth::AuthPlacement::Query(name),
+        };
+        self.requirements.push(crate::auth::AuthRequirement {
+            credential: crate::auth::CredentialRef {
+                id: crate::auth::CredentialId::new(client_namespace, credential),
+            },
+            placement,
+            usage_id: crate::auth::AuthUsageId::new(usage_id),
+            step_id: Some(step_id),
+            provenance: crate::auth::AuthProvenance::new(provenance),
+            challenge,
+        });
+    }
+
+    fn into_plan(self) -> crate::auth::AuthPlan {
+        crate::auth::AuthPlan {
+            requirements: self.requirements,
+        }
+    }
+}
+
+mod generated_request_sealed {
+    pub trait Adapter {
+        type Input;
+        fn prepare(
+            input: Self::Input,
+            ctx: crate::error::ErrorContext,
+        ) -> Result<crate::io::PreparedRequestEntity, crate::error::ApiClientError>;
+    }
+}
+
+#[doc(hidden)]
+pub struct GeneratedNoRequestBody;
+#[doc(hidden)]
+pub struct GeneratedEncodedRequest<C>(std::marker::PhantomData<fn() -> C>);
+#[doc(hidden)]
+pub struct GeneratedRawStreamRequest<M>(std::marker::PhantomData<fn() -> M>);
+#[cfg(feature = "multipart")]
+#[doc(hidden)]
+pub struct GeneratedMultipartRequest;
+
+impl generated_request_sealed::Adapter for GeneratedNoRequestBody {
+    type Input = ();
+    fn prepare(
+        input: Self::Input,
+        ctx: crate::error::ErrorContext,
+    ) -> Result<crate::io::PreparedRequestEntity, crate::error::ApiClientError> {
+        <crate::io::NoRequestBody as crate::io::RequestEntity>::prepare(input, ctx)
+    }
+}
+
+impl<C> generated_request_sealed::Adapter for GeneratedEncodedRequest<C>
+where
+    C: crate::codec::BodyCodec,
+{
+    type Input = C::Value;
+    fn prepare(
+        input: Self::Input,
+        ctx: crate::error::ErrorContext,
+    ) -> Result<crate::io::PreparedRequestEntity, crate::error::ApiClientError> {
+        <crate::io::EncodedRequest<C> as crate::io::RequestEntity>::prepare(input, ctx)
+    }
+}
+
+impl<M> generated_request_sealed::Adapter for GeneratedRawStreamRequest<M>
+where
+    M: crate::codec::ContentType,
+{
+    type Input = crate::stream_body::StreamBody;
+    fn prepare(
+        input: Self::Input,
+        ctx: crate::error::ErrorContext,
+    ) -> Result<crate::io::PreparedRequestEntity, crate::error::ApiClientError> {
+        <crate::io::RawStreamRequest<M> as crate::io::RequestEntity>::prepare(input, ctx)
+    }
+}
+
+#[cfg(feature = "multipart")]
+impl generated_request_sealed::Adapter for GeneratedMultipartRequest {
+    type Input = crate::multipart::MultipartBody;
+    fn prepare(
+        input: Self::Input,
+        ctx: crate::error::ErrorContext,
+    ) -> Result<crate::io::PreparedRequestEntity, crate::error::ApiClientError> {
+        <crate::io::MultipartRequest as crate::io::RequestEntity>::prepare(input, ctx)
+    }
+}
+
+#[doc(hidden)]
+pub fn prepare_generated_request_body<A>(
+    input: <A as generated_request_sealed::Adapter>::Input,
+    ctx: crate::error::ErrorContext,
+) -> Result<GeneratedRequestBody, crate::error::ApiClientError>
+where
+    A: generated_request_sealed::Adapter,
+{
+    Ok(GeneratedRequestBody(A::prepare(input, ctx)?.body))
+}
+
+type GeneratedExecute<Cx, Output> = for<'a> fn(
+    &'a crate::client::ApiClient<Cx>,
+    crate::endpoint::RequestPlan,
+) -> crate::endpoint::EndpointFuture<'a, Output>;
+
+type GeneratedExecuteWithMeta<Cx, Output> =
+    for<'a> fn(
+        &'a crate::client::ApiClient<Cx>,
+        crate::endpoint::RequestPlan,
+    )
+        -> crate::endpoint::EndpointFuture<'a, crate::transport::DecodedResponse<Output>>;
+
+#[doc(hidden)]
+pub struct GeneratedPreparedCall<Cx, Output>
+where
+    Cx: crate::client::ClientContext,
+{
+    plan: crate::endpoint::RequestPlan,
+    execute: GeneratedExecute<Cx, Output>,
+    execute_with_meta: Option<GeneratedExecuteWithMeta<Cx, Output>>,
+}
+
+#[cfg(test)]
+pub(crate) fn prepared_call_for_core_regression<Cx, Output>(
+    plan: crate::endpoint::RequestPlan,
+    execute: GeneratedExecute<Cx, Output>,
+) -> GeneratedPreparedCall<Cx, Output>
+where
+    Cx: crate::client::ClientContext,
+{
+    GeneratedPreparedCall {
+        plan,
+        execute,
+        execute_with_meta: None,
+    }
+}
+
+impl<Cx, Output> GeneratedPreparedCall<Cx, Output>
+where
+    Cx: crate::client::ClientContext,
+{
+    pub(crate) fn plan(&self) -> &crate::endpoint::RequestPlan {
+        &self.plan
+    }
+
+    pub(crate) fn plan_mut(&mut self) -> &mut crate::endpoint::RequestPlan {
+        &mut self.plan
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn into_plan(self) -> crate::endpoint::RequestPlan {
+        self.plan
+    }
+
+    #[doc(hidden)]
+    pub fn execute<'a>(
+        self,
+        client: &'a crate::client::ApiClient<Cx>,
+    ) -> crate::endpoint::EndpointFuture<'a, Output> {
+        (self.execute)(client, self.plan)
+    }
+
+    #[doc(hidden)]
+    pub fn execute_with_meta<'a>(
+        self,
+        client: &'a crate::client::ApiClient<Cx>,
+    ) -> crate::endpoint::EndpointFuture<'a, crate::transport::DecodedResponse<Output>> {
+        match self.execute_with_meta {
+            Some(execute) => execute(client, self.plan),
+            None => Box::pin(async move {
+                Err(crate::error::ApiClientError::invalid_param(
+                    crate::error::ErrorContext {
+                        endpoint: self.plan.endpoint.meta.name,
+                        method: self.plan.endpoint.meta.method.clone(),
+                    },
+                    "response_terminal",
+                ))
+            }),
+        }
+    }
+}
+
+mod generated_response_sealed {
+    pub trait Adapter<Cx: crate::client::ClientContext> {
+        type Output;
+        fn plan(
+            ctx: crate::error::ErrorContext,
+        ) -> Result<crate::io::ResponseEntityPlan, crate::error::ApiClientError>;
+        fn execute<'a>(
+            client: &'a crate::client::ApiClient<Cx>,
+            plan: crate::endpoint::RequestPlan,
+        ) -> crate::endpoint::EndpointFuture<'a, Self::Output>;
+        fn execute_with_meta() -> Option<super::GeneratedExecuteWithMeta<Cx, Self::Output>> {
+            None
+        }
+    }
+}
+
+#[doc(hidden)]
+pub struct GeneratedBufferedResponse<C>(std::marker::PhantomData<fn() -> C>);
+#[doc(hidden)]
+pub struct GeneratedBytesResponse;
+#[doc(hidden)]
+pub struct GeneratedNoContentResponse;
+#[doc(hidden)]
+pub struct GeneratedRawStreamResponse<M>(std::marker::PhantomData<fn() -> M>);
+
+macro_rules! impl_generated_buffered_response {
+    ($marker:ty, $runtime:ty) => {
+        impl<Cx> generated_response_sealed::Adapter<Cx> for $marker
+        where
+            Cx: crate::client::ClientContext,
+            $runtime: crate::io::ResponseEntity,
+        {
+            type Output = <$runtime as crate::io::ResponseEntity>::Output;
+            fn plan(
+                ctx: crate::error::ErrorContext,
+            ) -> Result<crate::io::ResponseEntityPlan, crate::error::ApiClientError> {
+                <$runtime as crate::io::ResponseEntity>::plan(ctx)
+            }
+            fn execute<'a>(
+                client: &'a crate::client::ApiClient<Cx>,
+                plan: crate::endpoint::RequestPlan,
+            ) -> crate::endpoint::EndpointFuture<'a, Self::Output> {
+                <$runtime as crate::io::ResponseEntity>::execute(client, plan)
+            }
+            fn execute_with_meta() -> Option<GeneratedExecuteWithMeta<Cx, Self::Output>> {
+                Some(<$runtime as crate::io::ResponseEntityWithMeta>::execute_with_meta::<Cx>)
+            }
+        }
+    };
+}
+
+impl_generated_buffered_response!(GeneratedBytesResponse, crate::io::BytesResponse);
+impl_generated_buffered_response!(GeneratedNoContentResponse, crate::io::NoContentResponse);
+
+impl<Cx, C> generated_response_sealed::Adapter<Cx> for GeneratedBufferedResponse<C>
+where
+    Cx: crate::client::ClientContext,
+    C: crate::codec::ResponseCodec,
+{
+    type Output = C::Value;
+    fn plan(
+        ctx: crate::error::ErrorContext,
+    ) -> Result<crate::io::ResponseEntityPlan, crate::error::ApiClientError> {
+        <crate::io::BufferedResponse<C> as crate::io::ResponseEntity>::plan(ctx)
+    }
+    fn execute<'a>(
+        client: &'a crate::client::ApiClient<Cx>,
+        plan: crate::endpoint::RequestPlan,
+    ) -> crate::endpoint::EndpointFuture<'a, Self::Output> {
+        <crate::io::BufferedResponse<C> as crate::io::ResponseEntity>::execute(client, plan)
+    }
+    fn execute_with_meta() -> Option<GeneratedExecuteWithMeta<Cx, Self::Output>> {
+        Some(<crate::io::BufferedResponse<C> as crate::io::ResponseEntityWithMeta>::execute_with_meta::<Cx>)
+    }
+}
+
+impl<Cx, M> generated_response_sealed::Adapter<Cx> for GeneratedRawStreamResponse<M>
+where
+    Cx: crate::client::ClientContext,
+    M: crate::codec::ContentType,
+{
+    type Output = crate::stream_response::StreamResponse<M>;
+    fn plan(
+        ctx: crate::error::ErrorContext,
+    ) -> Result<crate::io::ResponseEntityPlan, crate::error::ApiClientError> {
+        <crate::io::RawStreamResponse<M> as crate::io::ResponseEntity>::plan(ctx)
+    }
+    fn execute<'a>(
+        client: &'a crate::client::ApiClient<Cx>,
+        plan: crate::endpoint::RequestPlan,
+    ) -> crate::endpoint::EndpointFuture<'a, Self::Output> {
+        <crate::io::RawStreamResponse<M> as crate::io::ResponseEntity>::execute(client, plan)
+    }
+}
+
+#[doc(hidden)]
+pub struct GeneratedResponsePreparation<Cx, Output>
+where
+    Cx: crate::client::ClientContext,
+{
+    plan: crate::endpoint::ResponsePlan,
+    execute: GeneratedExecute<Cx, Output>,
+    execute_with_meta: Option<GeneratedExecuteWithMeta<Cx, Output>>,
+}
+
+impl<Cx, Output> GeneratedResponsePreparation<Cx, Output>
+where
+    Cx: crate::client::ClientContext,
+{
+    #[doc(hidden)]
+    pub fn accept(&self) -> Option<&http::HeaderValue> {
+        self.plan.accept.as_ref()
+    }
+
+    #[doc(hidden)]
+    pub fn is_no_content(&self) -> bool {
+        self.plan.no_content
+    }
+}
+
+#[doc(hidden)]
+pub fn prepare_generated_response<Cx, A>(
+    ctx: crate::error::ErrorContext,
+) -> Result<
+    GeneratedResponsePreparation<Cx, <A as generated_response_sealed::Adapter<Cx>>::Output>,
+    crate::error::ApiClientError,
+>
+where
+    Cx: crate::client::ClientContext,
+    A: generated_response_sealed::Adapter<Cx>,
+{
+    let prepared = A::plan(ctx)?;
+    Ok(GeneratedResponsePreparation {
+        plan: prepared.response_plan,
+        execute: A::execute,
+        execute_with_meta: A::execute_with_meta(),
+    })
+}
+
+#[doc(hidden)]
+pub fn prepare_generated_route(
+    scheme: http::uri::Scheme,
+    host: String,
+    path: String,
+) -> PreparedEndpointRoute {
+    PreparedEndpointRoute(crate::endpoint::ResolvedRoute::new(scheme, host, path))
+}
+
+#[doc(hidden)]
+pub fn prepare_generated_policy(
+    policy: crate::policy::ClientPolicyBuilder,
+    auth: GeneratedAuthBuilder,
+) -> PreparedEndpointPolicy {
+    let (headers, query, timeout, mut rate_limit) = policy.into_inner().into_parts();
+    rate_limit.canonicalize();
+    PreparedEndpointPolicy(crate::policy::ResolvedPolicy {
+        headers,
+        query,
+        timeout,
+        auth: auth.into_plan(),
+        rate_limit,
+    })
+}
+
+#[doc(hidden)]
+/// Core-owned endpoint preparation entry point used by generated adapters.
+/// Generated code supplies typed, already-materialized inputs; construction
+/// of the executable request plan remains in Core.
+#[doc(hidden)]
+#[allow(clippy::too_many_arguments)]
+pub fn prepare_generated_endpoint<Cx, Output>(
+    name: &'static str,
+    method: http::Method,
+    idempotent: bool,
+    facade_path: &'static [&'static str],
+    route: PreparedEndpointRoute,
+    policy: PreparedEndpointPolicy,
+    response: GeneratedResponsePreparation<Cx, Output>,
+    body: GeneratedRequestBody,
+    pagination: bool,
+) -> Result<GeneratedPreparedCall<Cx, Output>, crate::error::ApiClientError>
+where
+    Cx: crate::client::ClientContext,
+{
+    let plan = crate::endpoint::RequestPlan {
+        endpoint: crate::endpoint::EndpointPlan {
+            meta: crate::endpoint::EndpointMeta {
+                name,
+                method,
+                idempotent,
+                facade_path,
+            },
+            route: route.0,
+            policy: policy.0,
+            response: response.plan,
+            pagination: pagination.then_some(crate::endpoint::PaginationMarker),
+        },
+        body: body.0,
+        overrides: crate::endpoint::RequestOverrides::default(),
+    };
+    Ok(GeneratedPreparedCall {
+        plan,
+        execute: response.execute,
+        execute_with_meta: response.execute_with_meta,
+    })
 }
 
 #[cfg(feature = "json")]
@@ -249,9 +960,11 @@ pub struct ApiDescriptor {
 pub use crate::auth::OAuth2ClientCredentialsProvider;
 #[doc(hidden)]
 pub use crate::auth::{
-    AuthChallengePolicy, AuthPlacement, AuthPlan, AuthRequirement, CredentialRef,
-    ManualCredentialProvider, NoAuthState, StaticApiKeyProvider, StaticBasicProvider,
-    StaticBearerProvider,
+    AuthChallengePolicy as GeneratedChallengePolicy,
+    ManualCredentialProvider as GeneratedManualCredentialProvider,
+    NoAuthState as GeneratedNoAuthState, StaticApiKeyProvider as GeneratedStaticApiKeyProvider,
+    StaticBasicProvider as GeneratedStaticBasicProvider,
+    StaticBearerProvider as GeneratedStaticBearerProvider,
 };
 #[doc(hidden)]
 pub use crate::codec::{
@@ -260,34 +973,23 @@ pub use crate::codec::{
 };
 #[doc(hidden)]
 pub use crate::endpoint::{
-    ClientPlanContext, EndpointMeta, EndpointPlan, IntoEndpointPlan, PaginatedEndpoint,
-    PaginationMarker, RequestOverrides, RequestPlan, RequestPlanView, ResolvedRoute, ResponsePlan,
-    ResponseTerminalEndpoint, ReusableEndpoint,
+    GeneratedEndpoint, GeneratedIntoPreparedCall, GeneratedPaginatedEndpoint,
+    GeneratedResponseTerminalEndpoint, GeneratedReusableEndpoint,
+    PaginationMarker as GeneratedPaginationMarker,
 };
 #[doc(hidden)]
 pub use crate::error::ErrorContext;
-#[cfg(feature = "multipart")]
-#[doc(hidden)]
-pub use crate::io::MultipartRequest;
-#[doc(hidden)]
-pub use crate::io::{
-    BufferedResponse, BytesResponse, EncodedRequest, NoContentResponse, NoRequestBody,
-    PreparedBody, PreparedRequestEntity, RawStreamRequest, RawStreamResponse, RequestEntity,
-    ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan, ResponseEntityWithMeta,
-};
 #[doc(hidden)]
 pub use crate::pagination::{
-    Control, CursorPagination, EndpointPagination, HasNextCursor, OffsetLimitPagination,
-    PageAdvance, PageApply, PageDecision, PageItems, PagedPagination, PaginateBinding,
-    PaginationCaps, PaginationRuntime, PaginationRuntimeAdapter, PaginationTermination,
-    ProgressKey,
+    Control as GeneratedPageControl, CursorPagination as GeneratedCursorPagination,
+    EndpointPagination as GeneratedEndpointPagination, HasNextCursor as GeneratedHasNextCursor,
+    OffsetLimitPagination as GeneratedOffsetPagination, PageAdvance as GeneratedPageAdvance,
+    PageApply as GeneratedPageApply, PageDecision as GeneratedPageDecision,
+    PageItems as GeneratedPageItems, PagedPagination as GeneratedPagedPagination,
+    PaginateBinding as GeneratedPaginateBinding, PaginationCaps as GeneratedPaginationCaps,
+    PaginationTermination as GeneratedPaginationTermination, ProgressKey as GeneratedProgressKey,
 };
 #[doc(hidden)]
-pub use crate::policy::{Policy, PolicyLayer, PolicySnapshot, ResolvedPolicy};
-#[doc(hidden)]
-pub use crate::rate_limit::{
-    RateLimitBucketUse, RateLimitKey, RateLimitKeyPart, RateLimitPlan, RateLimitWindow,
-};
 #[doc(hidden)]
 pub use crate::types::HostLabelSource;
 
@@ -298,7 +1000,7 @@ mod tests {
     #[test]
     fn descriptor_method_adapter_is_metadata_only() {
         assert_eq!(HttpMethod::Get.as_http_method(), http::Method::GET);
-        const _: () = assert_macro_core_compatibility(GENERATED_API_COMPATIBILITY);
+        const _: () = assert_generated_contract(GENERATED_CONTRACT);
     }
 
     #[test]
@@ -309,7 +1011,6 @@ mod tests {
             concat!("get_or_", "refresh"),
             concat!("invalidate_", "generation"),
             concat!("AuthHttp", "Executor"),
-            concat!("Req", "westClient"),
             concat!("req", "west::"),
             concat!("Trans", "port"),
             concat!("Dyn", "Body"),

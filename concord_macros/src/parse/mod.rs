@@ -58,9 +58,9 @@ impl Parse for RawClient {
         let mut auth_vars: Option<VarsBlock> = None;
         let mut auth_credentials: Vec<AuthCredentialDecl> = Vec::new();
         let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
-        let mut default_behavior_uses: Vec<BehaviorUseSpec> = Vec::new();
+        let mut default_profile_uses: Vec<ProfileUseSpec> = Vec::new();
         let mut rate_limit: Option<RateLimitProfilesBlock> = None;
-        let mut behavior_profiles: Option<BehaviorProfilesBlock> = None;
+        let mut profiles: Option<ProfilesBlock> = None;
         let mut policy = PolicyBlocks::default();
         let mut seen_default_block = false;
 
@@ -106,8 +106,6 @@ impl Parse for RawClient {
                 content.parse::<kw::credential>()?;
                 parse_client_credential_decl_into(&content, &mut auth_credentials)?;
                 let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::retry) {
-                return Err(removed_retry_syntax_error(&content)?);
             } else if content.peek(kw::rate_limit) {
                 content.parse::<kw::rate_limit>()?;
                 rate_limit
@@ -127,47 +125,35 @@ impl Parse for RawClient {
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::profile) {
                 content.parse::<kw::profile>()?;
-                behavior_profiles
-                    .get_or_insert_with(|| BehaviorProfilesBlock {
+                profiles
+                    .get_or_insert_with(|| ProfilesBlock {
                         profiles: Vec::new(),
                     })
                     .profiles
-                    .push(parse_behavior_profile_decl_after_keyword(&content)?);
+                    .push(parse_profile_decl_after_keyword(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::profiles) {
                 content.parse::<kw::profiles>()?;
-                let behavior_content;
-                braced!(behavior_content in content);
-                while !behavior_content.is_empty() {
-                    if behavior_content.peek(kw::behavior) {
-                        let legacy: kw::behavior = behavior_content.parse()?;
-                        return Err(legacy_behavior_keyword_error(legacy.span));
-                    }
-                    if !behavior_content.peek(kw::profile) {
-                        let tt: TokenTree = behavior_content.parse()?;
+                let profile_content;
+                braced!(profile_content in content);
+                while !profile_content.is_empty() {
+                    if !profile_content.peek(kw::profile) {
+                        let tt: TokenTree = profile_content.parse()?;
                         return Err(syn::Error::new(
                             tt.span(),
                             "invalid item in profiles block; expected `profile NAME { ... }`",
                         ));
                     }
-                    behavior_content.parse::<kw::profile>()?;
-                    behavior_profiles
-                        .get_or_insert_with(|| BehaviorProfilesBlock {
+                    profile_content.parse::<kw::profile>()?;
+                    profiles
+                        .get_or_insert_with(|| ProfilesBlock {
                             profiles: Vec::new(),
                         })
                         .profiles
-                        .push(parse_behavior_profile_decl_after_keyword(
-                            &behavior_content,
-                        )?);
-                    let _ = behavior_content.parse::<Option<Token![,]>>()?;
+                        .push(parse_profile_decl_after_keyword(&profile_content)?);
+                    let _ = profile_content.parse::<Option<Token![,]>>()?;
                 }
                 let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::behavior) {
-                let legacy: kw::behavior = content.parse()?;
-                return Err(legacy_behavior_keyword_error(legacy.span));
-            } else if content.peek(kw::behaviors) {
-                let legacy: kw::behaviors = content.parse()?;
-                return Err(legacy_behaviors_keyword_error(legacy.span));
             } else if content.peek(kw::default) {
                 let default_span = content.parse::<kw::default>()?.span;
                 if seen_default_block {
@@ -183,13 +169,10 @@ impl Parse for RawClient {
                     &default_content,
                     &mut policy,
                     &mut auth_uses,
-                    &mut default_behavior_uses,
+                    &mut default_profile_uses,
                     &mut rate_limit,
                 )?;
                 let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::defaults) {
-                let legacy: kw::defaults = content.parse()?;
-                return Err(legacy_defaults_keyword_error(legacy.span));
             } else if content.peek(kw::observe) {
                 content.parse::<kw::observe>()?;
                 content.parse::<kw::rate_limit>()?;
@@ -269,13 +252,13 @@ impl Parse for RawClient {
                 credentials: auth_credentials,
             }),
             auth_uses,
-            default_behavior_uses,
+            default_profile_uses,
             name,
             scheme,
             host,
             policy,
             rate_limit,
-            behavior_profiles,
+            profiles,
         })
     }
 }
@@ -359,9 +342,7 @@ fn parse_client_policies_group(
     rate_limit: &mut Option<RateLimitProfilesBlock>,
 ) -> Result<()> {
     while !input.is_empty() {
-        if input.peek(kw::retry) {
-            return Err(removed_retry_syntax_error(input)?);
-        } else if input.peek(kw::rate_limit) {
+        if input.peek(kw::rate_limit) {
             let fork = input.fork();
             fork.parse::<kw::rate_limit>()?;
             if fork.peek(kw::off) || fork.peek(kw::only) {
@@ -432,7 +413,7 @@ fn parse_client_default_block(
     input: ParseStream<'_>,
     policy: &mut PolicyBlocks,
     auth_uses: &mut Vec<AuthUseDecl>,
-    default_behavior_uses: &mut Vec<BehaviorUseSpec>,
+    default_profile_uses: &mut Vec<ProfileUseSpec>,
     rate_limit: &mut Option<RateLimitProfilesBlock>,
 ) -> Result<()> {
     while !input.is_empty() {
@@ -468,12 +449,7 @@ fn parse_client_default_block(
             input.parse::<kw::auth>()?;
             auth_uses.push(parse_auth_use_decl_after_auth_keyword(input)?);
         } else if input.peek(kw::profile) {
-            default_behavior_uses.push(parse_behavior_use_spec(input)?);
-        } else if input.peek(kw::behavior) {
-            let legacy: kw::behavior = input.parse()?;
-            return Err(legacy_behavior_keyword_error(legacy.span));
-        } else if input.peek(kw::retry) {
-            return Err(removed_retry_syntax_error(input)?);
+            default_profile_uses.push(parse_profile_use_spec(input)?);
         } else if input.peek(kw::rate_limit) {
             let spec = parse_rate_limit_spec(input)?;
             let RateLimitSpec::Profiles {
@@ -510,40 +486,11 @@ fn parse_client_default_block(
     Ok(())
 }
 
-fn removed_retry_syntax_error(input: ParseStream<'_>) -> Result<syn::Error> {
-    let retry: kw::retry = input.parse()?;
-    Ok(syn::Error::new(
-        retry.span,
-        "retry DSL was removed; configure client-level `RetryMode` when constructing the client",
-    ))
-}
-
-fn legacy_behavior_keyword_error(span: Span) -> syn::Error {
-    syn::Error::new(
-        span,
-        "`behavior` is not valid current DSL; use `profile` for profile declarations and attachments",
-    )
-}
-
-fn legacy_behaviors_keyword_error(span: Span) -> syn::Error {
-    syn::Error::new(
-        span,
-        "`behaviors` is not valid current DSL; use `profiles { profile NAME { ... } }`",
-    )
-}
-
-fn legacy_defaults_keyword_error(span: Span) -> syn::Error {
-    syn::Error::new(
-        span,
-        "`defaults` is not valid current DSL; use `default { ... }`",
-    )
-}
-
 // Keep feature-domain macro chunks in separate files without widening helper visibility.
 include!("auth.rs");
 include!("endpoints.rs");
 include!("rate_limit.rs");
-include!("behavior.rs");
+include!("profile.rs");
 include!("items.rs");
 include!("policy.rs");
 

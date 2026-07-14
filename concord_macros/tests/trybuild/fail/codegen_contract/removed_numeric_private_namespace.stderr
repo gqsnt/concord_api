@@ -1,5 +1,0 @@
-error[E0433]: cannot find `v1` in `__private`
- --> tests/trybuild/fail/codegen_contract/removed_numeric_private_namespace.rs:2:38
-  |
-2 |     let _ = concord_core::__private::v1::GENERATED_API_COMPATIBILITY;
-  |                                      ^^ could not find `v1` in `__private`

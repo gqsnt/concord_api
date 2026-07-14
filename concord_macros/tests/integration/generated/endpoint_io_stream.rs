@@ -511,7 +511,7 @@ async fn generated_stream_request_enforces_configured_request_limit() {
     })
     .expect("mock client");
     let api = api.configure(|cfg| {
-        cfg.max_stream_request_body_bytes(4);
+        cfg.max_request_body_bytes(4);
     });
 
     let err = api
@@ -526,7 +526,7 @@ async fn generated_stream_request_enforces_configured_request_limit() {
     ));
     assert!(
         err.to_string()
-            .contains("stream request body exceeded configured size limit")
+            .contains("request body exceeded configured size limit")
     );
     assert_eq!(transport.send_count(), 0);
     assert!(transport.requests().is_empty());

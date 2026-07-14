@@ -6,7 +6,7 @@ multipart values, or secret values. Debug sinks, runtime hooks, and rate-limit
 contexts follow the same boundary. User-authored codec errors remain
 responsible for their own text.
 
-| Failure | Public shape | Body read | Retry behavior |
+| Failure | Public shape | Body read | Reqwest/recovery handling |
 | --- | --- | ---: | --- |
 | Configuration/build | typed configuration or client-build error | no | none |
 | Auth preparation | `ApiClientError::Auth` | no endpoint body | no visible execution yet |
@@ -21,10 +21,10 @@ responsible for their own text.
 | Decode/codec | `Decode` or `Codec` | bounded | terminal |
 | Pagination | typed pagination error/limit | page-dependent | page state does not advance on failure |
 
-There is no retry-exhaustion wrapper, general-attempt counter, or public hidden
-resend count. Reqwest returns the final status or request result for one
-visible execution. Concord then performs terminal processing or at most one
-authentication recovery.
+Reqwest returns the final status or request result for one visible execution;
+hidden Reqwest resends are not exposed as additional Concord response objects.
+Concord then performs terminal processing or at most one authentication
+recovery.
 
 A final `429` can include a sanitized `Retry-After` header and rate-limit
 action. It remains the returned status error; any valid capped delay affects
@@ -34,8 +34,8 @@ Reqwest and immediate.
 `#[cfg(feature = "dangerous-raw-response")]` exposes
 `concord_core::dangerous::BuiltResponse` and `execute_raw_response()`. It skips
 endpoint decode but retains construction, collision checks, authentication,
-rate limiting, hooks, selected Reqwest retry behavior, auth rejection handling,
-and response limits.
+rate limiting, hooks, selected Reqwest retry mode, auth rejection handling,
+  and response limits.
 
 HTTP status errors expose only sanitized stored headers. Sensitive response
 headers are redacted; safe metadata such as content type and Retry-After may

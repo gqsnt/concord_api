@@ -1,10 +1,9 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    AdvancedRequestBody, ApiOriginDescriptor, AuthChallengeMode, AuthError, AuthFuture,
-    AuthPreparationMode, AuthProviderBinding, CredentialContext, CredentialId, CredentialProvider,
-    CredentialProviderState, FixedOriginDescriptor, InvalidateReason, OctetStream, OriginScheme,
-    PreparedBody, PreparedEndpoint, PreparedRequestEntity, PreparedStreamEndpoint,
-    RequestAuthentication, RequestEntity, SafeProxy,
+    AdvancedRequestBody, AuthChallengeMode, AuthError, AuthFuture, AuthPreparationMode,
+    AuthProviderBinding, CredentialContext, CredentialId, CredentialProvider,
+    CredentialProviderState, InvalidateReason, OctetStream, PreparedBody, PreparedEndpoint,
+    PreparedRequestEntity, PreparedStreamEndpoint, RequestAuthentication, RequestEntity, SafeProxy,
 };
 use concord_core::prelude::{
     ApiClient, ApiClientError, ApiKey, ClientContext, RequestExecutionMeta, RetryMode, Text,
@@ -80,6 +79,30 @@ struct PublicAuthState {
     provider: Arc<CredentialProviderState<PublicContext, PublicProvider>>,
 }
 
+fn empty_auth_vars() -> PublicAuthVars {
+    PublicAuthVars {
+        acquired: Arc::new(AtomicUsize::new(0)),
+        invalidated: Arc::new(AtomicUsize::new(0)),
+    }
+}
+
+#[test]
+fn downstream_generic_client_has_only_supported_retry_modes() {
+    ApiClient::<PublicContext>::with_retry_mode((), empty_auth_vars(), RetryMode::ProtocolRecovery)
+        .expect("protocol recovery remains available");
+    ApiClient::<PublicContext>::with_retry_mode((), empty_auth_vars(), RetryMode::Disabled)
+        .expect("disabled mode remains available");
+    let status = RetryMode::status(1, [StatusCode::SERVICE_UNAVAILABLE]).unwrap();
+    let error = match ApiClient::<PublicContext>::with_retry_mode((), empty_auth_vars(), status) {
+        Ok(_) => panic!("generic clients have no status authority"),
+        Err(error) => error,
+    };
+    assert!(matches!(
+        error,
+        concord_core::prelude::RetryModeError::NotFixedOrigin
+    ));
+}
+
 impl ClientContext for PublicContext {
     type Vars = ();
     type AuthVars = PublicAuthVars;
@@ -87,12 +110,6 @@ impl ClientContext for PublicContext {
 
     const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTP;
     const DOMAIN: &'static str = "example.com";
-    const ORIGIN: ApiOriginDescriptor =
-        ApiOriginDescriptor::FixedSingleOrigin(FixedOriginDescriptor {
-            scheme: OriginScheme::Http,
-            authority: "example.com",
-        });
-
     fn init_auth_state(_vars: &Self::Vars, auth: &Self::AuthVars) -> Self::AuthState {
         PublicAuthState {
             provider: Arc::new(CredentialProviderState::new(PublicProvider {
@@ -333,13 +350,13 @@ async fn downstream_public_extension_executes_without_generated_integration_modu
     let acquired = Arc::new(AtomicUsize::new(0));
     let invalidated = Arc::new(AtomicUsize::new(0));
     let proxy = server.proxy();
-    let client = ApiClient::<PublicContext>::with_reqwest_builder_and_retry_mode(
+    let client = ApiClient::<PublicContext>::with_safe_reqwest_builder_and_retry_mode(
         (),
         PublicAuthVars {
             acquired: acquired.clone(),
             invalidated: invalidated.clone(),
         },
-        RetryMode::status(1, [StatusCode::SERVICE_UNAVAILABLE]).expect("status retry mode"),
+        RetryMode::ProtocolRecovery,
         |builder| Ok(builder.proxy(proxy)),
     )
     .expect("fixed-origin managed client");

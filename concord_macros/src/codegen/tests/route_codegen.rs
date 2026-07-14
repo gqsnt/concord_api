@@ -11,7 +11,7 @@ fn generated_route_builds_resolved_route_from_semantic_pieces() {
 
         scope regional {
             host [vars.region, "api"]
-            path ["v1"]
+            path ["api"]
 
             GET Show(id: String)
                 path ["items", id]
@@ -24,19 +24,17 @@ fn generated_route_builds_resolved_route_from_semantic_pieces() {
         &[
             "let mut route = < super :: RoutePlanApiCx as :: concord_core :: prelude :: ClientContext > :: base_route (vars , __concord_auth_vars)",
             "route.host_mut().push",
-            "route.path_mut().push_raw(\"v1\")",
+            "route.path_mut().push_raw(\"api\")",
             "route.path_mut().push_raw(\"items\")",
             "route.path_mut().push_segment_encoded(&__segment)",
             "route.host().validate(ctx_err.clone())",
-            "scheme : < super :: RoutePlanApiCx as :: concord_core :: prelude :: ClientContext > :: SCHEME",
-            "host : route.host().join",
-            "path : route.path().as_str().to_string()",
+            "let __resolved_route = :: concord_core :: __private :: prepare_generated_route",
         ],
     );
 }
 
 #[test]
-fn static_path_slash_behavior_characterized() {
+fn static_path_slash_profile_characterized() {
     let out = expanded(quote! {
         client StaticPathSlashApi {
             base "https://example.com"

@@ -142,31 +142,55 @@ Credential slots track monotonic generations, including when a slot is empty. If
 
 Cloned clients share auth state. Runtime configuration uses clone-on-write, but `set`, `clear`, `is_set`, and endpoint-backed acquisition operate on the shared auth-state handle. Clearing or replacing auth state on one clone affects other clones that share the same handle. Code that needs credential isolation should create a separate client instance or explicitly install separate auth state instead of relying on `clone()`. `vars` and `auth_vars` cloning are not credential-state isolation.
 
-## Rejection And Refresh
+## Rejection And Recovery
 
-Protected requests may refresh runtime-reacquirable credentials after `401 Unauthorized` or `403 Forbidden` when the credential is refreshable and the authoritative body recipe is rebuildable. Authentication recovery is bounded to one resend per protected request. A non-rebuildable body is not rejected before execution; if challenged, it follows the original status path without a second execution.
+Protected requests may recover runtime-reacquirable credentials after a
+recognized challenge when the credential is refreshable and the authoritative
+body recipe is rebuildable. Authentication recovery is bounded to one resend
+per protected request. A non-rebuildable body is not rejected before
+execution; if challenged, it follows the original status path without a
+second execution.
 
-Default rejection behavior:
+Default challenge policy:
 
-| Status | Invalidate credential | Retry after refresh |
+| Status | Invalidate credential | Recovery |
 | --- | --- | --- |
 | `401 Unauthorized` | yes | yes, for refreshable or runtime-reacquirable credentials |
-| `403 Forbidden` | yes | yes, for refreshable or runtime-reacquirable credentials |
+| `403 Forbidden` | no | no; requires `UnauthorizedOrForbidden` |
 
-`AuthStepPolicy` remains a bool matrix in the current contract. The supported combinations are:
+`AuthStepPolicy` controls invalidation and recovery independently for advanced
+integrations. Generated requirements use `AuthChallengePolicy::Unauthorized`
+by default. A generated declaration can select the broader challenge policy:
 
-| retry | invalidate | Observed behavior |
+```text
+auth bearer session challenge unauthorized_or_forbidden
+```
+
+Prepared public endpoints use the same selection explicitly:
+
+```rust
+RequestAuthentication::bearer("session")
+    .challenge_policy(AuthChallengePolicy::UnauthorizedOrForbidden)
+```
+
+The builder applies to bearer, Basic, header, and query authentication.
+`NeverRecover` disables both invalidation and recovery.
+
+| recover | invalidate | Observed result |
 | --- | --- | --- |
 | `true` | `true` | Invalidate the applied generation and use the one-resend recovery path when the credential can be reacquired and the body recipe is replayable. |
-| `true` | `false` | Concord retries the protected request without first clearing the applied generation. |
-| `false` | `true` | Concord invalidates the applied generation and returns a terminal auth rejection for the current request. |
-| `false` | `false` | Concord returns a terminal auth rejection and leaves the applied generation untouched. |
+| `true` | `false` | Recover without first clearing the applied generation. |
+| `false` | `true` | Invalidate the applied generation and return a terminal auth rejection. |
+| `false` | `false` | Return a terminal auth rejection without invalidation. |
 
 Endpoint-backed credentials are manual from the protected request's point of view. A protected `401` or `403` can invalidate the applied endpoint-backed generation, but it does not automatically call the auth endpoint again. Reacquire through the auth endpoint explicitly before sending another protected call.
 
 Reqwest owns general retry inside each visible execution. Hidden resends do not rerun authentication preparation. Auth rejection handling sees only the final result returned by Reqwest, then may schedule the single visible authentication recovery.
 
-`AuthChallengePolicy::NeverRefresh` is available in the advanced core API for runtime integrations that must never refresh on a protected response. It is not a public DSL clause in v1. With `NeverRefresh`, protected `401` and `403` responses do not invalidate, refresh, or retry.
+`AuthChallengePolicy::NeverRecover` is available in the advanced core API for
+runtime integrations that must not recover on a protected response. It is not
+part of the generated DSL. With this policy, protected `401` and `403`
+responses do not invalidate or recover.
 
 ## Redaction
 

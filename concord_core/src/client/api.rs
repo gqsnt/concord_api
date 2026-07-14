@@ -23,19 +23,71 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         )
     }
 
-    /// Configures the managed Reqwest client through Concord's reviewed
-    /// configuration surface. Raw Reqwest builders and clients stay private.
-    pub fn with_reqwest_builder(
+    /// Constructs a client whose managed Reqwest transport uses the selected
+    /// general [`RetryMode`](crate::retry_mode::RetryMode).
+    ///
+    /// Retry policy is a client-construction decision. The public generic path
+    /// accepts only retry modes that do not require generated origin authority.
+    /// Status retry is installed through the generated integration constructor.
+    pub fn with_retry_mode(
+        vars: Cx::Vars,
+        auth_vars: Cx::AuthVars,
+        retry_mode: crate::retry_mode::RetryMode,
+    ) -> Result<Self, crate::retry_mode::RetryModeError> {
+        Self::with_safe_reqwest_builder_and_retry_mode(vars, auth_vars, retry_mode, |builder| {
+            Ok(builder)
+        })
+    }
+
+    /// Retry-mode aware form of [`Self::with_safe_reqwest_builder_fallible`].
+    pub fn with_safe_reqwest_builder_and_retry_mode(
+        vars: Cx::Vars,
+        auth_vars: Cx::AuthVars,
+        retry_mode: crate::retry_mode::RetryMode,
+        configure: impl FnOnce(
+            crate::transport::SafeReqwestBuilder,
+        ) -> Result<
+            crate::transport::SafeReqwestBuilder,
+            crate::transport::ReqwestClientBuildError,
+        >,
+    ) -> Result<Self, crate::retry_mode::RetryModeError> {
+        let install = retry_mode.resolve(None)?;
+        let managed_client = crate::transport::ManagedReqwestClient::with_builder_fallible_retry(
+            configure, install,
+        )?;
+        Ok(Self::with_managed_client(vars, auth_vars, managed_client))
+    }
+
+    pub(crate) fn with_generated_descriptor_retry_mode(
+        origin: Option<crate::retry_mode::ApiOriginDescriptor>,
+        vars: Cx::Vars,
+        auth_vars: Cx::AuthVars,
+        retry_mode: crate::retry_mode::RetryMode,
+        configure: impl FnOnce(
+            crate::transport::SafeReqwestBuilder,
+        ) -> Result<
+            crate::transport::SafeReqwestBuilder,
+            crate::transport::ReqwestClientBuildError,
+        >,
+    ) -> Result<Self, crate::retry_mode::RetryModeError> {
+        let install = retry_mode.resolve(origin)?;
+        let managed_client = crate::transport::ManagedReqwestClient::with_builder_fallible_retry(
+            configure, install,
+        )?;
+        Ok(Self::with_managed_client(vars, auth_vars, managed_client))
+    }
+
+    pub fn with_safe_reqwest_builder(
         vars: Cx::Vars,
         auth_vars: Cx::AuthVars,
         configure: impl FnOnce(
             crate::transport::SafeReqwestBuilder,
         ) -> crate::transport::SafeReqwestBuilder,
     ) -> Result<Self, crate::transport::ReqwestClientBuildError> {
-        Self::with_reqwest_builder_fallible(vars, auth_vars, |builder| Ok(configure(builder)))
+        Self::with_safe_reqwest_builder_fallible(vars, auth_vars, |builder| Ok(configure(builder)))
     }
 
-    pub fn with_reqwest_builder_fallible(
+    pub fn with_safe_reqwest_builder_fallible(
         vars: Cx::Vars,
         auth_vars: Cx::AuthVars,
         configure: impl FnOnce(
@@ -50,67 +102,6 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             auth_vars,
             crate::transport::ManagedReqwestClient::with_builder_fallible(configure)?,
         ))
-    }
-
-    /// Constructs a client whose managed Reqwest transport uses the selected
-    /// general [`RetryMode`](crate::retry_mode::RetryMode).
-    ///
-    /// Retry policy is a client-construction decision. Selecting
-    /// [`RetryMode::Status`](crate::retry_mode::RetryMode::Status) is only
-    /// permitted when this context is classified as a fixed single origin by
-    /// the generated integration contract; otherwise this fails before any request,
-    /// provider, or body side effect.
-    pub fn with_retry_mode(
-        vars: Cx::Vars,
-        auth_vars: Cx::AuthVars,
-        retry_mode: crate::retry_mode::RetryMode,
-    ) -> Result<Self, crate::retry_mode::RetryModeError> {
-        Self::with_reqwest_builder_and_retry_mode(vars, auth_vars, retry_mode, |builder| {
-            Ok(builder)
-        })
-    }
-
-    /// Retry-mode aware form of [`Self::with_reqwest_builder_fallible`].
-    pub fn with_reqwest_builder_and_retry_mode(
-        vars: Cx::Vars,
-        auth_vars: Cx::AuthVars,
-        retry_mode: crate::retry_mode::RetryMode,
-        configure: impl FnOnce(
-            crate::transport::SafeReqwestBuilder,
-        ) -> Result<
-            crate::transport::SafeReqwestBuilder,
-            crate::transport::ReqwestClientBuildError,
-        >,
-    ) -> Result<Self, crate::retry_mode::RetryModeError> {
-        let install = retry_mode.resolve(Cx::ORIGIN)?;
-        let managed_client = crate::transport::ManagedReqwestClient::with_builder_fallible_retry(
-            configure, install,
-        )?;
-        Ok(Self::with_managed_client(vars, auth_vars, managed_client))
-    }
-
-    /// Clearer spelling for [`Self::with_reqwest_builder`].
-    pub fn with_safe_reqwest_builder(
-        vars: Cx::Vars,
-        auth_vars: Cx::AuthVars,
-        configure: impl FnOnce(
-            crate::transport::SafeReqwestBuilder,
-        ) -> crate::transport::SafeReqwestBuilder,
-    ) -> Result<Self, crate::transport::ReqwestClientBuildError> {
-        Self::with_reqwest_builder(vars, auth_vars, configure)
-    }
-
-    pub fn with_safe_reqwest_builder_fallible(
-        vars: Cx::Vars,
-        auth_vars: Cx::AuthVars,
-        configure: impl FnOnce(
-            crate::transport::SafeReqwestBuilder,
-        ) -> Result<
-            crate::transport::SafeReqwestBuilder,
-            crate::transport::ReqwestClientBuildError,
-        >,
-    ) -> Result<Self, crate::transport::ReqwestClientBuildError> {
-        Self::with_reqwest_builder_fallible(vars, auth_vars, configure)
     }
     fn with_managed_client(
         vars: Cx::Vars,
@@ -325,10 +316,8 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                 sink: self.debug_sink.clone(),
             },
             max_response_body_bytes: self.runtime_state.max_response_body_bytes(),
-            max_stream_request_body_bytes: self.runtime_state.max_stream_request_body_bytes(),
+            max_request_body_bytes: self.runtime_state.max_request_body_bytes(),
             max_stream_response_body_bytes: self.runtime_state.max_stream_response_body_bytes(),
-            #[cfg(feature = "dangerous-dev-tools")]
-            dev_body_capture: self.runtime_state.dev_body_capture().cloned(),
         };
         f(&mut config);
         self.debug_level = config.debug.level;
@@ -341,16 +330,13 @@ impl<Cx: ClientContext> ApiClient<Cx> {
     #[inline]
     pub fn request<E>(&self, ep: E) -> PendingRequest<'_, Cx, E>
     where
-        E: crate::endpoint::IntoEndpointPlan<Cx>,
+        E: crate::endpoint::GeneratedIntoPreparedCall<Cx>,
     {
         PendingRequest::new(self, ep)
     }
 
     #[inline]
-    pub fn plan_context(&self) -> ClientPlanContext<'_, Cx> {
-        ClientPlanContext {
-            vars: self.vars(),
-            auth_vars: self.auth_vars(),
-        }
+    pub fn plan_context(&self) -> crate::__private::GeneratedPlanContext<'_, Cx> {
+        crate::__private::GeneratedPlanContext::new(self.vars(), self.auth_vars())
     }
 }

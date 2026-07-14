@@ -164,7 +164,7 @@ async fn endpoint_backed_session_401_does_not_refresh_without_challenge_recovery
 }
 
 #[tokio::test]
-async fn endpoint_backed_session_403_does_not_refresh_without_challenge_recovery() {
+async fn endpoint_backed_session_403_is_terminal_without_recovery() {
     let (transport, handle) = mock()
         .reply(json_reply(r#"{"access_token":"session-token"}"#))
         .reply(
@@ -196,7 +196,7 @@ async fn endpoint_backed_session_403_does_not_refresh_without_challenge_recovery
     assert!(matches!(err, ApiClientError::Auth { .. }));
     assert!(!err.to_string().contains("missing credential"));
     assert!(
-        !api.auth_state()
+        api.auth_state()
             .session()
             .is_set()
             .await
@@ -212,15 +212,6 @@ async fn endpoint_backed_session_403_does_not_refresh_without_challenge_recovery
         .host("example.com")
         .path("/me")
         .header(http::header::AUTHORIZATION, "Bearer session-token");
-    let missing = api
-        .protected()
-        .me()
-        .execute()
-        .await
-        .expect_err("rejected endpoint-backed session should require explicit reacquire");
-    assert_eq!(missing.category(), ErrorCategory::MissingCredential);
-    assert!(missing.to_string().contains("acquire_auth_session"));
-    assert!(!rendered_error(&missing).contains("session-token"));
     handle.assert_recorded_len(2);
     handle.finish();
 }

@@ -2,7 +2,7 @@
 
 Concord keeps one managed Reqwest client per API client. Retry mode is chosen
 at construction; no client is built per endpoint or request and there is no
-pool keyed by endpoint retry settings.
+pool keyed by the selected client retry mode.
 
 ## Execution hot path
 
@@ -62,5 +62,5 @@ cargo bench --manifest-path perf/Cargo.toml --bench visible_execution
 cargo bench --manifest-path perf/Cargo.toml --bench native_paths
 ```
 
-The maintained package contains no historical transport-polymorphism or
-Concord retry-loop benchmarks.
+The maintained package measures only the current managed-client and native
+execution paths.

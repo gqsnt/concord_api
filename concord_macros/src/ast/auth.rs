@@ -46,17 +46,21 @@ pub enum AuthUseDecl {
 pub enum AuthUseKind {
     Bearer {
         credential: Ident,
+        challenge: Option<Ident>,
     },
     Header {
         header: LitStr,
         credential: Ident,
+        challenge: Option<Ident>,
     },
     Query {
         key: LitStr,
         credential: Ident,
+        challenge: Option<Ident>,
     },
     Basic {
         credential: Ident,
+        challenge: Option<Ident>,
     },
 }
 

@@ -32,11 +32,11 @@ Sema resolves names and turns raw declarations into the semantic model. Responsi
 - credentials and auth uses
 - scope and endpoint arguments
 - route atom references
-- retry, rate-limit, and behavior profile names
+- rate-limit and profile names
 - `extends` inheritance and cycle detection
 - policy inheritance and merge order
-- behavior expansion
-- behavior rustdoc metadata
+- profile expansion
+- profile rustdoc metadata
 
 The sema layer also applies the same 64-level scope nesting limit defensively during normalization and item walks, so synthetic ASTs that bypass parser validation still fail closed. Public expression token scanning in sema fails closed at 64 nested token groups.
 
@@ -57,8 +57,10 @@ The generated code builds `concord_core` request plans and calls the runtime. Ru
 - Syntax and span-local grammar errors: parser.
 - Unknown names, inheritance cycles, invalid profile references: sema.
 - Rust trait and type errors from generated user types: normal Rust compilation.
-- Runtime failures such as missing credentials, transport errors, decode errors, and retry exhaustion: `concord_core`.
+- Runtime failures such as missing credentials, request execution errors, decode errors, and rate-limit errors: `concord_core`.
 
-## Behavior Profiles
+## Profiles
 
-Behavior profiles expand during sema. Their auth, retry, and rate-limit effects are merged into resolved policy data before codegen. Behavior names are also preserved as endpoint rustdoc metadata, deduped in stable first-seen order.
+Profiles expand during sema. Their auth and rate-limit effects are merged into
+resolved policy data before codegen. Profile names are preserved as endpoint
+rustdoc metadata, deduped in stable first-seen order.

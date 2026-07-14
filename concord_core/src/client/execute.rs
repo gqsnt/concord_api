@@ -193,14 +193,14 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         &self,
         ctx: AuthRejectionStepCtx<'_, Cx>,
     ) -> Result<AuthRejectionStep, ApiClientError> {
-        if !ctx.auth_rebuildable && ctx.rejection_plan.requests_refresh() {
+        if !ctx.auth_rebuildable && ctx.rejection_plan.requests_recovery() {
             return Ok(AuthRejectionStep::Fail(Self::auth_challenge_rejected(
                 ctx.error_ctx,
             )));
         }
         self.apply_auth_rejection_plan(&ctx, AuthRejectionApplication::ProviderCapable)
             .await?;
-        if ctx.rejection_plan.requests_refresh() {
+        if ctx.rejection_plan.requests_recovery() {
             Ok(AuthRejectionStep::Retry)
         } else {
             Ok(AuthRejectionStep::Fail(Self::auth_challenge_rejected(
@@ -246,7 +246,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                     },
                     source: AuthError::new(
                         AuthErrorKind::InvalidConfiguration,
-                        "authentication rejection plan no longer matches the applied credential",
+                        "authentication rejection plan does not match the applied credential",
                     ),
                 });
             };
@@ -433,9 +433,8 @@ impl<Cx: ClientContext> ApiClient<Cx> {
     ) -> Result<ExecutionTransportSuccess, ApiClientError> {
         let dbg_verbose = dbg.is_verbose();
         // The authoritative logical body recipe determines reconstruction
-        // capacity for the single bounded authentication recovery only. It no
-        // longer drives any general retry loop; general retries belong to
-        // Reqwest. A non-rebuildable body is not rejected pre-execution merely
+        // capacity for the single bounded authentication recovery only. Reqwest
+        // owns hidden request resends. A non-rebuildable body is not rejected pre-execution merely
         // because a challenge could occur; instead a challenge simply cannot
         // trigger a second execution.
         let auth_rebuildable = body.is_replayable();
@@ -537,7 +536,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                         auth_attempt: &auth_attempt.summary,
                     })?;
                     match classification {
-                        Some(rejection_plan) if rejection_plan.requests_refresh() => {
+                        Some(rejection_plan) if rejection_plan.requests_recovery() => {
                             let intent = AuthResendIntent {
                                 rejection_plan,
                                 status: response_status,
@@ -708,8 +707,6 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             &ctx,
         )
         .await?;
-        #[cfg(feature = "dangerous-dev-tools")]
-        self.maybe_capture_dev_response_body(&plan, &resp);
         self.debug_planned_response(dbg, &resp, resp.url().as_str());
         Self::decode_planned_response::<C>(&plan, resp, ctx.clone())
     }
@@ -761,8 +758,6 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             &ctx,
         )
         .await?;
-        #[cfg(feature = "dangerous-dev-tools")]
-        self.maybe_capture_dev_response_body(&plan, &resp);
         self.debug_planned_response(dbg, &resp, resp.url().as_str());
         Ok(resp)
     }
@@ -995,27 +990,6 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             self.debug_sink
                 .response_headers(dbg, crate::debug::SanitizedHeaders::new(resp.headers()));
         }
-    }
-
-    #[cfg(feature = "dangerous-dev-tools")]
-    #[allow(deprecated)]
-    fn maybe_capture_dev_response_body(
-        &self,
-        plan: &crate::endpoint::RequestPlanView,
-        resp: &BuiltResponse,
-    ) {
-        let Some(capture) = self.runtime_state.dev_body_capture() else {
-            return;
-        };
-        if !plan.endpoint.policy.auth.requirements.is_empty() {
-            return;
-        }
-        capture.capture_response(
-            plan.endpoint.meta.name,
-            &plan.endpoint.meta.method,
-            resp.status(),
-            resp.body(),
-        );
     }
 }
 

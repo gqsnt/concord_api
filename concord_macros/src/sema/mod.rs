@@ -6,11 +6,11 @@
 //! parser structures.
 
 use crate::ast::{
-    AuthCredentialKind, AuthCredentials, AuthUseKind, BehaviorProfileDef, BehaviorProfilesBlock,
-    BehaviorUseSpec, FmtPiece, FmtSpec, KeySpec, PaginateSpec, PolicyBlock, PolicyBlocks,
-    PolicyStmt, PolicyValue, RateLimitDurationUnit, RateLimitKeyBindingSpec, RateLimitKeySpec,
-    RateLimitPlanSpec, RateLimitProfilesBlock, RateLimitSpec, RawIoSpec, RawResponseIo, RefScope,
-    RouteAtom, SecretRef,
+    AuthCredentialKind, AuthCredentials, AuthUseKind, FmtPiece, FmtSpec, KeySpec, PaginateSpec,
+    PolicyBlock, PolicyBlocks, PolicyStmt, PolicyValue, ProfileDef, ProfileUseSpec, ProfilesBlock,
+    RateLimitDurationUnit, RateLimitKeyBindingSpec, RateLimitKeySpec, RateLimitPlanSpec,
+    RateLimitProfilesBlock, RateLimitSpec, RawIoSpec, RawResponseIo, RefScope, RouteAtom,
+    SecretRef,
 };
 use crate::emit_helpers;
 use crate::model::facade::{
@@ -23,10 +23,10 @@ use proc_macro2::Span;
 use std::collections::{BTreeMap, BTreeSet as PublicNameSet};
 use syn::{Expr, Ident, LitStr, Path, Result, Type, spanned::Spanned};
 
-mod behavior;
 mod descriptor;
 mod ir;
 mod normalize;
+mod profile;
 mod profiles;
 #[path = "resolve.rs"]
 mod resolve_stage;
@@ -35,8 +35,8 @@ use self::descriptor::{classify_api_origin, resolve_endpoint_descriptor};
 pub(crate) use self::ir::*;
 pub(crate) use self::policy::*;
 
-use self::behavior::*;
 use self::normalize::*;
+use self::profile::*;
 use self::profiles::*;
 
 #[cfg(test)]
@@ -127,20 +127,18 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApiPipeline> {
         .collect();
 
     let rate_limit_profiles = resolve_rate_limit_profiles(norm.client.rate_limit.as_ref())?;
-    let behavior_profiles =
-        resolve_behavior_profiles(norm.client.behavior_profiles.as_ref(), &rate_limit_profiles)?;
-    validate_behavior_uses_unique_at_site(&norm.client.default_behavior_uses)?;
-    let client_default_behavior_names = behavior_use_names(&norm.client.default_behavior_uses);
-    let default_behavior =
-        resolve_behavior_uses(&norm.client.default_behavior_uses, &behavior_profiles)?;
-    let default_behavior_rate_limit = resolve_behavior_rate_limit_specs(
-        &default_behavior.rate_limit_specs,
+    let profiles = resolve_profiles(norm.client.profiles.as_ref(), &rate_limit_profiles)?;
+    validate_profile_uses_unique_at_site(&norm.client.default_profile_uses)?;
+    let client_default_profile_names = profile_use_names(&norm.client.default_profile_uses);
+    let default_profile = resolve_profile_uses(&norm.client.default_profile_uses, &profiles)?;
+    let default_profile_rate_limit = resolve_profile_rate_limit_specs(
+        &default_profile.rate_limit_specs,
         &rate_limit_profiles,
         &BTreeMap::new(),
         None,
         RateLimitAttachmentContext::ClientBase,
     )?;
-    let mut client_auth_uses = default_behavior.auth_uses;
+    let mut client_auth_uses = default_profile.auth_uses;
     client_auth_uses.extend(norm.client.auth_uses.iter().cloned());
     let client_auth = resolve_auth_requirements(
         &client_auth_uses,
@@ -163,7 +161,7 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApiPipeline> {
         None,
     )?;
     client_policy.rate_limit =
-        merge_rate_limit_resolved(default_behavior_rate_limit, explicit_default_rate_limit);
+        merge_rate_limit_resolved(default_profile_rate_limit, explicit_default_rate_limit);
 
     // walk layers/endpoints
     let mut layers: Vec<LayerIr> = Vec::new();
@@ -177,9 +175,9 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApiPipeline> {
         auth_vars: &auth_vars_map,
         auth_credentials: &auth_credential_map,
         client_auth: &client_auth,
-        client_default_behavior_names: &client_default_behavior_names,
+        client_default_profile_names: &client_default_profile_names,
         rate_limit_profiles: &rate_limit_profiles,
-        behavior_profiles: &behavior_profiles,
+        profiles: &profiles,
         layers: &mut layers,
         endpoints: &mut endpoints,
     };
@@ -794,28 +792,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn removed_retry_dsl_is_rejected_before_resolution() {
-        let err = syn::parse_str::<crate::ast::RawApi>(
-            r#"
-            api! {
-                client Api {
-                    base "https://example.com"
-
-                    retry read {
-                        attempts 2
-                    }
-                }
-            }
-            "#,
-        )
-        .expect_err("removed retry syntax must fail");
-
-        assert!(err.to_string().contains(
-            "retry DSL was removed; configure client-level `RetryMode` when constructing the client"
-        ));
-    }
-
-    #[test]
     fn resolved_endpoint_exposes_closed_io_variants() {
         let ast: crate::ast::RawApi = syn::parse_str(
             r#"
@@ -846,11 +822,11 @@ mod tests {
             .expect("buffered endpoint");
         assert_eq!(
             ty_string(&buffered.io.request_entity.adapter_ty),
-            "::concord_core::__private::EncodedRequest<Json<Body>>"
+            "::concord_core::__private::GeneratedEncodedRequest<Json<Body>>"
         );
         assert_eq!(
             ty_string(&buffered.io.response_entity.adapter_ty),
-            "::concord_core::__private::BufferedResponse<Json<Resp>>"
+            "::concord_core::__private::GeneratedBufferedResponse<Json<Resp>>"
         );
 
         let streamed = resolved_api
@@ -860,7 +836,7 @@ mod tests {
             .expect("streamed endpoint");
         assert_eq!(
             ty_string(&streamed.io.response_entity.adapter_ty),
-            "::concord_core::__private::RawStreamResponse<Bytes>"
+            "::concord_core::__private::GeneratedRawStreamResponse<Bytes>"
         );
     }
 
@@ -902,14 +878,14 @@ mod tests {
             .expect("no body endpoint");
         assert_eq!(
             ty_string(&no_body.io.request_entity.adapter_ty),
-            "::concord_core::__private::NoRequestBody"
+            "::concord_core::__private::GeneratedNoRequestBody"
         );
         assert!(no_body.io.request_entity.public_input_ty.is_none());
         assert!(no_body.io.request_entity.body_field_ty.is_none());
         assert!(no_body.io.request_entity.doc.facade_summary.is_none());
         assert_eq!(
             ty_string(&no_body.io.response_entity.adapter_ty),
-            "::concord_core::__private::BufferedResponse<Json<NoBodyResponse>>"
+            "::concord_core::__private::GeneratedBufferedResponse<Json<NoBodyResponse>>"
         );
         assert_eq!(
             ty_string(&no_body.io.response_entity.public_output_ty),
@@ -926,7 +902,7 @@ mod tests {
             .expect("buffered endpoint");
         assert_eq!(
             ty_string(&buffered.io.request_entity.adapter_ty),
-            "::concord_core::__private::EncodedRequest<Json<BufferedBody>>"
+            "::concord_core::__private::GeneratedEncodedRequest<Json<BufferedBody>>"
         );
         assert_eq!(
             ty_string(
@@ -956,7 +932,7 @@ mod tests {
         );
         assert_eq!(
             ty_string(&buffered.io.response_entity.adapter_ty),
-            "::concord_core::__private::BufferedResponse<Json<BufferedResponse>>"
+            "::concord_core::__private::GeneratedBufferedResponse<Json<BufferedResponse>>"
         );
         assert_eq!(
             ty_string(&buffered.io.response_entity.public_output_ty),
@@ -970,7 +946,7 @@ mod tests {
             .expect("stream request endpoint");
         assert_eq!(
             ty_string(&stream_req.io.request_entity.adapter_ty),
-            "::concord_core::__private::RawStreamRequest<OctetStream>"
+            "::concord_core::__private::GeneratedRawStreamRequest<OctetStream>"
         );
         assert!(stream_req.io.request_entity.capabilities.has_body);
         assert!(stream_req.io.request_entity.capabilities.is_streaming);
@@ -1017,7 +993,7 @@ mod tests {
             .expect("streamed endpoint");
         assert_eq!(
             ty_string(&streamed.io.response_entity.adapter_ty),
-            "::concord_core::__private::RawStreamResponse<OctetStream>"
+            "::concord_core::__private::GeneratedRawStreamResponse<OctetStream>"
         );
         assert_eq!(
             streamed.io.response_entity.doc.facade_summary.as_deref(),
@@ -1032,7 +1008,7 @@ mod tests {
             .expect("no content endpoint");
         assert_eq!(
             ty_string(&no_content.io.response_entity.adapter_ty),
-            "::concord_core::__private::NoContentResponse"
+            "::concord_core::__private::GeneratedNoContentResponse"
         );
         assert!(no_content.io.response_entity.capabilities.is_no_content);
         assert!(!no_content.io.response_entity.capabilities.is_streaming);
@@ -1071,7 +1047,7 @@ mod tests {
                 -> Json<String>;
 
             scope protected {
-                path ["v1"]
+                path ["api"]
                 auth header "X-Token" = key
 
                 GET Me(user_id: u64)

@@ -12,7 +12,7 @@ The runtime treats pagination as a deterministic page loop:
 6. ask the pagination controller whether to continue or stop only when the runtime has not already stopped
 7. derive the next page request or return
 
-Common page-content stop rules are runtime invariants, not controller-specific behavior when the runtime has enough information to decide before advance:
+Common page-content stop rules are runtime invariants, not controller-specific behavior, when the runtime has enough information to decide before advance:
 
 - an empty page stops pagination
 - a short page stops pagination when Concord knows the expected page size
@@ -54,7 +54,7 @@ The runtime keeps endpoint fields stable while advancing controller state.
 
 Custom pagination uses generated `PaginateBinding` to synchronize endpoint fields with controller state before planning. The generated endpoint type implements `PaginatedEndpoint<Cx> { type Pagination = Type; }`, and `EndpointPlan.pagination` is only a `PaginationMarker` presence flag. Core owns the runtime loop through `PaginationRuntime` and `PaginationRuntimeAdapter`. Endpoint-bound assignments load from endpoint fields and store back after the page advances. Literal or config assignments initialize pagination fields during load and are not stored back to endpoint fields. Planning remains the only place that renders query, header, path, or body output. Custom controllers that request a specific page size should implement `EndpointPagination::expected_items_per_page()`. The expected count is per page and does not persist.
 
-Paginated endpoints with request bodies are rejected in v1. Concord does not replay endpoint request bodies across page requests.
+Paginated endpoints with request bodies are rejected in . Concord does not replay endpoint request bodies across page requests.
 
 Pagination cannot override auth-owned query or header material. If a controller creates a collision with query auth, bearer or Basic `Authorization`, or custom header auth, Concord rejects the request before rate-limit acquisition and transport send.
 

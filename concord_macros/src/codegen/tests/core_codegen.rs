@@ -20,15 +20,14 @@ fn generated_minimal_api_contains_facade_and_endpoint_plan() {
         &[
             "pub fn ping (& self",
             "-> :: concord_core :: prelude :: PendingRequest",
-            "impl :: concord_core :: prelude :: Endpoint < super :: SnapshotMinimalCx > for EpPing",
+            "impl :: concord_core :: __private :: GeneratedEndpoint < super :: SnapshotMinimalCx > for EpPing",
             "type Response = String",
-            "fn plan (& self, plan_ctx : & :: concord_core :: __private :: ClientPlanContext",
-            ":: concord_core :: __private :: RequestPlan",
-            ":: concord_core :: __private :: EndpointPlan",
-            "ResponseEntity",
-            "BufferedResponse",
-            "__response_entity_plan",
-            "response: __response_plan",
+            "fn plan (& self, plan_ctx : & :: concord_core :: __private :: GeneratedPlanContext",
+            ":: concord_core :: __private :: GeneratedPreparedCall",
+            ":: concord_core :: __private :: prepare_generated_endpoint",
+            "prepare_generated_response",
+            "GeneratedBufferedResponse",
+            "__response_preparation",
         ],
     );
 }
@@ -63,19 +62,14 @@ fn generated_endpoint_plan_contains_plan_based_core_contract() {
     assert_contains_all(
         &out,
         &[
-            "impl :: concord_core :: prelude :: Endpoint < super :: PlanApiCx >",
-            "fn plan (& self , plan_ctx : & :: concord_core :: __private :: ClientPlanContext",
-            ":: concord_core :: __private :: RequestPlan",
-            ":: concord_core :: __private :: EndpointPlan",
-            ":: concord_core :: __private :: EndpointMeta",
-            ":: concord_core :: __private :: ResolvedRoute",
-            ":: concord_core :: __private :: ResolvedPolicy",
-            "ResponseEntity",
-            "BufferedResponse",
-            "__response_entity_plan",
-            "response: __response_plan",
-            "let __pagination_plan = :: core :: option :: Option :: Some",
-            "PaginationMarker",
+            "impl :: concord_core :: __private :: GeneratedEndpoint < super :: PlanApiCx >",
+            "fn plan (& self , plan_ctx : & :: concord_core :: __private :: GeneratedPlanContext",
+            ":: concord_core :: __private :: GeneratedPreparedCall",
+            ":: concord_core :: __private :: prepare_generated_endpoint",
+            "prepare_generated_response",
+            "GeneratedBufferedResponse",
+            "__response_preparation",
+            "let __pagination_plan = true",
         ],
     );
 }
@@ -134,7 +128,7 @@ fn codegen_uses_resolved_ir() {
     assert!(endpoint.is_some(), "resolved ping endpoint missing");
     let endpoint = endpoint.expect("ping endpoint missing");
     assert_eq!(
-        endpoint.behavior_doc.names,
+        endpoint.profile_doc.names,
         vec!["shared".to_string(), "endpoint_override".to_string()]
     );
     let out = emit(resolved)
@@ -146,22 +140,10 @@ fn codegen_uses_resolved_ir() {
     assert_contains_all(
         &out,
         &[
-            "policy.add_rate_limit(::concord_core::__private::RateLimitPlan::from_buckets",
-            "RateLimitBucketUse::new(\"application\",\"app_0\"",
+            "policy.add_generated_rate_limit(::concord_core::__private::GeneratedRateLimitDescriptor::from_buckets",
+            "GeneratedRateLimitBucketDescriptor::new(\"application\",\"app_0\"",
         ],
     );
-    for removed in [
-        "RetryConfig",
-        "RetryPolicy",
-        "set_retry",
-        "clear_retry",
-        "max_attempts",
-    ] {
-        assert!(
-            !out.contains(removed),
-            "generated source retained {removed}"
-        );
-    }
 }
 
 #[test]

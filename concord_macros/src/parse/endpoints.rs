@@ -22,7 +22,7 @@ fn parse_inline_var_decls(input: ParseStream<'_>, ctx: &'static str) -> Result<V
 struct EndpointBlockParts {
     route: RouteExpr,
     policy: PolicyBlocks,
-    behavior_uses: Vec<BehaviorUseSpec>,
+    profile_uses: Vec<ProfileUseSpec>,
     auth_uses: Vec<AuthUseDecl>,
     rate_limit: Option<RateLimitSpec>,
     rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
@@ -34,7 +34,7 @@ impl EndpointBlockParts {
         Self {
             route: RouteExpr { atoms: Vec::new() },
             policy: PolicyBlocks::default(),
-            behavior_uses: Vec::new(),
+            profile_uses: Vec::new(),
             auth_uses: Vec::new(),
             rate_limit: None,
             rate_limit_keys: Vec::new(),
@@ -62,7 +62,7 @@ impl EndpointBlockParts {
             self.policy.timeout = other.policy.timeout;
         }
         self.auth_uses.extend(other.auth_uses);
-        self.behavior_uses.extend(other.behavior_uses);
+        self.profile_uses.extend(other.profile_uses);
         if other.rate_limit.is_some() {
             if self.rate_limit.is_some() {
                 return Err(syn::Error::new(name.span(), "duplicate rate_limit policy in endpoint"));
@@ -171,15 +171,10 @@ fn parse_endpoint_inline_parts(input: ParseStream<'_>, name: &Ident) -> Result<E
             let t = parse_expr_until_comma_or_endpoint_arrow(input)?;
             parts.policy.timeout = Some(t);
         } else if input.peek(kw::profile) {
-            parts.behavior_uses.push(parse_behavior_use_spec(input)?);
-        } else if input.peek(kw::behavior) {
-            let legacy: kw::behavior = input.parse()?;
-            return Err(legacy_behavior_keyword_error(legacy.span));
+            parts.profile_uses.push(parse_profile_use_spec(input)?);
         } else if input.peek(kw::auth) {
             input.parse::<kw::auth>()?;
             parts.auth_uses.push(parse_auth_use_decl_after_auth_keyword(input)?);
-        } else if input.peek(kw::retry) {
-            return Err(removed_retry_syntax_error(input)?);
         } else if input.peek(kw::rate_limit) {
             let fork = input.fork();
             fork.parse::<kw::rate_limit>()?;

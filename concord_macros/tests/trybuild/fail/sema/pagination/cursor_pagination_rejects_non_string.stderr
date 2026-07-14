@@ -13,11 +13,11 @@ help: the trait `EndpointPagination<Vec<String>>` is not implemented for `concor
    | |     Page: PageItems + HasNextCursor<Cursor = String>,
    | |_____________________________________________________^
    = help: for that trait implementation, expected `String`, found `Foo`
-note: required by a bound in `concord_core::prelude::PaginatedEndpoint::Pagination`
+note: required by a bound in `concord_core::__private::GeneratedPaginatedEndpoint::Pagination`
   --> $WORKSPACE/concord_core/src/endpoint.rs
    |
    |     Self::Pagination: crate::pagination::EndpointPagination<Self::Response>,
-   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `PaginatedEndpoint::Pagination`
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `GeneratedPaginatedEndpoint::Pagination`
 ...
    |     type Pagination;
    |          ---------- required by a bound in this associated type

@@ -1,9 +1,9 @@
 //! Canonical macro model produced by raw syntax normalization.
 
 use crate::ast::{
-    AuthCredentials, AuthUseKind, BehaviorProfilesBlock, BehaviorUseSpec, PaginateSpec,
-    PolicyBlocks, RateLimitKeyBindingSpec, RateLimitProfilesBlock, RateLimitSpec, RawRequestIo,
-    RawResponseIo, RouteExpr, VarDeclNoWire,
+    AuthCredentials, AuthUseKind, PaginateSpec, PolicyBlocks, ProfileUseSpec, ProfilesBlock,
+    RateLimitKeyBindingSpec, RateLimitProfilesBlock, RateLimitSpec, RawRequestIo, RawResponseIo,
+    RouteExpr, VarDeclNoWire,
 };
 use crate::model::Scheme;
 use proc_macro2::Span;
@@ -32,9 +32,9 @@ pub(crate) struct NormClient {
     pub auth_vars: Option<NormVars>,
     pub auth: Option<AuthCredentials>,
     pub auth_uses: Vec<NormAuthUse>,
-    pub default_behavior_uses: Vec<BehaviorUseSpec>,
+    pub default_profile_uses: Vec<ProfileUseSpec>,
     pub rate_limit: Option<RateLimitProfilesBlock>,
-    pub behavior_profiles: Option<BehaviorProfilesBlock>,
+    pub profiles: Option<ProfilesBlock>,
 }
 
 #[derive(Debug)]
@@ -59,7 +59,7 @@ pub(crate) struct NormScope {
     pub route: RouteExpr,
     pub params: Vec<VarDeclNoWire>,
     pub policy: PolicyBlocks,
-    pub behavior_uses: Vec<BehaviorUseSpec>,
+    pub profile_uses: Vec<ProfileUseSpec>,
     pub auth_uses: Vec<NormAuthUse>,
     pub rate_limit: Option<RateLimitSpec>,
     pub rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
@@ -82,7 +82,7 @@ pub(crate) struct NormEndpoint {
     pub route: RouteExpr,
     pub params: Vec<VarDeclNoWire>,
     pub policy: PolicyBlocks,
-    pub behavior_uses: Vec<BehaviorUseSpec>,
+    pub profile_uses: Vec<ProfileUseSpec>,
     pub auth_uses: Vec<NormAuthUse>,
     pub rate_limit: Option<RateLimitSpec>,
     pub rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
@@ -113,9 +113,9 @@ mod tests {
             auth_vars: None,
             auth: None,
             auth_uses: Vec::new(),
-            default_behavior_uses: Vec::new(),
+            default_profile_uses: Vec::new(),
             rate_limit: None,
-            behavior_profiles: None,
+            profiles: None,
         };
 
         let tree = NormApiTree {
@@ -135,7 +135,7 @@ mod tests {
             route: RouteExpr { atoms: Vec::new() },
             params: Vec::new(),
             policy: PolicyBlocks::default(),
-            behavior_uses: Vec::new(),
+            profile_uses: Vec::new(),
             auth_uses: Vec::new(),
             rate_limit: None,
             rate_limit_keys: Vec::new(),

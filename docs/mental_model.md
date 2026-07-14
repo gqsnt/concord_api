@@ -39,7 +39,9 @@ The runtime receives resolved semantic data. It does not need to know the DSL
 syntax that produced the plan. Reqwest-internal resends occur inside an
 execution and are not visible Concord executions.
 
-Concord does not coalesce ordinary endpoint requests in v1. Two identical requests remain two request executions unless the application chooses a higher-level reuse strategy outside Concord.
+Concord does not coalesce ordinary endpoint requests. Two identical requests
+remain two request executions unless the application chooses a higher-level
+reuse strategy outside Concord.
 
 ## Facade First
 

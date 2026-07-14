@@ -210,30 +210,63 @@ pub(super) fn resolve_auth_use_kind(
     validate_auth_usage_fit(kind, cred)?;
 
     let kind = match kind {
-        AuthUseKind::Bearer { credential } => AuthUseKindIr::Bearer {
+        AuthUseKind::Bearer {
+            credential,
+            challenge,
+        } => AuthUseKindIr::Bearer {
             credential: credential.clone(),
+            challenge: resolve_auth_challenge(challenge.as_ref())?,
         },
-        AuthUseKind::Header { header, credential } => AuthUseKindIr::Header {
+        AuthUseKind::Header {
+            header,
+            credential,
+            challenge,
+        } => AuthUseKindIr::Header {
             header: header.clone(),
             credential: credential.clone(),
+            challenge: resolve_auth_challenge(challenge.as_ref())?,
         },
-        AuthUseKind::Query { key, credential } => AuthUseKindIr::Query {
+        AuthUseKind::Query {
+            key,
+            credential,
+            challenge,
+        } => AuthUseKindIr::Query {
             key: key.clone(),
             credential: credential.clone(),
+            challenge: resolve_auth_challenge(challenge.as_ref())?,
         },
-        AuthUseKind::Basic { credential } => AuthUseKindIr::Basic {
+        AuthUseKind::Basic {
+            credential,
+            challenge,
+        } => AuthUseKindIr::Basic {
             credential: credential.clone(),
+            challenge: resolve_auth_challenge(challenge.as_ref())?,
         },
     };
     Ok(AuthUseIr { kind, provenance })
 }
 
+fn resolve_auth_challenge(challenge: Option<&Ident>) -> Result<AuthChallengePolicyIr> {
+    let Some(challenge) = challenge else {
+        return Ok(AuthChallengePolicyIr::Unauthorized);
+    };
+    match challenge.to_string().as_str() {
+        "unauthorized" => Ok(AuthChallengePolicyIr::Unauthorized),
+        "unauthorized_or_forbidden" => Ok(AuthChallengePolicyIr::UnauthorizedOrForbidden),
+        "never_recover" => Ok(AuthChallengePolicyIr::NeverRecover),
+        _ => Err(syn::Error::new(
+            challenge.span(),
+            "unknown auth challenge policy; expected `unauthorized`, `unauthorized_or_forbidden`, or `never_recover`",
+        )),
+    }
+}
+
 pub(super) fn auth_use_credential_ident(u: &AuthUseKind) -> &Ident {
     match u {
-        AuthUseKind::Bearer { credential }
+        AuthUseKind::Bearer { credential, .. }
         | AuthUseKind::Header { credential, .. }
         | AuthUseKind::Query { credential, .. }
-        | AuthUseKind::Basic { credential } => credential,
+        | AuthUseKind::Basic { credential, .. } => credential,
     }
 }
 
@@ -371,7 +404,7 @@ pub(super) fn validate_auth_usage_fit(u: &AuthUseKind, cred: &AuthCredentialIr) 
     }
 
     match u {
-        AuthUseKind::Bearer { credential } => Err(syn::Error::new(
+        AuthUseKind::Bearer { credential, .. } => Err(syn::Error::new(
             credential.span(),
             format!(
                 "BearerAuth requires an access-token credential; `{}` does not fit",
@@ -387,7 +420,7 @@ pub(super) fn validate_auth_usage_fit(u: &AuthUseKind, cred: &AuthCredentialIr) 
                 ),
             ))
         }
-        AuthUseKind::Basic { credential } => Err(syn::Error::new(
+        AuthUseKind::Basic { credential, .. } => Err(syn::Error::new(
             credential.span(),
             format!(
                 "BasicAuth requires BasicCredential material; `{}` does not fit",
@@ -402,18 +435,35 @@ pub(crate) fn materialize_auth_requirement(
     endpoint_step_prefix: &str,
     idx: usize,
 ) -> AuthRequirementIr {
-    let (placement, credential) = match &auth_use.kind {
-        AuthUseKindIr::Bearer { credential } => (AuthPlacementIr::Bearer, credential),
-        AuthUseKindIr::Header { header, credential } => (
+    let (placement, credential, challenge) = match &auth_use.kind {
+        AuthUseKindIr::Bearer {
+            credential,
+            challenge,
+        } => (AuthPlacementIr::Bearer, credential, *challenge),
+        AuthUseKindIr::Header {
+            header,
+            credential,
+            challenge,
+        } => (
             AuthPlacementIr::Header {
                 name: header.clone(),
             },
             credential,
+            *challenge,
         ),
-        AuthUseKindIr::Query { key, credential } => {
-            (AuthPlacementIr::Query { key: key.clone() }, credential)
-        }
-        AuthUseKindIr::Basic { credential } => (AuthPlacementIr::Basic, credential),
+        AuthUseKindIr::Query {
+            key,
+            credential,
+            challenge,
+        } => (
+            AuthPlacementIr::Query { key: key.clone() },
+            credential,
+            *challenge,
+        ),
+        AuthUseKindIr::Basic {
+            credential,
+            challenge,
+        } => (AuthPlacementIr::Basic, credential, *challenge),
     };
     AuthRequirementIr {
         credential: credential.clone(),
@@ -423,6 +473,7 @@ pub(crate) fn materialize_auth_requirement(
         provenance: AuthProvenanceIr {
             label: provenance_label(auth_use.provenance),
         },
+        challenge,
     }
 }
 

@@ -82,7 +82,12 @@ pub(super) fn forbidden_stream_exec_call() -> String {
 }
 
 pub(super) fn forbidden_endpoint_execute_box_wrapper() -> String {
-    ["Box::pin(asyncmove{", "ResponseEntity", ">::execute"].concat()
+    [
+        "Box::pin(asyncmove{",
+        "prepare_generated_response",
+        ">::execute",
+    ]
+    .concat()
 }
 
 pub(super) fn forbidden_response_plan_struct() -> String {
@@ -91,8 +96,8 @@ pub(super) fn forbidden_response_plan_struct() -> String {
 
 pub(super) fn assert_runtime_response_plan_has_no_format_field(expanded: &str) {
     let start = expanded
-        .find("let__response_entity_plan=")
-        .expect("generated runtime response-entity plan");
+        .find("let__response_preparation=")
+        .expect("generated response preparation adapter");
     let end = expanded[start..]
         .find("let__pagination_plan=")
         .map(|offset| start + offset)
@@ -100,7 +105,7 @@ pub(super) fn assert_runtime_response_plan_has_no_format_field(expanded: &str) {
     let runtime_response_plan = &expanded[start..end];
     assert!(
         !runtime_response_plan.contains("format:"),
-        "runtime response plan unexpectedly reconstructed a `format` field: {runtime_response_plan}"
+        "generated response preparation unexpectedly reconstructed a `format` field: {runtime_response_plan}"
     );
 }
 

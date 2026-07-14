@@ -6,6 +6,18 @@ use thiserror::Error;
 
 pub type FxError = Box<dyn Error + Send + Sync>;
 
+/// Stable category for managed-client construction failures.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum ClientBuildErrorKind {
+    Builder,
+    Timeout,
+    Connect,
+    Request,
+    Body,
+    Other,
+}
+
 /// Stable request-oriented category for an opaque execution error source.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -28,14 +40,14 @@ pub struct RequestErrorSource {
 }
 
 impl RequestErrorSource {
-    fn from_transport(source: crate::transport::TransportError) -> Self {
+    fn from_reqwest(source: crate::transport::ReqwestError) -> Self {
         let body_kind = source.body_error().map(|error| error.kind());
         let kind = if body_kind.is_some() {
             RequestErrorSourceKind::Body
         } else {
             match source.kind() {
-                crate::transport::TransportErrorKind::Timeout => RequestErrorSourceKind::Timeout,
-                crate::transport::TransportErrorKind::Connect => RequestErrorSourceKind::Connect,
+                crate::transport::ReqwestErrorKind::Timeout => RequestErrorSourceKind::Timeout,
+                crate::transport::ReqwestErrorKind::Connect => RequestErrorSourceKind::Connect,
                 _ => RequestErrorSourceKind::Execution,
             }
         };
@@ -165,8 +177,16 @@ pub enum ApiClientError {
         kind: crate::body::BodyErrorKind,
     },
 
+    #[error("{ctx}: response file output failed: {msg}: {source}")]
+    ResponseFile {
+        ctx: ErrorContext,
+        msg: Cow<'static, str>,
+        #[source]
+        source: FxError,
+    },
+
     #[error(
-        "{ctx}: stream request body exceeded configured size limit {limit} bytes (seen {actual} bytes)"
+        "{ctx}: request body exceeded configured size limit {limit} bytes (seen {actual} bytes)"
     )]
     RequestBodyLimitExceeded {
         ctx: ErrorContext,
@@ -302,6 +322,12 @@ impl Debug for ApiClientError {
                 .debug_struct("ResponseBody")
                 .field("ctx", ctx)
                 .field("kind", kind)
+                .finish(),
+            Self::ResponseFile { ctx, msg, source } => f
+                .debug_struct("ResponseFile")
+                .field("ctx", ctx)
+                .field("msg", msg)
+                .field("source", source)
                 .finish(),
             Self::RequestBodyLimitExceeded { ctx, limit, actual } => f
                 .debug_struct("RequestBodyLimitExceeded")
@@ -478,9 +504,9 @@ impl ApiClientError {
     #[inline]
     pub(crate) fn request_execution(
         ctx: ErrorContext,
-        source: crate::transport::TransportError,
+        source: crate::transport::ReqwestError,
     ) -> Self {
-        let source = RequestErrorSource::from_transport(source);
+        let source = RequestErrorSource::from_reqwest(source);
         match source.kind() {
             RequestErrorSourceKind::Body => Self::RequestBody {
                 ctx,
@@ -570,6 +596,19 @@ impl ApiClientError {
     }
 
     #[inline]
+    pub(crate) fn response_file_error(
+        ctx: ErrorContext,
+        msg: impl Into<Cow<'static, str>>,
+        source: impl Into<FxError>,
+    ) -> ApiClientError {
+        ApiClientError::ResponseFile {
+            ctx,
+            msg: msg.into(),
+            source: source.into(),
+        }
+    }
+
+    #[inline]
     pub fn rate_limit(
         ctx: ErrorContext,
         kind: crate::rate_limit::RateLimitErrorKind,
@@ -649,6 +688,7 @@ impl ApiClientError {
             | ApiClientError::ResponseTooLarge { ctx, .. }
             | ApiClientError::ResponseBodyLimitExceeded { ctx, .. }
             | ApiClientError::ResponseBody { ctx, .. }
+            | ApiClientError::ResponseFile { ctx, .. }
             | ApiClientError::RequestBodyLimitExceeded { ctx, .. }
             | ApiClientError::HttpStatus { ctx, .. }
             | ApiClientError::Decode { ctx, .. }
@@ -678,7 +718,8 @@ impl ApiClientError {
             ApiClientError::RequestBody { .. } => ErrorCategory::RequestBody,
             ApiClientError::ResponseTooLarge { .. }
             | ApiClientError::ResponseBodyLimitExceeded { .. }
-            | ApiClientError::ResponseBody { .. } => ErrorCategory::Decode,
+            | ApiClientError::ResponseBody { .. }
+            | ApiClientError::ResponseFile { .. } => ErrorCategory::Decode,
             ApiClientError::RequestBodyLimitExceeded { .. } => ErrorCategory::RequestBody,
             ApiClientError::HttpStatus { rate_limit, .. } if rate_limit.is_some() => {
                 ErrorCategory::RateLimit

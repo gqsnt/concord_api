@@ -433,8 +433,9 @@ impl Eq for AuthPlacement {}
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum AuthChallengePolicy {
     #[default]
-    Default,
-    NeverRefresh,
+    Unauthorized,
+    UnauthorizedOrForbidden,
+    NeverRecover,
 }
 
 /// One side-effect-free action for one exact applied authentication use.
@@ -447,12 +448,12 @@ pub enum AuthRejectionAction {
         generation: Option<u64>,
         invalidate_reason: Option<InvalidateReason>,
     },
-    Refresh {
+    Recover {
         credential: CredentialRef,
         usage_id: AuthUsageId,
         step_id: Option<&'static str>,
         generation: Option<u64>,
-        reason: AuthRetryReason,
+        reason: AuthRecoveryReason,
         invalidate_reason: Option<InvalidateReason>,
     },
 }
@@ -479,13 +480,13 @@ impl AuthRejectionAction {
         }
     }
 
-    pub fn refresh(
+    pub fn recover(
         requirement: &AuthRequirement,
         applied: &AuthAppliedCredential,
-        reason: AuthRetryReason,
+        reason: AuthRecoveryReason,
         invalidate_reason: Option<InvalidateReason>,
     ) -> Self {
-        Self::Refresh {
+        Self::Recover {
             credential: requirement.credential.clone(),
             usage_id: applied.usage_id.clone(),
             step_id: applied.step_id,
@@ -495,8 +496,8 @@ impl AuthRejectionAction {
         }
     }
 
-    pub fn requests_refresh(&self) -> bool {
-        matches!(self, Self::Refresh { .. })
+    pub fn requests_recovery(&self) -> bool {
+        matches!(self, Self::Recover { .. })
     }
 
     #[cfg(feature = "dangerous-dev-tools")]
@@ -513,7 +514,7 @@ impl AuthRejectionAction {
                 step_id: action_step_id,
                 ..
             }
-            | Self::Refresh {
+            | Self::Recover {
                 credential,
                 usage_id: action_usage_id,
                 step_id: action_step_id,
@@ -535,7 +536,7 @@ impl AuthRejectionAction {
                 generation,
                 ..
             }
-            | Self::Refresh {
+            | Self::Recover {
                 credential,
                 usage_id,
                 step_id,
@@ -556,7 +557,7 @@ impl AuthRejectionAction {
             Self::Terminal {
                 invalidate_reason, ..
             }
-            | Self::Refresh {
+            | Self::Recover {
                 invalidate_reason, ..
             } => *invalidate_reason,
         }
@@ -568,19 +569,19 @@ impl AuthRejectionPlan {
         &self.actions
     }
 
-    pub(crate) fn requests_refresh(&self) -> bool {
+    pub(crate) fn requests_recovery(&self) -> bool {
         self.actions
             .iter()
-            .any(AuthRejectionAction::requests_refresh)
+            .any(AuthRejectionAction::requests_recovery)
     }
 
     pub(crate) fn append_validated(&mut self, action: AuthRejectionAction) {
         match action {
             AuthRejectionAction::Terminal { .. } => self.actions.push(action),
-            AuthRejectionAction::Refresh { .. } if !self.requests_refresh() => {
+            AuthRejectionAction::Recover { .. } if !self.requests_recovery() => {
                 self.actions.push(action)
             }
-            AuthRejectionAction::Refresh { .. } => {}
+            AuthRejectionAction::Recover { .. } => {}
         }
     }
 }
@@ -601,7 +602,7 @@ pub struct AuthAttemptSummary {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum AuthRetryReason {
+pub enum AuthRecoveryReason {
     Unauthorized,
     Forbidden,
 }
@@ -609,7 +610,7 @@ pub enum AuthRetryReason {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuthRejectionDecision {
     pub invalidate_reason: Option<InvalidateReason>,
-    pub retry_reason: Option<AuthRetryReason>,
+    pub recovery_reason: Option<AuthRecoveryReason>,
 }
 
 pub fn auth_decision_for_status(
@@ -618,34 +619,41 @@ pub fn auth_decision_for_status(
     _applied: &AuthAppliedCredential,
     policy: AuthStepPolicy,
 ) -> Option<AuthRejectionDecision> {
-    if matches!(requirement.challenge, AuthChallengePolicy::NeverRefresh) {
+    if matches!(requirement.challenge, AuthChallengePolicy::NeverRecover) {
         return None;
     }
 
-    if status == http::StatusCode::UNAUTHORIZED {
-        let retry_reason = policy
-            .retry_on_unauthorized
-            .then_some(AuthRetryReason::Unauthorized);
+    if status == http::StatusCode::UNAUTHORIZED
+        && matches!(
+            requirement.challenge,
+            AuthChallengePolicy::Unauthorized | AuthChallengePolicy::UnauthorizedOrForbidden
+        )
+    {
+        let recovery_reason = policy
+            .recover_on_unauthorized
+            .then_some(AuthRecoveryReason::Unauthorized);
         let invalidate_reason = policy
             .invalidate_on_unauthorized
             .then_some(InvalidateReason::Unauthorized);
-        if retry_reason.is_some() || invalidate_reason.is_some() {
+        if recovery_reason.is_some() || invalidate_reason.is_some() {
             return Some(AuthRejectionDecision {
                 invalidate_reason,
-                retry_reason,
+                recovery_reason,
             });
         }
-    } else if status == http::StatusCode::FORBIDDEN {
-        let retry_reason = policy
-            .retry_on_forbidden
-            .then_some(AuthRetryReason::Forbidden);
+    } else if status == http::StatusCode::FORBIDDEN
+        && requirement.challenge == AuthChallengePolicy::UnauthorizedOrForbidden
+    {
+        let recovery_reason = policy
+            .recover_on_forbidden
+            .then_some(AuthRecoveryReason::Forbidden);
         let invalidate_reason = policy
             .invalidate_on_forbidden
             .then_some(InvalidateReason::Forbidden);
-        if retry_reason.is_some() || invalidate_reason.is_some() {
+        if recovery_reason.is_some() || invalidate_reason.is_some() {
             return Some(AuthRejectionDecision {
                 invalidate_reason,
-                retry_reason,
+                recovery_reason,
             });
         }
     }
@@ -728,10 +736,10 @@ mod tests {
     }
 
     #[test]
-    fn auth_decision_default_unauthorized_invalidates_and_retries() {
+    fn auth_decision_default_unauthorized_invalidates_and_recovers() {
         let decision = auth_decision_for_status(
             StatusCode::UNAUTHORIZED,
-            &requirement(AuthChallengePolicy::Default),
+            &requirement(AuthChallengePolicy::Unauthorized),
             &applied(),
             AuthStepPolicy::default(),
         )
@@ -741,7 +749,7 @@ mod tests {
             decision,
             AuthRejectionDecision {
                 invalidate_reason: Some(InvalidateReason::Unauthorized),
-                retry_reason: Some(AuthRetryReason::Unauthorized),
+                recovery_reason: Some(AuthRecoveryReason::Unauthorized),
             }
         );
     }
@@ -756,7 +764,7 @@ mod tests {
             "proxy-authorization",
             "content-type",
         ] {
-            let mut requirement = requirement(AuthChallengePolicy::Default);
+            let mut requirement = requirement(AuthChallengePolicy::Unauthorized);
             requirement.placement = AuthPlacement::Header(name);
             let error = AuthPlacementPlan::from_auth_plan(&AuthPlan {
                 requirements: vec![requirement],
@@ -767,22 +775,15 @@ mod tests {
     }
 
     #[test]
-    fn auth_decision_default_forbidden_invalidates_and_retries() {
+    fn auth_decision_default_forbidden_is_terminal_without_invalidation() {
         let decision = auth_decision_for_status(
             StatusCode::FORBIDDEN,
-            &requirement(AuthChallengePolicy::Default),
+            &requirement(AuthChallengePolicy::Unauthorized),
             &applied(),
             AuthStepPolicy::default(),
-        )
-        .expect("default 403 should request auth handling");
-
-        assert_eq!(
-            decision,
-            AuthRejectionDecision {
-                invalidate_reason: Some(InvalidateReason::Forbidden),
-                retry_reason: Some(AuthRetryReason::Forbidden),
-            }
         );
+
+        assert_eq!(decision, None);
     }
 
     #[test]
@@ -790,7 +791,7 @@ mod tests {
         assert_eq!(
             auth_decision_for_status(
                 StatusCode::UNAUTHORIZED,
-                &requirement(AuthChallengePolicy::NeverRefresh),
+                &requirement(AuthChallengePolicy::NeverRecover),
                 &applied(),
                 AuthStepPolicy::default(),
             ),
@@ -799,16 +800,16 @@ mod tests {
     }
 
     #[test]
-    fn auth_decision_can_invalidate_unauthorized_without_retrying() {
+    fn auth_decision_can_invalidate_unauthorized_without_recovering() {
         let policy = AuthStepPolicy {
-            retry_on_unauthorized: false,
+            recover_on_unauthorized: false,
             invalidate_on_unauthorized: true,
             ..AuthStepPolicy::default()
         };
 
         let decision = auth_decision_for_status(
             StatusCode::UNAUTHORIZED,
-            &requirement(AuthChallengePolicy::Default),
+            &requirement(AuthChallengePolicy::Unauthorized),
             &applied(),
             policy,
         )
@@ -818,64 +819,64 @@ mod tests {
             decision,
             AuthRejectionDecision {
                 invalidate_reason: Some(InvalidateReason::Unauthorized),
-                retry_reason: None,
+                recovery_reason: None,
             }
         );
     }
 
     #[test]
-    fn auth_decision_can_retry_unauthorized_without_invalidating() {
+    fn auth_decision_can_recover_unauthorized_without_invalidating() {
         let policy = AuthStepPolicy {
-            retry_on_unauthorized: true,
+            recover_on_unauthorized: true,
             invalidate_on_unauthorized: false,
             ..AuthStepPolicy::default()
         };
 
         let decision = auth_decision_for_status(
             StatusCode::UNAUTHORIZED,
-            &requirement(AuthChallengePolicy::Default),
+            &requirement(AuthChallengePolicy::Unauthorized),
             &applied(),
             policy,
         )
-        .expect("retry-only 401 should request auth handling");
+        .expect("recovery-only 401 should request auth handling");
 
         assert_eq!(
             decision,
             AuthRejectionDecision {
                 invalidate_reason: None,
-                retry_reason: Some(AuthRetryReason::Unauthorized),
+                recovery_reason: Some(AuthRecoveryReason::Unauthorized),
             }
         );
     }
 
     #[test]
-    fn auth_decision_forbidden_follows_explicit_retry_and_invalidation_policy() {
+    fn auth_decision_forbidden_requires_explicit_challenge_policy() {
         let policy = AuthStepPolicy {
-            retry_on_forbidden: true,
+            recover_on_forbidden: true,
             invalidate_on_forbidden: true,
             ..AuthStepPolicy::default()
         };
 
         let decision = auth_decision_for_status(
             StatusCode::FORBIDDEN,
-            &requirement(AuthChallengePolicy::Default),
+            &requirement(AuthChallengePolicy::UnauthorizedOrForbidden),
             &applied(),
             policy,
         )
-        .expect("custom 403 policy should request auth handling");
+        .expect("explicit 403 policy should request auth handling");
 
         assert_eq!(
             decision,
             AuthRejectionDecision {
                 invalidate_reason: Some(InvalidateReason::Forbidden),
-                retry_reason: Some(AuthRetryReason::Forbidden),
+                recovery_reason: Some(AuthRecoveryReason::Forbidden),
             }
         );
     }
 
     #[test]
     fn aggregate_plan_keeps_all_terminals_and_one_refresh() {
-        let req = requirement(AuthChallengePolicy::Default);
+        let req = requirement(AuthChallengePolicy::Unauthorized);
         let first = applied();
         let mut second = applied();
         second.credential_id = CredentialId::new("test", "other");
@@ -887,10 +888,10 @@ mod tests {
             &first,
             Some(InvalidateReason::Unauthorized),
         ));
-        plan.append_validated(AuthRejectionAction::refresh(
+        plan.append_validated(AuthRejectionAction::recover(
             &req,
             &second,
-            AuthRetryReason::Unauthorized,
+            AuthRecoveryReason::Unauthorized,
             None,
         ));
         plan.append_validated(AuthRejectionAction::terminal(
@@ -898,16 +899,16 @@ mod tests {
             &first,
             Some(InvalidateReason::Forbidden),
         ));
-        plan.append_validated(AuthRejectionAction::refresh(
+        plan.append_validated(AuthRejectionAction::recover(
             &req,
             &second,
-            AuthRetryReason::Forbidden,
+            AuthRecoveryReason::Forbidden,
             None,
         ));
 
         assert_eq!(plan.actions().len(), 3);
         assert!(plan.actions()[0].invalidate_reason().is_some());
-        assert!(plan.actions()[1].requests_refresh());
+        assert!(plan.actions()[1].requests_recovery());
         assert_eq!(
             plan.actions()[2].invalidate_reason(),
             Some(InvalidateReason::Forbidden)
@@ -916,9 +917,9 @@ mod tests {
 
     #[test]
     fn action_matching_requires_exact_use_and_generation() {
-        let req = requirement(AuthChallengePolicy::Default);
+        let req = requirement(AuthChallengePolicy::Unauthorized);
         let action =
-            AuthRejectionAction::refresh(&req, &applied(), AuthRetryReason::Unauthorized, None);
+            AuthRejectionAction::recover(&req, &applied(), AuthRecoveryReason::Unauthorized, None);
         assert!(action.matches(&req, &applied()));
 
         let mut mismatched = applied();

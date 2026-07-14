@@ -4,7 +4,6 @@ use std::sync::Arc;
 #[test]
 fn final_public_surface_compiles() {
     fn uses_type<T>() {}
-    fn uses_endpoint<E: prelude::Endpoint<super::common::TestCx>>() {}
     fn uses_client_context<Cx: prelude::ClientContext>() {}
     fn uses_rate_limiter<L: advanced::RateLimiter>() {}
     fn uses_hooks<H: advanced::RuntimeHooks>() {}
@@ -12,14 +11,13 @@ fn final_public_surface_compiles() {
     fn uses_page_items<P: prelude::PageItems>() {}
     fn uses_next_cursor<P: prelude::HasNextCursor>() {}
 
-    uses_type::<prelude::ApiClient<super::common::TestCx>>();
+    uses_type::<prelude::ApiClient<super::public_context::PublicContext>>();
     uses_type::<prelude::ApiClientError>();
     uses_type::<advanced::RuntimeConfig>();
     uses_type::<prelude::RetryMode>();
     uses_type::<prelude::StatusRetryConfig>();
     uses_type::<prelude::DebugLevel>();
-    uses_endpoint::<super::common::TextEndpoint>();
-    uses_client_context::<super::common::TestCx>();
+    uses_client_context::<super::public_context::PublicContext>();
     uses_rate_limiter::<advanced::NoopRateLimiter>();
     uses_hooks::<advanced::NoopRuntimeHooks>();
     uses_debug_sink::<advanced::NoopDebugSink>();
@@ -38,10 +36,7 @@ fn final_public_surface_compiles() {
     uses_type::<advanced::PreparedStreamEndpoint<advanced::OctetStream>>();
     uses_type::<advanced::PreparedRequestEntity>();
     uses_type::<advanced::RequestAuthentication>();
-    uses_type::<advanced::AuthProviderBinding<'static, super::common::TestCx>>();
-    uses_type::<advanced::ApiOriginDescriptor>();
-    uses_type::<advanced::FixedOriginDescriptor>();
-    uses_type::<advanced::OriginScheme>();
+    uses_type::<advanced::AuthProviderBinding<'static, super::public_context::PublicContext>>();
     uses_type::<prelude::RequestErrorSource>();
     uses_type::<prelude::RequestErrorSourceKind>();
     uses_type::<prelude::RequestExecutionMeta>();
@@ -68,9 +63,6 @@ fn final_public_surface_compiles() {
 
 #[test]
 fn prelude_surface_contains_normal_user_api() {
-    fn assert_endpoint<E: prelude::Endpoint<super::common::TestCx>>() {}
-    assert_endpoint::<super::common::TextEndpoint>();
-
     let _debug = prelude::DebugLevel::default();
     let _secret = prelude::SecretString::new("redacted");
     let _api_key = prelude::ApiKey::new("key");

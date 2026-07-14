@@ -1,6 +1,6 @@
 # Security Model
 
-This document is the safe-consumer guide for the current Concord release. It describes the public surfaces Concord intends to keep safe by default, the explicit extension points that stay under caller control, and the dangerous escape hatches that can expose raw body bytes or local capture files when deliberately enabled.
+This document is the safe-consumer guide for the current Concord release. It describes the public surfaces kept safe by default, the explicit extension points under caller control, and the dangerous raw-response escape hatch.
 
 Concord is designed to keep the ordinary path narrow:
 
@@ -54,7 +54,7 @@ The dangerous feature gates are:
 These enable, respectively:
 
 - raw response access through `BuiltResponse` and `.execute_raw_response()`, which can return raw response body bytes before endpoint decode;
-- deprecated dev body capture through `DevBodyCaptureConfig` and `RuntimeConfig::dev_body_capture(...)`, which can write selected raw response bytes to local disk when explicitly configured.
+  - the narrow `__development` lifecycle-observation seam used by deterministic tests.
 
 These features are intended for controlled diagnostics, protocol testing, and local debugging. They should not be treated as the default application surface, and they should not be enabled in production unless that risk is intentionally accepted.
 
@@ -63,7 +63,7 @@ These features are intended for controlled diagnostics, protocol testing, and lo
 deterministic tests, not an alternate transport or a normal debug-build API.
 Without the explicit feature it does not exist—even under `debug_assertions`.
 Its narrow observations do not make credential cache, body engine, response
-entity, or transport error types public.
+entity, or request execution error types public.
 
 ### Generated-code-only plumbing
 
@@ -73,7 +73,12 @@ not a stable reflection, transport, middleware, or authentication-executor
 API; its public visibility exists only so macro expansions compile across
 crate boundaries.
 
-It exists so macro-generated code has stable paths for request planning, response planning, endpoint internals, and other implementation details that are not intended as a public user API. Normal application code should not import it.
+It exposes opaque descriptors and preparation adapters, not Core runtime-plan
+structs. Generated code emits resolved facts, and Core constructs and executes
+the runtime plan behind `GeneratedPreparedCall`. Normal application code
+should not import this namespace. Because cross-crate macro expansion requires
+public reachability, `#[doc(hidden)]` is an unsupported-integration boundary,
+not a claim that downstream Rust code is technically unable to call a symbol.
 
 ## Secret Handling
 
@@ -105,10 +110,8 @@ to their native Reqwest capabilities. Buffered responses use bounded native
 collection and streaming responses retain native lazy delivery. No universal
 public body or response bridge is part of the final surface.
 
-The dangerous surfaces are the exception:
-
-- raw response execution can expose raw response body bytes through the returned built response;
-- dev body capture can write selected raw response bytes to local disk when explicitly configured.
+The dangerous surface is raw response execution, which can expose raw response
+body bytes through the returned built response.
 
 Neither feature is enabled by default.
 
@@ -170,4 +173,4 @@ It should not render raw secret values, raw body bytes, or caller-chosen codec i
 - Use `advanced` only when you intentionally need an extension point.
 - Use `dangerous` only for local diagnostics or protocol testing with controlled handling.
 - Do not enable dangerous features in production unless you have intentionally accepted the risk.
-- Do not upload or store logs, screenshots, artifacts, or bundles that may contain raw response bytes from dangerous or dev capture paths.
+- Do not upload or store logs, screenshots, artifacts, or bundles that may contain raw response bytes from dangerous execution paths.

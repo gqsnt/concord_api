@@ -218,7 +218,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                 let e = context
                     .body_errors
                     .get()
-                    .map(crate::transport::TransportError::from)
+                    .map(crate::transport::ReqwestError::from)
                     .unwrap_or(e);
                 let terminal_error = if let Some(body_error) = e.body_error()
                     && body_error.kind() == crate::body::BodyErrorKind::LimitExceeded
@@ -259,7 +259,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             .acquire_rate_limit_and_send(
                 built,
                 send_ctx,
-                self.runtime_state.max_stream_request_body_bytes(),
+                self.runtime_state.max_request_body_bytes(),
             )
             .await?;
         self.observe_transport_response(resp, send_ctx.url_str, send_ctx.error_ctx)

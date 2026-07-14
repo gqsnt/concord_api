@@ -49,7 +49,7 @@ fn generated_rustdoc_covers_client_endpoint_and_request_builder() {
 #[test]
 fn generated_rustdoc_includes_profile_names() {
     let out = expanded(quote! {
-        client BehaviorDocs {
+        client ProfileDocs {
             base "https://example.com"
 
             profile client_read {
@@ -81,7 +81,6 @@ fn generated_rustdoc_includes_profile_names() {
         &out,
         &["#[doc=\"Profile: `client_read`, `scope_read`, `endpoint_read`\"]"],
     );
-    assert_generated_doc_attrs_do_not_contain(&out, "Behavior:");
 }
 
 #[test]

@@ -53,8 +53,8 @@ bytes, no-content, or lazy streams. The generated endpoint fixes its response
 adapter; callers do not choose a codec at execution time.
 
 Logical body recipes determine only authentication-recovery rebuildability.
-They do not create an endpoint retry policy and do not predict Reqwest body
-cloneability.
+They describe authentication-recovery rebuildability; client construction
+selects the Reqwest retry mode and determines hidden body cloneability.
 
 ## Authentication
 
@@ -121,27 +121,12 @@ are lowered before code generation.
 
 `paginate` binds a supported or custom controller to endpoint fields. Each
 page is a new logical page execution and receives the client's selected
-Reqwest retry behavior independently. A pagination binding capable of changing
+Reqwest retry mode independently. A pagination binding capable of changing
 a host component makes client-wide status mode ineligible.
-
-## Removed retry syntax
-
-The following forms are rejected with a diagnostic directing callers to
-client-level `RetryMode`:
-
-```rust,compile_fail
-retry read { max_attempts 2 }
-retry read
-retry off
-```
-
-This includes retry profiles and inheritance, endpoint retry patches,
-`max_attempts`, method/status lists, retry idempotency declarations, and
-`Retry-After` retry switches. Removed syntax produces a focused compile error.
 
 ## Generated construction
 
 `GeneratedApi::new(...)` uses `RetryMode::ProtocolRecovery`. Generated clients
-also expose retry-aware constructors for `Disabled` and validated `Status`
-mode. Generated source emits only generated descriptor metadata and narrow
-runtime calls; it emits no retry closure, classifier, loop, or delay logic.
+also expose constructors for `Disabled` and validated `Status` mode. Generated
+source emits descriptor metadata and narrow runtime calls; it emits no retry
+loop or delay logic.

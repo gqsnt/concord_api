@@ -63,12 +63,12 @@ pub struct LayerIr {
     pub policy: PolicyBlocksResolved,
     pub auth: Vec<AuthUsePlanIr>,
     pub rate_limit_key_bindings: Vec<RateLimitKeyBindingResolved>,
-    pub behavior_names: Vec<String>,
+    pub profile_names: Vec<String>,
     pub decls: Vec<VarInfo>, // endpoint vars declared by this layer
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct BehaviorDocMeta {
+pub struct ProfileDocMeta {
     pub names: Vec<String>,
 }
 
@@ -95,7 +95,7 @@ pub struct ResolvedEndpoint {
     pub io: ResolvedHttpEndpointIo,
 
     pub policy: ResolvedPolicySpec,
-    pub behavior_doc: BehaviorDocMeta,
+    pub profile_doc: ProfileDocMeta,
 
     /// Static descriptor facts derived from the same semantic inputs as the
     /// runtime plan. Codegen emits these facts; it does not reclassify them.
@@ -305,6 +305,14 @@ pub struct AuthRequirementIr {
     pub usage_id: String,
     pub step_id: String,
     pub provenance: AuthProvenanceIr,
+    pub challenge: AuthChallengePolicyIr,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthChallengePolicyIr {
+    Unauthorized,
+    UnauthorizedOrForbidden,
+    NeverRecover,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -327,10 +335,24 @@ pub enum AuthUsePlanIr {
 
 #[derive(Debug, Clone)]
 pub enum AuthUseKindIr {
-    Bearer { credential: Ident },
-    Header { header: LitStr, credential: Ident },
-    Query { key: LitStr, credential: Ident },
-    Basic { credential: Ident },
+    Bearer {
+        credential: Ident,
+        challenge: AuthChallengePolicyIr,
+    },
+    Header {
+        header: LitStr,
+        credential: Ident,
+        challenge: AuthChallengePolicyIr,
+    },
+    Query {
+        key: LitStr,
+        credential: Ident,
+        challenge: AuthChallengePolicyIr,
+    },
+    Basic {
+        credential: Ident,
+        challenge: AuthChallengePolicyIr,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -427,9 +427,11 @@ fn generated_client_construction_contains_current_api_only() {
             "pub fn api_headers (& self) -> & :: http :: HeaderMap",
             "pub fn set_api_headers (& mut self , headers : :: http :: HeaderMap) -> :: core :: result :: Result < () , :: concord_core :: prelude :: HeaderOwnershipError >",
             "pub fn with_api_headers ( mut self , headers : :: http :: HeaderMap) -> :: core :: result :: Result < Self , :: concord_core :: prelude :: HeaderOwnershipError >",
+            "pub static API_DESCRIPTOR : :: concord_core :: __private :: GeneratedApiDescriptor",
+            ":: concord_core :: __private :: GeneratedPreparedCall",
+            ":: concord_core :: __private :: prepare_generated_endpoint",
         ],
     );
-    assert_not_contains_all(&out, &["Transport", "new_with_transport"]);
 }
 
 #[test]

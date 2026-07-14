@@ -35,7 +35,7 @@ impl Parse for RawScopeTaggedScope {
         let body_span = content.span();
 
         let mut policy = PolicyBlocks::default();
-        let mut behavior_uses = Vec::new();
+        let mut profile_uses = Vec::new();
         let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
         let mut rate_limit: Option<RateLimitSpec> = None;
         let mut rate_limit_keys = Vec::new();
@@ -101,17 +101,12 @@ impl Parse for RawScopeTaggedScope {
                 policy.timeout = Some(t);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::profile) {
-                behavior_uses.push(parse_behavior_use_spec(&content)?);
+                profile_uses.push(parse_profile_use_spec(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::behavior) {
-                let legacy: kw::behavior = content.parse()?;
-                return Err(legacy_behavior_keyword_error(legacy.span));
             } else if content.peek(kw::auth) {
                 content.parse::<kw::auth>()?;
                 auth_uses.push(parse_auth_use_decl_after_auth_keyword(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::retry) {
-                return Err(removed_retry_syntax_error(&content)?);
             } else if content.peek(kw::rate_limit) {
                 let fork = content.fork();
                 fork.parse::<kw::rate_limit>()?;
@@ -145,7 +140,7 @@ impl Parse for RawScopeTaggedScope {
             path_route,
             params,
             policy,
-            behavior_uses,
+            profile_uses,
             auth_uses,
             rate_limit,
             rate_limit_keys,
@@ -205,7 +200,7 @@ impl Parse for RawEndpoint {
                 inline_parts.route,
                 params,
                 inline_parts.policy,
-                inline_parts.behavior_uses,
+                inline_parts.profile_uses,
                 inline_parts.auth_uses,
                 inline_parts.rate_limit,
                 inline_parts.rate_limit_keys,
@@ -230,7 +225,7 @@ impl Parse for RawEndpoint {
             inline_parts.route,
             params,
             inline_parts.policy,
-            inline_parts.behavior_uses,
+            inline_parts.profile_uses,
             inline_parts.auth_uses,
             inline_parts.rate_limit,
             inline_parts.rate_limit_keys,
@@ -250,7 +245,7 @@ fn raw_endpoint(
     route: RouteExpr,
     params: Vec<VarDeclNoWire>,
     policy: PolicyBlocks,
-    behavior_uses: Vec<BehaviorUseSpec>,
+    profile_uses: Vec<ProfileUseSpec>,
     auth_uses: Vec<AuthUseDecl>,
     rate_limit: Option<RateLimitSpec>,
     rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
@@ -272,7 +267,7 @@ fn raw_endpoint(
         route,
         params,
         policy,
-        behavior_uses,
+        profile_uses,
         auth_uses,
         rate_limit,
         rate_limit_keys,
@@ -303,21 +298,7 @@ fn unsupported_endpoint_clause_error(tt: TokenTree) -> syn::Error {
 impl Parse for PaginateSpec {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         input.parse::<kw::paginate>()?;
-        if input.peek(kw::endpoint_state) {
-            let endpoint_state_kw: kw::endpoint_state = input.parse()?;
-            return Err(syn::Error::new(
-                endpoint_state_kw.span,
-                "pagination no longer uses `endpoint_state ... bindings ...`; use `paginate Controller { ... }`",
-            ));
-        }
         let ctrl_ty: Type = input.parse()?;
-
-        if input.peek(kw::bindings) {
-            return Err(syn::Error::new(
-                input.span(),
-                "pagination no longer uses `bindings`; use `paginate Controller { ... }`",
-            ));
-        }
 
         if !input.peek(token::Brace) {
             return Ok(Self {

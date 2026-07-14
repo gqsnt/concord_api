@@ -313,7 +313,7 @@ fn emit_client_wrapper(
         let AuthCredentialKindIr::Endpoint {
             target,
             output_ty,
-            .. 
+            ..
         } = &credential.kind
         else {
             return None;
@@ -434,10 +434,12 @@ fn emit_client_wrapper(
             ) -> ::core::result::Result<Self, ::concord_core::prelude::RetryModeError> {
                 let vars = #vars_ty::new( #( #new_pass ),* );
                 let auth_vars = #auth_vars_ty::new( #( #new_auth_pass ),* );
-                let mut __inner = ::concord_core::prelude::ApiClient::<#cx_ty>::with_retry_mode(
+                let mut __inner = ::concord_core::__private::create_generated_client::<#cx_ty, _>(
+                    &API_DESCRIPTOR,
                     vars,
                     auth_vars,
                     retry_mode,
+                    |builder| Ok(builder),
                 )?;
                 #configure_rate_limiter
                 ::core::result::Result::Ok(Self { inner: __inner })
@@ -492,7 +494,8 @@ fn emit_client_wrapper(
             ) -> ::core::result::Result<Self, ::concord_core::prelude::RetryModeError> {
                 let vars = #vars_ty::new( #( #new_pass ),* );
                 let auth_vars = #auth_vars_ty::new( #( #new_auth_pass ),* );
-                let mut __inner = ::concord_core::prelude::ApiClient::<#cx_ty>::with_reqwest_builder_and_retry_mode(
+                let mut __inner = ::concord_core::__private::create_generated_client::<#cx_ty, _>(
+                    &API_DESCRIPTOR,
                     vars,
                     auth_vars,
                     retry_mode,
@@ -587,7 +590,7 @@ fn emit_client_wrapper(
             #[inline]
             pub fn request<E>(&self, ep: E) -> ::concord_core::prelude::PendingRequest<'_, #cx_ty, E>
             where
-                E: ::concord_core::prelude::IntoEndpointPlan<#cx_ty>,
+                E: ::concord_core::__private::GeneratedIntoPreparedCall<#cx_ty>,
             {
                 self.inner.request(ep)
             }
@@ -619,7 +622,7 @@ fn emit_auth_facade(resolved_api: &ResolvedApi, client_ty: &Ident) -> (TokenStre
         let AuthCredentialKindIr::Endpoint {
             target,
             output_ty,
-            .. 
+            ..
         } = &credential.kind
         else {
             return None;

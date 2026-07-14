@@ -11,6 +11,7 @@ Concord does not build boundaries manually or route multipart through a common
 universal body boundary. `StreamResponse` retains the native response and
 enforces configured limits lazily.
 
-Generated source must not reference retired compatibility modules or numeric private
-modules, runtime-state containers, transport abstractions, retry classifiers,
-authentication loops, body polling, or response collectors.
+Generated source uses the unversioned private integration contract and focused
+descriptors, typed sinks, request-entity adapters, response adapters, and the
+core execution entry point. Runtime planning and orchestration structures stay
+inside `concord_core`.

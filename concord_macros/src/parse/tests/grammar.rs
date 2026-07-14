@@ -216,18 +216,10 @@ fn parses_grouped_profiles_and_singular_default_profile() {
         "#,
     );
 
+    assert_eq!(ast.client.profiles.as_ref().unwrap().profiles.len(), 1);
+    assert_eq!(ast.client.default_profile_uses.len(), 1);
     assert_eq!(
-        ast.client
-            .behavior_profiles
-            .as_ref()
-            .unwrap()
-            .profiles
-            .len(),
-        1
-    );
-    assert_eq!(ast.client.default_behavior_uses.len(), 1);
-    assert_eq!(
-        ast.client.default_behavior_uses[0].names[0].to_string(),
+        ast.client.default_profile_uses[0].names[0].to_string(),
         "protected_read"
     );
 }

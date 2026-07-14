@@ -36,6 +36,3 @@ cargo bench --manifest-path perf/Cargo.toml --bench smoke
 Benchmarks use deterministic in-memory or loopback fixtures: no live services,
 real credentials, or filesystem timing dependencies. Results are comparative
 machine-local signals, not release thresholds.
-
-Historical reports under `docs/` may describe the removed Concord attempt loop
-and admission system. They are migration baselines, not current APIs.

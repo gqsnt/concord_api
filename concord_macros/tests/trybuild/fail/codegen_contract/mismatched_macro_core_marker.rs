@@ -1,5 +1,5 @@
-struct PreviousGeneratedContract;
+struct ForeignGeneratedContract;
 
-const _: PreviousGeneratedContract = concord_core::__private::GENERATED_API_COMPATIBILITY;
+const _: ForeignGeneratedContract = concord_core::__private::GENERATED_CONTRACT;
 
 fn main() {}

@@ -21,7 +21,7 @@ fn rate_limit_diagnostics_reject_unknown_rate_limit_profile() {
 }
 
 #[test]
-fn rate_limit_diagnostics_reject_default_behavior_rate_limit_key_in_client_base_policy() {
+fn rate_limit_diagnostics_reject_default_profile_rate_limit_key_in_client_base_policy() {
     let err = analyze_err(
         r#"
         api! {
@@ -89,7 +89,7 @@ fn rate_limit_diagnostics_reject_unknown_endpoint_var_in_key() {
 }
 
 #[test]
-fn rate_limit_diagnostics_reject_scope_behavior_key_without_binding() {
+fn rate_limit_diagnostics_reject_scope_profile_key_without_binding() {
     let err = analyze_err(
         r#"
         api! {

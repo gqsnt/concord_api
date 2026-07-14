@@ -89,8 +89,8 @@ pub trait CredentialProvider<Cx: ClientContext>: Send + Sync + 'static {
 #[derive(Clone, Copy, Debug)]
 pub struct AuthStepPolicy {
     pub refresh_skew: Duration,
-    pub retry_on_unauthorized: bool,
-    pub retry_on_forbidden: bool,
+    pub recover_on_unauthorized: bool,
+    pub recover_on_forbidden: bool,
     pub invalidate_on_unauthorized: bool,
     pub invalidate_on_forbidden: bool,
 }
@@ -99,8 +99,8 @@ impl Default for AuthStepPolicy {
     fn default() -> Self {
         Self {
             refresh_skew: Duration::from_secs(60),
-            retry_on_unauthorized: true,
-            retry_on_forbidden: true,
+            recover_on_unauthorized: true,
+            recover_on_forbidden: true,
             invalidate_on_unauthorized: true,
             invalidate_on_forbidden: true,
         }

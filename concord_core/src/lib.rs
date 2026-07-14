@@ -1,3 +1,6 @@
+#[cfg(test)]
+extern crate self as concord_core;
+
 mod auth;
 mod body;
 mod client;
@@ -28,6 +31,11 @@ mod timeout;
 mod transport;
 mod types;
 
+#[cfg(test)]
+#[path = "../tests/support/mod.rs"]
+#[allow(unused_imports)]
+mod support;
+
 #[doc(hidden)]
 pub mod __private;
 
@@ -47,10 +55,9 @@ pub mod prelude {
     pub use crate::codec::json::Json;
     pub use crate::codec::{ContentType, NoContent, text::Text};
     pub use crate::debug::DebugLevel;
-    pub use crate::endpoint::{Endpoint, IntoEndpointPlan, PaginatedEndpoint, ReusableEndpoint};
     pub use crate::error::{
-        ApiClientError, ErrorCategory, PaginationError, PaginationErrorKind, RequestErrorSource,
-        RequestErrorSourceKind,
+        ApiClientError, ClientBuildErrorKind, ErrorCategory, PaginationError, PaginationErrorKind,
+        RequestErrorSource, RequestErrorSourceKind,
     };
     pub use crate::execution_meta::RequestExecutionMeta;
     pub use crate::header_ownership::HeaderOwnershipError;
@@ -58,6 +65,7 @@ pub mod prelude {
         CursorPagination, HasNextCursor, OffsetLimitPagination, PageItems, PagedPagination,
         PaginationTermination,
     };
+    pub use crate::policy::ClientPolicyBuilder;
     pub use crate::rate_limit::{
         RateLimitError, RateLimitErrorKind, RateLimitObservation, RateLimitObserver,
         RateLimitResponseContext,
@@ -72,11 +80,12 @@ pub mod advanced {
     #[cfg(feature = "json")]
     pub use crate::auth::OAuth2ClientCredentialsProvider;
     pub use crate::auth::{
-        AuthChallengeMode, AuthError, AuthErrorKind, AuthFuture, AuthHttpExecutor, AuthHttpRequest,
-        AuthHttpResponse, AuthInternalPolicy, AuthMode, AuthPreparationMode, AuthProviderBinding,
-        AuthRequirementId, AuthStepPolicy, CredentialContext, CredentialId, CredentialLease,
-        CredentialMaterial, CredentialProvider, CredentialProviderState, CredentialRefreshReason,
-        InvalidateReason, SecretCredential,
+        AuthChallengeMode, AuthChallengePolicy, AuthError, AuthErrorKind, AuthFuture,
+        AuthHttpExecutor, AuthHttpRequest, AuthHttpResponse, AuthInternalPolicy, AuthMode,
+        AuthPlacement, AuthPlan, AuthPreparationMode, AuthProviderBinding, AuthRecoveryReason,
+        AuthRejectionDecision, AuthRequirement, AuthRequirementId, AuthStepPolicy,
+        CredentialContext, CredentialId, CredentialLease, CredentialMaterial, CredentialProvider,
+        CredentialProviderState, CredentialRefreshReason, InvalidateReason, SecretCredential,
     };
     pub use crate::body::{BodyError, BodyErrorKind};
     pub use crate::codec::{
@@ -86,8 +95,9 @@ pub mod advanced {
     pub use crate::debug::{
         DebugSink, NoopDebugSink, SanitizedHeaderValue, SanitizedHeaders, StderrDebugSink,
     };
-    pub use crate::endpoint::{Endpoint, IntoEndpointPlan, PaginatedEndpoint, ReusableEndpoint};
-    pub use crate::error::{ErrorContext, FxError, PaginationError, PaginationErrorKind};
+    pub use crate::error::{
+        ClientBuildErrorKind, ErrorContext, FxError, PaginationError, PaginationErrorKind,
+    };
     pub use crate::execution_meta::RequestExecutionMeta;
     pub use crate::io::{
         AdvancedRequestBody, PreparedBody, PreparedEndpoint, PreparedRequestEntity,
@@ -107,6 +117,7 @@ pub mod advanced {
         PaginationCaps, PaginationRuntime, PaginationRuntimeAdapter, PaginationTermination,
         ProgressKey,
     };
+    pub use crate::policy::ClientPolicyBuilder;
     pub use crate::rate_limit::{
         DefaultRateLimitResponsePolicy, DefaultRateLimiter, GovernorRateLimiter, NoopRateLimiter,
         RateLimitBucketId, RateLimitBucketUse, RateLimitContext, RateLimitError,
@@ -115,11 +126,7 @@ pub mod advanced {
         RateLimitResponsePolicy, RateLimitScopeHint, RateLimitSetting, RateLimitWindow,
         RateLimiter, parse_retry_after,
     };
-    pub use crate::retry_mode::{
-        ApiOriginDescriptor, FixedOriginDescriptor, OriginScheme, RetryMode, RetryModeError,
-        StatusRetryConfig,
-    };
-    #[allow(deprecated)]
+    pub use crate::retry_mode::{RetryMode, RetryModeError, StatusRetryConfig};
     pub use crate::runtime::{DebugConfig, RuntimeConfig};
     pub use crate::runtime_hooks::{
         HookMeta, NoopRuntimeHooks, PostResponseHookContext, PreSendHookContext,
@@ -136,9 +143,9 @@ pub mod advanced {
 }
 
 pub mod dangerous {
-    #[cfg(feature = "dangerous-dev-tools")]
-    #[allow(deprecated)]
-    pub use crate::runtime::DevBodyCaptureConfig;
     #[cfg(feature = "dangerous-raw-response")]
     pub use crate::transport::BuiltResponse;
 }
+
+#[cfg(test)]
+mod regression_tests;

@@ -13,7 +13,7 @@ fn release_gate_documents_all_required_invariants() {
         "supply-chain",
         "performance-package",
         "benchmark",
-        "numeric private namespaces",
+        "unversioned private namespace",
         "transport polymorphism",
         "`Retry-After` resend",
         "Hyper/Tower-family",
@@ -106,7 +106,7 @@ fn final_public_extension_boundary_has_no_private_planning_leaks() {
     for anchor in [
         "PreparedEndpoint",
         "PreparedStreamEndpoint",
-        "RequestEntity",
+        "PreparedRequestEntity",
         "CredentialProvider",
         "RequestExecutionMeta",
         "AuthPreparationMode::PerExecution",
@@ -125,18 +125,64 @@ fn final_public_extension_boundary_has_no_private_planning_leaks() {
         .split("pub mod dangerous")
         .next()
         .expect("advanced module body");
-    assert!(!advanced.contains("RequestPlan"));
-    assert!(!advanced.contains("ResolvedPolicy"));
+    assert!(!advanced.contains("GeneratedRequest"));
+    assert!(!advanced.contains("GeneratedResolvedPolicy"));
 
-    let core_sources = [
-        read_repo_file("concord_core/src/transport.rs"),
-        read_repo_file("concord_core/src/stream_response.rs"),
-        read_repo_file("concord_core/src/auth/orchestrator.rs"),
-    ]
-    .join("\n");
-    assert!(!core_sources.contains("pub struct RequestMeta"));
-    assert!(!core_sources.contains("-> &RequestMeta"));
-    assert!(!core_sources.contains("AuthPreparationMode::PerAttempt"));
+    let execution_meta = read_repo_file("concord_core/src/execution_meta.rs");
+    assert!(execution_meta.contains("pub struct RequestExecutionMeta"));
+    let generated_contract = read_repo_file("concord_core/src/__private/mod.rs");
+    assert!(generated_contract.contains("GeneratedPreparedCall"));
+    assert!(generated_contract.contains("prepare_generated_endpoint"));
+}
+
+#[test]
+fn generated_contract_contains_only_opaque_current_preparation() {
+    let private = read_repo_file("concord_core/src/__private/mod.rs");
+    for runtime_name in [
+        "RequestPlan as",
+        "RequestPlanView as",
+        "EndpointPlan as",
+        "ResolvedRoute as",
+        "ResolvedPolicy as",
+        "crate::policy::Policy as",
+        "PolicyLayer as",
+        "PolicySnapshot as",
+        "PreparedBody as",
+        "PreparedRequestEntity as",
+        "RequestEntity as",
+        "ResponseEntity as",
+        "PaginationRuntime as",
+        "PaginationRuntimeAdapter as",
+        "RateLimitPlan as",
+        "AuthPlan as",
+        "AuthRequirement as",
+    ] {
+        assert!(
+            !private.contains(runtime_name),
+            "runtime alias remained: {runtime_name}"
+        );
+    }
+    for current in [
+        "GeneratedApiDescriptor",
+        "GeneratedEndpointDescriptor",
+        "GeneratedAuthBuilder",
+        "GeneratedRateLimitDescriptor",
+        "GeneratedPreparedCall",
+        "prepare_generated_request_body",
+        "prepare_generated_response",
+        "prepare_generated_endpoint",
+        "create_generated_client",
+    ] {
+        assert!(
+            private.contains(current),
+            "missing narrow adapter: {current}"
+        );
+    }
+
+    let client = read_repo_file("concord_core/src/client/api.rs");
+    assert!(!client.contains(&["with_generated_", "retry_mode"].concat()));
+    assert!(!private.contains(&["GENERATED_STATUS_", "RETRY_CAPABILITY"].concat()));
+    assert!(!private.contains(&["GeneratedStatus", "RetryCapability"].concat()));
 }
 
 #[test]
@@ -165,13 +211,13 @@ fn development_boundary_is_explicit_narrow_and_not_generated() {
         "AuthApplicationRequest",
         "AuthAppliedCredential",
         "AuthRejectionAction",
-        "AuthRequirement",
+        "GeneratedAuthRequirement",
         "DynBody",
         "LimitedBody",
-        "TransportError",
-        "TransportErrorKind",
-        "ResponseEntity",
-        "RequestEntity",
+        "ReqwestError",
+        "ReqwestErrorKind",
+        "GeneratedResponseEntity",
+        "GeneratedRequestEntity",
     ] {
         assert!(
             !development.contains(forbidden),

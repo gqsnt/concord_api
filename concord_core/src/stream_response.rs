@@ -3,9 +3,9 @@ use crate::body::DynBody;
 use crate::body::{BodyError, BodyErrorKind};
 use crate::codec::ContentType;
 use crate::error::{ApiClientError, ErrorContext};
+use crate::transport::ExecutionResponse;
 #[cfg(test)]
 use crate::transport::NativeResponseErrorMapper;
-use crate::transport::{ExecutionResponse, TransportError, TransportErrorKind};
 use bytes::Bytes;
 use http::{HeaderMap, StatusCode, Version, header::CONTENT_LENGTH};
 #[cfg(test)]
@@ -254,26 +254,7 @@ impl<M> StreamResponse<M> {
     }
 
     fn io_error(ctx: ErrorContext, msg: &'static str, source: std::io::Error) -> ApiClientError {
-        let kind = if matches!(
-            source.kind(),
-            std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
-        ) {
-            TransportErrorKind::Timeout
-        } else {
-            TransportErrorKind::Io
-        };
-        Self::request_error(ctx, kind, msg)
-    }
-
-    fn request_error(
-        ctx: ErrorContext,
-        kind: TransportErrorKind,
-        msg: &'static str,
-    ) -> ApiClientError {
-        ApiClientError::request_execution(
-            ctx,
-            TransportError::with_kind(kind, std::io::Error::other(msg)),
-        )
+        ApiClientError::response_file_error(ctx, msg, source)
     }
 }
 

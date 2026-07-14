@@ -1,5 +1,0 @@
-error: unknown profile `missing`
-  --> tests/trybuild/fail/sema/policy/unknown_behavior_use.rs:10:17
-   |
-10 |         profile missing
-   |                 ^^^^^^^

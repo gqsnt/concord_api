@@ -1,6 +1,6 @@
 use crate::rate_limit::RateLimitPlan;
 use core::time::Duration;
-use http::header::{ACCEPT, CONTENT_TYPE, HeaderName};
+use http::header::{ACCEPT, HeaderName};
 use http::{HeaderMap, HeaderValue};
 
 pub mod feature;
@@ -43,6 +43,112 @@ pub struct Policy {
     accept_explicit_by_runtime: bool,
 }
 
+/// Supported policy input for hand-written [`ClientContext`](crate::client::ClientContext)
+/// implementations.
+///
+/// Its fields and runtime representation are Core-owned. Applications can
+/// contribute only public request facts needed by the base policy hook.
+#[derive(Default)]
+pub struct ClientPolicyBuilder {
+    inner: Policy,
+}
+
+impl ClientPolicyBuilder {
+    pub fn new() -> Self {
+        Self {
+            inner: Policy::new(),
+        }
+    }
+
+    pub fn set_header(&mut self, name: HeaderName, value: HeaderValue) {
+        self.inner.insert_header(name, value);
+    }
+
+    #[doc(hidden)]
+    pub fn insert_header(&mut self, name: HeaderName, value: HeaderValue) {
+        self.set_header(name, value);
+    }
+
+    pub fn remove_header(&mut self, name: HeaderName) {
+        self.inner.remove_header(name);
+    }
+
+    pub fn set_query(&mut self, key: &str, value: impl Into<String>) {
+        self.inner.set_query(key, value);
+    }
+
+    pub fn replace_query_values<I>(&mut self, key: &str, values: I)
+    where
+        I: IntoIterator<Item = String>,
+    {
+        self.inner.replace_query_values(key, values);
+    }
+
+    pub fn remove_query(&mut self, key: &str) {
+        self.inner.remove_query(key);
+    }
+
+    pub fn set_timeout(&mut self, timeout: Duration) {
+        self.inner.set_timeout(timeout);
+    }
+
+    pub fn clear_timeout(&mut self) {
+        self.inner.clear_timeout();
+    }
+
+    pub fn add_rate_limit(&mut self, plan: RateLimitPlan) {
+        self.inner.add_rate_limit(plan);
+    }
+
+    pub fn replace_rate_limit(&mut self, plan: RateLimitPlan) {
+        self.inner.replace_rate_limit(plan);
+    }
+
+    pub fn clear_rate_limit(&mut self) {
+        self.inner.clear_rate_limit();
+    }
+
+    #[doc(hidden)]
+    pub fn add_generated_rate_limit(
+        &mut self,
+        descriptor: crate::__private::GeneratedRateLimitDescriptor,
+    ) {
+        self.inner.add_rate_limit(descriptor.into_plan());
+    }
+
+    #[doc(hidden)]
+    pub fn replace_generated_rate_limit(
+        &mut self,
+        descriptor: crate::__private::GeneratedRateLimitDescriptor,
+    ) {
+        self.inner.replace_rate_limit(descriptor.into_plan());
+    }
+
+    pub(crate) fn into_inner(self) -> Policy {
+        self.inner
+    }
+
+    #[doc(hidden)]
+    pub fn begin_prefix_layer(&mut self) {
+        self.inner.set_layer(PolicyLayer::PrefixPath);
+    }
+
+    #[doc(hidden)]
+    pub fn begin_endpoint_layer(&mut self) {
+        self.inner.set_layer(PolicyLayer::Endpoint);
+    }
+
+    #[doc(hidden)]
+    pub fn begin_runtime_layer(&mut self) {
+        self.inner.set_layer(PolicyLayer::Runtime);
+    }
+
+    #[doc(hidden)]
+    pub fn ensure_accept(&mut self, value: HeaderValue) {
+        self.inner.ensure_accept(value);
+    }
+}
+
 impl Policy {
     pub fn new() -> Self {
         Self {
@@ -57,18 +163,8 @@ impl Policy {
     }
 
     #[inline]
-    pub fn layer(&self) -> PolicyLayer {
-        self.layer
-    }
-
-    #[inline]
     pub fn set_layer(&mut self, layer: PolicyLayer) {
         self.layer = layer;
-    }
-
-    #[inline]
-    pub fn timeout(&self) -> Option<Duration> {
-        self.timeout
     }
 
     #[inline]
@@ -79,11 +175,6 @@ impl Policy {
     #[inline]
     pub fn clear_timeout(&mut self) {
         self.timeout = None;
-    }
-
-    #[inline]
-    pub fn rate_limit(&self) -> &RateLimitPlan {
-        &self.rate_limit
     }
 
     #[inline]
@@ -101,10 +192,12 @@ impl Policy {
         self.rate_limit = RateLimitPlan::new();
     }
 
+    #[cfg(test)]
     pub fn headers(&self) -> &HeaderMap {
         &self.headers
     }
 
+    #[cfg(test)]
     pub fn query(&self) -> &[(String, String)] {
         &self.query
     }
@@ -123,14 +216,10 @@ impl Policy {
         let _ = self.headers.remove(name);
     }
 
-    pub fn has_content_type(&self) -> bool {
-        self.headers.contains_key(CONTENT_TYPE)
-    }
-
     /// Decoder-driven Accept injection:
     /// - Applied at runtime (after endpoint policy).
     /// - Overrides base/prefix/path Accept.
-    /// - Does NOT override if endpoint policy explicitly set OR removed Accept.
+    /// - Does NOT override if endpoint policy explicitly set or explicitly clears Accept.
     pub fn ensure_accept(&mut self, value: HeaderValue) {
         if self.accept_explicit_by_endpoint || self.accept_explicit_by_runtime {
             return;

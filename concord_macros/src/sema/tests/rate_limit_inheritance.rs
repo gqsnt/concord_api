@@ -128,7 +128,7 @@ fn rate_limit_inheritance_applies_client_scope_endpoint_layers() {
 }
 
 #[test]
-fn rate_limit_inheritance_behavior_and_direct_endpoint_limits_combine() {
+fn rate_limit_inheritance_profile_and_direct_endpoint_limits_combine() {
     let api = analyze_ok(
         r#"
         api! {
@@ -147,14 +147,14 @@ fn rate_limit_inheritance_behavior_and_direct_endpoint_limits_combine() {
                     }
                 }
 
-                profile read_behavior {
+                profile read_profile {
                     rate_limit app
                 }
             }
 
             GET Me
                 path ["me"]
-                profile read_behavior
+                profile read_profile
                 rate_limit method
                 -> Json<()>
         }
@@ -173,7 +173,7 @@ fn rate_limit_inheritance_behavior_and_direct_endpoint_limits_combine() {
 }
 
 #[test]
-fn rate_limit_inheritance_scope_behavior_rate_limit_combines_with_endpoint_rate_limit() {
+fn rate_limit_inheritance_scope_profile_rate_limit_combines_with_endpoint_rate_limit() {
     let api = analyze_ok(
         r#"
         api! {
@@ -222,7 +222,7 @@ fn rate_limit_inheritance_scope_behavior_rate_limit_combines_with_endpoint_rate_
 }
 
 #[test]
-fn rate_limit_inheritance_behavior_and_direct_scope_limits_combine() {
+fn rate_limit_inheritance_profile_and_direct_scope_limits_combine() {
     let api = analyze_ok(
         r#"
         api! {
@@ -276,7 +276,7 @@ fn rate_limit_inheritance_behavior_and_direct_scope_limits_combine() {
 }
 
 #[test]
-fn rate_limit_inheritance_behavior_contributed_layers_preserve_order() {
+fn rate_limit_inheritance_profile_contributed_layers_preserve_order() {
     let api = analyze_ok(
         r#"
         api! {
@@ -308,37 +308,37 @@ fn rate_limit_inheritance_behavior_contributed_layers_preserve_order() {
                 }
 
                 profiles {
-                    profile client_behavior {
+                    profile client_profile {
                         rate_limit client_limit
                     }
 
-                    profile outer_behavior {
+                    profile outer_profile {
                         rate_limit outer_limit
                     }
 
-                    profile inner_behavior {
+                    profile inner_profile {
                         rate_limit inner_limit
                     }
 
-                    profile endpoint_behavior {}
+                    profile endpoint_profile {}
                 }
 
                 default {
-                    profile client_behavior
+                    profile client_profile
                 }
             }
 
             scope outer {
                 path ["outer"]
-                profile outer_behavior
+                profile outer_profile
 
                 scope inner {
                     path ["inner"]
-                    profile inner_behavior
+                    profile inner_profile
 
                     GET Show
                         path ["show"]
-                        profile endpoint_behavior
+                        profile endpoint_profile
                         rate_limit endpoint_limit
                         -> Json<()>
                 }
@@ -394,7 +394,7 @@ fn rate_limit_inheritance_behavior_contributed_layers_preserve_order() {
 }
 
 #[test]
-fn rate_limit_inheritance_endpoint_off_clears_inherited_behavior_limit() {
+fn rate_limit_inheritance_endpoint_off_clears_inherited_profile_limit() {
     let api = analyze_ok(
         r#"
         api! {
@@ -407,12 +407,12 @@ fn rate_limit_inheritance_endpoint_off_clears_inherited_behavior_limit() {
                     }
                 }
 
-                profile read_behavior {
+                profile read_profile {
                     rate_limit app
                 }
 
                 default {
-                    profile read_behavior
+                    profile read_profile
                 }
             }
 
@@ -463,40 +463,40 @@ fn rate_limit_inheritance_clear_and_replace_semantics() {
                 }
 
                 profiles {
-                    profile client_limit_behavior {
+                    profile client_limit_profile {
                         rate_limit client_limit
                     }
 
-                    profile scope_limit_behavior {
+                    profile scope_limit_profile {
                         rate_limit scope_limit
                     }
 
-                    profile endpoint_limit_behavior {
+                    profile endpoint_limit_profile {
                         rate_limit endpoint_limit
                     }
 
-                    profile clear_limit_behavior {
+                    profile clear_limit_profile {
                         rate_limit off
                     }
                 }
 
                 default {
-                    profile client_limit_behavior
+                    profile client_limit_profile
                 }
             }
 
             scope protected {
                 path ["protected"]
-                profile scope_limit_behavior
+                profile scope_limit_profile
 
                 GET Append
                     path ["append"]
-                    profile endpoint_limit_behavior
+                    profile endpoint_limit_profile
                     -> Json<()>
 
                 GET Clear
                     path ["clear"]
-                    profile clear_limit_behavior
+                    profile clear_limit_profile
                     -> Json<()>
             }
         }

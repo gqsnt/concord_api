@@ -32,17 +32,16 @@ fn generated_policy_materializes_resolved_policy() {
         &out,
         &[
             "let mut policy = < super :: PolicyPlanApiCx as :: concord_core :: prelude :: ClientContext > :: base_policy",
-            "policy . set_layer (:: concord_core :: __private :: PolicyLayer :: Endpoint)",
+            "policy . begin_endpoint_layer ()",
             "policy.set_query(\"q\"",
             "policy.insert_header",
             "HeaderName :: from_bytes (\"X-Endpoint\" . as_bytes ())",
             "HeaderValue :: from_static (\"search\")",
-            ":: concord_core :: __private :: AuthRequirement",
+            ":: concord_core :: __private :: GeneratedAuthBuilder",
+            "__auth.require",
             "policy.ensure_accept",
-            "let (headers , query , timeout , mut rate_limit) = policy.into_parts()",
-            "rate_limit.canonicalize()",
-            "let __resolved_policy = :: concord_core :: __private :: ResolvedPolicy",
-            "auth : __auth_plan",
+            "prepare_generated_policy",
+            ":: concord_core :: __private :: prepare_generated_endpoint",
         ],
     );
 }
@@ -57,9 +56,9 @@ fn profile_doc_line_formats_labels_in_order() {
 }
 
 #[test]
-fn behavior_profiles_do_not_reach_runtime_codegen() {
+fn profiles_do_not_reach_runtime_codegen() {
     let alpha = expanded(quote! {
-        client BehaviorCodegen {
+        client ProfileCodegen {
             base "https://example.com"
             secret token: String
             credential session = api_key(secret.token)
@@ -87,7 +86,7 @@ fn behavior_profiles_do_not_reach_runtime_codegen() {
                 -> Json<()>
     });
     let beta = expanded(quote! {
-        client BehaviorCodegen {
+        client ProfileCodegen {
             base "https://example.com"
             secret token: String
             credential session = api_key(secret.token)
@@ -117,17 +116,23 @@ fn behavior_profiles_do_not_reach_runtime_codegen() {
 
     assert_contains_all(
         &alpha,
-        &["#[doc=\"Profile: `alpha`\"]", "policy.add_rate_limit"],
+        &[
+            "#[doc=\"Profile: `alpha`\"]",
+            "policy.add_generated_rate_limit",
+        ],
     );
     assert_contains_all(
         &beta,
-        &["#[doc=\"Profile: `beta`\"]", "policy.add_rate_limit"],
+        &[
+            "#[doc=\"Profile: `beta`\"]",
+            "policy.add_generated_rate_limit",
+        ],
     );
     assert_eq!(without_doc_attrs(&alpha), without_doc_attrs(&beta));
 }
 
 #[test]
-fn rustdoc_behavior_label_dedup_does_not_affect_policy() {
+fn rustdoc_profile_label_dedup_does_not_affect_policy() {
     let out = expanded(quote! {
         client LabelDedup {
             base "https://example.com"
@@ -161,14 +166,14 @@ fn rustdoc_behavior_label_dedup_does_not_affect_policy() {
     });
 
     assert_contains_all(&out, &["#[doc=\"Profile: `read`\"]"]);
-    assert_contains_all(&out, &["policy.add_rate_limit"]);
+    assert_contains_all(&out, &["policy.add_generated_rate_limit"]);
     let profile_doc_lines = generated_doc_attrs(&out)
         .into_iter()
         .filter(|doc| doc.contains("Profile:`"))
         .collect::<Vec<_>>();
     assert_eq!(profile_doc_lines.len(), 2);
     assert_eq!(
-        out.match_indices("RateLimitBucketUse::new(\"read\",\"read_limit_0\"")
+        out.match_indices("GeneratedRateLimitBucketDescriptor::new(\"read\",\"read_limit_0\"")
             .count(),
         3
     );

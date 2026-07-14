@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use concord_core::advanced::{OctetStream, StreamBody};
 use concord_core::prelude::*;
 use concord_macros::api;
 use concord_test_support::{MockHandle, MockReply, MockServer, RecordedRequest, mock};
@@ -22,8 +23,72 @@ use self::basic_endpoint_helper_contract::{
     BasicEndpointHelperApi, BasicEndpointHelperApiAcquireAsBasicSessionExt,
 };
 use self::basic_helper_contract::BasicHelperApi;
+use self::challenge_policy_contract::{ChallengePolicyApi, NeverRecoverApi, OneShotChallengeApi};
 use self::o_auth_helper_contract::OAuthHelperApi;
 use self::policy_merge_helper_contract::PolicyMergeHelperApi;
+
+mod challenge_policy_contract {
+    #![allow(unused_imports)]
+    use super::*;
+
+    api! {
+        client ChallengePolicyApi {
+            base "https://api.example.com"
+            secret client_id: String
+            secret client_secret: String
+            credential oauth = oauth2_client {
+                token_url: "https://auth.example.com/oauth/token",
+                client_id: secret.client_id,
+                client_secret: secret.client_secret,
+            }
+        }
+
+        GET Explicit
+            path ["explicit"]
+            auth bearer oauth challenge unauthorized_or_forbidden
+            -> Json<User>
+    }
+
+    api! {
+        client OneShotChallengeApi {
+            base "https://api.example.com"
+            secret client_id: String
+            secret client_secret: String
+            credential oauth = oauth2_client {
+                token_url: "https://auth.example.com/oauth/token",
+                client_id: secret.client_id,
+                client_secret: secret.client_secret,
+            }
+        }
+
+        POST Upload(body: Stream<OctetStream>)
+            path ["upload"]
+            auth bearer oauth challenge unauthorized_or_forbidden
+            -> Json<User>
+    }
+
+    api! {
+        client NeverRecoverApi {
+            base "https://api.example.com"
+            secret client_id: String
+            secret client_secret: String
+            credential oauth = oauth2_client {
+                token_url: "https://auth.example.com/oauth/token",
+                client_id: secret.client_id,
+                client_secret: secret.client_secret,
+            }
+        }
+
+        GET Terminal
+            path ["terminal"]
+            auth bearer oauth challenge never_recover
+            -> Json<User>
+    }
+
+    pub(super) use challenge_policy_api::ChallengePolicyApi;
+    pub(super) use never_recover_api::NeverRecoverApi;
+    pub(super) use one_shot_challenge_api::OneShotChallengeApi;
+}
 
 mod auth_helper_contract {
     #![allow(unused_imports)]
@@ -580,6 +645,163 @@ async fn generated_oauth_client_credentials_refreshes_after_unauthorized() {
             .get(http::header::AUTHORIZATION)
             .and_then(|value| value.to_str().ok()),
         Some("Bearer token-b")
+    );
+}
+
+#[tokio::test]
+async fn generated_default_forbidden_is_terminal_without_reacquisition() {
+    let transport = RecordingTransport::new(vec![
+        ResponseFixture::json(
+            r#"{"access_token":"token-a","token_type":"Bearer","expires_in":3600}"#,
+        ),
+        ResponseFixture::status_json(StatusCode::FORBIDDEN, r#"{"error":"forbidden"}"#),
+    ]);
+    let sent = transport.clone();
+    let api = OAuthHelperApi::new_with_safe_reqwest_builder(
+        "oauth-client".to_string(),
+        "oauth-secret".to_string(),
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("mock client");
+
+    let error = api
+        .oauth_me()
+        .execute()
+        .await
+        .expect_err("default 403 is terminal");
+    assert_eq!(error.category(), ErrorCategory::AuthRejected);
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|r| r.url.host_str() == Some("auth.example.com"))
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn generated_explicit_forbidden_recovers_once_and_second_challenge_is_terminal() {
+    let transport = RecordingTransport::new(vec![
+        ResponseFixture::json(
+            r#"{"access_token":"token-a","token_type":"Bearer","expires_in":3600}"#,
+        ),
+        ResponseFixture::status_json(StatusCode::FORBIDDEN, r#"{"error":"forbidden-a"}"#),
+        ResponseFixture::json(
+            r#"{"access_token":"token-b","token_type":"Bearer","expires_in":3600}"#,
+        ),
+        ResponseFixture::status_json(StatusCode::FORBIDDEN, r#"{"error":"forbidden-b"}"#),
+    ]);
+    let sent = transport.clone();
+    let api = ChallengePolicyApi::new_with_safe_reqwest_builder(
+        "oauth-client".to_string(),
+        "oauth-secret".to_string(),
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("mock client");
+
+    let error = api
+        .explicit()
+        .execute()
+        .await
+        .expect_err("second 403 is terminal");
+    assert_eq!(error.category(), ErrorCategory::AuthRejected);
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 4, "there is no third protected execution");
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|r| r.url.host_str() == Some("auth.example.com"))
+            .count(),
+        2
+    );
+    assert_eq!(
+        requests[1]
+            .headers
+            .get(http::header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok()),
+        Some("Bearer token-a")
+    );
+    assert_eq!(
+        requests[3]
+            .headers
+            .get(http::header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok()),
+        Some("Bearer token-b")
+    );
+}
+
+#[tokio::test]
+async fn generated_never_recover_keeps_401_and_403_terminal() {
+    for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
+        let transport = RecordingTransport::new(vec![
+            ResponseFixture::json(
+                r#"{"access_token":"token-a","token_type":"Bearer","expires_in":3600}"#,
+            ),
+            ResponseFixture::status_json(status, r#"{"error":"terminal"}"#),
+        ]);
+        let sent = transport.clone();
+        let api = NeverRecoverApi::new_with_safe_reqwest_builder(
+            "oauth-client".to_string(),
+            "oauth-secret".to_string(),
+            |builder| transport.configure_reqwest(builder),
+        )
+        .expect("mock client");
+
+        let error = api
+            .terminal()
+            .execute()
+            .await
+            .expect_err("recovery is disabled");
+        assert_eq!(error.category(), ErrorCategory::AuthRejected);
+        let requests = sent.requests().await;
+        assert_eq!(requests.len(), 2);
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|r| r.url.host_str() == Some("auth.example.com"))
+                .count(),
+            1
+        );
+    }
+}
+
+#[tokio::test]
+async fn generated_non_rebuildable_body_never_executes_a_second_protected_request() {
+    let transport = RecordingTransport::new(vec![
+        ResponseFixture::json(
+            r#"{"access_token":"token-a","token_type":"Bearer","expires_in":3600}"#,
+        ),
+        ResponseFixture::status_json(StatusCode::UNAUTHORIZED, r#"{"error":"expired"}"#),
+    ]);
+    let sent = transport.clone();
+    let api = OneShotChallengeApi::new_with_safe_reqwest_builder(
+        "oauth-client".to_string(),
+        "oauth-secret".to_string(),
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("mock client");
+
+    api.upload(StreamBody::from_bytes(Bytes::from_static(b"one-shot")))
+        .execute()
+        .await
+        .expect_err("a one-shot body cannot be replayed for auth recovery");
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|r| r.url.host_str() == Some("auth.example.com"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|r| r.url.host_str() == Some("api.example.com"))
+            .count(),
+        1
     );
 }
 

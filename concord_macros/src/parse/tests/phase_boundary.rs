@@ -23,7 +23,7 @@ fn parser_preserves_raw_names_for_auth_and_rate_limit() {
     let endpoint = endpoint_at_top_level(&ast, 0);
     match &endpoint.auth_uses[0] {
         AuthUseDecl::Single(kind) => match &**kind {
-            AuthUseKind::Bearer { credential } => {
+            AuthUseKind::Bearer { credential, .. } => {
                 assert_eq!(credential.to_string(), "missing_credential")
             }
             other => panic!("expected bearer auth use, got {other:?}"),

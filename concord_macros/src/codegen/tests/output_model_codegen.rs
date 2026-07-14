@@ -16,12 +16,11 @@ fn generated_invalid_codec_headers_return_typed_errors() {
     assert_contains_all(
         &out,
         &[
-            "RequestEntity",
-            "EncodedRequest",
-            "prepare(",
-            "ResponseEntity",
-            "BufferedResponse",
-            "__response_entity_plan",
+            "prepare_generated_request_body",
+            "GeneratedEncodedRequest",
+            "prepare_generated_response",
+            "GeneratedBufferedResponse",
+            "__response_preparation",
         ],
     );
     assert_not_contains_all(
@@ -52,12 +51,10 @@ fn generated_bytes_response_uses_response_entity_plan() {
     assert_contains_all(
         &out,
         &[
-            "ResponseEntity",
-            "BytesResponse",
-            "__response_entity_plan",
-            "response: __response_plan",
-            "ResponseEntity>::execute",
-            "NoRequestBody",
+            "prepare_generated_response",
+            "GeneratedBytesResponse",
+            "__response_preparation",
+            "GeneratedNoRequestBody",
         ],
     );
     assert_not_contains_all(
@@ -74,7 +71,7 @@ fn generated_bytes_response_uses_response_entity_plan() {
     assert_contains_all(
         &out,
         &[
-            "ResponseDescriptor { format : :: concord_core :: __private :: ResponseFormatDescriptor :: Bytes",
+            "ResponseDescriptor :: new (:: concord_core :: __private :: ResponseFormatDescriptor :: Bytes",
         ],
     );
     assert_runtime_response_plan_has_no_format_field(&out);
@@ -95,12 +92,10 @@ fn generated_no_content_response_uses_response_entity_plan() {
     assert_contains_all(
         &out,
         &[
-            "ResponseEntity",
-            "NoContentResponse",
-            "__response_entity_plan",
-            "response: __response_plan",
-            "ResponseEntity>::execute",
-            "NoRequestBody",
+            "prepare_generated_response",
+            "GeneratedNoContentResponse",
+            "__response_preparation",
+            "GeneratedNoRequestBody",
         ],
     );
     assert_not_contains_all(
@@ -116,7 +111,7 @@ fn generated_no_content_response_uses_response_entity_plan() {
     assert_contains_all(
         &out,
         &[
-            "ResponseDescriptor { format : :: concord_core :: __private :: ResponseFormatDescriptor :: NoContent",
+            "ResponseDescriptor :: new (:: concord_core :: __private :: ResponseFormatDescriptor :: NoContent",
         ],
     );
     assert_runtime_response_plan_has_no_format_field(&out);

@@ -3,7 +3,7 @@ use concord_core::prelude::*;
 use concord_macros::api;
 
 api! {
-    client RemovedQueryAppendBlock {
+    client InvalidQueryAppendBlock {
         base "https://example.com"
     }
 

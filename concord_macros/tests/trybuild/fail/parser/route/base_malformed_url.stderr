@@ -1,8 +1,8 @@
 error: base URL must contain only scheme and host
  --> tests/trybuild/fail/parser/route/base_malformed_url.rs:5:36
   |
-5 |     client MalformedBaseApi { base "https://example.com/v1" }
-  |                                    ^^^^^^^^^^^^^^^^^^^^^^^^
+5 |     client MalformedBaseApi { base "https://example.com/api" }
+  |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: unused import: `concord_core::prelude::*`
  --> tests/trybuild/fail/parser/route/base_malformed_url.rs:1:5

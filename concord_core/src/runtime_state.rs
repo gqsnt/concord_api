@@ -10,11 +10,8 @@ pub struct ClientRuntimeState {
     rate_limiter: Arc<dyn RateLimiter>,
     max_rate_limit_cooldown: Duration,
     max_response_body_bytes: Option<usize>,
-    max_stream_request_body_bytes: Option<usize>,
+    max_request_body_bytes: Option<usize>,
     max_stream_response_body_bytes: Option<usize>,
-    #[cfg(feature = "dangerous-dev-tools")]
-    #[allow(deprecated)]
-    dev_body_capture: Option<crate::dangerous::DevBodyCaptureConfig>,
 }
 
 impl Default for ClientRuntimeState {
@@ -31,10 +28,8 @@ impl ClientRuntimeState {
             rate_limiter: config.rate_limiter,
             max_rate_limit_cooldown: config.max_rate_limit_cooldown,
             max_response_body_bytes: config.max_response_body_bytes,
-            max_stream_request_body_bytes: config.max_stream_request_body_bytes,
+            max_request_body_bytes: config.max_request_body_bytes,
             max_stream_response_body_bytes: config.max_stream_response_body_bytes,
-            #[cfg(feature = "dangerous-dev-tools")]
-            dev_body_capture: config.dev_body_capture,
         }
     }
 
@@ -69,20 +64,13 @@ impl ClientRuntimeState {
     }
 
     #[inline]
-    pub fn max_stream_request_body_bytes(&self) -> Option<usize> {
-        self.max_stream_request_body_bytes
+    pub fn max_request_body_bytes(&self) -> Option<usize> {
+        self.max_request_body_bytes
     }
 
     #[inline]
     pub fn max_stream_response_body_bytes(&self) -> Option<usize> {
         self.max_stream_response_body_bytes
-    }
-
-    #[cfg(feature = "dangerous-dev-tools")]
-    #[allow(deprecated)]
-    #[inline]
-    pub fn dev_body_capture(&self) -> Option<&crate::dangerous::DevBodyCaptureConfig> {
-        self.dev_body_capture.as_ref()
     }
 
     #[inline]

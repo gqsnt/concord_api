@@ -1,17 +1,17 @@
 fn emit_endpoint_auth_plan(resolved_api: &ResolvedApi, ep: &ResolvedEndpoint) -> TokenStream2 {
     if ep.policy.auth.is_empty() {
-        return quote! { ::concord_core::__private::AuthPlan::default() };
+        return quote! { ::concord_core::__private::GeneratedAuthBuilder::new() };
     }
     let requirements = ep
         .policy
         .auth
         .iter()
         .map(|req| emit_auth_requirement(resolved_api, req));
-    quote! {
-        ::concord_core::__private::AuthPlan {
-            requirements: ::std::vec![ #( #requirements ),* ],
-        }
-    }
+    quote! {{
+        let mut __auth = ::concord_core::__private::GeneratedAuthBuilder::new();
+        #( #requirements )*
+        __auth
+    }}
 }
 
 fn emit_auth_requirement(
@@ -24,29 +24,39 @@ fn emit_auth_requirement(
     let step_id = LitStr::new(&requirement.step_id, Span::call_site());
     let provenance = LitStr::new(&requirement.provenance.label, Span::call_site());
     let placement = emit_auth_placement(&requirement.placement);
-    quote! {
-        ::concord_core::__private::AuthRequirement {
-            credential: ::concord_core::__private::CredentialRef {
-                id: ::concord_core::__private::CredentialId::new(#client_ns, #credential_name),
-            },
-            placement: #placement,
-            usage_id: ::concord_core::__private::AuthUsageId::new(#usage_id),
-            step_id: ::core::option::Option::Some(#step_id),
-            provenance: ::concord_core::__private::AuthProvenance::new(#provenance),
-            challenge: ::concord_core::__private::AuthChallengePolicy::Default,
+    let challenge = match requirement.challenge {
+        crate::sema::AuthChallengePolicyIr::Unauthorized => {
+            quote! { ::concord_core::__private::GeneratedChallengePolicy::Unauthorized }
         }
+        crate::sema::AuthChallengePolicyIr::UnauthorizedOrForbidden => {
+            quote! { ::concord_core::__private::GeneratedChallengePolicy::UnauthorizedOrForbidden }
+        }
+        crate::sema::AuthChallengePolicyIr::NeverRecover => {
+            quote! { ::concord_core::__private::GeneratedChallengePolicy::NeverRecover }
+        }
+    };
+    quote! {
+        __auth.require(
+            #client_ns,
+            #credential_name,
+            #placement,
+            #usage_id,
+            #step_id,
+            #provenance,
+            #challenge,
+        );
     }
 }
 
 fn emit_auth_placement(placement: &AuthPlacementIr) -> TokenStream2 {
     match placement {
-        AuthPlacementIr::Bearer => quote! { ::concord_core::__private::AuthPlacement::Bearer },
+        AuthPlacementIr::Bearer => quote! { ::concord_core::__private::GeneratedAuthPlacement::Bearer },
         AuthPlacementIr::Header { name } => {
-            quote! { ::concord_core::__private::AuthPlacement::Header(#name) }
+            quote! { ::concord_core::__private::GeneratedAuthPlacement::Header(#name) }
         }
         AuthPlacementIr::Query { key } => {
-            quote! { ::concord_core::__private::AuthPlacement::Query(#key) }
+            quote! { ::concord_core::__private::GeneratedAuthPlacement::Query(#key) }
         }
-        AuthPlacementIr::Basic => quote! { ::concord_core::__private::AuthPlacement::Basic },
+        AuthPlacementIr::Basic => quote! { ::concord_core::__private::GeneratedAuthPlacement::Basic },
     }
 }

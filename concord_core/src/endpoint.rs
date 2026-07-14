@@ -1,6 +1,5 @@
-use crate::client::{ApiClient, ClientContext};
+use crate::client::ClientContext;
 use crate::error::ApiClientError;
-use crate::transport::DecodedResponse;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -11,27 +10,14 @@ pub use plan::{
     ResolvedRoute, ResponsePlan,
 };
 
-pub struct ClientPlanContext<'a, Cx: ClientContext> {
-    pub vars: &'a Cx::Vars,
-    pub auth_vars: &'a Cx::AuthVars,
-}
-
 #[doc(hidden)]
 pub type EndpointFuture<'a, Output> =
     Pin<Box<dyn Future<Output = Result<Output, ApiClientError>> + Send + 'a>>;
 
 /// Endpoint model used by generated Concord clients.
-pub trait Endpoint<Cx: ClientContext>: Send + Sized + 'static {
+#[doc(hidden)]
+pub trait GeneratedEndpoint<Cx: ClientContext>: Send + Sized + 'static {
     type Response: Send + 'static;
-
-    /// Executes a planned endpoint through its typed response path.
-    ///
-    /// Generated endpoints implement this with their resolved response entity.
-    /// Manual endpoints must provide the corresponding typed execution path.
-    fn execute<'a>(
-        client: &'a ApiClient<Cx>,
-        plan: RequestPlan,
-    ) -> EndpointFuture<'a, Self::Response>;
 }
 
 /// Marker for endpoints that expose a metadata-bearing decoded response terminal.
@@ -39,32 +25,38 @@ pub trait Endpoint<Cx: ClientContext>: Send + Sized + 'static {
 /// Generated buffered endpoints implement this with their resolved response
 /// adapter so callers cannot choose a response codec at the call site.
 #[doc(hidden)]
-pub trait ResponseTerminalEndpoint<Cx: ClientContext>: Endpoint<Cx> {
-    fn execute_response<'a>(
-        client: &'a ApiClient<Cx>,
-        plan: RequestPlan,
-    ) -> EndpointFuture<'a, DecodedResponse<Self::Response>>;
-}
+pub trait GeneratedResponseTerminalEndpoint<Cx: ClientContext>: GeneratedEndpoint<Cx> {}
 
 /// Endpoint planning for reusable bodyless endpoints.
 ///
 /// Implement this for endpoints that may be planned multiple times by shared
 /// reference, such as paginated endpoints.
-pub trait ReusableEndpoint<Cx: ClientContext>: Endpoint<Cx> + Sync {
-    fn plan(&self, ctx: &ClientPlanContext<'_, Cx>) -> Result<RequestPlan, ApiClientError>;
+#[doc(hidden)]
+pub trait GeneratedReusableEndpoint<Cx: ClientContext>: GeneratedEndpoint<Cx> + Sync {
+    fn plan(
+        &self,
+        ctx: &crate::__private::GeneratedPlanContext<'_, Cx>,
+    ) -> Result<crate::__private::GeneratedPreparedCall<Cx, Self::Response>, ApiClientError>;
 }
 
 /// Endpoint planning that consumes the endpoint value.
-pub trait IntoEndpointPlan<Cx: ClientContext>: Endpoint<Cx> {
-    fn into_plan(self, ctx: &ClientPlanContext<'_, Cx>) -> Result<RequestPlan, ApiClientError>;
+#[doc(hidden)]
+pub trait GeneratedIntoPreparedCall<Cx: ClientContext>: GeneratedEndpoint<Cx> {
+    fn into_plan(
+        self,
+        ctx: &crate::__private::GeneratedPlanContext<'_, Cx>,
+    ) -> Result<crate::__private::GeneratedPreparedCall<Cx, Self::Response>, ApiClientError>;
 }
 
-impl<Cx, E> IntoEndpointPlan<Cx> for E
+impl<Cx, E> GeneratedIntoPreparedCall<Cx> for E
 where
     Cx: ClientContext,
-    E: ReusableEndpoint<Cx>,
+    E: GeneratedReusableEndpoint<Cx>,
 {
-    fn into_plan(self, ctx: &ClientPlanContext<'_, Cx>) -> Result<RequestPlan, ApiClientError> {
+    fn into_plan(
+        self,
+        ctx: &crate::__private::GeneratedPlanContext<'_, Cx>,
+    ) -> Result<crate::__private::GeneratedPreparedCall<Cx, Self::Response>, ApiClientError> {
         self.plan(ctx)
     }
 }
@@ -74,7 +66,7 @@ where
 /// A response type implementing [`crate::pagination::PageItems`] is not enough
 /// to make an endpoint paginated; the endpoint plan must also carry an
 /// explicit pagination controller.
-pub trait PaginatedEndpoint<Cx: ClientContext>: ReusableEndpoint<Cx>
+pub trait GeneratedPaginatedEndpoint<Cx: ClientContext>: GeneratedReusableEndpoint<Cx>
 where
     Self: crate::pagination::PaginateBinding<Self::Pagination>,
     Self::Pagination: crate::pagination::EndpointPagination<Self::Response>,

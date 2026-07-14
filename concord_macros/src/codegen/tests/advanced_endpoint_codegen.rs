@@ -43,7 +43,7 @@ fn generated_explicit_endpoint_api_is_clean_and_matches_facade_target() {
 }
 
 #[test]
-fn generated_request_surface_has_no_behaviorless_extension_traits() {
+fn generated_request_surface_has_no_profileless_extension_traits() {
     let out = expanded(quote! {
         client RequestSurfaceApi {
             base "https://example.com"

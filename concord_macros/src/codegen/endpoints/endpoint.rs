@@ -130,7 +130,6 @@ fn emit_endpoint_def(
     }
 
     let final_response_ty = endpoint_response_output_ty(ep);
-    let execute_override = endpoint_execute_override(ep, ty_name, cx_ty);
     let response_terminal_impl = endpoint_response_terminal_impl(ep, ty_name, cx_ty);
     let plan_impl = endpoint_plan_impl(
         resolved_api,
@@ -232,9 +231,8 @@ fn emit_endpoint_def(
 
         #paginate_binding_impl
 
-        impl ::concord_core::prelude::Endpoint<super::#cx_ty> for #ty_name {
+        impl ::concord_core::__private::GeneratedEndpoint<super::#cx_ty> for #ty_name {
             type Response = #final_response_ty;
-            #execute_override
         }
 
         #response_terminal_impl
@@ -306,18 +304,15 @@ fn emit_endpoint_descriptor(api: &ResolvedApi, ep: &ResolvedEndpoint) -> TokenSt
         let credential = LitStr::new(&requirement.credential.to_string(), requirement.credential.span());
         let usage_id = LitStr::new(&requirement.usage_id, requirement.credential.span());
         quote! {
-            ::concord_core::__private::AuthRequirementDescriptor {
-                credential: #credential,
-                usage_id: #usage_id,
-            }
+            ::concord_core::__private::AuthRequirementDescriptor::new(#credential, #usage_id)
         }
     });
     let pagination = if ep.paginate.is_some() {
         let can_change_origin = ep.descriptor.pagination_can_change_origin;
         quote! {
-            ::core::option::Option::Some(::concord_core::__private::PaginationDescriptor {
-                can_change_origin: #can_change_origin,
-            })
+            ::core::option::Option::Some(
+                ::concord_core::__private::PaginationDescriptor::new(#can_change_origin)
+            )
         }
     } else {
         quote! { ::core::option::Option::None }
@@ -325,19 +320,17 @@ fn emit_endpoint_descriptor(api: &ResolvedApi, ep: &ResolvedEndpoint) -> TokenSt
 
     quote! {
         #[doc(hidden)]
-        pub(super) static #descriptor: ::concord_core::__private::EndpointDescriptor =
-            ::concord_core::__private::EndpointDescriptor {
-                name: #name,
-                api_name: #api_name,
-                method: #method,
-                origin: #origin,
-                request: ::concord_core::__private::RequestDescriptor { body: #request_body },
-                response: ::concord_core::__private::ResponseDescriptor { format: #response_format },
-                auth: ::concord_core::__private::AuthDescriptor {
-                    requirements: &[ #( #auth_requirements ),* ],
-                },
-                pagination: #pagination,
-            };
+        pub(super) static #descriptor: ::concord_core::__private::GeneratedEndpointDescriptor =
+            ::concord_core::__private::GeneratedEndpointDescriptor::new(
+                #name,
+                #api_name,
+                #method,
+                #origin,
+                ::concord_core::__private::RequestDescriptor::new(#request_body),
+                ::concord_core::__private::ResponseDescriptor::new(#response_format),
+                ::concord_core::__private::AuthDescriptor::new(&[ #( #auth_requirements ),* ]),
+                #pagination,
+            );
     }
 }
 
@@ -360,7 +353,7 @@ fn emit_paginate_binding_impl(ep: &ResolvedEndpoint, ty_name: &Ident) -> TokenSt
     }).collect();
 
     quote! {
-        impl ::concord_core::__private::PaginateBinding<#pagination_ty> for #ty_name {
+        impl ::concord_core::__private::GeneratedPaginateBinding<#pagination_ty> for #ty_name {
             fn load_pagination(&self) -> #pagination_ty {
                 let mut pagination = <#pagination_ty as ::core::default::Default>::default();
                 #( #load_assignments )*
@@ -385,7 +378,7 @@ fn emit_paginated_endpoint_impl(
     let controller_ty = &p.controller_ty;
 
     quote! {
-        impl ::concord_core::prelude::PaginatedEndpoint<super::#cx_ty> for #ty_name
+        impl ::concord_core::__private::GeneratedPaginatedEndpoint<super::#cx_ty> for #ty_name
         {
             type Pagination = #controller_ty;
         }
@@ -442,10 +435,8 @@ fn emit_endpoint_plan_route_policy(
         let scope_policy_apply = emit_policy_apply_fn(scope_policy, PolicyEmitCtx::Layer);
         quote! {
             {
-                let __prev = policy.layer();
-                policy.set_layer(::concord_core::__private::PolicyLayer::PrefixPath);
+                policy.begin_prefix_layer();
                 #scope_policy_apply
-                policy.set_layer(__prev);
             }
         }
     });
@@ -457,36 +448,29 @@ fn emit_endpoint_plan_route_policy(
         #path_layer_route_ops
         #endpoint_route_apply
         route.host().validate(ctx_err.clone())?;
-        let __resolved_route = ::concord_core::__private::ResolvedRoute {
-            scheme: <super::#cx_ty as ::concord_core::prelude::ClientContext>::SCHEME,
-            host: route.host().join(<super::#cx_ty as ::concord_core::prelude::ClientContext>::DOMAIN),
-            path: route.path().as_str().to_string(),
-        };
+        let __resolved_route = ::concord_core::__private::prepare_generated_route(
+            <super::#cx_ty as ::concord_core::prelude::ClientContext>::SCHEME,
+            route.host().join(<super::#cx_ty as ::concord_core::prelude::ClientContext>::DOMAIN),
+            route.path().as_str().to_string(),
+        );
 
         let mut policy = <super::#cx_ty as ::concord_core::prelude::ClientContext>::base_policy(vars, __concord_auth_vars, &ctx_err)?;
         #( #scope_policy_ops )*
         {
-            let __prev = policy.layer();
-            policy.set_layer(::concord_core::__private::PolicyLayer::Endpoint);
+            policy.begin_endpoint_layer();
             #endpoint_policy_apply
-            policy.set_layer(__prev);
         }
-        policy.set_layer(::concord_core::__private::PolicyLayer::Runtime);
+        policy.begin_runtime_layer();
         if ::http::Method::#method != ::http::Method::HEAD
             && !#response_no_content
             && let ::core::option::Option::Some(__accept) = #response_accept
         {
             policy.ensure_accept(__accept);
         }
-        let (headers, query, timeout, mut rate_limit) = policy.into_parts();
-        rate_limit.canonicalize();
-        let __resolved_policy = ::concord_core::__private::ResolvedPolicy {
-            headers,
-            query,
-            timeout,
-            auth: __auth_plan,
-            rate_limit,
-        };
+        let __resolved_policy = ::concord_core::__private::prepare_generated_policy(
+            policy,
+            __auth_plan,
+        );
     }
 }
 
@@ -494,12 +478,11 @@ fn emit_endpoint_plan_route_policy(
 fn emit_endpoint_pagination_plan(ep: &ResolvedEndpoint) -> TokenStream2 {
     if ep.paginate.is_some() {
         quote! {
-            let __pagination_plan =
-                ::core::option::Option::Some(::concord_core::__private::PaginationMarker);
+            let __pagination_plan = true;
         }
     } else {
         quote! {
-            let __pagination_plan = ::core::option::Option::None;
+            let __pagination_plan = false;
         }
     }
 }
@@ -535,23 +518,21 @@ fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, Tok
     let request_adapter_ty = &ep.io.request_entity.adapter_ty;
     if ep.io.request_entity.capabilities.has_body {
         Ok(quote! {
-            let __prepared_request_entity = <#request_adapter_ty as ::concord_core::__private::RequestEntity>::prepare(
+            let __prepared_body = ::concord_core::__private::prepare_generated_request_body::<#request_adapter_ty>(
                 {
                     let __body_value = ep.body;
                     __body_value
                 },
                 ctx_err.clone(),
             )?;
-            let __prepared_body = __prepared_request_entity.body;
         })
     } else {
         Ok(quote! {
-            let __prepared_request_entity =
-                <#request_adapter_ty as ::concord_core::__private::RequestEntity>::prepare(
+            let __prepared_body =
+                ::concord_core::__private::prepare_generated_request_body::<#request_adapter_ty>(
                     (),
                     ctx_err.clone(),
                 )?;
-            let __prepared_body = __prepared_request_entity.body;
         })
     }
 }
@@ -566,7 +547,7 @@ fn endpoint_plan_impl(
     let method = endpoint_http_method_ident(ep);
     let endpoint_name_str = endpoint_qualified_name(ep);
     let endpoint_name = LitStr::new(&endpoint_name_str, ep.name.span());
-    let response_plan_setup = endpoint_response_plan_tokens(ep, ty_name);
+    let response_plan_setup = endpoint_response_plan_tokens(ep, ty_name, cx_ty);
     let response_plan_accept = quote! { __response_accept };
     let response_plan_no_content = quote! { __response_no_content };
     let route_policy = emit_endpoint_plan_route_policy(
@@ -588,8 +569,8 @@ fn endpoint_plan_impl(
         "GET" | "HEAD" | "PUT" | "DELETE" | "OPTIONS"
     );
     let plan_body = quote! {
-        let vars = plan_ctx.vars;
-        let __concord_auth_vars = plan_ctx.auth_vars;
+        let vars = plan_ctx.vars();
+        let __concord_auth_vars = plan_ctx.auth_vars();
         let ep = self;
         let ctx_err = ::concord_core::error::ErrorContext { endpoint: #endpoint_name, method: ::http::Method::#method };
         let __auth_plan = #auth_plan;
@@ -598,41 +579,36 @@ fn endpoint_plan_impl(
         #route_policy
         #pagination_plan
         #body_plan
-        ::core::result::Result::Ok(::concord_core::__private::RequestPlan {
-            endpoint: ::concord_core::__private::EndpointPlan {
-                meta: ::concord_core::__private::EndpointMeta {
-                    name: #endpoint_name,
-                    method: ::http::Method::#method,
-                    idempotent: #idempotent,
-                    facade_path: &[],
-                },
-                route: __resolved_route,
-                policy: __resolved_policy,
-                response: __response_plan,
-                pagination: __pagination_plan,
-            },
-            body: __prepared_body,
-            overrides: ::concord_core::__private::RequestOverrides::default(),
-        })
+        ::concord_core::__private::prepare_generated_endpoint(
+            #endpoint_name,
+            ::http::Method::#method,
+            #idempotent,
+            &[],
+            __resolved_route,
+            __resolved_policy,
+            __response_preparation,
+            __prepared_body,
+            __pagination_plan,
+        )
     };
     if owned {
         quote! {
-            impl ::concord_core::prelude::IntoEndpointPlan<super::#cx_ty> for #ty_name {
+            impl ::concord_core::__private::GeneratedIntoPreparedCall<super::#cx_ty> for #ty_name {
                 fn into_plan(
                     self,
-                    plan_ctx: &::concord_core::__private::ClientPlanContext<'_, super::#cx_ty>,
-                ) -> ::core::result::Result<::concord_core::__private::RequestPlan, ::concord_core::prelude::ApiClientError> {
+                    plan_ctx: &::concord_core::__private::GeneratedPlanContext<'_, super::#cx_ty>,
+                ) -> ::core::result::Result<::concord_core::__private::GeneratedPreparedCall<super::#cx_ty, Self::Response>, ::concord_core::prelude::ApiClientError> {
                     #plan_body
                 }
             }
         }
     } else {
         quote! {
-            impl ::concord_core::prelude::ReusableEndpoint<super::#cx_ty> for #ty_name {
+            impl ::concord_core::__private::GeneratedReusableEndpoint<super::#cx_ty> for #ty_name {
                 fn plan(
                     &self,
-                    plan_ctx: &::concord_core::__private::ClientPlanContext<'_, super::#cx_ty>,
-                ) -> ::core::result::Result<::concord_core::__private::RequestPlan, ::concord_core::prelude::ApiClientError> {
+                    plan_ctx: &::concord_core::__private::GeneratedPlanContext<'_, super::#cx_ty>,
+                ) -> ::core::result::Result<::concord_core::__private::GeneratedPreparedCall<super::#cx_ty, Self::Response>, ::concord_core::prelude::ApiClientError> {
                     #plan_body
                 }
             }
@@ -651,38 +627,19 @@ fn endpoint_response_adapter_ty(ep: &ResolvedEndpoint, ty_name: &Ident) -> Token
     quote! { #base_adapter_ty }
 }
 
-fn endpoint_response_plan_tokens(ep: &ResolvedEndpoint, ty_name: &Ident) -> TokenStream2 {
+fn endpoint_response_plan_tokens(
+    ep: &ResolvedEndpoint,
+    ty_name: &Ident,
+    cx_ty: &Ident,
+) -> TokenStream2 {
     let response_entity_adapter_ty = endpoint_response_adapter_ty(ep, ty_name);
     quote! {
-        let __response_entity_plan = <#response_entity_adapter_ty as ::concord_core::__private::ResponseEntity>::plan(ctx_err.clone())?;
-        let __response_plan = __response_entity_plan.response_plan.clone();
-        let __response_accept = __response_plan.accept.clone();
-        let __response_no_content = __response_plan.no_content;
-    }
-}
-
-fn endpoint_execute_override(ep: &ResolvedEndpoint, ty_name: &Ident, cx_ty: &Ident) -> TokenStream2 {
-    let response_entity_adapter_ty = endpoint_response_adapter_ty(ep, ty_name);
-    quote! {
-        fn execute<'a>(
-            client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty>,
-            plan: ::concord_core::__private::RequestPlan,
-        ) -> ::core::pin::Pin<
-            ::std::boxed::Box<
-                dyn ::core::future::Future<
-                        Output = ::core::result::Result<
-                            Self::Response,
-                            ::concord_core::prelude::ApiClientError,
-                        >,
-                    > + Send + 'a,
-            >,
-        >
-        {
-            <#response_entity_adapter_ty as ::concord_core::__private::ResponseEntity>::execute(
-                client,
-                plan,
-            )
-        }
+        let __response_preparation = ::concord_core::__private::prepare_generated_response::<
+            super::#cx_ty,
+            #response_entity_adapter_ty,
+        >(ctx_err.clone())?;
+        let __response_accept = __response_preparation.accept().cloned();
+        let __response_no_content = __response_preparation.is_no_content();
     }
 }
 
@@ -695,28 +652,7 @@ fn endpoint_response_terminal_impl(
         return quote! {};
     }
 
-    let response_entity_adapter_ty = endpoint_response_adapter_ty(ep, ty_name);
     quote! {
-        impl ::concord_core::__private::ResponseTerminalEndpoint<super::#cx_ty> for #ty_name {
-            fn execute_response<'a>(
-                client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty>,
-                plan: ::concord_core::__private::RequestPlan,
-            ) -> ::core::pin::Pin<
-                ::std::boxed::Box<
-                    dyn ::core::future::Future<
-                            Output = ::core::result::Result<
-                                ::concord_core::prelude::DecodedResponse<Self::Response>,
-                                ::concord_core::prelude::ApiClientError,
-                            >,
-                        > + Send + 'a,
-                >,
-            >
-            {
-                <#response_entity_adapter_ty as ::concord_core::__private::ResponseEntityWithMeta>::execute_with_meta(
-                    client,
-                    plan,
-                )
-            }
-        }
+        impl ::concord_core::__private::GeneratedResponseTerminalEndpoint<super::#cx_ty> for #ty_name {}
     }
 }

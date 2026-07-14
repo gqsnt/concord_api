@@ -6,19 +6,27 @@ Concord uses several layers of tests because the project spans macro syntax, gen
 
 Trybuild pass and fail fixtures cover public macro UI contracts: downstream compile boundaries, intended user-facing diagnostics, and span-sensitive diagnostics. Fixtures are split by category under `concord_macros/tests/trybuild/`.
 
-The current trybuild test functions are:
+The current Trybuild functions are grouped by test binary.
+
+`trybuild_current` contains:
 
 - `trybuild_facade_contract_fixtures`
 - `trybuild_endpoint_io_contract_fixtures`
 - `trybuild_pagination_contract_fixtures`
 - `trybuild_auth_contract_fixtures`
-- `trybuild_retry_contract_fixtures`
 - `trybuild_route_contract_fixtures`
+- `trybuild_codegen_contract_failures`
+
+`trybuild_sema` contains:
+
 - `trybuild_parser_diagnostics`
+- `trybuild_route_diagnostics`
 - `trybuild_auth_diagnostics`
 - `trybuild_policy_diagnostics`
 - `trybuild_pagination_diagnostics`
-- `trybuild_route_diagnostics`
+
+`trybuild_codegen` contains:
+
 - `trybuild_codegen_contract_diagnostics`
 - `trybuild_rust_type_errors`
 
@@ -53,34 +61,40 @@ Only use `TRYBUILD=overwrite` when diagnostics intentionally change. Inspect the
 
 The repo ships `.config/nextest.toml`. It gives `concord_macros`'s `trybuild_current` binary a longer slow-timeout and places it in the `trybuild` nextest group. The other trybuild binaries use the ordinary nextest scheduling.
 
-The current-pass example above is representative; the other current-pass wrapper names (`trybuild_endpoint_io_contract_fixtures`, `trybuild_pagination_contract_fixtures`, `trybuild_auth_contract_fixtures`, `trybuild_retry_contract_fixtures`, and `trybuild_route_contract_fixtures`) use the same `--test trybuild_current` binary.
+The current-pass example above is representative; the other current-pass
+wrapper functions listed under `trybuild_current` use the same test binary.
+`trybuild_codegen_contract_failures` is the compile-fail group in that binary.
 
 Trybuild remains part of the full gate through `cargo nextest run --workspace --all-targets`. The checked-in nextest config only special-cases `concord_macros`'s `trybuild_current` binary for a longer timeout and the `trybuild` group; the other trybuild binaries run under the standard nextest scheduling.
 
 Parser unit tests cover smaller syntax rules and span-sensitive diagnostics.
 
-Sema unit tests cover name resolution, inheritance, policy merging, behavior expansion, and diagnostics that need semantic context.
+Sema unit tests cover name resolution, inheritance, policy merging, profile expansion, and diagnostics that need semantic context.
 
 Codegen tests should prefer generated API compile checks, type checks, trybuild fixtures, and focused generated-shape assertions that cannot be expressed through Rust type checking.
 
 Macro strictness belongs primarily in semantic unit tests and trybuild pass/fail fixtures. Add trybuild fail fixtures when a rejected form needs a stable public diagnostic. Source-level keyword audits can be useful during review, but they should not be normal `cargo test` checks.
 
-`just release` validates the combined all-feature workspace configuration.
-No-default, individual-feature, and dependency-tree checks are focused
-diagnostics to run when changing feature ownership or optional dependencies;
-they are not part of the canonical release gate.
+`just release` validates both the all-feature and default-feature workspace
+configurations. Each configuration is checked, linted with warnings denied,
+and exercised through Nextest. The release gate also compiles `concord_core`
+with Rust 1.97 at both feature extremes: no default features and all features.
 
 Supply-chain policy is gated by `just supply-chain`. It requires `cargo-deny`, checks advisories, yanked crates, licenses, dependency sources and registries, and configured ban policy, and it may require a cached advisory database or network access to refresh advisory data. It does not use live credentials.
 
-The canonical release gate runs one executable-test axis:
+The executable workspace-test axes in the canonical release gate are:
 
 ```text
 cargo nextest run --workspace --all-targets --all-features \
   --no-tests fail --no-fail-fast --retries 0
+cargo nextest run --workspace \
+  --no-tests fail --no-fail-fast --retries 0
 ```
 
-Focused default-feature, per-crate, UI, no-default, and feature-specific
-commands are diagnostics and are not dependencies of `just release`.
+Focused per-crate, UI, individual-feature, and no-default executable-test
+filters remain optional diagnostics. The no-default Core compilation check is
+not optional: `just release` runs
+`cargo +1.97 check -p concord_core --no-default-features`.
 
 The no-default rate-limit regression is exercised separately with a focused cargo test filter instead of the full runtime suite:
 
@@ -92,8 +106,8 @@ cargo test -p concord_core --no-default-features --features json no_default_rate
 ## Architecture Boundary Checks
 
 Architecture boundaries are maintained through module and crate organization,
-compile-fail/runtime tests, review, and focused repository searches for removed
-public execution and request-bridge symbols.
+compile-fail/runtime tests, review, and focused repository searches for public
+execution and request-extension boundaries.
 
 The maintained architectural contract includes:
 
@@ -116,7 +130,7 @@ Auth and redaction tests cover arbitrary auth names and verify that response val
 
 Auth preparation boundary tests verify that raw material stays out of logical, debug, and error surfaces and reaches only the native request at execution time.
 
-Runtime strictness tests should reject invented policy values and silent saturation through observable behavior. Rate-limit `[host]` keys must fail explicitly when the logical URL has no host. Request and auth attempt counters should return typed overflow errors instead of saturating.
+Runtime strictness tests should reject invented policy values and silent saturation through observable behavior. Rate-limit `[host]` keys must fail explicitly when the logical URL has no host. Request and authentication counters should return typed overflow errors instead of saturating.
 
 Runtime lock and state tests should poison representative auth and rate-limit state where feasible and assert typed errors instead of panics.
 
@@ -124,27 +138,20 @@ Response body limit tests should cover `Content-Length` precheck, unknown-length
 
 ## Deterministic Async Harness
 
-Runtime async, cancellation, and drop tests should use the test-only harness in `concord_core/tests/integration/current_core/common.rs` instead of sleeps or stress loops.
+Native wire tests use the loopback helpers in `concord_test_support/src/mock.rs` instead of an injected transport abstraction or live external services.
 
-The common helpers are:
+The native helpers start a bounded loopback HTTP server, configure Concord's
+safe Reqwest builder to reach it, serve queued `MockReply` values, expose
+`ReplyGate` for deterministic response release, and record `RecordedRequest`
+wire observations. They exercise the managed Reqwest path directly.
 
-- `PhaseGate`: records phase entry, waits for a phase count with a bounded timeout, blocks entrants, releases one waiter, releases all waiters, and preserves an ordered phase log.
-- `PhaseGate`: release accounting is exact. Duplicate releases do not create surplus permits for future entrants, and cancelled blocked waiters clean up their own accounting without leaking a future release.
-- `DropProbe`: creates cloneable drop tokens, counts drops, and waits for a drop count with a bounded timeout. It also tries to log a labeled drop event when drop-time locking is available, but the count is the authoritative signal.
-- `GateableTransport`: records transport send start and request metadata, blocks at `transport_send`, returns configured responses or transport errors, counts sends, and can attach a `DropProbe` to the in-flight send future.
-- `GateableBodyTransport`: returns a streaming response body that blocks at `body_chunk`, counts chunks read, can produce deterministic partial reads, and can attach a `DropProbe` to the body stream.
-- `CountingRateLimiter`: records acquire start and completion, permit creation, response observation, and deterministic lifecycle completion. The public runtime permit type is currently a unit value, so this helper records the observable lifecycle boundary rather than instrumenting the production permit destructor.
-- `GateableHooks` and `SafeRecordingDebugSink`: block or record hook and debug phases using URL, status, and header metadata only.
-
-`DevBodyCaptureConfig` is a separate, deprecated, disabled-by-default local-file capture path. It persists raw selected response bytes to disk with no redaction, never captures request bodies, and skips protected auth-bearing requests and auth endpoint traffic by default. It is not a substitute for debug sinks or hooks, and tests should not use it to inspect secrets or production-like payloads.
+The dangerous development feature exposes only lifecycle observations and
+opaque credential-generation snapshots. It does not persist response bodies.
 
 Every harness wait is bounded through `wait_bounded`, `PhaseGate::wait_for`, or `PhaseGate::try_wait_for`. Tests that assert a task is still blocked may use a short bounded negative wait such as `assert_still_pending`, but the phase event must be the synchronization point. Do not make correctness depend on arbitrary wall-clock sleeps.
 
-Harness event logs must remain safe metadata. They may include phase labels, sanitized URLs, statuses, and headers, but not request body bytes, response body bytes, raw auth material, or secret values. The harness self-tests live in `concord_core/tests/integration/current_core/async_harness.rs`; they prove blocking, release, drop observation, rate-limit, transport, body, hook ordering, bounded missing-phase waits, and safe observer surfaces.
-
-The cancellation suite in `concord_core/tests/integration/current_core/cancellation.rs` reuses those helpers to prove that aborted rate-limit, hook, transport, body, and pagination work does not produce late semantic side effects. Timeout handling remains transport-delegated unless a runtime timer is explicitly documented elsewhere.
-
-The concurrency characterization suite in `concord_core/tests/integration/current_core/concurrency.rs` uses the same helpers to prove that concurrent requests keep request-local config, rate-limit state, auth credential generations, pagination state, decode results, observer metadata, and cancellation outcomes isolated even when they reuse the same client, limiter, hooks, or debug sink.
+Harness observations must remain safe metadata. They may include sanitized URLs,
+statuses, and headers, but not raw auth material or secret values.
 
 ## Examples And Docs Tests
 
@@ -152,7 +159,7 @@ The concurrency characterization suite in `concord_core/tests/integration/curren
 
 The Riot fixture is the large real-world surface test. Do not change Riot semantics for unrelated macro or runtime work.
 
-Markdown prose is not validated by keyword tests in `cargo test`. Release review may include a manual source and documentation audit for outdated wording, unsafe live calls, or validation-dependent codegen patterns, but that audit is not a substitute for behavior, compile, diagnostic, and runtime tests.
+Markdown prose is not validated by keyword tests in `cargo test`. Release review may include a manual source and documentation audit for outdated wording, unsafe live calls, or validation-dependent codegen patterns, but that audit is not a substitute for parser, compile, diagnostic, and runtime tests.
 
 ## Full Local Gate
 
@@ -162,11 +169,13 @@ Run the canonical maintained-workspace gate with:
 just release
 ```
 
-It runs one formatting check, all-feature workspace check and Clippy, one
-all-target/all-feature workspace Nextest run, doctests, rustdoc, and the
-supply-chain policy check. Deferred performance diagnostics remain available as
-`just perf-check`, `just perf-test`, and `just bench-check`, but are not part of
-release validation.
+It runs formatting verification; all-target checks, strict Clippy, and Nextest
+for both all-feature and default-feature workspace configurations; Rust 1.97
+Core compilation checks with no default features and with all features;
+doctests; rustdoc; and the supply-chain policy check. It also runs
+`perf-check`, `perf-test`, and `bench-check`, so performance compilation,
+deterministic performance tests, and benchmark compilation are part of the
+release gate.
 
 ## New DSL Feature Checklist
 
@@ -174,7 +183,7 @@ release validation.
 2. Add parser success and fail fixtures.
 3. Add semantic model fields.
 4. Add sema resolution and diagnostics.
-5. Add merge and inheritance behavior if applicable.
+5. Add a merge and inheritance test if applicable.
 6. Add codegen.
 7. Add core runtime support only if required.
 8. Add public docs.

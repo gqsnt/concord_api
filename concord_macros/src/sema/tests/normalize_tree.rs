@@ -59,7 +59,7 @@ fn normalized_tree_preserves_client_and_top_level_endpoint_fields() {
             .len(),
         1
     );
-    assert!(norm.client.default_behavior_uses.is_empty());
+    assert!(norm.client.default_profile_uses.is_empty());
     assert!(norm.client.rate_limit.is_some());
     assert_eq!(norm.items.len(), 1);
 
@@ -278,7 +278,9 @@ fn normalized_tree_preserves_client_shape_without_raw_auth_groups() {
 
     let auth_use = &scope.auth_uses[0];
     match &auth_use.kind {
-        AuthUseKind::Header { header, credential } => {
+        AuthUseKind::Header {
+            header, credential, ..
+        } => {
             assert_eq!(header.value(), "X-Token");
             assert_eq!(credential.to_string(), "key");
         }

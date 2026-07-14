@@ -6,10 +6,10 @@ error[E0599]: the method `execute_stream` exists for struct `PendingRequest<'_, 
  7 | |         base "https://example.com"
 ...  |
 10 | |     GET User
-   | |____________- doesn't satisfy `<_ as Endpoint<BufferedEndpointExecuteStreamApiCx>>::Response = StreamResponse<_>`
+   | |____________- doesn't satisfy `<_ as GeneratedEndpoint<BufferedEndpointExecuteStreamApiCx>>::Response = StreamResponse<_>`
 ...
 16 |       let _ = api.user().execute_stream().await.unwrap();
    |                          ^^^^^^^^^^^^^^
    |
    = note: the following trait bounds were not satisfied:
-           `<EpUserHa48f81f001b893d2 as concord_core::prelude::Endpoint<BufferedEndpointExecuteStreamApiCx>>::Response = StreamResponse<_>`
+           `<EpUserHa48f81f001b893d2 as concord_core::__private::GeneratedEndpoint<BufferedEndpointExecuteStreamApiCx>>::Response = StreamResponse<_>`

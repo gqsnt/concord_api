@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn default_limiter_allows_empty_plans() {
-        let limiter = DefaultRateLimiter::default();
+        let limiter = DefaultRateLimiter::new();
         let permit = Builder::new_current_thread()
             .enable_all()
             .build()
@@ -198,7 +198,7 @@ mod tests {
 
     #[test]
     fn default_limiter_fails_closed_for_non_empty_plans() {
-        let limiter = DefaultRateLimiter::default();
+        let limiter = DefaultRateLimiter::new();
         let err = Builder::new_current_thread()
             .enable_all()
             .build()

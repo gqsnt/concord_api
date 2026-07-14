@@ -217,28 +217,56 @@ fn parse_auth_use_kind(input: ParseStream<'_>) -> Result<AuthUseKind> {
             usage.span(),
             "auth none/any/all are not supported; declare explicit credential usage",
         )),
-        "bearer" => Ok(AuthUseKind::Bearer {
-            credential: input.parse()?,
-        }),
+        "bearer" => {
+            let credential = input.parse()?;
+            Ok(AuthUseKind::Bearer {
+                credential,
+                challenge: parse_auth_challenge(input)?,
+            })
+        }
         "header" => {
             let header: LitStr = input.parse()?;
             input.parse::<Token![=]>()?;
             let credential: Ident = input.parse()?;
-            Ok(AuthUseKind::Header { header, credential })
+            Ok(AuthUseKind::Header {
+                header,
+                credential,
+                challenge: parse_auth_challenge(input)?,
+            })
         }
         "query" => {
             let key: LitStr = input.parse()?;
             input.parse::<Token![=]>()?;
             let credential: Ident = input.parse()?;
-            Ok(AuthUseKind::Query { key, credential })
+            Ok(AuthUseKind::Query {
+                key,
+                credential,
+                challenge: parse_auth_challenge(input)?,
+            })
         }
-        "basic" => Ok(AuthUseKind::Basic {
-            credential: input.parse()?,
-        }),
+        "basic" => {
+            let credential = input.parse()?;
+            Ok(AuthUseKind::Basic {
+                credential,
+                challenge: parse_auth_challenge(input)?,
+            })
+        }
         _ => Err(syn::Error::new(
             usage.span(),
             "unknown auth usage; expected `bearer credential`, `header \"Name\" = credential`, `query \"name\" = credential`, or `basic credential`",
         )),
     }
+}
+
+fn parse_auth_challenge(input: ParseStream<'_>) -> Result<Option<Ident>> {
+    if input.peek(Ident) {
+        let fork = input.fork();
+        let keyword: Ident = fork.parse()?;
+        if keyword == "challenge" {
+            input.parse::<Ident>()?;
+            return Ok(Some(input.parse()?));
+        }
+    }
+    Ok(None)
 }
 
