@@ -1,0 +1,6 @@
+[profile.default]
+retries = 0
+
+[profile.ci]
+inherits = "default"
+retries = 0

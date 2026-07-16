@@ -1,0 +1,12 @@
+[package]
+name = "concord_macros"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+proc-macro = true
+
+[lints]
+workspace = true
