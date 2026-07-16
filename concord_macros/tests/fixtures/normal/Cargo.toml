@@ -1,0 +1,10 @@
+[package]
+name = "concord-fixture-normal"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+[dependencies]
+concord_core = { path = "../../../../concord_core", default-features = false }
+concord_macros = { path = "../../.." }

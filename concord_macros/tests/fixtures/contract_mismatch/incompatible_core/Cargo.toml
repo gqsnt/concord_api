@@ -1,0 +1,9 @@
+[package]
+name = "concord_core"
+version = "99.0.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+[lib]
+path = "lib.rs"

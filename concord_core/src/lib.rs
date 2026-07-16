@@ -1,6 +1,15 @@
-//! Workspace scaffold for the future Concord core implementation.
+//! Core support for Concord-generated API clients.
 //!
-//! No Concord runtime capabilities are implemented in this phase.
+//! Phase 0 exposes no request execution surface. The only implementation is
+//! the generated-private construction contract used by `concord_macros`.
+
+#![forbid(unsafe_code)]
+
+mod generated_contract;
+mod request;
+
+#[doc(hidden)]
+pub mod __private;
 
 #[cfg(test)]
 mod tests {

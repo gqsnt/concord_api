@@ -1,0 +1,10 @@
+[package]
+name = "concord-fixture-contract-mismatch"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+[dependencies]
+concord_core = { path = "incompatible_core" }
+concord_macros = { path = "../../.." }
