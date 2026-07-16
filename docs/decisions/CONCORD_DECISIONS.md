@@ -1,0 +1,555 @@
+# CONCORD_DECISIONS
+**Version:** 0.1  
+**Status:** Informative decision log  
+**Authority:** Architectural rationale; normative behavior remains in the specification documents
+
+## How to use this log
+
+Each decision records why the specification selected one design and rejected alternatives.
+
+A decision does not override a normative requirement. If a decision and specification disagree, the specification wins and the decision must be updated.
+
+Decision statuses:
+
+- **Accepted** — selected for Concord 0.1;
+- **Superseded** — replaced by another recorded decision;
+- **Rejected** — considered and explicitly not selected.
+
+---
+
+## ADR-001 — Production transport is concrete Reqwest
+
+
+**Context:** A public transport trait would require generic generated clients, a transport-neutral body/stream/error model, and would expose final authenticated requests to arbitrary transport implementations.
+
+**Decision:** Production execution uses private managed Reqwest clients. A deterministic executor seam exists only under testing/development configuration and does not alter generated client types.
+
+**Consequences:**
+
+- simpler endpoint and response types;
+- no duplicate transport error taxonomy;
+- Reqwest retry, TLS, proxy, and body semantics remain authoritative;
+- replacing Reqwest is not a supported application extension.
+
+**Rejected alternatives:** Public `Transport` trait; generic `ApiClient<T>`; Tower service as the primary public transport.
+
+**Affected requirements:** `PROD-CORE-001`, `FEAT-CORE-002`, `CONF-DET-001`.
+
+---
+
+## ADR-002 — No Concord general retry loop
+
+**Status:** Accepted
+
+**Context:** A Concord retry loop would coexist with Reqwest-native retries and complicate request counts, hooks, body replay, credentials, pagination, and limiter accounting. Even Reqwest's native default retry may create more physical attempts than one Concord limiter reservation.
+
+**Decision:** Concord application native retry is disabled by default. Applications may explicitly opt into Reqwest default retry or the feature-gated dangerous custom Reqwest retry. Concord separately owns one authentication recovery.
+
+**Consequences:** With the default, one limiter reservation corresponds to one physical native attempt. Explicit native retry weakens physical-attempt limiter accounting and remains invisible to Concord lifecycle hooks.
+
+**Rejected alternatives:** Safe status-retry profiles; endpoint retry policies; custom Concord backoff engine; enabling Reqwest default retry implicitly.
+
+**Affected requirements:** `PROD-GUAR-008`, `PROD-GUAR-013`, `DSL-RETRY-*`, `EXEC-NATIVE-*`, `EXEC-COUNT-*`.
+
+## ADR-003 — HTTP caching is outside core
+
+
+**Context:** Correct caching requires `Vary`, authorization partitioning, freshness, revalidation, stale behavior, and response transformation rules.
+
+**Decision:** Concord core 0.1 contains no response cache.
+
+**Consequences:** The request runtime remains focused. A future cache may be a separate crate and require a contract revision.
+
+**Rejected alternatives:** Built-in memory cache; generic cache backend; stale-on-error in the core execution loop.
+
+**Affected requirements:** Product non-goals.
+
+---
+
+## ADR-004 — Built client values are fixed immutable snapshots
+
+**Context:** Mutable or derived client values create clone-sharing ambiguity and can reuse tenant-, region-, host-, or audience-sensitive credentials under a different public snapshot.
+
+**Decision:** Client-level public values are selected during independent construction and remain fixed. Cloning preserves the exact same client snapshot and shares its credential handles. Per-operation variability belongs in scope values and endpoint parameters. A different client-level snapshot requires an independently built client with independent credential state.
+
+**Consequences:** Credential validity never silently crosses changed client-level values. Same-snapshot clones remain cheap and concurrency-safe. Concord 0.1 does not need credential partition-key declarations or post-build `with_*` client methods.
+
+**Rejected alternatives:** Shared mutable client values; derived clients sharing credentials; automatic credential partition maps in 0.1.
+
+**Affected requirements:** `PROD-MODEL-*`, `PROD-STATE-*`, `GEN-CLONE-*`.
+
+---
+
+## ADR-005 — Credentials remain explicitly mutable through typed handles
+
+
+**Context:** Credential rotation, session acquisition, invalidation, and clearing are genuine runtime lifecycle operations.
+
+**Decision:** Credentials are shared only by clones of the same fixed client snapshot and mutated only through credential-specific handles. Independently built clients own independent credential handles.
+
+**Consequences:** Client values and credentials have deliberately different state models. Compound static input replacement is atomic, and changing client-level routing/audience values cannot reuse an existing credential slot.
+
+**Rejected alternatives:** Credentials embedded in immutable client snapshots; generic secret setters; public credential-slot mutation.
+
+**Affected requirements:** `PROD-STATE-002`, `GEN-CRED-*`, `API-HANDLE-*`.
+
+---
+
+## ADR-006 — No `ClientContext` god trait
+
+
+**Context:** A context combining route, values, auth registry, state initialization, policy, and recovery makes advanced clients implement internal orchestration.
+
+**Decision:** Generated immutable storage and `ClientCore` replace a public context trait. Advanced users create prepared endpoints against `ClientCore` behavior through stable builders.
+
+**Consequences:** Core feature traits remain narrow. Generated-private integration is sealed.
+
+**Rejected alternatives:** Hand-written `ClientContext`; separate public route/auth context traits; application-implemented core client spec.
+
+**Affected requirements:** `API-PRIVATE-001`, Core Architecture.
+
+---
+
+## ADR-007 — Endpoint outputs remain statically typed
+
+
+**Context:** Generated endpoints already know their body and response types at compile time.
+
+**Decision:** `EndpointSpec` has static body and response associated types. No normal response decoder returns `Box<dyn Any>`.
+
+**Consequences:** Better compiler errors, no runtime downcast failure, and simpler pagination bounds.
+
+**Rejected alternatives:** Type-erased response plans; dynamic endpoint descriptors; boxed decoded values.
+
+**Affected requirements:** `PROD-CORE-002`, `GEN-TERM-*`.
+
+---
+
+## ADR-008 — Narrow private credential erasure is allowed
+
+
+**Context:** One request may contain heterogeneous credential material and providers, while endpoint outputs do not require erasure.
+
+**Decision:** Credential preparation/materialization may use a private erased trait. Versions and prepared material remain private.
+
+**Consequences:** Auth plans can contain mixed API-key/bearer/Basic/custom sources without exposing internal types publicly.
+
+**Rejected alternatives:** Entire request type parameterized over credential tuples; public auth plan traits; runtime endpoint output erasure.
+
+**Affected requirements:** `API-PRIVATE-001`, Core Architecture auth boundary.
+
+---
+
+## ADR-009 — Page-based pagination only
+
+
+**Context:** Item caps require generic runtime knowledge of page item counts, truncation, and proof pages.
+
+**Decision:** Pagination supports soft page count and hard page cap only.
+
+**Consequences:** Page execution remains the unit of network boundedness. Applications may truncate returned vectors when needed.
+
+**Rejected alternatives:** `TakeItems`; `HardItemCap`; generic item-count hints.
+
+**Affected requirements:** Product pagination non-goals, `API-PAGE-*`, `EXEC-PAGE-*`.
+
+---
+
+## ADR-010 — Pagination pages use `IntoIterator`
+
+
+**Context:** A custom `PageItems` trait duplicates standard item extraction and creates count-consistency obligations.
+
+**Decision:** Decoded page output must implement `IntoIterator`. `Vec<T>` works directly.
+
+**Consequences:** Custom cursor pages implement ordinary Rust iteration. The controller inspects `&Page` before consumption.
+
+**Rejected alternatives:** `PageItems`; boxed iterator callbacks; runtime page downcasting.
+
+**Affected requirements:** `API-PAGE-001`, `GEN-PAGE-001`.
+
+---
+
+## ADR-011 — Pagination is directly awaitable
+
+
+**Context:** `.paginate(...).collect().await` implies a stream/iterator abstraction that does not otherwise exist.
+
+**Decision:** `.paginate(limit).await` returns `Vec<Item>`.
+
+**Consequences:** One terminal, simpler generated API, no separate collection builder.
+
+**Rejected alternatives:** `.collect()` terminal; async page stream in core 0.1.
+
+**Affected requirements:** `GEN-PAGE-002`.
+
+---
+
+## ADR-012 — Pagination loop protection and aggregate ceilings are always enabled
+
+**Context:** Repeating a logical page request can create unbounded network activity, while a caller-selected `u32` page count alone is not a practical memory or work bound.
+
+**Decision:** Every pagination operation tracks canonical prior request identities, rejects cycles before resend, and enforces finite configured ceilings for requested pages, collected items, and retained identity bytes.
+
+**Consequences:** There is no loop-protection opt-out. Collection remains all-or-error. The runtime fails closed before exceeding any aggregate ceiling.
+
+**Rejected alternatives:** Optional progress keys; adjacent-page comparison; public opt-out; relying on integer width as the only bound; mandatory incremental pagination in 0.1.
+
+**Affected requirements:** `EXEC-PAGE-*`, `BOUND-PAGE-*`.
+
+---
+
+## ADR-013 — Body metadata is validated before hooks; expensive materialization follows the veto hook
+
+**Context:** Invalid body ownership and known impossible sizes should fail early, but expensive codec/factory work should not occur for an operation vetoed by application policy.
+
+**Decision:** Public validation → body metadata validation → before-send hook → body materialization and finite-size enforcement → credentials → limiter.
+
+**Consequences:** Hook veto performs no provider, limiter, or expensive body work. Encoding failure still performs no provider or limiter work. Direct request streams remain unpolled until native execution.
+
+**Rejected alternatives:** Fully materialize before hook; credentials before body validation; limiter before encoding; native middleware mutation.
+
+**Affected requirements:** `EXEC-ORDER-001`, `EXEC-BODYMETA-*`, `EXEC-BODY-*`.
+
+---
+
+## ADR-014 — Before-send hook runs before provider and limiter
+
+
+**Context:** A veto policy should reject a prepared public operation without causing token acquisition or quota consumption.
+
+**Decision:** The hook receives validated body metadata before expensive body materialization, credentials, and limiter acquisition.
+
+**Consequences:** Hook context remains credential-free. Hook errors have minimal protected side effects.
+
+**Rejected alternatives:** Hook after limiter; hook after auth materialization; general middleware mutation.
+
+**Affected requirements:** `EXEC-HOOK-001`.
+
+---
+
+## ADR-015 — Static rejection requires explicit challenge attribution
+
+**Status:** Accepted
+
+**Context:** A bare `401` cannot safely identify every credential in a multi-credential plan. Permanently rejecting all applied credentials can destroy a valid API key when only a bearer token expired.
+
+**Decision:** Built-in static and endpoint-backed placements default to `ChallengePolicy::Never`; built-in OAuth2 bearer defaults to `Unauthorized`; custom providers require an explicit challenge policy. One effective auth plan may have at most one challenge-enabled placement. An explicitly challenge-enabled static credential enters persistent rejected state until complete source replacement.
+
+**Consequences:** Ambiguous responses mutate at most one credential. Static material is never persistently rejected merely because it was present on a request whose bearer failed.
+
+**Rejected alternatives:** Reject every applied credential on `401`; general challenge groups in 0.1; scheme inference for custom headers/query credentials.
+
+**Affected requirements:** `DSL-AUTH-*`, `API-AUTH-*`, `EXEC-RECOVER-*`.
+
+## ADR-016 — Endpoint-backed credentials require explicit reacquisition
+
+
+**Context:** Automatically calling an application auth endpoint during challenge handling introduces hidden request trees and endpoint dependency cycles.
+
+**Decision:** Endpoint-backed credentials use invalidate-only recovery. The application explicitly executes the acquisition terminal.
+
+**Consequences:** Hidden login flows do not occur. Error recovery is visible at the application level.
+
+**Affected requirements:** `EXEC-RECOVER-004`, `GEN-AUTHFLOW-001`.
+
+---
+
+## ADR-017 — Limiter observation cannot replace the current response
+
+
+**Context:** A successful HTTP response should not become an internal error because local cooldown storage is full or a custom observer fails.
+
+**Decision:** `RateLimiter::observe` returns `()` and may affect future acquisition only.
+
+**Consequences:** Response semantics remain server-authoritative. Limiter implementations must contain observation errors internally.
+
+**Rejected alternatives:** Fallible response callback that suppresses auth/status/decode; current-response retry instruction.
+
+**Affected requirements:** `API-RATE-002`, `EXEC-RESPHEAD-003`.
+
+---
+
+## ADR-018 — Built-in limiter reservations are atomic
+
+
+**Context:** Reserving one bucket while waiting for another consumes quota for requests that may never send and complicates cancellation.
+
+**Decision:** The built-in governor calculates all waits and subtracts all rule/window costs in one short locked transition only when all are available.
+
+**Consequences:** Cancellation while waiting consumes no quota. Locking is simpler and fairer at the request level.
+
+**Rejected alternatives:** Sequential Governor cell waits; compensating refunds; partial reservations.
+
+**Affected requirements:** `EXEC-RATE-002`, `EXEC-RATE-003`.
+
+---
+
+## ADR-019 — No-content accepts all successful statuses and ignores body
+
+
+**Context:** Many APIs return `200` with an ignorable body or use different successful codes for semantically bodyless operations.
+
+**Decision:** `NoContent` accepts any `2xx` and drops the body unpolled.
+
+**Consequences:** Tolerant SDK behavior; strict status contracts can be represented separately in a future feature if required.
+
+**Rejected alternatives:** Require `204`/`205`; reject a body by content length; decode empty bytes through a codec.
+
+**Affected requirements:** `EXEC-NOCONTENT-001`.
+
+---
+
+## ADR-020 — One structured hook model; debug is built-in presentation
+
+
+**Context:** Separate hook and debug sink taxonomies duplicate lifecycle meaning and can diverge.
+
+**Decision:** Applications implement `RuntimeHooks`. Built-in debug levels render the same lifecycle milestones internally.
+
+**Consequences:** One extension lifecycle. No custom `DebugSink` trait in 0.1.
+
+**Rejected alternatives:** Separate async hooks and synchronous debug sink; generic event bus with request mutation.
+
+**Affected requirements:** `API-HOOK-*`, debug sections of Generated/Public API.
+
+---
+
+## ADR-021 — Terminal status bodies use finite complete-only explicit access
+
+**Status:** Accepted
+
+**Context:** Status and headers alone discard protocol information needed for validation, conflict handling, remediation, and machine-readable API errors. Raw or automatically formatted error bodies would undermine Concord's diagnostic safety.
+
+**Decision:** A final non-success application response attempts to retain one small finite complete body in an opaque `StatusBody`. Known oversized bodies remain unread; unknown overflow discards every collected byte; capture failure preserves the HTTP status. Bytes are available only through explicit access or explicit decoding with an existing codec and never through automatic formatting, hooks, completion events, limiter contexts, or source chains.
+
+**Consequences:** Applications can handle bounded protocol error data without a generated per-status error type system. Recoverable challenge bodies remain unread; terminal challenge bodies may use the same bounded capture path.
+
+**Rejected alternatives:** Drop every non-success body; expose truncated prefixes; expose a native or lazy error response; generate typed error enums in 0.1.
+
+**Affected requirements:** `PROD-GUAR-011`, `API-ERR-004` through `API-ERR-007`, `SEC-RESP-*`, `BOUND-BODY-009`, `BOUND-BODY-010`, `EXEC-STATUS-*`.
+
+## ADR-022 — Specialized protocols live outside core
+
+
+**Context:** SSE, WebSocket, record streaming, and multipart response parsing have distinct state machines and reconnection/framing semantics.
+
+**Decision:** Core provides generic bounded byte streams. Specialized protocols belong in separate future crates.
+
+**Consequences:** Smaller core feature matrix and execution model.
+
+**Rejected alternatives:** Core response modes for every protocol.
+
+---
+
+## ADR-023 — Exact limits are centralized
+
+
+**Context:** Repeating default numbers across subsystem docs risks contradictory changes.
+
+**Decision:** Exact default limits are owned only by the Security and Limits Specification.
+
+**Consequences:** Execution and public API docs reference `BOUND-*` requirements instead of repeating numbers.
+
+**Affected requirements:** `DOC-DUP-001`.
+
+---
+
+## ADR-024 — Generated-private integration is not an extension API
+
+
+**Context:** Procedural macro output compiled downstream requires public Rust visibility for some integration items.
+
+**Decision:** Such items live in `__private`, are protected by a generated contract marker, and are unsupported for application code.
+
+**Consequences:** Public visibility does not create semver promises. Stable advanced workflows require no private imports.
+
+**Affected requirements:** `API-NS-002`, `COMPAT-GEN-*`.
+
+## ADR-025 — No provider invalidation callback
+
+
+**Context:** A provider invalidation callback races with proactive refresh, concurrent challenge responses, cancellation, and exact-version local rejection. Ordinary token renewal requires the challenged material to reach `refresh(current)`, not a separate revocation phase.
+
+**Decision:** Concord 0.1 performs exact local rejection and coordinated `refresh(current)` recovery. `CredentialProvider` has no invalidation or remote-revocation callback.
+
+**Consequences:** The credential state machine is smaller, one exact-version refresh operation owns challenge recovery, and remote revocation remains an explicit application workflow outside the protected request path.
+
+**Rejected alternatives:** Provider invalidation before refresh; best-effort invalidation callback; callback on manual clear.
+
+**Affected requirements:** `API-PROV-*`, `EXEC-RECOVER-*`, auth state-machine architecture.
+
+---
+
+## ADR-026 — Ordinary application I/O limits remain finite
+
+**Context:** A normal method disabling request, buffered-response, or stream-response limits contradicts the product guarantee that ordinary I/O is bounded.
+
+**Decision:** Concord 0.1 exposes only positive finite application I/O limits. No ordinary no-limit method or dangerous unbounded-I/O feature is included.
+
+**Consequences:** Applications may select larger limits but cannot accidentally make ordinary execution unbounded. Provider limits also remain finite.
+
+**Rejected alternatives:** Weaken the guarantee to bounded-by-default; normal `no_*_limit` methods; unbounded I/O in 0.1.
+
+**Affected requirements:** `PROD-GUAR-004`, `BOUND-BODY-*`, `API-RUNTIME-001`.
+
+---
+
+## ADR-027 — Endpoint timeout is a Concord operation deadline
+
+**Context:** A generic `timeout` name is misleading when only native Reqwest transport is bounded and hooks, credentials, provider HTTP, limiter waits, and authentication recovery remain outside it.
+
+**Decision:** DSL and request-level `timeout` define one endpoint/page operation deadline. Remaining budget is propagated through asynchronous Concord phases and native transport. Pagination has a separate deadline per page and no aggregate collection deadline in 0.1.
+
+**Consequences:** Connect/read configuration remains available at the managed-client level. Synchronous extension work cannot be preempted but is checked immediately after returning.
+
+**Rejected alternatives:** Keep ambiguous transport-only timeout; expose two per-request timeout concepts in 0.1; whole-pagination deadline.
+
+**Affected requirements:** `DSL-TIME-*`, `GEN-REQ-*`, `EXEC-DEADLINE-*`.
+
+---
+
+## ADR-028 — Custom pagination uses factories and a safe request patch
+
+**Context:** Requiring `Default` and generated writes to public controller fields prevents invariants and freezes field layout as an extension ABI.
+
+**Decision:** Custom pagination is created by one typed factory expression. Controllers keep private state and may modify only a safe `PaginationRequest` patch containing public query/header pagination inputs.
+
+**Consequences:** Construction validates controller invariants atomically. Custom pagination receives no native request, auth, body, host, or path mutation capability in 0.1.
+
+**Rejected alternatives:** `Default` plus public fields; runtime adapter objects; arbitrary native request mutation.
+
+**Affected requirements:** `DSL-PAGE-*`, `API-PAGE-*`, `EXEC-PAGE-*`.
+
+---
+
+## ADR-029 — Stream opening and aggregate pagination have distinct completion outcomes
+
+**Context:** Returning a stream does not prove full body consumption, and successful page events do not prove aggregate collection success.
+
+**Decision:** Request completion reports `StreamOpened` when a bounded stream is safely returned. Pagination additionally emits one aggregate completion event covering final collection outcome.
+
+**Consequences:** Metrics do not label an unopened/partially consumed stream as fully downloaded, and controller/cycle/cap failures remain observable. Terminal stream-consumption hooks are deferred.
+
+**Rejected alternatives:** Treat stream construction as full success; page-only pagination observation; asynchronous terminal stream hooks in 0.1.
+
+**Affected requirements:** `API-HOOK-*`, `EXEC-COMPLETE-*`.
+
+---
+
+## ADR-030 — Built-in rate limiting is bounded best-effort pacing
+
+**Context:** Bounded LRU state may forget quota history after eviction, so the built-in governor cannot be strict authoritative quota enforcement for unbounded key cardinality.
+
+**Decision:** The built-in governor is explicitly process-local best-effort pacing. Applications needing strict capacity or distributed authority provide a custom limiter.
+
+**Consequences:** State remains bounded and an evicted key may receive a fresh local burst. Concord 0.1 does not add a second strict governor mode.
+
+**Affected requirements:** `BOUND-RATE-*`, `BOUND-RATE-*`.
+
+---
+
+## ADR-031 — Dependency-renamed macro expansion is supported
+
+**Context:** Hardcoded `::concord_core` paths fail when downstream crates rename dependencies or expand macros in nested modules.
+
+**Decision:** The macro discovers the caller-visible core crate path through `proc_macro_crate` or an equivalent validated mechanism and generates a unique private alias.
+
+**Consequences:** Renamed dependencies, nested modules, and multiple API declarations are compile-tested.
+
+**Affected requirements:** `COMPAT-MACRO-*`, Macro Architecture.
+
+---
+
+## ADR-032 — Concord 0.x uses an explicit pre-1.0 compatibility policy
+
+**Context:** Concord 0.1 intentionally defines a broad surface before implementation experience, and the dangerous retry API is coupled to Reqwest.
+
+**Decision:** Patch releases preserve documented normal and advanced 0.1 signatures. A later `0.y.0` may make documented breaking changes. The generated contract is versioned, and dangerous Reqwest-coupled APIs may change with Concord minor releases.
+
+**Consequences:** The specification is a firm implementation baseline without pretending to be a 1.0 semver freeze.
+
+**Affected requirements:** `COMPAT-SURF-*`, `COMPAT-REQWEST-*`, `COMPAT-GEN-*`.
+
+---
+
+## ADR-033 — Automatic typed status schemas remain outside 0.1
+
+**Status:** Accepted; supersedes the earlier body-discard wording through ADR-021
+
+**Context:** Endpoint-specific typed status schemas would alter generated endpoint error types, prepared endpoints, pagination, and the uniform `ApiError` model.
+
+**Decision:** Concord 0.1 provides bounded complete-only raw terminal status-body access and explicit decoding through existing codecs, but does not generate per-status error enums or automatic error-codec routing.
+
+**Consequences:** Protocol information is available without expanding every endpoint's future error type. Typed generated schemas remain a possible later layer over `HttpResponseFailure`.
+
+**Rejected alternatives:** Complete body discard; generated typed status schemas in the initial release.
+
+**Affected requirements:** Product error-body non-goals, `API-ERR-*`, `EXEC-STATUS-*`.
+
+## ADR-034 — The initial MSRV is evidence-based Rust 1.85
+
+**Context:** Rust 2024 and Reqwest 0.13.4 require Rust 1.85, while selecting the newest stable compiler would unnecessarily reduce compatibility.
+
+**Decision:** Concord 0.1 targets Rust 1.85 unless an actually selected dependency or required language feature proves a higher floor. CI enforces the declared MSRV.
+
+**Consequences:** An MSRV increase requires a compatibility-specification update and dependency evidence.
+
+**Affected requirements:** `COMPAT-RUST-*`, `CONF-MSRV-*`.
+
+## ADR-035 — Credential finalization follows limiter waiting
+
+**Status:** Accepted
+
+**Context:** Credential preflight before a potentially long limiter wait may retain material that is later cleared, replaced, rejected, or expired.
+
+**Decision:** Concord preflights credential availability before limiter acquisition, then finalizes slot identity, version, rejection, clear state, and expiration immediately after limiter authority and before native request construction. Finalization is the send-selection linearization point.
+
+**Consequences:** A clear or replacement completed before finalization prevents stale send. A race after finalization may not retract an already-selected native send. Finalization failure does not refund local limiter reservation.
+
+**Rejected alternatives:** Use the preflight snapshot unconditionally; hold credential locks across limiter wait or native execution; require limiter reservation rollback.
+
+**Affected requirements:** `EXEC-AUTH-009` through `EXEC-AUTH-013`.
+
+## ADR-036 — Protected and provider requests require HTTPS
+
+**Status:** Accepted
+
+**Context:** The DSL permits HTTP for unauthenticated APIs, but credential placement over cleartext would contradict the security model.
+
+**Decision:** Application requests with a non-empty effective auth plan and every provider HTTP request require HTTPS. No implicit localhost exception exists in 0.1.
+
+**Consequences:** HTTP remains supported for unauthenticated application endpoints. Deterministic tests use the development executor rather than insecure credential transmission.
+
+**Rejected alternatives:** Optional-only `https_only`; automatic localhost exception; ordinary dangerous insecure-auth switch.
+
+**Affected requirements:** `PROD-GUAR-012`, `SEC-HTTP-008`, `SEC-HTTP-009`, `EXEC-HEAD-003`, `EXEC-PHTTP-005`.
+
+## ADR-037 — Operation events carry opaque correlation identifiers
+
+**Status:** Accepted
+
+**Context:** Endpoint, URL, page index, and recovery index do not uniquely correlate concurrent identical operations.
+
+**Decision:** Every request/page operation has an opaque `OperationId`; pagination pages carry a parent aggregate operation ID. Completion events expose monotonic elapsed time and final status when available.
+
+**Consequences:** Hooks can build correct traces without receiving credentials, bodies, cursors, or native URLs.
+
+**Rejected alternatives:** Infer correlation from endpoint and URL; expose internal task IDs; add full per-phase tracing metrics to core.
+
+**Affected requirements:** `API-HOOK-006`, `API-HOOK-007`, `EXEC-OPID-001`, `EXEC-COMPLETE-005`.
+
+## ADR-038 — Specification candidate and release evidence are distinct
+
+**Status:** Accepted
+
+**Context:** A mechanically complete design package is not a conforming release, and planned coverage rows are not passing evidence.
+
+**Decision:** The current package is `Normative Implementation Candidate`. Coverage planning and actual conformance evidence use separate catalogs. `Normative Release Final` requires complete passing or approved waived actual evidence.
+
+**Consequences:** The linter can prove planning completeness without claiming implementation conformance.
+
+**Rejected alternatives:** Mark the pre-implementation package final; store planned and passing evidence in one ambiguous table.
+
+**Affected requirements:** `DOC-STATUS-*`, `CONF-TRACE-*`, `CONF-RELEASE-001`.
+
