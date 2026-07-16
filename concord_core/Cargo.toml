@@ -22,5 +22,13 @@ dangerous-dev-tools = []
 [dependencies]
 reqwest.workspace = true
 
+[dev-dependencies]
+concord_test_support = { version = "=0.1.0", path = "../concord_test_support" }
+h2.workspace = true
+http.workspace = true
+reqwest = { workspace = true, features = ["http2", "rustls-no-provider", "system-proxy"] }
+rustls.workspace = true
+tokio.workspace = true
+
 [lints]
 workspace = true

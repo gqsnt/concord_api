@@ -13,11 +13,16 @@ edition = "2024"
 rust-version = "1.85"
 
 [workspace.dependencies]
+base64 = "=0.22.1"
+h2 = "=0.4.15"
+http = "=1.4.0"
 proc-macro-crate = "=3.5.0"
 proc-macro2 = "=1.0.106"
 quote = "=1.0.46"
 reqwest = { version = "=0.13.4", default-features = false }
+rustls = { version = "=0.23.37", default-features = false, features = ["ring", "std", "tls12"] }
 syn = { version = "=2.0.119", features = ["full"] }
+tokio = { version = "=1.52.4", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
