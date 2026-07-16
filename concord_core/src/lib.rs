@@ -12,6 +12,9 @@ mod request;
 mod auth;
 
 #[cfg(test)]
+mod execute;
+
+#[cfg(test)]
 mod pagination;
 
 #[doc(hidden)]
