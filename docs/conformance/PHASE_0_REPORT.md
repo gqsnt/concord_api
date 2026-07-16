@@ -4,6 +4,8 @@
 
 `PHASE_0_COMPLETE_WITH_LIMITATIONS`
 
+Phase 0 evidence anchor commit: 3dbea65ab7e94a8b779329b895b314223161cdf4
+
 All accepted Phase 0 source units and every non-checker validation required by PR 0.7 passed at committed baseline `ca578db25acace2b9b95fee5f0df04157a8cb786`. The specification checker and its negative tests were explicitly excluded by user instruction. Because that gate was part of the original Phase 0 definition, this report does not claim `PHASE_0_COMPLETE`.
 
 ## 2. Workspace Identity
