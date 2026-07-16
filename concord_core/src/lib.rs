@@ -11,6 +11,9 @@ mod request;
 #[cfg(test)]
 mod auth;
 
+#[cfg(test)]
+mod pagination;
+
 #[doc(hidden)]
 pub mod __private;
 
