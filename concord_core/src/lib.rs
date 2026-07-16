@@ -8,6 +8,9 @@
 mod generated_contract;
 mod request;
 
+#[cfg(test)]
+mod auth;
+
 #[doc(hidden)]
 pub mod __private;
 
