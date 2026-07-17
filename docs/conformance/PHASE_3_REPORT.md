@@ -27,7 +27,11 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 - Corrected Phase 3 source: `7ac4a1c6e18a080f4810b93ae4bc6aa02f52ed8f`
 - Corrected validation/evidence time: `2026-07-17T21:41:27Z`
 - Corrected Phase 3 evidence/report commit: `08fd7adeacab1efcf2b1543a04574b796ab4010e`
-- Corrected Phase 3 evidence anchor: this report's documentation-only correction follow-up
+- Corrected Phase 3 evidence anchor: `2e9cdf9d059dc03594773bd31cc2b8a79e9a7298`
+- Final corrected Phase 3 source: `54a64cb4ba062453dea26dd6af1dff97eaa3406e`
+- Final validation/evidence time: `2026-07-17T22:49:32Z`
+- Final Phase 3 evidence/report commit: named by the following documentation-only anchor
+- Final Phase 3 evidence anchor: this report's documentation-only follow-up
 - Branch: `master`
 - Initial working tree: clean
 - Rust edition: 2024
@@ -36,10 +40,11 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 - Nextest exercised: 0.9.140; repository minimum 0.9.115
 - Managed HTTP baseline: Reqwest 0.13.4 with default features disabled
 
-The source tree was clean when corrected validation began and remained unchanged throughout the
-final validation matrix. Corrected rows point to the immutable corrected source commit rather than
-a later documentation commit; accurate original Phase 3 rows retain their original immutable
-source reference. Git history preserves the original source, evidence, and anchor commits.
+The source tree was clean when final validation began and remained unchanged throughout the final
+validation matrix. Source-behavior rows point to the immutable final source commit. Catalog/report
+integrity rows are anchored separately to the later evidence/report commit so that every cited
+artifact exists with the claimed content at its recorded owner. Git history preserves the original
+Phase 3 and first-correction source, evidence, and anchor commits.
 
 ## Phase 3 commits
 
@@ -48,6 +53,7 @@ source reference. Git history preserves the original source, evidence, and ancho
 | Phase 2 follow-up / Unit 3.0 | `9a647867d5629ea077b2fefebea606aef510befc` | `test: reconcile phase2 coverage and UI fixtures` | Corrected coverage paths and methods; LF-normalized edited guidance; migrated source-only core Cargo failures to Trybuild; retained genuine feature/dependency fixtures; narrowed Nextest overrides. |
 | Buffered vertical slice / Units 3.1-3.3 | `c9521f649c91df0a0bae9786cba101f4d526692b` | `feat: deliver buffered codec vertical slice` | Atomically advanced the core/macro generated contract to version 3 and connected codec contracts, one buffered body model, one executor, bounded decoding, generated POST body syntax, tests, features, and Rustdoc proof. |
 | Controller correction | `7ac4a1c6e18a080f4810b93ae4bc6aa02f52ed8f` | `fix: enforce buffered response terminal capability` | Added the sealed metadata-terminal capability, positive and negative compiler/runtime proof, completed development-namespace UI migration, and extended the generated Rustdoc privacy sentinel. |
+| Final controller correction | `54a64cb4ba062453dea26dd6af1dff97eaa3406e` | `fix: complete phase3 terminal and namespace proof` | Added the feature-specific dangerous-namespace UI proof and semantic rendered-Rustdoc proof for `Request::response` and `ResponseRequest` without exposing the private capability. |
 
 The core body ABI, production executor, macro model/codegen, generated contract version, and their
 end-to-end tests were committed together because splitting them would create intermediate
@@ -120,6 +126,14 @@ grammar, extensions, or release-final behavior. The broader 126-row audit additi
 compound lifecycle, protected-value, MSRV, and extension requirements whose remaining body-mode,
 provider, limiter, pagination, certification, or release-wide clauses belong to Phases 4 and 6-10.
 
+The final controller audit found three remaining proof-integrity defects. The ordinary namespace UI
+case covered `prelude` and `advanced` but not an existing `dangerous` namespace; stable Request
+Rustdoc privacy was scanned without semantically proving that `.response()` remained rendered; and
+several evidence rows cited reports absent or stale at their recorded source commits. The final
+correction adds a Trybuild case compiled with `dangerous-custom-retry` and without
+`dangerous-dev-tools`, adds rendered-Rustdoc semantic assertions for both stable wrappers, and
+audits all 126 Phase 3 rows with `git cat-file -e <commit>:<path>` plus content review.
+
 ## Phase 2 follow-up
 
 Coverage rows `GEN-END-003`, `GEN-EXPL-001`, `GEN-EXPL-002`, `GEN-DOC-001`,
@@ -143,6 +157,13 @@ The retained development fixture now proves only feature presence, feature absen
 client compilation under the feature graph. Nextest extended timeouts apply only to genuine
 Cargo-spawning binaries; core UI tests use ordinary execution. No nested `cargo test` process was
 added.
+
+The final feature-specific `ui_dangerous` harness runs as an ordinary Trybuild test when
+`dangerous-custom-retry` is enabled and `dangerous-dev-tools` is disabled. Its compile failure is
+the missing `DeterministicExecutor` item in the existing `dangerous` module. Together with the
+default UI case for `prelude` and `advanced` and the retained feature fixture proving the enabled
+`__development` path, this completes the three stable-namespace negatives without a nested Cargo
+fixture.
 
 ## Public codec surface
 
@@ -231,6 +252,16 @@ custom, Bytes, and NoContent runtime tests prove the supported side. Streaming i
 Phase 4's direct stream result will already carry metadata and will not acquire or remove this
 buffered terminal.
 
+Production compilation retains the hidden capability-bound inherent implementation. Documentation
+compilation uses a mutually exclusive public semantic presentation of the same stable
+`Request::response(self) -> ResponseRequest<E>` signature so Rustdoc does not need to render a
+private bound. The maintained `public_rustdoc` test builds rendered all-feature core documentation,
+requires the `.response()` method anchor and its buffered/Bytes/NoContent capability wording in
+`Request`, requires the public `ResponseRequest` page, and rejects `MetadataResponse`, `__private`,
+`EndpointSpec`, `ResponseHandler`, `ClientCore`, `PreparedBody`, `execute_request`, and Reqwest
+request/client names. The `cfg(doc)` presentation cannot exist in a production build and therefore
+does not create a second runtime terminal or weaken the compile-time bound.
+
 ## Generated DSL and API
 
 The existing parser/model/codegen pipeline now accepts:
@@ -295,7 +326,7 @@ the explicitly documented trusted downstream extension boundary.
 ## Integrated validation
 
 The following corrected commands passed against exact source
-`7ac4a1c6e18a080f4810b93ae4bc6aa02f52ed8f`:
+`54a64cb4ba062453dea26dd6af1dff97eaa3406e`:
 
 | Command | Result |
 |---|---|
@@ -305,8 +336,8 @@ The following corrected commands passed against exact source
 | `just check-no-default` | passed; core all targets no defaults |
 | `just clippy` | passed with warnings denied |
 | `just clippy-all` | passed with warnings denied |
-| `just test` | passed; Nextest 285/285 across 31 binaries |
-| `just test-all` | passed; CI-profile Nextest 288/288 across 31 binaries |
+| `just test` | passed; Nextest 286/286 across 33 binaries |
+| `just test-all` | passed; CI-profile Nextest 289/289 across 33 binaries |
 | `just test-no-default` | passed 1/1; 182 filtered |
 | `just doctest` | passed; core 2/2; other libraries zero |
 | `just doctest-all` | passed; core 2/2; other libraries zero |
@@ -314,8 +345,10 @@ The following corrected commands passed against exact source
 | `just doc-all` | passed for all three libraries with warnings denied |
 | `just deny` | passed advisories bans licenses and sources; allowed duplicate-version warnings only |
 | `just diff-check` | passed |
-| `just release` | passed; CI-default 285/285, all-features 288/288, no-default 1/1, doctests 2/2 |
+| `just release` | passed; CI-default 286/286, all-features 289/289, no-default 1/1, doctests 2/2 |
 | `cargo nextest run -p concord_core --test ui` | passed 1/1 harness; seven default-feature compile-fail cases including response capability and development namespace |
+| `cargo nextest run -p concord_core --features dangerous-custom-retry --test ui_dangerous` | passed 1/1; existing dangerous namespace has no development executor while dev tools are disabled |
+| `cargo nextest run -p concord_core --test public_rustdoc` | passed 1/1; rendered Request exposes `.response()`, ResponseRequest is documented, and private integration names are absent |
 | `cargo nextest run -p concord_core --test development` | passed 2/2 genuine Cargo feature-topology cases |
 | `cargo nextest run -p concord_core --test config_methods` | passed 1/1 genuine Cargo feature-topology harness |
 | `cargo nextest run -p concord_core --all-features --test codec_extensions` | passed 2/2 |
@@ -329,7 +362,7 @@ The following corrected commands passed against exact source
 | `cargo nextest run -p concord_macros --test ui` | passed 6/6 |
 | `cargo nextest run -p concord_macros --test compile` | passed 5/5 Cargo/Rustdoc fixtures |
 | `cargo nextest show-config version` | passed; current 0.9.140 satisfies required 0.9.115 |
-| `cargo nextest show-config test-groups` | passed; only five Cargo-spawning binaries receive the bounded override; core UI does not |
+| `cargo nextest show-config test-groups` | passed; only genuine Cargo-spawning binaries including rendered-Rustdoc inspection receive the bounded override; core UI harnesses do not |
 
 Default, all-feature, and no-default checks cover JSON enabled and disabled. The generated runtime
 suite covers direct and metadata Text, JSON, custom, Bytes, and NoContent behavior; the compile
@@ -341,9 +374,9 @@ generated contract mismatch, and generated Rustdoc privacy. No corrected validat
 
 ## Source self-review and architecture negatives
 
-The original complete Phase 3 patch and the focused correction patch (78 insertions and 32
-deletions across 14 files) were generated and inspected. Searches and public Rustdoc review
-confirm:
+The original Phase 3 patch, first correction patch, and final correction patch (142 insertions and
+8 deletions across 7 files) were generated and inspected. Searches and rendered public Rustdoc
+review confirm:
 
 - exactly one `Request<E>` pending model and one `execute_request` production executor;
 - exactly one `BodyMetadata` / `PreparedBody` / generic `CodecBody<C>` body architecture;
@@ -364,12 +397,11 @@ Existing reduced auth/pagination models and final hook/configuration vocabulary 
 proof foundations from earlier phases; they are not production implementations.
 
 Correction self-review verified that direct await is unchanged and no runtime capability check,
-second response model, or Phase 4 marker was introduced. One pre-commit all-feature UI run exposed
-a feature-dependent compiler suggestion for the development namespace case. The source-only
-namespace proof was scoped to the ordinary feature configuration, while the retained feature
-fixture independently proves enabled/disabled topology; the exact all-feature command then passed
-254/254. The Rustdoc sentinel was extended for `MetadataResponse`. Clippy, UI, feature, focused
-runtime, and full release reruns passed after correction.
+second response model, or Phase 4 marker was introduced. The final dangerous UI case is gated to
+the exact feature topology that keeps the `dangerous` module present while development tools are
+absent; its snapshot fails on the missing item rather than a missing module. The rendered-Rustdoc
+test proved semantic terminal visibility and private-name absence. Clippy, both UI configurations,
+feature fixtures, focused runtime, Rustdoc, and full release reruns passed after correction.
 
 ## Evidence and coverage
 
@@ -378,21 +410,35 @@ all eight `P2-AUDIT-*` rows pointing to
 `ea1ce944fe1d2622db7a66600d734ac0dc04784f`, `EXEC-CANCEL-001` partial evidence, and
 `GEN-NAME-001` partial evidence.
 
-Phase 3 contains 126 unique `P3-*` rows covering 126 exact requirements: 78 direct and 48
-explicitly partial after correction. The resulting catalog contains 445 rows and 445 unique
-evidence IDs, with zero unknown normative requirement IDs. Accurate original rows retain source
-`c9521f649c91df0a0bae9786cba101f4d526692b`; the 28 materially corrected rows reference
-`7ac4a1c6e18a080f4810b93ae4bc6aa02f52ed8f`. The correction commit supersedes only those original
-classifications/descriptions and leaves the original evidence commit intact in Git history.
+Phase 3 contains 126 unique `P3-*` rows covering 126 exact requirements: 76 direct and 50
+explicitly partial after final correction. The catalog contains 445 rows and 445 unique evidence
+IDs, with zero unknown normative requirement IDs. All source-behavior rows are revalidated at
+`54a64cb4ba062453dea26dd6af1dff97eaa3406e`; catalog/report-integrity rows are anchored to the
+later immutable evidence/report commit. The original and first-correction evidence commits remain
+intact in Git history and their superseded classifications are recorded below.
+
+The artifact audit inspected all 126 Phase 3 rows and 512 listed path references. Before
+correction it reproduced 12 nonexistent references: `P3-CONF-001` through `P3-CONF-005`,
+`P3-CONF-009` through `P3-CONF-013`, `P3-CONF-017`, and `P3-CONF-019` named
+`PHASE_3_REPORT.md` at `c9521f...`, where that report did not exist. `P3-CONF-006` named the
+first-correction report/catalog state at the earlier source commit where it was not yet updated.
+Those report references were removed from source-behavior rows and replaced by exact source,
+test, command, and rendered-Rustdoc artifacts. Catalog-integrity rows use the evidence/report
+anchor model. Re-running `git cat-file -e <commit>:<path>` over all final source-owned paths found
+zero missing artifacts, followed by content review of commands and requirement scope.
+Sixteen rows received semantic path, method, type, or classification corrections; the other 110
+retained their accurate proof descriptions and were mechanically re-anchored to the final tested
+source. No Phase 0-2 row changed.
 
 | Evidence row | Original label | Corrected label | Correction |
 |---|---|---|---|
 | `P3-DEC-005` / `GEN-TERM-002` | direct | direct | Re-anchored to the sealed method-availability bound, unsupported UI diagnostic, and supported generated runtime cases. |
 | `P3-MEDIA-001` / `API-CODEC-003` | direct | partial | Phase 3 proves internal shared ownership; Phase 5 must prove public user-header precedence and conflicts. |
 | `P3-RESP-002` / `BOUND-BODY-011` | direct | partial | Gzip has runtime proof; Brotli and Deflate have feature wiring but await Phase 10 runtime probes. |
+| `P3-GEN-002` / `GEN-TYPE-002` | direct | partial | Client, facade, endpoint, and request field privacy is proved; credential-storage privacy remains Phase 6 because that storage does not yet exist. |
 | `P3-FEAT-014` / `COMPAT-SURF-001` | direct | partial | Custom codecs are certified; every documented extension workflow remains a Phase 9 obligation. |
 | `P3-EXT-003` / `API-REQ-002` | direct | direct | Re-anchored to the hidden capability bound plus core UI and generated Rustdoc privacy proof. |
-| `P3-EXT-005` / `API-PRIVATE-002` | direct | direct | Re-anchored to the completed source-only namespace migration and response-capability privacy proof. |
+| `P3-EXT-005` / `API-PRIVATE-002` | direct | partial | Prelude, advanced, dangerous, transport, native, and terminal-capability surfaces are proved; replay, authentication/credential, and pagination internals require recertification in Phases 4, 6, 8, and 10. |
 | `P3-CONF-006` / `CONF-TRACE-006` | direct | partial | Current rows are exact; release-final missing-evidence rejection remains Phase 10. |
 | `P3-CONF-007` / `CONF-PARSER-001` | direct | partial | Only the implemented buffered grammar is covered; exhaustive grammar coverage remains Phase 10. |
 | `P3-CONF-008` / `CONF-SEMA-001` | direct | partial | Buffered normalization is covered; complete inherited configuration resolution remains Phase 5 with Phase 10 closure. |
@@ -416,17 +462,19 @@ classifications/descriptions and leaves the original evidence commit intact in G
 | `P3-SEC-003` / `SEC-THREAT-001` | direct | partial | Current protected-value categories are covered; credential, provider, stream, multipart, limiter, pagination, extension, and release-wide surfaces remain Phases 4 and 6-10. |
 | `P3-SEC-006` / `SEC-BODY-002` | direct | partial | Buffered codec input, output, and errors are covered; stream, multipart, producer, limiter, and pagination surfaces remain Phases 4, 7, 8, and 10. |
 
-The coverage plan now names current parser, codegen, UI, runtime, feature, and Rustdoc paths for the
-buffered boundary and distinguishes current direct proof from future Phase 4/5/release ownership.
-It remains LF-only. Historical evidence paths were not rewritten.
+The coverage plan now names current parser, codegen, default and dangerous UI, runtime, feature,
+catalog-audit, and rendered-Rustdoc paths. Stale `concord_examples/tests/generated_api.rs`,
+`concord_core/tests/runtime/conformance.rs`, Phase 1 report, and absent MSRV-workflow paths were
+replaced only in the reviewed rows. Current proof is distinguished from explicit Phase 4-10
+ownership. Both conformance CSVs remain LF-only. Historical evidence rows were not rewritten.
 
 ## Remaining limitations and Phase 4 readiness
 
-The 48 partial Phase 3 rows are:
+The 50 partial Phase 3 rows are:
 
 `PROD-CORE-003`, `PROD-GUAR-002`, `PROD-GUAR-004`, `PROD-GUAR-010`,
-`API-BODY-001`, `API-CODEC-003`, `BOUND-BODY-006`, `BOUND-BODY-007`,
-`BOUND-BODY-011`, `GEN-END-002`, `GEN-EXPL-002`, `GEN-NAME-002`, `GEN-DOC-002`,
+`API-BODY-001`, `API-CODEC-003`, `API-PRIVATE-002`, `BOUND-BODY-006`, `BOUND-BODY-007`,
+`BOUND-BODY-011`, `GEN-TYPE-002`, `GEN-END-002`, `GEN-EXPL-002`, `GEN-NAME-002`, `GEN-DOC-002`,
 `EXEC-CREATE-001`, `EXEC-CREATE-002`, `EXEC-BODYMETA-001`, `EXEC-HOOK-001`,
 `EXEC-BODY-001`, `EXEC-RESPHEAD-001`, `EXEC-RESPHEAD-002`, `EXEC-STATUS-003`,
 `EXEC-PREC-001`, `EXEC-COMPLETE-001`, `EXEC-COMPLETE-005`, `EXEC-ORDER-001`,
@@ -439,7 +487,8 @@ The 48 partial Phase 3 rows are:
 `CONF-SEC-001`, `CONF-MSRV-001`, and `CONF-DOC-001`.
 
 Their remaining portions belong to Phase 4 streaming/factories/multipart/replayability; Phase 5
-public headers, inherited values, and request shaping; Phases 6-8 auth, rate limiting, and
+public headers, inherited values, and request shaping; Phase 6 credential-storage privacy and
+authentication; Phases 7-8 rate limiting and
 pagination; Phase 9 prepared endpoints and complete extension certification; or Phase 10
 compression-algorithm, grammar, platform, documentation, and release-final evidence.
 

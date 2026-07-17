@@ -23,7 +23,7 @@ an execution queue because several foundations were delivered in a different ord
 | Phase 0 | `PHASE_0_COMPLETE_WITH_LIMITATIONS` | Workspace, macro/core contract spike, reduced auth/pagination models, Reqwest probes, and typed-executor proof. | Proof architecture was not a production endpoint runtime; governance and Rustdoc gates were later corrected. |
 | Phase 1 | `PHASE_1_COMPLETE_WITH_LIMITATIONS` | Safe errors/redaction, finite configuration, private managed application/provider clients, deterministic final-call seam, and canonical Nextest/release architecture. | No generated client core, pending request, lifecycle execution, or successful-response pipeline existed. |
 | Phase 2 | `PHASE_2_COMPLETE_WITH_LIMITATIONS` | First executable generated bodyless request: fallible generated construction, shared private core, stable pending wrappers, first-poll lifecycle, hooks/debug, managed Reqwest, bounded bytes/status handling, no-content, metadata terminal, and an API-specific sealed explicit-endpoint capability. | Only the explicitly authorized Phase 2 DSL and response subset is implemented; broad 0.1 evidence remains partial where later categories are absent, and the PR 2.3 uncommitted review patch omitted one subsequently reviewed committed file. |
-| Phase 3 | `PHASE_3_COMPLETE_WITH_LIMITATIONS` | One buffered codec vertical slice: stable media/encode/decode contracts, Text, feature-owned JSON, downstream custom codecs, finite request bodies, bounded decoded successes, coherent media headers, POST body DSL, typed direct/metadata results, and preserved Bytes/NoContent/status behavior. The corrected source type-gates `.response()` to metadata-capable modes and completes the core source-only fixture migration. | Forty-eight broader requirement rows remain partial. Their unimplemented clauses include public-header precedence, Brotli/Deflate runtime probes, full grammar/semantic coverage, Phase 4 streaming/factories/multipart, and provider/limiter/pagination/extension/release-wide variants owned by Phases 6-10. |
+| Phase 3 | `PHASE_3_COMPLETE_WITH_LIMITATIONS` | One buffered codec vertical slice: stable media/encode/decode contracts, Text, feature-owned JSON, downstream custom codecs, finite request bodies, bounded decoded successes, coherent media headers, POST body DSL, typed direct/metadata results, and preserved Bytes/NoContent/status behavior. The final corrected source type-gates `.response()` to metadata-capable modes, semantically proves that terminal in rendered Rustdoc, and completes source-only namespace proof across prelude, advanced, and dangerous. | Fifty broader requirement rows remain partial. Their unimplemented clauses include credential-storage privacy, public-header precedence, Brotli/Deflate runtime probes, full grammar/semantic coverage, Phase 4 streaming/factories/multipart, and provider/limiter/pagination/extension/release-wide variants owned by Phases 4-10. |
 
 Phase reports remain the detailed evidence owners:
 
@@ -39,7 +39,8 @@ The integrated-audit-corrected source baseline is
 `ea1ce944fe1d2622db7a66600d734ac0dc04784f`.
 The tested Phase 3 buffered source is
 `c9521f649c91df0a0bae9786cba101f4d526692b`. The controller-reviewed corrected Phase 3 source is
-`7ac4a1c6e18a080f4810b93ae4bc6aa02f52ed8f`; the complete maintained release matrix passed
+`7ac4a1c6e18a080f4810b93ae4bc6aa02f52ed8f`. The final controller-reviewed Phase 3 source is
+`54a64cb4ba062453dea26dd6af1dff97eaa3406e`; the complete maintained release matrix passed
 against that immutable commit.
 
 Its executable path is:
@@ -74,11 +75,14 @@ facade and explicit execution. A generated-private sealed `MetadataResponse` cap
 `.response()` only for buffered, Bytes, and NoContent response modes; direct await remains
 independent. All source-only core Cargo failures, including development-namespace escape, are now
 ordinary Trybuild UI cases. The retained `config_features` and `development_features` projects
-contain only genuine feature-graph checks; dependency-topology fixtures remain Cargo projects.
+contain only genuine feature-graph checks; dependency-topology fixtures remain Cargo projects. A
+feature-specific ordinary UI harness proves the development executor is also absent from the
+existing dangerous namespace, while rendered core Rustdoc proves that the supported public
+`.response()` terminal remains visible without rendering its private capability bound.
 
-The corrected evidence audit records 78 direct and 48 partial Phase 3 rows. In addition to public
+The final evidence audit records 76 direct and 50 partial Phase 3 rows. In addition to public
 header precedence, compression probes, extension certification, and complete grammar/semantic
-coverage, compound lifecycle and redaction requirements remain partial where their full text also
+coverage, generated credential-storage privacy and compound lifecycle/redaction requirements remain partial where their full text also
 requires Phase 4 body modes, Phase 6 providers/recovery, Phase 7 limiter behavior, Phase 8 page
 operations, Phase 9 extension certification, or Phase 10 release-wide proof. The coverage plan
 names each current proof and future owner without moving public-header completion into Phase 3.
