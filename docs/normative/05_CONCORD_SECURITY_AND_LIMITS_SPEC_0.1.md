@@ -489,6 +489,8 @@ For multipart, it includes framing, boundaries, part headers, and payload.
 
 Response limits count bytes yielded by Reqwest after enabled decompression.
 
+**BOUND-BODY-011 — Post-decompression response accounting.** Response-body limits MUST count bytes yielded by Reqwest after enabled decompression.
+
 ### 17.3 Known and unknown lengths
 
 Known excessive lengths fail before polling.

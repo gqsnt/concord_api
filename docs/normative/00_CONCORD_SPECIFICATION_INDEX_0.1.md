@@ -252,6 +252,8 @@ Cross-references do not create authority in the opposite direction. A later docu
 
 **DOC-LINT-001 — Normative language tracking.** Every independently testable normative statement using MUST, MUST NOT, SHOULD, SHOULD NOT, or MAY MUST either carry a stable requirement ID or be part of the explicitly allowlisted normative-language definitions in this index.
 
+Specification governance is performed through a recorded manual review of normative ownership and dependency order, followed by coverage-plan review, conformance-evidence review, and release audit. No automated specification checker is part of the archive or release authority.
+
 ## 12. Archive contents
 
 A complete Concord 0.1 specification archive contains:
@@ -276,5 +278,6 @@ decisions/CONCORD_DECISIONS.md
 contributor/CONCORD_REPOSITORY_GUIDE.md
 conformance/REQUIREMENT_COVERAGE_PLAN_0.1.csv
 conformance/CONFORMANCE_EVIDENCE_0.1.csv
-tools/concord_spec_lint.py
+conformance/PHASE_0_REPORT.md
+conformance/PHASE_1_REPORT.md
 ```

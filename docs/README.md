@@ -43,9 +43,11 @@ Verification artifacts:
 
 - [`conformance/REQUIREMENT_COVERAGE_PLAN_0.1.csv`](conformance/REQUIREMENT_COVERAGE_PLAN_0.1.csv)
 - [`conformance/CONFORMANCE_EVIDENCE_0.1.csv`](conformance/CONFORMANCE_EVIDENCE_0.1.csv)
-- [`tools/concord_spec_lint.py`](tools/concord_spec_lint.py)
-- [`tools/concord_spec_lint_output.txt`](tools/concord_spec_lint_output.txt)
+- [`conformance/PHASE_0_REPORT.md`](conformance/PHASE_0_REPORT.md)
+- [`conformance/PHASE_1_REPORT.md`](conformance/PHASE_1_REPORT.md)
 - [`REVIEW_RESOLUTION_0.1.md`](REVIEW_RESOLUTION_0.1.md)
+
+Specification governance is review-based: reviewers inspect the normative documents, verify the coverage plan, verify exact executed evidence, and audit the maintained release command. No automated specification checker is authoritative or maintained.
 
 Delivery and contribution:
 

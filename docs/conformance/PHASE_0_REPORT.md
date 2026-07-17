@@ -6,7 +6,7 @@
 
 Phase 0 evidence anchor commit: 3dbea65ab7e94a8b779329b895b314223161cdf4
 
-All accepted Phase 0 source units and every non-checker validation required by PR 0.7 passed at committed baseline `ca578db25acace2b9b95fee5f0df04157a8cb786`. The specification checker and its negative tests were explicitly excluded by user instruction. Because that gate was part of the original Phase 0 definition, this report does not claim `PHASE_0_COMPLETE`.
+All accepted Phase 0 source units and every applicable validation required by PR 0.7 passed at committed baseline `ca578db25acace2b9b95fee5f0df04157a8cb786`. The then-planned automated specification gate was explicitly excluded and was later removed from repository authority. This historical report retains its limitation-aware verdict rather than retroactively claiming unrecorded Phase 0 governance evidence.
 
 ## 2. Workspace Identity
 
@@ -138,7 +138,7 @@ HTTP/1.1 observations: two fully consumed small responses reused one connection;
 | `cargo check -p concord_core --lib --no-default-features --features dangerous-custom-retry` | Passed independently. |
 | `cargo check -p concord_core --lib --no-default-features --features dangerous-dev-tools` | Passed independently. |
 
-No required tool was unavailable. The specification checker was intentionally not invoked.
+No required tool was unavailable. The removed automated specification gate was intentionally not invoked.
 
 ### Final staged validation
 
@@ -280,7 +280,7 @@ There is no public executor or transport abstraction, runtime `Any`, separate ge
 
 ## 13. Known Limitations
 
-- The specification checker and negative checker tests are explicitly excluded; no checker evidence or waiver exists.
+- Historical Phase 0 validation predates the current recorded manual normative-document, coverage-plan, evidence, and release-audit procedure.
 - Normative documents remain `Normative Implementation Candidate`, not release-final.
 - Auth, pagination, and executor proofs are private models, not production implementations.
 - Completion elapsed-time metadata is not implemented or proved; no `EXEC-COMPLETE-005` or `API-HOOK-007` evidence is claimed.

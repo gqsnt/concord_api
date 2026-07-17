@@ -333,7 +333,8 @@ A behavior-changing PR should include:
 - [ ] requirement IDs changed or added;
 - [ ] coverage-plan rows updated;
 - [ ] actual evidence rows added or updated only for implemented artifacts;
-- [ ] specification linter passes with no untracked normative prose or dependency cycle;
+- [ ] normative ownership, normative prose, and dependency order manually reviewed;
+- [ ] coverage-plan and conformance-evidence mappings manually reviewed;
 - [ ] failing test added before implementation;
 - [ ] focused tests pass;
 - [ ] default and relevant feature checks pass;
@@ -350,27 +351,25 @@ A behavior-changing PR should include:
 Canonical commands:
 
 ```bash
-just spec-check
-just auth-model
 just fmt
+just fmt-check
 just check
+just clippy
 just test
-just test-all
-just msrv
-just docs
+just nextest
 just deny
 just release
 ```
 
-Direct equivalents must remain documented in the Conformance Plan and `justfile`.
+Manual specification governance consists of normative-document review, coverage-plan review, conformance-evidence review, and release audit. Maintained command equivalents remain documented in the Conformance Plan and `justfile`.
 
 ## 22. Release checklist
 
 Before release:
 
 1. verify normative documents remain final;
-2. complete coverage planning, actual release evidence, and specification lint;
-3. run release command;
+2. complete and record normative-document, coverage-plan, and conformance-evidence review;
+3. audit and run the release command;
 4. review feature graph;
 5. review public API diff;
 6. review generated Rustdoc;

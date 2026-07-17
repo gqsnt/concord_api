@@ -146,18 +146,11 @@ These capabilities require a later contract revision if real usage demonstrates 
 
 ## 5. Validation model
 
-Run from the package root:
+Specification governance uses an explicit review procedure rather than an automated specification checker:
 
-```bash
-python3 tools/concord_spec_lint.py
-```
+1. review the normative documents in the dependency order declared by the Specification Index, including requirement-ID ownership and normative-language placement;
+2. review `REQUIREMENT_COVERAGE_PLAN_0.1.csv` for one intentional planned mapping per requirement;
+3. review `CONFORMANCE_EVIDENCE_0.1.csv` for exact executed or approved waived evidence without converting plans into results;
+4. audit and run the maintained release command, then record its exact outcome in the applicable phase report.
 
-A successful implementation-candidate lint means:
-
-- normative requirement IDs are unique;
-- requirement coverage planning is exact;
-- actual evidence rows, when present, reference known requirements and valid evidence results;
-- normative dependencies are acyclic;
-- Markdown, placeholders, and local links pass structural checks.
-
-It does not claim that implementation evidence exists. Release-final status requires complete actual conformance evidence.
+An implementation-candidate review establishes document consistency and planned coverage only. It does not claim that implementation evidence exists. Release-final status requires complete actual conformance evidence.

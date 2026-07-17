@@ -107,3 +107,27 @@ fn public_categories_are_matched_structurally() {
     };
     assert_eq!(label, "status");
 }
+
+#[test]
+fn pagination_ceiling_kinds_are_public_and_structured() {
+    let kinds = [
+        PaginationErrorKind::InvalidLimit,
+        PaginationErrorKind::Controller,
+        PaginationErrorKind::Overflow,
+        PaginationErrorKind::RepeatedRequest,
+        PaginationErrorKind::HardCapExceeded,
+        PaginationErrorKind::PageCeilingExceeded,
+        PaginationErrorKind::CollectedItemCeilingExceeded,
+        PaginationErrorKind::IdentityStorageCeilingExceeded,
+    ];
+
+    assert_eq!(kinds.len(), 8);
+    assert_ne!(
+        PaginationErrorKind::PageCeilingExceeded,
+        PaginationErrorKind::HardCapExceeded
+    );
+    assert_ne!(
+        PaginationErrorKind::CollectedItemCeilingExceeded,
+        PaginationErrorKind::IdentityStorageCeilingExceeded
+    );
+}

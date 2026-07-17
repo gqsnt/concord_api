@@ -115,9 +115,9 @@ A waived requirement records an approved decision and a repeatable manual review
 
 **CONF-TRACE-002 — No undocumented waiver.** A waived actual-evidence row MUST identify an approved decision and manual evidence procedure.
 
-**CONF-TRACE-003 — No untracked normative prose.** Automated specification lint MUST reject substantive normative `MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, or `MAY` statements outside stable requirement definitions, except an explicit allowlist for normative-language definitions.
+**CONF-TRACE-003 — No untracked normative prose.** Recorded normative-document review MUST reject substantive normative `MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, or `MAY` statements outside stable requirement definitions, except an explicit allowlist for normative-language definitions.
 
-**CONF-TRACE-004 — Acyclic normative dependencies.** Automated specification lint MUST reject a cycle in normative document dependencies.
+**CONF-TRACE-004 — Acyclic normative dependencies.** Recorded normative-document review MUST reject a cycle in normative document dependencies.
 
 **CONF-TRACE-005 — Planned coverage is not evidence.** Tooling and documentation MUST distinguish a planned or implemented coverage row from actual passing or waived conformance evidence.
 
@@ -869,7 +869,7 @@ It must execute or invoke jobs equivalent to:
 
 ```bash
 cargo fmt --all -- --check
-cargo check --workspace --all-targets --all-features
+cargo +1.85.0 check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo nextest run --workspace --all-features
 cargo test --workspace --doc --all-features
@@ -879,11 +879,12 @@ cargo test -p concord_core --no-default-features --test no_default
 cargo +1.85.0 check -p concord_core --no-default-features
 cargo +1.85.0 check -p concord_core --all-features
 cargo +1.85.0 check -p concord_macros
-python tools/concord_spec_lint.py
-cargo test -p concord_core --test auth_model
+cargo test -p concord_core auth_model
 cargo deny check
 git diff --check
 ```
+
+The release owner additionally records a manual normative-document review, coverage-plan review, conformance-evidence review, and release-command audit. These reviews are governance evidence; they are not replaced by a repository specification checker.
 
 It also compiles:
 

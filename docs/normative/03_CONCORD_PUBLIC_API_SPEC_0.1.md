@@ -342,6 +342,9 @@ pub enum PaginationErrorKind {
     Overflow,
     RepeatedRequest,
     HardCapExceeded,
+    PageCeilingExceeded,
+    CollectedItemCeilingExceeded,
+    IdentityStorageCeilingExceeded,
 }
 
 #[non_exhaustive]

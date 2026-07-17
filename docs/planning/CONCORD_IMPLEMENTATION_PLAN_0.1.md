@@ -137,34 +137,32 @@ cargo +1.85.0 check --workspace
 
 Expected: success with no warnings.
 
-### Task 0.2: Install specification coverage and evidence checks
+### Task 0.2: Establish specification coverage and evidence review
 
 **Files:**
 
-- Create: `xtask/Cargo.toml` or `scripts/check_spec.py`
 - Create: `conformance/REQUIREMENT_COVERAGE_PLAN_0.1.csv`
 - Create: `conformance/CONFORMANCE_EVIDENCE_0.1.csv`
-- Test: `tests/spec_conformance_catalogs.*`
+- Create: phase conformance reports as implementation milestones complete
 
 **Produces:**
 
-A repository command that:
+A repeatable manual governance procedure that:
 
-- scans normative Markdown for requirement IDs;
-- rejects duplicate IDs;
-- rejects missing or duplicate coverage-plan rows;
-- rejects unknown coverage/evidence requirement IDs;
+- reviews normative Markdown for stable requirement IDs, ownership, and dependency order;
+- reviews the coverage plan for intentional mappings;
+- reviews the evidence catalog for exact known requirements and valid results;
 - distinguishes planned coverage from actual passing/waived evidence;
-- requires exact actual evidence only for release-final status;
-- rejects placeholder markers and incomplete normative sections.
+- requires exact actual evidence for release-final status;
+- concludes with an audit of the maintained release command.
 
 **Steps:**
 
-- [ ] Write failing tests using one missing coverage row and one release-final requirement lacking actual evidence.
-- [ ] Implement the requirement scanner.
-- [ ] Add a `just spec-check` command.
-- [ ] Verify the current specification archive passes.
-- [ ] Commit as `test: add specification coverage and evidence gates`.
+- [ ] Review normative ownership and requirement IDs in dependency order.
+- [ ] Review every coverage-plan mapping without treating it as evidence.
+- [ ] Review actual evidence for exact artifacts, commands, results, and source commits.
+- [ ] Audit the release recipe and record the review in the phase report.
+- [ ] Commit as `docs: establish specification coverage and evidence governance`.
 
 **Conformance:** `DOC-ID-*`, `CONF-TRACE-*`.
 
@@ -321,7 +319,7 @@ One prepared endpoint and one generated endpoint traversing the same typed execu
 
 - Workspace compiles on Rust 1.85.
 - All feature names exist.
-- The specification linter, coverage-plan checker, and evidence-catalog checker pass.
+- Normative documents, coverage planning, and actual evidence pass recorded manual review.
 - A minimal generated endpoint compiles with normal and renamed core dependencies.
 - Scoped facade and explicit endpoints have equivalent public request heads.
 - Credential slot invariants pass bounded model checking.
@@ -1654,21 +1652,21 @@ A minimal DSL subset covering one client, fixed base URL, one scope, one bodyles
 - [ ] Add `cargo bench --no-run` to the release gate.
 - [ ] Commit as `perf: add local runtime benchmarks`.
 
-### Task 10.7: Enable strict docs, lints, dependency, and specification gates
+### Task 10.7: Enable strict docs, lints, dependency, and release governance
 
 **Files:**
 
 - Modify: crate roots
 - Modify: `deny.toml`
 - Modify: `justfile`
-- Modify: coverage-plan and evidence-catalog checker
+- Modify: coverage plan, evidence catalog, and release report
 
 **Steps:**
 
 - [ ] Enable `#![deny(missing_docs)]` for stable public surfaces.
 - [ ] Deny warnings in Clippy and Rustdoc.
 - [ ] Add Cargo Deny license/advisory/source policy.
-- [ ] Add local-link, duplicate requirement, CSV coverage, placeholder, and specification ownership checks.
+- [ ] Record manual normative ownership, local-link, coverage-plan, and evidence-catalog review.
 - [ ] Add `git diff --check` and benchmark compilation.
 - [ ] Commit as `chore: enable concord release gates`.
 

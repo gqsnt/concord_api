@@ -88,6 +88,12 @@ pub enum PaginationErrorKind {
     RepeatedRequest,
     /// A configured hard cap was exceeded.
     HardCapExceeded,
+    /// The configured maximum page count was exceeded.
+    PageCeilingExceeded,
+    /// The configured maximum collected-item count was exceeded.
+    CollectedItemCeilingExceeded,
+    /// The configured pagination identity-storage limit was exceeded.
+    IdentityStorageCeilingExceeded,
 }
 
 /// Stable client-construction failure classification.

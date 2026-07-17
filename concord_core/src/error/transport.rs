@@ -338,6 +338,24 @@ mod tests {
         );
     }
 
+    #[test]
+    fn pagination_ceiling_kinds_keep_structural_category_and_safe_formatting() {
+        for kind in [
+            PaginationErrorKind::PageCeilingExceeded,
+            PaginationErrorKind::CollectedItemCeilingExceeded,
+            PaginationErrorKind::IdentityStorageCeilingExceeded,
+        ] {
+            let error = ApiError::with_pagination_kind("widgets.list", Method::GET, kind);
+            assert_eq!(error.category(), ErrorCategory::Pagination);
+            assert_eq!(error.pagination_kind(), Some(kind));
+            assert_eq!(
+                error.to_string(),
+                "endpoint GET widgets.list failed (Pagination)"
+            );
+            assert!(format!("{error:?}").contains(&format!("{kind:?}")));
+        }
+    }
+
     #[tokio::test]
     async fn raw_reqwest_url_error_is_reduced_without_retaining_native_error() {
         let _ = rustls::crypto::ring::default_provider().install_default();
