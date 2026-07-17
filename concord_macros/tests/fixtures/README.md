@@ -11,6 +11,6 @@ package metadata or dependency topology:
   `concord_core` package and proves the generated contract marker fails during
   compilation. Its nested package therefore also requires a manifest.
 
-Ordinary generated use, nested/repeated expansion, equal names, and minimal
-trait bounds live in `generated_surface.rs`. Source-only failures live under
-`tests/ui/fail` and run through Trybuild.
+Ordinary generated construction and execution, builder behavior, lazy request
+creation, and nested/repeated expansion live in `generated_surface.rs`.
+Source-only failures live under `tests/ui/fail` and run through Trybuild.

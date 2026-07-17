@@ -2,73 +2,70 @@ use proc_macro2::{Ident, Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::Index;
 
-use crate::model::{Api, Parameter, PathAtom};
+use crate::model::{Api, Endpoint, Parameter, PathAtom, ResponseKind, Scope, to_snake_case};
 
 const GENERATED_CONTRACT_VERSION: u32 = 2;
 
 pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
     let client = &api.client;
     let scope = &client.scope;
-    let endpoint = &scope.endpoint;
-
     let client_name = &client.name;
+    let builder_name = format_ident!("{client_name}Builder");
     let scope_name = &scope.name;
-    let endpoint_name = &endpoint.name;
     let support_name = format_ident!("{}", to_snake_case(&client_name.to_string()));
     let scope_module_name = format_ident!("{}", to_snake_case(&scope_name.to_string()));
     let scope_method_name = &scope_module_name;
-    let endpoint_method_name = format_ident!("{}", to_snake_case(&endpoint_name.to_string()));
     let facade_name = format_ident!("{}Facade", to_pascal_case(&scope_name.to_string()));
-
-    let scope_names: Vec<_> = scope
-        .parameters
-        .iter()
-        .map(|parameter| &parameter.name)
-        .collect();
-    let scope_types: Vec<_> = scope
-        .parameters
-        .iter()
-        .map(|parameter| &parameter.ty)
-        .collect();
-    let endpoint_names: Vec<_> = endpoint
-        .parameters
-        .iter()
-        .map(|parameter| &parameter.name)
-        .collect();
-    let endpoint_types: Vec<_> = endpoint
-        .parameters
-        .iter()
-        .map(|parameter| &parameter.ty)
-        .collect();
-    let scope_bindings: Vec<_> = scope
-        .parameters
-        .iter()
-        .enumerate()
-        .map(|(index, parameter)| parameter_binding("scope", index, &parameter.name))
-        .collect();
-    let endpoint_bindings: Vec<_> = endpoint
-        .parameters
-        .iter()
-        .enumerate()
-        .map(|(index, parameter)| parameter_binding("endpoint", index, &parameter.name))
-        .collect();
-    let scope_indices: Vec<_> = (0..scope.parameters.len()).map(Index::from).collect();
-
-    let all_path_atoms: Vec<_> = scope.path.iter().chain(endpoint.path.iter()).collect();
-    let path_statements: Vec<_> = all_path_atoms
-        .iter()
-        .map(|atom| path_statement(atom, &scope.parameters, &endpoint.parameters))
-        .collect();
     let base = &client.base;
-    let endpoint_identity = format!("{client_name}::{scope_name}::{endpoint_name}");
     let contract_version = GENERATED_CONTRACT_VERSION;
+    let client_doc = format!("Generated Concord client `{client_name}`.");
+    let builder_doc = format!("Canonical fallible builder for [`{client_name}`].");
+    let support_doc = format!("Public generated API modules for [`{client_name}`].");
+    let facade_doc = format!("Immutable generated facade for the `{}` scope.", scope.name);
+    let scope_method_doc = format!(
+        "Creates an immutable `{}` scope facade without starting a request.",
+        scope.name
+    );
+
+    let scope_names = scope
+        .parameters
+        .iter()
+        .map(|parameter| &parameter.name)
+        .collect::<Vec<_>>();
+    let scope_types = scope
+        .parameters
+        .iter()
+        .map(|parameter| &parameter.ty)
+        .collect::<Vec<_>>();
+    let endpoint_items = scope
+        .endpoints
+        .iter()
+        .map(|endpoint| generate_endpoint(client_name, scope, endpoint, core_path))
+        .collect::<Vec<_>>();
+    let facade_methods = scope
+        .endpoints
+        .iter()
+        .map(|endpoint| generate_facade_method(scope, endpoint, core_path, &scope_module_name))
+        .collect::<Vec<_>>();
 
     quote! {
+        #[doc = #client_doc]
         #[derive(Clone)]
         pub struct #client_name {
-            __concord_private: (),
+            __concord_core: #core_path::__private::ClientCore,
         }
 
+        #[doc = #builder_doc]
+        pub struct #builder_name {
+            __concord_http: ::std::option::Option<#core_path::advanced::HttpConfigBuilder>,
+            __concord_runtime: ::std::option::Option<#core_path::advanced::RuntimeConfigBuilder>,
+            __concord_http_configured: bool,
+            __concord_runtime_configured: bool,
+            __concord_duplicate_http: bool,
+            __concord_duplicate_runtime: bool,
+        }
+
+        #[doc = #support_doc]
         pub mod #support_name {
             mod __concord_generated {
                 pub(super) use #core_path as __core;
@@ -76,115 +73,396 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
                 const _: () = __core::__private::assert_generated_contract(#contract_version);
             }
 
+            /// Generated immutable scope facades.
             pub mod facades {
+                #[doc = #facade_doc]
                 #[derive(Clone)]
                 pub struct #facade_name {
+                    pub(super) __concord_client: super::super::#client_name,
                     pub(super) __concord_scope: (#(::std::sync::Arc<#scope_types>,)*),
                 }
             }
 
+            /// Generated explicit endpoint values.
             pub mod endpoints {
                 pub mod #scope_module_name {
-                    pub struct #endpoint_name {
-                        __concord_scope: (#(::std::sync::Arc<#scope_types>,)*),
-                        __concord_endpoint: (#(#endpoint_types,)*),
-                    }
-
-                    impl #endpoint_name {
-                        pub fn new(#(#scope_bindings: #scope_types,)* #(#endpoint_bindings: #endpoint_types),*) -> Self {
-                            Self::__concord_from_shared(
-                                #(::std::sync::Arc::new(#scope_bindings),)*
-                                #(#endpoint_bindings),*
-                            )
-                        }
-
-                        pub(in super::super) fn __concord_from_shared(
-                            #(#scope_bindings: ::std::sync::Arc<#scope_types>,)*
-                            #(#endpoint_bindings: #endpoint_types),*
-                        ) -> Self {
-                            Self {
-                                __concord_scope: (#(#scope_bindings,)*),
-                                __concord_endpoint: (#(#endpoint_bindings,)*),
-                            }
-                        }
-                    }
-
-                    #[doc(hidden)]
-                    impl super::super::__concord_generated::__core::__private::EndpointSpec
-                        for #endpoint_name
-                    where
-                        #(#scope_types: ::std::fmt::Display + ::std::marker::Send + ::std::marker::Sync + 'static,)*
-                        #(#endpoint_types: ::std::fmt::Display + ::std::marker::Send + 'static,)*
-                    {
-                        type Body = super::super::__concord_generated::__core::__private::EmptyBody;
-                        type Response = super::super::__concord_generated::__core::__private::NoContentResponse;
-
-                        fn request_meta(
-                            &self,
-                        ) -> super::super::__concord_generated::__core::__private::RequestMeta {
-                            super::super::__concord_generated::__core::__private::RequestMeta::new(
-                                #endpoint_identity,
-                                super::super::__concord_generated::__core::__private::Method::GET,
-                                ::std::option::Option::None,
-                            )
-                        }
-
-                        fn prepare_head_and_body_metadata(
-                            &self,
-                            mut __concord_builder: super::super::__concord_generated::__core::__private::HeadBuilder,
-                        ) -> ::std::result::Result<
-                            (
-                                super::super::__concord_generated::__core::__private::PreparedHead,
-                                super::super::__concord_generated::__core::__private::BodyMetadata,
-                            ),
-                            super::super::__concord_generated::__core::__private::ApiError,
-                        > {
-                            #(#path_statements)*
-                            ::std::result::Result::Ok((
-                                __concord_builder.finish(),
-                                super::super::__concord_generated::__core::__private::EmptyBody::metadata(),
-                            ))
-                        }
-
-                        fn into_body(self) -> Self::Body {
-                            let _ = self;
-                            super::super::__concord_generated::__core::__private::EmptyBody::new()
-                        }
-                    }
+                    #(#endpoint_items)*
                 }
             }
 
             impl super::#client_name {
-                #[must_use]
-                pub const fn new() -> Self {
-                    let _ = #base;
-                    Self { __concord_private: () }
+                /// Builds a client with the canonical default configuration.
+                pub fn new() -> ::std::result::Result<
+                    Self,
+                    #core_path::prelude::ClientBuildError,
+                > {
+                    Self::builder().build()
                 }
 
                 #[must_use]
+                /// Creates the canonical generated client builder.
+                pub fn builder() -> super::#builder_name {
+                    super::#builder_name::new()
+                }
+
+                #[must_use]
+                #[doc = #scope_method_doc]
                 pub fn #scope_method_name(
                     &self,
                     #(#scope_names: #scope_types),*
                 ) -> facades::#facade_name {
                     facades::#facade_name {
+                        __concord_client: self.clone(),
                         __concord_scope: (#(::std::sync::Arc::new(#scope_names),)*),
                     }
+                }
+
+                #[must_use]
+                /// Creates a side-effect-free pending request from an explicit generated endpoint.
+                pub fn request<E>(&self, endpoint: E) -> #core_path::Request<E> {
+                    __concord_generated::__core::__private::request(
+                        &self.__concord_core,
+                        endpoint,
+                    )
+                }
+            }
+
+            impl super::#builder_name {
+                #[must_use]
+                /// Creates an empty canonical generated client builder.
+                pub fn new() -> Self {
+                    Self {
+                        __concord_http: ::std::option::Option::Some(
+                            __concord_generated::__core::__private::default_http_config(),
+                        ),
+                        __concord_runtime: ::std::option::Option::Some(
+                            __concord_generated::__core::__private::default_runtime_config(),
+                        ),
+                        __concord_http_configured: false,
+                        __concord_runtime_configured: false,
+                        __concord_duplicate_http: false,
+                        __concord_duplicate_runtime: false,
+                    }
+                }
+
+                #[must_use]
+                /// Applies the HTTP configuration closure immediately.
+                pub fn http<F>(mut self, configure: F) -> Self
+                where
+                    F: ::std::ops::FnOnce(
+                        #core_path::advanced::HttpConfigBuilder,
+                    ) -> #core_path::advanced::HttpConfigBuilder,
+                {
+                    if self.__concord_http_configured {
+                        self.__concord_duplicate_http = true;
+                        return self;
+                    }
+                    self.__concord_http_configured = true;
+                    let Some(http) = self.__concord_http.take() else {
+                        unreachable!("generated HTTP builder state is internally consistent");
+                    };
+                    self.__concord_http = ::std::option::Option::Some(configure(http));
+                    self
+                }
+
+                #[must_use]
+                /// Applies the runtime configuration closure immediately.
+                pub fn runtime<F>(mut self, configure: F) -> Self
+                where
+                    F: ::std::ops::FnOnce(
+                        #core_path::advanced::RuntimeConfigBuilder,
+                    ) -> #core_path::advanced::RuntimeConfigBuilder,
+                {
+                    if self.__concord_runtime_configured {
+                        self.__concord_duplicate_runtime = true;
+                        return self;
+                    }
+                    self.__concord_runtime_configured = true;
+                    let Some(runtime) = self.__concord_runtime.take() else {
+                        unreachable!("generated runtime builder state is internally consistent");
+                    };
+                    self.__concord_runtime = ::std::option::Option::Some(configure(runtime));
+                    self
+                }
+
+                /// Resolves configuration and builds the generated client.
+                pub fn build(
+                    self,
+                ) -> ::std::result::Result<
+                    super::#client_name,
+                    #core_path::prelude::ClientBuildError,
+                > {
+                    if self.__concord_duplicate_http {
+                        return ::std::result::Result::Err(
+                            __concord_generated::__core::__private::duplicate_http_configuration_error(),
+                        );
+                    }
+                    if self.__concord_duplicate_runtime {
+                        return ::std::result::Result::Err(
+                            __concord_generated::__core::__private::duplicate_runtime_configuration_error(),
+                        );
+                    }
+                    let Some(http) = self.__concord_http else {
+                        unreachable!("generated HTTP builder state is internally consistent");
+                    };
+                    let Some(runtime) = self.__concord_runtime else {
+                        unreachable!("generated runtime builder state is internally consistent");
+                    };
+                    let core = __concord_generated::__core::__private::build_client_core(
+                        #base,
+                        http,
+                        runtime,
+                    )?;
+                    ::std::result::Result::Ok(super::#client_name {
+                        __concord_core: core,
+                    })
+                }
+            }
+
+            impl ::std::default::Default for super::#builder_name {
+                fn default() -> Self {
+                    Self::new()
                 }
             }
 
             impl facades::#facade_name {
-                #[must_use]
-                pub fn #endpoint_method_name(
-                    &self,
-                    #(#endpoint_names: #endpoint_types),*
-                ) -> endpoints::#scope_module_name::#endpoint_name {
-                    endpoints::#scope_module_name::#endpoint_name::__concord_from_shared(
-                        #(::std::sync::Arc::clone(&self.__concord_scope.#scope_indices),)*
-                        #(#endpoint_names),*
-                    )
+                #(#facade_methods)*
+            }
+        }
+    }
+}
+
+fn generate_endpoint(
+    client_name: &Ident,
+    scope: &Scope,
+    endpoint: &Endpoint,
+    core_path: &TokenStream,
+) -> TokenStream {
+    let endpoint_name = &endpoint.name;
+    let scope_types = scope
+        .parameters
+        .iter()
+        .map(|parameter| &parameter.ty)
+        .collect::<Vec<_>>();
+    let endpoint_types = endpoint
+        .parameters
+        .iter()
+        .map(|parameter| &parameter.ty)
+        .collect::<Vec<_>>();
+    let scope_bindings = scope
+        .parameters
+        .iter()
+        .enumerate()
+        .map(|(index, parameter)| parameter_binding("scope", index, &parameter.name))
+        .collect::<Vec<_>>();
+    let endpoint_bindings = endpoint
+        .parameters
+        .iter()
+        .enumerate()
+        .map(|(index, parameter)| parameter_binding("endpoint", index, &parameter.name))
+        .collect::<Vec<_>>();
+    let path_statements = scope
+        .path
+        .iter()
+        .chain(endpoint.path.iter())
+        .map(|atom| path_statement(atom, &scope.parameters, &endpoint.parameters))
+        .collect::<Vec<_>>();
+    let endpoint_identity = format!("{client_name}::{}::{endpoint_name}", scope.name);
+    let route_shape = route_shape(scope, endpoint);
+    let response_name = match endpoint.response {
+        ResponseKind::Bytes => "Bytes",
+        ResponseKind::NoContent => "NoContent",
+    };
+    let required_names = scope
+        .parameters
+        .iter()
+        .chain(endpoint.parameters.iter())
+        .map(|parameter| format!("`{}`", parameter.name))
+        .collect::<Vec<_>>();
+    let required_arguments = if required_names.is_empty() {
+        "none".to_owned()
+    } else {
+        required_names.join(", ")
+    };
+    let endpoint_doc = format!(
+        "Bodyless `GET` endpoint `{endpoint_identity}` for route `{route_shape}`. Required arguments: {required_arguments}. Direct await uses the `{response_name}` response mode; metadata is available through `Request::response`."
+    );
+    let constructor_doc = format!(
+        "Creates the explicit `{endpoint_identity}` endpoint value without preparing or executing a request."
+    );
+    let response = response_handler(endpoint.response, core_path);
+    let bounds = scope
+        .parameters
+        .iter()
+        .map(|parameter| {
+            let ty = &parameter.ty;
+            quote!(#ty: ::std::fmt::Display + ::std::marker::Send + ::std::marker::Sync + 'static)
+        })
+        .chain(endpoint.parameters.iter().map(|parameter| {
+            let ty = &parameter.ty;
+            quote!(#ty: ::std::fmt::Display + ::std::marker::Send + 'static)
+        }))
+        .collect::<Vec<_>>();
+    let where_clause = if bounds.is_empty() {
+        quote!()
+    } else {
+        quote!(where #(#bounds,)*)
+    };
+    let default_impl = if scope.parameters.is_empty() && endpoint.parameters.is_empty() {
+        quote! {
+            impl ::std::default::Default for #endpoint_name {
+                fn default() -> Self {
+                    Self::new()
                 }
             }
         }
+    } else {
+        quote!()
+    };
+
+    quote! {
+        #[doc = #endpoint_doc]
+        pub struct #endpoint_name {
+            __concord_scope: (#(::std::sync::Arc<#scope_types>,)*),
+            __concord_endpoint: (#(#endpoint_types,)*),
+        }
+
+        impl #endpoint_name {
+            #[must_use]
+            #[doc = #constructor_doc]
+            pub fn new(
+                #(#scope_bindings: #scope_types,)*
+                #(#endpoint_bindings: #endpoint_types),*
+            ) -> Self {
+                Self::__concord_from_shared(
+                    #(::std::sync::Arc::new(#scope_bindings),)*
+                    #(#endpoint_bindings),*
+                )
+            }
+
+            pub(in super::super) fn __concord_from_shared(
+                #(#scope_bindings: ::std::sync::Arc<#scope_types>,)*
+                #(#endpoint_bindings: #endpoint_types),*
+            ) -> Self {
+                Self {
+                    __concord_scope: (#(#scope_bindings,)*),
+                    __concord_endpoint: (#(#endpoint_bindings,)*),
+                }
+            }
+        }
+
+        #default_impl
+
+        #[doc(hidden)]
+        impl super::super::__concord_generated::__core::__private::EndpointSpec for #endpoint_name
+        #where_clause
+        {
+            type Body = super::super::__concord_generated::__core::__private::EmptyBody;
+            type Response = #response;
+
+            fn request_meta(
+                &self,
+            ) -> super::super::__concord_generated::__core::__private::RequestMeta {
+                super::super::__concord_generated::__core::__private::RequestMeta::new(
+                    #endpoint_identity,
+                    super::super::__concord_generated::__core::__private::Method::GET,
+                    ::std::option::Option::None,
+                )
+            }
+
+            fn prepare_head_and_body_metadata(
+                &self,
+                mut __concord_builder: super::super::__concord_generated::__core::__private::HeadBuilder,
+            ) -> ::std::result::Result<
+                (
+                    super::super::__concord_generated::__core::__private::PreparedHead,
+                    super::super::__concord_generated::__core::__private::BodyMetadata,
+                ),
+                super::super::__concord_generated::__core::__private::ApiError,
+            > {
+                #(#path_statements)*
+                ::std::result::Result::Ok((
+                    __concord_builder.finish(),
+                    super::super::__concord_generated::__core::__private::EmptyBody::metadata(),
+                ))
+            }
+
+            fn into_body(self) -> Self::Body {
+                let _ = self;
+                super::super::__concord_generated::__core::__private::EmptyBody::new()
+            }
+        }
+    }
+}
+
+fn generate_facade_method(
+    scope: &Scope,
+    endpoint: &Endpoint,
+    core_path: &TokenStream,
+    scope_module_name: &Ident,
+) -> TokenStream {
+    let endpoint_name = &endpoint.name;
+    let endpoint_method_name = format_ident!("{}", to_snake_case(&endpoint_name.to_string()));
+    let endpoint_names = endpoint
+        .parameters
+        .iter()
+        .map(|parameter| &parameter.name)
+        .collect::<Vec<_>>();
+    let endpoint_types = endpoint
+        .parameters
+        .iter()
+        .map(|parameter| &parameter.ty)
+        .collect::<Vec<_>>();
+    let scope_indices = (0..scope.parameters.len())
+        .map(Index::from)
+        .collect::<Vec<_>>();
+    let endpoint_identity = format!("{}::{}", scope.name, endpoint.name);
+    let route_shape = route_shape(scope, endpoint);
+    let response_name = match endpoint.response {
+        ResponseKind::Bytes => "Bytes",
+        ResponseKind::NoContent => "NoContent",
+    };
+    let method_doc = format!(
+        "Creates a pending bodyless `GET` request for `{endpoint_identity}` at route `{route_shape}` using the `{response_name}` response mode."
+    );
+
+    quote! {
+        #[must_use]
+        #[doc = #method_doc]
+        pub fn #endpoint_method_name(
+            &self,
+            #(#endpoint_names: #endpoint_types),*
+        ) -> #core_path::Request<endpoints::#scope_module_name::#endpoint_name> {
+            let endpoint = endpoints::#scope_module_name::#endpoint_name::__concord_from_shared(
+                #(::std::sync::Arc::clone(&self.__concord_scope.#scope_indices),)*
+                #(#endpoint_names),*
+            );
+            __concord_generated::__core::__private::request(
+                &self.__concord_client.__concord_core,
+                endpoint,
+            )
+        }
+    }
+}
+
+fn route_shape(scope: &Scope, endpoint: &Endpoint) -> String {
+    let segments = scope
+        .path
+        .iter()
+        .chain(endpoint.path.iter())
+        .map(|atom| match atom {
+            PathAtom::Static(value) => value.value(),
+            PathAtom::Scope(name) => format!("{{scope.{name}}}"),
+            PathAtom::Endpoint(name) => format!("{{ep.{name}}}"),
+        })
+        .collect::<Vec<_>>();
+    format!("/{}", segments.join("/"))
+}
+
+fn response_handler(response: ResponseKind, core_path: &TokenStream) -> TokenStream {
+    match response {
+        ResponseKind::Bytes => quote!(#core_path::__private::BytesResponse),
+        ResponseKind::NoContent => quote!(#core_path::__private::NoContentResponse),
     }
 }
 
@@ -222,27 +500,6 @@ fn parameter_binding(namespace: &str, index: usize, name: &Ident) -> Ident {
     )
 }
 
-fn to_snake_case(name: &str) -> String {
-    let name = name.strip_prefix("r#").unwrap_or(name);
-    let characters: Vec<_> = name.chars().collect();
-    let mut output = String::with_capacity(name.len());
-    for (index, character) in characters.iter().copied().enumerate() {
-        if character.is_uppercase() {
-            let previous_is_lowercase = index > 0 && characters[index - 1].is_lowercase();
-            let next_is_lowercase = characters
-                .get(index + 1)
-                .is_some_and(|next| next.is_lowercase());
-            if index > 0 && (previous_is_lowercase || next_is_lowercase) {
-                output.push('_');
-            }
-            output.extend(character.to_lowercase());
-        } else {
-            output.push(character);
-        }
-    }
-    output
-}
-
 fn to_pascal_case(name: &str) -> String {
     let name = name.strip_prefix("r#").unwrap_or(name);
     name.split('_')
@@ -259,7 +516,8 @@ fn to_pascal_case(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{to_pascal_case, to_snake_case};
+    use super::to_pascal_case;
+    use crate::model::to_snake_case;
 
     #[test]
     fn generated_names_are_deterministic() {

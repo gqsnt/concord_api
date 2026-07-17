@@ -6,7 +6,26 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{Ident, LitStr, Token, Type, braced, bracketed, parenthesized};
 
-use crate::model::{Api, Client, Endpoint, Parameter, PathAtom, Scope};
+use crate::model::{
+    Api, Client, Endpoint, Parameter, PathAtom, ResponseKind, Scope, to_snake_case,
+};
+
+const RESERVED_GENERATED_METHODS: &[&str] = &[
+    "new",
+    "builder",
+    "build",
+    "http",
+    "runtime",
+    "credentials",
+    "request",
+    "response",
+    "raw_response",
+    "paginate",
+    "timeout",
+    "disable_timeout",
+    "inherit_timeout",
+    "debug",
+];
 
 mod keyword {
     syn::custom_keyword!(base);
@@ -23,8 +42,9 @@ impl Parse for Api {
     fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
         let client = input.parse()?;
         if !input.is_empty() {
-            return Err(input
-                .error("PR 0.2 accepts exactly one `client` declaration per `api!` invocation"));
+            return Err(input.error(
+                "the current generated subset accepts exactly one `client` declaration per `api!` invocation",
+            ));
         }
         Ok(Self { client })
     }
@@ -38,7 +58,7 @@ impl Parse for Client {
         braced!(body in input);
 
         if !body.peek(keyword::base) {
-            return Err(body.error("a PR 0.2 client must begin with `base \"https://...\";`"));
+            return Err(body.error("a client must begin with a fixed `base \"https://...\";`"));
         }
         body.parse::<keyword::base>()?;
         let base: LitStr = body.parse()?;
@@ -46,13 +66,14 @@ impl Parse for Client {
         validate_base(&base)?;
 
         if !body.peek(keyword::scope) {
-            return Err(body
-                .error("PR 0.2 accepts one scope immediately after the fixed `base` declaration"));
+            return Err(body.error(
+                "the current generated subset requires one scope after the fixed `base` declaration",
+            ));
         }
         let scope = body.parse()?;
         if !body.is_empty() {
             return Err(body.error(
-                "unsupported client declaration; PR 0.2 accepts only one fixed base and one scope",
+                "unsupported client declaration; the current generated subset accepts one fixed base and one scope",
             ));
         }
 
@@ -67,84 +88,120 @@ impl Parse for Scope {
         let parameters_content;
         parenthesized!(parameters_content in input);
         let parameters = parse_required_parameters(&parameters_content, "scope")?;
-        if parameters.is_empty() {
-            return Err(name
-                .span()
-                .error("a PR 0.2 scope must declare at least one required scope parameter"));
-        }
 
         let body;
         braced!(body in input);
         if !body.peek(keyword::path) {
-            return Err(body.error("a PR 0.2 scope must begin with a `path [...]` declaration"));
+            return Err(body.error("a scope must begin with a `path [...]` declaration"));
         }
         let path = parse_path(&body)?;
         validate_path(&path, &parameters, PathContext::Scope)?;
 
         if body.is_empty() {
-            return Err(body.error("a PR 0.2 scope must contain one bodyless `GET` endpoint"));
+            return Err(body.error("a scope must contain at least one bodyless `GET` endpoint"));
         }
-        let endpoint = parse_endpoint(&body)?;
-        if !body.is_empty() {
-            return Err(body.error(
-                "unsupported scope declaration; PR 0.2 accepts one path and one GET endpoint",
-            ));
+        let mut endpoints = Vec::new();
+        let mut endpoint_names = HashSet::new();
+        while !body.is_empty() {
+            let endpoint = parse_endpoint(&body)?;
+            if !endpoint_names.insert(endpoint.name.to_string()) {
+                return Err(endpoint
+                    .name
+                    .span()
+                    .error(format!("duplicate endpoint `{}`", endpoint.name)));
+            }
+            endpoints.push(endpoint);
         }
+
+        validate_generated_names(&name, &endpoints)?;
 
         Ok(Self {
             name,
             parameters,
             path,
-            endpoint,
+            endpoints,
         })
     }
+}
+
+fn validate_generated_names(scope_name: &Ident, endpoints: &[Endpoint]) -> syn::Result<()> {
+    let scope_method = to_snake_case(&scope_name.to_string());
+    if RESERVED_GENERATED_METHODS.contains(&scope_method.as_str()) {
+        return Err(scope_name.span().error(format!(
+            "generated scope method `{scope_method}` collides with a reserved Concord method"
+        )));
+    }
+
+    let mut endpoint_methods = HashSet::new();
+    for endpoint in endpoints {
+        let method = to_snake_case(&endpoint.name.to_string());
+        if RESERVED_GENERATED_METHODS.contains(&method.as_str()) {
+            return Err(endpoint.name.span().error(format!(
+                "generated endpoint method `{method}` collides with a reserved Concord method"
+            )));
+        }
+        if !endpoint_methods.insert(method.clone()) {
+            return Err(endpoint.name.span().error(format!(
+                "generated endpoint method `{method}` collides after deterministic Rust name normalization"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<Endpoint> {
     let method: Ident = input
         .parse()
-        .map_err(|_| input.error("unsupported endpoint declaration; PR 0.2 accepts only `GET`"))?;
+        .map_err(|_| input.error("unsupported endpoint declaration; expected bodyless `GET`"))?;
     if method != "GET" {
-        return Err(method
-            .span()
-            .error("unsupported endpoint method; PR 0.2 accepts only bodyless `GET`"));
+        return Err(method.span().error(
+            "unsupported endpoint method; the current generated subset accepts only bodyless `GET`",
+        ));
     }
 
     let name: Ident = input.parse()?;
     let parameters_content;
     parenthesized!(parameters_content in input);
     let parameters = parse_required_parameters(&parameters_content, "endpoint")?;
-    if parameters.is_empty() {
-        return Err(name.span().error(
-            "a PR 0.2 endpoint must declare at least one required endpoint-local parameter",
-        ));
-    }
 
     input.parse::<Token![->]>()?;
     let response: Ident = input.parse()?;
-    if response != "NoContent" {
-        return Err(response
-            .span()
-            .error("unsupported response marker; PR 0.2 accepts only `NoContent`"));
-    }
+    let response = match response.to_string().as_str() {
+        "Bytes" => ResponseKind::Bytes,
+        "NoContent" => ResponseKind::NoContent,
+        _ => {
+            return Err(response.span().error(
+                "unsupported response marker; the current generated subset accepts `Bytes` or `NoContent`",
+            ));
+        }
+    };
 
-    let body;
-    braced!(body in input);
-    if !body.peek(keyword::path) {
-        return Err(body.error("a PR 0.2 endpoint must contain one `path [...]` declaration"));
-    }
-    let path = parse_path(&body)?;
+    let path = if input.peek(Token![;]) {
+        input.parse::<Token![;]>()?;
+        Vec::new()
+    } else {
+        let body;
+        braced!(body in input);
+        if !body.peek(keyword::path) {
+            return Err(body.error(
+                "an endpoint block in the current generated subset must contain one `path [...]` declaration",
+            ));
+        }
+        let path = parse_path(&body)?;
+        if !body.is_empty() {
+            return Err(body.error(
+                "unsupported endpoint clause; the current generated subset accepts only one `path [...]` clause",
+            ));
+        }
+        path
+    };
     validate_path(&path, &parameters, PathContext::Endpoint)?;
-    if !body.is_empty() {
-        return Err(
-            body.error("unsupported endpoint clause; PR 0.2 accepts only one `path [...]` clause")
-        );
-    }
 
     Ok(Endpoint {
         name,
         parameters,
         path,
+        response,
     })
 }
 
@@ -158,12 +215,12 @@ fn parse_required_parameters(input: ParseStream<'_>, owner: &str) -> syn::Result
         let ty: Type = input.parse()?;
         if is_option(&ty) {
             return Err(ty.span().error(format!(
-                "optional {owner} parameters are outside PR 0.2; use a required parameter"
+                "optional {owner} parameters are outside the current generated subset; use a required parameter"
             )));
         }
         if input.peek(Token![=]) {
             return Err(input.error(format!(
-                "defaulted {owner} parameters are outside PR 0.2; use a required parameter"
+                "defaulted {owner} parameters are outside the current generated subset; use a required parameter"
             )));
         }
         if !names.insert(name.to_string()) {
@@ -203,7 +260,7 @@ fn parse_path(input: ParseStream<'_>) -> syn::Result<Vec<PathAtom>> {
     let atoms = Punctuated::<PathAtom, Token![,]>::parse_terminated(&atoms_content)?;
     input.parse::<Token![;]>()?;
     if atoms.is_empty() {
-        return Err(atoms_content.error("a PR 0.2 path must contain at least one atom"));
+        return Err(atoms_content.error("a path must contain at least one atom"));
     }
     Ok(atoms.into_iter().collect())
 }
@@ -224,9 +281,9 @@ impl Parse for PathAtom {
         match namespace.to_string().as_str() {
             "scope" => Ok(Self::Scope(name)),
             "ep" => Ok(Self::Endpoint(name)),
-            _ => Err(namespace.span().error(
-                "unsupported path namespace; PR 0.2 accepts only `scope.NAME` and `ep.NAME`",
-            )),
+            _ => Err(namespace
+                .span()
+                .error("unsupported path namespace; use only `scope.NAME` and `ep.NAME`")),
         }
     }
 }
@@ -246,7 +303,7 @@ fn validate_path(
         .iter()
         .map(|parameter| parameter.name.to_string())
         .collect();
-    let mut found_required_reference = false;
+    let mut referenced = HashSet::new();
 
     for atom in atoms {
         let reference = match (context, atom) {
@@ -258,9 +315,9 @@ fn validate_path(
                     .error("`ep.NAME` is not available in a scope path; use `scope.NAME`"));
             }
             (PathContext::Endpoint, PathAtom::Scope(name)) => {
-                return Err(name
-                    .span()
-                    .error("scope values belong in the enclosing scope path in the PR 0.2 slice"));
+                return Err(name.span().error(
+                    "scope values belong in the enclosing scope path in the current generated subset",
+                ));
             }
             (_, PathAtom::Static(_)) => continue,
         };
@@ -274,21 +331,20 @@ fn validate_path(
                 .span()
                 .error(format!("unknown {namespace} path value `{reference}`")));
         }
-        found_required_reference = true;
+        referenced.insert(reference.to_string());
     }
 
-    if !found_required_reference {
-        let message = match context {
-            PathContext::Scope => "the scope path must reference at least one `scope.NAME` value",
-            PathContext::Endpoint => {
-                "the endpoint path must reference at least one `ep.NAME` value"
-            }
-        };
-        let span = match &atoms[0] {
-            PathAtom::Static(value) => value.span(),
-            PathAtom::Scope(name) | PathAtom::Endpoint(name) => name.span(),
-        };
-        return Err(syn::Error::new(span, message));
+    for parameter in parameters {
+        if !referenced.contains(&parameter.name.to_string()) {
+            let owner = match context {
+                PathContext::Scope => "scope",
+                PathContext::Endpoint => "endpoint",
+            };
+            return Err(parameter.name.span().error(format!(
+                "required {owner} parameter `{}` must be used by its path in the current generated subset",
+                parameter.name
+            )));
+        }
     }
 
     Ok(())
@@ -358,11 +414,11 @@ mod tests {
             }
         })
         .err()
-        .expect("POST is outside the PR 0.2 grammar");
+        .expect("POST is outside the current generated subset");
 
         assert_eq!(
             error.to_string(),
-            "unsupported endpoint method; PR 0.2 accepts only bodyless `GET`"
+            "unsupported endpoint method; the current generated subset accepts only bodyless `GET`"
         );
     }
 
@@ -385,7 +441,7 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            "unsupported client declaration; PR 0.2 accepts only one fixed base and one scope"
+            "unsupported client declaration; the current generated subset accepts one fixed base and one scope"
         );
     }
 
@@ -408,5 +464,44 @@ mod tests {
             }
         })
         .expect("canonical trailing commas must be accepted");
+    }
+
+    #[test]
+    fn accepts_zero_parameter_scope_multiple_response_modes_and_semicolon_endpoint() {
+        parse(quote! {
+            client ExampleApi {
+                base "http://example.test/v1/";
+                scope health() {
+                    path ["health"];
+                    GET Bytes() -> Bytes;
+                    GET Ping() -> NoContent;
+                    GET Item(id: String) -> Bytes {
+                        path ["items", ep.id];
+                    }
+                }
+            }
+        })
+        .expect("the complete Phase 2 grammar slice must parse");
+    }
+
+    #[test]
+    fn rejects_endpoint_names_that_normalize_to_the_same_public_method() {
+        let error = parse(quote! {
+            client ExampleApi {
+                base "http://example.test/";
+                scope health() {
+                    path ["health"];
+                    GET HTTPStatus() -> NoContent;
+                    GET HttpStatus() -> NoContent;
+                }
+            }
+        })
+        .err()
+        .expect("normalized public endpoint names must not collide");
+
+        assert_eq!(
+            error.to_string(),
+            "generated endpoint method `http_status` collides after deterministic Rust name normalization"
+        );
     }
 }

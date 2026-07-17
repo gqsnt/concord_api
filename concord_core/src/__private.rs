@@ -53,6 +53,20 @@ pub fn build_client_core(
     ClientCore::build(fixed_base, http, runtime)
 }
 
+/// Produces the structured generated-builder error for a repeated HTTP
+/// configuration closure without invoking that duplicate closure.
+#[doc(hidden)]
+pub fn duplicate_http_configuration_error() -> ClientBuildError {
+    ClientBuildError::new(crate::error::ClientBuildErrorKind::HttpConfiguration)
+}
+
+/// Produces the structured generated-builder error for a repeated runtime
+/// configuration closure without invoking that duplicate closure.
+#[doc(hidden)]
+pub fn duplicate_runtime_configuration_error() -> ClientBuildError {
+    ClientBuildError::new(crate::error::ClientBuildErrorKind::RuntimeConfiguration)
+}
+
 /// Creates one side-effect-free stable pending request wrapper.
 #[doc(hidden)]
 #[must_use]

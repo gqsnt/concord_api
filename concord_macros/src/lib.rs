@@ -9,7 +9,7 @@ mod parse;
 
 use proc_macro::TokenStream;
 
-/// Declares the minimal Phase 0 Concord client, scope, and endpoint surface.
+/// Declares a generated Concord client and its typed bodyless endpoints.
 #[proc_macro]
 pub fn api(input: TokenStream) -> TokenStream {
     parse::parse(input.into())

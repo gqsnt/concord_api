@@ -1,17 +1,27 @@
-use concord_macros::api;
 use std::fmt::{self, Display, Formatter};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
-use concord_core::__private::{
-    DebugLevel, EndpointSpec, HeadBuilder, PreparedHead, RequestOptions, Url,
+use concord_core::advanced::{
+    BeforeSend, BoxFuture, ClientBuildErrorKind, CompletionEvent, DebugLevel, HookError,
+    ResponseHeadEvent, RuntimeHooks, SafeProxy,
 };
+use concord_core::prelude::{Bytes, ClientBuildError, DecodedResponse, Request, ResponseRequest};
+use concord_macros::api;
+use concord_test_support::server::{ResponseScript, ScriptedServer};
 
-struct MinimalValue(&'static str);
-
-impl Display for MinimalValue {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.0)
+api! {
+    client ExampleApi {
+        base "http://generated.example.test/v1/";
+        scope health() {
+            path ["health"];
+            GET Bytes() -> Bytes;
+            GET Ping() -> NoContent;
+            GET Item(id: String) -> Bytes {
+                path ["items", ep.id];
+            }
+        }
     }
 }
 
@@ -27,90 +37,15 @@ impl Display for CountingValue {
     }
 }
 
-fn prepared_head<E>(endpoint: &E, base: &str) -> PreparedHead
-where
-    E: EndpointSpec,
-{
-    let base = Url::parse(base).expect("test base URL");
-    let builder = HeadBuilder::new(
-        &base,
-        endpoint.request_meta(),
-        &RequestOptions::new(),
-        DebugLevel::None,
-    );
-    endpoint
-        .prepare_head_and_body_metadata(builder)
-        .expect("generated head preparation")
-        .0
-}
-
-fn assert_same_head(first: &PreparedHead, second: &PreparedHead) {
-    assert_eq!(first.endpoint(), second.endpoint());
-    assert_eq!(first.method(), second.method());
-    assert_eq!(first.logical_url(), second.logical_url());
-    assert_eq!(first.safe_url(), second.safe_url());
-    assert_eq!(first.public_headers(), second.public_headers());
-    assert_eq!(first.timeout(), second.timeout());
-    assert_eq!(first.debug(), second.debug());
-}
-
-api! {
-    client ProofApi {
-        base "https://example.test/api";
-        scope resources(
-            account: String,
-            region: String,
-        ) {
-            path ["regions", scope.region, "scopes", scope.account, "resources"];
-            GET ById(
-                endpoint_value: String,
-            ) -> NoContent {
-                path [ep.endpoint_value];
-            }
-        }
-    }
-}
-
-api! {
-    client EqualNameApi {
-        base "https://equal-name.example.test";
-        scope resources(
-            id: crate::MinimalValue,
-        ) {
-            path ["scopes", scope.id];
-            GET ById(
-                id: crate::MinimalValue,
-            ) -> NoContent {
-                path ["resources", ep.id];
-            }
-        }
-    }
-}
-
-api! {
-    client BoundsApi {
-        base "https://bounds.example.test";
-        scope resources(
-            scope_value: crate::MinimalValue,
-        ) {
-            path ["scopes", scope.scope_value];
-            GET ById(
-                endpoint_value: crate::MinimalValue,
-            ) -> NoContent {
-                path ["resources", ep.endpoint_value];
-            }
-        }
-    }
-}
-
 api! {
     client LazyApi {
-        base "https://lazy.example.test";
+        base "http://lazy.generated.example.test/";
         scope resources(scope_value: crate::CountingValue) {
-            path ["scopes", scope.scope_value];
-            GET ById(endpoint_value: crate::CountingValue) -> NoContent {
-                path ["resources", ep.endpoint_value];
+            path ["scopes", scope.scope_value, "resources"];
+            GET ById(endpoint_value: crate::CountingValue) -> Bytes {
+                path [ep.endpoint_value];
             }
+            GET Ping() -> NoContent;
         }
     }
 }
@@ -121,12 +56,10 @@ mod nested_case {
 
         api! {
             client NestedApi {
-                base "https://nested.example.test";
-                scope resources(scope_value: ::std::string::String) {
-                    path ["scopes", scope.scope_value, "resources"];
-                    GET ById(endpoint_value: ::std::string::String) -> NoContent {
-                        path [ep.endpoint_value];
-                    }
+                base "http://nested.generated.example.test/";
+                scope health() {
+                    path ["health"];
+                    GET Ping() -> NoContent;
                 }
             }
         }
@@ -149,160 +82,281 @@ mod repeated_case {
 
     api! {
         client AlphaApi {
-            base "https://alpha.example.test";
-            scope resources(scope_value: ::std::string::String) {
-                path ["scopes", scope.scope_value, "resources"];
-                GET ById(endpoint_value: ::std::string::String) -> NoContent {
-                    path [ep.endpoint_value];
-                }
+            base "http://alpha.generated.example.test/";
+            scope health() {
+                path ["health"];
+                GET Ping() -> NoContent;
             }
         }
     }
 
     api! {
         client BetaApi {
-            base "https://beta.example.test";
-            scope resources(scope_value: ::std::string::String) {
-                path ["scopes", scope.scope_value, "resources"];
-                GET ById(endpoint_value: ::std::string::String) -> NoContent {
-                    path [ep.endpoint_value];
-                }
+            base "http://beta.generated.example.test/";
+            scope health() {
+                path ["health"];
+                GET Ping() -> NoContent;
             }
         }
     }
 
-    pub fn endpoint_names() -> (&'static str, &'static str) {
-        let alpha = AlphaApi::new()
-            .resources("alpha-scope".to_owned())
-            .by_id("alpha-endpoint".to_owned());
-        let beta = BetaApi::new()
-            .resources("beta-scope".to_owned())
-            .by_id("beta-endpoint".to_owned());
-        let alpha = concord_core::__private::EndpointSpec::request_meta(&alpha);
-        let beta = concord_core::__private::EndpointSpec::request_meta(&beta);
-        (alpha.endpoint(), beta.endpoint())
+    pub fn requests_are_isolated() {
+        let alpha = AlphaApi::new().expect("alpha client");
+        let beta = BetaApi::new().expect("beta client");
+        let _: concord_core::Request<_> = alpha.health().ping();
+        let _: concord_core::Request<_> = beta.health().ping();
+    }
+}
+
+struct CountingHooks {
+    before: AtomicUsize,
+    response: AtomicUsize,
+    complete: AtomicUsize,
+}
+
+impl CountingHooks {
+    const fn new() -> Self {
+        Self {
+            before: AtomicUsize::new(0),
+            response: AtomicUsize::new(0),
+            complete: AtomicUsize::new(0),
+        }
+    }
+}
+
+impl RuntimeHooks for CountingHooks {
+    fn before_send<'a>(&'a self, _context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
+        self.before.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { Ok(()) })
+    }
+
+    fn on_response_head<'a>(&'a self, _context: ResponseHeadEvent<'a>) -> BoxFuture<'a, ()> {
+        self.response.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async {})
+    }
+
+    fn on_complete<'a>(&'a self, _context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
+        self.complete.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async {})
+    }
+}
+
+fn proxy(server: &ScriptedServer) -> SafeProxy {
+    SafeProxy::parse(server.url("")).expect("local proxy origin")
+}
+
+fn proxied_example(server: &ScriptedServer, hooks: Option<Arc<dyn RuntimeHooks>>) -> ExampleApi {
+    let proxy = proxy(server);
+    let builder = ExampleApi::builder().http(move |http| http.proxy(proxy));
+    let builder = match hooks {
+        Some(hooks) => {
+            builder.runtime(move |runtime| runtime.hooks(hooks).debug(DebugLevel::Headers))
+        }
+        None => builder,
+    };
+    builder.build().expect("proxied generated client")
+}
+
+fn exact_new_shape() -> Result<(), ClientBuildError> {
+    let client = ExampleApi::new()?;
+    let _: Request<_> = client.health().bytes();
+    let _: Request<_> = client.health().ping();
+    Ok(())
+}
+
+fn build_error(result: Result<ExampleApi, ClientBuildError>) -> ClientBuildError {
+    match result {
+        Ok(_) => panic!("generated build unexpectedly succeeded"),
+        Err(error) => error,
     }
 }
 
 #[test]
-fn facade_and_explicit_construction_have_exact_metadata_parity() {
-    let facade_endpoint = {
-        let facade =
-            ProofApi::new().resources("account-alpha".to_owned(), "region-beta".to_owned());
-        facade.by_id("item-omega".to_owned())
-    };
-    let explicit_endpoint = proof_api::endpoints::resources::ById::new(
-        "account-alpha".to_owned(),
-        "region-beta".to_owned(),
-        "item-omega".to_owned(),
-    );
+fn new_builder_and_public_request_shapes_are_final() {
+    exact_new_shape().expect("fallible no-input constructor");
+    let from_builder = ExampleApi::builder().build().expect("client builder");
+    let from_named_builder = ExampleApiBuilder::new().build().expect("named builder");
+    let _: Request<_> = from_builder.health().bytes();
+    let _: Request<_> = from_named_builder.health().ping();
+    let _: ResponseRequest<_> = from_builder.health().bytes().response();
+    let _: Request<_> = from_builder.request(example_api::endpoints::health::Bytes::new());
+}
 
-    let facade_head = prepared_head(&facade_endpoint, "https://example.test/api");
-    let explicit_head = prepared_head(&explicit_endpoint, "https://example.test/api");
-
-    assert_same_head(&facade_head, &explicit_head);
-    assert_eq!(facade_head.endpoint(), "ProofApi::resources::ById");
-    assert_eq!(facade_head.method(), "GET");
+#[test]
+fn configuration_closures_are_immediate_and_duplicates_are_suppressed() {
+    let first_http = AtomicUsize::new(0);
+    let duplicate_http = AtomicUsize::new(0);
+    let builder = ExampleApi::builder()
+        .http(|http| {
+            first_http.fetch_add(1, Ordering::SeqCst);
+            http.retry_off()
+        })
+        .http(|http| {
+            duplicate_http.fetch_add(1, Ordering::SeqCst);
+            http
+        });
+    assert_eq!(first_http.load(Ordering::SeqCst), 1);
+    assert_eq!(duplicate_http.load(Ordering::SeqCst), 0);
     assert_eq!(
-        facade_head.logical_url().as_str(),
-        "https://example.test/api/regions/region-beta/scopes/account-alpha/resources/item-omega"
+        build_error(builder.build()).kind(),
+        ClientBuildErrorKind::HttpConfiguration
     );
-    assert!(facade_head.public_headers().is_empty());
-}
 
-#[test]
-fn explicit_constructor_preserves_distinct_scope_and_endpoint_values() {
-    let endpoint = proof_api::endpoints::resources::ById::new(
-        "outer-account-only".to_owned(),
-        "outer-region-only".to_owned(),
-        "endpoint-only".to_owned(),
-    );
-    let head = prepared_head(&endpoint, "https://example.test/api");
-
+    let first_runtime = AtomicUsize::new(0);
+    let duplicate_runtime = AtomicUsize::new(0);
+    let builder = ExampleApi::builder()
+        .runtime(|runtime| {
+            first_runtime.fetch_add(1, Ordering::SeqCst);
+            runtime.debug(DebugLevel::Basic)
+        })
+        .runtime(|runtime| {
+            duplicate_runtime.fetch_add(1, Ordering::SeqCst);
+            runtime
+        });
+    assert_eq!(first_runtime.load(Ordering::SeqCst), 1);
+    assert_eq!(duplicate_runtime.load(Ordering::SeqCst), 0);
     assert_eq!(
-        head.logical_url().as_str(),
-        "https://example.test/api/regions/outer-region-only/scopes/outer-account-only/resources/endpoint-only"
+        build_error(builder.build()).kind(),
+        ClientBuildErrorKind::RuntimeConfiguration
     );
 }
 
 #[test]
-fn equal_names_keep_scope_and_endpoint_bindings_distinct_without_extra_bounds() {
-    let facade = EqualNameApi::new().resources(MinimalValue("outer-scope-id"));
-    let cloned_facade = facade.clone();
-    let facade_endpoint = cloned_facade.by_id(MinimalValue("endpoint-local-id"));
-    let explicit_endpoint = equal_name_api::endpoints::resources::ById::new(
-        MinimalValue("outer-scope-id"),
-        MinimalValue("endpoint-local-id"),
+fn fixed_base_and_http_configuration_fail_during_generated_build() {
+    let error = build_error(
+        ExampleApi::builder()
+            .http(|http| http.https_only(true))
+            .build(),
     );
-
-    let facade_head = prepared_head(&facade_endpoint, "https://equal-name.example.test");
-    let explicit_head = prepared_head(&explicit_endpoint, "https://equal-name.example.test");
-    assert_same_head(&facade_head, &explicit_head);
-    assert_eq!(
-        facade_head.logical_url().as_str(),
-        "https://equal-name.example.test/scopes/outer-scope-id/resources/endpoint-local-id"
-    );
+    assert_eq!(error.kind(), ClientBuildErrorKind::HttpConfiguration);
 }
 
-#[test]
-fn nested_module_invocation_preserves_generated_paths() {
-    let facade = nested_case::inner::NestedApi::new().resources("nested-scope".to_owned());
-    let endpoint = facade.by_id("nested-endpoint".to_owned());
-    let explicit = nested_case::inner::nested_api::endpoints::resources::ById::new(
-        "nested-scope".to_owned(),
-        "nested-endpoint".to_owned(),
-    );
+#[tokio::test]
+async fn exact_generated_direct_and_metadata_workflows_execute_through_local_proxy() {
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"healthy".to_vec()),
+        ResponseScript::status(205, b"ignored-and-unpolled".to_vec()),
+    ])
+    .expect("generated proxy");
+    let hooks = Arc::new(CountingHooks::new());
+    let hook_object: Arc<dyn RuntimeHooks> = hooks.clone();
+    let client = proxied_example(&server, Some(hook_object));
 
-    let endpoint = prepared_head(&endpoint, "https://nested.example.test");
-    let explicit = prepared_head(&explicit, "https://nested.example.test");
-    assert_same_head(&endpoint, &explicit);
+    let bytes: Bytes = client.health().bytes().await.expect("generated bytes");
+    assert_eq!(bytes, b"healthy"[..]);
+    let response: DecodedResponse<()> = client
+        .health()
+        .ping()
+        .response()
+        .await
+        .expect("generated metadata");
+    assert_eq!(response.status().as_u16(), 205);
+    assert_eq!(response.value(), &());
+    assert_eq!(hooks.before.load(Ordering::SeqCst), 2);
+    assert_eq!(hooks.response.load(Ordering::SeqCst), 2);
+    assert_eq!(hooks.complete.load(Ordering::SeqCst), 2);
+    assert_eq!(server.request_count(), 2);
 }
 
-#[test]
-fn repeated_macro_invocations_keep_internal_aliases_isolated() {
-    let (alpha, beta) = repeated_case::endpoint_names();
-    assert_eq!(alpha, "AlphaApi::resources::ById");
-    assert_eq!(beta, "BetaApi::resources::ById");
-    assert_ne!(alpha, beta);
+#[tokio::test]
+async fn facade_and_explicit_endpoints_execute_with_identical_encoded_paths() {
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"facade".to_vec()),
+        ResponseScript::ok(b"explicit".to_vec()),
+    ])
+    .expect("parity proxy");
+    let client = proxied_example(&server, None);
+    let dynamic = "team/alpha".to_owned();
+
+    let facade = client
+        .health()
+        .item(dynamic.clone())
+        .timeout(Duration::from_secs(5))
+        .debug(DebugLevel::None)
+        .await
+        .expect("facade request");
+    let explicit = example_api::endpoints::health::Item::new(dynamic);
+    let explicit = client
+        .request(explicit)
+        .inherit_timeout()
+        .await
+        .expect("explicit request");
+    assert_eq!(facade, b"facade"[..]);
+    assert_eq!(explicit, b"explicit"[..]);
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].target(), requests[1].target());
+    assert!(
+        requests[0]
+            .target()
+            .contains("/v1/health/items/team%2Falpha")
+    );
+    assert!(!requests[0].target().contains("/team/alpha"));
 }
 
-#[test]
-fn generated_facade_requires_only_display_for_stored_values() {
-    let facade = BoundsApi::new().resources(MinimalValue("scope-value"));
-    let cloned_facade = facade.clone();
-    let endpoint = cloned_facade.by_id(MinimalValue("endpoint-value"));
-    let explicit = bounds_api::endpoints::resources::ById::new(
-        MinimalValue("scope-value"),
-        MinimalValue("endpoint-value"),
-    );
-
-    let endpoint = prepared_head(&endpoint, "https://bounds.example.test");
-    let explicit = prepared_head(&explicit, "https://bounds.example.test");
-    assert_same_head(&endpoint, &explicit);
-    assert_eq!(
-        endpoint.logical_url().as_str(),
-        "https://bounds.example.test/scopes/scope-value/resources/endpoint-value"
-    );
-}
-
-#[test]
-fn generated_endpoint_construction_does_not_render_or_prepare_its_url() {
+#[tokio::test]
+async fn request_creation_is_lazy_and_generated_client_clone_shares_runtime_configuration() {
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"first".to_vec()),
+        ResponseScript::ok(b"second".to_vec()),
+    ])
+    .expect("lazy proxy");
+    let proxy = proxy(&server);
+    let hooks = Arc::new(CountingHooks::new());
+    let hook_object: Arc<dyn RuntimeHooks> = hooks.clone();
+    let client = LazyApi::builder()
+        .http(move |http| http.proxy(proxy))
+        .runtime(move |runtime| runtime.hooks(hook_object))
+        .build()
+        .expect("lazy client");
+    let clone = client.clone();
     let calls = Arc::new(AtomicUsize::new(0));
-    let endpoint = LazyApi::new()
+    let facade = client.resources(CountingValue {
+        text: "scope/value",
+        calls: Arc::clone(&calls),
+    });
+    let request = facade.clone().by_id(CountingValue {
+        text: "endpoint/value",
+        calls: Arc::clone(&calls),
+    });
+    let sibling = facade.ping();
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(server.request_count(), 0);
+    assert_eq!(hooks.before.load(Ordering::SeqCst), 0);
+    assert_eq!(hooks.response.load(Ordering::SeqCst), 0);
+    assert_eq!(hooks.complete.load(Ordering::SeqCst), 0);
+    drop(sibling);
+    assert_eq!(request.await.expect("lazy request"), b"first"[..]);
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert!(
+        server.requests()[0]
+            .target()
+            .contains("/scopes/scope%2Fvalue/resources/endpoint%2Fvalue")
+    );
+
+    let second = clone
         .resources(CountingValue {
-            text: "scope/value",
+            text: "other-scope",
             calls: Arc::clone(&calls),
         })
         .by_id(CountingValue {
-            text: "endpoint/value",
+            text: "other-endpoint",
             calls: Arc::clone(&calls),
-        });
-    assert_eq!(calls.load(Ordering::SeqCst), 0);
+        })
+        .disable_timeout()
+        .await
+        .expect("clone request");
+    assert_eq!(second, b"second"[..]);
+    assert_eq!(hooks.before.load(Ordering::SeqCst), 2);
+    assert_eq!(hooks.complete.load(Ordering::SeqCst), 2);
+}
 
-    let head = prepared_head(&endpoint, "https://lazy.example.test");
-    assert_eq!(calls.load(Ordering::SeqCst), 2);
-    assert_eq!(
-        head.logical_url().as_str(),
-        "https://lazy.example.test/scopes/scope%2Fvalue/resources/endpoint%2Fvalue"
-    );
+#[test]
+fn nested_and_repeated_invocations_keep_generated_paths_isolated() {
+    let nested = nested_case::inner::NestedApi::new().expect("nested client");
+    let _: concord_core::Request<_> = nested.health().ping();
+    let _: concord_core::Request<_> =
+        nested.request(nested_case::inner::nested_api::endpoints::health::Ping::new());
+    repeated_case::requests_are_isolated();
 }

@@ -14,13 +14,20 @@ pub(crate) struct Scope {
     pub(crate) name: Ident,
     pub(crate) parameters: Vec<Parameter>,
     pub(crate) path: Vec<PathAtom>,
-    pub(crate) endpoint: Endpoint,
+    pub(crate) endpoints: Vec<Endpoint>,
 }
 
 pub(crate) struct Endpoint {
     pub(crate) name: Ident,
     pub(crate) parameters: Vec<Parameter>,
     pub(crate) path: Vec<PathAtom>,
+    pub(crate) response: ResponseKind,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ResponseKind {
+    Bytes,
+    NoContent,
 }
 
 pub(crate) struct Parameter {
@@ -32,4 +39,25 @@ pub(crate) enum PathAtom {
     Static(LitStr),
     Scope(Ident),
     Endpoint(Ident),
+}
+
+pub(crate) fn to_snake_case(name: &str) -> String {
+    let name = name.strip_prefix("r#").unwrap_or(name);
+    let characters = name.chars().collect::<Vec<_>>();
+    let mut output = String::with_capacity(name.len());
+    for (index, character) in characters.iter().copied().enumerate() {
+        if character.is_uppercase() {
+            let previous_is_lowercase = index > 0 && characters[index - 1].is_lowercase();
+            let next_is_lowercase = characters
+                .get(index + 1)
+                .is_some_and(|next| next.is_lowercase());
+            if index > 0 && (previous_is_lowercase || next_is_lowercase) {
+                output.push('_');
+            }
+            output.extend(character.to_lowercase());
+        } else {
+            output.push(character);
+        }
+    }
+    output
 }
