@@ -1,14 +1,14 @@
 use std::num::{NonZeroU32, NonZeroUsize};
+use std::sync::Arc;
 use std::time::Duration;
+
+use crate::hooks::{DebugLevel, RuntimeHooks, default_hooks};
 
 const MIB: usize = 1_048_576;
 const KIB: usize = 1_024;
 
 /// Private immutable finite runtime configuration.
-#[allow(
-    dead_code,
-    reason = "consumed by later Phase 1 managed runtime assembly"
-)]
+#[allow(dead_code, reason = "assembled into the private Phase 2 ClientCore")]
 pub(crate) struct RuntimeConfig {
     pub(crate) request_body_limit: NonZeroUsize,
     pub(crate) response_body_limit: NonZeroUsize,
@@ -21,6 +21,8 @@ pub(crate) struct RuntimeConfig {
     pub(crate) pagination_identity_limit: NonZeroUsize,
     pub(crate) auth_failure_cooldown_cap: Duration,
     pub(crate) rate_limit_cooldown_cap: Duration,
+    pub(crate) hooks: Arc<dyn RuntimeHooks>,
+    pub(crate) debug: DebugLevel,
 }
 
 /// A consuming builder whose ordinary limits remain positive and finite.
@@ -45,6 +47,8 @@ impl RuntimeConfigBuilder {
                 pagination_identity_limit: nonzero_usize(4 * MIB),
                 auth_failure_cooldown_cap: Duration::from_secs(60),
                 rate_limit_cooldown_cap: Duration::from_secs(60),
+                hooks: default_hooks(),
+                debug: DebugLevel::None,
             },
         }
     }
@@ -105,6 +109,20 @@ impl RuntimeConfigBuilder {
         self
     }
 
+    /// Replaces the immutable lifecycle hook object used by the built client.
+    #[must_use]
+    pub fn hooks(mut self, hooks: Arc<dyn RuntimeHooks>) -> Self {
+        self.config.hooks = hooks;
+        self
+    }
+
+    /// Replaces the built-in body-free debug presentation level.
+    #[must_use]
+    pub fn debug(mut self, level: DebugLevel) -> Self {
+        self.config.debug = level;
+        self
+    }
+
     /// Sets the finite authentication failure cooldown cap, including zero.
     #[must_use]
     pub fn auth_failure_cooldown_cap(mut self, duration: Duration) -> Self {
@@ -133,7 +151,7 @@ impl RuntimeConfigBuilder {
         self
     }
 
-    #[allow(dead_code, reason = "consumed by later Phase 1 runtime assembly")]
+    #[allow(dead_code, reason = "assembled into the private Phase 2 ClientCore")]
     pub(crate) fn resolve(self) -> RuntimeConfig {
         self.config
     }
@@ -146,6 +164,12 @@ fn nonzero_usize(value: usize) -> NonZeroUsize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct FirstHooks;
+    impl RuntimeHooks for FirstHooks {}
+
+    struct SecondHooks;
+    impl RuntimeHooks for SecondHooks {}
 
     #[test]
     fn defaults_are_exact_positive_finite_values() {
@@ -164,6 +188,7 @@ mod tests {
         assert_eq!(config.pagination_identity_limit.get(), 4 * MIB);
         assert_eq!(config.auth_failure_cooldown_cap, Duration::from_secs(60));
         assert_eq!(config.rate_limit_cooldown_cap, Duration::from_secs(60));
+        assert_eq!(config.debug, DebugLevel::None);
     }
 
     #[test]
@@ -178,6 +203,8 @@ mod tests {
             .pagination_max_pages(one_page)
             .pagination_max_items(one)
             .pagination_identity_limit(one)
+            .hooks(Arc::new(crate::hooks::NoopHooks))
+            .debug(DebugLevel::Headers)
             .auth_failure_cooldown_cap(Duration::ZERO)
             .rate_limit_cooldown_cap(Duration::ZERO)
             .provider_request_limit(one)
@@ -190,6 +217,7 @@ mod tests {
         assert_eq!(config.pagination_max_pages, one_page);
         assert_eq!(config.pagination_max_items, one);
         assert_eq!(config.pagination_identity_limit, one);
+        assert_eq!(config.debug, DebugLevel::Headers);
         assert_eq!(config.auth_failure_cooldown_cap, Duration::ZERO);
         assert_eq!(config.rate_limit_cooldown_cap, Duration::ZERO);
         assert_eq!(config.provider_request_limit, one);
@@ -208,5 +236,21 @@ mod tests {
             .status_body_limit(NonZeroUsize::MIN)
             .resolve();
         assert_eq!(enabled.status_body_limit, Some(NonZeroUsize::MIN));
+    }
+
+    #[test]
+    fn hook_and_debug_setters_replace_immutable_builder_selection() {
+        let first: Arc<dyn RuntimeHooks> = Arc::new(FirstHooks);
+        let second: Arc<dyn RuntimeHooks> = Arc::new(SecondHooks);
+        let config = RuntimeConfigBuilder::new()
+            .hooks(Arc::clone(&first))
+            .debug(DebugLevel::Basic)
+            .hooks(Arc::clone(&second))
+            .debug(DebugLevel::Headers)
+            .resolve();
+
+        assert!(!Arc::ptr_eq(&config.hooks, &first));
+        assert!(Arc::ptr_eq(&config.hooks, &second));
+        assert_eq!(config.debug, DebugLevel::Headers);
     }
 }

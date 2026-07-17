@@ -1,8 +1,8 @@
 //! Core support for Concord-generated API clients.
 //!
-//! No request-execution surface exists yet. The crate contains the Phase 0
-//! generated-private construction contract used by `concord_macros` and the
-//! Phase 1 safe error, redaction, and sanitized-metadata foundations.
+//! The crate contains safe error, redaction, managed HTTP, lifecycle, and
+//! successful-response metadata foundations plus generated-private integration.
+//! Executable typed pending requests are assembled by the Phase 2 runtime work.
 
 #![forbid(unsafe_code)]
 
@@ -16,9 +16,12 @@ pub mod prelude;
 mod codec;
 mod error;
 mod generated_contract;
+mod hooks;
 mod http;
+mod operation;
 mod redaction;
 mod request;
+mod response;
 mod runtime;
 
 #[cfg(test)]

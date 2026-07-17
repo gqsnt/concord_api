@@ -2,6 +2,7 @@
 
 mod category;
 mod context;
+mod hook;
 mod status;
 mod transport;
 
@@ -10,6 +11,7 @@ pub use category::{
     PaginationErrorKind, RateLimitErrorKind,
 };
 pub use context::{ClientBuildError, ConfigurationError};
+pub use hook::HookError;
 pub use status::{HttpResponseFailure, StatusBody, StatusBodyDecodeError, StatusBodyState};
 pub use transport::ApiError;
 pub(crate) use transport::reqwest_category;
