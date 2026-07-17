@@ -153,8 +153,9 @@ An initial Concord attempt uses this ordering:
 17. Collect, ignore, or expose bounded stream
 18. Validate response contract
 19. Decode buffered success response
-20. Emit one request/page completion event
-21. Return result
+20. Fix the application result, completion outcome, final status, and elapsed time
+21. Await one request/page completion event outside the operation deadline
+22. Return the already-fixed result
 ```
 
 The same operation identifier and deadline remain in force across authentication recovery. A page in a pagination collection receives its own operation identifier and operation deadline plus the aggregate pagination operation identifier as parent. The collection has no separate whole-pagination deadline in 0.1.
@@ -163,7 +164,7 @@ A failure stops at its phase. Later phases do not run. Earlier completed side ef
 
 **EXEC-ORDER-001 — Canonical ordering.** Every generated and prepared application endpoint MUST follow this ordering.
 
-**EXEC-DEADLINE-001 — Operation-wide deadline.** A resolved endpoint timeout MUST bound asynchronous hook, body materialization when asynchronous, credential/provider, limiter-wait, credential-finalization, native HTTP, authentication-recovery, terminal status-body capture, and buffered-success-response work for that endpoint or page operation.
+**EXEC-DEADLINE-001 — Operation-wide result deadline.** A resolved endpoint timeout MUST bound asynchronous work that can determine the result for that endpoint or page operation: `before_send`, `on_response_head`, body materialization when asynchronous, credential/provider work, limiter waiting, credential finalization, native HTTP, authentication recovery, terminal status-body capture, and buffered-success-response work. It MUST NOT bound `on_complete` or `on_pagination_complete`, which observe an already-fixed result outside the operation deadline.
 
 **EXEC-DEADLINE-002 — Recovery budget.** Authentication recovery MUST use the remaining original operation-deadline budget and MUST NOT reset the deadline.
 
@@ -798,7 +799,9 @@ It does not expose a native Reqwest response or non-success body.
 
 ### 22.1 Direct and page operations
 
-One direct endpoint operation emits at most one terminal `on_complete` event during normal result return. Each page operation independently emits one such event. Every event uses the operation identifier allocated when polling began, reports monotonic elapsed time, and reports the final application status when a response head existed.
+One direct endpoint operation emits at most one terminal `on_complete` event during normal result return. Each page operation independently emits one such event. Concord first fixes the application result, completion outcome, and final status. It then records elapsed time from first poll through that result-fixation instant, constructs the event, and awaits the completion hook outside the operation deadline before returning the already-fixed result.
+
+The completion hook cannot replace or mutate the fixed result, request a retry, or restart the operation deadline. It is not detached and may delay delivery of the fixed result. Its execution time is excluded from `CompletionEvent::elapsed` and is governed by extension-owned boundedness.
 
 ### 22.2 Recovery
 
@@ -812,13 +815,13 @@ A successfully returned lazy response stream emits `StreamOpened`, not full `Suc
 
 Every pagination collection allocates one aggregate operation identifier. Every nonzero collection emits exactly one `on_pagination_complete` event after final success or failure. `Take(0)` also emits one aggregate success event with zero pages and zero items, while invoking no page/controller/request extensions.
 
-The aggregate event is additional to per-page completion events and reports only safe counts and an outcome category.
+The aggregate event is additional to per-page completion events and reports only safe counts and an outcome category. `on_pagination_complete` observes the fixed aggregate result outside any page deadline and follows the same non-detached, result-immutable completion rules.
 
 ### 22.5 Coverage
 
-Normal terminal results emit request/page completion for success and every ordinary error category after operation start. Cancellation and panic do not guarantee completion delivery.
+Normal terminal results emit request/page completion for success and every ordinary error category after operation start. A normally polled timeout result invokes `on_complete` with `CompletionOutcome::Timeout`. Cancellation or panic, including cancellation or panic while a completion future is pending, does not guarantee completion delivery.
 
-**EXEC-COMPLETE-001 — One request/page event.** Each direct endpoint or page operation MUST emit at most one completion event during normal result return.
+**EXEC-COMPLETE-001 — One outside-deadline request/page event.** Each direct endpoint or page operation MUST emit at most one completion event during normal result return. Concord MUST await it outside the operation deadline only after fixing the result, and the hook MUST NOT alter that fixed result or request another attempt.
 
 **EXEC-COMPLETE-002 — One aggregate pagination event.** Each pagination collection MUST emit exactly one aggregate pagination completion event during normal result return, including zero-page success.
 
@@ -826,7 +829,7 @@ Normal terminal results emit request/page completion for success and every ordin
 
 **EXEC-COMPLETE-004 — Aggregate outcome parity.** Pagination aggregate completion MUST preserve the returned ordinary page-error category and use `Pagination` only for pagination-specific cycle, controller, cap, or aggregate-ceiling failures.
 
-**EXEC-COMPLETE-005 — Correlated completion metadata.** Request/page and aggregate pagination completion events MUST carry their allocated operation identifiers, monotonic elapsed duration, and final application status when one existed.
+**EXEC-COMPLETE-005 — Correlated result-fixation metadata.** Request/page and aggregate pagination completion events MUST carry their allocated operation identifiers, the monotonic elapsed duration from first poll through result fixation excluding completion-hook time, and the final application status when one existed.
 
 ## 23. Pagination execution
 
@@ -1062,11 +1065,11 @@ No row implies transactional rollback.
 | Returned stream | Later chunks | Chunks already delivered |
 | Pagination | Later pages and result return | Completed page effects; accumulated items dropped |
 
-A deadline expiry is reported as `Timeout` and prevents later phases in the same manner as cancellation observed at that point, but normal timeout completion callbacks still run.
+A deadline expiry is reported as `Timeout` and prevents later result-determining phases in the same manner as cancellation observed at that point. During normal continued polling, Concord then fixes the timeout result and awaits its completion callback outside the expired operation deadline. Cancellation while that callback is pending may prevent completion delivery.
 
 **EXEC-CANCEL-001 — No rollback promise.** Cancellation MUST prevent later work after it is observed but MUST NOT imply rollback of completed provider, limiter, hook, network, or response effects.
 
-**EXEC-DEADLINE-004 — Remaining-budget enforcement.** Before and after each awaited extension or transport phase, Concord MUST enforce the remaining operation-deadline budget; synchronous extension work is checked immediately after it returns but is not preempted.
+**EXEC-DEADLINE-004 — Remaining-budget enforcement.** Before and after each awaited result-determining extension or transport phase, Concord MUST enforce the remaining operation-deadline budget; synchronous result-determining extension work is checked immediately after it returns but is not preempted. Completion observation is excluded because it begins only after the result and elapsed duration are fixed.
 
 ## 28. Attempt-count guarantees
 

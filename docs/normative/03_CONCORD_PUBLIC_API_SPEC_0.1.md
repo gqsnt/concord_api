@@ -33,6 +33,8 @@ Bytes
 StreamBody
 StreamResponse
 DecodedResponse
+Request
+ResponseRequest
 PageLimit
 DebugLevel
 SecretString
@@ -109,6 +111,59 @@ pub type BoxFuture<'a, T> =
 ```
 
 Equivalent named future wrapper types are permitted if they provide the same lifetime and `Send` behavior.
+
+### 3.1 Stable pending-request wrappers
+
+The stable opaque request wrappers have these exact crate-root paths and are also re-exported from
+`concord_core::prelude`:
+
+```rust
+concord_core::Request<E>
+concord_core::ResponseRequest<E>
+```
+
+Their fields are private. They are application-facing movable values, not transport, executor, or
+application-implementable extension traits. Generated-private endpoint integration may determine
+which endpoint types are awaitable, but generated public signatures and public Rustdoc do not
+display that integration boundary.
+
+```rust
+pub struct Request<E> { /* private */ }
+pub struct ResponseRequest<E> { /* private */ }
+
+impl<E> Request<E> {
+    pub fn timeout(
+        self,
+        duration: Duration,
+    ) -> Self;
+
+    pub fn disable_timeout(
+        self,
+    ) -> Self;
+
+    pub fn inherit_timeout(
+        self,
+    ) -> Self;
+
+    pub fn debug(
+        self,
+        level: DebugLevel,
+    ) -> Self;
+
+    pub fn response(
+        self,
+    ) -> ResponseRequest<E>;
+}
+```
+
+`response()` is available only for response modes that support the metadata terminal. `Request<E>`
+and `ResponseRequest<E>` implement `IntoFuture` for valid generated endpoints. Their associated
+future type is a publicly nameable `BoxFuture` or an equivalent stable named public wrapper; it does
+not expose a private future type, runtime `Any`, boxed decoded value, or public executor trait.
+
+**API-REQ-001 — Stable request-wrapper paths.** The opaque application request wrappers MUST be available as `concord_core::Request<E>` and `concord_core::ResponseRequest<E>` and MUST also be re-exported from `concord_core::prelude`.
+
+**API-REQ-002 — Private integration containment.** Public request-wrapper signatures, associated future types, generated public signatures, and generated public Rustdoc MUST NOT expose generated-private endpoint bounds, native request/response types, execution state, or a transport/executor abstraction.
 
 ## 4. Errors
 
@@ -1771,7 +1826,7 @@ pub struct PaginationCompletionEvent<'a> {
 }
 ```
 
-For request/page completion, `final_status` is the final application response status received by that operation. For aggregate pagination completion, it is the final completed page operation's application response status when at least one page response existed; it is `None` for zero-page success or failure before any page response. The aggregate event contains no continuation value, repeated request identity, partial item collection, body, or rate-limit key.
+For request/page completion, `final_status` is the final application response status received by that operation. For aggregate pagination completion, it is the final completed page operation's application response status when at least one page response existed; it is `None` for zero-page success or failure before any page response. `elapsed` covers first poll through result fixation and excludes time awaiting the completion hook. The aggregate event contains no continuation value, repeated request identity, partial item collection, body, or rate-limit key.
 
 ### 15.8 Completion outcomes
 
@@ -1811,6 +1866,12 @@ pub enum CompletionOutcome {
 `Success` means a buffered, bytes, no-content, raw-success, or completed page result has been fully produced. `StreamOpened` means the response head was accepted and a bounded lazy stream was returned; it does not claim that later stream consumption completed successfully.
 
 The outcomes contain no error source, response body, cursor, request identity, or rate-limit key.
+
+`on_complete` and `on_pagination_complete` observe an already-fixed result outside the operation
+deadline. They cannot replace or mutate that result, request a retry, or restart the deadline. They
+are awaited rather than detached and may delay result delivery. A normal timeout result invokes
+`on_complete` with `CompletionOutcome::Timeout`. Extension authors own completion-hook boundedness;
+cancellation or panic may prevent completion delivery.
 
 
 ### 15.9 Hook trait
@@ -1864,7 +1925,7 @@ pub trait RuntimeHooks:
 
 **API-HOOK-006 — Operation correlation.** Every before-send, response-head, and request/page completion event for one operation MUST carry the same opaque `OperationId`; page events MUST also carry their aggregate pagination parent identifier.
 
-**API-HOOK-007 — Completion timing metadata.** Completion events MUST expose monotonic elapsed duration and the final application HTTP status when a response head existed.
+**API-HOOK-007 — Completion result-fixation metadata.** Completion events MUST expose monotonic elapsed duration from first poll through result fixation, excluding completion-hook time, and the final application HTTP status when a response head existed. Completion hooks MUST observe but MUST NOT alter the fixed result and MUST run outside the operation deadline during normal continued polling, including for timeout results.
 
 **API-HOOK-008 — Live identifier uniqueness.** Two simultaneously live Concord operations, including operations from different clients that can report to the same hook object, MUST NOT share an `OperationId`.
 

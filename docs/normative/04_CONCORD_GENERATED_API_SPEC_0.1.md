@@ -569,14 +569,20 @@ pub fn create(
 Endpoint methods return:
 
 ```rust
-Request<GeneratedEndpointType>
+concord_core::Request<GeneratedEndpointType>
 ```
+
+The wrapper is also available as `Request` from `concord_core::prelude`, so ordinary generated use
+does not import generated-private integration. Generated public signatures and public Rustdoc never
+display `concord_core::__private`.
 
 The endpoint method performs no request execution.
 
 **GEN-END-001 — Required argument order.** Required endpoint method arguments MUST preserve declaration order, with the body argument last.
 
 **GEN-END-002 — Request creation only.** Calling a generated endpoint method MUST NOT execute HTTP or invoke body codecs, providers, hooks, or limiters.
+
+**GEN-END-003 — Stable request-wrapper path.** Generated endpoint methods and `client.request(endpoint)` MUST return `concord_core::Request<E>` without exposing generated-private endpoint bounds or `concord_core::__private` in public signatures or public Rustdoc.
 
 ## 9. Endpoint request setters
 
@@ -670,8 +676,10 @@ Buffered, bytes, and no-content requests expose:
 ```rust
 pub fn response(
     self,
-) -> ResponseRequest<E>;
+) -> concord_core::ResponseRequest<E>;
 ```
+
+The wrapper is also available as `ResponseRequest` from `concord_core::prelude`.
 
 Awaiting the returned value produces:
 

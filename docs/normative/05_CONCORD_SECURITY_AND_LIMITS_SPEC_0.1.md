@@ -630,6 +630,12 @@ Concord does not impose an automatic timeout or memory cap on custom:
 - pagination controllers;
 - dangerous retry callbacks.
 
+The operation deadline still bounds result-determining asynchronous extensions such as
+`before_send`, `on_response_head`, provider work, and limiter waiting. `on_complete` and
+`on_pagination_complete` begin only after the result and elapsed duration are fixed and are awaited
+outside that deadline. They are not detached, may delay delivery of the fixed result, and may be
+prevented from completing by cancellation or panic.
+
 **SEC-EXT-001 — Extension-owned boundedness.** Extension authors MUST bound their own:
 
 - execution time;
@@ -639,6 +645,9 @@ Concord does not impose an automatic timeout or memory cap on custom:
 - logging volume;
 - metric cardinality;
 - external I/O.
+
+This responsibility applies in particular to completion hooks because Concord applies no operation
+deadline or separate completion timeout after result fixation.
 
 **BOUND-EXT-001 — Extension responsibility.** A stable extension contract MUST document concurrency, cancellation, sensitivity, and boundedness obligations.
 

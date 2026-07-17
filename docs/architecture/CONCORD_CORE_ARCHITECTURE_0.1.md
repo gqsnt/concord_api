@@ -231,7 +231,7 @@ The endpoint value does not contain a native URL, native headers, or Reqwest bod
 
 ## 9. Public request wrapper
 
-Recommended core wrapper:
+Stable crate-root core wrappers:
 
 ```rust
 pub struct Request<E> {
@@ -239,13 +239,23 @@ pub struct Request<E> {
     endpoint: E,
     options: RequestOptions,
 }
+
+pub struct ResponseRequest<E> {
+    request: Request<E>,
+}
 ```
 
-`Request<E>` owns every request-local input. It does not borrow its facade or client.
+Their exact public paths are `concord_core::Request<E>` and
+`concord_core::ResponseRequest<E>`; both are also exported from `concord_core::prelude`.
+`Request<E>` owns every request-local input. It does not borrow its facade or client. Wrapper fields
+remain private.
 
 Generic setters update `RequestOptions`; endpoint-specific setters update `E` through generated inherent methods.
 
-The request can implement `IntoFuture` without allocating a runtime endpoint descriptor.
+The wrappers implement `IntoFuture` with a publicly nameable boxed future alias without allocating a
+runtime endpoint descriptor. Generated-private `EndpointSpec`, `BodySpec`, `ResponseHandler`,
+`ClientCore`, and execution bounds remain hidden from generated public signatures and public
+Rustdoc; they are not promoted merely to satisfy Rust type visibility.
 
 ## 10. Generated-private endpoint integration
 
@@ -563,7 +573,12 @@ Authentication is excluded. Identity values are never rendered in pagination err
 
 `ClientInner` owns one `Arc<dyn RuntimeHooks>`.
 
-The hook object is invoked by the execution engine only at normative lifecycle points, including one aggregate pagination completion callback per collection. Stream-return completion uses `StreamOpened`. Every event receives an opaque operation identifier; page events also receive their aggregate pagination parent identifier. Completion metadata uses the operation's monotonic start instant and final response status when available.
+The hook object is invoked by the execution engine only at normative lifecycle points, including one aggregate pagination completion callback per collection. Stream-return completion uses `StreamOpened`. Every event receives an opaque operation identifier; page events also receive their aggregate pagination parent identifier. Completion metadata uses the operation's monotonic start instant through result fixation and the final response status when available.
+
+Result-determining hook work runs under the operation deadline. After fixing the result, outcome,
+status, and elapsed duration, the executor awaits completion observation outside the deadline and
+then returns the unchanged result. Completion is never detached, may delay result delivery, and is
+bounded by the extension author rather than a second core timeout.
 
 Built-in debug output is a separate internal dispatcher controlled by `DebugConfig`; it is not another application extension trait.
 

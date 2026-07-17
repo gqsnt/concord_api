@@ -589,3 +589,35 @@ application client. A later provider identity requires an explicit contract revi
 identity setting; select identity per request.
 
 **Affected requirements:** `API-HTTP-004`, `SEC-HTTP-010`.
+
+## ADR-041 — Completion observes fixed results outside the operation deadline
+
+**Status:** Accepted
+
+**Context:** The operation deadline must bound asynchronous work capable of determining the
+application result, while normal timeout results must still produce completion observation. An
+already expired deadline cannot also provide a remaining budget in which an awaited timeout
+completion hook finishes.
+
+**Decision:** Concord fixes the result, completion outcome, final status, and elapsed duration before
+completion observation. `on_complete` and `on_pagination_complete` are awaited outside the operation
+deadline, are not detached, and cannot mutate the fixed result, request retry, or restart the
+deadline. Elapsed time ends at result fixation and excludes completion-hook time. Extension authors
+bound completion-hook work. Cancellation or panic may prevent delivery.
+
+The stable pending request wrappers are `concord_core::Request<E>` and
+`concord_core::ResponseRequest<E>`, also exported from `concord_core::prelude`. Generated-private
+endpoint and execution traits remain absent from generated public signatures and public Rustdoc.
+
+**Consequences:** Normal timeout results invoke completion with `CompletionOutcome::Timeout`.
+Completion may delay delivery of an already-fixed result, but it creates no second timeout, queue,
+detached task, executor surface, or alternate result path. Generated users can name request wrappers
+without importing `__private`.
+
+**Rejected alternatives:** Bound completion by an already exhausted operation deadline; detach
+completion; add a completion-task queue; add a second completion timeout/configuration placeholder;
+expose generated-private endpoint bounds in stable signatures.
+
+**Affected requirements:** `API-REQ-001`, `API-REQ-002`, `API-HOOK-007`, `GEN-END-003`,
+`EXEC-DEADLINE-001`, `EXEC-DEADLINE-004`, `EXEC-COMPLETE-001`, `EXEC-COMPLETE-005`,
+`SEC-EXT-001`.
