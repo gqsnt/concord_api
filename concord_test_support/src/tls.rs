@@ -1,6 +1,6 @@
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -62,11 +62,17 @@ const PRIVATE_KEY_DER_BASE64: &str = concat!(
 
 #[derive(Clone)]
 pub struct TlsRequest {
+    connection_id: u64,
     target: String,
     headers: Vec<(String, String)>,
 }
 
 impl TlsRequest {
+    #[must_use]
+    pub fn connection_id(&self) -> u64 {
+        self.connection_id
+    }
+
     #[must_use]
     pub fn target(&self) -> &str {
         &self.target
@@ -85,6 +91,7 @@ struct Shared {
     requests: Mutex<Vec<TlsRequest>>,
     changed: Condvar,
     stop: AtomicBool,
+    next_connection: AtomicU64,
 }
 
 pub struct TlsServer {
@@ -112,6 +119,7 @@ impl TlsServer {
             requests: Mutex::new(Vec::new()),
             changed: Condvar::new(),
             stop: AtomicBool::new(false),
+            next_connection: AtomicU64::new(1),
         });
         let thread_shared = Arc::clone(&shared);
         let worker = thread::Builder::new()
@@ -138,6 +146,29 @@ impl TlsServer {
     #[must_use]
     pub fn certificate_der(&self) -> &[u8] {
         &self.certificate
+    }
+
+    /// Returns the fixed loopback certificate encoded as PEM.
+    #[must_use]
+    pub fn certificate_pem(&self) -> Vec<u8> {
+        let encoded = STANDARD.encode(&self.certificate);
+        format!("-----BEGIN CERTIFICATE-----\n{encoded}\n-----END CERTIFICATE-----\n").into_bytes()
+    }
+
+    /// Returns the fixed, non-secret loopback certificate and key as an
+    /// identity PEM suitable for construction probes.
+    #[must_use]
+    pub fn identity_pem(&self) -> Vec<u8> {
+        let certificate = STANDARD.encode(&self.certificate);
+        let key = STANDARD
+            .decode(PRIVATE_KEY_DER_BASE64)
+            .expect("embedded loopback key fixture must remain valid base64");
+        let key = STANDARD.encode(key);
+        format!(
+            "-----BEGIN CERTIFICATE-----\n{certificate}\n-----END CERTIFICATE-----\n\
+             -----BEGIN PRIVATE KEY-----\n{key}\n-----END PRIVATE KEY-----\n"
+        )
+        .into_bytes()
     }
 
     #[must_use]
@@ -191,10 +222,11 @@ fn accept_loop(listener: TcpListener, config: Arc<ServerConfig>, shared: Arc<Sha
                 }
                 let config = Arc::clone(&config);
                 let shared = Arc::clone(&shared);
+                let connection_id = shared.next_connection.fetch_add(1, Ordering::Relaxed);
                 workers.push(
                     thread::Builder::new()
                         .name("concord-tls-connection".into())
-                        .spawn(move || handle_tls(tcp, config, shared))
+                        .spawn(move || handle_tls(tcp, connection_id, config, shared))
                         .expect("failed to spawn TLS connection worker"),
                 );
             }
@@ -209,30 +241,38 @@ fn accept_loop(listener: TcpListener, config: Arc<ServerConfig>, shared: Arc<Sha
     }
 }
 
-fn handle_tls(tcp: TcpStream, config: Arc<ServerConfig>, shared: Arc<Shared>) {
+fn handle_tls(tcp: TcpStream, connection_id: u64, config: Arc<ServerConfig>, shared: Arc<Shared>) {
     tcp.set_nonblocking(false)
         .expect("failed to make accepted TLS socket blocking");
     tcp.set_read_timeout(Some(Duration::from_secs(2)))
         .expect("failed to set TLS read timeout");
     let connection = ServerConnection::new(config).expect("failed to create TLS connection");
     let mut stream = StreamOwned::new(connection, tcp);
-    let Some(request) = read_request(&mut stream) else {
-        return;
-    };
-    {
-        let mut requests = shared
-            .requests
-            .lock()
-            .expect("TLS request record mutex poisoned");
-        requests.push(request);
-        shared.changed.notify_all();
+    loop {
+        let Some(request) = read_request(&mut stream, connection_id) else {
+            return;
+        };
+        {
+            let mut requests = shared
+                .requests
+                .lock()
+                .expect("TLS request record mutex poisoned");
+            requests.push(request);
+            shared.changed.notify_all();
+        }
+        if stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: keep-alive\r\n\r\nok")
+            .is_err()
+        {
+            return;
+        }
+        if stream.flush().is_err() {
+            return;
+        }
     }
-    let _ =
-        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
-    let _ = stream.flush();
 }
 
-fn read_request(stream: &mut impl Read) -> Option<TlsRequest> {
+fn read_request(stream: &mut impl Read, connection_id: u64) -> Option<TlsRequest> {
     let mut bytes = Vec::new();
     let mut block = [0_u8; 1024];
     while bytes.windows(4).all(|window| window != b"\r\n\r\n") {
@@ -250,5 +290,9 @@ fn read_request(stream: &mut impl Read) -> Option<TlsRequest> {
         .filter_map(|line| line.split_once(':'))
         .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_owned()))
         .collect();
-    Some(TlsRequest { target, headers })
+    Some(TlsRequest {
+        connection_id,
+        target,
+        headers,
+    })
 }

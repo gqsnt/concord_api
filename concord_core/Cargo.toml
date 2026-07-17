@@ -7,14 +7,14 @@ publish = false
 
 [features]
 default = ["default-tls", "http2", "rate-limit-governor"]
-default-tls = []
-http2 = []
+default-tls = ["dep:rustls", "reqwest/rustls-no-provider"]
+http2 = ["reqwest/http2"]
 rate-limit-governor = []
 json = []
 multipart = []
-gzip = []
-brotli = []
-deflate = []
+gzip = ["reqwest/gzip"]
+brotli = ["reqwest/brotli"]
+deflate = ["reqwest/deflate"]
 dangerous-raw-response = []
 dangerous-custom-retry = []
 dangerous-dev-tools = []
@@ -24,6 +24,8 @@ bytes.workspace = true
 http.workspace = true
 httpdate.workspace = true
 reqwest.workspace = true
+rustls = { workspace = true, optional = true }
+tokio.workspace = true
 url.workspace = true
 
 [dev-dependencies]
@@ -34,7 +36,6 @@ http.workspace = true
 http-body.workspace = true
 reqwest = { workspace = true, features = ["http2", "rustls-no-provider", "system-proxy"] }
 rustls.workspace = true
-tokio.workspace = true
 
 [lints]
 workspace = true

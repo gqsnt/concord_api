@@ -61,18 +61,7 @@ impl ApiError {
         error: reqwest::Error,
         managed_body_failed: bool,
     ) -> Self {
-        let category = if managed_body_failed {
-            ErrorCategory::RequestBody
-        } else if error.is_timeout() {
-            ErrorCategory::Timeout
-        } else if error.is_connect() {
-            ErrorCategory::Connect
-        } else if error.is_body() {
-            ErrorCategory::RequestBody
-        } else {
-            ErrorCategory::Transport
-        };
-        drop(error);
+        let category = reqwest_category(error, managed_body_failed);
         Self::classified(endpoint, method, category)
     }
 
@@ -195,6 +184,22 @@ impl ApiError {
             .as_deref()
             .and_then(HttpResponseFailure::retry_after)
     }
+}
+
+pub(crate) fn reqwest_category(error: reqwest::Error, managed_body_failed: bool) -> ErrorCategory {
+    let category = if managed_body_failed {
+        ErrorCategory::RequestBody
+    } else if error.is_timeout() {
+        ErrorCategory::Timeout
+    } else if error.is_connect() {
+        ErrorCategory::Connect
+    } else if error.is_body() {
+        ErrorCategory::RequestBody
+    } else {
+        ErrorCategory::Transport
+    };
+    drop(error);
+    category
 }
 
 impl fmt::Display for ApiError {

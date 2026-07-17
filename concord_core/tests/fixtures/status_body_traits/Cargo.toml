@@ -5,7 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
-concord_core = { path = "../../.." }
+concord_core = { path = "../../..", default-features = false }
 serde = "=1.0.228"
 
 [workspace]
