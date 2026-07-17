@@ -4,6 +4,8 @@
 
 `PHASE_1_COMPLETE_WITH_LIMITATIONS`
 
+Phase 1 evidence anchor commit: `2cf13c46ab6119c91e2bf9a2e75c31f5aaab6dd6`
+
 All 18 Phase 1 exit criteria in the implementation mission are satisfied. The limitations below do not invalidate those criteria: they identify intentional Phase 1 boundaries, reduced evidence, and deferred APIs whose final dependent public types do not yet exist.
 
 This is a Phase 1 result, not a claim of full Concord production conformance.
@@ -37,10 +39,10 @@ The source tree was clean at the start and end of validation against `1074c141fd
 | PR 1.3 | `ff998924ce0505056fbb8f95e020c549db00dbb4` | `feat(core): add safe http and runtime configuration` |
 | PR 1.4 | `54097a6e1c7fd41d3fb7380ccf0005b67ba0d86a` | `feat(core): add managed reqwest clients` |
 | PR 1.5 | `1074c141fd1a48748d08a46bfca66fb6201e0b61` | `test(core): add deterministic reqwest boundary` |
-| PR 1.6 | containing commit | `phase1: record integrated validation and evidence` |
+| PR 1.6 | `4c1bb03587a555f03cc5aa1866656c15069e94c3` | `phase1: record integrated validation and evidence` |
 | PR 1.7 | `720f0e862cfdbbc138fdeb13fbe076231c25a4f4` | `phase1: correct integrated governance and evidence` |
 | PR 1.8 source | `8689457af515b2325259c5401c436752288705ba` | `phase1: finalize test and release architecture` |
-| PR 1.8 evidence | containing commit | `phase1: record final test architecture evidence` |
+| PR 1.8 evidence | `2cf13c46ab6119c91e2bf9a2e75c31f5aaab6dd6` | `phase1: record final test architecture evidence` |
 
 Each unit has an ignored committed patch under `git_diff/phase1-pr-1.X.patch`. The patch directory is not tracked.
 
@@ -337,6 +339,8 @@ Specification governance is now explicitly manual and recorded: normative docume
 3. Authentication providers, rate limiting, pagination runtime, hooks, bodies/responses, streams, multipart, successful codecs/handlers, prepared requests, and full deadline/recovery behavior remain future milestones. Their Phase 0 models are explicitly reduced evidence only.
 4. Runtime post-decompression accounting was executed with gzip. Brotli and Deflate feature isolation is directly proved, but separate Brotli/Deflate runtime probes are not claimed.
 5. `cargo deny check` passed while reporting duplicate transitive versions of `core-foundation` and `windows-sys`; these are warnings, not Phase 1 validation failures.
+6. `dangerous-dev-tools` currently relies on the unpublished workspace-only `concord_test_support` crate. Before registry publication, the development-support types must be moved into a publishable package or that crate must become a reviewed published dependency.
+
 These limitations do not invalidate any Phase 1 exit criterion.
 
 ## Milestone 2 Readiness

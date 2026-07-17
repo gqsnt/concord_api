@@ -929,7 +929,7 @@ timeout.
 
 **CONF-CI-002 — No automatic retries.** Maintained release test execution MUST use zero automatic retries.
 
-**CONF-CI-003 — No live services.** Release tests MUST NOT require live APIs, API keys, local proxy rewriting, or network listeners.
+**CONF-CI-003 — No external live services.** Release tests MUST NOT require live external APIs, real credentials, pre-existing proxy configuration, externally managed network listeners, or Internet access. Tests MAY create and own ephemeral loopback HTTP, HTTPS, mTLS, and proxy listeners and MAY use process-scoped environment configuration when the behavior is deterministic, isolated, and restored or confined to a child process.
 
 **CONF-CI-004 — Canonical Rust test runner.** Maintained unit and integration test execution MUST use Nextest with no omitted default test set, and Cargo-spawning tests MUST use bounded concurrency; `cargo test` is reserved for doctests.
 
