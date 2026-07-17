@@ -56,12 +56,18 @@ fn generated_operation(
     handler: WidgetCountHandler,
 ) -> Operation<WidgetCountHandler> {
     let endpoint = generated_endpoint();
-    Operation::from_generated(
-        endpoint.__concord_request_head(),
-        operation_id,
-        deadline(),
-        handler,
-    )
+    let base = crate::__private::Url::parse("https://executor.example.test/v1")
+        .expect("executor proof base");
+    let builder = crate::__private::HeadBuilder::new(
+        &base,
+        crate::__private::EndpointSpec::request_meta(&endpoint),
+        &crate::__private::RequestOptions::new(),
+        crate::__private::DebugLevel::None,
+    );
+    let (head, _) =
+        crate::__private::EndpointSpec::prepare_head_and_body_metadata(&endpoint, builder)
+            .expect("generated proof head");
+    Operation::from_generated(&head, operation_id, deadline(), handler)
 }
 
 fn prepared_endpoint(
@@ -75,7 +81,7 @@ fn prepared_endpoint(
             .to_owned(),
         query: Vec::new(),
         headers: Vec::new(),
-        scope_snapshot: vec![("account", "account-alpha".to_owned())],
+        scope_snapshot: Vec::new(),
         operation_id,
         deadline: deadline(),
         body: BodyMetadata::Empty,
@@ -182,10 +188,7 @@ mod executor_parity {
         assert_eq!(generated.method, "GET");
         assert_eq!(generated.query, Vec::<(String, String)>::new());
         assert_eq!(generated.headers, Vec::<(String, String)>::new());
-        assert_eq!(
-            generated.scope_snapshot,
-            vec![("account", "account-alpha".to_owned())]
-        );
+        assert!(generated.scope_snapshot.is_empty());
         assert_eq!(generated.operation_id, OperationId(41));
         assert_eq!(generated.deadline, deadline());
         assert_eq!(generated.body, BodyMetadata::Empty);
@@ -582,13 +585,23 @@ mod executor_architecture {
 }
 
 #[test]
-fn generated_executor_real_macro_supplies_request_head() {
+fn generated_executor_real_macro_supplies_prepared_head() {
     let endpoint = generated_endpoint();
-    let head = endpoint.__concord_request_head();
+    let base = crate::__private::Url::parse("https://executor.example.test/v1")
+        .expect("executor proof base");
+    let builder = crate::__private::HeadBuilder::new(
+        &base,
+        crate::__private::EndpointSpec::request_meta(&endpoint),
+        &crate::__private::RequestOptions::new(),
+        crate::__private::DebugLevel::None,
+    );
+    let (head, _) =
+        crate::__private::EndpointSpec::prepare_head_and_body_metadata(&endpoint, builder)
+            .expect("generated proof head");
     assert_eq!(head.endpoint(), "ExecutorProofApi::accounts::ById");
-    assert_eq!(head.method(), "GET");
+    assert_eq!(head.method(), &http::Method::GET);
     assert_eq!(
-        head.logical_url(),
+        head.logical_url().as_str(),
         "https://executor.example.test/v1/accounts/account-alpha/widgets/widget-omega"
     );
 }

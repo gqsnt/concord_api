@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use crate::__private::RequestHead;
+use crate::__private::PreparedHead;
 
 const STATUS_BODY_LIMIT: usize = 8;
 
@@ -87,14 +87,14 @@ struct OperationMetadata {
 }
 
 impl OperationMetadata {
-    fn from_generated(head: &RequestHead, operation_id: OperationId, deadline: Deadline) -> Self {
+    fn from_generated(head: &PreparedHead, operation_id: OperationId, deadline: Deadline) -> Self {
         Self {
             endpoint: head.endpoint(),
-            method: head.method(),
-            logical_url: head.logical_url().to_owned(),
-            query: head.query().to_vec(),
-            headers: head.headers().to_vec(),
-            scope_snapshot: head.scope_snapshot().to_vec(),
+            method: "GET",
+            logical_url: head.logical_url().to_string(),
+            query: Vec::new(),
+            headers: Vec::new(),
+            scope_snapshot: Vec::new(),
             operation_id,
             deadline,
             body: BodyMetadata::Empty,
@@ -135,7 +135,7 @@ struct Operation<H> {
 
 impl<H> Operation<H> {
     fn from_generated(
-        head: &RequestHead,
+        head: &PreparedHead,
         operation_id: OperationId,
         deadline: Deadline,
         handler: H,

@@ -1,12 +1,10 @@
-use std::collections::HashSet;
-
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::Index;
 
 use crate::model::{Api, Parameter, PathAtom};
 
-const GENERATED_CONTRACT_VERSION: u32 = 1;
+const GENERATED_CONTRACT_VERSION: u32 = 2;
 
 pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
     let client = &api.client;
@@ -56,47 +54,11 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
         .collect();
     let scope_indices: Vec<_> = (0..scope.parameters.len()).map(Index::from).collect();
 
-    let reserved: HashSet<_> = scope
-        .parameters
-        .iter()
-        .chain(endpoint.parameters.iter())
-        .map(|parameter| parameter.name.to_string())
-        .collect();
-    let local_prefix = format!(
-        "__concord_{}_{}_{}",
-        to_snake_case(&client_name.to_string()),
-        to_snake_case(&scope_name.to_string()),
-        to_snake_case(&endpoint_name.to_string())
-    );
-    let url_local = collision_safe_ident(&format!("{local_prefix}_logical_url"), &reserved);
-    let segment_local = collision_safe_ident(&format!("{local_prefix}_segment"), &reserved);
-    let head_local = collision_safe_ident(&format!("{local_prefix}_head"), &reserved);
-
     let all_path_atoms: Vec<_> = scope.path.iter().chain(endpoint.path.iter()).collect();
-    let path_expressions: Vec<_> = all_path_atoms
+    let path_statements: Vec<_> = all_path_atoms
         .iter()
-        .map(|atom| {
-            path_expression(
-                atom,
-                &scope.parameters,
-                &scope_bindings,
-                &endpoint.parameters,
-                &endpoint_bindings,
-            )
-        })
+        .map(|atom| path_statement(atom, &scope.parameters, &endpoint.parameters))
         .collect();
-    let scope_snapshot =
-        scope
-            .parameters
-            .iter()
-            .zip(&scope_bindings)
-            .map(|(parameter, binding)| {
-                let name_text = parameter.name.to_string();
-                quote!((
-                    #name_text,
-                    ::std::string::ToString::to_string(&*#binding),
-                ))
-            });
     let base = &client.base;
     let endpoint_identity = format!("{client_name}::{scope_name}::{endpoint_name}");
     let contract_version = GENERATED_CONTRACT_VERSION;
@@ -126,7 +88,6 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
                     pub struct #endpoint_name {
                         __concord_scope: (#(::std::sync::Arc<#scope_types>,)*),
                         __concord_endpoint: (#(#endpoint_types,)*),
-                        __concord_head: super::super::__concord_generated::__core::__private::RequestHead,
                     }
 
                     impl #endpoint_name {
@@ -141,34 +102,53 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
                             #(#scope_bindings: ::std::sync::Arc<#scope_types>,)*
                             #(#endpoint_bindings: #endpoint_types),*
                         ) -> Self {
-                            let mut #url_local = ::std::string::String::from(
-                                #base.trim_end_matches('/')
-                            );
-                            for #segment_local in [#(#path_expressions),*] {
-                                #url_local.push('/');
-                                #url_local.push_str(&#segment_local);
-                            }
-                            let #head_local = super::super::__concord_generated::__core::__private::RequestHead::new(
-                                #endpoint_identity,
-                                "GET",
-                                #url_local,
-                                ::std::vec::Vec::new(),
-                                ::std::vec::Vec::new(),
-                                ::std::vec![#(#scope_snapshot),*],
-                            );
                             Self {
                                 __concord_scope: (#(#scope_bindings,)*),
                                 __concord_endpoint: (#(#endpoint_bindings,)*),
-                                __concord_head: #head_local,
                             }
                         }
+                    }
 
-                        #[doc(hidden)]
-                        #[must_use]
-                        pub fn __concord_request_head(
+                    #[doc(hidden)]
+                    impl super::super::__concord_generated::__core::__private::EndpointSpec
+                        for #endpoint_name
+                    where
+                        #(#scope_types: ::std::fmt::Display + ::std::marker::Send + ::std::marker::Sync + 'static,)*
+                        #(#endpoint_types: ::std::fmt::Display + ::std::marker::Send + 'static,)*
+                    {
+                        type Body = super::super::__concord_generated::__core::__private::EmptyBody;
+                        type Response = super::super::__concord_generated::__core::__private::NoContentResponse;
+
+                        fn request_meta(
                             &self,
-                        ) -> &super::super::__concord_generated::__core::__private::RequestHead {
-                            &self.__concord_head
+                        ) -> super::super::__concord_generated::__core::__private::RequestMeta {
+                            super::super::__concord_generated::__core::__private::RequestMeta::new(
+                                #endpoint_identity,
+                                super::super::__concord_generated::__core::__private::Method::GET,
+                                ::std::option::Option::None,
+                            )
+                        }
+
+                        fn prepare_head_and_body_metadata(
+                            &self,
+                            mut __concord_builder: super::super::__concord_generated::__core::__private::HeadBuilder,
+                        ) -> ::std::result::Result<
+                            (
+                                super::super::__concord_generated::__core::__private::PreparedHead,
+                                super::super::__concord_generated::__core::__private::BodyMetadata,
+                            ),
+                            super::super::__concord_generated::__core::__private::ApiError,
+                        > {
+                            #(#path_statements)*
+                            ::std::result::Result::Ok((
+                                __concord_builder.finish(),
+                                super::super::__concord_generated::__core::__private::EmptyBody::metadata(),
+                            ))
+                        }
+
+                        fn into_body(self) -> Self::Body {
+                            let _ = self;
+                            super::super::__concord_generated::__core::__private::EmptyBody::new()
                         }
                     }
                 }
@@ -177,6 +157,7 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
             impl super::#client_name {
                 #[must_use]
                 pub const fn new() -> Self {
+                    let _ = #base;
                     Self { __concord_private: () }
                 }
 
@@ -207,30 +188,28 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
     }
 }
 
-fn path_expression(
+fn path_statement(
     atom: &PathAtom,
     scope_parameters: &[Parameter],
-    scope_bindings: &[Ident],
     endpoint_parameters: &[Parameter],
-    endpoint_bindings: &[Ident],
 ) -> TokenStream {
     match atom {
-        PathAtom::Static(value) => quote!(::std::string::String::from(#value)),
+        PathAtom::Static(value) => quote!(__concord_builder.push_static(#value)?;),
         PathAtom::Scope(name) => {
             let index = scope_parameters
                 .iter()
                 .position(|parameter| parameter.name == *name)
                 .expect("validated scope path references have a generated binding");
-            let binding = &scope_bindings[index];
-            quote!(::std::string::ToString::to_string(&*#binding))
+            let index = Index::from(index);
+            quote!(__concord_builder.push_value(&*self.__concord_scope.#index)?;)
         }
         PathAtom::Endpoint(name) => {
             let index = endpoint_parameters
                 .iter()
                 .position(|parameter| parameter.name == *name)
                 .expect("validated endpoint path references have a generated binding");
-            let binding = &endpoint_bindings[index];
-            quote!(::std::string::ToString::to_string(&#binding))
+            let index = Index::from(index);
+            quote!(__concord_builder.push_value(&self.__concord_endpoint.#index)?;)
         }
     }
 }
@@ -241,19 +220,6 @@ fn parameter_binding(namespace: &str, index: usize, name: &Ident) -> Ident {
         &format!("__concord_{namespace}_{index}_{normalized}"),
         Span::mixed_site(),
     )
-}
-
-fn collision_safe_ident(base: &str, reserved: &HashSet<String>) -> Ident {
-    if !reserved.contains(base) {
-        return Ident::new(base, Span::mixed_site());
-    }
-    for suffix in 1_u32.. {
-        let candidate = format!("{base}_{suffix}");
-        if !reserved.contains(&candidate) {
-            return Ident::new(&candidate, Span::mixed_site());
-        }
-    }
-    unreachable!("the finite parameter set cannot exhaust generated suffixes")
 }
 
 fn to_snake_case(name: &str) -> String {

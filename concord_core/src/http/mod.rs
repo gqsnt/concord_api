@@ -1,9 +1,15 @@
 //! Reviewed plain HTTP configuration values.
 
-#[allow(dead_code, reason = "assembled by the later private ClientCore")]
-mod application;
-#[allow(dead_code, reason = "assembled by the later private ClientCore")]
-mod build;
+#[allow(
+    dead_code,
+    reason = "owned by ClientCore and called by the PR 2.3 executor"
+)]
+pub(crate) mod application;
+#[allow(
+    dead_code,
+    reason = "owns both managed clients for the private ClientCore"
+)]
+pub(crate) mod build;
 mod config;
 #[cfg(any(test, feature = "dangerous-dev-tools"))]
 mod development;

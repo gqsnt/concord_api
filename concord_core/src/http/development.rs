@@ -86,12 +86,9 @@ mod tests {
     const WAIT: Duration = Duration::from_secs(3);
 
     fn managed(executor: &DeterministicExecutor) -> ManagedHttp {
-        ManagedHttp::build_with_development(
-            HttpConfigBuilder::new().resolve(),
-            RuntimeConfigBuilder::new().resolve(),
-            executor,
-        )
-        .expect("development managed clients should build")
+        let runtime = RuntimeConfigBuilder::new().resolve();
+        ManagedHttp::build_with_development(HttpConfigBuilder::new().resolve(), &runtime, executor)
+            .expect("development managed clients should build")
     }
 
     fn application_request(

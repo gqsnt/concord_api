@@ -107,11 +107,9 @@ mod tests {
             Some(limit) => RuntimeConfigBuilder::new().status_body_limit(limit),
             None => RuntimeConfigBuilder::new().disable_status_body_capture(),
         };
-        ManagedHttp::build(
-            HttpConfigBuilder::new().http1_only().resolve(),
-            runtime.resolve(),
-        )
-        .expect("managed status client should build")
+        let runtime = runtime.resolve();
+        ManagedHttp::build(HttpConfigBuilder::new().http1_only().resolve(), &runtime)
+            .expect("managed status client should build")
     }
 
     async fn response(

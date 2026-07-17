@@ -11,15 +11,31 @@ pub(super) enum TlsCapability {
     Unavailable,
 }
 
-pub(super) struct ManagedHttp {
-    pub(super) application: ApplicationHttp,
+pub(crate) struct ManagedHttp {
+    pub(crate) application: ApplicationHttp,
     pub(super) provider: ProviderHttpInner,
 }
 
 impl ManagedHttp {
-    pub(super) fn build(
+    pub(crate) fn validate_fixed_base(
+        http: &HttpConfig,
+        base_url: &url::Url,
+    ) -> Result<(), ClientBuildError> {
+        if http.https_only && base_url.scheme() != "https" {
+            return Err(ClientBuildError::new(
+                ClientBuildErrorKind::HttpConfiguration,
+            ));
+        }
+        #[cfg(not(feature = "default-tls"))]
+        if base_url.scheme() == "https" {
+            return Err(ClientBuildError::new(ClientBuildErrorKind::TlsUnavailable));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn build(
         http: HttpConfig,
-        runtime: RuntimeConfig,
+        runtime: &RuntimeConfig,
     ) -> Result<Self, ClientBuildError> {
         #[cfg(feature = "default-tls")]
         let tls = TlsCapability::Available;
@@ -74,9 +90,9 @@ impl ManagedHttp {
     }
 
     #[cfg(any(test, feature = "dangerous-dev-tools"))]
-    pub(super) fn build_with_development(
+    pub(crate) fn build_with_development(
         http: HttpConfig,
-        runtime: RuntimeConfig,
+        runtime: &RuntimeConfig,
         executor: &concord_test_support::executor::DeterministicExecutor,
     ) -> Result<Self, ClientBuildError> {
         let managed = Self::build(http, runtime)?;
@@ -217,8 +233,8 @@ mod tests {
     const WAIT: Duration = Duration::from_secs(3);
 
     fn managed(builder: HttpConfigBuilder) -> ManagedHttp {
-        ManagedHttp::build(builder.resolve(), RuntimeConfigBuilder::new().resolve())
-            .expect("managed clients should build")
+        let runtime = RuntimeConfigBuilder::new().resolve();
+        ManagedHttp::build(builder.resolve(), &runtime).expect("managed clients should build")
     }
 
     fn assert_send_sync_static<T: Send + Sync + 'static>() {}
@@ -592,7 +608,7 @@ mod tests {
             HttpConfigBuilder::new()
                 .add_root_certificate_pem(ROOT_SENTINEL.as_bytes().to_vec())
                 .resolve(),
-            RuntimeConfigBuilder::new().resolve(),
+            &RuntimeConfigBuilder::new().resolve(),
         );
         assert_safe_pem_error(invalid_root, ROOT_SENTINEL);
 
@@ -600,7 +616,7 @@ mod tests {
             HttpConfigBuilder::new()
                 .identity_pem(IDENTITY_SENTINEL.as_bytes().to_vec())
                 .resolve(),
-            RuntimeConfigBuilder::new().resolve(),
+            &RuntimeConfigBuilder::new().resolve(),
         );
         assert_safe_pem_error(invalid_identity, IDENTITY_SENTINEL);
     }

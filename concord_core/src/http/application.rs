@@ -8,14 +8,14 @@ use concord_test_support::executor::ApplicationChannel;
 #[cfg(any(test, feature = "dangerous-dev-tools"))]
 use concord_test_support::script::BoundaryRequest;
 
-use crate::error::{ApiError, ConfigurationErrorKind};
+use crate::error::{ApiError, ClientBuildError, ClientBuildErrorKind, ConfigurationErrorKind};
 
 use super::build::TlsCapability;
 use super::status::{StatusCapture, StatusDisposition, collect_terminal_status};
 
 /// Private application HTTP owner. Its Reqwest client never crosses the
 /// managed boundary.
-pub(super) struct ApplicationHttp {
+pub(crate) struct ApplicationHttp {
     client: reqwest::Client,
     tls: TlsCapability,
     https_only: bool,
@@ -44,12 +44,43 @@ impl ApplicationHttp {
         }
     }
 
-    #[allow(
-        dead_code,
-        reason = "retained for future public preflight before endpoint execution exists"
-    )]
     pub(super) const fn https_only(&self) -> bool {
         self.https_only
+    }
+
+    pub(crate) fn validate_fixed_base(&self, url: &url::Url) -> Result<(), ClientBuildError> {
+        if self.https_only && url.scheme() != "https" {
+            return Err(ClientBuildError::new(
+                ClientBuildErrorKind::HttpConfiguration,
+            ));
+        }
+        if url.scheme() == "https" && self.tls == TlsCapability::Unavailable {
+            return Err(ClientBuildError::new(ClientBuildErrorKind::TlsUnavailable));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn preflight_url(
+        &self,
+        endpoint: &'static str,
+        method: &Method,
+        url: &url::Url,
+    ) -> Result<(), ApiError> {
+        if self.https_only && url.scheme() != "https" {
+            return Err(ApiError::configuration(
+                endpoint,
+                method.clone(),
+                ConfigurationErrorKind::InvalidRoute,
+            ));
+        }
+        if url.scheme() == "https" && self.tls == TlsCapability::Unavailable {
+            return Err(ApiError::classified(
+                endpoint,
+                method.clone(),
+                crate::error::ErrorCategory::Configuration,
+            ));
+        }
+        Ok(())
     }
 
     #[cfg(any(test, feature = "dangerous-dev-tools"))]
@@ -72,6 +103,7 @@ impl ApplicationHttp {
                 crate::error::ErrorCategory::Configuration,
             )
         })?;
+        self.preflight_url(endpoint, &method, &url)?;
         if protected && url.scheme() != "https" {
             return Err(ApiError::configuration(
                 endpoint,

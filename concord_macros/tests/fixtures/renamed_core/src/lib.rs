@@ -16,5 +16,8 @@ pub fn proof() {
     let endpoint = RenamedApi::new()
         .resources("renamed-scope".to_owned())
         .by_id("renamed-endpoint".to_owned());
-    assert_eq!(endpoint.__concord_request_head().method(), "GET");
+    assert_eq!(
+        runtime::__private::EndpointSpec::request_meta(&endpoint).method(),
+        &runtime::__private::Method::GET
+    );
 }

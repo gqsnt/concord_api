@@ -1,5 +1,11 @@
 use concord_macros::api;
 use std::fmt::{self, Display, Formatter};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use concord_core::__private::{
+    DebugLevel, EndpointSpec, HeadBuilder, PreparedHead, RequestOptions, Url,
+};
 
 struct MinimalValue(&'static str);
 
@@ -7,6 +13,45 @@ impl Display for MinimalValue {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.0)
     }
+}
+
+struct CountingValue {
+    text: &'static str,
+    calls: Arc<AtomicUsize>,
+}
+
+impl Display for CountingValue {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        formatter.write_str(self.text)
+    }
+}
+
+fn prepared_head<E>(endpoint: &E, base: &str) -> PreparedHead
+where
+    E: EndpointSpec,
+{
+    let base = Url::parse(base).expect("test base URL");
+    let builder = HeadBuilder::new(
+        &base,
+        endpoint.request_meta(),
+        &RequestOptions::new(),
+        DebugLevel::None,
+    );
+    endpoint
+        .prepare_head_and_body_metadata(builder)
+        .expect("generated head preparation")
+        .0
+}
+
+fn assert_same_head(first: &PreparedHead, second: &PreparedHead) {
+    assert_eq!(first.endpoint(), second.endpoint());
+    assert_eq!(first.method(), second.method());
+    assert_eq!(first.logical_url(), second.logical_url());
+    assert_eq!(first.safe_url(), second.safe_url());
+    assert_eq!(first.public_headers(), second.public_headers());
+    assert_eq!(first.timeout(), second.timeout());
+    assert_eq!(first.debug(), second.debug());
 }
 
 api! {
@@ -58,6 +103,18 @@ api! {
     }
 }
 
+api! {
+    client LazyApi {
+        base "https://lazy.example.test";
+        scope resources(scope_value: crate::CountingValue) {
+            path ["scopes", scope.scope_value];
+            GET ById(endpoint_value: crate::CountingValue) -> NoContent {
+                path ["resources", ep.endpoint_value];
+            }
+        }
+    }
+}
+
 mod nested_case {
     pub mod inner {
         use concord_macros::api;
@@ -86,7 +143,7 @@ mod repeated_case {
     struct String;
     struct Vec;
     struct Method;
-    struct RequestHead;
+    struct HeadBuilder;
     mod core {}
     mod runtime {}
 
@@ -121,10 +178,9 @@ mod repeated_case {
         let beta = BetaApi::new()
             .resources("beta-scope".to_owned())
             .by_id("beta-endpoint".to_owned());
-        (
-            alpha.__concord_request_head().endpoint(),
-            beta.__concord_request_head().endpoint(),
-        )
+        let alpha = concord_core::__private::EndpointSpec::request_meta(&alpha);
+        let beta = concord_core::__private::EndpointSpec::request_meta(&beta);
+        (alpha.endpoint(), beta.endpoint())
     }
 }
 
@@ -141,25 +197,17 @@ fn facade_and_explicit_construction_have_exact_metadata_parity() {
         "item-omega".to_owned(),
     );
 
-    let facade_head = facade_endpoint.__concord_request_head();
-    let explicit_head = explicit_endpoint.__concord_request_head();
+    let facade_head = prepared_head(&facade_endpoint, "https://example.test/api");
+    let explicit_head = prepared_head(&explicit_endpoint, "https://example.test/api");
 
-    assert_eq!(facade_head, explicit_head);
+    assert_same_head(&facade_head, &explicit_head);
     assert_eq!(facade_head.endpoint(), "ProofApi::resources::ById");
     assert_eq!(facade_head.method(), "GET");
     assert_eq!(
-        facade_head.logical_url(),
+        facade_head.logical_url().as_str(),
         "https://example.test/api/regions/region-beta/scopes/account-alpha/resources/item-omega"
     );
-    assert_eq!(facade_head.query(), &[]);
-    assert_eq!(facade_head.headers(), &[]);
-    assert_eq!(
-        facade_head.scope_snapshot(),
-        &[
-            ("account", "account-alpha".to_owned()),
-            ("region", "region-beta".to_owned()),
-        ]
-    );
+    assert!(facade_head.public_headers().is_empty());
 }
 
 #[test]
@@ -169,18 +217,11 @@ fn explicit_constructor_preserves_distinct_scope_and_endpoint_values() {
         "outer-region-only".to_owned(),
         "endpoint-only".to_owned(),
     );
-    let head = endpoint.__concord_request_head();
+    let head = prepared_head(&endpoint, "https://example.test/api");
 
     assert_eq!(
-        head.logical_url(),
+        head.logical_url().as_str(),
         "https://example.test/api/regions/outer-region-only/scopes/outer-account-only/resources/endpoint-only"
-    );
-    assert_eq!(
-        head.scope_snapshot(),
-        &[
-            ("account", "outer-account-only".to_owned()),
-            ("region", "outer-region-only".to_owned()),
-        ]
     );
 }
 
@@ -194,16 +235,12 @@ fn equal_names_keep_scope_and_endpoint_bindings_distinct_without_extra_bounds() 
         MinimalValue("endpoint-local-id"),
     );
 
-    let facade_head = facade_endpoint.__concord_request_head();
-    let explicit_head = explicit_endpoint.__concord_request_head();
-    assert_eq!(facade_head, explicit_head);
+    let facade_head = prepared_head(&facade_endpoint, "https://equal-name.example.test");
+    let explicit_head = prepared_head(&explicit_endpoint, "https://equal-name.example.test");
+    assert_same_head(&facade_head, &explicit_head);
     assert_eq!(
-        facade_head.logical_url(),
+        facade_head.logical_url().as_str(),
         "https://equal-name.example.test/scopes/outer-scope-id/resources/endpoint-local-id"
-    );
-    assert_eq!(
-        facade_head.scope_snapshot(),
-        &[("id", "outer-scope-id".to_owned())]
     );
 }
 
@@ -216,10 +253,9 @@ fn nested_module_invocation_preserves_generated_paths() {
         "nested-endpoint".to_owned(),
     );
 
-    assert_eq!(
-        endpoint.__concord_request_head(),
-        explicit.__concord_request_head()
-    );
+    let endpoint = prepared_head(&endpoint, "https://nested.example.test");
+    let explicit = prepared_head(&explicit, "https://nested.example.test");
+    assert_same_head(&endpoint, &explicit);
 }
 
 #[test]
@@ -240,12 +276,33 @@ fn generated_facade_requires_only_display_for_stored_values() {
         MinimalValue("endpoint-value"),
     );
 
+    let endpoint = prepared_head(&endpoint, "https://bounds.example.test");
+    let explicit = prepared_head(&explicit, "https://bounds.example.test");
+    assert_same_head(&endpoint, &explicit);
     assert_eq!(
-        endpoint.__concord_request_head(),
-        explicit.__concord_request_head()
-    );
-    assert_eq!(
-        endpoint.__concord_request_head().logical_url(),
+        endpoint.logical_url().as_str(),
         "https://bounds.example.test/scopes/scope-value/resources/endpoint-value"
+    );
+}
+
+#[test]
+fn generated_endpoint_construction_does_not_render_or_prepare_its_url() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let endpoint = LazyApi::new()
+        .resources(CountingValue {
+            text: "scope/value",
+            calls: Arc::clone(&calls),
+        })
+        .by_id(CountingValue {
+            text: "endpoint/value",
+            calls: Arc::clone(&calls),
+        });
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+
+    let head = prepared_head(&endpoint, "https://lazy.example.test");
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        head.logical_url().as_str(),
+        "https://lazy.example.test/scopes/scope%2Fvalue/resources/endpoint%2Fvalue"
     );
 }

@@ -13,6 +13,7 @@ pub mod advanced;
 pub mod dangerous;
 pub mod prelude;
 
+mod client;
 mod codec;
 mod error;
 mod generated_contract;
@@ -23,6 +24,8 @@ mod redaction;
 mod request;
 mod response;
 mod runtime;
+
+pub use request::{Request, ResponseRequest};
 
 #[cfg(test)]
 mod auth;

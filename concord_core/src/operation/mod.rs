@@ -9,3 +9,4 @@ mod id;
 )]
 pub(crate) use deadline::{DeadlineElapsed, DeadlineOverflow, OperationDeadline};
 pub use id::OperationId;
+pub(crate) use id::OperationIdExhausted;
