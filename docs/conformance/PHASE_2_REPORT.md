@@ -19,7 +19,7 @@ This is not a claim of full Concord 0.1 conformance. The normative status remain
 - Original Phase 2 source commit tested: `055d74718c443412a605bd880cfad9415a824f99`
 - Corrected final Phase 2 source commit tested: `ea1ce944fe1d2622db7a66600d734ac0dc04784f`
 - Corrected validation time recorded for evidence: `2026-07-17T16:01:17Z`
-- Corrected evidence/report commit: recorded by the documentation-only evidence anchor
+- Corrected evidence/report commit: `f339d0e09d86d71c9ed1ea3a46a6092b4dffdea4`
 - Corrected evidence anchor commit: this report's documentation-only follow-up
 - Rust edition: 2024
 - MSRV exercised: Rust 1.85.0 from `rust-toolchain.toml`
