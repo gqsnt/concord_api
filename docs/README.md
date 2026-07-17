@@ -49,6 +49,12 @@ Verification artifacts:
 
 Specification governance is review-based: reviewers inspect the normative documents, verify the coverage plan, verify exact executed evidence, and audit the maintained release command. No automated specification checker is authoritative or maintained.
 
+Rust unit and integration tests use Nextest as the canonical runner. `cargo test` is used only for
+Rust doctests. The maintained release graph intentionally exercises default, all-feature, and core
+no-default surfaces; manifest-bearing Cargo fixtures are limited to tests of package metadata,
+dependency renaming/topology, feature selection, and compile-fail boundaries that require a
+separate dependency graph.
+
 Delivery and contribution:
 
 - [`planning/CONCORD_IMPLEMENTATION_PLAN_0.1.md`](planning/CONCORD_IMPLEMENTATION_PLAN_0.1.md)

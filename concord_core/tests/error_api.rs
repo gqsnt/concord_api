@@ -10,6 +10,7 @@ use concord_core::advanced::{
 
 fn api_error_accessors(error: &ApiError) {
     let _: ErrorCategory = error.category();
+    let _: Option<ConfigurationErrorKind> = error.configuration_kind();
     let _: &'static str = error.endpoint();
     let _: &Method = error.method();
     let _: Option<concord_core::advanced::StatusCode> = error.http_status();
@@ -121,7 +122,12 @@ fn pagination_ceiling_kinds_are_public_and_structured() {
         PaginationErrorKind::IdentityStorageCeilingExceeded,
     ];
 
-    assert_eq!(kinds.len(), 8);
+    for (index, kind) in kinds.iter().enumerate() {
+        assert!(
+            kinds[index + 1..].iter().all(|candidate| candidate != kind),
+            "named pagination classifications must remain structurally distinct"
+        );
+    }
     assert_ne!(
         PaginationErrorKind::PageCeilingExceeded,
         PaginationErrorKind::HardCapExceeded

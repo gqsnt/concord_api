@@ -1,15 +1,8 @@
 [workspace]
 members = [
     "contract_mismatch",
-    "equal_name",
-    "malformed",
-    "minimal_bounds",
     "missing_core",
-    "missing_scope",
-    "nested_module",
-    "normal",
     "renamed_core",
-    "repeated_invocation",
 ]
 exclude = ["contract_mismatch/incompatible_core"]
 resolver = "3"

@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
 
 use concord_core::advanced::{Bytes, StatusBody, StatusBodyState};
+use concord_test_support::cargo_fixture::{check_manifest, diagnostics};
 
 fn public_accessors(body: &StatusBody) {
     let _: StatusBodyState = body.state();
@@ -17,20 +18,20 @@ fn fixture_manifest() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/status_body_traits/Cargo.toml")
 }
 
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("core crate should be inside the workspace")
+        .to_owned()
+}
+
 fn check_fixture() -> Output {
-    let target =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/compile-fixtures/status-body");
-    Command::new(env!("CARGO"))
-        .arg("check")
-        .arg("--offline")
-        .arg("--locked")
-        .arg("--color")
-        .arg("never")
-        .arg("--manifest-path")
-        .arg(fixture_manifest())
-        .env("CARGO_TARGET_DIR", target)
-        .output()
-        .expect("status-body trait fixture should run")
+    check_manifest(
+        &workspace_root(),
+        "status-body/negative-traits",
+        &fixture_manifest(),
+        &[],
+    )
 }
 
 #[test]
@@ -42,11 +43,7 @@ fn downstream_complete_only_accessors_have_final_signatures() {
 #[test]
 fn status_body_has_no_concord_provided_implicit_byte_or_clone_surface() {
     let output = check_fixture();
-    let diagnostics = format!(
-        "stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let diagnostics = diagnostics(&output);
     assert!(
         !output.status.success(),
         "negative status-body fixture unexpectedly compiled\n{diagnostics}"

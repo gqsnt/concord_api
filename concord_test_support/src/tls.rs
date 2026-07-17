@@ -8,10 +8,11 @@ use std::time::Duration;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
-use rustls::{ServerConfig, ServerConnection, StreamOwned};
+use rustls::server::WebPkiClientVerifier;
+use rustls::{RootCertStore, ServerConfig, ServerConnection, StreamOwned};
 
-// Fixed, non-secret test fixture material. This key authenticates only the
-// loopback probe server and is never used as an application credential.
+// Fixed, non-secret test fixture material. These keys authenticate only the
+// loopback probe server/client pair and are never used as real credentials.
 const CERTIFICATE_DER_BASE64: &str = concat!(
     "MIIDJTCCAg2gAwIBAgIUVVfNMrqxxHjkQC1jfCVryF3pplkwDQYJKoZIhvcNAQEL",
     "BQAwFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTI2MDcxNjE5MzYzOVoXDTM2MDcx",
@@ -59,6 +60,54 @@ const PRIVATE_KEY_DER_BASE64: &str = concat!(
     "Fo9S3xXOFr8fFdolVPtLOWjh9xT8E2mmdnf7hqRjiTl0Qb/DrBhYIwlgGIlq0lj8",
     "MvwsZD+/zLGkhj7G71aUBrI=",
 );
+const CLIENT_CERTIFICATE_DER_BASE64: &str = concat!(
+    "MIIDOTCCAiGgAwIBAgIUJwMjsznGpAUETibtJVfn+DMmepQwDQYJKoZIhvcNAQEL",
+    "BQAwFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTI2MDcxNzEwMzM0MVoXDTM2MDcx",
+    "NDEwMzM0MVowIjEgMB4GA1UEAwwXY29uY29yZC1sb29wYmFjay1jbGllbnQwggEi",
+    "MA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCMkXAzgK1TwlWKtcM22hMp+ht1",
+    "Zi+CDgAxoZDZyq6cNz8YX+vnocW3FTZOOLrWHkoagwn0CyKCbXFa/at4OrfFuaDP",
+    "yHUyQWSbNrPti8AKQD+/MVoM3U4OP0p+Uh3hp+253IU8Li2X5ZyIBwSPFViC6Zc",
+    "F8UosZYcYp72fkFjJU7tS9cnjo87p6wYK27q1uHbggeWn8b3WdHpLRkRa789bjyN",
+    "FpSfeQflgFPUHbytK5VHzQaYyfad4ddeaQHSQYrw+OX0V6zaRRC/xWAPKBkg+OUR",
+    "dK2CL87cgerMCtBih+bq7IJC5BSti3f/zClvEAFsERfY6uK3tBZFPS8ZcCsyVAgM",
+    "BAAGjdTBzMAwGA1UdEwEB/wQCMAAwDgYDVR0PAQH/BAQDAgeAMBMGA1UdJQQMMAoG",
+    "CCsGAQUFBwMCMB0GA1UdDgQWBBSP4ytdMSHdY858yFfCCkpOvBmOKTAfBgNVHSME",
+    "GDAWgBSAkEAV0bI0pbjKhqRoKnpVyRy99DANBgkqhkiG9w0BAQsFAAOCAQEATiXg",
+    "D8GfQjnflV/koh0JrvDETbFh7tjOjgNOR8N1TrwdYO6phYPOx5lDvDHuxW3nCFeP",
+    "ZF62ezy8q9pJH4y6Xs8eCELss3QPtdXnxTENhtyPFTnFpskJgj1I2taR55u9frdk",
+    "mdtPdn58cJvzD2EuKplEbBDHB0Ru5Zb0LuMoMgR21ZjQoght93xw8bFSuWlW33h",
+    "N4eNSLIbdGuQpmEBevGIBs2iPVnRxfQqfLJEq3pCjhQ7HN+wd4XOwes/XNvHIcwV",
+    "m9cdU2CyEaXdCgfrKu19vj33ylpd4ct0UUFRf9dDrunICb4O2MhXPie5uHqfDhbf",
+    "RicKxIYbD6ryFKArOww==",
+);
+const CLIENT_PRIVATE_KEY_DER_BASE64: &str = concat!(
+    "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCMkXAzgK1TwlWK",
+    "tcM22hMp+ht1Zi+CDgAxoZDZyq6cNz8YX+vnocW3FTZOOLrWHkoagwn0CyKCbXFa",
+    "/at4OrfFuaDPyHUyQWSbNrPti8AKQD+/MVoM3U4OP0p+Uh3hp+253IU8Li2X5ZyI",
+    "BwSPFViC6ZcF8UosZYcYp72fkFjJU7tS9cnjo87p6wYK27q1uHbggeWn8b3WdHpL",
+    "RkRa789bjyNFpSfeQflgFPUHbytK5VHzQaYyfad4ddeaQHSQYrw+OX0V6zaRRC/x",
+    "WAPKBkg+OURdK2CL87cgerMCtBih+bq7IJC5BSti3f/zClvEAFsERfY6uK3tBZFP",
+    "S8ZcCsyVAgMBAAECggEABGWgPtwtj8sqZdZdrt+Pbea26SszHTxW4TaOk2F1qMlJ",
+    "nfeSJ4K17o4pTrUTkxMLelzS+OFISRAnVZNNw8sCaJrv3tAEangFL528bxfKAAgW",
+    "dmKS0Igzotpz+BOVf7ODCidNu54uKuwxw0eE6vzd8epgoPz1NwJOAYVttwoK3PFH",
+    "sDEQLh1nBe2oDtO0DexMzyivOXKdQ5PFji5m24Q+JSJ8wjDIrxu5F+Jv3DxPDizU",
+    "cvWXfSpD5CTvMqkk8zumJdg71uvXMMB6OF/I+O8+OVQ5KawLdC76UTgMXIPDDS7G",
+    "ucZ07rRHz9KXGtDd+/H09q1wcaeGr9SiZA+x9jN0mQKBgQDFd6kcS/qARezuHtOz",
+    "UBdoKOa/DvUoC5D6xvC/JhGrMSAg3GV0HVzNclE1pQ1ld3BlTLe3akSFVP2dWk+l",
+    "bxpg4vxl3Eh7yHwZYqyF/hZEtUXDO8l0MDFf4WUEjIiPRycpHe7EjSXD2DXB7wO4",
+    "aG10/Haki5RZTwYXKH36v8/8swKBgQC2PBxtwewZhq+r94zKAO7j06RYCGXksQjR",
+    "8TuqbiybYI0+RJeB0NQput+AnI3RgQ0ym8tQF60jVhEpETGLZiP4RDai8b7wKHrK",
+    "xl1mOs1nHb/+RXJEPnvY2GOoZau3MSKAj89OJjoAYSXA9kr4rECdhaL44lh8qJKO",
+    "S4Hd2v3FlwKBgQC6tGo77Aa88+CSQKlvmGGZRVru+OiJZW49/o2wXgFEuN0k1N5E",
+    "DGMriVQJgbaJ4oVt8jyeeiaxXmuxNKurwsHRK6zzbnVGPIhBxE9VHanWawK8FrJi",
+    "XhLBEi7ePzX7Ko53TOruAnrbknk5lZER8gLUIsTWzXaFfrdGfC2pQWUZCwKBgGSB",
+    "mKhMKNwXNXIh0MtkYlzS0DQhRZkwro2jf2XK5902DhBGokzdkPYG89eqAGmIxG+i",
+    "Dyr4M+xmPoaozet1BOebL4sEy2sG2FpXtxF34us5NDeXs6LB12pMRgKNOHyLo9zF",
+    "8+7FFH47FihrbgPidKysFKsxot311waVzGVAr2+3AoGABxwyfaSxX1NOjjsi3fdB",
+    "EqpjxH02rWpcp0WLzi4UaeQz/Y2D72gIr3bZ6CDwiwrhju6wMEfxv78/ebY12nJc",
+    "Wg35NoYsMPSAd7/noyIB0sHiUhoCScc8etyQQDfXy+tZ7o0RjbUa8f7BOV0YkmOv",
+    "l89UcyF8w344P3u2p1mEvRM=",
+);
 
 #[derive(Clone)]
 pub struct TlsRequest {
@@ -103,15 +152,36 @@ pub struct TlsServer {
 
 impl TlsServer {
     pub fn start() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        Self::start_with_client_auth(false)
+    }
+
+    /// Starts the fixed loopback server with a mandatory client-certificate
+    /// verifier rooted in the same non-secret fixture certificate.
+    pub fn start_mtls() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        Self::start_with_client_auth(true)
+    }
+
+    fn start_with_client_auth(
+        require_client_auth: bool,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let certificate = STANDARD.decode(CERTIFICATE_DER_BASE64)?;
         let private_key = STANDARD.decode(PRIVATE_KEY_DER_BASE64)?;
         let certificate_chain = vec![CertificateDer::from(certificate.clone())];
         let key = PrivateKeyDer::from(PrivatePkcs8KeyDer::from(private_key));
-        let config = Arc::new(
-            ServerConfig::builder()
+        let builder = ServerConfig::builder();
+        let config = if require_client_auth {
+            let mut roots = RootCertStore::empty();
+            roots.add(CertificateDer::from(certificate.clone()))?;
+            let verifier = WebPkiClientVerifier::builder(Arc::new(roots)).build()?;
+            builder
+                .with_client_cert_verifier(verifier)
+                .with_single_cert(certificate_chain, key)?
+        } else {
+            builder
                 .with_no_client_auth()
-                .with_single_cert(certificate_chain, key)?,
-        );
+                .with_single_cert(certificate_chain, key)?
+        };
+        let config = Arc::new(config);
         let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))?;
         listener.set_nonblocking(true)?;
         let address = listener.local_addr()?;
@@ -159,10 +229,13 @@ impl TlsServer {
     /// identity PEM suitable for construction probes.
     #[must_use]
     pub fn identity_pem(&self) -> Vec<u8> {
-        let certificate = STANDARD.encode(&self.certificate);
+        let certificate = STANDARD
+            .decode(CLIENT_CERTIFICATE_DER_BASE64)
+            .expect("embedded client certificate fixture must remain valid base64");
+        let certificate = STANDARD.encode(certificate);
         let key = STANDARD
-            .decode(PRIVATE_KEY_DER_BASE64)
-            .expect("embedded loopback key fixture must remain valid base64");
+            .decode(CLIENT_PRIVATE_KEY_DER_BASE64)
+            .expect("embedded client key fixture must remain valid base64");
         let key = STANDARD.encode(key);
         format!(
             "-----BEGIN CERTIFICATE-----\n{certificate}\n-----END CERTIFICATE-----\n\

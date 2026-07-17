@@ -117,22 +117,24 @@ The `perf` package may remain outside the primary workspace if that avoids pollu
 - `rust-version = "1.85"` on public crates;
 - exact Reqwest 0.13.4 workspace dependency;
 - feature names from `FEAT-*`;
-- Nextest retries set to zero.
+- Nextest is the canonical unit/integration runner with a minimum version, zero retries, default
+  and CI profiles, finite timeouts, and bounded concurrency for Cargo-spawning tests. `cargo test`
+  is reserved for doctests.
 
 **Steps:**
 
 - [ ] Create the workspace with empty `concord_core`, `concord_macros`, `concord_test_support`, and `concord_examples` crates.
 - [ ] Add exact feature declarations to `concord_core/Cargo.toml`.
 - [ ] Add `#![forbid(unsafe_code)]` and `#![deny(missing_docs)]` initially only where public scaffolding permits it; enable full missing-doc denial by Milestone 10.
-- [ ] Add the canonical `just check`, `just test`, and `just release` recipes.
-- [ ] Run `cargo +1.85.0 check --workspace` and fix all failures.
+- [ ] Add composable default/all/no-default check, Nextest, doctest, Rustdoc, and release recipes.
+- [ ] Run `cargo check --workspace` under the pinned Rust 1.85 toolchain and fix all failures.
 - [ ] Commit as `chore: bootstrap concord 0.1 workspace`.
 
 **Verification:**
 
 ```bash
 cargo fmt --all -- --check
-cargo +1.85.0 check --workspace
+cargo check --workspace
 ```
 
 Expected: success with no warnings.
@@ -708,7 +710,7 @@ A minimal DSL subset covering one client, fixed base URL, one scope, one bodyles
 - [ ] Implement the managed `http_body::Body<Data = Bytes>` adapter with checked cumulative byte accounting.
 - [ ] Convert producer errors into `BodyErrorKind::Producer` without retaining user text or body fragments.
 - [ ] Verify cancellation drops the upstream stream and performs no later polling.
-- [ ] Run `cargo test -p concord_core --test request_stream` and the focused security/property tests.
+- [ ] Run `cargo nextest run -p concord_core -E 'binary(request_stream)'` and the focused security/property tests.
 - [ ] Commit as `feat(core): add bounded request streams`.
 
 **Conformance:** `API-BODY-*`, `EXEC-BODY-*`, `EXEC-NATIVE-*`, `BOUND-BODY-*`, `SEC-BODY-*`.
@@ -1598,9 +1600,11 @@ A minimal DSL subset covering one client, fixed base URL, one scope, one bodyles
 **Steps:**
 
 - [ ] Add default, all-feature, no-default, JSON-only, multipart, each dangerous feature, and dangerous-feature-independence jobs.
-- [ ] Add Rust 1.85 checks for core no-default/all-features, macros, generated fixture, and extension fixture.
+- [ ] Use Nextest for unit/integration jobs and `cargo test` only for doctests.
+- [ ] Add Rust 1.85 checks for core no-default/all-features, macros, generated fixture, and extension fixture through the pinned toolchain.
 - [ ] Add a dependency-floor check proving no selected normal dependency declares a higher MSRV without an explicit specification update.
-- [ ] Configure Nextest automatic retries to zero.
+- [ ] Configure a required Nextest version, inherited default/CI profiles, zero retries, finite
+      timeouts, and a bounded group for tests that launch nested Cargo metadata/build checks.
 - [ ] Commit as `ci: add feature and msrv matrix`.
 
 **Conformance:** `FEAT-*`, `COMPAT-*`, `CONF-MSRV-001`, `CONF-CI-*`.
@@ -1667,7 +1671,8 @@ A minimal DSL subset covering one client, fixed base URL, one scope, one bodyles
 - [ ] Deny warnings in Clippy and Rustdoc.
 - [ ] Add Cargo Deny license/advisory/source policy.
 - [ ] Record manual normative ownership, local-link, coverage-plan, and evidence-catalog review.
-- [ ] Add `git diff --check` and benchmark compilation.
+- [ ] Compose `just release` from maintained default/all/no-default recipes; add `git diff --check`
+      and benchmark compilation without duplicating recipe command bodies.
 - [ ] Commit as `chore: enable concord release gates`.
 
 ### Task 10.8: Finalize conformance evidence and normative status

@@ -1,36 +1,29 @@
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
+
+use concord_test_support::cargo_fixture::{check_manifest, diagnostics};
 
 fn fixture_manifest() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/development_features/Cargo.toml")
 }
 
-fn check_fixture(bin: &str, features: Option<&str>) -> Output {
-    let target = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../target/compile-fixtures/development-features");
-    let mut command = Command::new(env!("CARGO"));
-    command
-        .arg("check")
-        .arg("--offline")
-        .arg("--locked")
-        .arg("--color")
-        .arg("never")
-        .arg("--manifest-path")
-        .arg(fixture_manifest())
-        .arg("--bin")
-        .arg(bin)
-        .env("CARGO_TARGET_DIR", target);
-    if let Some(features) = features {
-        command.arg("--features").arg(features);
-    }
-    command.output().expect("development fixture should run")
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("core crate should be inside the workspace")
+        .to_owned()
 }
 
-fn diagnostics(output: &Output) -> String {
-    format!(
-        "stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+fn check_fixture(bin: &str, features: Option<&str>) -> Output {
+    let mut arguments = vec!["--bin", bin];
+    if let Some(features) = features {
+        arguments.extend(["--features", features]);
+    }
+    check_manifest(
+        &workspace_root(),
+        &format!("development-features/{bin}-{}", features.unwrap_or("base")),
+        &fixture_manifest(),
+        &arguments,
     )
 }
 

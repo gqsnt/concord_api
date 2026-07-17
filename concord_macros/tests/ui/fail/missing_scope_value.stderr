@@ -1,0 +1,19 @@
+error[E0308]: mismatched types
+  --> tests/ui/fail/missing_scope_value.rs:34:9
+   |
+33 |     let _endpoint = missing_scope_api::endpoints::resources::ById::new(
+   |                     -------------------------------------------------- arguments to this function are incorrect
+34 |         EndpointValue("endpoint-in-scope-position"),
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `ScopeValue`, found `EndpointValue`
+   |
+note: associated function defined here
+  --> tests/ui/fail/missing_scope_value.rs:20:1
+   |
+20 | / api! {
+21 | |     client MissingScopeApi {
+22 | |         base "https://missing-scope.example.test";
+23 | |         scope resources(scope_value: crate::ScopeValue) {
+...  |
+30 | | }
+   | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

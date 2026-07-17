@@ -47,30 +47,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "concord-fixture-equal-name"
-version = "0.0.0"
-dependencies = [
- "concord_core 0.1.0",
- "concord_macros",
-]
-
-[[package]]
-name = "concord-fixture-malformed"
-version = "0.0.0"
-dependencies = [
- "concord_core 0.1.0",
- "concord_macros",
-]
-
-[[package]]
-name = "concord-fixture-minimal-bounds"
-version = "0.0.0"
-dependencies = [
- "concord_core 0.1.0",
- "concord_macros",
-]
-
-[[package]]
 name = "concord-fixture-missing-core"
 version = "0.0.0"
 dependencies = [
@@ -78,39 +54,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "concord-fixture-missing-scope"
-version = "0.0.0"
-dependencies = [
- "concord_core 0.1.0",
- "concord_macros",
-]
-
-[[package]]
-name = "concord-fixture-nested-module"
-version = "0.0.0"
-dependencies = [
- "concord_core 0.1.0",
- "concord_macros",
-]
-
-[[package]]
-name = "concord-fixture-normal"
-version = "0.0.0"
-dependencies = [
- "concord_core 0.1.0",
- "concord_macros",
-]
-
-[[package]]
 name = "concord-fixture-renamed-core"
-version = "0.0.0"
-dependencies = [
- "concord_core 0.1.0",
- "concord_macros",
-]
-
-[[package]]
-name = "concord-fixture-repeated-invocation"
 version = "0.0.0"
 dependencies = [
  "concord_core 0.1.0",

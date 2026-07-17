@@ -7,7 +7,8 @@ use http::{Method, StatusCode};
 use crate::redaction::SanitizedHeaderMap;
 
 use super::{
-    AuthErrorKind, ErrorCategory, HttpResponseFailure, PaginationErrorKind, RateLimitErrorKind,
+    AuthErrorKind, ConfigurationErrorKind, ErrorCategory, HttpResponseFailure, PaginationErrorKind,
+    RateLimitErrorKind,
 };
 
 /// A structured safe failure from an endpoint operation.
@@ -15,6 +16,7 @@ pub struct ApiError {
     endpoint: &'static str,
     method: Method,
     category: ErrorCategory,
+    configuration_kind: Option<ConfigurationErrorKind>,
     auth_kind: Option<AuthErrorKind>,
     rate_limit_kind: Option<RateLimitErrorKind>,
     pagination_kind: Option<PaginationErrorKind>,
@@ -47,6 +49,7 @@ impl ApiError {
             endpoint,
             method,
             category,
+            configuration_kind: None,
             auth_kind,
             rate_limit_kind: None,
             pagination_kind: None,
@@ -74,11 +77,22 @@ impl ApiError {
             endpoint,
             method,
             category,
+            configuration_kind: None,
             auth_kind: None,
             rate_limit_kind: None,
             pagination_kind: None,
             response: None,
         }
+    }
+
+    pub(crate) fn configuration(
+        endpoint: &'static str,
+        method: Method,
+        kind: ConfigurationErrorKind,
+    ) -> Self {
+        let mut error = Self::classified(endpoint, method, ErrorCategory::Configuration);
+        error.configuration_kind = Some(kind);
+        error
     }
 
     #[cfg(test)]
@@ -119,6 +133,12 @@ impl ApiError {
     #[must_use]
     pub const fn category(&self) -> ErrorCategory {
         self.category
+    }
+
+    /// Returns the stable configuration kind when applicable.
+    #[must_use]
+    pub const fn configuration_kind(&self) -> Option<ConfigurationErrorKind> {
+        self.configuration_kind
     }
 
     /// Returns the stable generated endpoint identity.
@@ -223,6 +243,7 @@ impl fmt::Debug for ApiError {
             .field("endpoint", &self.endpoint)
             .field("method", &self.method)
             .field("category", &self.category)
+            .field("configuration_kind", &self.configuration_kind)
             .field("auth_kind", &self.auth_kind)
             .field("rate_limit_kind", &self.rate_limit_kind)
             .field("pagination_kind", &self.pagination_kind)

@@ -8,7 +8,7 @@ use concord_test_support::executor::ApplicationChannel;
 #[cfg(any(test, feature = "dangerous-dev-tools"))]
 use concord_test_support::script::BoundaryRequest;
 
-use crate::error::ApiError;
+use crate::error::{ApiError, ConfigurationErrorKind};
 
 use super::build::TlsCapability;
 use super::status::{StatusCapture, StatusDisposition, collect_terminal_status};
@@ -18,6 +18,7 @@ use super::status::{StatusCapture, StatusDisposition, collect_terminal_status};
 pub(super) struct ApplicationHttp {
     client: reqwest::Client,
     tls: TlsCapability,
+    https_only: bool,
     status_body_limit: Option<NonZeroUsize>,
     retry_after_cap: Duration,
     #[cfg(any(test, feature = "dangerous-dev-tools"))]
@@ -28,17 +29,27 @@ impl ApplicationHttp {
     pub(super) const fn new(
         client: reqwest::Client,
         tls: TlsCapability,
+        https_only: bool,
         status_body_limit: Option<NonZeroUsize>,
         retry_after_cap: Duration,
     ) -> Self {
         Self {
             client,
             tls,
+            https_only,
             status_body_limit,
             retry_after_cap,
             #[cfg(any(test, feature = "dangerous-dev-tools"))]
             development: None,
         }
+    }
+
+    #[allow(
+        dead_code,
+        reason = "retained for future public preflight before endpoint execution exists"
+    )]
+    pub(super) const fn https_only(&self) -> bool {
+        self.https_only
     }
 
     #[cfg(any(test, feature = "dangerous-dev-tools"))]
@@ -62,10 +73,10 @@ impl ApplicationHttp {
             )
         })?;
         if protected && url.scheme() != "https" {
-            return Err(ApiError::classified(
+            return Err(ApiError::configuration(
                 endpoint,
                 method,
-                crate::error::ErrorCategory::AuthenticationUnavailable,
+                ConfigurationErrorKind::InvalidAuthentication,
             ));
         }
         if url.scheme() == "https" && self.tls == TlsCapability::Unavailable {

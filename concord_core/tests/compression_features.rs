@@ -1,12 +1,21 @@
-use std::process::{Command, Output};
+use std::path::{Path, PathBuf};
+use std::process::Output;
+
+use concord_test_support::cargo_fixture::{diagnostics, run};
+
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("core crate should be inside the workspace")
+        .to_owned()
+}
 
 fn reqwest_feature_tree(feature: &str) -> Output {
-    Command::new(env!("CARGO"))
-        .args([
-            "tree",
-            "--offline",
-            "--color",
-            "never",
+    run(
+        &workspace_root(),
+        &format!("compression-tree/{feature}"),
+        "tree",
+        [
             "-p",
             "concord_core",
             "--no-default-features",
@@ -16,16 +25,7 @@ fn reqwest_feature_tree(feature: &str) -> Output {
             "normal,build,features",
             "-i",
             "reqwest",
-        ])
-        .output()
-        .expect("Cargo feature-tree command should run")
-}
-
-fn diagnostics(output: &Output) -> String {
-    format!(
-        "stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        ],
     )
 }
 

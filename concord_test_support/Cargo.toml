@@ -6,7 +6,8 @@ rust-version.workspace = true
 publish = false
 
 [features]
-default = ["deterministic", "loopback"]
+default = ["cargo-fixture", "deterministic", "loopback"]
+cargo-fixture = []
 deterministic = ["dep:bytes", "dep:http", "dep:tokio"]
 loopback = ["dep:base64", "dep:rustls"]
 

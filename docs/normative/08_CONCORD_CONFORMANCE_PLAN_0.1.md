@@ -140,15 +140,26 @@ concord_core/
 concord_macros/
 ├── src/
 ├── tests/
-│   ├── trybuild/
-│   │   ├── pass/
-│   │   └── fail/
-│   └── generated_runtime/
+│   ├── generated_surface.rs
+│   ├── ui.rs
+│   ├── ui/fail/
+│   └── fixtures/
 concord_examples/
 concord_test_support/
 ```
 
 The exact paths may differ, but test ownership and separation must remain clear.
+
+Nextest is the canonical runner for Rust unit and integration tests. `cargo test` is retained only
+for Rust doctests because Nextest does not execute them. A Rust test must not spawn `cargo test` to
+exercise another Rust test. Nested Cargo check/build/tree/metadata processes are permitted only
+when a distinct manifest, dependency topology, feature graph, or compile-fail boundary is itself
+under test.
+
+Nextest configuration requires version 0.9.115, the first repository-compatible release needed for
+the inherited CI profile used here. It declares zero retries, finite stuck-test and CI run timeouts,
+and a bounded test group for Cargo-spawning tests. It has no default filter that omits tests.
+Independent loopback tests remain parallel unless a concrete shared resource requires a group.
 
 ## 4. Parser unit tests
 
@@ -215,7 +226,11 @@ SEMA-NORMALIZE-001
 
 ## 6. Compile-pass tests
 
-Trybuild or an equivalent downstream compiler harness compiles canonical public usage.
+Ordinary integration tests compile canonical public usage that needs no distinct dependency graph.
+Trybuild or an equivalent focused compiler harness owns source-only diagnostic cases. A standalone
+Cargo package is reserved for behavior that depends on package metadata or dependency topology,
+such as a renamed dependency, a missing runtime package, an incompatible macro/core package, or a
+feature/visibility graph.
 
 Pass fixtures include:
 
@@ -859,30 +874,42 @@ Focused codegen assertions are allowed for public names or the presence of the g
 
 ## 27. CI and release commands
 
-The repository provides one canonical release command, for example:
+The repository provides one canonical release command:
 
 ```text
 just release
 ```
 
-It must execute or invoke jobs equivalent to:
+The pinned `rust-toolchain.toml` makes ordinary `cargo` recipes MSRV runs. The release recipe
+composes maintained default, all-feature, and no-default recipes and executes jobs equivalent to:
 
 ```bash
 cargo fmt --all -- --check
-cargo +1.85.0 check --workspace --all-targets --all-features
+cargo check --workspace --all-targets
+cargo check --workspace --all-targets --all-features
+cargo check -p concord_core --all-targets --no-default-features
+cargo clippy --workspace --all-targets -- -D warnings
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo nextest run --workspace --all-features
+cargo nextest run --profile ci --workspace
+cargo nextest run --profile ci --workspace --all-features
+cargo nextest run -p concord_core --no-default-features --lib -E 'test(=http::build::tests::no_default_http_works_and_https_preflight_is_typed)'
+cargo test --workspace --doc
 cargo test --workspace --doc --all-features
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
-cargo check -p concord_core --no-default-features
-cargo test -p concord_core --no-default-features --test no_default
-cargo +1.85.0 check -p concord_core --no-default-features
-cargo +1.85.0 check -p concord_core --all-features
-cargo +1.85.0 check -p concord_macros
-cargo test -p concord_core auth_model
+cargo rustdoc -p concord_core -- -D warnings
+cargo rustdoc -p concord_macros -- -D warnings
+cargo rustdoc -p concord_test_support -- -D warnings
+cargo rustdoc -p concord_core --all-features -- -D warnings
+cargo rustdoc -p concord_macros --all-features -- -D warnings
+cargo rustdoc -p concord_test_support --all-features -- -D warnings
 cargo deny check
 git diff --check
 ```
+
+`cargo test` appears only in the two doctest commands. Default/all/no-default repetition is
+intentional because each command compiles a different feature surface. The release command invokes
+the maintained recipes rather than copying their command bodies. Rust 1.85 `cargo rustdoc` has no
+workspace selector, so the documentation recipes invoke it once for each workspace library and pass
+the warning policy directly to rustdoc.
 
 The release owner additionally records a manual normative-document review, coverage-plan review, conformance-evidence review, and release-command audit. These reviews are governance evidence; they are not replaced by a repository specification checker.
 
@@ -894,13 +921,17 @@ It also compiles:
 - examples;
 - benchmark targets.
 
-Nextest automatic test retries must be zero.
+Nextest automatic test retries must be zero. Cargo-process tests use a bounded Nextest test group
+and a longer finite slow-test timeout; the CI profile has fail-fast disabled and a finite global
+timeout.
 
 **CONF-CI-001 — Warnings denied.** Clippy and Rustdoc warnings MUST fail release validation.
 
 **CONF-CI-002 — No automatic retries.** Maintained release test execution MUST use zero automatic retries.
 
 **CONF-CI-003 — No live services.** Release tests MUST NOT require live APIs, API keys, local proxy rewriting, or network listeners.
+
+**CONF-CI-004 — Canonical Rust test runner.** Maintained unit and integration test execution MUST use Nextest with no omitted default test set, and Cargo-spawning tests MUST use bounded concurrency; `cargo test` is reserved for doctests.
 
 ## 28. Milestone exit criteria
 

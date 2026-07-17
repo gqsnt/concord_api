@@ -7,32 +7,54 @@ fmt-check:
     cargo fmt --all -- --check
 
 check:
-    cargo +1.85.0 check --workspace --all-targets
+    cargo check --workspace --all-targets
+
+check-all:
+    cargo check --workspace --all-targets --all-features
+
+check-no-default:
+    cargo check -p concord_core --all-targets --no-default-features
 
 clippy:
     cargo clippy --workspace --all-targets -- -D warnings
 
-test:
-    cargo test --workspace
+clippy-all:
+    cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-nextest:
+test:
     cargo nextest run --workspace
+
+test-all:
+    cargo nextest run --profile ci --workspace --all-features
+
+test-no-default:
+    cargo nextest run -p concord_core --no-default-features --lib -E 'test(=http::build::tests::no_default_http_works_and_https_preflight_is_typed)'
+
+doctest:
+    cargo test --workspace --doc
+
+doctest-all:
+    cargo test --workspace --doc --all-features
+
+doc:
+    # Rust 1.85 cargo-rustdoc has no workspace selector, so cover each library.
+    cargo rustdoc -p concord_core -- -D warnings
+    cargo rustdoc -p concord_macros -- -D warnings
+    cargo rustdoc -p concord_test_support -- -D warnings
+
+doc-all:
+    cargo rustdoc -p concord_core --all-features -- -D warnings
+    cargo rustdoc -p concord_macros --all-features -- -D warnings
+    cargo rustdoc -p concord_test_support --all-features -- -D warnings
 
 deny:
     cargo deny check
 
-release:
-    cargo fmt --all -- --check
-    cargo +1.85.0 check --workspace --all-targets --all-features
-    cargo clippy --workspace --all-targets --all-features -- -D warnings
-    cargo nextest run --workspace --all-features
-    cargo test --workspace --doc --all-features
-    $env:RUSTDOCFLAGS = "-D warnings"; cargo doc --workspace --all-features --no-deps
-    cargo check -p concord_core --no-default-features
-    cargo test -p concord_core --no-default-features --test no_default
-    cargo +1.85.0 check -p concord_core --no-default-features
-    cargo +1.85.0 check -p concord_core --all-features
-    cargo +1.85.0 check -p concord_macros
-    cargo test -p concord_core auth_model
-    cargo deny check
+diff-check:
     git diff --check
+
+[private]
+_test-ci-default:
+    cargo nextest run --profile ci --workspace
+
+release: fmt-check check check-all check-no-default clippy clippy-all _test-ci-default test-all test-no-default doctest doctest-all doc doc-all deny diff-check

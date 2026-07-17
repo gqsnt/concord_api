@@ -1,7 +1,7 @@
 use concord_macros::api;
 use std::fmt::{self, Display, Formatter};
 
-pub struct ScopeValue(&'static str);
+struct ScopeValue(&'static str);
 
 impl Display for ScopeValue {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
@@ -9,7 +9,7 @@ impl Display for ScopeValue {
     }
 }
 
-pub struct EndpointValue(&'static str);
+struct EndpointValue(&'static str);
 
 impl Display for EndpointValue {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
@@ -29,7 +29,7 @@ api! {
     }
 }
 
-pub fn must_not_compile() {
+fn main() {
     let _endpoint = missing_scope_api::endpoints::resources::ById::new(
         EndpointValue("endpoint-in-scope-position"),
         EndpointValue("endpoint-value"),

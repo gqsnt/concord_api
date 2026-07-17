@@ -165,7 +165,10 @@ Each feature exposes only its reviewed safe configuration methods.
 
 `http2` enables Reqwest HTTP/2 support and HTTP/2-specific safe configuration, including prior knowledge where supported.
 
-Concord does not directly depend on `h2`.
+The `concord_core` and `concord_macros` normal/build graphs do not directly depend on `h2`.
+`concord_core` may retain an isolated dev-only `h2` dependency for deterministic Reqwest
+upstream-contract probes such as `REFUSED_STREAM`. That test exception does not enter published
+runtime code, generated code, public APIs, or normal/build dependency graphs.
 
 ## 10. Governor feature
 
@@ -340,20 +343,22 @@ Dangerous APIs are feature-gated and follow the same patch/minor policy for sign
 
 ## 20. Dependency policy
 
-**COMPAT-DEP-001 — Prohibited transport-layer dependencies.** The workspace MUST NOT add direct dependencies on:
+**COMPAT-DEP-001 — Prohibited transport-layer dependencies.** The `concord_core` and `concord_macros` normal and build dependency graphs MUST NOT add direct dependencies on:
 
 - `hyper`;
 - `hyper-util`;
 - `tower`;
 - `h2`.
 
-Reqwest owns those transport details.
+Reqwest owns those production transport details. A direct test-only `h2` dev dependency MAY be
+used solely in isolated deterministic upstream-contract probes. It MUST NOT appear in published
+runtime code, generated code, public APIs, or either package's normal/build graph.
 
 **COMPAT-DEP-002 — Explicit dependency versions.** Workspace dependencies MUST use explicit compatible version requirements; wildcard dependencies are prohibited.
 
 Git and non-default registry dependencies require an explicit recorded decision.
 
-**COMPAT-DEPS-001 — Reqwest ownership.** Concord MUST NOT duplicate Reqwest's underlying HTTP stack through direct transport-stack dependencies.
+**COMPAT-DEPS-001 — Reqwest ownership.** Concord production and build graphs MUST NOT duplicate Reqwest's underlying HTTP stack through direct transport-stack dependencies.
 
 ## 21. Required build matrix
 

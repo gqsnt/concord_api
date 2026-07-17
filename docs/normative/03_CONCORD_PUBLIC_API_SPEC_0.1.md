@@ -123,6 +123,8 @@ Required methods:
 ```rust
 impl ApiError {
     pub fn category(&self) -> ErrorCategory;
+    pub fn configuration_kind(&self)
+        -> Option<ConfigurationErrorKind>;
     pub fn endpoint(&self) -> &'static str;
     pub fn method(&self) -> &http::Method;
 
@@ -166,7 +168,9 @@ Sync
 
 For a terminal HTTP status carrying a valid `Retry-After`, `retry_after()` returns the parsed non-negative delay clamped to the configured rate-limit cooldown cap. It accepts decimal delta-seconds and HTTP dates. Malformed values return `None`; past dates return `Some(Duration::ZERO)`. This accessor reports header semantics independently of custom limiter observation.
 
-The actual source chain is safe and may be absent.
+The actual source chain is safe and may be absent. A configuration-category failure exposes a
+`ConfigurationErrorKind` when a stable specific classification is available. In particular,
+authenticated cleartext public preflight is `Configuration` with `InvalidAuthentication`.
 
 ### 4.2 Terminal HTTP response
 
@@ -2032,7 +2036,11 @@ impl HttpConfigBuilder {
 }
 ```
 
-PEM inputs are parsed during client construction. Invalid material produces `ClientBuildError` without reproducing PEM contents.
+PEM inputs are parsed during client construction. Invalid material produces `ClientBuildError` without reproducing PEM contents. Additional root certificates apply to both managed application and provider clients. `identity_pem` configures only the managed application client identity; the provider client does not present it. Concord 0.1 has no provider-specific client-identity setting.
+
+`https_only(true)` is retained as effective managed-application metadata so public preflight can
+reject every HTTP application request, including an unauthenticated request, before native Reqwest
+execution.
 
 ### 17.2 `RuntimeConfigBuilder`
 
@@ -2135,6 +2143,10 @@ A safe proxy is a credential-free HTTP(S) origin with no path, query, or fragmen
 **API-HTTP-001 — No raw builder.** Safe configuration MUST NOT expose `reqwest::ClientBuilder` or a raw Reqwest client.
 
 **API-HTTP-002 — Native retry opt-in.** Safe application HTTP configuration MUST begin with native retry disabled and MUST enable Reqwest default retry only through `retry_reqwest_default()`.
+
+**API-HTTP-003 — Effective HTTPS restriction.** Enabling `https_only` MUST remain available to public request preflight and MUST reject every HTTP application request before native execution.
+
+**API-HTTP-004 — Managed TLS material scope.** Additional root certificates MUST apply to application and provider managed clients, while `identity_pem` MUST apply only to the application client.
 
 **API-RUNTIME-001 — Finite ordinary limits.** `RuntimeConfigBuilder` MUST provide no ordinary method that disables request, response, stream, provider, or pagination ceilings.
 

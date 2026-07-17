@@ -519,7 +519,7 @@ Decision statuses:
 
 **Decision:** Application requests with a non-empty effective auth plan and every provider HTTP request require HTTPS. No implicit localhost exception exists in 0.1.
 
-**Consequences:** HTTP remains supported for unauthenticated application endpoints. Deterministic tests use the development executor rather than insecure credential transmission.
+**Consequences:** HTTP remains supported for unauthenticated application endpoints. Protected cleartext preflight is classified as `Configuration` / `InvalidAuthentication`. The managed application wrapper retains effective `https_only` metadata for later public preflight. Deterministic tests use the development executor rather than insecure credential transmission.
 
 **Rejected alternatives:** Optional-only `https_only`; automatic localhost exception; ordinary dangerous insecure-auth switch.
 
@@ -547,9 +547,45 @@ Decision statuses:
 
 **Decision:** The current package is `Normative Implementation Candidate`. Coverage planning and actual conformance evidence use separate catalogs. `Normative Release Final` requires complete passing or approved waived actual evidence.
 
-**Consequences:** The linter can prove planning completeness without claiming implementation conformance.
+**Consequences:** Manual normative-document, coverage-plan, evidence-catalog, and release-command review establish governance without claiming implementation conformance prematurely.
 
 **Rejected alternatives:** Mark the pre-implementation package final; store planned and passing evidence in one ambiguous table.
 
 **Affected requirements:** `DOC-STATUS-*`, `CONF-TRACE-*`, `CONF-RELEASE-001`.
 
+## ADR-039 — Direct transport dependencies are prohibited in production graphs
+
+**Status:** Accepted
+
+**Context:** Reqwest owns Concord's transport stack, while deterministic Reqwest contract probes
+need to synthesize upstream HTTP/2 conditions such as `REFUSED_STREAM` that an ordinary loopback
+HTTP server cannot request.
+
+**Decision:** `concord_core` and `concord_macros` normal/build graphs have no direct `hyper`,
+`hyper-util`, `tower`, or `h2` dependency. An isolated test probe may use `h2` as a dev dependency.
+
+**Consequences:** The test-only type never appears in published runtime/generated code, public
+APIs, or normal/build dependency graphs. Dependency-tree evidence must review the edge class.
+
+**Rejected alternatives:** Remove the executable upstream retry probe; add `h2` to production;
+retain wording that incorrectly prohibits a dev-only probe.
+
+**Affected requirements:** `COMPAT-DEP-001`, `COMPAT-DEPS-001`, `CONF-REQWEST-001`.
+
+## ADR-040 — Additional roots are shared but application identity is isolated
+
+**Status:** Accepted
+
+**Context:** Application and provider clients may need the same private trust roots, but presenting
+an application mTLS identity to an authentication provider would cross client security domains.
+
+**Decision:** Additional configured roots apply to both managed clients. `identity_pem` applies
+only to the application client. Concord 0.1 defines no provider-specific identity configuration.
+
+**Consequences:** Provider HTTPS can trust the configured authority without impersonating the
+application client. A later provider identity requires an explicit contract revision.
+
+**Rejected alternatives:** Apply one identity to both clients; add an undocumented provider
+identity setting; select identity per request.
+
+**Affected requirements:** `API-HTTP-004`, `SEC-HTTP-010`.

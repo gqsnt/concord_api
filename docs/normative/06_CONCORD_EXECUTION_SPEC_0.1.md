@@ -228,7 +228,7 @@ Examples include invalid routing, invalid public headers, auth collisions, sever
 
 **EXEC-HEAD-002 — Logical URL immutability.** The logical URL created by this phase MUST remain unchanged through both Concord attempts.
 
-**EXEC-HEAD-003 — Protected HTTPS preflight.** A non-empty effective authentication plan MUST fail during public preparation when the logical URL uses HTTP, before hook, body materialization, provider, limiter, or native request activity.
+**EXEC-HEAD-003 — Protected HTTPS preflight.** A non-empty effective authentication plan MUST fail during public preparation when the logical URL uses HTTP, before hook, body materialization, provider, limiter, or native request activity. The structured result is `ErrorCategory::Configuration` with `ConfigurationErrorKind::InvalidAuthentication`.
 
 **EXEC-BODYMETA-001 — No eager materialization.** Public request preparation MUST NOT invoke a request codec, request body factory, multipart factory, or request stream.
 

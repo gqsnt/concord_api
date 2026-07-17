@@ -1,85 +1,57 @@
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
+
+use concord_test_support::cargo_fixture::{check_manifest, diagnostics};
 
 fn fixture_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
 }
 
-fn check_fixture(name: &str) -> Output {
-    let root = fixture_root();
-    let manifest = root.join(name).join("Cargo.toml");
-    let target = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../target/compile-fixtures")
-        .join(name);
-    Command::new(env!("CARGO"))
-        .arg("check")
-        .arg("--offline")
-        .arg("--locked")
-        .arg("--manifest-path")
-        .arg(manifest)
-        .env("CARGO_TARGET_DIR", target)
-        .output()
-        .unwrap_or_else(|error| panic!("failed to run Cargo for fixture `{name}`: {error}"))
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("macro crate should be inside the workspace")
+        .to_owned()
 }
 
-fn diagnostics(output: &Output) -> String {
-    format!(
-        "stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    )
+fn check_fixture(name: &str) -> Output {
+    let manifest = fixture_root().join(name).join("Cargo.toml");
+    check_manifest(&workspace_root(), &format!("macros/{name}"), &manifest, &[])
+}
+
+fn assert_fixture_passes(name: &str) {
+    let output = check_fixture(name);
+    assert!(
+        output.status.success(),
+        "success fixture `{name}` failed\n{}",
+        diagnostics(&output)
+    );
+}
+
+fn assert_fixture_fails_with(name: &str, expected: &str) {
+    let output = check_fixture(name);
+    let diagnostic = diagnostics(&output);
+    assert!(
+        !output.status.success(),
+        "compile-fail fixture `{name}` unexpectedly succeeded\n{diagnostic}"
+    );
+    assert!(
+        diagnostic.contains(expected),
+        "compile-fail fixture `{name}` omitted intentional diagnostic `{expected}`\n{diagnostic}"
+    );
 }
 
 #[test]
-fn downstream_compile_fixtures_prove_resolution_hygiene_and_failures() {
-    for name in [
-        "normal",
-        "renamed_core",
-        "nested_module",
-        "repeated_invocation",
-        "equal_name",
-        "minimal_bounds",
-    ] {
-        let output = check_fixture(name);
-        assert!(
-            output.status.success(),
-            "success fixture `{name}` failed\n{}",
-            diagnostics(&output)
-        );
-        eprintln!("fixture `{name}`: success");
-    }
+fn renamed_core_dependency_resolves_through_package_metadata() {
+    assert_fixture_passes("renamed_core");
+}
 
-    for (name, expected_components) in [
-        (
-            "contract_mismatch",
-            &["concord macro/core contract mismatch"][..],
-        ),
-        (
-            "missing_scope",
-            &[
-                "error[E0308]: mismatched types",
-                "expected `ScopeValue`, found `EndpointValue`",
-                "scope_value: crate::ScopeValue",
-            ][..],
-        ),
-        ("missing_core", &["requires the `concord_core` package"][..]),
-        (
-            "malformed",
-            &["unsupported endpoint method; PR 0.2 accepts only bodyless `GET`"][..],
-        ),
-    ] {
-        let output = check_fixture(name);
-        let diagnostic = diagnostics(&output);
-        assert!(
-            !output.status.success(),
-            "compile-fail fixture `{name}` unexpectedly succeeded\n{diagnostic}"
-        );
-        for expected in expected_components {
-            assert!(
-                diagnostic.contains(expected),
-                "compile-fail fixture `{name}` did not contain `{expected}`\n{diagnostic}"
-            );
-        }
-        eprintln!("fixture `{name}`: expected failure matched {expected_components:?}");
-    }
+#[test]
+fn missing_core_dependency_has_a_focused_macro_diagnostic() {
+    assert_fixture_fails_with("missing_core", "requires the `concord_core` package");
+}
+
+#[test]
+fn incompatible_core_contract_fails_during_compilation() {
+    assert_fixture_fails_with("contract_mismatch", "concord macro/core contract mismatch");
 }

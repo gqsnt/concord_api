@@ -192,7 +192,8 @@ impl HttpConfigBuilder {
         self
     }
 
-    /// Retains a client-identity PEM for parsing during client construction.
+    /// Retains an application-client identity PEM for parsing during client
+    /// construction. The provider client never receives this identity.
     #[cfg(feature = "default-tls")]
     #[must_use]
     pub fn identity_pem(mut self, pem: impl Into<Vec<u8>>) -> Self {

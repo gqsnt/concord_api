@@ -399,16 +399,21 @@ An HTTP application endpoint is permitted only when the effective authentication
 
 Every provider HTTP request uses HTTPS. The ordinary provider API has no localhost or loopback cleartext exception.
 
-**SEC-HTTP-008 — No cleartext application credentials.** An application request with an effective authentication plan MUST use HTTPS and MUST fail before protected side effects when its logical URL uses HTTP.
+**SEC-HTTP-008 — No cleartext application credentials.** An application request with an effective authentication plan MUST use HTTPS and MUST fail before protected side effects when its logical URL uses HTTP. The failure classification is `ErrorCategory::Configuration` with `ConfigurationErrorKind::InvalidAuthentication`.
 
 **SEC-HTTP-009 — Provider HTTPS only.** Provider HTTP MUST reject every non-HTTPS URL before request-body factory invocation or native execution.
 
 
 ### 14.5 Client identities
 
-mTLS identity is selected when constructing a managed client.
+mTLS identity is selected when constructing a managed client. Configured additional roots are
+installed on both managed clients. The configured application identity is installed only on the
+application client; the provider client does not present it. Concord 0.1 defines no
+provider-specific client identity.
 
 Concord 0.1 does not select client identities per request.
+
+**SEC-HTTP-010 — TLS identity isolation.** The managed provider client MUST trust configured additional roots but MUST NOT receive or present the application identity configured by `identity_pem`.
 
 **SEC-HTTP-001 — No implicit redirect/cookie/proxy.** Managed clients MUST disable redirects, cookie persistence, and implicit proxy discovery.
 

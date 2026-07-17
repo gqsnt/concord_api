@@ -28,6 +28,7 @@ impl ManagedHttp {
 
         #[cfg(feature = "default-tls")]
         let tls_material = parse_tls_material(&http)?;
+        let application_https_only = http.https_only;
 
         let mut application = base_builder(&http, false)?;
         let mut provider = base_builder(&http, true)?;
@@ -49,8 +50,7 @@ impl ManagedHttp {
                 provider = provider.add_root_certificate(certificate.clone());
             }
             if let Some(identity) = tls_material.identity {
-                application = application.identity(identity.clone());
-                provider = provider.identity(identity);
+                application = application.identity(identity);
             }
         }
 
@@ -60,6 +60,7 @@ impl ManagedHttp {
             application: ApplicationHttp::new(
                 application,
                 tls,
+                application_https_only,
                 runtime.status_body_limit,
                 runtime.rate_limit_cooldown_cap,
             ),
@@ -209,7 +210,7 @@ mod tests {
     use super::*;
     #[cfg(feature = "default-tls")]
     use crate::error::ClientBuildErrorKind;
-    use crate::error::ErrorCategory;
+    use crate::error::{ConfigurationErrorKind, ErrorCategory};
     use crate::http::{HttpConfigBuilder, SafeProxy};
     use crate::runtime::RuntimeConfigBuilder;
 
@@ -349,6 +350,7 @@ mod tests {
 
     #[test]
     fn cleartext_preflights_run_before_protected_or_provider_body_work() {
+        const URL_SENTINEL: &str = "protected-cleartext-sentinel-8b71d4";
         let server = ScriptedServer::start([ResponseScript::ok(b"must-not-arrive".to_vec())])
             .expect("trap origin should start");
         let managed = managed(HttpConfigBuilder::new());
@@ -356,11 +358,17 @@ mod tests {
         let protected = managed.application.prepare(
             "managed.protected",
             Method::GET,
-            &server.url("/protected"),
+            &server.url(&format!("/protected/{URL_SENTINEL}")),
             true,
         );
         let error = protected.expect_err("protected loopback HTTP must be rejected");
-        assert_eq!(error.category(), ErrorCategory::AuthenticationUnavailable);
+        assert_eq!(error.category(), ErrorCategory::Configuration);
+        assert_eq!(
+            error.configuration_kind(),
+            Some(ConfigurationErrorKind::InvalidAuthentication)
+        );
+        assert!(!error.to_string().contains(URL_SENTINEL));
+        assert!(!format!("{error:?}").contains(URL_SENTINEL));
 
         let provider =
             managed
@@ -369,6 +377,15 @@ mod tests {
         let error = provider.expect_err("provider scheme must precede body-limit work");
         assert_eq!(error, ErrorCategory::Configuration);
         assert_eq!(server.request_count(), 0);
+    }
+
+    #[test]
+    fn application_owner_retains_effective_https_only_preflight_metadata() {
+        let ordinary = managed(HttpConfigBuilder::new());
+        assert!(!ordinary.application.https_only());
+
+        let restricted = managed(HttpConfigBuilder::new().https_only(true));
+        assert!(restricted.application.https_only());
     }
 
     #[cfg(not(feature = "default-tls"))]
@@ -409,32 +426,50 @@ mod tests {
 
     #[cfg(feature = "default-tls")]
     #[tokio::test]
-    async fn root_and_identity_apply_to_both_independent_clients() {
-        let server = TlsServer::start().expect("TLS server should start");
+    async fn additional_roots_apply_to_both_but_identity_is_application_only() {
+        const ROOT_PEM_SENTINEL: &str = "MIIDJTCCAg2gAwIBAgIUVVfN";
+        const IDENTITY_PEM_SENTINEL: &str = "MIIDOTCCAiGgAwIBAgIUJwMj";
+
+        let trust_server = TlsServer::start().expect("TLS server should start");
+        let mtls_server = TlsServer::start_mtls().expect("mTLS server should start");
+        let root_pem = trust_server.certificate_pem();
+        let identity_pem = trust_server.identity_pem();
+        assert!(
+            String::from_utf8_lossy(&root_pem).contains(ROOT_PEM_SENTINEL),
+            "root sentinel must be present in configured input"
+        );
+        assert!(
+            String::from_utf8_lossy(&identity_pem).contains(IDENTITY_PEM_SENTINEL),
+            "identity sentinel must be present in configured input"
+        );
         let managed = managed(
             HttpConfigBuilder::new()
                 .http1_only()
-                .add_root_certificate_pem(server.certificate_pem())
-                .identity_pem(server.identity_pem()),
+                .add_root_certificate_pem(root_pem)
+                .identity_pem(identity_pem),
         );
+
         let application = managed
             .application
-            .get("managed.tls", &server.url("localhost", "/application"))
+            .get(
+                "managed.tls",
+                &trust_server.url("localhost", "/application-root"),
+            )
             .await
             .expect("application root should validate");
         assert_eq!(application.status(), reqwest::StatusCode::OK);
-        assert_eq!(
-            application
-                .bytes()
-                .await
-                .expect("application TLS body should complete")
-                .as_ref(),
-            b"ok"
-        );
+        application
+            .bytes()
+            .await
+            .expect("application TLS body should complete");
 
         let request = managed
             .provider
-            .prepare(Method::GET, &server.url("localhost", "/provider"), None)
+            .prepare(
+                Method::GET,
+                &trust_server.url("localhost", "/provider-root"),
+                None,
+            )
             .expect("provider HTTPS should prepare");
         let provider = managed
             .provider
@@ -442,21 +477,69 @@ mod tests {
             .await
             .expect("provider root should validate");
         assert_eq!(provider.status(), reqwest::StatusCode::OK);
-        server
+        provider
+            .bytes()
+            .await
+            .expect("provider TLS body should complete");
+        trust_server
             .wait_for_requests(2, WAIT)
             .expect("both managed clients should reach TLS server");
-        let targets: Vec<_> = server
-            .requests()
-            .into_iter()
+        let requests = trust_server.requests();
+        let targets: Vec<_> = requests
+            .iter()
             .map(|request| request.target().to_owned())
             .collect();
-        assert_eq!(targets, ["/application", "/provider"]);
-        let requests = server.requests();
+        assert_eq!(targets, ["/application-root", "/provider-root"]);
         assert_ne!(
             requests[0].connection_id(),
             requests[1].connection_id(),
             "application and provider clients must not share a connection pool"
         );
+
+        let application = managed
+            .application
+            .get(
+                "managed.mtls",
+                &mtls_server.url("localhost", "/application-identity"),
+            )
+            .await
+            .expect("application client should present its configured identity");
+        assert_eq!(application.status(), reqwest::StatusCode::OK);
+        application
+            .bytes()
+            .await
+            .expect("application mTLS body should complete");
+
+        let request = managed
+            .provider
+            .prepare(
+                Method::GET,
+                &mtls_server.url("localhost", "/provider-without-identity"),
+                None,
+            )
+            .expect("provider mTLS URL should prepare");
+        let provider_error = managed
+            .provider
+            .execute_native("managed.provider", Method::GET, request)
+            .await
+            .expect_err("provider client must not present the application identity");
+        assert!(matches!(
+            provider_error,
+            ErrorCategory::Connect | ErrorCategory::Transport
+        ));
+        let diagnostics = format!("{provider_error:?}");
+        for sentinel in [ROOT_PEM_SENTINEL, IDENTITY_PEM_SENTINEL] {
+            assert!(!diagnostics.contains(sentinel));
+        }
+        mtls_server
+            .wait_for_requests(1, WAIT)
+            .expect("only the authenticated application client should reach HTTP");
+        let targets: Vec<_> = mtls_server
+            .requests()
+            .into_iter()
+            .map(|request| request.target().to_owned())
+            .collect();
+        assert_eq!(targets, ["/application-identity"]);
     }
 
     #[cfg(feature = "default-tls")]

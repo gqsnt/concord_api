@@ -41,7 +41,7 @@ Local-overhead tests and benchmarks. It must not add dependencies to the normal 
 5. Authentication does not depend on pagination or rate-limit implementation internals.
 6. Rate limiting does not depend on auth slot state.
 7. Codecs do not depend on client or Reqwest request objects.
-8. No direct `hyper`, `hyper-util`, `tower`, or `h2` dependency is added.
+8. `concord_core` and `concord_macros` normal/build graphs have no direct `hyper`, `hyper-util`, `tower`, or `h2` dependency. An isolated deterministic upstream-contract probe may use `h2` as a dev dependency under ADR-039; it never enters published runtime/generated code or public APIs.
 9. `concord_macros` resolves renamed core dependencies through `proc_macro_crate` or an equivalent reviewed mechanism; generated code never hardcodes the downstream crate name.
 
 A dependency-rule exception requires an accepted decision entry.
@@ -52,7 +52,7 @@ Before implementing or changing behavior:
 
 1. Identify the authoritative normative document using the Specification Index.
 2. Add or modify the requirement ID.
-3. Run the normative-language and dependency-graph linter.
+3. Manually review normative ownership, requirement language, and dependency order.
 4. Update the requirement coverage plan.
 5. Add a failing test or another exact implementation evidence target.
 6. Update architecture when internal ownership changes.
@@ -231,11 +231,15 @@ Live beside macro compiler modules or in focused test modules.
 
 ### Trybuild
 
-Use for public generated API and diagnostic behavior.
+Use for source-only public generated API and intentional diagnostic behavior. Keep each expected
+diagnostic focused on the Concord error under test.
 
 ### Downstream fixtures
 
-Use for stable generated and advanced workflows.
+Use for stable generated and advanced workflows only when a distinct Cargo manifest is part of the
+contract. Dependency renaming, a missing runtime dependency, an incompatible macro/core package,
+feature selection, and downstream visibility boundaries justify standalone packages. Ordinary
+generated use, nesting, repetition, and trait bounds belong in normal integration tests.
 
 ### Runtime deterministic tests
 
@@ -263,6 +267,10 @@ Keep isolated so Cargo feature unification does not hide missing-feature behavio
 - Use explicit fake values for protected-value comparisons.
 - Ensure mismatch diagnostics remain redacted.
 - Set Nextest retries to zero.
+- Run Rust unit and integration tests through Nextest. Use `cargo test` only for doctests.
+- Never spawn `cargo test` from another Rust test. A nested Cargo check/build/tree process is
+  permitted only when manifest metadata, dependency topology, feature selection, or compile-fail
+  behavior is the subject of the test.
 
 ## 15. Prohibited test patterns
 
@@ -354,12 +362,26 @@ Canonical commands:
 just fmt
 just fmt-check
 just check
+just check-all
+just check-no-default
 just clippy
+just clippy-all
 just test
-just nextest
+just test-all
+just test-no-default
+just doctest
+just doctest-all
+just doc
+just doc-all
 just deny
+just diff-check
 just release
 ```
+
+`just test` is the local default-feature Nextest run. `just test-all` uses the CI Nextest profile;
+`just test-no-default` directly selects the private no-default managed HTTP/TLS contract. Nextest
+is required for unit and integration tests, while the doctest recipes are the only maintained
+`cargo test` uses. The default/all/no-default checks are deliberately separate feature surfaces.
 
 Manual specification governance consists of normative-document review, coverage-plan review, conformance-evidence review, and release audit. Maintained command equivalents remain documented in the Conformance Plan and `justfile`.
 
@@ -367,7 +389,7 @@ Manual specification governance consists of normative-document review, coverage-
 
 Before release:
 
-1. verify normative documents remain final;
+1. verify normative documents retain the status appropriate to the release stage. `Normative Release Final` requires complete passing or approved waived conformance evidence; the current status remains `Normative Implementation Candidate`;
 2. complete and record normative-document, coverage-plan, and conformance-evidence review;
 3. audit and run the release command;
 4. review feature graph;

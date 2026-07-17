@@ -1,34 +1,32 @@
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
+
+use concord_test_support::cargo_fixture::{check_manifest, diagnostics};
 
 fn fixture_manifest() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/raw_escape/Cargo.toml")
 }
 
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("core crate should be inside the workspace")
+        .to_owned()
+}
+
 fn check_fixture() -> Output {
-    let target =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/compile-fixtures/raw-escape");
-    Command::new(env!("CARGO"))
-        .arg("check")
-        .arg("--offline")
-        .arg("--locked")
-        .arg("--color")
-        .arg("never")
-        .arg("--manifest-path")
-        .arg(fixture_manifest())
-        .env("CARGO_TARGET_DIR", target)
-        .output()
-        .expect("raw-escape Cargo fixture should run")
+    check_manifest(
+        &workspace_root(),
+        "raw-escape/negative-surface",
+        &fixture_manifest(),
+        &[],
+    )
 }
 
 #[test]
 fn downstream_code_cannot_compile_raw_header_escape_attempts() {
     let output = check_fixture();
-    let diagnostics = format!(
-        "stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let diagnostics = diagnostics(&output);
     assert!(
         !output.status.success(),
         "raw-escape fixture unexpectedly compiled\n{diagnostics}"

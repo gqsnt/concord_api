@@ -112,6 +112,12 @@ struct ClientInner {
 
 `ClientInner` is immutable after construction (`PROD-STATE-001`).
 
+The private application wrapper retains the resolved `https_only` bit in addition to applying it
+to Reqwest, so later public preflight can reject every HTTP URL without relying on a native send.
+Additional configured roots are installed on both private managed clients. The configured client
+identity belongs only to the application client; the provider client has an independent pool and
+does not present application mTLS identity.
+
 It does not own generated client values or one global credential registry. Generated credentials live in generated credential storage and are referenced by prepared auth requirements.
 
 Advantages:
@@ -487,7 +493,7 @@ The identity is opaque and body/secret-free.
 
 ## 19. Provider HTTP architecture
 
-`ProviderHttp` wraps a private `ProviderHttpInner` containing the provider Reqwest client and mandatory request/response limits. When invoked while preparing an application operation, it also receives the remaining parent operation-deadline budget and applies the earlier of that budget and the provider request timeout.
+`ProviderHttp` wraps a private `ProviderHttpInner` containing the provider Reqwest client and mandatory request/response limits. It shares configured additional trust roots with the application client but never receives the application client identity; Concord 0.1 has no provider-specific identity configuration. When invoked while preparing an application operation, it also receives the remaining parent operation-deadline budget and applies the earlier of that budget and the provider request timeout.
 
 Provider bodies are limited to:
 

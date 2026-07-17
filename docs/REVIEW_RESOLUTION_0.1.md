@@ -36,7 +36,7 @@ The review record is informative. Requirement wording and behavior are authorita
 | CR-018 | Accepted | Custom pagination uses one atomic factory and a safe request patch; no `Default` or public controller fields are required. |
 | CR-019 | Accepted | Authentication conformance requires Loom, Shuttle, or equivalent model checking plus deterministic integration tests. |
 | CR-020 | Accepted | Milestone 0 contains vertical risk spikes before broad runtime implementation. |
-| CR-021 | Accepted | Substantive normative language is requirement-ID tracked; normative dependencies are acyclic; a package linter enforces both. |
+| CR-021 | Accepted | Substantive normative language is requirement-ID tracked and normative dependencies are acyclic; manual normative-document, coverage-plan, evidence-catalog, and release-command review enforce both. |
 | CR-022 | Accepted | Observable algorithms such as page identity, challenge attribution, and credential finalization were promoted into normative documents. |
 | CR-023 | Accepted | Defaults use a restricted side-effect-resistant grammar; overridden client defaults are not evaluated. |
 | CR-024 | Accepted with bounded scope | Body processing separates early metadata validation from expensive materialization while retaining one-phase limiter acquisition. |
