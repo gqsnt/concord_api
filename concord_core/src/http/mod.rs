@@ -1,9 +1,5 @@
 //! Reviewed plain HTTP configuration values.
 
-#[allow(
-    dead_code,
-    reason = "owned by ClientCore and called by the PR 2.3 executor"
-)]
 pub(crate) mod application;
 #[allow(
     dead_code,

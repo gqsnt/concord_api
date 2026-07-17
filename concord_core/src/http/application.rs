@@ -1,17 +1,63 @@
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
-use http::Method;
+use bytes::Bytes;
+use http::{HeaderMap, Method, StatusCode, Version};
 
 #[cfg(any(test, feature = "dangerous-dev-tools"))]
 use concord_test_support::executor::ApplicationChannel;
-#[cfg(any(test, feature = "dangerous-dev-tools"))]
+#[cfg(test)]
 use concord_test_support::script::BoundaryRequest;
 
-use crate::error::{ApiError, ClientBuildError, ClientBuildErrorKind, ConfigurationErrorKind};
+use crate::error::{
+    ApiError, ClientBuildError, ClientBuildErrorKind, ConfigurationErrorKind, HttpResponseFailure,
+};
 
 use super::build::TlsCapability;
 use super::status::{StatusCapture, StatusDisposition, collect_terminal_status};
+
+pub(crate) struct ApplicationRequest {
+    native: reqwest::Request,
+}
+
+pub(crate) struct ApplicationResponse {
+    native: reqwest::Response,
+    endpoint: &'static str,
+    method: Method,
+}
+
+impl ApplicationResponse {
+    pub(crate) fn status(&self) -> StatusCode {
+        self.native.status()
+    }
+
+    pub(crate) fn version(&self) -> Version {
+        self.native.version()
+    }
+
+    pub(crate) fn headers(&self) -> &HeaderMap {
+        self.native.headers()
+    }
+
+    pub(crate) fn content_length(&self) -> Option<u64> {
+        self.native.content_length()
+    }
+
+    pub(crate) async fn chunk(&mut self) -> Result<Option<Bytes>, ApiError> {
+        self.native.chunk().await.map_err(|error| {
+            drop(error);
+            ApiError::classified(
+                self.endpoint,
+                self.method.clone(),
+                crate::error::ErrorCategory::ResponseBody,
+            )
+        })
+    }
+
+    fn into_native(self) -> reqwest::Response {
+        self.native
+    }
+}
 
 /// Private application HTTP owner. Its Reqwest client never crosses the
 /// managed boundary.
@@ -44,6 +90,7 @@ impl ApplicationHttp {
         }
     }
 
+    #[cfg(test)]
     pub(super) const fn https_only(&self) -> bool {
         self.https_only
     }
@@ -83,12 +130,93 @@ impl ApplicationHttp {
         Ok(())
     }
 
+    pub(crate) fn build_empty_request(
+        &self,
+        endpoint: &'static str,
+        method: &Method,
+        url: &url::Url,
+        public_headers: &HeaderMap,
+    ) -> Result<ApplicationRequest, ApiError> {
+        self.preflight_url(endpoint, method, url)?;
+        let native = self
+            .client
+            .request(method.clone(), url.clone())
+            .headers(public_headers.clone())
+            .build()
+            .map_err(|error| {
+                drop(error);
+                ApiError::classified(
+                    endpoint,
+                    method.clone(),
+                    crate::error::ErrorCategory::RequestEncoding,
+                )
+            })?;
+        Ok(ApplicationRequest { native })
+    }
+
+    pub(crate) async fn execute(
+        &self,
+        endpoint: &'static str,
+        method: &Method,
+        request: ApplicationRequest,
+        safe_url: &str,
+        public_headers: &HeaderMap,
+        known_body_length: Option<u64>,
+    ) -> Result<ApplicationResponse, ApiError> {
+        #[cfg(any(test, feature = "dangerous-dev-tools"))]
+        let native =
+            match &self.development {
+                Some(development) => {
+                    let boundary = super::development::boundary_request(
+                        endpoint,
+                        method.clone(),
+                        Some(safe_url.to_owned()),
+                        public_headers,
+                        concord_test_support::script::BodyCategory::Empty,
+                        known_body_length.and_then(|length| usize::try_from(length).ok()),
+                        Some(Bytes::new()),
+                    );
+                    drop(request);
+                    development
+                        .__execute(boundary)
+                        .await
+                        .map(|response| response.__into_http_response().into())
+                        .map_err(|failure| {
+                            ApiError::classified(
+                                endpoint,
+                                method.clone(),
+                                super::development::failure_category(failure.kind()),
+                            )
+                        })?
+                }
+                None => self.client.execute(request.native).await.map_err(|error| {
+                    ApiError::from_reqwest(endpoint, method.clone(), error, false)
+                })?,
+            };
+
+        #[cfg(not(any(test, feature = "dangerous-dev-tools")))]
+        let native = {
+            let _ = (safe_url, public_headers, known_body_length);
+            self.client
+                .execute(request.native)
+                .await
+                .map_err(|error| ApiError::from_reqwest(endpoint, method.clone(), error, false))?
+        };
+
+        Ok(ApplicationResponse {
+            native,
+            endpoint,
+            method: method.clone(),
+        })
+    }
+
     #[cfg(any(test, feature = "dangerous-dev-tools"))]
     pub(super) fn with_development(mut self, development: ApplicationChannel) -> Self {
         self.development = Some(development);
         self
     }
 
+    #[cfg(test)]
     pub(super) fn prepare(
         &self,
         endpoint: &'static str,
@@ -121,6 +249,7 @@ impl ApplicationHttp {
         Ok(self.client.request(method, url))
     }
 
+    #[cfg(test)]
     pub(super) async fn execute_native(
         &self,
         endpoint: &'static str,
@@ -142,7 +271,7 @@ impl ApplicationHttp {
             .map_err(|error| ApiError::from_reqwest(endpoint, method, error, false))
     }
 
-    #[cfg(any(test, feature = "dangerous-dev-tools"))]
+    #[cfg(test)]
     pub(super) async fn execute_at_boundary(
         &self,
         endpoint: &'static str,
@@ -188,6 +317,30 @@ impl ApplicationHttp {
             deadline,
         )
         .await
+    }
+
+    pub(crate) async fn terminal_status_managed(
+        &self,
+        endpoint: &'static str,
+        method: Method,
+        response: ApplicationResponse,
+        deadline: Option<tokio::time::Instant>,
+    ) -> HttpResponseFailure {
+        match self
+            .terminal_status(
+                endpoint,
+                method,
+                response.into_native(),
+                StatusDisposition::Terminal,
+                deadline,
+            )
+            .await
+        {
+            StatusCapture::Terminal(failure) => failure,
+            StatusCapture::SkippedRecoverable => {
+                unreachable!("Phase 2 terminal status capture cannot be recoverable")
+            }
+        }
     }
 
     #[cfg(test)]

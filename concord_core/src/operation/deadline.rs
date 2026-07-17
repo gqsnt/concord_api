@@ -3,13 +3,11 @@ use std::time::Duration;
 
 /// One monotonic operation budget established at first poll.
 #[derive(Clone, Copy)]
-#[allow(dead_code, reason = "used by the Phase 2 production executor")]
 pub(crate) struct OperationDeadline {
     started: tokio::time::Instant,
     expires: Option<tokio::time::Instant>,
 }
 
-#[allow(dead_code, reason = "used by the Phase 2 production executor")]
 impl OperationDeadline {
     pub(crate) fn new(
         started: tokio::time::Instant,

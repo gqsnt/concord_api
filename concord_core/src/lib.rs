@@ -1,8 +1,8 @@
 //! Core support for Concord-generated API clients.
 //!
 //! The crate contains safe error, redaction, managed HTTP, lifecycle, and
-//! successful-response metadata foundations plus generated-private integration.
-//! Executable typed pending requests are assembled by the Phase 2 runtime work.
+//! successful-response metadata, typed pending requests, and generated-private
+//! integration for managed bodyless execution.
 
 #![forbid(unsafe_code)]
 
@@ -30,7 +30,6 @@ pub use request::{Request, ResponseRequest};
 #[cfg(test)]
 mod auth;
 
-#[cfg(test)]
 mod execute;
 
 #[cfg(test)]

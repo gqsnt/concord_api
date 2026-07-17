@@ -3,14 +3,12 @@ use std::fmt;
 use super::{BeforeSend, CompletionEvent, DebugLevel, ResponseHeadEvent};
 
 /// Private body-free presentation dispatcher for built-in debug output.
-#[allow(dead_code, reason = "wired into ClientCore by the Phase 2 executor")]
 pub(crate) struct DebugDispatcher {
     level: DebugLevel,
     #[cfg(test)]
     output: Option<std::sync::Arc<std::sync::Mutex<Vec<String>>>>,
 }
 
-#[allow(dead_code, reason = "wired into ClientCore by the Phase 2 executor")]
 impl DebugDispatcher {
     pub(crate) const fn new(level: DebugLevel) -> Self {
         Self {
@@ -21,7 +19,10 @@ impl DebugDispatcher {
     }
 
     #[cfg(test)]
-    fn with_output(mut self, output: std::sync::Arc<std::sync::Mutex<Vec<String>>>) -> Self {
+    pub(crate) fn with_output(
+        mut self,
+        output: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    ) -> Self {
         self.output = Some(output);
         self
     }

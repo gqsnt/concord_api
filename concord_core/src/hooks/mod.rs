@@ -6,7 +6,6 @@ use std::pin::Pin;
 mod debug;
 mod events;
 
-#[allow(unused_imports, reason = "wired into ClientCore by PR 2.2")]
 pub(crate) use debug::DebugDispatcher;
 pub use events::{
     BeforeSend, BodyKind, CompletionEvent, CompletionOutcome, PaginationCompletionEvent,

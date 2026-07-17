@@ -4,8 +4,10 @@ use http::Method;
 use url::Url;
 
 use crate::error::{ApiError, ClientBuildError, ClientBuildErrorKind};
+use crate::hooks::DebugDispatcher;
 use crate::hooks::{DebugLevel, RuntimeHooks};
 use crate::http::HttpConfigBuilder;
+use crate::http::application::ApplicationHttp;
 use crate::http::build::ManagedHttp;
 use crate::operation::{OperationId, OperationIdExhausted};
 use crate::runtime::{RuntimeConfig, RuntimeConfigBuilder};
@@ -13,24 +15,21 @@ use crate::runtime::{RuntimeConfig, RuntimeConfigBuilder};
 /// Shared generated-private owner for one built client's immutable runtime.
 #[doc(hidden)]
 #[derive(Clone)]
-#[allow(dead_code, reason = "read by the Phase 2 executor beginning in PR 2.3")]
 pub struct ClientCore {
     inner: Arc<ClientInner>,
 }
 
-#[allow(dead_code, reason = "read by the Phase 2 executor beginning in PR 2.3")]
 struct ClientInner {
     base_url: Url,
+    safe_base_url: Arc<str>,
     http: ManagedHttp,
     runtime: RuntimeConfig,
+    #[cfg(test)]
+    debug_output: Option<Arc<std::sync::Mutex<Vec<String>>>>,
     #[cfg(test)]
     operation_allocations: std::sync::atomic::AtomicUsize,
 }
 
-#[allow(
-    dead_code,
-    reason = "request preparation is consumed by the PR 2.3 executor"
-)]
 impl ClientCore {
     pub(crate) fn build(
         fixed_base: &str,
@@ -43,11 +42,15 @@ impl ClientCore {
         ManagedHttp::validate_fixed_base(&http, &base_url)?;
         let http = ManagedHttp::build(http, &runtime)?;
         http.application.validate_fixed_base(&base_url)?;
+        let safe_base_url = Arc::from(base_url.as_str());
         Ok(Self {
             inner: Arc::new(ClientInner {
                 base_url,
+                safe_base_url,
                 http,
                 runtime,
+                #[cfg(test)]
+                debug_output: None,
                 #[cfg(test)]
                 operation_allocations: std::sync::atomic::AtomicUsize::new(0),
             }),
@@ -67,11 +70,14 @@ impl ClientCore {
         ManagedHttp::validate_fixed_base(&http, &base_url)?;
         let http = ManagedHttp::build_with_development(http, &runtime, executor)?;
         http.application.validate_fixed_base(&base_url)?;
+        let safe_base_url = Arc::from(base_url.as_str());
         Ok(Self {
             inner: Arc::new(ClientInner {
                 base_url,
+                safe_base_url,
                 http,
                 runtime,
+                debug_output: None,
                 operation_allocations: std::sync::atomic::AtomicUsize::new(0),
             }),
         })
@@ -81,12 +87,34 @@ impl ClientCore {
         &self.inner.base_url
     }
 
+    pub(crate) fn safe_base_url(&self) -> Arc<str> {
+        Arc::clone(&self.inner.safe_base_url)
+    }
+
+    pub(crate) fn application_http(&self) -> &ApplicationHttp {
+        &self.inner.http.application
+    }
+
     pub(crate) fn hooks(&self) -> &Arc<dyn RuntimeHooks> {
         &self.inner.runtime.hooks
     }
 
     pub(crate) fn default_debug(&self) -> DebugLevel {
         self.inner.runtime.debug
+    }
+
+    pub(crate) fn debug_dispatcher(&self, level: DebugLevel) -> DebugDispatcher {
+        let dispatcher = DebugDispatcher::new(level);
+        #[cfg(test)]
+        let dispatcher = match &self.inner.debug_output {
+            Some(output) => dispatcher.with_output(Arc::clone(output)),
+            None => dispatcher,
+        };
+        dispatcher
+    }
+
+    pub(crate) fn response_body_limit(&self) -> std::num::NonZeroUsize {
+        self.inner.runtime.response_body_limit
     }
 
     pub(crate) fn allocate_operation_id(
@@ -131,17 +159,22 @@ impl ClientCore {
     pub(crate) fn shares_inner_with(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
+
+    #[cfg(test)]
+    pub(crate) fn with_debug_output(mut self, output: Arc<std::sync::Mutex<Vec<String>>>) -> Self {
+        Arc::get_mut(&mut self.inner)
+            .expect("debug output is installed before ClientCore cloning")
+            .debug_output = Some(output);
+        self
+    }
 }
 
 fn parse_fixed_base(value: &str) -> Result<Url, ClientBuildError> {
     let url = Url::parse(value)
         .map_err(|_| ClientBuildError::new(ClientBuildErrorKind::InvalidBaseUrl))?;
-    let raw_authority = value.split_once("://").map(|(_, remainder)| {
-        remainder
-            .split(['/', '?', '#'])
-            .next()
-            .unwrap_or_default()
-    });
+    let raw_authority = value
+        .split_once("://")
+        .map(|(_, remainder)| remainder.split(['/', '?', '#']).next().unwrap_or_default());
     let valid = matches!(url.scheme(), "http" | "https")
         && url.host().is_some()
         && url.username().is_empty()

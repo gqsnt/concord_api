@@ -122,6 +122,18 @@ fn bytes_endpoint(value: &'static str, calls: Arc<AtomicUsize>) -> BytesEndpoint
     }
 }
 
+fn ready<E>(preparation: OperationPreparation<E>) -> PreparedOperation<E> {
+    match preparation {
+        OperationPreparation::Ready(prepared) => prepared,
+        OperationPreparation::Failed(failure) => {
+            panic!(
+                "unexpected preparation failure: {:?}",
+                failure.error.category()
+            )
+        }
+    }
+}
+
 #[tokio::test]
 async fn request_creation_and_setters_are_side_effect_free_until_first_poll() {
     let executor = DeterministicExecutor::new();
@@ -143,7 +155,7 @@ async fn request_creation_and_setters_are_side_effect_free_until_first_poll() {
     assert_eq!(hooks.calls.load(Ordering::SeqCst), 0);
     assert_eq!(executor.application().request_count().expect("count"), 0);
 
-    let prepared = future.await.expect("first poll should prepare");
+    let prepared = ready(future.await.expect("first poll should prepare"));
     assert_eq!(display_calls.load(Ordering::SeqCst), 1);
     assert_eq!(core.operation_allocations(), 1);
     assert_eq!(hooks.calls.load(Ordering::SeqCst), 0);
@@ -201,7 +213,8 @@ async fn invalid_dynamic_segment_fails_before_hooks_or_transport() {
     ))
     .await
     {
-        Ok(_) => panic!("empty dynamic segment must fail"),
+        Ok(OperationPreparation::Ready(_)) => panic!("empty dynamic segment must fail"),
+        Ok(OperationPreparation::Failed(failure)) => failure.error,
         Err(error) => error,
     };
     assert_eq!(error.category(), ErrorCategory::Configuration);
@@ -224,8 +237,8 @@ async fn request_options_are_local_and_core_clones_share_one_inner_owner() {
     );
     let second = prepare_operation(Request::new(sibling, NoContentEndpoint).disable_timeout());
     let (first, second) = tokio::join!(first, second);
-    let first = first.expect("first preparation");
-    let second = second.expect("second preparation");
+    let first = ready(first.expect("first preparation"));
+    let second = ready(second.expect("second preparation"));
     assert_eq!(first.head.timeout(), Some(Duration::from_secs(1)));
     assert_eq!(first.head.debug(), DebugLevel::Basic);
     assert_eq!(second.head.timeout(), None);
@@ -245,8 +258,8 @@ async fn live_operation_ids_are_unique_across_cores_sharing_hooks() {
         prepare_operation(Request::new(second_core, NoContentEndpoint)),
     );
     assert_ne!(
-        first.expect("first operation").operation_id,
-        second.expect("second operation").operation_id
+        ready(first.expect("first operation")).operation_id,
+        ready(second.expect("second operation")).operation_id
     );
 }
 

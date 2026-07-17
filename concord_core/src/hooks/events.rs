@@ -103,7 +103,6 @@ pub enum CompletionOutcome {
 }
 
 impl CompletionOutcome {
-    #[allow(dead_code, reason = "used by the Phase 2 production executor")]
     pub(crate) const fn from_error_category(category: crate::error::ErrorCategory) -> Self {
         use crate::error::ErrorCategory;
 

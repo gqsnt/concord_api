@@ -6,11 +6,9 @@ mod prepare;
 
 pub use pending::{Request, ResponseRequest};
 
-#[allow(
-    unused_imports,
-    reason = "used by the Phase 2 production executor in PR 2.3"
-)]
-pub(crate) use prepare::{PreparedOperation, prepare_operation};
+pub(crate) use prepare::{
+    OperationPreparation, PreparationFailure, PreparedOperation, prepare_operation,
+};
 
 #[doc(hidden)]
 pub use endpoint::{
