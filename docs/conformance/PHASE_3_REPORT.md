@@ -22,7 +22,7 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 - Phase 3 tested source:
   `c9521f649c91df0a0bae9786cba101f4d526692b`
 - Phase 3 validation/evidence time: `2026-07-17T19:17:20Z`
-- Phase 3 evidence/report commit: `PHASE3_EVIDENCE_COMMIT_PENDING`
+- Phase 3 evidence/report commit: `7b958cde82cf138cb91ca2d33499679233f42358`
 - Phase 3 evidence anchor: this report's documentation-only follow-up
 - Branch: `master`
 - Initial working tree: clean
