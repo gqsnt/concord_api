@@ -20,7 +20,10 @@ dangerous-custom-retry = []
 dangerous-dev-tools = []
 
 [dependencies]
+bytes.workspace = true
+http.workspace = true
 reqwest.workspace = true
+url.workspace = true
 
 [dev-dependencies]
 concord_macros = { version = "=0.1.0", path = "../concord_macros" }

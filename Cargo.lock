@@ -62,6 +62,7 @@ dependencies = [
 name = "concord_core"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "concord_macros",
  "concord_test_support",
  "h2",
@@ -69,6 +70,7 @@ dependencies = [
  "reqwest",
  "rustls",
  "tokio",
+ "url",
 ]
 
 [[package]]

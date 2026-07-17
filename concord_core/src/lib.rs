@@ -1,11 +1,16 @@
 //! Core support for Concord-generated API clients.
 //!
-//! Phase 0 exposes no request execution surface. The only implementation is
-//! the generated-private construction contract used by `concord_macros`.
+//! No request-execution surface exists yet. The crate contains the Phase 0
+//! generated-private construction contract used by `concord_macros` and the
+//! Phase 1 central redaction and sanitized-metadata foundation.
 
 #![forbid(unsafe_code)]
 
+pub mod advanced;
+pub mod prelude;
+
 mod generated_contract;
+mod redaction;
 mod request;
 
 #[cfg(test)]
