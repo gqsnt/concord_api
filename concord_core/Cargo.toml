@@ -22,6 +22,7 @@ dangerous-dev-tools = []
 [dependencies]
 bytes.workspace = true
 http.workspace = true
+httpdate.workspace = true
 reqwest.workspace = true
 url.workspace = true
 
@@ -30,6 +31,7 @@ concord_macros = { version = "=0.1.0", path = "../concord_macros" }
 concord_test_support = { version = "=0.1.0", path = "../concord_test_support" }
 h2.workspace = true
 http.workspace = true
+http-body.workspace = true
 reqwest = { workspace = true, features = ["http2", "rustls-no-provider", "system-proxy"] }
 rustls.workspace = true
 tokio.workspace = true

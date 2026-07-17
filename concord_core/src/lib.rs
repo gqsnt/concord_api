@@ -2,13 +2,15 @@
 //!
 //! No request-execution surface exists yet. The crate contains the Phase 0
 //! generated-private construction contract used by `concord_macros` and the
-//! Phase 1 central redaction and sanitized-metadata foundation.
+//! Phase 1 safe error, redaction, and sanitized-metadata foundations.
 
 #![forbid(unsafe_code)]
 
 pub mod advanced;
 pub mod prelude;
 
+mod codec;
+mod error;
 mod generated_contract;
 mod redaction;
 mod request;

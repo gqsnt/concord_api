@@ -1,0 +1,11 @@
+[package]
+name = "status-body-traits"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+concord_core = { path = "../../.." }
+serde = "=1.0.228"
+
+[workspace]
