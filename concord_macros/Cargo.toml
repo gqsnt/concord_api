@@ -15,7 +15,7 @@ quote.workspace = true
 syn.workspace = true
 
 [dev-dependencies]
-concord_core = { version = "=0.1.0", path = "../concord_core", default-features = false }
+concord_core = { version = "=0.1.0", path = "../concord_core", default-features = false, features = ["json"] }
 concord_test_support = { version = "=0.1.0", path = "../concord_test_support", default-features = false, features = ["cargo-fixture"] }
 tokio.workspace = true
 trybuild = "=1.0.118"

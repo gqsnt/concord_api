@@ -57,6 +57,14 @@ fn incompatible_core_contract_fails_during_compilation() {
 }
 
 #[test]
+fn json_dsl_without_runtime_feature_has_a_focused_diagnostic() {
+    assert_fixture_fails_with(
+        "json_disabled",
+        "Concord JSON DSL requires the `concord_core/json` feature",
+    );
+}
+
+#[test]
 fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names() {
     let root = workspace_root();
     let manifest = fixture_root().join("renamed_core/Cargo.toml");
@@ -88,6 +96,7 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
         "struct.RenamedApiBuilder.html",
         "renamed_api/facades/struct.ResourcesFacade.html",
         "renamed_api/endpoints/resources/struct.ById.html",
+        "renamed_api/endpoints/resources/struct.Custom.html",
     ] {
         let path = documentation.join(relative);
         let page = std::fs::read_to_string(&path)
@@ -98,6 +107,10 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
             "ClientCore",
             "EndpointSpec",
             "ResponseHandler",
+            "CodecBody",
+            "BufferedResponse",
+            "PreparedBody",
+            "reqwest",
             "Sealed",
         ] {
             assert!(
@@ -113,17 +126,25 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
             );
         }
         if relative.contains("endpoints") {
-            for expected in ["Bodyless", "GET", "NoContent"] {
-                assert!(
-                    page.contains(expected),
-                    "generated endpoint Rustdoc omitted supported public fact {expected}"
-                );
+            for expected in ["POST", "Text"] {
+                if relative.ends_with("struct.ById.html") {
+                    assert!(
+                        page.contains(expected),
+                        "generated endpoint Rustdoc omitted supported public fact {expected}"
+                    );
+                }
             }
-            for expected in [
-                "RenamedApi::resources::ById",
-                "scope_value",
-                "endpoint_value",
-            ] {
+            let expected: &[&str] = if relative.ends_with("struct.ById.html") {
+                &[
+                    "RenamedApi::resources::ById",
+                    "scope_value",
+                    "endpoint_value",
+                    "body",
+                ]
+            } else {
+                &["RenamedApi::resources::Custom", "scope_value", "body"]
+            };
+            for expected in expected.iter().copied() {
                 assert!(
                     page.contains(expected),
                     "generated endpoint Rustdoc omitted public identity or parameter {expected}"

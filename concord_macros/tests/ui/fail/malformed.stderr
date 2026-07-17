@@ -1,5 +1,5 @@
-error: unsupported endpoint method; the current generated subset accepts only bodyless `GET`
+error: unsupported endpoint method; the Phase 3 generated subset accepts `GET` or `POST`
  --> tests/ui/fail/malformed.rs:8:13
   |
-8 |             POST ById(endpoint_value: String) -> NoContent {
-  |             ^^^^
+8 |             PUT ById(endpoint_value: String) -> NoContent {
+  |             ^^^

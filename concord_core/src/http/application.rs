@@ -12,6 +12,7 @@ use concord_test_support::script::BoundaryRequest;
 use crate::error::{
     ApiError, ClientBuildError, ClientBuildErrorKind, ConfigurationErrorKind, HttpResponseFailure,
 };
+use crate::hooks::BodyKind;
 
 use super::build::TlsCapability;
 use super::status::{StatusCapture, StatusDisposition, collect_terminal_status};
@@ -130,30 +131,38 @@ impl ApplicationHttp {
         Ok(())
     }
 
-    pub(crate) fn build_empty_request(
+    pub(crate) fn build_request(
         &self,
         endpoint: &'static str,
         method: &Method,
         url: &url::Url,
         public_headers: &HeaderMap,
+        body: Option<Bytes>,
     ) -> Result<ApplicationRequest, ApiError> {
         self.preflight_url(endpoint, method, url)?;
-        let native = self
+        let builder = self
             .client
             .request(method.clone(), url.clone())
-            .headers(public_headers.clone())
-            .build()
-            .map_err(|error| {
-                drop(error);
-                ApiError::classified(
-                    endpoint,
-                    method.clone(),
-                    crate::error::ErrorCategory::RequestEncoding,
-                )
-            })?;
+            .headers(public_headers.clone());
+        let builder = match body {
+            Some(body) => builder.body(body),
+            None => builder,
+        };
+        let native = builder.build().map_err(|error| {
+            drop(error);
+            ApiError::classified(
+                endpoint,
+                method.clone(),
+                crate::error::ErrorCategory::RequestEncoding,
+            )
+        })?;
         Ok(ApplicationRequest { native })
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the single managed execution boundary receives exact native and deterministic proof facts"
+    )]
     pub(crate) async fn execute(
         &self,
         endpoint: &'static str,
@@ -161,7 +170,9 @@ impl ApplicationHttp {
         request: ApplicationRequest,
         safe_url: &str,
         public_headers: &HeaderMap,
+        body_kind: BodyKind,
         known_body_length: Option<u64>,
+        boundary_body: Bytes,
     ) -> Result<ApplicationResponse, ApiError> {
         #[cfg(any(test, feature = "dangerous-dev-tools"))]
         let native =
@@ -172,9 +183,9 @@ impl ApplicationHttp {
                         method.clone(),
                         Some(safe_url.to_owned()),
                         public_headers,
-                        concord_test_support::script::BodyCategory::Empty,
+                        boundary_body_category(body_kind),
                         known_body_length.and_then(|length| usize::try_from(length).ok()),
-                        Some(Bytes::new()),
+                        Some(boundary_body),
                     );
                     drop(request);
                     development
@@ -196,7 +207,13 @@ impl ApplicationHttp {
 
         #[cfg(not(any(test, feature = "dangerous-dev-tools")))]
         let native = {
-            let _ = (safe_url, public_headers, known_body_length);
+            let _ = (
+                safe_url,
+                public_headers,
+                body_kind,
+                known_body_length,
+                boundary_body,
+            );
             self.client
                 .execute(request.native)
                 .await
@@ -338,7 +355,7 @@ impl ApplicationHttp {
         {
             StatusCapture::Terminal(failure) => failure,
             StatusCapture::SkippedRecoverable => {
-                unreachable!("Phase 2 terminal status capture cannot be recoverable")
+                unreachable!("terminal status capture cannot be recoverable")
             }
         }
     }
@@ -352,5 +369,15 @@ impl ApplicationHttp {
         let method = Method::GET;
         let request = self.prepare(endpoint, method.clone(), url, false)?;
         self.execute_native(endpoint, method, request).await
+    }
+}
+
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
+const fn boundary_body_category(kind: BodyKind) -> concord_test_support::script::BodyCategory {
+    match kind {
+        BodyKind::Empty => concord_test_support::script::BodyCategory::Empty,
+        BodyKind::Buffered => concord_test_support::script::BodyCategory::Bytes,
+        BodyKind::Stream => concord_test_support::script::BodyCategory::Streaming,
+        BodyKind::Multipart => concord_test_support::script::BodyCategory::Multipart,
     }
 }

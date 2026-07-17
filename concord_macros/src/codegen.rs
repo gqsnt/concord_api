@@ -1,12 +1,14 @@
 use std::collections::HashSet;
 
 use proc_macro2::{Ident, Span, TokenStream};
-use quote::{format_ident, quote};
+use quote::{ToTokens, format_ident, quote};
 use syn::Index;
 
-use crate::model::{Api, Endpoint, Parameter, PathAtom, ResponseKind, Scope, to_snake_case};
+use crate::model::{
+    Api, CodecKind, Endpoint, MethodKind, Parameter, PathAtom, ResponseKind, Scope, to_snake_case,
+};
 
-const GENERATED_CONTRACT_VERSION: u32 = 2;
+const GENERATED_CONTRACT_VERSION: u32 = 3;
 
 pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
     let client = &api.client;
@@ -21,6 +23,13 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
     let facade_name = format_ident!("{}Facade", to_pascal_case(&scope_name.to_string()));
     let base = &client.base;
     let contract_version = GENERATED_CONTRACT_VERSION;
+    let json_feature_assertion = if scope.endpoints.iter().any(endpoint_uses_json) {
+        quote!(
+            const _: () = __core::__private::assert_json_feature();
+        )
+    } else {
+        quote!()
+    };
     let client_doc = format!("Generated Concord client `{client_name}`.");
     let builder_doc = format!("Canonical fallible builder for [`{client_name}`].");
     let support_doc = format!("Public generated API modules for [`{client_name}`].");
@@ -87,6 +96,7 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
                 pub(super) use #core_path as __core;
 
                 const _: () = __core::__private::assert_generated_contract(#contract_version);
+                #json_feature_assertion
             }
 
             mod __concord_endpoint_seal {
@@ -290,8 +300,24 @@ fn generate_endpoint(
         .enumerate()
         .map(|(index, parameter)| parameter_binding("endpoint", index, &parameter.name))
         .collect::<Vec<_>>();
-    let (scope_public_bindings, endpoint_public_bindings) =
-        explicit_parameter_bindings(&scope.parameters, &endpoint.parameters);
+    let (scope_public_bindings, endpoint_public_bindings, body_public_binding) =
+        explicit_parameter_bindings(
+            &scope.parameters,
+            &endpoint.parameters,
+            endpoint.body.is_some(),
+        );
+    let body_private_binding = endpoint
+        .body
+        .as_ref()
+        .map(|_| Ident::new("__concord_body_0_body", Span::mixed_site()));
+    let body_input_type = endpoint
+        .body
+        .as_ref()
+        .map(|body| codec_input_type(body, core_path));
+    let body_codec_type = endpoint
+        .body
+        .as_ref()
+        .map(|body| codec_type(body, core_path));
     let path_statements = scope
         .path
         .iter()
@@ -300,15 +326,14 @@ fn generate_endpoint(
         .collect::<Vec<_>>();
     let endpoint_identity = format!("{client_name}::{}::{endpoint_name}", scope.name);
     let route_shape = route_shape(scope, endpoint);
-    let response_name = match endpoint.response {
-        ResponseKind::Bytes => "Bytes",
-        ResponseKind::NoContent => "NoContent",
-    };
+    let response_name = response_name(&endpoint.response);
+    let method_name = method_name(endpoint.method);
     let required_names = scope
         .parameters
         .iter()
         .chain(endpoint.parameters.iter())
         .map(|parameter| format!("`{}`", parameter.name))
+        .chain(endpoint.body.as_ref().map(|_| "`body`".to_owned()))
         .collect::<Vec<_>>();
     let required_arguments = if required_names.is_empty() {
         "none".to_owned()
@@ -316,13 +341,46 @@ fn generate_endpoint(
         required_names.join(", ")
     };
     let endpoint_doc = format!(
-        "Bodyless `GET` endpoint `{endpoint_identity}` for route `{route_shape}`. Required arguments: {required_arguments}. Direct await uses the `{response_name}` response mode; metadata is available through `Request::response`."
+        "`{method_name}` endpoint `{endpoint_identity}` for route `{route_shape}`. Required arguments: {required_arguments}. Direct await uses the `{response_name}` response mode; metadata is available through `Request::response`."
     );
     let constructor_doc = format!(
         "Creates the explicit `{endpoint_identity}` endpoint value without preparing or executing a request."
     );
-    let response = response_handler(endpoint.response, core_path);
-    let bounds = scope
+    let response = response_handler(&endpoint.response, core_path);
+    let body_type = body_handler(endpoint.body.as_ref(), core_path);
+    let method = method_token(endpoint.method, core_path);
+    let body_metadata = body_metadata(endpoint.body.as_ref(), core_path);
+    let into_body = match (&body_codec_type, &body_private_binding) {
+        (Some(codec), Some(binding)) => {
+            quote!(super::super::__concord_generated::__core::__private::CodecBody::<#codec>::new(self.#binding))
+        }
+        (None, None) => {
+            quote!(super::super::__concord_generated::__core::__private::EmptyBody::new())
+        }
+        _ => unreachable!("body codec and binding are modeled together"),
+    };
+    let body_field = match (&body_private_binding, &body_input_type) {
+        (Some(binding), Some(ty)) => quote!(#binding: #ty,),
+        (None, None) => quote!(),
+        _ => unreachable!("body input and binding are modeled together"),
+    };
+    let body_public_parameter = match (&body_public_binding, &body_input_type) {
+        (Some(binding), Some(ty)) => quote!(#binding: #ty,),
+        (None, None) => quote!(),
+        _ => unreachable!("body input and public binding are modeled together"),
+    };
+    let body_private_parameter = match (&body_private_binding, &body_input_type) {
+        (Some(binding), Some(ty)) => quote!(#binding: #ty,),
+        (None, None) => quote!(),
+        _ => unreachable!("body input and private binding are modeled together"),
+    };
+    let body_public_argument = body_public_binding
+        .as_ref()
+        .map_or_else(TokenStream::new, |binding| quote!(#binding,));
+    let body_private_argument = body_private_binding
+        .as_ref()
+        .map_or_else(TokenStream::new, |binding| quote!(#binding,));
+    let mut bounds = scope
         .parameters
         .iter()
         .map(|parameter| {
@@ -334,28 +392,38 @@ fn generate_endpoint(
             quote!(#ty: ::std::fmt::Display + ::std::marker::Send + 'static)
         }))
         .collect::<Vec<_>>();
+    if let Some(codec) = &body_codec_type {
+        bounds.push(quote!(#codec: #core_path::advanced::EncodeBody));
+    }
+    if let ResponseKind::Buffered(codec) = &endpoint.response {
+        let codec = codec_type(codec, core_path);
+        bounds.push(quote!(#codec: #core_path::advanced::DecodeBody));
+    }
     let where_clause = if bounds.is_empty() {
         quote!()
     } else {
         quote!(where #(#bounds,)*)
     };
-    let default_impl = if scope.parameters.is_empty() && endpoint.parameters.is_empty() {
-        quote! {
-            impl ::std::default::Default for #endpoint_name {
-                fn default() -> Self {
-                    Self::new()
+    let default_impl =
+        if scope.parameters.is_empty() && endpoint.parameters.is_empty() && endpoint.body.is_none()
+        {
+            quote! {
+                impl ::std::default::Default for #endpoint_name {
+                    fn default() -> Self {
+                        Self::new()
+                    }
                 }
             }
-        }
-    } else {
-        quote!()
-    };
+        } else {
+            quote!()
+        };
 
     quote! {
         #[doc = #endpoint_doc]
         pub struct #endpoint_name {
             __concord_scope: (#(::std::sync::Arc<#scope_types>,)*),
             __concord_endpoint: (#(#endpoint_types,)*),
+            #body_field
         }
 
         impl #endpoint_name {
@@ -363,21 +431,25 @@ fn generate_endpoint(
             #[doc = #constructor_doc]
             pub fn new(
                 #(#scope_public_bindings: #scope_types,)*
-                #(#endpoint_public_bindings: #endpoint_types),*
+                #(#endpoint_public_bindings: #endpoint_types,)*
+                #body_public_parameter
             ) -> Self {
                 Self::__concord_from_shared(
                     #(::std::sync::Arc::new(#scope_public_bindings),)*
-                    #(#endpoint_public_bindings),*
+                    #(#endpoint_public_bindings,)*
+                    #body_public_argument
                 )
             }
 
             pub(in super::super) fn __concord_from_shared(
                 #(#scope_bindings: ::std::sync::Arc<#scope_types>,)*
-                #(#endpoint_bindings: #endpoint_types),*
+                #(#endpoint_bindings: #endpoint_types,)*
+                #body_private_parameter
             ) -> Self {
                 Self {
                     __concord_scope: (#(#scope_bindings,)*),
                     __concord_endpoint: (#(#endpoint_bindings,)*),
+                    #body_private_argument
                 }
             }
         }
@@ -394,7 +466,7 @@ fn generate_endpoint(
         impl super::super::__concord_generated::__core::__private::EndpointSpec for #endpoint_name
         #where_clause
         {
-            type Body = super::super::__concord_generated::__core::__private::EmptyBody;
+            type Body = #body_type;
             type Response = #response;
 
             fn request_meta(
@@ -402,7 +474,7 @@ fn generate_endpoint(
             ) -> super::super::__concord_generated::__core::__private::RequestMeta {
                 super::super::__concord_generated::__core::__private::RequestMeta::new(
                     #endpoint_identity,
-                    super::super::__concord_generated::__core::__private::Method::GET,
+                    #method,
                     ::std::option::Option::None,
                 )
             }
@@ -420,13 +492,12 @@ fn generate_endpoint(
                 #(#path_statements)*
                 ::std::result::Result::Ok((
                     __concord_builder.finish(),
-                    super::super::__concord_generated::__core::__private::EmptyBody::metadata(),
+                    #body_metadata,
                 ))
             }
 
             fn into_body(self) -> Self::Body {
-                let _ = self;
-                super::super::__concord_generated::__core::__private::EmptyBody::new()
+                #into_body
             }
         }
     }
@@ -451,17 +522,25 @@ fn generate_facade_method(
         .iter()
         .map(|parameter| &parameter.ty)
         .collect::<Vec<_>>();
+    let body_type = endpoint
+        .body
+        .as_ref()
+        .map(|body| codec_input_type(body, core_path));
+    let body_parameter = body_type
+        .as_ref()
+        .map_or_else(TokenStream::new, |ty| quote!(body: #ty,));
+    let body_argument = body_type
+        .as_ref()
+        .map_or_else(TokenStream::new, |_| quote!(body,));
     let scope_indices = (0..scope.parameters.len())
         .map(Index::from)
         .collect::<Vec<_>>();
     let endpoint_identity = format!("{client_name}::{}::{}", scope.name, endpoint.name);
     let route_shape = route_shape(scope, endpoint);
-    let response_name = match endpoint.response {
-        ResponseKind::Bytes => "Bytes",
-        ResponseKind::NoContent => "NoContent",
-    };
+    let response_name = response_name(&endpoint.response);
+    let method_name = method_name(endpoint.method);
     let method_doc = format!(
-        "Creates a pending bodyless `GET` request for `{endpoint_identity}` at route `{route_shape}` using the `{response_name}` response mode."
+        "Creates a pending `{method_name}` request for `{endpoint_identity}` at route `{route_shape}` using the `{response_name}` response mode."
     );
 
     quote! {
@@ -469,11 +548,13 @@ fn generate_facade_method(
         #[doc = #method_doc]
         pub fn #endpoint_method_name(
             &self,
-            #(#endpoint_names: #endpoint_types),*
+            #(#endpoint_names: #endpoint_types,)*
+            #body_parameter
         ) -> #core_path::Request<endpoints::#scope_module_name::#endpoint_name> {
             let endpoint = endpoints::#scope_module_name::#endpoint_name::__concord_from_shared(
                 #(::std::sync::Arc::clone(&self.__concord_scope.#scope_indices),)*
-                #(#endpoint_names),*
+                #(#endpoint_names,)*
+                #body_argument
             );
             self.__concord_client.request(endpoint)
         }
@@ -483,17 +564,20 @@ fn generate_facade_method(
 fn explicit_parameter_bindings(
     scope_parameters: &[Parameter],
     endpoint_parameters: &[Parameter],
-) -> (Vec<Ident>, Vec<Ident>) {
+    has_body: bool,
+) -> (Vec<Ident>, Vec<Ident>, Option<Ident>) {
+    let body_name = has_body.then(|| Ident::new("body", Span::call_site()));
     let original_names = scope_parameters
         .iter()
         .chain(endpoint_parameters.iter())
         .map(|parameter| parameter.name.to_string())
+        .chain(body_name.iter().map(ToString::to_string))
         .collect::<Vec<_>>();
     let reserved = original_names.iter().cloned().collect::<HashSet<_>>();
     let mut used = HashSet::new();
 
-    let mut allocate = |namespace: &str, parameter: &Parameter| {
-        let original = parameter.name.to_string();
+    let mut allocate = |namespace: &str, name: &Ident| {
+        let original = name.to_string();
         if original_names
             .iter()
             .filter(|name| name.as_str() == original.as_str())
@@ -501,28 +585,29 @@ fn explicit_parameter_bindings(
             == 1
             && used.insert(original)
         {
-            return parameter.name.clone();
+            return name.clone();
         }
 
-        let base = format!("{namespace}_{}", to_snake_case(&parameter.name.to_string()));
+        let base = format!("{namespace}_{}", to_snake_case(&name.to_string()));
         let mut candidate = base.clone();
         let mut suffix = 2_u32;
         while reserved.contains(&candidate) || !used.insert(candidate.clone()) {
             candidate = format!("{base}_{suffix}");
             suffix += 1;
         }
-        Ident::new(&candidate, parameter.name.span())
+        Ident::new(&candidate, name.span())
     };
 
     let scope = scope_parameters
         .iter()
-        .map(|parameter| allocate("scope", parameter))
+        .map(|parameter| allocate("scope", &parameter.name))
         .collect();
     let endpoint = endpoint_parameters
         .iter()
-        .map(|parameter| allocate("endpoint", parameter))
+        .map(|parameter| allocate("endpoint", &parameter.name))
         .collect();
-    (scope, endpoint)
+    let body = body_name.as_ref().map(|name| allocate("request", name));
+    (scope, endpoint, body)
 }
 
 fn route_shape(scope: &Scope, endpoint: &Endpoint) -> String {
@@ -539,11 +624,91 @@ fn route_shape(scope: &Scope, endpoint: &Endpoint) -> String {
     format!("/{}", segments.join("/"))
 }
 
-fn response_handler(response: ResponseKind, core_path: &TokenStream) -> TokenStream {
+fn response_handler(response: &ResponseKind, core_path: &TokenStream) -> TokenStream {
     match response {
         ResponseKind::Bytes => quote!(#core_path::__private::BytesResponse),
         ResponseKind::NoContent => quote!(#core_path::__private::NoContentResponse),
+        ResponseKind::Buffered(codec) => {
+            let codec = codec_type(codec, core_path);
+            quote!(#core_path::__private::BufferedResponse<#codec>)
+        }
     }
+}
+
+fn body_handler(body: Option<&CodecKind>, core_path: &TokenStream) -> TokenStream {
+    match body {
+        Some(codec) => {
+            let codec = codec_type(codec, core_path);
+            quote!(#core_path::__private::CodecBody<#codec>)
+        }
+        None => quote!(#core_path::__private::EmptyBody),
+    }
+}
+
+fn body_metadata(body: Option<&CodecKind>, core_path: &TokenStream) -> TokenStream {
+    match body {
+        Some(codec) => {
+            let codec = codec_type(codec, core_path);
+            quote!(
+                <#core_path::__private::CodecBody<#codec> as #core_path::__private::BodySpec>::metadata()
+            )
+        }
+        None => quote!(#core_path::__private::EmptyBody::metadata()),
+    }
+}
+
+fn codec_type(codec: &CodecKind, core_path: &TokenStream) -> TokenStream {
+    match codec {
+        CodecKind::Text => quote!(#core_path::prelude::Text),
+        CodecKind::Json(ty) => quote!(#core_path::prelude::Json<#ty>),
+        CodecKind::Custom(ty) => quote!(#ty),
+    }
+}
+
+fn codec_input_type(codec: &CodecKind, core_path: &TokenStream) -> TokenStream {
+    match codec {
+        CodecKind::Text => quote!(::std::string::String),
+        CodecKind::Json(ty) => quote!(#ty),
+        CodecKind::Custom(ty) => quote!(<#ty as #core_path::advanced::EncodeBody>::Input),
+    }
+}
+
+fn response_name(response: &ResponseKind) -> String {
+    match response {
+        ResponseKind::Bytes => "Bytes".to_owned(),
+        ResponseKind::NoContent => "NoContent".to_owned(),
+        ResponseKind::Buffered(CodecKind::Text) => "Text".to_owned(),
+        ResponseKind::Buffered(CodecKind::Json(ty)) => {
+            format!("Json<{}>", ty.to_token_stream())
+        }
+        ResponseKind::Buffered(CodecKind::Custom(ty)) => ty.to_token_stream().to_string(),
+    }
+}
+
+const fn method_name(method: MethodKind) -> &'static str {
+    match method {
+        MethodKind::Get => "GET",
+        MethodKind::Post => "POST",
+    }
+}
+
+fn method_token(method: MethodKind, core_path: &TokenStream) -> TokenStream {
+    match method {
+        MethodKind::Get => quote!(#core_path::__private::Method::GET),
+        MethodKind::Post => quote!(#core_path::__private::Method::POST),
+    }
+}
+
+fn endpoint_uses_json(endpoint: &Endpoint) -> bool {
+    endpoint.body.as_ref().is_some_and(codec_is_json)
+        || matches!(
+            &endpoint.response,
+            ResponseKind::Buffered(codec) if codec_is_json(codec)
+        )
+}
+
+const fn codec_is_json(codec: &CodecKind) -> bool {
+    matches!(codec, CodecKind::Json(_))
 }
 
 fn path_statement(
@@ -620,9 +785,11 @@ mod tests {
             name: parse_quote!(user_id),
             ty: parse_quote!(String),
         }];
-        let (scope_names, endpoint_names) = explicit_parameter_bindings(&scope, &endpoint);
+        let (scope_names, endpoint_names, body_name) =
+            explicit_parameter_bindings(&scope, &endpoint, false);
         assert_eq!(scope_names[0], "region");
         assert_eq!(endpoint_names[0], "user_id");
+        assert!(body_name.is_none());
 
         let scope = [Parameter {
             name: parse_quote!(id),
@@ -632,8 +799,19 @@ mod tests {
             name: parse_quote!(id),
             ty: parse_quote!(String),
         }];
-        let (scope_names, endpoint_names) = explicit_parameter_bindings(&scope, &endpoint);
+        let (scope_names, endpoint_names, _) =
+            explicit_parameter_bindings(&scope, &endpoint, false);
         assert_eq!(scope_names[0], "scope_id");
         assert_eq!(endpoint_names[0], "endpoint_id");
+
+        let scope = [Parameter {
+            name: parse_quote!(body),
+            ty: parse_quote!(String),
+        }];
+        let (scope_names, endpoint_names, body_name) =
+            explicit_parameter_bindings(&scope, &[], true);
+        assert_eq!(scope_names[0], "scope_body");
+        assert!(endpoint_names.is_empty());
+        assert_eq!(body_name.expect("body binding"), "request_body");
     }
 }

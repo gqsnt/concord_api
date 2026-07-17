@@ -47,6 +47,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-fixture-json-disabled"
+version = "0.0.0"
+dependencies = [
+ "concord_core 0.1.0",
+ "concord_macros",
+]
+
+[[package]]
 name = "concord-fixture-missing-core"
 version = "0.0.0"
 dependencies = [

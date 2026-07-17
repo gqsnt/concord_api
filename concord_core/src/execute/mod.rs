@@ -1,4 +1,4 @@
-//! One statically typed production engine for generated bodyless requests.
+//! One statically typed production engine for generated requests.
 
 use std::future::IntoFuture;
 
@@ -72,16 +72,25 @@ where
         run_before_send(&core, operation_id, deadline, &head, body_metadata).await?;
 
         check_deadline(deadline, head.endpoint(), head.method())?;
-        endpoint.into_body().materialize()?;
+        let materialized = endpoint.into_body().materialize(
+            head.endpoint(),
+            head.method(),
+            core.request_body_limit(),
+        );
         check_deadline(deadline, head.endpoint(), head.method())?;
+        let prepared_body = materialized?;
+        let known_body_length = prepared_body.known_length();
+        let boundary_body = prepared_body.boundary_bytes();
+        let materialized_metadata = body_metadata.with_known_length(known_body_length);
 
-        let request = core.application_http().build_empty_request(
+        let request = core.application_http().build_request(
             head.endpoint(),
             head.method(),
             head.logical_url(),
             head.public_headers(),
+            prepared_body.into_bytes(),
         )?;
-        let request_event = before_send_event(operation_id, &head, body_metadata);
+        let request_event = before_send_event(operation_id, &head, materialized_metadata);
         core.debug_dispatcher(head.debug())
             .request_ready(&request_event);
         check_deadline(deadline, head.endpoint(), head.method())?;
@@ -93,7 +102,9 @@ where
                 request,
                 head.safe_url(),
                 head.public_headers(),
-                body_metadata.known_length(),
+                materialized_metadata.kind(),
+                materialized_metadata.known_length(),
+                boundary_body,
             ))
             .await
             .map_err(|_| timeout_error(head.endpoint(), head.method()))??;

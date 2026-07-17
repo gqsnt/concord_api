@@ -115,6 +115,7 @@ pub struct RecordedRequest {
     method: String,
     target: String,
     headers: Vec<(String, String)>,
+    body: Vec<u8>,
 }
 
 impl RecordedRequest {
@@ -139,6 +140,11 @@ impl RecordedRequest {
             .iter()
             .find(|(candidate, _)| candidate.eq_ignore_ascii_case(name))
             .map(|(_, value)| value.as_str())
+    }
+
+    #[must_use]
+    pub fn body(&self) -> &[u8] {
+        &self.body
     }
 }
 
@@ -335,12 +341,14 @@ fn read_request(
                     return None;
                 }
             }
+            let body = buffered[end + 4..consumed].to_vec();
             buffered.drain(..consumed);
             return Some(RecordedRequest {
                 connection_id,
                 method,
                 target,
                 headers,
+                body,
             });
         }
         if !read_more(stream, buffered, shared) {

@@ -1,4 +1,5 @@
 use std::fmt;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -181,7 +182,11 @@ async fn request_creation_and_setters_are_side_effect_free_until_first_poll() {
     prepared
         .endpoint
         .into_body()
-        .materialize()
+        .materialize(
+            prepared.head.endpoint(),
+            prepared.head.method(),
+            NonZeroUsize::new(16).expect("positive test body limit"),
+        )
         .expect("empty body materialization");
 }
 

@@ -8,7 +8,7 @@ const MIB: usize = 1_048_576;
 const KIB: usize = 1_024;
 
 /// Private immutable finite runtime configuration.
-#[allow(dead_code, reason = "assembled into the private Phase 2 ClientCore")]
+#[allow(dead_code, reason = "assembled into the private production ClientCore")]
 pub(crate) struct RuntimeConfig {
     pub(crate) request_body_limit: NonZeroUsize,
     pub(crate) response_body_limit: NonZeroUsize,
@@ -151,7 +151,7 @@ impl RuntimeConfigBuilder {
         self
     }
 
-    #[allow(dead_code, reason = "assembled into the private Phase 2 ClientCore")]
+    #[allow(dead_code, reason = "assembled into the private production ClientCore")]
     pub(crate) fn resolve(self) -> RuntimeConfig {
         self.config
     }

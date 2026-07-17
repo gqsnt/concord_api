@@ -2,7 +2,7 @@
 //!
 //! The crate contains safe error, redaction, managed HTTP, lifecycle, and
 //! successful-response metadata, typed pending requests, and generated-private
-//! integration for managed bodyless execution.
+//! integration for managed typed execution.
 
 #![forbid(unsafe_code)]
 

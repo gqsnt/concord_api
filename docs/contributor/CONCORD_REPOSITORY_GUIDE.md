@@ -244,6 +244,11 @@ Cargo feature selection justify standalone projects. Source-only visibility, pri
 trait failures do not. Ordinary generated use, nesting, repetition, and trait bounds belong in
 normal integration tests or Trybuild.
 
+The retained core `config_features` project owns feature-presence and feature-absence compilation,
+including the public JSON marker. The macro `json_disabled` project is retained specifically because
+its diagnostic depends on the caller selecting no `concord_core/json` feature; ordinary Text and
+custom-codec generation remains in normal integration tests.
+
 ### Runtime deterministic tests
 
 Use for execution ordering, auth, limiter, response, and pagination behavior.

@@ -4,7 +4,11 @@ pub use bytes::Bytes;
 pub use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Version};
 pub use url::Url;
 
-pub use crate::codec::{CodecError, DecodeBody, DecodeContext};
+#[cfg(feature = "json")]
+pub use crate::codec::Json;
+pub use crate::codec::{
+    CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType, OctetStream, Text,
+};
 pub use crate::error::{
     ApiError, AuthErrorKind, ClientBuildError, ClientBuildErrorKind, ConfigurationError,
     ConfigurationErrorKind, ErrorCategory, HookError, HttpResponseFailure, PaginationErrorKind,

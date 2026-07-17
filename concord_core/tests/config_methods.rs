@@ -43,6 +43,7 @@ fn feature_gated_configuration_methods_are_present_only_with_their_features() {
         "brotli",
         "deflate",
         "dangerous-custom-retry",
+        "json",
     ] {
         let output = check_fixture("presence", Some(feature));
         assert!(
@@ -59,6 +60,7 @@ fn feature_gated_configuration_methods_are_present_only_with_their_features() {
         ("absence_brotli", "disable_brotli"),
         ("absence_deflate", "disable_deflate"),
         ("absence_dangerous", "dangerous"),
+        ("absence_json", "Json"),
     ] {
         let output = check_fixture(bin, None);
         let diagnostics = diagnostics(&output);

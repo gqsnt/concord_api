@@ -9,7 +9,7 @@ mod parse;
 
 use proc_macro::TokenStream;
 
-/// Declares a generated Concord client and its typed bodyless endpoints.
+/// Declares a generated Concord client and its typed endpoints.
 #[proc_macro]
 pub fn api(input: TokenStream) -> TokenStream {
     parse::parse(input.into())

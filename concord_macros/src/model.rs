@@ -18,16 +18,30 @@ pub(crate) struct Scope {
 }
 
 pub(crate) struct Endpoint {
+    pub(crate) method: MethodKind,
     pub(crate) name: Ident,
     pub(crate) parameters: Vec<Parameter>,
+    pub(crate) body: Option<CodecKind>,
     pub(crate) path: Vec<PathAtom>,
     pub(crate) response: ResponseKind,
 }
 
 #[derive(Clone, Copy)]
+pub(crate) enum MethodKind {
+    Get,
+    Post,
+}
+
 pub(crate) enum ResponseKind {
     Bytes,
     NoContent,
+    Buffered(CodecKind),
+}
+
+pub(crate) enum CodecKind {
+    Text,
+    Json(Type),
+    Custom(Type),
 }
 
 pub(crate) struct Parameter {

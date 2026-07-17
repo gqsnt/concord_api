@@ -10,7 +10,7 @@ default = ["default-tls", "http2", "rate-limit-governor"]
 default-tls = ["dep:rustls", "reqwest/rustls-no-provider"]
 http2 = ["reqwest/http2"]
 rate-limit-governor = []
-json = []
+json = ["dep:mime", "dep:serde", "dep:serde_json"]
 multipart = []
 gzip = ["reqwest/gzip"]
 brotli = ["reqwest/brotli"]
@@ -24,8 +24,11 @@ bytes.workspace = true
 concord_test_support = { version = "=0.1.0", path = "../concord_test_support", optional = true, default-features = false, features = ["deterministic"] }
 http.workspace = true
 httpdate.workspace = true
+mime = { workspace = true, optional = true }
 reqwest.workspace = true
 rustls = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 tokio.workspace = true
 url.workspace = true
 
@@ -37,7 +40,7 @@ http.workspace = true
 http-body.workspace = true
 reqwest = { workspace = true, features = ["http2", "rustls-no-provider", "system-proxy"] }
 rustls.workspace = true
-serde = "=1.0.228"
+serde.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 trybuild = "=1.0.118"
 

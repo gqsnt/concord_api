@@ -12,6 +12,7 @@ gzip = ["concord_core/gzip"]
 brotli = ["concord_core/brotli"]
 deflate = ["concord_core/deflate"]
 dangerous-custom-retry = ["concord_core/dangerous-custom-retry"]
+json = ["concord_core/json"]
 
 [dependencies]
 concord_core = { path = "../../..", default-features = false }

@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "contract_mismatch",
+    "json_disabled",
     "missing_core",
     "renamed_core",
 ]

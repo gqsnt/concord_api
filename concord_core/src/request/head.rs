@@ -3,7 +3,8 @@ use std::fmt::Display;
 use std::sync::Arc;
 use std::time::Duration;
 
-use http::{HeaderMap, Method};
+use http::header::{ACCEPT, CONTENT_TYPE};
+use http::{HeaderMap, HeaderValue, Method};
 use url::Url;
 
 use super::RequestOptions;
@@ -142,6 +143,43 @@ pub struct PreparedHead {
 }
 
 impl PreparedHead {
+    pub(crate) fn apply_media_headers(
+        &mut self,
+        accept: Option<&'static str>,
+        content_type: Option<&'static str>,
+    ) -> Result<(), ApiError> {
+        if let Some(accept) = accept {
+            if !self.public_headers.contains_key(ACCEPT) {
+                let value = HeaderValue::from_str(accept).map_err(|_| {
+                    ApiError::configuration(
+                        self.endpoint(),
+                        self.method().clone(),
+                        ConfigurationErrorKind::InvalidHeader,
+                    )
+                })?;
+                self.public_headers.insert(ACCEPT, value);
+            }
+        }
+        if let Some(content_type) = content_type {
+            if self.public_headers.contains_key(CONTENT_TYPE) {
+                return Err(ApiError::configuration(
+                    self.endpoint(),
+                    self.method().clone(),
+                    ConfigurationErrorKind::InvalidHeader,
+                ));
+            }
+            let value = HeaderValue::from_str(content_type).map_err(|_| {
+                ApiError::configuration(
+                    self.endpoint(),
+                    self.method().clone(),
+                    ConfigurationErrorKind::InvalidHeader,
+                )
+            })?;
+            self.public_headers.insert(CONTENT_TYPE, value);
+        }
+        Ok(())
+    }
+
     #[doc(hidden)]
     pub const fn meta(&self) -> &RequestMeta {
         &self.meta
@@ -189,4 +227,71 @@ fn invalid_route(endpoint: &'static str, method: &Method) -> ApiError {
         method.clone(),
         ConfigurationErrorKind::InvalidRoute,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::{ConfigurationErrorKind, ErrorCategory};
+
+    fn prepared() -> PreparedHead {
+        HeadBuilder::new(
+            &Url::parse("https://headers.example.test/").expect("base URL"),
+            RequestMeta::new("HeaderApi::records::create", Method::POST, None),
+            &RequestOptions::new(),
+            DebugLevel::None,
+        )
+        .finish()
+    }
+
+    #[test]
+    fn codec_media_uses_the_single_public_header_map_with_owned_precedence() {
+        let mut head = prepared();
+        head.apply_media_headers(
+            Some("application/vnd.example+json"),
+            Some("application/json"),
+        )
+        .expect("codec headers");
+        assert_eq!(
+            head.public_headers().get(ACCEPT),
+            Some(&HeaderValue::from_static("application/vnd.example+json"))
+        );
+        assert_eq!(
+            head.public_headers().get(CONTENT_TYPE),
+            Some(&HeaderValue::from_static("application/json"))
+        );
+
+        head.apply_media_headers(Some("text/plain"), None)
+            .expect("an existing Accept value wins");
+        assert_eq!(
+            head.public_headers().get(ACCEPT),
+            Some(&HeaderValue::from_static("application/vnd.example+json"))
+        );
+
+        let error = head
+            .apply_media_headers(None, Some("text/plain"))
+            .expect_err("a request codec owns Content-Type");
+        assert_eq!(error.category(), ErrorCategory::Configuration);
+        assert_eq!(
+            error.configuration_kind(),
+            Some(ConfigurationErrorKind::InvalidHeader)
+        );
+    }
+
+    #[test]
+    fn invalid_static_codec_header_values_fail_during_public_preparation() {
+        for (accept, content_type) in [
+            (Some("invalid\r\naccept"), None),
+            (None, Some("invalid\r\ncontent-type")),
+        ] {
+            let error = prepared()
+                .apply_media_headers(accept, content_type)
+                .expect_err("invalid codec header value");
+            assert_eq!(error.category(), ErrorCategory::Configuration);
+            assert_eq!(
+                error.configuration_kind(),
+                Some(ConfigurationErrorKind::InvalidHeader)
+            );
+        }
+    }
 }

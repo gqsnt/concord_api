@@ -12,6 +12,14 @@ pub const fn assert_generated_contract(expected: u32) {
     );
 }
 
+/// Produces a focused const-evaluation diagnostic for generated JSON syntax
+/// when the runtime dependency omitted its `json` feature.
+#[doc(hidden)]
+pub const fn assert_json_feature() {
+    #[cfg(not(feature = "json"))]
+    panic!("Concord JSON DSL requires the `concord_core/json` feature");
+}
+
 #[doc(hidden)]
 pub use http::Method;
 #[doc(hidden)]
@@ -25,8 +33,9 @@ pub use crate::error::{ApiError, ClientBuildError};
 pub use crate::hooks::DebugLevel;
 #[doc(hidden)]
 pub use crate::request::{
-    BodyMetadata, BodySpec, BytesResponse, EmptyBody, EndpointSpec, HeadBuilder, NoContentResponse,
-    PreparedBody, PreparedHead, RequestMeta, RequestOptions, ResponseHandler, TimeoutOverride,
+    BodyMetadata, BodySpec, BufferedResponse, BytesResponse, CodecBody, EmptyBody, EndpointSpec,
+    HeadBuilder, NoContentResponse, PreparedBody, PreparedHead, RequestMeta, RequestOptions,
+    ResponseHandler, TimeoutOverride,
 };
 
 /// Creates the ordinary generated-client HTTP configuration baseline.

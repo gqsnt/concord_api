@@ -1,7 +1,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use super::{BodyMetadata, EndpointSpec, HeadBuilder, PreparedHead, Request, RequestMeta};
+use super::{
+    BodyMetadata, EndpointSpec, HeadBuilder, PreparedHead, Request, RequestMeta, ResponseHandler,
+};
 use crate::client::ClientCore;
 use crate::error::{ApiError, ConfigurationErrorKind, ErrorCategory};
 use crate::hooks::DebugLevel;
@@ -86,7 +88,7 @@ where
         &options,
         core.default_debug(),
     );
-    let (head, body_metadata) = match endpoint.prepare_head_and_body_metadata(builder) {
+    let (mut head, body_metadata) = match endpoint.prepare_head_and_body_metadata(builder) {
         Ok(prepared) => prepared,
         Err(error) => {
             return Ok(OperationPreparation::Failed(failure(
@@ -100,6 +102,18 @@ where
             )));
         }
     };
+    if let Err(error) = head.apply_media_headers(E::Response::ACCEPT, body_metadata.content_type())
+    {
+        return Ok(OperationPreparation::Failed(failure(
+            core,
+            operation_id,
+            meta,
+            Arc::from(head.safe_url()),
+            debug,
+            started,
+            error,
+        )));
+    }
     if let Err(error) = ensure_matching_meta(&meta, &head) {
         return Ok(OperationPreparation::Failed(failure(
             core,

@@ -4,8 +4,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use concord_core::advanced::{
-    BeforeSend, BoxFuture, ClientBuildErrorKind, CompletionEvent, DebugLevel, HookError,
-    ResponseHeadEvent, RuntimeHooks, SafeProxy,
+    BeforeSend, BoxFuture, ClientBuildErrorKind, CodecError, CompletionEvent, DebugLevel,
+    DecodeBody, DecodeContext, EncodeBody, EncodeContext, HookError, ResponseHeadEvent,
+    RuntimeHooks, SafeProxy,
 };
 use concord_core::prelude::{Bytes, ClientBuildError, DecodedResponse, Request, ResponseRequest};
 use concord_macros::api;
@@ -21,6 +22,53 @@ api! {
             GET Item(id: String) -> Bytes {
                 path ["items", ep.id];
             }
+        }
+    }
+}
+
+pub struct WireCodec;
+
+impl EncodeBody for WireCodec {
+    type Input = String;
+
+    const CONTENT_TYPE: Option<&'static str> = Some("application/x-concord-wire");
+
+    fn encode(input: Self::Input, _context: EncodeContext<'_>) -> Result<Bytes, CodecError> {
+        Ok(Bytes::from(input))
+    }
+}
+
+impl DecodeBody for WireCodec {
+    type Output = String;
+
+    const ACCEPT: Option<&'static str> = Some("application/x-concord-wire");
+
+    fn validate_content_type(content_type: Option<&str>) -> Result<(), CodecError> {
+        if content_type == Some("application/x-concord-wire") {
+            Ok(())
+        } else {
+            Err(CodecError::new("wire media mismatch"))
+        }
+    }
+
+    fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
+        String::from_utf8(body.to_vec()).map_err(|error| {
+            drop(error);
+            CodecError::new("wire decode failure")
+        })
+    }
+}
+
+api! {
+    client BufferedApi {
+        base "http://buffered.generated.example.test/v1/";
+        scope messages() {
+            path ["messages"];
+            POST TextEcho(body: Text) -> Text;
+            POST JsonEcho(body: Json<Vec<u32>>) -> Json<Vec<u32>>;
+            POST CustomEcho(body: crate::WireCodec) -> crate::WireCodec;
+            POST BytesEcho(body: Text) -> Bytes;
+            POST NoContentEcho(body: Text) -> NoContent;
         }
     }
 }
@@ -60,6 +108,7 @@ mod nested_case {
                 scope health() {
                     path ["health"];
                     GET Ping() -> NoContent;
+                    POST Echo(body: Text) -> Text;
                 }
             }
         }
@@ -86,6 +135,7 @@ mod repeated_case {
             scope health() {
                 path ["health"];
                 GET Ping() -> NoContent;
+                POST Echo(body: Text) -> Text;
             }
         }
     }
@@ -96,6 +146,7 @@ mod repeated_case {
             scope health() {
                 path ["health"];
                 GET Ping() -> NoContent;
+                POST Echo(body: Text) -> Text;
             }
         }
     }
@@ -105,6 +156,8 @@ mod repeated_case {
         let beta = BetaApi::new().expect("beta client");
         let _: concord_core::Request<_> = alpha.health().ping();
         let _: concord_core::Request<_> = beta.health().ping();
+        let _: concord_core::Request<_> = alpha.health().echo("alpha".to_owned());
+        let _: concord_core::Request<_> = beta.health().echo("beta".to_owned());
 
         fn accepts_alpha_endpoint<E: alpha_api::AlphaApiEndpoint>(_: &E) {}
         fn accepts_beta_endpoint<E: beta_api::BetaApiEndpoint>(_: &E) {}
@@ -166,6 +219,14 @@ fn proxied_example(server: &ScriptedServer, hooks: Option<Arc<dyn RuntimeHooks>>
         None => builder,
     };
     builder.build().expect("proxied generated client")
+}
+
+fn proxied_buffered(server: &ScriptedServer) -> BufferedApi {
+    let proxy = proxy(server);
+    BufferedApi::builder()
+        .http(move |http| http.proxy(proxy))
+        .build()
+        .expect("proxied buffered generated client")
 }
 
 fn exact_new_shape() -> Result<(), ClientBuildError> {
@@ -270,6 +331,110 @@ async fn exact_generated_direct_and_metadata_workflows_execute_through_local_pro
 }
 
 #[tokio::test]
+async fn generated_buffered_facade_and_explicit_endpoints_use_typed_codecs_end_to_end() {
+    let server = ScriptedServer::start([
+        ResponseScript::ok("facade-text-response".as_bytes().to_vec()),
+        ResponseScript::ok("explicit-text-response".as_bytes().to_vec()),
+        ResponseScript::ok(b"[8,13,21]".to_vec())
+            .with_header("Content-Type", "application/vnd.example+json; version=1"),
+        ResponseScript::ok(b"custom-facade-response".to_vec())
+            .with_header("Content-Type", "application/x-concord-wire"),
+        ResponseScript::ok(b"custom-explicit-response".to_vec())
+            .with_header("Content-Type", "application/x-concord-wire"),
+        ResponseScript::ok(b"bytes-response".to_vec()),
+        ResponseScript::status(205, b"successful-body-is-ignored".to_vec()),
+    ])
+    .expect("generated buffered proxy");
+    let client = proxied_buffered(&server);
+
+    let text: String = client
+        .messages()
+        .text_echo("facade-text-request".to_owned())
+        .await
+        .expect("facade text");
+    assert_eq!(text, "facade-text-response");
+
+    let endpoint =
+        buffered_api::endpoints::messages::TextEcho::new("explicit-text-request".to_owned());
+    let text: DecodedResponse<String> = client
+        .request(endpoint)
+        .response()
+        .await
+        .expect("explicit text metadata");
+    assert_eq!(text.value(), "explicit-text-response");
+
+    let json: DecodedResponse<Vec<u32>> = client
+        .messages()
+        .json_echo(vec![1, 2, 3])
+        .response()
+        .await
+        .expect("JSON metadata");
+    assert_eq!(json.value(), &[8, 13, 21]);
+
+    let custom: String = client
+        .messages()
+        .custom_echo("custom-facade-request".to_owned())
+        .await
+        .expect("custom facade");
+    assert_eq!(custom, "custom-facade-response");
+    let custom_endpoint =
+        buffered_api::endpoints::messages::CustomEcho::new("custom-explicit-request".to_owned());
+    let custom = client
+        .request(custom_endpoint)
+        .response()
+        .await
+        .expect("custom explicit metadata");
+    assert_eq!(custom.value(), "custom-explicit-response");
+
+    let bytes: Bytes = client
+        .messages()
+        .bytes_echo("bytes-request".to_owned())
+        .await
+        .expect("bytes regression");
+    assert_eq!(bytes, b"bytes-response"[..]);
+    let no_content: DecodedResponse<()> = client
+        .messages()
+        .no_content_echo("no-content-request".to_owned())
+        .response()
+        .await
+        .expect("no-content regression");
+    assert_eq!(no_content.status().as_u16(), 205);
+
+    server
+        .wait_for_requests(7, Duration::from_secs(1))
+        .expect("all generated requests recorded");
+    let requests = server.requests();
+    let expected_bodies: [&[u8]; 7] = [
+        b"facade-text-request",
+        b"explicit-text-request",
+        b"[1,2,3]",
+        b"custom-facade-request",
+        b"custom-explicit-request",
+        b"bytes-request",
+        b"no-content-request",
+    ];
+    for (request, expected_body) in requests.iter().zip(expected_bodies) {
+        assert_eq!(request.method(), "POST");
+        assert_eq!(request.body(), expected_body);
+    }
+    assert_eq!(requests[0].header("accept"), Some("text/plain"));
+    assert_eq!(
+        requests[0].header("content-type"),
+        Some("text/plain; charset=utf-8")
+    );
+    assert_eq!(requests[2].header("accept"), Some("application/json"));
+    assert_eq!(requests[2].header("content-type"), Some("application/json"));
+    assert_eq!(
+        requests[3].header("accept"),
+        Some("application/x-concord-wire")
+    );
+    assert_eq!(
+        requests[3].header("content-type"),
+        Some("application/x-concord-wire")
+    );
+}
+
+#[tokio::test]
 async fn facade_and_explicit_endpoints_execute_with_identical_encoded_paths() {
     let server = ScriptedServer::start([
         ResponseScript::ok(b"facade".to_vec()),
@@ -367,6 +532,7 @@ async fn request_creation_is_lazy_and_generated_client_clone_shares_runtime_conf
 fn nested_and_repeated_invocations_keep_generated_paths_isolated() {
     let nested = nested_case::inner::NestedApi::new().expect("nested client");
     let _: concord_core::Request<_> = nested.health().ping();
+    let _: concord_core::Request<_> = nested.health().echo("nested".to_owned());
     let _: concord_core::Request<_> =
         nested.request(nested_case::inner::nested_api::endpoints::health::Ping::new());
     repeated_case::requests_are_isolated();

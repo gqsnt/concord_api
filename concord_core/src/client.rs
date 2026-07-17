@@ -117,6 +117,10 @@ impl ClientCore {
         self.inner.runtime.response_body_limit
     }
 
+    pub(crate) fn request_body_limit(&self) -> std::num::NonZeroUsize {
+        self.inner.runtime.request_body_limit
+    }
+
     pub(crate) fn allocate_operation_id(
         &self,
         endpoint: &'static str,

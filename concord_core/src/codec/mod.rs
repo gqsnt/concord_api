@@ -1,14 +1,61 @@
-//! Final response-decoder contracts used by bounded terminal status bodies.
+//! Stable buffered request and response codec contracts.
 
 use std::error::Error;
 use std::fmt;
+#[cfg(feature = "json")]
+use std::marker::PhantomData;
 
 use bytes::Bytes;
 use http::{Method, StatusCode};
 
+/// Declares one static, syntactically valid media type for a typed body mode.
+pub trait MediaType: Send + Sync + 'static {
+    /// Valid HTTP media type owned by the marker.
+    const MEDIA_TYPE: &'static str;
+}
+
+/// Built-in `application/octet-stream` media marker.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct OctetStream;
+
+impl MediaType for OctetStream {
+    const MEDIA_TYPE: &'static str = "application/octet-stream";
+}
+
+/// Safe request metadata supplied to a request encoder.
+pub struct EncodeContext<'a> {
+    /// Stable generated endpoint identity.
+    pub endpoint: &'static str,
+    /// Application HTTP method.
+    pub method: &'a Method,
+    /// Positive finite request-body limit, when one applies.
+    pub body_limit: Option<usize>,
+}
+
+/// Encodes one application input into a complete buffered request body.
+///
+/// Encoding is synchronous, runs at most once for a pending execution, and
+/// begins only after `before_send` approves the request. Input may be
+/// sensitive. Implementors are trusted application extensions: they must
+/// bound their own CPU, memory, logging, and external side effects. Concord
+/// cannot preempt synchronous codec work, but checks the operation deadline
+/// immediately after it returns.
+pub trait EncodeBody: Send + Sync + 'static {
+    /// Application value accepted by the generated endpoint.
+    type Input: Send + 'static;
+
+    /// Request `Content-Type` owned by this codec, when present.
+    const CONTENT_TYPE: Option<&'static str>;
+
+    /// Encodes one input without access to URL, headers, credentials, or native request state.
+    fn encode(input: Self::Input, context: EncodeContext<'_>) -> Result<Bytes, CodecError>;
+}
+
 /// A safe failure reported by an application codec.
 ///
-/// Codec-provided text is deliberately not reproduced by Concord formatting.
+/// Codec-provided text is deliberately not reproduced by Concord formatting
+/// or copied into [`crate::advanced::ApiError`]. A codec remains trusted for any
+/// application-owned side effects it performs before returning this value.
 pub struct CodecError {
     _message: String,
 }
@@ -50,6 +97,13 @@ pub struct DecodeContext<'a> {
 }
 
 /// Decodes a complete bounded response body.
+///
+/// Validation runs after known-length preflight and before body polling.
+/// Decoding runs synchronously only after complete bounded collection. The
+/// body may be sensitive. Implementors are trusted application extensions and
+/// must bound their CPU, memory, logging, and external side effects; Concord
+/// checks the operation deadline immediately after synchronous callbacks
+/// return.
 pub trait DecodeBody: Send + Sync + 'static {
     /// Value produced by the decoder.
     type Output: Send + 'static;
@@ -64,4 +118,176 @@ pub trait DecodeBody: Send + Sync + 'static {
 
     /// Decodes one complete bounded body.
     fn decode(body: Bytes, context: DecodeContext<'_>) -> Result<Self::Output, CodecError>;
+}
+
+/// Built-in UTF-8 text request and response codec.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Text;
+
+impl EncodeBody for Text {
+    type Input = String;
+
+    const CONTENT_TYPE: Option<&'static str> = Some("text/plain; charset=utf-8");
+
+    fn encode(input: Self::Input, _context: EncodeContext<'_>) -> Result<Bytes, CodecError> {
+        Ok(Bytes::from(input))
+    }
+}
+
+impl DecodeBody for Text {
+    type Output = String;
+
+    const ACCEPT: Option<&'static str> = Some("text/plain");
+
+    fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
+        String::from_utf8(body.to_vec()).map_err(|error| {
+            drop(error);
+            CodecError::new("response was not valid UTF-8")
+        })
+    }
+}
+
+/// Feature-gated built-in JSON request and response codec.
+#[cfg(feature = "json")]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Json<T>(PhantomData<T>);
+
+#[cfg(feature = "json")]
+impl<T> EncodeBody for Json<T>
+where
+    T: serde::Serialize + Send + Sync + 'static,
+{
+    type Input = T;
+
+    const CONTENT_TYPE: Option<&'static str> = Some("application/json");
+
+    fn encode(input: Self::Input, _context: EncodeContext<'_>) -> Result<Bytes, CodecError> {
+        serde_json::to_vec(&input)
+            .map(Bytes::from)
+            .map_err(|error| {
+                drop(error);
+                CodecError::new("JSON request encoding failed")
+            })
+    }
+}
+
+#[cfg(feature = "json")]
+impl<T> DecodeBody for Json<T>
+where
+    T: serde::de::DeserializeOwned + Send + Sync + 'static,
+{
+    type Output = T;
+
+    const ACCEPT: Option<&'static str> = Some("application/json");
+
+    fn validate_content_type(content_type: Option<&str>) -> Result<(), CodecError> {
+        if content_type.is_some_and(is_json_media_type) {
+            Ok(())
+        } else {
+            Err(CodecError::new("response media type was not JSON"))
+        }
+    }
+
+    fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
+        serde_json::from_slice(&body).map_err(|error| {
+            drop(error);
+            CodecError::new("JSON response decoding failed")
+        })
+    }
+}
+
+#[cfg(feature = "json")]
+fn is_json_media_type(value: &str) -> bool {
+    value.parse::<mime::Mime>().is_ok_and(|media_type| {
+        media_type.type_() == mime::APPLICATION
+            && (media_type.subtype() == mime::JSON || media_type.suffix() == Some(mime::JSON))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn encode_context() -> EncodeContext<'static> {
+        EncodeContext {
+            endpoint: "CodecApi::messages::create",
+            method: &Method::POST,
+            body_limit: Some(1024),
+        }
+    }
+
+    fn decode_context(content_type: Option<&str>) -> DecodeContext<'_> {
+        DecodeContext {
+            endpoint: "CodecApi::messages::create",
+            method: &Method::POST,
+            status: StatusCode::OK,
+            content_type,
+        }
+    }
+
+    #[test]
+    fn text_is_exact_utf8_and_does_not_require_response_media_metadata() {
+        let encoded = Text::encode("hello ♥".to_owned(), encode_context()).expect("text encode");
+        assert_eq!(encoded, "hello ♥".as_bytes());
+        Text::validate_content_type(None).expect("missing media is accepted");
+        Text::validate_content_type(Some("application/octet-stream"))
+            .expect("other media is accepted");
+        assert_eq!(
+            Text::decode(encoded, decode_context(None)).expect("text decode"),
+            "hello ♥"
+        );
+        let error = Text::decode(Bytes::from_static(&[0xff]), decode_context(None))
+            .expect_err("invalid UTF-8 must fail");
+        assert_eq!(error.to_string(), "codec operation failed");
+    }
+
+    #[test]
+    fn media_markers_have_the_normative_values() {
+        assert_eq!(OctetStream::MEDIA_TYPE, "application/octet-stream");
+        assert_eq!(Text::CONTENT_TYPE, Some("text/plain; charset=utf-8"));
+        assert_eq!(Text::ACCEPT, Some("text/plain"));
+    }
+
+    #[cfg(feature = "json")]
+    #[test]
+    fn json_accepts_standard_and_structured_suffix_media_types() {
+        for accepted in [
+            "application/json",
+            "APPLICATION/JSON; CHARSET=UTF-8",
+            "application/problem+json",
+            "application/vnd.example+json; version=2",
+        ] {
+            Json::<String>::validate_content_type(Some(accepted)).expect(accepted);
+        }
+        for rejected in [
+            None,
+            Some("text/json"),
+            Some("application/json-seq"),
+            Some("application/json; invalid"),
+            Some("application/problem+json; broken=\"unterminated"),
+        ] {
+            assert!(Json::<String>::validate_content_type(rejected).is_err());
+        }
+    }
+
+    #[cfg(feature = "json")]
+    #[test]
+    fn json_round_trips_without_exposing_serde_failures() {
+        let encoded = Json::<Vec<u32>>::encode(vec![1, 2, 3], encode_context()).expect("encode");
+        let decoded = Json::<Vec<u32>>::decode(
+            encoded,
+            decode_context(Some("application/json; charset=utf-8")),
+        )
+        .expect("decode");
+        assert_eq!(decoded, vec![1, 2, 3]);
+
+        let error = Json::<Vec<u32>>::decode(
+            Bytes::from_static(b"not-json-sentinel"),
+            decode_context(Some("application/json")),
+        )
+        .expect_err("invalid JSON");
+        for formatted in [error.to_string(), format!("{error:?}")] {
+            assert!(!formatted.contains("not-json-sentinel"));
+        }
+    }
 }
