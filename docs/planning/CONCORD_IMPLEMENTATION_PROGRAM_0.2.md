@@ -22,7 +22,7 @@ an execution queue because several foundations were delivered in a different ord
 |---|---|---|---|
 | Phase 0 | `PHASE_0_COMPLETE_WITH_LIMITATIONS` | Workspace, macro/core contract spike, reduced auth/pagination models, Reqwest probes, and typed-executor proof. | Proof architecture was not a production endpoint runtime; governance and Rustdoc gates were later corrected. |
 | Phase 1 | `PHASE_1_COMPLETE_WITH_LIMITATIONS` | Safe errors/redaction, finite configuration, private managed application/provider clients, deterministic final-call seam, and canonical Nextest/release architecture. | No generated client core, pending request, lifecycle execution, or successful-response pipeline existed. |
-| Phase 2 | `PHASE_2_COMPLETE` | First executable generated bodyless request: fallible generated construction, shared private core, stable pending wrappers, first-poll lifecycle, hooks/debug, managed Reqwest, bounded bytes/status handling, no-content, metadata terminal, and final generated vertical slice. | Only the explicitly authorized Phase 2 DSL and response subset is implemented; the omissions below are future product work rather than failed Phase 2 criteria. |
+| Phase 2 | `PHASE_2_COMPLETE_WITH_LIMITATIONS` | First executable generated bodyless request: fallible generated construction, shared private core, stable pending wrappers, first-poll lifecycle, hooks/debug, managed Reqwest, bounded bytes/status handling, no-content, metadata terminal, and an API-specific sealed explicit-endpoint capability. | Only the explicitly authorized Phase 2 DSL and response subset is implemented; broad 0.1 evidence remains partial where later categories are absent, and the PR 2.3 uncommitted review patch omitted one subsequently reviewed committed file. |
 
 Phase reports remain the detailed evidence owners:
 
@@ -32,7 +32,9 @@ Phase reports remain the detailed evidence owners:
 
 ## Phase 2 production baseline
 
-The Phase 2 source baseline is commit `055d74718c443412a605bd880cfad9415a824f99`.
+The original Phase 2 source baseline is commit `055d74718c443412a605bd880cfad9415a824f99`.
+The integrated-audit-corrected source baseline is
+`ea1ce944fe1d2622db7a66600d734ac0dc04784f`.
 
 Its executable path is:
 
@@ -52,6 +54,11 @@ DSL
 The Phase 0 executor proof and inert generated `RequestHead` are gone. The retained `cfg(test)` auth
 and pagination models still prove independent future invariants and do not duplicate a Phase 2
 production representation.
+
+Each generated API now owns a locally sealed endpoint capability. Facade endpoint methods and
+explicit `client.request(endpoint)` calls use the same capability-constrained path, so foreign
+generated endpoints, arbitrary application values, and downstream capability implementations fail
+at compile time without a runtime client identifier.
 
 ## Current non-goals
 

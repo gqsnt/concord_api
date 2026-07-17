@@ -2,11 +2,13 @@
 
 ## Verdict
 
-`PHASE_2_COMPLETE`
+`PHASE_2_COMPLETE_WITH_LIMITATIONS`
 
-All 26 Phase 2 exit criteria are satisfied. The limitations recorded below are the authorized
-Phase 2 product boundary or explicitly partial evidence for broader 0.1 requirements; none
-invalidates a Phase 2 exit criterion.
+All 26 Phase 2 exit criteria are satisfied after the integrated-audit correction. The generated
+explicit-endpoint ownership defect is fixed at compile time. The limitations recorded below are
+the authorized Phase 2 product boundary, explicitly partial evidence for broader 0.1 requirements,
+and one review-patch process limitation; none is a remaining Phase 2 source defect or invalidates
+an exit criterion.
 
 This is not a claim of full Concord 0.1 conformance. The normative status remains
 `Normative Implementation Candidate`.
@@ -14,18 +16,21 @@ This is not a claim of full Concord 0.1 conformance. The normative status remain
 ## Immutable evidence identity
 
 - Starting baseline: `5331b2c39b4c5911bbebfbc52b61ccc342d47deb`
-- Final Phase 2 source commit tested: `055d74718c443412a605bd880cfad9415a824f99`
-- Validation time recorded for evidence: `2026-07-17T14:38:11Z`
-- Evidence/report commit: `639549aafcf5b9fa9a5f021aed07c3ded00c5544`
-- Evidence anchor commit: this documentation-only `docs: anchor phase2 evidence` follow-up
+- Original Phase 2 source commit tested: `055d74718c443412a605bd880cfad9415a824f99`
+- Corrected final Phase 2 source commit tested: `ea1ce944fe1d2622db7a66600d734ac0dc04784f`
+- Corrected validation time recorded for evidence: `2026-07-17T16:01:17Z`
+- Corrected evidence/report commit: recorded by the documentation-only evidence anchor
+- Corrected evidence anchor commit: this report's documentation-only follow-up
 - Rust edition: 2024
 - MSRV exercised: Rust 1.85.0 from `rust-toolchain.toml`
 - Nextest exercised: 0.9.140; repository minimum: 0.9.115
 - Managed HTTP baseline: Reqwest 0.13.4 with its default features disabled
 
-The source tree was clean before integrated validation. The report and evidence commit follows the
-tested source commit, and the final anchor changes documentation only. No evidence row points to a
-documentation commit.
+The tracked source tree was clean before corrected integrated validation. An unrelated untracked
+workspace archive, `concord_api.zip`, appeared during source work and was excluded from every
+commit and patch; it was no longer present at evidence review. The report/evidence commit follows
+the tested source commit, and the final anchor changes documentation only. No evidence row points
+to a documentation commit.
 
 ## Phase 2 commits
 
@@ -36,6 +41,7 @@ documentation commit.
 | PR 2.2 | `a6d9d47a9bbdef5eed2f87376b7ca19f096b2086` | `feat(core): add typed request preparation` | Added the private shared client core, stable pending wrappers, generated-private endpoint bridge, and lazy safe head preparation. |
 | PR 2.3 | `e5dcd2c74ad31f0268ce0d6525335db3c401b6c2` | `feat(core): execute typed bodyless requests` | Replaced the proof executor with one production Bytes/NoContent lifecycle and managed Reqwest path. |
 | PR 2.4 | `055d74718c443412a605bd880cfad9415a824f99` | `feat: deliver first executable generated endpoint` | Connected the existing parser/model/codegen pipeline to the production request path and contract version 2. |
+| Integrated audit correction | `ea1ce944fe1d2622db7a66600d734ac0dc04784f` | `fix(macros): bind endpoints to generated clients` | Added each generated API's sealed endpoint capability, compile-time ownership rejection, public constructor-name cleanup, complete endpoint documentation identity, and focused contract clarification. |
 
 ## Contract decisions applied
 
@@ -93,10 +99,21 @@ Generated APIs provide:
 - fallible no-input `new()` and a public builder with immediate `.http(F)` and `.runtime(F)`;
 - structured duplicate-call/build errors without invoking duplicate closures;
 - a scope facade that owns immutable values;
-- explicit endpoint constructors that require all enclosing scope and endpoint inputs;
-- facade methods and `client.request(endpoint)` returning the same stable `Request<E>` wrapper;
+- explicit endpoint constructors that require all enclosing scope and endpoint inputs and expose
+  sanitized original DSL parameter names rather than collision-resistant storage identifiers;
+- one public, documentation-hidden, API-specific endpoint capability with a private seal;
+- facade methods and `client.request(endpoint)` using the same capability-constrained path and
+  returning the stable `Request<E>` wrapper;
 - direct `.await`, `.response().await`, and request-local timeout/debug setters;
 - generated contract version 2 with compile-time mismatch detection.
+
+Only endpoint types emitted for a generated API implement that API's capability. A foreign
+generated endpoint, an arbitrary application value, and a downstream attempted implementation are
+all compile-time errors. Facade methods construct their endpoint value and call the same generated
+client request path, so they cannot bypass the ownership check. The public bound names only the
+API-specific capability; generated Rustdoc exposes neither its private seal nor
+`concord_core::__private`. Facade and endpoint documentation use the same complete
+`client::scope::endpoint` identity.
 
 Dynamic values are prepared only on first poll and appended through the URL library's structured
 path-segment API. Slash, backslash, dot, dot-dot, empty, and pre-encoded injection cases cannot
@@ -171,8 +188,10 @@ do not reach automatic surfaces.
 
 ## Per-PR validation
 
-Each source PR generated and received full review of an ignored uncommitted patch before commit and
-a committed binary patch afterward.
+Each source PR generated an ignored uncommitted review patch and a committed binary patch. The
+PR 2.3 uncommitted review patch omitted one newly created response-handler file. The complete
+committed patch and final integrated source were subsequently reviewed and validated. The other
+source review patches included their complete tracked source changes.
 
 | Unit | Focused acceptance | Maintained validation |
 |---|---|---|
@@ -181,15 +200,22 @@ a committed binary patch afterward.
 | PR 2.2 | request preparation/identity/route suite; final integrated rerun 6/6 | same maintained source-PR matrix |
 | PR 2.3 | production executor/deadline/status/Bytes/NoContent suite; final integrated rerun 15/15 | same maintained source-PR matrix |
 | PR 2.4 | generated contract/routing 3/3; macro generated/fixture/Trybuild package 20/20 | same maintained source-PR matrix |
+| Integrated audit correction | API ownership compile failures 3/3; generated package 26/26; generated Rustdoc and constructor-name inspection | format, check/default+all, Clippy/default+all, Rustdoc/default+all, diff check, default/all/no-default release matrix |
 
 The cumulative PR 2.4 patch was amended before final validation to strengthen two independent
 oracles: non-`Clone` facade input/sibling-request isolation and a slash/backslash/pre-encoded/
 empty/dot/dot-dot/static-separator route matrix.
 
+The correction patch was reviewed in full before commit. Its compile-fail oracles independently
+reject a foreign generated endpoint, an arbitrary value, and a downstream forged capability
+implementation. The Rustdoc oracle verifies the public capability bound while rejecting the
+private seal, `concord_core::__private`, `ClientCore`, `EndpointSpec`, and `ResponseHandler`.
+
 ## Integrated validation
 
 Every maintained public recipe passed against exact source commit
-`055d74718c443412a605bd880cfad9415a824f99`:
+`ea1ce944fe1d2622db7a66600d734ac0dc04784f` through the post-commit `just release`
+gate:
 
 | Recipe | Result |
 |---|---|
@@ -199,8 +225,8 @@ Every maintained public recipe passed against exact source commit
 | `just check-no-default` | passed; core all targets without defaults |
 | `just clippy` | passed with warnings denied |
 | `just clippy-all` | passed with warnings denied |
-| `just test` | passed; Nextest 264/264 across 31 binaries |
-| `just test-all` | passed; CI-profile Nextest 267/267 across 31 binaries |
+| `just test` | passed; Nextest 268/268 across 31 binaries |
+| `just test-all` | passed; CI-profile Nextest 271/271 across 31 binaries |
 | `just test-no-default` | passed; exact private HTTP/TLS boundary 1/1 |
 | `just doctest` | passed; core 2/2, other libraries had zero doctests |
 | `just doctest-all` | passed; core 2/2, other libraries had zero doctests |
@@ -213,29 +239,32 @@ Every maintained public recipe passed against exact source commit
 Cargo Deny emitted only the accepted non-failing duplicate-version warnings for
 `core-foundation` and `windows-sys`.
 
-Focused final commands also passed:
+Focused original-source commands remained covered by the corrected full matrix. Correction-specific
+commands also passed:
 
-- lifecycle/public path filter: 11/11;
-- `cargo nextest run -p concord_core --lib -E 'test(request::tests)'`: 6/6;
-- `cargo nextest run -p concord_core --lib -E 'test(execute::tests)'`: 15/15;
-- generated contract/routing target: 3/3;
-- `cargo nextest run -p concord_macros`: 20/20, including renamed dependency, contract mismatch,
-  generated public Rustdoc, and three focused Trybuild cases.
+- `just test`: 268/268;
+- `cargo nextest run -p concord_macros`: 26/26, including renamed dependency, contract mismatch,
+  generated public Rustdoc, and six focused Trybuild cases;
+- `just release`: default 268/268, all-feature 271/271, no-default 1/1, plus the maintained
+  check, Clippy, doctest, Rustdoc, Cargo Deny, and diff-check gates.
 
 No Python repository script, Python test, specification checker, replacement checker, nested
 ordinary `cargo test`, external service, or Phase 3 command was run.
 
 ## Requirement evidence
 
-`docs/conformance/CONFORMANCE_EVIDENCE_0.1.csv` appends 170 Phase 2 rows: one exact requirement ID
-per row, one unique `P2-*` evidence ID per row, and the tested source commit
-`055d74718c443412a605bd880cfad9415a824f99` on every row. There are 158 direct rows and 12 rows
-explicitly classified as partial. Historical Phase 0 and Phase 1 rows were not rewritten.
+`docs/conformance/CONFORMANCE_EVIDENCE_0.1.csv` contains 178 Phase 2 rows: one exact requirement ID
+per row and one unique `P2-*` evidence ID per row. The original 170 rows retain tested source commit
+`055d74718c443412a605bd880cfad9415a824f99`; eight correction rows point to corrected tested source
+commit `ea1ce944fe1d2622db7a66600d734ac0dc04784f`. There are 114 direct rows and 64 rows explicitly
+classified as partial. Historical Phase 0 and Phase 1 rows were not rewritten.
 
-Partial rows are limited to broader contracts whose unimplemented portions are explicit non-goals:
-prepared endpoints, later response/body modes, authentication, non-gzip decompression runtime
-probes, later constructor values, fuller nested/clause grammar, a wholly behavioral negative proof
-for the private deterministic boundary, and the full future side-effect matrix. No waiver is used.
+The integrated audit reclassified `EXEC-CANCEL-001`, `GEN-NAME-001`, and every other reviewed
+Phase 2 direct row whose owning 0.1 requirement explicitly includes unimplemented later categories.
+Those partial rows now identify the exact direct Phase 2 portion and the unproved body, credential,
+provider, limiter, authentication, prepared-endpoint, streaming, decoder, dynamic-host, or
+pagination portion. Structural requirements whose complete public configuration or negative shape
+is already present remain direct. No waiver is used.
 
 The evidence combines public compile/Rustdoc tests, deterministic execution tests, real local
 Reqwest tests, redaction/property tests, dependency/feature tests, and the complete maintained
@@ -245,7 +274,8 @@ release command. Planned coverage rows remain planning, not evidence.
 
 The final source audit found exactly one production representation for pending request, prepared
 head, operation ID, operation deadline, basic execution, successful Bytes collection, and
-NoContent handling. It confirmed the absence of:
+NoContent handling. It also confirmed one generated, API-specific sealed capability per client,
+with facade and explicit construction sharing its request path. It confirmed the absence of:
 
 - an inert/eager generated `RequestHead`;
 - a duplicate test-only execution loop;
@@ -253,6 +283,8 @@ NoContent handling. It confirmed the absence of:
 - a public transport, production executor trait, or raw Reqwest client/request/response;
 - eager generated URL construction;
 - generated public `__private` paths;
+- cross-client explicit-endpoint admission, arbitrary endpoint admission, or a downstream-open
+  generated endpoint capability;
 - stale PR 0.2 diagnostics;
 - authentication, limiter, request-body, pagination-runtime, streaming, multipart, raw-success,
   or other Phase 3 placeholders;
@@ -272,6 +304,17 @@ prepared endpoints, dangerous raw success, or the complete nested value system.
 Completion hooks are awaited and extension-owned; a non-returning hook can postpone delivery of an
 already-fixed result. Cancellation or panic may prevent completion delivery. These are approved
 contract semantics, not missing Phase 2 behavior.
+
+The PR 2.3 uncommitted review patch omitted `concord_core/src/response/handler.rs` while that file
+was newly untracked. The committed PR 2.3 patch contained it, and both the complete committed patch
+and final integrated source were subsequently reviewed and validated. This is a recorded process
+limitation, not a source defect.
+
+The feature-gated deterministic development boundary still has no approved generated-client
+injection method. Before streaming is implemented, `Request<E>::response()` must become
+capability-constrained so it is absent for streaming endpoints. Built-in textual debug remains
+sanitized but does not include the operation ID. These are future contract/publication concerns,
+not Phase 2 exit failures.
 
 ## Phase 3 readiness
 
