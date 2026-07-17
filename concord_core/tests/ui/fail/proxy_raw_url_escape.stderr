@@ -1,0 +1,18 @@
+error[E0624]: method `as_str` is private
+ --> tests/ui/fail/proxy_raw_url_escape.rs:5:25
+  |
+5 |     let _: &str = proxy.as_str();
+  |                         ^^^^^^ private method
+  |
+ ::: src/http/proxy.rs
+  |
+  |     pub(crate) fn as_str(&self) -> &str {
+  |     ----------------------------------- private method defined here
+
+error[E0277]: the trait bound `Url: From<SafeProxy>` is not satisfied
+ --> tests/ui/fail/proxy_raw_url_escape.rs:6:24
+  |
+6 |     let _: Url = proxy.into();
+  |                        ^^^^ the trait `From<SafeProxy>` is not implemented for `Url`
+  |
+  = note: required for `SafeProxy` to implement `Into<Url>`

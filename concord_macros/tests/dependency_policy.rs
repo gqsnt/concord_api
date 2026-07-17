@@ -58,21 +58,23 @@ fn transport_stack_exception_is_h2_dev_only() {
 }
 
 #[test]
-fn trybuild_is_confined_to_macro_development_dependencies() {
-    let normal = direct_tree(
-        "concord_macros",
-        "normal,build",
-        "dependency-policy/macros-normal-build-trybuild",
-    );
-    assert!(!has_direct_package(&normal, "trybuild"), "{normal}");
+fn trybuild_is_confined_to_core_and_macro_development_dependencies() {
+    for package in ["concord_core", "concord_macros"] {
+        let normal = direct_tree(
+            package,
+            "normal,build",
+            &format!("dependency-policy/{package}-normal-build-trybuild"),
+        );
+        assert!(!has_direct_package(&normal, "trybuild"), "{normal}");
 
-    let development = direct_tree(
-        "concord_macros",
-        "dev",
-        "dependency-policy/macros-development-trybuild",
-    );
-    assert!(
-        has_direct_package(&development, "trybuild"),
-        "{development}"
-    );
+        let development = direct_tree(
+            package,
+            "dev",
+            &format!("dependency-policy/{package}-development-trybuild"),
+        );
+        assert!(
+            has_direct_package(&development, "trybuild"),
+            "{development}"
+        );
+    }
 }

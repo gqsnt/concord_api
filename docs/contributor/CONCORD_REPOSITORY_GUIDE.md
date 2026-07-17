@@ -231,15 +231,18 @@ Live beside macro compiler modules or in focused test modules.
 
 ### Trybuild
 
-Use for source-only public generated API and intentional diagnostic behavior. Keep each expected
-diagnostic focused on the Concord error under test.
+Use for source-only public core/generated API failures and intentional diagnostic behavior. This
+includes private-item access, absent methods, forbidden trait surfaces, raw owner/builder escape,
+and generated client generic/constructor escape. Keep each expected diagnostic focused on the
+Concord error under test. Trybuild suites use ordinary Nextest timeout policy.
 
 ### Downstream fixtures
 
-Use for stable generated and advanced workflows only when a distinct Cargo manifest is part of the
-contract. Dependency renaming, a missing runtime dependency, an incompatible macro/core package,
-feature selection, and downstream visibility boundaries justify standalone packages. Ordinary
-generated use, nesting, repetition, and trait bounds belong in normal integration tests.
+Use a standalone Cargo project only when a distinct manifest is part of the contract. Dependency
+renaming, a missing runtime dependency, an incompatible macro/core package, package metadata, and
+Cargo feature selection justify standalone projects. Source-only visibility, privacy, method, and
+trait failures do not. Ordinary generated use, nesting, repetition, and trait bounds belong in
+normal integration tests or Trybuild.
 
 ### Runtime deterministic tests
 
@@ -269,8 +272,8 @@ Keep isolated so Cargo feature unification does not hide missing-feature behavio
 - Set Nextest retries to zero.
 - Run Rust unit and integration tests through Nextest. Use `cargo test` only for doctests.
 - Never spawn `cargo test` from another Rust test. A nested Cargo check/build/tree process is
-  permitted only when manifest metadata, dependency topology, feature selection, or compile-fail
-  behavior is the subject of the test.
+  permitted only when manifest metadata, dependency topology, or feature selection is the subject
+  of the test. Source-only compile-fail behavior belongs in Trybuild.
 
 ## 15. Prohibited test patterns
 

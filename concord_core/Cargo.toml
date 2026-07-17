@@ -37,7 +37,9 @@ http.workspace = true
 http-body.workspace = true
 reqwest = { workspace = true, features = ["http2", "rustls-no-provider", "system-proxy"] }
 rustls.workspace = true
+serde = "=1.0.228"
 tokio = { workspace = true, features = ["test-util"] }
+trybuild = "=1.0.118"
 
 [lints]
 workspace = true

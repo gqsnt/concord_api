@@ -1,4 +1,3 @@
-use concord_core::__development::DeterministicExecutor;
 use concord_macros::api;
 
 api! {
@@ -14,6 +13,6 @@ api! {
 }
 
 fn main() {
-    let _: Option<DevelopmentProofApi<DeterministicExecutor>> = None;
-    let _ = DevelopmentProofApi::new(DeterministicExecutor::new());
+    let _: Option<DevelopmentProofApi<()>> = None;
+    let _ = DevelopmentProofApi::new(());
 }

@@ -37,8 +37,8 @@ just release
 Nextest is the canonical runner for Rust unit and integration tests. `cargo test` is retained only
 for doctests, which Nextest does not execute. The default, all-feature, and no-default recipes are
 intentional checks of different compiled surfaces. Standalone Cargo fixture packages are reserved
-for behavior that depends on package metadata or dependency topology; source-only macro cases use
-ordinary integration tests or Trybuild.
+for behavior that depends on package metadata or dependency topology; source-only macro and core
+public-surface cases use ordinary integration tests or Trybuild.
 
 Planned coverage in the conformance catalog describes intended verification. It is separate from
 actual executed evidence and does not establish product conformance.

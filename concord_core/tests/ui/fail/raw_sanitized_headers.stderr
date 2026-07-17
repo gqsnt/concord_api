@@ -1,0 +1,98 @@
+error[E0599]: the method `as_ref` exists for reference `&SanitizedHeaderMap`, but its trait bounds were not satisfied
+ --> tests/ui/fail/raw_sanitized_headers.rs:6:33
+  |
+6 |     let _: &HeaderMap = headers.as_ref();
+  |                                 ^^^^^^ method cannot be called on `&SanitizedHeaderMap` due to unsatisfied trait bounds
+  |
+ ::: src/redaction/headers.rs
+  |
+  | pub struct SanitizedHeaderMap {
+  | ----------------------------- doesn't satisfy `SanitizedHeaderMap: AsRef<_>`
+  |
+  = note: the following trait bounds were not satisfied:
+          `SanitizedHeaderMap: AsRef<_>`
+          which is required by `&SanitizedHeaderMap: AsRef<_>`
+
+error[E0308]: mismatched types
+  --> tests/ui/fail/raw_sanitized_headers.rs:10:25
+   |
+10 |     let _: &HeaderMap = &*headers;
+   |            ----------   ^^^^^^^^^ expected `&HeaderMap`, found `&SanitizedHeaderMap`
+   |            |
+   |            expected due to this
+   |
+   = note: expected reference `&HeaderMap`
+              found reference `&SanitizedHeaderMap`
+
+error[E0277]: the trait bound `HeaderMap: From<SanitizedHeaderMap>` is not satisfied
+  --> tests/ui/fail/raw_sanitized_headers.rs:14:32
+   |
+14 |     let _: HeaderMap = headers.into();
+   |                                ^^^^ the trait `From<SanitizedHeaderMap>` is not implemented for `HeaderMap`
+   |
+   = note: required for `SanitizedHeaderMap` to implement `Into<HeaderMap>`
+
+error[E0599]: no method named `raw` found for reference `&SanitizedHeaderMap` in the current scope
+  --> tests/ui/fail/raw_sanitized_headers.rs:18:33
+   |
+18 |     let _: &HeaderMap = headers.raw();
+   |                                 ^^^ method not found in `&SanitizedHeaderMap`
+
+error[E0308]: mismatched types
+  --> tests/ui/fail/raw_sanitized_headers.rs:22:50
+   |
+22 |     let _: Option<(&HeaderName, &HeaderValue)> = headers.iter().next();
+   |            -----------------------------------   ^^^^^^^^^^^^^^^^^^^^^ expected `Option<(&HeaderName, &HeaderValue)>`, found `Option<(&HeaderName, ...)>`
+   |            |
+   |            expected due to this
+   |
+   = note: expected enum `Option<(&HeaderName, &HeaderValue)>`
+              found enum `Option<(&HeaderName, SanitizedHeaderValue<'_>)>`
+
+error[E0599]: no method named `as_ref` found for struct `SanitizedHeaders` in the current scope
+  --> tests/ui/fail/raw_sanitized_headers.rs:26:33
+   |
+26 |     let _: &HeaderMap = headers.as_ref();
+   |                                 ^^^^^^ method not found in `SanitizedHeaders<'_>`
+
+error[E0614]: type `SanitizedHeaders<'_>` cannot be dereferenced
+  --> tests/ui/fail/raw_sanitized_headers.rs:30:26
+   |
+30 |     let _: &HeaderMap = &*headers;
+   |                          ^^^^^^^^
+
+error[E0277]: the trait bound `HeaderMap: From<SanitizedHeaders<'_>>` is not satisfied
+  --> tests/ui/fail/raw_sanitized_headers.rs:34:32
+   |
+34 |     let _: HeaderMap = headers.into();
+   |                                ^^^^ the trait `From<SanitizedHeaders<'_>>` is not implemented for `HeaderMap`
+   |
+   = note: required for `SanitizedHeaders<'_>` to implement `Into<HeaderMap>`
+
+error[E0599]: no method named `raw` found for struct `SanitizedHeaders` in the current scope
+  --> tests/ui/fail/raw_sanitized_headers.rs:38:33
+   |
+38 |     let _: &HeaderMap = headers.raw();
+   |                                 ^^^ method not found in `SanitizedHeaders<'_>`
+
+error[E0277]: a value of type `Vec<(&HeaderName, &HeaderValue)>` cannot be built from an iterator over elements of type `(&HeaderName, SanitizedHeaderValue<'_>)`
+  --> tests/ui/fail/raw_sanitized_headers.rs:42:62
+   |
+42 |     let _: Vec<(&HeaderName, &HeaderValue)> = headers.iter().collect();
+   |                                                              ^^^^^^^ value of type `Vec<(&HeaderName, &HeaderValue)>` cannot be built from `std::iter::Iterator<Item=(&HeaderName, SanitizedHeaderValue<'_>)>`
+   |
+   = help: the trait `FromIterator<(&HeaderName, SanitizedHeaderValue<'_>)>` is not implemented for `Vec<(&HeaderName, &HeaderValue)>`
+           but trait `FromIterator<(&HeaderName, &HeaderValue)>` is implemented for it
+   = help: for that trait implementation, expected `&HeaderValue`, found `SanitizedHeaderValue<'_>`
+note: the method call chain might not have had the expected associated types
+  --> tests/ui/fail/raw_sanitized_headers.rs:42:55
+   |
+42 |     let _: Vec<(&HeaderName, &HeaderValue)> = headers.iter().collect();
+   |                                               ------- ^^^^^^ `Iterator::Item` is `(&HeaderName, SanitizedHeaderValue<'_>)` here
+   |                                               |
+   |                                               this expression has type `SanitizedHeaders<'_>`
+note: required by a bound in `collect`
+  --> $RUST/core/src/iter/traits/iterator.rs
+   |
+   |     fn collect<B: FromIterator<Self::Item>>(self) -> B
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Iterator::collect`

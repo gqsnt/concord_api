@@ -1,0 +1,23 @@
+error[E0432]: unresolved import `concord_core::advanced::ApplicationHttp`
+ --> tests/ui/fail/managed_reqwest_escape.rs:1:5
+  |
+1 | use concord_core::advanced::ApplicationHttp;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `ApplicationHttp` in `advanced`
+
+error[E0432]: unresolved import `concord_core::advanced::ProviderHttpInner`
+ --> tests/ui/fail/managed_reqwest_escape.rs:3:5
+  |
+3 | use concord_core::advanced::ProviderHttpInner;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `ProviderHttpInner` in `advanced`
+
+error[E0599]: no method named `client` found for struct `HttpConfigBuilder` in the current scope
+ --> tests/ui/fail/managed_reqwest_escape.rs:6:21
+  |
+6 |     let _ = builder.client();
+  |                     ^^^^^^ method not found in `HttpConfigBuilder`
+
+error[E0599]: no method named `reqwest_builder` found for struct `HttpConfigBuilder` in the current scope
+  --> tests/ui/fail/managed_reqwest_escape.rs:10:21
+   |
+10 |     let _ = builder.reqwest_builder();
+   |                     ^^^^^^^^^^^^^^^ method not found in `HttpConfigBuilder`

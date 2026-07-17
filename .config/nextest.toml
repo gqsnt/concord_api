@@ -25,15 +25,11 @@ binary(compile)
 | binary(config_methods)
 | binary(dependency_policy)
 | binary(development)
-| binary(managed_clients)
-| binary(proxy)
-| binary(raw_escape_compile_fail)
-| binary(status_body_api)
-| binary(ui)
 '''
 test-group = "cargo-processes"
 retries = 0
 # These tests intentionally launch Cargo to inspect a separate manifest or
-# feature/dependency graph. Report them after two minutes and terminate after
-# ten minutes rather than constraining unrelated loopback tests.
+# feature/dependency graph. Trybuild/UI tests and ordinary public-surface tests
+# use the normal profile. Report retained Cargo fixtures after two minutes and
+# terminate after ten minutes rather than constraining unrelated loopback tests.
 slow-timeout = { period = "120s", terminate-after = 5 }

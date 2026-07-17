@@ -1,0 +1,56 @@
+error[E0599]: the method `as_ref` exists for reference `&StatusBody`, but its trait bounds were not satisfied
+ --> tests/ui/fail/status_body_traits.rs:7:25
+  |
+7 |     let _: &[u8] = body.as_ref();
+  |                         ^^^^^^ method cannot be called on `&StatusBody` due to unsatisfied trait bounds
+  |
+ ::: src/error/status.rs
+  |
+  | pub struct StatusBody {
+  | --------------------- doesn't satisfy `StatusBody: AsRef<_>`
+  |
+  = note: the following trait bounds were not satisfied:
+          `StatusBody: AsRef<_>`
+          which is required by `&StatusBody: AsRef<_>`
+
+error[E0614]: type `StatusBody` cannot be dereferenced
+  --> tests/ui/fail/status_body_traits.rs:11:21
+   |
+11 |     let _: &[u8] = &**body;
+   |                     ^^^^^^
+
+error[E0277]: the trait bound `StatusBody: Clone` is not satisfied
+  --> tests/ui/fail/status_body_traits.rs:15:21
+   |
+15 |     require_clone::<StatusBody>();
+   |                     ^^^^^^^^^^ the trait `Clone` is not implemented for `StatusBody`
+   |
+note: required by a bound in `require_clone`
+  --> tests/ui/fail/status_body_traits.rs:3:21
+   |
+3  | fn require_clone<T: Clone>() {}
+   |                     ^^^^^ required by this bound in `require_clone`
+
+error[E0277]: the trait bound `StatusBody: serde::Serialize` is not satisfied
+  --> tests/ui/fail/status_body_traits.rs:16:25
+   |
+16 |     require_serialize::<StatusBody>();
+   |                         ^^^^^^^^^^ the trait `Serialize` is not implemented for `StatusBody`
+   |
+   = note: for local types consider adding `#[derive(serde::Serialize)]` to your `StatusBody` type
+   = note: for types from other crates check whether the crate offers a `serde` feature flag
+   = help: the following other types implement trait `Serialize`:
+             &'a T
+             &'a mut T
+             ()
+             (T,)
+             (T0, T1)
+             (T0, T1, T2)
+             (T0, T1, T2, T3)
+             (T0, T1, T2, T3, T4)
+           and $N others
+note: required by a bound in `require_serialize`
+  --> tests/ui/fail/status_body_traits.rs:4:25
+   |
+4  | fn require_serialize<T: serde::Serialize>() {}
+   |                         ^^^^^^^^^^^^^^^^ required by this bound in `require_serialize`
