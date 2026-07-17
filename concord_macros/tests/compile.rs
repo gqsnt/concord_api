@@ -106,6 +106,7 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
             "__concord_endpoint_seal",
             "ClientCore",
             "EndpointSpec",
+            "MetadataResponse",
             "ResponseHandler",
             "CodecBody",
             "BufferedResponse",

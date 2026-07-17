@@ -49,22 +49,6 @@ fn development_module_is_downstream_accessible_only_with_its_feature() {
 }
 
 #[test]
-fn development_items_do_not_leak_into_stable_namespaces() {
-    let output = check_fixture("namespace_escape", Some("dangerous-custom-retry"));
-    let diagnostics = diagnostics(&output);
-    assert!(
-        !output.status.success(),
-        "development namespace escape unexpectedly compiled\n{diagnostics}"
-    );
-    for namespace in ["advanced", "prelude", "dangerous"] {
-        assert!(
-            diagnostics.contains(namespace),
-            "namespace diagnostic omitted {namespace:?}\n{diagnostics}"
-        );
-    }
-}
-
-#[test]
 fn generated_clients_still_compile_when_development_support_is_enabled() {
     let normal = check_fixture("generated_presence", Some("dangerous-dev-tools"));
     assert!(

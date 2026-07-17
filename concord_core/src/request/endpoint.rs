@@ -205,6 +205,11 @@ pub trait ResponseHandler: sealed::Response + Send + Sync + 'static {
     const ACCEPT: Option<&'static str>;
 }
 
+/// Generated-private capability for successful response modes that support the
+/// metadata-bearing buffered completion terminal.
+#[doc(hidden)]
+pub trait MetadataResponse: ResponseHandler {}
+
 /// Built-in finite bytes response handler marker.
 #[doc(hidden)]
 pub struct BytesResponse;
@@ -217,6 +222,8 @@ impl ResponseHandler for BytesResponse {
 
 impl sealed::Response for BytesResponse {}
 
+impl MetadataResponse for BytesResponse {}
+
 /// Built-in all-2xx body-ignoring response handler marker.
 #[doc(hidden)]
 pub struct NoContentResponse;
@@ -228,6 +235,8 @@ impl ResponseHandler for NoContentResponse {
 }
 
 impl sealed::Response for NoContentResponse {}
+
+impl MetadataResponse for NoContentResponse {}
 
 /// Generated-private successful buffered response backed by one public codec.
 #[doc(hidden)]
@@ -243,6 +252,8 @@ where
 }
 
 impl<C> sealed::Response for BufferedResponse<C> where C: DecodeBody {}
+
+impl<C> MetadataResponse for BufferedResponse<C> where C: DecodeBody {}
 
 /// Generated-private bridge from one concrete endpoint value into core.
 #[doc(hidden)]

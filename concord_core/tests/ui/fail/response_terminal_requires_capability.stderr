@@ -1,0 +1,8 @@
+error[E0599]: the method `response` exists for struct `Request<E>`, but its trait bounds were not satisfied
+ --> tests/ui/fail/response_terminal_requires_capability.rs:8:21
+  |
+8 |     let _ = request.response();
+  |                     ^^^^^^^^ method cannot be called on `Request<E>` due to unsatisfied trait bounds
+  |
+  = note: the following trait bounds were not satisfied:
+          `<E as EndpointSpec>::Response: MetadataResponse`

@@ -249,6 +249,10 @@ including the public JSON marker. The macro `json_disabled` project is retained 
 its diagnostic depends on the caller selecting no `concord_core/json` feature; ordinary Text and
 custom-codec generation remains in normal integration tests.
 
+The retained core `development_features` project owns only development-feature presence, absence,
+and generated-client compilation under that feature graph. Attempts to reach development-only
+items through stable namespaces are source-only failures and belong in the core Trybuild suite.
+
 ### Runtime deterministic tests
 
 Use for execution ordering, auth, limiter, response, and pagination behavior.

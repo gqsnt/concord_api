@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use super::{RequestOptions, TimeoutOverride};
+use super::{EndpointSpec, MetadataResponse, RequestOptions, TimeoutOverride};
 use crate::client::ClientCore;
 use crate::hooks::DebugLevel;
 
@@ -55,7 +55,16 @@ impl<E> Request<E> {
         self.options = self.options.with_debug(level);
         self
     }
+}
 
+#[doc(hidden)]
+impl<E> Request<E>
+where
+    E: EndpointSpec,
+    E::Response: MetadataResponse,
+{
+    /// Selects successful response metadata for response modes with a buffered
+    /// metadata-bearing completion.
     #[must_use]
     pub fn response(self) -> ResponseRequest<E> {
         ResponseRequest { request: self }

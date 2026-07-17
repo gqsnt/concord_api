@@ -34,8 +34,8 @@ pub use crate::hooks::DebugLevel;
 #[doc(hidden)]
 pub use crate::request::{
     BodyMetadata, BodySpec, BufferedResponse, BytesResponse, CodecBody, EmptyBody, EndpointSpec,
-    HeadBuilder, NoContentResponse, PreparedBody, PreparedHead, RequestMeta, RequestOptions,
-    ResponseHandler, TimeoutOverride,
+    HeadBuilder, MetadataResponse, NoContentResponse, PreparedBody, PreparedHead, RequestMeta,
+    RequestOptions, ResponseHandler, TimeoutOverride,
 };
 
 /// Creates the ordinary generated-client HTTP configuration baseline.

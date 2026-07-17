@@ -7,7 +7,6 @@ publish = false
 [features]
 default = []
 dangerous-dev-tools = ["concord_core/dangerous-dev-tools"]
-dangerous-custom-retry = ["concord_core/dangerous-custom-retry"]
 
 [dependencies]
 concord_core = { path = "../../..", default-features = false }
