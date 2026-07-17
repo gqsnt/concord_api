@@ -1,0 +1,19 @@
+[package]
+name = "config-features"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[features]
+default = []
+http2 = ["concord_core/http2"]
+default-tls = ["concord_core/default-tls"]
+gzip = ["concord_core/gzip"]
+brotli = ["concord_core/brotli"]
+deflate = ["concord_core/deflate"]
+dangerous-custom-retry = ["concord_core/dangerous-custom-retry"]
+
+[dependencies]
+concord_core = { path = "../../..", default-features = false }
+
+[workspace]

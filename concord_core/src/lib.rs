@@ -7,13 +7,17 @@
 #![forbid(unsafe_code)]
 
 pub mod advanced;
+#[cfg(feature = "dangerous-custom-retry")]
+pub mod dangerous;
 pub mod prelude;
 
 mod codec;
 mod error;
 mod generated_contract;
+mod http;
 mod redaction;
 mod request;
+mod runtime;
 
 #[cfg(test)]
 mod auth;

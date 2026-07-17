@@ -10,4 +10,6 @@ pub use crate::error::{
     ConfigurationErrorKind, ErrorCategory, HttpResponseFailure, PaginationErrorKind,
     RateLimitErrorKind, StatusBody, StatusBodyDecodeError, StatusBodyState,
 };
+pub use crate::http::{HttpConfigBuilder, ProviderRetry, SafeProxy};
 pub use crate::redaction::{SanitizedHeaderMap, SanitizedHeaderValue, SanitizedHeaders};
+pub use crate::runtime::RuntimeConfigBuilder;
