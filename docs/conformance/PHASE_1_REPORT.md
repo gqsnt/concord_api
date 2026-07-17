@@ -17,13 +17,16 @@ This is a Phase 1 result, not a claim of full Concord production conformance.
 - PR 1.1 baseline: `9c335396fb7bb0081c1239f33937161ea59d946d`
 - Integrated Phase 1 source commit tested by PR 1.6: `1074c141fd1a48748d08a46bfca66fb6201e0b61`
 - PR 1.7 correction baseline: `4c1bb03587a555f03cc5aa1866656c15069e94c3`
-- PR 1.7 corrected candidate: the tree recorded by the containing PR 1.7 commit
+- PR 1.7 corrected candidate: `720f0e862cfdbbc138fdeb13fbe076231c25a4f4`
+- PR 1.8 starting baseline: `720f0e862cfdbbc138fdeb13fbe076231c25a4f4`
+- PR 1.8 exact source commit tested: `8689457af515b2325259c5401c436752288705ba`
+- Nextest exercised: 0.9.140; repository minimum: 0.9.115
 - Rust edition: 2024
 - MSRV exercised: Rust 1.85.0
 - Managed HTTP baseline: Reqwest 0.13.4 with Reqwest default features disabled
 - Validation date: 2026-07-17 UTC
 
-The source tree was clean at the start and end of validation against `1074c141fd1a48748d08a46bfca66fb6201e0b61`. PR 1.6 changed only this report and the actual-evidence catalog. PR 1.7 began from clean commit `4c1bb03587a555f03cc5aa1866656c15069e94c3`, corrected the integrated governance and source defects listed below, and reran the expanded release matrix before commit.
+The source tree was clean at the start and end of validation against `1074c141fd1a48748d08a46bfca66fb6201e0b61`. PR 1.6 changed only this report and the actual-evidence catalog. PR 1.7 began from clean commit `4c1bb03587a555f03cc5aa1866656c15069e94c3`, corrected the integrated governance and source defects listed below, and reran the expanded release matrix before commit. PR 1.8 began from clean commit `720f0e862cfdbbc138fdeb13fbe076231c25a4f4`; its source was committed first at `8689457af515b2325259c5401c436752288705ba`, then the report and evidence were recorded separately so every new evidence row could truthfully reference an existing exact source commit.
 
 ## Accepted Phase 1 Units and Commits
 
@@ -35,7 +38,9 @@ The source tree was clean at the start and end of validation against `1074c141fd
 | PR 1.4 | `54097a6e1c7fd41d3fb7380ccf0005b67ba0d86a` | `feat(core): add managed reqwest clients` |
 | PR 1.5 | `1074c141fd1a48748d08a46bfca66fb6201e0b61` | `test(core): add deterministic reqwest boundary` |
 | PR 1.6 | containing commit | `phase1: record integrated validation and evidence` |
-| PR 1.7 | containing commit | `phase1: correct integrated governance and evidence` |
+| PR 1.7 | `720f0e862cfdbbc138fdeb13fbe076231c25a4f4` | `phase1: correct integrated governance and evidence` |
+| PR 1.8 source | `8689457af515b2325259c5401c436752288705ba` | `phase1: finalize test and release architecture` |
+| PR 1.8 evidence | containing commit | `phase1: record final test architecture evidence` |
 
 Each unit has an ignored committed patch under `git_diff/phase1-pr-1.X.patch`. The patch directory is not tracked.
 
@@ -44,7 +49,7 @@ Each unit has an ignored committed patch under `git_diff/phase1-pr-1.X.patch`. T
 The stable public Phase 1 surface is intentionally small:
 
 - central sanitized metadata: `SanitizedHeaders`, `SanitizedHeaderMap`, and `SanitizedHeaderValue`;
-- structured errors: `ApiError`, `ErrorCategory`, `ClientBuildError`, `ConfigurationError`, their public classification enums, `HttpResponseFailure`, `StatusBody`, `StatusBodyState`, and `StatusBodyDecodeError`;
+- structured errors: `ApiError`, including its exact `configuration_kind()` accessor, `ErrorCategory`, `ClientBuildError`, `ConfigurationError`, their public classification enums, `HttpResponseFailure`, `StatusBody`, `StatusBodyState`, and `StatusBodyDecodeError`;
 - explicit pagination ceiling classifications: `PageCeilingExceeded`, `CollectedItemCeilingExceeded`, and `IdentityStorageCeilingExceeded`;
 - final terminal-body decoding contract: `CodecError`, `DecodeContext`, and `DecodeBody`;
 - safe configuration: `HttpConfigBuilder`, `ProviderRetry`, `RuntimeConfigBuilder`, and `SafeProxy`;
@@ -55,6 +60,7 @@ Private-only foundations are:
 
 - immutable resolved HTTP/runtime configuration;
 - `ApplicationHttp` and `ProviderHttpInner`, each owning a separate concrete Reqwest client and pool;
+- retained effective `https_only` metadata and application-only managed client identity;
 - TLS capability and safe client-build reduction;
 - the complete-only terminal status-body collector;
 - the final-call deterministic seam inside the two managed wrappers.
@@ -124,7 +130,115 @@ Focused correction tests also passed:
 - `cargo test -p concord_core pagination_ceiling_kinds`: 2 relevant tests passed across the unit/public targets; the remaining tests were filtered.
 - `cargo test -p concord_core --no-default-features --test no_default`: 1 passed and executed the existing private managed HTTP/TLS no-default test.
 
-The maintained `just release` recipe now contains the applicable normative all-feature workspace MSRV check, all-feature Clippy, all-feature Nextest, all-feature doc tests, PowerShell-scoped `RUSTDOCFLAGS=-D warnings`, no-default core check/test/MSRV gates, all-feature core MSRV, macro MSRV, the auth-model filter, Cargo Deny, and Git whitespace validation. It contains no specification automation command.
+The PR 1.7 `just release` recipe at that point contained the applicable normative all-feature workspace MSRV check, all-feature Clippy, all-feature Nextest, all-feature doc tests, PowerShell-scoped `RUSTDOCFLAGS=-D warnings`, no-default core check/test/MSRV gates, all-feature core MSRV, macro MSRV, the auth-model filter, Cargo Deny, and Git whitespace validation. It contained no specification automation command; PR 1.8 supersedes its command graph below.
+
+### PR 1.8 final test and release architecture
+
+PR 1.8 makes Nextest the only maintained runner for Rust unit and integration tests. Nextest
+0.9.140 was installed; `.config/nextest.toml` requires 0.9.115 because the CI profile inherits from
+the default profile. Both profiles use zero retries. The default slow timeout reports after 60
+seconds and terminates after three periods. CI disables fail-fast and has a finite 60-minute global
+timeout. Cargo-spawning integration binaries use the `cargo-processes` group with two workers, a
+120-second slow report, and termination after five periods. No default filter hides tests.
+
+Configuration enumeration produced 244 default-feature tests and 247 all-feature tests; the CI
+profile selected the same 247 all-feature tests. The Cargo-process override selected 18 tests in 10
+integration binaries. Independent loopback tests remain parallel.
+
+The nested `concord_core/tests/no_default.rs` Cargo-test wrapper was removed. Its private production
+helper now runs directly through an exact Nextest filter. All remaining nested Cargo processes are
+checks or feature/dependency-tree inspections whose separate manifest or dependency graph is the
+subject of the test. They share bounded diagnostics, locked/offline arguments, and isolated target
+directories through the unpublished `concord_test_support::cargo_fixture` module.
+
+Macro source-only cases were reduced as follows:
+
+- normal use, nested invocation, repeated invocation, equal names, and minimal public bounds are
+  independently named ordinary tests in `generated_surface.rs`;
+- malformed Phase 0 DSL and missing outer scope values are focused Trybuild cases under
+  `tests/ui/fail`;
+- only renamed-core, missing-core, and contract-mismatch Cargo projects remain. The first two need
+  caller manifest topology; contract mismatch needs both its own manifest and the nested fake
+  incompatible `concord_core` package. `tests/fixtures/README.md` records those reasons.
+
+Trybuild 1.0.118 is an exact dev dependency. Cargo edge evidence confirms it is absent from the
+macro normal/build graph. Each retained Cargo fixture is a separate Nextest test with a unique target
+directory, rather than one opaque loop.
+
+The public Just recipes are `fmt`, `fmt-check`, `check`, `check-all`, `check-no-default`, `clippy`,
+`clippy-all`, `test`, `test-all`, `test-no-default`, `doctest`, `doctest-all`, `doc`, `doc-all`,
+`deny`, `diff-check`, and `release`. The pinned toolchain makes unqualified `cargo` commands Rust
+1.85 runs. `release` composes maintained recipes in this graph:
+
+```text
+fmt-check -> check -> check-all -> check-no-default
+          -> clippy -> clippy-all
+          -> private CI-default Nextest -> test-all -> test-no-default
+          -> doctest -> doctest-all -> doc -> doc-all -> deny -> diff-check
+```
+
+It no longer duplicates package checks already covered by workspace jobs, adds a second ordinary
+`cargo test` run, or repeats the auth-model filter. `cargo test` remains only in the two doctest
+recipes. Rust 1.85 `cargo rustdoc` lacks workspace and no-deps selectors, so `doc` and `doc-all`
+invoke `cargo rustdoc -p ... -- -D warnings` for each of the three workspace libraries; this is
+cross-shell and preserves the warning gate.
+
+The exact source commit passed every public recipe:
+
+| Recipe | Result |
+|---|---|
+| `just fmt`; `just fmt-check` | passed; formatting remained unchanged |
+| `just check` | passed, workspace all targets with default features |
+| `just check-all` | passed, workspace all targets with all features |
+| `just check-no-default` | passed, `concord_core` all targets without defaults |
+| `just clippy`; `just clippy-all` | passed with warnings denied |
+| `just test` | passed; 244/244 across 26 binaries, 0 skipped |
+| `just test-all` | passed under CI profile; 247/247 across 26 binaries, 0 skipped |
+| `just test-no-default` | passed; exact managed HTTP/TLS helper 1/1 |
+| `just doctest`; `just doctest-all` | passed for all three documentation targets; 0 failures |
+| `just doc`; `just doc-all` | passed for all three libraries with warnings denied |
+| `just deny` | advisories, bans, licenses, and sources passed; two allowed duplicate-version warnings remain |
+| `just diff-check` | passed |
+| `just release` | passed the complete composed default/all/no-default matrix |
+
+Focused commands passed as follows:
+
+| Command | Result |
+|---|---|
+| `cargo nextest show-config version` | installed 0.9.140 satisfies required 0.9.115 |
+| default/all/CI `cargo nextest list` commands | 244 / 247 / 247 selected; no unexpected omissions |
+| `cargo nextest run -p concord_macros` | 17/17, including split fixtures and two Trybuild cases |
+| `cargo nextest run -p concord_core -E 'test(/auth_model/)'` | 51/51 |
+| exact no-default lib filter | 1/1 |
+| `binary(reqwest_contract)` | 13/13 |
+| `binary(managed_clients)` | 1/1 |
+| `binary(error_api)` | 3/3 |
+| cleartext / `https_only` / mTLS isolation lib filters | 3/3 |
+| `cargo nextest run -p concord_macros --test dependency_policy` | 2/2 |
+| `cargo deny check`; `git diff --check` | passed; only the two allowed Cargo Deny duplicate warnings |
+
+Dependency-tree inspection shows no direct `h2`, `hyper`, `hyper-util`, or `tower` edge in either
+production crate's normal/build graph. `h2` is a `concord_core` dev edge; its two direct source
+references are inside the isolated `cfg(test)` HTTP/2 probe module. Rendered all-feature
+`concord_core` public Rustdoc contains no `h2` type reference. This preserves deterministic
+`REFUSED_STREAM` evidence without expanding runtime or public dependencies.
+
+The remaining contract corrections are:
+
+- protected cleartext preflight now yields `ErrorCategory::Configuration` with
+  `ConfigurationErrorKind::InvalidAuthentication`; its URL sentinel is absent from `Display` and
+  `Debug`;
+- `ApiError::configuration_kind()` exposes that stable structural detail;
+- `ApplicationHttp` privately retains the effective `https_only` value for later public preflight;
+- additional roots are applied to both managed clients, while `identity_pem` is application-only.
+  A local mTLS probe proves the application succeeds, the provider safely fails the client-certificate
+  requirement, and neither root nor identity sentinel appears in the error;
+- contributor release wording now retains `Normative Implementation Candidate` until complete
+  passing or approved waived evidence permits `Normative Release Final`.
+
+No specification checker, production endpoint pipeline, pagination runtime, authentication
+provider, limiter, hook system, successful codec family, stream, multipart API, public transport,
+or production executor was added or invoked.
 
 ## Requirement Evidence Added
 
@@ -137,9 +251,15 @@ PR 1.6 appended 63 Phase 1 evidence rows to `CONFORMANCE_EVIDENCE_0.1.csv`:
 - 16 managed-HTTP rows;
 - 6 deterministic-boundary rows.
 
-All 63 PR 1.6 rows reference source commit `1074c141fd1a48748d08a46bfca66fb6201e0b61` and exact commands or tests. PR 1.7 adds one direct feature-tree row anchored to exact committed and tested source `4c1bb03587a555f03cc5aa1866656c15069e94c3`. The catalog therefore contains 64 Phase 1 rows: 50 direct rows and 14 rows beginning with an explicit `partial` qualification.
+All 63 PR 1.6 rows reference source commit `1074c141fd1a48748d08a46bfca66fb6201e0b61` and exact commands or tests. PR 1.7 adds one direct feature-tree row anchored to exact committed and tested source `4c1bb03587a555f03cc5aa1866656c15069e94c3`. PR 1.8 appends 20 rows, all anchored to exact source commit `8689457af515b2325259c5401c436752288705ba`: 15 direct rows and 5 rows with an explicit `partial` qualification. The catalog therefore contains 84 Phase 1 rows: 65 direct and 19 explicitly partial.
 
 PR 1.7 corrects one earlier mapping without changing its source commit or execution facts: `P1-HTTP-016` now maps the gzip collector test to `BOUND-BODY-011`, the explicit post-decompression response-accounting requirement. `FEAT-COMPRESS-001` is mapped only to `P1-CORR-001`, whose three Cargo feature-tree commands directly prove gzip, Brotli, and Deflate isolation. No row converts retained private auth/pagination/executor models into a production claim.
+
+PR 1.8 evidence covers canonical default/all-feature Nextest runs, the direct no-default filter,
+version/profile/group selection, reduced macro fixture topology, independently scheduled retained
+fixtures, Trybuild's dev-only edge, the composed release matrix, the dev-only `h2` exception,
+cleartext classification, retained `https_only`, and managed TLS identity isolation. Historical
+rows and their original source commits and commands remain unchanged.
 
 ## Public Surface Audit
 
@@ -156,6 +276,8 @@ The audit found no public `Transport`, production `Executor`, request/response/a
 ## Error and Redaction Audit
 
 - Error categories are structural and matchable without parsing text.
+- Configuration-category endpoint failures expose `ConfigurationErrorKind`; protected cleartext is
+  specifically `InvalidAuthentication`, not `AuthenticationUnavailable`.
 - `PaginationErrorKind` now distinguishes hard caps, configured page ceilings, collected-item ceilings, and identity-storage ceilings without implementing pagination runtime behavior.
 - Raw Reqwest errors are immediately reduced; no raw native error is retained as a source.
 - Sentinel tests cover authenticated native URLs, request-body errors, terminal bodies, sensitive headers, codec error text, fake expectations, and deterministic mismatch diagnostics.
@@ -175,6 +297,10 @@ The audit found no public `Transport`, production `Executor`, request/response/a
 - Provider request preparation is HTTPS-only. Protected application HTTP and provider HTTP are rejected before later credential/body work, with no localhost exception.
 - No-default unauthenticated HTTP succeeds. HTTPS produces typed TLS-unavailable preflight behavior and is never downgraded.
 - Root certificates and identity PEM are parsed during construction under `default-tls`; invalid inputs are reduced without reproducing PEM bytes.
+- Additional roots apply to both clients. The application identity applies only to the application
+  client; the provider neither receives nor presents it.
+- Effective `https_only` remains private managed-application metadata for the future public
+  preflight, rather than existing only inside the native Reqwest builder.
 - No certificate-verification bypass, raw Reqwest escape, direct production `h2` dependency, or system-proxy opt-in was added.
 
 ## Feature and MSRV Audit
@@ -185,6 +311,9 @@ The audit found no public `Transport`, production `Executor`, request/response/a
 - Direct Cargo feature-tree evidence proves `gzip`, `brotli`, and `deflate` are independently selectable and each enables only its matching Reqwest feature.
 - All-feature post-decompression byte accounting was executed for gzip and is mapped only to `BOUND-BODY-011`. Brotli and Deflate were compile-validated but not given separate runtime decompression probes.
 - The no-default production graph retains Reqwest and ordinary HTTP but excludes the optional deterministic support dependency.
+- `h2` remains a dev-only deterministic-probe dependency; production normal/build graphs and
+  rendered public Rustdoc expose no direct `h2` edge or type.
+- Nextest 0.9.115 or newer is required; default/CI retries are zero and Cargo-process concurrency is bounded.
 - Rust 1.85.0 workspace/all-target validation passed.
 - `.gitattributes` establishes LF for Rust, TOML, Markdown, CSV, YAML, Cargo lockfiles, and the Justfile. Renormalization changed no tracked file solely for line endings; every changed tracked file has an intentional correction described in this report.
 
@@ -208,8 +337,6 @@ Specification governance is now explicitly manual and recorded: normative docume
 3. Authentication providers, rate limiting, pagination runtime, hooks, bodies/responses, streams, multipart, successful codecs/handlers, prepared requests, and full deadline/recovery behavior remain future milestones. Their Phase 0 models are explicitly reduced evidence only.
 4. Runtime post-decompression accounting was executed with gzip. Brotli and Deflate feature isolation is directly proved, but separate Brotli/Deflate runtime probes are not claimed.
 5. `cargo deny check` passed while reporting duplicate transitive versions of `core-foundation` and `windows-sys`; these are warnings, not Phase 1 validation failures.
-6. PR 1.7 does not resolve or claim resolution of the separate cleartext error-category or TLS-material design decision. TLS configuration was not redesigned.
-
 These limitations do not invalidate any Phase 1 exit criterion.
 
 ## Milestone 2 Readiness
