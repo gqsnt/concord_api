@@ -25,11 +25,13 @@ binary(compile)
 | binary(config_methods)
 | binary(dependency_policy)
 | binary(development)
+| binary(public_rustdoc)
 '''
 test-group = "cargo-processes"
 retries = 0
-# These tests intentionally launch Cargo to inspect a separate manifest or
-# feature/dependency graph. Trybuild/UI tests and ordinary public-surface tests
-# use the normal profile. Report retained Cargo fixtures after two minutes and
-# terminate after ten minutes rather than constraining unrelated loopback tests.
+# These tests intentionally launch Cargo to inspect a separate manifest,
+# feature/dependency graph, or rendered public Rustdoc artifact. Trybuild/UI
+# tests and ordinary public-surface tests use the normal profile. Report these
+# bounded Cargo processes after two minutes and terminate after ten minutes
+# rather than constraining unrelated loopback tests.
 slow-timeout = { period = "120s", terminate-after = 5 }

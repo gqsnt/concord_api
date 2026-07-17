@@ -57,6 +57,25 @@ impl<E> Request<E> {
     }
 }
 
+// Rustdoc cannot display a method from an implementation constrained by the
+// generated-private endpoint capability without also rendering that private
+// bound. Keep the production implementation below capability-bound and give
+// documentation builds the same public terminal signature plus its semantic
+// availability rule.
+#[cfg(doc)]
+impl<E> Request<E> {
+    /// Selects successful response metadata.
+    ///
+    /// This terminal is available on generated requests whose successful
+    /// response mode is buffered, bytes, or no-content. Streaming responses
+    /// carry their successful metadata directly and do not expose this method.
+    #[must_use]
+    pub fn response(self) -> ResponseRequest<E> {
+        ResponseRequest { request: self }
+    }
+}
+
+#[cfg(not(doc))]
 #[doc(hidden)]
 impl<E> Request<E>
 where

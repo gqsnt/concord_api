@@ -251,7 +251,14 @@ custom-codec generation remains in normal integration tests.
 
 The retained core `development_features` project owns only development-feature presence, absence,
 and generated-client compilation under that feature graph. Attempts to reach development-only
-items through stable namespaces are source-only failures and belong in the core Trybuild suite.
+items through stable namespaces are source-only failures and belong in the core Trybuild suites;
+the dangerous-namespace case runs with `dangerous-custom-retry` enabled so that namespace exists
+without enabling `dangerous-dev-tools`.
+
+Rendered public Rustdoc is an artifact contract rather than a source-only failure. A focused
+integration test may launch isolated `cargo rustdoc` when it inspects the resulting HTML for public
+terminal semantics and private-name exclusion. Such a test receives the bounded Cargo-process
+Nextest override; it does not justify a standalone fixture manifest.
 
 ### Runtime deterministic tests
 
@@ -280,9 +287,10 @@ Keep isolated so Cargo feature unification does not hide missing-feature behavio
 - Ensure mismatch diagnostics remain redacted.
 - Set Nextest retries to zero.
 - Run Rust unit and integration tests through Nextest. Use `cargo test` only for doctests.
-- Never spawn `cargo test` from another Rust test. A nested Cargo check/build/tree process is
-  permitted only when manifest metadata, dependency topology, or feature selection is the subject
-  of the test. Source-only compile-fail behavior belongs in Trybuild.
+- Never spawn `cargo test` from another Rust test. A nested Cargo check/build/tree/rustdoc process
+  is permitted only when manifest metadata, dependency topology, feature selection, or a rendered
+  Rustdoc artifact is the subject of the test. Source-only compile-fail behavior belongs in
+  Trybuild.
 
 ## 15. Prohibited test patterns
 
