@@ -2,7 +2,7 @@
 **Version:** 0.1  
 **Status:** Informative contributor guide  
 **Authority:** Repository workflow and contribution discipline  
-**Depends on:** Specification Index, Conformance Plan, Implementation Plan
+**Depends on:** Specification Index, Conformance Plan, Implementation Program 0.2
 
 ## 1. Purpose
 

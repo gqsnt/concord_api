@@ -45,6 +45,7 @@ Verification artifacts:
 - [`conformance/CONFORMANCE_EVIDENCE_0.1.csv`](conformance/CONFORMANCE_EVIDENCE_0.1.csv)
 - [`conformance/PHASE_0_REPORT.md`](conformance/PHASE_0_REPORT.md)
 - [`conformance/PHASE_1_REPORT.md`](conformance/PHASE_1_REPORT.md)
+- [`conformance/PHASE_2_REPORT.md`](conformance/PHASE_2_REPORT.md)
 - [`REVIEW_RESOLUTION_0.1.md`](REVIEW_RESOLUTION_0.1.md)
 
 Specification governance is review-based: reviewers inspect the normative documents, verify the coverage plan, verify exact executed evidence, and audit the maintained release command. No automated specification checker is authoritative or maintained.
@@ -57,7 +58,9 @@ separate dependency graph.
 
 Delivery and contribution:
 
+- [`planning/CONCORD_IMPLEMENTATION_PROGRAM_0.2.md`](planning/CONCORD_IMPLEMENTATION_PROGRAM_0.2.md)
 - [`planning/CONCORD_IMPLEMENTATION_PLAN_0.1.md`](planning/CONCORD_IMPLEMENTATION_PLAN_0.1.md)
+  (superseded historical plan)
 - [`decisions/CONCORD_DECISIONS.md`](decisions/CONCORD_DECISIONS.md)
 - [`contributor/CONCORD_REPOSITORY_GUIDE.md`](contributor/CONCORD_REPOSITORY_GUIDE.md)
 

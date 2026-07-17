@@ -2,10 +2,16 @@
 > **For agentic workers:** implement this plan task-by-task with fresh review checkpoints. Use test-driven development, small commits, and the conformance requirement IDs attached to every task.
 
 **Version:** 0.1  
-**Status:** Internal Implementation Candidate  
+**Status:** Superseded historical implementation plan
 **Authority:** Delivery sequence and milestone exit criteria  
 **Depends on:** All normative and architecture documents  
 **Supersedes:** None
+**Superseded for future execution by:** `CONCORD_IMPLEMENTATION_PROGRAM_0.2.md`
+
+> This document is retained unchanged below this notice as historical planning and evidence context.
+> Phase 0, Phase 1, and Phase 2 execution changed the practical sequencing. New work must use the
+> 0.2 implementation program and a separately approved phase mission; unchecked tasks below are not
+> current authorization.
 
 **Goal:** Build Concord 0.1 from a clean workspace as a typed generated Reqwest API client satisfying the complete normative specification set.
 

@@ -1,12 +1,16 @@
 # Concord
 
 Concord is currently a **Normative Implementation Candidate**. This repository contains the
-approved Concord 0.1 specification and the Rust workspace. Phase 1 foundations are implemented;
-the later endpoint runtime described by the specification is not yet present.
+approved Concord 0.1 specification and the Rust workspace. Phase 2 delivers the first executable
+generated bodyless endpoint path: fallible generated clients, typed pending requests, lifecycle
+hooks, managed Reqwest execution, bounded `Bytes`, `NoContent`, and response metadata. Later
+request bodies, codecs, authentication, rate limiting, pagination, and streaming remain deferred.
 
-Start with the [documentation overview](docs/README.md), the
-[normative specification index](docs/normative/00_CONCORD_SPECIFICATION_INDEX_0.1.md), and the
-[implementation plan](docs/planning/CONCORD_IMPLEMENTATION_PLAN_0.1.md).
+Start with the [documentation overview](docs/README.md) and the
+[normative specification index](docs/normative/00_CONCORD_SPECIFICATION_INDEX_0.1.md). For current
+delivery state, see the
+[implementation program](docs/planning/CONCORD_IMPLEMENTATION_PROGRAM_0.2.md) and the
+[Phase 2 report](docs/conformance/PHASE_2_REPORT.md).
 
 Current validation entry points are:
 
