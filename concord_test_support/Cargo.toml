@@ -5,9 +5,17 @@ edition.workspace = true
 rust-version.workspace = true
 publish = false
 
+[features]
+default = ["deterministic", "loopback"]
+deterministic = ["dep:bytes", "dep:http", "dep:tokio"]
+loopback = ["dep:base64", "dep:rustls"]
+
 [dependencies]
-base64.workspace = true
-rustls.workspace = true
+base64 = { workspace = true, optional = true }
+bytes = { workspace = true, optional = true }
+http = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
 
 [lints]
 workspace = true

@@ -71,6 +71,19 @@ impl ManagedHttp {
             ),
         })
     }
+
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
+    pub(super) fn build_with_development(
+        http: HttpConfig,
+        runtime: RuntimeConfig,
+        executor: &concord_test_support::executor::DeterministicExecutor,
+    ) -> Result<Self, ClientBuildError> {
+        let managed = Self::build(http, runtime)?;
+        Ok(Self {
+            application: managed.application.with_development(executor.application()),
+            provider: managed.provider.with_development(executor.provider()),
+        })
+    }
 }
 
 fn base_builder(
@@ -425,7 +438,7 @@ mod tests {
             .expect("provider HTTPS should prepare");
         let provider = managed
             .provider
-            .execute_native(request)
+            .execute_native("managed.provider", Method::GET, request)
             .await
             .expect("provider root should validate");
         assert_eq!(provider.status(), reqwest::StatusCode::OK);

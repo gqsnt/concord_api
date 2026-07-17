@@ -1,0 +1,16 @@
+[package]
+name = "development-features"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[features]
+default = []
+dangerous-dev-tools = ["concord_core/dangerous-dev-tools"]
+dangerous-custom-retry = ["concord_core/dangerous-custom-retry"]
+
+[dependencies]
+concord_core = { path = "../../..", default-features = false }
+concord_macros = { path = "../../../../concord_macros" }
+
+[workspace]

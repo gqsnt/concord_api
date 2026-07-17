@@ -17,10 +17,11 @@ brotli = ["reqwest/brotli"]
 deflate = ["reqwest/deflate"]
 dangerous-raw-response = []
 dangerous-custom-retry = []
-dangerous-dev-tools = []
+dangerous-dev-tools = ["dep:concord_test_support"]
 
 [dependencies]
 bytes.workspace = true
+concord_test_support = { version = "=0.1.0", path = "../concord_test_support", optional = true, default-features = false, features = ["deterministic"] }
 http.workspace = true
 httpdate.workspace = true
 reqwest.workspace = true

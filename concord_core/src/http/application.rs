@@ -3,6 +3,11 @@ use std::time::Duration;
 
 use http::Method;
 
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
+use concord_test_support::executor::ApplicationChannel;
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
+use concord_test_support::script::BoundaryRequest;
+
 use crate::error::ApiError;
 
 use super::build::TlsCapability;
@@ -15,6 +20,8 @@ pub(super) struct ApplicationHttp {
     tls: TlsCapability,
     status_body_limit: Option<NonZeroUsize>,
     retry_after_cap: Duration,
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
+    development: Option<ApplicationChannel>,
 }
 
 impl ApplicationHttp {
@@ -29,7 +36,15 @@ impl ApplicationHttp {
             tls,
             status_body_limit,
             retry_after_cap,
+            #[cfg(any(test, feature = "dangerous-dev-tools"))]
+            development: None,
         }
+    }
+
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
+    pub(super) fn with_development(mut self, development: ApplicationChannel) -> Self {
+        self.development = Some(development);
+        self
     }
 
     pub(super) fn prepare(
@@ -69,10 +84,47 @@ impl ApplicationHttp {
         method: Method,
         request: reqwest::RequestBuilder,
     ) -> Result<reqwest::Response, ApiError> {
+        #[cfg(any(test, feature = "dangerous-dev-tools"))]
+        {
+            let boundary = super::development::minimal_boundary_request(endpoint, method.clone());
+            return self
+                .execute_at_boundary(endpoint, method, request, boundary)
+                .await;
+        }
+
+        #[cfg(not(any(test, feature = "dangerous-dev-tools")))]
         request
             .send()
             .await
             .map_err(|error| ApiError::from_reqwest(endpoint, method, error, false))
+    }
+
+    #[cfg(any(test, feature = "dangerous-dev-tools"))]
+    pub(super) async fn execute_at_boundary(
+        &self,
+        endpoint: &'static str,
+        method: Method,
+        request: reqwest::RequestBuilder,
+        boundary: BoundaryRequest,
+    ) -> Result<reqwest::Response, ApiError> {
+        let Some(development) = &self.development else {
+            return request
+                .send()
+                .await
+                .map_err(|error| ApiError::from_reqwest(endpoint, method, error, false));
+        };
+        drop(request);
+        development
+            .__execute(boundary)
+            .await
+            .map(|response| response.__into_http_response().into())
+            .map_err(|failure| {
+                ApiError::classified(
+                    endpoint,
+                    method,
+                    super::development::failure_category(failure.kind()),
+                )
+            })
     }
 
     pub(super) async fn terminal_status(

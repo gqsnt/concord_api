@@ -6,6 +6,8 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "dangerous-dev-tools")]
+pub mod __development;
 pub mod advanced;
 #[cfg(feature = "dangerous-custom-retry")]
 pub mod dangerous;
