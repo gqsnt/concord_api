@@ -105,6 +105,17 @@ mod repeated_case {
         let beta = BetaApi::new().expect("beta client");
         let _: concord_core::Request<_> = alpha.health().ping();
         let _: concord_core::Request<_> = beta.health().ping();
+
+        fn accepts_alpha_endpoint<E: alpha_api::AlphaApiEndpoint>(_: &E) {}
+        fn accepts_beta_endpoint<E: beta_api::BetaApiEndpoint>(_: &E) {}
+
+        let alpha_endpoint = alpha_api::endpoints::health::Ping::new();
+        accepts_alpha_endpoint(&alpha_endpoint);
+        let _: concord_core::Request<_> = alpha.request(alpha_endpoint);
+
+        let beta_endpoint = beta_api::endpoints::health::Ping::new();
+        accepts_beta_endpoint(&beta_endpoint);
+        let _: concord_core::Request<_> = beta.request(beta_endpoint);
     }
 }
 

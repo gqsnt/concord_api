@@ -378,13 +378,18 @@ Code generation must not:
 
 ### 10.3 Typed endpoint generation
 
-For each endpoint, generate one concrete endpoint value and one `EndpointSpec` implementation with static `Body` and `Response` associated types.
+For each API, generate one public but sealed API-specific endpoint capability. For each endpoint,
+generate one concrete endpoint value, implement that API-specific capability, and implement one
+generated-private `EndpointSpec` with static `Body` and `Response` associated types. The generated
+client request method is constrained by the API-specific capability; the private seal and
+`EndpointSpec` bound do not appear in public Rustdoc. Facade methods construct their endpoint value
+and call that same request method.
 
 Do not emit a generic runtime decoder function returning `Any`.
 
 ### 10.4 Value capture
 
-Generated endpoint values store one `Arc` to the fixed client snapshot, `Arc` or owned enclosing-scope snapshots, and owned/`Arc` endpoint arguments. Explicit endpoint constructors capture every required enclosing scope value in lexical outer-to-inner order.
+Generated endpoint values store one `Arc` to the fixed client snapshot, `Arc` or owned enclosing-scope snapshots, and owned/`Arc` endpoint arguments. Explicit endpoint constructors capture every required enclosing scope value in lexical outer-to-inner order. Public constructor parameters retain sanitized DSL names; collision-resistant private storage bindings do not leak into the signature.
 
 The macro should avoid unnecessary `Clone` bounds.
 

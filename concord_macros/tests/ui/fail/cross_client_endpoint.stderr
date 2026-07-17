@@ -1,0 +1,20 @@
+error[E0277]: the trait bound `alpha_api::endpoints::health::Ping: BetaApiEndpoint` is not satisfied
+  --> tests/ui/fail/cross_client_endpoint.rs:34:26
+   |
+34 |     let _ = beta.request(alpha_endpoint);
+   |                  ------- ^^^^^^^^^^^^^^ the trait `BetaApiEndpoint` is not implemented for `alpha_api::endpoints::health::Ping`
+   |                  |
+   |                  required by a bound introduced by this call
+   |
+   = help: the trait `BetaApiEndpoint` is implemented for `beta_api::endpoints::health::Ping`
+note: required by a bound in `beta_api::<impl BetaApi>::request`
+  --> tests/ui/fail/cross_client_endpoint.rs:20:5
+   |
+20 | /     api! {
+21 | |         client BetaApi {
+22 | |             base "https://beta.example.test";
+23 | |             scope health() {
+...  |
+28 | |     }
+   | |_____^ required by this bound in `beta_api::<impl BetaApi>::request`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

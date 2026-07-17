@@ -1,0 +1,16 @@
+use concord_macros::api;
+
+api! {
+    client TypedApi {
+        base "https://typed.example.test";
+        scope health() {
+            path ["health"];
+            GET Ping() -> NoContent;
+        }
+    }
+}
+
+fn main() {
+    let client = TypedApi::new().unwrap();
+    let _ = client.request(42_u32);
+}

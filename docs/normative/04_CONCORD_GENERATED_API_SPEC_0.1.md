@@ -582,7 +582,7 @@ The endpoint method performs no request execution.
 
 **GEN-END-002 — Request creation only.** Calling a generated endpoint method MUST NOT execute HTTP or invoke body codecs, providers, hooks, or limiters.
 
-**GEN-END-003 — Stable request-wrapper path.** Generated endpoint methods and `client.request(endpoint)` MUST return `concord_core::Request<E>` without exposing generated-private endpoint bounds or `concord_core::__private` in public signatures or public Rustdoc.
+**GEN-END-003 — Stable request-wrapper path.** Generated endpoint methods and `client.request(endpoint)` MUST return `concord_core::Request<E>`. Each generated client's `request` method MUST use a public, API-specific, sealed endpoint capability so an endpoint generated for another client, an arbitrary application value, or a downstream implementation is rejected at compile time. The public signature MAY name that API-specific capability, but MUST NOT expose its private seal, generated-private core endpoint bounds, or `concord_core::__private` in public signatures or public Rustdoc.
 
 ## 9. Endpoint request setters
 
@@ -826,6 +826,12 @@ pub fn new(
 ) -> Self;
 ```
 
+Public constructor parameter bindings use the sanitized DSL names shown above. Collision-resistant
+private field and helper bindings remain implementation details and MUST NOT replace ordinary DSL
+names in the public Rust signature. If two visible DSL namespaces use the same binding name, the
+generated public bindings MUST be deterministically namespace-qualified rather than exposing a
+private generated identifier.
+
 The explicit endpoint exposes the same optional/defaulted enclosing-scope and endpoint setters/resetters needed to construct the immutable snapshots used by facade execution:
 
 ```rust
@@ -841,13 +847,13 @@ let endpoint =
 let user = client.request(endpoint).await?;
 ```
 
-`client.request(endpoint)` returns the same `Request<E>` type used by facades. It supplies only the generated client's fixed client-value snapshot, credential handles, and core runtime; it does not infer or replace missing scope values.
+`client.request(endpoint)` returns the same `Request<E>` type used by facades. It supplies only the generated client's fixed client-value snapshot, credential handles, and core runtime; it does not infer or replace missing scope values. Every generated API owns a distinct sealed endpoint capability. Only that API's generated endpoint types implement the capability, downstream code cannot implement it, and facade methods construct an endpoint value and call the same capability-constrained request path. No runtime client identifier or dynamic ownership check is used.
 
 The same `request` method accepts stable advanced `PreparedEndpoint<R>` values. Prepared endpoints use the generated client's base URL, core runtime, hooks, limiter, and limits, plus credentials explicitly attached to the prepared endpoint.
 
 Explicit endpoint values do not expose private generated context or storage types.
 
-**GEN-EXPL-001 — Runtime parity.** Explicit generated endpoints MUST execute through the same runtime and produce the same behavior as facade-created endpoints.
+**GEN-EXPL-001 — Runtime and ownership parity.** Explicit generated endpoints MUST execute through the same capability-constrained request path and runtime as facade-created endpoints and produce the same behavior. Passing an explicit endpoint to a different generated client MUST fail at compile time.
 
 **GEN-EXPL-002 — Scope-complete construction.** An explicit endpoint constructor MUST accept every required enclosing scope value in lexical outer-to-inner order, followed by required endpoint arguments in declaration order and the body argument last when present. The explicit endpoint MUST expose the optional/defaulted scope controls needed for parity with facade-created execution.
 

@@ -92,7 +92,14 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
         let path = documentation.join(relative);
         let page = std::fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
-        for forbidden in ["__private", "ClientCore", "EndpointSpec", "ResponseHandler"] {
+        for forbidden in [
+            "__private",
+            "__concord_endpoint_seal",
+            "ClientCore",
+            "EndpointSpec",
+            "ResponseHandler",
+            "Sealed",
+        ] {
             assert!(
                 !page.contains(forbidden),
                 "public generated Rustdoc {} exposed {forbidden}",
@@ -112,6 +119,44 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
                     "generated endpoint Rustdoc omitted supported public fact {expected}"
                 );
             }
+            for expected in [
+                "RenamedApi::resources::ById",
+                "scope_value",
+                "endpoint_value",
+            ] {
+                assert!(
+                    page.contains(expected),
+                    "generated endpoint Rustdoc omitted public identity or parameter {expected}"
+                );
+            }
+            for forbidden in ["__concord_scope_0", "__concord_endpoint_0"] {
+                assert!(
+                    !page.contains(forbidden),
+                    "generated endpoint Rustdoc exposed internal constructor parameter {forbidden}"
+                );
+            }
         }
     }
+
+    let client_page = std::fs::read_to_string(documentation.join("struct.RenamedApi.html"))
+        .expect("generated client Rustdoc should be readable");
+    assert!(
+        client_page.contains("E: RenamedApiEndpoint"),
+        "generated client Rustdoc omitted its API-specific endpoint capability"
+    );
+    assert!(
+        !documentation
+            .join("renamed_api/trait.RenamedApiEndpoint.html")
+            .exists(),
+        "generated Rustdoc exposed the hidden endpoint sealing capability implementation"
+    );
+
+    let facade_page = std::fs::read_to_string(
+        documentation.join("renamed_api/facades/struct.ResourcesFacade.html"),
+    )
+    .expect("generated facade Rustdoc should be readable");
+    assert!(
+        facade_page.contains("RenamedApi::resources::ById"),
+        "facade and endpoint Rustdoc must use the same complete endpoint identity"
+    );
 }

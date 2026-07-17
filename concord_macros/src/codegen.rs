@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::Index;
@@ -11,6 +13,7 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
     let scope = &client.scope;
     let client_name = &client.name;
     let builder_name = format_ident!("{client_name}Builder");
+    let endpoint_capability_name = format_ident!("{client_name}Endpoint");
     let scope_name = &scope.name;
     let support_name = format_ident!("{}", to_snake_case(&client_name.to_string()));
     let scope_module_name = format_ident!("{}", to_snake_case(&scope_name.to_string()));
@@ -21,6 +24,9 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
     let client_doc = format!("Generated Concord client `{client_name}`.");
     let builder_doc = format!("Canonical fallible builder for [`{client_name}`].");
     let support_doc = format!("Public generated API modules for [`{client_name}`].");
+    let endpoint_capability_doc = format!(
+        "Sealed capability implemented only by explicit endpoints generated for [`{client_name}`]."
+    );
     let facade_doc = format!("Immutable generated facade for the `{}` scope.", scope.name);
     let scope_method_doc = format!(
         "Creates an immutable `{}` scope facade without starting a request.",
@@ -40,12 +46,22 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
     let endpoint_items = scope
         .endpoints
         .iter()
-        .map(|endpoint| generate_endpoint(client_name, scope, endpoint, core_path))
+        .map(|endpoint| {
+            generate_endpoint(
+                client_name,
+                scope,
+                endpoint,
+                core_path,
+                &endpoint_capability_name,
+            )
+        })
         .collect::<Vec<_>>();
     let facade_methods = scope
         .endpoints
         .iter()
-        .map(|endpoint| generate_facade_method(scope, endpoint, core_path, &scope_module_name))
+        .map(|endpoint| {
+            generate_facade_method(client_name, scope, endpoint, core_path, &scope_module_name)
+        })
         .collect::<Vec<_>>();
 
     quote! {
@@ -72,6 +88,15 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
 
                 const _: () = __core::__private::assert_generated_contract(#contract_version);
             }
+
+            mod __concord_endpoint_seal {
+                pub trait Sealed {}
+            }
+
+            #[doc(hidden)]
+            #[doc = #endpoint_capability_doc]
+            #[allow(private_bounds)]
+            pub trait #endpoint_capability_name: __concord_endpoint_seal::Sealed {}
 
             /// Generated immutable scope facades.
             pub mod facades {
@@ -118,8 +143,11 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
                 }
 
                 #[must_use]
-                /// Creates a side-effect-free pending request from an explicit generated endpoint.
-                pub fn request<E>(&self, endpoint: E) -> #core_path::Request<E> {
+                /// Creates a side-effect-free pending request from an endpoint generated for this client.
+                pub fn request<E>(&self, endpoint: E) -> #core_path::Request<E>
+                where
+                    E: #endpoint_capability_name,
+                {
                     __concord_generated::__core::__private::request(
                         &self.__concord_core,
                         endpoint,
@@ -237,6 +265,7 @@ fn generate_endpoint(
     scope: &Scope,
     endpoint: &Endpoint,
     core_path: &TokenStream,
+    endpoint_capability_name: &Ident,
 ) -> TokenStream {
     let endpoint_name = &endpoint.name;
     let scope_types = scope
@@ -261,6 +290,8 @@ fn generate_endpoint(
         .enumerate()
         .map(|(index, parameter)| parameter_binding("endpoint", index, &parameter.name))
         .collect::<Vec<_>>();
+    let (scope_public_bindings, endpoint_public_bindings) =
+        explicit_parameter_bindings(&scope.parameters, &endpoint.parameters);
     let path_statements = scope
         .path
         .iter()
@@ -331,12 +362,12 @@ fn generate_endpoint(
             #[must_use]
             #[doc = #constructor_doc]
             pub fn new(
-                #(#scope_bindings: #scope_types,)*
-                #(#endpoint_bindings: #endpoint_types),*
+                #(#scope_public_bindings: #scope_types,)*
+                #(#endpoint_public_bindings: #endpoint_types),*
             ) -> Self {
                 Self::__concord_from_shared(
-                    #(::std::sync::Arc::new(#scope_bindings),)*
-                    #(#endpoint_bindings),*
+                    #(::std::sync::Arc::new(#scope_public_bindings),)*
+                    #(#endpoint_public_bindings),*
                 )
             }
 
@@ -352,6 +383,12 @@ fn generate_endpoint(
         }
 
         #default_impl
+
+        #[doc(hidden)]
+        impl super::super::__concord_endpoint_seal::Sealed for #endpoint_name {}
+
+        #[doc(hidden)]
+        impl super::super::#endpoint_capability_name for #endpoint_name {}
 
         #[doc(hidden)]
         impl super::super::__concord_generated::__core::__private::EndpointSpec for #endpoint_name
@@ -396,6 +433,7 @@ fn generate_endpoint(
 }
 
 fn generate_facade_method(
+    client_name: &Ident,
     scope: &Scope,
     endpoint: &Endpoint,
     core_path: &TokenStream,
@@ -416,7 +454,7 @@ fn generate_facade_method(
     let scope_indices = (0..scope.parameters.len())
         .map(Index::from)
         .collect::<Vec<_>>();
-    let endpoint_identity = format!("{}::{}", scope.name, endpoint.name);
+    let endpoint_identity = format!("{client_name}::{}::{}", scope.name, endpoint.name);
     let route_shape = route_shape(scope, endpoint);
     let response_name = match endpoint.response {
         ResponseKind::Bytes => "Bytes",
@@ -437,12 +475,54 @@ fn generate_facade_method(
                 #(::std::sync::Arc::clone(&self.__concord_scope.#scope_indices),)*
                 #(#endpoint_names),*
             );
-            __concord_generated::__core::__private::request(
-                &self.__concord_client.__concord_core,
-                endpoint,
-            )
+            self.__concord_client.request(endpoint)
         }
     }
+}
+
+fn explicit_parameter_bindings(
+    scope_parameters: &[Parameter],
+    endpoint_parameters: &[Parameter],
+) -> (Vec<Ident>, Vec<Ident>) {
+    let original_names = scope_parameters
+        .iter()
+        .chain(endpoint_parameters.iter())
+        .map(|parameter| parameter.name.to_string())
+        .collect::<Vec<_>>();
+    let reserved = original_names.iter().cloned().collect::<HashSet<_>>();
+    let mut used = HashSet::new();
+
+    let mut allocate = |namespace: &str, parameter: &Parameter| {
+        let original = parameter.name.to_string();
+        if original_names
+            .iter()
+            .filter(|name| name.as_str() == original.as_str())
+            .count()
+            == 1
+            && used.insert(original)
+        {
+            return parameter.name.clone();
+        }
+
+        let base = format!("{namespace}_{}", to_snake_case(&parameter.name.to_string()));
+        let mut candidate = base.clone();
+        let mut suffix = 2_u32;
+        while reserved.contains(&candidate) || !used.insert(candidate.clone()) {
+            candidate = format!("{base}_{suffix}");
+            suffix += 1;
+        }
+        Ident::new(&candidate, parameter.name.span())
+    };
+
+    let scope = scope_parameters
+        .iter()
+        .map(|parameter| allocate("scope", parameter))
+        .collect();
+    let endpoint = endpoint_parameters
+        .iter()
+        .map(|parameter| allocate("endpoint", parameter))
+        .collect();
+    (scope, endpoint)
 }
 
 fn route_shape(scope: &Scope, endpoint: &Endpoint) -> String {
@@ -516,8 +596,10 @@ fn to_pascal_case(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::to_pascal_case;
-    use crate::model::to_snake_case;
+    use syn::parse_quote;
+
+    use super::{explicit_parameter_bindings, to_pascal_case};
+    use crate::model::{Parameter, to_snake_case};
 
     #[test]
     fn generated_names_are_deterministic() {
@@ -526,5 +608,32 @@ mod tests {
         assert_eq!(to_snake_case("HTTPStatus"), "http_status");
         assert_eq!(to_pascal_case("resources"), "Resources");
         assert_eq!(to_pascal_case("user_resources"), "UserResources");
+    }
+
+    #[test]
+    fn explicit_constructor_bindings_preserve_dsl_names_and_qualify_overlap() {
+        let scope = [Parameter {
+            name: parse_quote!(region),
+            ty: parse_quote!(String),
+        }];
+        let endpoint = [Parameter {
+            name: parse_quote!(user_id),
+            ty: parse_quote!(String),
+        }];
+        let (scope_names, endpoint_names) = explicit_parameter_bindings(&scope, &endpoint);
+        assert_eq!(scope_names[0], "region");
+        assert_eq!(endpoint_names[0], "user_id");
+
+        let scope = [Parameter {
+            name: parse_quote!(id),
+            ty: parse_quote!(String),
+        }];
+        let endpoint = [Parameter {
+            name: parse_quote!(id),
+            ty: parse_quote!(String),
+        }];
+        let (scope_names, endpoint_names) = explicit_parameter_bindings(&scope, &endpoint);
+        assert_eq!(scope_names[0], "scope_id");
+        assert_eq!(endpoint_names[0], "endpoint_id");
     }
 }
