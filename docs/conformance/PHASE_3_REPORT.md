@@ -23,7 +23,11 @@ This report does not claim full Concord 0.1 conformance. The normative status re
   `c9521f649c91df0a0bae9786cba101f4d526692b`
 - Phase 3 validation/evidence time: `2026-07-17T19:17:20Z`
 - Phase 3 evidence/report commit: `7b958cde82cf138cb91ca2d33499679233f42358`
-- Phase 3 evidence anchor: this report's documentation-only follow-up
+- Original Phase 3 evidence anchor: `304709bc9cde4d806475f8a18080969efd20994e`
+- Corrected Phase 3 source: `7ac4a1c6e18a080f4810b93ae4bc6aa02f52ed8f`
+- Corrected validation/evidence time: `2026-07-17T21:41:27Z`
+- Corrected Phase 3 evidence/report commit: recorded by the documentation-only correction anchor
+- Corrected Phase 3 evidence anchor: this report's documentation-only correction follow-up
 - Branch: `master`
 - Initial working tree: clean
 - Rust edition: 2024
@@ -32,9 +36,10 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 - Nextest exercised: 0.9.140; repository minimum 0.9.115
 - Managed HTTP baseline: Reqwest 0.13.4 with default features disabled
 
-The source tree was clean when integrated validation began and remained unchanged throughout the
-final validation matrix. Every Phase 3 evidence row points to the tested source commit above rather
-than a later documentation commit.
+The source tree was clean when corrected validation began and remained unchanged throughout the
+final validation matrix. Corrected rows point to the immutable corrected source commit rather than
+a later documentation commit; accurate original Phase 3 rows retain their original immutable
+source reference. Git history preserves the original source, evidence, and anchor commits.
 
 ## Phase 3 commits
 
@@ -42,6 +47,7 @@ than a later documentation commit.
 |---|---|---|---|
 | Phase 2 follow-up / Unit 3.0 | `9a647867d5629ea077b2fefebea606aef510befc` | `test: reconcile phase2 coverage and UI fixtures` | Corrected coverage paths and methods; LF-normalized edited guidance; migrated source-only core Cargo failures to Trybuild; retained genuine feature/dependency fixtures; narrowed Nextest overrides. |
 | Buffered vertical slice / Units 3.1-3.3 | `c9521f649c91df0a0bae9786cba101f4d526692b` | `feat: deliver buffered codec vertical slice` | Atomically advanced the core/macro generated contract to version 3 and connected codec contracts, one buffered body model, one executor, bounded decoding, generated POST body syntax, tests, features, and Rustdoc proof. |
+| Controller correction | `7ac4a1c6e18a080f4810b93ae4bc6aa02f52ed8f` | `fix: enforce buffered response terminal capability` | Added the sealed metadata-terminal capability, positive and negative compiler/runtime proof, completed development-namespace UI migration, and extended the generated Rustdoc privacy sentinel. |
 
 The core body ABI, production executor, macro model/codegen, generated contract version, and their
 end-to-end tests were committed together because splitting them would create intermediate
@@ -104,6 +110,16 @@ limits after codec completion but before native construction; one public header 
 ownership; core-owned JSON feature activation; normative POST body examples; and metadata
 terminals for the only currently implemented buffered/bytes/no-content response modes.
 
+The independent controller review found three blocking documentation/source defects in the
+original Phase 3 state: `.response()` was an unconditional inherent method, the retained
+`development_features` Cargo project still executed one source-only namespace failure, and several
+direct evidence labels covered only proper subsets of their normative requirements. The corrected
+design uses the existing sealed response-handler boundary, moves the namespace failure into core
+Trybuild, and reclassifies every identified subset without implementing deferred public headers,
+grammar, extensions, or release-final behavior. The broader 126-row audit additionally found
+compound lifecycle, protected-value, MSRV, and extension requirements whose remaining body-mode,
+provider, limiter, pagination, certification, or release-wide clauses belong to Phases 4 and 6-10.
+
 ## Phase 2 follow-up
 
 Coverage rows `GEN-END-003`, `GEN-EXPL-001`, `GEN-EXPL-002`, `GEN-DOC-001`,
@@ -121,8 +137,12 @@ The macro Cargo fixtures remain `renamed_core`, `missing_core`, and `contract_mi
 `json_disabled` is additionally justified because the caller's Cargo feature graph is the test.
 Core `config_features` and `development_features` remain Cargo fixtures for feature topology.
 Source-only `raw_escape` and `status_body_traits` cases moved into the ordinary core Trybuild UI
-suite. Nextest extended timeouts apply only to genuine Cargo-spawning binaries; core UI tests use
-ordinary execution. No nested `cargo test` process was added.
+suite during Unit 3.0. The correction also moved `development_namespace_escape` from
+`development_features/src/bin` into that UI suite and removed its dedicated nested Cargo check.
+The retained development fixture now proves only feature presence, feature absence, and generated
+client compilation under the feature graph. Nextest extended timeouts apply only to genuine
+Cargo-spawning binaries; core UI tests use ordinary execution. No nested `cargo test` process was
+added.
 
 ## Public codec surface
 
@@ -154,9 +174,10 @@ the positive configured limit. Encoder failure or first byte above the limit pre
 request construction and execution. Exact-limit and below-limit bodies succeed.
 
 The one `PreparedHead` header map inserts codec `Accept` only when absent. A codec
-`Content-Type` owns that header and conflicts fail during public preparation. Invalid static
-codec header values fail safely before hooks. This representation is ready for later public-header
-shaping without a codec-only parallel header system.
+`Content-Type` owns that header in the current internal preparation model, and invalid static
+codec header values fail safely before hooks. This proves shared ownership architecture, not the
+complete `API-CODEC-003` public precedence contract: application-provided public `Accept` and
+`Content-Type` inputs remain deferred to Phase 5. No codec-only parallel header system was added.
 
 ## Production execution lifecycle
 
@@ -201,9 +222,14 @@ complete-only path; their known status stays primary when capture fails, and exp
 `StatusBody::decode_body::<C>()` continues to use the same public `DecodeBody` contract.
 
 `DecodedResponse<T>` remains the stable metadata wrapper and does not format application `T`.
-All implemented Phase 3 modes add metadata beyond their direct output and therefore retain the
-stable `ResponseRequest<E>` terminal. Streaming is not present; Phase 4 must return its own
-metadata-bearing direct stream result and must not create a second buffered terminal.
+The generated-private sealed `MetadataResponse` capability is implemented only by
+`BufferedResponse<C>`, `BytesResponse`, and `NoContentResponse`. The inherent `.response()` method
+exists only when `E::Response` has that capability, while the independent `IntoFuture` path for
+direct await is unchanged. A focused core UI case binds only `EndpointSpec` and fails specifically
+because `<E as EndpointSpec>::Response: MetadataResponse` is unsatisfied; generated Text, JSON,
+custom, Bytes, and NoContent runtime tests prove the supported side. Streaming is not present;
+Phase 4's direct stream result will already carry metadata and will not acquire or remove this
+buffered terminal.
 
 ## Generated DSL and API
 
@@ -232,7 +258,7 @@ dependencies, nested and repeated macro invocations, and contract mismatch detec
 Generated contract version is 3.
 
 Rendered renamed-dependency Rustdoc is scanned for and excludes `concord_core::__private`, the
-private seal, `ClientCore`, `EndpointSpec`, `ResponseHandler`, `CodecBody`,
+private seal, `ClientCore`, `EndpointSpec`, `MetadataResponse`, `ResponseHandler`, `CodecBody`,
 `BufferedResponse`, `PreparedBody`, Reqwest types, and internal executor/body names.
 
 ## Downstream extension proof
@@ -256,6 +282,11 @@ custom codecs, exact/known/unknown response limits, first-excess rejection, medi
 body polling, Bytes, NoContent, and terminal status behavior. Servers use ephemeral test-owned
 loopback sockets; no external network or fixed global port is used.
 
+The retained gzip runtime probe proves that limits count bytes yielded after Reqwest
+decompression. Brotli and Deflate remain independently feature-wired but lack equivalent
+maintained runtime probes, so `BOUND-BODY-011` is partial; Phase 10 owns completion of that
+algorithm matrix.
+
 Sentinels cover request/success/terminal bytes and codec-authored messages across `Display`,
 `Debug`, recursive `source()`, hooks, debug observations, mismatch messages, and generated
 Rustdoc. Concord-generated messages copy none of them. Codec-authored logging or side effects remain
@@ -263,8 +294,8 @@ the explicitly documented trusted downstream extension boundary.
 
 ## Integrated validation
 
-The following final commands passed against exact source
-`c9521f649c91df0a0bae9786cba101f4d526692b`:
+The following corrected commands passed against exact source
+`7ac4a1c6e18a080f4810b93ae4bc6aa02f52ed8f`:
 
 | Command | Result |
 |---|---|
@@ -274,8 +305,8 @@ The following final commands passed against exact source
 | `just check-no-default` | passed; core all targets no defaults |
 | `just clippy` | passed with warnings denied |
 | `just clippy-all` | passed with warnings denied |
-| `just test` / release CI-default stage | passed; Nextest 286/286 across 31 binaries |
-| `just test-all` | passed; CI-profile Nextest 289/289 across 31 binaries |
+| `just test` | passed; Nextest 285/285 across 31 binaries |
+| `just test-all` | passed; CI-profile Nextest 288/288 across 31 binaries |
 | `just test-no-default` | passed 1/1; 182 filtered |
 | `just doctest` | passed; core 2/2; other libraries zero |
 | `just doctest-all` | passed; core 2/2; other libraries zero |
@@ -283,48 +314,36 @@ The following final commands passed against exact source
 | `just doc-all` | passed for all three libraries with warnings denied |
 | `just deny` | passed advisories bans licenses and sources; allowed duplicate-version warnings only |
 | `just diff-check` | passed |
-| `just release` | passed the composed matrix above |
-| `cargo nextest run -p concord_core --lib` | passed 189/189 |
-| `cargo nextest run -p concord_core --lib --all-features` | passed 195/195 |
-| `cargo nextest run -p concord_core --test codec_extensions` | passed 2/2 |
-| `cargo nextest run -p concord_core --test status_body_contract` | passed 12/12 |
-| `cargo nextest run -p concord_core --test ui` | passed 1/1 Trybuild harness |
-| `cargo nextest run -p concord_core --test config_methods` | passed 1/1 Cargo feature harness |
-| `cargo check -p concord_core --all-targets --no-default-features --features json` | passed |
-| JSON-only no-default exact Nextest selection | passed 3/3; 183 filtered |
-| `cargo nextest run -p concord_core --no-default-features --test codec_extensions` | passed 2/2 |
-| JSON-disabled/enabled `cargo tree` depth-one commands | passed; optional dependencies absent/present exactly |
-| `cargo nextest run -p concord_macros --lib` | passed 9/9 parser/model/codegen tests |
+| `just release` | passed; CI-default 285/285, all-features 288/288, no-default 1/1, doctests 2/2 |
+| `cargo nextest run -p concord_core --test ui` | passed 1/1 harness; seven default-feature compile-fail cases including response capability and development namespace |
+| `cargo nextest run -p concord_core --test development` | passed 2/2 genuine Cargo feature-topology cases |
+| `cargo nextest run -p concord_core --test config_methods` | passed 1/1 genuine Cargo feature-topology harness |
+| `cargo nextest run -p concord_core --all-features --test codec_extensions` | passed 2/2 |
+| `cargo nextest run -p concord_core --no-default-features --test codec_extensions` | passed 2/2; custom codecs require no JSON feature |
+| `cargo check -p concord_core --all-targets --no-default-features --features json` | passed; JSON-only no-default surface compiled |
+| `cargo nextest run -p concord_core --no-default-features --features json -E 'test(codec::tests::json_accepts_standard_and_structured_suffix_media_types) \| test(codec::tests::json_round_trips_without_exposing_serde_failures) \| test(execute::tests::real_reqwest_json_round_trip_is_feature_owned)'` | passed 3/3; 242 skipped |
+| `cargo nextest run -p concord_core --all-features --test status_body_contract` | passed 12/12 |
+| `cargo nextest run -p concord_core --all-features --test error_redaction --test hook_redaction --test deterministic_redaction` | passed 3/3 |
+| `cargo nextest run -p concord_core --all-features --lib -E 'test(~execute::tests::)'` | passed 23/23; 172 skipped |
 | `cargo nextest run -p concord_macros --test generated_surface` | passed 8/8 |
 | `cargo nextest run -p concord_macros --test ui` | passed 6/6 |
 | `cargo nextest run -p concord_macros --test compile` | passed 5/5 Cargo/Rustdoc fixtures |
-| `cargo nextest run -p concord_macros --test dependency_policy` | passed 3/3 |
-| `cargo metadata --locked --no-deps --format-version 1` | passed manifest/version audit |
-| `cargo tree -p concord_macros --edges normal` | passed macro/runtime separation audit |
-| `cargo tree --workspace --edges normal,build` | passed production/build transport ownership audit |
+| `cargo nextest show-config version` | passed; current 0.9.140 satisfies required 0.9.115 |
+| `cargo nextest show-config test-groups` | passed; only five Cargo-spawning binaries receive the bounded override; core UI does not |
 
-The exact JSON-only filter selected:
-
-```text
-codec::tests::json_accepts_standard_and_structured_suffix_media_types
-codec::tests::json_round_trips_without_exposing_serde_failures
-execute::tests::real_reqwest_json_round_trip_is_feature_owned
-```
-
-Before the source commit, a focused six-test no-default execution selection failed because the
-Reqwest development dependency topology left no process-global Rustls crypto provider installed.
-This was a test-environment defect rather than a product failure. The shared real/deterministic
-test helpers now install the ring provider only when `default-tls` is absent. The same six tests
-then passed 6/6; the final no-default check, JSON-only 3/3, custom-codec 2/2, and complete release
-matrix all passed. No validation is unavailable.
+Default, all-feature, and no-default checks cover JSON enabled and disabled. The generated runtime
+suite covers direct and metadata Text, JSON, custom, Bytes, and NoContent behavior; the compile
+fixture suite covers JSON-disabled diagnostics, renamed runtime dependency, missing dependency,
+generated contract mismatch, and generated Rustdoc privacy. No corrected validation is unavailable.
 
 `cargo deny` emitted only the pre-existing accepted non-failing duplicate-version warnings for
 `core-foundation` and `windows-sys`.
 
 ## Source self-review and architecture negatives
 
-The complete staged patch (2,216 insertions and 190 deletions across 47 files) and committed binary
-patch were generated and inspected. Searches and public Rustdoc review confirm:
+The original complete Phase 3 patch and the focused correction patch (78 insertions and 32
+deletions across 14 files) were generated and inspected. Searches and public Rustdoc review
+confirm:
 
 - exactly one `Request<E>` pending model and one `execute_request` production executor;
 - exactly one `BodyMetadata` / `PreparedBody` / generic `CodecBody<C>` body architecture;
@@ -344,10 +363,13 @@ patch were generated and inspected. Searches and public Rustdoc review confirm:
 Existing reduced auth/pagination models and final hook/configuration vocabulary remain unchanged
 proof foundations from earlier phases; they are not production implementations.
 
-Self-review corrected three issues before the source commit: no-default test TLS provider setup,
-generated Rustdoc sentinels for the new private body/response names, and parser diagnostics that
-distinguish Phase 3 methods from deferred streaming/multipart markers. Clippy, UI, feature, and full
-release reruns passed after correction.
+Correction self-review verified that direct await is unchanged and no runtime capability check,
+second response model, or Phase 4 marker was introduced. One pre-commit all-feature UI run exposed
+a feature-dependent compiler suggestion for the development namespace case. The source-only
+namespace proof was scoped to the ordinary feature configuration, while the retained feature
+fixture independently proves enabled/disabled topology; the exact all-feature command then passed
+254/254. The Rustdoc sentinel was extended for `MetadataResponse`. Clippy, UI, feature, focused
+runtime, and full release reruns passed after correction.
 
 ## Evidence and coverage
 
@@ -356,9 +378,43 @@ all eight `P2-AUDIT-*` rows pointing to
 `ea1ce944fe1d2622db7a66600d734ac0dc04784f`, `EXEC-CANCEL-001` partial evidence, and
 `GEN-NAME-001` partial evidence.
 
-Phase 3 appends 126 unique `P3-*` rows: 102 direct and 24 explicitly partial. The resulting catalog
-contains 445 rows and 445 unique evidence IDs, with zero unknown normative requirement IDs. Every
-new row points to `c9521f649c91df0a0bae9786cba101f4d526692b`.
+Phase 3 contains 126 unique `P3-*` rows covering 126 exact requirements: 78 direct and 48
+explicitly partial after correction. The resulting catalog contains 445 rows and 445 unique
+evidence IDs, with zero unknown normative requirement IDs. Accurate original rows retain source
+`c9521f649c91df0a0bae9786cba101f4d526692b`; the 28 materially corrected rows reference
+`7ac4a1c6e18a080f4810b93ae4bc6aa02f52ed8f`. The correction commit supersedes only those original
+classifications/descriptions and leaves the original evidence commit intact in Git history.
+
+| Evidence row | Original label | Corrected label | Correction |
+|---|---|---|---|
+| `P3-DEC-005` / `GEN-TERM-002` | direct | direct | Re-anchored to the sealed method-availability bound, unsupported UI diagnostic, and supported generated runtime cases. |
+| `P3-MEDIA-001` / `API-CODEC-003` | direct | partial | Phase 3 proves internal shared ownership; Phase 5 must prove public user-header precedence and conflicts. |
+| `P3-RESP-002` / `BOUND-BODY-011` | direct | partial | Gzip has runtime proof; Brotli and Deflate have feature wiring but await Phase 10 runtime probes. |
+| `P3-FEAT-014` / `COMPAT-SURF-001` | direct | partial | Custom codecs are certified; every documented extension workflow remains a Phase 9 obligation. |
+| `P3-EXT-003` / `API-REQ-002` | direct | direct | Re-anchored to the hidden capability bound plus core UI and generated Rustdoc privacy proof. |
+| `P3-EXT-005` / `API-PRIVATE-002` | direct | direct | Re-anchored to the completed source-only namespace migration and response-capability privacy proof. |
+| `P3-CONF-006` / `CONF-TRACE-006` | direct | partial | Current rows are exact; release-final missing-evidence rejection remains Phase 10. |
+| `P3-CONF-007` / `CONF-PARSER-001` | direct | partial | Only the implemented buffered grammar is covered; exhaustive grammar coverage remains Phase 10. |
+| `P3-CONF-008` / `CONF-SEMA-001` | direct | partial | Buffered normalization is covered; complete inherited configuration resolution remains Phase 5 with Phase 10 closure. |
+| `P3-ENC-001` / `EXEC-CREATE-001` | direct | partial | Current creation excludes hooks, codecs, and network activity; provider and limiter exclusions remain Phases 6 and 7. |
+| `P3-ENC-002` / `EXEC-CREATE-002` | direct | partial | Current first-poll proof covers URL, codec, hook, native request, and HTTP work; factories, providers, and limiters remain Phases 4, 6, and 7. |
+| `P3-ENC-003` / `EXEC-BODYMETA-001` | direct | partial | Buffered metadata preparation is non-materializing; factory, multipart, and stream forms remain Phase 4. |
+| `P3-ENC-004` / `EXEC-HOOK-001` | direct | partial | Veto blocks buffered encoding and native execution; provider and limiter cutoff proof remains Phases 6 and 7. |
+| `P3-ENC-006` / `EXEC-BODY-001` | direct | partial | Buffered materialization precedes native construction; credential-provider and limiter ordering remains Phases 6 and 7. |
+| `P3-RESP-008` / `EXEC-STATUS-003` | direct | partial | Current non-success handling is status-primary; limiter observation of server categories remains Phase 7. |
+| `P3-GEN-004` / `GEN-END-002` | direct | partial | Generated construction invokes no codec, hook, or HTTP work; provider and limiter non-invocation remains Phases 6 and 7. |
+| `P3-FEAT-015` / `COMPAT-BUILD-001` | direct | partial | The current matrix passes on Rust 1.85; complete extension and release-platform MSRV coverage remains Phases 9 and 10. |
+| `P3-SEC-001` / `PROD-GUAR-002` | direct | partial | Current body-bearing diagnostic surfaces are covered; streaming, limiter, pagination, and release-wide surfaces remain Phases 4, 7, 8, and 10. |
+| `P3-SEC-005` / `SEC-BODY-001` | direct | partial | Buffered request bytes are excluded from diagnostics; multipart values remain Phase 4. |
+| `P3-SEC-009` / `SEC-RESP-003` | direct | partial | Buffered and terminal response bytes are excluded from current surfaces; stream, raw, and limiter surfaces remain Phases 4, 7, and 10. |
+| `P3-LIFE-004` / `EXEC-RESPHEAD-001` | direct | partial | Current attempts emit one response-head observation; authentication recovery attempts remain Phase 6. |
+| `P3-LIFE-005` / `EXEC-RESPHEAD-002` | direct | partial | Observation precedes current status/body work; limiter observation ordering remains Phase 7. |
+| `P3-LIFE-006` / `EXEC-PREC-001` | direct | partial | Current request failures retain the earliest phase; pagination natural-stop precedence remains Phase 8. |
+| `P3-LIFE-007` / `EXEC-COMPLETE-001` | direct | partial | Current request operations emit one fixed-result completion; page-operation completion remains Phase 8. |
+| `P3-LIFE-008` / `EXEC-COMPLETE-005` | direct | partial | Current request correlation metadata is stable through fixation; page and aggregate correlation remains Phase 8. |
+| `P3-REQ-LIMIT-003` / `API-RUNTIME-001` | direct | direct | Re-anchored to the public configuration proof for every positive finite request, response, stream, provider, and pagination ceiling. |
+| `P3-SEC-003` / `SEC-THREAT-001` | direct | partial | Current protected-value categories are covered; credential, provider, stream, multipart, limiter, pagination, extension, and release-wide surfaces remain Phases 4 and 6-10. |
+| `P3-SEC-006` / `SEC-BODY-002` | direct | partial | Buffered codec input, output, and errors are covered; stream, multipart, producer, limiter, and pagination surfaces remain Phases 4, 7, 8, and 10. |
 
 The coverage plan now names current parser, codegen, UI, runtime, feature, and Rustdoc paths for the
 buffered boundary and distinguishes current direct proof from future Phase 4/5/release ownership.
@@ -366,19 +422,26 @@ It remains LF-only. Historical evidence paths were not rewritten.
 
 ## Remaining limitations and Phase 4 readiness
 
-The 24 partial Phase 3 rows are:
+The 48 partial Phase 3 rows are:
 
-`PROD-CORE-003`, `PROD-GUAR-004`, `PROD-GUAR-010`, `API-BODY-001`,
-`BOUND-BODY-006`, `BOUND-BODY-007`, `GEN-EXPL-002`, `GEN-NAME-002`,
-`GEN-DOC-002`, `EXEC-ORDER-001`, `EXEC-DEADLINE-001`, `EXEC-DEADLINE-004`,
-`EXEC-CANCEL-001`, `SEC-TEST-001`, `CONF-COMPILE-001`, `CONF-COMPILE-002`,
-`CONF-COMPILE-003`, `CONF-DOWNSTREAM-001`, `CONF-DOWNSTREAM-002`,
-`CONF-REQWEST-001`, `CONF-ORDER-001`, `CONF-SEC-001`, `CONF-MSRV-001`, and
-`CONF-DOC-001`.
+`PROD-CORE-003`, `PROD-GUAR-002`, `PROD-GUAR-004`, `PROD-GUAR-010`,
+`API-BODY-001`, `API-CODEC-003`, `BOUND-BODY-006`, `BOUND-BODY-007`,
+`BOUND-BODY-011`, `GEN-END-002`, `GEN-EXPL-002`, `GEN-NAME-002`, `GEN-DOC-002`,
+`EXEC-CREATE-001`, `EXEC-CREATE-002`, `EXEC-BODYMETA-001`, `EXEC-HOOK-001`,
+`EXEC-BODY-001`, `EXEC-RESPHEAD-001`, `EXEC-RESPHEAD-002`, `EXEC-STATUS-003`,
+`EXEC-PREC-001`, `EXEC-COMPLETE-001`, `EXEC-COMPLETE-005`, `EXEC-ORDER-001`,
+`EXEC-DEADLINE-001`, `EXEC-DEADLINE-004`, `EXEC-CANCEL-001`, `SEC-THREAT-001`,
+`SEC-BODY-001`, `SEC-BODY-002`, `SEC-RESP-003`, `SEC-TEST-001`,
+`COMPAT-SURF-001`, `COMPAT-BUILD-001`,
+`CONF-COMPILE-001`, `CONF-COMPILE-002`, `CONF-COMPILE-003`,
+`CONF-DOWNSTREAM-001`, `CONF-DOWNSTREAM-002`, `CONF-TRACE-006`,
+`CONF-PARSER-001`, `CONF-SEMA-001`, `CONF-REQWEST-001`, `CONF-ORDER-001`,
+`CONF-SEC-001`, `CONF-MSRV-001`, and `CONF-DOC-001`.
 
 Their remaining portions belong to Phase 4 streaming/factories/multipart/replayability; Phase 5
-remaining values and request shaping; Phases 6-9 auth, rate limiting, pagination, and prepared
-endpoints; or Phase 10 release-wide platform/documentation evidence.
+public headers, inherited values, and request shaping; Phases 6-8 auth, rate limiting, and
+pagination; Phase 9 prepared endpoints and complete extension certification; or Phase 10
+compression-algorithm, grammar, platform, documentation, and release-final evidence.
 
 Phase 4 can extend the existing `BodySpec`, `PreparedBody`, response-handler capability, head,
 and single executor. It must not replace the public codec contracts or add a second request,
