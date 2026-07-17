@@ -402,6 +402,10 @@ just release
 `just test-no-default` directly selects the private no-default managed HTTP/TLS contract. Nextest
 is required for unit and integration tests, while the doctest recipes are the only maintained
 `cargo test` uses. The default/all/no-default checks are deliberately separate feature surfaces.
+`just release` also runs the dangerous-namespace Trybuild harness with
+`dangerous-custom-retry` enabled and `dangerous-dev-tools` disabled. This keeps the existing
+dangerous namespace present while proving that development-only execution support cannot escape
+through it; the proof must not be replaced by an all-feature run.
 
 Manual specification governance consists of normative-document review, coverage-plan review, conformance-evidence review, and release audit. Maintained command equivalents remain documented in the Conformance Plan and `justfile`.
 

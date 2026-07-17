@@ -57,4 +57,8 @@ diff-check:
 _test-ci-default:
     cargo nextest run --profile ci --workspace
 
-release: fmt-check check check-all check-no-default clippy clippy-all _test-ci-default test-all test-no-default doctest doctest-all doc doc-all deny diff-check
+[private]
+_test-ui-dangerous:
+    cargo nextest run --profile ci -p concord_core --features dangerous-custom-retry --test ui_dangerous
+
+release: fmt-check check check-all check-no-default clippy clippy-all _test-ci-default test-all test-no-default _test-ui-dangerous doctest doctest-all doc doc-all deny diff-check
