@@ -30,7 +30,7 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 - Corrected Phase 3 evidence anchor: `2e9cdf9d059dc03594773bd31cc2b8a79e9a7298`
 - Final corrected Phase 3 source: `54a64cb4ba062453dea26dd6af1dff97eaa3406e`
 - Final validation/evidence time: `2026-07-17T22:49:32Z`
-- Final Phase 3 evidence/report commit: named by the following documentation-only anchor
+- Final Phase 3 evidence/report commit: `ef8df96db9ac6594998327fa108af9f25ba787f7`
 - Final Phase 3 evidence anchor: this report's documentation-only follow-up
 - Branch: `master`
 - Initial working tree: clean
@@ -413,9 +413,9 @@ all eight `P2-AUDIT-*` rows pointing to
 Phase 3 contains 126 unique `P3-*` rows covering 126 exact requirements: 76 direct and 50
 explicitly partial after final correction. The catalog contains 445 rows and 445 unique evidence
 IDs, with zero unknown normative requirement IDs. All source-behavior rows are revalidated at
-`54a64cb4ba062453dea26dd6af1dff97eaa3406e`; catalog/report-integrity rows are anchored to the
-later immutable evidence/report commit. The original and first-correction evidence commits remain
-intact in Git history and their superseded classifications are recorded below.
+`54a64cb4ba062453dea26dd6af1dff97eaa3406e`; catalog/report-integrity rows are anchored to
+`ef8df96db9ac6594998327fa108af9f25ba787f7`. The original and first-correction evidence
+commits remain intact in Git history and their superseded classifications are recorded below.
 
 The artifact audit inspected all 126 Phase 3 rows and 512 listed path references. Before
 correction it reproduced 12 nonexistent references: `P3-CONF-001` through `P3-CONF-005`,
