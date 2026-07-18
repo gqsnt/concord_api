@@ -655,3 +655,41 @@ self types; a Rust MSRV/toolchain change.
 **Affected requirements:** `GEN-END-003`, `GEN-REQ-001`, `GEN-DEFAULT-001`, `GEN-NAME-001`,
 `GEN-NAME-002`, `GEN-DOC-001`, `GEN-DOC-002`, `API-REQ-001`, `API-REQ-002`,
 `CONF-COMPILE-001`, `CONF-COMPILE-003`, `CONF-DOWNSTREAM-001`, `CONF-MSRV-001`.
+
+## ADR-043 — Conformance evidence types use a closed extended vocabulary
+
+**Status:** Accepted
+
+**Context:** The normative Conformance Plan enumerated 16 evidence types as the complete set allowed
+in both catalogs. The 504-row coverage plan uses 23 types and the 771-row actual-evidence catalog
+uses 33 types. Their union contains 19 additional labels, including the coverage-only
+`runtime-and-compile` label for `CONF-CORE-002`. The rows otherwise retain exact artifacts,
+commands, configurations, results, and immutable commits, so the literal enumeration contradicted
+accurate historical catalogs.
+
+**Decision:** Preserve every historical catalog row byte-for-byte and amend the normative
+Conformance Plan in place. The existing 16 labels remain canonical primitive proof types. Every
+currently used additional label is admitted as one precisely bounded alias, compound mapping, or
+specialized procedural type. Planned labels continue to describe intended work only; actual labels
+classify only the exact proof recorded by their row. The vocabulary is closed, and a future label
+requires an approved normative amendment that names and defines it before catalog use.
+
+**Consequences:** The permitted vocabulary contains 35 labels: 34 currently used labels plus the
+intentionally retained supplemental `fuzz` primitive. Historical evidence identities,
+classifications, artifacts, results, and commits remain unchanged. The clarification changes only
+metadata interpretation; it changes no product behavior, public API, implementation phase, or
+release verdict. The Conformance Plan remains the normative owner, and this decision remains
+informative rationale.
+
+**Rejected alternatives:** Reclassifying historical rows into the original 16 labels, which would
+rewrite accurate evidence and discard useful procedural specificity; permitting arbitrary
+free-form or catch-all labels; treating this decision log as normative authority; migrating the
+unchanged 0.1 authority to a new path or version.
+
+**Affected requirements:** `DOC-ID-003`, `DOC-CHG-003`, `DOC-LINT-001`, `CONF-CORE-002`,
+`CONF-TRACE-001`, `CONF-TRACE-005`, `CONF-TRACE-006`.
+
+**Affected documents:** `docs/normative/08_CONCORD_CONFORMANCE_PLAN_0.1.md`,
+`docs/conformance/REQUIREMENT_COVERAGE_PLAN_0.1.csv`, and
+`docs/conformance/CONFORMANCE_EVIDENCE_0.1.csv`; both catalogs are interpreted but remain
+byte-identical.

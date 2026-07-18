@@ -88,26 +88,68 @@ waived
 
 One requirement may have several actual evidence rows. An evidence row identifies an exact test, command, or repeatable manual review rather than only a directory.
 
-Allowed evidence types in both catalogs are:
+### 2.3 Evidence-type vocabulary
 
-```text
-parser-unit
-semantic-unit
-compile-pass
-compile-fail
-downstream-generated
-downstream-extension
-runtime
-concurrency
-model-check
-property
-fuzz
-feature-boundary
-msrv
-doc-test
-manual-review
-release-command
-```
+Both catalog columns use a closed vocabulary. The following 16 labels are the canonical primitive
+proof types:
+
+| Label | Exact meaning |
+|---|---|
+| `parser-unit` | Isolated acceptance or rejection of source syntax without relying on runtime behavior. |
+| `semantic-unit` | Isolated resolution, normalization, ownership, state-model, configuration, or semantic-diagnostic behavior without requiring an end-to-end runtime. |
+| `compile-pass` | Successful Rust compilation of the exact supported use and configuration named by the row. |
+| `compile-fail` | Expected Rust compilation failure with the relevant diagnostic and boundary reviewed by the cited fixture. |
+| `downstream-generated` | Application-shaped compilation using a generated Concord API through documented public namespaces and no private imports. |
+| `downstream-extension` | Downstream implementation or use of a documented stable extension surface through public namespaces. |
+| `runtime` | Observable execution behavior under the deterministic or test-owned runtime conditions named by the row. |
+| `concurrency` | Deterministically synchronized concurrent or cancellation behavior; timing-only sleeps are not sufficient. |
+| `model-check` | Systematic exploration of a reduced state-transition model and its stated invariants. |
+| `property` | An invariant checked across a named deterministic matrix or generated input space; generated failures retain a reproducible seed or minimized case. |
+| `fuzz` | Supplemental execution of a named fuzz target; it does not replace deterministic evidence. |
+| `feature-boundary` | Presence, absence, or isolation of behavior under the exact Cargo feature graph named by the row. |
+| `msrv` | Compilation or public type checking under the declared minimum supported Rust version. |
+| `doc-test` | Compilation and, when applicable, execution of Rust documentation examples through the maintained doctest path. |
+| `manual-review` | A repeatable reviewer audit of exact named artifacts or command output against explicit recorded criteria. |
+| `release-command` | Execution of the exact maintained release-gate command or aggregate release recipe named by the row at the recorded commit and configuration. |
+
+The following 19 non-primitive labels are additionally permitted in both catalogs only with these
+bounded meanings:
+
+| Label | Kind | Exact definition or primitive mapping |
+|---|---|---|
+| `artifact-audit` | Specialized procedural type | A repeatable commit-scoped audit of the exact artifact paths, row ownership, recorded results, and any historical-preservation claim named by the row. It proves catalog artifact integrity, not product behavior absent another exact proof. |
+| `boundary-test` | Specialized procedural type | An exact `BOUND-*` accepted/rejected compile boundary or below/equal/first-excess/checked-arithmetic runtime boundary. The row identifies which boundary and test procedure apply. |
+| `catalog-audit` | Specialized procedural type | A repeatable audit of catalog headers or schema, row and identifier counts, uniqueness, normative-ID membership, planned/actual separation, or historical preservation, limited to the checks named by the row. |
+| `compatibility-matrix` | Specialized procedural type | For `COMPAT-*` rows, the exact compiler, MSRV, package topology, dependency, or public-surface configurations named by the row. It does not imply an unrecorded platform or configuration. |
+| `compile-fail-and-rustdoc` | Compound type | `compile-fail` + `compile-pass`; the `compile-pass` component is warning-denied Rustdoc generation, with any rendered-surface inspection named explicitly by the row. |
+| `compile-fail-runtime-and-rustdoc` | Compound type | `compile-fail` + `runtime` + `compile-pass`; the `compile-pass` component is warning-denied Rustdoc generation, with any rendered-surface inspection named explicitly by the row. |
+| `configuration` | Specialized procedural type | Exact public configuration signatures, default values, finite enable/disable rules, or runtime enforcement for the `API-*` or `BOUND-*` contract named by the row. |
+| `conformance` | Specialized procedural type | Only for `CONF-*` rows: the exact conformance-process property, fixture architecture, catalog rule, documentation gate, runner rule, or maintained command named by the row. It is not a general assertion that the product or release conforms. |
+| `doctest-and-rustdoc` | Compound type | `doc-test` + `compile-pass`; the `compile-pass` component is warning-denied Rustdoc generation, with any rendered-surface inspection named explicitly by the row. |
+| `downstream-generated-runtime` | Compound type | `downstream-generated` + `runtime`. |
+| `feature-matrix` | Specialized procedural type | For `FEAT-*` rows, the exact set of Cargo feature graphs and isolation checks named by the row. It does not imply an unrecorded feature combination. |
+| `lifecycle-runtime` | Permitted alias | `runtime`, narrowed to the `EXEC-*` lifecycle ordering, side effects, attempt counts, deadlines, cancellation, or completion behavior named by the row. |
+| `manifest` | Specialized procedural type | Review of exact manifest or lockfile metadata, dependency versions and sources, or package topology through the artifact and metadata/policy command named by the row. |
+| `parser-semantic` | Compound type | `parser-unit` + `semantic-unit`. |
+| `public-api` | Specialized procedural type | Exact `API-*` signature, namespace, trait, ownership, or accessor behavior proved by the downstream compilation or observable runtime artifacts named by the row. It is not a general public-API approval. |
+| `runtime-and-compile` | Compound type | `runtime` + `compile-pass`. |
+| `rustdoc` | Specialized procedural type | Warning-denied Rustdoc generation plus only the rendered public-surface semantics or private-name exclusions explicitly inspected by the row. It does not imply a doctest. |
+| `security-runtime` | Permitted alias | `runtime`, narrowed to the `SEC-*` secrecy, redaction, safe-surface, or fail-closed behavior named by the row. |
+| `source-runtime` | Permitted alias | `runtime`, narrowed to `PROD-*` behavior. Exact source paths identify production ownership but do not add source-inspection proof or strengthen the runtime result. |
+
+A compound label requires evidence for every mapped primitive in the exact row. A specialized label
+provides only its bounded definition and does not stand in for an unnamed primitive proof. The
+canonical `fuzz` type is intentionally retained for the supplemental targets in section 20 even
+though neither current catalog uses it.
+
+In the coverage plan, a type label describes only the intended verification procedure. In the
+actual-evidence catalog, it classifies only the exact artifact, command or test, configuration,
+result, and verified commit recorded by that row. No label turns planned coverage into actual
+evidence or strengthens an actual row beyond those fields.
+
+This vocabulary is closed. A label not enumerated in the two tables above is not permitted in
+either catalog until an approved normative amendment to this conformance plan explicitly names and
+defines it.
 
 A waived requirement records an approved decision and a repeatable manual review procedure.
 
