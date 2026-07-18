@@ -36,7 +36,7 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 - Original Phase 5 evidence anchor:
   `10139ef98319d52a7fa6c874c72883e61427e813`
 - Corrected Phase 5 evidence-state commit:
-  `PENDING_CORRECTED_PHASE_5_EVIDENCE_STATE`
+  `afaa2fd091111e5fb9ca3a584ebb415735020907`
 - Corrected Phase 5 evidence anchor: the later documentation-only
   `docs: anchor corrected phase5 evidence` commit; its object identity is intentionally external
   to its own content
@@ -59,6 +59,9 @@ The corrected evidence-state commit contains all 203 final Phase 5 evidence IDs 
 marker. The subsequent documentation-only anchor changes only that marker and corresponding audit
 commands/identity text. It adds or removes no ID, changes no classification or count, and contains
 no product source.
+
+All five stored commit-scoped commands (`P5-AUDIT-001` through `P5-AUDIT-005`) pass against the
+corrected evidence state `afaa2fd091111e5fb9ca3a584ebb415735020907`.
 
 ## Phase 5 commits
 

@@ -136,7 +136,7 @@ The approved endpoint-setter decision is commit
 passes against that exact commit. The original evidence state is
 `a8353a151a35b3ba8a3d8ebd689ad269e7b1d948`, and its original anchor is
 `10139ef98319d52a7fa6c874c72883e61427e813`. The corrected complete evidence state is
-`PENDING_CORRECTED_PHASE_5_EVIDENCE_STATE`; its later documentation-only anchor and full
+`afaa2fd091111e5fb9ca3a584ebb415735020907`; its later documentation-only anchor and full
 classification details are recorded in `docs/conformance/PHASE_5_REPORT.md`.
 
 The production compiler and execution path is now:
