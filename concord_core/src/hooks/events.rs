@@ -2,22 +2,9 @@ use std::time::Duration;
 
 use http::{Method, StatusCode};
 
+use crate::body::BodyKind;
 use crate::operation::OperationId;
 use crate::redaction::SanitizedHeaders;
-
-/// Structural category of a request body visible to lifecycle observers.
-#[non_exhaustive]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BodyKind {
-    /// No request body.
-    Empty,
-    /// A complete buffered request body.
-    Buffered,
-    /// A lazy streaming request body.
-    Stream,
-    /// A multipart request body.
-    Multipart,
-}
 
 /// Sanitized metadata supplied before expensive request work begins.
 #[derive(Debug)]

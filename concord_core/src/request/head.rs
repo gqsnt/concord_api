@@ -146,7 +146,7 @@ impl PreparedHead {
     pub(crate) fn apply_media_headers(
         &mut self,
         accept: Option<&'static str>,
-        content_type: Option<&'static str>,
+        content_type: Option<&HeaderValue>,
     ) -> Result<(), ApiError> {
         if let Some(accept) = accept {
             if !self.public_headers.contains_key(ACCEPT) {
@@ -168,14 +168,8 @@ impl PreparedHead {
                     ConfigurationErrorKind::InvalidHeader,
                 ));
             }
-            let value = HeaderValue::from_str(content_type).map_err(|_| {
-                ApiError::configuration(
-                    self.endpoint(),
-                    self.method().clone(),
-                    ConfigurationErrorKind::InvalidHeader,
-                )
-            })?;
-            self.public_headers.insert(CONTENT_TYPE, value);
+            self.public_headers
+                .insert(CONTENT_TYPE, content_type.clone());
         }
         Ok(())
     }
@@ -249,7 +243,7 @@ mod tests {
         let mut head = prepared();
         head.apply_media_headers(
             Some("application/vnd.example+json"),
-            Some("application/json"),
+            Some(&HeaderValue::from_static("application/json")),
         )
         .expect("codec headers");
         assert_eq!(
@@ -269,7 +263,7 @@ mod tests {
         );
 
         let error = head
-            .apply_media_headers(None, Some("text/plain"))
+            .apply_media_headers(None, Some(&HeaderValue::from_static("text/plain")))
             .expect_err("a request codec owns Content-Type");
         assert_eq!(error.category(), ErrorCategory::Configuration);
         assert_eq!(
@@ -279,19 +273,14 @@ mod tests {
     }
 
     #[test]
-    fn invalid_static_codec_header_values_fail_during_public_preparation() {
-        for (accept, content_type) in [
-            (Some("invalid\r\naccept"), None),
-            (None, Some("invalid\r\ncontent-type")),
-        ] {
-            let error = prepared()
-                .apply_media_headers(accept, content_type)
-                .expect_err("invalid codec header value");
-            assert_eq!(error.category(), ErrorCategory::Configuration);
-            assert_eq!(
-                error.configuration_kind(),
-                Some(ConfigurationErrorKind::InvalidHeader)
-            );
-        }
+    fn invalid_static_accept_value_fails_during_public_preparation() {
+        let error = prepared()
+            .apply_media_headers(Some("invalid\r\naccept"), None)
+            .expect_err("invalid codec Accept value");
+        assert_eq!(error.category(), ErrorCategory::Configuration);
+        assert_eq!(
+            error.configuration_kind(),
+            Some(ConfigurationErrorKind::InvalidHeader)
+        );
     }
 }

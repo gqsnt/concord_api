@@ -6,10 +6,10 @@ use std::pin::Pin;
 mod debug;
 mod events;
 
+pub use crate::body::BodyKind;
 pub(crate) use debug::DebugDispatcher;
 pub use events::{
-    BeforeSend, BodyKind, CompletionEvent, CompletionOutcome, PaginationCompletionEvent,
-    ResponseHeadEvent,
+    BeforeSend, CompletionEvent, CompletionOutcome, PaginationCompletionEvent, ResponseHeadEvent,
 };
 
 use crate::error::HookError;

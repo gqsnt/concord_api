@@ -69,7 +69,7 @@ where
     let mut final_status = None;
 
     let result = async {
-        run_before_send(&core, operation_id, deadline, &head, body_metadata).await?;
+        run_before_send(&core, operation_id, deadline, &head, &body_metadata).await?;
 
         check_deadline(deadline, head.endpoint(), head.method())?;
         let materialized = endpoint.into_body().materialize(
@@ -78,19 +78,30 @@ where
             core.request_body_limit(),
         );
         check_deadline(deadline, head.endpoint(), head.method())?;
-        let prepared_body = materialized?;
+        let mut prepared_body = materialized?;
+        debug_assert_eq!(prepared_body.kind(), body_metadata.kind());
         let known_body_length = prepared_body.known_length();
-        let boundary_body = prepared_body.boundary_bytes();
         let materialized_metadata = body_metadata.with_known_length(known_body_length);
+
+        let native_body = prepared_body
+            .prepare_native(core.request_body_limit())
+            .map_err(|error| {
+                drop(error);
+                ApiError::classified(
+                    head.endpoint(),
+                    head.method().clone(),
+                    ErrorCategory::RequestBody,
+                )
+            })?;
 
         let request = core.application_http().build_request(
             head.endpoint(),
             head.method(),
             head.logical_url(),
             head.public_headers(),
-            prepared_body.into_bytes(),
+            native_body,
         )?;
-        let request_event = before_send_event(operation_id, &head, materialized_metadata);
+        let request_event = before_send_event(operation_id, &head, &materialized_metadata);
         core.debug_dispatcher(head.debug())
             .request_ready(&request_event);
         check_deadline(deadline, head.endpoint(), head.method())?;
@@ -104,7 +115,6 @@ where
                 head.public_headers(),
                 materialized_metadata.kind(),
                 materialized_metadata.known_length(),
-                boundary_body,
             ))
             .await
             .map_err(|_| timeout_error(head.endpoint(), head.method()))??;
@@ -207,7 +217,7 @@ async fn run_before_send(
     operation_id: OperationId,
     deadline: OperationDeadline,
     head: &crate::request::PreparedHead,
-    body_metadata: crate::request::BodyMetadata,
+    body_metadata: &crate::request::BodyMetadata,
 ) -> Result<(), ApiError> {
     check_deadline(deadline, head.endpoint(), head.method())?;
     let future = core
@@ -244,11 +254,11 @@ async fn run_response_head_hook(
         .map_err(|_| timeout_error(endpoint, method))
 }
 
-fn before_send_event(
+fn before_send_event<'a>(
     operation_id: OperationId,
-    head: &crate::request::PreparedHead,
-    body_metadata: crate::request::BodyMetadata,
-) -> BeforeSend<'_> {
+    head: &'a crate::request::PreparedHead,
+    body_metadata: &crate::request::BodyMetadata,
+) -> BeforeSend<'a> {
     BeforeSend {
         operation_id,
         parent_operation_id: None,

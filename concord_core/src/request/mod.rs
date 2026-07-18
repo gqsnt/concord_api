@@ -11,9 +11,11 @@ pub(crate) use prepare::{
 };
 
 #[doc(hidden)]
+pub use crate::body::{BodyMetadata, BodySpec, CodecBody, EmptyBody, PreparedBody};
+#[doc(hidden)]
 pub use endpoint::{
-    BodyMetadata, BodySpec, BufferedResponse, BytesResponse, CodecBody, EmptyBody, EndpointSpec,
-    MetadataResponse, NoContentResponse, PreparedBody, ResponseHandler,
+    BufferedResponse, BytesResponse, EndpointSpec, MetadataResponse, NoContentResponse,
+    ResponseHandler,
 };
 #[doc(hidden)]
 pub use head::{HeadBuilder, PreparedHead, RequestMeta};

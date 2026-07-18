@@ -57,7 +57,6 @@ impl ApiError {
         }
     }
 
-    #[allow(dead_code, reason = "used by later managed Reqwest execution")]
     pub(crate) fn from_reqwest(
         endpoint: &'static str,
         method: Method,

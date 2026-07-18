@@ -1,8 +1,12 @@
+use std::collections::VecDeque;
 use std::fmt;
 use std::future::IntoFuture;
+use std::io;
 use std::num::NonZeroUsize;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -12,15 +16,17 @@ use concord_test_support::script::{
     BodyCategory, ExpectedRequest, ScriptedResponse, TransportFailure,
 };
 use concord_test_support::server::{BodyGate, ResponseScript, ScriptedServer};
+use futures_core::Stream;
 use http::{Method, StatusCode};
 
 use super::*;
+use crate::body::{BodyError, BodyFactory, RequestBody, StreamBody};
 use crate::codec::{CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, Text};
 use crate::error::{ErrorCategory, HookError, StatusBodyState};
 use crate::hooks::{BoxFuture, RuntimeHooks};
 use crate::http::HttpConfigBuilder;
 use crate::request::{
-    BodyMetadata, BodySpec, BufferedResponse, BytesResponse, CodecBody, EmptyBody, HeadBuilder,
+    BodyMetadata, BufferedResponse, BytesResponse, CodecBody, EmptyBody, HeadBuilder,
     NoContentResponse, PreparedHead, RequestMeta,
 };
 use crate::runtime::RuntimeConfigBuilder;
@@ -28,6 +34,155 @@ use crate::runtime::RuntimeConfigBuilder;
 const ENDPOINT: &str = "ExecutionApi::health::bytes";
 const NO_CONTENT_ENDPOINT: &str = "ExecutionApi::health::ping";
 const CODEC_ENDPOINT: &str = "ExecutionApi::codec::round_trip";
+const BODY_ENDPOINT: &str = "ExecutionApi::body::upload";
+
+struct BodyEndpoint {
+    body: RequestBody,
+}
+
+impl BodyEndpoint {
+    fn new(body: RequestBody) -> Self {
+        Self { body }
+    }
+}
+
+impl EndpointSpec for BodyEndpoint {
+    type Body = RequestBody;
+    type Response = BytesResponse;
+
+    fn request_meta(&self) -> RequestMeta {
+        RequestMeta::new(BODY_ENDPOINT, Method::POST, Some(Duration::from_secs(30)))
+    }
+
+    fn prepare_head_and_body_metadata(
+        &self,
+        mut builder: HeadBuilder,
+    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+        builder.push_static("body")?;
+        builder.push_static("upload")?;
+        Ok((
+            builder.finish(),
+            self.body.metadata(BODY_ENDPOINT, &Method::POST)?,
+        ))
+    }
+
+    fn into_body(self) -> Self::Body {
+        self.body
+    }
+}
+
+enum ProbeFrame {
+    Data(&'static [u8]),
+    Failure(&'static str),
+}
+
+struct BodyPollProbe {
+    frames: VecDeque<ProbeFrame>,
+    polls: Arc<AtomicUsize>,
+    dropped: Option<Arc<AtomicBool>>,
+}
+
+impl BodyPollProbe {
+    fn new(frames: impl IntoIterator<Item = ProbeFrame>, polls: &Arc<AtomicUsize>) -> Self {
+        Self {
+            frames: frames.into_iter().collect(),
+            polls: Arc::clone(polls),
+            dropped: None,
+        }
+    }
+}
+
+impl Stream for BodyPollProbe {
+    type Item = Result<Bytes, io::Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.polls.fetch_add(1, Ordering::SeqCst);
+        Poll::Ready(self.frames.pop_front().map(|frame| match frame {
+            ProbeFrame::Data(bytes) => Ok(Bytes::from_static(bytes)),
+            ProbeFrame::Failure(message) => Err(io::Error::other(message)),
+        }))
+    }
+}
+
+impl Drop for BodyPollProbe {
+    fn drop(&mut self) {
+        if let Some(dropped) = &self.dropped {
+            dropped.store(true, Ordering::SeqCst);
+        }
+    }
+}
+
+struct ProbeBodyFactory {
+    content_type_calls: Arc<AtomicUsize>,
+    create_calls: Arc<AtomicUsize>,
+    polls: Arc<AtomicUsize>,
+    fail: bool,
+}
+
+impl BodyFactory for ProbeBodyFactory {
+    fn content_type(&self) -> Option<http::HeaderValue> {
+        self.content_type_calls.fetch_add(1, Ordering::SeqCst);
+        Some(http::HeaderValue::from_static(
+            "application/x-concord-factory",
+        ))
+    }
+
+    fn create(&self) -> Result<StreamBody, BodyError> {
+        self.create_calls.fetch_add(1, Ordering::SeqCst);
+        if self.fail {
+            Err(BodyError::with_safe_message(
+                crate::body::BodyErrorKind::Factory,
+                "safe factory configuration failure",
+            ))
+        } else {
+            Ok(StreamBody::from_stream(BodyPollProbe::new(
+                [ProbeFrame::Data(b"factory")],
+                &self.polls,
+            ))
+            .exact_length(7))
+        }
+    }
+}
+
+struct PendingBodyStream {
+    polls: Arc<AtomicUsize>,
+    dropped: Arc<AtomicBool>,
+    reached: Arc<tokio::sync::Notify>,
+}
+
+impl Stream for PendingBodyStream {
+    type Item = Result<Bytes, io::Error>;
+
+    fn poll_next(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.polls.fetch_add(1, Ordering::SeqCst);
+        self.reached.notify_one();
+        Poll::Pending
+    }
+}
+
+impl Drop for PendingBodyStream {
+    fn drop(&mut self) {
+        self.dropped.store(true, Ordering::SeqCst);
+    }
+}
+
+struct PendingBodyFactory {
+    create_calls: Arc<AtomicUsize>,
+    polls: Arc<AtomicUsize>,
+    dropped: Arc<AtomicBool>,
+    reached: Arc<tokio::sync::Notify>,
+}
+
+impl BodyFactory for PendingBodyFactory {
+    fn create(&self) -> Result<StreamBody, BodyError> {
+        self.create_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(StreamBody::from_stream(PendingBodyStream {
+            polls: Arc::clone(&self.polls),
+            dropped: Arc::clone(&self.dropped),
+            reached: Arc::clone(&self.reached),
+        }))
+    }
+}
 
 struct CodecEndpoint<Encoder, Decoder>
 where
@@ -71,7 +226,7 @@ where
         builder.push_static("round-trip")?;
         Ok((
             builder.finish(),
-            <CodecBody<Encoder> as BodySpec>::metadata(),
+            CodecBody::<Encoder>::metadata_for(CODEC_ENDPOINT, &Method::POST)?,
         ))
     }
 
@@ -478,6 +633,10 @@ where
     Request::new(core, CodecEndpoint::new(input))
 }
 
+fn body_request(core: ClientCore, body: RequestBody) -> Request<BodyEndpoint> {
+    Request::new(core, BodyEndpoint::new(body))
+}
+
 fn probe_input(value: &'static [u8], calls: &Arc<AtomicUsize>) -> EncoderInput {
     EncoderInput {
         bytes: Bytes::from_static(value),
@@ -651,6 +810,350 @@ async fn vetoed_buffered_request_does_not_invoke_its_encoder() {
     for formatted in [error.to_string(), format!("{error:?}")] {
         assert!(!formatted.contains("veto-body-secret-78f4"));
     }
+}
+
+#[tokio::test]
+async fn request_stream_and_factory_remain_lazy_through_hook_veto() {
+    let stream_executor = DeterministicExecutor::new();
+    let mut stream_probe = ProbeHooks::new();
+    stream_probe.veto = AtomicBool::new(true);
+    let stream_hooks = Arc::new(stream_probe);
+    let stream_core = development_core(
+        &stream_executor,
+        Arc::clone(&stream_hooks),
+        RuntimeConfigBuilder::new(),
+    );
+    let stream_polls = Arc::new(AtomicUsize::new(0));
+    let stream = StreamBody::from_stream(BodyPollProbe::new(
+        [ProbeFrame::Data(b"lazy-stream-secret-a8ef")],
+        &stream_polls,
+    ))
+    .exact_length(23);
+    assert_eq!(stream_polls.load(Ordering::SeqCst), 0);
+    let request = body_request(stream_core, RequestBody::stream(stream));
+    assert_eq!(stream_polls.load(Ordering::SeqCst), 0);
+    let error = request.await.expect_err("stream hook veto");
+    assert_eq!(error.category(), ErrorCategory::Hook);
+    assert_eq!(stream_polls.load(Ordering::SeqCst), 0);
+    assert_eq!(stream_executor.application().request_count().unwrap(), 0);
+    assert!(matches!(
+        stream_hooks.records().first(),
+        Some(LifecycleRecord::Before {
+            body_kind: crate::hooks::BodyKind::Stream,
+            known_body_length: Some(23),
+            ..
+        })
+    ));
+
+    let factory_executor = DeterministicExecutor::new();
+    let mut factory_probe = ProbeHooks::new();
+    factory_probe.veto = AtomicBool::new(true);
+    let factory_hooks = Arc::new(factory_probe);
+    let factory_core = development_core(
+        &factory_executor,
+        Arc::clone(&factory_hooks),
+        RuntimeConfigBuilder::new(),
+    );
+    let content_type_calls = Arc::new(AtomicUsize::new(0));
+    let create_calls = Arc::new(AtomicUsize::new(0));
+    let factory_polls = Arc::new(AtomicUsize::new(0));
+    let request = body_request(
+        factory_core,
+        RequestBody::factory(ProbeBodyFactory {
+            content_type_calls: Arc::clone(&content_type_calls),
+            create_calls: Arc::clone(&create_calls),
+            polls: Arc::clone(&factory_polls),
+            fail: false,
+        }),
+    );
+    assert_eq!(content_type_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(create_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(factory_polls.load(Ordering::SeqCst), 0);
+    let error = request.await.expect_err("factory hook veto");
+    assert_eq!(error.category(), ErrorCategory::Hook);
+    assert_eq!(content_type_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(create_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(factory_polls.load(Ordering::SeqCst), 0);
+    assert_eq!(factory_executor.application().request_count().unwrap(), 0);
+}
+
+#[tokio::test]
+async fn managed_request_stream_enforces_exact_length_and_aggregate_limit() {
+    let success_executor = DeterministicExecutor::new();
+    let success_hooks = Arc::new(ProbeHooks::new());
+    let success_core = development_core(
+        &success_executor,
+        Arc::clone(&success_hooks),
+        RuntimeConfigBuilder::new()
+            .request_body_limit(NonZeroUsize::new(5).expect("positive limit")),
+    );
+    success_executor
+        .application()
+        .queue_expected_response(
+            ExpectedRequest::new()
+                .method(Method::POST)
+                .safe_url("http://execution.example.test/v1/body/upload")
+                .body("abcde"),
+            ScriptedResponse::success("accepted"),
+        )
+        .expect("stream success script");
+    let success_polls = Arc::new(AtomicUsize::new(0));
+    let success_body = StreamBody::from_stream(BodyPollProbe::new(
+        [ProbeFrame::Data(b"ab"), ProbeFrame::Data(b"cde")],
+        &success_polls,
+    ))
+    .exact_length(5);
+    assert_eq!(
+        body_request(success_core, RequestBody::stream(success_body))
+            .await
+            .expect("exact stream success"),
+        b"accepted"[..]
+    );
+    assert_eq!(success_polls.load(Ordering::SeqCst), 3);
+    let captures = success_executor.application().captures().unwrap();
+    assert_eq!(captures.len(), 1);
+    assert_eq!(captures[0].body_category(), BodyCategory::Streaming);
+    assert_eq!(captures[0].known_body_length(), Some(5));
+
+    let preflight_executor = DeterministicExecutor::new();
+    let preflight_hooks = Arc::new(ProbeHooks::new());
+    let preflight_core = development_core(
+        &preflight_executor,
+        Arc::clone(&preflight_hooks),
+        RuntimeConfigBuilder::new()
+            .request_body_limit(NonZeroUsize::new(4).expect("positive limit")),
+    );
+    let preflight_polls = Arc::new(AtomicUsize::new(0));
+    let preflight_body = StreamBody::from_stream(BodyPollProbe::new(
+        [ProbeFrame::Data(b"never-polled")],
+        &preflight_polls,
+    ))
+    .exact_length(5);
+    let error = body_request(preflight_core, RequestBody::stream(preflight_body))
+        .await
+        .expect_err("known impossible stream size");
+    assert_eq!(error.category(), ErrorCategory::RequestBody);
+    assert_eq!(preflight_polls.load(Ordering::SeqCst), 0);
+    assert_eq!(preflight_executor.application().request_count().unwrap(), 0);
+    assert!(preflight_hooks.records().iter().all(|record| !matches!(
+        record,
+        LifecycleRecord::Before { .. } | LifecycleRecord::Response(..)
+    )));
+
+    async fn managed_failure(
+        body: StreamBody,
+        polls: &Arc<AtomicUsize>,
+        expected_polls: usize,
+        limit: usize,
+    ) -> ApiError {
+        let executor = DeterministicExecutor::new();
+        let hooks = Arc::new(ProbeHooks::new());
+        let core = development_core(
+            &executor,
+            hooks,
+            RuntimeConfigBuilder::new()
+                .request_body_limit(NonZeroUsize::new(limit).expect("positive limit")),
+        );
+        let error = body_request(core, RequestBody::stream(body))
+            .await
+            .expect_err("managed stream failure");
+        assert_eq!(error.category(), ErrorCategory::RequestBody);
+        assert_eq!(polls.load(Ordering::SeqCst), expected_polls);
+        assert_eq!(executor.application().request_count().unwrap(), 0);
+        error
+    }
+
+    let underflow_polls = Arc::new(AtomicUsize::new(0));
+    managed_failure(
+        StreamBody::from_stream(BodyPollProbe::new(
+            [ProbeFrame::Data(b"abc")],
+            &underflow_polls,
+        ))
+        .exact_length(4),
+        &underflow_polls,
+        2,
+        64,
+    )
+    .await;
+
+    let exact_overflow_polls = Arc::new(AtomicUsize::new(0));
+    managed_failure(
+        StreamBody::from_stream(BodyPollProbe::new(
+            [ProbeFrame::Data(b"abc"), ProbeFrame::Data(b"de")],
+            &exact_overflow_polls,
+        ))
+        .exact_length(4),
+        &exact_overflow_polls,
+        2,
+        64,
+    )
+    .await;
+
+    let limit_overflow_polls = Arc::new(AtomicUsize::new(0));
+    managed_failure(
+        StreamBody::from_stream(BodyPollProbe::new(
+            [ProbeFrame::Data(b"abc"), ProbeFrame::Data(b"de")],
+            &limit_overflow_polls,
+        )),
+        &limit_overflow_polls,
+        2,
+        4,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn producer_failure_is_request_body_primary_and_body_free() {
+    let executor = DeterministicExecutor::new();
+    let hooks = Arc::new(ProbeHooks::new());
+    let core = development_core(&executor, hooks, RuntimeConfigBuilder::new());
+    let polls = Arc::new(AtomicUsize::new(0));
+    let body = StreamBody::from_stream(BodyPollProbe::new(
+        [
+            ProbeFrame::Data(b"accepted-prefix-secret-029b"),
+            ProbeFrame::Failure("producer-authored-secret-80d1"),
+        ],
+        &polls,
+    ));
+    let error = body_request(core, RequestBody::stream(body))
+        .await
+        .expect_err("producer failure");
+    assert_eq!(error.category(), ErrorCategory::RequestBody);
+    assert_eq!(polls.load(Ordering::SeqCst), 2);
+    assert_eq!(executor.application().request_count().unwrap(), 0);
+    let recursive = format!("{error:?} {error}");
+    assert!(!recursive.contains("accepted-prefix-secret-029b"));
+    assert!(!recursive.contains("producer-authored-secret-80d1"));
+}
+
+#[tokio::test]
+async fn body_factory_is_created_once_after_approval_and_failure_is_pre_native() {
+    let executor = DeterministicExecutor::new();
+    let hooks = Arc::new(ProbeHooks::new());
+    let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
+    executor
+        .application()
+        .queue_expected_response(
+            ExpectedRequest::new()
+                .method(Method::POST)
+                .safe_url("http://execution.example.test/v1/body/upload")
+                .body("factory"),
+            ScriptedResponse::success("factory-ok"),
+        )
+        .expect("factory script");
+    let content_type_calls = Arc::new(AtomicUsize::new(0));
+    let create_calls = Arc::new(AtomicUsize::new(0));
+    let polls = Arc::new(AtomicUsize::new(0));
+    let request = body_request(
+        core,
+        RequestBody::factory(ProbeBodyFactory {
+            content_type_calls: Arc::clone(&content_type_calls),
+            create_calls: Arc::clone(&create_calls),
+            polls: Arc::clone(&polls),
+            fail: false,
+        }),
+    );
+    assert_eq!(content_type_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(create_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(polls.load(Ordering::SeqCst), 0);
+    assert_eq!(request.await.expect("factory request"), b"factory-ok"[..]);
+    assert_eq!(content_type_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(create_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(polls.load(Ordering::SeqCst), 2);
+    assert_eq!(executor.application().request_count().unwrap(), 1);
+    assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 1);
+
+    let failing_executor = DeterministicExecutor::new();
+    let failing_hooks = Arc::new(ProbeHooks::new());
+    let failing_core = development_core(
+        &failing_executor,
+        failing_hooks,
+        RuntimeConfigBuilder::new(),
+    );
+    let failing_content_type_calls = Arc::new(AtomicUsize::new(0));
+    let failing_create_calls = Arc::new(AtomicUsize::new(0));
+    let failing_polls = Arc::new(AtomicUsize::new(0));
+    let error = body_request(
+        failing_core,
+        RequestBody::factory(ProbeBodyFactory {
+            content_type_calls: Arc::clone(&failing_content_type_calls),
+            create_calls: Arc::clone(&failing_create_calls),
+            polls: Arc::clone(&failing_polls),
+            fail: true,
+        }),
+    )
+    .await
+    .expect_err("factory creation failure");
+    assert_eq!(error.category(), ErrorCategory::RequestBody);
+    assert_eq!(failing_content_type_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(failing_create_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(failing_polls.load(Ordering::SeqCst), 0);
+    assert_eq!(failing_executor.application().request_count().unwrap(), 0);
+    let formatted = format!("{error:?} {error}");
+    assert!(!formatted.contains("safe factory configuration failure"));
+}
+
+#[tokio::test]
+async fn bytes_reader_and_file_stream_constructors_use_the_same_native_path() {
+    let executor = DeterministicExecutor::new();
+    let hooks = Arc::new(ProbeHooks::new());
+    let core = development_core(&executor, hooks, RuntimeConfigBuilder::new());
+    for (expected, response) in [
+        (b"bytes-source".as_slice(), "bytes-ok"),
+        (b"reader-source".as_slice(), "reader-ok"),
+        (b"file-source".as_slice(), "file-ok"),
+    ] {
+        executor
+            .application()
+            .queue_expected_response(
+                ExpectedRequest::new()
+                    .method(Method::POST)
+                    .safe_url("http://execution.example.test/v1/body/upload")
+                    .body(Bytes::copy_from_slice(expected)),
+                ScriptedResponse::success(response),
+            )
+            .expect("constructor script");
+    }
+
+    assert_eq!(
+        body_request(
+            core.clone(),
+            RequestBody::stream(StreamBody::from_bytes(Bytes::from_static(b"bytes-source"))),
+        )
+        .await
+        .expect("bytes stream"),
+        b"bytes-ok"[..]
+    );
+    assert_eq!(
+        body_request(
+            core.clone(),
+            RequestBody::stream(
+                StreamBody::from_reader(std::io::Cursor::new(b"reader-source".to_vec()))
+                    .exact_length(13),
+            ),
+        )
+        .await
+        .expect("reader stream"),
+        b"reader-ok"[..]
+    );
+
+    let file_path = std::env::temp_dir().join(format!(
+        "concord-phase4-stream-{}-{}.tmp",
+        std::process::id(),
+        BODY_ENDPOINT.len()
+    ));
+    tokio::fs::write(&file_path, b"file-source")
+        .await
+        .expect("write stream fixture");
+    let file_body = StreamBody::from_file(&file_path)
+        .await
+        .expect("open stream fixture");
+    let file_result = body_request(core, RequestBody::stream(file_body)).await;
+    tokio::fs::remove_file(&file_path)
+        .await
+        .expect("remove stream fixture");
+    assert_eq!(file_result.expect("file stream"), b"file-ok"[..]);
+    assert_eq!(executor.application().request_count().unwrap(), 3);
 }
 
 #[tokio::test]
@@ -1249,6 +1752,140 @@ async fn real_content_type_mismatch_rejects_before_response_body_polling() {
     for formatted in [error.to_string(), format!("{error:?}")] {
         assert!(!formatted.contains("content-contract-body-secret-5dd4"));
     }
+}
+
+#[tokio::test]
+async fn real_reqwest_stream_upload_transmits_exact_bytes_and_owned_media_type() {
+    let server = ScriptedServer::start([ResponseScript::ok(b"upload-ok".to_vec())])
+        .expect("stream upload server");
+    let hooks = Arc::new(ProbeHooks::new());
+    let core = real_core(&server, Arc::clone(&hooks), RuntimeConfigBuilder::new());
+    let polls = Arc::new(AtomicUsize::new(0));
+    let stream = StreamBody::from_stream(BodyPollProbe::new(
+        [
+            ProbeFrame::Data(b"real-"),
+            ProbeFrame::Data(b"stream-"),
+            ProbeFrame::Data(b"upload"),
+        ],
+        &polls,
+    ))
+    .exact_length(18);
+    let body = RequestBody::stream(stream)
+        .content_type("application/x-concord-stream")
+        .expect("valid stream content type");
+    assert_eq!(
+        body_request(core, body).await.expect("stream upload"),
+        b"upload-ok"[..]
+    );
+    assert_eq!(polls.load(Ordering::SeqCst), 3);
+    server
+        .wait_for_requests(1, Duration::from_secs(2))
+        .expect("recorded stream request");
+    let requests = server.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method(), "POST");
+    assert_eq!(requests[0].target(), "/v1/body/upload");
+    assert_eq!(requests[0].body(), b"real-stream-upload");
+    assert_eq!(
+        requests[0].header("content-type"),
+        Some("application/x-concord-stream")
+    );
+    assert_eq!(requests[0].header("content-length"), Some("18"));
+    assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn managed_producer_failure_precedes_reqwest_transport_failure() {
+    let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("managed producer listener");
+    let address = listener.local_addr().expect("managed producer address");
+    let peer = tokio::spawn(async move {
+        let (_socket, _) = listener.accept().await.expect("managed producer accept");
+        std::future::pending::<()>().await;
+    });
+    #[cfg(not(feature = "default-tls"))]
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let hooks = Arc::new(ProbeHooks::new());
+    let core = ClientCore::build(
+        &format!("http://{address}/v1/"),
+        HttpConfigBuilder::new().http1_only(),
+        RuntimeConfigBuilder::new().hooks(hooks.clone()),
+    )
+    .expect("managed producer core");
+    let polls = Arc::new(AtomicUsize::new(0));
+    let body = StreamBody::from_stream(BodyPollProbe::new(
+        [ProbeFrame::Failure("native-producer-secret-88be")],
+        &polls,
+    ))
+    .exact_length(1);
+    let error = tokio::time::timeout(
+        Duration::from_secs(3),
+        body_request(core, RequestBody::stream(body)),
+    )
+    .await
+    .expect("managed producer failure should be prompt")
+    .expect_err("managed producer request must fail");
+    peer.abort();
+    let _ = peer.await;
+    assert_eq!(error.category(), ErrorCategory::RequestBody);
+    assert_eq!(polls.load(Ordering::SeqCst), 1);
+    assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 1);
+    let formatted = format!("{error:?} {error}");
+    assert!(!formatted.contains("native-producer-secret-88be"));
+}
+
+#[tokio::test]
+async fn cancellation_drops_direct_and_factory_created_request_streams_without_completion() {
+    async fn cancel(body: RequestBody, reached: Arc<tokio::sync::Notify>) -> Arc<ProbeHooks> {
+        let executor = DeterministicExecutor::new();
+        let hooks = Arc::new(ProbeHooks::new());
+        let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
+        let task = tokio::spawn(async move { body_request(core, body).await });
+        reached.notified().await;
+        assert_eq!(executor.application().request_count().unwrap(), 0);
+        task.abort();
+        let join = task.await.expect_err("request task must be cancelled");
+        assert!(join.is_cancelled());
+        tokio::task::yield_now().await;
+        assert_eq!(executor.application().request_count().unwrap(), 0);
+        hooks
+    }
+
+    let direct_polls = Arc::new(AtomicUsize::new(0));
+    let direct_dropped = Arc::new(AtomicBool::new(false));
+    let direct_reached = Arc::new(tokio::sync::Notify::new());
+    let direct_body = RequestBody::stream(StreamBody::from_stream(PendingBodyStream {
+        polls: Arc::clone(&direct_polls),
+        dropped: Arc::clone(&direct_dropped),
+        reached: Arc::clone(&direct_reached),
+    }));
+    let direct_hooks = cancel(direct_body, Arc::clone(&direct_reached)).await;
+    let direct_polls_at_drop = direct_polls.load(Ordering::SeqCst);
+    assert!(direct_polls_at_drop > 0);
+    assert!(direct_dropped.load(Ordering::SeqCst));
+    assert_eq!(direct_hooks.completion_returned.load(Ordering::SeqCst), 0);
+    tokio::task::yield_now().await;
+    assert_eq!(direct_polls.load(Ordering::SeqCst), direct_polls_at_drop);
+
+    let factory_calls = Arc::new(AtomicUsize::new(0));
+    let factory_polls = Arc::new(AtomicUsize::new(0));
+    let factory_dropped = Arc::new(AtomicBool::new(false));
+    let factory_reached = Arc::new(tokio::sync::Notify::new());
+    let factory_body = RequestBody::factory(PendingBodyFactory {
+        create_calls: Arc::clone(&factory_calls),
+        polls: Arc::clone(&factory_polls),
+        dropped: Arc::clone(&factory_dropped),
+        reached: Arc::clone(&factory_reached),
+    });
+    let factory_hooks = cancel(factory_body, Arc::clone(&factory_reached)).await;
+    let factory_polls_at_drop = factory_polls.load(Ordering::SeqCst);
+    assert_eq!(factory_calls.load(Ordering::SeqCst), 1);
+    assert!(factory_polls_at_drop > 0);
+    assert!(factory_dropped.load(Ordering::SeqCst));
+    assert_eq!(factory_hooks.completion_returned.load(Ordering::SeqCst), 0);
+    tokio::task::yield_now().await;
+    assert_eq!(factory_polls.load(Ordering::SeqCst), factory_polls_at_drop);
 }
 
 #[tokio::test]

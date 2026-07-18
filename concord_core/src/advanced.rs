@@ -4,6 +4,7 @@ pub use bytes::Bytes;
 pub use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Version};
 pub use url::Url;
 
+pub use crate::body::{BodyError, BodyErrorKind, BodyFactory, BodyKind, RequestBody, StreamBody};
 #[cfg(feature = "json")]
 pub use crate::codec::Json;
 pub use crate::codec::{
@@ -15,7 +16,7 @@ pub use crate::error::{
     RateLimitErrorKind, StatusBody, StatusBodyDecodeError, StatusBodyState,
 };
 pub use crate::hooks::{
-    BeforeSend, BodyKind, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel,
+    BeforeSend, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel,
     PaginationCompletionEvent, ResponseHeadEvent, RuntimeHooks,
 };
 pub use crate::http::{HttpConfigBuilder, ProviderRetry, SafeProxy};

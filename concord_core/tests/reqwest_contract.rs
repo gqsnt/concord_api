@@ -1,11 +1,16 @@
+use std::io;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener};
+use std::pin::Pin;
 use std::process::Command;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
+use bytes::Bytes;
 use concord_test_support::proxy::ProxyTrap;
 use concord_test_support::server::{BodyGate, ResponseScript, ScriptedServer};
+use futures_core::Stream;
 use h2::Reason;
 use tokio::net::TcpListener as TokioTcpListener;
 
@@ -390,6 +395,141 @@ async fn hidden_retry_does_not_reenter_concord_boundaries() {
     println!(
         "hidden_retry_logical=1 hook=1 limiter=1 body_factory=1 auth_finalization=1 reqwest_call=1 physical={physical}"
     );
+}
+
+struct NativePollProbe {
+    item: Option<Result<Bytes, io::Error>>,
+    polls: Arc<AtomicUsize>,
+    dropped: Option<Arc<AtomicBool>>,
+    reached: Option<Arc<tokio::sync::Notify>>,
+    pending: bool,
+}
+
+impl Stream for NativePollProbe {
+    type Item = Result<Bytes, io::Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.polls.fetch_add(1, Ordering::SeqCst);
+        if let Some(reached) = &self.reached {
+            reached.notify_one();
+        }
+        if self.pending {
+            Poll::Pending
+        } else {
+            Poll::Ready(self.item.take())
+        }
+    }
+}
+
+impl Drop for NativePollProbe {
+    fn drop(&mut self) {
+        if let Some(dropped) = &self.dropped {
+            dropped.store(true, Ordering::SeqCst);
+        }
+    }
+}
+
+#[tokio::test]
+async fn reqwest_stream_polling_starts_only_when_send_is_polled() {
+    let server = ScriptedServer::start([ResponseScript::ok(b"accepted".to_vec())])
+        .expect("native request stream server should start");
+    let polls = Arc::new(AtomicUsize::new(0));
+    let body = reqwest::Body::wrap_stream(NativePollProbe {
+        item: Some(Ok(Bytes::from_static(b"probe"))),
+        polls: Arc::clone(&polls),
+        dropped: None,
+        reached: None,
+        pending: false,
+    });
+    let future = hardened_client()
+        .post(server.url("/native-stream"))
+        .header(reqwest::header::CONTENT_LENGTH, 5)
+        .body(body)
+        .send();
+    assert_eq!(polls.load(Ordering::SeqCst), 0);
+    let response = future.await.expect("native stream response");
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    assert_eq!(polls.load(Ordering::SeqCst), 1);
+    server
+        .wait_for_requests(1, PROBE_WAIT)
+        .expect("native stream request should be recorded");
+    assert_eq!(server.requests()[0].body(), b"probe");
+}
+
+#[tokio::test]
+async fn reqwest_propagates_request_stream_producer_failure() {
+    let listener = TokioTcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("producer failure listener should bind");
+    let address = listener.local_addr().expect("producer listener address");
+    let peer = tokio::spawn(async move {
+        let (_socket, _) = listener.accept().await.expect("producer peer accept");
+        std::future::pending::<()>().await;
+    });
+    let polls = Arc::new(AtomicUsize::new(0));
+    let body = reqwest::Body::wrap_stream(NativePollProbe {
+        item: Some(Err(io::Error::other("upstream-producer-probe"))),
+        polls: Arc::clone(&polls),
+        dropped: None,
+        reached: None,
+        pending: false,
+    });
+    let error = hardened_client()
+        .post(format!("http://{address}/producer-failure"))
+        .header(reqwest::header::CONTENT_LENGTH, 1)
+        .body(body)
+        .send()
+        .await
+        .expect_err("producer failure should reach Reqwest");
+    peer.abort();
+    let _ = peer.await;
+    assert!(error.is_body() || error.is_request());
+    assert_eq!(polls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn dropping_reqwest_send_drops_pending_request_stream() {
+    let listener = TokioTcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("cancellation listener should bind");
+    let address = listener
+        .local_addr()
+        .expect("cancellation listener address");
+    let peer = tokio::spawn(async move {
+        let (_socket, _) = listener.accept().await.expect("cancellation peer accept");
+        std::future::pending::<()>().await;
+    });
+    let polls = Arc::new(AtomicUsize::new(0));
+    let dropped = Arc::new(AtomicBool::new(false));
+    let reached = Arc::new(tokio::sync::Notify::new());
+    let body = reqwest::Body::wrap_stream(NativePollProbe {
+        item: None,
+        polls: Arc::clone(&polls),
+        dropped: Some(Arc::clone(&dropped)),
+        reached: Some(Arc::clone(&reached)),
+        pending: true,
+    });
+    let client = hardened_client();
+    let task = tokio::spawn(async move {
+        client
+            .post(format!("http://{address}/cancel-stream"))
+            .header(reqwest::header::CONTENT_LENGTH, 1)
+            .body(body)
+            .send()
+            .await
+    });
+    tokio::time::timeout(PROBE_WAIT, reached.notified())
+        .await
+        .expect("Reqwest should poll pending request stream");
+    let polls_at_drop = polls.load(Ordering::SeqCst);
+    task.abort();
+    let join = task.await.expect_err("send task should be cancelled");
+    assert!(join.is_cancelled());
+    peer.abort();
+    let _ = peer.await;
+    assert!(dropped.load(Ordering::SeqCst));
+    tokio::task::yield_now().await;
+    assert_eq!(polls.load(Ordering::SeqCst), polls_at_drop);
 }
 
 #[derive(Debug, Eq, PartialEq)]

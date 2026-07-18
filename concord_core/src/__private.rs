@@ -26,6 +26,8 @@ pub use http::Method;
 pub use url::Url;
 
 #[doc(hidden)]
+pub use crate::body::StreamRequestBody;
+#[doc(hidden)]
 pub use crate::client::ClientCore;
 #[doc(hidden)]
 pub use crate::error::{ApiError, ClientBuildError};

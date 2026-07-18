@@ -103,9 +103,13 @@ fn trybuild_is_confined_to_core_and_macro_development_dependencies() {
 }
 
 #[test]
-fn json_dependencies_are_activated_only_by_the_json_feature() {
+fn stream_media_is_common_and_json_data_dependencies_remain_feature_owned() {
     let disabled = core_feature_tree(None, "dependency-policy/core-json-disabled");
-    for package in ["mime", "serde", "serde_json"] {
+    assert!(
+        has_direct_package(&disabled, "mime"),
+        "stream media validation requires common mime support\n{disabled}"
+    );
+    for package in ["serde", "serde_json"] {
         assert!(
             !has_direct_package(&disabled, package),
             "JSON-disabled core unexpectedly activates {package}\n{disabled}"

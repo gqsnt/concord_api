@@ -15,6 +15,7 @@ rust-version = "1.85"
 [workspace.dependencies]
 base64 = "=0.22.1"
 bytes = "=1.12.1"
+futures-core = "=0.3.32"
 h2 = "=0.4.15"
 http = "=1.4.0"
 http-body = "=1.1.0"

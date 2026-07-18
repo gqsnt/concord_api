@@ -102,6 +102,23 @@ where
             )));
         }
     };
+    if let Err(error) = body_metadata.validate_limit(core.request_body_limit()) {
+        drop(error);
+        let error = ApiError::classified(
+            meta.endpoint(),
+            meta.method().clone(),
+            ErrorCategory::RequestBody,
+        );
+        return Ok(OperationPreparation::Failed(failure(
+            core,
+            operation_id,
+            meta,
+            Arc::from(head.safe_url()),
+            debug,
+            started,
+            error,
+        )));
+    }
     if let Err(error) = head.apply_media_headers(E::Response::ACCEPT, body_metadata.content_type())
     {
         return Ok(OperationPreparation::Failed(failure(

@@ -2,6 +2,9 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use bytes::Bytes;
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
+use bytes::BytesMut;
+use http::header::CONTENT_LENGTH;
 use http::{HeaderMap, Method, StatusCode, Version};
 
 #[cfg(any(test, feature = "dangerous-dev-tools"))]
@@ -9,6 +12,7 @@ use concord_test_support::executor::ApplicationChannel;
 #[cfg(test)]
 use concord_test_support::script::BoundaryRequest;
 
+use crate::body::{BodyFailureState, NativeBody};
 use crate::error::{
     ApiError, ClientBuildError, ClientBuildErrorKind, ConfigurationErrorKind, HttpResponseFailure,
 };
@@ -19,6 +23,7 @@ use super::status::{StatusCapture, StatusDisposition, collect_terminal_status};
 
 pub(crate) struct ApplicationRequest {
     native: reqwest::Request,
+    body_failure: Option<BodyFailureState>,
 }
 
 pub(crate) struct ApplicationResponse {
@@ -137,16 +142,27 @@ impl ApplicationHttp {
         method: &Method,
         url: &url::Url,
         public_headers: &HeaderMap,
-        body: Option<Bytes>,
+        body: NativeBody,
     ) -> Result<ApplicationRequest, ApiError> {
         self.preflight_url(endpoint, method, url)?;
         let builder = self
             .client
             .request(method.clone(), url.clone())
             .headers(public_headers.clone());
-        let builder = match body {
-            Some(body) => builder.body(body),
-            None => builder,
+        let (builder, body_failure) = match body {
+            NativeBody::Empty => (builder, None),
+            NativeBody::Bytes(body) => (builder.body(body), None),
+            NativeBody::Stream {
+                body,
+                known_length,
+                failure,
+            } => {
+                let builder = match known_length {
+                    Some(length) => builder.header(CONTENT_LENGTH, length),
+                    None => builder,
+                };
+                (builder.body(body), Some(failure))
+            }
         };
         let native = builder.build().map_err(|error| {
             drop(error);
@@ -156,7 +172,10 @@ impl ApplicationHttp {
                 crate::error::ErrorCategory::RequestEncoding,
             )
         })?;
-        Ok(ApplicationRequest { native })
+        Ok(ApplicationRequest {
+            native,
+            body_failure,
+        })
     }
 
     #[allow(
@@ -172,52 +191,74 @@ impl ApplicationHttp {
         public_headers: &HeaderMap,
         body_kind: BodyKind,
         known_body_length: Option<u64>,
-        boundary_body: Bytes,
     ) -> Result<ApplicationResponse, ApiError> {
         #[cfg(any(test, feature = "dangerous-dev-tools"))]
-        let native =
-            match &self.development {
-                Some(development) => {
-                    let boundary = super::development::boundary_request(
+        let _ = public_headers;
+        #[cfg(any(test, feature = "dangerous-dev-tools"))]
+        let native = match &self.development {
+            Some(development) => {
+                let ApplicationRequest {
+                    mut native,
+                    body_failure,
+                } = request;
+                let boundary_body = match native.body_mut().take() {
+                    Some(body) => collect_request_body(body).await.map_err(|()| {
+                        ApiError::classified(
+                            endpoint,
+                            method.clone(),
+                            crate::error::ErrorCategory::RequestBody,
+                        )
+                    })?,
+                    None => Bytes::new(),
+                };
+                let boundary = super::development::boundary_request(
+                    endpoint,
+                    method.clone(),
+                    Some(safe_url.to_owned()),
+                    native.headers(),
+                    boundary_body_category(body_kind),
+                    known_body_length.and_then(|length| usize::try_from(length).ok()),
+                    Some(boundary_body),
+                );
+                let _ = body_failure;
+                drop(native);
+                development
+                    .__execute(boundary)
+                    .await
+                    .map(|response| response.__into_http_response().into())
+                    .map_err(|failure| {
+                        ApiError::classified(
+                            endpoint,
+                            method.clone(),
+                            super::development::failure_category(failure.kind()),
+                        )
+                    })?
+            }
+            None => {
+                let body_failure = request.body_failure.clone();
+                self.client.execute(request.native).await.map_err(|error| {
+                    ApiError::from_reqwest(
                         endpoint,
                         method.clone(),
-                        Some(safe_url.to_owned()),
-                        public_headers,
-                        boundary_body_category(body_kind),
-                        known_body_length.and_then(|length| usize::try_from(length).ok()),
-                        Some(boundary_body),
-                    );
-                    drop(request);
-                    development
-                        .__execute(boundary)
-                        .await
-                        .map(|response| response.__into_http_response().into())
-                        .map_err(|failure| {
-                            ApiError::classified(
-                                endpoint,
-                                method.clone(),
-                                super::development::failure_category(failure.kind()),
-                            )
-                        })?
-                }
-                None => self.client.execute(request.native).await.map_err(|error| {
-                    ApiError::from_reqwest(endpoint, method.clone(), error, false)
-                })?,
-            };
+                        error,
+                        body_failure.as_ref().is_some_and(BodyFailureState::failed),
+                    )
+                })?
+            }
+        };
 
         #[cfg(not(any(test, feature = "dangerous-dev-tools")))]
         let native = {
-            let _ = (
-                safe_url,
-                public_headers,
-                body_kind,
-                known_body_length,
-                boundary_body,
-            );
-            self.client
-                .execute(request.native)
-                .await
-                .map_err(|error| ApiError::from_reqwest(endpoint, method.clone(), error, false))?
+            let _ = (safe_url, public_headers, body_kind, known_body_length);
+            let body_failure = request.body_failure.clone();
+            self.client.execute(request.native).await.map_err(|error| {
+                ApiError::from_reqwest(
+                    endpoint,
+                    method.clone(),
+                    error,
+                    body_failure.as_ref().is_some_and(BodyFailureState::failed),
+                )
+            })?
         };
 
         Ok(ApplicationResponse {
@@ -369,6 +410,29 @@ impl ApplicationHttp {
         let method = Method::GET;
         let request = self.prepare(endpoint, method.clone(), url, false)?;
         self.execute_native(endpoint, method, request).await
+    }
+}
+
+#[cfg(any(test, feature = "dangerous-dev-tools"))]
+async fn collect_request_body(body: reqwest::Body) -> Result<Bytes, ()> {
+    use http_body::Body as _;
+
+    let mut body = Box::pin(body);
+    let mut collected = BytesMut::new();
+    loop {
+        let frame = std::future::poll_fn(|context| body.as_mut().poll_frame(context)).await;
+        match frame {
+            Some(Ok(frame)) => {
+                if let Ok(data) = frame.into_data() {
+                    collected.extend_from_slice(&data);
+                }
+            }
+            Some(Err(error)) => {
+                drop(error);
+                return Err(());
+            }
+            None => return Ok(collected.freeze()),
+        }
     }
 }
 

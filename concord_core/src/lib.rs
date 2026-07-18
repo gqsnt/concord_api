@@ -13,6 +13,7 @@ pub mod advanced;
 pub mod dangerous;
 pub mod prelude;
 
+mod body;
 mod client;
 mod codec;
 mod error;

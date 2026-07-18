@@ -8,7 +8,7 @@ use crate::model::{
     Api, CodecKind, Endpoint, MethodKind, Parameter, PathAtom, ResponseKind, Scope, to_snake_case,
 };
 
-const GENERATED_CONTRACT_VERSION: u32 = 3;
+const GENERATED_CONTRACT_VERSION: u32 = 4;
 
 pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
     let client = &api.client;
@@ -349,21 +349,16 @@ fn generate_endpoint(
     let response = response_handler(&endpoint.response, core_path);
     let body_type = body_handler(endpoint.body.as_ref(), core_path);
     let method = method_token(endpoint.method, core_path);
-    let body_metadata = body_metadata(endpoint.body.as_ref(), core_path);
-    let into_body = match (&body_codec_type, &body_private_binding) {
+    let body_constructor = match (&body_codec_type, &body_private_binding) {
         (Some(codec), Some(binding)) => {
-            quote!(super::super::__concord_generated::__core::__private::CodecBody::<#codec>::new(self.#binding))
+            quote!(super::super::__concord_generated::__core::__private::CodecBody::<#codec>::new(#binding))
         }
         (None, None) => {
             quote!(super::super::__concord_generated::__core::__private::EmptyBody::new())
         }
         _ => unreachable!("body codec and binding are modeled together"),
     };
-    let body_field = match (&body_private_binding, &body_input_type) {
-        (Some(binding), Some(ty)) => quote!(#binding: #ty,),
-        (None, None) => quote!(),
-        _ => unreachable!("body input and binding are modeled together"),
-    };
+    let body_field = quote!(__concord_body: #body_type,);
     let body_public_parameter = match (&body_public_binding, &body_input_type) {
         (Some(binding), Some(ty)) => quote!(#binding: #ty,),
         (None, None) => quote!(),
@@ -377,9 +372,7 @@ fn generate_endpoint(
     let body_public_argument = body_public_binding
         .as_ref()
         .map_or_else(TokenStream::new, |binding| quote!(#binding,));
-    let body_private_argument = body_private_binding
-        .as_ref()
-        .map_or_else(TokenStream::new, |binding| quote!(#binding,));
+    let body_private_argument = quote!(__concord_body: #body_constructor,);
     let mut bounds = scope
         .parameters
         .iter()
@@ -492,12 +485,16 @@ fn generate_endpoint(
                 #(#path_statements)*
                 ::std::result::Result::Ok((
                     __concord_builder.finish(),
-                    #body_metadata,
+                    <Self::Body as super::super::__concord_generated::__core::__private::BodySpec>::metadata(
+                        &self.__concord_body,
+                        #endpoint_identity,
+                        &#method,
+                    )?,
                 ))
             }
 
             fn into_body(self) -> Self::Body {
-                #into_body
+                self.__concord_body
             }
         }
     }
@@ -642,18 +639,6 @@ fn body_handler(body: Option<&CodecKind>, core_path: &TokenStream) -> TokenStrea
             quote!(#core_path::__private::CodecBody<#codec>)
         }
         None => quote!(#core_path::__private::EmptyBody),
-    }
-}
-
-fn body_metadata(body: Option<&CodecKind>, core_path: &TokenStream) -> TokenStream {
-    match body {
-        Some(codec) => {
-            let codec = codec_type(codec, core_path);
-            quote!(
-                <#core_path::__private::CodecBody<#codec> as #core_path::__private::BodySpec>::metadata()
-            )
-        }
-        None => quote!(#core_path::__private::EmptyBody::metadata()),
     }
 }
 
