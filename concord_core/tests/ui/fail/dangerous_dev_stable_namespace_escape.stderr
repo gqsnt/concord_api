@@ -1,0 +1,25 @@
+error[E0432]: unresolved import `concord_core::advanced::DeterministicExecutor`
+ --> tests/ui/fail/dangerous_dev_stable_namespace_escape.rs:1:5
+  |
+1 | use concord_core::advanced::DeterministicExecutor as AdvancedExecutor;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `DeterministicExecutor` in `advanced`
+  |
+help: consider importing one of these structs instead
+  |
+1 | use concord_core::__development::DeterministicExecutor as AdvancedExecutor;
+  |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+1 | use concord_test_support::executor::DeterministicExecutor as AdvancedExecutor;
+  |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+error[E0432]: unresolved import `concord_core::prelude::DeterministicExecutor`
+ --> tests/ui/fail/dangerous_dev_stable_namespace_escape.rs:2:5
+  |
+2 | use concord_core::prelude::DeterministicExecutor as PreludeExecutor;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `DeterministicExecutor` in `prelude`
+  |
+help: consider importing one of these structs instead
+  |
+2 | use concord_core::__development::DeterministicExecutor as PreludeExecutor;
+  |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+2 | use concord_test_support::executor::DeterministicExecutor as PreludeExecutor;
+  |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

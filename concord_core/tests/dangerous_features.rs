@@ -1,0 +1,84 @@
+#[cfg(not(any(
+    feature = "dangerous-custom-retry",
+    feature = "dangerous-dev-tools",
+    feature = "dangerous-raw-response"
+)))]
+#[test]
+fn compiled_default_surface_enables_no_dangerous_feature() {
+    assert!(!cfg!(feature = "dangerous-custom-retry"));
+    assert!(!cfg!(feature = "dangerous-dev-tools"));
+    assert!(!cfg!(feature = "dangerous-raw-response"));
+}
+
+#[cfg(all(
+    feature = "dangerous-custom-retry",
+    not(feature = "dangerous-dev-tools"),
+    not(feature = "dangerous-raw-response")
+))]
+#[test]
+fn custom_retry_is_available_without_other_dangerous_or_optional_features() {
+    use concord_core::advanced::HttpConfigBuilder;
+    use concord_core::dangerous::ReqwestRetryBuilder;
+
+    fn configure(builder: HttpConfigBuilder, retry: ReqwestRetryBuilder) -> HttpConfigBuilder {
+        builder.dangerous_retry(retry)
+    }
+
+    let _: fn(HttpConfigBuilder, ReqwestRetryBuilder) -> HttpConfigBuilder = configure;
+
+    assert!(!cfg!(feature = "dangerous-dev-tools"));
+    assert!(!cfg!(feature = "dangerous-raw-response"));
+    assert!(!cfg!(feature = "default-tls"));
+    assert!(!cfg!(feature = "http2"));
+    assert!(!cfg!(feature = "rate-limit-governor"));
+    assert!(!cfg!(feature = "json"));
+    assert!(!cfg!(feature = "multipart"));
+    assert!(!cfg!(feature = "gzip"));
+    assert!(!cfg!(feature = "brotli"));
+    assert!(!cfg!(feature = "deflate"));
+}
+
+#[cfg(all(
+    feature = "dangerous-dev-tools",
+    not(feature = "dangerous-custom-retry"),
+    not(feature = "dangerous-raw-response")
+))]
+#[test]
+fn development_tools_are_available_without_other_dangerous_or_optional_features() {
+    use concord_core::__development::DeterministicExecutor;
+
+    let _ = DeterministicExecutor::new();
+
+    assert!(!cfg!(feature = "dangerous-custom-retry"));
+    assert!(!cfg!(feature = "dangerous-raw-response"));
+    assert!(!cfg!(feature = "default-tls"));
+    assert!(!cfg!(feature = "http2"));
+    assert!(!cfg!(feature = "rate-limit-governor"));
+    assert!(!cfg!(feature = "json"));
+    assert!(!cfg!(feature = "multipart"));
+    assert!(!cfg!(feature = "gzip"));
+    assert!(!cfg!(feature = "brotli"));
+    assert!(!cfg!(feature = "deflate"));
+}
+
+#[cfg(all(
+    feature = "dangerous-raw-response",
+    not(feature = "dangerous-custom-retry"),
+    not(feature = "dangerous-dev-tools")
+))]
+#[test]
+fn raw_response_flag_is_isolated_without_claiming_its_deferred_public_api() {
+    // Phase 4 certifies only the Cargo-feature boundary. Positive RawResponse
+    // and generated raw-response terminals remain assigned to Phase 10.
+    assert!(cfg!(feature = "dangerous-raw-response"));
+    assert!(!cfg!(feature = "dangerous-custom-retry"));
+    assert!(!cfg!(feature = "dangerous-dev-tools"));
+    assert!(!cfg!(feature = "default-tls"));
+    assert!(!cfg!(feature = "http2"));
+    assert!(!cfg!(feature = "rate-limit-governor"));
+    assert!(!cfg!(feature = "json"));
+    assert!(!cfg!(feature = "multipart"));
+    assert!(!cfg!(feature = "gzip"));
+    assert!(!cfg!(feature = "brotli"));
+    assert!(!cfg!(feature = "deflate"));
+}

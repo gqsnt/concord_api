@@ -1,0 +1,16 @@
+error[E0432]: unresolved import `concord_core::dangerous`
+ --> tests/ui/fail/dangerous_raw_response_absent.rs:1:19
+  |
+1 | use concord_core::dangerous::RawResponse;
+  |                   ^^^^^^^^^ could not find `dangerous` in `concord_core`
+  |
+note: found an item that was configured out
+ --> src/lib.rs
+  |
+  | pub mod dangerous;
+  |         ^^^^^^^^^
+note: the item is gated behind the `dangerous-custom-retry` feature
+ --> src/lib.rs
+  |
+  | #[cfg(feature = "dangerous-custom-retry")]
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

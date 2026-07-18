@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `concord_core::dangerous::RawResponse`
+ --> tests/ui/fail/dangerous_raw_response_absent_with_custom_retry.rs:1:5
+  |
+1 | use concord_core::dangerous::RawResponse;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `RawResponse` in `dangerous`

@@ -58,7 +58,13 @@ _test-ci-default:
     cargo nextest run --profile ci --workspace
 
 [private]
-_test-ui-dangerous:
-    cargo nextest run --profile ci -p concord_core --features dangerous-custom-retry --test ui_dangerous
+_test-dangerous-features:
+    cargo nextest run --profile ci -p concord_core --test dangerous_features --test dangerous_feature_ui
+    cargo check -p concord_core --no-default-features --features dangerous-custom-retry --all-targets
+    cargo nextest run --profile ci -p concord_core --no-default-features --features dangerous-custom-retry --test dangerous_features --test dangerous_feature_ui --test ui_dangerous
+    cargo check -p concord_core --no-default-features --features dangerous-dev-tools --all-targets
+    cargo nextest run --profile ci -p concord_core --no-default-features --features dangerous-dev-tools --test dangerous_features --test dangerous_feature_ui
+    cargo check -p concord_core --no-default-features --features dangerous-raw-response --all-targets
+    cargo nextest run --profile ci -p concord_core --no-default-features --features dangerous-raw-response --test dangerous_features --test dangerous_feature_ui
 
-release: fmt-check check check-all check-no-default clippy clippy-all _test-ci-default test-all test-no-default _test-ui-dangerous doctest doctest-all doc doc-all deny diff-check
+release: fmt-check check check-all check-no-default clippy clippy-all _test-ci-default test-all test-no-default _test-dangerous-features doctest doctest-all doc doc-all deny diff-check

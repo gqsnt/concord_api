@@ -1,0 +1,16 @@
+error[E0432]: unresolved import `concord_core::__development`
+ --> tests/ui/fail/dangerous_development_absent.rs:1:19
+  |
+1 | use concord_core::__development::DeterministicExecutor;
+  |                   ^^^^^^^^^^^^^ could not find `__development` in `concord_core`
+  |
+note: found an item that was configured out
+ --> src/lib.rs
+  |
+  | pub mod __development;
+  |         ^^^^^^^^^^^^^
+note: the item is gated behind the `dangerous-dev-tools` feature
+ --> src/lib.rs
+  |
+  | #[cfg(feature = "dangerous-dev-tools")]
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
