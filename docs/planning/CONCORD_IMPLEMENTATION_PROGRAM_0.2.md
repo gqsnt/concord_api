@@ -25,7 +25,7 @@ an execution queue because several foundations were delivered in a different ord
 | Phase 2 | `PHASE_2_COMPLETE_WITH_LIMITATIONS` | First executable generated bodyless request: fallible generated construction, shared private core, stable pending wrappers, first-poll lifecycle, hooks/debug, managed Reqwest, bounded bytes/status handling, no-content, metadata terminal, and an API-specific sealed explicit-endpoint capability. | Only the explicitly authorized Phase 2 DSL and response subset is implemented; broad 0.1 evidence remains partial where later categories are absent, and the PR 2.3 uncommitted review patch omitted one subsequently reviewed committed file. |
 | Phase 3 | `PHASE_3_COMPLETE_WITH_LIMITATIONS` | One buffered codec vertical slice: stable media/encode/decode contracts, Text, feature-owned JSON, downstream custom codecs, finite request bodies, bounded decoded successes, coherent media headers, POST body DSL, typed direct/metadata results, and preserved Bytes/NoContent/status behavior. The final corrected source type-gates `.response()` to metadata-capable modes, semantically proves that terminal in rendered Rustdoc, and completes source-only namespace proof across prelude, advanced, and dangerous. | Fifty broader requirement rows remain partial. Their unimplemented clauses include credential-storage privacy, public-header precedence, Brotli/Deflate runtime probes, full grammar/semantic coverage, Phase 4 streaming/factories/multipart, and provider/limiter/pagination/extension/release-wide variants owned by Phases 4-10. |
 | Phase 4 | `PHASE_4_COMPLETE_WITH_LIMITATIONS` | One finite body architecture now covers buffered values, lazy request streams, reconstructible factories, inferred replayability, lazy typed response streams, and feature-gated request multipart. Generated `Stream<M>`/`Multipart` markers, Reqwest-owned multipart framing, stream-open completion, cancellation, no-default support, and maintained independent dangerous-feature isolation all use the existing request executor. | Forty-six source rows and one audit row remain partial where their text also requires Phase 5 shaping, Phase 6 recovery/providers, Phase 7 limiter behavior, Phase 8 pagination, Phase 9 prepared endpoints/extension certification, or Phase 10 raw successful responses and release-wide grammar, security, documentation, platform, and evidence closure. |
-| Phase 5 | `PHASE_5_COMPLETE_WITH_LIMITATIONS` | One normalized compiler and generated runtime now support multiple clients, root endpoints, nested scopes, required/optional/default client-scope-endpoint values, immutable snapshots, sealed request extension traits through generated preludes, explicit endpoint parity, host/path/ordered-query/public-header shaping, timeout/retry, all standard methods, custom methods, aliases, and deterministic names on the existing first-poll executor. | Fifty-five source requirements and one audit row remain partial only for compound clauses owned by Phase 6 credentials/auth/providers, Phase 7 limiting, Phase 8 pagination, Phase 9 prepared endpoints/extension certification, or Phase 10 positive raw success and release-wide closure. |
+| Phase 5 | `PHASE_5_COMPLETE_WITH_LIMITATIONS` | One normalized compiler and generated runtime now support multiple clients, root endpoints, nested scopes, required/optional/default client-scope-endpoint values, immutable snapshots, sealed request extension traits through generated preludes, explicit endpoint parity, host/path/ordered-query/public-header shaping, timeout/retry, all standard methods, custom methods, aliases, and deterministic names on the existing first-poll executor. | Seventy-three source requirements and one audit row remain partial for complete compound clauses owned by Phase 6 credentials/auth/providers/recovery, Phase 7 limiting, Phase 8 pagination, Phase 9 prepared endpoints/extension certification, or Phase 10 positive raw success and release-wide closure. An independent controller correction reclassified 18 Phase 5 rows without changing product source. |
 
 Phase reports remain the detailed evidence owners:
 
@@ -133,8 +133,11 @@ closure. Historical Phase 0-3 evidence is unchanged.
 The approved endpoint-setter decision is commit
 `255e1fd94f4614b5a3c02cda0f820c4eb56146c5`. The immutable tested Phase 5 source is
 `c513710c1e6ae2333a58ec481c2b74a4a0529a5f`; every maintained recipe, including `just release`,
-passes against that exact commit. The complete evidence-state and its later documentation-only
-anchor are recorded in `docs/conformance/PHASE_5_REPORT.md`.
+passes against that exact commit. The original evidence state is
+`a8353a151a35b3ba8a3d8ebd689ad269e7b1d948`, and its original anchor is
+`10139ef98319d52a7fa6c874c72883e61427e813`. The corrected complete evidence state is
+`PENDING_CORRECTED_PHASE_5_EVIDENCE_STATE`; its later documentation-only anchor and full
+classification details are recorded in `docs/conformance/PHASE_5_REPORT.md`.
 
 The production compiler and execution path is now:
 
@@ -184,10 +187,28 @@ nested/repeated invocations, contract mismatch, rendered Rustdoc, no-default, JS
 streaming, ownership, and the maintained dangerous-feature matrix all pass. No authentication,
 limiter, pagination execution, prepared endpoint, or positive raw-success API was added.
 
-Phase 5 contributes 198 source-behavior rows (143 direct, 55 partial) plus five audit rows (four
-direct, one partial). The complete Phase 5 total is 203 rows: 147 direct and 56 partial. The catalog
+Phase 5 contributes 198 source-behavior rows (125 direct, 73 partial) plus five audit rows (four
+direct, one partial). The complete Phase 5 total is 203 rows: 129 direct and 74 partial. The catalog
 contains 771 unique IDs, all 504 normative IDs remain mapped exactly once in coverage, unknown IDs
 are zero, and all 568 historical rows are byte-identical to the Phase 4 anchor.
+
+### Phase 5 compound-evidence correction
+
+An independent controller found that five rows classified only their Phase 5 portion instead of the
+complete compound requirement. A clause-by-clause audit of all 143 direct Phase 5 source rows and
+four direct audit rows found 13 additional overclaims. The following evidence rows are therefore
+partial: `P5-PROD-003`, `P5-PROD-013`, `P5-PROD-014`, `P5-DSL-007`, `P5-DSL-044`,
+`P5-DSL-050`, `P5-DSL-055`, `P5-DSL-056`, `P5-GEN-003`, `P5-GEN-018`, `P5-GEN-029`,
+`P5-GEN-030`, `P5-GEN-032`, `P5-EXEC-009`, `P5-EXEC-012`, `P5-EXEC-013`, `P5-FEAT-008`,
+and `P5-CONF-012`.
+
+Their deferred clauses remain assigned to the established sequence: credentials, providers,
+authentication, and recovery in Phase 6; limiter selection and execution in Phase 7; pagination in
+Phase 8; prepared endpoints and full extension certification in Phase 9; and release-final Reqwest,
+platform, documentation, security, evidence, and positive raw-success closure in Phase 10. The
+correction changes evidence, coverage, report, and Program documentation only. Phase 5 product,
+manifest, lockfile, recipe, and test source remain exactly the immutable
+`c513710c1e6ae2333a58ec481c2b74a4a0529a5f` state. Phase 6 remains next and unstarted.
 
 ## Current non-goals
 

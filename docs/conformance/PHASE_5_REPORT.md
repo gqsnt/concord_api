@@ -9,6 +9,7 @@ All applicable Phase 5 exit criteria are satisfied. The limitations below are cl
 Phase 5 value, compiler, generated API, or request-shaping boundary.
 
 `PHASE_6_NOT_STARTED`
+
 This report does not claim full Concord 0.1 conformance. The normative status remains
 `Normative Implementation Candidate`.
 
@@ -30,25 +31,34 @@ This report does not claim full Concord 0.1 conformance. The normative status re
   `255e1fd94f4614b5a3c02cda0f820c4eb56146c5`
 - Immutable tested Phase 5 source:
   `c513710c1e6ae2333a58ec481c2b74a4a0529a5f`
-- Complete Phase 5 evidence-state commit:
+- Original Phase 5 evidence-state commit:
   `a8353a151a35b3ba8a3d8ebd689ad269e7b1d948`
-- Phase 5 evidence anchor: the later documentation-only `docs: anchor phase5 evidence` commit; its
-  object identity is intentionally external to its own content
-- Validation/evidence time: `2026-07-18T09:46:11Z`
+- Original Phase 5 evidence anchor:
+  `10139ef98319d52a7fa6c874c72883e61427e813`
+- Corrected Phase 5 evidence-state commit:
+  `PENDING_CORRECTED_PHASE_5_EVIDENCE_STATE`
+- Corrected Phase 5 evidence anchor: the later documentation-only
+  `docs: anchor corrected phase5 evidence` commit; its object identity is intentionally external
+  to its own content
+- Correction validation/evidence time: `2026-07-18T10:42:16Z`
 - Rust edition: 2024
 - MSRV exercised: Rust 1.85.0
 - Cargo resolver: 3
 - Nextest exercised: 0.9.140; repository minimum 0.9.115
 - Managed HTTP baseline: Reqwest 0.13.4 with default features disabled
 
-The complete maintained validation matrix ran against the immutable source commit before any
-report, coverage, evidence, or Program changes. The later evidence-state commit contains all 203
-Phase 5 evidence IDs. Its five audit rows temporarily use the non-self-referential pending marker;
-the subsequent documentation-only anchor changes only that marker and the corresponding audit
-commands/identity text. It adds no IDs, changes no classification, and contains no product source.
+The immutable source and complete maintained validation result remain unchanged. The original
+evidence state and anchor contained all 203 Phase 5 evidence IDs, but an independent controller
+review found that compound requirements were classified by their Phase 5 portion rather than by
+their complete normative text. The correction audits every direct Phase 5 row clause by clause,
+reclassifies all 18 overclaims, and leaves all product, manifest, lockfile, recipe, and test source
+unchanged.
 
-All five final commit-scoped audit commands pass against
-`a8353a151a35b3ba8a3d8ebd689ad269e7b1d948`.
+The corrected evidence-state commit contains all 203 final Phase 5 evidence IDs and the final
+129-direct/74-partial split. Its five audit rows temporarily use the non-self-referential pending
+marker. The subsequent documentation-only anchor changes only that marker and corresponding audit
+commands/identity text. It adds or removes no ID, changes no classification or count, and contains
+no product source.
 
 ## Phase 5 commits
 
@@ -62,6 +72,40 @@ All five final commit-scoped audit commands pass against
 Each unit received focused validation, a complete uncommitted patch capture, full patch inspection,
 correction where necessary, rerun, a coherent commit, and a committed patch under ignored
 `git_diff/`.
+
+## Compound-requirement evidence correction
+
+The controller identified five known overclaims. The complete audit opened the full normative text
+for each of the 143 direct source-behavior rows, enumerated every independent clause, mapped exact
+artifacts and commands to those clauses, and classified a row as direct only when every clause was
+currently proved. It also rechecked the four direct catalog/report-integrity rows. This found 13
+additional compound overclaims, for 18 corrections in total. The remaining 125 direct source rows
+and four direct audit rows prove their complete requirements.
+
+| Evidence | Requirement | Correct Phase 5 proof | Deferred clause and owner |
+|---|---|---|---|
+| `P5-PROD-003` | `PROD-CORE-003` | Generated and explicit endpoints use the production runtime. | Prepared public endpoints — Phase 9. |
+| `P5-PROD-013` | `PROD-STATE-001` | HTTP behavior, limits, hooks, debug defaults, and current runtime configuration are build-fixed. | Limiter selection — Phase 7. |
+| `P5-PROD-014` | `PROD-STATE-003` | Requests retain current public and runtime configuration. | Selected limiter stability — Phase 7. |
+| `P5-DSL-007` | `DSL-ORDER-001` | Implemented client configuration ordering is enforced. | Credential, authentication, and rate configuration ordering — Phases 6-7. |
+| `P5-DSL-044` | `DSL-SCOPE-001` | Implemented scope configuration ordering is enforced. | Scope authentication and rate configuration ordering — Phases 6-7. |
+| `P5-DSL-050` | `DSL-END-004` | Implemented endpoint clause ordering is enforced. | Authentication, rate-limit, and pagination clause ordering — Phases 6-8. |
+| `P5-DSL-055` | `DSL-NAME-002` | Current DSL declaration collisions are diagnosed deterministically. | Credential, authentication, limiter, pagination, and prepared-endpoint namespaces — Phases 6-9. |
+| `P5-DSL-056` | `DSL-NORM-001` | Host, path, query, headers, and timeout are fully normalized. | Authentication, rate-limit, and pagination normalization — Phases 6-8. |
+| `P5-GEN-003` | `GEN-TYPE-003` | Cheap clones share Reqwest pools and immutable generated public snapshots. | Credential-state sharing and non-duplication — Phase 6. |
+| `P5-GEN-018` | `GEN-END-002` | Endpoint construction performs no HTTP, codec, hook, or body work. | Provider and limiter non-invocation — Phases 6-7. |
+| `P5-GEN-029` | `GEN-NAME-001` | Current generated-item collisions are diagnosed. | Credential/acquisition, pagination, and prepared-endpoint generated names — Phases 6, 8, and 9. |
+| `P5-GEN-030` | `GEN-NAME-002` | Current generated namespaces are deterministic. | Future credential, pagination, and prepared-endpoint namespaces — Phases 6, 8, and 9. |
+| `P5-GEN-032` | `GEN-OWN-002` | Public-value snapshots avoid user-value `Clone` bounds. | Credential/provider and limiter ownership bounds — Phases 6-7. |
+| `P5-EXEC-009` | `EXEC-HEAD-002` | The logical URL is immutable for the current single attempt. | Authentication-recovery second-attempt behavior — Phase 6. |
+| `P5-EXEC-012` | `EXEC-HOOK-002` | Hook views exclude body and native URL/request state. | Exclusion of real credential material — Phase 6. |
+| `P5-EXEC-013` | `EXEC-NATIVE-001` | Current direct attempts make one Reqwest execution. | Recovery, page, and prepared-endpoint attempts — Phases 6, 8, and 9. |
+| `P5-FEAT-008` | `FEAT-DIAG-001` | Current body/response, JSON, multipart, stream, and retry failures have focused diagnostics with no fallback. | OAuth2 credential and limiter diagnostics — Phases 6-7. |
+| `P5-CONF-012` | `CONF-REQWEST-001` | Exact Reqwest tests cover current shaping, methods, timeouts, bodies, streams, retry, and execution counts. | Recovery, providers, limiters, pagination, prepared endpoints, and release-final assumptions — Phases 6-10. |
+
+Each row changed from `direct` to `partial`; its evidence text states the proved portion, missing
+portion, and future owner. No direct row was promoted, no evidence ID was added or removed, and no
+Phase 0-4 row was modified.
 
 ## Approved request-setter contract
 
@@ -303,6 +347,7 @@ Focused proof before the full gate included:
 |---|---|---:|
 | `cargo nextest run --profile ci -p concord_core -p concord_macros --all-features` | pass | 368/368 |
 | `cargo nextest run --profile ci -p concord_macros --all-features` | pass | 61/61 |
+| `cargo nextest run --profile ci -p concord_core --all-features --test reqwest_contract` | pass | 17/17 |
 | `cargo nextest run --profile ci -p concord_macros --all-features --test phase5_generated` | pass | 10/10 |
 
 These suites include parser boundaries, semantic resolution, normalized IR, deterministic naming,
@@ -312,7 +357,8 @@ parity, all standard/custom methods, exact local Reqwest paths/query/header beha
 inheritance, safe URL redaction, generated Rustdoc, renamed dependencies, generated contract
 mismatch, and existing body/response regressions.
 
-The complete maintained matrix against `c513710c1e6ae2333a58ec481c2b74a4a0529a5f` is:
+The complete maintained matrix was rerun after the classification correction against unchanged
+source `c513710c1e6ae2333a58ec481c2b74a4a0529a5f`:
 
 | Exact command | Result | Count / note |
 |---|---|---|
@@ -331,11 +377,14 @@ The complete maintained matrix against `c513710c1e6ae2333a58ec481c2b74a4a0529a5f
 | `just doc-all` | pass | all-feature Rustdoc, warnings denied |
 | `just deny` | pass | accepted duplicate `core-foundation`/`windows-sys` warnings only |
 | `just diff-check` | pass | no whitespace errors |
-| `just release` | pass | complete gate in 65.9 seconds |
+| `just release` | pass | complete gate in 50.5 seconds |
 
 `just release` repeated the default 367, all-feature 371, no-default 1, doctest, documentation,
 deny, and diff gates. Its maintained dangerous matrix passed default 2/2, custom retry 3/3,
 development tools 2/2, and raw-response flag 2/2.
+
+The correction rerun required no source, test, manifest, lockfile, recipe, or validation-command
+change. No maintained or focused check was unavailable, and no weaker command was substituted.
 
 During integrated review, stale path tests that expected slash encoding were corrected to the
 normative rejection contract and percent-data exactly-once case. The development-feature lock was
@@ -347,23 +396,31 @@ validation was unavailable and no weaker command was substituted.
 
 ## Evidence and coverage
 
-The catalog adds 198 Phase 5 source-behavior rows: 143 direct and 55 partial. Four direct and one
-partial catalog/report-integrity rows bring Phase 5 to 203 rows: 147 direct and 56 partial. The
+The catalog contains 198 Phase 5 source-behavior rows: 125 direct and 73 partial. Four direct and one
+partial catalog/report-integrity rows bring Phase 5 to 203 rows: 129 direct and 74 partial. The
 complete catalog has 771 rows and 771 unique evidence IDs. All IDs refer to one of the 504 exact
 normative requirement IDs; unknown IDs are zero.
 
 All 568 Phase 0-4 evidence rows, including all 445 Phase 0-3 rows, are byte-identical to the Phase 4
 anchor. All 198 source rows point to artifacts that exist at the immutable tested source commit.
-The five audit artifacts exist at the complete evidence-state commit and are reanchored later to
-that state without adding IDs or changing counts/classifications.
+The five audit artifacts exist at the corrected evidence-state commit and are reanchored later to
+that state without adding IDs or changing counts/classifications. The correction changes only 18
+Phase 5 source-row classifications and their proof descriptions, plus matching coverage and durable
+documentation.
 
 The 504-row coverage plan retains `PLAN-*` IDs and `planned` status so planning remains distinct
 from actual passing evidence. Exactly 198 reviewed rows now point to Phase 5 source/tests and exact
 `P5-*` evidence IDs in their notes. In particular:
 
-- `API-CODEC-003`, `GEN-EXPL-002`, and `GEN-NAME-002` are direct;
+- `API-CODEC-003` and `GEN-EXPL-002` remain direct;
+- `GEN-NAME-002` is partial because future credential, pagination, and prepared-endpoint namespaces
+  remain owned by Phases 6, 8, and 9;
 - `EXEC-HEAD-001` is partial only for Phase 6 authentication collision/TLS clauses;
-- `CONF-SEMA-001` is partial only for later authentication/rate/pagination IR.
+- `CONF-SEMA-001` is partial only for later authentication/rate/pagination IR;
+- all 18 corrected coverage rows point to current immutable Phase 5 artifacts and commands, state
+  their missing clauses and future owners, and do not claim that future paths already exist;
+- `CONF-REQWEST-001` now points specifically to `reqwest_contract.rs`, the managed HTTP
+  application/provider implementation, executor tests, and generated Phase 5 runtime tests.
 
 Both CSVs are LF-only. Schema/count/uniqueness/unknown-ID/history/artifact checks pass.
 
@@ -408,8 +465,9 @@ Every partial Phase 5 requirement is listed below. “Proved” identifies the e
 | `CONF-TRACE-006` | Every Phase 5 row has exact immutable artifact ownership | Actual release evidence for every applicable normative requirement — Phase 10 |
 | `CONF-MSRV-001`, `CONF-DOC-001` | Rust 1.85 and compiled canonical documentation for all current APIs | Completed-product MSRV/examples/documentation — Phase 10 |
 
-The table contains all 55 unique partial source requirements. `P5-AUDIT-005` is the second partial
-row for `CONF-TRACE-006`, so the evidence catalog contains 56 partial Phase 5 rows.
+The table, together with the 18-row correction table above, contains all 73 unique partial source
+requirements. `P5-AUDIT-005` is the second partial row for `CONF-TRACE-006`, so the evidence catalog
+contains 74 partial Phase 5 rows.
 
 ## Phase 6 readiness
 
