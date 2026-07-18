@@ -2,13 +2,13 @@
 
 **Version:** 0.2
 **Status:** Internal Implementation Candidate
-**Authority:** Current delivery sequencing after Phase 4
+**Authority:** Current delivery sequencing after Phase 5
 **Depends on:** All normative and architecture documents
 **Supersedes:** `CONCORD_IMPLEMENTATION_PLAN_0.1.md` for future execution
 
 ## Purpose
 
-This program records the implementation state actually reached through Phase 4 and resets future
+This program records the implementation state actually reached through Phase 5 and resets future
 sequencing around the production vertical slice now in the repository. It does not change normative
 behavior, authorize a later phase, or claim full Concord 0.1 conformance. The normative documents
 remain `Normative Implementation Candidate`.
@@ -25,6 +25,7 @@ an execution queue because several foundations were delivered in a different ord
 | Phase 2 | `PHASE_2_COMPLETE_WITH_LIMITATIONS` | First executable generated bodyless request: fallible generated construction, shared private core, stable pending wrappers, first-poll lifecycle, hooks/debug, managed Reqwest, bounded bytes/status handling, no-content, metadata terminal, and an API-specific sealed explicit-endpoint capability. | Only the explicitly authorized Phase 2 DSL and response subset is implemented; broad 0.1 evidence remains partial where later categories are absent, and the PR 2.3 uncommitted review patch omitted one subsequently reviewed committed file. |
 | Phase 3 | `PHASE_3_COMPLETE_WITH_LIMITATIONS` | One buffered codec vertical slice: stable media/encode/decode contracts, Text, feature-owned JSON, downstream custom codecs, finite request bodies, bounded decoded successes, coherent media headers, POST body DSL, typed direct/metadata results, and preserved Bytes/NoContent/status behavior. The final corrected source type-gates `.response()` to metadata-capable modes, semantically proves that terminal in rendered Rustdoc, and completes source-only namespace proof across prelude, advanced, and dangerous. | Fifty broader requirement rows remain partial. Their unimplemented clauses include credential-storage privacy, public-header precedence, Brotli/Deflate runtime probes, full grammar/semantic coverage, Phase 4 streaming/factories/multipart, and provider/limiter/pagination/extension/release-wide variants owned by Phases 4-10. |
 | Phase 4 | `PHASE_4_COMPLETE_WITH_LIMITATIONS` | One finite body architecture now covers buffered values, lazy request streams, reconstructible factories, inferred replayability, lazy typed response streams, and feature-gated request multipart. Generated `Stream<M>`/`Multipart` markers, Reqwest-owned multipart framing, stream-open completion, cancellation, no-default support, and maintained independent dangerous-feature isolation all use the existing request executor. | Forty-six source rows and one audit row remain partial where their text also requires Phase 5 shaping, Phase 6 recovery/providers, Phase 7 limiter behavior, Phase 8 pagination, Phase 9 prepared endpoints/extension certification, or Phase 10 raw successful responses and release-wide grammar, security, documentation, platform, and evidence closure. |
+| Phase 5 | `PHASE_5_COMPLETE_WITH_LIMITATIONS` | One normalized compiler and generated runtime now support multiple clients, root endpoints, nested scopes, required/optional/default client-scope-endpoint values, immutable snapshots, sealed request extension traits through generated preludes, explicit endpoint parity, host/path/ordered-query/public-header shaping, timeout/retry, all standard methods, custom methods, aliases, and deterministic names on the existing first-poll executor. | Fifty-five source requirements and one audit row remain partial only for compound clauses owned by Phase 6 credentials/auth/providers, Phase 7 limiting, Phase 8 pagination, Phase 9 prepared endpoints/extension certification, or Phase 10 positive raw success and release-wide closure. |
 
 Phase reports remain the detailed evidence owners:
 
@@ -33,6 +34,7 @@ Phase reports remain the detailed evidence owners:
 - `docs/conformance/PHASE_2_REPORT.md`
 - `docs/conformance/PHASE_3_REPORT.md`
 - `docs/conformance/PHASE_4_REPORT.md`
+- `docs/conformance/PHASE_5_REPORT.md`
 
 ## Phase 4 production baseline
 
@@ -126,16 +128,76 @@ their future owner and do not claim public-header shaping, recovery, limiter, pa
 endpoints, complete extension certification, full grammar/security evidence, or release-platform
 closure. Historical Phase 0-3 evidence is unchanged.
 
+## Phase 5 production baseline
+
+The approved endpoint-setter decision is commit
+`255e1fd94f4614b5a3c02cda0f820c4eb56146c5`. The immutable tested Phase 5 source is
+`c513710c1e6ae2333a58ec481c2b74a4a0529a5f`; every maintained recipe, including `just release`,
+passes against that exact commit. The complete evidence-state and its later documentation-only
+anchor are recorded in `docs/conformance/PHASE_5_REPORT.md`.
+
+The production compiler and execution path is now:
+
+```text
+DSL tokens
+→ source AST
+→ lexical symbol tables and resolved semantic references
+→ normalized inherited client/scope/endpoint IR
+→ deterministic generated names
+→ immutable generated client/facade/endpoint snapshots
+→ concord_core::Request<E>
+→ optional endpoint-specific sealed extension methods from the generated client prelude
+→ first-poll operation identity and deadline
+→ one HeadBuilder and PreparedHead
+→ validated host, path, ordered public query, public headers, and safe URL
+→ body metadata and media ownership validation
+→ before-send hook
+→ existing body materialization and private managed Reqwest execution
+→ existing bounded buffered, NoContent, or lazy stream response handling
+→ completion and typed result
+```
+
+One `api!` invocation may generate multiple independently owned clients. Client-root endpoints,
+nested scopes to depth 64, all required/optional/default public values, facade and explicit endpoint
+parity, all standard methods, validated custom methods, aliases, and deterministic collision
+diagnostics use one compiler pipeline. Client values resolve during build, scope values during
+facade creation, and endpoint values during pending request creation; final public shaping remains
+deferred to first poll. Arc-backed immutable snapshots avoid user-value `Clone` bounds.
+
+Endpoint-specific request controls use public generated sealed extension traits. A single
+`use client_support::prelude::*` imports deterministic client/full-scope/endpoint-qualified trait
+aliases. The facade still returns `concord_core::Request<E>`, generic timeout/debug setters remain
+inherent, and a single private consume-and-map bridge preserves the request core, options, body,
+handler, and terminal capabilities without polling. Downstream trait forgery and cross-endpoint use
+fail at compile time; no private core import appears in public Rustdoc.
+
+The one evolved `HeadBuilder` preserves fixed scheme, port, and base path while validating dynamic
+DNS labels and path segments, serializing ordered scalar/optional/vector public query pairs, and
+building the logical and safe URLs. The existing `PreparedHead` owns the only public-header map.
+Public `Accept` wins over codec defaults; codec/stream/multipart `Content-Type` ownership conflicts
+fail before hooks. Inherited timeout declarations and request-local overrides remain distinct.
+Application retry is disabled by omission/off, Reqwest default is explicit, dangerous custom retry
+is feature-gated, and an overriding `.http(...)` selection prevents the DSL factory from running.
+
+Generated contract version 6 is synchronized between macro and core. Normal/renamed dependencies,
+nested/repeated invocations, contract mismatch, rendered Rustdoc, no-default, JSON, multipart,
+streaming, ownership, and the maintained dangerous-feature matrix all pass. No authentication,
+limiter, pagination execution, prepared endpoint, or positive raw-success API was added.
+
+Phase 5 contributes 198 source-behavior rows (143 direct, 55 partial) plus five audit rows (four
+direct, one partial). The complete Phase 5 total is 203 rows: 147 direct and 56 partial. The catalog
+contains 771 unique IDs, all 504 normative IDs remain mapped exactly once in coverage, unknown IDs
+are zero, and all 568 historical rows are byte-identical to the Phase 4 anchor.
+
 ## Current non-goals
 
-Phase 4 intentionally does not provide:
+Phase 5 intentionally does not provide:
 
 - authentication, credential providers, recovery, or generated credential surfaces;
 - limiter waits, governors, or generated rate-limit configuration;
 - pagination execution or generated pagination terminals;
 - prepared public endpoints or dangerous raw success responses (the latter is explicitly owned by
   Phase 10);
-- query/public-header/host-prefix DSL clauses, custom methods, or the complete nested value system;
 - streaming terminal-consumption hooks, SSE, WebSocket, record/CSV streaming, bidirectional
   streaming, or multipart response parsing.
 
@@ -146,23 +208,20 @@ No placeholder public API was added for these capabilities.
 Future work should build outward from the single production request path rather than recreate proof
 loops or parallel request models. A later phase requires its own approved contract map and mission.
 
-1. **Phase 5 — remaining client/scope/endpoint values and request shaping.** Complete query,
-   public-header, host-prefix, and nested DSL compiler surfaces on the existing generated
-   client/core bridge.
-2. **Phase 6 — authentication.** Integrate authentication and recovery using the retained reduced
+1. **Phase 6 — authentication.** Integrate authentication and recovery using the retained reduced
    state-machine invariants.
-3. **Phase 7 — rate limiting.** Integrate rate limiting and cooldown observation without exposing a
+2. **Phase 7 — rate limiting.** Integrate rate limiting and cooldown observation without exposing a
    public transport.
-4. **Phase 8 — pagination.** Integrate sequential pagination using the retained identity/ceiling
+3. **Phase 8 — pagination.** Integrate sequential pagination using the retained identity/ceiling
    invariants and final hook contract.
-5. **Phase 9 — prepared endpoints and extension certification.** Add prepared endpoints only after
+4. **Phase 9 — prepared endpoints and extension certification.** Add prepared endpoints only after
    their public contract can reuse the same core executor, and certify the approved extension
    surfaces.
-6. **Phase 10 — product completion and release candidate.** Implement the positive dangerous raw
+5. **Phase 10 — product completion and release candidate.** Implement the positive dangerous raw
    successful-response surface and complete examples, compatibility matrices, security/property
    evidence, performance work, and release-final conformance.
 
-This sequence is planning context, not a Phase 5 implementation prompt.
+This sequence is planning context, not a Phase 6 implementation prompt. Phase 6 is not started.
 
 ## Continuing constraints
 
@@ -173,6 +232,6 @@ This sequence is planning context, not a Phase 5 implementation prompt.
 - Preserve the immutable source/evidence anchor sequence for each phase.
 - Keep normative status at `Normative Implementation Candidate` until full release evidence exists.
 
-`PHASE_4_COMPLETE_WITH_LIMITATIONS`
+`PHASE_5_COMPLETE_WITH_LIMITATIONS`
 
-`PHASE_5_NOT_STARTED`
+`PHASE_6_NOT_STARTED`
