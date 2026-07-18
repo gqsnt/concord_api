@@ -162,6 +162,7 @@ version = "0.1.0"
 dependencies = [
  "concord_core",
  "concord_test_support",
+ "futures-core",
  "proc-macro-crate",
  "proc-macro2",
  "quote",

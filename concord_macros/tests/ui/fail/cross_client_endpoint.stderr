@@ -1,12 +1,12 @@
-error[E0277]: the trait bound `alpha_api::endpoints::health::Ping: BetaApiEndpoint` is not satisfied
+error[E0277]: the trait bound `alpha_api::endpoints::health::Download: BetaApiEndpoint` is not satisfied
   --> tests/ui/fail/cross_client_endpoint.rs:34:26
    |
 34 |     let _ = beta.request(alpha_endpoint);
-   |                  ------- ^^^^^^^^^^^^^^ the trait `BetaApiEndpoint` is not implemented for `alpha_api::endpoints::health::Ping`
+   |                  ------- ^^^^^^^^^^^^^^ the trait `BetaApiEndpoint` is not implemented for `alpha_api::endpoints::health::Download`
    |                  |
    |                  required by a bound introduced by this call
    |
-   = help: the trait `BetaApiEndpoint` is implemented for `beta_api::endpoints::health::Ping`
+   = help: the trait `BetaApiEndpoint` is implemented for `beta_api::endpoints::health::Download`
 note: required by a bound in `beta_api::<impl BetaApi>::request`
   --> tests/ui/fail/cross_client_endpoint.rs:20:5
    |

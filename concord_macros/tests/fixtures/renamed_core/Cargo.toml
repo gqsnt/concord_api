@@ -7,4 +7,4 @@ publish = false
 
 [dependencies]
 concord_macros = { path = "../../.." }
-runtime = { package = "concord_core", path = "../../../../concord_core", default-features = false }
+runtime = { package = "concord_core", path = "../../../../concord_core", default-features = false, features = ["multipart"] }

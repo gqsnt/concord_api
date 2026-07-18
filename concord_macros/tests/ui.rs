@@ -33,3 +33,21 @@ fn downstream_types_cannot_implement_generated_endpoint_capabilities() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/fail/forged_endpoint.rs");
 }
+
+#[test]
+fn generated_stream_endpoints_have_no_metadata_terminal() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/fail/stream_terminal_absent.rs");
+}
+
+#[test]
+fn generated_stream_endpoints_have_no_pagination_terminal() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/fail/stream_pagination_absent.rs");
+}
+
+#[test]
+fn multipart_is_rejected_as_a_generated_response_marker() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/fail/multipart_response.rs");
+}

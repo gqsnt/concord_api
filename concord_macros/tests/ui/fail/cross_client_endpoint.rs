@@ -8,7 +8,7 @@ mod alpha {
             base "https://alpha.example.test";
             scope health() {
                 path ["health"];
-                GET Ping() -> NoContent;
+                GET Download() -> Stream<OctetStream>;
             }
         }
     }
@@ -22,7 +22,7 @@ mod beta {
             base "https://beta.example.test";
             scope health() {
                 path ["health"];
-                GET Ping() -> NoContent;
+                GET Download() -> Stream<OctetStream>;
             }
         }
     }
@@ -30,6 +30,6 @@ mod beta {
 
 fn main() {
     let beta = beta::BetaApi::new().unwrap();
-    let alpha_endpoint = alpha::alpha_api::endpoints::health::Ping::new();
+    let alpha_endpoint = alpha::alpha_api::endpoints::health::Download::new();
     let _ = beta.request(alpha_endpoint);
 }

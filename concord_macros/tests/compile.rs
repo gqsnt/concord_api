@@ -65,6 +65,14 @@ fn json_dsl_without_runtime_feature_has_a_focused_diagnostic() {
 }
 
 #[test]
+fn multipart_dsl_without_runtime_feature_has_a_focused_diagnostic() {
+    assert_fixture_fails_with(
+        "multipart_disabled",
+        "Concord multipart DSL requires the `concord_core/multipart` feature",
+    );
+}
+
+#[test]
 fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names() {
     let root = workspace_root();
     let manifest = fixture_root().join("renamed_core/Cargo.toml");
@@ -97,6 +105,9 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
         "renamed_api/facades/struct.ResourcesFacade.html",
         "renamed_api/endpoints/resources/struct.ById.html",
         "renamed_api/endpoints/resources/struct.Custom.html",
+        "renamed_api/endpoints/resources/struct.StreamUpload.html",
+        "renamed_api/endpoints/resources/struct.StreamDownload.html",
+        "renamed_api/endpoints/resources/struct.MultipartUpload.html",
     ] {
         let path = documentation.join(relative);
         let page = std::fs::read_to_string(&path)
@@ -111,6 +122,11 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
             "CodecBody",
             "BufferedResponse",
             "PreparedBody",
+            "BodySpec",
+            "StreamRequestBody",
+            "StreamResponseHandler",
+            "ManagedRequestStream",
+            "Replayability",
             "reqwest",
             "Sealed",
         ] {
@@ -127,23 +143,45 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
             );
         }
         if relative.contains("endpoints") {
-            for expected in ["POST", "Text"] {
-                if relative.ends_with("struct.ById.html") {
-                    assert!(
-                        page.contains(expected),
-                        "generated endpoint Rustdoc omitted supported public fact {expected}"
-                    );
-                }
-            }
-            let expected: &[&str] = if relative.ends_with("struct.ById.html") {
-                &[
+            let expected: &[&str] = match relative {
+                path if path.ends_with("struct.ById.html") => &[
                     "RenamedApi::resources::ById",
+                    "POST",
+                    "Text",
                     "scope_value",
                     "endpoint_value",
                     "body",
-                ]
-            } else {
-                &["RenamedApi::resources::Custom", "scope_value", "body"]
+                ],
+                path if path.ends_with("struct.Custom.html") => {
+                    &["RenamedApi::resources::Custom", "scope_value", "body"]
+                }
+                path if path.ends_with("struct.StreamUpload.html") => &[
+                    "RenamedApi::resources::StreamUpload",
+                    "POST",
+                    "Stream&lt;OctetStream&gt;",
+                    "one-shot",
+                    "StreamBody",
+                    "scope_value",
+                    "body",
+                ],
+                path if path.ends_with("struct.StreamDownload.html") => &[
+                    "RenamedApi::resources::StreamDownload",
+                    "GET",
+                    "StreamResponse",
+                    "finite stream-response limit",
+                    "intentionally unavailable",
+                    "scope_value",
+                ],
+                path if path.ends_with("struct.MultipartUpload.html") => &[
+                    "RenamedApi::resources::MultipartUpload",
+                    "POST",
+                    "MultipartBody",
+                    "concord_core/multipart",
+                    "aggregate framing limits",
+                    "scope_value",
+                    "body",
+                ],
+                _ => panic!("unexpected generated endpoint Rustdoc path {relative}"),
             };
             for expected in expected.iter().copied() {
                 assert!(

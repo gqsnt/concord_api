@@ -5,10 +5,11 @@ use quote::{ToTokens, format_ident, quote};
 use syn::Index;
 
 use crate::model::{
-    Api, CodecKind, Endpoint, MethodKind, Parameter, PathAtom, ResponseKind, Scope, to_snake_case,
+    Api, CodecKind, Endpoint, MediaKind, MethodKind, Parameter, PathAtom, RequestBodyKind,
+    ResponseKind, Scope, to_snake_case,
 };
 
-const GENERATED_CONTRACT_VERSION: u32 = 4;
+const GENERATED_CONTRACT_VERSION: u32 = 5;
 
 pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
     let client = &api.client;
@@ -27,6 +28,13 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
         quote!(
             const _: () = __core::__private::assert_json_feature();
         )
+    } else {
+        quote!()
+    };
+    let multipart_feature_assertion = if scope.endpoints.iter().any(endpoint_uses_multipart) {
+        quote! {
+            const _: () = __core::__private::assert_multipart_feature();
+        }
     } else {
         quote!()
     };
@@ -97,6 +105,7 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
 
                 const _: () = __core::__private::assert_generated_contract(#contract_version);
                 #json_feature_assertion
+                #multipart_feature_assertion
             }
 
             mod __concord_endpoint_seal {
@@ -313,11 +322,7 @@ fn generate_endpoint(
     let body_input_type = endpoint
         .body
         .as_ref()
-        .map(|body| codec_input_type(body, core_path));
-    let body_codec_type = endpoint
-        .body
-        .as_ref()
-        .map(|body| codec_type(body, core_path));
+        .map(|body| request_body_input_type(body, core_path));
     let path_statements = scope
         .path
         .iter()
@@ -340,8 +345,10 @@ fn generate_endpoint(
     } else {
         required_names.join(", ")
     };
+    let body_doc = request_body_doc(endpoint.body.as_ref());
+    let response_doc = response_doc(&endpoint.response);
     let endpoint_doc = format!(
-        "`{method_name}` endpoint `{endpoint_identity}` for route `{route_shape}`. Required arguments: {required_arguments}. Direct await uses the `{response_name}` response mode; metadata is available through `Request::response`."
+        "`{method_name}` endpoint `{endpoint_identity}` for route `{route_shape}`. Required arguments: {required_arguments}. {body_doc} Direct await uses the `{response_name}` response mode. {response_doc}"
     );
     let constructor_doc = format!(
         "Creates the explicit `{endpoint_identity}` endpoint value without preparing or executing a request."
@@ -349,14 +356,20 @@ fn generate_endpoint(
     let response = response_handler(&endpoint.response, core_path);
     let body_type = body_handler(endpoint.body.as_ref(), core_path);
     let method = method_token(endpoint.method, core_path);
-    let body_constructor = match (&body_codec_type, &body_private_binding) {
-        (Some(codec), Some(binding)) => {
+    let body_constructor = match (&endpoint.body, &body_private_binding) {
+        (Some(RequestBodyKind::Buffered(codec)), Some(binding)) => {
+            let codec = codec_type(codec, core_path);
             quote!(super::super::__concord_generated::__core::__private::CodecBody::<#codec>::new(#binding))
         }
+        (Some(RequestBodyKind::Stream(media)), Some(binding)) => {
+            let media = media_type(media, core_path);
+            quote!(super::super::__concord_generated::__core::__private::StreamRequestBody::<#media>::new(#binding))
+        }
+        (Some(RequestBodyKind::Multipart), Some(binding)) => quote!(#binding),
         (None, None) => {
             quote!(super::super::__concord_generated::__core::__private::EmptyBody::new())
         }
-        _ => unreachable!("body codec and binding are modeled together"),
+        _ => unreachable!("request body and binding are modeled together"),
     };
     let body_field = quote!(__concord_body: #body_type,);
     let body_public_parameter = match (&body_public_binding, &body_input_type) {
@@ -385,12 +398,26 @@ fn generate_endpoint(
             quote!(#ty: ::std::fmt::Display + ::std::marker::Send + 'static)
         }))
         .collect::<Vec<_>>();
-    if let Some(codec) = &body_codec_type {
-        bounds.push(quote!(#codec: #core_path::advanced::EncodeBody));
+    if let Some(body) = &endpoint.body {
+        match body {
+            RequestBodyKind::Buffered(codec) => {
+                let codec = codec_type(codec, core_path);
+                bounds.push(quote!(#codec: #core_path::advanced::EncodeBody));
+            }
+            RequestBodyKind::Stream(media) => {
+                let media = media_type(media, core_path);
+                bounds.push(quote!(#media: #core_path::advanced::MediaType));
+            }
+            RequestBodyKind::Multipart => {}
+        }
     }
     if let ResponseKind::Buffered(codec) = &endpoint.response {
         let codec = codec_type(codec, core_path);
         bounds.push(quote!(#codec: #core_path::advanced::DecodeBody));
+    }
+    if let ResponseKind::Stream(media) = &endpoint.response {
+        let media = media_type(media, core_path);
+        bounds.push(quote!(#media: #core_path::advanced::MediaType));
     }
     let where_clause = if bounds.is_empty() {
         quote!()
@@ -522,7 +549,7 @@ fn generate_facade_method(
     let body_type = endpoint
         .body
         .as_ref()
-        .map(|body| codec_input_type(body, core_path));
+        .map(|body| request_body_input_type(body, core_path));
     let body_parameter = body_type
         .as_ref()
         .map_or_else(TokenStream::new, |ty| quote!(body: #ty,));
@@ -536,8 +563,10 @@ fn generate_facade_method(
     let route_shape = route_shape(scope, endpoint);
     let response_name = response_name(&endpoint.response);
     let method_name = method_name(endpoint.method);
+    let body_doc = request_body_doc(endpoint.body.as_ref());
+    let response_doc = response_doc(&endpoint.response);
     let method_doc = format!(
-        "Creates a pending `{method_name}` request for `{endpoint_identity}` at route `{route_shape}` using the `{response_name}` response mode."
+        "Creates a pending `{method_name}` request for `{endpoint_identity}` at route `{route_shape}` using the `{response_name}` response mode. {body_doc} {response_doc}"
     );
 
     quote! {
@@ -629,16 +658,33 @@ fn response_handler(response: &ResponseKind, core_path: &TokenStream) -> TokenSt
             let codec = codec_type(codec, core_path);
             quote!(#core_path::__private::BufferedResponse<#codec>)
         }
+        ResponseKind::Stream(media) => {
+            let media = media_type(media, core_path);
+            quote!(#core_path::__private::StreamResponseHandler<#media>)
+        }
     }
 }
 
-fn body_handler(body: Option<&CodecKind>, core_path: &TokenStream) -> TokenStream {
+fn body_handler(body: Option<&RequestBodyKind>, core_path: &TokenStream) -> TokenStream {
     match body {
-        Some(codec) => {
+        Some(RequestBodyKind::Buffered(codec)) => {
             let codec = codec_type(codec, core_path);
             quote!(#core_path::__private::CodecBody<#codec>)
         }
+        Some(RequestBodyKind::Stream(media)) => {
+            let media = media_type(media, core_path);
+            quote!(#core_path::__private::StreamRequestBody<#media>)
+        }
+        Some(RequestBodyKind::Multipart) => quote!(#core_path::advanced::MultipartBody),
         None => quote!(#core_path::__private::EmptyBody),
+    }
+}
+
+fn request_body_input_type(body: &RequestBodyKind, core_path: &TokenStream) -> TokenStream {
+    match body {
+        RequestBodyKind::Buffered(codec) => codec_input_type(codec, core_path),
+        RequestBodyKind::Stream(_) => quote!(#core_path::prelude::StreamBody),
+        RequestBodyKind::Multipart => quote!(#core_path::advanced::MultipartBody),
     }
 }
 
@@ -647,6 +693,13 @@ fn codec_type(codec: &CodecKind, core_path: &TokenStream) -> TokenStream {
         CodecKind::Text => quote!(#core_path::prelude::Text),
         CodecKind::Json(ty) => quote!(#core_path::prelude::Json<#ty>),
         CodecKind::Custom(ty) => quote!(#ty),
+    }
+}
+
+fn media_type(media: &MediaKind, core_path: &TokenStream) -> TokenStream {
+    match media {
+        MediaKind::OctetStream => quote!(#core_path::prelude::OctetStream),
+        MediaKind::Custom(ty) => quote!(#ty),
     }
 }
 
@@ -667,6 +720,13 @@ fn response_name(response: &ResponseKind) -> String {
             format!("Json<{}>", ty.to_token_stream())
         }
         ResponseKind::Buffered(CodecKind::Custom(ty)) => ty.to_token_stream().to_string(),
+        ResponseKind::Stream(media) => {
+            let media = match media {
+                MediaKind::OctetStream => "OctetStream".to_owned(),
+                MediaKind::Custom(ty) => ty.to_token_stream().to_string(),
+            };
+            format!("Stream<{media}>")
+        }
     }
 }
 
@@ -685,11 +745,46 @@ fn method_token(method: MethodKind, core_path: &TokenStream) -> TokenStream {
 }
 
 fn endpoint_uses_json(endpoint: &Endpoint) -> bool {
-    endpoint.body.as_ref().is_some_and(codec_is_json)
-        || matches!(
-            &endpoint.response,
-            ResponseKind::Buffered(codec) if codec_is_json(codec)
-        )
+    endpoint.body.as_ref().is_some_and(
+        |body| matches!(body, RequestBodyKind::Buffered(codec) if codec_is_json(codec)),
+    ) || matches!(
+        &endpoint.response,
+        ResponseKind::Buffered(codec) if codec_is_json(codec)
+    )
+}
+
+const fn endpoint_uses_multipart(endpoint: &Endpoint) -> bool {
+    matches!(&endpoint.body, Some(RequestBodyKind::Multipart))
+}
+
+fn request_body_doc(body: Option<&RequestBodyKind>) -> String {
+    match body {
+        None => "The request has no body argument.".to_owned(),
+        Some(RequestBodyKind::Buffered(_)) => {
+            "The final body argument is encoded after the before-send hook and remains subject to the finite request-body limit.".to_owned()
+        }
+        Some(RequestBodyKind::Stream(media)) => {
+            let media = match media {
+                MediaKind::OctetStream => "OctetStream".to_owned(),
+                MediaKind::Custom(ty) => ty.to_token_stream().to_string(),
+            };
+            format!(
+                "The final `Stream<{media}>` body argument is an owned one-shot `StreamBody`; it remains unpolled until native execution and is subject to exact-length and finite request-body limits."
+            )
+        }
+        Some(RequestBodyKind::Multipart) => {
+            "The final body argument is `MultipartBody` and requires the `concord_core/multipart` feature; the managed HTTP layer owns boundary serialization and aggregate framing limits.".to_owned()
+        }
+    }
+}
+
+fn response_doc(response: &ResponseKind) -> &'static str {
+    match response {
+        ResponseKind::Stream(_) => {
+            "Direct await returns `StreamResponse<M>`, which carries successful metadata and enforces the finite stream-response limit. `Request::response` and pagination are intentionally unavailable."
+        }
+        _ => "Successful metadata is available through `Request::response`.",
+    }
 }
 
 const fn codec_is_json(codec: &CodecKind) -> bool {

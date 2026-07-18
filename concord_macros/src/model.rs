@@ -21,7 +21,7 @@ pub(crate) struct Endpoint {
     pub(crate) method: MethodKind,
     pub(crate) name: Ident,
     pub(crate) parameters: Vec<Parameter>,
-    pub(crate) body: Option<CodecKind>,
+    pub(crate) body: Option<RequestBodyKind>,
     pub(crate) path: Vec<PathAtom>,
     pub(crate) response: ResponseKind,
 }
@@ -36,6 +36,18 @@ pub(crate) enum ResponseKind {
     Bytes,
     NoContent,
     Buffered(CodecKind),
+    Stream(MediaKind),
+}
+
+pub(crate) enum RequestBodyKind {
+    Buffered(CodecKind),
+    Stream(MediaKind),
+    Multipart,
+}
+
+pub(crate) enum MediaKind {
+    OctetStream,
+    Custom(Type),
 }
 
 pub(crate) enum CodecKind {

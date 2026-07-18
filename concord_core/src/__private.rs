@@ -20,6 +20,14 @@ pub const fn assert_json_feature() {
     panic!("Concord JSON DSL requires the `concord_core/json` feature");
 }
 
+/// Produces a focused const-evaluation diagnostic for generated multipart
+/// syntax when the runtime dependency omitted its `multipart` feature.
+#[doc(hidden)]
+pub const fn assert_multipart_feature() {
+    #[cfg(not(feature = "multipart"))]
+    panic!("Concord multipart DSL requires the `concord_core/multipart` feature");
+}
+
 #[doc(hidden)]
 pub use http::Method;
 #[doc(hidden)]

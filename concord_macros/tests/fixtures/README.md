@@ -13,6 +13,9 @@ package metadata or dependency topology:
 - `json_disabled` omits the runtime `json` feature and proves that generated
   JSON syntax produces the focused feature diagnostic rather than falling
   back to another body or response mode.
+- `multipart_disabled` omits the runtime `multipart` feature and proves that
+  generated multipart syntax produces the focused feature diagnostic rather
+  than falling back to another request-body mode.
 
 Ordinary generated construction and execution, builder behavior, lazy request
 creation, and nested/repeated expansion live in `generated_surface.rs`.

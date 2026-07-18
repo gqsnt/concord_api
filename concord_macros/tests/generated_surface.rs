@@ -1,16 +1,22 @@
 use std::fmt::{self, Display, Formatter};
+use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use concord_core::advanced::{
-    BeforeSend, BoxFuture, ClientBuildErrorKind, CodecError, CompletionEvent, DebugLevel,
-    DecodeBody, DecodeContext, EncodeBody, EncodeContext, HookError, ResponseHeadEvent,
-    RuntimeHooks, SafeProxy,
+    BeforeSend, BoxFuture, ClientBuildErrorKind, CodecError, CompletionEvent, CompletionOutcome,
+    DebugLevel, DecodeBody, DecodeContext, EncodeBody, EncodeContext, HookError, MediaType,
+    MultipartBody, MultipartPart, ResponseHeadEvent, RuntimeHooks, SafeProxy,
 };
-use concord_core::prelude::{Bytes, ClientBuildError, DecodedResponse, Request, ResponseRequest};
+use concord_core::prelude::{
+    Bytes, ClientBuildError, DecodedResponse, OctetStream, Request, ResponseRequest, StreamBody,
+    StreamResponse,
+};
 use concord_macros::api;
 use concord_test_support::server::{ResponseScript, ScriptedServer};
+use futures_core::Stream;
 
 api! {
     client ExampleApi {
@@ -22,6 +28,26 @@ api! {
             GET Item(id: String) -> Bytes {
                 path ["items", ep.id];
             }
+        }
+    }
+}
+
+pub struct VendorStreamMedia;
+
+impl MediaType for VendorStreamMedia {
+    const MEDIA_TYPE: &'static str = "application/vnd.concord.generated-stream; version=1";
+}
+
+api! {
+    client StreamingApi {
+        base "http://streaming.generated.example.test/v1/";
+        scope transfers() {
+            path ["transfers"];
+            POST Upload(body: Stream<OctetStream>) -> Bytes;
+            POST VendorUpload(body: Stream<crate::VendorStreamMedia>) -> Bytes;
+            GET Download() -> Stream<OctetStream>;
+            GET VendorDownload() -> Stream<crate::VendorStreamMedia>;
+            POST MultipartUpload(body: Multipart) -> Bytes;
         }
     }
 }
@@ -109,6 +135,8 @@ mod nested_case {
                     path ["health"];
                     GET Ping() -> NoContent;
                     POST Echo(body: Text) -> Text;
+                    POST Upload(body: Stream<OctetStream>) -> NoContent;
+                    GET Download() -> Stream<OctetStream>;
                 }
             }
         }
@@ -136,6 +164,7 @@ mod repeated_case {
                 path ["health"];
                 GET Ping() -> NoContent;
                 POST Echo(body: Text) -> Text;
+                GET Download() -> Stream<OctetStream>;
             }
         }
     }
@@ -147,6 +176,7 @@ mod repeated_case {
                 path ["health"];
                 GET Ping() -> NoContent;
                 POST Echo(body: Text) -> Text;
+                GET Download() -> Stream<OctetStream>;
             }
         }
     }
@@ -158,6 +188,8 @@ mod repeated_case {
         let _: concord_core::Request<_> = beta.health().ping();
         let _: concord_core::Request<_> = alpha.health().echo("alpha".to_owned());
         let _: concord_core::Request<_> = beta.health().echo("beta".to_owned());
+        let _: concord_core::Request<_> = alpha.health().download();
+        let _: concord_core::Request<_> = beta.health().download();
 
         fn accepts_alpha_endpoint<E: alpha_api::AlphaApiEndpoint>(_: &E) {}
         fn accepts_beta_endpoint<E: beta_api::BetaApiEndpoint>(_: &E) {}
@@ -176,6 +208,7 @@ struct CountingHooks {
     before: AtomicUsize,
     response: AtomicUsize,
     complete: AtomicUsize,
+    outcomes: Mutex<Vec<CompletionOutcome>>,
 }
 
 impl CountingHooks {
@@ -184,7 +217,12 @@ impl CountingHooks {
             before: AtomicUsize::new(0),
             response: AtomicUsize::new(0),
             complete: AtomicUsize::new(0),
+            outcomes: Mutex::new(Vec::new()),
         }
+    }
+
+    fn outcomes(&self) -> Vec<CompletionOutcome> {
+        self.outcomes.lock().expect("outcome lock").clone()
     }
 }
 
@@ -199,8 +237,12 @@ impl RuntimeHooks for CountingHooks {
         Box::pin(async {})
     }
 
-    fn on_complete<'a>(&'a self, _context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
+    fn on_complete<'a>(&'a self, context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
         self.complete.fetch_add(1, Ordering::SeqCst);
+        self.outcomes
+            .lock()
+            .expect("outcome lock")
+            .push(context.outcome);
         Box::pin(async {})
     }
 }
@@ -227,6 +269,21 @@ fn proxied_buffered(server: &ScriptedServer) -> BufferedApi {
         .http(move |http| http.proxy(proxy))
         .build()
         .expect("proxied buffered generated client")
+}
+
+fn proxied_streaming(server: &ScriptedServer, hooks: Arc<dyn RuntimeHooks>) -> StreamingApi {
+    let proxy = proxy(server);
+    StreamingApi::builder()
+        .http(move |http| http.proxy(proxy))
+        .runtime(move |runtime| runtime.hooks(hooks))
+        .build()
+        .expect("proxied streaming generated client")
+}
+
+async fn next_stream_chunk<M>(
+    response: &mut StreamResponse<M>,
+) -> Option<Result<Bytes, concord_core::prelude::ApiError>> {
+    std::future::poll_fn(|context| Pin::new(&mut *response).poll_next(context)).await
 }
 
 fn exact_new_shape() -> Result<(), ClientBuildError> {
@@ -435,6 +492,138 @@ async fn generated_buffered_facade_and_explicit_endpoints_use_typed_codecs_end_t
 }
 
 #[tokio::test]
+async fn generated_stream_and_multipart_facade_and_explicit_endpoints_use_one_runtime_path() {
+    let stream_headers =
+        |content_type: &str| vec![("Content-Type".to_owned(), content_type.to_owned())];
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"upload-ok".to_vec()),
+        ResponseScript::ok(b"vendor-upload-ok".to_vec()),
+        ResponseScript::Chunked {
+            status: 200,
+            headers: stream_headers("application/octet-stream"),
+            chunks: vec![b"facade-".to_vec(), b"download".to_vec()],
+        },
+        ResponseScript::Chunked {
+            status: 200,
+            headers: stream_headers(
+                "application/vnd.concord.generated-stream; version=1; framing=chunks",
+            ),
+            chunks: vec![b"explicit-".to_vec(), b"vendor-download".to_vec()],
+        },
+        ResponseScript::ok(b"multipart-ok".to_vec()),
+    ])
+    .expect("generated streaming proxy");
+    let hooks = Arc::new(CountingHooks::new());
+    let hook_object: Arc<dyn RuntimeHooks> = hooks.clone();
+    let client = proxied_streaming(&server, hook_object);
+
+    let upload: Bytes = client
+        .transfers()
+        .upload(StreamBody::from_bytes(Bytes::from_static(
+            b"generated-stream-upload",
+        )))
+        .await
+        .expect("generated stream upload");
+    assert_eq!(upload, b"upload-ok"[..]);
+
+    let vendor_endpoint = streaming_api::endpoints::transfers::VendorUpload::new(
+        StreamBody::from_bytes(Bytes::from_static(b"generated-vendor-upload")),
+    );
+    let vendor_upload: Bytes = client
+        .request(vendor_endpoint)
+        .await
+        .expect("explicit generated vendor stream upload");
+    assert_eq!(vendor_upload, b"vendor-upload-ok"[..]);
+
+    let mut download: StreamResponse<OctetStream> = client
+        .transfers()
+        .download()
+        .await
+        .expect("generated stream response");
+    let mut downloaded = Vec::new();
+    while let Some(chunk) = next_stream_chunk(&mut download).await {
+        downloaded.extend_from_slice(&chunk.expect("generated stream chunk"));
+    }
+    assert_eq!(downloaded, b"facade-download");
+
+    let vendor_endpoint = streaming_api::endpoints::transfers::VendorDownload::new();
+    let mut vendor: StreamResponse<VendorStreamMedia> = client
+        .request(vendor_endpoint)
+        .await
+        .expect("explicit generated vendor stream response");
+    let mut vendor_downloaded = Vec::new();
+    while let Some(chunk) = next_stream_chunk(&mut vendor).await {
+        vendor_downloaded.extend_from_slice(&chunk.expect("vendor stream chunk"));
+    }
+    assert_eq!(vendor_downloaded, b"explicit-vendor-download");
+
+    let multipart = MultipartBody::new()
+        .part(
+            "text",
+            MultipartPart::text("generated-multipart-text-secret"),
+        )
+        .expect("generated multipart part")
+        .part(
+            "bytes",
+            MultipartPart::bytes(Bytes::from_static(b"generated-multipart-bytes-secret"))
+                .filename("generated-secret-name.bin")
+                .expect("generated multipart filename"),
+        )
+        .expect("generated multipart bytes part");
+    let multipart_result: Bytes = client
+        .transfers()
+        .multipart_upload(multipart)
+        .await
+        .expect("generated multipart upload");
+    assert_eq!(multipart_result, b"multipart-ok"[..]);
+
+    server
+        .wait_for_requests(5, Duration::from_secs(1))
+        .expect("generated streaming requests recorded");
+    let requests = server.requests();
+    assert_eq!(requests[0].body(), b"generated-stream-upload");
+    assert_eq!(
+        requests[0].header("content-type"),
+        Some("application/octet-stream")
+    );
+    assert_eq!(requests[1].body(), b"generated-vendor-upload");
+    assert_eq!(
+        requests[1].header("content-type"),
+        Some("application/vnd.concord.generated-stream; version=1")
+    );
+    assert_eq!(
+        requests[2].header("accept"),
+        Some("application/octet-stream")
+    );
+    assert_eq!(
+        requests[3].header("accept"),
+        Some("application/vnd.concord.generated-stream; version=1")
+    );
+    let multipart_content_type = requests[4]
+        .header("content-type")
+        .expect("generated multipart content type");
+    assert!(multipart_content_type.starts_with("multipart/form-data; boundary="));
+    let multipart_wire = String::from_utf8_lossy(requests[4].body());
+    assert!(multipart_wire.contains("generated-multipart-text-secret"));
+    assert!(multipart_wire.contains("generated-multipart-bytes-secret"));
+    assert!(multipart_wire.contains("generated-secret-name.bin"));
+
+    assert_eq!(hooks.before.load(Ordering::SeqCst), 5);
+    assert_eq!(hooks.response.load(Ordering::SeqCst), 5);
+    assert_eq!(hooks.complete.load(Ordering::SeqCst), 5);
+    assert_eq!(
+        hooks.outcomes(),
+        vec![
+            CompletionOutcome::Success,
+            CompletionOutcome::Success,
+            CompletionOutcome::StreamOpened,
+            CompletionOutcome::StreamOpened,
+            CompletionOutcome::Success,
+        ]
+    );
+}
+
+#[tokio::test]
 async fn facade_and_explicit_endpoints_execute_with_identical_encoded_paths() {
     let server = ScriptedServer::start([
         ResponseScript::ok(b"facade".to_vec()),
@@ -533,6 +722,10 @@ fn nested_and_repeated_invocations_keep_generated_paths_isolated() {
     let nested = nested_case::inner::NestedApi::new().expect("nested client");
     let _: concord_core::Request<_> = nested.health().ping();
     let _: concord_core::Request<_> = nested.health().echo("nested".to_owned());
+    let _: concord_core::Request<_> = nested
+        .health()
+        .upload(StreamBody::from_bytes(Bytes::from_static(b"nested-stream")));
+    let _: concord_core::Request<_> = nested.health().download();
     let _: concord_core::Request<_> =
         nested.request(nested_case::inner::nested_api::endpoints::health::Ping::new());
     repeated_case::requests_are_isolated();

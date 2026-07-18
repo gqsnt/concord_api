@@ -4,8 +4,8 @@ use concord_core::__private::{
 use concord_core::advanced::ErrorCategory;
 
 #[test]
-fn generated_contract_version_is_four() {
-    assert_eq!(GENERATED_CONTRACT_VERSION, 4);
+fn generated_contract_version_is_five() {
+    assert_eq!(GENERATED_CONTRACT_VERSION, 5);
 }
 
 #[test]

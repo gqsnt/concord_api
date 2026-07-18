@@ -38,6 +38,9 @@ api! {
                 path [ep.endpoint_value];
             }
             POST Custom(body: crate::WireCodec) -> crate::WireCodec;
+            POST StreamUpload(body: Stream<OctetStream>) -> Bytes;
+            GET StreamDownload() -> Stream<OctetStream>;
+            POST MultipartUpload(body: Multipart) -> NoContent;
         }
     }
 }
@@ -57,5 +60,21 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
     let _: runtime::Request<_> = client
         .resources("renamed-scope".to_owned())
         .custom("custom-body".to_owned());
+    let _: runtime::Request<_> = client
+        .resources("renamed-scope".to_owned())
+        .stream_upload(runtime::prelude::StreamBody::from_bytes(
+            runtime::prelude::Bytes::from_static(b"renamed stream"),
+        ));
+    let _: runtime::Request<_> = client
+        .resources("renamed-scope".to_owned())
+        .stream_download();
+    let multipart = runtime::advanced::MultipartBody::new().part(
+        "field",
+        runtime::advanced::MultipartPart::text("renamed multipart"),
+    )
+    .expect("valid renamed multipart recipe");
+    let _: runtime::Request<_> = client
+        .resources("renamed-scope".to_owned())
+        .multipart_upload(multipart);
     Ok(())
 }

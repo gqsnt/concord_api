@@ -10,8 +10,8 @@ use syn::{
 };
 
 use crate::model::{
-    Api, Client, CodecKind, Endpoint, MethodKind, Parameter, PathAtom, ResponseKind, Scope,
-    to_snake_case,
+    Api, Client, CodecKind, Endpoint, MediaKind, MethodKind, Parameter, PathAtom, RequestBodyKind,
+    ResponseKind, Scope, to_snake_case,
 };
 
 const RESERVED_GENERATED_METHODS: &[&str] = &[
@@ -35,6 +35,7 @@ mod keyword {
     syn::custom_keyword!(base);
     syn::custom_keyword!(client);
     syn::custom_keyword!(path);
+    syn::custom_keyword!(paginate);
     syn::custom_keyword!(scope);
 }
 
@@ -162,7 +163,7 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<Endpoint> {
         "POST" => MethodKind::Post,
         _ => {
             return Err(method.span().error(
-                "unsupported endpoint method; the Phase 3 generated subset accepts `GET` or `POST`",
+                "unsupported endpoint method; the Phase 4 generated subset accepts `GET` or `POST`",
             ));
         }
     };
@@ -187,6 +188,17 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<Endpoint> {
             ));
         }
         let path = parse_path(&body)?;
+        if body.peek(keyword::paginate)
+            && matches!(
+                response,
+                ResponseKind::Stream(_) | ResponseKind::Bytes | ResponseKind::NoContent
+            )
+        {
+            let paginate: keyword::paginate = body.parse()?;
+            return Err(paginate.span().error(
+                "`Stream`, `Bytes`, and `NoContent` response markers cannot declare pagination",
+            ));
+        }
         if !body.is_empty() {
             return Err(body.error(
                 "unsupported endpoint clause; the current generated subset accepts only one `path [...]` clause",
@@ -208,7 +220,7 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<Endpoint> {
 
 fn parse_endpoint_parameters(
     input: ParseStream<'_>,
-) -> syn::Result<(Vec<Parameter>, Option<CodecKind>)> {
+) -> syn::Result<(Vec<Parameter>, Option<RequestBodyKind>)> {
     let mut parameters = Vec::new();
     let mut body = None;
     let mut names = HashSet::new();
@@ -229,7 +241,7 @@ fn parse_endpoint_parameters(
         }
 
         if name == "body" {
-            body = Some(parse_request_codec(ty)?);
+            body = Some(parse_request_body(ty)?);
         } else {
             if is_option(&ty) {
                 return Err(ty.span().error(
@@ -251,7 +263,7 @@ fn parse_endpoint_parameters(
     Ok((parameters, body))
 }
 
-fn parse_request_codec(ty: Type) -> syn::Result<CodecKind> {
+fn parse_request_body(ty: Type) -> syn::Result<RequestBodyKind> {
     if is_named_marker(&ty, "NoContent") {
         return Err(ty
             .span()
@@ -259,10 +271,19 @@ fn parse_request_codec(ty: Type) -> syn::Result<CodecKind> {
     }
     if is_named_marker(&ty, "Bytes") {
         return Err(ty.span().error(
-            "`Bytes` is not a request body marker; use `Text`, `Json<T>`, or a custom `EncodeBody` codec",
+            "`Bytes` is not a request body marker; use `Text`, `Json<T>`, `Stream<M>`, `Multipart`, or a custom `EncodeBody` codec",
         ));
     }
-    parse_buffered_codec(ty, "request")
+    if let Type::Path(path) = &ty {
+        if is_unqualified(path, "Stream") {
+            return stream_media_inner(path).map(RequestBodyKind::Stream);
+        }
+        if is_unqualified(path, "Multipart") {
+            ensure_no_arguments(path, "Multipart")?;
+            return Ok(RequestBodyKind::Multipart);
+        }
+    }
+    parse_buffered_codec(ty).map(RequestBodyKind::Buffered)
 }
 
 fn parse_response(ty: Type) -> syn::Result<ResponseKind> {
@@ -280,10 +301,20 @@ fn parse_response(ty: Type) -> syn::Result<ResponseKind> {
         ensure_no_arguments(path, "NoContent")?;
         return Ok(ResponseKind::NoContent);
     }
-    parse_buffered_codec(ty, "response").map(ResponseKind::Buffered)
+    if let Type::Path(path) = &ty {
+        if is_unqualified(path, "Stream") {
+            return stream_media_inner(path).map(ResponseKind::Stream);
+        }
+        if is_unqualified(path, "Multipart") {
+            return Err(ty
+                .span()
+                .error("`Multipart` is a request-only marker and cannot be used as a response"));
+        }
+    }
+    parse_buffered_codec(ty).map(ResponseKind::Buffered)
 }
 
-fn parse_buffered_codec(ty: Type, role: &str) -> syn::Result<CodecKind> {
+fn parse_buffered_codec(ty: Type) -> syn::Result<CodecKind> {
     let Type::Path(path) = &ty else {
         return Ok(CodecKind::Custom(ty));
     };
@@ -294,17 +325,39 @@ fn parse_buffered_codec(ty: Type, role: &str) -> syn::Result<CodecKind> {
     if is_unqualified(path, "Json") {
         return json_inner(path).map(CodecKind::Json);
     }
-    if is_unqualified(path, "Multipart") && role == "response" {
-        return Err(ty
-            .span()
-            .error("`Multipart` is a request-only marker and cannot be used as a response"));
-    }
-    if is_unqualified(path, "Stream") || is_unqualified(path, "Multipart") {
-        return Err(ty.span().error(format!(
-            "{role} streaming and multipart markers are deferred to Phase 4"
-        )));
-    }
     Ok(CodecKind::Custom(ty))
+}
+
+fn stream_media_inner(path: &TypePath) -> syn::Result<MediaKind> {
+    let segment = &path.path.segments[0];
+    let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+        return Err(segment
+            .span()
+            .error("`Stream` requires exactly one media marker type argument"));
+    };
+    let mut values = arguments.args.iter();
+    let Some(GenericArgument::Type(ty)) = values.next() else {
+        return Err(arguments
+            .span()
+            .error("`Stream` requires exactly one media marker type argument"));
+    };
+    if values.next().is_some() {
+        return Err(arguments
+            .span()
+            .error("`Stream` requires exactly one media marker type argument"));
+    }
+    if is_named_marker(ty, "Stream") || is_named_marker(ty, "Multipart") {
+        return Err(ty.span().error(
+            "a `Stream` media marker cannot itself be a Concord stream or multipart marker",
+        ));
+    }
+    if let Type::Path(path) = ty {
+        if is_unqualified(path, "OctetStream") {
+            ensure_no_arguments(path, "OctetStream")?;
+            return Ok(MediaKind::OctetStream);
+        }
+    }
+    Ok(MediaKind::Custom(ty.clone()))
 }
 
 fn is_named_marker(ty: &Type, expected: &str) -> bool {
@@ -550,7 +603,7 @@ mod tests {
     use super::parse;
 
     #[test]
-    fn rejects_methods_outside_the_phase3_slice_with_focused_message() {
+    fn rejects_methods_outside_the_phase4_slice_with_focused_message() {
         let error = parse(quote! {
             client ProofApi {
                 base "https://example.test";
@@ -567,7 +620,7 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            "unsupported endpoint method; the Phase 3 generated subset accepts `GET` or `POST`"
+            "unsupported endpoint method; the Phase 4 generated subset accepts `GET` or `POST`"
         );
     }
 
@@ -589,7 +642,125 @@ mod tests {
                 }
             }
         })
-        .expect("Phase 3 buffered grammar must parse");
+        .expect("buffered grammar must parse");
+    }
+
+    #[test]
+    fn accepts_stream_request_response_and_multipart_request_markers() {
+        parse(quote! {
+            client StreamingApi {
+                base "https://example.test";
+                scope transfers() {
+                    path ["transfers"];
+                    POST Upload(body: Stream<OctetStream>) -> Bytes;
+                    POST VendorUpload(body: Stream<crate::VendorMedia>) -> NoContent;
+                    GET Download() -> Stream<OctetStream>;
+                    GET VendorDownload() -> Stream<crate::VendorMedia>;
+                    POST MultipartUpload(body: Multipart) -> NoContent;
+                }
+            }
+        })
+        .expect("Phase 4 stream and multipart markers must parse");
+    }
+
+    #[test]
+    fn stream_marker_shape_and_multipart_direction_have_focused_diagnostics() {
+        for (tokens, expected) in [
+            (
+                quote! {
+                    client InvalidApi {
+                        base "https://example.test";
+                        scope transfers() {
+                            path ["transfers"];
+                            GET Invalid() -> Stream;
+                        }
+                    }
+                },
+                "`Stream` requires exactly one media marker type argument",
+            ),
+            (
+                quote! {
+                    client InvalidApi {
+                        base "https://example.test";
+                        scope transfers() {
+                            path ["transfers"];
+                            POST Invalid(body: Stream<OctetStream, Text>) -> NoContent;
+                        }
+                    }
+                },
+                "`Stream` requires exactly one media marker type argument",
+            ),
+            (
+                quote! {
+                    client InvalidApi {
+                        base "https://example.test";
+                        scope transfers() {
+                            path ["transfers"];
+                            GET Invalid() -> Stream<Stream<OctetStream>>;
+                        }
+                    }
+                },
+                "a `Stream` media marker cannot itself be a Concord stream or multipart marker",
+            ),
+            (
+                quote! {
+                    client InvalidApi {
+                        base "https://example.test";
+                        scope transfers() {
+                            path ["transfers"];
+                            GET Invalid() -> Multipart;
+                        }
+                    }
+                },
+                "`Multipart` is a request-only marker and cannot be used as a response",
+            ),
+            (
+                quote! {
+                    client InvalidApi {
+                        base "https://example.test";
+                        scope transfers() {
+                            path ["transfers"];
+                            POST Invalid(body: Multipart<Text>) -> NoContent;
+                        }
+                    }
+                },
+                "`Multipart` does not accept type arguments",
+            ),
+        ] {
+            let error = parse(tokens).err().expect("marker must be rejected");
+            assert_eq!(error.to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn stream_bytes_and_no_content_responses_reject_pagination_without_starting_phase8() {
+        for response in [
+            quote!(Stream<OctetStream>),
+            quote!(Bytes),
+            quote!(NoContent),
+        ] {
+            let error = parse(quote! {
+                client InvalidApi {
+                    base "https://example.test";
+                    scope transfers() {
+                        path ["transfers"];
+                        GET Invalid() -> #response {
+                            path ["page"];
+                            paginate OffsetPagination {
+                                offset = ep.offset,
+                                page_size = ep.limit
+                            }
+                        }
+                    }
+                }
+            })
+            .err()
+            .expect("incompatible pagination must be rejected");
+            assert_eq!(
+                error.to_string(),
+                "`Stream`, `Bytes`, and `NoContent` response markers cannot declare pagination"
+            );
+        }
     }
 
     #[test]
