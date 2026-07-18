@@ -92,3 +92,23 @@ pub fn duplicate_runtime_configuration_error() -> ClientBuildError {
 pub fn request<E>(core: &ClientCore, endpoint: E) -> crate::Request<E> {
     crate::Request::new(core.clone(), endpoint)
 }
+
+/// Consumes a pending request, maps its endpoint value, and preserves every
+/// generic request-local and runtime field without starting execution.
+#[doc(hidden)]
+#[must_use]
+pub fn map_endpoint<E, F>(request: crate::Request<E>, map: F) -> crate::Request<E>
+where
+    F: FnOnce(E) -> E,
+{
+    let crate::Request {
+        core,
+        endpoint,
+        options,
+    } = request;
+    crate::Request {
+        core,
+        endpoint: map(endpoint),
+        options,
+    }
+}

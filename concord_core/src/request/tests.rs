@@ -143,7 +143,7 @@ async fn request_creation_and_setters_are_side_effect_free_until_first_poll() {
     let core = core(&executor, hooks.clone());
     let request = Request::new(
         core.clone(),
-        bytes_endpoint("team/alpha", Arc::clone(&display_calls)),
+        bytes_endpoint("team-alpha", Arc::clone(&display_calls)),
     )
     .timeout(Duration::from_secs(2))
     .disable_timeout()
@@ -163,7 +163,7 @@ async fn request_creation_and_setters_are_side_effect_free_until_first_poll() {
     assert_eq!(executor.application().request_count().expect("count"), 0);
     assert_eq!(
         prepared.head.logical_url().as_str(),
-        "http://preparation.example.test/v1/accounts/team%2Falpha/bytes"
+        "http://preparation.example.test/v1/accounts/team-alpha/bytes"
     );
     assert_eq!(
         prepared.head.safe_url(),
@@ -249,6 +249,34 @@ async fn request_options_are_local_and_core_clones_share_one_inner_owner() {
     assert_eq!(second.head.timeout(), None);
     assert_eq!(second.head.debug(), DebugLevel::None);
     assert_ne!(first.operation_id, second.operation_id);
+}
+
+#[test]
+fn generated_private_endpoint_mapping_preserves_core_and_request_options() {
+    struct ValueEndpoint(u32);
+
+    let executor = DeterministicExecutor::new();
+    let core = core(&executor, Arc::new(CountingHooks::new()));
+    let request = Request::new(core.clone(), ValueEndpoint(1))
+        .timeout(Duration::from_secs(7))
+        .debug(DebugLevel::Headers);
+    let mapped =
+        crate::__private::map_endpoint(request, |ValueEndpoint(value)| ValueEndpoint(value + 1));
+    let Request {
+        core: mapped_core,
+        endpoint: ValueEndpoint(value),
+        options,
+    } = mapped;
+
+    assert_eq!(value, 2);
+    assert!(core.shares_inner_with(&mapped_core));
+    assert_eq!(
+        options.resolve_timeout(Some(Duration::from_secs(99))),
+        Some(Duration::from_secs(7))
+    );
+    assert_eq!(options.resolve_debug(DebugLevel::None), DebugLevel::Headers);
+    assert_eq!(core.operation_allocations(), 0);
+    assert_eq!(executor.application().request_count().expect("count"), 0);
 }
 
 #[tokio::test]
