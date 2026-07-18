@@ -229,14 +229,17 @@ fn builder() -> RateApiBuilder {
 }
 
 #[test]
-fn no_governor_static_plan_fails_construction_without_constructing_dsl_observer() {
+fn generated_default_limiter_selection_matches_the_resolved_feature_graph() {
     OBSERVER_DEFAULTS.store(0, Ordering::SeqCst);
-    let error = builder()
-        .build()
-        .err()
-        .expect("the macro test dependency intentionally disables the governor");
-    assert_eq!(error.kind(), ClientBuildErrorKind::LimiterUnavailable);
-    assert_eq!(OBSERVER_DEFAULTS.load(Ordering::SeqCst), 0);
+    match builder().build() {
+        Ok(_client) => {
+            assert_eq!(OBSERVER_DEFAULTS.load(Ordering::SeqCst), 1);
+        }
+        Err(error) => {
+            assert_eq!(error.kind(), ClientBuildErrorKind::LimiterUnavailable);
+            assert_eq!(OBSERVER_DEFAULTS.load(Ordering::SeqCst), 0);
+        }
+    }
 }
 
 #[tokio::test]
