@@ -31,7 +31,7 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 - Immutable tested Phase 5 source:
   `c513710c1e6ae2333a58ec481c2b74a4a0529a5f`
 - Complete Phase 5 evidence-state commit:
-  `PENDING_PHASE_5_EVIDENCE_STATE`
+  `a8353a151a35b3ba8a3d8ebd689ad269e7b1d948`
 - Phase 5 evidence anchor: the later documentation-only `docs: anchor phase5 evidence` commit; its
   object identity is intentionally external to its own content
 - Validation/evidence time: `2026-07-18T09:46:11Z`
@@ -46,6 +46,9 @@ report, coverage, evidence, or Program changes. The later evidence-state commit 
 Phase 5 evidence IDs. Its five audit rows temporarily use the non-self-referential pending marker;
 the subsequent documentation-only anchor changes only that marker and the corresponding audit
 commands/identity text. It adds no IDs, changes no classification, and contains no product source.
+
+All five final commit-scoped audit commands pass against
+`a8353a151a35b3ba8a3d8ebd689ad269e7b1d948`.
 
 ## Phase 5 commits
 
