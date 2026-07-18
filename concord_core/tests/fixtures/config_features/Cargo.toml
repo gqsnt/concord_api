@@ -13,6 +13,7 @@ brotli = ["concord_core/brotli"]
 deflate = ["concord_core/deflate"]
 dangerous-custom-retry = ["concord_core/dangerous-custom-retry"]
 json = ["concord_core/json"]
+rate-limit-governor = ["concord_core/rate-limit-governor"]
 
 [dependencies]
 concord_core = { path = "../../..", default-features = false }

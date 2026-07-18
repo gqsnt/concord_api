@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::hooks::{DebugLevel, RuntimeHooks, default_hooks};
+use crate::rate_limit::{RateLimitObserver, RateLimiter};
 
 const MIB: usize = 1_048_576;
 const KIB: usize = 1_024;
@@ -21,6 +22,8 @@ pub(crate) struct RuntimeConfig {
     pub(crate) pagination_identity_limit: NonZeroUsize,
     pub(crate) auth_failure_cooldown_cap: Duration,
     pub(crate) rate_limit_cooldown_cap: Duration,
+    pub(crate) rate_limit_key_limit: usize,
+    pub(crate) rate_limiter: Arc<dyn RateLimiter>,
     pub(crate) hooks: Arc<dyn RuntimeHooks>,
     pub(crate) debug: DebugLevel,
 }
@@ -28,6 +31,7 @@ pub(crate) struct RuntimeConfig {
 /// A consuming builder whose ordinary limits remain positive and finite.
 pub struct RuntimeConfigBuilder {
     config: RuntimeConfig,
+    rate_limiter_explicit: bool,
 }
 
 impl RuntimeConfigBuilder {
@@ -47,9 +51,12 @@ impl RuntimeConfigBuilder {
                 pagination_identity_limit: nonzero_usize(4 * MIB),
                 auth_failure_cooldown_cap: Duration::from_secs(60),
                 rate_limit_cooldown_cap: Duration::from_secs(60),
+                rate_limit_key_limit: KIB,
+                rate_limiter: default_rate_limiter(),
                 hooks: default_hooks(),
                 debug: DebugLevel::None,
             },
+            rate_limiter_explicit: false,
         }
     }
 
@@ -137,6 +144,14 @@ impl RuntimeConfigBuilder {
         self
     }
 
+    /// Replaces the immutable limiter shared by the built client and its clones.
+    #[must_use]
+    pub fn rate_limiter(mut self, limiter: Arc<dyn RateLimiter>) -> Self {
+        self.config.rate_limiter = limiter;
+        self.rate_limiter_explicit = true;
+        self
+    }
+
     /// Sets the positive finite provider request-body limit.
     #[must_use]
     pub fn provider_request_limit(mut self, bytes: NonZeroUsize) -> Self {
@@ -155,6 +170,63 @@ impl RuntimeConfigBuilder {
     pub(crate) fn resolve(self) -> RuntimeConfig {
         self.config
     }
+
+    pub(crate) fn prepare_generated_rate_limits(
+        self,
+        requires_limiter: bool,
+    ) -> Result<Self, crate::error::ClientBuildError> {
+        #[cfg(feature = "rate-limit-governor")]
+        let _ = requires_limiter;
+        #[cfg(not(feature = "rate-limit-governor"))]
+        if requires_limiter && !self.rate_limiter_explicit {
+            return Err(crate::error::ClientBuildError::new(
+                crate::error::ClientBuildErrorKind::LimiterUnavailable,
+            ));
+        }
+        Ok(self)
+    }
+
+    pub(crate) fn prepare_generated_rate_limits_with_observer<O>(
+        self,
+        requires_limiter: bool,
+    ) -> Result<Self, crate::error::ClientBuildError>
+    where
+        O: Default + RateLimitObserver,
+    {
+        if self.rate_limiter_explicit {
+            return Ok(self);
+        }
+        #[cfg(feature = "rate-limit-governor")]
+        {
+            let _ = requires_limiter;
+            let mut builder = self;
+            builder.config.rate_limiter = Arc::new(
+                crate::rate_limit::GovernorRateLimiter::new().observer(Arc::new(O::default())),
+            );
+            Ok(builder)
+        }
+        #[cfg(not(feature = "rate-limit-governor"))]
+        {
+            let _ = std::marker::PhantomData::<O>;
+            if requires_limiter {
+                Err(crate::error::ClientBuildError::new(
+                    crate::error::ClientBuildErrorKind::LimiterUnavailable,
+                ))
+            } else {
+                Ok(self)
+            }
+        }
+    }
+}
+
+#[cfg(feature = "rate-limit-governor")]
+fn default_rate_limiter() -> Arc<dyn RateLimiter> {
+    Arc::new(crate::rate_limit::GovernorRateLimiter::new())
+}
+
+#[cfg(not(feature = "rate-limit-governor"))]
+fn default_rate_limiter() -> Arc<dyn RateLimiter> {
+    crate::rate_limit::fallback_limiter()
 }
 
 fn nonzero_usize(value: usize) -> NonZeroUsize {

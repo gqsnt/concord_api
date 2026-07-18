@@ -215,8 +215,6 @@ mod tests {
     use std::net::Ipv4Addr;
     use std::net::SocketAddr;
     use std::process::Command;
-    #[cfg(feature = "http2")]
-    use std::sync::Arc;
     #[cfg(any(feature = "http2", feature = "dangerous-custom-retry"))]
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
@@ -225,11 +223,7 @@ mod tests {
     use concord_test_support::server::{ResponseScript, ScriptedServer};
     #[cfg(feature = "default-tls")]
     use concord_test_support::tls::TlsServer;
-    #[cfg(feature = "http2")]
-    use h2::Reason;
     use http::Method;
-    #[cfg(feature = "http2")]
-    use tokio::net::TcpListener as TokioTcpListener;
 
     use super::*;
     #[cfg(feature = "default-tls")]
@@ -237,6 +231,8 @@ mod tests {
     use crate::error::{ConfigurationErrorKind, ErrorCategory};
     #[cfg(feature = "default-tls")]
     use crate::http::provider::ProviderRequest;
+    #[cfg(feature = "http2")]
+    use crate::http::test_support::H2RefusedServer;
     use crate::http::{HttpConfigBuilder, SafeProxy};
     use crate::runtime::RuntimeConfigBuilder;
 
@@ -659,78 +655,10 @@ mod tests {
     }
 
     #[cfg(feature = "http2")]
-    struct H2RefusedServer {
-        address: SocketAddr,
-        physical_attempts: Arc<AtomicUsize>,
-        worker: tokio::task::JoinHandle<()>,
-    }
-
-    #[cfg(feature = "http2")]
-    impl H2RefusedServer {
-        async fn start(refusals: usize, expected_attempts: usize) -> Self {
-            let listener = TokioTcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-                .await
-                .expect("HTTP/2 retry listener should bind");
-            let address = listener.local_addr().expect("HTTP/2 address should exist");
-            let physical_attempts = Arc::new(AtomicUsize::new(0));
-            let counter = Arc::clone(&physical_attempts);
-            let worker = tokio::spawn(async move {
-                let (stream, _) = tokio::time::timeout(WAIT, listener.accept())
-                    .await
-                    .expect("HTTP/2 client should connect")
-                    .expect("HTTP/2 accept should succeed");
-                let mut connection = h2::server::handshake(stream)
-                    .await
-                    .expect("HTTP/2 handshake should succeed");
-                while let Some(request) = tokio::time::timeout(WAIT, connection.accept())
-                    .await
-                    .expect("HTTP/2 request should arrive")
-                {
-                    let (_, mut respond) = request.expect("HTTP/2 request should parse");
-                    let attempt = counter.fetch_add(1, Ordering::SeqCst) + 1;
-                    if attempt <= refusals {
-                        respond.send_reset(Reason::REFUSED_STREAM);
-                    } else {
-                        let response = http::Response::builder()
-                            .status(200)
-                            .body(())
-                            .expect("HTTP/2 response should build");
-                        respond
-                            .send_response(response, true)
-                            .expect("HTTP/2 response should send");
-                    }
-                    if attempt >= expected_attempts {
-                        let _ =
-                            tokio::time::timeout(Duration::from_millis(500), connection.accept())
-                                .await;
-                        break;
-                    }
-                }
-            });
-            Self {
-                address,
-                physical_attempts,
-                worker,
-            }
-        }
-
-        fn url(&self) -> String {
-            format!("http://{}/retry", self.address)
-        }
-
-        async fn finish(self) {
-            tokio::time::timeout(WAIT, self.worker)
-                .await
-                .expect("HTTP/2 worker should finish")
-                .expect("HTTP/2 worker should not panic");
-        }
-    }
-
-    #[cfg(feature = "http2")]
     #[tokio::test]
     async fn application_retry_is_off_by_default_at_one_boundary_call() {
         let server = H2RefusedServer::start(1, 1).await;
-        let attempts = Arc::clone(&server.physical_attempts);
+        let attempts = server.physical_attempts();
         let managed = managed(HttpConfigBuilder::new().http2_prior_knowledge());
         let boundary_calls = AtomicUsize::new(0);
         boundary_calls.fetch_add(1, Ordering::SeqCst);
@@ -748,7 +676,7 @@ mod tests {
     #[tokio::test]
     async fn reqwest_default_retry_requires_opt_in_and_stays_inside_boundary() {
         let server = H2RefusedServer::start(1, 2).await;
-        let attempts = Arc::clone(&server.physical_attempts);
+        let attempts = server.physical_attempts();
         let managed = managed(
             HttpConfigBuilder::new()
                 .http2_prior_knowledge()

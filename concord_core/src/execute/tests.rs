@@ -29,6 +29,10 @@ use crate::codec::{
 use crate::error::{ErrorCategory, HookError, StatusBodyState};
 use crate::hooks::{BoxFuture, RuntimeHooks};
 use crate::http::HttpConfigBuilder;
+use crate::rate_limit::{
+    RateLimitError, RateLimitKeyPart, RateLimitPermit, RateLimitRequest, RateLimitResponse,
+    RateLimiter,
+};
 use crate::request::{
     BodyMetadata, BufferedResponse, BytesResponse, CodecBody, EmptyBody, HeadBuilder,
     NoContentResponse, PreparedHead, RequestMeta, StreamResponseHandler,
@@ -494,6 +498,71 @@ impl EndpointSpec for BytesEndpoint {
     }
 }
 
+struct RateLimitedBytesEndpoint {
+    inherited_timeout: Option<Duration>,
+    key: String,
+    capacity: u32,
+    window: Duration,
+}
+
+impl RateLimitedBytesEndpoint {
+    fn new(inherited_timeout: Option<Duration>, key: impl Into<String>) -> Self {
+        Self {
+            inherited_timeout,
+            key: key.into(),
+            capacity: 100,
+            window: Duration::from_secs(1),
+        }
+    }
+
+    #[cfg(feature = "rate-limit-governor")]
+    fn strict(inherited_timeout: Option<Duration>, key: impl Into<String>) -> Self {
+        Self {
+            inherited_timeout,
+            key: key.into(),
+            capacity: 1,
+            window: Duration::from_secs(10),
+        }
+    }
+}
+
+impl EndpointSpec for RateLimitedBytesEndpoint {
+    type Body = EmptyBody;
+    type Response = BytesResponse;
+
+    fn request_meta(&self) -> RequestMeta {
+        RequestMeta::new(ENDPOINT, Method::GET, self.inherited_timeout)
+    }
+
+    fn prepare_head_and_body_metadata(
+        &self,
+        mut builder: HeadBuilder,
+    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+        builder.push_static("health")?;
+        builder.push_static("bytes")?;
+        builder.push_rate_limit_rule(
+            "ExecutionApi::rate_limit::tenant",
+            [RateLimitKeyPart::new("vars.tenant", self.key.clone())],
+            1,
+            [(self.capacity, self.window)],
+        )?;
+        Ok((builder.finish(), EmptyBody::metadata()))
+    }
+
+    fn into_body(self) -> Self::Body {
+        EmptyBody::new()
+    }
+}
+
+#[cfg(feature = "rate-limit-governor")]
+fn strict_rate_limited_bytes_request(
+    core: ClientCore,
+    timeout: Option<Duration>,
+    key: impl Into<String>,
+) -> Request<RateLimitedBytesEndpoint> {
+    Request::new(core, RateLimitedBytesEndpoint::strict(timeout, key))
+}
+
 struct NoContentEndpoint;
 
 impl EndpointSpec for NoContentEndpoint {
@@ -569,6 +638,119 @@ struct ProbeHooks {
     completion_gate: Option<Gate>,
     veto: AtomicBool,
     completion_returned: AtomicUsize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct LimiterRequestRecord {
+    endpoint: &'static str,
+    method: Method,
+    safe_url: String,
+    host: Option<String>,
+    page_index: u32,
+    rule_ids: Vec<String>,
+    key_values: Vec<String>,
+}
+
+struct ProbeRateLimiter {
+    acquisitions: AtomicUsize,
+    observations: AtomicUsize,
+    requests: Mutex<Vec<LimiterRequestRecord>>,
+    trace: Option<Arc<Mutex<Vec<String>>>>,
+    acquire_gate: Option<Gate>,
+    observe_gate: Option<Gate>,
+    response_body_polls: Option<Arc<AtomicUsize>>,
+    fail: bool,
+}
+
+impl ProbeRateLimiter {
+    fn new() -> Self {
+        Self {
+            acquisitions: AtomicUsize::new(0),
+            observations: AtomicUsize::new(0),
+            requests: Mutex::new(Vec::new()),
+            trace: None,
+            acquire_gate: None,
+            observe_gate: None,
+            response_body_polls: None,
+            fail: false,
+        }
+    }
+
+    fn request_records(&self) -> Vec<LimiterRequestRecord> {
+        self.requests.lock().expect("limiter requests").clone()
+    }
+}
+
+impl RateLimiter for ProbeRateLimiter {
+    fn acquire<'a>(
+        &'a self,
+        request: RateLimitRequest<'a>,
+    ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
+        self.acquisitions.fetch_add(1, Ordering::SeqCst);
+        if let Some(trace) = &self.trace {
+            trace
+                .lock()
+                .expect("trace lock")
+                .push("limiter acquire".into());
+        }
+        self.requests
+            .lock()
+            .expect("limiter requests")
+            .push(LimiterRequestRecord {
+                endpoint: request.endpoint,
+                method: request.method.clone(),
+                safe_url: request.safe_url.to_owned(),
+                host: request.host.map(str::to_owned),
+                page_index: request.page_index,
+                rule_ids: request
+                    .plan
+                    .rules()
+                    .iter()
+                    .map(|rule| rule.id().as_str().to_owned())
+                    .collect(),
+                key_values: request
+                    .plan
+                    .rules()
+                    .iter()
+                    .flat_map(|rule| rule.key().parts())
+                    .map(|part| part.value().to_owned())
+                    .collect(),
+            });
+        Box::pin(async move {
+            if let Some(gate) = &self.acquire_gate {
+                gate.wait().await;
+            }
+            if self.fail {
+                Err(RateLimitError::new(
+                    crate::error::RateLimitErrorKind::Acquire,
+                ))
+            } else {
+                Ok(RateLimitPermit::granted())
+            }
+        })
+    }
+
+    fn observe<'a>(&'a self, _response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
+        self.observations.fetch_add(1, Ordering::SeqCst);
+        if let Some(trace) = &self.trace {
+            trace
+                .lock()
+                .expect("trace lock")
+                .push("limiter observe".into());
+        }
+        Box::pin(async move {
+            if let Some(body_polls) = &self.response_body_polls {
+                assert_eq!(
+                    body_polls.load(Ordering::SeqCst),
+                    0,
+                    "response body was polled before limiter observation finished"
+                );
+            }
+            if let Some(gate) = &self.observe_gate {
+                gate.wait().await;
+            }
+        })
+    }
 }
 
 impl ProbeHooks {
@@ -696,6 +878,14 @@ fn bytes_request(core: ClientCore) -> Request<BytesEndpoint> {
     Request::new(core, BytesEndpoint::new(Some(Duration::from_secs(30))))
 }
 
+fn rate_limited_bytes_request(
+    core: ClientCore,
+    timeout: Option<Duration>,
+    key: impl Into<String>,
+) -> Request<RateLimitedBytesEndpoint> {
+    Request::new(core, RateLimitedBytesEndpoint::new(timeout, key))
+}
+
 fn no_content_request(core: ClientCore) -> Request<NoContentEndpoint> {
     Request::new(core, NoContentEndpoint)
 }
@@ -760,6 +950,403 @@ fn completion(
             _ => None,
         })
         .expect("completion record")
+}
+
+#[tokio::test]
+async fn custom_limiter_context_and_response_observation_use_one_ordered_attempt() {
+    const KEY_SENTINEL: &str = "controlled-custom-key-5e8c7f2b";
+    let executor = DeterministicExecutor::new();
+    let body_polls = Arc::new(AtomicUsize::new(0));
+    executor
+        .application()
+        .queue_response(
+            ScriptedResponse::success(Bytes::from_static(b"limited"))
+                .body_poll_counter(Arc::clone(&body_polls)),
+        )
+        .expect("limited response");
+    let trace = Arc::new(Mutex::new(Vec::new()));
+    let hooks = Arc::new(ProbeHooks::traced(Arc::clone(&trace)));
+    let observe_gate = Gate::closed();
+    let limiter = Arc::new(ProbeRateLimiter {
+        trace: Some(Arc::clone(&trace)),
+        observe_gate: Some(observe_gate.clone()),
+        response_body_polls: Some(Arc::clone(&body_polls)),
+        ..ProbeRateLimiter::new()
+    });
+    let configured: Arc<dyn RateLimiter> = limiter.clone();
+    let debug = Arc::new(Mutex::new(Vec::new()));
+    let core = development_core(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new()
+            .rate_limiter(configured)
+            .debug(DebugLevel::Headers),
+    )
+    .with_debug_output(Arc::clone(&debug));
+    let request = rate_limited_bytes_request(core, Some(Duration::from_secs(30)), KEY_SENTINEL);
+    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 0);
+    assert_eq!(executor.application().request_count().expect("count"), 0);
+
+    let task = tokio::spawn(request.into_future());
+    observe_gate.wait_until_reached().await;
+    assert_eq!(body_polls.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        trace.lock().expect("trace").as_slice(),
+        [
+            "before_send",
+            "limiter acquire",
+            "on_response_head",
+            "limiter observe",
+        ]
+    );
+    observe_gate.open();
+    assert_eq!(
+        task.await.expect("request task").expect("limited result"),
+        Bytes::from_static(b"limited")
+    );
+    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 1);
+    assert_eq!(limiter.observations.load(Ordering::SeqCst), 1);
+    let records = limiter.request_records();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].endpoint, ENDPOINT);
+    assert_eq!(records[0].method, Method::GET);
+    assert_eq!(
+        records[0].safe_url,
+        "http://execution.example.test/v1/health/bytes"
+    );
+    assert_eq!(records[0].host.as_deref(), Some("execution.example.test"));
+    assert_eq!(records[0].page_index, 0);
+    assert_eq!(records[0].rule_ids, ["ExecutionApi::rate_limit::tenant"]);
+    assert_eq!(records[0].key_values, [KEY_SENTINEL]);
+    let ordinary_diagnostics = format!(
+        "{}\n{:?}\n{:?}",
+        debug.lock().expect("debug output").join("\n"),
+        hooks.records(),
+        trace.lock().expect("trace"),
+    );
+    assert!(
+        !ordinary_diagnostics.contains(KEY_SENTINEL),
+        "resolved keys are visible only in the controlled custom-limiter capture"
+    );
+}
+
+#[tokio::test]
+async fn limiter_failure_prevents_request_debug_and_native_execution() {
+    const KEY_SENTINEL: &str = "limiter-failure-key-private-73cf9a0d";
+    let executor = DeterministicExecutor::new();
+    let trace = Arc::new(Mutex::new(Vec::new()));
+    let hooks = Arc::new(ProbeHooks::traced(Arc::clone(&trace)));
+    let limiter = Arc::new(ProbeRateLimiter {
+        fail: true,
+        trace: Some(Arc::clone(&trace)),
+        ..ProbeRateLimiter::new()
+    });
+    let configured: Arc<dyn RateLimiter> = limiter.clone();
+    let debug = Arc::new(Mutex::new(Vec::new()));
+    let core = development_core(
+        &executor,
+        hooks,
+        RuntimeConfigBuilder::new()
+            .rate_limiter(configured)
+            .debug(DebugLevel::Headers),
+    )
+    .with_debug_output(Arc::clone(&debug));
+    let error = rate_limited_bytes_request(core, Some(Duration::from_secs(30)), KEY_SENTINEL)
+        .await
+        .expect_err("limiter rejection");
+    assert_eq!(error.category(), ErrorCategory::RateLimit);
+    assert_eq!(
+        error.rate_limit_kind(),
+        Some(crate::error::RateLimitErrorKind::Acquire)
+    );
+    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 1);
+    assert_eq!(limiter.observations.load(Ordering::SeqCst), 0);
+    assert_eq!(executor.application().request_count().expect("count"), 0);
+    let mut source: Option<&(dyn std::error::Error + 'static)> = Some(&error);
+    while let Some(current) = source {
+        assert!(!current.to_string().contains(KEY_SENTINEL));
+        assert!(!format!("{current:?}").contains(KEY_SENTINEL));
+        source = current.source();
+    }
+    assert!(
+        debug
+            .lock()
+            .expect("debug output")
+            .iter()
+            .all(|line| !line.starts_with("request-ready "))
+    );
+    assert_eq!(
+        trace.lock().expect("trace").as_slice(),
+        ["before_send", "limiter acquire", "on_complete"]
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn original_deadline_cancels_limiter_wait_without_native_send() {
+    let executor = DeterministicExecutor::new();
+    let gate = Gate::closed();
+    let hooks = Arc::new(ProbeHooks::new());
+    let limiter = Arc::new(ProbeRateLimiter {
+        acquire_gate: Some(gate.clone()),
+        ..ProbeRateLimiter::new()
+    });
+    let configured: Arc<dyn RateLimiter> = limiter.clone();
+    let core = development_core(
+        &executor,
+        hooks,
+        RuntimeConfigBuilder::new().rate_limiter(configured),
+    );
+    let task = tokio::spawn(
+        rate_limited_bytes_request(core, Some(Duration::from_secs(5)), "limited").into_future(),
+    );
+    gate.wait_until_reached().await;
+    tokio::time::advance(Duration::from_secs(5)).await;
+    let error = task
+        .await
+        .expect("request task")
+        .expect_err("deadline timeout");
+    assert_eq!(error.category(), ErrorCategory::Timeout);
+    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 1);
+    assert_eq!(executor.application().request_count().expect("count"), 0);
+}
+
+#[cfg(feature = "rate-limit-governor")]
+#[tokio::test(start_paused = true)]
+async fn deadline_cancellation_of_governor_wait_consumes_no_quota() {
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_response(ScriptedResponse::success(Bytes::from_static(b"first")))
+        .expect("first response");
+    executor
+        .application()
+        .queue_response(ScriptedResponse::success(Bytes::from_static(
+            b"after timeout",
+        )))
+        .expect("post-timeout response");
+    let core = development_core(
+        &executor,
+        Arc::new(ProbeHooks::new()),
+        RuntimeConfigBuilder::new(),
+    );
+    assert_eq!(
+        strict_rate_limited_bytes_request(
+            core.clone(),
+            Some(Duration::from_secs(30)),
+            "deadline-key",
+        )
+        .await
+        .expect("first reservation"),
+        Bytes::from_static(b"first")
+    );
+
+    let timeout = tokio::spawn(
+        strict_rate_limited_bytes_request(
+            core.clone(),
+            Some(Duration::from_secs(5)),
+            "deadline-key",
+        )
+        .into_future(),
+    );
+    tokio::time::advance(Duration::from_secs(5)).await;
+    assert_eq!(
+        timeout
+            .await
+            .expect("timeout task")
+            .expect_err("governor wait deadline")
+            .category(),
+        ErrorCategory::Timeout
+    );
+    assert_eq!(executor.application().request_count().expect("count"), 1);
+
+    let later = tokio::spawn(
+        strict_rate_limited_bytes_request(core, Some(Duration::from_secs(30)), "deadline-key")
+            .into_future(),
+    );
+    tokio::time::advance(Duration::from_secs(4)).await;
+    tokio::task::yield_now().await;
+    assert_eq!(executor.application().request_count().expect("count"), 1);
+    tokio::time::advance(Duration::from_secs(1)).await;
+    assert_eq!(
+        later.await.expect("later task").expect("later reservation"),
+        Bytes::from_static(b"after timeout")
+    );
+    assert_eq!(executor.application().request_count().expect("count"), 2);
+}
+
+#[tokio::test]
+async fn hook_body_and_key_preparation_failures_perform_no_limiter_work() {
+    let executor = DeterministicExecutor::new();
+    let hooks = Arc::new(ProbeHooks::new());
+    hooks.veto.store(true, Ordering::SeqCst);
+    let limiter = Arc::new(ProbeRateLimiter::new());
+    let configured: Arc<dyn RateLimiter> = limiter.clone();
+    let core = development_core(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new().rate_limiter(configured),
+    );
+    let error = rate_limited_bytes_request(core, Some(Duration::from_secs(30)), "hook-veto-key")
+        .await
+        .expect_err("hook veto");
+    assert_eq!(error.category(), ErrorCategory::Hook);
+    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 0);
+
+    hooks.veto.store(false, Ordering::SeqCst);
+    let core = development_core(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new().rate_limiter(limiter.clone()),
+    );
+    let error = body_request(
+        core,
+        RequestBody::factory(ProbeBodyFactory {
+            content_type_calls: Arc::new(AtomicUsize::new(0)),
+            create_calls: Arc::new(AtomicUsize::new(0)),
+            polls: Arc::new(AtomicUsize::new(0)),
+            fail: true,
+        }),
+    )
+    .await
+    .expect_err("body failure");
+    assert_eq!(error.category(), ErrorCategory::RequestBody);
+    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 0);
+
+    let hook_records_before_key = hooks.records().len();
+    let core = development_core(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new().rate_limiter(limiter.clone()),
+    );
+    let error = rate_limited_bytes_request(core, Some(Duration::from_secs(30)), "x".repeat(1_025))
+        .await
+        .expect_err("key bound");
+    assert_eq!(error.category(), ErrorCategory::Configuration);
+    assert_eq!(
+        error.configuration_kind(),
+        Some(crate::error::ConfigurationErrorKind::InvalidRateLimit)
+    );
+    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        hooks.records().len(),
+        hook_records_before_key + 1,
+        "key rejection occurs before before-send; only completion is added"
+    );
+    assert_eq!(executor.application().request_count().expect("count"), 0);
+}
+
+#[cfg(feature = "rate-limit-governor")]
+#[tokio::test(start_paused = true)]
+async fn final_429_is_unchanged_while_observation_delays_only_the_future_call() {
+    let executor = DeterministicExecutor::new();
+    let mut headers = http::HeaderMap::new();
+    headers.insert(
+        http::header::RETRY_AFTER,
+        http::HeaderValue::from_static("10"),
+    );
+    executor
+        .application()
+        .queue_response(
+            ScriptedResponse::status(
+                StatusCode::TOO_MANY_REQUESTS,
+                Bytes::from_static(b"current 429"),
+            )
+            .headers(headers),
+        )
+        .expect("429 response");
+    executor
+        .application()
+        .queue_response(ScriptedResponse::success(Bytes::from_static(
+            b"future success",
+        )))
+        .expect("future response");
+    let core = development_core(
+        &executor,
+        Arc::new(ProbeHooks::new()),
+        RuntimeConfigBuilder::new().rate_limit_cooldown_cap(Duration::from_secs(5)),
+    );
+
+    let error = bytes_request(core.clone()).await.expect_err("terminal 429");
+    assert_eq!(error.category(), ErrorCategory::HttpStatus);
+    assert_eq!(error.http_status(), Some(StatusCode::TOO_MANY_REQUESTS));
+    assert_eq!(error.retry_after(), Some(Duration::from_secs(5)));
+    assert_eq!(executor.application().request_count().expect("count"), 1);
+
+    let future = tokio::spawn(bytes_request(core).into_future());
+    tokio::task::yield_now().await;
+    assert_eq!(executor.application().request_count().expect("count"), 1);
+    tokio::time::advance(Duration::from_secs(4)).await;
+    tokio::task::yield_now().await;
+    assert_eq!(executor.application().request_count().expect("count"), 1);
+    tokio::time::advance(Duration::from_secs(1)).await;
+    assert_eq!(
+        future.await.expect("future task").expect("future call"),
+        Bytes::from_static(b"future success")
+    );
+    assert_eq!(executor.application().request_count().expect("count"), 2);
+}
+
+#[cfg(not(feature = "rate-limit-governor"))]
+#[tokio::test]
+async fn private_fallback_rejects_a_nonempty_runtime_plan_before_send() {
+    let executor = DeterministicExecutor::new();
+    let core = development_core(
+        &executor,
+        Arc::new(ProbeHooks::new()),
+        RuntimeConfigBuilder::new(),
+    );
+    let error = rate_limited_bytes_request(core, Some(Duration::from_secs(30)), "nonempty")
+        .await
+        .expect_err("fallback must reject a nonempty runtime plan");
+    assert_eq!(error.category(), ErrorCategory::RateLimit);
+    assert_eq!(
+        error.rate_limit_kind(),
+        Some(crate::error::RateLimitErrorKind::InvalidConfiguration)
+    );
+    assert_eq!(executor.application().request_count().expect("count"), 0);
+}
+
+#[cfg(feature = "http2")]
+#[tokio::test]
+async fn hidden_reqwest_retry_does_not_reenter_custom_limiter_or_lifecycle() {
+    let server = crate::http::test_support::H2RefusedServer::start(1, 2).await;
+    let physical_attempts = server.physical_attempts();
+    let hooks = Arc::new(ProbeHooks::new());
+    let limiter = Arc::new(ProbeRateLimiter::new());
+    let configured: Arc<dyn RateLimiter> = limiter.clone();
+    let core = ClientCore::build(
+        &server.base_url(),
+        HttpConfigBuilder::new()
+            .http2_prior_knowledge()
+            .retry_reqwest_default(),
+        RuntimeConfigBuilder::new()
+            .hooks(hooks.clone())
+            .rate_limiter(configured),
+    )
+    .expect("real HTTP/2 core");
+    assert_eq!(
+        bytes_request(core).await.expect("native retry recovery"),
+        Bytes::new()
+    );
+    server.finish().await;
+    assert_eq!(physical_attempts.load(Ordering::SeqCst), 2);
+    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 1);
+    assert_eq!(limiter.observations.load(Ordering::SeqCst), 1);
+    let records = hooks.records();
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| matches!(record, LifecycleRecord::Before { .. }))
+            .count(),
+        1
+    );
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| matches!(record, LifecycleRecord::Response(_, _)))
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]

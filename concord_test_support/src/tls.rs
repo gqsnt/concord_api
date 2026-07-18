@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -138,6 +139,7 @@ impl TlsRequest {
 
 struct Shared {
     requests: Mutex<Vec<TlsRequest>>,
+    statuses: Mutex<VecDeque<u16>>,
     changed: Condvar,
     stop: AtomicBool,
     next_connection: AtomicU64,
@@ -187,6 +189,7 @@ impl TlsServer {
         let address = listener.local_addr()?;
         let shared = Arc::new(Shared {
             requests: Mutex::new(Vec::new()),
+            statuses: Mutex::new(VecDeque::new()),
             changed: Condvar::new(),
             stop: AtomicBool::new(false),
             next_connection: AtomicU64::new(1),
@@ -206,6 +209,22 @@ impl TlsServer {
     #[must_use]
     pub fn url(&self, host: &str, path: &str) -> String {
         format!("https://{host}:{}{}", self.address.port(), path)
+    }
+
+    /// Queues one response status for the next request; an empty queue defaults to `200`.
+    pub fn queue_status(&self, status: u16) -> io::Result<()> {
+        if !(200..=599).contains(&status) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "TLS probe status must be a final HTTP status",
+            ));
+        }
+        self.shared
+            .statuses
+            .lock()
+            .map_err(|_| io::Error::other("TLS response queue mutex poisoned"))?
+            .push_back(status);
+        Ok(())
     }
 
     #[must_use]
@@ -333,10 +352,16 @@ fn handle_tls(tcp: TcpStream, connection_id: u64, config: Arc<ServerConfig>, sha
             requests.push(request);
             shared.changed.notify_all();
         }
-        if stream
-            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: keep-alive\r\n\r\nok")
-            .is_err()
-        {
+        let status = shared
+            .statuses
+            .lock()
+            .expect("TLS response queue mutex poisoned")
+            .pop_front()
+            .unwrap_or(200);
+        let response = format!(
+            "HTTP/1.1 {status} Scripted\r\nContent-Length: 2\r\nConnection: keep-alive\r\n\r\nok"
+        );
+        if stream.write_all(response.as_bytes()).is_err() {
             return;
         }
         if stream.flush().is_err() {

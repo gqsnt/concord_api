@@ -22,6 +22,7 @@ pub struct ApiError {
     pagination_kind: Option<PaginationErrorKind>,
     response: Option<Box<HttpResponseFailure>>,
     authentication_error: Option<Box<crate::auth::AuthError>>,
+    rate_limit_error: Option<Box<crate::rate_limit::RateLimitError>>,
 }
 
 impl ApiError {
@@ -54,6 +55,7 @@ impl ApiError {
             pagination_kind: None,
             response: Some(Box::new(response)),
             authentication_error: None,
+            rate_limit_error: None,
         }
     }
 
@@ -82,6 +84,7 @@ impl ApiError {
             pagination_kind: None,
             response: None,
             authentication_error: None,
+            rate_limit_error: None,
         }
     }
 
@@ -109,6 +112,18 @@ impl ApiError {
         let mut result = Self::classified(endpoint, method, category);
         result.auth_kind = Some(kind);
         result.authentication_error = Some(Box::new(error));
+        result
+    }
+
+    pub(crate) fn rate_limit(
+        endpoint: &'static str,
+        method: Method,
+        error: crate::rate_limit::RateLimitError,
+    ) -> Self {
+        let kind = error.kind();
+        let mut result = Self::classified(endpoint, method, ErrorCategory::RateLimit);
+        result.rate_limit_kind = Some(kind);
+        result.rate_limit_error = Some(Box::new(error));
         result
     }
 
@@ -256,6 +271,13 @@ impl fmt::Display for ApiError {
         {
             write!(formatter, ": {message}")?;
         }
+        if let Some(message) = self
+            .rate_limit_error
+            .as_deref()
+            .and_then(crate::rate_limit::RateLimitError::safe_message)
+        {
+            write!(formatter, ": {message}")?;
+        }
         Ok(())
     }
 }
@@ -273,6 +295,7 @@ impl fmt::Debug for ApiError {
             .field("pagination_kind", &self.pagination_kind)
             .field("http_status", &self.http_status())
             .field("authentication_error", &self.authentication_error)
+            .field("rate_limit_error", &self.rate_limit_error)
             .finish()
     }
 }
@@ -282,6 +305,11 @@ impl Error for ApiError {
         self.authentication_error
             .as_deref()
             .map(|error| error as &(dyn Error + 'static))
+            .or_else(|| {
+                self.rate_limit_error
+                    .as_deref()
+                    .map(|error| error as &(dyn Error + 'static))
+            })
     }
 }
 

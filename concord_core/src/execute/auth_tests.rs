@@ -29,6 +29,10 @@ use crate::hooks::{
 use crate::http::HttpConfigBuilder;
 use crate::http::provider::{ProviderBody, ProviderRequest};
 use crate::operation::OperationId;
+use crate::rate_limit::{
+    RateLimitError, RateLimitKeyPart, RateLimitPermit, RateLimitRequest, RateLimitResponse,
+    RateLimiter,
+};
 use crate::request::{
     BodyMetadata, BodySpec, BytesResponse, EndpointSpec, HeadBuilder, PreparedHead, Request,
     RequestMeta, StreamResponseHandler,
@@ -45,6 +49,7 @@ struct ProtectedEndpoint {
     challenge: ChallengePolicy,
     body: RequestBody,
     query: bool,
+    rate_key: Option<String>,
 }
 
 struct ProtectedStreamEndpoint {
@@ -207,12 +212,13 @@ impl EndpointSpec for DynamicCollisionEndpoint {
 struct FinalizationExpiryToken {
     value: SecretString,
     freshness_checks: Arc<AtomicUsize>,
+    expire_after_preflight: bool,
 }
 
 impl CredentialMaterial for FinalizationExpiryToken {
     fn expires_at(&self) -> Option<Instant> {
-        (self.freshness_checks.fetch_add(1, Ordering::SeqCst) > 0)
-            .then(|| Instant::now() - Duration::from_secs(1))
+        let check = self.freshness_checks.fetch_add(1, Ordering::SeqCst);
+        (self.expire_after_preflight && check > 0).then(|| Instant::now() - Duration::from_secs(1))
     }
 }
 
@@ -224,6 +230,92 @@ impl SecretCredential for FinalizationExpiryToken {
 
 struct FinalizationExpiryEndpoint {
     credential: CredentialRef<FinalizationExpiryToken>,
+}
+
+#[derive(Clone)]
+struct LimiterWaitExpiryToken {
+    value: SecretString,
+    expired: Arc<AtomicBool>,
+}
+
+impl CredentialMaterial for LimiterWaitExpiryToken {
+    fn expires_at(&self) -> Option<Instant> {
+        self.expired
+            .load(Ordering::SeqCst)
+            .then(|| Instant::now() - Duration::from_secs(1))
+    }
+}
+
+impl SecretCredential for LimiterWaitExpiryToken {
+    fn expose_secret(&self) -> &str {
+        self.value.expose_secret()
+    }
+}
+
+struct LimiterWaitExpiryProvider {
+    initial_expired: Arc<AtomicBool>,
+    acquires: Arc<AtomicUsize>,
+    refreshes: Arc<AtomicUsize>,
+}
+
+impl CredentialProvider for LimiterWaitExpiryProvider {
+    type Material = LimiterWaitExpiryToken;
+
+    fn acquire<'a>(
+        &'a self,
+        _context: CredentialRequest<'a>,
+    ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
+        self.acquires.fetch_add(1, Ordering::SeqCst);
+        let expired = Arc::clone(&self.initial_expired);
+        Box::pin(async move {
+            Ok(LimiterWaitExpiryToken {
+                value: SecretString::new(INITIAL),
+                expired,
+            })
+        })
+    }
+
+    fn refresh<'a>(
+        &'a self,
+        _current: &'a Self::Material,
+        context: CredentialRequest<'a>,
+    ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
+        assert_eq!(context.reason, CredentialReason::Expired);
+        self.refreshes.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async {
+            Ok(LimiterWaitExpiryToken {
+                value: SecretString::new(REFRESHED),
+                expired: Arc::new(AtomicBool::new(false)),
+            })
+        })
+    }
+}
+
+struct LimiterWaitExpiryEndpoint {
+    credential: CredentialRef<LimiterWaitExpiryToken>,
+}
+
+impl EndpointSpec for LimiterWaitExpiryEndpoint {
+    type Body = RequestBody;
+    type Response = BytesResponse;
+
+    fn request_meta(&self) -> RequestMeta {
+        RequestMeta::new(ENDPOINT, Method::POST, Some(Duration::from_secs(30)))
+    }
+
+    fn prepare_head_and_body_metadata(
+        &self,
+        mut builder: HeadBuilder,
+    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+        builder.push_static("expiry-refresh")?;
+        builder.push_auth(Auth::bearer(self.credential.clone()))?;
+        let body = RequestBody::bytes(Bytes::new());
+        Ok((builder.finish(), body.metadata(ENDPOINT, &Method::POST)?))
+    }
+
+    fn into_body(self) -> Self::Body {
+        RequestBody::bytes(Bytes::new())
+    }
 }
 
 #[derive(Clone)]
@@ -288,6 +380,12 @@ impl EndpointSpec for FinalizationExpiryEndpoint {
         &self,
         mut builder: HeadBuilder,
     ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+        builder.push_rate_limit_rule(
+            "AuthenticationApi::rate_limit::finalization",
+            std::iter::empty::<RateLimitKeyPart>(),
+            1,
+            [(1, Duration::from_secs(10))],
+        )?;
         builder.push_auth(Auth::bearer(self.credential.clone()))?;
         let body = RequestBody::bytes(Bytes::new());
         Ok((builder.finish(), body.metadata(ENDPOINT, &Method::POST)?))
@@ -317,6 +415,14 @@ impl EndpointSpec for ProtectedEndpoint {
             Auth::bearer(self.credential.clone())
         };
         builder.push_auth(auth.challenge(self.challenge))?;
+        if let Some(rate_key) = &self.rate_key {
+            builder.push_rate_limit_rule(
+                "AuthenticationApi::rate_limit::tenant",
+                [RateLimitKeyPart::new("vars.tenant", rate_key.clone())],
+                1,
+                [(1, Duration::from_secs(1))],
+            )?;
+        }
         Ok((
             builder.finish(),
             self.body.metadata(ENDPOINT, &Method::POST)?,
@@ -469,7 +575,87 @@ struct CountingProvider {
     calls: Arc<AtomicUsize>,
 }
 
+type ObservedSelector = (Arc<SlotSelector<AccessToken>>, Arc<Mutex<Vec<bool>>>);
+
+struct AuthRateLimiter {
+    acquisitions: Arc<AtomicUsize>,
+    observations: Arc<AtomicUsize>,
+    gate: Option<Gate>,
+    failure: bool,
+    observed_selector: Option<ObservedSelector>,
+}
+
+impl AuthRateLimiter {
+    fn counting(acquisitions: &Arc<AtomicUsize>, observations: &Arc<AtomicUsize>) -> Self {
+        Self {
+            acquisitions: Arc::clone(acquisitions),
+            observations: Arc::clone(observations),
+            gate: None,
+            failure: false,
+            observed_selector: None,
+        }
+    }
+
+    fn gated(acquisitions: &Arc<AtomicUsize>, gate: Gate) -> Self {
+        Self {
+            acquisitions: Arc::clone(acquisitions),
+            observations: Arc::new(AtomicUsize::new(0)),
+            gate: Some(gate),
+            failure: false,
+            observed_selector: None,
+        }
+    }
+
+    fn failing(acquisitions: &Arc<AtomicUsize>) -> Self {
+        Self {
+            acquisitions: Arc::clone(acquisitions),
+            observations: Arc::new(AtomicUsize::new(0)),
+            gate: None,
+            failure: true,
+            observed_selector: None,
+        }
+    }
+}
+
+impl RateLimiter for AuthRateLimiter {
+    fn acquire<'a>(
+        &'a self,
+        _request: RateLimitRequest<'a>,
+    ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
+        self.acquisitions.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async move {
+            if let Some(gate) = &self.gate {
+                gate.wait().await;
+            }
+            if self.failure {
+                Err(RateLimitError::with_safe_message(
+                    crate::error::RateLimitErrorKind::Acquire,
+                    "safe application limiter rejection",
+                ))
+            } else {
+                Ok(RateLimitPermit::granted())
+            }
+        })
+    }
+
+    fn observe<'a>(&'a self, _response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
+        self.observations.fetch_add(1, Ordering::SeqCst);
+        if let Some((selector, records)) = &self.observed_selector {
+            records
+                .lock()
+                .expect("limiter observation records")
+                .push(selector.is_set());
+        }
+        Box::pin(async {})
+    }
+}
+
 struct IsolatedHttpProvider;
+
+struct LoopbackHttpProvider {
+    url: url::Url,
+    calls: Arc<AtomicUsize>,
+}
 
 impl CredentialProvider for IsolatedHttpProvider {
     type Material = AccessToken;
@@ -500,6 +686,30 @@ impl CredentialProvider for IsolatedHttpProvider {
                 return Err(AuthError::new(AuthErrorKind::Acquisition));
             }
             Ok(AccessToken::new("application-token-e6cc09dfdf24"))
+        })
+    }
+}
+
+impl CredentialProvider for LoopbackHttpProvider {
+    type Material = AccessToken;
+
+    fn acquire<'a>(
+        &'a self,
+        context: CredentialRequest<'a>,
+    ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async move {
+            let response = context
+                .http
+                .send(ProviderRequest::new(Method::POST, self.url.clone()).header(
+                    http::HeaderName::from_static("x-provider-probe"),
+                    HeaderValue::from_static("isolated-provider-probe"),
+                ))
+                .await?;
+            if response.body() != &Bytes::from_static(b"ok") {
+                return Err(AuthError::new(AuthErrorKind::Acquisition));
+            }
+            Ok(AccessToken::new("real-provider-application-token"))
         })
     }
 }
@@ -554,13 +764,19 @@ fn core(
     executor: &DeterministicExecutor,
     hooks: Arc<AuthHooks>,
 ) -> (ClientCore, Arc<Mutex<Vec<String>>>) {
+    core_with_runtime(executor, hooks, RuntimeConfigBuilder::new())
+}
+
+fn core_with_runtime(
+    executor: &DeterministicExecutor,
+    hooks: Arc<AuthHooks>,
+    runtime: RuntimeConfigBuilder,
+) -> (ClientCore, Arc<Mutex<Vec<String>>>) {
     let output = Arc::new(Mutex::new(Vec::new()));
     let core = ClientCore::build_with_development(
         "https://protected.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
-        RuntimeConfigBuilder::new()
-            .hooks(hooks)
-            .debug(DebugLevel::Headers),
+        runtime.hooks(hooks).debug(DebugLevel::Headers),
         executor,
     )
     .expect("protected development core")
@@ -581,6 +797,7 @@ fn request(
             challenge,
             body,
             query: false,
+            rate_key: None,
         },
     )
 }
@@ -596,6 +813,7 @@ fn query_request(
             challenge: ChallengePolicy::Never,
             body: RequestBody::bytes(Bytes::new()),
             query: true,
+            rate_key: None,
         },
     )
 }
@@ -655,6 +873,133 @@ async fn production_managed_reqwest_inserts_auth_over_real_tls_loopback() {
 }
 
 #[tokio::test]
+async fn real_tls_authentication_recovery_performs_two_visible_limiter_acquisitions() {
+    let server = TlsServer::start().expect("TLS recovery loopback server");
+    server.queue_status(401).expect("challenge status");
+    server.queue_status(200).expect("success status");
+
+    let provider_acquires = Arc::new(AtomicUsize::new(0));
+    let provider_refreshes = Arc::new(AtomicUsize::new(0));
+    let exact_current = Arc::new(AtomicBool::new(false));
+    let selector = SlotSelector::provider(
+        RotatingProvider {
+            acquires: Arc::clone(&provider_acquires),
+            refreshes: Arc::clone(&provider_refreshes),
+            exact_current_seen: Arc::clone(&exact_current),
+        },
+        Duration::ZERO,
+    );
+    let limiter_acquires = Arc::new(AtomicUsize::new(0));
+    let limiter_observations = Arc::new(AtomicUsize::new(0));
+    let limiter: Arc<dyn RateLimiter> = Arc::new(AuthRateLimiter::counting(
+        &limiter_acquires,
+        &limiter_observations,
+    ));
+    let core = ClientCore::build(
+        &server.url("localhost", "/v1/"),
+        HttpConfigBuilder::new()
+            .http1_only()
+            .add_root_certificate_pem(server.certificate_pem()),
+        RuntimeConfigBuilder::new().rate_limiter(limiter),
+    )
+    .expect("managed TLS recovery core");
+
+    let output = request(
+        core,
+        &selector,
+        ChallengePolicy::Unauthorized,
+        RequestBody::bytes(Bytes::new()),
+    )
+    .await
+    .expect("real loopback recovery");
+    assert_eq!(output, Bytes::from_static(b"ok"));
+    server
+        .wait_for_requests(2, Duration::from_secs(2))
+        .expect("both recovery attempts reached TLS loopback");
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[0].header("authorization"),
+        Some("Bearer initial-auth-token-1148c7")
+    );
+    assert_eq!(
+        requests[1].header("authorization"),
+        Some("Bearer refreshed-auth-token-709fe2")
+    );
+    assert_eq!(provider_acquires.load(Ordering::SeqCst), 1);
+    assert_eq!(provider_refreshes.load(Ordering::SeqCst), 1);
+    assert!(exact_current.load(Ordering::SeqCst));
+    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 2);
+    assert_eq!(limiter_observations.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn real_tls_provider_http_remains_outside_application_limiter_lifecycle() {
+    let provider_server = TlsServer::start().expect("TLS provider loopback server");
+    let application_server = TlsServer::start().expect("TLS application loopback server");
+    let provider_calls = Arc::new(AtomicUsize::new(0));
+    let selector = SlotSelector::provider(
+        LoopbackHttpProvider {
+            url: url::Url::parse(&provider_server.url("localhost", "/token"))
+                .expect("provider URL"),
+            calls: Arc::clone(&provider_calls),
+        },
+        Duration::ZERO,
+    );
+    let hooks = Arc::new(AuthHooks::default());
+    let limiter_acquires = Arc::new(AtomicUsize::new(0));
+    let limiter_observations = Arc::new(AtomicUsize::new(0));
+    let limiter: Arc<dyn RateLimiter> = Arc::new(AuthRateLimiter::counting(
+        &limiter_acquires,
+        &limiter_observations,
+    ));
+    let core = ClientCore::build(
+        &application_server.url("localhost", "/v1/"),
+        HttpConfigBuilder::new()
+            .http1_only()
+            .add_root_certificate_pem(application_server.certificate_pem()),
+        RuntimeConfigBuilder::new()
+            .hooks(hooks.clone())
+            .rate_limiter(limiter),
+    )
+    .expect("managed application/provider core");
+
+    assert_eq!(
+        request(
+            core,
+            &selector,
+            ChallengePolicy::Never,
+            RequestBody::bytes(Bytes::new()),
+        )
+        .await
+        .expect("provider-backed real application request"),
+        Bytes::from_static(b"ok")
+    );
+    provider_server
+        .wait_for_requests(1, Duration::from_secs(2))
+        .expect("provider request reached TLS loopback");
+    application_server
+        .wait_for_requests(1, Duration::from_secs(2))
+        .expect("application request reached TLS loopback");
+    assert_eq!(provider_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(provider_server.requests().len(), 1);
+    assert_eq!(
+        provider_server.requests()[0].header("x-provider-probe"),
+        Some("isolated-provider-probe")
+    );
+    assert_eq!(application_server.requests().len(), 1);
+    assert_eq!(
+        application_server.requests()[0].header("authorization"),
+        Some("Bearer real-provider-application-token")
+    );
+    assert_eq!(hooks.before.lock().expect("before hooks").len(), 1);
+    assert_eq!(hooks.response.lock().expect("response hooks").len(), 1);
+    assert_eq!(hooks.completion.lock().expect("completion hooks").len(), 1);
+    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 1);
+    assert_eq!(limiter_observations.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
 async fn refresh_recovery_reuses_identity_reenters_full_attempt_and_keeps_secrets_native() {
     const CHALLENGE_BODY: &[u8] = &[b'x'; 70_000];
     let executor = DeterministicExecutor::new();
@@ -702,7 +1047,17 @@ async fn refresh_recovery_reuses_identity_reenters_full_attempt_and_keeps_secret
     );
     let hooks = Arc::new(AuthHooks::default());
     hooks.observe(Arc::clone(&selector));
-    let (core, debug) = core(&executor, Arc::clone(&hooks));
+    let limiter_acquires = Arc::new(AtomicUsize::new(0));
+    let limiter_observations = Arc::new(AtomicUsize::new(0));
+    let limiter_ready = Arc::new(Mutex::new(Vec::new()));
+    let mut limiter = AuthRateLimiter::counting(&limiter_acquires, &limiter_observations);
+    limiter.observed_selector = Some((Arc::clone(&selector), Arc::clone(&limiter_ready)));
+    let limiter = Arc::new(limiter);
+    let (core, debug) = core_with_runtime(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new().rate_limiter(limiter),
+    );
 
     let response = request(
         core.clone(),
@@ -726,6 +1081,13 @@ async fn refresh_recovery_reuses_identity_reenters_full_attempt_and_keeps_secret
     assert_eq!(core.operation_allocations(), 1);
     assert_eq!(executor.application().request_count().expect("count"), 2);
     assert_eq!(executor.provider().request_count().expect("count"), 0);
+    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 2);
+    assert_eq!(limiter_observations.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        limiter_ready.lock().expect("limiter readiness").as_slice(),
+        [true, true],
+        "limiter observation precedes challenge mutation on the first response"
+    );
     assert_eq!(challenge_body_polls.load(Ordering::SeqCst), 0);
 
     let before = hooks.before.lock().expect("before records").clone();
@@ -908,7 +1270,16 @@ async fn provider_http_data_stays_outside_application_hooks_debug_and_channel() 
         .expect("application response");
     let selector = SlotSelector::provider(IsolatedHttpProvider, Duration::ZERO);
     let hooks = Arc::new(AuthHooks::default());
-    let (core, debug) = core(&executor, Arc::clone(&hooks));
+    let limiter_acquires = Arc::new(AtomicUsize::new(0));
+    let limiter_observations = Arc::new(AtomicUsize::new(0));
+    let (core, debug) = core_with_runtime(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new().rate_limiter(Arc::new(AuthRateLimiter::counting(
+            &limiter_acquires,
+            &limiter_observations,
+        ))),
+    );
     let result = request(
         core,
         &selector,
@@ -923,6 +1294,8 @@ async fn provider_http_data_stays_outside_application_hooks_debug_and_channel() 
     assert_eq!(hooks.completion.lock().expect("completion hooks").len(), 1);
     assert_eq!(executor.provider().request_count().expect("count"), 1);
     assert_eq!(executor.application().request_count().expect("count"), 1);
+    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 1);
+    assert_eq!(limiter_observations.load(Ordering::SeqCst), 1);
 
     let provider_capture = executor.provider().captures().expect("provider captures");
     assert_eq!(provider_capture.len(), 1);
@@ -1433,6 +1806,59 @@ async fn default_never_preserves_static_material_and_query_auth_exists_only_in_n
 }
 
 #[tokio::test]
+async fn oversized_rate_key_precedes_hook_body_credentials_limiter_and_send() {
+    let executor = DeterministicExecutor::new();
+    let provider_calls = Arc::new(AtomicUsize::new(0));
+    let selector = SlotSelector::provider(
+        CountingProvider {
+            calls: Arc::clone(&provider_calls),
+        },
+        Duration::ZERO,
+    );
+    let body_calls = Arc::new(AtomicUsize::new(0));
+    let hooks = Arc::new(AuthHooks::default());
+    let limiter_acquires = Arc::new(AtomicUsize::new(0));
+    let limiter: Arc<dyn RateLimiter> = Arc::new(AuthRateLimiter::counting(
+        &limiter_acquires,
+        &Arc::new(AtomicUsize::new(0)),
+    ));
+    let (core, debug) = core_with_runtime(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new().rate_limiter(limiter),
+    );
+    let error = api_error(
+        Request::new(
+            core,
+            ProtectedEndpoint {
+                credential: CredentialRef::new(selector),
+                challenge: ChallengePolicy::Never,
+                body: RequestBody::factory(ReplayFactory {
+                    calls: Arc::clone(&body_calls),
+                }),
+                query: false,
+                rate_key: Some("k".repeat(1_025)),
+            },
+        )
+        .await,
+    );
+    assert_eq!(error.category(), ErrorCategory::Configuration);
+    assert_eq!(
+        error.configuration_kind(),
+        Some(crate::error::ConfigurationErrorKind::InvalidRateLimit)
+    );
+    assert_eq!(body_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(provider_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 0);
+    assert!(hooks.before.lock().expect("before records").is_empty());
+    assert!(hooks.response.lock().expect("response records").is_empty());
+    assert_eq!(executor.application().request_count().expect("count"), 0);
+    let debug = debug.lock().expect("debug output");
+    assert_eq!(debug.len(), 1);
+    assert!(debug[0].starts_with("completion "));
+}
+
+#[tokio::test]
 async fn body_failure_prevents_provider_debug_and_native_send() {
     let executor = DeterministicExecutor::new();
     let calls = Arc::new(AtomicUsize::new(0));
@@ -1443,7 +1869,16 @@ async fn body_failure_prevents_provider_debug_and_native_send() {
         Duration::ZERO,
     );
     let hooks = Arc::new(AuthHooks::default());
-    let (core, debug) = core(&executor, Arc::clone(&hooks));
+    let limiter_acquires = Arc::new(AtomicUsize::new(0));
+    let limiter = Arc::new(AuthRateLimiter::counting(
+        &limiter_acquires,
+        &Arc::new(AtomicUsize::new(0)),
+    ));
+    let (core, debug) = core_with_runtime(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new().rate_limiter(limiter),
+    );
     let error = api_error(
         request(
             core,
@@ -1455,6 +1890,7 @@ async fn body_failure_prevents_provider_debug_and_native_send() {
     );
     assert_eq!(error.category(), ErrorCategory::RequestBody);
     assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 0);
     assert_eq!(executor.application().request_count().expect("count"), 0);
     let debug = debug.lock().expect("debug output");
     assert_eq!(debug.len(), 1);
@@ -1475,7 +1911,16 @@ async fn complete_plan_preflight_failure_preserves_earlier_acquisition_and_stops
     );
     let second = SlotSelector::endpoint(Duration::ZERO);
     let hooks = Arc::new(AuthHooks::default());
-    let (core, debug) = core(&executor, hooks);
+    let limiter_acquires = Arc::new(AtomicUsize::new(0));
+    let limiter = Arc::new(AuthRateLimiter::counting(
+        &limiter_acquires,
+        &Arc::new(AtomicUsize::new(0)),
+    ));
+    let (core, debug) = core_with_runtime(
+        &executor,
+        hooks,
+        RuntimeConfigBuilder::new().rate_limiter(limiter),
+    );
     let body_calls = Arc::new(AtomicUsize::new(0));
     let endpoint = MultiAuthEndpoint {
         first: CredentialRef::new(Arc::clone(&first)),
@@ -1488,6 +1933,7 @@ async fn complete_plan_preflight_failure_preserves_earlier_acquisition_and_stops
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert!(first.is_set());
     assert_eq!(body_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 0);
     assert_eq!(executor.application().request_count().expect("count"), 0);
     assert!(
         debug
@@ -1496,6 +1942,129 @@ async fn complete_plan_preflight_failure_preserves_earlier_acquisition_and_stops
             .iter()
             .all(|line| !line.starts_with("request-ready "))
     );
+}
+
+#[tokio::test]
+async fn limiter_failure_is_typed_and_prevents_finalization_debug_and_send() {
+    let executor = DeterministicExecutor::new();
+    let selector = SlotSelector::static_value(AccessToken::new(INITIAL), Duration::ZERO);
+    let hooks = Arc::new(AuthHooks::default());
+    let limiter_acquires = Arc::new(AtomicUsize::new(0));
+    let (core, debug) = core_with_runtime(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new()
+            .rate_limiter(Arc::new(AuthRateLimiter::failing(&limiter_acquires))),
+    );
+    let error = api_error(
+        request(
+            core,
+            &selector,
+            ChallengePolicy::Never,
+            RequestBody::bytes(Bytes::new()),
+        )
+        .await,
+    );
+    assert_eq!(error.category(), ErrorCategory::RateLimit);
+    assert_eq!(
+        error.rate_limit_kind(),
+        Some(crate::error::RateLimitErrorKind::Acquire)
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("safe application limiter rejection")
+    );
+    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 1);
+    assert_eq!(executor.application().request_count().expect("count"), 0);
+    assert!(hooks.response.lock().expect("responses").is_empty());
+    assert!(
+        debug
+            .lock()
+            .expect("debug output")
+            .iter()
+            .all(|line| !line.starts_with("request-ready "))
+    );
+}
+
+#[tokio::test]
+async fn clear_during_limiter_wait_prevents_stale_credential_send() {
+    let executor = DeterministicExecutor::new();
+    let selector = SlotSelector::static_value(AccessToken::new(INITIAL), Duration::ZERO);
+    let gate = Gate::closed();
+    let limiter_acquires = Arc::new(AtomicUsize::new(0));
+    let (core, _) = core_with_runtime(
+        &executor,
+        Arc::new(AuthHooks::default()),
+        RuntimeConfigBuilder::new().rate_limiter(Arc::new(AuthRateLimiter::gated(
+            &limiter_acquires,
+            gate.clone(),
+        ))),
+    );
+    let pending_selector = Arc::clone(&selector);
+    let task = tokio::spawn(async move {
+        request(
+            core,
+            &pending_selector,
+            ChallengePolicy::Never,
+            RequestBody::bytes(Bytes::new()),
+        )
+        .await
+    });
+    gate.wait_until_reached().await;
+    selector.clear().expect("clear while limiter waits");
+    gate.open();
+    let error = api_error(task.await.expect("request task"));
+    assert_eq!(error.category(), ErrorCategory::AuthenticationUnavailable);
+    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 1);
+    assert_eq!(executor.application().request_count().expect("count"), 0);
+}
+
+#[tokio::test]
+async fn complete_source_replacement_during_wait_uses_only_the_new_slot() {
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_expected_response(
+            ExpectedRequest::new().header(
+                AUTHORIZATION,
+                HeaderValue::from_static("Bearer newer-auth-token-265f0a"),
+            ),
+            ScriptedResponse::success(Bytes::from_static(b"new slot")),
+        )
+        .expect("new-slot response");
+    let selector = SlotSelector::static_value(AccessToken::new(INITIAL), Duration::ZERO);
+    let gate = Gate::closed();
+    let limiter_acquires = Arc::new(AtomicUsize::new(0));
+    let (core, _) = core_with_runtime(
+        &executor,
+        Arc::new(AuthHooks::default()),
+        RuntimeConfigBuilder::new().rate_limiter(Arc::new(AuthRateLimiter::gated(
+            &limiter_acquires,
+            gate.clone(),
+        ))),
+    );
+    let pending_selector = Arc::clone(&selector);
+    let task = tokio::spawn(async move {
+        request(
+            core,
+            &pending_selector,
+            ChallengePolicy::Never,
+            RequestBody::bytes(Bytes::new()),
+        )
+        .await
+    });
+    gate.wait_until_reached().await;
+    selector
+        .replace_static(AccessToken::new(NEWER))
+        .expect("complete source replacement");
+    gate.open();
+    assert_eq!(
+        task.await.expect("request task").expect("new-slot send"),
+        Bytes::from_static(b"new slot")
+    );
+    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 1);
+    assert_eq!(executor.application().request_count().expect("count"), 1);
 }
 
 #[tokio::test]
@@ -1585,21 +2154,35 @@ async fn finalization_expiration_prevents_native_construction_debug_and_send() {
         FinalizationExpiryToken {
             value: SecretString::new(INITIAL),
             freshness_checks: Arc::clone(&checks),
+            expire_after_preflight: true,
         },
         Duration::ZERO,
     );
-    let (core, debug) = core(&executor, Arc::new(AuthHooks::default()));
-    let error = api_error(
+    let gate = Gate::closed();
+    let limiter_acquires = Arc::new(AtomicUsize::new(0));
+    let (core, debug) = core_with_runtime(
+        &executor,
+        Arc::new(AuthHooks::default()),
+        RuntimeConfigBuilder::new().rate_limiter(Arc::new(AuthRateLimiter::gated(
+            &limiter_acquires,
+            gate.clone(),
+        ))),
+    );
+    let task = tokio::spawn(async move {
         Request::new(
             core,
             FinalizationExpiryEndpoint {
                 credential: CredentialRef::new(selector),
             },
         )
-        .await,
-    );
+        .await
+    });
+    gate.wait_until_reached().await;
+    gate.open();
+    let error = api_error(task.await.expect("request task"));
     assert_eq!(error.category(), ErrorCategory::AuthenticationUnavailable);
     assert!(checks.load(Ordering::SeqCst) >= 2);
+    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 1);
     assert_eq!(executor.application().request_count().expect("count"), 0);
     assert!(
         debug
@@ -1608,6 +2191,127 @@ async fn finalization_expiration_prevents_native_construction_debug_and_send() {
             .iter()
             .all(|line| !line.starts_with("request-ready "))
     );
+}
+
+#[cfg(feature = "rate-limit-governor")]
+#[tokio::test(start_paused = true)]
+async fn reservation_is_retained_after_credential_finalization_failure() {
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_expected_response(
+            ExpectedRequest::new().header(
+                AUTHORIZATION,
+                HeaderValue::from_static("Bearer newer-auth-token-265f0a"),
+            ),
+            ScriptedResponse::success(Bytes::from_static(b"after finalization failure")),
+        )
+        .expect("post-failure response");
+    let (core, _) = core(&executor, Arc::new(AuthHooks::default()));
+    let expiring = SlotSelector::static_value(
+        FinalizationExpiryToken {
+            value: SecretString::new(INITIAL),
+            freshness_checks: Arc::new(AtomicUsize::new(0)),
+            expire_after_preflight: true,
+        },
+        Duration::ZERO,
+    );
+    let error = api_error(
+        Request::new(
+            core.clone(),
+            FinalizationExpiryEndpoint {
+                credential: CredentialRef::new(expiring),
+            },
+        )
+        .await,
+    );
+    assert_eq!(error.category(), ErrorCategory::AuthenticationUnavailable);
+    assert_eq!(executor.application().request_count().expect("count"), 0);
+
+    let stable = SlotSelector::static_value(
+        FinalizationExpiryToken {
+            value: SecretString::new(NEWER),
+            freshness_checks: Arc::new(AtomicUsize::new(0)),
+            expire_after_preflight: false,
+        },
+        Duration::ZERO,
+    );
+    let later = tokio::spawn(async move {
+        Request::new(
+            core,
+            FinalizationExpiryEndpoint {
+                credential: CredentialRef::new(stable),
+            },
+        )
+        .await
+    });
+    tokio::task::yield_now().await;
+    assert_eq!(executor.application().request_count().expect("count"), 0);
+    tokio::time::advance(Duration::from_secs(9)).await;
+    tokio::task::yield_now().await;
+    assert_eq!(executor.application().request_count().expect("count"), 0);
+    tokio::time::advance(Duration::from_secs(1)).await;
+    assert_eq!(
+        later.await.expect("later task").expect("later send"),
+        Bytes::from_static(b"after finalization failure")
+    );
+    assert_eq!(executor.application().request_count().expect("count"), 1);
+}
+
+#[tokio::test]
+async fn expiry_during_limiter_wait_refreshes_at_current_finalization() {
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_expected_response(
+            ExpectedRequest::new().header(
+                AUTHORIZATION,
+                HeaderValue::from_static("Bearer refreshed-auth-token-709fe2"),
+            ),
+            ScriptedResponse::success(Bytes::from_static(b"refreshed after wait")),
+        )
+        .expect("refreshed response");
+    let expired = Arc::new(AtomicBool::new(false));
+    let acquires = Arc::new(AtomicUsize::new(0));
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let selector = SlotSelector::provider(
+        LimiterWaitExpiryProvider {
+            initial_expired: Arc::clone(&expired),
+            acquires: Arc::clone(&acquires),
+            refreshes: Arc::clone(&refreshes),
+        },
+        Duration::ZERO,
+    );
+    let gate = Gate::closed();
+    let limiter_acquires = Arc::new(AtomicUsize::new(0));
+    let (core, _) = core_with_runtime(
+        &executor,
+        Arc::new(AuthHooks::default()),
+        RuntimeConfigBuilder::new().rate_limiter(Arc::new(AuthRateLimiter::gated(
+            &limiter_acquires,
+            gate.clone(),
+        ))),
+    );
+    let task = tokio::spawn(async move {
+        Request::new(
+            core,
+            LimiterWaitExpiryEndpoint {
+                credential: CredentialRef::new(selector),
+            },
+        )
+        .await
+    });
+    gate.wait_until_reached().await;
+    expired.store(true, Ordering::SeqCst);
+    gate.open();
+    assert_eq!(
+        task.await.expect("request task").expect("refreshed send"),
+        Bytes::from_static(b"refreshed after wait")
+    );
+    assert_eq!(acquires.load(Ordering::SeqCst), 1);
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 1);
+    assert_eq!(executor.application().request_count().expect("count"), 1);
 }
 
 #[tokio::test]

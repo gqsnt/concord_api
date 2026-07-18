@@ -1,0 +1,17 @@
+error[E0277]: `RateLimitKey` doesn't implement `Debug`
+ --> tests/ui/fail/rate_limit_key_debug_absent.rs:4:22
+  |
+4 |     let _ = format!("{key:?}");
+  |                      ^^^^^^^ `RateLimitKey` cannot be formatted using `{:?}` because it doesn't implement `Debug`
+  |
+  = help: the trait `Debug` is not implemented for `RateLimitKey`
+  = note: this error originates in the macro `$crate::__export::format_args` which comes from the expansion of the macro `format` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `RateLimitPlan` doesn't implement `Debug`
+ --> tests/ui/fail/rate_limit_key_debug_absent.rs:5:22
+  |
+5 |     let _ = format!("{plan:?}");
+  |                      ^^^^^^^^ `RateLimitPlan` cannot be formatted using `{:?}` because it doesn't implement `Debug`
+  |
+  = help: the trait `Debug` is not implemented for `RateLimitPlan`
+  = note: this error originates in the macro `$crate::__export::format_args` which comes from the expansion of the macro `format` (in Nightly builds, run with -Z macro-backtrace for more info)

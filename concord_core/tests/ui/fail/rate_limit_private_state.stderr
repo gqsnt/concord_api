@@ -1,0 +1,5 @@
+error[E0616]: field `state` of struct `GovernorRateLimiter` is private
+ --> tests/ui/fail/rate_limit_private_state.rs:7:22
+  |
+7 |     let _ = governor.state;
+  |                      ^^^^^ private field

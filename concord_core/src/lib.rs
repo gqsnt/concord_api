@@ -22,6 +22,7 @@ mod generated_contract;
 mod hooks;
 mod http;
 mod operation;
+mod rate_limit;
 mod redaction;
 mod request;
 mod response;

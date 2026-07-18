@@ -1,0 +1,5 @@
+error: a dynamic rate-limit dimension must resolve to a required non-optional scalar value
+ --> tests/ui/fail/phase7_rate_optional_dimension.rs:7:41
+  |
+7 |         rate_limits { tenant { by [vars.tenant]; 1 / 1s; } }
+  |                                         ^^^^^^

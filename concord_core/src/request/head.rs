@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::fmt::Display;
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,6 +12,10 @@ use super::RequestOptions;
 use crate::auth::{Auth, AuthPlan};
 use crate::error::{ApiError, ConfigurationErrorKind};
 use crate::hooks::DebugLevel;
+use crate::rate_limit::{
+    RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPlan, RateLimitRule,
+    RateLimitWindow,
+};
 use crate::redaction::render_safe_url;
 
 /// Static generated metadata required before public-head preparation.
@@ -65,6 +70,7 @@ pub struct HeadBuilder {
     debug: DebugLevel,
     appended_segment: bool,
     auth: AuthPlan,
+    rate_limit_rules: Vec<RateLimitRule>,
 }
 
 impl HeadBuilder {
@@ -90,6 +96,7 @@ impl HeadBuilder {
             public_headers: HeaderMap::new(),
             appended_segment: false,
             auth: AuthPlan::default(),
+            rate_limit_rules: Vec::new(),
         }
     }
 
@@ -106,6 +113,68 @@ impl HeadBuilder {
                     ConfigurationErrorKind::InvalidAuthentication,
                 )
             })
+    }
+
+    /// Appends one generated, structurally validated effective rate-limit rule.
+    #[doc(hidden)]
+    pub fn push_rate_limit_rule<I, W>(
+        &mut self,
+        id: &str,
+        parts: I,
+        cost: u32,
+        windows: W,
+    ) -> Result<(), ApiError>
+    where
+        I: IntoIterator<Item = RateLimitKeyPart>,
+        W: IntoIterator<Item = (u32, Duration)>,
+    {
+        let rule = (|| -> Result<RateLimitRule, RateLimitError> {
+            let id = RateLimitId::new(id)?;
+            let key = RateLimitKey::from_parts(parts)?;
+            let cost = NonZeroU32::new(cost).ok_or_else(|| {
+                RateLimitError::new(crate::error::RateLimitErrorKind::InvalidConfiguration)
+            })?;
+            let windows = windows
+                .into_iter()
+                .map(|(capacity, duration)| {
+                    let capacity = NonZeroU32::new(capacity).ok_or_else(|| {
+                        RateLimitError::new(crate::error::RateLimitErrorKind::InvalidConfiguration)
+                    })?;
+                    RateLimitWindow::new(capacity, duration)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            RateLimitRule::new(id, key, cost, windows)
+        })()
+        .map_err(|error| {
+            drop(error);
+            ApiError::configuration(
+                self.meta.endpoint(),
+                self.meta.method().clone(),
+                ConfigurationErrorKind::InvalidRateLimit,
+            )
+        })?;
+        self.rate_limit_rules.push(rule);
+        Ok(())
+    }
+
+    /// Returns the final logical host for generated rate-key resolution.
+    #[doc(hidden)]
+    pub fn rate_limit_host(&self) -> &str {
+        self.logical_url
+            .host_str()
+            .expect("generated client logical URLs retain a host")
+    }
+
+    /// Returns the stable endpoint identity for generated rate-key resolution.
+    #[doc(hidden)]
+    pub const fn rate_limit_endpoint(&self) -> &'static str {
+        self.meta.endpoint()
+    }
+
+    /// Returns the HTTP method text for generated rate-key resolution.
+    #[doc(hidden)]
+    pub fn rate_limit_method(&self) -> &str {
+        self.meta.method().as_str()
     }
 
     /// Adds one macro-validated static host-prefix label.
@@ -222,6 +291,7 @@ impl HeadBuilder {
             timeout: self.timeout,
             debug: self.debug,
             auth: self.auth,
+            rate_limit_plan: RateLimitPlan::from_rules(self.rate_limit_rules),
         }
     }
 }
@@ -236,6 +306,7 @@ pub struct PreparedHead {
     timeout: Option<Duration>,
     debug: DebugLevel,
     auth: AuthPlan,
+    rate_limit_plan: RateLimitPlan,
 }
 
 impl PreparedHead {
@@ -326,6 +397,23 @@ impl PreparedHead {
 
     pub(crate) const fn auth(&self) -> &AuthPlan {
         &self.auth
+    }
+
+    pub(crate) const fn rate_limit_plan(&self) -> &RateLimitPlan {
+        &self.rate_limit_plan
+    }
+
+    pub(crate) fn validate_rate_limit_key_limit(&self, limit: usize) -> Result<(), ApiError> {
+        self.rate_limit_plan
+            .validate_key_limit(limit)
+            .map_err(|error| {
+                drop(error);
+                ApiError::configuration(
+                    self.endpoint(),
+                    self.method().clone(),
+                    ConfigurationErrorKind::InvalidRateLimit,
+                )
+            })
     }
 }
 

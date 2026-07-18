@@ -16,6 +16,7 @@ pub(crate) struct SourceClient {
     pub(crate) credentials: Option<CredentialsBlock>,
     pub(crate) retry: RetrySelection,
     pub(crate) layer: Layer,
+    pub(crate) rate_limits: Option<RateLimitsBlock>,
     pub(crate) children: Vec<SourceChild>,
 }
 
@@ -81,6 +82,50 @@ pub(crate) struct Layer {
     pub(crate) headers: Option<HeaderOperation>,
     pub(crate) auth: Option<AuthOperation>,
     pub(crate) timeout: Option<TimeoutOperation>,
+    pub(crate) rate_limit: Option<RateLimitOperation>,
+}
+
+#[derive(Clone)]
+pub(crate) struct RateLimitsBlock {
+    pub(crate) templates: Vec<RateLimitTemplate>,
+    pub(crate) observer: Option<Path>,
+}
+
+#[derive(Clone)]
+pub(crate) struct RateLimitTemplate {
+    pub(crate) name: Ident,
+    pub(crate) dimensions: Vec<RateLimitDimension>,
+    pub(crate) cost: u32,
+    pub(crate) windows: Vec<RateLimitWindowLiteral>,
+}
+
+#[derive(Clone)]
+pub(crate) enum RateLimitDimension {
+    Host(Span),
+    Endpoint(Span),
+    Method(Span),
+    Value { namespace: Ident, name: Ident },
+}
+
+#[derive(Clone)]
+pub(crate) struct RateLimitWindowLiteral {
+    pub(crate) capacity: u32,
+    pub(crate) duration: DurationLiteral,
+}
+
+#[derive(Clone)]
+pub(crate) enum RateLimitOperation {
+    Modify {
+        replacement: Option<Ident>,
+        additions: Vec<RateLimitUse>,
+    },
+    Off,
+}
+
+#[derive(Clone)]
+pub(crate) enum RateLimitUse {
+    Named(Ident),
+    Direct(RateLimitTemplate),
 }
 
 #[derive(Clone)]

@@ -10,11 +10,11 @@ use crate::ast::{
 };
 use crate::model::{
     Api, Child, Client, Credential, CredentialSource, Endpoint, NormalizedConfig, ResolvedExpr,
-    Scope, Value, ValueReference, ValueShape,
+    ResolvedRateLimitDimension, Scope, Value, ValueReference, ValueShape,
 };
 use crate::names::{canonical_ident, public_ident, to_snake_case};
 
-const GENERATED_CONTRACT_VERSION: u32 = 7;
+const GENERATED_CONTRACT_VERSION: u32 = 8;
 
 pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
     let clients = api
@@ -38,11 +38,18 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
     let value_summary = value_category_summary(&client.values, "client");
     let retry_summary = retry_summary(&client.retry);
     let credential_summary = credential_summary(client);
+    let rate_summary = if client.requires_limiter {
+        "This client statically declares or attaches rate-limit rules and therefore requires functional or explicit no-op limiter selection."
+    } else if client.rate_observer.is_some() {
+        "This client declares a response-head rate-limit observer but no static rule."
+    } else {
+        "This client declares no rate-limit rule or observer."
+    };
     let client_doc = format!(
-        "Generated Concord client `{client_name}` with one fixed immutable public-value snapshot. {value_summary} {credential_summary} {retry_summary}"
+        "Generated Concord client `{client_name}` with one fixed immutable public-value snapshot. {value_summary} {credential_summary} {retry_summary} {rate_summary}"
     );
     let builder_doc = format!(
-        "Canonical fallible builder for [`{client_name}`]. {value_summary} {credential_summary} Selected client defaults are evaluated once by `build`; overridden defaults are not evaluated. {retry_summary}"
+        "Canonical fallible builder for [`{client_name}`]. {value_summary} {credential_summary} Selected client defaults are evaluated once by `build`; overridden defaults are not evaluated. {retry_summary} {rate_summary}"
     );
     let support_doc = format!("Public generated API modules for [`{client_name}`].");
     let prelude_doc = format!(
@@ -233,6 +240,25 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
             const _: () = __core::__private::assert_multipart_feature();
         )
     });
+    let requires_limiter = client.requires_limiter;
+    let prepare_runtime = client.rate_observer.as_ref().map_or_else(
+        || {
+            quote!(
+                __concord_generated::__core::__private::prepare_generated_rate_limits(
+                    runtime,
+                    #requires_limiter,
+                )?
+            )
+        },
+        |observer| {
+            quote!(
+                __concord_generated::__core::__private::prepare_generated_rate_limits_with_observer::<#observer>(
+                    runtime,
+                    #requires_limiter,
+                )?
+            )
+        },
+    );
 
     let facade_modules = generate_facade_children(client, &client.children, &[], core_path);
     let endpoint_modules = generate_endpoint_children(client, &client.children, &[], core_path);
@@ -435,6 +461,7 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
                     let Some(runtime) = self.__concord_runtime else {
                         unreachable!("generated runtime builder state is internally consistent");
                     };
+                    let runtime = #prepare_runtime;
                     let core = __concord_generated::__core::__private::build_client_core(
                         #base,
                         http,
@@ -1645,6 +1672,7 @@ fn generate_endpoint(
     let query_statements = query_statements(client, scopes, endpoint);
     let header_statements = header_statements(client, scopes, endpoint);
     let auth_statements = auth_statements(client, endpoint, core_path);
+    let rate_limit_statements = rate_limit_statements(client, scopes, endpoint, core_path);
     let where_clause = endpoint_where_clause(client, scopes, endpoint, core_path);
     let extension_trait = generate_request_extension_trait(
         client,
@@ -1732,6 +1760,7 @@ fn generate_endpoint(
                 #query_statements
                 #header_statements
                 #auth_statements
+                #rate_limit_statements
                 let __concord_head = __concord_builder.finish();
                 let __concord_method = #method;
                 let __concord_body_metadata = <Self::Body as #generated_core::__private::BodySpec>::metadata(
@@ -2556,6 +2585,85 @@ fn auth_statements(client: &Client, endpoint: &Endpoint, core_path: &TokenStream
     }
 }
 
+fn rate_limit_statements(
+    client: &Client,
+    scopes: &[&Scope],
+    endpoint: &Endpoint,
+    core_path: &TokenStream,
+) -> TokenStream {
+    let statements = endpoint
+        .config
+        .rate_limits
+        .iter()
+        .map(|rule| {
+            let id = syn::LitStr::new(&rule.id, rule.declared_name.span());
+            let cost = rule.cost;
+            let parts = rule
+                .dimensions
+                .iter()
+                .map(|dimension| match dimension {
+                    ResolvedRateLimitDimension::Host => quote!(
+                        #core_path::__private::RateLimitKeyPart::new(
+                            "host",
+                            __concord_builder.rate_limit_host(),
+                        )
+                    ),
+                    ResolvedRateLimitDimension::Endpoint => quote!(
+                        #core_path::__private::RateLimitKeyPart::new(
+                            "endpoint",
+                            __concord_builder.rate_limit_endpoint(),
+                        )
+                    ),
+                    ResolvedRateLimitDimension::Method => quote!(
+                        #core_path::__private::RateLimitKeyPart::new(
+                            "method",
+                            __concord_builder.rate_limit_method(),
+                        )
+                    ),
+                    ResolvedRateLimitDimension::Value { name, value } => {
+                        let name = syn::LitStr::new(name, rule.declared_name.span());
+                        let access =
+                            resolved_value_access(value.reference, client, scopes, endpoint);
+                        quote!(
+                            #core_path::__private::RateLimitKeyPart::new(
+                                #name,
+                                ::std::format!("{}", #access),
+                            )
+                        )
+                    }
+                })
+                .collect::<Vec<_>>();
+            let parts = if parts.is_empty() {
+                quote!(::std::vec::Vec::<#core_path::__private::RateLimitKeyPart>::new())
+            } else {
+                quote!([#(#parts,)*])
+            };
+            let windows = rule
+                .windows
+                .iter()
+                .map(|window| {
+                    let capacity = window.capacity;
+                    let seconds = window.duration.as_secs();
+                    let nanos = window.duration.subsec_nanos();
+                    quote!((
+                        #capacity,
+                        ::std::time::Duration::new(#seconds, #nanos),
+                    ))
+                })
+                .collect::<Vec<_>>();
+            quote! {
+                __concord_builder.push_rate_limit_rule(
+                    #id,
+                    #parts,
+                    #cost,
+                    [#(#windows,)*],
+                )?;
+            }
+        })
+        .collect::<Vec<_>>();
+    quote!(#(#statements)*)
+}
+
 fn display_argument(
     expression: &ResolvedExpr,
     client: &Client,
@@ -2695,6 +2803,13 @@ fn collect_config_display_types(
     }
     for entry in &config.headers {
         collect_expression_display_types(&entry.value, client, scopes, endpoint, true, output);
+    }
+    for rule in &config.rate_limits {
+        for dimension in &rule.dimensions {
+            if let ResolvedRateLimitDimension::Value { value, .. } = dimension {
+                output.push(resolved_value_type(value.reference, client, scopes, endpoint).clone());
+            }
+        }
     }
 }
 
@@ -3000,8 +3115,23 @@ fn endpoint_configuration_summary(client: &Client, endpoint: &Endpoint) -> Strin
             endpoint.config.auth.len()
         )
     };
+    let rate_limits = if endpoint.config.rate_limits.is_empty() {
+        "The effective rate-limit plan is empty.".to_owned()
+    } else {
+        let names = endpoint
+            .config
+            .rate_limits
+            .iter()
+            .map(|rule| format!("`{}`", canonical_ident(&rule.declared_name)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "The effective rate-limit plan has {} rule(s), in declaration order: {names}. Resolved key values are absent from generated documentation.",
+            endpoint.config.rate_limits.len()
+        )
+    };
     format!(
-        "The normalized public head contains {query_count} public query declaration(s) and {header_count} public header declaration(s). {authentication} {timeout} {}",
+        "The normalized public head contains {query_count} public query declaration(s) and {header_count} public header declaration(s). {authentication} {rate_limits} {timeout} {}",
         retry_summary(&client.retry)
     )
 }

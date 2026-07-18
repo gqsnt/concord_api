@@ -1,0 +1,11 @@
+error[E0451]: field `_private` of struct `RateLimitPermit` is private
+ --> tests/ui/fail/rate_limit_opaque_values.rs:4:31
+  |
+4 |     let _ = RateLimitPermit { _private: () };
+  |                               ^^^^^^^^^^^^ private field
+
+error[E0451]: field `rules` of struct `RateLimitPlan` is private
+ --> tests/ui/fail/rate_limit_opaque_values.rs:5:29
+  |
+5 |     let _ = RateLimitPlan { rules: Box::new([]) };
+  |                             ^^^^^^^^^^^^^^^^^^^ private field

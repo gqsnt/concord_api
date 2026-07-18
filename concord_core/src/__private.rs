@@ -54,6 +54,10 @@ pub use crate::error::{ApiError, ClientBuildError};
 #[doc(hidden)]
 pub use crate::hooks::DebugLevel;
 #[doc(hidden)]
+pub use crate::rate_limit::{
+    RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitRule, RateLimitWindow,
+};
+#[doc(hidden)]
 pub use crate::request::{
     BodyMetadata, BodySpec, BufferedResponse, BytesResponse, CodecBody, EmptyBody, EndpointSpec,
     HeadBuilder, MetadataResponse, NoContentResponse, PreparedBody, PreparedHead, RequestMeta,
@@ -287,6 +291,29 @@ pub fn default_http_config_with_custom_retry<F>(_factory: F) -> crate::http::Htt
 #[must_use]
 pub fn default_runtime_config() -> crate::runtime::RuntimeConfigBuilder {
     crate::runtime::RuntimeConfigBuilder::new()
+}
+
+/// Applies generated static rate-limit requirements without constructing a
+/// custom observer.
+#[doc(hidden)]
+pub fn prepare_generated_rate_limits(
+    runtime: crate::runtime::RuntimeConfigBuilder,
+    requires_limiter: bool,
+) -> Result<crate::runtime::RuntimeConfigBuilder, ClientBuildError> {
+    runtime.prepare_generated_rate_limits(requires_limiter)
+}
+
+/// Applies generated static rate-limit requirements and lazily constructs the
+/// DSL observer only for the generated default governor.
+#[doc(hidden)]
+pub fn prepare_generated_rate_limits_with_observer<O>(
+    runtime: crate::runtime::RuntimeConfigBuilder,
+    requires_limiter: bool,
+) -> Result<crate::runtime::RuntimeConfigBuilder, ClientBuildError>
+where
+    O: Default + crate::rate_limit::RateLimitObserver,
+{
+    runtime.prepare_generated_rate_limits_with_observer::<O>(requires_limiter)
 }
 
 /// Builds one private shared core for generated client storage.

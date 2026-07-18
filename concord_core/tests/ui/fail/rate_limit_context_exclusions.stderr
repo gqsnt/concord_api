@@ -1,0 +1,63 @@
+error[E0609]: no field `body` on type `RateLimitRequest<'_>`
+ --> tests/ui/fail/rate_limit_context_exclusions.rs:4:21
+  |
+4 |     let _ = request.body;
+  |                     ^^^^ unknown field
+  |
+  = note: available fields are: `endpoint`, `method`, `safe_url`, `host`, `page_index`, `plan`
+
+error[E0609]: no field `credentials` on type `RateLimitRequest<'_>`
+ --> tests/ui/fail/rate_limit_context_exclusions.rs:5:21
+  |
+5 |     let _ = request.credentials;
+  |                     ^^^^^^^^^^^ unknown field
+  |
+  = note: available fields are: `endpoint`, `method`, `safe_url`, `host`, `page_index`, `plan`
+
+error[E0609]: no field `headers` on type `RateLimitRequest<'_>`
+ --> tests/ui/fail/rate_limit_context_exclusions.rs:6:21
+  |
+6 |     let _ = request.headers;
+  |                     ^^^^^^^ unknown field
+  |
+  = note: available fields are: `endpoint`, `method`, `safe_url`, `host`, `page_index`, `plan`
+
+error[E0609]: no field `native_url` on type `RateLimitRequest<'_>`
+ --> tests/ui/fail/rate_limit_context_exclusions.rs:7:21
+  |
+7 |     let _ = request.native_url;
+  |                     ^^^^^^^^^^ unknown field
+  |
+  = note: available fields are: `endpoint`, `method`, `safe_url`, `host`, `page_index`, `plan`
+
+error[E0609]: no field `native_request` on type `RateLimitRequest<'_>`
+ --> tests/ui/fail/rate_limit_context_exclusions.rs:8:21
+  |
+8 |     let _ = request.native_request;
+  |                     ^^^^^^^^^^^^^^ unknown field
+  |
+  = note: available fields are: `endpoint`, `method`, `safe_url`, `host`, `page_index`, `plan`
+
+error[E0609]: no field `body` on type `RateLimitResponse<'_>`
+  --> tests/ui/fail/rate_limit_context_exclusions.rs:12:22
+   |
+12 |     let _ = response.body;
+   |                      ^^^^ unknown field
+   |
+   = note: available fields are: `request`, `status`, `headers`
+
+error[E0609]: no field `credentials` on type `RateLimitResponse<'_>`
+  --> tests/ui/fail/rate_limit_context_exclusions.rs:13:22
+   |
+13 |     let _ = response.credentials;
+   |                      ^^^^^^^^^^^ unknown field
+   |
+   = note: available fields are: `request`, `status`, `headers`
+
+error[E0609]: no field `native_response` on type `RateLimitResponse<'_>`
+  --> tests/ui/fail/rate_limit_context_exclusions.rs:14:22
+   |
+14 |     let _ = response.native_response;
+   |                      ^^^^^^^^^^^^^^^ unknown field
+   |
+   = note: available fields are: `request`, `status`, `headers`

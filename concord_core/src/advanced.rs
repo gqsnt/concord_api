@@ -30,6 +30,14 @@ pub use crate::http::provider::{
 };
 pub use crate::http::{HttpConfigBuilder, ProviderRetry, SafeProxy};
 pub use crate::operation::OperationId;
+#[cfg(feature = "rate-limit-governor")]
+pub use crate::rate_limit::GovernorRateLimiter;
+pub use crate::rate_limit::{
+    Cooldown, CooldownScope, DefaultRateLimitObserver, NoopRateLimiter, RateLimitError,
+    RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitObserver, RateLimitPermit, RateLimitPlan,
+    RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimitRule, RateLimitWindow,
+    RateLimiter,
+};
 pub use crate::redaction::{SanitizedHeaderMap, SanitizedHeaderValue, SanitizedHeaders};
 pub use crate::response::{DecodedResponse, ExecutionMeta, NoContent, StreamResponse};
 pub use crate::runtime::RuntimeConfigBuilder;

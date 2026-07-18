@@ -111,3 +111,20 @@ fn credential_references_do_not_expose_mutation() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/fail/phase6_credential_ref_mutation_absent.rs");
 }
+
+#[test]
+fn phase7_rate_limit_diagnostics_are_source_only_and_focused() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/fail/phase7_rate_optional_dimension.rs");
+    cases.compile_fail("tests/ui/fail/phase7_rate_invalid_cost.rs");
+    cases.compile_fail("tests/ui/fail/phase7_rate_off_exclusive.rs");
+    cases.compile_fail("tests/ui/fail/phase7_rate_clause_order.rs");
+    cases.compile_fail("tests/ui/fail/phase7_rate_undefined_attachment.rs");
+    cases.compile_fail("tests/ui/fail/phase7_rate_secret_dimension.rs");
+}
+
+#[test]
+fn phase7_dynamic_dimensions_require_display_without_a_clone_contract() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/fail/phase7_rate_display_required.rs");
+}

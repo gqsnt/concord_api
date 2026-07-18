@@ -12,6 +12,7 @@ use crate::hooks::{
     BeforeSend, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel, ResponseHeadEvent,
 };
 use crate::operation::{OperationDeadline, OperationId};
+use crate::rate_limit::{RateLimitRequest, RateLimitResponse};
 use crate::redaction::SanitizedHeaders;
 use crate::request::{
     BodySpec, EndpointSpec, OperationPreparation, PreparationFailure, PreparedOperation, Request,
@@ -405,7 +406,7 @@ async fn send_attempt(
     recovery_index: u8,
     final_status: &mut Option<StatusCode>,
 ) -> Result<AttemptResponse, ApiError> {
-    acquire_rate_limit_authority(deadline, head).await?;
+    acquire_rate_limit_authority(core, deadline, head).await?;
     let (applied_auth, finalized_auth) = run_auth(
         core,
         deadline,
@@ -466,7 +467,7 @@ async fn send_attempt(
     core.debug_dispatcher(head.debug())
         .response_head(&response_event);
     run_response_head_hook(core, deadline, response_event).await?;
-    observe_rate_limit_response(head, status);
+    observe_rate_limit_response(core, head, status, response.headers()).await;
     Ok(AttemptResponse {
         response,
         applied_auth,
@@ -490,16 +491,55 @@ fn auth_api_error(head: &crate::request::PreparedHead, error: crate::auth::AuthE
     ApiError::authentication(head.endpoint(), head.method().clone(), error)
 }
 
-// Phase 6 owns this explicit lifecycle seam. Phase 7 will replace its no-op
-// implementation with real rate-limit authority without moving auth phases.
 async fn acquire_rate_limit_authority(
+    core: &ClientCore,
     deadline: OperationDeadline,
     head: &crate::request::PreparedHead,
 ) -> Result<(), ApiError> {
-    check_deadline(deadline, head.endpoint(), head.method())
+    check_deadline(deadline, head.endpoint(), head.method())?;
+    let request = RateLimitRequest {
+        endpoint: head.endpoint(),
+        method: head.method(),
+        safe_url: head.safe_url(),
+        host: head.logical_url().host_str(),
+        page_index: 0,
+        plan: head.rate_limit_plan(),
+    };
+    let future = core.rate_limiter().acquire(request);
+    check_deadline(deadline, head.endpoint(), head.method())?;
+    deadline
+        .run(future)
+        .await
+        .map_err(|_| timeout_error(head.endpoint(), head.method()))?
+        .map(|_permit| ())
+        .map_err(|error| ApiError::rate_limit(head.endpoint(), head.method().clone(), error))
 }
 
-fn observe_rate_limit_response(_head: &crate::request::PreparedHead, _status: StatusCode) {}
+async fn observe_rate_limit_response(
+    core: &ClientCore,
+    head: &crate::request::PreparedHead,
+    status: StatusCode,
+    headers: &http::HeaderMap,
+) {
+    let response = RateLimitResponse {
+        request: RateLimitRequest {
+            endpoint: head.endpoint(),
+            method: head.method(),
+            safe_url: head.safe_url(),
+            host: head.logical_url().host_str(),
+            page_index: 0,
+            plan: head.rate_limit_plan(),
+        },
+        status,
+        headers: SanitizedHeaders::new(headers),
+    };
+    crate::rate_limit::observe_with_cooldown_cap(
+        core.rate_limiter(),
+        response,
+        core.rate_limit_cooldown_cap(),
+    )
+    .await;
+}
 
 fn check_deadline(
     deadline: OperationDeadline,

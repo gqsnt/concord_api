@@ -105,6 +105,18 @@ impl ClientCore {
         self.inner.runtime.auth_failure_cooldown_cap
     }
 
+    pub(crate) fn rate_limiter(&self) -> &Arc<dyn crate::rate_limit::RateLimiter> {
+        &self.inner.runtime.rate_limiter
+    }
+
+    pub(crate) fn rate_limit_cooldown_cap(&self) -> std::time::Duration {
+        self.inner.runtime.rate_limit_cooldown_cap
+    }
+
+    pub(crate) fn rate_limit_key_limit(&self) -> usize {
+        self.inner.runtime.rate_limit_key_limit
+    }
+
     pub(crate) fn hooks(&self) -> &Arc<dyn RuntimeHooks> {
         &self.inner.runtime.hooks
     }

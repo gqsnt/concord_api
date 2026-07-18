@@ -119,6 +119,8 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
     for relative in [
         "struct.RenamedApi.html",
         "struct.RenamedApiBuilder.html",
+        "struct.RenamedRateApi.html",
+        "struct.RenamedRateApiBuilder.html",
         "renamed_api/facades/resources/struct.ResourcesFacade.html",
         "renamed_api/credentials/struct.RenamedApiCredentials.html",
         "renamed_api/credentials/struct.ApiKeyCredentialHandle.html",
@@ -127,6 +129,7 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
         "renamed_api/endpoints/resources/struct.StreamUpload.html",
         "renamed_api/endpoints/resources/struct.StreamDownload.html",
         "renamed_api/endpoints/resources/struct.MultipartUpload.html",
+        "renamed_rate_api/endpoints/struct.Read.html",
     ] {
         let path = documentation.join(relative);
         let page = std::fs::read_to_string(&path)
@@ -148,6 +151,7 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
             "Replayability",
             "reqwest",
             "Sealed",
+            "renamed-rate-key-sentinel",
         ] {
             assert!(
                 !page.contains(forbidden),
@@ -201,6 +205,12 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
                     "aggregate framing limits",
                     "scope_value",
                     "body",
+                ],
+                path if path.ends_with("renamed_rate_api/endpoints/struct.Read.html") => &[
+                    "RenamedRateApi::Read",
+                    "GET",
+                    "tenant_quota",
+                    "Resolved key values are absent",
                 ],
                 _ => panic!("unexpected generated endpoint Rustdoc path {relative}"),
             };

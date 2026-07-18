@@ -62,6 +62,21 @@ api! {
     }
 }
 
+api! {
+    client RenamedRateApi {
+        base "http://renamed-rate.example.test";
+        var tenant: String;
+        rate_limits {
+            tenant_quota {
+                by [host, endpoint, vars.tenant];
+                10 / 1m;
+            }
+        }
+        rate_limit tenant_quota;
+        GET Read() -> Bytes;
+    }
+}
+
 use renamed_api::prelude::*;
 
 pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
@@ -110,5 +125,14 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
     let _: runtime::Request<_> = client
         .resources("renamed-scope".to_owned())
         .multipart_upload(multipart);
+    let rate_client = RenamedRateApi::builder()
+        .tenant("renamed-rate-key-sentinel".to_owned())
+        .runtime(|runtime| {
+            runtime.rate_limiter(std::sync::Arc::new(
+                runtime::advanced::NoopRateLimiter::new(),
+            ))
+        })
+        .build()?;
+    let _: runtime::Request<_> = rate_client.read();
     Ok(())
 }

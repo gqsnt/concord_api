@@ -44,6 +44,7 @@ fn feature_gated_configuration_methods_are_present_only_with_their_features() {
         "deflate",
         "dangerous-custom-retry",
         "json",
+        "rate-limit-governor",
     ] {
         let output = check_fixture("presence", Some(feature));
         assert!(
@@ -73,4 +74,21 @@ fn feature_gated_configuration_methods_are_present_only_with_their_features() {
             "absence fixture {bin} omitted {expected:?}\n{diagnostics}"
         );
     }
+
+    let governor = check_fixture("presence_governor", Some("rate-limit-governor"));
+    assert!(
+        governor.status.success(),
+        "governor presence fixture failed\n{}",
+        diagnostics(&governor)
+    );
+    let json_only = check_fixture("absence_governor", Some("json"));
+    let json_only_diagnostics = diagnostics(&json_only);
+    assert!(
+        !json_only.status.success(),
+        "JSON unexpectedly enabled the governor\n{json_only_diagnostics}"
+    );
+    assert!(
+        json_only_diagnostics.contains("GovernorRateLimiter"),
+        "JSON-only governor diagnostic omitted the gated type\n{json_only_diagnostics}"
+    );
 }

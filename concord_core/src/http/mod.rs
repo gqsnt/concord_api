@@ -13,6 +13,8 @@ pub(crate) mod provider;
 mod proxy;
 #[allow(dead_code, reason = "called by the private managed response boundary")]
 mod status;
+#[cfg(all(test, feature = "http2"))]
+pub(crate) mod test_support;
 
 pub use config::{HttpConfigBuilder, ProviderRetry};
 pub use proxy::SafeProxy;

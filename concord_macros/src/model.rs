@@ -24,6 +24,8 @@ pub(crate) struct Client {
     pub(crate) secrets: Vec<Secret>,
     pub(crate) credentials: Vec<Credential>,
     pub(crate) retry: RetrySelection,
+    pub(crate) rate_observer: Option<Path>,
+    pub(crate) requires_limiter: bool,
     #[allow(dead_code, reason = "retained as the normalized client-layer IR root")]
     pub(crate) config: NormalizedConfig,
     pub(crate) children: Vec<Child>,
@@ -162,6 +164,30 @@ pub(crate) struct NormalizedConfig {
     pub(crate) headers: Vec<NormalizedHeader>,
     pub(crate) auth: Vec<NormalizedAuth>,
     pub(crate) timeout: Option<Duration>,
+    pub(crate) rate_limits: Vec<NormalizedRateLimitRule>,
+}
+
+#[derive(Clone)]
+pub(crate) struct NormalizedRateLimitRule {
+    pub(crate) id: String,
+    pub(crate) declared_name: Ident,
+    pub(crate) dimensions: Vec<ResolvedRateLimitDimension>,
+    pub(crate) cost: u32,
+    pub(crate) windows: Vec<NormalizedRateLimitWindow>,
+}
+
+#[derive(Clone)]
+pub(crate) enum ResolvedRateLimitDimension {
+    Host,
+    Endpoint,
+    Method,
+    Value { name: String, value: ResolvedValue },
+}
+
+#[derive(Clone)]
+pub(crate) struct NormalizedRateLimitWindow {
+    pub(crate) capacity: u32,
+    pub(crate) duration: Duration,
 }
 
 #[derive(Clone)]
