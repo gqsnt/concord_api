@@ -29,23 +29,39 @@ evidence_catalog = "docs/conformance/CONFORMANCE_EVIDENCE_0.1.csv"
 
 [validated_state]
 expected_branch = "master"
-latest_validated_phase = "5"
-latest_verdict = "PHASE_5_COMPLETE_WITH_LIMITATIONS"
-source_commit = "c513710c1e6ae2333a58ec481c2b74a4a0529a5f"
-evidence_commit = "afaa2fd091111e5fb9ca3a584ebb415735020907"
-anchor_commit = "856ee0bfb6cbeae433c164e37056d0ffd32341e0"
-phase_report = "docs/conformance/PHASE_5_REPORT.md"
+latest_validated_phase = "6"
+latest_verdict = "PHASE_6_COMPLETE_WITH_LIMITATIONS"
+source_commit = "e4c1cca94962cf0ee6855bab3c252c1caba19202"
+post_source_governance_commit = "c7dfd11906d453de27702a6ff69f7f79a60e4dd9"
+evidence_commit = "PENDING_PHASE_6_EVIDENCE_STATE"
+anchor_commit = "PENDING_PHASE_6_EVIDENCE_ANCHOR"
+anchor_identity_policy = "anchor-object-identity-is-external-to-its-own-content"
+phase_report = "docs/conformance/PHASE_6_REPORT.md"
 normative_status = "Normative Implementation Candidate"
 head_policy = "anchor-must-be-an-ancestor"
+requirement_trace_rows = 195
+requirement_trace_direct_rows = 148
+requirement_trace_partial_rows = 47
+immutable_source_evidence_rows = 192
+source_direct_rows = 146
+source_partial_rows = 46
+requirement_trace_audit_rows = 3
+cross_phase_catalog_audit_rows = 2
+evidence_state_audit_rows = 5
+phase_evidence_rows = 197
+phase_direct_rows = 150
+phase_partial_rows = 47
+catalog_evidence_rows = 968
+coverage_requirement_rows = 504
 
 [active_phase]
-id = "6"
-title = "Authentication"
+id = "7"
+title = "Rate Limiting"
 status = "NOT_STARTED"
 definition_kind = "implementation-program-entry"
 definition_document = "docs/planning/CONCORD_IMPLEMENTATION_PROGRAM_0.2.md"
-definition_heading = "Phase 6 — authentication"
-previous_limitations_owner = "docs/conformance/PHASE_5_REPORT.md"
+definition_heading = "Phase 7 — rate limiting"
+previous_limitations_owner = "docs/conformance/PHASE_6_REPORT.md"
 
 [implementation_agent]
 surface = "Codex external agent through Zed ACP"

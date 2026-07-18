@@ -46,6 +46,10 @@ Verification artifacts:
 - [`conformance/PHASE_0_REPORT.md`](conformance/PHASE_0_REPORT.md)
 - [`conformance/PHASE_1_REPORT.md`](conformance/PHASE_1_REPORT.md)
 - [`conformance/PHASE_2_REPORT.md`](conformance/PHASE_2_REPORT.md)
+- [`conformance/PHASE_3_REPORT.md`](conformance/PHASE_3_REPORT.md)
+- [`conformance/PHASE_4_REPORT.md`](conformance/PHASE_4_REPORT.md)
+- [`conformance/PHASE_5_REPORT.md`](conformance/PHASE_5_REPORT.md)
+- [`conformance/PHASE_6_REPORT.md`](conformance/PHASE_6_REPORT.md)
 - [`REVIEW_RESOLUTION_0.1.md`](REVIEW_RESOLUTION_0.1.md)
 
 Specification governance is review-based: reviewers inspect the normative documents, verify the coverage plan, verify exact executed evidence, and audit the maintained release command. No automated specification checker is authoritative or maintained.
@@ -67,6 +71,15 @@ Delivery and contribution:
 ## Status
 
 The normative documents are `Normative Implementation Candidate`: they are the approved design baseline for implementation, not evidence that a conforming release exists. Architecture and planning documents are `Internal Implementation Candidate`; contributor and decision documents are informative. A release becomes `Normative Release Final` only after actual conformance evidence passes. Any behavior change must follow the Specification Index and update both the coverage plan and, when implemented, actual evidence.
+
+Phase 6 is the current delivered implementation boundary. The one generated request path now
+supports all six credential sources, typed public and generated authentication contracts, bounded
+credential coordination, isolated finite provider HTTP, JSON-owned OAuth2 client credentials,
+native-only authentication materialization, and one bounded recovery attempt. See the
+[`Phase 6 report`](conformance/PHASE_6_REPORT.md) for exact source identity, validation, evidence,
+and limitations. Phase 7 — Rate Limiting is next and remains `NOT_STARTED`; pagination, prepared
+endpoints/final extension certification, positive dangerous raw success, and release completion
+remain assigned to Phases 8-10.
 
 
 ## Review closure

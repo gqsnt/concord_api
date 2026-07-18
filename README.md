@@ -1,21 +1,23 @@
 # Concord
 
 Concord is currently a **Normative Implementation Candidate**. This repository contains the
-approved Concord 0.1 specification and the Rust workspace. Phase 4 is the current delivered
-implementation phase. It extends the generated request path with bounded lazy request streams,
-body factories, inferred replayability, bounded lazy successful response streams, and
-feature-gated request multipart while retaining one managed Reqwest executor.
+approved Concord 0.1 specification and the Rust workspace. Phase 6 is the current delivered
+implementation phase. It extends the one normalized generated request path with all six credential
+sources, typed public and generated authentication contracts, bounded single-flight credential
+state, isolated finite provider HTTP, JSON-owned OAuth2 client credentials, native-only
+authentication materialization, and one source-aware recovery attempt.
 
-This remains a limited vertical DSL subset, not a release candidate. Complete request shaping,
-authentication, rate limiting, pagination, prepared endpoints, positive dangerous raw successful
-responses, and release completion remain deferred. The raw-response Cargo flag is independently
-selectable but its positive API is explicitly owned by Phase 10.
+This is Phase 6, not a release candidate. Rate limiting, pagination, prepared endpoints and final
+extension certification, positive dangerous raw successful responses, and release completion remain
+deferred to Phases 7-10. The private no-op limiter seam used by authentication recovery is not a
+Phase 7 limiter implementation. The raw-response Cargo flag is independently selectable, but its
+positive API remains explicitly owned by Phase 10.
 
 Start with the [documentation overview](docs/README.md) and the
 [normative specification index](docs/normative/00_CONCORD_SPECIFICATION_INDEX_0.1.md). For current
 delivery state, see the
 [implementation program](docs/planning/CONCORD_IMPLEMENTATION_PROGRAM_0.2.md) and the
-[Phase 4 report](docs/conformance/PHASE_4_REPORT.md). The implementation program is the active
+[Phase 6 report](docs/conformance/PHASE_6_REPORT.md). The implementation program is the active
 planning authority for the remaining phase sequence.
 
 Current validation entry points are:
