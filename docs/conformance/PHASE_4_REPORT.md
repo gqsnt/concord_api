@@ -32,8 +32,10 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 - Corrected immutable source/test commit:
   `909021e7b82436bdfdff1e1ffea67f3255e63c77`
 - Corrected validation/evidence time: `2026-07-18T06:54:46Z`
-- Complete corrected evidence-state commit: pending non-self-referential anchor
-- Corrected Phase 4 anchor: the subsequent documentation-only anchor
+- Complete corrected evidence-state commit:
+  `705ea9b453ae7434cf3a2aba7693147eefb8348a`
+- Corrected Phase 4 anchor: this documentation-only `docs: anchor corrected phase4 evidence`
+  commit; its object identity is intentionally external to its own content
 - Rust edition: 2024
 - MSRV exercised: Rust 1.85.0
 - Cargo resolver: 3
@@ -43,9 +45,12 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 The source tree was clean when correction validation began and remained unchanged throughout the
 maintained and focused matrices. Of the 118 source-behavior rows, 116 retain their original tested
 owners and corrected `P4-FEAT-006` plus the sharpened negative `P4-GEN-012` point to the immutable
-correction commit. The complete
-evidence-state commit contains every final evidence ID before a later documentation-only anchor
+correction commit. The complete evidence-state commit contains every final evidence ID before a
+later documentation-only anchor
 records that state as the owner of the five audit rows.
+
+All five final commit-scoped audit commands pass against
+`705ea9b453ae7434cf3a2aba7693147eefb8348a`.
 
 ## Phase 4 commits
 
