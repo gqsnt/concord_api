@@ -29,23 +29,23 @@ evidence_catalog = "docs/conformance/CONFORMANCE_EVIDENCE_0.1.csv"
 
 [validated_state]
 expected_branch = "master"
-latest_validated_phase = "4"
-latest_verdict = "PHASE_4_COMPLETE_WITH_LIMITATIONS"
-source_commit = "909021e7b82436bdfdff1e1ffea67f3255e63c77"
-evidence_commit = "705ea9b453ae7434cf3a2aba7693147eefb8348a"
-anchor_commit = "16cae134e1dc6681bacaa3c80fb37cc0ff8ed6e5"
-phase_report = "docs/conformance/PHASE_4_REPORT.md"
+latest_validated_phase = "5"
+latest_verdict = "PHASE_5_COMPLETE_WITH_LIMITATIONS"
+source_commit = "c513710c1e6ae2333a58ec481c2b74a4a0529a5f"
+evidence_commit = "afaa2fd091111e5fb9ca3a584ebb415735020907"
+anchor_commit = "856ee0bfb6cbeae433c164e37056d0ffd32341e0"
+phase_report = "docs/conformance/PHASE_5_REPORT.md"
 normative_status = "Normative Implementation Candidate"
 head_policy = "anchor-must-be-an-ancestor"
 
 [active_phase]
-id = "5"
-title = "Remaining client, scope, and endpoint values and request shaping"
+id = "6"
+title = "Authentication"
 status = "NOT_STARTED"
 definition_kind = "implementation-program-entry"
 definition_document = "docs/planning/CONCORD_IMPLEMENTATION_PROGRAM_0.2.md"
-definition_heading = "Phase 5 — remaining client/scope/endpoint values and request shaping"
-previous_limitations_owner = "docs/conformance/PHASE_4_REPORT.md"
+definition_heading = "Phase 6 — authentication"
+previous_limitations_owner = "docs/conformance/PHASE_5_REPORT.md"
 
 [implementation_agent]
 surface = "Codex external agent through Zed ACP"
