@@ -250,7 +250,18 @@ Their exact public paths are `concord_core::Request<E>` and
 `Request<E>` owns every request-local input. It does not borrow its facade or client. Wrapper fields
 remain private.
 
-Generic setters update `RequestOptions`; endpoint-specific setters update `E` through generated inherent methods.
+Generic setters are inherent core methods that update `RequestOptions`. Endpoint-specific setters
+are methods of public generated sealed extension traits implemented for the exact
+`Request<GeneratedEndpoint>` type. A generated support-module prelude re-exports every endpoint
+trait under a client- and path-qualified deterministic alias, so one glob import enables all
+endpoint setters for that client without exposing generated-private integration.
+
+Each extension method calls one doc-hidden generated-private core bridge that consumes
+`Request<E>`, maps `E -> E`, and reconstructs the same request while preserving `ClientCore` and
+`RequestOptions`. The bridge neither polls the request nor prepares its head, body, or transport.
+It adds no user-value `Clone` bound and is the only core operation needed by every generated
+endpoint setter. Explicit endpoint values remain local generated types and use inherent setters
+before they enter `Request<E>`.
 
 The wrappers implement `IntoFuture` with a publicly nameable boxed future alias without allocating a
 runtime endpoint descriptor. Generated-private `EndpointSpec`, `BodySpec`, `ResponseHandler`,
@@ -279,6 +290,11 @@ pub trait EndpointSpec: Send + 'static {
 ```
 
 This trait is generated-private, not an application extension.
+
+The endpoint mapping bridge is also generated-private. It is a structural ownership operation on
+the existing pending wrapper, not an executor, endpoint plan, public mutation API, or second request
+wrapper. Generated extension-trait signatures name only the stable `Request<E>` and declared value
+types; they do not name `EndpointSpec`, `ClientCore`, `RequestOptions`, or `__private`.
 
 Borrowed metadata preparation permits route, auth-collision, TLS, content-type ownership, replayability, exact-length, and lower-bound validation before consuming or encoding the body. `into_body(self)` then transfers body ownership exactly once after hook approval.
 

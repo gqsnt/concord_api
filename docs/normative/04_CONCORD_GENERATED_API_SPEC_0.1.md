@@ -50,6 +50,10 @@ A public snake-case support module is generated at the same scope:
 
 ```rust
 pub mod example_api {
+    pub mod prelude {
+        // generated endpoint request extension traits
+    }
+
     pub mod facades {
         // public facade types
     }
@@ -64,7 +68,10 @@ pub mod example_api {
 }
 ```
 
-Nested scopes produce nested modules under `facades` and `endpoints` following the DSL scope path. Generated-private integration items are not placed in these public modules.
+Nested scopes produce nested modules under `facades` and `endpoints` following the DSL scope path.
+The generated `prelude` re-exports the public sealed request extension traits needed for
+endpoint-specific setters. Generated-private integration items are not placed in these public
+modules.
 
 **GEN-TYPE-001 — Concrete client.** A generated client MUST be a concrete type with no public transport or executor generic.
 
@@ -586,6 +593,25 @@ The endpoint method performs no request execution.
 
 ## 9. Endpoint request setters
 
+Endpoint-specific setters on a facade-created request are methods of a generated public sealed
+extension trait implemented only for the exact `concord_core::Request<Endpoint>` type. Application
+code brings every such trait for one generated client into scope with one import:
+
+```rust
+use example_api::prelude::*;
+```
+
+The generated endpoint module may own a locally named `RequestExt` trait. The support prelude
+re-exports each endpoint trait under a deterministic collision-resistant public alias containing
+the client name, complete scope path, endpoint public name or alias, and `RequestExt`. Consequently,
+preludes for several generated clients may be imported together, and endpoints in different scopes
+may use the same setter names without a trait-name collision. The generated trait is sealed so
+downstream crates cannot implement it for another type.
+
+The trait implementation uses one generated-private core operation that consumes the pending
+request, maps its endpoint value, and reconstructs the same `Request<E>` while preserving the client
+core and generic request-local options. It performs no request preparation or execution.
+
 ### 9.1 Optional endpoint value
 
 ```rust
@@ -614,9 +640,13 @@ pub fn reset_limit(
 
 The endpoint default is evaluated once when the pending request is created and retained by that request. `reset_limit()` restores the retained value without re-evaluation.
 
+These endpoint-specific methods are unavailable until their generated trait is in scope. They
+consume and return the exact same `concord_core::Request<E>`, so direct await and every terminal
+supported by `E` remain unchanged.
+
 ### 9.3 Generic request setters
 
-Every request exposes:
+Every request exposes the following inherent core methods without a generated prelude import:
 
 ```rust
 pub fn timeout(
@@ -641,6 +671,9 @@ pub fn debug(
 `timeout` selects the Concord operation deadline defined by the Execution Specification. It is distinct from connection and read timeouts configured through `HttpConfigBuilder`.
 
 Request setters consume and return the request.
+
+Explicit generated endpoint values use inherent optional/defaulted setters before
+`client.request(endpoint)`. They do not require the generated request-extension prelude.
 
 **GEN-REQ-001 — Request-local setters.** Request setters MUST affect only the returned request value.
 
@@ -876,6 +909,8 @@ The macro rejects collisions involving:
 - credential accessors;
 - facade methods;
 - endpoint setters;
+- endpoint request extension trait names;
+- generated-prelude trait aliases;
 - request-wide setters;
 - terminal methods;
 - endpoint-backed acquisition methods;
@@ -901,6 +936,10 @@ debug
 ```
 
 The macro may reserve additional names required by stable public APIs.
+
+Every generated-prelude trait alias is derived deterministically from the client identity, full
+scope path, endpoint public name or alias, and `RequestExt`. Alias generation participates in
+collision validation, including collisions across multiple clients in one macro invocation.
 
 **GEN-NAME-001 — Compile-time collisions.** Generated public name collisions MUST be rejected during macro expansion.
 
@@ -931,6 +970,8 @@ Generated public types and methods include Rustdoc describing:
 - public route shape without resolved values;
 - required arguments;
 - optional/default setters;
+- the generated support-prelude import required by endpoint-specific request setters;
+- the endpoint-specific sealed request extension trait and its exact request type;
 - request body mode;
 - response mode;
 - authentication placement categories without secret values;
@@ -950,6 +991,10 @@ Generated public types and methods include Rustdoc describing:
 - cursor values;
 - custom retry internals;
 - private generated traits or storage types.
+
+The public generated request extension trait and its public prelude alias are supported generated
+API and are documented. Their private seal, the core endpoint mapping operation, endpoint execution
+traits, and private request fields are not rendered.
 
 **GEN-DOC-001 — Public-only documentation.** Generated Rustdoc MUST describe only supported public behavior and APIs.
 

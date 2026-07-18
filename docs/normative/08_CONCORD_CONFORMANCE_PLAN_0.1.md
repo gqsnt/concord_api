@@ -240,6 +240,8 @@ Pass fixtures include:
 - client builder, immediately evaluated `.http`/`.runtime` closures, duplicate-call suppression, same-snapshot cloning, and independent client construction;
 - nested facades;
 - endpoint required/optional/default arguments;
+- endpoint request setters after one generated support-prelude import;
+- simultaneous generated preludes for multiple clients and repeated setter names on distinct typed requests;
 - JSON under feature;
 - text;
 - custom request/response codec;
@@ -289,6 +291,10 @@ Compile-fail fixtures cover:
 - invalid custom pagination factory call or controller contract;
 - missing features;
 - unavailable generated methods;
+- endpoint request setter use without its generated prelude import;
+- downstream implementation of a sealed endpoint request extension trait;
+- an endpoint request extension trait used with the wrong endpoint request type;
+- generated-prelude trait alias collisions;
 - invalid custom trait implementations;
 - private-module imports in supported fixtures.
 
@@ -314,6 +320,9 @@ It exercises:
 - same-snapshot client clones and independent clients with different client values;
 - facades;
 - request setters;
+- endpoint-specific request setters through only `use example_api::prelude::*`;
+- direct await and supported metadata terminals after endpoint-specific setters;
+- simultaneous imports of collision-free preludes from multiple generated clients;
 - direct await type checking;
 - metadata terminal;
 - stream terminal;
@@ -330,6 +339,10 @@ It must not import:
 - internal architecture modules.
 
 **CONF-DOWNSTREAM-001 — Generated public sufficiency.** Normal generated workflows MUST compile downstream without application awareness of generated-private integration types.
+
+The generated-request proof additionally checks that generic timeout/debug methods remain inherent,
+stream requests retain direct await without the metadata terminal, renamed runtime dependencies use
+the same public prelude contract, and no application import from `concord_core::__private` appears.
 
 ## 9. Downstream public extension fixture
 
@@ -809,6 +822,12 @@ Every public Rust example should be one of:
 The complete canonical DSL example must compile in a dedicated fixture.
 
 Generated Rustdoc must build with warnings denied.
+
+Rendered generated Rustdoc must document the support-module prelude import and each public endpoint
+request extension trait/alias while omitting the private seal, core endpoint mapping bridge,
+generated-private endpoint bounds, request fields, and `concord_core::__private`. The rendered
+fixture includes multiple clients, nested scopes, repeated endpoint names, and a renamed core
+dependency.
 
 **CONF-DOC-001 — No uncompiled canonical example.** A canonical example presented as valid MUST have compile evidence.
 

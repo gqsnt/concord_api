@@ -621,3 +621,37 @@ expose generated-private endpoint bounds in stable signatures.
 **Affected requirements:** `API-REQ-001`, `API-REQ-002`, `API-HOOK-007`, `GEN-END-003`,
 `EXEC-DEADLINE-001`, `EXEC-DEADLINE-004`, `EXEC-COMPLETE-001`, `EXEC-COMPLETE-005`,
 `SEC-EXT-001`.
+
+## ADR-042 — Endpoint request setters use generated sealed extension traits
+
+**Status:** Accepted
+
+**Context:** Generated facade methods must return the stable core-owned
+`concord_core::Request<E>`, while optional and defaulted endpoint values require endpoint-specific
+consuming methods whose names are known only in downstream macro expansion. Rust coherence forbids
+downstream inherent implementations for the foreign wrapper, and stable Rust 1.85 does not support
+`self: Request<Self>` as an arbitrary receiver. A generated wrapper would violate the single
+pending-request contract; changing setter syntax or the toolchain would alter approved public
+behavior.
+
+**Decision:** Each endpoint with optional or defaulted request controls generates one public sealed
+extension trait implemented only for `concord_core::Request<ThatEndpoint>`. The client support
+module contains a public `prelude` that re-exports every endpoint trait under a deterministic alias
+containing the client, complete scope path, endpoint public name or alias, and `RequestExt`.
+Applications use one `use example_api::prelude::*;` import. A single doc-hidden core bridge consumes
+a request, maps its endpoint value, and reconstructs the same wrapper while preserving its core and
+generic request options. Explicit endpoint values keep inherent controls, and generic timeout/debug
+setters remain inherent on `Request<E>`.
+
+**Consequences:** The stable wrapper, endpoint ownership seal, response capabilities, direct await,
+and one executor remain unchanged. Multiple client preludes and repeated endpoint names coexist
+without trait-name collisions. Public Rustdoc documents the generated prelude and extension traits
+but hides their seals, the endpoint mapping bridge, and all generated-private core bounds.
+
+**Rejected alternatives:** Downstream inherent implementations; a generated request newtype;
+closure-based or generic-name setters; invisible injected application imports; nightly arbitrary
+self types; a Rust MSRV/toolchain change.
+
+**Affected requirements:** `GEN-END-003`, `GEN-REQ-001`, `GEN-DEFAULT-001`, `GEN-NAME-001`,
+`GEN-NAME-002`, `GEN-DOC-001`, `GEN-DOC-002`, `API-REQ-001`, `API-REQ-002`,
+`CONF-COMPILE-001`, `CONF-COMPILE-003`, `CONF-DOWNSTREAM-001`, `CONF-MSRV-001`.
