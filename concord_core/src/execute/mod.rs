@@ -154,9 +154,11 @@ where
         let output = <E::Response as ExecuteResponse>::handle(ResponseInput {
             response,
             limit: core.response_body_limit(),
+            stream_limit: core.stream_response_limit(),
             deadline,
             endpoint: head.endpoint(),
             method: head.method().clone(),
+            logical_url: head.logical_url().clone(),
         })
         .await?;
         Ok(DecodedResponse::new(
@@ -181,6 +183,7 @@ where
         head.debug(),
         elapsed,
         final_status,
+        E::Response::COMPLETION_OUTCOME,
         result,
     )
     .await
@@ -207,6 +210,7 @@ async fn complete_preparation_failure<E>(
         debug,
         elapsed,
         None,
+        CompletionOutcome::Success,
         Err(error),
     )
     .await
@@ -286,10 +290,11 @@ async fn deliver_completion<T>(
     debug: DebugLevel,
     elapsed: std::time::Duration,
     final_status: Option<StatusCode>,
+    success_outcome: CompletionOutcome,
     result: Result<T, ApiError>,
 ) -> Result<T, ApiError> {
     let outcome = match &result {
-        Ok(_) => CompletionOutcome::Success,
+        Ok(_) => success_outcome,
         Err(error) => CompletionOutcome::from_error_category(error.category()),
     };
     let event = CompletionEvent {

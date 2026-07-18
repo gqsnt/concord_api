@@ -22,5 +22,5 @@ pub use crate::hooks::{
 pub use crate::http::{HttpConfigBuilder, ProviderRetry, SafeProxy};
 pub use crate::operation::OperationId;
 pub use crate::redaction::{SanitizedHeaderMap, SanitizedHeaderValue, SanitizedHeaders};
-pub use crate::response::{DecodedResponse, ExecutionMeta, NoContent};
+pub use crate::response::{DecodedResponse, ExecutionMeta, NoContent, StreamResponse};
 pub use crate::runtime::RuntimeConfigBuilder;

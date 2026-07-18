@@ -21,13 +21,15 @@ use http::{Method, StatusCode};
 
 use super::*;
 use crate::body::{BodyError, BodyFactory, RequestBody, StreamBody};
-use crate::codec::{CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, Text};
+use crate::codec::{
+    CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType, OctetStream, Text,
+};
 use crate::error::{ErrorCategory, HookError, StatusBodyState};
 use crate::hooks::{BoxFuture, RuntimeHooks};
 use crate::http::HttpConfigBuilder;
 use crate::request::{
     BodyMetadata, BufferedResponse, BytesResponse, CodecBody, EmptyBody, HeadBuilder,
-    NoContentResponse, PreparedHead, RequestMeta,
+    NoContentResponse, PreparedHead, RequestMeta, StreamResponseHandler,
 };
 use crate::runtime::RuntimeConfigBuilder;
 
@@ -35,6 +37,56 @@ const ENDPOINT: &str = "ExecutionApi::health::bytes";
 const NO_CONTENT_ENDPOINT: &str = "ExecutionApi::health::ping";
 const CODEC_ENDPOINT: &str = "ExecutionApi::codec::round_trip";
 const BODY_ENDPOINT: &str = "ExecutionApi::body::upload";
+const STREAM_ENDPOINT: &str = "ExecutionApi::stream::download";
+
+struct StreamEndpoint<M> {
+    marker: std::marker::PhantomData<fn() -> M>,
+}
+
+impl<M> StreamEndpoint<M> {
+    fn new() -> Self {
+        Self {
+            marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<M> EndpointSpec for StreamEndpoint<M>
+where
+    M: MediaType,
+{
+    type Body = EmptyBody;
+    type Response = StreamResponseHandler<M>;
+
+    fn request_meta(&self) -> RequestMeta {
+        RequestMeta::new(STREAM_ENDPOINT, Method::GET, Some(Duration::from_secs(30)))
+    }
+
+    fn prepare_head_and_body_metadata(
+        &self,
+        mut builder: HeadBuilder,
+    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+        builder.push_static("stream")?;
+        builder.push_static("download")?;
+        Ok((builder.finish(), EmptyBody::metadata()))
+    }
+
+    fn into_body(self) -> Self::Body {
+        EmptyBody::new()
+    }
+}
+
+struct VendorStream;
+
+impl MediaType for VendorStream {
+    const MEDIA_TYPE: &'static str = "application/vnd.concord.stream; version=1";
+}
+
+struct InvalidStreamMedia;
+
+impl MediaType for InvalidStreamMedia {
+    const MEDIA_TYPE: &'static str = "not-a-media-type";
+}
 
 struct BodyEndpoint {
     body: RequestBody,
@@ -637,6 +689,19 @@ fn body_request(core: ClientCore, body: RequestBody) -> Request<BodyEndpoint> {
     Request::new(core, BodyEndpoint::new(body))
 }
 
+fn stream_request<M>(core: ClientCore) -> Request<StreamEndpoint<M>>
+where
+    M: MediaType,
+{
+    Request::new(core, StreamEndpoint::new())
+}
+
+async fn next_stream_chunk<M>(
+    response: &mut crate::response::StreamResponse<M>,
+) -> Option<Result<Bytes, ApiError>> {
+    std::future::poll_fn(|context| Pin::new(&mut *response).poll_next(context)).await
+}
+
 fn probe_input(value: &'static [u8], calls: &Arc<AtomicUsize>) -> EncoderInput {
     EncoderInput {
         bytes: Bytes::from_static(value),
@@ -1154,6 +1219,395 @@ async fn bytes_reader_and_file_stream_constructors_use_the_same_native_path() {
         .expect("remove stream fixture");
     assert_eq!(file_result.expect("file stream"), b"file-ok"[..]);
     assert_eq!(executor.application().request_count().unwrap(), 3);
+}
+
+fn stream_headers(content_type: &'static str) -> http::HeaderMap {
+    let mut headers = http::HeaderMap::new();
+    headers.insert(
+        http::header::CONTENT_TYPE,
+        http::HeaderValue::from_static(content_type),
+    );
+    headers
+}
+
+fn server_stream_headers(content_type: &str) -> Vec<(String, String)> {
+    vec![("Content-Type".to_owned(), content_type.to_owned())]
+}
+
+#[tokio::test]
+async fn stream_response_carries_metadata_and_completes_once_when_opened() {
+    let executor = DeterministicExecutor::new();
+    let hooks = Arc::new(ProbeHooks::new());
+    let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
+    let mut headers = stream_headers("application/octet-stream");
+    headers.insert(
+        "x-stream-sentinel",
+        http::HeaderValue::from_static("stream-header-secret-c62f"),
+    );
+    executor
+        .application()
+        .queue_response(ScriptedResponse::success("stream-value-secret-8d0a").headers(headers))
+        .expect("stream response script");
+
+    let mut response = stream_request::<OctetStream>(core)
+        .await
+        .expect("stream response");
+    assert_eq!(
+        response.url().as_str(),
+        "http://execution.example.test/v1/stream/download"
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.content_length(), Some(24));
+    assert_eq!(response.metadata().endpoint(), STREAM_ENDPOINT);
+    assert_eq!(response.metadata().method(), Method::GET);
+    assert_eq!(response.metadata().page_index(), 0);
+    assert!(!response.metadata().recovered_authentication());
+    assert_eq!(
+        response.headers()["x-stream-sentinel"],
+        "stream-header-secret-c62f"
+    );
+    let records = hooks.records();
+    assert_eq!(
+        completion(&records).1,
+        CompletionOutcome::StreamOpened,
+        "completion must describe stream creation, not consumption"
+    );
+    assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 1);
+
+    let debug = format!("{response:?}");
+    for forbidden in [
+        "stream-value-secret-8d0a",
+        "stream-header-secret-c62f",
+        "execution.example.test",
+        "/stream/download",
+    ] {
+        assert!(
+            !debug.contains(forbidden),
+            "stream Debug leaked {forbidden}"
+        );
+    }
+    assert_eq!(
+        next_stream_chunk(&mut response)
+            .await
+            .expect("stream chunk")
+            .expect("valid chunk"),
+        b"stream-value-secret-8d0a"[..]
+    );
+    assert!(next_stream_chunk(&mut response).await.is_none());
+    assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn stream_response_known_length_and_media_fail_before_body_polling() {
+    let known_gate = BodyGate::closed();
+    let known_server = ScriptedServer::start([ResponseScript::GatedBodyWithHeaders {
+        status: 200,
+        headers: server_stream_headers("application/octet-stream"),
+        body: b"known-excess-secret-f45c".to_vec(),
+        gate: known_gate.clone(),
+    }])
+    .expect("known stream server");
+    let known_core = real_core(
+        &known_server,
+        Arc::new(ProbeHooks::new()),
+        RuntimeConfigBuilder::new()
+            .stream_response_limit(NonZeroUsize::new(4).expect("positive limit")),
+    );
+    let error = tokio::time::timeout(
+        Duration::from_secs(1),
+        stream_request::<OctetStream>(known_core),
+    )
+    .await
+    .expect("known excess must not await the body")
+    .expect_err("known stream excess");
+    known_gate.release();
+    assert_eq!(error.category(), ErrorCategory::ResponseBody);
+    assert!(!format!("{error:?} {error}").contains("known-excess-secret-f45c"));
+
+    let media_gate = BodyGate::closed();
+    let media_server = ScriptedServer::start([ResponseScript::GatedBodyWithHeaders {
+        status: 200,
+        headers: server_stream_headers("text/plain"),
+        body: b"media-mismatch-secret-18bf".to_vec(),
+        gate: media_gate.clone(),
+    }])
+    .expect("media stream server");
+    let media_core = real_core(
+        &media_server,
+        Arc::new(ProbeHooks::new()),
+        RuntimeConfigBuilder::new(),
+    );
+    let error = tokio::time::timeout(
+        Duration::from_secs(1),
+        stream_request::<OctetStream>(media_core),
+    )
+    .await
+    .expect("media mismatch must not await the body")
+    .expect_err("stream media mismatch");
+    media_gate.release();
+    assert_eq!(error.category(), ErrorCategory::ResponseContract);
+    assert!(!format!("{error:?} {error}").contains("media-mismatch-secret-18bf"));
+}
+
+#[tokio::test]
+async fn invalid_stream_marker_is_rejected_preflight_and_required_parameters_are_enforced() {
+    let invalid_executor = DeterministicExecutor::new();
+    let invalid_hooks = Arc::new(ProbeHooks::new());
+    let invalid_core = development_core(
+        &invalid_executor,
+        Arc::clone(&invalid_hooks),
+        RuntimeConfigBuilder::new(),
+    );
+    let error = stream_request::<InvalidStreamMedia>(invalid_core)
+        .await
+        .expect_err("invalid media marker");
+    assert_eq!(error.category(), ErrorCategory::ResponseContract);
+    assert_eq!(invalid_executor.application().request_count().unwrap(), 0);
+    assert!(invalid_hooks.records().iter().all(|record| !matches!(
+        record,
+        LifecycleRecord::Before { .. } | LifecycleRecord::Response(..)
+    )));
+
+    let executor = DeterministicExecutor::new();
+    let hooks = Arc::new(ProbeHooks::new());
+    let core = development_core(&executor, hooks, RuntimeConfigBuilder::new());
+    executor
+        .application()
+        .queue_response(ScriptedResponse::success("vendor").headers(stream_headers(
+            "application/vnd.concord.stream; charset=utf-8; version=1",
+        )))
+        .expect("valid vendor media");
+    let mut accepted = stream_request::<VendorStream>(core.clone())
+        .await
+        .expect("required media parameter accepted with extras");
+    assert_eq!(
+        next_stream_chunk(&mut accepted)
+            .await
+            .expect("vendor chunk")
+            .expect("vendor chunk success"),
+        b"vendor"[..]
+    );
+
+    executor
+        .application()
+        .queue_response(
+            ScriptedResponse::success("must-not-be-yielded")
+                .headers(stream_headers("application/vnd.concord.stream; version=2")),
+        )
+        .expect("invalid vendor media");
+    let error = stream_request::<VendorStream>(core)
+        .await
+        .expect_err("required media parameter mismatch");
+    assert_eq!(error.category(), ErrorCategory::ResponseContract);
+}
+
+#[tokio::test]
+async fn unknown_stream_is_lazy_and_first_cumulative_excess_chunk_is_withheld() {
+    let lazy_gate = BodyGate::closed();
+    let server = ScriptedServer::start([
+        ResponseScript::GatedChunkedBodyWithHeaders {
+            status: 200,
+            headers: server_stream_headers("application/octet-stream"),
+            chunks: vec![b"ab".to_vec(), b"cd".to_vec()],
+            gate: lazy_gate.clone(),
+        },
+        ResponseScript::Chunked {
+            status: 200,
+            headers: server_stream_headers("application/octet-stream"),
+            chunks: vec![b"abc".to_vec(), b"first-excess-secret-4fa2".to_vec()],
+        },
+    ])
+    .expect("unknown stream server");
+    let hooks = Arc::new(ProbeHooks::new());
+    let core = real_core(
+        &server,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new()
+            .response_body_limit(NonZeroUsize::new(1).expect("positive limit"))
+            .stream_response_limit(NonZeroUsize::new(4).expect("positive limit")),
+    );
+    let mut lazy = tokio::time::timeout(
+        Duration::from_secs(1),
+        stream_request::<OctetStream>(core.clone()),
+    )
+    .await
+    .expect("unknown stream must return before body gate")
+    .expect("lazy stream response");
+    assert_eq!(lazy.content_length(), None);
+    assert_eq!(
+        completion(&hooks.records()).1,
+        CompletionOutcome::StreamOpened
+    );
+    lazy_gate.release();
+    assert_eq!(
+        next_stream_chunk(&mut lazy).await.unwrap().unwrap(),
+        b"ab"[..]
+    );
+    assert_eq!(
+        next_stream_chunk(&mut lazy).await.unwrap().unwrap(),
+        b"cd"[..]
+    );
+    assert!(next_stream_chunk(&mut lazy).await.is_none());
+
+    let mut overflow = stream_request::<OctetStream>(core)
+        .await
+        .expect("overflow stream opens");
+    assert_eq!(
+        next_stream_chunk(&mut overflow).await.unwrap().unwrap(),
+        b"abc"[..]
+    );
+    let error = next_stream_chunk(&mut overflow)
+        .await
+        .expect("overflow result")
+        .expect_err("first excess chunk withheld");
+    assert_eq!(error.category(), ErrorCategory::ResponseBody);
+    assert!(!format!("{error:?} {error}").contains("first-excess-secret-4fa2"));
+    assert!(next_stream_chunk(&mut overflow).await.is_none());
+    assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 2);
+    assert!(
+        hooks
+            .records()
+            .iter()
+            .filter(|record| matches!(record, LifecycleRecord::Complete { .. }))
+            .all(|record| matches!(
+                record,
+                LifecycleRecord::Complete {
+                    outcome: CompletionOutcome::StreamOpened,
+                    ..
+                }
+            ))
+    );
+}
+
+#[cfg(feature = "gzip")]
+#[tokio::test]
+async fn response_stream_limit_counts_reqwest_post_decompression_bytes() {
+    const GZIP_128_X: &[u8] = &[
+        31, 139, 8, 0, 0, 0, 0, 0, 0, 10, 171, 168, 24, 88, 0, 0, 55, 138, 224, 172, 128, 0, 0, 0,
+    ];
+    let server = ScriptedServer::start([ResponseScript::Complete {
+        status: 200,
+        headers: vec![
+            ("Content-Encoding".into(), "gzip".into()),
+            ("Content-Type".into(), "application/octet-stream".into()),
+        ],
+        body: GZIP_128_X.to_vec(),
+    }])
+    .expect("compressed stream server");
+    let core = real_core(
+        &server,
+        Arc::new(ProbeHooks::new()),
+        RuntimeConfigBuilder::new()
+            .stream_response_limit(NonZeroUsize::new(64).expect("positive limit")),
+    );
+    let mut response = stream_request::<OctetStream>(core)
+        .await
+        .expect("compressed stream opens");
+    assert_eq!(response.content_length(), None);
+    let error = next_stream_chunk(&mut response)
+        .await
+        .expect("post-decompression limit result")
+        .expect_err("128 decoded bytes exceed a 64-byte stream limit");
+    assert_eq!(error.category(), ErrorCategory::ResponseBody);
+    assert!(next_stream_chunk(&mut response).await.is_none());
+}
+
+#[tokio::test]
+async fn response_stream_native_failure_is_safe_and_emits_no_second_completion() {
+    let server = ScriptedServer::start([ResponseScript::TruncatedWithHeaders {
+        status: 200,
+        declared_length: 6,
+        prefix: b"short".to_vec(),
+        headers: server_stream_headers("application/octet-stream"),
+    }])
+    .expect("truncated stream server");
+    let hooks = Arc::new(ProbeHooks::new());
+    let core = real_core(&server, Arc::clone(&hooks), RuntimeConfigBuilder::new());
+    let mut response = stream_request::<OctetStream>(core)
+        .await
+        .expect("truncated stream opens after valid head");
+    let mut saw_native_error = None;
+    while let Some(chunk) = next_stream_chunk(&mut response).await {
+        match chunk {
+            Ok(bytes) => assert_eq!(bytes, b"short"[..]),
+            Err(error) => {
+                saw_native_error = Some(error);
+                break;
+            }
+        }
+    }
+    let error = saw_native_error.expect("truncation must become a stream item error");
+    assert_eq!(error.category(), ErrorCategory::ResponseBody);
+    assert!(!format!("{error:?} {error}").contains("short"));
+    assert!(next_stream_chunk(&mut response).await.is_none());
+    assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        completion(&hooks.records()).1,
+        CompletionOutcome::StreamOpened
+    );
+}
+
+#[tokio::test]
+async fn caller_stream_polling_is_outside_operation_deadline_and_drop_is_terminal() {
+    let deadline_gate = BodyGate::closed();
+    let drop_gate = BodyGate::closed();
+    let server = ScriptedServer::start([
+        ResponseScript::GatedChunkedBodyWithHeaders {
+            status: 200,
+            headers: server_stream_headers("application/octet-stream"),
+            chunks: vec![b"after-deadline".to_vec()],
+            gate: deadline_gate.clone(),
+        },
+        ResponseScript::GatedChunkedWithHeaders {
+            status: 200,
+            headers: server_stream_headers("application/octet-stream"),
+            first_chunk: b"first".to_vec(),
+            remaining_chunk: b"must-not-be-observed".to_vec(),
+            gate: drop_gate.clone(),
+        },
+    ])
+    .expect("deadline and drop stream server");
+    let hooks = Arc::new(ProbeHooks::new());
+    let core = real_core(&server, Arc::clone(&hooks), RuntimeConfigBuilder::new());
+    let mut after_deadline = stream_request::<OctetStream>(core.clone())
+        .timeout(Duration::from_millis(100))
+        .await
+        .expect("stream opens inside deadline");
+    tokio::time::sleep(Duration::from_millis(180)).await;
+    deadline_gate.release();
+    assert_eq!(
+        next_stream_chunk(&mut after_deadline)
+            .await
+            .expect("post-deadline chunk")
+            .expect("post-deadline polling is allowed"),
+        b"after-deadline"[..]
+    );
+    assert!(next_stream_chunk(&mut after_deadline).await.is_none());
+
+    let mut dropped = stream_request::<OctetStream>(core)
+        .await
+        .expect("drop stream opens");
+    assert_eq!(
+        next_stream_chunk(&mut dropped).await.unwrap().unwrap(),
+        b"first"[..]
+    );
+    drop(dropped);
+    drop_gate.release();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 2);
+    assert!(
+        hooks
+            .records()
+            .iter()
+            .filter(|record| matches!(record, LifecycleRecord::Complete { .. }))
+            .all(|record| matches!(
+                record,
+                LifecycleRecord::Complete {
+                    outcome: CompletionOutcome::StreamOpened,
+                    ..
+                }
+            ))
+    );
 }
 
 #[tokio::test]

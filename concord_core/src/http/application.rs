@@ -1,9 +1,12 @@
 use std::num::NonZeroUsize;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use bytes::Bytes;
 #[cfg(any(test, feature = "dangerous-dev-tools"))]
 use bytes::BytesMut;
+use futures_core::Stream;
 use http::header::CONTENT_LENGTH;
 use http::{HeaderMap, Method, StatusCode, Version};
 
@@ -60,8 +63,51 @@ impl ApplicationResponse {
         })
     }
 
+    pub(crate) fn into_byte_stream(self) -> ApplicationByteStream {
+        let endpoint = self.endpoint;
+        let method = self.method;
+        Box::pin(ReducedResponseStream {
+            inner: Box::pin(self.native.bytes_stream()),
+            endpoint,
+            method,
+        })
+    }
+
     fn into_native(self) -> reqwest::Response {
         self.native
+    }
+}
+
+pub(crate) type ApplicationByteStream =
+    Pin<Box<dyn Stream<Item = Result<Bytes, ApiError>> + Send + 'static>>;
+
+struct ReducedResponseStream<S> {
+    inner: Pin<Box<S>>,
+    endpoint: &'static str,
+    method: Method,
+}
+
+impl<S> Stream for ReducedResponseStream<S>
+where
+    S: Stream<Item = Result<Bytes, reqwest::Error>>,
+{
+    type Item = Result<Bytes, ApiError>;
+
+    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        match this.inner.as_mut().poll_next(context) {
+            Poll::Ready(Some(Ok(bytes))) => Poll::Ready(Some(Ok(bytes))),
+            Poll::Ready(Some(Err(error))) => {
+                drop(error);
+                Poll::Ready(Some(Err(ApiError::classified(
+                    this.endpoint,
+                    this.method.clone(),
+                    crate::error::ErrorCategory::ResponseBody,
+                ))))
+            }
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 

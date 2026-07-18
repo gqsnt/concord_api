@@ -15,7 +15,7 @@ pub use crate::body::{BodyMetadata, BodySpec, CodecBody, EmptyBody, PreparedBody
 #[doc(hidden)]
 pub use endpoint::{
     BufferedResponse, BytesResponse, EndpointSpec, MetadataResponse, NoContentResponse,
-    ResponseHandler,
+    ResponseHandler, StreamResponseHandler,
 };
 #[doc(hidden)]
 pub use head::{HeadBuilder, PreparedHead, RequestMeta};

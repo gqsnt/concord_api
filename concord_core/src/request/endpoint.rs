@@ -1,8 +1,10 @@
 use std::marker::PhantomData;
 
 use crate::body::{BodyMetadata, BodySpec};
-use crate::codec::DecodeBody;
+use crate::codec::{DecodeBody, MediaType};
 use crate::error::ApiError;
+use crate::hooks::CompletionOutcome;
+use crate::response::StreamResponse;
 
 use super::{HeadBuilder, PreparedHead, RequestMeta};
 
@@ -16,6 +18,14 @@ pub trait ResponseHandler: sealed::Response + Send + Sync + 'static {
     type Output: Send + 'static;
 
     const ACCEPT: Option<&'static str>;
+    const COMPLETION_OUTCOME: CompletionOutcome = CompletionOutcome::Success;
+
+    fn validate_configuration(
+        _endpoint: &'static str,
+        _method: &http::Method,
+    ) -> Result<(), ApiError> {
+        Ok(())
+    }
 }
 
 /// Generated-private capability for successful response modes that support the
@@ -67,6 +77,30 @@ where
 impl<C> sealed::Response for BufferedResponse<C> where C: DecodeBody {}
 
 impl<C> MetadataResponse for BufferedResponse<C> where C: DecodeBody {}
+
+/// Generated-private successful lazy stream response handler marker.
+#[doc(hidden)]
+pub struct StreamResponseHandler<M>(PhantomData<fn() -> M>);
+
+impl<M> ResponseHandler for StreamResponseHandler<M>
+where
+    M: MediaType,
+{
+    type Output = StreamResponse<M>;
+
+    const ACCEPT: Option<&'static str> = Some(M::MEDIA_TYPE);
+    const COMPLETION_OUTCOME: CompletionOutcome = CompletionOutcome::StreamOpened;
+
+    fn validate_configuration(
+        endpoint: &'static str,
+        method: &http::Method,
+    ) -> Result<(), ApiError> {
+        let _ = crate::response::validate_stream_media_marker::<M>(endpoint, method)?;
+        Ok(())
+    }
+}
+
+impl<M> sealed::Response for StreamResponseHandler<M> where M: MediaType {}
 
 /// Generated-private bridge from one concrete endpoint value into core.
 #[doc(hidden)]

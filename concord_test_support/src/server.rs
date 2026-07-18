@@ -51,6 +51,12 @@ pub enum ResponseScript {
         declared_length: usize,
         prefix: Vec<u8>,
     },
+    TruncatedWithHeaders {
+        status: u16,
+        declared_length: usize,
+        prefix: Vec<u8>,
+        headers: Vec<(String, String)>,
+    },
     DelayBeforeHeaders {
         delay: Duration,
         status: u16,
@@ -61,10 +67,29 @@ pub enum ResponseScript {
         body: Vec<u8>,
         gate: BodyGate,
     },
+    GatedBodyWithHeaders {
+        status: u16,
+        headers: Vec<(String, String)>,
+        body: Vec<u8>,
+        gate: BodyGate,
+    },
     GatedChunked {
         status: u16,
         first_chunk: Vec<u8>,
         remaining_chunk: Vec<u8>,
+        gate: BodyGate,
+    },
+    GatedChunkedWithHeaders {
+        status: u16,
+        headers: Vec<(String, String)>,
+        first_chunk: Vec<u8>,
+        remaining_chunk: Vec<u8>,
+        gate: BodyGate,
+    },
+    GatedChunkedBodyWithHeaders {
+        status: u16,
+        headers: Vec<(String, String)>,
+        chunks: Vec<Vec<u8>>,
         gate: BodyGate,
     },
     CloseWithoutResponse,
@@ -416,6 +441,17 @@ fn write_response(stream: &mut TcpStream, script: ResponseScript) -> io::Result<
             stream.flush()?;
             stream.shutdown(Shutdown::Both)
         }
+        ResponseScript::TruncatedWithHeaders {
+            status,
+            declared_length,
+            prefix,
+            headers,
+        } => {
+            write_head(stream, status, &headers, Some(declared_length), false)?;
+            stream.write_all(&prefix)?;
+            stream.flush()?;
+            stream.shutdown(Shutdown::Both)
+        }
         ResponseScript::DelayBeforeHeaders {
             delay,
             status,
@@ -428,6 +464,21 @@ fn write_response(stream: &mut TcpStream, script: ResponseScript) -> io::Result<
         }
         ResponseScript::GatedBody { status, body, gate } => {
             write_head(stream, status, &[], Some(body.len()), false)?;
+            stream.flush()?;
+            if gate.wait() {
+                stream.write_all(&body)?;
+                stream.flush()
+            } else {
+                stream.shutdown(Shutdown::Both)
+            }
+        }
+        ResponseScript::GatedBodyWithHeaders {
+            status,
+            headers,
+            body,
+            gate,
+        } => {
+            write_head(stream, status, &headers, Some(body.len()), false)?;
             stream.flush()?;
             if gate.wait() {
                 stream.write_all(&body)?;
@@ -451,6 +502,47 @@ fn write_response(stream: &mut TcpStream, script: ResponseScript) -> io::Result<
                 write!(stream, "{:X}\r\n", remaining_chunk.len())?;
                 stream.write_all(&remaining_chunk)?;
                 stream.write_all(b"\r\n0\r\n\r\n")?;
+                stream.flush()
+            } else {
+                stream.shutdown(Shutdown::Both)
+            }
+        }
+        ResponseScript::GatedChunkedWithHeaders {
+            status,
+            headers,
+            first_chunk,
+            remaining_chunk,
+            gate,
+        } => {
+            write_head(stream, status, &headers, None, true)?;
+            write!(stream, "{:X}\r\n", first_chunk.len())?;
+            stream.write_all(&first_chunk)?;
+            stream.write_all(b"\r\n")?;
+            stream.flush()?;
+            if gate.wait() {
+                write!(stream, "{:X}\r\n", remaining_chunk.len())?;
+                stream.write_all(&remaining_chunk)?;
+                stream.write_all(b"\r\n0\r\n\r\n")?;
+                stream.flush()
+            } else {
+                stream.shutdown(Shutdown::Both)
+            }
+        }
+        ResponseScript::GatedChunkedBodyWithHeaders {
+            status,
+            headers,
+            chunks,
+            gate,
+        } => {
+            write_head(stream, status, &headers, None, true)?;
+            stream.flush()?;
+            if gate.wait() {
+                for chunk in chunks {
+                    write!(stream, "{:X}\r\n", chunk.len())?;
+                    stream.write_all(&chunk)?;
+                    stream.write_all(b"\r\n")?;
+                }
+                stream.write_all(b"0\r\n\r\n")?;
                 stream.flush()
             } else {
                 stream.shutdown(Shutdown::Both)
