@@ -1,0 +1,36 @@
+# Concord project-local Codex policy.
+# Loaded only after the repository is trusted. Model and Max selection remain per-thread choices.
+
+approvals_reviewer = "user"
+sandbox_mode = "workspace-write"
+web_search = "disabled"
+
+[approval_policy.granular]
+# Allow the user to approve narrowly scoped sandbox and exec-policy requests.
+sandbox_approval = true
+rules = true
+skill_approval = true
+# This repository workflow does not use MCP elicitation or broad permission negotiation.
+mcp_elicitations = false
+request_permissions = false
+
+[sandbox_workspace_write]
+# Product implementation and validation are local. Dependency caches may already exist, but the
+# agent must not obtain network access merely because a tool or dependency is missing.
+network_access = false
+
+[shell_environment_policy]
+# Retain Codex's default filtering of variables containing KEY, SECRET, or TOKEN and do not source
+# an interactive shell profile that could inject unrelated commands or credentials.
+ignore_default_excludes = false
+experimental_use_profile = false
+
+[features]
+# One accountable implementation agent owns a Concord phase.
+multi_agent = false
+# No connector/app surface is needed for the repository-local workflow.
+apps = false
+# The Concord skill has no MCP dependencies and must not install any implicitly.
+skill_mcp_dependency_install = false
+# Hooks add an executable policy surface that the current workflow does not require.
+hooks = false
