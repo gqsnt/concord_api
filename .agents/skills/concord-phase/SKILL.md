@@ -107,10 +107,17 @@ Inspect a recipe before first use and again if it changed. The current `just rel
 while it remains a local validation graph with no remote, publishing, deployment, credential, or
 destructive action.
 
-Run routine commands inside the workspace sandbox. Network is not part of normal implementation.
-A missing dependency or tool does not authorize `curl`, `wget`, package installation, another
-repository, or unrestricted execution. Request the narrowest explicit approval or report the check
-unavailable.
+The Zed ACP implementation session uses Codex Full access with no interactive approval channel.
+Allowed commands run directly; `forbidden` exec-policy decisions stop immediately. Full access is an
+execution capability, not additional mission authority. Do not circumvent a hard deny, use another
+repository, access unrelated files or credentials, or obtain network resources merely because a tool
+or dependency is missing. Report the check unavailable when the approved local workflow cannot
+continue.
+
+Exact-path `git add -- <path> ...`, focused new `git commit -m <message>`, mission-scoped `git mv` or
+`git rm`, and approved Cargo dependency changes may run without prompting. Broad staging, implicit
+staging, amendment, history replacement, remote Git, publication, system mutation, and shell-level
+file deletion remain prohibited.
 
 Never claim an unexecuted command passed. Record exact command, working directory, configuration,
 tested commit, exit status, and result.

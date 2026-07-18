@@ -1,21 +1,12 @@
-# Concord project-local Codex policy.
+# Concord project-local Codex policy for Zed ACP full-access sessions.
 # Loaded only after the repository is trusted. Model and Max selection remain per-thread choices.
+#
+# Zed ACP Full access uses AskForApproval = Never. Keep Codex aligned with that execution profile:
+# no sandbox escalation requests and no interactive approval prompts.
 
-
-
-[approval_policy.granular]
-# Allow the user to approve narrowly scoped sandbox and exec-policy requests.
-sandbox_approval = true
-rules = true
-skill_approval = true
-# This repository workflow does not use MCP elicitation or broad permission negotiation.
-mcp_elicitations = false
-request_permissions = false
-
-[sandbox_workspace_write]
-# Product implementation and validation are local. Dependency caches may already exist, but the
-# agent must not obtain network access merely because a tool or dependency is missing.
-network_access = false
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+web_search = "disabled"
 
 [shell_environment_policy]
 # Retain Codex's default filtering of variables containing KEY, SECRET, or TOKEN and do not source

@@ -26,16 +26,18 @@ conflict silently.
   discard, reset, restore, or clean unexplained work.
 - Do not push, pull, fetch, clone, merge, rebase, switch branches, rewrite history, tag, publish,
   deploy, alter remotes, or use another repository without explicit authorization for that action.
-- Local commits are permitted only by an approved implementation/correction mission. Stage exact
-  reviewed paths, inspect the staged diff, create new focused commits, and never amend.
+- Local commits are permitted only by an approved implementation/correction mission. The ACP
+  session does not prompt before Git writes: stage exact reviewed paths, inspect the staged diff,
+  create new focused commits, and never amend.
 - Do not access external services, credentials, tokens, private keys, unrelated environment values,
   or files outside the project for convenience.
 - Do not modify `.agents/`, `.codex/`, or controller policy files during an ordinary product phase.
 - Keep patches and contract maps under ignored `git_diff/`; never commit that directory.
 
-A missing tool, dependency, permission, or file is not authorization to bypass the sandbox, weaken a
-check, obtain another resource, or substitute an unapproved path. Request the narrowest necessary
-approval or report the limitation.
+The ACP implementation session runs with full process access and no interactive approval channel.
+Absence of a prompt is not additional authority. A missing tool, dependency, permission, or file is
+not authorization to weaken a check, obtain another resource, circumvent a hard-deny rule, or use an
+unapproved path. Stop and report the limitation when the approved workflow cannot continue.
 
 ## Engineering constraints
 
