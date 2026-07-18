@@ -5,6 +5,8 @@ pub use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Version};
 pub use url::Url;
 
 pub use crate::body::{BodyError, BodyErrorKind, BodyFactory, BodyKind, RequestBody, StreamBody};
+#[cfg(feature = "multipart")]
+pub use crate::body::{MultipartBody, MultipartFactory, MultipartPart};
 #[cfg(feature = "json")]
 pub use crate::codec::Json;
 pub use crate::codec::{

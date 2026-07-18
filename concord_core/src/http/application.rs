@@ -195,9 +195,13 @@ impl ApplicationHttp {
             .client
             .request(method.clone(), url.clone())
             .headers(public_headers.clone());
-        let (builder, body_failure) = match body {
-            NativeBody::Empty => (builder, None),
-            NativeBody::Bytes(body) => (builder.body(body), None),
+        let (builder, body_failure, multipart_limit): (
+            _,
+            Option<BodyFailureState>,
+            Option<NonZeroUsize>,
+        ) = match body {
+            NativeBody::Empty => (builder, None, None),
+            NativeBody::Bytes(body) => (builder.body(body), None, None),
             NativeBody::Stream {
                 body,
                 known_length,
@@ -207,8 +211,10 @@ impl ApplicationHttp {
                     Some(length) => builder.header(CONTENT_LENGTH, length),
                     None => builder,
                 };
-                (builder.body(body), Some(failure))
+                (builder.body(body), Some(failure), None)
             }
+            #[cfg(feature = "multipart")]
+            NativeBody::Multipart { form, limit } => (builder.multipart(form), None, Some(limit)),
         };
         let native = builder.build().map_err(|error| {
             drop(error);
@@ -218,6 +224,42 @@ impl ApplicationHttp {
                 crate::error::ErrorCategory::RequestEncoding,
             )
         })?;
+        #[cfg(feature = "multipart")]
+        let (native, body_failure) = match multipart_limit {
+            Some(limit) => {
+                let mut native = native;
+                let exact_length = native
+                    .headers()
+                    .get(CONTENT_LENGTH)
+                    .and_then(|value| value.to_str().ok())
+                    .and_then(|value| value.parse::<u64>().ok());
+                let limit_u64 = u64::try_from(limit.get()).unwrap_or(u64::MAX);
+                if exact_length.is_some_and(|length| length > limit_u64) {
+                    return Err(ApiError::classified(
+                        endpoint,
+                        method.clone(),
+                        crate::error::ErrorCategory::RequestBody,
+                    ));
+                }
+                let serialized = native.body_mut().take().ok_or_else(|| {
+                    ApiError::classified(
+                        endpoint,
+                        method.clone(),
+                        crate::error::ErrorCategory::RequestBody,
+                    )
+                })?;
+                let (managed, failure) =
+                    crate::body::wrap_multipart_native_body(serialized, exact_length, limit);
+                *native.body_mut() = Some(managed);
+                (native, Some(failure))
+            }
+            None => (native, body_failure),
+        };
+        #[cfg(not(feature = "multipart"))]
+        let (native, body_failure) = {
+            let _ = multipart_limit;
+            (native, body_failure)
+        };
         Ok(ApplicationRequest {
             native,
             body_failure,

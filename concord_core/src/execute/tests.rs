@@ -21,6 +21,8 @@ use http::{Method, StatusCode};
 
 use super::*;
 use crate::body::{BodyError, BodyFactory, RequestBody, StreamBody};
+#[cfg(feature = "multipart")]
+use crate::body::{MultipartBody, MultipartFactory, MultipartPart};
 use crate::codec::{
     CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType, OctetStream, Text,
 };
@@ -233,6 +235,30 @@ impl BodyFactory for PendingBodyFactory {
             dropped: Arc::clone(&self.dropped),
             reached: Arc::clone(&self.reached),
         }))
+    }
+}
+
+#[cfg(feature = "multipart")]
+struct ProbeMultipartFactory {
+    create_calls: Arc<AtomicUsize>,
+    fail: bool,
+}
+
+#[cfg(feature = "multipart")]
+impl MultipartFactory for ProbeMultipartFactory {
+    fn create(&self) -> Result<MultipartBody, BodyError> {
+        self.create_calls.fetch_add(1, Ordering::SeqCst);
+        if self.fail {
+            Err(BodyError::with_safe_message(
+                crate::body::BodyErrorKind::Factory,
+                "multipart-factory-error-secret-88a1",
+            ))
+        } else {
+            MultipartBody::new().part(
+                "factory-field",
+                MultipartPart::text("factory-multipart-value"),
+            )
+        }
     }
 }
 
@@ -940,6 +966,147 @@ async fn request_stream_and_factory_remain_lazy_through_hook_veto() {
     assert_eq!(create_calls.load(Ordering::SeqCst), 0);
     assert_eq!(factory_polls.load(Ordering::SeqCst), 0);
     assert_eq!(factory_executor.application().request_count().unwrap(), 0);
+}
+
+#[cfg(feature = "multipart")]
+#[tokio::test]
+async fn multipart_stream_and_factory_remain_lazy_through_hook_veto() {
+    let direct_executor = DeterministicExecutor::new();
+    let mut direct_probe = ProbeHooks::new();
+    direct_probe.veto = AtomicBool::new(true);
+    let direct_hooks = Arc::new(direct_probe);
+    let direct_core = development_core(
+        &direct_executor,
+        Arc::clone(&direct_hooks),
+        RuntimeConfigBuilder::new(),
+    );
+    let polls = Arc::new(AtomicUsize::new(0));
+    let stream = StreamBody::from_stream(BodyPollProbe::new(
+        [ProbeFrame::Data(b"multipart-lazy-stream-secret")],
+        &polls,
+    ))
+    .exact_length(28);
+    let body = RequestBody::multipart(
+        MultipartBody::new()
+            .part("stream-field", MultipartPart::stream(stream))
+            .expect("multipart stream part"),
+    );
+    assert_eq!(polls.load(Ordering::SeqCst), 0);
+    let error = body_request(direct_core, body)
+        .await
+        .expect_err("multipart hook veto");
+    assert_eq!(error.category(), ErrorCategory::Hook);
+    assert_eq!(polls.load(Ordering::SeqCst), 0);
+    assert_eq!(direct_executor.application().request_count().unwrap(), 0);
+    assert!(matches!(
+        direct_hooks.records().first(),
+        Some(LifecycleRecord::Before {
+            body_kind: crate::hooks::BodyKind::Multipart,
+            ..
+        })
+    ));
+
+    let factory_executor = DeterministicExecutor::new();
+    let mut factory_probe = ProbeHooks::new();
+    factory_probe.veto = AtomicBool::new(true);
+    let factory_hooks = Arc::new(factory_probe);
+    let factory_core = development_core(
+        &factory_executor,
+        Arc::clone(&factory_hooks),
+        RuntimeConfigBuilder::new(),
+    );
+    let create_calls = Arc::new(AtomicUsize::new(0));
+    let body = RequestBody::multipart_factory(ProbeMultipartFactory {
+        create_calls: Arc::clone(&create_calls),
+        fail: false,
+    });
+    assert_eq!(create_calls.load(Ordering::SeqCst), 0);
+    let error = body_request(factory_core, body)
+        .await
+        .expect_err("multipart factory hook veto");
+    assert_eq!(error.category(), ErrorCategory::Hook);
+    assert_eq!(create_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(factory_executor.application().request_count().unwrap(), 0);
+}
+
+#[cfg(feature = "multipart")]
+#[tokio::test]
+async fn multipart_aggregate_framing_limit_and_factory_failure_are_pre_native() {
+    let executor = DeterministicExecutor::new();
+    let hooks = Arc::new(ProbeHooks::new());
+    let core = development_core(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new()
+            .request_body_limit(NonZeroUsize::new(64).expect("positive limit")),
+    );
+    let body = RequestBody::multipart(
+        MultipartBody::new()
+            .part("field", MultipartPart::text("x"))
+            .expect("multipart part"),
+    );
+    let error = body_request(core, body)
+        .await
+        .expect_err("multipart framing exceeds the request limit");
+    assert_eq!(error.category(), ErrorCategory::RequestBody);
+    assert_eq!(executor.application().request_count().unwrap(), 0);
+    assert!(matches!(
+        hooks.records().first(),
+        Some(LifecycleRecord::Before {
+            body_kind: crate::hooks::BodyKind::Multipart,
+            known_body_length: Some(1),
+            ..
+        })
+    ));
+
+    let failing_executor = DeterministicExecutor::new();
+    let failing_hooks = Arc::new(ProbeHooks::new());
+    let failing_core = development_core(
+        &failing_executor,
+        Arc::clone(&failing_hooks),
+        RuntimeConfigBuilder::new(),
+    );
+    let create_calls = Arc::new(AtomicUsize::new(0));
+    let error = body_request(
+        failing_core,
+        RequestBody::multipart_factory(ProbeMultipartFactory {
+            create_calls: Arc::clone(&create_calls),
+            fail: true,
+        }),
+    )
+    .await
+    .expect_err("multipart factory failure");
+    assert_eq!(error.category(), ErrorCategory::RequestBody);
+    assert_eq!(create_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(failing_executor.application().request_count().unwrap(), 0);
+    let formatted = format!("{error:?} {error}");
+    assert!(!formatted.contains("multipart-factory-error-secret-88a1"));
+}
+
+#[cfg(feature = "multipart")]
+#[tokio::test]
+async fn multipart_stream_failure_is_sanitized_and_request_body_primary() {
+    let executor = DeterministicExecutor::new();
+    let hooks = Arc::new(ProbeHooks::new());
+    let core = development_core(&executor, hooks, RuntimeConfigBuilder::new());
+    let polls = Arc::new(AtomicUsize::new(0));
+    let stream = StreamBody::from_stream(BodyPollProbe::new(
+        [ProbeFrame::Failure("multipart-producer-error-secret-9b31")],
+        &polls,
+    ));
+    let body = RequestBody::multipart(
+        MultipartBody::new()
+            .part("stream", MultipartPart::stream(stream))
+            .expect("multipart stream part"),
+    );
+    let error = body_request(core, body)
+        .await
+        .expect_err("multipart producer failure");
+    assert_eq!(error.category(), ErrorCategory::RequestBody);
+    assert_eq!(polls.load(Ordering::SeqCst), 1);
+    assert_eq!(executor.application().request_count().unwrap(), 0);
+    let formatted = format!("{error:?} {error}");
+    assert!(!formatted.contains("multipart-producer-error-secret-9b31"));
 }
 
 #[tokio::test]
@@ -2248,6 +2415,119 @@ async fn real_reqwest_stream_upload_transmits_exact_bytes_and_owned_media_type()
     assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 1);
 }
 
+#[cfg(feature = "multipart")]
+#[tokio::test]
+async fn real_reqwest_multipart_upload_owns_framing_and_supports_streams_and_factories() {
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"buffered-ok".to_vec()),
+        ResponseScript::ok(b"streamed-ok".to_vec()),
+        ResponseScript::ok(b"factory-ok".to_vec()),
+    ])
+    .expect("multipart upload server");
+    let hooks = Arc::new(ProbeHooks::new());
+    let core = real_core(&server, Arc::clone(&hooks), RuntimeConfigBuilder::new());
+
+    let buffered = MultipartBody::new()
+        .part(
+            "text-field",
+            MultipartPart::text("multipart-text-value-secret-017c"),
+        )
+        .expect("text part")
+        .part(
+            "file-field",
+            MultipartPart::bytes(Bytes::from_static(b"multipart-bytes-value-secret-929d"))
+                .filename("upload-secret-name.txt")
+                .expect("filename")
+                .content_type("application/x-concord-part")
+                .expect("part content type"),
+        )
+        .expect("bytes part");
+    assert_eq!(
+        body_request(core.clone(), RequestBody::multipart(buffered))
+            .await
+            .expect("buffered multipart upload"),
+        b"buffered-ok"[..]
+    );
+
+    let polls = Arc::new(AtomicUsize::new(0));
+    let streamed = StreamBody::from_stream(BodyPollProbe::new(
+        [
+            ProbeFrame::Data(b"multipart-streamed-"),
+            ProbeFrame::Data(b"value-secret-62e7"),
+        ],
+        &polls,
+    ));
+    let streamed = MultipartBody::new()
+        .part(
+            "stream-field",
+            MultipartPart::stream(streamed)
+                .filename("stream-secret-name.bin")
+                .expect("stream filename")
+                .content_type("application/octet-stream")
+                .expect("stream content type"),
+        )
+        .expect("stream part");
+    assert_eq!(
+        body_request(core.clone(), RequestBody::multipart(streamed))
+            .await
+            .expect("streamed multipart upload"),
+        b"streamed-ok"[..]
+    );
+
+    let factory_calls = Arc::new(AtomicUsize::new(0));
+    assert_eq!(
+        body_request(
+            core,
+            RequestBody::multipart_factory(ProbeMultipartFactory {
+                create_calls: Arc::clone(&factory_calls),
+                fail: false,
+            }),
+        )
+        .await
+        .expect("factory multipart upload"),
+        b"factory-ok"[..]
+    );
+
+    server
+        .wait_for_requests(3, Duration::from_secs(2))
+        .expect("recorded multipart requests");
+    let requests = server.requests();
+    assert_eq!(requests.len(), 3);
+    for request in &requests {
+        let content_type = request
+            .header("content-type")
+            .expect("Reqwest multipart content type");
+        assert!(content_type.starts_with("multipart/form-data; boundary="));
+        let boundary = content_type
+            .strip_prefix("multipart/form-data; boundary=")
+            .expect("boundary parameter");
+        assert!(!boundary.is_empty());
+        assert!(
+            request
+                .body()
+                .starts_with(format!("--{boundary}\r\n").as_bytes())
+        );
+    }
+    let buffered_wire = String::from_utf8_lossy(requests[0].body());
+    assert!(buffered_wire.contains("name=\"text-field\""));
+    assert!(buffered_wire.contains("multipart-text-value-secret-017c"));
+    assert!(buffered_wire.contains("multipart-bytes-value-secret-929d"));
+    assert!(buffered_wire.contains("upload-secret-name.txt"));
+    assert!(buffered_wire.contains("application/x-concord-part"));
+    assert!(requests[0].header("content-length").is_some());
+
+    let streamed_wire = String::from_utf8_lossy(requests[1].body());
+    assert!(streamed_wire.contains("multipart-streamed-value-secret-62e7"));
+    assert!(streamed_wire.contains("stream-secret-name.bin"));
+    assert_eq!(requests[1].header("transfer-encoding"), Some("chunked"));
+    assert_eq!(polls.load(Ordering::SeqCst), 3);
+
+    let factory_wire = String::from_utf8_lossy(requests[2].body());
+    assert!(factory_wire.contains("factory-multipart-value"));
+    assert_eq!(factory_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 3);
+}
+
 #[tokio::test]
 async fn managed_producer_failure_precedes_reqwest_transport_failure() {
     let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
@@ -2340,6 +2620,36 @@ async fn cancellation_drops_direct_and_factory_created_request_streams_without_c
     assert_eq!(factory_hooks.completion_returned.load(Ordering::SeqCst), 0);
     tokio::task::yield_now().await;
     assert_eq!(factory_polls.load(Ordering::SeqCst), factory_polls_at_drop);
+
+    #[cfg(feature = "multipart")]
+    {
+        let multipart_polls = Arc::new(AtomicUsize::new(0));
+        let multipart_dropped = Arc::new(AtomicBool::new(false));
+        let multipart_reached = Arc::new(tokio::sync::Notify::new());
+        let stream = StreamBody::from_stream(PendingBodyStream {
+            polls: Arc::clone(&multipart_polls),
+            dropped: Arc::clone(&multipart_dropped),
+            reached: Arc::clone(&multipart_reached),
+        });
+        let multipart_body = RequestBody::multipart(
+            MultipartBody::new()
+                .part("stream", MultipartPart::stream(stream))
+                .expect("multipart pending stream"),
+        );
+        let multipart_hooks = cancel(multipart_body, Arc::clone(&multipart_reached)).await;
+        let multipart_polls_at_drop = multipart_polls.load(Ordering::SeqCst);
+        assert!(multipart_polls_at_drop > 0);
+        assert!(multipart_dropped.load(Ordering::SeqCst));
+        assert_eq!(
+            multipart_hooks.completion_returned.load(Ordering::SeqCst),
+            0
+        );
+        tokio::task::yield_now().await;
+        assert_eq!(
+            multipart_polls.load(Ordering::SeqCst),
+            multipart_polls_at_drop
+        );
+    }
 }
 
 #[tokio::test]

@@ -456,6 +456,63 @@ async fn reqwest_stream_polling_starts_only_when_send_is_polled() {
     assert_eq!(server.requests()[0].body(), b"probe");
 }
 
+#[cfg(feature = "multipart")]
+#[tokio::test]
+async fn reqwest_owns_multipart_boundary_length_and_stream_polling() {
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"buffered".to_vec()),
+        ResponseScript::ok(b"streamed".to_vec()),
+    ])
+    .expect("native multipart server should start");
+    let client = hardened_client();
+    let buffered = reqwest::multipart::Form::new().part(
+        "field",
+        reqwest::multipart::Part::text("native-multipart-buffered-probe"),
+    );
+    client
+        .post(server.url("/native-multipart-buffered"))
+        .multipart(buffered)
+        .send()
+        .await
+        .expect("buffered native multipart request");
+
+    let polls = Arc::new(AtomicUsize::new(0));
+    let body = reqwest::Body::wrap_stream(NativePollProbe {
+        item: Some(Ok(Bytes::from_static(b"native-multipart-stream-probe"))),
+        polls: Arc::clone(&polls),
+        dropped: None,
+        reached: None,
+        pending: false,
+    });
+    let streamed =
+        reqwest::multipart::Form::new().part("stream", reqwest::multipart::Part::stream(body));
+    let future = client
+        .post(server.url("/native-multipart-streamed"))
+        .multipart(streamed)
+        .send();
+    assert_eq!(polls.load(Ordering::SeqCst), 0);
+    future.await.expect("streamed native multipart request");
+
+    server
+        .wait_for_requests(2, PROBE_WAIT)
+        .expect("native multipart requests should be recorded");
+    let requests = server.requests();
+    for request in &requests {
+        assert!(
+            request
+                .header("content-type")
+                .is_some_and(|value| value.starts_with("multipart/form-data; boundary="))
+        );
+    }
+    assert!(requests[0].header("content-length").is_some());
+    assert!(
+        String::from_utf8_lossy(requests[0].body()).contains("native-multipart-buffered-probe")
+    );
+    assert_eq!(requests[1].header("transfer-encoding"), Some("chunked"));
+    assert!(String::from_utf8_lossy(requests[1].body()).contains("native-multipart-stream-probe"));
+    assert_eq!(polls.load(Ordering::SeqCst), 2);
+}
+
 #[tokio::test]
 async fn reqwest_propagates_request_stream_producer_failure() {
     let listener = TokioTcpListener::bind((Ipv4Addr::LOCALHOST, 0))

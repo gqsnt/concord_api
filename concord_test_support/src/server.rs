@@ -358,15 +358,33 @@ fn read_request(
             let body_length = headers
                 .iter()
                 .find(|(name, _)| name == "content-length")
-                .and_then(|(_, value)| value.parse::<usize>().ok())
-                .unwrap_or(0);
-            let consumed = end + 4 + body_length;
-            while buffered.len() < consumed {
-                if !read_more(stream, buffered, shared) {
-                    return None;
+                .and_then(|(_, value)| value.parse::<usize>().ok());
+            let chunked = headers.iter().any(|(name, value)| {
+                name == "transfer-encoding"
+                    && value
+                        .split(',')
+                        .any(|coding| coding.trim().eq_ignore_ascii_case("chunked"))
+            });
+            let body_start = end + 4;
+            let (body, consumed) = if chunked {
+                loop {
+                    if let Some((body, encoded_length)) = decode_chunked(&buffered[body_start..]) {
+                        break (body, body_start + encoded_length);
+                    }
+                    if !read_more(stream, buffered, shared) {
+                        return None;
+                    }
                 }
-            }
-            let body = buffered[end + 4..consumed].to_vec();
+            } else {
+                let body_length = body_length.unwrap_or(0);
+                let consumed = body_start + body_length;
+                while buffered.len() < consumed {
+                    if !read_more(stream, buffered, shared) {
+                        return None;
+                    }
+                }
+                (buffered[body_start..consumed].to_vec(), consumed)
+            };
             buffered.drain(..consumed);
             return Some(RecordedRequest {
                 connection_id,
@@ -404,6 +422,37 @@ fn read_more(stream: &mut TcpStream, buffered: &mut Vec<u8>, shared: &Shared) ->
 
 fn find_header_end(bytes: &[u8]) -> Option<usize> {
     bytes.windows(4).position(|window| window == b"\r\n\r\n")
+}
+
+fn decode_chunked(bytes: &[u8]) -> Option<(Vec<u8>, usize)> {
+    let mut decoded = Vec::new();
+    let mut cursor = 0;
+    loop {
+        let line_end = bytes[cursor..]
+            .windows(2)
+            .position(|window| window == b"\r\n")?
+            + cursor;
+        let size_text = std::str::from_utf8(&bytes[cursor..line_end]).ok()?;
+        let size = usize::from_str_radix(size_text.split(';').next()?.trim(), 16).ok()?;
+        cursor = line_end + 2;
+        if size == 0 {
+            if bytes.get(cursor..cursor + 2)? == b"\r\n" {
+                return Some((decoded, cursor + 2));
+            }
+            let trailer_end = bytes[cursor..]
+                .windows(4)
+                .position(|window| window == b"\r\n\r\n")?
+                + cursor;
+            return Some((decoded, trailer_end + 4));
+        }
+        let data_end = cursor.checked_add(size)?;
+        let frame_end = data_end.checked_add(2)?;
+        if bytes.get(data_end..frame_end)? != b"\r\n" {
+            return None;
+        }
+        decoded.extend_from_slice(bytes.get(cursor..data_end)?);
+        cursor = frame_end;
+    }
 }
 
 fn write_response(stream: &mut TcpStream, script: ResponseScript) -> io::Result<()> {

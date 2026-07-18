@@ -42,6 +42,26 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", request_path.display()));
     let response = std::fs::read_to_string(&response_path)
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", response_path.display()));
+    let multipart_body_path = documentation.join("advanced/struct.MultipartBody.html");
+    let multipart_part_path = documentation.join("advanced/struct.MultipartPart.html");
+    let multipart_factory_path = documentation.join("advanced/trait.MultipartFactory.html");
+    let stream_response_path = documentation.join("advanced/struct.StreamResponse.html");
+    let multipart_body = std::fs::read_to_string(&multipart_body_path).unwrap_or_else(|error| {
+        panic!("failed to read {}: {error}", multipart_body_path.display())
+    });
+    let multipart_part = std::fs::read_to_string(&multipart_part_path).unwrap_or_else(|error| {
+        panic!("failed to read {}: {error}", multipart_part_path.display())
+    });
+    let multipart_factory =
+        std::fs::read_to_string(&multipart_factory_path).unwrap_or_else(|error| {
+            panic!(
+                "failed to read {}: {error}",
+                multipart_factory_path.display()
+            )
+        });
+    let stream_response = std::fs::read_to_string(&stream_response_path).unwrap_or_else(|error| {
+        panic!("failed to read {}: {error}", stream_response_path.display())
+    });
 
     for expected in [
         "id=\"method.response\"",
@@ -62,6 +82,17 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         response.contains("pub struct ResponseRequest"),
         "ResponseRequest Rustdoc omitted its public declaration"
     );
+    assert!(
+        multipart_body.contains("owned request-side multipart recipe")
+            && multipart_body.contains("boundary generation")
+            && multipart_part.contains("opaque part")
+            && multipart_factory.contains("fresh complete multipart recipe"),
+        "multipart Rustdoc omitted its public lifecycle and ownership semantics"
+    );
+    assert!(
+        stream_response.contains("successful response head together with its bounded lazy body"),
+        "stream response Rustdoc omitted its bounded lazy semantics"
+    );
 
     for forbidden in [
         "MetadataResponse",
@@ -72,10 +103,23 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "PreparedBody",
         "execute_request",
         "reqwest",
+        "Replayability",
+        "NativeMultipartStream",
+        "ManagedRequestStream",
+        "StreamResponseHandler",
     ] {
         assert!(
-            !request.contains(forbidden) && !response.contains(forbidden),
-            "stable request Rustdoc exposed private integration name {forbidden}"
+            [
+                &request,
+                &response,
+                &multipart_body,
+                &multipart_part,
+                &multipart_factory,
+                &stream_response,
+            ]
+            .iter()
+            .all(|page| !page.contains(forbidden)),
+            "stable public Rustdoc exposed private integration name {forbidden}"
         );
     }
 }
