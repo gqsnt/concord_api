@@ -47,6 +47,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-fixture-custom-retry-disabled"
+version = "0.0.0"
+dependencies = [
+ "concord_core 0.1.0",
+ "concord_macros",
+]
+
+[[package]]
+name = "concord-fixture-custom-retry-enabled"
+version = "0.0.0"
+dependencies = [
+ "concord_core 0.1.0",
+ "concord_macros",
+ "reqwest",
+]
+
+[[package]]
 name = "concord-fixture-json-disabled"
 version = "0.0.0"
 dependencies = [
@@ -100,10 +117,12 @@ version = "99.0.0"
 name = "concord_macros"
 version = "0.1.0"
 dependencies = [
+ "http",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
  "syn",
+ "url",
 ]
 
 [[package]]

@@ -1,0 +1,11 @@
+[package]
+name = "concord-fixture-custom-retry-enabled"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+[dependencies]
+concord_core = { path = "../../../../concord_core", default-features = false, features = ["dangerous-custom-retry"] }
+concord_macros = { path = "../../.." }
+reqwest = { version = "=0.13.4", default-features = false }

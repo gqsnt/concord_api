@@ -58,10 +58,12 @@ dependencies = [
 name = "concord_macros"
 version = "0.1.0"
 dependencies = [
+ "http",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
  "syn",
+ "url",
 ]
 
 [[package]]

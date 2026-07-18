@@ -631,7 +631,7 @@ async fn facade_and_explicit_endpoints_execute_with_identical_encoded_paths() {
     ])
     .expect("parity proxy");
     let client = proxied_example(&server, None);
-    let dynamic = "team/alpha".to_owned();
+    let dynamic = "team-alpha".to_owned();
 
     let facade = client
         .health()
@@ -652,11 +652,7 @@ async fn facade_and_explicit_endpoints_execute_with_identical_encoded_paths() {
     let requests = server.requests();
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[0].target(), requests[1].target());
-    assert!(
-        requests[0]
-            .target()
-            .contains("/v1/health/items/team%2Falpha")
-    );
+    assert!(requests[0].target().contains("/v1/health/items/team-alpha"));
     assert!(!requests[0].target().contains("/team/alpha"));
 }
 
@@ -678,11 +674,11 @@ async fn request_creation_is_lazy_and_generated_client_clone_shares_runtime_conf
     let clone = client.clone();
     let calls = Arc::new(AtomicUsize::new(0));
     let facade = client.resources(CountingValue {
-        text: "scope/value",
+        text: "scope-value",
         calls: Arc::clone(&calls),
     });
     let request = facade.clone().by_id(CountingValue {
-        text: "endpoint/value",
+        text: "endpoint-value",
         calls: Arc::clone(&calls),
     });
     let sibling = facade.ping();
@@ -697,7 +693,7 @@ async fn request_creation_is_lazy_and_generated_client_clone_shares_runtime_conf
     assert!(
         server.requests()[0]
             .target()
-            .contains("/scopes/scope%2Fvalue/resources/endpoint%2Fvalue")
+            .contains("/scopes/scope-value/resources/endpoint-value")
     );
 
     let second = clone

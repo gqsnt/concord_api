@@ -1,95 +1,178 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use proc_macro2::{Ident, Span, TokenStream};
-use quote::{ToTokens, format_ident, quote};
-use syn::Index;
+use quote::{ToTokens, quote};
+use syn::Type;
 
-use crate::model::{
-    Api, CodecKind, Endpoint, MediaKind, MethodKind, Parameter, PathAtom, RequestBodyKind,
-    ResponseKind, Scope, to_snake_case,
+use crate::ast::{
+    CodecKind, DefaultExpr, MediaKind, MethodKind, RequestBodyKind, ResponseKind, RetrySelection,
+    ValueKind,
 };
+use crate::model::{
+    Api, Child, Client, Endpoint, NormalizedConfig, ResolvedExpr, Scope, Value, ValueReference,
+    ValueShape,
+};
+use crate::names::{canonical_ident, public_ident, to_snake_case};
 
-const GENERATED_CONTRACT_VERSION: u32 = 5;
+const GENERATED_CONTRACT_VERSION: u32 = 6;
 
 pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
-    let client = &api.client;
-    let scope = &client.scope;
+    let clients = api
+        .clients
+        .iter()
+        .map(|client| generate_client(client, core_path))
+        .collect::<Vec<_>>();
+    quote!(#(#clients)*)
+}
+
+fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
     let client_name = &client.name;
-    let builder_name = format_ident!("{client_name}Builder");
-    let endpoint_capability_name = format_ident!("{client_name}Endpoint");
-    let scope_name = &scope.name;
-    let support_name = format_ident!("{}", to_snake_case(&client_name.to_string()));
-    let scope_module_name = format_ident!("{}", to_snake_case(&scope_name.to_string()));
-    let scope_method_name = &scope_module_name;
-    let facade_name = format_ident!("{}Facade", to_pascal_case(&scope_name.to_string()));
+    let builder_name = &client.builder_name;
+    let support_name = &client.support_name;
+    let capability_name = &client.endpoint_capability_name;
+    let values_type = &client.values_type_name;
     let base = &client.base;
     let contract_version = GENERATED_CONTRACT_VERSION;
-    let json_feature_assertion = if scope.endpoints.iter().any(endpoint_uses_json) {
+
+    let value_summary = value_category_summary(&client.values, "client");
+    let retry_summary = retry_summary(&client.retry);
+    let client_doc = format!(
+        "Generated Concord client `{client_name}` with one fixed immutable public-value snapshot. {value_summary} {retry_summary}"
+    );
+    let builder_doc = format!(
+        "Canonical fallible builder for [`{client_name}`]. {value_summary} Selected client defaults are evaluated once by `build`; overridden defaults are not evaluated. {retry_summary}"
+    );
+    let support_doc = format!("Public generated API modules for [`{client_name}`].");
+    let prelude_doc = format!(
+        "Re-exports every endpoint-specific request extension trait for [`{client_name}`] under a deterministic client-qualified alias. Import all setters with `use {support_name}::prelude::*;`. Generic timeout and debug setters remain inherent on `Request<E>`."
+    );
+    let constructor_doc = format!(
+        "Builds `{client_name}` through the canonical builder. Required client values appear in DSL order. {value_summary}"
+    );
+    let capability_doc = format!(
+        "Sealed capability implemented only by explicit endpoints generated for [`{client_name}`]."
+    );
+
+    let value_fields = client
+        .values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let field = client_value_field(index, value);
+            let ty = &value.ty;
+            quote!(#field: #ty,)
+        })
+        .collect::<Vec<_>>();
+    let builder_value_fields = client
+        .values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let field = builder_value_field(index, value);
+            let ty = value.setter_type();
+            quote!(#field: ::std::option::Option<#ty>,)
+        })
+        .collect::<Vec<_>>();
+    let builder_value_initializers = client
+        .values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let field = builder_value_field(index, value);
+            quote!(#field: ::std::option::Option::None,)
+        })
+        .collect::<Vec<_>>();
+    let builder_methods = client
+        .values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| generate_builder_value_methods(index, value))
+        .collect::<Vec<_>>();
+    let required_client_values = client
+        .values
+        .iter()
+        .enumerate()
+        .filter(|(_, value)| value.is_required())
+        .collect::<Vec<_>>();
+    let constructor_parameters = required_client_values
+        .iter()
+        .map(|(_, value)| {
+            let name = &value.name;
+            let ty = &value.ty;
+            quote!(#name: #ty,)
+        })
+        .collect::<Vec<_>>();
+    let constructor_setters = required_client_values
+        .iter()
+        .map(|(_, value)| {
+            let name = &value.name;
+            quote!(.#name(#name))
+        })
+        .collect::<Vec<_>>();
+    let build_value_statements = client
+        .values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| generate_client_value_resolution(index, value))
+        .collect::<Vec<_>>();
+    let snapshot_fields = client
+        .values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let source = resolved_client_value(index, value);
+            let field = client_value_field(index, value);
+            quote!(#field: #source,)
+        })
+        .collect::<Vec<_>>();
+
+    let retry_baseline = match &client.retry {
+        RetrySelection::Disabled => {
+            quote!(__concord_generated::__core::__private::default_http_config())
+        }
+        RetrySelection::ReqwestDefault => quote!(
+            __concord_generated::__core::__private::default_http_config().retry_reqwest_default()
+        ),
+        RetrySelection::Custom(path) => quote!(
+            __concord_generated::__core::__private::default_http_config_with_custom_retry(#path)
+        ),
+    };
+    let custom_retry_assertion = matches!(&client.retry, RetrySelection::Custom(_)).then(|| {
+        quote!(
+            const _: () = __core::__private::assert_custom_retry_feature();
+        )
+    });
+    let json_assertion = client_uses_json(client).then(|| {
         quote!(
             const _: () = __core::__private::assert_json_feature();
         )
-    } else {
-        quote!()
-    };
-    let multipart_feature_assertion = if scope.endpoints.iter().any(endpoint_uses_multipart) {
-        quote! {
+    });
+    let multipart_assertion = client_uses_multipart(client).then(|| {
+        quote!(
             const _: () = __core::__private::assert_multipart_feature();
-        }
-    } else {
-        quote!()
-    };
-    let client_doc = format!("Generated Concord client `{client_name}`.");
-    let builder_doc = format!("Canonical fallible builder for [`{client_name}`].");
-    let support_doc = format!("Public generated API modules for [`{client_name}`].");
-    let endpoint_capability_doc = format!(
-        "Sealed capability implemented only by explicit endpoints generated for [`{client_name}`]."
-    );
-    let facade_doc = format!("Immutable generated facade for the `{}` scope.", scope.name);
-    let scope_method_doc = format!(
-        "Creates an immutable `{}` scope facade without starting a request.",
-        scope.name
-    );
+        )
+    });
 
-    let scope_names = scope
-        .parameters
-        .iter()
-        .map(|parameter| &parameter.name)
-        .collect::<Vec<_>>();
-    let scope_types = scope
-        .parameters
-        .iter()
-        .map(|parameter| &parameter.ty)
-        .collect::<Vec<_>>();
-    let endpoint_items = scope
-        .endpoints
-        .iter()
-        .map(|endpoint| {
-            generate_endpoint(
-                client_name,
-                scope,
-                endpoint,
-                core_path,
-                &endpoint_capability_name,
-            )
-        })
-        .collect::<Vec<_>>();
-    let facade_methods = scope
-        .endpoints
-        .iter()
-        .map(|endpoint| {
-            generate_facade_method(client_name, scope, endpoint, core_path, &scope_module_name)
-        })
-        .collect::<Vec<_>>();
+    let facade_modules = generate_facade_children(client, &client.children, &[], core_path);
+    let endpoint_modules = generate_endpoint_children(client, &client.children, &[], core_path);
+    let client_child_methods = generate_client_child_methods(client, core_path);
+    let prelude_exports = collect_prelude_exports(&client.children, &[]);
 
     quote! {
+        struct #values_type {
+            #(#value_fields)*
+        }
+
         #[doc = #client_doc]
         #[derive(Clone)]
         pub struct #client_name {
             __concord_core: #core_path::__private::ClientCore,
+            __concord_values: ::std::sync::Arc<#values_type>,
         }
 
         #[doc = #builder_doc]
         pub struct #builder_name {
+            #(#builder_value_fields)*
             __concord_http: ::std::option::Option<#core_path::advanced::HttpConfigBuilder>,
             __concord_runtime: ::std::option::Option<#core_path::advanced::RuntimeConfigBuilder>,
             __concord_http_configured: bool,
@@ -104,8 +187,9 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
                 pub(super) use #core_path as __core;
 
                 const _: () = __core::__private::assert_generated_contract(#contract_version);
-                #json_feature_assertion
-                #multipart_feature_assertion
+                #json_assertion
+                #multipart_assertion
+                #custom_retry_assertion
             }
 
             mod __concord_endpoint_seal {
@@ -113,34 +197,39 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
             }
 
             #[doc(hidden)]
-            #[doc = #endpoint_capability_doc]
+            #[doc = #capability_doc]
             #[allow(private_bounds)]
-            pub trait #endpoint_capability_name: __concord_endpoint_seal::Sealed {}
-
-            /// Generated immutable scope facades.
-            pub mod facades {
-                #[doc = #facade_doc]
-                #[derive(Clone)]
-                pub struct #facade_name {
-                    pub(super) __concord_client: super::super::#client_name,
-                    pub(super) __concord_scope: (#(::std::sync::Arc<#scope_types>,)*),
+            pub trait #capability_name: __concord_endpoint_seal::Sealed {
+                #[doc(hidden)]
+                fn __concord_bind(self, _client: &super::#client_name) -> Self
+                where
+                    Self: ::std::marker::Sized,
+                {
+                    self
                 }
             }
 
-            /// Generated explicit endpoint values.
+            #[doc = #prelude_doc]
+            pub mod prelude {
+                #(#prelude_exports)*
+            }
+
+            /// Generated immutable nested scope facades.
+            pub mod facades {
+                #facade_modules
+            }
+
+            /// Generated explicit endpoint values and sealed request extension traits.
             pub mod endpoints {
-                pub mod #scope_module_name {
-                    #(#endpoint_items)*
-                }
+                #endpoint_modules
             }
 
             impl super::#client_name {
-                /// Builds a client with the canonical default configuration.
-                pub fn new() -> ::std::result::Result<
-                    Self,
-                    #core_path::prelude::ClientBuildError,
-                > {
-                    Self::builder().build()
+                #[doc = #constructor_doc]
+                pub fn new(
+                    #(#constructor_parameters)*
+                ) -> ::std::result::Result<Self, #core_path::prelude::ClientBuildError> {
+                    Self::builder()#(#constructor_setters)*.build()
                 }
 
                 #[must_use]
@@ -149,24 +238,15 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
                     super::#builder_name::new()
                 }
 
-                #[must_use]
-                #[doc = #scope_method_doc]
-                pub fn #scope_method_name(
-                    &self,
-                    #(#scope_names: #scope_types),*
-                ) -> facades::#facade_name {
-                    facades::#facade_name {
-                        __concord_client: self.clone(),
-                        __concord_scope: (#(::std::sync::Arc::new(#scope_names),)*),
-                    }
-                }
+                #client_child_methods
 
                 #[must_use]
                 /// Creates a side-effect-free pending request from an endpoint generated for this client.
                 pub fn request<E>(&self, endpoint: E) -> #core_path::Request<E>
                 where
-                    E: #endpoint_capability_name,
+                    E: #capability_name,
                 {
+                    let endpoint = <E as #capability_name>::__concord_bind(endpoint, self);
                     __concord_generated::__core::__private::request(
                         &self.__concord_core,
                         endpoint,
@@ -179,9 +259,8 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
                 /// Creates an empty canonical generated client builder.
                 pub fn new() -> Self {
                     Self {
-                        __concord_http: ::std::option::Option::Some(
-                            __concord_generated::__core::__private::default_http_config(),
-                        ),
+                        #(#builder_value_initializers)*
+                        __concord_http: ::std::option::Option::Some(#retry_baseline),
                         __concord_runtime: ::std::option::Option::Some(
                             __concord_generated::__core::__private::default_runtime_config(),
                         ),
@@ -192,8 +271,10 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
                     }
                 }
 
+                #(#builder_methods)*
+
                 #[must_use]
-                /// Applies the HTTP configuration closure immediately.
+                /// Applies the HTTP configuration closure immediately. A later retry selection replaces the DSL selection.
                 pub fn http<F>(mut self, configure: F) -> Self
                 where
                     F: ::std::ops::FnOnce(
@@ -232,13 +313,10 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
                     self
                 }
 
-                /// Resolves configuration and builds the generated client.
+                /// Resolves selected defaults once and builds the immutable generated client snapshot.
                 pub fn build(
                     self,
-                ) -> ::std::result::Result<
-                    super::#client_name,
-                    #core_path::prelude::ClientBuildError,
-                > {
+                ) -> ::std::result::Result<super::#client_name, #core_path::prelude::ClientBuildError> {
                     if self.__concord_duplicate_http {
                         return ::std::result::Result::Err(
                             __concord_generated::__core::__private::duplicate_http_configuration_error(),
@@ -249,6 +327,7 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
                             __concord_generated::__core::__private::duplicate_runtime_configuration_error(),
                         );
                     }
+                    #(#build_value_statements)*
                     let Some(http) = self.__concord_http else {
                         unreachable!("generated HTTP builder state is internally consistent");
                     };
@@ -260,8 +339,12 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
                         http,
                         runtime,
                     )?;
+                    let values = ::std::sync::Arc::new(super::#values_type {
+                        #(#snapshot_fields)*
+                    });
                     ::std::result::Result::Ok(super::#client_name {
                         __concord_core: core,
+                        __concord_values: values,
                     })
                 }
             }
@@ -271,133 +354,1524 @@ pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
                     Self::new()
                 }
             }
+        }
+    }
+}
 
-            impl facades::#facade_name {
-                #(#facade_methods)*
+fn generate_builder_value_methods(index: usize, value: &Value) -> TokenStream {
+    let method = &value.name;
+    let field = builder_value_field(index, value);
+    let setter_type = value.setter_type();
+    let helper = if value.is_optional() {
+        let clear = helper_ident("clear", &value.name);
+        let clear_doc = format!(
+            "Selects `None` for the optional client value `{}`.",
+            canonical_ident(&value.name)
+        );
+        quote! {
+            #[doc = #clear_doc]
+            #[must_use]
+            pub fn #clear(mut self) -> Self {
+                self.#field = ::std::option::Option::None;
+                self
+            }
+        }
+    } else if value.default().is_some() {
+        let reset = helper_ident("reset", &value.name);
+        let reset_doc = format!(
+            "Selects the DSL default for client value `{}` without evaluating it until `build`.",
+            canonical_ident(&value.name)
+        );
+        quote! {
+            #[doc = #reset_doc]
+            #[must_use]
+            pub fn #reset(mut self) -> Self {
+                self.#field = ::std::option::Option::None;
+                self
+            }
+        }
+    } else {
+        quote!()
+    };
+    let setter_doc = match &value.kind {
+        ValueKind::Required => format!(
+            "Sets the required client value `{}`; a later call replaces this selection.",
+            canonical_ident(&value.name)
+        ),
+        ValueKind::Optional => format!(
+            "Selects `Some(value)` for optional client value `{}`; a later call replaces this selection.",
+            canonical_ident(&value.name)
+        ),
+        ValueKind::Defaulted(_) => format!(
+            "Overrides defaulted client value `{}`; while selected, its DSL default is not evaluated.",
+            canonical_ident(&value.name)
+        ),
+    };
+    quote! {
+        #[doc = #setter_doc]
+        #[must_use]
+        pub fn #method(mut self, value: #setter_type) -> Self {
+            self.#field = ::std::option::Option::Some(value);
+            self
+        }
+
+        #helper
+    }
+}
+
+fn generate_client_value_resolution(index: usize, value: &Value) -> TokenStream {
+    let builder_field = builder_value_field(index, value);
+    let resolved = resolved_client_value(index, value);
+    let ty = &value.ty;
+    match &value.kind {
+        ValueKind::Required => quote! {
+            let #resolved: #ty = match self.#builder_field {
+                ::std::option::Option::Some(value) => value,
+                ::std::option::Option::None => {
+                    return ::std::result::Result::Err(
+                        __concord_generated::__core::__private::missing_input_error(),
+                    );
+                }
+            };
+        },
+        ValueKind::Optional => quote! {
+            let #resolved: #ty = self.#builder_field;
+        },
+        ValueKind::Defaulted(default) => {
+            let default = default_expr(default);
+            quote! {
+                let #resolved: #ty = match self.#builder_field {
+                    ::std::option::Option::Some(value) => value,
+                    ::std::option::Option::None => #default,
+                };
             }
         }
     }
 }
 
-fn generate_endpoint(
-    client_name: &Ident,
-    scope: &Scope,
-    endpoint: &Endpoint,
+fn generate_client_child_methods(client: &Client, core_path: &TokenStream) -> TokenStream {
+    let methods = client
+        .children
+        .iter()
+        .map(|child| match child {
+            Child::Scope(scope) => generate_scope_entry(client, &[], scope, true, core_path),
+            Child::Endpoint(endpoint) => {
+                generate_endpoint_method(client, &[], endpoint, true, core_path)
+            }
+        })
+        .collect::<Vec<_>>();
+    quote!(#(#methods)*)
+}
+
+fn generate_facade_children(
+    client: &Client,
+    children: &[Child],
+    ancestors: &[&Scope],
     core_path: &TokenStream,
-    endpoint_capability_name: &Ident,
 ) -> TokenStream {
-    let endpoint_name = &endpoint.name;
-    let scope_types = scope
-        .parameters
+    let modules = children
         .iter()
-        .map(|parameter| &parameter.ty)
+        .filter_map(|child| match child {
+            Child::Scope(scope) => {
+                Some(generate_facade_module(client, scope, ancestors, core_path))
+            }
+            Child::Endpoint(_) => None,
+        })
         .collect::<Vec<_>>();
-    let endpoint_types = endpoint
-        .parameters
-        .iter()
-        .map(|parameter| &parameter.ty)
-        .collect::<Vec<_>>();
-    let scope_bindings = scope
+    quote!(#(#modules)*)
+}
+
+fn generate_facade_module(
+    client: &Client,
+    scope: &Scope,
+    ancestors: &[&Scope],
+    core_path: &TokenStream,
+) -> TokenStream {
+    let mut visible = ancestors.to_vec();
+    visible.push(scope);
+    let module_name = &scope.module_name;
+    let facade_name = &scope.facade_name;
+    let depth = visible.len();
+    let invocation_path = super_chain(depth + 2);
+    let support_path = super_chain(depth + 1);
+    let client_name = &client.name;
+    let scope_values = value_category_summary(&scope.parameters, "local scope");
+    let facade_doc = format!(
+        "Immutable facade snapshot for the `{}` scope. {scope_values} Optional and defaulted local values use consuming setters; defaults are retained for reset without re-evaluation.",
+        scope.name
+    );
+
+    let fields = facade_scope_fields(&visible);
+    let constructor_parameters =
+        facade_constructor_parameters(&visible, &invocation_path, client_name);
+    let constructor_fields = facade_constructor_fields(&visible);
+    let setters = scope
         .parameters
         .iter()
         .enumerate()
-        .map(|(index, parameter)| parameter_binding("scope", index, &parameter.name))
+        .filter(|(_, value)| !value.is_required())
+        .map(|(index, value)| generate_facade_setters(scope.id, index, value))
         .collect::<Vec<_>>();
-    let endpoint_bindings = endpoint
+    let child_methods = scope
+        .children
+        .iter()
+        .map(|child| match child {
+            Child::Scope(child_scope) => {
+                generate_scope_entry(client, &visible, child_scope, false, core_path)
+            }
+            Child::Endpoint(endpoint) => {
+                generate_endpoint_method(client, &visible, endpoint, false, core_path)
+            }
+        })
+        .collect::<Vec<_>>();
+    let nested = generate_facade_children(client, &scope.children, &visible, core_path);
+
+    quote! {
+        pub mod #module_name {
+            #[doc = #facade_doc]
+            #[derive(Clone)]
+            pub struct #facade_name {
+                __concord_client: #invocation_path::#client_name,
+                #fields
+            }
+
+            impl #facade_name {
+                #[doc(hidden)]
+                pub(in #support_path) fn __concord_new(
+                    #constructor_parameters
+                ) -> Self {
+                    Self {
+                        #constructor_fields
+                    }
+                }
+
+                #(#setters)*
+                #(#child_methods)*
+            }
+
+            #nested
+        }
+    }
+}
+
+fn generate_scope_entry(
+    client: &Client,
+    ancestors: &[&Scope],
+    scope: &Scope,
+    on_client: bool,
+    _core_path: &TokenStream,
+) -> TokenStream {
+    let method = &scope.method_name;
+    let facade = &scope.facade_name;
+    let module = &scope.module_name;
+    let required = scope
+        .parameters
+        .iter()
+        .filter(|value| value.is_required())
+        .collect::<Vec<_>>();
+    let parameters = required
+        .iter()
+        .map(|value| {
+            let name = &value.name;
+            let ty = &value.ty;
+            quote!(#name: #ty,)
+        })
+        .collect::<Vec<_>>();
+    let mut visible = ancestors.to_vec();
+    visible.push(scope);
+    let init = initialize_scope_values(scope, &required);
+    let local_arguments = scope_constructor_local_arguments(scope);
+    let existing_arguments = if on_client {
+        quote!()
+    } else {
+        let arguments = facade_scope_argument_clones(ancestors);
+        quote!(#arguments)
+    };
+    let client_argument = if on_client {
+        quote!(self.clone(),)
+    } else {
+        quote!(self.__concord_client.clone(),)
+    };
+    let return_path = if on_client {
+        quote!(facades::#module::#facade)
+    } else {
+        quote!(#module::#facade)
+    };
+    let constructor_path = return_path.clone();
+    let doc = format!(
+        "Creates an immutable `{}` facade snapshot. {} Selected scope defaults are evaluated once here.",
+        scope.name,
+        value_category_summary(&scope.parameters, "local scope")
+    );
+    let _ = client;
+    quote! {
+        #[must_use]
+        #[doc = #doc]
+        pub fn #method(&self, #(#parameters)*) -> #return_path {
+            #init
+            #constructor_path::__concord_new(
+                #client_argument
+                #existing_arguments
+                #local_arguments
+            )
+        }
+    }
+}
+
+fn initialize_scope_values(scope: &Scope, required: &[&Value]) -> TokenStream {
+    let required_names = required
+        .iter()
+        .map(|value| (canonical_ident(&value.name), &value.name))
+        .collect::<HashMap<_, _>>();
+    let statements = scope
         .parameters
         .iter()
         .enumerate()
-        .map(|(index, parameter)| parameter_binding("endpoint", index, &parameter.name))
+        .map(|(index, value)| {
+            let field = scope_value_field(scope.id, index, value);
+            let ty = &value.ty;
+            if value.is_required() {
+                let name = required_names
+                    .get(&canonical_ident(&value.name))
+                    .expect("required scope binding");
+                quote!(let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(#name);)
+            } else if value.is_optional() {
+                quote!(let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(::std::option::Option::None);)
+            } else {
+                let default_field = scope_default_field(scope.id, index, value);
+                let default = default_expr(value.default().expect("defaulted scope value"));
+                quote! {
+                    let #default_field: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(#default);
+                    let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::clone(&#default_field);
+                }
+            }
+        })
         .collect::<Vec<_>>();
-    let (scope_public_bindings, endpoint_public_bindings, body_public_binding) =
-        explicit_parameter_bindings(
-            &scope.parameters,
-            &endpoint.parameters,
-            endpoint.body.is_some(),
+    quote!(#(#statements)*)
+}
+
+fn facade_scope_fields(scopes: &[&Scope]) -> TokenStream {
+    let fields = scopes
+        .iter()
+        .flat_map(|scope| {
+            scope
+                .parameters
+                .iter()
+                .enumerate()
+                .flat_map(move |(index, value)| {
+                    let field = scope_value_field(scope.id, index, value);
+                    let ty = &value.ty;
+                    let mut values = vec![quote!(#field: ::std::sync::Arc<#ty>,)];
+                    if value.default().is_some() {
+                        let default = scope_default_field(scope.id, index, value);
+                        values.push(quote!(#default: ::std::sync::Arc<#ty>,));
+                    }
+                    values
+                })
+        })
+        .collect::<Vec<_>>();
+    quote!(#(#fields)*)
+}
+
+fn facade_constructor_parameters(
+    scopes: &[&Scope],
+    invocation_path: &TokenStream,
+    client_name: &Ident,
+) -> TokenStream {
+    let fields = facade_scope_fields_as_parameters(scopes);
+    quote! {
+        __concord_client: #invocation_path::#client_name,
+        #fields
+    }
+}
+
+fn facade_scope_fields_as_parameters(scopes: &[&Scope]) -> TokenStream {
+    let parameters = scopes
+        .iter()
+        .flat_map(|scope| {
+            scope
+                .parameters
+                .iter()
+                .enumerate()
+                .flat_map(move |(index, value)| {
+                    let field = scope_value_field(scope.id, index, value);
+                    let ty = &value.ty;
+                    let mut values = vec![quote!(#field: ::std::sync::Arc<#ty>,)];
+                    if value.default().is_some() {
+                        let default = scope_default_field(scope.id, index, value);
+                        values.push(quote!(#default: ::std::sync::Arc<#ty>,));
+                    }
+                    values
+                })
+        })
+        .collect::<Vec<_>>();
+    quote!(#(#parameters)*)
+}
+
+fn facade_constructor_fields(scopes: &[&Scope]) -> TokenStream {
+    let fields = scopes
+        .iter()
+        .flat_map(|scope| {
+            scope
+                .parameters
+                .iter()
+                .enumerate()
+                .flat_map(move |(index, value)| {
+                    let field = scope_value_field(scope.id, index, value);
+                    let mut values = vec![quote!(#field,)];
+                    if value.default().is_some() {
+                        let default = scope_default_field(scope.id, index, value);
+                        values.push(quote!(#default,));
+                    }
+                    values
+                })
+        })
+        .collect::<Vec<_>>();
+    quote! {
+        __concord_client,
+        #(#fields)*
+    }
+}
+
+fn facade_scope_argument_clones(scopes: &[&Scope]) -> TokenStream {
+    let values = scopes
+        .iter()
+        .flat_map(|scope| {
+            scope
+                .parameters
+                .iter()
+                .enumerate()
+                .flat_map(move |(index, value)| {
+                    let field = scope_value_field(scope.id, index, value);
+                    let mut values = vec![quote!(::std::sync::Arc::clone(&self.#field),)];
+                    if value.default().is_some() {
+                        let default = scope_default_field(scope.id, index, value);
+                        values.push(quote!(::std::sync::Arc::clone(&self.#default),));
+                    }
+                    values
+                })
+        })
+        .collect::<Vec<_>>();
+    quote!(#(#values)*)
+}
+
+fn scope_constructor_local_arguments(scope: &Scope) -> TokenStream {
+    let values = scope
+        .parameters
+        .iter()
+        .enumerate()
+        .flat_map(|(index, value)| {
+            let field = scope_value_field(scope.id, index, value);
+            let mut values = vec![quote!(#field,)];
+            if value.default().is_some() {
+                let default = scope_default_field(scope.id, index, value);
+                values.push(quote!(#default,));
+            }
+            values
+        })
+        .collect::<Vec<_>>();
+    quote!(#(#values)*)
+}
+
+fn generate_facade_setters(scope_id: usize, index: usize, value: &Value) -> TokenStream {
+    let method = &value.name;
+    let field = scope_value_field(scope_id, index, value);
+    let setter_type = value.setter_type();
+    if value.is_optional() {
+        let clear = helper_ident("clear", method);
+        let setter_doc = format!(
+            "Returns a new facade selecting `Some(value)` for optional scope value `{}`.",
+            canonical_ident(&value.name)
         );
-    let body_private_binding = endpoint
-        .body
-        .as_ref()
-        .map(|_| Ident::new("__concord_body_0_body", Span::mixed_site()));
-    let body_input_type = endpoint
+        let clear_doc = format!(
+            "Returns a new facade selecting `None` for optional scope value `{}`.",
+            canonical_ident(&value.name)
+        );
+        quote! {
+            #[doc = #setter_doc]
+            #[must_use]
+            pub fn #method(mut self, value: #setter_type) -> Self {
+                self.#field = ::std::sync::Arc::new(::std::option::Option::Some(value));
+                self
+            }
+
+            #[doc = #clear_doc]
+            #[must_use]
+            pub fn #clear(mut self) -> Self {
+                self.#field = ::std::sync::Arc::new(::std::option::Option::None);
+                self
+            }
+        }
+    } else {
+        let reset = helper_ident("reset", method);
+        let default = scope_default_field(scope_id, index, value);
+        let setter_doc = format!(
+            "Returns a new facade overriding defaulted scope value `{}`.",
+            canonical_ident(&value.name)
+        );
+        let reset_doc = format!(
+            "Returns a new facade restoring the retained `{}` default without re-evaluation.",
+            canonical_ident(&value.name)
+        );
+        quote! {
+            #[doc = #setter_doc]
+            #[must_use]
+            pub fn #method(mut self, value: #setter_type) -> Self {
+                self.#field = ::std::sync::Arc::new(value);
+                self
+            }
+
+            #[doc = #reset_doc]
+            #[must_use]
+            pub fn #reset(mut self) -> Self {
+                self.#field = ::std::sync::Arc::clone(&self.#default);
+                self
+            }
+        }
+    }
+}
+
+fn generate_endpoint_method(
+    client: &Client,
+    scopes: &[&Scope],
+    endpoint: &Endpoint,
+    on_client: bool,
+    core_path: &TokenStream,
+) -> TokenStream {
+    let method = &endpoint.public_method_name;
+    let endpoint_type_path = endpoint_type_path_from_context(scopes, endpoint, on_client);
+    let required = endpoint
+        .parameters
+        .iter()
+        .filter(|value| value.is_required())
+        .collect::<Vec<_>>();
+    let parameters = required
+        .iter()
+        .map(|value| {
+            let name = &value.name;
+            let ty = &value.ty;
+            quote!(#name: #ty,)
+        })
+        .collect::<Vec<_>>();
+    let body_type = endpoint
         .body
         .as_ref()
         .map(|body| request_body_input_type(body, core_path));
-    let path_statements = scope
-        .path
-        .iter()
-        .chain(endpoint.path.iter())
-        .map(|atom| path_statement(atom, &scope.parameters, &endpoint.parameters))
-        .collect::<Vec<_>>();
-    let endpoint_identity = format!("{client_name}::{}::{endpoint_name}", scope.name);
-    let route_shape = route_shape(scope, endpoint);
-    let response_name = response_name(&endpoint.response);
-    let method_name = method_name(endpoint.method);
-    let required_names = scope
-        .parameters
-        .iter()
-        .chain(endpoint.parameters.iter())
-        .map(|parameter| format!("`{}`", parameter.name))
-        .chain(endpoint.body.as_ref().map(|_| "`body`".to_owned()))
-        .collect::<Vec<_>>();
-    let required_arguments = if required_names.is_empty() {
-        "none".to_owned()
+    let body_parameter = body_type.as_ref().map(|ty| quote!(body: #ty,));
+    let scope_arguments = if on_client {
+        quote!()
     } else {
-        required_names.join(", ")
+        facade_scope_argument_clones(scopes)
     };
-    let body_doc = request_body_doc(endpoint.body.as_ref());
-    let response_doc = response_doc(&endpoint.response);
-    let endpoint_doc = format!(
-        "`{method_name}` endpoint `{endpoint_identity}` for route `{route_shape}`. Required arguments: {required_arguments}. {body_doc} Direct await uses the `{response_name}` response mode. {response_doc}"
-    );
+    let endpoint_arguments = required
+        .iter()
+        .map(|value| {
+            let name = &value.name;
+            quote!(#name,)
+        })
+        .collect::<Vec<_>>();
+    let body_argument = body_type.as_ref().map(|_| quote!(body,));
+    let client_expression = if on_client {
+        quote!(self)
+    } else {
+        quote!(&self.__concord_client)
+    };
+    let endpoint_doc = endpoint_method_doc(client, scopes, endpoint);
+    quote! {
+        #[must_use]
+        #[doc = #endpoint_doc]
+        pub fn #method(
+            &self,
+            #(#parameters)*
+            #body_parameter
+        ) -> #core_path::Request<#endpoint_type_path> {
+            let endpoint = #endpoint_type_path::__concord_from_facade(
+                #scope_arguments
+                #(#endpoint_arguments)*
+                #body_argument
+            );
+            (#client_expression).request(endpoint)
+        }
+    }
+}
+
+fn endpoint_type_path_from_context(
+    scopes: &[&Scope],
+    endpoint: &Endpoint,
+    on_client: bool,
+) -> TokenStream {
+    let endpoint_name = &endpoint.name;
+    let modules = scopes
+        .iter()
+        .map(|scope| &scope.module_name)
+        .collect::<Vec<_>>();
+    if on_client {
+        quote!(endpoints::#(#modules::)*#endpoint_name)
+    } else {
+        let support_path = super_chain(scopes.len() + 1);
+        quote!(#support_path::endpoints::#(#modules::)*#endpoint_name)
+    }
+}
+
+fn generate_endpoint_children(
+    client: &Client,
+    children: &[Child],
+    ancestors: &[&Scope],
+    core_path: &TokenStream,
+) -> TokenStream {
+    let items = children
+        .iter()
+        .map(|child| match child {
+            Child::Endpoint(endpoint) => generate_endpoint(client, ancestors, endpoint, core_path),
+            Child::Scope(scope) => {
+                let module = &scope.module_name;
+                let mut visible = ancestors.to_vec();
+                visible.push(scope);
+                let children =
+                    generate_endpoint_children(client, &scope.children, &visible, core_path);
+                quote! {
+                    pub mod #module {
+                        #children
+                    }
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+    quote!(#(#items)*)
+}
+
+fn generate_endpoint(
+    client: &Client,
+    scopes: &[&Scope],
+    endpoint: &Endpoint,
+    core_path: &TokenStream,
+) -> TokenStream {
+    let endpoint_name = &endpoint.name;
+    let capability_name = &client.endpoint_capability_name;
+    let client_name = &client.name;
+    let values_type = &client.values_type_name;
+    let depth = scopes.len();
+    let support_path = super_chain(depth + 1);
+    let invocation_path = super_chain(depth + 2);
+    let generated_core = quote!(#support_path::__concord_generated::__core);
+    let endpoint_identity = endpoint_identity(client, scopes, endpoint);
+    let endpoint_doc = endpoint_type_doc(client, scopes, endpoint);
     let constructor_doc = format!(
-        "Creates the explicit `{endpoint_identity}` endpoint value without preparing or executing a request."
+        "Creates an explicit `{endpoint_identity}` snapshot. Required enclosing scope values are outer-to-inner; optional/defaulted controls are inherent methods."
+    );
+
+    let scope_fields = endpoint_scope_fields(scopes);
+    let endpoint_fields = endpoint_value_fields(endpoint);
+    let body_type = body_handler(endpoint.body.as_ref(), core_path);
+    let body_field = quote!(__concord_body: #body_type,);
+    let client_values_field = quote!(
+        __concord_client_values: ::std::option::Option<::std::sync::Arc<#invocation_path::#values_type>>,
+    );
+
+    let (scope_bindings, endpoint_bindings, body_binding) =
+        explicit_parameter_bindings(scopes, endpoint);
+    let explicit_parameters = explicit_constructor_parameters(
+        scopes,
+        endpoint,
+        &scope_bindings,
+        &endpoint_bindings,
+        body_binding.as_ref(),
+        core_path,
+    );
+    let explicit_initialization = initialize_explicit_endpoint(
+        scopes,
+        endpoint,
+        &scope_bindings,
+        &endpoint_bindings,
+        body_binding.as_ref(),
+        &generated_core,
+        core_path,
+    );
+    let facade_parameters = endpoint_facade_constructor_parameters(scopes, endpoint, core_path);
+    let facade_initialization =
+        initialize_facade_endpoint(scopes, endpoint, &generated_core, core_path);
+    let inherent_setters = generate_explicit_endpoint_setters(scopes, endpoint);
+
+    let default_impl = (scopes
+        .iter()
+        .flat_map(|scope| scope.parameters.iter())
+        .all(|value| !value.is_required())
+        && endpoint.parameters.iter().all(|value| !value.is_required())
+        && endpoint.body.is_none())
+    .then(|| {
+        quote! {
+            impl ::std::default::Default for #endpoint_name {
+                fn default() -> Self {
+                    Self::new()
+                }
+            }
+        }
+    });
+
+    let method = method_token(&endpoint.method, core_path);
+    let timeout = endpoint.config.timeout.map_or_else(
+        || quote!(::std::option::Option::None),
+        |duration| {
+            let seconds = duration.as_secs();
+            let nanos = duration.subsec_nanos();
+            quote!(::std::option::Option::Some(::std::time::Duration::new(#seconds, #nanos)))
+        },
     );
     let response = response_handler(&endpoint.response, core_path);
-    let body_type = body_handler(endpoint.body.as_ref(), core_path);
-    let method = method_token(endpoint.method, core_path);
-    let body_constructor = match (&endpoint.body, &body_private_binding) {
-        (Some(RequestBodyKind::Buffered(codec)), Some(binding)) => {
-            let codec = codec_type(codec, core_path);
-            quote!(super::super::__concord_generated::__core::__private::CodecBody::<#codec>::new(#binding))
+    let host_statements = host_statements(client, scopes, endpoint);
+    let path_statements = path_statements(client, scopes, endpoint);
+    let query_statements = query_statements(client, scopes, endpoint);
+    let header_statements = header_statements(client, scopes, endpoint);
+    let where_clause = endpoint_where_clause(client, scopes, endpoint, core_path);
+    let extension_trait =
+        generate_request_extension_trait(endpoint, &support_path, &generated_core, core_path);
+
+    quote! {
+        #[doc = #endpoint_doc]
+        pub struct #endpoint_name {
+            #client_values_field
+            #scope_fields
+            #endpoint_fields
+            #body_field
         }
-        (Some(RequestBodyKind::Stream(media)), Some(binding)) => {
-            let media = media_type(media, core_path);
-            quote!(super::super::__concord_generated::__core::__private::StreamRequestBody::<#media>::new(#binding))
+
+        impl #endpoint_name {
+            #[must_use]
+            #[doc = #constructor_doc]
+            pub fn new(#explicit_parameters) -> Self {
+                #explicit_initialization
+            }
+
+            #[doc(hidden)]
+            pub(in #support_path) fn __concord_from_facade(#facade_parameters) -> Self {
+                #facade_initialization
+            }
+
+            #inherent_setters
         }
-        (Some(RequestBodyKind::Multipart), Some(binding)) => quote!(#binding),
-        (None, None) => {
-            quote!(super::super::__concord_generated::__core::__private::EmptyBody::new())
+
+        #default_impl
+
+        #[doc(hidden)]
+        impl #support_path::__concord_endpoint_seal::Sealed for #endpoint_name {}
+
+        #[doc(hidden)]
+        impl #support_path::#capability_name for #endpoint_name {
+            fn __concord_bind(mut self, client: &#invocation_path::#client_name) -> Self {
+                self.__concord_client_values = ::std::option::Option::Some(
+                    ::std::sync::Arc::clone(&client.__concord_values),
+                );
+                self
+            }
         }
-        _ => unreachable!("request body and binding are modeled together"),
-    };
-    let body_field = quote!(__concord_body: #body_type,);
-    let body_public_parameter = match (&body_public_binding, &body_input_type) {
-        (Some(binding), Some(ty)) => quote!(#binding: #ty,),
-        (None, None) => quote!(),
-        _ => unreachable!("body input and public binding are modeled together"),
-    };
-    let body_private_parameter = match (&body_private_binding, &body_input_type) {
-        (Some(binding), Some(ty)) => quote!(#binding: #ty,),
-        (None, None) => quote!(),
-        _ => unreachable!("body input and private binding are modeled together"),
-    };
-    let body_public_argument = body_public_binding
-        .as_ref()
-        .map_or_else(TokenStream::new, |binding| quote!(#binding,));
-    let body_private_argument = quote!(__concord_body: #body_constructor,);
-    let mut bounds = scope
+
+        #[doc(hidden)]
+        impl #generated_core::__private::EndpointSpec for #endpoint_name
+        #where_clause
+        {
+            type Body = #body_type;
+            type Response = #response;
+
+            fn request_meta(&self) -> #generated_core::__private::RequestMeta {
+                #generated_core::__private::RequestMeta::new(
+                    #endpoint_identity,
+                    #method,
+                    #timeout,
+                )
+            }
+
+            fn prepare_head_and_body_metadata(
+                &self,
+                mut __concord_builder: #generated_core::__private::HeadBuilder,
+            ) -> ::std::result::Result<
+                (
+                    #generated_core::__private::PreparedHead,
+                    #generated_core::__private::BodyMetadata,
+                ),
+                #generated_core::__private::ApiError,
+            > {
+                let __concord_client_values = self
+                    .__concord_client_values
+                    .as_ref()
+                    .expect("generated endpoint is bound by the sealed client request path");
+                #host_statements
+                #path_statements
+                #query_statements
+                #header_statements
+                let __concord_head = __concord_builder.finish();
+                let __concord_method = #method;
+                let __concord_body_metadata = <Self::Body as #generated_core::__private::BodySpec>::metadata(
+                    &self.__concord_body,
+                    #endpoint_identity,
+                    &__concord_method,
+                )?;
+                ::std::result::Result::Ok((__concord_head, __concord_body_metadata))
+            }
+
+            fn into_body(self) -> Self::Body {
+                self.__concord_body
+            }
+        }
+
+        #extension_trait
+    }
+}
+
+fn endpoint_scope_fields(scopes: &[&Scope]) -> TokenStream {
+    let fields = scopes
+        .iter()
+        .flat_map(|scope| {
+            scope
+                .parameters
+                .iter()
+                .enumerate()
+                .flat_map(move |(index, value)| {
+                    let field = scope_value_field(scope.id, index, value);
+                    let ty = &value.ty;
+                    let mut fields = vec![quote!(#field: ::std::sync::Arc<#ty>,)];
+                    if value.default().is_some() {
+                        let default = scope_default_field(scope.id, index, value);
+                        fields.push(quote!(#default: ::std::sync::Arc<#ty>,));
+                    }
+                    fields
+                })
+        })
+        .collect::<Vec<_>>();
+    quote!(#(#fields)*)
+}
+
+fn endpoint_value_fields(endpoint: &Endpoint) -> TokenStream {
+    let fields = endpoint
         .parameters
         .iter()
-        .map(|parameter| {
-            let ty = &parameter.ty;
-            quote!(#ty: ::std::fmt::Display + ::std::marker::Send + ::std::marker::Sync + 'static)
+        .enumerate()
+        .flat_map(|(index, value)| {
+            let field = endpoint_value_field(index, value);
+            let ty = &value.ty;
+            let mut fields = vec![quote!(#field: ::std::sync::Arc<#ty>,)];
+            if value.default().is_some() {
+                let default = endpoint_default_field(index, value);
+                fields.push(quote!(#default: ::std::sync::Arc<#ty>,));
+            }
+            fields
         })
-        .chain(endpoint.parameters.iter().map(|parameter| {
-            let ty = &parameter.ty;
-            quote!(#ty: ::std::fmt::Display + ::std::marker::Send + 'static)
-        }))
         .collect::<Vec<_>>();
+    quote!(#(#fields)*)
+}
+
+fn explicit_constructor_parameters(
+    scopes: &[&Scope],
+    endpoint: &Endpoint,
+    scope_bindings: &[Ident],
+    endpoint_bindings: &[Ident],
+    body_binding: Option<&Ident>,
+    core_path: &TokenStream,
+) -> TokenStream {
+    let mut scope_index = 0;
+    let scope_parameters = scopes
+        .iter()
+        .flat_map(|scope| scope.parameters.iter())
+        .filter(|value| value.is_required())
+        .map(|value| {
+            let binding = &scope_bindings[scope_index];
+            scope_index += 1;
+            let ty = &value.ty;
+            quote!(#binding: #ty,)
+        })
+        .collect::<Vec<_>>();
+    let endpoint_parameters = endpoint
+        .parameters
+        .iter()
+        .filter(|value| value.is_required())
+        .enumerate()
+        .map(|(index, value)| {
+            let binding = &endpoint_bindings[index];
+            let ty = &value.ty;
+            quote!(#binding: #ty,)
+        })
+        .collect::<Vec<_>>();
+    let body = endpoint.body.as_ref().map(|kind| {
+        let binding = body_binding.expect("body binding");
+        let ty = request_body_input_type(kind, core_path);
+        quote!(#binding: #ty,)
+    });
+    quote!(#(#scope_parameters)* #(#endpoint_parameters)* #body)
+}
+
+fn initialize_explicit_endpoint(
+    scopes: &[&Scope],
+    endpoint: &Endpoint,
+    scope_bindings: &[Ident],
+    endpoint_bindings: &[Ident],
+    body_binding: Option<&Ident>,
+    generated_core: &TokenStream,
+    core_path: &TokenStream,
+) -> TokenStream {
+    let mut scope_binding_index = 0;
+    let scope_statements = scopes
+        .iter()
+        .flat_map(|scope| {
+            scope.parameters.iter().enumerate().map(move |(index, value)| {
+                (scope.id, index, value)
+            })
+        })
+        .map(|(scope_id, index, value)| {
+            let field = scope_value_field(scope_id, index, value);
+            let ty = &value.ty;
+            if value.is_required() {
+                let binding = &scope_bindings[scope_binding_index];
+                scope_binding_index += 1;
+                quote!(let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(#binding);)
+            } else if value.is_optional() {
+                quote!(let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(::std::option::Option::None);)
+            } else {
+                let retained = scope_default_field(scope_id, index, value);
+                let default = default_expr(value.default().expect("default"));
+                quote! {
+                    let #retained: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(#default);
+                    let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::clone(&#retained);
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+    let endpoint_statements = endpoint
+        .parameters
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let field = endpoint_value_field(index, value);
+            let ty = &value.ty;
+            if value.is_required() {
+                let binding_index = endpoint
+                    .parameters
+                    .iter()
+                    .take(index + 1)
+                    .filter(|value| value.is_required())
+                    .count()
+                    - 1;
+                let binding = &endpoint_bindings[binding_index];
+                quote!(let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(#binding);)
+            } else if value.is_optional() {
+                quote!(let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(::std::option::Option::None);)
+            } else {
+                let retained = endpoint_default_field(index, value);
+                let default = default_expr(value.default().expect("default"));
+                quote! {
+                    let #retained: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(#default);
+                    let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::clone(&#retained);
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+    let fields = endpoint_all_snapshot_field_initializers(scopes, endpoint);
+    let body = body_constructor(
+        endpoint.body.as_ref(),
+        body_binding,
+        generated_core,
+        core_path,
+    );
+    quote! {
+        #(#scope_statements)*
+        #(#endpoint_statements)*
+        Self {
+            __concord_client_values: ::std::option::Option::None,
+            #fields
+            __concord_body: #body,
+        }
+    }
+}
+
+fn endpoint_facade_constructor_parameters(
+    scopes: &[&Scope],
+    endpoint: &Endpoint,
+    core_path: &TokenStream,
+) -> TokenStream {
+    let scope_parameters = facade_scope_fields_as_parameters(scopes);
+    let endpoint_parameters = endpoint
+        .parameters
+        .iter()
+        .enumerate()
+        .filter(|(_, value)| value.is_required())
+        .map(|(index, value)| {
+            let binding = endpoint_constructor_binding(index, value);
+            let ty = &value.ty;
+            quote!(#binding: #ty,)
+        })
+        .collect::<Vec<_>>();
+    let body = endpoint.body.as_ref().map(|kind| {
+        let ty = request_body_input_type(kind, core_path);
+        quote!(__concord_body_input: #ty,)
+    });
+    quote!(#scope_parameters #(#endpoint_parameters)* #body)
+}
+
+fn initialize_facade_endpoint(
+    scopes: &[&Scope],
+    endpoint: &Endpoint,
+    generated_core: &TokenStream,
+    core_path: &TokenStream,
+) -> TokenStream {
+    let statements = endpoint
+        .parameters
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let field = endpoint_value_field(index, value);
+            let ty = &value.ty;
+            if value.is_required() {
+                let binding = endpoint_constructor_binding(index, value);
+                quote!(let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(#binding);)
+            } else if value.is_optional() {
+                quote!(let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(::std::option::Option::None);)
+            } else {
+                let retained = endpoint_default_field(index, value);
+                let default = default_expr(value.default().expect("default"));
+                quote! {
+                    let #retained: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(#default);
+                    let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::clone(&#retained);
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+    let scope_fields = scopes
+        .iter()
+        .flat_map(|scope| {
+            scope
+                .parameters
+                .iter()
+                .enumerate()
+                .flat_map(move |(index, value)| {
+                    let field = scope_value_field(scope.id, index, value);
+                    let mut values = vec![quote!(#field,)];
+                    if value.default().is_some() {
+                        let default = scope_default_field(scope.id, index, value);
+                        values.push(quote!(#default,));
+                    }
+                    values
+                })
+        })
+        .collect::<Vec<_>>();
+    let endpoint_fields = endpoint
+        .parameters
+        .iter()
+        .enumerate()
+        .flat_map(|(index, value)| {
+            let field = endpoint_value_field(index, value);
+            let mut values = vec![quote!(#field,)];
+            if value.default().is_some() {
+                let default = endpoint_default_field(index, value);
+                values.push(quote!(#default,));
+            }
+            values
+        })
+        .collect::<Vec<_>>();
+    let body_binding = endpoint
+        .body
+        .as_ref()
+        .map(|_| Ident::new("__concord_body_input", Span::call_site()));
+    let body = body_constructor(
+        endpoint.body.as_ref(),
+        body_binding.as_ref(),
+        generated_core,
+        core_path,
+    );
+    quote! {
+        #(#statements)*
+        Self {
+            __concord_client_values: ::std::option::Option::None,
+            #(#scope_fields)*
+            #(#endpoint_fields)*
+            __concord_body: #body,
+        }
+    }
+}
+
+fn endpoint_all_snapshot_field_initializers(scopes: &[&Scope], endpoint: &Endpoint) -> TokenStream {
+    let scope_fields = scopes
+        .iter()
+        .flat_map(|scope| {
+            scope
+                .parameters
+                .iter()
+                .enumerate()
+                .flat_map(move |(index, value)| {
+                    let field = scope_value_field(scope.id, index, value);
+                    let mut values = vec![quote!(#field,)];
+                    if value.default().is_some() {
+                        let default = scope_default_field(scope.id, index, value);
+                        values.push(quote!(#default,));
+                    }
+                    values
+                })
+        })
+        .chain(
+            endpoint
+                .parameters
+                .iter()
+                .enumerate()
+                .flat_map(|(index, value)| {
+                    let field = endpoint_value_field(index, value);
+                    let mut values = vec![quote!(#field,)];
+                    if value.default().is_some() {
+                        let default = endpoint_default_field(index, value);
+                        values.push(quote!(#default,));
+                    }
+                    values
+                }),
+        )
+        .collect::<Vec<_>>();
+    quote!(#(#scope_fields)*)
+}
+
+fn generate_explicit_endpoint_setters(scopes: &[&Scope], endpoint: &Endpoint) -> TokenStream {
+    let scope_setters = scopes
+        .iter()
+        .flat_map(|scope| {
+            scope
+                .parameters
+                .iter()
+                .enumerate()
+                .filter(|(_, value)| !value.is_required())
+                .map(move |(index, value)| {
+                    generate_endpoint_snapshot_setters(
+                        value,
+                        scope_value_field(scope.id, index, value),
+                        value
+                            .default()
+                            .map(|_| scope_default_field(scope.id, index, value)),
+                    )
+                })
+        })
+        .collect::<Vec<_>>();
+    let endpoint_setters = endpoint
+        .parameters
+        .iter()
+        .enumerate()
+        .filter(|(_, value)| !value.is_required())
+        .map(|(index, value)| {
+            generate_endpoint_snapshot_setters(
+                value,
+                endpoint_value_field(index, value),
+                value
+                    .default()
+                    .map(|_| endpoint_default_field(index, value)),
+            )
+        })
+        .collect::<Vec<_>>();
+    quote!(#(#scope_setters)* #(#endpoint_setters)*)
+}
+
+fn generate_endpoint_snapshot_setters(
+    value: &Value,
+    field: Ident,
+    default: Option<Ident>,
+) -> TokenStream {
+    let method = &value.name;
+    let ty = value.setter_type();
+    if value.is_optional() {
+        let clear = helper_ident("clear", method);
+        let setter_doc = format!(
+            "Returns a new explicit endpoint snapshot selecting `Some(value)` for optional value `{}`.",
+            canonical_ident(&value.name)
+        );
+        let clear_doc = format!(
+            "Returns a new explicit endpoint snapshot selecting `None` for optional value `{}`.",
+            canonical_ident(&value.name)
+        );
+        quote! {
+            #[doc = #setter_doc]
+            #[must_use]
+            pub fn #method(mut self, value: #ty) -> Self {
+                self.#field = ::std::sync::Arc::new(::std::option::Option::Some(value));
+                self
+            }
+
+            #[doc = #clear_doc]
+            #[must_use]
+            pub fn #clear(mut self) -> Self {
+                self.#field = ::std::sync::Arc::new(::std::option::Option::None);
+                self
+            }
+        }
+    } else {
+        let reset = helper_ident("reset", method);
+        let default = default.expect("default field");
+        let setter_doc = format!(
+            "Returns a new explicit endpoint snapshot overriding defaulted value `{}`.",
+            canonical_ident(&value.name)
+        );
+        let reset_doc = format!(
+            "Returns a new explicit endpoint snapshot restoring the retained `{}` default without re-evaluation.",
+            canonical_ident(&value.name)
+        );
+        quote! {
+            #[doc = #setter_doc]
+            #[must_use]
+            pub fn #method(mut self, value: #ty) -> Self {
+                self.#field = ::std::sync::Arc::new(value);
+                self
+            }
+
+            #[doc = #reset_doc]
+            #[must_use]
+            pub fn #reset(mut self) -> Self {
+                self.#field = ::std::sync::Arc::clone(&self.#default);
+                self
+            }
+        }
+    }
+}
+
+fn generate_request_extension_trait(
+    endpoint: &Endpoint,
+    support_path: &TokenStream,
+    generated_core: &TokenStream,
+    core_path: &TokenStream,
+) -> TokenStream {
+    let controls = endpoint
+        .parameters
+        .iter()
+        .enumerate()
+        .filter(|(_, value)| !value.is_required())
+        .collect::<Vec<_>>();
+    if controls.is_empty() {
+        return quote!();
+    }
+    let endpoint_name = &endpoint.name;
+    let trait_name = &endpoint.request_ext_name;
+    let seal_module = Ident::new(
+        &format!(
+            "__concord_{}_request_ext_seal",
+            to_snake_case(&canonical_ident(endpoint_name))
+        ),
+        Span::mixed_site(),
+    );
+    let trait_methods = controls
+        .iter()
+        .flat_map(|(_, value)| request_extension_trait_methods(value))
+        .collect::<Vec<_>>();
+    let impl_methods = controls
+        .iter()
+        .flat_map(|(_, value)| request_extension_impl_methods(value, generated_core))
+        .collect::<Vec<_>>();
+    let doc = format!(
+        "Endpoint-specific consuming setters for `Request<{endpoint_name}>`. Import this client's generated `prelude::*`; it re-exports this trait as `{}`. The trait is sealed and implemented only for this exact request type.",
+        endpoint.prelude_alias
+    );
+    let _ = support_path;
+    quote! {
+        #[doc(hidden)]
+        mod #seal_module {
+            pub struct Token;
+        }
+
+        #[doc = #doc]
+        #[allow(private_interfaces)]
+        pub trait #trait_name {
+            #[doc(hidden)]
+            fn __concord_request_extension_seal(
+                &self,
+                _: #seal_module::Token,
+            );
+
+            #(#trait_methods)*
+        }
+
+        impl #trait_name for #core_path::Request<#endpoint_name> {
+            fn __concord_request_extension_seal(
+                &self,
+                _: #seal_module::Token,
+            ) {}
+
+            #(#impl_methods)*
+        }
+    }
+}
+
+fn request_extension_trait_methods(value: &Value) -> Vec<TokenStream> {
+    let method = &value.name;
+    let ty = value.setter_type();
+    let setter_doc = if value.is_optional() {
+        format!(
+            "Consumes this request and selects `Some(value)` for optional endpoint value `{}`.",
+            canonical_ident(&value.name)
+        )
+    } else {
+        format!(
+            "Consumes this request and overrides defaulted endpoint value `{}`.",
+            canonical_ident(&value.name)
+        )
+    };
+    let mut methods = vec![quote! {
+        #[doc = #setter_doc]
+        #[must_use]
+        fn #method(self, value: #ty) -> Self;
+    }];
+    let helper = if value.is_optional() {
+        helper_ident("clear", method)
+    } else {
+        helper_ident("reset", method)
+    };
+    let helper_doc = if value.is_optional() {
+        format!(
+            "Consumes this request and selects `None` for optional endpoint value `{}`.",
+            canonical_ident(&value.name)
+        )
+    } else {
+        format!(
+            "Consumes this request and restores the retained `{}` default without re-evaluation.",
+            canonical_ident(&value.name)
+        )
+    };
+    methods.push(quote! {
+        #[doc = #helper_doc]
+        #[must_use]
+        fn #helper(self) -> Self;
+    });
+    methods
+}
+
+fn request_extension_impl_methods(value: &Value, generated_core: &TokenStream) -> Vec<TokenStream> {
+    let method = &value.name;
+    let ty = value.setter_type();
+    let mut methods = vec![quote! {
+        fn #method(self, value: #ty) -> Self {
+            #generated_core::__private::map_endpoint(self, |endpoint| endpoint.#method(value))
+        }
+    }];
+    let helper = if value.is_optional() {
+        helper_ident("clear", method)
+    } else {
+        helper_ident("reset", method)
+    };
+    methods.push(quote! {
+        fn #helper(self) -> Self {
+            #generated_core::__private::map_endpoint(self, |endpoint| endpoint.#helper())
+        }
+    });
+    methods
+}
+
+fn collect_prelude_exports(children: &[Child], modules: &[Ident]) -> Vec<TokenStream> {
+    let mut exports = Vec::new();
+    for child in children {
+        match child {
+            Child::Scope(scope) => {
+                let mut nested = modules.to_vec();
+                nested.push(scope.module_name.clone());
+                exports.extend(collect_prelude_exports(&scope.children, &nested));
+            }
+            Child::Endpoint(endpoint)
+                if endpoint.parameters.iter().any(|value| !value.is_required()) =>
+            {
+                let trait_name = &endpoint.request_ext_name;
+                let alias = &endpoint.prelude_alias;
+                exports.push(quote! {
+                    pub use super::endpoints::#(#modules::)*#trait_name as #alias;
+                });
+            }
+            Child::Endpoint(_) => {}
+        }
+    }
+    exports
+}
+
+fn host_statements(client: &Client, scopes: &[&Scope], endpoint: &Endpoint) -> TokenStream {
+    let statements = endpoint
+        .config
+        .host
+        .iter()
+        .map(|value| match value {
+            ResolvedExpr::String(literal) => {
+                quote!(__concord_builder.push_host_static(#literal)?;)
+            }
+            _ => {
+                let value = display_argument(value, client, scopes, endpoint);
+                quote!(__concord_builder.push_host_value(#value)?;)
+            }
+        })
+        .collect::<Vec<_>>();
+    quote!(#(#statements)*)
+}
+
+fn path_statements(client: &Client, scopes: &[&Scope], endpoint: &Endpoint) -> TokenStream {
+    let statements = endpoint
+        .config
+        .path
+        .iter()
+        .map(|value| match value {
+            ResolvedExpr::String(literal) => quote!(__concord_builder.push_static(#literal)?;),
+            _ => {
+                let value = display_argument(value, client, scopes, endpoint);
+                quote!(__concord_builder.push_value(#value)?;)
+            }
+        })
+        .collect::<Vec<_>>();
+    quote!(#(#statements)*)
+}
+
+fn query_statements(client: &Client, scopes: &[&Scope], endpoint: &Endpoint) -> TokenStream {
+    let statements = endpoint
+        .config
+        .query
+        .iter()
+        .map(|entry| {
+            let key = &entry.key;
+            if let ResolvedExpr::Value(value) = &entry.value {
+                let access = resolved_value_access(value.reference, client, scopes, endpoint);
+                match &value.shape {
+                    ValueShape::Scalar => {
+                        quote!(__concord_builder.push_query_value(#key, #access);)
+                    }
+                    ValueShape::Option { .. } => quote! {
+                        if let ::std::option::Option::Some(value) = #access.as_ref() {
+                            __concord_builder.push_query_value(#key, value);
+                        }
+                    },
+                    ValueShape::Vec { .. } => quote! {
+                        for value in #access.iter() {
+                            __concord_builder.push_query_value(#key, value);
+                        }
+                    },
+                    ValueShape::OptionVec { .. } => quote! {
+                        if let ::std::option::Option::Some(values) = #access.as_ref() {
+                            for value in values.iter() {
+                                __concord_builder.push_query_value(#key, value);
+                            }
+                        }
+                    },
+                }
+            } else {
+                let value = display_argument(&entry.value, client, scopes, endpoint);
+                quote!(__concord_builder.push_query_value(#key, #value);)
+            }
+        })
+        .collect::<Vec<_>>();
+    quote!(#(#statements)*)
+}
+
+fn header_statements(client: &Client, scopes: &[&Scope], endpoint: &Endpoint) -> TokenStream {
+    let statements = endpoint
+        .config
+        .headers
+        .iter()
+        .map(|entry| {
+            let name = &entry.name;
+            if let ResolvedExpr::Value(value) = &entry.value {
+                let access = resolved_value_access(value.reference, client, scopes, endpoint);
+                match &value.shape {
+                    ValueShape::Option { .. } => quote! {
+                        if let ::std::option::Option::Some(value) = #access.as_ref() {
+                            __concord_builder.insert_header_value(#name, value)?;
+                        }
+                    },
+                    ValueShape::Scalar => {
+                        quote!(__concord_builder.insert_header_value(#name, #access)?;)
+                    }
+                    ValueShape::Vec { .. } | ValueShape::OptionVec { .. } => {
+                        unreachable!("resolver rejects vector public headers")
+                    }
+                }
+            } else {
+                let value = display_argument(&entry.value, client, scopes, endpoint);
+                quote!(__concord_builder.insert_header_value(#name, #value)?;)
+            }
+        })
+        .collect::<Vec<_>>();
+    quote!(#(#statements)*)
+}
+
+fn display_argument(
+    expression: &ResolvedExpr,
+    client: &Client,
+    scopes: &[&Scope],
+    endpoint: &Endpoint,
+) -> TokenStream {
+    match expression {
+        ResolvedExpr::String(value) => quote!(&#value),
+        ResolvedExpr::Integer(value) => quote!(&#value),
+        ResolvedExpr::Value(value) => {
+            resolved_value_access(value.reference, client, scopes, endpoint)
+        }
+        ResolvedExpr::Format(values) => {
+            let writes = values
+                .iter()
+                .map(|value| {
+                    let value = display_argument(value, client, scopes, endpoint);
+                    quote! {
+                        ::std::fmt::Write::write_fmt(
+                            &mut __concord_formatted,
+                            format_args!("{}", #value),
+                        ).expect("formatting into a String is infallible");
+                    }
+                })
+                .collect::<Vec<_>>();
+            quote!(&{
+                let mut __concord_formatted = ::std::string::String::new();
+                #(#writes)*
+                __concord_formatted
+            })
+        }
+    }
+}
+
+fn resolved_value_access(
+    reference: ValueReference,
+    client: &Client,
+    scopes: &[&Scope],
+    endpoint: &Endpoint,
+) -> TokenStream {
+    match reference {
+        ValueReference::Client(index) => {
+            let value = &client.values[index];
+            let field = client_value_field(index, value);
+            quote!((&__concord_client_values.#field))
+        }
+        ValueReference::Scope {
+            scope_id,
+            parameter,
+        } => {
+            let scope = scopes
+                .iter()
+                .find(|scope| scope.id == scope_id)
+                .expect("resolved scope identity appears in the endpoint lexical chain");
+            let field = scope_value_field(scope_id, parameter, &scope.parameters[parameter]);
+            quote!((&*self.#field))
+        }
+        ValueReference::Endpoint(index) => {
+            let field = endpoint_value_field(index, &endpoint.parameters[index]);
+            quote!((&*self.#field))
+        }
+    }
+}
+
+fn endpoint_where_clause(
+    client: &Client,
+    scopes: &[&Scope],
+    endpoint: &Endpoint,
+    core_path: &TokenStream,
+) -> TokenStream {
+    let mut bounds = Vec::new();
+    for value in client
+        .values
+        .iter()
+        .chain(scopes.iter().flat_map(|scope| scope.parameters.iter()))
+        .chain(endpoint.parameters.iter())
+    {
+        let ty = &value.ty;
+        bounds.push(quote!(#ty: ::std::marker::Send + ::std::marker::Sync + 'static));
+    }
+    let mut display_types = Vec::new();
+    collect_config_display_types(
+        &endpoint.config,
+        client,
+        scopes,
+        endpoint,
+        &mut display_types,
+    );
+    for ty in display_types {
+        bounds.push(quote!(#ty: ::std::fmt::Display));
+    }
     if let Some(body) = &endpoint.body {
         match body {
             RequestBodyKind::Buffered(codec) => {
@@ -411,243 +1885,378 @@ fn generate_endpoint(
             RequestBodyKind::Multipart => {}
         }
     }
-    if let ResponseKind::Buffered(codec) = &endpoint.response {
-        let codec = codec_type(codec, core_path);
-        bounds.push(quote!(#codec: #core_path::advanced::DecodeBody));
+    match &endpoint.response {
+        ResponseKind::Buffered(codec) => {
+            let codec = codec_type(codec, core_path);
+            bounds.push(quote!(#codec: #core_path::advanced::DecodeBody));
+        }
+        ResponseKind::Stream(media) => {
+            let media = media_type(media, core_path);
+            bounds.push(quote!(#media: #core_path::advanced::MediaType));
+        }
+        ResponseKind::Bytes | ResponseKind::NoContent => {}
     }
-    if let ResponseKind::Stream(media) = &endpoint.response {
-        let media = media_type(media, core_path);
-        bounds.push(quote!(#media: #core_path::advanced::MediaType));
-    }
-    let where_clause = if bounds.is_empty() {
+    let mut seen = HashSet::new();
+    bounds.retain(|bound| seen.insert(bound.to_string()));
+    if bounds.is_empty() {
         quote!()
     } else {
         quote!(where #(#bounds,)*)
-    };
-    let default_impl =
-        if scope.parameters.is_empty() && endpoint.parameters.is_empty() && endpoint.body.is_none()
-        {
-            quote! {
-                impl ::std::default::Default for #endpoint_name {
-                    fn default() -> Self {
-                        Self::new()
-                    }
-                }
-            }
-        } else {
-            quote!()
-        };
-
-    quote! {
-        #[doc = #endpoint_doc]
-        pub struct #endpoint_name {
-            __concord_scope: (#(::std::sync::Arc<#scope_types>,)*),
-            __concord_endpoint: (#(#endpoint_types,)*),
-            #body_field
-        }
-
-        impl #endpoint_name {
-            #[must_use]
-            #[doc = #constructor_doc]
-            pub fn new(
-                #(#scope_public_bindings: #scope_types,)*
-                #(#endpoint_public_bindings: #endpoint_types,)*
-                #body_public_parameter
-            ) -> Self {
-                Self::__concord_from_shared(
-                    #(::std::sync::Arc::new(#scope_public_bindings),)*
-                    #(#endpoint_public_bindings,)*
-                    #body_public_argument
-                )
-            }
-
-            pub(in super::super) fn __concord_from_shared(
-                #(#scope_bindings: ::std::sync::Arc<#scope_types>,)*
-                #(#endpoint_bindings: #endpoint_types,)*
-                #body_private_parameter
-            ) -> Self {
-                Self {
-                    __concord_scope: (#(#scope_bindings,)*),
-                    __concord_endpoint: (#(#endpoint_bindings,)*),
-                    #body_private_argument
-                }
-            }
-        }
-
-        #default_impl
-
-        #[doc(hidden)]
-        impl super::super::__concord_endpoint_seal::Sealed for #endpoint_name {}
-
-        #[doc(hidden)]
-        impl super::super::#endpoint_capability_name for #endpoint_name {}
-
-        #[doc(hidden)]
-        impl super::super::__concord_generated::__core::__private::EndpointSpec for #endpoint_name
-        #where_clause
-        {
-            type Body = #body_type;
-            type Response = #response;
-
-            fn request_meta(
-                &self,
-            ) -> super::super::__concord_generated::__core::__private::RequestMeta {
-                super::super::__concord_generated::__core::__private::RequestMeta::new(
-                    #endpoint_identity,
-                    #method,
-                    ::std::option::Option::None,
-                )
-            }
-
-            fn prepare_head_and_body_metadata(
-                &self,
-                mut __concord_builder: super::super::__concord_generated::__core::__private::HeadBuilder,
-            ) -> ::std::result::Result<
-                (
-                    super::super::__concord_generated::__core::__private::PreparedHead,
-                    super::super::__concord_generated::__core::__private::BodyMetadata,
-                ),
-                super::super::__concord_generated::__core::__private::ApiError,
-            > {
-                #(#path_statements)*
-                ::std::result::Result::Ok((
-                    __concord_builder.finish(),
-                    <Self::Body as super::super::__concord_generated::__core::__private::BodySpec>::metadata(
-                        &self.__concord_body,
-                        #endpoint_identity,
-                        &#method,
-                    )?,
-                ))
-            }
-
-            fn into_body(self) -> Self::Body {
-                self.__concord_body
-            }
-        }
     }
 }
 
-fn generate_facade_method(
-    client_name: &Ident,
-    scope: &Scope,
+fn collect_config_display_types(
+    config: &NormalizedConfig,
+    client: &Client,
+    scopes: &[&Scope],
     endpoint: &Endpoint,
-    core_path: &TokenStream,
-    scope_module_name: &Ident,
-) -> TokenStream {
-    let endpoint_name = &endpoint.name;
-    let endpoint_method_name = format_ident!("{}", to_snake_case(&endpoint_name.to_string()));
-    let endpoint_names = endpoint
-        .parameters
-        .iter()
-        .map(|parameter| &parameter.name)
-        .collect::<Vec<_>>();
-    let endpoint_types = endpoint
-        .parameters
-        .iter()
-        .map(|parameter| &parameter.ty)
-        .collect::<Vec<_>>();
-    let body_type = endpoint
-        .body
-        .as_ref()
-        .map(|body| request_body_input_type(body, core_path));
-    let body_parameter = body_type
-        .as_ref()
-        .map_or_else(TokenStream::new, |ty| quote!(body: #ty,));
-    let body_argument = body_type
-        .as_ref()
-        .map_or_else(TokenStream::new, |_| quote!(body,));
-    let scope_indices = (0..scope.parameters.len())
-        .map(Index::from)
-        .collect::<Vec<_>>();
-    let endpoint_identity = format!("{client_name}::{}::{}", scope.name, endpoint.name);
-    let route_shape = route_shape(scope, endpoint);
-    let response_name = response_name(&endpoint.response);
-    let method_name = method_name(endpoint.method);
-    let body_doc = request_body_doc(endpoint.body.as_ref());
-    let response_doc = response_doc(&endpoint.response);
-    let method_doc = format!(
-        "Creates a pending `{method_name}` request for `{endpoint_identity}` at route `{route_shape}` using the `{response_name}` response mode. {body_doc} {response_doc}"
-    );
+    output: &mut Vec<Type>,
+) {
+    for expression in config.host.iter().chain(config.path.iter()) {
+        collect_expression_display_types(expression, client, scopes, endpoint, false, output);
+    }
+    for entry in &config.query {
+        collect_expression_display_types(&entry.value, client, scopes, endpoint, true, output);
+    }
+    for entry in &config.headers {
+        collect_expression_display_types(&entry.value, client, scopes, endpoint, true, output);
+    }
+}
 
-    quote! {
-        #[must_use]
-        #[doc = #method_doc]
-        pub fn #endpoint_method_name(
-            &self,
-            #(#endpoint_names: #endpoint_types,)*
-            #body_parameter
-        ) -> #core_path::Request<endpoints::#scope_module_name::#endpoint_name> {
-            let endpoint = endpoints::#scope_module_name::#endpoint_name::__concord_from_shared(
-                #(::std::sync::Arc::clone(&self.__concord_scope.#scope_indices),)*
-                #(#endpoint_names,)*
-                #body_argument
-            );
-            self.__concord_client.request(endpoint)
+fn collect_expression_display_types(
+    expression: &ResolvedExpr,
+    client: &Client,
+    scopes: &[&Scope],
+    endpoint: &Endpoint,
+    collection_aware: bool,
+    output: &mut Vec<Type>,
+) {
+    match expression {
+        ResolvedExpr::Value(value) => {
+            let declared = resolved_value_type(value.reference, client, scopes, endpoint);
+            let ty = if collection_aware {
+                match &value.shape {
+                    ValueShape::Option { inner } => inner.clone(),
+                    ValueShape::Vec { element } | ValueShape::OptionVec { element, .. } => {
+                        element.clone()
+                    }
+                    ValueShape::Scalar => declared.clone(),
+                }
+            } else {
+                declared.clone()
+            };
+            output.push(ty);
         }
+        ResolvedExpr::Format(values) => {
+            for value in values {
+                collect_expression_display_types(value, client, scopes, endpoint, false, output);
+            }
+        }
+        ResolvedExpr::String(_) | ResolvedExpr::Integer(_) => {}
+    }
+}
+
+fn resolved_value_type<'a>(
+    reference: ValueReference,
+    client: &'a Client,
+    scopes: &[&'a Scope],
+    endpoint: &'a Endpoint,
+) -> &'a Type {
+    match reference {
+        ValueReference::Client(index) => &client.values[index].ty,
+        ValueReference::Scope {
+            scope_id,
+            parameter,
+        } => {
+            &scopes
+                .iter()
+                .find(|scope| scope.id == scope_id)
+                .expect("scope reference")
+                .parameters[parameter]
+                .ty
+        }
+        ValueReference::Endpoint(index) => &endpoint.parameters[index].ty,
     }
 }
 
 fn explicit_parameter_bindings(
-    scope_parameters: &[Parameter],
-    endpoint_parameters: &[Parameter],
-    has_body: bool,
+    scopes: &[&Scope],
+    endpoint: &Endpoint,
 ) -> (Vec<Ident>, Vec<Ident>, Option<Ident>) {
-    let body_name = has_body.then(|| Ident::new("body", Span::call_site()));
-    let original_names = scope_parameters
+    let scope_values = scopes
         .iter()
-        .chain(endpoint_parameters.iter())
-        .map(|parameter| parameter.name.to_string())
-        .chain(body_name.iter().map(ToString::to_string))
+        .flat_map(|scope| scope.parameters.iter())
+        .filter(|value| value.is_required())
         .collect::<Vec<_>>();
-    let reserved = original_names.iter().cloned().collect::<HashSet<_>>();
+    let endpoint_values = endpoint
+        .parameters
+        .iter()
+        .filter(|value| value.is_required())
+        .collect::<Vec<_>>();
+    let body_name = endpoint.body.as_ref().map(|_| "body".to_owned());
+    let original = scope_values
+        .iter()
+        .chain(endpoint_values.iter())
+        .map(|value| canonical_ident(&value.name))
+        .chain(body_name.iter().cloned())
+        .collect::<Vec<_>>();
+    let reserved = original.iter().cloned().collect::<HashSet<_>>();
     let mut used = HashSet::new();
-
     let mut allocate = |namespace: &str, name: &Ident| {
-        let original = name.to_string();
-        if original_names
+        let original_name = canonical_ident(name);
+        if original
             .iter()
-            .filter(|name| name.as_str() == original.as_str())
+            .filter(|candidate| **candidate == original_name)
             .count()
             == 1
-            && used.insert(original)
+            && used.insert(original_name.clone())
         {
             return name.clone();
         }
-
-        let base = format!("{namespace}_{}", to_snake_case(&name.to_string()));
+        let base = format!("{namespace}_{}", to_snake_case(&original_name));
         let mut candidate = base.clone();
-        let mut suffix = 2_u32;
+        let mut suffix = 2;
         while reserved.contains(&candidate) || !used.insert(candidate.clone()) {
             candidate = format!("{base}_{suffix}");
             suffix += 1;
         }
-        Ident::new(&candidate, name.span())
+        public_ident(&candidate, name.span())
     };
-
-    let scope = scope_parameters
+    let scope = scope_values
         .iter()
-        .map(|parameter| allocate("scope", &parameter.name))
+        .map(|value| allocate("scope", &value.name))
         .collect();
-    let endpoint = endpoint_parameters
+    let endpoint_bindings = endpoint_values
         .iter()
-        .map(|parameter| allocate("endpoint", &parameter.name))
+        .map(|value| allocate("endpoint", &value.name))
         .collect();
-    let body = body_name.as_ref().map(|name| allocate("request", name));
-    (scope, endpoint, body)
+    let body = body_name.map(|_| allocate("request", &Ident::new("body", Span::call_site())));
+    (scope, endpoint_bindings, body)
 }
 
-fn route_shape(scope: &Scope, endpoint: &Endpoint) -> String {
-    let segments = scope
-        .path
+fn endpoint_constructor_binding(index: usize, value: &Value) -> Ident {
+    private_ident("endpoint_input", index, &value.name)
+}
+
+fn body_constructor(
+    body: Option<&RequestBodyKind>,
+    binding: Option<&Ident>,
+    generated_core: &TokenStream,
+    core_path: &TokenStream,
+) -> TokenStream {
+    match (body, binding) {
+        (Some(RequestBodyKind::Buffered(codec)), Some(binding)) => {
+            let codec = codec_type(codec, core_path);
+            quote!(#generated_core::__private::CodecBody::<#codec>::new(#binding))
+        }
+        (Some(RequestBodyKind::Stream(media)), Some(binding)) => {
+            let media = media_type(media, core_path);
+            quote!(#generated_core::__private::StreamRequestBody::<#media>::new(#binding))
+        }
+        (Some(RequestBodyKind::Multipart), Some(binding)) => quote!(#binding),
+        (None, None) => quote!(#generated_core::__private::EmptyBody::new()),
+        _ => unreachable!("body and binding are modeled together"),
+    }
+}
+
+fn endpoint_method_doc(client: &Client, scopes: &[&Scope], endpoint: &Endpoint) -> String {
+    let identity = endpoint_identity(client, scopes, endpoint);
+    let method = method_name(&endpoint.method);
+    let route = route_shape(&endpoint.config.path);
+    let controls = endpoint
+        .parameters
         .iter()
-        .chain(endpoint.path.iter())
-        .map(|atom| match atom {
-            PathAtom::Static(value) => value.value(),
-            PathAtom::Scope(name) => format!("{{scope.{name}}}"),
-            PathAtom::Endpoint(name) => format!("{{ep.{name}}}"),
+        .filter(|value| !value.is_required())
+        .map(|value| canonical_ident(&value.name))
+        .collect::<Vec<_>>();
+    let control_doc = if controls.is_empty() {
+        "This endpoint has no endpoint-specific request setters.".to_owned()
+    } else {
+        format!(
+            "Import the generated support `prelude::*` to use consuming request setters for: {}.",
+            controls.join(", ")
+        )
+    };
+    let values = value_category_summary(&endpoint.parameters, "endpoint");
+    let configuration = endpoint_configuration_summary(client, endpoint);
+    let features = endpoint_feature_summary(endpoint);
+    format!(
+        "Creates a side-effect-free pending `{method}` request for `{identity}` at `{route}`. {values} {control_doc} {configuration} {} Direct await uses the `{}` response mode. {} {features}",
+        request_body_doc(endpoint.body.as_ref()),
+        response_name(&endpoint.response),
+        response_doc(&endpoint.response),
+    )
+}
+
+fn endpoint_type_doc(client: &Client, scopes: &[&Scope], endpoint: &Endpoint) -> String {
+    let identity = endpoint_identity(client, scopes, endpoint);
+    let method = method_name(&endpoint.method);
+    let route = route_shape(&endpoint.config.path);
+    let endpoint_values = value_category_summary(&endpoint.parameters, "endpoint");
+    let scope_values = if scopes.is_empty() {
+        "No enclosing scope values are stored.".to_owned()
+    } else {
+        scopes
+            .iter()
+            .map(|scope| value_category_summary(&scope.parameters, "enclosing scope"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let configuration = endpoint_configuration_summary(client, endpoint);
+    let features = endpoint_feature_summary(endpoint);
+    format!(
+        "Explicit `{method}` endpoint snapshot for `{identity}` at route `{route}`. It executes through the same client request path as its facade method. {scope_values} {endpoint_values} {configuration} {} Direct await uses the `{}` response mode. {} {features}",
+        request_body_doc(endpoint.body.as_ref()),
+        response_name(&endpoint.response),
+        response_doc(&endpoint.response),
+    )
+}
+
+fn endpoint_identity(client: &Client, scopes: &[&Scope], endpoint: &Endpoint) -> String {
+    std::iter::once(client.name.to_string())
+        .chain(scopes.iter().map(|scope| scope.name.to_string()))
+        .chain(std::iter::once(endpoint.name.to_string()))
+        .collect::<Vec<_>>()
+        .join("::")
+}
+
+fn route_shape(path: &[ResolvedExpr]) -> String {
+    let values = path
+        .iter()
+        .map(|value| match value {
+            ResolvedExpr::String(value) => value.value(),
+            ResolvedExpr::Integer(value) => value.to_string(),
+            ResolvedExpr::Value(value) => match value.reference {
+                ValueReference::Client(_) => "{vars.VALUE}".to_owned(),
+                ValueReference::Scope { .. } => "{scope.VALUE}".to_owned(),
+                ValueReference::Endpoint(_) => "{ep.VALUE}".to_owned(),
+            },
+            ResolvedExpr::Format(_) => "{fmt[...]}".to_owned(),
         })
         .collect::<Vec<_>>();
-    format!("/{}", segments.join("/"))
+    if values.is_empty() {
+        "<fixed base path>".to_owned()
+    } else {
+        format!("/<fixed base>/{}", values.join("/"))
+    }
+}
+
+fn value_category_summary(values: &[Value], owner: &str) -> String {
+    let names = |predicate: fn(&Value) -> bool| {
+        values
+            .iter()
+            .filter(|value| predicate(value))
+            .map(|value| format!("`{}`", canonical_ident(&value.name)))
+            .collect::<Vec<_>>()
+    };
+    let required = names(Value::is_required);
+    let optional = names(Value::is_optional);
+    let defaulted = names(|value| value.default().is_some());
+    let mut categories = Vec::new();
+    if !required.is_empty() {
+        categories.push(format!("Required {owner} values: {}.", required.join(", ")));
+    }
+    if !optional.is_empty() {
+        categories.push(format!("Optional {owner} values: {}.", optional.join(", ")));
+    }
+    if !defaulted.is_empty() {
+        categories.push(format!(
+            "Defaulted {owner} values: {}; default expressions are intentionally omitted.",
+            defaulted.join(", ")
+        ));
+    }
+    if categories.is_empty() {
+        format!("No {owner} values are declared.")
+    } else {
+        categories.join(" ")
+    }
+}
+
+fn retry_summary(retry: &RetrySelection) -> &'static str {
+    match retry {
+        RetrySelection::Disabled => "Application native retry is disabled.",
+        RetrySelection::ReqwestDefault => {
+            "Reqwest default native retry is explicitly selected; an HTTP builder retry method may replace it."
+        }
+        RetrySelection::Custom(_) => {
+            "A dangerous custom native retry factory is selected and requires `dangerous-custom-retry`; an HTTP builder retry method may replace it before factory evaluation."
+        }
+    }
+}
+
+fn endpoint_configuration_summary(client: &Client, endpoint: &Endpoint) -> String {
+    let query_count = endpoint.config.query.len();
+    let header_count = endpoint.config.headers.len();
+    let timeout = endpoint.config.timeout.map_or_else(
+        || "No inherited operation deadline is active.".to_owned(),
+        |duration| {
+            format!(
+                "The inherited operation deadline is {} seconds and {} nanoseconds; inherent request setters may override, disable, or restore it.",
+                duration.as_secs(),
+                duration.subsec_nanos()
+            )
+        },
+    );
+    format!(
+        "The normalized public head contains {query_count} public query declaration(s) and {header_count} public header declaration(s). {timeout} {}",
+        retry_summary(&client.retry)
+    )
+}
+
+fn endpoint_feature_summary(endpoint: &Endpoint) -> String {
+    let uses_json = matches!(
+        &endpoint.body,
+        Some(RequestBodyKind::Buffered(CodecKind::Json(_)))
+    ) || matches!(
+        &endpoint.response,
+        ResponseKind::Buffered(CodecKind::Json(_))
+    );
+    let uses_multipart = matches!(&endpoint.body, Some(RequestBodyKind::Multipart));
+    let mut requirements = Vec::new();
+    if uses_json {
+        requirements.push("`concord_core/json`");
+    }
+    if uses_multipart {
+        requirements.push("`concord_core/multipart`");
+    }
+    if requirements.is_empty() {
+        "No endpoint-specific Cargo feature is required by this body/response mode.".to_owned()
+    } else {
+        format!("Required Cargo feature(s): {}.", requirements.join(", "))
+    }
+}
+
+fn method_name(method: &MethodKind) -> String {
+    match method {
+        MethodKind::Get => "GET".to_owned(),
+        MethodKind::Post => "POST".to_owned(),
+        MethodKind::Put => "PUT".to_owned(),
+        MethodKind::Patch => "PATCH".to_owned(),
+        MethodKind::Delete => "DELETE".to_owned(),
+        MethodKind::Head => "HEAD".to_owned(),
+        MethodKind::Options => "OPTIONS".to_owned(),
+        MethodKind::Trace => "TRACE".to_owned(),
+        MethodKind::Connect => "CONNECT".to_owned(),
+        MethodKind::Custom(value) => value.value(),
+    }
+}
+
+fn method_token(method: &MethodKind, core_path: &TokenStream) -> TokenStream {
+    match method {
+        MethodKind::Get => quote!(#core_path::__private::Method::GET),
+        MethodKind::Post => quote!(#core_path::__private::Method::POST),
+        MethodKind::Put => quote!(#core_path::__private::Method::PUT),
+        MethodKind::Patch => quote!(#core_path::__private::Method::PATCH),
+        MethodKind::Delete => quote!(#core_path::__private::Method::DELETE),
+        MethodKind::Head => quote!(#core_path::__private::Method::HEAD),
+        MethodKind::Options => quote!(#core_path::__private::Method::OPTIONS),
+        MethodKind::Trace => quote!(#core_path::__private::Method::TRACE),
+        MethodKind::Connect => quote!(#core_path::__private::Method::CONNECT),
+        MethodKind::Custom(value) => quote!(
+            #core_path::__private::Method::from_bytes(#value.as_bytes())
+                .expect("the Concord macro validates custom HTTP method tokens")
+        ),
+    }
 }
 
 fn response_handler(response: &ResponseKind, core_path: &TokenStream) -> TokenStream {
@@ -711,69 +2320,23 @@ fn codec_input_type(codec: &CodecKind, core_path: &TokenStream) -> TokenStream {
     }
 }
 
-fn response_name(response: &ResponseKind) -> String {
-    match response {
-        ResponseKind::Bytes => "Bytes".to_owned(),
-        ResponseKind::NoContent => "NoContent".to_owned(),
-        ResponseKind::Buffered(CodecKind::Text) => "Text".to_owned(),
-        ResponseKind::Buffered(CodecKind::Json(ty)) => {
-            format!("Json<{}>", ty.to_token_stream())
-        }
-        ResponseKind::Buffered(CodecKind::Custom(ty)) => ty.to_token_stream().to_string(),
-        ResponseKind::Stream(media) => {
-            let media = match media {
-                MediaKind::OctetStream => "OctetStream".to_owned(),
-                MediaKind::Custom(ty) => ty.to_token_stream().to_string(),
-            };
-            format!("Stream<{media}>")
-        }
-    }
-}
-
-const fn method_name(method: MethodKind) -> &'static str {
-    match method {
-        MethodKind::Get => "GET",
-        MethodKind::Post => "POST",
-    }
-}
-
-fn method_token(method: MethodKind, core_path: &TokenStream) -> TokenStream {
-    match method {
-        MethodKind::Get => quote!(#core_path::__private::Method::GET),
-        MethodKind::Post => quote!(#core_path::__private::Method::POST),
-    }
-}
-
-fn endpoint_uses_json(endpoint: &Endpoint) -> bool {
-    endpoint.body.as_ref().is_some_and(
-        |body| matches!(body, RequestBodyKind::Buffered(codec) if codec_is_json(codec)),
-    ) || matches!(
-        &endpoint.response,
-        ResponseKind::Buffered(codec) if codec_is_json(codec)
-    )
-}
-
-const fn endpoint_uses_multipart(endpoint: &Endpoint) -> bool {
-    matches!(&endpoint.body, Some(RequestBodyKind::Multipart))
-}
-
 fn request_body_doc(body: Option<&RequestBodyKind>) -> String {
     match body {
-        None => "The request has no body argument.".to_owned(),
-        Some(RequestBodyKind::Buffered(_)) => {
-            "The final body argument is encoded after the before-send hook and remains subject to the finite request-body limit.".to_owned()
+        None => "The request is bodyless.".to_owned(),
+        Some(RequestBodyKind::Buffered(codec)) => {
+            format!(
+                "The final `body` argument uses the `{}` buffered body mode and is encoded only after protected public-head preparation and the before-send hook.",
+                codec_name(codec)
+            )
         }
         Some(RequestBodyKind::Stream(media)) => {
-            let media = match media {
-                MediaKind::OctetStream => "OctetStream".to_owned(),
-                MediaKind::Custom(ty) => ty.to_token_stream().to_string(),
-            };
             format!(
-                "The final `Stream<{media}>` body argument is an owned one-shot `StreamBody`; it remains unpolled until native execution and is subject to exact-length and finite request-body limits."
+                "The final `body` argument uses `Stream<{}>` with an owned one-shot `StreamBody`; it remains unpolled until managed native execution.",
+                media_name(media)
             )
         }
         Some(RequestBodyKind::Multipart) => {
-            "The final body argument is `MultipartBody` and requires the `concord_core/multipart` feature; the managed HTTP layer owns boundary serialization and aggregate framing limits.".to_owned()
+            "The final `body` argument is `MultipartBody`, requires `concord_core/multipart`, and remains subject to aggregate framing limits while the managed HTTP layer owns the top-level boundary header.".to_owned()
         }
     }
 }
@@ -781,117 +2344,164 @@ fn request_body_doc(body: Option<&RequestBodyKind>) -> String {
 fn response_doc(response: &ResponseKind) -> &'static str {
     match response {
         ResponseKind::Stream(_) => {
-            "Direct await returns `StreamResponse<M>`, which carries successful metadata and enforces the finite stream-response limit. `Request::response` and pagination are intentionally unavailable."
+            "Direct await returns `StreamResponse<M>` with a finite stream-response limit; `.response()` is intentionally unavailable."
         }
-        _ => "Successful metadata is available through `Request::response`.",
-    }
-}
-
-const fn codec_is_json(codec: &CodecKind) -> bool {
-    matches!(codec, CodecKind::Json(_))
-}
-
-fn path_statement(
-    atom: &PathAtom,
-    scope_parameters: &[Parameter],
-    endpoint_parameters: &[Parameter],
-) -> TokenStream {
-    match atom {
-        PathAtom::Static(value) => quote!(__concord_builder.push_static(#value)?;),
-        PathAtom::Scope(name) => {
-            let index = scope_parameters
-                .iter()
-                .position(|parameter| parameter.name == *name)
-                .expect("validated scope path references have a generated binding");
-            let index = Index::from(index);
-            quote!(__concord_builder.push_value(&*self.__concord_scope.#index)?;)
-        }
-        PathAtom::Endpoint(name) => {
-            let index = endpoint_parameters
-                .iter()
-                .position(|parameter| parameter.name == *name)
-                .expect("validated endpoint path references have a generated binding");
-            let index = Index::from(index);
-            quote!(__concord_builder.push_value(&self.__concord_endpoint.#index)?;)
+        _ => {
+            "Direct await returns the semantic value and `.response()` selects successful metadata."
         }
     }
 }
 
-fn parameter_binding(namespace: &str, index: usize, name: &Ident) -> Ident {
-    let normalized = to_snake_case(&name.to_string());
+fn response_name(response: &ResponseKind) -> String {
+    match response {
+        ResponseKind::Bytes => "Bytes".to_owned(),
+        ResponseKind::NoContent => "NoContent".to_owned(),
+        ResponseKind::Buffered(codec) => codec_name(codec),
+        ResponseKind::Stream(media) => format!("Stream<{}>", media_name(media)),
+    }
+}
+
+fn codec_name(codec: &CodecKind) -> String {
+    match codec {
+        CodecKind::Text => "Text".to_owned(),
+        CodecKind::Json(ty) => format!("Json<{}>", ty.to_token_stream()),
+        CodecKind::Custom(ty) => ty.to_token_stream().to_string(),
+    }
+}
+
+fn media_name(media: &MediaKind) -> String {
+    match media {
+        MediaKind::OctetStream => "OctetStream".to_owned(),
+        MediaKind::Custom(ty) => ty.to_token_stream().to_string(),
+    }
+}
+
+fn client_uses_json(client: &Client) -> bool {
+    endpoints(&client.children).any(|endpoint| {
+        endpoint
+            .body
+            .as_ref()
+            .is_some_and(|body| matches!(body, RequestBodyKind::Buffered(CodecKind::Json(_))))
+            || matches!(
+                &endpoint.response,
+                ResponseKind::Buffered(CodecKind::Json(_))
+            )
+    })
+}
+
+fn client_uses_multipart(client: &Client) -> bool {
+    endpoints(&client.children)
+        .any(|endpoint| matches!(&endpoint.body, Some(RequestBodyKind::Multipart)))
+}
+
+fn endpoints(children: &[Child]) -> Box<dyn Iterator<Item = &Endpoint> + '_> {
+    Box::new(children.iter().flat_map(|child| match child {
+        Child::Endpoint(endpoint) => {
+            Box::new(std::iter::once(endpoint)) as Box<dyn Iterator<Item = &Endpoint>>
+        }
+        Child::Scope(scope) => endpoints(&scope.children),
+    }))
+}
+
+fn default_expr(value: &DefaultExpr) -> TokenStream {
+    match value {
+        DefaultExpr::String(value) => quote!(#value),
+        DefaultExpr::Integer { negative, literal } if *negative => quote!(-#literal),
+        DefaultExpr::Integer { literal, .. } => quote!(#literal),
+        DefaultExpr::Boolean(value) => quote!(#value),
+        DefaultExpr::Path(value) => quote!(#value),
+    }
+}
+
+fn super_chain(count: usize) -> TokenStream {
+    let supers = (0..count).map(|_| quote!(super)).collect::<Vec<_>>();
+    quote!(#(#supers)::* )
+}
+
+fn helper_ident(prefix: &str, name: &Ident) -> Ident {
+    public_ident(&format!("{prefix}_{}", canonical_ident(name)), name.span())
+}
+
+fn client_value_field(index: usize, value: &Value) -> Ident {
+    private_ident("client_value", index, &value.name)
+}
+
+fn builder_value_field(index: usize, value: &Value) -> Ident {
+    private_ident("builder_value", index, &value.name)
+}
+
+fn resolved_client_value(index: usize, value: &Value) -> Ident {
+    private_ident("resolved_client_value", index, &value.name)
+}
+
+fn scope_value_field(scope_id: usize, index: usize, value: &Value) -> Ident {
     Ident::new(
-        &format!("__concord_{namespace}_{index}_{normalized}"),
+        &format!(
+            "__concord_scope_{scope_id}_{index}_{}",
+            to_snake_case(&canonical_ident(&value.name))
+        ),
         Span::mixed_site(),
     )
 }
 
-fn to_pascal_case(name: &str) -> String {
-    let name = name.strip_prefix("r#").unwrap_or(name);
-    name.split('_')
-        .filter(|part| !part.is_empty())
-        .map(|part| {
-            let mut characters = part.chars();
-            let Some(first) = characters.next() else {
-                return String::new();
-            };
-            first.to_uppercase().chain(characters).collect::<String>()
-        })
-        .collect()
+fn scope_default_field(scope_id: usize, index: usize, value: &Value) -> Ident {
+    Ident::new(
+        &format!(
+            "__concord_scope_default_{scope_id}_{index}_{}",
+            to_snake_case(&canonical_ident(&value.name))
+        ),
+        Span::mixed_site(),
+    )
+}
+
+fn endpoint_value_field(index: usize, value: &Value) -> Ident {
+    private_ident("endpoint_value", index, &value.name)
+}
+
+fn endpoint_default_field(index: usize, value: &Value) -> Ident {
+    private_ident("endpoint_default", index, &value.name)
+}
+
+fn private_ident(namespace: &str, index: usize, name: &Ident) -> Ident {
+    Ident::new(
+        &format!(
+            "__concord_{namespace}_{index}_{}",
+            to_snake_case(&canonical_ident(name))
+        ),
+        Span::mixed_site(),
+    )
 }
 
 #[cfg(test)]
 mod tests {
-    use syn::parse_quote;
+    use quote::quote;
 
-    use super::{explicit_parameter_bindings, to_pascal_case};
-    use crate::model::{Parameter, to_snake_case};
-
-    #[test]
-    fn generated_names_are_deterministic() {
-        assert_eq!(to_snake_case("ProofApi"), "proof_api");
-        assert_eq!(to_snake_case("ById"), "by_id");
-        assert_eq!(to_snake_case("HTTPStatus"), "http_status");
-        assert_eq!(to_pascal_case("resources"), "Resources");
-        assert_eq!(to_pascal_case("user_resources"), "UserResources");
-    }
+    use super::*;
+    use crate::{parse, resolve};
 
     #[test]
-    fn explicit_constructor_bindings_preserve_dsl_names_and_qualify_overlap() {
-        let scope = [Parameter {
-            name: parse_quote!(region),
-            ty: parse_quote!(String),
-        }];
-        let endpoint = [Parameter {
-            name: parse_quote!(user_id),
-            ty: parse_quote!(String),
-        }];
-        let (scope_names, endpoint_names, body_name) =
-            explicit_parameter_bindings(&scope, &endpoint, false);
-        assert_eq!(scope_names[0], "region");
-        assert_eq!(endpoint_names[0], "user_id");
-        assert!(body_name.is_none());
-
-        let scope = [Parameter {
-            name: parse_quote!(id),
-            ty: parse_quote!(String),
-        }];
-        let endpoint = [Parameter {
-            name: parse_quote!(id),
-            ty: parse_quote!(String),
-        }];
-        let (scope_names, endpoint_names, _) =
-            explicit_parameter_bindings(&scope, &endpoint, false);
-        assert_eq!(scope_names[0], "scope_id");
-        assert_eq!(endpoint_names[0], "endpoint_id");
-
-        let scope = [Parameter {
-            name: parse_quote!(body),
-            ty: parse_quote!(String),
-        }];
-        let (scope_names, endpoint_names, body_name) =
-            explicit_parameter_bindings(&scope, &[], true);
-        assert_eq!(scope_names[0], "scope_body");
-        assert!(endpoint_names.is_empty());
-        assert_eq!(body_name.expect("body binding"), "request_body");
+    fn complete_generation_consumes_normalized_multi_client_ir() {
+        let source = parse::parse(quote! {
+            client FirstApi {
+                base "https://example.test";
+                var tenant: String;
+                GET Root(id: String, verbose: Option<bool>) -> Bytes {
+                    path [vars.tenant, ep.id];
+                }
+            }
+            client SecondApi {
+                base "http://example.test";
+                scope resources(region: String) {
+                    GET List() -> NoContent;
+                }
+            }
+        })
+        .expect("AST");
+        let api = resolve::resolve(source).expect("IR");
+        let output = generate(&api, &quote!(::concord_core)).to_string();
+        assert!(!output.contains("FirstApiRegions"));
+        assert!(output.contains("FirstApiRootRequestExt"));
+        assert!(output.contains("SecondApi"));
+        assert!(output.contains("map_endpoint"));
     }
 }

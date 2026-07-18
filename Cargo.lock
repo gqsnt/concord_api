@@ -163,12 +163,14 @@ dependencies = [
  "concord_core",
  "concord_test_support",
  "futures-core",
+ "http",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
  "syn",
  "tokio",
  "trybuild",
+ "url",
 ]
 
 [[package]]

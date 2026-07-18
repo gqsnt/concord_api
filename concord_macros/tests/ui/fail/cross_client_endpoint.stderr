@@ -1,20 +1,14 @@
 error[E0277]: the trait bound `alpha_api::endpoints::health::Download: BetaApiEndpoint` is not satisfied
-  --> tests/ui/fail/cross_client_endpoint.rs:34:26
+  --> tests/ui/fail/cross_client_endpoint.rs:24:26
    |
-34 |     let _ = beta.request(alpha_endpoint);
+24 |     let _ = beta.request(alpha_endpoint);
    |                  ------- ^^^^^^^^^^^^^^ the trait `BetaApiEndpoint` is not implemented for `alpha_api::endpoints::health::Download`
    |                  |
    |                  required by a bound introduced by this call
    |
    = help: the trait `BetaApiEndpoint` is implemented for `beta_api::endpoints::health::Download`
 note: required by a bound in `beta_api::<impl BetaApi>::request`
-  --> tests/ui/fail/cross_client_endpoint.rs:20:5
+  --> tests/ui/fail/cross_client_endpoint.rs:12:12
    |
-20 | /     api! {
-21 | |         client BetaApi {
-22 | |             base "https://beta.example.test";
-23 | |             scope health() {
-...  |
-28 | |     }
-   | |_____^ required by this bound in `beta_api::<impl BetaApi>::request`
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+12 |     client BetaApi {
+   |            ^^^^^^^ required by this bound in `beta_api::<impl BetaApi>::request`

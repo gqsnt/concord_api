@@ -5,7 +5,7 @@ api! {
         base "https://malformed.example.test";
         scope resources(scope_value: String) {
             path ["scopes", scope.scope_value, "resources"];
-            PUT ById(endpoint_value: String) -> NoContent {
+            FETCH ById(endpoint_value: String) -> NoContent {
                 path [ep.endpoint_value];
             }
         }

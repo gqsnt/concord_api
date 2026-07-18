@@ -73,6 +73,19 @@ fn multipart_dsl_without_runtime_feature_has_a_focused_diagnostic() {
 }
 
 #[test]
+fn custom_retry_dsl_without_runtime_feature_has_a_focused_diagnostic() {
+    assert_fixture_fails_with(
+        "custom_retry_disabled",
+        "Concord `retry custom PATH` requires the `concord_core/dangerous-custom-retry` feature",
+    );
+}
+
+#[test]
+fn custom_retry_dsl_with_runtime_feature_and_http_override_compiles() {
+    assert_fixture_passes("custom_retry_enabled");
+}
+
+#[test]
 fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names() {
     let root = workspace_root();
     let manifest = fixture_root().join("renamed_core/Cargo.toml");
@@ -102,7 +115,7 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
     for relative in [
         "struct.RenamedApi.html",
         "struct.RenamedApiBuilder.html",
-        "renamed_api/facades/struct.ResourcesFacade.html",
+        "renamed_api/facades/resources/struct.ResourcesFacade.html",
         "renamed_api/endpoints/resources/struct.ById.html",
         "renamed_api/endpoints/resources/struct.Custom.html",
         "renamed_api/endpoints/resources/struct.StreamUpload.html",
@@ -201,9 +214,20 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
     let client_page = std::fs::read_to_string(documentation.join("struct.RenamedApi.html"))
         .expect("generated client Rustdoc should be readable");
     assert!(
-        client_page.contains("E: RenamedApiEndpoint"),
+        client_page.contains("RenamedApiEndpoint"),
         "generated client Rustdoc omitted its API-specific endpoint capability"
     );
+    for expected in [
+        "tenant",
+        "locale",
+        "page_size",
+        "Application native retry is disabled",
+    ] {
+        assert!(
+            client_page.contains(expected),
+            "generated client Rustdoc omitted value/retry behavior {expected}"
+        );
+    }
     assert!(
         !documentation
             .join("renamed_api/trait.RenamedApiEndpoint.html")
@@ -212,11 +236,58 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
     );
 
     let facade_page = std::fs::read_to_string(
-        documentation.join("renamed_api/facades/struct.ResourcesFacade.html"),
+        documentation.join("renamed_api/facades/resources/struct.ResourcesFacade.html"),
     )
     .expect("generated facade Rustdoc should be readable");
     assert!(
         facade_page.contains("RenamedApi::resources::ById"),
         "facade and endpoint Rustdoc must use the same complete endpoint identity"
     );
+    for expected in ["scope_value", "region", "scope_limit", "reset_scope_limit"] {
+        assert!(
+            facade_page.contains(expected),
+            "generated facade Rustdoc omitted scope value/control {expected}"
+        );
+    }
+
+    let prelude_path = documentation.join("renamed_api/prelude/index.html");
+    let prelude_page = std::fs::read_to_string(&prelude_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", prelude_path.display()));
+    assert!(
+        prelude_page.contains("RenamedApiResourcesByIdRequestExt"),
+        "generated prelude Rustdoc omitted the deterministic request-extension alias"
+    );
+
+    let request_ext_path =
+        documentation.join("renamed_api/endpoints/resources/trait.ByIdRequestExt.html");
+    let request_ext_page = std::fs::read_to_string(&request_ext_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", request_ext_path.display()));
+    for expected in [
+        "Request&lt;ById&gt;",
+        "prelude",
+        "RenamedApiResourcesByIdRequestExt",
+        "verbose",
+        "clear_verbose",
+        "limit",
+        "reset_limit",
+        "without re-evaluation",
+    ] {
+        assert!(
+            request_ext_page.contains(expected),
+            "generated request-extension Rustdoc omitted {expected}"
+        );
+    }
+    for forbidden in [
+        "__private",
+        "__concord_",
+        "EndpointSpec",
+        "ClientCore",
+        "reqwest",
+        "Sealed",
+    ] {
+        assert!(
+            !request_ext_page.contains(forbidden),
+            "generated request-extension Rustdoc exposed {forbidden}"
+        );
+    }
 }

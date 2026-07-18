@@ -1,4 +1,4 @@
-error: `Multipart` is a request-only marker and cannot be used as a response
+error: `Multipart` is request-only and cannot be used as a response
  --> tests/ui/fail/multipart_response.rs:8:30
   |
 8 |             GET Invalid() -> Multipart;

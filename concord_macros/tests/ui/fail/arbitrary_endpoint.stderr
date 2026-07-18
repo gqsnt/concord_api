@@ -8,13 +8,7 @@ error[E0277]: the trait bound `u32: TypedApiEndpoint` is not satisfied
    |
    = help: the trait `TypedApiEndpoint` is implemented for `Ping`
 note: required by a bound in `typed_api::<impl TypedApi>::request`
-  --> tests/ui/fail/arbitrary_endpoint.rs:3:1
+  --> tests/ui/fail/arbitrary_endpoint.rs:4:12
    |
-3  | / api! {
-4  | |     client TypedApi {
-5  | |         base "https://typed.example.test";
-6  | |         scope health() {
-...  |
-11 | | }
-   | |_^ required by this bound in `typed_api::<impl TypedApi>::request`
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+4  |     client TypedApi {
+   |            ^^^^^^^^ required by this bound in `typed_api::<impl TypedApi>::request`

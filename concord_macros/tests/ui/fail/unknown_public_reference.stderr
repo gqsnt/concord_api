@@ -1,0 +1,5 @@
+error: unknown endpoint value `missing`
+ --> tests/ui/fail/unknown_public_reference.rs:7:22
+  |
+7 |             path [ep.missing];
+  |                      ^^^^^^^

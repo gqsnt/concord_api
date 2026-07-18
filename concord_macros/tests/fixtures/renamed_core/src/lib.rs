@@ -32,9 +32,21 @@ impl runtime::advanced::DecodeBody for WireCodec {
 api! {
     client RenamedApi {
         base "http://renamed.example.test";
-        scope resources(scope_value: String) {
+        var tenant: String;
+        var locale: Option<String>;
+        var page_size: u32 = 25;
+        scope resources(
+            scope_value: String,
+            region: Option<String>,
+            scope_limit: u32 = 50,
+        ) {
             path ["scopes", scope.scope_value, "resources"];
-            POST ById(endpoint_value: String, body: Text) -> Text {
+            POST ById(
+                endpoint_value: String,
+                verbose: Option<bool>,
+                limit: u32 = 10,
+                body: Text,
+            ) -> Text {
                 path [ep.endpoint_value];
             }
             POST Custom(body: crate::WireCodec) -> crate::WireCodec;
@@ -45,18 +57,34 @@ api! {
     }
 }
 
+use renamed_api::prelude::*;
+
 pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
-    let client = RenamedApi::new()?;
+    let client = RenamedApi::new("tenant".to_owned())?;
     let request = client
         .resources("renamed-scope".to_owned())
-        .by_id("renamed-endpoint".to_owned(), "renamed-body".to_owned());
+        .region("eu".to_owned())
+        .scope_limit(20)
+        .reset_scope_limit()
+        .by_id("renamed-endpoint".to_owned(), "renamed-body".to_owned())
+        .verbose(true)
+        .limit(20)
+        .reset_limit();
     let _: runtime::Request<_> = request;
     let endpoint = renamed_api::endpoints::resources::ById::new(
         "renamed-scope".to_owned(),
         "renamed-endpoint".to_owned(),
         "renamed-body".to_owned(),
     );
-    let _: runtime::Request<_> = client.request(endpoint);
+    let _: runtime::Request<_> = client.request(
+        endpoint
+            .region("eu".to_owned())
+            .scope_limit(20)
+            .reset_scope_limit()
+            .verbose(true)
+            .limit(20)
+            .reset_limit(),
+    );
     let _: runtime::Request<_> = client
         .resources("renamed-scope".to_owned())
         .custom("custom-body".to_owned());

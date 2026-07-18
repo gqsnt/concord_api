@@ -1,89 +1,156 @@
-use syn::{Ident, LitStr, Type};
+use std::time::Duration;
 
+use syn::{Ident, LitInt, LitStr, Type};
+
+pub(crate) use crate::ast::{
+    DefaultExpr, MethodKind, RequestBodyKind, ResponseKind, RetrySelection, ValueKind,
+};
+
+#[derive(Clone)]
 pub(crate) struct Api {
-    pub(crate) client: Client,
+    pub(crate) clients: Vec<Client>,
 }
 
+#[derive(Clone)]
 pub(crate) struct Client {
     pub(crate) name: Ident,
+    pub(crate) builder_name: Ident,
+    pub(crate) support_name: Ident,
+    pub(crate) endpoint_capability_name: Ident,
+    pub(crate) values_type_name: Ident,
     pub(crate) base: LitStr,
-    pub(crate) scope: Scope,
+    pub(crate) values: Vec<Value>,
+    pub(crate) retry: RetrySelection,
+    #[allow(dead_code, reason = "retained as the normalized client-layer IR root")]
+    pub(crate) config: NormalizedConfig,
+    pub(crate) children: Vec<Child>,
 }
 
+#[derive(Clone)]
+pub(crate) enum Child {
+    Scope(Box<Scope>),
+    Endpoint(Endpoint),
+}
+
+#[derive(Clone)]
 pub(crate) struct Scope {
+    pub(crate) id: usize,
     pub(crate) name: Ident,
-    pub(crate) parameters: Vec<Parameter>,
-    pub(crate) path: Vec<PathAtom>,
-    pub(crate) endpoints: Vec<Endpoint>,
+    pub(crate) method_name: Ident,
+    pub(crate) module_name: Ident,
+    pub(crate) facade_name: Ident,
+    pub(crate) parameters: Vec<Value>,
+    #[allow(
+        dead_code,
+        reason = "retained for direct normalized-IR conformance tests"
+    )]
+    pub(crate) config: NormalizedConfig,
+    pub(crate) children: Vec<Child>,
 }
 
+#[derive(Clone)]
 pub(crate) struct Endpoint {
+    #[allow(
+        dead_code,
+        reason = "stable semantic identity retained in normalized IR"
+    )]
+    pub(crate) id: usize,
     pub(crate) method: MethodKind,
     pub(crate) name: Ident,
-    pub(crate) parameters: Vec<Parameter>,
+    #[allow(dead_code, reason = "retained for deterministic public-name audit")]
+    pub(crate) alias: Option<Ident>,
+    pub(crate) public_method_name: Ident,
+    pub(crate) request_ext_name: Ident,
+    pub(crate) prelude_alias: Ident,
+    pub(crate) parameters: Vec<Value>,
     pub(crate) body: Option<RequestBodyKind>,
-    pub(crate) path: Vec<PathAtom>,
+    pub(crate) config: NormalizedConfig,
     pub(crate) response: ResponseKind,
 }
 
-#[derive(Clone, Copy)]
-pub(crate) enum MethodKind {
-    Get,
-    Post,
-}
-
-pub(crate) enum ResponseKind {
-    Bytes,
-    NoContent,
-    Buffered(CodecKind),
-    Stream(MediaKind),
-}
-
-pub(crate) enum RequestBodyKind {
-    Buffered(CodecKind),
-    Stream(MediaKind),
-    Multipart,
-}
-
-pub(crate) enum MediaKind {
-    OctetStream,
-    Custom(Type),
-}
-
-pub(crate) enum CodecKind {
-    Text,
-    Json(Type),
-    Custom(Type),
-}
-
-pub(crate) struct Parameter {
+#[derive(Clone)]
+pub(crate) struct Value {
     pub(crate) name: Ident,
     pub(crate) ty: Type,
+    pub(crate) kind: ValueKind,
+    pub(crate) shape: ValueShape,
 }
 
-pub(crate) enum PathAtom {
-    Static(LitStr),
-    Scope(Ident),
-    Endpoint(Ident),
-}
-
-pub(crate) fn to_snake_case(name: &str) -> String {
-    let name = name.strip_prefix("r#").unwrap_or(name);
-    let characters = name.chars().collect::<Vec<_>>();
-    let mut output = String::with_capacity(name.len());
-    for (index, character) in characters.iter().copied().enumerate() {
-        if character.is_uppercase() {
-            let previous_is_lowercase = index > 0 && characters[index - 1].is_lowercase();
-            let next_is_lowercase = characters
-                .get(index + 1)
-                .is_some_and(|next| next.is_lowercase());
-            if index > 0 && (previous_is_lowercase || next_is_lowercase) {
-                output.push('_');
+impl Value {
+    pub(crate) fn setter_type(&self) -> &Type {
+        if self.is_optional() {
+            match &self.shape {
+                ValueShape::Option { inner } | ValueShape::OptionVec { inner, .. } => inner,
+                ValueShape::Scalar | ValueShape::Vec { .. } => &self.ty,
             }
-            output.extend(character.to_lowercase());
         } else {
-            output.push(character);
+            &self.ty
         }
     }
-    output
+
+    pub(crate) fn is_required(&self) -> bool {
+        matches!(self.kind, ValueKind::Required)
+    }
+
+    pub(crate) fn is_optional(&self) -> bool {
+        matches!(self.kind, ValueKind::Optional)
+    }
+
+    pub(crate) fn default(&self) -> Option<&DefaultExpr> {
+        match &self.kind {
+            ValueKind::Defaulted(value) => Some(value),
+            ValueKind::Required | ValueKind::Optional => None,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(crate) enum ValueShape {
+    Scalar,
+    Option { inner: Type },
+    Vec { element: Type },
+    OptionVec { inner: Type, element: Type },
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct NormalizedConfig {
+    pub(crate) host: Vec<ResolvedExpr>,
+    pub(crate) path: Vec<ResolvedExpr>,
+    pub(crate) query: Vec<NormalizedQuery>,
+    pub(crate) headers: Vec<NormalizedHeader>,
+    pub(crate) timeout: Option<Duration>,
+}
+
+#[derive(Clone)]
+pub(crate) struct NormalizedQuery {
+    pub(crate) key: LitStr,
+    pub(crate) value: ResolvedExpr,
+}
+
+#[derive(Clone)]
+pub(crate) struct NormalizedHeader {
+    pub(crate) name: LitStr,
+    pub(crate) canonical_name: String,
+    pub(crate) value: ResolvedExpr,
+}
+
+#[derive(Clone)]
+pub(crate) enum ResolvedExpr {
+    String(LitStr),
+    Integer(LitInt),
+    Value(ResolvedValue),
+    Format(Vec<ResolvedExpr>),
+}
+
+#[derive(Clone)]
+pub(crate) struct ResolvedValue {
+    pub(crate) reference: ValueReference,
+    pub(crate) shape: ValueShape,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ValueReference {
+    Client(usize),
+    Scope { scope_id: usize, parameter: usize },
+    Endpoint(usize),
 }

@@ -1,4 +1,4 @@
-error: generated endpoint method `http_status` collides after deterministic Rust name normalization
+error: generated child name `http_status` collides within this scope after deterministic Rust normalization
  --> tests/ui/fail/normalized_collision.rs:9:17
   |
 9 |             GET HttpStatus() -> NoContent;

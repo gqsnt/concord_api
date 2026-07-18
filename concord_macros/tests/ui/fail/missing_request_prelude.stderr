@@ -1,0 +1,25 @@
+error[E0599]: no method named `verbose` found for struct `concord_core::Request` in the current scope
+  --> tests/ui/fail/missing_request_prelude.rs:12:27
+   |
+6  |         GET Item(verbose: Option<bool>) -> Bytes;
+   |                  ------- the method is available for `concord_core::Request<Item>` here
+...
+12 |     let _ = client.item().verbose(true);
+   |                           ^^^^^^^
+   |
+   = help: items from traits can only be used if the trait is in scope
+help: there is a method `clear_verbose` with a similar name, but with different arguments
+  --> tests/ui/fail/missing_request_prelude.rs:3:1
+   |
+3  | / api! {
+4  | |     client SetterApi {
+5  | |         base "http://setter.example.test";
+6  | |         GET Item(verbose: Option<bool>) -> Bytes;
+7  | |     }
+8  | | }
+   | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: trait `ItemRequestExt` which provides `verbose` is implemented but not in scope; perhaps you want to import it
+   |
+1  + use crate::setter_api::endpoints::ItemRequestExt;
+   |

@@ -5,12 +5,14 @@ api! {
         base "http://streaming.example.test";
         scope transfers() {
             path ["transfers"];
-            GET Download() -> Stream<OctetStream>;
+            GET Download(verbose: Option<bool>) -> Stream<OctetStream>;
         }
     }
 }
 
 fn main() {
+    use streaming_api::prelude::*;
+
     let client = StreamingApi::new().unwrap();
-    let _ = client.transfers().download().response();
+    let _ = client.transfers().download().verbose(true).response();
 }

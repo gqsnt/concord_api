@@ -1,8 +1,8 @@
 error[E0599]: the method `response` exists for struct `Request<Download>`, but its trait bounds were not satisfied
-  --> tests/ui/fail/stream_terminal_absent.rs:15:43
+  --> tests/ui/fail/stream_terminal_absent.rs:17:57
    |
-15 |     let _ = client.transfers().download().response();
-   |                                           ^^^^^^^^ method cannot be called on `Request<Download>` due to unsatisfied trait bounds
+17 |     let _ = client.transfers().download().verbose(true).response();
+   |                                                         ^^^^^^^^ method cannot be called on `Request<Download>` due to unsatisfied trait bounds
    |
   ::: $WORKSPACE/concord_core/src/request/endpoint.rs
    |

@@ -2,10 +2,13 @@
 
 #![forbid(unsafe_code)]
 
+mod ast;
 mod codegen;
 mod crate_path;
 mod model;
+mod names;
 mod parse;
+mod resolve;
 
 use proc_macro::TokenStream;
 
@@ -13,6 +16,7 @@ use proc_macro::TokenStream;
 #[proc_macro]
 pub fn api(input: TokenStream) -> TokenStream {
     parse::parse(input.into())
+        .and_then(resolve::resolve)
         .and_then(|model| {
             let core_path = crate_path::resolve_core_path()?;
             Ok(codegen::generate(&model, &core_path))

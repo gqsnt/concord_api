@@ -1,61 +1,81 @@
 use std::collections::HashSet;
+use std::time::Duration;
 
+use http::{HeaderName, Method};
 use proc_macro2::TokenStream;
 use syn::parse::{Parse, ParseStream};
-use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{
-    GenericArgument, Ident, LitStr, PathArguments, Token, Type, TypePath, braced, bracketed,
-    parenthesized,
+    GenericArgument, Ident, LitBool, LitInt, LitStr, PathArguments, Token, Type, TypePath, braced,
+    bracketed, parenthesized,
 };
+use url::Url;
 
-use crate::model::{
-    Api, Client, CodecKind, Endpoint, MediaKind, MethodKind, Parameter, PathAtom, RequestBodyKind,
-    ResponseKind, Scope, to_snake_case,
+use crate::ast::{
+    CodecKind, DefaultExpr, DurationLiteral, HeaderEntry, HeaderOperation, HostOperation, Layer,
+    MediaKind, MethodKind, PathOperation, PublicExpr, QueryEntry, QueryOperation, RequestBodyKind,
+    ResponseKind, RetrySelection, SourceApi, SourceChild, SourceClient, SourceEndpoint,
+    SourceScope, TimeoutOperation, ValueDecl, ValueKind,
 };
+use crate::names::canonical_ident;
 
-const RESERVED_GENERATED_METHODS: &[&str] = &[
-    "new",
-    "builder",
-    "build",
-    "http",
-    "runtime",
-    "credentials",
-    "request",
-    "response",
-    "raw_response",
-    "paginate",
-    "timeout",
-    "disable_timeout",
-    "inherit_timeout",
-    "debug",
-];
+const MAX_FORMAT_DEPTH: usize = 64;
 
 mod keyword {
+    syn::custom_keyword!(auth);
     syn::custom_keyword!(base);
     syn::custom_keyword!(client);
-    syn::custom_keyword!(path);
+    syn::custom_keyword!(credentials);
+    syn::custom_keyword!(custom);
+    syn::custom_keyword!(fmt);
+    syn::custom_keyword!(headers);
+    syn::custom_keyword!(host);
+    syn::custom_keyword!(METHOD);
+    syn::custom_keyword!(off);
     syn::custom_keyword!(paginate);
+    syn::custom_keyword!(path);
+    syn::custom_keyword!(query);
+    syn::custom_keyword!(rate_limit);
+    syn::custom_keyword!(rate_limits);
+    syn::custom_keyword!(remove);
+    syn::custom_keyword!(replace);
+    syn::custom_keyword!(reqwest_default);
+    syn::custom_keyword!(retry);
     syn::custom_keyword!(scope);
+    syn::custom_keyword!(timeout);
+    syn::custom_keyword!(var);
 }
 
-pub(crate) fn parse(input: TokenStream) -> syn::Result<Api> {
+pub(crate) fn parse(input: TokenStream) -> syn::Result<SourceApi> {
     syn::parse2(input)
 }
 
-impl Parse for Api {
+impl Parse for SourceApi {
     fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
-        let client = input.parse()?;
-        if !input.is_empty() {
-            return Err(input.error(
-                "the current generated subset accepts exactly one `client` declaration per `api!` invocation",
-            ));
+        if input.is_empty() {
+            return Err(
+                input.error("an `api!` invocation requires at least one `client` declaration")
+            );
         }
-        Ok(Self { client })
+
+        let mut clients = Vec::new();
+        let mut names = HashSet::new();
+        while !input.is_empty() {
+            let client: SourceClient = input.parse()?;
+            let canonical = canonical_ident(&client.name);
+            if !names.insert(canonical.clone()) {
+                return Err(client
+                    .name
+                    .span()
+                    .error(format!("duplicate client `{canonical}`")));
+            }
+            clients.push(client);
+        }
+        Ok(Self { clients })
     }
 }
 
-impl Parse for Client {
+impl Parse for SourceClient {
     fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
         input.parse::<keyword::client>()?;
         let name: Ident = input.parse()?;
@@ -63,164 +83,257 @@ impl Parse for Client {
         braced!(body in input);
 
         if !body.peek(keyword::base) {
-            return Err(body.error("a client must begin with a fixed `base \"https://...\";`"));
+            return Err(
+                body.error("a client must begin with exactly one fixed `base \"https://...\";`")
+            );
         }
         body.parse::<keyword::base>()?;
         let base: LitStr = body.parse()?;
         body.parse::<Token![;]>()?;
         validate_base(&base)?;
 
-        if !body.peek(keyword::scope) {
-            return Err(body.error(
-                "the current generated subset requires one scope after the fixed `base` declaration",
-            ));
+        let mut values = Vec::new();
+        let mut value_names = HashSet::new();
+        while body.peek(keyword::var) {
+            body.parse::<keyword::var>()?;
+            let value = parse_value(&body)?;
+            body.parse::<Token![;]>()?;
+            insert_unique_value(&mut value_names, &value, "client value")?;
+            values.push(value);
         }
-        let scope = body.parse()?;
+
+        let retry = if body.peek(keyword::retry) {
+            parse_retry(&body)?
+        } else {
+            RetrySelection::Disabled
+        };
+        let layer = parse_ordered_layer(&body)?;
+        let children = parse_children(&body, 0, "client")?;
+
         if !body.is_empty() {
-            return Err(body.error(
-                "unsupported client declaration; the current generated subset accepts one fixed base and one scope",
-            ));
+            return Err(client_tail_error(&body));
         }
-
-        Ok(Self { name, base, scope })
-    }
-}
-
-impl Parse for Scope {
-    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
-        input.parse::<keyword::scope>()?;
-        let name: Ident = input.parse()?;
-        let parameters_content;
-        parenthesized!(parameters_content in input);
-        let parameters = parse_required_parameters(&parameters_content, "scope")?;
-
-        let body;
-        braced!(body in input);
-        if !body.peek(keyword::path) {
-            return Err(body.error("a scope must begin with a `path [...]` declaration"));
-        }
-        let path = parse_path(&body)?;
-        validate_path(&path, &parameters, PathContext::Scope)?;
-
-        if body.is_empty() {
-            return Err(body.error("a scope must contain at least one endpoint"));
-        }
-        let mut endpoints = Vec::new();
-        let mut endpoint_names = HashSet::new();
-        while !body.is_empty() {
-            let endpoint = parse_endpoint(&body)?;
-            if !endpoint_names.insert(endpoint.name.to_string()) {
-                return Err(endpoint
-                    .name
-                    .span()
-                    .error(format!("duplicate endpoint `{}`", endpoint.name)));
-            }
-            endpoints.push(endpoint);
-        }
-
-        validate_generated_names(&name, &endpoints)?;
 
         Ok(Self {
             name,
-            parameters,
-            path,
-            endpoints,
+            base,
+            values,
+            retry,
+            layer,
+            children,
         })
     }
 }
 
-fn validate_generated_names(scope_name: &Ident, endpoints: &[Endpoint]) -> syn::Result<()> {
-    let scope_method = to_snake_case(&scope_name.to_string());
-    if RESERVED_GENERATED_METHODS.contains(&scope_method.as_str()) {
-        return Err(scope_name.span().error(format!(
-            "generated scope method `{scope_method}` collides with a reserved Concord method"
-        )));
+fn parse_children(
+    input: ParseStream<'_>,
+    depth: usize,
+    owner: &str,
+) -> syn::Result<Vec<SourceChild>> {
+    let mut children = Vec::new();
+    while !input.is_empty() {
+        if input.peek(keyword::scope) {
+            children.push(SourceChild::Scope(Box::new(parse_scope(input, depth + 1)?)));
+        } else if endpoint_starts(input) {
+            children.push(SourceChild::Endpoint(parse_endpoint(input)?));
+        } else {
+            break;
+        }
     }
 
-    let mut endpoint_methods = HashSet::new();
-    for endpoint in endpoints {
-        let method = to_snake_case(&endpoint.name.to_string());
-        if RESERVED_GENERATED_METHODS.contains(&method.as_str()) {
-            return Err(endpoint.name.span().error(format!(
-                "generated endpoint method `{method}` collides with a reserved Concord method"
-            )));
-        }
-        if !endpoint_methods.insert(method.clone()) {
-            return Err(endpoint.name.span().error(format!(
-                "generated endpoint method `{method}` collides after deterministic Rust name normalization"
+    let mut names = HashSet::new();
+    for child in &children {
+        let name = match child {
+            SourceChild::Scope(scope) => &scope.name,
+            SourceChild::Endpoint(endpoint) => &endpoint.name,
+        };
+        let normalized = crate::names::to_snake_case(&canonical_ident(name));
+        if !names.insert(normalized.clone()) {
+            return Err(name.span().error(format!(
+                "generated child name `{normalized}` collides within this {owner} after deterministic Rust normalization"
             )));
         }
     }
-    Ok(())
+    Ok(children)
 }
 
-fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<Endpoint> {
-    let method: Ident = input
-        .parse()
-        .map_err(|_| input.error("unsupported endpoint declaration; expected `GET` or `POST`"))?;
-    let method = match method.to_string().as_str() {
-        "GET" => MethodKind::Get,
-        "POST" => MethodKind::Post,
-        _ => {
-            return Err(method.span().error(
-                "unsupported endpoint method; the Phase 4 generated subset accepts `GET` or `POST`",
-            ));
-        }
-    };
-
+fn parse_scope(input: ParseStream<'_>, depth: usize) -> syn::Result<SourceScope> {
+    if depth > 64 {
+        return Err(input
+            .span()
+            .error("scope nesting exceeds the maximum supported depth of 64"));
+    }
+    input.parse::<keyword::scope>()?;
     let name: Ident = input.parse()?;
     let parameters_content;
     parenthesized!(parameters_content in input);
-    let (parameters, body) = parse_endpoint_parameters(&parameters_content)?;
+    let parameters = parse_parameters(&parameters_content, "scope", false)?.0;
 
+    let body;
+    braced!(body in input);
+    let layer = parse_ordered_layer(&body)?;
+    let children = parse_children(&body, depth, "scope")?;
+    if !body.is_empty() {
+        if body.peek(keyword::retry) {
+            return Err(body.error("`retry` is client-only and cannot be declared in a scope"));
+        }
+        if body.peek(keyword::var)
+            || body.peek(keyword::base)
+            || body.peek(keyword::credentials)
+            || body.peek(keyword::rate_limits)
+        {
+            return Err(body.error("this declaration is client-only and cannot appear in a scope"));
+        }
+        if is_layer_start(&body) {
+            return Err(body.error(
+                "scope configuration must appear once, in normative order, before child scopes and endpoints",
+            ));
+        }
+        if body.peek(keyword::auth) || body.peek(keyword::rate_limit) {
+            return Err(body.error(
+                "authentication and rate-limit declarations are owned by later phases and are not implemented in Phase 5",
+            ));
+        }
+        return Err(body.error("unsupported scope declaration"));
+    }
+
+    Ok(SourceScope {
+        name,
+        parameters,
+        layer,
+        children,
+    })
+}
+
+fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
+    let method = parse_method(input)?;
+    let name: Ident = input.parse().map_err(|_| {
+        input.error("an endpoint method must be followed by an endpoint identifier")
+    })?;
+    if !input.peek(syn::token::Paren) {
+        return Err(input.error("every endpoint declaration requires parentheses, including `()`"));
+    }
+    let parameters_content;
+    parenthesized!(parameters_content in input);
+    let (parameters, body) = parse_parameters(&parameters_content, "endpoint", true)?;
+
+    let alias = if input.peek(Token![as]) {
+        input.parse::<Token![as]>()?;
+        Some(input.parse()?)
+    } else {
+        None
+    };
     input.parse::<Token![->]>()?;
     let response = parse_response(input.parse()?)?;
 
-    let path = if input.peek(Token![;]) {
+    let layer = if input.peek(Token![;]) {
         input.parse::<Token![;]>()?;
-        Vec::new()
+        Layer::default()
     } else {
-        let body;
-        braced!(body in input);
-        if !body.peek(keyword::path) {
-            return Err(body.error(
-                "an endpoint block in the current generated subset must contain one `path [...]` declaration",
+        let clauses;
+        braced!(clauses in input);
+        let layer = parse_ordered_layer(&clauses)?;
+        if clauses.peek(keyword::paginate) {
+            let marker: keyword::paginate = clauses.parse()?;
+            let incompatible = body.is_some()
+                || matches!(
+                    response,
+                    ResponseKind::Stream(_) | ResponseKind::Bytes | ResponseKind::NoContent
+                );
+            let message = if incompatible {
+                "this body/response mode cannot declare pagination"
+            } else {
+                "pagination declarations are owned by Phase 8 and are not implemented in Phase 5"
+            };
+            return Err(marker.span().error(message));
+        }
+        if clauses.peek(keyword::auth) || clauses.peek(keyword::rate_limit) {
+            return Err(clauses.error(
+                "authentication and rate-limit declarations are owned by later phases and are not implemented in Phase 5",
             ));
         }
-        let path = parse_path(&body)?;
-        if body.peek(keyword::paginate)
-            && matches!(
-                response,
-                ResponseKind::Stream(_) | ResponseKind::Bytes | ResponseKind::NoContent
-            )
-        {
-            let paginate: keyword::paginate = body.parse()?;
-            return Err(paginate.span().error(
-                "`Stream`, `Bytes`, and `NoContent` response markers cannot declare pagination",
-            ));
+        if clauses.peek(keyword::retry) {
+            return Err(
+                clauses.error("`retry` is client-only and cannot be declared on an endpoint")
+            );
         }
-        if !body.is_empty() {
-            return Err(body.error(
-                "unsupported endpoint clause; the current generated subset accepts only one `path [...]` clause",
-            ));
+        if !clauses.is_empty() {
+            if is_layer_start(&clauses) {
+                return Err(clauses.error(
+                    "endpoint clauses must appear at most once and in `host`, `path`, `query`, `headers`, `timeout` order",
+                ));
+            }
+            return Err(clauses.error("unsupported endpoint clause"));
         }
-        path
+        layer
     };
-    validate_path(&path, &parameters, PathContext::Endpoint)?;
 
-    Ok(Endpoint {
+    Ok(SourceEndpoint {
         method,
         name,
+        alias,
         parameters,
         body,
-        path,
+        layer,
         response,
     })
 }
 
-fn parse_endpoint_parameters(
+fn endpoint_starts(input: ParseStream<'_>) -> bool {
+    if input.peek(keyword::METHOD) {
+        return true;
+    }
+    input.fork().parse::<Ident>().is_ok_and(|ident| {
+        matches!(
+            ident.to_string().as_str(),
+            "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS" | "TRACE" | "CONNECT"
+        )
+    })
+}
+
+fn parse_method(input: ParseStream<'_>) -> syn::Result<MethodKind> {
+    if input.peek(keyword::METHOD) {
+        input.parse::<keyword::METHOD>()?;
+        let content;
+        parenthesized!(content in input);
+        let literal: LitStr = content.parse()?;
+        if !content.is_empty() {
+            return Err(content.error("`METHOD` accepts exactly one string literal"));
+        }
+        Method::from_bytes(literal.value().as_bytes()).map_err(|_| {
+            literal
+                .span()
+                .error("custom endpoint method must be a valid HTTP method token")
+        })?;
+        return Ok(MethodKind::Custom(literal));
+    }
+
+    let method: Ident = input.parse().map_err(|_| {
+        input.error(
+            "unsupported endpoint declaration; expected a standard method or `METHOD(\"TOKEN\")`",
+        )
+    })?;
+    match method.to_string().as_str() {
+        "GET" => Ok(MethodKind::Get),
+        "POST" => Ok(MethodKind::Post),
+        "PUT" => Ok(MethodKind::Put),
+        "PATCH" => Ok(MethodKind::Patch),
+        "DELETE" => Ok(MethodKind::Delete),
+        "HEAD" => Ok(MethodKind::Head),
+        "OPTIONS" => Ok(MethodKind::Options),
+        "TRACE" => Ok(MethodKind::Trace),
+        "CONNECT" => Ok(MethodKind::Connect),
+        _ => Err(method.span().error(
+            "unsupported endpoint method; use a standard method keyword or `METHOD(\"TOKEN\")`",
+        )),
+    }
+}
+
+fn parse_parameters(
     input: ParseStream<'_>,
-) -> syn::Result<(Vec<Parameter>, Option<RequestBodyKind>)> {
+    owner: &str,
+    body_is_special: bool,
+) -> syn::Result<(Vec<ValueDecl>, Option<RequestBodyKind>)> {
     let mut parameters = Vec::new();
     let mut body = None;
     let mut names = HashSet::new();
@@ -229,26 +342,21 @@ fn parse_endpoint_parameters(
         let name: Ident = input.parse()?;
         input.parse::<Token![:]>()?;
         let ty: Type = input.parse()?;
-        if !names.insert(name.to_string()) {
+        let canonical = canonical_ident(&name);
+        if !names.insert(canonical.clone()) {
             return Err(name
                 .span()
-                .error(format!("duplicate endpoint parameter `{name}`")));
-        }
-        if input.peek(Token![=]) {
-            return Err(input.error(
-                "defaulted endpoint parameters are outside the current generated subset; use a required parameter",
-            ));
+                .error(format!("duplicate {owner} parameter `{canonical}`")));
         }
 
-        if name == "body" {
+        if body_is_special && canonical == "body" {
+            if input.peek(Token![=]) {
+                return Err(input.error("a request body parameter cannot have a default"));
+            }
             body = Some(parse_request_body(ty)?);
         } else {
-            if is_option(&ty) {
-                return Err(ty.span().error(
-                    "optional endpoint parameters are outside the current generated subset; use a required parameter",
-                ));
-            }
-            parameters.push(Parameter { name, ty });
+            let kind = parse_value_kind(input, &ty)?;
+            parameters.push(ValueDecl { name, ty, kind });
         }
 
         if input.is_empty() {
@@ -259,8 +367,363 @@ fn parse_endpoint_parameters(
             return Err(input.error("the request body must be the final endpoint parameter"));
         }
     }
-
     Ok((parameters, body))
+}
+
+fn parse_value(input: ParseStream<'_>) -> syn::Result<ValueDecl> {
+    let name: Ident = input.parse()?;
+    input.parse::<Token![:]>()?;
+    let ty: Type = input.parse()?;
+    let kind = parse_value_kind(input, &ty)?;
+    Ok(ValueDecl { name, ty, kind })
+}
+
+fn parse_value_kind(input: ParseStream<'_>, ty: &Type) -> syn::Result<ValueKind> {
+    let optional = outer_type_argument(ty, "Option")?;
+    if input.peek(Token![=]) {
+        input.parse::<Token![=]>()?;
+        return Ok(ValueKind::Defaulted(parse_default(input)?));
+    }
+    Ok(if optional.is_some() {
+        ValueKind::Optional
+    } else {
+        ValueKind::Required
+    })
+}
+
+fn parse_default(input: ParseStream<'_>) -> syn::Result<DefaultExpr> {
+    if input.peek(LitStr) {
+        return input.parse().map(DefaultExpr::String);
+    }
+    if input.peek(Token![-]) {
+        input.parse::<Token![-]>()?;
+        let literal: LitInt = input
+            .parse()
+            .map_err(|_| input.error("a negative default requires an integer literal"))?;
+        validate_integer(&literal, "default")?;
+        return Ok(DefaultExpr::Integer {
+            negative: true,
+            literal,
+        });
+    }
+    if input.peek(LitInt) {
+        let literal: LitInt = input.parse()?;
+        validate_integer(&literal, "default")?;
+        return Ok(DefaultExpr::Integer {
+            negative: false,
+            literal,
+        });
+    }
+    if input.peek(LitBool) {
+        return input.parse::<LitBool>().map(DefaultExpr::Boolean);
+    }
+    if input.fork().parse::<syn::Path>().is_ok() {
+        let path = input.parse()?;
+        if input.peek(syn::token::Paren)
+            || input.peek(syn::token::Brace)
+            || input.peek(syn::token::Bracket)
+            || input.peek(Token![.])
+            || input.peek(Token![!])
+        {
+            return Err(input.error(
+                "defaults accept a Rust const path, not a call, method, macro, block, or collection expression",
+            ));
+        }
+        return Ok(DefaultExpr::Path(path));
+    }
+    Err(input.error(
+        "defaults accept only a string literal, signed integer literal, boolean literal, or Rust const path",
+    ))
+}
+
+fn parse_retry(input: ParseStream<'_>) -> syn::Result<RetrySelection> {
+    input.parse::<keyword::retry>()?;
+    let selection = if input.peek(keyword::off) {
+        input.parse::<keyword::off>()?;
+        RetrySelection::Disabled
+    } else if input.peek(keyword::reqwest_default) {
+        input.parse::<keyword::reqwest_default>()?;
+        RetrySelection::ReqwestDefault
+    } else if input.peek(keyword::custom) {
+        input.parse::<keyword::custom>()?;
+        RetrySelection::Custom(input.parse()?)
+    } else {
+        return Err(input.error("retry must be `off`, `reqwest_default`, or `custom PATH`"));
+    };
+    input.parse::<Token![;]>()?;
+    Ok(selection)
+}
+
+fn parse_ordered_layer(input: ParseStream<'_>) -> syn::Result<Layer> {
+    let host = input
+        .peek(keyword::host)
+        .then(|| parse_host(input))
+        .transpose()?;
+    let path = input
+        .peek(keyword::path)
+        .then(|| parse_path(input))
+        .transpose()?;
+    let query = input
+        .peek(keyword::query)
+        .then(|| parse_query(input))
+        .transpose()?;
+    let headers = input
+        .peek(keyword::headers)
+        .then(|| parse_headers(input))
+        .transpose()?;
+    let timeout = input
+        .peek(keyword::timeout)
+        .then(|| parse_timeout(input))
+        .transpose()?;
+    Ok(Layer {
+        host,
+        path,
+        query,
+        headers,
+        timeout,
+    })
+}
+
+fn parse_host(input: ParseStream<'_>) -> syn::Result<HostOperation> {
+    input.parse::<keyword::host>()?;
+    if input.peek(keyword::off) {
+        input.parse::<keyword::off>()?;
+        input.parse::<Token![;]>()?;
+        return Ok(HostOperation::Off);
+    }
+    let values = parse_expression_list(input, "host")?;
+    for value in &values {
+        if let PublicExpr::String(value) = value {
+            validate_static_host_label(value)?;
+        }
+    }
+    input.parse::<Token![;]>()?;
+    Ok(HostOperation::Replace(values))
+}
+
+fn parse_path(input: ParseStream<'_>) -> syn::Result<PathOperation> {
+    input.parse::<keyword::path>()?;
+    if input.peek(keyword::off) {
+        input.parse::<keyword::off>()?;
+        input.parse::<Token![;]>()?;
+        return Ok(PathOperation::Off);
+    }
+    let replace = input.peek(keyword::replace);
+    if replace {
+        input.parse::<keyword::replace>()?;
+    }
+    let values = parse_expression_list(input, "path")?;
+    for value in &values {
+        if let PublicExpr::String(value) = value {
+            validate_static_segment(value)?;
+        }
+    }
+    input.parse::<Token![;]>()?;
+    Ok(if replace {
+        PathOperation::Replace(values)
+    } else {
+        PathOperation::Append(values)
+    })
+}
+
+fn parse_expression_list(input: ParseStream<'_>, owner: &str) -> syn::Result<Vec<PublicExpr>> {
+    let content;
+    bracketed!(content in input);
+    if content.is_empty() {
+        return Err(content.error(format!(
+            "a {owner} declaration requires at least one expression"
+        )));
+    }
+    let mut values = Vec::new();
+    while !content.is_empty() {
+        values.push(parse_public_expr(&content, 0)?);
+        if content.is_empty() {
+            break;
+        }
+        content.parse::<Token![,]>()?;
+        if content.is_empty() {
+            break;
+        }
+    }
+    Ok(values)
+}
+
+fn parse_query(input: ParseStream<'_>) -> syn::Result<QueryOperation> {
+    input.parse::<keyword::query>()?;
+    if input.peek(keyword::off) {
+        input.parse::<keyword::off>()?;
+        input.parse::<Token![;]>()?;
+        return Ok(QueryOperation::Off);
+    }
+    let replace = input.peek(keyword::replace);
+    if replace {
+        input.parse::<keyword::replace>()?;
+    }
+    let body;
+    braced!(body in input);
+    let mut entries = Vec::new();
+    let mut keys = HashSet::new();
+    while !body.is_empty() {
+        let entry = if body.peek(keyword::remove) {
+            body.parse::<keyword::remove>()?;
+            QueryEntry::Remove(body.parse()?)
+        } else {
+            let key: LitStr = body.parse()?;
+            body.parse::<Token![=]>()?;
+            QueryEntry::Assign {
+                key,
+                value: parse_public_expr(&body, 0)?,
+            }
+        };
+        body.parse::<Token![;]>()?;
+        let key = match &entry {
+            QueryEntry::Assign { key, .. } | QueryEntry::Remove(key) => key,
+        };
+        if !keys.insert(key.value()) {
+            return Err(key
+                .span()
+                .error(format!("duplicate local query key `{}`", key.value())));
+        }
+        entries.push(entry);
+    }
+    Ok(if replace {
+        QueryOperation::Replace(entries)
+    } else {
+        QueryOperation::Modify(entries)
+    })
+}
+
+fn parse_headers(input: ParseStream<'_>) -> syn::Result<HeaderOperation> {
+    input.parse::<keyword::headers>()?;
+    if input.peek(keyword::off) {
+        input.parse::<keyword::off>()?;
+        input.parse::<Token![;]>()?;
+        return Ok(HeaderOperation::Off);
+    }
+    let replace = input.peek(keyword::replace);
+    if replace {
+        input.parse::<keyword::replace>()?;
+    }
+    let body;
+    braced!(body in input);
+    let mut entries = Vec::new();
+    let mut names = HashSet::new();
+    while !body.is_empty() {
+        let entry = if body.peek(keyword::remove) {
+            body.parse::<keyword::remove>()?;
+            HeaderEntry::Remove(body.parse()?)
+        } else {
+            let name: LitStr = body.parse()?;
+            body.parse::<Token![=]>()?;
+            HeaderEntry::Assign {
+                name,
+                value: parse_public_expr(&body, 0)?,
+            }
+        };
+        body.parse::<Token![;]>()?;
+        let name = match &entry {
+            HeaderEntry::Assign { name, .. } | HeaderEntry::Remove(name) => name,
+        };
+        validate_public_header_name(name)?;
+        let canonical = name.value().to_ascii_lowercase();
+        if !names.insert(canonical) {
+            return Err(name.span().error(format!(
+                "duplicate local public header name `{}` (header names are case-insensitive)",
+                name.value()
+            )));
+        }
+        entries.push(entry);
+    }
+    Ok(if replace {
+        HeaderOperation::Replace(entries)
+    } else {
+        HeaderOperation::Modify(entries)
+    })
+}
+
+fn parse_timeout(input: ParseStream<'_>) -> syn::Result<TimeoutOperation> {
+    input.parse::<keyword::timeout>()?;
+    if input.peek(keyword::off) {
+        input.parse::<keyword::off>()?;
+        input.parse::<Token![;]>()?;
+        return Ok(TimeoutOperation::Off);
+    }
+    let literal: LitInt = input.parse().map_err(|_| {
+        input.error("timeout requires a duration such as `250ms`, `5s`, `10m`, or `1h`")
+    })?;
+    let value = parse_duration(&literal)?;
+    input.parse::<Token![;]>()?;
+    Ok(TimeoutOperation::Set(DurationLiteral {
+        value,
+        span: literal.span(),
+    }))
+}
+
+fn parse_public_expr(input: ParseStream<'_>, depth: usize) -> syn::Result<PublicExpr> {
+    if input.peek(LitStr) {
+        return input.parse().map(PublicExpr::String);
+    }
+    if input.peek(LitInt) {
+        let literal: LitInt = input.parse()?;
+        validate_integer(&literal, "public expression")?;
+        return Ok(PublicExpr::Integer(literal));
+    }
+    if input.peek(keyword::fmt) {
+        let marker: keyword::fmt = input.parse()?;
+        if depth >= MAX_FORMAT_DEPTH {
+            return Err(marker
+                .span()
+                .error("nested `fmt[...]` expressions exceed the maximum depth of 64"));
+        }
+        let content;
+        bracketed!(content in input);
+        if content.is_empty() {
+            return Err(content.error("`fmt[...]` requires at least one expression"));
+        }
+        let mut values = Vec::new();
+        loop {
+            values.push(parse_public_expr(&content, depth + 1)?);
+            if content.is_empty() {
+                break;
+            }
+            content
+                .parse::<Token![,]>()
+                .map_err(|_| content.error("`fmt[...]` expressions must be separated by commas"))?;
+            if content.is_empty() {
+                return Err(content.error("a trailing comma is not accepted in `fmt[...]`"));
+            }
+        }
+        return Ok(PublicExpr::Format {
+            span: marker.span(),
+            values,
+        });
+    }
+
+    let namespace: Ident = input.parse().map_err(|_| {
+        input.error(
+            "public expressions accept only literals, `vars.NAME`, `scope.NAME`, `ep.NAME`, or `fmt[...]`",
+        )
+    })?;
+    input.parse::<Token![.]>().map_err(|_| {
+        namespace.span().error(
+            "arbitrary Rust expressions are not supported; use `vars.NAME`, `scope.NAME`, or `ep.NAME`",
+        )
+    })?;
+    let name: Ident = input.parse()?;
+    if input.peek(Token![.])
+        || input.peek(syn::token::Paren)
+        || input.peek(syn::token::Bracket)
+        || input.peek(Token![!])
+    {
+        return Err(input
+            .error("arbitrary Rust expressions are not supported after a public value reference"));
+    }
+    if !matches!(namespace.to_string().as_str(), "vars" | "scope" | "ep") {
+        return Err(namespace.span().error(
+            "unsupported public-expression namespace; secrets and credentials are not expressible",
+        ));
+    }
+    Ok(PublicExpr::Reference { namespace, name })
 }
 
 fn parse_request_body(ty: Type) -> syn::Result<RequestBodyKind> {
@@ -271,7 +734,7 @@ fn parse_request_body(ty: Type) -> syn::Result<RequestBodyKind> {
     }
     if is_named_marker(&ty, "Bytes") {
         return Err(ty.span().error(
-            "`Bytes` is not a request body marker; use `Text`, `Json<T>`, `Stream<M>`, `Multipart`, or a custom `EncodeBody` codec",
+            "`Bytes` is not a request body marker; use `Text`, `Json<T>`, `Stream<M>`, `Multipart`, or a custom codec",
         ));
     }
     if let Type::Path(path) = &ty {
@@ -289,14 +752,14 @@ fn parse_request_body(ty: Type) -> syn::Result<RequestBodyKind> {
 fn parse_response(ty: Type) -> syn::Result<ResponseKind> {
     if is_named_marker(&ty, "Bytes") {
         let Type::Path(path) = &ty else {
-            unreachable!("named markers are type paths")
+            unreachable!()
         };
         ensure_no_arguments(path, "Bytes")?;
         return Ok(ResponseKind::Bytes);
     }
     if is_named_marker(&ty, "NoContent") {
         let Type::Path(path) = &ty else {
-            unreachable!("named markers are type paths")
+            unreachable!()
         };
         ensure_no_arguments(path, "NoContent")?;
         return Ok(ResponseKind::NoContent);
@@ -308,7 +771,7 @@ fn parse_response(ty: Type) -> syn::Result<ResponseKind> {
         if is_unqualified(path, "Multipart") {
             return Err(ty
                 .span()
-                .error("`Multipart` is a request-only marker and cannot be used as a response"));
+                .error("`Multipart` is request-only and cannot be used as a response"));
         }
     }
     parse_buffered_codec(ty).map(ResponseKind::Buffered)
@@ -323,48 +786,60 @@ fn parse_buffered_codec(ty: Type) -> syn::Result<CodecKind> {
         return Ok(CodecKind::Text);
     }
     if is_unqualified(path, "Json") {
-        return json_inner(path).map(CodecKind::Json);
+        return single_type_argument(path, "Json").map(CodecKind::Json);
     }
     Ok(CodecKind::Custom(ty))
 }
 
 fn stream_media_inner(path: &TypePath) -> syn::Result<MediaKind> {
-    let segment = &path.path.segments[0];
-    let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
-        return Err(segment
+    let ty = single_type_argument(path, "Stream")?;
+    if is_named_marker(&ty, "Stream") || is_named_marker(&ty, "Multipart") {
+        return Err(ty
             .span()
-            .error("`Stream` requires exactly one media marker type argument"));
-    };
-    let mut values = arguments.args.iter();
-    let Some(GenericArgument::Type(ty)) = values.next() else {
-        return Err(arguments
-            .span()
-            .error("`Stream` requires exactly one media marker type argument"));
-    };
-    if values.next().is_some() {
-        return Err(arguments
-            .span()
-            .error("`Stream` requires exactly one media marker type argument"));
+            .error("a `Stream` media marker cannot itself be a stream or multipart marker"));
     }
-    if is_named_marker(ty, "Stream") || is_named_marker(ty, "Multipart") {
-        return Err(ty.span().error(
-            "a `Stream` media marker cannot itself be a Concord stream or multipart marker",
-        ));
-    }
-    if let Type::Path(path) = ty {
+    if let Type::Path(path) = &ty {
         if is_unqualified(path, "OctetStream") {
             ensure_no_arguments(path, "OctetStream")?;
             return Ok(MediaKind::OctetStream);
         }
     }
-    Ok(MediaKind::Custom(ty.clone()))
+    Ok(MediaKind::Custom(ty))
+}
+
+fn single_type_argument(path: &TypePath, marker: &str) -> syn::Result<Type> {
+    let segment = &path.path.segments[0];
+    let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+        return Err(segment
+            .span()
+            .error(format!("`{marker}` requires exactly one type argument")));
+    };
+    let mut values = arguments.args.iter();
+    let Some(GenericArgument::Type(ty)) = values.next() else {
+        return Err(arguments
+            .span()
+            .error(format!("`{marker}` requires exactly one type argument")));
+    };
+    if values.next().is_some() {
+        return Err(arguments
+            .span()
+            .error(format!("`{marker}` requires exactly one type argument")));
+    }
+    Ok(ty.clone())
+}
+
+fn outer_type_argument(ty: &Type, marker: &str) -> syn::Result<Option<Type>> {
+    let Type::Path(path) = ty else {
+        return Ok(None);
+    };
+    if !is_unqualified(path, marker) {
+        return Ok(None);
+    }
+    single_type_argument(path, marker).map(Some)
 }
 
 fn is_named_marker(ty: &Type, expected: &str) -> bool {
-    let Type::Path(path) = ty else {
-        return false;
-    };
-    is_unqualified(path, expected)
+    matches!(ty, Type::Path(path) if is_unqualified(path, expected))
 }
 
 fn is_unqualified(path: &TypePath, expected: &str) -> bool {
@@ -386,187 +861,88 @@ fn ensure_no_arguments(path: &TypePath, marker: &str) -> syn::Result<()> {
     }
 }
 
-fn json_inner(path: &TypePath) -> syn::Result<Type> {
-    let segment = &path.path.segments[0];
-    let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
-        return Err(segment
+fn parse_duration(literal: &LitInt) -> syn::Result<Duration> {
+    let value = literal
+        .base10_parse::<u64>()
+        .map_err(|_| literal.span().error("duration value is not representable"))?;
+    if value == 0 {
+        return Err(literal
             .span()
-            .error("`Json` requires exactly one type argument"));
-    };
-    let mut values = arguments.args.iter();
-    let Some(GenericArgument::Type(ty)) = values.next() else {
-        return Err(arguments
-            .span()
-            .error("`Json` requires exactly one type argument"));
-    };
-    if values.next().is_some() {
-        return Err(arguments
-            .span()
-            .error("`Json` requires exactly one type argument"));
+            .error("operation timeouts must be greater than zero"));
     }
-    Ok(ty.clone())
-}
-
-fn parse_required_parameters(input: ParseStream<'_>, owner: &str) -> syn::Result<Vec<Parameter>> {
-    let mut parameters = Vec::new();
-    let mut names = HashSet::new();
-
-    while !input.is_empty() {
-        let name: Ident = input.parse()?;
-        input.parse::<Token![:]>()?;
-        let ty: Type = input.parse()?;
-        if is_option(&ty) {
-            return Err(ty.span().error(format!(
-                "optional {owner} parameters are outside the current generated subset; use a required parameter"
-            )));
-        }
-        if input.peek(Token![=]) {
-            return Err(input.error(format!(
-                "defaulted {owner} parameters are outside the current generated subset; use a required parameter"
-            )));
-        }
-        if !names.insert(name.to_string()) {
-            return Err(name
-                .span()
-                .error(format!("duplicate {owner} parameter `{name}`")));
-        }
-        parameters.push(Parameter { name, ty });
-
-        if input.is_empty() {
-            break;
-        }
-        input.parse::<Token![,]>()?;
-        if input.is_empty() {
-            break;
-        }
-    }
-
-    Ok(parameters)
-}
-
-fn is_option(ty: &Type) -> bool {
-    let Type::Path(type_path) = ty else {
-        return false;
-    };
-    type_path
-        .path
-        .segments
-        .last()
-        .is_some_and(|segment| segment.ident == "Option")
-}
-
-fn parse_path(input: ParseStream<'_>) -> syn::Result<Vec<PathAtom>> {
-    input.parse::<keyword::path>()?;
-    let atoms_content;
-    bracketed!(atoms_content in input);
-    let atoms = Punctuated::<PathAtom, Token![,]>::parse_terminated(&atoms_content)?;
-    input.parse::<Token![;]>()?;
-    if atoms.is_empty() {
-        return Err(atoms_content.error("a path must contain at least one atom"));
-    }
-    Ok(atoms.into_iter().collect())
-}
-
-impl Parse for PathAtom {
-    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
-        if input.peek(LitStr) {
-            let literal: LitStr = input.parse()?;
-            validate_static_segment(&literal)?;
-            return Ok(Self::Static(literal));
-        }
-
-        let namespace: Ident = input.parse().map_err(|_| {
-            input.error("unsupported path atom; use a string literal, `scope.NAME`, or `ep.NAME`")
-        })?;
-        input.parse::<Token![.]>()?;
-        let name = input.parse()?;
-        match namespace.to_string().as_str() {
-            "scope" => Ok(Self::Scope(name)),
-            "ep" => Ok(Self::Endpoint(name)),
-            _ => Err(namespace
-                .span()
-                .error("unsupported path namespace; use only `scope.NAME` and `ep.NAME`")),
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-enum PathContext {
-    Scope,
-    Endpoint,
-}
-
-fn validate_path(
-    atoms: &[PathAtom],
-    parameters: &[Parameter],
-    context: PathContext,
-) -> syn::Result<()> {
-    let names: HashSet<_> = parameters
-        .iter()
-        .map(|parameter| parameter.name.to_string())
-        .collect();
-    let mut referenced = HashSet::new();
-
-    for atom in atoms {
-        let reference = match (context, atom) {
-            (PathContext::Scope, PathAtom::Scope(name))
-            | (PathContext::Endpoint, PathAtom::Endpoint(name)) => name,
-            (PathContext::Scope, PathAtom::Endpoint(name)) => {
-                return Err(name
+    match literal.suffix() {
+        "ms" => Ok(Duration::from_millis(value)),
+        "s" => Ok(Duration::from_secs(value)),
+        "m" => value
+            .checked_mul(60)
+            .map(Duration::from_secs)
+            .ok_or_else(|| {
+                literal
                     .span()
-                    .error("`ep.NAME` is not available in a scope path; use `scope.NAME`"));
-            }
-            (PathContext::Endpoint, PathAtom::Scope(name)) => {
-                return Err(name.span().error(
-                    "scope values belong in the enclosing scope path in the current generated subset",
-                ));
-            }
-            (_, PathAtom::Static(_)) => continue,
-        };
-
-        if !names.contains(&reference.to_string()) {
-            let namespace = match context {
-                PathContext::Scope => "scope",
-                PathContext::Endpoint => "endpoint",
-            };
-            return Err(reference
-                .span()
-                .error(format!("unknown {namespace} path value `{reference}`")));
-        }
-        referenced.insert(reference.to_string());
+                    .error("duration overflows `std::time::Duration`")
+            }),
+        "h" => value
+            .checked_mul(3_600)
+            .map(Duration::from_secs)
+            .ok_or_else(|| {
+                literal
+                    .span()
+                    .error("duration overflows `std::time::Duration`")
+            }),
+        _ => Err(literal
+            .span()
+            .error("duration unit must be one of `ms`, `s`, `m`, or `h`")),
     }
+}
 
-    for parameter in parameters {
-        if !referenced.contains(&parameter.name.to_string()) {
-            let owner = match context {
-                PathContext::Scope => "scope",
-                PathContext::Endpoint => "endpoint",
-            };
-            return Err(parameter.name.span().error(format!(
-                "required {owner} parameter `{}` must be used by its path in the current generated subset",
-                parameter.name
-            )));
-        }
+fn validate_integer(literal: &LitInt, owner: &str) -> syn::Result<()> {
+    if !literal.suffix().is_empty() {
+        return Err(literal.span().error(format!(
+            "{owner} integer literals must be unsuffixed base-10 values"
+        )));
     }
-
+    let text = literal.to_string().replace('_', "");
+    if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(literal.span().error(format!(
+            "{owner} integer literals must be unsuffixed base-10 values"
+        )));
+    }
     Ok(())
 }
 
 fn validate_base(base: &LitStr) -> syn::Result<()> {
-    let value = base.value();
-    let authority_and_path = value
-        .strip_prefix("https://")
-        .or_else(|| value.strip_prefix("http://"))
-        .ok_or_else(|| {
-            base.span()
-                .error("the fixed base must begin with `https://` or `http://`")
-        })?;
-    let authority = authority_and_path.split('/').next().unwrap_or_default();
-    if authority.is_empty() || authority.contains('@') || value.contains('?') || value.contains('#')
+    let parsed = Url::parse(&base.value()).map_err(|_| {
+        base.span()
+            .error("the fixed base must be a valid absolute HTTP or HTTPS URL")
+    })?;
+    if !matches!(parsed.scheme(), "http" | "https")
+        || parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
     {
-        return Err(base
-            .span()
-            .error("the fixed base must have a host and no user information, query, or fragment"));
+        return Err(base.span().error(
+            "the fixed base must be absolute HTTP(S), contain a host, and contain no user information, query, or fragment",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_static_host_label(label: &LitStr) -> syn::Result<()> {
+    let value = label.value();
+    let bytes = value.as_bytes();
+    if !(1..=63).contains(&bytes.len())
+        || !bytes.is_ascii()
+        || !bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'-')
+        || !bytes.first().is_some_and(u8::is_ascii_alphanumeric)
+        || !bytes.last().is_some_and(u8::is_ascii_alphanumeric)
+    {
+        return Err(label.span().error(
+            "a static host atom must be one 1-63 byte ASCII DNS label beginning and ending with an alphanumeric character",
+        ));
     }
     Ok(())
 }
@@ -586,6 +962,83 @@ fn validate_static_segment(segment: &LitStr) -> syn::Result<()> {
     Ok(())
 }
 
+fn validate_public_header_name(name: &LitStr) -> syn::Result<()> {
+    let parsed = HeaderName::from_bytes(name.value().as_bytes()).map_err(|_| {
+        name.span()
+            .error("public header name is not a valid HTTP header name")
+    })?;
+    if matches!(
+        parsed.as_str(),
+        "host"
+            | "content-length"
+            | "transfer-encoding"
+            | "connection"
+            | "keep-alive"
+            | "te"
+            | "trailer"
+            | "upgrade"
+            | "authorization"
+            | "proxy-authorization"
+            | "cookie"
+            | "set-cookie"
+    ) {
+        return Err(name
+            .span()
+            .error("this public header name is reserved by transport, authentication, cookies, or proxy authentication"));
+    }
+    Ok(())
+}
+
+fn insert_unique_value(
+    names: &mut HashSet<String>,
+    value: &ValueDecl,
+    owner: &str,
+) -> syn::Result<()> {
+    let name = canonical_ident(&value.name);
+    if !names.insert(name.clone()) {
+        return Err(value
+            .name
+            .span()
+            .error(format!("duplicate {owner} `{name}`")));
+    }
+    Ok(())
+}
+
+fn is_layer_start(input: ParseStream<'_>) -> bool {
+    input.peek(keyword::host)
+        || input.peek(keyword::path)
+        || input.peek(keyword::query)
+        || input.peek(keyword::headers)
+        || input.peek(keyword::timeout)
+}
+
+fn client_tail_error(input: ParseStream<'_>) -> syn::Error {
+    if input.peek(keyword::base) {
+        return input.error("a client requires exactly one `base` declaration");
+    }
+    if input.peek(keyword::var) || input.peek(keyword::retry) || is_layer_start(input) {
+        return input.error(
+            "client configuration must appear once, in normative order, before every child scope or endpoint",
+        );
+    }
+    if input.peek(keyword::credentials) {
+        return input.error(
+            "credential declarations are owned by Phase 6 and are not implemented in Phase 5",
+        );
+    }
+    if input.peek(keyword::auth) {
+        return input.error(
+            "authentication declarations are owned by Phase 6 and are not implemented in Phase 5",
+        );
+    }
+    if input.peek(keyword::rate_limits) || input.peek(keyword::rate_limit) {
+        return input.error(
+            "rate-limit declarations are owned by Phase 7 and are not implemented in Phase 5",
+        );
+    }
+    input.error("unsupported client declaration")
+}
+
 trait SpanError {
     fn error(self, message: impl std::fmt::Display) -> syn::Error;
 }
@@ -598,288 +1051,245 @@ impl SpanError for proc_macro2::Span {
 
 #[cfg(test)]
 mod tests {
-    use quote::quote;
+    use quote::{format_ident, quote};
 
-    use super::parse;
+    use super::*;
+
+    fn parse_ok(tokens: TokenStream) -> SourceApi {
+        parse(tokens).expect("source AST")
+    }
 
     #[test]
-    fn rejects_methods_outside_the_phase4_slice_with_focused_message() {
-        let error = parse(quote! {
-            client ProofApi {
-                base "https://example.test";
-                scope resources(scope_value: String) {
-                    path ["scopes", scope.scope_value];
-                    PUT ById(endpoint_value: String) -> NoContent {
-                        path [ep.endpoint_value];
+    fn parses_multiple_clients_roots_nested_values_and_all_shaping_layers() {
+        let api = parse_ok(quote! {
+            client FirstApi {
+                base "https://example.test:8443/fixed";
+                var tenant: String;
+                var locale: Option<String>;
+                var limit: u32 = 50;
+                retry reqwest_default;
+                host ["api"];
+                path ["v1"];
+                query { "tenant" = vars.tenant; }
+                headers { "X-Locale" = vars.locale; }
+                timeout 5s;
+                GET Root(id: String, verbose: Option<bool>, page: u32 = 10) as root -> Bytes {
+                    path [ep.id];
+                }
+                scope regions(region: String, language: Option<String>) {
+                    host [scope.region, "api"];
+                    path ["regions", scope.region];
+                    scope users(account: String) {
+                        path ["users", scope.account];
+                        METHOD("PROPFIND") Inspect() -> Text;
                     }
                 }
             }
+            client SecondApi {
+                base "http://example.test";
+                CONNECT Tunnel() -> NoContent;
+            }
+        });
+        assert_eq!(api.clients.len(), 2);
+        assert_eq!(api.clients[0].children.len(), 2);
+    }
+
+    #[test]
+    fn rejects_arbitrary_defaults_and_public_expressions() {
+        let default_error = parse(quote! {
+            client Api {
+                base "https://example.test";
+                var value: String = make_value();
+            }
         })
         .err()
-        .expect("PUT is outside the current generated subset");
+        .expect("call default");
+        assert!(default_error.to_string().contains("Rust const path"));
 
-        assert_eq!(
-            error.to_string(),
-            "unsupported endpoint method; the Phase 4 generated subset accepts `GET` or `POST`"
+        let expression_error = parse(quote! {
+            client Api {
+                base "https://example.test";
+                GET Root(id: String) -> Bytes { path [ep.id.to_string()]; }
+            }
+        })
+        .err()
+        .expect("method expression");
+        assert!(
+            expression_error
+                .to_string()
+                .contains("unsupported endpoint clause")
+                || expression_error
+                    .to_string()
+                    .contains("arbitrary Rust expressions")
         );
     }
 
     #[test]
-    fn accepts_text_json_and_custom_buffered_body_and_response_markers() {
-        parse(quote! {
-            client CodecApi {
+    fn duration_and_custom_method_boundaries_are_checked() {
+        let zero = parse(quote! {
+            client Api { base "https://example.test"; timeout 0s; }
+        })
+        .err()
+        .expect("zero timeout");
+        assert!(zero.to_string().contains("greater than zero"));
+
+        let invalid = parse(quote! {
+            client Api { base "https://example.test"; METHOD("BAD METHOD") Root() -> Bytes; }
+        })
+        .err()
+        .expect("invalid method");
+        assert!(invalid.to_string().contains("valid HTTP method token"));
+
+        let overflow = parse(quote! {
+            client Api {
                 base "https://example.test";
-                scope messages() {
-                    path ["messages"];
-                    POST TextRoundTrip(body: Text) -> Text;
-                    POST JsonRoundTrip(body: Json<crate::Record>) -> Json<crate::Record>;
-                    POST Custom(
-                        id: String,
-                        body: crate::codec::MessagePack<crate::Record>,
-                    ) -> crate::codec::MessagePack<crate::Record> {
-                        path [ep.id];
-                    }
-                }
+                timeout 18446744073709551615h;
             }
         })
-        .expect("buffered grammar must parse");
+        .err()
+        .expect("overflowing timeout");
+        assert!(overflow.to_string().contains("overflows"));
     }
 
-    #[test]
-    fn accepts_stream_request_response_and_multipart_request_markers() {
-        parse(quote! {
-            client StreamingApi {
+    fn nested_scopes(depth: usize) -> TokenStream {
+        let mut child = quote!(GET Leaf() -> Bytes;);
+        for index in 0..depth {
+            let name = format_ident!("scope_{index}");
+            child = quote!(scope #name() { #child });
+        }
+        quote!(client Api { base "https://example.test"; #child })
+    }
+
+    fn nested_format(depth: usize) -> TokenStream {
+        let mut expression = quote!("leaf");
+        for _ in 0..depth {
+            expression = quote!(fmt[#expression]);
+        }
+        quote! {
+            client Api {
                 base "https://example.test";
-                scope transfers() {
-                    path ["transfers"];
-                    POST Upload(body: Stream<OctetStream>) -> Bytes;
-                    POST VendorUpload(body: Stream<crate::VendorMedia>) -> NoContent;
-                    GET Download() -> Stream<OctetStream>;
-                    GET VendorDownload() -> Stream<crate::VendorMedia>;
-                    POST MultipartUpload(body: Multipart) -> NoContent;
-                }
+                GET Leaf() -> Bytes { path [#expression]; }
             }
-        })
-        .expect("Phase 4 stream and multipart markers must parse");
-    }
-
-    #[test]
-    fn stream_marker_shape_and_multipart_direction_have_focused_diagnostics() {
-        for (tokens, expected) in [
-            (
-                quote! {
-                    client InvalidApi {
-                        base "https://example.test";
-                        scope transfers() {
-                            path ["transfers"];
-                            GET Invalid() -> Stream;
-                        }
-                    }
-                },
-                "`Stream` requires exactly one media marker type argument",
-            ),
-            (
-                quote! {
-                    client InvalidApi {
-                        base "https://example.test";
-                        scope transfers() {
-                            path ["transfers"];
-                            POST Invalid(body: Stream<OctetStream, Text>) -> NoContent;
-                        }
-                    }
-                },
-                "`Stream` requires exactly one media marker type argument",
-            ),
-            (
-                quote! {
-                    client InvalidApi {
-                        base "https://example.test";
-                        scope transfers() {
-                            path ["transfers"];
-                            GET Invalid() -> Stream<Stream<OctetStream>>;
-                        }
-                    }
-                },
-                "a `Stream` media marker cannot itself be a Concord stream or multipart marker",
-            ),
-            (
-                quote! {
-                    client InvalidApi {
-                        base "https://example.test";
-                        scope transfers() {
-                            path ["transfers"];
-                            GET Invalid() -> Multipart;
-                        }
-                    }
-                },
-                "`Multipart` is a request-only marker and cannot be used as a response",
-            ),
-            (
-                quote! {
-                    client InvalidApi {
-                        base "https://example.test";
-                        scope transfers() {
-                            path ["transfers"];
-                            POST Invalid(body: Multipart<Text>) -> NoContent;
-                        }
-                    }
-                },
-                "`Multipart` does not accept type arguments",
-            ),
-        ] {
-            let error = parse(tokens).err().expect("marker must be rejected");
-            assert_eq!(error.to_string(), expected);
         }
     }
 
     #[test]
-    fn stream_bytes_and_no_content_responses_reject_pagination_without_starting_phase8() {
-        for response in [
-            quote!(Stream<OctetStream>),
-            quote!(Bytes),
-            quote!(NoContent),
-        ] {
-            let error = parse(quote! {
-                client InvalidApi {
-                    base "https://example.test";
-                    scope transfers() {
-                        path ["transfers"];
-                        GET Invalid() -> #response {
-                            path ["page"];
-                            paginate OffsetPagination {
-                                offset = ep.offset,
-                                page_size = ep.limit
-                            }
-                        }
-                    }
-                }
-            })
-            .err()
-            .expect("incompatible pagination must be rejected");
-            assert_eq!(
-                error.to_string(),
-                "`Stream`, `Bytes`, and `NoContent` response markers cannot declare pagination"
-            );
-        }
+    fn scope_and_format_depth_bounds_accept_64_and_reject_65() {
+        parse(nested_scopes(64)).expect("64 nested scopes");
+        let scope_error = parse(nested_scopes(65)).err().expect("65 nested scopes");
+        assert!(
+            scope_error
+                .to_string()
+                .contains("maximum supported depth of 64")
+        );
+
+        parse(nested_format(64)).expect("64 nested formats");
+        let format_error = parse(nested_format(65)).err().expect("65 nested formats");
+        assert!(format_error.to_string().contains("maximum depth of 64"));
     }
 
     #[test]
-    fn request_body_must_be_last_and_no_content_is_response_only() {
-        let error = parse(quote! {
-            client CodecApi {
-                base "https://example.test";
-                scope messages() {
-                    path ["messages"];
-                    POST Invalid(body: Text, id: String) -> Text {
-                        path [ep.id];
-                    }
-                }
-            }
+    fn focused_structure_and_local_duplicate_diagnostics_are_stable() {
+        let empty = parse(TokenStream::new()).err().expect("zero clients");
+        assert!(empty.to_string().contains("at least one `client`"));
+
+        let duplicate_client = parse(quote! {
+            client Api { base "https://one.example.test"; }
+            client Api { base "https://two.example.test"; }
         })
         .err()
-        .expect("body ordering must be checked");
-        assert_eq!(
-            error.to_string(),
-            "the request body must be the final endpoint parameter"
+        .expect("duplicate clients");
+        assert!(
+            duplicate_client
+                .to_string()
+                .contains("duplicate client `Api`")
         );
 
-        let error = parse(quote! {
-            client CodecApi {
+        let body_order = parse(quote! {
+            client Api {
                 base "https://example.test";
-                scope messages() {
-                    path ["messages"];
-                    POST Invalid(body: NoContent) -> Text;
-                }
+                POST Create(body: Text, id: String) -> Bytes;
             }
         })
         .err()
-        .expect("NoContent request bodies must be rejected");
-        assert_eq!(
-            error.to_string(),
-            "`NoContent` is a response marker and cannot be used as a request body"
+        .expect("body must be last");
+        assert!(body_order.to_string().contains("final endpoint parameter"));
+
+        let duplicate_query = parse(quote! {
+            client Api {
+                base "https://example.test";
+                query { "key" = "one"; remove "key"; }
+            }
+        })
+        .err()
+        .expect("duplicate query key");
+        assert!(
+            duplicate_query
+                .to_string()
+                .contains("duplicate local query key")
         );
+
+        let duplicate_header = parse(quote! {
+            client Api {
+                base "https://example.test";
+                headers { "X-Key" = "one"; "x-key" = "two"; }
+            }
+        })
+        .err()
+        .expect("case-insensitive duplicate header");
+        assert!(duplicate_header.to_string().contains("case-insensitive"));
     }
 
     #[test]
-    fn rejects_trailing_unsupported_client_declaration() {
-        let error = parse(quote! {
-            client ProofApi {
-                base "https://example.test";
-                scope resources(scope_value: String) {
-                    path ["scopes", scope.scope_value];
-                    GET ById(endpoint_value: String) -> NoContent {
-                        path [ep.endpoint_value];
-                    }
-                }
-                var ignored: String;
-            }
-        })
-        .err()
-        .expect("unsupported input must not be silently ignored");
-
-        assert_eq!(
-            error.to_string(),
-            "unsupported client declaration; the current generated subset accepts one fixed base and one scope"
-        );
-    }
-
-    #[test]
-    fn accepts_trailing_commas_in_scope_and_endpoint_parameters() {
+    fn defaults_formats_static_atoms_and_later_phase_boundaries_are_restricted() {
         parse(quote! {
-            client ProofApi {
+            client Api {
                 base "https://example.test";
-                scope resources(
-                    account: String,
-                    region: String,
-                ) {
-                    path ["accounts", scope.account, "regions", scope.region];
-                    GET ById(
-                        endpoint_value: String,
-                    ) -> NoContent {
-                        path [ep.endpoint_value];
-                    }
-                }
+                var text: &'static str = "value";
+                var negative: i64 = -7;
+                var enabled: bool = true;
+                var constant: usize = crate::DEFAULT_SIZE;
+                host ["a12345678901234567890123456789012345678901234567890123456789012"];
+                GET Read(id: u32) -> Bytes { path [fmt["id-", ep.id]]; }
             }
         })
-        .expect("canonical trailing commas must be accepted");
-    }
+        .expect("restricted defaults and 63-byte host label");
 
-    #[test]
-    fn accepts_zero_parameter_scope_multiple_response_modes_and_semicolon_endpoint() {
-        parse(quote! {
-            client ExampleApi {
-                base "http://example.test/v1/";
-                scope health() {
-                    path ["health"];
-                    GET Bytes() -> Bytes;
-                    GET Ping() -> NoContent;
-                    GET Item(id: String) -> Bytes {
-                        path ["items", ep.id];
-                    }
-                }
-            }
-        })
-        .expect("the retained bodyless grammar slice must parse");
-    }
-
-    #[test]
-    fn rejects_endpoint_names_that_normalize_to_the_same_public_method() {
-        let error = parse(quote! {
-            client ExampleApi {
-                base "http://example.test/";
-                scope health() {
-                    path ["health"];
-                    GET HTTPStatus() -> NoContent;
-                    GET HttpStatus() -> NoContent;
-                }
+        let host = parse(quote! {
+            client Api {
+                base "https://example.test";
+                host ["a123456789012345678901234567890123456789012345678901234567890123"];
             }
         })
         .err()
-        .expect("normalized public endpoint names must not collide");
+        .expect("64-byte host label");
+        assert!(host.to_string().contains("1-63 byte"));
 
-        assert_eq!(
-            error.to_string(),
-            "generated endpoint method `http_status` collides after deterministic Rust name normalization"
-        );
+        let segment = parse(quote! {
+            client Api { base "https://example.test"; path ["two/segments"]; }
+        })
+        .err()
+        .expect("static path structure");
+        assert!(segment.to_string().contains("static path atom"));
+
+        let commas = parse(quote! {
+            client Api {
+                base "https://example.test";
+                GET Read(id: u32) -> Bytes { path [fmt["id-" ep.id]]; }
+            }
+        })
+        .err()
+        .expect("missing format comma");
+        assert!(commas.to_string().contains("separated by commas"));
+
+        let credentials = parse(quote! {
+            client Api {
+                base "https://example.test";
+                credentials { }
+            }
+        })
+        .err()
+        .expect("Phase 6 syntax");
+        assert!(credentials.to_string().contains("owned by Phase 6"));
     }
 }
