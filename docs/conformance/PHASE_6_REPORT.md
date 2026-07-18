@@ -26,7 +26,7 @@ This report does not claim full Concord 0.1 conformance. The normative status re
   `e4c1cca94962cf0ee6855bab3c252c1caba19202`
 - Post-source governance commit:
   `c7dfd11906d453de27702a6ff69f7f79a60e4dd9`
-- Phase 6 evidence/report/state commit: `PENDING_PHASE_6_EVIDENCE_STATE`
+- Phase 6 evidence/report/state commit: `a4e4a004a6868f1d5dd462fef077cc948fd5109f`
 - Phase 6 evidence anchor: the subsequent documentation-only
   `docs: anchor phase 6 evidence` commit; its object identity is intentionally external to its own
   content because a commit cannot contain its own hash
@@ -57,8 +57,8 @@ validation log identifies only the immutable tested source commit.
 |---|---|---|---|
 | Phase 6 source/test | `e4c1cca94962cf0ee6855bab3c252c1caba19202` | `feat: implement phase 6 authentication` | Added production credentials, typed public and generated authentication contracts, provider HTTP, OAuth2 client credentials, executor preflight/finalization/native materialization, and one bounded source-aware recovery on the existing request path. |
 | Post-source governance | `c7dfd11906d453de27702a6ff69f7f79a60e4dd9` | `chore: harden agent commit policy` | Changed only repository-agent governance files after validation; no executable artifact changed. |
-| Evidence/report/state | `PENDING_PHASE_6_EVIDENCE_STATE` | `docs: record phase 6 conformance evidence` | Adds the report and actual evidence and reconciles coverage, planning, controller state, and current-state documentation. |
-| Evidence anchor | external identity | `docs: anchor phase 6 evidence` | Replaces the pending evidence-state marker only in permitted documentation/catalog state; changes no executable artifact, classification, evidence ID, or count. |
+| Evidence/report/state | `a4e4a004a6868f1d5dd462fef077cc948fd5109f` | `docs: record phase 6 conformance evidence` | Adds the report and actual evidence and reconciles coverage, planning, controller state, and current-state documentation. |
+| Evidence anchor | external identity | `docs: anchor phase 6 evidence` | Replaces the pending evidence-state/time markers and corrects tokenization in the recorded `P6-AUDIT-003` command; changes no executable artifact, classification, evidence ID, or count. |
 
 Phase 6 extends the one production compiler, generated client, request, prepared head, body,
 executor, application HTTP client, and provider HTTP client already in the repository. It does not
@@ -341,6 +341,12 @@ evidence.
 The controller index records Phase 6 as the latest validated phase with this verdict, the immutable
 source identity, the Phase 6 report, and the anchored evidence-state identity. Phase 7 — Rate
 Limiting is the next active planning entry and remains `NOT_STARTED`.
+
+The first anchor audit attempt passed `P6-AUDIT-001` and `P6-AUDIT-002`, then exposed a missing
+PowerShell token separator in the newly recorded `P6-AUDIT-003` one-line command. The anchor
+corrects that documentation-only command syntax. The corrected `P6-AUDIT-003` and all five final
+state-audit commands passed against the immutable evidence/state commit; the catalog records their
+observed anchor-audit time.
 
 ## Remaining limitations and later-phase owners
 

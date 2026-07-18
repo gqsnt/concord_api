@@ -220,7 +220,7 @@ The immutable tested Phase 6 source/test commit is
 including `just release`, passed against that exact commit. The subsequent governance-only commit
 `c7dfd11906d453de27702a6ff69f7f79a60e4dd9` changes only `.agents/`, `.codex/`, and `AGENTS.md`;
 it changes no executable artifact and does not invalidate the source validation identity. The
-Phase 6 evidence/report/state commit is `PENDING_PHASE_6_EVIDENCE_STATE`; the subsequent
+Phase 6 evidence/report/state commit is `a4e4a004a6868f1d5dd462fef077cc948fd5109f`; the subsequent
 documentation-only anchor records that evidence identity without attempting impossible commit
 self-reference. Exact classification, commands, results, traces, and limitations are recorded in
 `docs/conformance/PHASE_6_REPORT.md`.
