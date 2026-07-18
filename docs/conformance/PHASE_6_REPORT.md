@@ -56,7 +56,7 @@ validation log identifies only the immutable tested source commit.
 | Unit | Commit | Subject | Durable result |
 |---|---|---|---|
 | Phase 6 source/test | `e4c1cca94962cf0ee6855bab3c252c1caba19202` | `feat: implement phase 6 authentication` | Added production credentials, typed public and generated authentication contracts, provider HTTP, OAuth2 client credentials, executor preflight/finalization/native materialization, and one bounded source-aware recovery on the existing request path. |
-| Post-source governance | `c7dfd11906d453de27702a6ff69f7f79a60e4dd9` | `chore: harden agent commit policy` | Changed only repository-agent governance files after validation; no executable artifact changed. |
+| Post-source governance | `c7dfd11906d453de27702a6ff69f7f79a60e4dd9` | Git subject bytes: `\x20change config to\x20\x20allow commit` | Changed only repository-agent governance files after validation; no executable artifact changed. |
 | Evidence/report/state | `a4e4a004a6868f1d5dd462fef077cc948fd5109f` | `docs: record phase 6 conformance evidence` | Adds the report and actual evidence and reconciles coverage, planning, controller state, and current-state documentation. |
 | Evidence anchor | external identity | `docs: anchor phase 6 evidence` | Replaces the pending evidence-state/time markers and corrects tokenization in the recorded `P6-AUDIT-003` command; changes no executable artifact, classification, evidence ID, or count. |
 
