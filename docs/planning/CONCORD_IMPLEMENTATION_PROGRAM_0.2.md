@@ -24,7 +24,7 @@ an execution queue because several foundations were delivered in a different ord
 | Phase 1 | `PHASE_1_COMPLETE_WITH_LIMITATIONS` | Safe errors/redaction, finite configuration, private managed application/provider clients, deterministic final-call seam, and canonical Nextest/release architecture. | No generated client core, pending request, lifecycle execution, or successful-response pipeline existed. |
 | Phase 2 | `PHASE_2_COMPLETE_WITH_LIMITATIONS` | First executable generated bodyless request: fallible generated construction, shared private core, stable pending wrappers, first-poll lifecycle, hooks/debug, managed Reqwest, bounded bytes/status handling, no-content, metadata terminal, and an API-specific sealed explicit-endpoint capability. | Only the explicitly authorized Phase 2 DSL and response subset is implemented; broad 0.1 evidence remains partial where later categories are absent, and the PR 2.3 uncommitted review patch omitted one subsequently reviewed committed file. |
 | Phase 3 | `PHASE_3_COMPLETE_WITH_LIMITATIONS` | One buffered codec vertical slice: stable media/encode/decode contracts, Text, feature-owned JSON, downstream custom codecs, finite request bodies, bounded decoded successes, coherent media headers, POST body DSL, typed direct/metadata results, and preserved Bytes/NoContent/status behavior. The final corrected source type-gates `.response()` to metadata-capable modes, semantically proves that terminal in rendered Rustdoc, and completes source-only namespace proof across prelude, advanced, and dangerous. | Fifty broader requirement rows remain partial. Their unimplemented clauses include credential-storage privacy, public-header precedence, Brotli/Deflate runtime probes, full grammar/semantic coverage, Phase 4 streaming/factories/multipart, and provider/limiter/pagination/extension/release-wide variants owned by Phases 4-10. |
-| Phase 4 | `PHASE_4_COMPLETE_WITH_LIMITATIONS` | One finite body architecture now covers buffered values, lazy request streams, reconstructible factories, inferred replayability, lazy typed response streams, and feature-gated request multipart. Generated `Stream<M>`/`Multipart` markers, Reqwest-owned multipart framing, stream-open completion, cancellation, no-default support, and maintained dangerous-namespace proof all use the existing request executor. | Forty-five broader source requirements remain partial where their text also requires Phase 5 shaping, Phase 6 recovery/providers, Phase 7 limiter behavior, Phase 8 pagination, Phase 9 prepared endpoints/extension certification, or Phase 10 release-wide grammar, security, documentation, platform, and evidence closure. |
+| Phase 4 | `PHASE_4_COMPLETE_WITH_LIMITATIONS` | One finite body architecture now covers buffered values, lazy request streams, reconstructible factories, inferred replayability, lazy typed response streams, and feature-gated request multipart. Generated `Stream<M>`/`Multipart` markers, Reqwest-owned multipart framing, stream-open completion, cancellation, no-default support, and maintained independent dangerous-feature isolation all use the existing request executor. | Forty-six source rows and one audit row remain partial where their text also requires Phase 5 shaping, Phase 6 recovery/providers, Phase 7 limiter behavior, Phase 8 pagination, Phase 9 prepared endpoints/extension certification, or Phase 10 raw successful responses and release-wide grammar, security, documentation, platform, and evidence closure. |
 
 Phase reports remain the detailed evidence owners:
 
@@ -43,9 +43,14 @@ The tested Phase 3 buffered source is
 `c9521f649c91df0a0bae9786cba101f4d526692b`. The controller-reviewed corrected Phase 3 source is
 `7ac4a1c6e18a080f4810b93ae4bc6aa02f52ed8f`. The final controller-reviewed Phase 3 source is
 `54a64cb4ba062453dea26dd6af1dff97eaa3406e`; the complete maintained release matrix passed
-against that immutable commit. The immutable tested Phase 4 source is
-`6472bc01e55bbd4282a8d5e06deeb9126650f9c4`; its complete maintained and focused matrices also
-passed.
+against that immutable commit. The immutable tested Phase 4 product source is
+`6472bc01e55bbd4282a8d5e06deeb9126650f9c4`. Controller correction source/test commit
+`909021e7b82436bdfdff1e1ffea67f3255e63c77` adds only dangerous-feature isolation tests and
+release wiring; its complete maintained and focused matrices pass. The complete evidence-state is
+the documentation commit containing this program and every final Phase 4 evidence ID; the
+subsequent documentation-only anchor reanchors the five audit rows without changing counts or
+classifications. Exact hashes are recorded in the anchored Phase 4 report and Git history without
+requiring impossible commit self-reference.
 
 Its executable path is:
 
@@ -109,11 +114,14 @@ contain only genuine feature-graph checks; dependency-topology fixtures remain C
 feature-specific ordinary UI harness proves the development executor is also absent from the
 existing dangerous namespace, while rendered core Rustdoc proves that the supported public
 `.response()` terminal remains visible without rendering its private capability bound. Phase 4
-makes that dangerous-namespace harness a mandatory dependency of `just release` with
-`dangerous-custom-retry` enabled and `dangerous-dev-tools` disabled.
+now makes a complete default/custom-retry/development-tools/raw-flag isolation matrix a mandatory
+dependency of `just release`; every dangerous configuration uses `--no-default-features` and
+enables exactly one dangerous flag. The raw flag remains topology-only in this phase.
 
-The Phase 4 source-evidence audit records 73 direct and 45 partial rows across 118 exact
-requirements, plus separately anchored catalog/report-integrity evidence. Partial clauses name
+The corrected Phase 4 source-evidence audit records 72 direct and 46 partial rows across 118 exact
+requirements, plus four direct and one partial catalog/report-integrity rows. The final 123 Phase 4
+rows are 76 direct and 47 partial; the full catalog remains 568 unique IDs. `P4-FEAT-006` is partial
+because positive raw-response APIs are absent even though all dangerous flags are isolated. Partial clauses name
 their future owner and do not claim public-header shaping, recovery, limiter, pagination, prepared
 endpoints, complete extension certification, full grammar/security evidence, or release-platform
 closure. Historical Phase 0-3 evidence is unchanged.
@@ -125,7 +133,8 @@ Phase 4 intentionally does not provide:
 - authentication, credential providers, recovery, or generated credential surfaces;
 - limiter waits, governors, or generated rate-limit configuration;
 - pagination execution or generated pagination terminals;
-- prepared public endpoints or dangerous raw success responses;
+- prepared public endpoints or dangerous raw success responses (the latter is explicitly owned by
+  Phase 10);
 - query/public-header/host-prefix DSL clauses, custom methods, or the complete nested value system;
 - streaming terminal-consumption hooks, SSE, WebSocket, record/CSV streaming, bidirectional
   streaming, or multipart response parsing.
@@ -149,8 +158,9 @@ loops or parallel request models. A later phase requires its own approved contra
 5. **Phase 9 — prepared endpoints and extension certification.** Add prepared endpoints only after
    their public contract can reuse the same core executor, and certify the approved extension
    surfaces.
-6. **Phase 10 — product completion and release candidate.** Complete examples, compatibility
-   matrices, security/property evidence, performance work, and release-final conformance.
+6. **Phase 10 — product completion and release candidate.** Implement the positive dangerous raw
+   successful-response surface and complete examples, compatibility matrices, security/property
+   evidence, performance work, and release-final conformance.
 
 This sequence is planning context, not a Phase 5 implementation prompt.
 

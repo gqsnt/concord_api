@@ -6,7 +6,7 @@
 
 All Phase 4 exit criteria are satisfied. The limitations in this report belong to broader 0.1
 requirements whose remaining clauses are owned by Phases 5-10; none invalidates a Phase 4 exit
-criterion. Phase 5 has not started.
+criterion. Phase 5 is not started.
 
 This report does not claim full Concord 0.1 conformance. The normative status remains
 `Normative Implementation Candidate`.
@@ -25,19 +25,27 @@ This report does not claim full Concord 0.1 conformance. The normative status re
   `f5cd7e98ade6474f2893ae9199884fb05d651004`
 - Immutable tested Phase 4 source:
   `6472bc01e55bbd4282a8d5e06deeb9126650f9c4`
-- Final Phase 4 validation/evidence time: `2026-07-18T01:06:38Z`
-- Phase 4 evidence/report commit: `cb2a521024ef86149a3397faa7818782a1231187`
-- Phase 4 evidence anchor: this report's documentation-only follow-up
+- Original Phase 4 evidence/report commit:
+  `cb2a521024ef86149a3397faa7818782a1231187`
+- Original Phase 4 evidence anchor:
+  `39b89ea4898cf6d66fceb04d1ee23f5e3b2a72d3`
+- Corrected immutable source/test commit:
+  `909021e7b82436bdfdff1e1ffea67f3255e63c77`
+- Corrected validation/evidence time: `2026-07-18T06:54:46Z`
+- Complete corrected evidence-state commit: pending non-self-referential anchor
+- Corrected Phase 4 anchor: the subsequent documentation-only anchor
 - Rust edition: 2024
 - MSRV exercised: Rust 1.85.0
 - Cargo resolver: 3
 - Nextest exercised: 0.9.140; repository minimum 0.9.115
 - Managed HTTP baseline: Reqwest 0.13.4 with default features disabled
 
-The source tree was clean when final validation began and remained unchanged throughout the
-maintained and focused final matrices. All 118 source-behavior rows point to the immutable source
-commit. Catalog/report-integrity rows are anchored separately to the evidence/report commit so
-every cited artifact exists at its recorded owner.
+The source tree was clean when correction validation began and remained unchanged throughout the
+maintained and focused matrices. Of the 118 source-behavior rows, 116 retain their original tested
+owners and corrected `P4-FEAT-006` plus the sharpened negative `P4-GEN-012` point to the immutable
+correction commit. The complete
+evidence-state commit contains every final evidence ID before a later documentation-only anchor
+records that state as the owner of the five audit rows.
 
 ## Phase 4 commits
 
@@ -48,9 +56,38 @@ every cited artifact exists at its recorded owner.
 | 4.3 | `eed624947af12cbdc7897529fb8c8b45fc4b12b9` | `feat: add bounded lazy response streams` | Added the typed lazy stream response handler/wrapper, media validation, finite cumulative limits, deadline boundary, and `StreamOpened`. |
 | 4.4 | `d1967fc0afef27f33578749c39faafd584e6fa38` | `feat: add bounded request multipart` | Added feature-gated multipart recipes/factories, Reqwest-owned framing, aggregate accounting, replayability, redaction, and local upload proof. |
 | 4.5 | `6472bc01e55bbd4282a8d5e06deeb9126650f9c4` | `feat: generate stream and multipart endpoints` | Added the one parser/model/codegen vertical slice, diagnostics, terminal boundaries, renamed/nested/repeated compatibility, generated runtime, and Rustdoc proof; advanced the macro/core contract to version 5. |
+| 4.C1 | `909021e7b82436bdfdff1e1ffea67f3255e63c77` | `test: certify dangerous feature isolation` | Added exact default and independent no-default dangerous-feature checks and made the complete matrix a mandatory `just release` dependency without changing product APIs. |
 
 Each source unit received focused validation, an uncommitted full patch review, a committed patch
 capture under ignored `git_diff/`, and a coherent commit before the next unit began.
+
+## Controller review and correction history
+
+The independent controller review found two documentation/test-surface defects without finding a
+Phase 4 product defect:
+
+1. `P4-FEAT-006` called compound `FEAT-DANGER-001` direct even though the maintained matrix proved
+   only custom-retry isolation and positive raw successful-response APIs were intentionally absent.
+2. The original evidence/report commit `cb2a521024ef86149a3397faa7818782a1231187`
+   contained 563 total rows and 118 Phase 4 rows, while the original anchor
+   `39b89ea4898cf6d66fceb04d1ee23f5e3b2a72d3` first added the five `P4-AUDIT-*`
+   rows. Those rows nevertheless cited the earlier commit and claimed the later 568-row state.
+
+The strategic resolution is explicit: Phase 4 does not implement `RawResponse`,
+`RawResponseRequest<E>`, a raw successful-response handler, or generated `.raw_response()`.
+Phase 4 certifies independent Cargo-feature selection and the implemented custom-retry/development
+surfaces. Positive dangerous raw-response behavior belongs to Phase 10. Accordingly
+`P4-FEAT-006` is partial, while `P4-GEN-012` remains direct only for its exact negative clause that
+`.raw_response()` is absent with its feature disabled. `EXEC-RAW-001` and `SEC-RESP-006` remain
+planned for Phase 10.
+
+The correction uses three immutable stages. The source/test commit above was fully validated. The
+complete evidence-state commit already contains all 123 Phase 4 IDs and the final classifications.
+Because a commit cannot contain its own hash, its five audit rows temporarily use the documented
+`PENDING_CORRECTED_EVIDENCE_STATE` marker. A later documentation-only anchor replaces only that
+marker and the corresponding commit-scoped command owner with the complete evidence-state hash;
+it adds no IDs and changes no counts or classifications. Claims in all five final audit rows concern
+properties already true at the complete evidence state. Planning remains distinct from evidence.
 
 ## Contract map and authority review
 
@@ -117,16 +154,27 @@ Phase 6 owns an actual reconstructed authentication-recovery attempt.
 
 ## Phase 3 follow-up
 
-`just release` now depends on the private `_test-ui-dangerous` recipe:
+`just release` originally gained the feature-specific custom-retry proof through
+`_test-ui-dangerous`. The correction replaces it with the private `_test-dangerous-features`
+recipe, which owns the complete independent matrix:
 
 ```text
-cargo nextest run --profile ci -p concord_core --features dangerous-custom-retry --test ui_dangerous
+cargo nextest run --profile ci -p concord_core --test dangerous_features --test dangerous_feature_ui
+cargo check -p concord_core --no-default-features --features dangerous-custom-retry --all-targets
+cargo nextest run --profile ci -p concord_core --no-default-features --features dangerous-custom-retry --test dangerous_features --test dangerous_feature_ui --test ui_dangerous
+cargo check -p concord_core --no-default-features --features dangerous-dev-tools --all-targets
+cargo nextest run --profile ci -p concord_core --no-default-features --features dangerous-dev-tools --test dangerous_features --test dangerous_feature_ui
+cargo check -p concord_core --no-default-features --features dangerous-raw-response --all-targets
+cargo nextest run --profile ci -p concord_core --no-default-features --features dangerous-raw-response --test dangerous_features --test dangerous_feature_ui
 ```
 
-It enables `dangerous-custom-retry`, does not enable `dangerous-dev-tools`, uses ordinary Trybuild,
-and has no nested Cargo fixture. The maintained proof passed 1/1 both independently and within
-`just release`. Default and all-feature behavior remain unchanged. No new normative row was added
-solely for moving the already-valid proof into the release matrix.
+Each dangerous configuration uses `--no-default-features` and enables exactly one dangerous flag.
+The ordinary integration and Trybuild tests prove positive custom-retry/development availability,
+negative namespace leakage, negative public/generated raw surfaces when the raw flag is disabled,
+and default absence. The raw-response configuration proves only flag/topology isolation; it makes
+no positive raw-response API claim. The retained `ui_dangerous` check runs with custom retry alone.
+No nested Cargo fixture or extended Nextest timeout was added. The direct recipe and `just release`
+both pass.
 
 ## Public body and stream surface
 
@@ -280,7 +328,7 @@ only the open event and never its later consumption.
 
 ## Feature and dependency behavior
 
-- default: request/response streams work; 336/336 tests pass;
+- default: request/response streams work; 338/338 tests pass and no dangerous feature is enabled;
 - all features: streams, multipart, JSON, compression wiring, and dangerous surfaces coexist;
   340/340 tests pass;
 - no default: core checks pass, managed HTTP proof passes, public body/stream fixtures pass 3/3,
@@ -288,7 +336,10 @@ only the open event and never its later consumption.
 - multipart enabled: 11/11 focused tests and multipart-only all-target check pass;
 - multipart disabled: types are absent and both core/macro focused diagnostics pass;
 - JSON remains independently owned and is not activated by multipart;
-- dangerous custom retry remains independently selectable and does not activate development tools;
+- each of `dangerous-custom-retry`, `dangerous-dev-tools`, and `dangerous-raw-response` is
+  independently selectable without another dangerous or unrelated optional feature;
+- custom retry and development tools expose only their approved surfaces; the raw-response flag has
+  no positive API in Phase 4 and remains a Phase 10 capability;
 - Reqwest remains mandatory; `concord_macros` has no runtime-only normal dependency;
 - Rust 1.85.0, edition 2024, resolver 3, and Reqwest 0.13.4 are unchanged.
 
@@ -304,7 +355,7 @@ only the open event and never its later consumption.
 | `just check-no-default` | pass | core all targets/no defaults |
 | `just clippy` | pass | workspace all targets, warnings denied |
 | `just clippy-all` | pass | workspace all targets/all features, warnings denied |
-| `just test` | pass | 336/336 Nextest tests |
+| `just test` | pass | 338/338 Nextest tests |
 | `just test-all` | pass | 340/340 Nextest CI-profile tests |
 | `just test-no-default` | pass | 1/1 maintained no-default managed HTTP test; 207 filtered |
 | `just doctest` | pass | 2/2 core compile-fail docs; macro/test-support have zero |
@@ -313,7 +364,7 @@ only the open event and never its later consumption.
 | `just doc-all` | pass | all-feature Rustdoc for all three libraries |
 | `just deny` | pass | advisories, bans, licenses, and sources; only tolerated duplicate-version warnings for `core-foundation` and `windows-sys` |
 | `just diff-check` | pass | no whitespace errors |
-| `just release` | pass | default CI 336/336; all-feature CI 340/340; no-default 1/1; dangerous UI 1/1; doctest/doc/deny/diff gates pass |
+| `just release` | pass | default CI 338/338; all-feature CI 340/340; no-default 1/1; dangerous isolation 9/9 plus three all-target checks; doctest/doc/deny/diff gates pass |
 
 ### Focused Phase 4 commands
 
@@ -329,12 +380,16 @@ only the open event and never its later consumption.
 | `cargo nextest run -p concord_core --all-features --test ui --test public_rustdoc` | 2/2 core UI/Rustdoc harnesses pass |
 | `cargo nextest run -p concord_macros --test ui --test compile --test generated_surface` | 24/24 UI, fixture, Rustdoc, and generated runtime tests pass |
 | `cargo nextest run -p concord_core --all-features -E 'test(/(validation_and_debug_are_structural_and_redacted\|producer_failure\|multipart_stream_failure\|debug_is_non_consuming\|cancellation_drops_direct\|caller_stream_polling)/)'` | 9/9 pass |
-| `cargo nextest run --profile ci -p concord_core --features dangerous-custom-retry --test ui_dangerous` | 1/1 pass |
+| `cargo nextest run --profile ci -p concord_core --test dangerous_features --test dangerous_feature_ui` | 2/2 default-absence tests pass |
+| `cargo check -p concord_core --no-default-features --features dangerous-custom-retry --all-targets` plus the matching Nextest command in `_test-dangerous-features` | compile pass; 3/3 presence/isolation/UI tests pass |
+| `cargo check -p concord_core --no-default-features --features dangerous-dev-tools --all-targets` plus the matching Nextest command in `_test-dangerous-features` | compile pass; 2/2 presence/isolation tests pass |
+| `cargo check -p concord_core --no-default-features --features dangerous-raw-response --all-targets` plus the matching Nextest command in `_test-dangerous-features` | compile pass; 2/2 flag-isolation tests pass; no positive raw API claimed |
+| `cargo nextest run --profile ci -p concord_core --no-default-features --features dangerous-custom-retry --test ui_dangerous` | retained dangerous-namespace proof 1/1 pass |
 | `cargo nextest run -p concord_macros --lib` | 12/12 parser/codegen unit tests pass |
 
 ### Corrections and unavailable evidence
 
-Focused implementation validation found and corrected: one Rust 1.85-incompatible let-chain in the
+Original focused implementation validation found and corrected: one Rust 1.85-incompatible let-chain in the
 parser; one incomplete generated request-stream Rustdoc sentence; fixture workspace/locked-lockfile
 registration; one overly broad multipart Rustdoc assertion; and one attempted command that named a
 nonexistent `parser` integration target (rerun correctly as `cargo nextest run -p concord_macros
@@ -342,8 +397,8 @@ nonexistent `parser` integration target (rerun correctly as `cargo nextest run -
 
 The additional, non-maintained command
 `cargo nextest run -p concord_core --no-default-features` is not a Phase 4 gate and remains
-unavailable as a full-suite proof: Nextest stopped at 132/276 after 122 passes and 10 failures (144
-not run). All ten failures are pre-existing TLS/development HTTP unit tests that build a
+unavailable as a full-suite proof: the correction rerun stopped at 132/278 after 122 passes and 10
+failures (146 not run). All ten failures are pre-existing TLS/development HTTP unit tests that build a
 `rustls-no-provider` Reqwest client without installing a process crypto provider. The maintained
 no-default recipe intentionally owns the provider-independent proof. Phase 4 no-default source,
 all-target compilation, public stream contracts, and focused real stream execution all pass. This
@@ -371,23 +426,26 @@ which is outside ordinary body/execution surfaces and unchanged by Phase 4.
 
 ## Evidence and coverage
 
-The 118 exact Phase 4 source-behavior rows comprise 73 direct and 45 partial classifications. The
-documentation-only anchor adds five catalog/report-integrity rows (four direct and one partial), so
-the final Phase 4 addition is 123 rows: 77 direct and 46 partial. The final catalog contains 568
+The 118 exact Phase 4 source-behavior rows comprise 72 direct and 46 partial classifications after
+correcting `P4-FEAT-006` from direct to partial. The five catalog/report-integrity rows comprise
+four direct and one partial, so the final Phase 4 addition is 123 rows: 76 direct and 47 partial.
+The complete evidence-state commit already contains all five audit IDs; the later anchor adds none.
+The final catalog contains 568
 rows and 568 unique evidence IDs. The coverage plan retains 504 rows and 504 unique normative IDs.
 There are zero unknown requirement IDs in either catalog.
 
-All 445 historical evidence rows are unchanged. Coverage edits affect 123 reviewed Phase 4
-evidence requirements: the 118 source requirements and five catalog/report-integrity requirements.
-They retain their planning identifiers/status, name current exact paths and evidence IDs, and
-distinguish direct proof from deferred clauses. Source rows are owned by
-`6472bc01e55bbd4282a8d5e06deeb9126650f9c4`; the five audit rows are owned by the later
-evidence/report commit. The final anchor runs `git cat-file -e <verified_commit>:<path>` for every
-listed Phase 4 artifact and reviews all classifications and commands.
+All 445 historical evidence rows are byte-for-byte unchanged from the Phase 3 anchor. Nine coverage
+rows were corrected narrowly: `FEAT-DANGER-001`, `GEN-TERM-003`, `EXEC-RAW-001`,
+`SEC-RESP-006`, and the five audit-row requirements. They retain planning identifiers/status and
+now distinguish the exact negative/partial proof from Phase 10 positive raw-response ownership.
+Before the complete evidence-state commit, all 118 source rows and 888 exact source-artifact path
+references were checked with `git cat-file -e`; none was missing. After that commit, each of the five
+commit-scoped audit commands is executed against that exact state. The final anchor changes only
+their owner/command metadata and report identity; counts, IDs, and classifications remain fixed.
 
 ## Remaining partial requirements
 
-Every partial Phase 4 requirement (45 source rows plus the audit row) has an explicit proved
+Every partial Phase 4 requirement (46 source rows plus the audit row) has an explicit proved
 portion and future owner:
 
 | Requirement IDs | Proved in Phase 4 | Missing portion and owner |
@@ -410,6 +468,7 @@ portion and future owner:
 | `SEC-TEST-001` | Phase 4 cross-surface body sentinels | limiter/pagination matrices and release audit — Phases 7, 8, 10 |
 | `BOUND-BODY-007` | application limits stay positive/finite | production provider body paths — Phase 6 |
 | `BOUND-BODY-011` | gzip post-decompression stream accounting | Brotli/Deflate maintained runtime probes — Phase 10 |
+| `FEAT-DANGER-001` | all three dangerous flags independently select; implemented custom-retry/development surfaces isolate; defaults enable none | positive `RawResponse`, `RawResponseRequest<E>`, raw handler, and generated `.raw_response()` — Phase 10 |
 | `EXEC-CREATE-001`, `EXEC-CREATE-002` | no URL/body/factory/stream/hook/native/HTTP eager work | production provider and limiter exclusions — Phases 6-7 |
 | `EXEC-HEAD-001` | body/media/TLS preflight precedes effects | Phase 5 shaping and Phase 6 auth collision preflight |
 | `EXEC-HOOK-001` | veto prevents every current body/native effect | provider and limiter cutoffs — Phases 6-7 |
@@ -436,6 +495,11 @@ portion and future owner:
 | `CONF-MSRV-001` | all current signatures/workflows on Rust 1.85 | later signatures and platform automation — Phases 5-10 |
 | `CONF-DOC-001` | current docs/doctests/rendered Rustdoc | later canonical examples — Phases 5-10 |
 | `CONF-TRACE-006` | every Phase 4 row has immutable artifact ownership | release-final evidence completeness — Phase 10 |
+
+Three related raw-response requirements are not counted as new Phase 4 partial rows:
+`GEN-TERM-003` retains direct evidence only for feature-disabled `.raw_response()` absence, while
+its positive feature-enabled clause is planned for Phase 10; `EXEC-RAW-001` and `SEC-RESP-006`
+remain planned with no positive Phase 4 implementation or evidence claim.
 
 ## Phase 5 readiness
 
