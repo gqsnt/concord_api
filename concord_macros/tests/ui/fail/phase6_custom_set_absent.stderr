@@ -1,0 +1,30 @@
+error[E0599]: no method named `set` found for struct `CustomProviderCredentialHandle` in the current scope
+  --> tests/ui/fail/phase6_custom_set_absent.rs:35:44
+   |
+24 | / api! {
+25 | |     client Api {
+26 | |         base "http://example.test";
+27 | |         credentials {
+...  |
+31 | | }
+   | |_- method `set` not found for this struct
+...
+35 |       let _ = client.credentials().session().set(SessionToken);
+   |                                              ^^^
+   |
+help: there is a method `is_set` with a similar name, but with different arguments
+  --> tests/ui/fail/phase6_custom_set_absent.rs:24:1
+   |
+24 | / api! {
+25 | |     client Api {
+26 | |         base "http://example.test";
+27 | |         credentials {
+...  |
+31 | | }
+   | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: consider pinning the expression
+   |
+35 ~     let mut pinned = std::pin::pin!(client.credentials().session());
+36 ~     let _ = pinned.as_mut().set(SessionToken);
+   |

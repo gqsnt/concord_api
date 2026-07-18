@@ -21,15 +21,14 @@ pub struct ApiError {
     rate_limit_kind: Option<RateLimitErrorKind>,
     pagination_kind: Option<PaginationErrorKind>,
     response: Option<Box<HttpResponseFailure>>,
+    authentication_error: Option<Box<crate::auth::AuthError>>,
 }
 
 impl ApiError {
-    #[allow(dead_code, reason = "used by later managed endpoint execution")]
     pub(crate) fn from_http_response(response: HttpResponseFailure) -> Self {
         Self::with_response(ErrorCategory::HttpStatus, None, response)
     }
 
-    #[allow(dead_code, reason = "used by later authentication execution")]
     pub(crate) fn authentication_rejected(response: HttpResponseFailure) -> Self {
         Self::with_response(
             ErrorCategory::AuthenticationRejected,
@@ -54,6 +53,7 @@ impl ApiError {
             rate_limit_kind: None,
             pagination_kind: None,
             response: Some(Box::new(response)),
+            authentication_error: None,
         }
     }
 
@@ -81,6 +81,7 @@ impl ApiError {
             rate_limit_kind: None,
             pagination_kind: None,
             response: None,
+            authentication_error: None,
         }
     }
 
@@ -92,6 +93,23 @@ impl ApiError {
         let mut error = Self::classified(endpoint, method, ErrorCategory::Configuration);
         error.configuration_kind = Some(kind);
         error
+    }
+
+    pub(crate) fn authentication(
+        endpoint: &'static str,
+        method: Method,
+        error: crate::auth::AuthError,
+    ) -> Self {
+        let kind = error.kind();
+        let category = match kind {
+            AuthErrorKind::Unavailable => ErrorCategory::AuthenticationUnavailable,
+            AuthErrorKind::Rejected => ErrorCategory::AuthenticationRejected,
+            _ => ErrorCategory::AuthenticationProvider,
+        };
+        let mut result = Self::classified(endpoint, method, category);
+        result.auth_kind = Some(kind);
+        result.authentication_error = Some(Box::new(error));
+        result
     }
 
     #[cfg(test)]
@@ -231,6 +249,13 @@ impl fmt::Display for ApiError {
         if let Some(status) = self.http_status() {
             write!(formatter, " with HTTP status {status}")?;
         }
+        if let Some(message) = self
+            .authentication_error
+            .as_deref()
+            .and_then(crate::auth::AuthError::safe_message)
+        {
+            write!(formatter, ": {message}")?;
+        }
         Ok(())
     }
 }
@@ -247,11 +272,18 @@ impl fmt::Debug for ApiError {
             .field("rate_limit_kind", &self.rate_limit_kind)
             .field("pagination_kind", &self.pagination_kind)
             .field("http_status", &self.http_status())
+            .field("authentication_error", &self.authentication_error)
             .finish()
     }
 }
 
-impl Error for ApiError {}
+impl Error for ApiError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        self.authentication_error
+            .as_deref()
+            .map(|error| error as &(dyn Error + 'static))
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -356,6 +388,24 @@ mod tests {
             pagination.pagination_kind(),
             Some(PaginationErrorKind::RepeatedRequest)
         );
+    }
+
+    #[test]
+    fn provider_owned_safe_message_remains_application_visible() {
+        const SAFE_MESSAGE: &str = "operator-approved credential broker outage";
+        let error = ApiError::authentication(
+            "widgets.fetch",
+            Method::GET,
+            crate::auth::AuthError::with_safe_message(AuthErrorKind::Acquisition, SAFE_MESSAGE),
+        );
+
+        assert!(error.to_string().contains(SAFE_MESSAGE));
+        assert!(format!("{error:?}").contains(SAFE_MESSAGE));
+        let source = error
+            .source()
+            .expect("authentication source should remain visible");
+        assert!(source.to_string().contains(SAFE_MESSAGE));
+        assert_eq!(error.auth_kind(), Some(AuthErrorKind::Acquisition));
     }
 
     #[test]

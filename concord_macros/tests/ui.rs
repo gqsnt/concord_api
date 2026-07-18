@@ -99,3 +99,15 @@ fn vector_values_are_rejected_for_public_headers() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/fail/vector_public_header.rs");
 }
+
+#[test]
+fn generated_custom_provider_handles_do_not_expose_direct_set() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/fail/phase6_custom_set_absent.rs");
+}
+
+#[test]
+fn credential_references_do_not_expose_mutation() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/fail/phase6_credential_ref_mutation_absent.rs");
+}

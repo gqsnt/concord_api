@@ -3,7 +3,9 @@ use crate::runtime::RuntimeConfig;
 
 use super::application::ApplicationHttp;
 use super::config::{ApplicationRetry, HttpConfig, ProtocolMode, ProviderRetry};
+use super::provider::ProviderHttp;
 use super::provider::ProviderHttpInner;
+use crate::operation::OperationDeadline;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum TlsCapability {
@@ -17,6 +19,10 @@ pub(crate) struct ManagedHttp {
 }
 
 impl ManagedHttp {
+    pub(crate) fn provider_http(&self, deadline: Option<OperationDeadline>) -> ProviderHttp<'_> {
+        self.provider.capability(deadline)
+    }
+
     pub(crate) fn validate_fixed_base(
         http: &HttpConfig,
         base_url: &url::Url,
@@ -229,6 +235,8 @@ mod tests {
     #[cfg(feature = "default-tls")]
     use crate::error::ClientBuildErrorKind;
     use crate::error::{ConfigurationErrorKind, ErrorCategory};
+    #[cfg(feature = "default-tls")]
+    use crate::http::provider::ProviderRequest;
     use crate::http::{HttpConfigBuilder, SafeProxy};
     use crate::runtime::RuntimeConfigBuilder;
 
@@ -505,24 +513,18 @@ mod tests {
             .await
             .expect("application TLS body should complete");
 
-        let request = managed
-            .provider
-            .prepare(
-                Method::GET,
-                &trust_server.url("localhost", "/provider-root"),
-                None,
-            )
-            .expect("provider HTTPS should prepare");
+        let request = ProviderRequest::new(
+            Method::GET,
+            url::Url::parse(&trust_server.url("localhost", "/provider-root"))
+                .expect("provider HTTPS URL should parse"),
+        );
         let provider = managed
-            .provider
-            .execute_native("managed.provider", Method::GET, request)
+            .provider_http(None)
+            .send(request)
             .await
             .expect("provider root should validate");
         assert_eq!(provider.status(), reqwest::StatusCode::OK);
-        provider
-            .bytes()
-            .await
-            .expect("provider TLS body should complete");
+        assert_eq!(provider.body().as_ref(), b"ok");
         trust_server
             .wait_for_requests(2, WAIT)
             .expect("both managed clients should reach TLS server");
@@ -552,23 +554,19 @@ mod tests {
             .await
             .expect("application mTLS body should complete");
 
-        let request = managed
-            .provider
-            .prepare(
-                Method::GET,
-                &mtls_server.url("localhost", "/provider-without-identity"),
-                None,
-            )
-            .expect("provider mTLS URL should prepare");
-        let provider_error = managed
-            .provider
-            .execute_native("managed.provider", Method::GET, request)
-            .await
-            .expect_err("provider client must not present the application identity");
-        assert!(matches!(
-            provider_error,
-            ErrorCategory::Connect | ErrorCategory::Transport
-        ));
+        let request = ProviderRequest::new(
+            Method::GET,
+            url::Url::parse(&mtls_server.url("localhost", "/provider-without-identity"))
+                .expect("provider mTLS URL should parse"),
+        );
+        let provider_error = match managed.provider_http(None).send(request).await {
+            Ok(_) => panic!("provider client must not present the application identity"),
+            Err(error) => error,
+        };
+        assert_eq!(
+            provider_error.kind(),
+            crate::error::AuthErrorKind::Acquisition
+        );
         let diagnostics = format!("{provider_error:?}");
         for sentinel in [ROOT_PEM_SENTINEL, IDENTITY_PEM_SENTINEL] {
             assert!(!diagnostics.contains(sentinel));

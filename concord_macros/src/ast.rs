@@ -13,6 +13,7 @@ pub(crate) struct SourceClient {
     pub(crate) name: Ident,
     pub(crate) base: LitStr,
     pub(crate) values: Vec<ValueDecl>,
+    pub(crate) credentials: Option<CredentialsBlock>,
     pub(crate) retry: RetrySelection,
     pub(crate) layer: Layer,
     pub(crate) children: Vec<SourceChild>,
@@ -78,7 +79,82 @@ pub(crate) struct Layer {
     pub(crate) path: Option<PathOperation>,
     pub(crate) query: Option<QueryOperation>,
     pub(crate) headers: Option<HeaderOperation>,
+    pub(crate) auth: Option<AuthOperation>,
     pub(crate) timeout: Option<TimeoutOperation>,
+}
+
+#[derive(Clone)]
+pub(crate) struct CredentialsBlock {
+    pub(crate) secrets: Vec<SecretDecl>,
+    pub(crate) credentials: Vec<CredentialDecl>,
+}
+
+#[derive(Clone)]
+pub(crate) struct SecretDecl {
+    pub(crate) name: Ident,
+}
+
+#[derive(Clone)]
+pub(crate) struct CredentialDecl {
+    pub(crate) name: Ident,
+    pub(crate) source: CredentialSource,
+}
+
+#[derive(Clone)]
+pub(crate) enum CredentialSource {
+    ApiKey {
+        secret: Ident,
+    },
+    Bearer {
+        secret: Ident,
+    },
+    Basic {
+        username: Ident,
+        password: Ident,
+    },
+    OAuth2Client {
+        token_url: LitStr,
+        client_id: Ident,
+        client_secret: Ident,
+        scope: Option<LitStr>,
+    },
+    Endpoint {
+        path: Path,
+    },
+    Custom {
+        material: Type,
+    },
+}
+
+#[derive(Clone)]
+pub(crate) enum AuthOperation {
+    Modify {
+        replace: bool,
+        placements: Vec<AuthPlacement>,
+    },
+    Off,
+}
+
+#[derive(Clone)]
+pub(crate) struct AuthPlacement {
+    pub(crate) kind: AuthPlacementKind,
+    pub(crate) credential: Ident,
+    pub(crate) challenge: Option<AuthChallenge>,
+}
+
+#[derive(Clone)]
+pub(crate) enum AuthPlacementKind {
+    Bearer,
+    Basic,
+    Header(LitStr),
+    Query(LitStr),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum AuthChallenge {
+    Unauthorized,
+    UnauthorizedOrForbidden,
+    Never,
 }
 
 #[derive(Clone)]

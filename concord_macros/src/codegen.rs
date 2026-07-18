@@ -5,16 +5,16 @@ use quote::{ToTokens, quote};
 use syn::Type;
 
 use crate::ast::{
-    CodecKind, DefaultExpr, MediaKind, MethodKind, RequestBodyKind, ResponseKind, RetrySelection,
-    ValueKind,
+    AuthChallenge, AuthPlacementKind, CodecKind, DefaultExpr, MediaKind, MethodKind,
+    RequestBodyKind, ResponseKind, RetrySelection, ValueKind,
 };
 use crate::model::{
-    Api, Child, Client, Endpoint, NormalizedConfig, ResolvedExpr, Scope, Value, ValueReference,
-    ValueShape,
+    Api, Child, Client, Credential, CredentialSource, Endpoint, NormalizedConfig, ResolvedExpr,
+    Scope, Value, ValueReference, ValueShape,
 };
 use crate::names::{canonical_ident, public_ident, to_snake_case};
 
-const GENERATED_CONTRACT_VERSION: u32 = 6;
+const GENERATED_CONTRACT_VERSION: u32 = 7;
 
 pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
     let clients = api
@@ -31,23 +31,25 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
     let support_name = &client.support_name;
     let capability_name = &client.endpoint_capability_name;
     let values_type = &client.values_type_name;
+    let credentials_store = credentials_store_name(client);
     let base = &client.base;
     let contract_version = GENERATED_CONTRACT_VERSION;
 
     let value_summary = value_category_summary(&client.values, "client");
     let retry_summary = retry_summary(&client.retry);
+    let credential_summary = credential_summary(client);
     let client_doc = format!(
-        "Generated Concord client `{client_name}` with one fixed immutable public-value snapshot. {value_summary} {retry_summary}"
+        "Generated Concord client `{client_name}` with one fixed immutable public-value snapshot. {value_summary} {credential_summary} {retry_summary}"
     );
     let builder_doc = format!(
-        "Canonical fallible builder for [`{client_name}`]. {value_summary} Selected client defaults are evaluated once by `build`; overridden defaults are not evaluated. {retry_summary}"
+        "Canonical fallible builder for [`{client_name}`]. {value_summary} {credential_summary} Selected client defaults are evaluated once by `build`; overridden defaults are not evaluated. {retry_summary}"
     );
     let support_doc = format!("Public generated API modules for [`{client_name}`].");
     let prelude_doc = format!(
         "Re-exports every endpoint-specific request extension trait for [`{client_name}`] under a deterministic client-qualified alias. Import all setters with `use {support_name}::prelude::*;`. Generic timeout and debug setters remain inherent on `Request<E>`."
     );
     let constructor_doc = format!(
-        "Builds `{client_name}` through the canonical builder. Required client values appear in DSL order. {value_summary}"
+        "Builds `{client_name}` through the canonical builder. Constructor arguments are required client values, then protected secrets, then custom credential providers, each in normative declaration order. {value_summary} {credential_summary}"
     );
     let capability_doc = format!(
         "Sealed capability implemented only by explicit endpoints generated for [`{client_name}`]."
@@ -73,6 +75,31 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
             quote!(#field: ::std::option::Option<#ty>,)
         })
         .collect::<Vec<_>>();
+    let secret_builder_fields = client
+        .secrets
+        .iter()
+        .enumerate()
+        .map(|(index, secret)| {
+            let field = secret_builder_field(index, &secret.name);
+            quote!(#field: ::std::option::Option<#core_path::prelude::SecretString>,)
+        })
+        .collect::<Vec<_>>();
+    let provider_builder_fields = client
+        .credentials
+        .iter()
+        .enumerate()
+        .filter_map(|(index, credential)| match &credential.source {
+            CredentialSource::Custom { material } => {
+                let field = provider_builder_field(index, &credential.name);
+                Some(quote!(
+                    #field: ::std::option::Option<::std::sync::Arc<
+                        dyn #core_path::advanced::CredentialProvider<Material = #material>
+                    >>,
+                ))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
     let builder_value_initializers = client
         .values
         .iter()
@@ -82,19 +109,40 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
             quote!(#field: ::std::option::Option::None,)
         })
         .collect::<Vec<_>>();
+    let secret_builder_initializers = client
+        .secrets
+        .iter()
+        .enumerate()
+        .map(|(index, secret)| {
+            let field = secret_builder_field(index, &secret.name);
+            quote!(#field: ::std::option::Option::None,)
+        })
+        .collect::<Vec<_>>();
+    let provider_builder_initializers = client
+        .credentials
+        .iter()
+        .enumerate()
+        .filter(|(_, credential)| matches!(&credential.source, CredentialSource::Custom { .. }))
+        .map(|(index, credential)| {
+            let field = provider_builder_field(index, &credential.name);
+            quote!(#field: ::std::option::Option::None,)
+        })
+        .collect::<Vec<_>>();
     let builder_methods = client
         .values
         .iter()
         .enumerate()
         .map(|(index, value)| generate_builder_value_methods(index, value))
         .collect::<Vec<_>>();
+    let secret_builder_methods = generate_secret_builder_methods(client, core_path);
+    let provider_builder_methods = generate_provider_builder_methods(client, core_path);
     let required_client_values = client
         .values
         .iter()
         .enumerate()
         .filter(|(_, value)| value.is_required())
         .collect::<Vec<_>>();
-    let constructor_parameters = required_client_values
+    let mut constructor_parameters = required_client_values
         .iter()
         .map(|(_, value)| {
             let name = &value.name;
@@ -102,19 +150,48 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
             quote!(#name: #ty,)
         })
         .collect::<Vec<_>>();
-    let constructor_setters = required_client_values
+    constructor_parameters.extend(client.secrets.iter().map(|secret| {
+        let name = &secret.name;
+        quote!(#name: impl ::std::convert::Into<#core_path::prelude::SecretString>,)
+    }));
+    constructor_parameters.extend(client.credentials.iter().filter_map(|credential| {
+        let CredentialSource::Custom { material } = &credential.source else {
+            return None;
+        };
+        let name = provider_argument_name(&credential.name);
+        Some(quote!(
+            #name: impl #core_path::advanced::CredentialProvider<Material = #material>,
+        ))
+    }));
+    let mut constructor_setters = required_client_values
         .iter()
         .map(|(_, value)| {
             let name = &value.name;
             quote!(.#name(#name))
         })
         .collect::<Vec<_>>();
+    constructor_setters.extend(client.secrets.iter().map(|secret| {
+        let name = &secret.name;
+        quote!(.#name(#name))
+    }));
+    constructor_setters.extend(
+        client
+            .credentials
+            .iter()
+            .filter(|credential| matches!(&credential.source, CredentialSource::Custom { .. }))
+            .map(|credential| {
+                let method = provider_argument_name(&credential.name);
+                quote!(.#method(#method))
+            }),
+    );
     let build_value_statements = client
         .values
         .iter()
         .enumerate()
         .map(|(index, value)| generate_client_value_resolution(index, value))
         .collect::<Vec<_>>();
+    let build_secret_statements = generate_secret_resolution(client, core_path);
+    let build_provider_statements = generate_provider_resolution(client, core_path);
     let snapshot_fields = client
         .values
         .iter()
@@ -125,6 +202,10 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
             quote!(#field: #source,)
         })
         .collect::<Vec<_>>();
+    let credential_store_fields = generate_credential_store_fields(client, core_path);
+    let credential_store_initializers = generate_credential_store_initializers(client, core_path);
+    let credentials_module = generate_credentials_module(client, core_path);
+    let credentials_method = generate_credentials_method(client);
 
     let retry_baseline = match &client.retry {
         RetrySelection::Disabled => {
@@ -156,11 +237,15 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
     let facade_modules = generate_facade_children(client, &client.children, &[], core_path);
     let endpoint_modules = generate_endpoint_children(client, &client.children, &[], core_path);
     let client_child_methods = generate_client_child_methods(client, core_path);
-    let prelude_exports = collect_prelude_exports(&client.children, &[]);
+    let prelude_exports = collect_prelude_exports(client, &client.children, &[]);
 
     quote! {
         struct #values_type {
             #(#value_fields)*
+        }
+
+        struct #credentials_store {
+            #credential_store_fields
         }
 
         #[doc = #client_doc]
@@ -168,11 +253,14 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
         pub struct #client_name {
             __concord_core: #core_path::__private::ClientCore,
             __concord_values: ::std::sync::Arc<#values_type>,
+            __concord_credentials: ::std::sync::Arc<#credentials_store>,
         }
 
         #[doc = #builder_doc]
         pub struct #builder_name {
             #(#builder_value_fields)*
+            #(#secret_builder_fields)*
+            #(#provider_builder_fields)*
             __concord_http: ::std::option::Option<#core_path::advanced::HttpConfigBuilder>,
             __concord_runtime: ::std::option::Option<#core_path::advanced::RuntimeConfigBuilder>,
             __concord_http_configured: bool,
@@ -214,6 +302,8 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
                 #(#prelude_exports)*
             }
 
+            #credentials_module
+
             /// Generated immutable nested scope facades.
             pub mod facades {
                 #facade_modules
@@ -226,6 +316,10 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
 
             impl super::#client_name {
                 #[doc = #constructor_doc]
+                #[allow(
+                    clippy::too_many_arguments,
+                    reason = "the normative constructor lists required values, secrets, and providers in declaration order"
+                )]
                 pub fn new(
                     #(#constructor_parameters)*
                 ) -> ::std::result::Result<Self, #core_path::prelude::ClientBuildError> {
@@ -239,6 +333,7 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
                 }
 
                 #client_child_methods
+                #credentials_method
 
                 #[must_use]
                 /// Creates a side-effect-free pending request from an endpoint generated for this client.
@@ -260,6 +355,8 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
                 pub fn new() -> Self {
                     Self {
                         #(#builder_value_initializers)*
+                        #(#secret_builder_initializers)*
+                        #(#provider_builder_initializers)*
                         __concord_http: ::std::option::Option::Some(#retry_baseline),
                         __concord_runtime: ::std::option::Option::Some(
                             __concord_generated::__core::__private::default_runtime_config(),
@@ -272,6 +369,8 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
                 }
 
                 #(#builder_methods)*
+                #secret_builder_methods
+                #provider_builder_methods
 
                 #[must_use]
                 /// Applies the HTTP configuration closure immediately. A later retry selection replaces the DSL selection.
@@ -328,6 +427,8 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
                         );
                     }
                     #(#build_value_statements)*
+                    #build_secret_statements
+                    #build_provider_statements
                     let Some(http) = self.__concord_http else {
                         unreachable!("generated HTTP builder state is internally consistent");
                     };
@@ -339,12 +440,16 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
                         http,
                         runtime,
                     )?;
+                    let credentials = ::std::sync::Arc::new(super::#credentials_store {
+                        #credential_store_initializers
+                    });
                     let values = ::std::sync::Arc::new(super::#values_type {
                         #(#snapshot_fields)*
                     });
                     ::std::result::Result::Ok(super::#client_name {
                         __concord_core: core,
                         __concord_values: values,
+                        __concord_credentials: credentials,
                     })
                 }
             }
@@ -356,6 +461,519 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
             }
         }
     }
+}
+
+fn generate_secret_builder_methods(client: &Client, core_path: &TokenStream) -> TokenStream {
+    let methods = client
+        .secrets
+        .iter()
+        .enumerate()
+        .map(|(index, secret)| {
+            let method = &secret.name;
+            let field = secret_builder_field(index, method);
+            quote! {
+                #[must_use]
+                #[doc = "Sets one required protected client secret; a later call replaces it."]
+                pub fn #method(
+                    mut self,
+                    value: impl ::std::convert::Into<#core_path::prelude::SecretString>,
+                ) -> Self {
+                    self.#field = ::std::option::Option::Some(value.into());
+                    self
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+    quote!(#(#methods)*)
+}
+
+fn generate_provider_builder_methods(client: &Client, core_path: &TokenStream) -> TokenStream {
+    let methods = client
+        .credentials
+        .iter()
+        .enumerate()
+        .filter_map(|(index, credential)| {
+            let CredentialSource::Custom { material } = &credential.source else {
+                return None;
+            };
+            let method = provider_argument_name(&credential.name);
+            let field = provider_builder_field(index, &credential.name);
+            Some(quote! {
+                #[must_use]
+                #[doc = "Sets one required custom credential provider; a later call replaces it."]
+                pub fn #method<P>(mut self, provider: P) -> Self
+                where
+                    P: #core_path::advanced::CredentialProvider<Material = #material>,
+                {
+                    self.#field = ::std::option::Option::Some(::std::sync::Arc::new(provider));
+                    self
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    quote!(#(#methods)*)
+}
+
+fn generate_secret_resolution(client: &Client, _core_path: &TokenStream) -> TokenStream {
+    let statements = client
+        .secrets
+        .iter()
+        .enumerate()
+        .map(|(index, secret)| {
+            let field = secret_builder_field(index, &secret.name);
+            let resolved = resolved_secret(index, &secret.name);
+            quote! {
+                let #resolved = match self.#field {
+                    ::std::option::Option::Some(value) => value,
+                    ::std::option::Option::None => {
+                        return ::std::result::Result::Err(
+                            __concord_generated::__core::__private::missing_input_error(),
+                        );
+                    }
+                };
+            }
+        })
+        .collect::<Vec<_>>();
+    quote!(#(#statements)*)
+}
+
+fn generate_provider_resolution(client: &Client, _core_path: &TokenStream) -> TokenStream {
+    let statements = client
+        .credentials
+        .iter()
+        .enumerate()
+        .filter(|(_, credential)| matches!(&credential.source, CredentialSource::Custom { .. }))
+        .map(|(index, credential)| {
+            let field = provider_builder_field(index, &credential.name);
+            let resolved = resolved_provider(index, &credential.name);
+            quote! {
+                let #resolved = match self.#field {
+                    ::std::option::Option::Some(provider) => provider,
+                    ::std::option::Option::None => {
+                        return ::std::result::Result::Err(
+                            __concord_generated::__core::__private::missing_input_error(),
+                        );
+                        }
+                };
+            }
+        })
+        .collect::<Vec<_>>();
+    quote!(#(#statements)*)
+}
+
+fn generate_credential_store_fields(client: &Client, core_path: &TokenStream) -> TokenStream {
+    let fields = client
+        .credentials
+        .iter()
+        .enumerate()
+        .map(|(index, credential)| {
+            let field = credential_store_field(index, &credential.name);
+            let material = credential_material_type(client, credential, core_path);
+            quote!(#field: #core_path::__private::GeneratedCredential<#material>,)
+        })
+        .collect::<Vec<_>>();
+    quote!(#(#fields)*)
+}
+
+fn generate_credential_store_initializers(client: &Client, core_path: &TokenStream) -> TokenStream {
+    let initializers = client
+        .credentials
+        .iter()
+        .enumerate()
+        .map(|(index, credential)| {
+            let field = credential_store_field(index, &credential.name);
+            let value = match &credential.source {
+                CredentialSource::ApiKey { secret } => {
+                    let secret = resolved_secret(*secret, &client.secrets[*secret].name);
+                    quote!(#core_path::__private::GeneratedCredential::static_value(
+                        &core,
+                        #core_path::prelude::ApiKey::new(#secret.clone()),
+                    ))
+                }
+                CredentialSource::Bearer { secret } => {
+                    let secret = resolved_secret(*secret, &client.secrets[*secret].name);
+                    quote!(#core_path::__private::GeneratedCredential::static_value(
+                        &core,
+                        #core_path::prelude::AccessToken::new(#secret.clone()),
+                    ))
+                }
+                CredentialSource::Basic { username, password } => {
+                    let username = resolved_secret(*username, &client.secrets[*username].name);
+                    let password = resolved_secret(*password, &client.secrets[*password].name);
+                    quote!(#core_path::__private::GeneratedCredential::static_value(
+                        &core,
+                        #core_path::prelude::BasicCredential::new(
+                            #username.clone(),
+                            #password.clone(),
+                        ),
+                    ))
+                }
+                CredentialSource::OAuth2Client {
+                    token_url,
+                    client_id,
+                    client_secret,
+                    scope,
+                } => {
+                    let client_id = resolved_secret(*client_id, &client.secrets[*client_id].name);
+                    let client_secret =
+                        resolved_secret(*client_secret, &client.secrets[*client_secret].name);
+                    let scope = scope.as_ref().map_or_else(
+                        || quote!(::std::option::Option::None),
+                        |scope| quote!(::std::option::Option::Some(#scope)),
+                    );
+                    quote!(#core_path::__private::GeneratedCredential::provider(
+                        &core,
+                        #core_path::__private::oauth2_client_credentials(
+                            #token_url,
+                            #client_id.clone(),
+                            #client_secret.clone(),
+                            #scope,
+                        )?,
+                    ))
+                }
+                CredentialSource::Endpoint { .. } => {
+                    quote!(#core_path::__private::GeneratedCredential::endpoint(&core))
+                }
+                CredentialSource::Custom { .. } => {
+                    let provider = resolved_provider(index, &credential.name);
+                    quote!(#core_path::__private::GeneratedCredential::provider_arc(
+                        &core,
+                        #provider,
+                    ))
+                }
+            };
+            quote!(#field: #value,)
+        })
+        .collect::<Vec<_>>();
+    quote!(#(#initializers)*)
+}
+
+fn generate_credentials_method(client: &Client) -> TokenStream {
+    if client.credentials.is_empty() {
+        return quote!();
+    }
+    let facade = credentials_facade_name(client);
+    quote! {
+        /// Borrows the typed credential-management facade for this client.
+        #[must_use]
+        pub fn credentials(&self) -> credentials::#facade<'_> {
+            credentials::#facade::__concord_new(self)
+        }
+    }
+}
+
+fn generate_credentials_module(client: &Client, core_path: &TokenStream) -> TokenStream {
+    if client.credentials.is_empty() {
+        return quote!();
+    }
+    let client_name = &client.name;
+    let facade = credentials_facade_name(client);
+    let accessors = client
+        .credentials
+        .iter()
+        .enumerate()
+        .map(|(index, credential)| {
+            let method = public_ident(
+                &to_snake_case(&canonical_ident(&credential.name)),
+                credential.name.span(),
+            );
+            let field = credential_store_field(index, &credential.name);
+            let material = credential_material_type(client, credential, core_path);
+            let handle = credential_handle_type(credential, &material);
+            let handle_constructor = credential_handle_constructor(credential);
+            let extra = match &credential.source {
+                CredentialSource::OAuth2Client {
+                    token_url, scope, ..
+                } => {
+                    let scope = scope.as_ref().map_or_else(
+                        || quote!(::std::option::Option::None),
+                        |scope| quote!(::std::option::Option::Some(#scope)),
+                    );
+                    quote!(token_url: #token_url, scope: #scope,)
+                }
+                _ => quote!(),
+            };
+            quote! {
+                /// Returns a typed source-specific credential handle.
+                #[must_use]
+                pub fn #method(&self) -> #handle {
+                    #handle_constructor {
+                        inner: self.client.__concord_credentials.#field.clone(),
+                        #extra
+                    }
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+    let handle_types = generate_credential_handle_types(client, core_path);
+    quote! {
+        /// Generated typed credential access and source-specific mutation capabilities.
+        pub mod credentials {
+            /// Borrowed credential facade for the generated client.
+            pub struct #facade<'a> {
+                client: &'a super::super::#client_name,
+            }
+
+            impl<'a> #facade<'a> {
+                pub(super) fn __concord_new(client: &'a super::super::#client_name) -> Self {
+                    Self { client }
+                }
+
+                #(#accessors)*
+            }
+
+            #handle_types
+        }
+    }
+}
+
+fn generate_credential_handle_types(client: &Client, core_path: &TokenStream) -> TokenStream {
+    let api_key = client
+        .credentials
+        .iter()
+        .any(|credential| matches!(credential.source, CredentialSource::ApiKey { .. }))
+        .then(|| quote! {
+            /// Handle for one static API-key source.
+            pub struct ApiKeyCredentialHandle {
+                pub(super) inner: #core_path::__private::GeneratedCredential<#core_path::prelude::ApiKey>,
+            }
+            impl ApiKeyCredentialHandle {
+                #[must_use]
+                pub fn credential(&self) -> #core_path::advanced::CredentialRef<#core_path::prelude::ApiKey> {
+                    self.inner.credential()
+                }
+                pub async fn replace(
+                    &self,
+                    value: impl ::std::convert::Into<#core_path::prelude::SecretString>,
+                ) -> ::std::result::Result<(), #core_path::advanced::AuthError> {
+                    self.inner.replace_static(#core_path::prelude::ApiKey::new(value)).await
+                }
+            }
+        });
+    let bearer = client
+        .credentials
+        .iter()
+        .any(|credential| matches!(credential.source, CredentialSource::Bearer { .. }))
+        .then(|| quote! {
+            /// Handle for one static bearer source.
+            pub struct BearerCredentialHandle {
+                pub(super) inner: #core_path::__private::GeneratedCredential<#core_path::prelude::AccessToken>,
+            }
+            impl BearerCredentialHandle {
+                #[must_use]
+                pub fn credential(&self) -> #core_path::advanced::CredentialRef<#core_path::prelude::AccessToken> {
+                    self.inner.credential()
+                }
+                pub async fn replace(
+                    &self,
+                    value: impl ::std::convert::Into<#core_path::prelude::SecretString>,
+                ) -> ::std::result::Result<(), #core_path::advanced::AuthError> {
+                    self.inner.replace_static(#core_path::prelude::AccessToken::new(value)).await
+                }
+            }
+        });
+    let basic = client
+        .credentials
+        .iter()
+        .any(|credential| matches!(credential.source, CredentialSource::Basic { .. }))
+        .then(|| quote! {
+            /// Handle for one atomic static Basic source.
+            pub struct BasicCredentialHandle {
+                pub(super) inner: #core_path::__private::GeneratedCredential<#core_path::prelude::BasicCredential>,
+            }
+            impl BasicCredentialHandle {
+                #[must_use]
+                pub fn credential(&self) -> #core_path::advanced::CredentialRef<#core_path::prelude::BasicCredential> {
+                    self.inner.credential()
+                }
+                pub async fn replace(
+                    &self,
+                    username: impl ::std::convert::Into<#core_path::prelude::SecretString>,
+                    password: impl ::std::convert::Into<#core_path::prelude::SecretString>,
+                ) -> ::std::result::Result<(), #core_path::advanced::AuthError> {
+                    self.inner.replace_static(
+                        #core_path::prelude::BasicCredential::new(username, password),
+                    ).await
+                }
+            }
+        });
+    let oauth = client
+        .credentials
+        .iter()
+        .any(|credential| matches!(credential.source, CredentialSource::OAuth2Client { .. }))
+        .then(|| quote! {
+            /// Handle for one built-in OAuth2 client-credentials source.
+            pub struct OAuthClientCredentialsHandle {
+                pub(super) inner: #core_path::__private::GeneratedCredential<#core_path::prelude::AccessToken>,
+                pub(super) token_url: &'static str,
+                pub(super) scope: ::std::option::Option<&'static str>,
+            }
+            impl OAuthClientCredentialsHandle {
+                #[must_use]
+                pub fn credential(&self) -> #core_path::advanced::CredentialRef<#core_path::prelude::AccessToken> {
+                    self.inner.credential()
+                }
+                pub async fn replace_client_credentials(
+                    &self,
+                    client_id: impl ::std::convert::Into<#core_path::prelude::SecretString>,
+                    client_secret: impl ::std::convert::Into<#core_path::prelude::SecretString>,
+                ) -> ::std::result::Result<(), #core_path::advanced::AuthError> {
+                    let provider = #core_path::__private::oauth2_client_credentials_for_replace(
+                        self.token_url,
+                        client_id.into(),
+                        client_secret.into(),
+                        self.scope,
+                    )?;
+                    self.inner.replace_provider(provider).await
+                }
+            }
+        });
+    let endpoint = client
+        .credentials
+        .iter()
+        .any(|credential| matches!(credential.source, CredentialSource::Endpoint { .. }))
+        .then(|| quote! {
+            /// Handle for one explicitly acquired endpoint-backed source.
+            pub struct EndpointCredentialHandle<M>
+            where
+                M: #core_path::advanced::CredentialMaterial,
+            {
+                pub(super) inner: #core_path::__private::GeneratedCredential<M>,
+            }
+            impl<M> EndpointCredentialHandle<M>
+            where
+                M: #core_path::advanced::CredentialMaterial,
+            {
+                #[must_use]
+                pub fn credential(&self) -> #core_path::advanced::CredentialRef<M> {
+                    self.inner.credential()
+                }
+                pub async fn set(&self, value: M) -> ::std::result::Result<(), #core_path::advanced::AuthError> {
+                    self.inner.set(value).await
+                }
+                pub async fn clear(&self) -> ::std::result::Result<(), #core_path::advanced::AuthError> {
+                    self.inner.clear().await
+                }
+                #[must_use]
+                pub fn is_set(&self) -> bool {
+                    self.inner.is_set()
+                }
+            }
+        });
+    let custom = client
+        .credentials
+        .iter()
+        .any(|credential| matches!(credential.source, CredentialSource::Custom { .. }))
+        .then(|| quote! {
+            /// Handle for one custom provider-backed source.
+            pub struct CustomProviderCredentialHandle<M>
+            where
+                M: #core_path::advanced::CredentialMaterial,
+            {
+                pub(super) inner: #core_path::__private::GeneratedCredential<M>,
+            }
+            impl<M> CustomProviderCredentialHandle<M>
+            where
+                M: #core_path::advanced::CredentialMaterial,
+            {
+                #[must_use]
+                pub fn credential(&self) -> #core_path::advanced::CredentialRef<M> {
+                    self.inner.credential()
+                }
+                pub async fn clear(&self) -> ::std::result::Result<(), #core_path::advanced::AuthError> {
+                    self.inner.clear().await
+                }
+                #[must_use]
+                pub fn is_set(&self) -> bool {
+                    self.inner.is_set()
+                }
+            }
+        });
+    quote!(#api_key #bearer #basic #oauth #endpoint #custom)
+}
+
+fn credential_handle_type(credential: &Credential, material: &TokenStream) -> TokenStream {
+    match credential.source {
+        CredentialSource::ApiKey { .. } => quote!(ApiKeyCredentialHandle),
+        CredentialSource::Bearer { .. } => quote!(BearerCredentialHandle),
+        CredentialSource::Basic { .. } => quote!(BasicCredentialHandle),
+        CredentialSource::OAuth2Client { .. } => quote!(OAuthClientCredentialsHandle),
+        CredentialSource::Endpoint { .. } => quote!(EndpointCredentialHandle<#material>),
+        CredentialSource::Custom { .. } => quote!(CustomProviderCredentialHandle<#material>),
+    }
+}
+
+fn credential_handle_constructor(credential: &Credential) -> TokenStream {
+    match credential.source {
+        CredentialSource::ApiKey { .. } => quote!(ApiKeyCredentialHandle),
+        CredentialSource::Bearer { .. } => quote!(BearerCredentialHandle),
+        CredentialSource::Basic { .. } => quote!(BasicCredentialHandle),
+        CredentialSource::OAuth2Client { .. } => quote!(OAuthClientCredentialsHandle),
+        CredentialSource::Endpoint { .. } => quote!(EndpointCredentialHandle),
+        CredentialSource::Custom { .. } => quote!(CustomProviderCredentialHandle),
+    }
+}
+
+fn credential_material_type(
+    client: &Client,
+    credential: &Credential,
+    core_path: &TokenStream,
+) -> TokenStream {
+    match &credential.source {
+        CredentialSource::ApiKey { .. } => quote!(#core_path::prelude::ApiKey),
+        CredentialSource::Bearer { .. } | CredentialSource::OAuth2Client { .. } => {
+            quote!(#core_path::prelude::AccessToken)
+        }
+        CredentialSource::Basic { .. } => quote!(#core_path::prelude::BasicCredential),
+        CredentialSource::Custom { material } => quote!(#material),
+        CredentialSource::Endpoint {
+            endpoint_id: Some(endpoint_id),
+            ..
+        } => response_output_type(
+            &find_endpoint_by_id(&client.children, *endpoint_id)
+                .expect("resolved endpoint credential")
+                .response,
+            core_path,
+        ),
+        CredentialSource::Endpoint {
+            endpoint_id: None, ..
+        } => {
+            unreachable!("endpoint credentials are resolved before code generation")
+        }
+    }
+}
+
+fn response_output_type(response: &ResponseKind, core_path: &TokenStream) -> TokenStream {
+    match response {
+        ResponseKind::Bytes => quote!(#core_path::prelude::Bytes),
+        ResponseKind::NoContent => quote!(()),
+        ResponseKind::Buffered(CodecKind::Text) => quote!(::std::string::String),
+        ResponseKind::Buffered(CodecKind::Json(ty)) => quote!(#ty),
+        ResponseKind::Buffered(CodecKind::Custom(ty)) => {
+            quote!(<#ty as #core_path::advanced::DecodeBody>::Output)
+        }
+        ResponseKind::Stream(MediaKind::OctetStream) => {
+            quote!(#core_path::prelude::StreamResponse<#core_path::prelude::OctetStream>)
+        }
+        ResponseKind::Stream(MediaKind::Custom(ty)) => {
+            quote!(#core_path::prelude::StreamResponse<#ty>)
+        }
+    }
+}
+
+fn find_endpoint_by_id(children: &[Child], id: usize) -> Option<&Endpoint> {
+    for child in children {
+        match child {
+            Child::Endpoint(endpoint) if endpoint.id == id => return Some(endpoint),
+            Child::Scope(scope) => {
+                if let Some(endpoint) = find_endpoint_by_id(&scope.children, id) {
+                    return Some(endpoint);
+                }
+            }
+            Child::Endpoint(_) => {}
+        }
+    }
+    None
 }
 
 fn generate_builder_value_methods(index: usize, value: &Value) -> TokenStream {
@@ -950,6 +1568,7 @@ fn generate_endpoint(
     let capability_name = &client.endpoint_capability_name;
     let client_name = &client.name;
     let values_type = &client.values_type_name;
+    let credentials_store = credentials_store_name(client);
     let depth = scopes.len();
     let support_path = super_chain(depth + 1);
     let invocation_path = super_chain(depth + 2);
@@ -966,6 +1585,9 @@ fn generate_endpoint(
     let body_field = quote!(__concord_body: #body_type,);
     let client_values_field = quote!(
         __concord_client_values: ::std::option::Option<::std::sync::Arc<#invocation_path::#values_type>>,
+    );
+    let credentials_field = quote!(
+        __concord_credentials: ::std::option::Option<::std::sync::Arc<#invocation_path::#credentials_store>>,
     );
 
     let (scope_bindings, endpoint_bindings, body_binding) =
@@ -1022,14 +1644,22 @@ fn generate_endpoint(
     let path_statements = path_statements(client, scopes, endpoint);
     let query_statements = query_statements(client, scopes, endpoint);
     let header_statements = header_statements(client, scopes, endpoint);
+    let auth_statements = auth_statements(client, endpoint, core_path);
     let where_clause = endpoint_where_clause(client, scopes, endpoint, core_path);
-    let extension_trait =
-        generate_request_extension_trait(endpoint, &support_path, &generated_core, core_path);
+    let extension_trait = generate_request_extension_trait(
+        client,
+        scopes,
+        endpoint,
+        &support_path,
+        &generated_core,
+        core_path,
+    );
 
     quote! {
         #[doc = #endpoint_doc]
         pub struct #endpoint_name {
             #client_values_field
+            #credentials_field
             #scope_fields
             #endpoint_fields
             #body_field
@@ -1060,6 +1690,9 @@ fn generate_endpoint(
             fn __concord_bind(mut self, client: &#invocation_path::#client_name) -> Self {
                 self.__concord_client_values = ::std::option::Option::Some(
                     ::std::sync::Arc::clone(&client.__concord_values),
+                );
+                self.__concord_credentials = ::std::option::Option::Some(
+                    ::std::sync::Arc::clone(&client.__concord_credentials),
                 );
                 self
             }
@@ -1098,6 +1731,7 @@ fn generate_endpoint(
                 #path_statements
                 #query_statements
                 #header_statements
+                #auth_statements
                 let __concord_head = __concord_builder.finish();
                 let __concord_method = #method;
                 let __concord_body_metadata = <Self::Body as #generated_core::__private::BodySpec>::metadata(
@@ -1275,6 +1909,7 @@ fn initialize_explicit_endpoint(
         #(#endpoint_statements)*
         Self {
             __concord_client_values: ::std::option::Option::None,
+            __concord_credentials: ::std::option::Option::None,
             #fields
             __concord_body: #body,
         }
@@ -1379,6 +2014,7 @@ fn initialize_facade_endpoint(
         #(#statements)*
         Self {
             __concord_client_values: ::std::option::Option::None,
+            __concord_credentials: ::std::option::Option::None,
             #(#scope_fields)*
             #(#endpoint_fields)*
             __concord_body: #body,
@@ -1523,6 +2159,8 @@ fn generate_endpoint_snapshot_setters(
 }
 
 fn generate_request_extension_trait(
+    client: &Client,
+    scopes: &[&Scope],
     endpoint: &Endpoint,
     support_path: &TokenStream,
     generated_core: &TokenStream,
@@ -1534,7 +2172,21 @@ fn generate_request_extension_trait(
         .enumerate()
         .filter(|(_, value)| !value.is_required())
         .collect::<Vec<_>>();
-    if controls.is_empty() {
+    let acquisitions = client
+        .credentials
+        .iter()
+        .enumerate()
+        .filter(|(_, credential)| {
+            matches!(
+                credential.source,
+                CredentialSource::Endpoint {
+                    endpoint_id: Some(id),
+                    ..
+                } if id == endpoint.id
+            )
+        })
+        .collect::<Vec<_>>();
+    if controls.is_empty() && acquisitions.is_empty() {
         return quote!();
     }
     let endpoint_name = &endpoint.name;
@@ -1554,6 +2206,60 @@ fn generate_request_extension_trait(
         .iter()
         .flat_map(|(_, value)| request_extension_impl_methods(value, generated_core))
         .collect::<Vec<_>>();
+    let acquisition_trait_methods = acquisitions
+        .iter()
+        .map(|(_, credential)| {
+            let method = public_ident(
+                &format!(
+                    "acquire_as_{}",
+                    to_snake_case(&canonical_ident(&credential.name))
+                ),
+                credential.name.span(),
+            );
+            quote! {
+                /// Executes this endpoint and atomically stores its decoded output as a credential.
+                async fn #method(self) -> ::std::result::Result<(), #core_path::prelude::ApiError>;
+            }
+        })
+        .collect::<Vec<_>>();
+    let acquisition_impl_methods = acquisitions
+        .iter()
+        .map(|(credential_index, credential)| {
+            let method = public_ident(
+                &format!("acquire_as_{}", to_snake_case(&canonical_ident(&credential.name))),
+                credential.name.span(),
+            );
+            let field = credential_store_field(*credential_index, &credential.name);
+            let identity = endpoint_identity(client, scopes, endpoint);
+            let native_method = method_token(&endpoint.method, core_path);
+            quote! {
+                async fn #method(self) -> ::std::result::Result<(), #core_path::prelude::ApiError> {
+                    let __concord_credential = #generated_core::__private::inspect_endpoint(
+                        &self,
+                        |endpoint| {
+                            endpoint
+                                .__concord_credentials
+                                .as_ref()
+                                .expect("generated endpoint is bound by the sealed client request path")
+                                .#field
+                                .clone()
+                        },
+                    );
+                    let value = self.await?;
+                    __concord_credential
+                        .set(value)
+                        .await
+                        .map_err(|error| {
+                            #generated_core::__private::credential_store_error(
+                                #identity,
+                                #native_method,
+                                error,
+                            )
+                        })
+                }
+            }
+        })
+        .collect::<Vec<_>>();
     let doc = format!(
         "Endpoint-specific consuming setters for `Request<{endpoint_name}>`. Import this client's generated `prelude::*`; it re-exports this trait as `{}`. The trait is sealed and implemented only for this exact request type.",
         endpoint.prelude_alias
@@ -1566,7 +2272,7 @@ fn generate_request_extension_trait(
         }
 
         #[doc = #doc]
-        #[allow(private_interfaces)]
+        #[allow(private_interfaces, async_fn_in_trait)]
         pub trait #trait_name {
             #[doc(hidden)]
             fn __concord_request_extension_seal(
@@ -1575,6 +2281,7 @@ fn generate_request_extension_trait(
             );
 
             #(#trait_methods)*
+            #(#acquisition_trait_methods)*
         }
 
         impl #trait_name for #core_path::Request<#endpoint_name> {
@@ -1584,6 +2291,7 @@ fn generate_request_extension_trait(
             ) {}
 
             #(#impl_methods)*
+            #(#acquisition_impl_methods)*
         }
     }
 }
@@ -1652,17 +2360,30 @@ fn request_extension_impl_methods(value: &Value, generated_core: &TokenStream) -
     methods
 }
 
-fn collect_prelude_exports(children: &[Child], modules: &[Ident]) -> Vec<TokenStream> {
+fn collect_prelude_exports(
+    client: &Client,
+    children: &[Child],
+    modules: &[Ident],
+) -> Vec<TokenStream> {
     let mut exports = Vec::new();
     for child in children {
         match child {
             Child::Scope(scope) => {
                 let mut nested = modules.to_vec();
                 nested.push(scope.module_name.clone());
-                exports.extend(collect_prelude_exports(&scope.children, &nested));
+                exports.extend(collect_prelude_exports(client, &scope.children, &nested));
             }
             Child::Endpoint(endpoint)
-                if endpoint.parameters.iter().any(|value| !value.is_required()) =>
+                if endpoint.parameters.iter().any(|value| !value.is_required())
+                    || client.credentials.iter().any(|credential| {
+                        matches!(
+                            credential.source,
+                            CredentialSource::Endpoint {
+                                endpoint_id: Some(id),
+                                ..
+                            } if id == endpoint.id
+                        )
+                    }) =>
             {
                 let trait_name = &endpoint.request_ext_name;
                 let alias = &endpoint.prelude_alias;
@@ -1779,6 +2500,60 @@ fn header_statements(client: &Client, scopes: &[&Scope], endpoint: &Endpoint) ->
         })
         .collect::<Vec<_>>();
     quote!(#(#statements)*)
+}
+
+fn auth_statements(client: &Client, endpoint: &Endpoint, core_path: &TokenStream) -> TokenStream {
+    if endpoint.config.auth.is_empty() {
+        return quote!();
+    }
+    let statements = endpoint
+        .config
+        .auth
+        .iter()
+        .map(|placement| {
+            let credential = &client.credentials[placement.credential];
+            let field = credential_store_field(placement.credential, &credential.name);
+            let reference = quote!(__concord_credentials.#field.credential());
+            let constructor = match &placement.kind {
+                AuthPlacementKind::Bearer => {
+                    quote!(#core_path::__private::Auth::bearer(#reference))
+                }
+                AuthPlacementKind::Basic => {
+                    quote!(#core_path::__private::Auth::basic(#reference))
+                }
+                AuthPlacementKind::Header(name) => {
+                    let canonical =
+                        syn::LitStr::new(&name.value().to_ascii_lowercase(), name.span());
+                    quote!(#core_path::__private::Auth::header(
+                        #core_path::__private::HeaderName::from_static(#canonical),
+                        #reference,
+                    ))
+                }
+                AuthPlacementKind::Query(name) => {
+                    quote!(#core_path::__private::Auth::query(#name, #reference))
+                }
+            };
+            let policy = match placement.challenge {
+                AuthChallenge::Unauthorized => quote!(
+                    #core_path::advanced::ChallengePolicy::Unauthorized
+                ),
+                AuthChallenge::UnauthorizedOrForbidden => quote!(
+                    #core_path::advanced::ChallengePolicy::UnauthorizedOrForbidden
+                ),
+                AuthChallenge::Never => quote!(#core_path::advanced::ChallengePolicy::Never),
+            };
+            quote! {
+                __concord_builder.push_auth((#constructor).challenge(#policy))?;
+            }
+        })
+        .collect::<Vec<_>>();
+    quote! {
+        let __concord_credentials = self
+            .__concord_credentials
+            .as_ref()
+            .expect("generated endpoint is bound by the sealed client request path");
+        #(#statements)*
+    }
 }
 
 fn display_argument(
@@ -2079,7 +2854,7 @@ fn endpoint_method_doc(client: &Client, scopes: &[&Scope], endpoint: &Endpoint) 
     };
     let values = value_category_summary(&endpoint.parameters, "endpoint");
     let configuration = endpoint_configuration_summary(client, endpoint);
-    let features = endpoint_feature_summary(endpoint);
+    let features = endpoint_feature_summary(client, endpoint);
     format!(
         "Creates a side-effect-free pending `{method}` request for `{identity}` at `{route}`. {values} {control_doc} {configuration} {} Direct await uses the `{}` response mode. {} {features}",
         request_body_doc(endpoint.body.as_ref()),
@@ -2103,7 +2878,7 @@ fn endpoint_type_doc(client: &Client, scopes: &[&Scope], endpoint: &Endpoint) ->
             .join(" ")
     };
     let configuration = endpoint_configuration_summary(client, endpoint);
-    let features = endpoint_feature_summary(endpoint);
+    let features = endpoint_feature_summary(client, endpoint);
     format!(
         "Explicit `{method}` endpoint snapshot for `{identity}` at route `{route}`. It executes through the same client request path as its facade method. {scope_values} {endpoint_values} {configuration} {} Direct await uses the `{}` response mode. {} {features}",
         request_body_doc(endpoint.body.as_ref()),
@@ -2197,20 +2972,51 @@ fn endpoint_configuration_summary(client: &Client, endpoint: &Endpoint) -> Strin
             )
         },
     );
+    let authentication = if endpoint.config.auth.is_empty() {
+        "The effective authentication plan is empty.".to_owned()
+    } else {
+        let placements = endpoint
+            .config
+            .auth
+            .iter()
+            .map(|placement| {
+                let category = match placement.kind {
+                    AuthPlacementKind::Bearer => "bearer",
+                    AuthPlacementKind::Basic => "basic",
+                    AuthPlacementKind::Header(_) => "custom header",
+                    AuthPlacementKind::Query(_) => "private native query",
+                };
+                let challenge = match placement.challenge {
+                    AuthChallenge::Unauthorized => "unauthorized",
+                    AuthChallenge::UnauthorizedOrForbidden => "unauthorized-or-forbidden",
+                    AuthChallenge::Never => "never",
+                };
+                format!("{category} ({challenge})")
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "The effective authentication plan has {} placement(s), in declaration order: {placements}. Credential values are absent from generated documentation.",
+            endpoint.config.auth.len()
+        )
+    };
     format!(
-        "The normalized public head contains {query_count} public query declaration(s) and {header_count} public header declaration(s). {timeout} {}",
+        "The normalized public head contains {query_count} public query declaration(s) and {header_count} public header declaration(s). {authentication} {timeout} {}",
         retry_summary(&client.retry)
     )
 }
 
-fn endpoint_feature_summary(endpoint: &Endpoint) -> String {
+fn endpoint_feature_summary(client: &Client, endpoint: &Endpoint) -> String {
     let uses_json = matches!(
         &endpoint.body,
         Some(RequestBodyKind::Buffered(CodecKind::Json(_)))
     ) || matches!(
         &endpoint.response,
         ResponseKind::Buffered(CodecKind::Json(_))
-    );
+    ) || client
+        .credentials
+        .iter()
+        .any(|credential| matches!(credential.source, CredentialSource::OAuth2Client { .. }));
     let uses_multipart = matches!(&endpoint.body, Some(RequestBodyKind::Multipart));
     let mut requirements = Vec::new();
     if uses_json {
@@ -2224,6 +3030,32 @@ fn endpoint_feature_summary(endpoint: &Endpoint) -> String {
     } else {
         format!("Required Cargo feature(s): {}.", requirements.join(", "))
     }
+}
+
+fn credential_summary(client: &Client) -> String {
+    if client.credentials.is_empty() {
+        return "No credential sources are declared.".to_owned();
+    }
+    let sources = client
+        .credentials
+        .iter()
+        .map(|credential| match credential.source {
+            CredentialSource::ApiKey { .. } => "static API key (replace)",
+            CredentialSource::Bearer { .. } => "static bearer (replace)",
+            CredentialSource::Basic { .. } => "atomic Basic pair (replace)",
+            CredentialSource::OAuth2Client { .. } => {
+                "OAuth2 client credentials (atomic client replacement)"
+            }
+            CredentialSource::Endpoint { .. } => "endpoint-backed (set/clear)",
+            CredentialSource::Custom { .. } => "custom provider (clear)",
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "It declares {} protected secret input(s) and {} credential source(s), in order: {sources}. Source-specific handles expose only their documented capabilities.",
+        client.secrets.len(),
+        client.credentials.len()
+    )
 }
 
 fn method_name(method: &MethodKind) -> String {
@@ -2377,16 +3209,20 @@ fn media_name(media: &MediaKind) -> String {
 }
 
 fn client_uses_json(client: &Client) -> bool {
-    endpoints(&client.children).any(|endpoint| {
-        endpoint
-            .body
-            .as_ref()
-            .is_some_and(|body| matches!(body, RequestBodyKind::Buffered(CodecKind::Json(_))))
-            || matches!(
-                &endpoint.response,
-                ResponseKind::Buffered(CodecKind::Json(_))
-            )
-    })
+    client
+        .credentials
+        .iter()
+        .any(|credential| matches!(credential.source, CredentialSource::OAuth2Client { .. }))
+        || endpoints(&client.children).any(|endpoint| {
+            endpoint
+                .body
+                .as_ref()
+                .is_some_and(|body| matches!(body, RequestBodyKind::Buffered(CodecKind::Json(_))))
+                || matches!(
+                    &endpoint.response,
+                    ResponseKind::Buffered(CodecKind::Json(_))
+                )
+        })
 }
 
 fn client_uses_multipart(client: &Client) -> bool {
@@ -2460,6 +3296,53 @@ fn endpoint_value_field(index: usize, value: &Value) -> Ident {
 
 fn endpoint_default_field(index: usize, value: &Value) -> Ident {
     private_ident("endpoint_default", index, &value.name)
+}
+
+fn credentials_store_name(client: &Client) -> Ident {
+    Ident::new(
+        &format!(
+            "__Concord{}Credentials",
+            crate::names::to_pascal_case(&canonical_ident(&client.name))
+        ),
+        Span::mixed_site(),
+    )
+}
+
+fn credentials_facade_name(client: &Client) -> Ident {
+    Ident::new(
+        &format!(
+            "{}Credentials",
+            crate::names::to_pascal_case(&canonical_ident(&client.name))
+        ),
+        client.name.span(),
+    )
+}
+
+fn secret_builder_field(index: usize, name: &Ident) -> Ident {
+    private_ident("builder_secret", index, name)
+}
+
+fn resolved_secret(index: usize, name: &Ident) -> Ident {
+    private_ident("resolved_secret", index, name)
+}
+
+fn provider_builder_field(index: usize, name: &Ident) -> Ident {
+    private_ident("builder_provider", index, name)
+}
+
+fn resolved_provider(index: usize, name: &Ident) -> Ident {
+    private_ident("resolved_provider", index, name)
+}
+
+fn credential_store_field(index: usize, name: &Ident) -> Ident {
+    private_ident("credential", index, name)
+}
+
+fn provider_argument_name(name: &Ident) -> Ident {
+    public_ident(
+        &format!("{}_provider", to_snake_case(&canonical_ident(name))),
+        name.span(),
+    )
 }
 
 fn private_ident(namespace: &str, index: usize, name: &Ident) -> Ident {

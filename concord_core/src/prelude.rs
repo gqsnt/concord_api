@@ -2,6 +2,7 @@
 
 pub use bytes::Bytes;
 
+pub use crate::auth::{AccessToken, ApiKey, BasicCredential, SecretString};
 pub use crate::body::StreamBody;
 #[cfg(feature = "json")]
 pub use crate::codec::Json;

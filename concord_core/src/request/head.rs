@@ -8,6 +8,7 @@ use http::{HeaderMap, HeaderName, HeaderValue, Method};
 use url::{Host, Url};
 
 use super::RequestOptions;
+use crate::auth::{Auth, AuthPlan};
 use crate::error::{ApiError, ConfigurationErrorKind};
 use crate::hooks::DebugLevel;
 use crate::redaction::render_safe_url;
@@ -63,6 +64,7 @@ pub struct HeadBuilder {
     timeout: Option<Duration>,
     debug: DebugLevel,
     appended_segment: bool,
+    auth: AuthPlan,
 }
 
 impl HeadBuilder {
@@ -87,7 +89,23 @@ impl HeadBuilder {
             host_labels: Vec::new(),
             public_headers: HeaderMap::new(),
             appended_segment: false,
+            auth: AuthPlan::default(),
         }
+    }
+
+    /// Appends one normalized generated authentication placement.
+    #[doc(hidden)]
+    pub fn push_auth(&mut self, auth: Auth) -> Result<(), ApiError> {
+        self.auth
+            .push(auth, &self.logical_url, &self.public_headers)
+            .map_err(|error| {
+                drop(error);
+                ApiError::configuration(
+                    self.meta.endpoint(),
+                    self.meta.method().clone(),
+                    ConfigurationErrorKind::InvalidAuthentication,
+                )
+            })
     }
 
     /// Adds one macro-validated static host-prefix label.
@@ -203,6 +221,7 @@ impl HeadBuilder {
             public_headers: self.public_headers,
             timeout: self.timeout,
             debug: self.debug,
+            auth: self.auth,
         }
     }
 }
@@ -216,9 +235,23 @@ pub struct PreparedHead {
     public_headers: HeaderMap,
     timeout: Option<Duration>,
     debug: DebugLevel,
+    auth: AuthPlan,
 }
 
 impl PreparedHead {
+    pub(crate) fn validate_auth(&self) -> Result<(), ApiError> {
+        self.auth
+            .validate_public(&self.logical_url, &self.public_headers)
+            .map_err(|error| {
+                drop(error);
+                ApiError::configuration(
+                    self.endpoint(),
+                    self.method().clone(),
+                    ConfigurationErrorKind::InvalidAuthentication,
+                )
+            })
+    }
+
     pub(crate) fn apply_media_headers(
         &mut self,
         accept: Option<&'static str>,
@@ -289,6 +322,10 @@ impl PreparedHead {
     #[doc(hidden)]
     pub const fn debug(&self) -> DebugLevel {
         self.debug
+    }
+
+    pub(crate) const fn auth(&self) -> &AuthPlan {
+        &self.auth
     }
 }
 

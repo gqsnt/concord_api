@@ -681,10 +681,6 @@ impl PreparedBody {
         }
     }
 
-    #[allow(
-        dead_code,
-        reason = "Phase 6 recovery will select reuse or reconstruction from this prepared body"
-    )]
     pub(crate) const fn replayability(&self) -> Replayability {
         match self {
             Self::Empty | Self::ReusableBytes(_) => Replayability::Reusable,
@@ -766,10 +762,6 @@ impl PreparedBody {
         }
     }
 
-    #[allow(
-        dead_code,
-        reason = "Phase 6 authentication recovery will request the next Concord-attempt body"
-    )]
     pub(crate) fn reconstruct_for_next_attempt(
         &mut self,
         limit: NonZeroUsize,

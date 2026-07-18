@@ -22,6 +22,7 @@ pub(crate) struct ResponseInput {
     pub(crate) endpoint: &'static str,
     pub(crate) method: http::Method,
     pub(crate) logical_url: url::Url,
+    pub(crate) recovered_authentication: bool,
 }
 
 pub(crate) trait ExecuteResponse: ResponseHandler {
@@ -147,7 +148,12 @@ where
             let status = input.response.status();
             let version = input.response.version();
             let headers = input.response.headers().clone();
-            let metadata = ExecutionMeta::new(input.endpoint, input.method.clone(), 0, false);
+            let metadata = ExecutionMeta::new(
+                input.endpoint,
+                input.method.clone(),
+                0,
+                input.recovered_authentication,
+            );
             let body = input.response.into_byte_stream();
             input
                 .deadline

@@ -118,6 +118,8 @@ pub struct BoundaryRequest {
     body_category: BodyCategory,
     known_body_length: Option<usize>,
     expectation_body: Option<Bytes>,
+    expectation_native_url: Option<String>,
+    expectation_headers: HeaderMap,
 }
 
 impl BoundaryRequest {
@@ -140,10 +142,20 @@ impl BoundaryRequest {
             body_category,
             known_body_length,
             expectation_body,
+            expectation_native_url: None,
+            expectation_headers: HeaderMap::new(),
         }
     }
 
-    pub(crate) fn into_capture(self, channel: Channel) -> (CapturedRequest, Option<Bytes>) {
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __with_native(mut self, native_url: impl Into<String>, headers: &HeaderMap) -> Self {
+        self.expectation_native_url = Some(native_url.into());
+        self.expectation_headers = headers.clone();
+        self
+    }
+
+    pub(crate) fn into_capture(self, channel: Channel) -> (CapturedRequest, BoundaryExpectation) {
         (
             CapturedRequest {
                 channel,
@@ -154,9 +166,19 @@ impl BoundaryRequest {
                 body_category: self.body_category,
                 known_body_length: self.known_body_length,
             },
-            self.expectation_body,
+            BoundaryExpectation {
+                body: self.expectation_body,
+                native_url: self.expectation_native_url,
+                headers: self.expectation_headers,
+            },
         )
     }
+}
+
+pub(crate) struct BoundaryExpectation {
+    body: Option<Bytes>,
+    native_url: Option<String>,
+    headers: HeaderMap,
 }
 
 /// Explicit fake-value expectations evaluated only inside the harness.
@@ -164,15 +186,19 @@ pub struct ExpectedRequest {
     method: Option<Method>,
     safe_url: Option<String>,
     body: Option<Bytes>,
+    native_url: Option<String>,
+    headers: HeaderMap,
 }
 
 impl ExpectedRequest {
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             method: None,
             safe_url: None,
             body: None,
+            native_url: None,
+            headers: HeaderMap::new(),
         }
     }
 
@@ -194,7 +220,27 @@ impl ExpectedRequest {
         self
     }
 
-    pub(crate) fn matches(&self, captured: &CapturedRequest, body: Option<&Bytes>) -> bool {
+    /// Matches an exact native URL only inside the deterministic boundary.
+    /// The value is never copied into captures, formatting, or failures.
+    #[must_use]
+    pub fn native_url(mut self, native_url: impl Into<String>) -> Self {
+        self.native_url = Some(native_url.into());
+        self
+    }
+
+    /// Matches one exact native header only inside the deterministic boundary.
+    /// The value is never copied into captures, formatting, or failures.
+    #[must_use]
+    pub fn header(mut self, name: HeaderName, value: http::HeaderValue) -> Self {
+        self.headers.insert(name, value);
+        self
+    }
+
+    pub(crate) fn matches(
+        &self,
+        captured: &CapturedRequest,
+        expectation: &BoundaryExpectation,
+    ) -> bool {
         self.method
             .as_ref()
             .is_none_or(|expected| expected == captured.method())
@@ -205,7 +251,15 @@ impl ExpectedRequest {
             && self
                 .body
                 .as_ref()
-                .is_none_or(|expected| body == Some(expected))
+                .is_none_or(|expected| expectation.body.as_ref() == Some(expected))
+            && self
+                .native_url
+                .as_deref()
+                .is_none_or(|expected| expectation.native_url.as_deref() == Some(expected))
+            && self
+                .headers
+                .iter()
+                .all(|(name, value)| expectation.headers.get(name) == Some(value))
     }
 }
 
@@ -222,6 +276,8 @@ impl fmt::Debug for ExpectedRequest {
             .field("method", &self.method.is_some())
             .field("safe_url", &self.safe_url.is_some())
             .field("body", &self.body.is_some())
+            .field("native_url", &self.native_url.is_some())
+            .field("headers", &self.headers.len())
             .finish()
     }
 }
@@ -232,6 +288,7 @@ pub struct ScriptedResponse {
     headers: HeaderMap,
     body: Bytes,
     delivery_gate: Option<Gate>,
+    body_polls: Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
 }
 
 impl ScriptedResponse {
@@ -247,6 +304,7 @@ impl ScriptedResponse {
             headers: HeaderMap::new(),
             body: body.into(),
             delivery_gate: None,
+            body_polls: None,
         }
     }
 
@@ -262,6 +320,17 @@ impl ScriptedResponse {
         self
     }
 
+    /// Observes native response-body polling without retaining response bytes
+    /// in deterministic captures or diagnostics.
+    #[must_use]
+    pub fn body_poll_counter(
+        mut self,
+        counter: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    ) -> Self {
+        self.body_polls = Some(counter);
+        self
+    }
+
     pub(crate) fn gate(&self) -> Option<Gate> {
         self.delivery_gate.clone()
     }
@@ -269,10 +338,24 @@ impl ScriptedResponse {
     #[doc(hidden)]
     #[must_use]
     pub fn __into_http_response(self) -> http::Response<Bytes> {
-        let mut response = http::Response::new(self.body);
-        *response.status_mut() = self.status;
-        *response.headers_mut() = self.headers;
+        let (status, headers, body, _) = self.__into_parts();
+        let mut response = http::Response::new(body);
+        *response.status_mut() = status;
+        *response.headers_mut() = headers;
         response
+    }
+
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __into_parts(
+        self,
+    ) -> (
+        StatusCode,
+        HeaderMap,
+        Bytes,
+        Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
+    ) {
+        (self.status, self.headers, self.body, self.body_polls)
     }
 }
 
@@ -284,6 +367,7 @@ impl fmt::Debug for ScriptedResponse {
             .field("header_values", &self.headers.len())
             .field("body_len", &self.body.len())
             .field("delivery_gate", &self.delivery_gate.is_some())
+            .field("body_poll_counter", &self.body_polls.is_some())
             .finish()
     }
 }

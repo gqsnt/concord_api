@@ -4,6 +4,8 @@ use std::future::IntoFuture;
 
 use http::{Method, StatusCode};
 
+use crate::auth::PreparedAuthPlan;
+use crate::body::Replayability;
 use crate::client::ClientCore;
 use crate::error::{ApiError, ErrorCategory};
 use crate::hooks::{
@@ -67,9 +69,10 @@ where
         body_metadata,
     } = prepared;
     let mut final_status = None;
+    let mut recovered_authentication = false;
 
     let result = async {
-        run_before_send(&core, operation_id, deadline, &head, &body_metadata).await?;
+        run_before_send(&core, operation_id, deadline, &head, &body_metadata, 0).await?;
 
         check_deadline(deadline, head.endpoint(), head.method())?;
         let materialized = endpoint.into_body().materialize(
@@ -81,61 +84,115 @@ where
         let mut prepared_body = materialized?;
         debug_assert_eq!(prepared_body.kind(), body_metadata.kind());
         let known_body_length = prepared_body.known_length();
-        let materialized_metadata = body_metadata.with_known_length(known_body_length);
+        let materialized_metadata = body_metadata.clone().with_known_length(known_body_length);
 
-        let native_body = prepared_body
-            .prepare_native(core.request_body_limit())
-            .map_err(|error| {
+        let mut prepared_auth = run_auth(
+            &core,
+            deadline,
+            &head,
+            head.auth().preflight(core.provider_http(Some(deadline))),
+        )
+        .await?;
+        let mut recovery_index = 0_u8;
+        let response = loop {
+            let attempt_metadata = materialized_metadata
+                .clone()
+                .with_known_length(prepared_body.known_length());
+            let attempt = send_attempt(
+                &core,
+                operation_id,
+                deadline,
+                &head,
+                &mut prepared_body,
+                &attempt_metadata,
+                prepared_auth,
+                recovery_index,
+                &mut final_status,
+            )
+            .await?;
+            let status = attempt.response.status();
+
+            let Some(challenge_index) = attempt.applied_auth.challenge_index(status) else {
+                break attempt.response;
+            };
+
+            let reusable = prepared_body.replayability() != Replayability::OneShot;
+            let can_recover = recovery_index == 0
+                && reusable
+                && attempt
+                    .applied_auth
+                    .challenge_can_recover(challenge_index)
+                    .map_err(|error| auth_api_error(&head, error))?;
+            if !can_recover {
+                attempt
+                    .applied_auth
+                    .apply_terminal_challenge(challenge_index)
+                    .map_err(|error| auth_api_error(&head, error))?;
+                let failure = core
+                    .application_http()
+                    .terminal_status_managed(
+                        head.endpoint(),
+                        head.method().clone(),
+                        attempt.response,
+                        deadline.expires_at(),
+                    )
+                    .await;
+                return Err(ApiError::authentication_rejected(failure));
+            }
+
+            // A response selected for recovery is dropped without polling its body.
+            drop(attempt.response);
+            if let Err(error) =
+                run_before_send(&core, operation_id, deadline, &head, &body_metadata, 1).await
+            {
+                let _ = attempt
+                    .applied_auth
+                    .apply_terminal_challenge(challenge_index);
+                return Err(error);
+            }
+            if let Err(error) =
+                prepared_body.reconstruct_for_next_attempt(core.request_body_limit())
+            {
                 drop(error);
-                ApiError::classified(
+                let primary = ApiError::classified(
                     head.endpoint(),
                     head.method().clone(),
                     ErrorCategory::RequestBody,
-                )
-            })?;
-
-        let request = core.application_http().build_request(
-            head.endpoint(),
-            head.method(),
-            head.logical_url(),
-            head.public_headers(),
-            native_body,
-        )?;
-        let request_event = before_send_event(operation_id, &head, &materialized_metadata);
-        core.debug_dispatcher(head.debug())
-            .request_ready(&request_event);
-        check_deadline(deadline, head.endpoint(), head.method())?;
-
-        let response = deadline
-            .run(core.application_http().execute(
-                head.endpoint(),
-                head.method(),
-                request,
-                head.safe_url(),
-                head.public_headers(),
-                materialized_metadata.kind(),
-                materialized_metadata.known_length(),
-            ))
+                );
+                let _ = attempt
+                    .applied_auth
+                    .apply_terminal_challenge(challenge_index);
+                return Err(primary);
+            }
+            if let Err(error) = run_auth(
+                &core,
+                deadline,
+                &head,
+                attempt
+                    .applied_auth
+                    .recover_attributed(challenge_index, core.provider_http(Some(deadline))),
+            )
             .await
-            .map_err(|_| timeout_error(head.endpoint(), head.method()))??;
+            {
+                let _ = attempt
+                    .applied_auth
+                    .apply_terminal_challenge(challenge_index);
+                return Err(error);
+            }
+            prepared_auth = run_auth(
+                &core,
+                deadline,
+                &head,
+                attempt
+                    .applied_auth
+                    .preflight_current(core.provider_http(Some(deadline))),
+            )
+            .await?;
+            recovery_index = 1;
+            recovered_authentication = true;
+        };
 
         let status = response.status();
-        final_status = Some(status);
-        let response_event = ResponseHeadEvent {
-            operation_id,
-            parent_operation_id: None,
-            endpoint: head.endpoint(),
-            method: head.method(),
-            safe_url: head.safe_url(),
-            page_index: 0,
-            recovery_index: 0,
-            status,
-            headers: SanitizedHeaders::new(response.headers()),
-        };
-        core.debug_dispatcher(head.debug())
-            .response_head(&response_event);
-        run_response_head_hook(&core, deadline, response_event).await?;
-
         if !status.is_success() {
             let failure = core
                 .application_http()
@@ -159,6 +216,7 @@ where
             endpoint: head.endpoint(),
             method: head.method().clone(),
             logical_url: head.logical_url().clone(),
+            recovered_authentication,
         })
         .await?;
         Ok(DecodedResponse::new(
@@ -166,7 +224,12 @@ where
             status,
             version,
             headers,
-            ExecutionMeta::new(head.endpoint(), head.method().clone(), 0, false),
+            ExecutionMeta::new(
+                head.endpoint(),
+                head.method().clone(),
+                0,
+                recovered_authentication,
+            ),
             output,
         ))
     }
@@ -184,6 +247,7 @@ where
         elapsed,
         final_status,
         E::Response::COMPLETION_OUTCOME,
+        recovered_authentication,
         result,
     )
     .await
@@ -211,6 +275,7 @@ async fn complete_preparation_failure<E>(
         elapsed,
         None,
         CompletionOutcome::Success,
+        false,
         Err(error),
     )
     .await
@@ -222,11 +287,15 @@ async fn run_before_send(
     deadline: OperationDeadline,
     head: &crate::request::PreparedHead,
     body_metadata: &crate::request::BodyMetadata,
+    recovery_index: u8,
 ) -> Result<(), ApiError> {
     check_deadline(deadline, head.endpoint(), head.method())?;
-    let future = core
-        .hooks()
-        .before_send(before_send_event(operation_id, head, body_metadata));
+    let future = core.hooks().before_send(before_send_event(
+        operation_id,
+        head,
+        body_metadata,
+        recovery_index,
+    ));
     check_deadline(deadline, head.endpoint(), head.method())?;
     match deadline.run(future).await {
         Err(_) => Err(timeout_error(head.endpoint(), head.method())),
@@ -262,6 +331,7 @@ fn before_send_event<'a>(
     operation_id: OperationId,
     head: &'a crate::request::PreparedHead,
     body_metadata: &crate::request::BodyMetadata,
+    recovery_index: u8,
 ) -> BeforeSend<'a> {
     BeforeSend {
         operation_id,
@@ -270,7 +340,7 @@ fn before_send_event<'a>(
         method: head.method(),
         safe_url: head.safe_url(),
         page_index: 0,
-        recovery_index: 0,
+        recovery_index,
         headers: SanitizedHeaders::new(head.public_headers()),
         body_kind: body_metadata.kind(),
         known_body_length: body_metadata.known_length(),
@@ -291,6 +361,7 @@ async fn deliver_completion<T>(
     elapsed: std::time::Duration,
     final_status: Option<StatusCode>,
     success_outcome: CompletionOutcome,
+    recovered_authentication: bool,
     result: Result<T, ApiError>,
 ) -> Result<T, ApiError> {
     let outcome = match &result {
@@ -304,7 +375,7 @@ async fn deliver_completion<T>(
         method,
         safe_url,
         page_index: 0,
-        recovered_authentication: false,
+        recovered_authentication,
         elapsed,
         final_status,
         outcome,
@@ -313,6 +384,122 @@ async fn deliver_completion<T>(
     core.hooks().on_complete(event).await;
     result
 }
+
+struct AttemptResponse {
+    response: crate::http::application::ApplicationResponse,
+    applied_auth: PreparedAuthPlan,
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one attempt receives the exact canonical lifecycle state"
+)]
+async fn send_attempt(
+    core: &ClientCore,
+    operation_id: OperationId,
+    deadline: OperationDeadline,
+    head: &crate::request::PreparedHead,
+    prepared_body: &mut crate::request::PreparedBody,
+    body_metadata: &crate::request::BodyMetadata,
+    prepared_auth: PreparedAuthPlan,
+    recovery_index: u8,
+    final_status: &mut Option<StatusCode>,
+) -> Result<AttemptResponse, ApiError> {
+    acquire_rate_limit_authority(deadline, head).await?;
+    let (applied_auth, finalized_auth) = run_auth(
+        core,
+        deadline,
+        head,
+        prepared_auth.finalize(core.provider_http(Some(deadline))),
+    )
+    .await?;
+
+    let native_body = prepared_body
+        .prepare_native(core.request_body_limit())
+        .map_err(|error| {
+            drop(error);
+            ApiError::classified(
+                head.endpoint(),
+                head.method().clone(),
+                ErrorCategory::RequestBody,
+            )
+        })?;
+    let mut request = core.application_http().build_request(
+        head.endpoint(),
+        head.method(),
+        head.logical_url(),
+        head.public_headers(),
+        native_body,
+    )?;
+    let request_event = before_send_event(operation_id, head, body_metadata, recovery_index);
+    core.debug_dispatcher(head.debug())
+        .request_ready(&request_event);
+    check_deadline(deadline, head.endpoint(), head.method())?;
+    finalized_auth.materialize(&mut request, head.endpoint(), head.method())?;
+
+    let response = deadline
+        .run(core.application_http().execute(
+            head.endpoint(),
+            head.method(),
+            request,
+            head.safe_url(),
+            head.public_headers(),
+            body_metadata.kind(),
+            body_metadata.known_length(),
+        ))
+        .await
+        .map_err(|_| timeout_error(head.endpoint(), head.method()))??;
+
+    let status = response.status();
+    *final_status = Some(status);
+    let response_event = ResponseHeadEvent {
+        operation_id,
+        parent_operation_id: None,
+        endpoint: head.endpoint(),
+        method: head.method(),
+        safe_url: head.safe_url(),
+        page_index: 0,
+        recovery_index,
+        status,
+        headers: SanitizedHeaders::new(response.headers()),
+    };
+    core.debug_dispatcher(head.debug())
+        .response_head(&response_event);
+    run_response_head_hook(core, deadline, response_event).await?;
+    observe_rate_limit_response(head, status);
+    Ok(AttemptResponse {
+        response,
+        applied_auth,
+    })
+}
+
+async fn run_auth<T>(
+    _core: &ClientCore,
+    deadline: OperationDeadline,
+    head: &crate::request::PreparedHead,
+    future: impl std::future::Future<Output = Result<T, crate::auth::AuthError>>,
+) -> Result<T, ApiError> {
+    deadline
+        .run(future)
+        .await
+        .map_err(|_| timeout_error(head.endpoint(), head.method()))?
+        .map_err(|error| auth_api_error(head, error))
+}
+
+fn auth_api_error(head: &crate::request::PreparedHead, error: crate::auth::AuthError) -> ApiError {
+    ApiError::authentication(head.endpoint(), head.method().clone(), error)
+}
+
+// Phase 6 owns this explicit lifecycle seam. Phase 7 will replace its no-op
+// implementation with real rate-limit authority without moving auth phases.
+async fn acquire_rate_limit_authority(
+    deadline: OperationDeadline,
+    head: &crate::request::PreparedHead,
+) -> Result<(), ApiError> {
+    check_deadline(deadline, head.endpoint(), head.method())
+}
+
+fn observe_rate_limit_response(_head: &crate::request::PreparedHead, _status: StatusCode) {}
 
 fn check_deadline(
     deadline: OperationDeadline,
@@ -328,5 +515,7 @@ fn timeout_error(endpoint: &'static str, method: &Method) -> ApiError {
     ApiError::classified(endpoint, method.clone(), ErrorCategory::Timeout)
 }
 
+#[cfg(test)]
+mod auth_tests;
 #[cfg(test)]
 mod tests;

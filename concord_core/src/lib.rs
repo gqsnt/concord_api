@@ -13,6 +13,7 @@ pub mod advanced;
 pub mod dangerous;
 pub mod prelude;
 
+mod auth;
 mod body;
 mod client;
 mod codec;
@@ -27,9 +28,6 @@ mod response;
 mod runtime;
 
 pub use request::{Request, ResponseRequest};
-
-#[cfg(test)]
-mod auth;
 
 mod execute;
 

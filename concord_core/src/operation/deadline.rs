@@ -23,6 +23,11 @@ impl OperationDeadline {
         self.expires
     }
 
+    pub(crate) fn remaining(self) -> Option<Duration> {
+        self.expires
+            .map(|expires| expires.saturating_duration_since(tokio::time::Instant::now()))
+    }
+
     pub(crate) fn elapsed_at(self, fixed_at: tokio::time::Instant) -> Duration {
         fixed_at.saturating_duration_since(self.started)
     }

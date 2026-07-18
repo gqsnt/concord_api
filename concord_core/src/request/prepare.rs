@@ -145,6 +145,17 @@ where
             error,
         )));
     }
+    if let Err(error) = head.validate_auth() {
+        return Ok(OperationPreparation::Failed(failure(
+            core,
+            operation_id,
+            meta,
+            Arc::from(head.safe_url()),
+            debug,
+            started,
+            error,
+        )));
+    }
     if let Err(error) = ensure_matching_meta(&meta, &head) {
         return Ok(OperationPreparation::Failed(failure(
             core,
@@ -156,7 +167,12 @@ where
             error,
         )));
     }
-    if let Err(error) = core.preflight_url(meta.endpoint(), meta.method(), head.logical_url()) {
+    let url_preflight = if head.auth().is_empty() {
+        core.preflight_url(meta.endpoint(), meta.method(), head.logical_url())
+    } else {
+        core.preflight_protected_url(meta.endpoint(), meta.method(), head.logical_url())
+    };
+    if let Err(error) = url_preflight {
         return Ok(OperationPreparation::Failed(failure(
             core,
             operation_id,

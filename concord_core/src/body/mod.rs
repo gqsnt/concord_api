@@ -17,4 +17,4 @@ pub use prepared::{BodyMetadata, BodySpec, CodecBody, EmptyBody, PreparedBody, S
 
 #[cfg(feature = "multipart")]
 pub(crate) use prepared::wrap_multipart_native_body;
-pub(crate) use prepared::{BodyFailureState, NativeBody};
+pub(crate) use prepared::{BodyFailureState, NativeBody, Replayability};

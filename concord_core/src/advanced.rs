@@ -4,6 +4,10 @@ pub use bytes::Bytes;
 pub use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Version};
 pub use url::Url;
 
+pub use crate::auth::{
+    Auth, AuthError, ChallengePolicy, CredentialHandle, CredentialMaterial, CredentialProvider,
+    CredentialReason, CredentialRef, CredentialRequest, RecoveryMode, SecretCredential,
+};
 pub use crate::body::{BodyError, BodyErrorKind, BodyFactory, BodyKind, RequestBody, StreamBody};
 #[cfg(feature = "multipart")]
 pub use crate::body::{MultipartBody, MultipartFactory, MultipartPart};
@@ -20,6 +24,9 @@ pub use crate::error::{
 pub use crate::hooks::{
     BeforeSend, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel,
     PaginationCompletionEvent, ResponseHeadEvent, RuntimeHooks,
+};
+pub use crate::http::provider::{
+    ProviderBody, ProviderBodyFactory, ProviderHttp, ProviderRequest, ProviderResponse,
 };
 pub use crate::http::{HttpConfigBuilder, ProviderRetry, SafeProxy};
 pub use crate::operation::OperationId;

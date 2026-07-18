@@ -240,7 +240,7 @@ impl ChannelHandle {
             gate.wait().await;
         }
 
-        let (captured, expectation_body) = request.into_capture(self.state.channel);
+        let (captured, boundary_expectation) = request.into_capture(self.state.channel);
         lock(&self.state.captures)?.push(captured.clone());
 
         loop {
@@ -262,7 +262,7 @@ impl ChannelHandle {
                     outcome,
                 } => {
                     if expectation.as_ref().is_some_and(|expectation| {
-                        !expectation.matches(&captured, expectation_body.as_ref())
+                        !expectation.matches(&captured, &boundary_expectation)
                     }) {
                         return Err(ExecutionFailure::new(ExecutionFailureKind::Mismatch));
                     }
@@ -393,17 +393,29 @@ mod tests {
         const EXPECTED: &str = "expected-body-secret-9e1c";
         const ACTUAL: &str = "actual-body-secret-52aa";
         const RESPONSE: &str = "response-body-secret-77fb";
+        const NATIVE: &str = "native-auth-secret-4f21";
         let application = DeterministicExecutor::new().application();
         let response = ScriptedResponse::success(Bytes::from_static(RESPONSE.as_bytes()));
         assert!(!format!("{response:?}").contains(RESPONSE));
         application
             .queue_expected_response(
-                ExpectedRequest::new().body(Bytes::from_static(EXPECTED.as_bytes())),
+                ExpectedRequest::new()
+                    .body(Bytes::from_static(EXPECTED.as_bytes()))
+                    .native_url(format!("https://native.invalid/?token={NATIVE}"))
+                    .header(
+                        http::header::AUTHORIZATION,
+                        http::HeaderValue::from_str(NATIVE).expect("header"),
+                    ),
                 response,
             )
             .expect("expected response should queue");
         let error = application
-            .__execute(request(Some(Bytes::from_static(ACTUAL.as_bytes()))))
+            .__execute(
+                request(Some(Bytes::from_static(ACTUAL.as_bytes()))).__with_native(
+                    "https://native.invalid/?token=wrong",
+                    &http::HeaderMap::new(),
+                ),
+            )
             .await
             .expect_err("body mismatch should fail safely");
         assert_eq!(error.kind(), ExecutionFailureKind::Mismatch);
@@ -411,6 +423,7 @@ mod tests {
             assert!(!formatted.contains(EXPECTED));
             assert!(!formatted.contains(ACTUAL));
             assert!(!formatted.contains(RESPONSE));
+            assert!(!formatted.contains(NATIVE));
         }
     }
 }

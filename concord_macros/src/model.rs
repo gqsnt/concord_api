@@ -1,9 +1,10 @@
 use std::time::Duration;
 
-use syn::{Ident, LitInt, LitStr, Type};
+use syn::{Ident, LitInt, LitStr, Path, Type};
 
 pub(crate) use crate::ast::{
-    DefaultExpr, MethodKind, RequestBodyKind, ResponseKind, RetrySelection, ValueKind,
+    AuthChallenge, AuthPlacementKind, DefaultExpr, MethodKind, RequestBodyKind, ResponseKind,
+    RetrySelection, ValueKind,
 };
 
 #[derive(Clone)]
@@ -20,6 +21,8 @@ pub(crate) struct Client {
     pub(crate) values_type_name: Ident,
     pub(crate) base: LitStr,
     pub(crate) values: Vec<Value>,
+    pub(crate) secrets: Vec<Secret>,
+    pub(crate) credentials: Vec<Credential>,
     pub(crate) retry: RetrySelection,
     #[allow(dead_code, reason = "retained as the normalized client-layer IR root")]
     pub(crate) config: NormalizedConfig,
@@ -66,6 +69,45 @@ pub(crate) struct Endpoint {
     pub(crate) body: Option<RequestBodyKind>,
     pub(crate) config: NormalizedConfig,
     pub(crate) response: ResponseKind,
+    pub(crate) dsl_path: Vec<Ident>,
+}
+
+#[derive(Clone)]
+pub(crate) struct Secret {
+    pub(crate) name: Ident,
+}
+
+#[derive(Clone)]
+pub(crate) struct Credential {
+    pub(crate) name: Ident,
+    pub(crate) source: CredentialSource,
+}
+
+#[derive(Clone)]
+pub(crate) enum CredentialSource {
+    ApiKey {
+        secret: usize,
+    },
+    Bearer {
+        secret: usize,
+    },
+    Basic {
+        username: usize,
+        password: usize,
+    },
+    OAuth2Client {
+        token_url: LitStr,
+        client_id: usize,
+        client_secret: usize,
+        scope: Option<LitStr>,
+    },
+    Endpoint {
+        path: Path,
+        endpoint_id: Option<usize>,
+    },
+    Custom {
+        material: Type,
+    },
 }
 
 #[derive(Clone)]
@@ -118,7 +160,15 @@ pub(crate) struct NormalizedConfig {
     pub(crate) path: Vec<ResolvedExpr>,
     pub(crate) query: Vec<NormalizedQuery>,
     pub(crate) headers: Vec<NormalizedHeader>,
+    pub(crate) auth: Vec<NormalizedAuth>,
     pub(crate) timeout: Option<Duration>,
+}
+
+#[derive(Clone)]
+pub(crate) struct NormalizedAuth {
+    pub(crate) kind: AuthPlacementKind,
+    pub(crate) credential: usize,
+    pub(crate) challenge: AuthChallenge,
 }
 
 #[derive(Clone)]

@@ -9,6 +9,8 @@ use crate::hooks::{DebugLevel, RuntimeHooks};
 use crate::http::HttpConfigBuilder;
 use crate::http::application::ApplicationHttp;
 use crate::http::build::ManagedHttp;
+use crate::http::provider::ProviderHttp;
+use crate::operation::OperationDeadline;
 use crate::operation::{OperationId, OperationIdExhausted};
 use crate::runtime::{RuntimeConfig, RuntimeConfigBuilder};
 
@@ -95,6 +97,14 @@ impl ClientCore {
         &self.inner.http.application
     }
 
+    pub(crate) fn provider_http(&self, deadline: Option<OperationDeadline>) -> ProviderHttp<'_> {
+        self.inner.http.provider_http(deadline)
+    }
+
+    pub(crate) fn auth_failure_cooldown_cap(&self) -> std::time::Duration {
+        self.inner.runtime.auth_failure_cooldown_cap
+    }
+
     pub(crate) fn hooks(&self) -> &Arc<dyn RuntimeHooks> {
         &self.inner.runtime.hooks
     }
@@ -154,6 +164,18 @@ impl ClientCore {
             .http
             .application
             .preflight_url(endpoint, method, url)
+    }
+
+    pub(crate) fn preflight_protected_url(
+        &self,
+        endpoint: &'static str,
+        method: &Method,
+        url: &Url,
+    ) -> Result<(), ApiError> {
+        self.inner
+            .http
+            .application
+            .preflight_protected_url(endpoint, method, url)
     }
 
     #[cfg(test)]

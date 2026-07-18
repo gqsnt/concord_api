@@ -1,0 +1,17 @@
+error[E0616]: field `selector` of struct `CredentialRef` is private
+  --> tests/ui/fail/authentication_private_material.rs:10:23
+   |
+10 |     let _ = reference.selector;
+   |                       ^^^^^^^^ private field
+
+error[E0616]: field `token` of struct `AccessToken` is private
+  --> tests/ui/fail/authentication_private_material.rs:11:19
+   |
+11 |     let _ = token.token;
+   |                   ^^^^^ private field
+
+error[E0616]: field `username` of struct `BasicCredential` is private
+  --> tests/ui/fail/authentication_private_material.rs:12:19
+   |
+12 |     let _ = basic.username;
+   |                   ^^^^^^^^ private field

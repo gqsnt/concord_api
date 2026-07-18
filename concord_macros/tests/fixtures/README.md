@@ -13,6 +13,9 @@ package metadata or dependency topology:
 - `json_disabled` omits the runtime `json` feature and proves that generated
   JSON syntax produces the focused feature diagnostic rather than falling
   back to another body or response mode.
+- `oauth_disabled` omits the runtime `json` feature and proves that an
+  OAuth2-only credential declaration produces the same focused diagnostic
+  rather than generating a fallback provider.
 - `multipart_disabled` omits the runtime `multipart` feature and proves that
   generated multipart syntax produces the focused feature diagnostic rather
   than falling back to another request-body mode.

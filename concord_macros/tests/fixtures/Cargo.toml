@@ -6,6 +6,7 @@ members = [
     "json_disabled",
     "multipart_disabled",
     "missing_core",
+    "oauth_disabled",
     "renamed_core",
 ]
 exclude = ["contract_mismatch/incompatible_core"]

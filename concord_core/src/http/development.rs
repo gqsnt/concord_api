@@ -1,9 +1,14 @@
 use bytes::Bytes;
 use concord_test_support::script::{
     BodyCategory, BoundaryRequest, CapturedHeader, CapturedHeaderValue, ExecutionFailureKind,
-    TransportFailure,
+    ScriptedResponse, TransportFailure,
 };
+use futures_core::Stream;
 use http::{HeaderMap, Method};
+use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::task::{Context, Poll};
 
 use crate::error::ErrorCategory;
 use crate::redaction::{SanitizedHeaderValue, SanitizedHeaders};
@@ -39,6 +44,36 @@ pub(super) fn boundary_request(
     )
 }
 
+pub(super) fn scripted_response(response: ScriptedResponse) -> reqwest::Response {
+    let (status, headers, body, polls) = response.__into_parts();
+    let body = match polls {
+        Some(polls) => reqwest::Body::wrap_stream(ObservedBody {
+            body: Some(body),
+            polls,
+        }),
+        None => reqwest::Body::from(body),
+    };
+    let mut response = http::Response::new(body);
+    *response.status_mut() = status;
+    *response.headers_mut() = headers;
+    response.into()
+}
+
+struct ObservedBody {
+    body: Option<Bytes>,
+    polls: Arc<AtomicUsize>,
+}
+
+impl Stream for ObservedBody {
+    type Item = Result<Bytes, std::io::Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.polls.fetch_add(1, Ordering::SeqCst);
+        Poll::Ready(self.body.take().map(Ok))
+    }
+}
+
+#[cfg(test)]
 pub(super) fn minimal_boundary_request(endpoint: &'static str, method: Method) -> BoundaryRequest {
     boundary_request(
         endpoint,

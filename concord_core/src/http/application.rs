@@ -29,6 +29,19 @@ pub(crate) struct ApplicationRequest {
     body_failure: Option<BodyFailureState>,
 }
 
+impl ApplicationRequest {
+    pub(crate) fn insert_auth_header(&mut self, name: http::HeaderName, value: http::HeaderValue) {
+        self.native.headers_mut().insert(name, value);
+    }
+
+    pub(crate) fn append_auth_query(&mut self, name: &str, value: &str) {
+        self.native
+            .url_mut()
+            .query_pairs_mut()
+            .append_pair(name, value);
+    }
+}
+
 pub(crate) struct ApplicationResponse {
     native: reqwest::Response,
     endpoint: &'static str,
@@ -182,6 +195,23 @@ impl ApplicationHttp {
         Ok(())
     }
 
+    pub(crate) fn preflight_protected_url(
+        &self,
+        endpoint: &'static str,
+        method: &Method,
+        url: &url::Url,
+    ) -> Result<(), ApiError> {
+        self.preflight_url(endpoint, method, url)?;
+        if url.scheme() != "https" || self.tls == TlsCapability::Unavailable {
+            return Err(ApiError::configuration(
+                endpoint,
+                method.clone(),
+                ConfigurationErrorKind::InvalidAuthentication,
+            ));
+        }
+        Ok(())
+    }
+
     pub(crate) fn build_request(
         &self,
         endpoint: &'static str,
@@ -307,13 +337,14 @@ impl ApplicationHttp {
                     boundary_body_category(body_kind),
                     known_body_length.and_then(|length| usize::try_from(length).ok()),
                     Some(boundary_body),
-                );
+                )
+                .__with_native(native.url().as_str(), native.headers());
                 let _ = body_failure;
                 drop(native);
                 development
                     .__execute(boundary)
                     .await
-                    .map(|response| response.__into_http_response().into())
+                    .map(super::development::scripted_response)
                     .map_err(|failure| {
                         ApiError::classified(
                             endpoint,
@@ -435,7 +466,7 @@ impl ApplicationHttp {
         development
             .__execute(boundary)
             .await
-            .map(|response| response.__into_http_response().into())
+            .map(super::development::scripted_response)
             .map_err(|failure| {
                 ApiError::classified(
                     endpoint,

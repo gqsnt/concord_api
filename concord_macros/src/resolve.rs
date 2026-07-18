@@ -5,13 +5,15 @@ use syn::spanned::Spanned;
 use syn::{GenericArgument, Ident, PathArguments, Type, TypePath};
 
 use crate::ast::{
-    HeaderEntry, HeaderOperation, HostOperation, Layer, PathOperation, PublicExpr, QueryEntry,
-    QueryOperation, SourceApi, SourceChild, SourceEndpoint, SourceScope, TimeoutOperation,
-    ValueDecl,
+    AuthChallenge, AuthOperation, AuthPlacementKind, CredentialSource as SourceCredentialSource,
+    CredentialsBlock, HeaderEntry, HeaderOperation, HostOperation, Layer, PathOperation,
+    PublicExpr, QueryEntry, QueryOperation, SourceApi, SourceChild, SourceEndpoint, SourceScope,
+    TimeoutOperation, ValueDecl,
 };
 use crate::model::{
-    Api, Child, Client, Endpoint, NormalizedConfig, NormalizedHeader, NormalizedQuery,
-    ResolvedExpr, ResolvedValue, Scope, Value, ValueReference, ValueShape,
+    Api, Child, Client, Credential, CredentialSource, Endpoint, NormalizedAuth, NormalizedConfig,
+    NormalizedHeader, NormalizedQuery, ResolvedExpr, ResolvedValue, Scope, Secret, Value,
+    ValueReference, ValueShape,
 };
 use crate::names::{
     RESERVED_GENERATED_METHODS, canonical_ident, prelude_alias, public_ident, request_ext_name,
@@ -27,6 +29,7 @@ struct ScopeFrame {
 struct Resolver<'a> {
     client_name: &'a Ident,
     client_values: &'a [Value],
+    credentials: &'a [Credential],
     next_scope_id: usize,
     next_endpoint_id: usize,
     prelude_aliases: &'a mut HashMap<String, Span>,
@@ -47,6 +50,8 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
     for source_client in source.clients {
         let values = convert_values(source_client.values)?;
         validate_setter_namespace(&values, "client builder", true, true)?;
+        let (secrets, mut credentials) = convert_credentials(source_client.credentials)?;
+        validate_credential_names(&values, &secrets, &credentials)?;
 
         let client_name = source_client.name;
         let client_canonical = canonical_ident(&client_name);
@@ -59,21 +64,28 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
             Span::mixed_site(),
         );
 
-        let mut resolver = Resolver {
-            client_name: &client_name,
-            client_values: &values,
-            next_scope_id: 0,
-            next_endpoint_id: 0,
-            prelude_aliases: &mut prelude_aliases,
+        let (config, children) = {
+            let mut resolver = Resolver {
+                client_name: &client_name,
+                client_values: &values,
+                credentials: &credentials,
+                next_scope_id: 0,
+                next_endpoint_id: 0,
+                prelude_aliases: &mut prelude_aliases,
+            };
+            let config = resolver.normalize_layer(
+                &source_client.layer,
+                &NormalizedConfig::default(),
+                &[],
+                None,
+            )?;
+            let children =
+                resolver.resolve_children(source_client.children, &config, &[], &[], "client")?;
+            (config, children)
         };
-        let config = resolver.normalize_layer(
-            &source_client.layer,
-            &NormalizedConfig::default(),
-            &[],
-            None,
-        )?;
-        let children =
-            resolver.resolve_children(source_client.children, &config, &[], &[], "client")?;
+        resolve_endpoint_credentials(&mut credentials, &children)?;
+        validate_credential_generated_names(&credentials, &children, "client")?;
+        validate_credential_cycles(&credentials, &children)?;
         validate_child_methods(&children, &[], "generated client", true)?;
 
         clients.push(Client {
@@ -84,6 +96,8 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
             values_type_name,
             base: source_client.base,
             values,
+            secrets,
+            credentials,
             retry: source_client.retry,
             config,
             children,
@@ -200,6 +214,11 @@ impl Resolver<'_> {
 
         let config =
             self.normalize_layer(&source.layer, parent, visible_scopes, Some(&parameters))?;
+        let dsl_path = scope_path
+            .iter()
+            .cloned()
+            .chain(std::iter::once(source.name.clone()))
+            .collect();
         Ok(Endpoint {
             id,
             method: source.method,
@@ -212,6 +231,7 @@ impl Resolver<'_> {
             body: source.body,
             config,
             response: source.response,
+            dsl_path,
         })
     }
 
@@ -310,6 +330,48 @@ impl Resolver<'_> {
                 }
             }
         }
+        if let Some(operation) = &layer.auth {
+            match operation {
+                AuthOperation::Off => normalized.auth.clear(),
+                AuthOperation::Modify {
+                    replace,
+                    placements,
+                } => {
+                    if *replace {
+                        normalized.auth.clear();
+                    }
+                    for placement in placements {
+                        let credential = find_credential(self.credentials, &placement.credential)?;
+                        let source = &self.credentials[credential].source;
+                        validate_auth_compatibility(
+                            &placement.kind,
+                            source,
+                            &placement.credential,
+                        )?;
+                        let challenge = match placement.challenge {
+                            Some(challenge) => challenge,
+                            None => match source {
+                                CredentialSource::OAuth2Client { .. } => {
+                                    AuthChallenge::Unauthorized
+                                }
+                                CredentialSource::Custom { .. } => {
+                                    return Err(placement.credential.span().error(
+                                        "an auth placement using a custom provider requires an explicit challenge suffix",
+                                    ));
+                                }
+                                _ => AuthChallenge::Never,
+                            },
+                        };
+                        normalized.auth.push(NormalizedAuth {
+                            kind: placement.kind.clone(),
+                            credential,
+                            challenge,
+                        });
+                    }
+                }
+            }
+        }
+        validate_effective_auth(&normalized)?;
         if let Some(operation) = &layer.timeout {
             normalized.timeout = match operation {
                 TimeoutOperation::Off => None,
@@ -427,6 +489,457 @@ impl Resolver<'_> {
             }
         }
     }
+}
+
+fn convert_credentials(
+    block: Option<CredentialsBlock>,
+) -> syn::Result<(Vec<Secret>, Vec<Credential>)> {
+    let Some(block) = block else {
+        return Ok((Vec::new(), Vec::new()));
+    };
+    let secrets = block
+        .secrets
+        .into_iter()
+        .map(|secret| Secret { name: secret.name })
+        .collect::<Vec<_>>();
+    let secret_index = secrets
+        .iter()
+        .enumerate()
+        .map(|(index, secret)| (canonical_ident(&secret.name), index))
+        .collect::<HashMap<_, _>>();
+    let mut credentials = Vec::new();
+    for credential in block.credentials {
+        let source = match credential.source {
+            SourceCredentialSource::ApiKey { secret } => CredentialSource::ApiKey {
+                secret: secret_index[&canonical_ident(&secret)],
+            },
+            SourceCredentialSource::Bearer { secret } => CredentialSource::Bearer {
+                secret: secret_index[&canonical_ident(&secret)],
+            },
+            SourceCredentialSource::Basic { username, password } => CredentialSource::Basic {
+                username: secret_index[&canonical_ident(&username)],
+                password: secret_index[&canonical_ident(&password)],
+            },
+            SourceCredentialSource::OAuth2Client {
+                token_url,
+                client_id,
+                client_secret,
+                scope,
+            } => CredentialSource::OAuth2Client {
+                token_url,
+                client_id: secret_index[&canonical_ident(&client_id)],
+                client_secret: secret_index[&canonical_ident(&client_secret)],
+                scope,
+            },
+            SourceCredentialSource::Endpoint { path } => CredentialSource::Endpoint {
+                path,
+                endpoint_id: None,
+            },
+            SourceCredentialSource::Custom { material } => CredentialSource::Custom { material },
+        };
+        credentials.push(Credential {
+            name: credential.name,
+            source,
+        });
+    }
+    Ok((secrets, credentials))
+}
+
+fn find_credential(credentials: &[Credential], name: &Ident) -> syn::Result<usize> {
+    credentials
+        .iter()
+        .position(|credential| canonical_ident(&credential.name) == canonical_ident(name))
+        .ok_or_else(|| {
+            name.span()
+                .error(format!("unknown credential `{}`", canonical_ident(name)))
+        })
+}
+
+fn validate_auth_compatibility(
+    placement: &AuthPlacementKind,
+    source: &CredentialSource,
+    span: &Ident,
+) -> syn::Result<()> {
+    let compatible = match source {
+        CredentialSource::ApiKey { .. } => {
+            matches!(
+                placement,
+                AuthPlacementKind::Header(_) | AuthPlacementKind::Query(_)
+            )
+        }
+        CredentialSource::Bearer { .. } | CredentialSource::OAuth2Client { .. } => {
+            matches!(placement, AuthPlacementKind::Bearer)
+        }
+        CredentialSource::Basic { .. } => matches!(placement, AuthPlacementKind::Basic),
+        CredentialSource::Endpoint { .. } | CredentialSource::Custom { .. } => true,
+    };
+    if compatible {
+        Ok(())
+    } else {
+        Err(span
+            .span()
+            .error("credential source is incompatible with this authentication placement"))
+    }
+}
+
+fn validate_effective_auth(config: &NormalizedConfig) -> syn::Result<()> {
+    let challenge_count = config
+        .auth
+        .iter()
+        .filter(|placement| placement.challenge != AuthChallenge::Never)
+        .count();
+    if challenge_count > 1 {
+        let span = config
+            .auth
+            .iter()
+            .find(|placement| placement.challenge != AuthChallenge::Never)
+            .map(|placement| match &placement.kind {
+                AuthPlacementKind::Header(name) | AuthPlacementKind::Query(name) => name.span(),
+                AuthPlacementKind::Bearer | AuthPlacementKind::Basic => Span::call_site(),
+            })
+            .unwrap_or_else(Span::call_site);
+        return Err(span.error(
+            "one effective authentication plan may contain at most one challenge-enabled placement",
+        ));
+    }
+    for (index, placement) in config.auth.iter().enumerate() {
+        match &placement.kind {
+            AuthPlacementKind::Bearer | AuthPlacementKind::Basic => {
+                if config
+                    .auth
+                    .iter()
+                    .enumerate()
+                    .any(|(other, candidate)| {
+                        other != index
+                            && (matches!(
+                                &candidate.kind,
+                                AuthPlacementKind::Bearer | AuthPlacementKind::Basic
+                            ) || matches!(
+                                &candidate.kind,
+                                AuthPlacementKind::Header(name)
+                                    if name.value().eq_ignore_ascii_case("authorization")
+                            ))
+                    })
+                {
+                    return Err(Span::call_site().error(
+                        "effective authentication placements collide on `Authorization`",
+                    ));
+                }
+            }
+            AuthPlacementKind::Header(name) => {
+                let canonical = name.value().to_ascii_lowercase();
+                if canonical == "authorization"
+                    || config
+                        .headers
+                        .iter()
+                        .any(|header| {
+                            header.canonical_name == canonical
+                                && resolved_expr_is_guaranteed_present(&header.value)
+                        })
+                    || config.auth[..index].iter().any(|candidate| {
+                        matches!(&candidate.kind, AuthPlacementKind::Header(other) if other.value().eq_ignore_ascii_case(&name.value()))
+                    })
+                {
+                    return Err(name.span().error(
+                        "authentication header collides with an effective public or authentication header",
+                    ));
+                }
+            }
+            AuthPlacementKind::Query(name) => {
+                if config
+                    .query
+                    .iter()
+                    .any(|query| {
+                        query.key.value() == name.value()
+                            && resolved_expr_is_guaranteed_present(&query.value)
+                    })
+                    || config.auth[..index].iter().any(|candidate| {
+                        matches!(&candidate.kind, AuthPlacementKind::Query(other) if other.value() == name.value())
+                    })
+                {
+                    return Err(name.span().error(
+                        "authentication query key collides with an effective public or authentication query key",
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn resolved_expr_is_guaranteed_present(value: &ResolvedExpr) -> bool {
+    match value {
+        ResolvedExpr::Value(value) => matches!(value.shape, ValueShape::Scalar),
+        ResolvedExpr::String(_) | ResolvedExpr::Integer(_) | ResolvedExpr::Format(_) => true,
+    }
+}
+
+fn validate_credential_names(
+    values: &[Value],
+    secrets: &[Secret],
+    credentials: &[Credential],
+) -> syn::Result<()> {
+    let mut builder = RESERVED_GENERATED_METHODS
+        .iter()
+        .map(|name| ((*name).to_owned(), Span::call_site()))
+        .collect::<HashMap<_, _>>();
+    for value in values {
+        insert_name(
+            &mut builder,
+            canonical_ident(&value.name),
+            value.name.span(),
+            "generated client builder method",
+        )?;
+        if value.is_optional() {
+            insert_name(
+                &mut builder,
+                format!("clear_{}", canonical_ident(&value.name)),
+                value.name.span(),
+                "generated client builder method",
+            )?;
+        } else if value.default().is_some() {
+            insert_name(
+                &mut builder,
+                format!("reset_{}", canonical_ident(&value.name)),
+                value.name.span(),
+                "generated client builder method",
+            )?;
+        }
+    }
+    for secret in secrets {
+        insert_name(
+            &mut builder,
+            canonical_ident(&secret.name),
+            secret.name.span(),
+            "generated client builder method",
+        )?;
+    }
+    for credential in credentials {
+        if matches!(credential.source, CredentialSource::Custom { .. }) {
+            insert_name(
+                &mut builder,
+                format!(
+                    "{}_provider",
+                    to_snake_case(&canonical_ident(&credential.name))
+                ),
+                credential.name.span(),
+                "generated client builder method",
+            )?;
+        }
+    }
+    let mut accessors = HashMap::from([("__concord_new".to_owned(), Span::call_site())]);
+    for credential in credentials {
+        insert_name(
+            &mut accessors,
+            to_snake_case(&canonical_ident(&credential.name)),
+            credential.name.span(),
+            "generated credential accessor",
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_credential_generated_names(
+    credentials: &[Credential],
+    children: &[Child],
+    owner: &str,
+) -> syn::Result<()> {
+    let mut items = HashMap::new();
+    for child in children {
+        match child {
+            Child::Scope(scope) => {
+                insert_name(
+                    &mut items,
+                    canonical_ident(&scope.module_name),
+                    scope.name.span(),
+                    &format!("{owner} generated module"),
+                )?;
+                validate_credential_generated_names(credentials, &scope.children, "scope")?;
+            }
+            Child::Endpoint(endpoint) => {
+                insert_name(
+                    &mut items,
+                    canonical_ident(&endpoint.name),
+                    endpoint.name.span(),
+                    &format!("{owner} explicit endpoint module"),
+                )?;
+                let acquisitions = endpoint_acquisitions(credentials, endpoint.id);
+                if endpoint.parameters.iter().any(|value| !value.is_required())
+                    || !acquisitions.is_empty()
+                {
+                    insert_name(
+                        &mut items,
+                        canonical_ident(&endpoint.request_ext_name),
+                        endpoint.name.span(),
+                        &format!("{owner} endpoint request extension"),
+                    )?;
+                }
+                if !acquisitions.is_empty() {
+                    validate_acquisition_methods(endpoint, &acquisitions)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn endpoint_acquisitions(credentials: &[Credential], endpoint_id: usize) -> Vec<&Credential> {
+    credentials
+        .iter()
+        .filter(|credential| {
+            matches!(
+                credential.source,
+                CredentialSource::Endpoint {
+                    endpoint_id: Some(id),
+                    ..
+                } if id == endpoint_id
+            )
+        })
+        .collect()
+}
+
+fn validate_acquisition_methods(
+    endpoint: &Endpoint,
+    acquisitions: &[&Credential],
+) -> syn::Result<()> {
+    let mut names = RESERVED_GENERATED_METHODS
+        .iter()
+        .map(|name| ((*name).to_owned(), Span::call_site()))
+        .collect::<HashMap<_, _>>();
+    for value in endpoint
+        .parameters
+        .iter()
+        .filter(|value| !value.is_required())
+    {
+        insert_name(
+            &mut names,
+            canonical_ident(&value.name),
+            value.name.span(),
+            "endpoint request controls and credential acquisition terminals",
+        )?;
+        let helper = if value.is_optional() {
+            format!("clear_{}", canonical_ident(&value.name))
+        } else {
+            format!("reset_{}", canonical_ident(&value.name))
+        };
+        insert_name(
+            &mut names,
+            helper,
+            value.name.span(),
+            "endpoint request controls and credential acquisition terminals",
+        )?;
+    }
+    for credential in acquisitions {
+        insert_name(
+            &mut names,
+            format!(
+                "acquire_as_{}",
+                to_snake_case(&canonical_ident(&credential.name))
+            ),
+            credential.name.span(),
+            "endpoint request controls and credential acquisition terminals",
+        )?;
+    }
+    Ok(())
+}
+
+fn resolve_endpoint_credentials(
+    credentials: &mut [Credential],
+    children: &[Child],
+) -> syn::Result<()> {
+    let mut endpoints = Vec::new();
+    collect_endpoints(children, &mut endpoints);
+    let paths = endpoints
+        .iter()
+        .map(|endpoint| {
+            (
+                endpoint
+                    .dsl_path
+                    .iter()
+                    .map(canonical_ident)
+                    .collect::<Vec<_>>()
+                    .join("::"),
+                endpoint.id,
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    for credential in credentials {
+        if let CredentialSource::Endpoint { path, endpoint_id } = &mut credential.source {
+            let canonical = path
+                .segments
+                .iter()
+                .map(|segment| canonical_ident(&segment.ident))
+                .collect::<Vec<_>>()
+                .join("::");
+            *endpoint_id = Some(*paths.get(&canonical).ok_or_else(|| {
+                path.span().error(format!(
+                    "unknown endpoint-backed credential target `{canonical}`"
+                ))
+            })?);
+        }
+    }
+    Ok(())
+}
+
+fn collect_endpoints<'a>(children: &'a [Child], output: &mut Vec<&'a Endpoint>) {
+    for child in children {
+        match child {
+            Child::Scope(scope) => collect_endpoints(&scope.children, output),
+            Child::Endpoint(endpoint) => output.push(endpoint),
+        }
+    }
+}
+
+fn validate_credential_cycles(credentials: &[Credential], children: &[Child]) -> syn::Result<()> {
+    let mut endpoints = Vec::new();
+    collect_endpoints(children, &mut endpoints);
+    let endpoint_count = endpoints
+        .iter()
+        .map(|endpoint| endpoint.id)
+        .max()
+        .map_or(0, |maximum| maximum + 1);
+    let credential_count = credentials.len();
+    let mut edges = vec![Vec::new(); credential_count + endpoint_count];
+    for (index, credential) in credentials.iter().enumerate() {
+        if let CredentialSource::Endpoint {
+            endpoint_id: Some(endpoint),
+            ..
+        } = credential.source
+        {
+            edges[index].push(credential_count + endpoint);
+        }
+    }
+    for endpoint in endpoints {
+        for auth in &endpoint.config.auth {
+            edges[credential_count + endpoint.id].push(auth.credential);
+        }
+    }
+    let mut state = vec![0_u8; edges.len()];
+    fn visit(node: usize, edges: &[Vec<usize>], state: &mut [u8]) -> bool {
+        if state[node] == 1 {
+            return true;
+        }
+        if state[node] == 2 {
+            return false;
+        }
+        state[node] = 1;
+        if edges[node]
+            .iter()
+            .copied()
+            .any(|next| visit(next, edges, state))
+        {
+            return true;
+        }
+        state[node] = 2;
+        false
+    }
+    for node in 0..edges.len() {
+        if visit(node, &edges, &mut state) {
+            return Err(Span::call_site()
+                .error("endpoint-backed credential dependency or authentication cycle detected"));
+        }
+    }
+    Ok(())
 }
 
 fn convert_values(values: Vec<ValueDecl>) -> syn::Result<Vec<Value>> {
@@ -942,6 +1455,242 @@ mod tests {
     }
 
     #[test]
+    fn phase6_auth_normalization_appends_replaces_clears_and_resolves_defaults() {
+        let api = resolve_ok(quote! {
+            client AuthApi {
+                base "https://example.test";
+                credentials {
+                    secret key_value: String;
+                    secret bearer_value: String;
+                    secret client_id: String;
+                    secret client_secret: String;
+                    credential key = api_key(secret.key_value);
+                    credential bearer = bearer(secret.bearer_value);
+                    credential oauth = oauth2_client {
+                        token_url: "https://auth.example.test/token",
+                        client_id: secret.client_id,
+                        client_secret: secret.client_secret,
+                    };
+                    credential acquired = endpoint Login;
+                    credential custom = custom crate::SessionToken;
+                }
+                auth header "X-Api-Key" = key;
+                GET Login() -> Bytes;
+                scope Secured() {
+                    auth bearer oauth;
+                    GET Inherited() -> Bytes;
+                    GET Replaced() -> Bytes {
+                        auth replace bearer bearer;
+                    }
+                    GET Custom() -> Bytes {
+                        auth replace header "X-Session" = custom challenge never;
+                    }
+                    GET Public() -> Bytes { auth off; }
+                }
+            }
+        });
+        let client = &api.clients[0];
+        assert_eq!(client.config.auth.len(), 1);
+        assert_eq!(client.config.auth[0].challenge, AuthChallenge::Never);
+        let Child::Scope(scope) = &client.children[1] else {
+            panic!("secured scope")
+        };
+        assert_eq!(scope.config.auth.len(), 2);
+        assert_eq!(scope.config.auth[0].challenge, AuthChallenge::Never);
+        assert_eq!(scope.config.auth[1].challenge, AuthChallenge::Unauthorized);
+        let Child::Endpoint(inherited) = &scope.children[0] else {
+            panic!("inherited endpoint")
+        };
+        assert_eq!(inherited.config.auth.len(), 2);
+        let Child::Endpoint(replaced) = &scope.children[1] else {
+            panic!("replaced endpoint")
+        };
+        assert_eq!(replaced.config.auth.len(), 1);
+        assert_eq!(replaced.config.auth[0].challenge, AuthChallenge::Never);
+        let Child::Endpoint(custom) = &scope.children[2] else {
+            panic!("custom endpoint")
+        };
+        assert_eq!(custom.config.auth.len(), 1);
+        assert_eq!(custom.config.auth[0].challenge, AuthChallenge::Never);
+        let Child::Endpoint(public) = &scope.children[3] else {
+            panic!("public endpoint")
+        };
+        assert!(public.config.auth.is_empty());
+    }
+
+    #[test]
+    fn phase6_auth_semantics_reject_unknown_incompatible_ambiguous_and_colliding_plans() {
+        fn error(tokens: proc_macro2::TokenStream) -> String {
+            match parse::parse(tokens) {
+                Ok(source) => resolve(source).err().expect("semantic error").to_string(),
+                Err(error) => error.to_string(),
+            }
+        }
+
+        let unknown = error(quote! {
+            client Api {
+                base "https://example.test";
+                GET Read() -> Bytes { auth bearer missing; }
+            }
+        });
+        assert!(unknown.contains("unknown credential `missing`"));
+
+        let incompatible = error(quote! {
+            client Api {
+                base "https://example.test";
+                credentials {
+                    secret key_value: String;
+                    credential key = api_key(secret.key_value);
+                }
+                GET Read() -> Bytes { auth bearer key; }
+            }
+        });
+        assert!(incompatible.contains("incompatible"));
+
+        let custom = error(quote! {
+            client Api {
+                base "https://example.test";
+                credentials { credential session = custom crate::SessionToken; }
+                GET Read() -> Bytes { auth bearer session; }
+            }
+        });
+        assert!(custom.contains("requires an explicit challenge suffix"));
+
+        let challengers = error(quote! {
+            client Api {
+                base "https://example.test";
+                credentials {
+                    secret first_value: String;
+                    secret second_value: String;
+                    credential first = bearer(secret.first_value);
+                    credential second = api_key(secret.second_value);
+                }
+                GET Read() -> Bytes {
+                    auth bearer first challenge unauthorized;
+                    auth query "key" = second challenge unauthorized_or_forbidden;
+                }
+            }
+        });
+        assert!(challengers.contains("at most one challenge-enabled"));
+
+        let authorization = error(quote! {
+            client Api {
+                base "https://example.test";
+                credentials {
+                    secret token: String;
+                    credential bearer = bearer(secret.token);
+                }
+                headers { "Authorization" = "public"; }
+                GET Read() -> Bytes { auth bearer bearer; }
+            }
+        });
+        assert!(authorization.contains("reserved by transport, authentication"));
+
+        let header = error(quote! {
+            client Api {
+                base "https://example.test";
+                credentials {
+                    secret key_value: String;
+                    credential key = api_key(secret.key_value);
+                }
+                headers { "X-Key" = "public"; }
+                GET Read() -> Bytes { auth header "x-key" = key; }
+            }
+        });
+        assert!(header.contains("collides"));
+
+        let query = error(quote! {
+            client Api {
+                base "https://example.test";
+                credentials {
+                    secret key_value: String;
+                    credential key = api_key(secret.key_value);
+                }
+                query { "key" = "public"; }
+                GET Read() -> Bytes { auth query "key" = key; }
+            }
+        });
+        assert!(query.contains("collides"));
+
+        let duplicate_auth = error(quote! {
+            client Api {
+                base "https://example.test";
+                credentials {
+                    secret first_value: String;
+                    secret second_value: String;
+                    credential first = api_key(secret.first_value);
+                    credential second = api_key(secret.second_value);
+                }
+                GET Read() -> Bytes {
+                    auth header "X-Key" = first;
+                    auth header "x-key" = second;
+                }
+            }
+        });
+        assert!(duplicate_auth.contains("collides"));
+    }
+
+    #[test]
+    fn phase6_optional_public_values_defer_material_collision_to_request_preparation() {
+        resolve_ok(quote! {
+            client Api {
+                base "https://example.test";
+                credentials {
+                    secret key_value: String;
+                    credential key = api_key(secret.key_value);
+                }
+                GET Optional(
+                    query_value: Option<String>,
+                    header_value: Option<String>,
+                ) -> Bytes {
+                    query { "key" = ep.query_value; }
+                    headers { "X-Key" = ep.header_value; }
+                    auth query "key" = key;
+                    auth header "X-Key" = key;
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn phase6_endpoint_backed_dependency_and_authentication_cycles_are_rejected() {
+        fn error(tokens: proc_macro2::TokenStream) -> String {
+            resolve(parse::parse(tokens).expect("source AST"))
+                .err()
+                .expect("cycle")
+                .to_string()
+        }
+
+        let direct = error(quote! {
+            client Api {
+                base "https://example.test";
+                credentials { credential session = endpoint Login; }
+                GET Login() -> Bytes {
+                    auth bearer session challenge never;
+                }
+            }
+        });
+        assert!(direct.contains("dependency or authentication cycle"));
+
+        let mutual = error(quote! {
+            client Api {
+                base "https://example.test";
+                credentials {
+                    credential first = endpoint First;
+                    credential second = endpoint Second;
+                }
+                GET First() -> Bytes {
+                    auth bearer second challenge never;
+                }
+                GET Second() -> Bytes {
+                    auth bearer first challenge never;
+                }
+            }
+        });
+        assert!(mutual.contains("dependency or authentication cycle"));
+    }
+
+    #[test]
     fn generated_name_collisions_cover_aliases_traits_and_generic_request_methods() {
         let support = resolve(
             parse::parse(quote! {
@@ -996,5 +1745,72 @@ mod tests {
         .err()
         .expect("generic request method collision");
         assert!(request_method.to_string().contains("timeout"));
+    }
+
+    #[test]
+    fn phase6_generated_names_cover_builder_accessor_and_acquisition_namespaces() {
+        fn error(tokens: proc_macro2::TokenStream) -> String {
+            resolve(parse::parse(tokens).expect("source AST"))
+                .err()
+                .expect("generated name collision")
+                .to_string()
+        }
+
+        let reserved_secret = error(quote! {
+            client Api {
+                base "https://example.test";
+                credentials {
+                    secret build: String;
+                    credential key = api_key(secret.build);
+                }
+            }
+        });
+        assert!(reserved_secret.contains("build"));
+        assert!(reserved_secret.contains("collides"));
+
+        let helper_secret = error(quote! {
+            client Api {
+                base "https://example.test";
+                var token: Option<String>;
+                credentials {
+                    secret clear_token: String;
+                    credential key = api_key(secret.clear_token);
+                }
+            }
+        });
+        assert!(helper_secret.contains("clear_token"));
+        assert!(helper_secret.contains("collides"));
+
+        let internal_accessor = error(quote! {
+            client Api {
+                base "https://example.test";
+                credentials {
+                    secret value: String;
+                    credential __concord_new = api_key(secret.value);
+                }
+            }
+        });
+        assert!(internal_accessor.contains("__concord_new"));
+        assert!(internal_accessor.contains("collides"));
+
+        let acquisition_method = error(quote! {
+            client Api {
+                base "https://example.test";
+                credentials { credential session = endpoint Login; }
+                GET Login(acquire_as_session: Option<String>) -> Bytes;
+            }
+        });
+        assert!(acquisition_method.contains("acquire_as_session"));
+        assert!(acquisition_method.contains("collides"));
+
+        let acquisition_trait = error(quote! {
+            client Api {
+                base "https://example.test";
+                credentials { credential session = endpoint Read; }
+                GET Read() -> Bytes;
+                GET ReadRequestExt() -> Bytes;
+            }
+        });
+        assert!(acquisition_trait.contains("collides"));
     }
 }

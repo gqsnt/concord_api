@@ -35,6 +35,10 @@ api! {
         var tenant: String;
         var locale: Option<String>;
         var page_size: u32 = 25;
+        credentials {
+            secret api_key: String;
+            credential application_key = api_key(secret.api_key);
+        }
         scope resources(
             scope_value: String,
             region: Option<String>,
@@ -48,6 +52,7 @@ api! {
                 body: Text,
             ) -> Text {
                 path [ep.endpoint_value];
+                auth header "X-Api-Key" = application_key;
             }
             POST Custom(body: crate::WireCodec) -> crate::WireCodec;
             POST StreamUpload(body: Stream<OctetStream>) -> Bytes;
@@ -60,7 +65,8 @@ api! {
 use renamed_api::prelude::*;
 
 pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
-    let client = RenamedApi::new("tenant".to_owned())?;
+    let client = RenamedApi::new("tenant".to_owned(), "protected-api-key")?;
+    let _ = client.credentials().application_key().credential();
     let request = client
         .resources("renamed-scope".to_owned())
         .region("eu".to_owned())

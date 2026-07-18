@@ -57,9 +57,13 @@ fn incompatible_core_contract_fails_during_compilation() {
 }
 
 #[test]
-fn json_dsl_without_runtime_feature_has_a_focused_diagnostic() {
+fn json_and_oauth_dsl_without_runtime_feature_have_a_focused_diagnostic() {
     assert_fixture_fails_with(
         "json_disabled",
+        "Concord JSON DSL requires the `concord_core/json` feature",
+    );
+    assert_fixture_fails_with(
+        "oauth_disabled",
         "Concord JSON DSL requires the `concord_core/json` feature",
     );
 }
@@ -116,6 +120,8 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
         "struct.RenamedApi.html",
         "struct.RenamedApiBuilder.html",
         "renamed_api/facades/resources/struct.ResourcesFacade.html",
+        "renamed_api/credentials/struct.RenamedApiCredentials.html",
+        "renamed_api/credentials/struct.ApiKeyCredentialHandle.html",
         "renamed_api/endpoints/resources/struct.ById.html",
         "renamed_api/endpoints/resources/struct.Custom.html",
         "renamed_api/endpoints/resources/struct.StreamUpload.html",
@@ -164,6 +170,8 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
                     "scope_value",
                     "endpoint_value",
                     "body",
+                    "custom header",
+                    "Credential values are absent",
                 ],
                 path if path.ends_with("struct.Custom.html") => {
                     &["RenamedApi::resources::Custom", "scope_value", "body"]
@@ -221,6 +229,8 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
         "tenant",
         "locale",
         "page_size",
+        "protected secret input",
+        "static API key (replace)",
         "Application native retry is disabled",
     ] {
         assert!(
@@ -257,6 +267,23 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
         prelude_page.contains("RenamedApiResourcesByIdRequestExt"),
         "generated prelude Rustdoc omitted the deterministic request-extension alias"
     );
+
+    let credentials_page = std::fs::read_to_string(
+        documentation.join("renamed_api/credentials/struct.ApiKeyCredentialHandle.html"),
+    )
+    .expect("generated credential handle Rustdoc should be readable");
+    for expected in ["credential", "replace", "SecretString", "CredentialRef"] {
+        assert!(
+            credentials_page.contains(expected),
+            "generated credential Rustdoc omitted {expected}"
+        );
+    }
+    for forbidden in ["protected-api-key", "SlotSelector", "waiter", "reqwest"] {
+        assert!(
+            !credentials_page.contains(forbidden),
+            "generated credential Rustdoc exposed {forbidden}"
+        );
+    }
 
     let request_ext_path =
         documentation.join("renamed_api/endpoints/resources/trait.ByIdRequestExt.html");
