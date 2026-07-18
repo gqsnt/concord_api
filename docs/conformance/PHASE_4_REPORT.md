@@ -26,7 +26,7 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 - Immutable tested Phase 4 source:
   `6472bc01e55bbd4282a8d5e06deeb9126650f9c4`
 - Final Phase 4 validation/evidence time: `2026-07-18T01:06:38Z`
-- Phase 4 evidence/report commit: named by the following documentation-only anchor
+- Phase 4 evidence/report commit: `cb2a521024ef86149a3397faa7818782a1231187`
 - Phase 4 evidence anchor: this report's documentation-only follow-up
 - Rust edition: 2024
 - MSRV exercised: Rust 1.85.0
@@ -377,16 +377,18 @@ the final Phase 4 addition is 123 rows: 77 direct and 46 partial. The final cata
 rows and 568 unique evidence IDs. The coverage plan retains 504 rows and 504 unique normative IDs.
 There are zero unknown requirement IDs in either catalog.
 
-All 445 historical evidence rows are unchanged. Coverage edits affect only the 118 reviewed Phase
-4 requirement rows, retain their planning identifiers/status, name current exact source paths and
-evidence IDs, and distinguish direct proof from deferred clauses. Source rows are owned by
+All 445 historical evidence rows are unchanged. Coverage edits affect 123 reviewed Phase 4
+evidence requirements: the 118 source requirements and five catalog/report-integrity requirements.
+They retain their planning identifiers/status, name current exact paths and evidence IDs, and
+distinguish direct proof from deferred clauses. Source rows are owned by
 `6472bc01e55bbd4282a8d5e06deeb9126650f9c4`; the five audit rows are owned by the later
 evidence/report commit. The final anchor runs `git cat-file -e <verified_commit>:<path>` for every
 listed Phase 4 artifact and reviews all classifications and commands.
 
 ## Remaining partial requirements
 
-Every partial source requirement has an explicit proved portion and future owner:
+Every partial Phase 4 requirement (45 source rows plus the audit row) has an explicit proved
+portion and future owner:
 
 | Requirement IDs | Proved in Phase 4 | Missing portion and owner |
 |---|---|---|
