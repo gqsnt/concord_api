@@ -1,9 +1,7 @@
 # Concord project-local Codex policy.
 # Loaded only after the repository is trusted. Model and Max selection remain per-thread choices.
 
-approvals_reviewer = "user"
-sandbox_mode = "workspace-write"
-web_search = "disabled"
+
 
 [approval_policy.granular]
 # Allow the user to approve narrowly scoped sandbox and exec-policy requests.
