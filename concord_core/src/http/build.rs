@@ -53,6 +53,8 @@ impl ManagedHttp {
             ApplicationRetry::ReqwestDefault => application,
             #[cfg(feature = "dangerous-custom-retry")]
             ApplicationRetry::Dangerous(retry) => application.retry(retry),
+            #[cfg(feature = "dangerous-custom-retry")]
+            ApplicationRetry::DangerousFactory(factory) => application.retry(factory()),
         };
         provider = match http.provider_retry {
             ProviderRetry::ProtocolRecovery => provider,
@@ -209,7 +211,7 @@ mod tests {
     use std::process::Command;
     #[cfg(feature = "http2")]
     use std::sync::Arc;
-    #[cfg(feature = "http2")]
+    #[cfg(any(feature = "http2", feature = "dangerous-custom-retry"))]
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
@@ -232,6 +234,15 @@ mod tests {
 
     const WAIT: Duration = Duration::from_secs(3);
 
+    #[cfg(feature = "dangerous-custom-retry")]
+    static SELECTED_FACTORY_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    #[cfg(feature = "dangerous-custom-retry")]
+    fn selected_factory() -> crate::dangerous::ReqwestRetryBuilder {
+        SELECTED_FACTORY_CALLS.fetch_add(1, Ordering::SeqCst);
+        reqwest::retry::never()
+    }
+
     fn managed(builder: HttpConfigBuilder) -> ManagedHttp {
         let runtime = RuntimeConfigBuilder::new().resolve();
         ManagedHttp::build(builder.resolve(), &runtime).expect("managed clients should build")
@@ -244,6 +255,21 @@ mod tests {
         assert_send_sync_static::<ApplicationHttp>();
         assert_send_sync_static::<ProviderHttpInner>();
         assert_send_sync_static::<ManagedHttp>();
+    }
+
+    #[cfg(feature = "dangerous-custom-retry")]
+    #[test]
+    fn selected_generated_retry_factory_runs_once_during_managed_build() {
+        SELECTED_FACTORY_CALLS.store(0, Ordering::SeqCst);
+        let runtime = RuntimeConfigBuilder::new().resolve();
+        ManagedHttp::build(
+            HttpConfigBuilder::new()
+                .generated_custom_retry_factory(selected_factory)
+                .resolve(),
+            &runtime,
+        )
+        .expect("managed clients should build with selected custom retry");
+        assert_eq!(SELECTED_FACTORY_CALLS.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]

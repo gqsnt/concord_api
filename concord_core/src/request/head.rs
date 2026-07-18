@@ -223,6 +223,7 @@ impl PreparedHead {
         &mut self,
         accept: Option<&'static str>,
         content_type: Option<&HeaderValue>,
+        body_owns_content_type: bool,
     ) -> Result<(), ApiError> {
         if let Some(accept) = accept {
             if !self.public_headers.contains_key(ACCEPT) {
@@ -236,14 +237,14 @@ impl PreparedHead {
                 self.public_headers.insert(ACCEPT, value);
             }
         }
+        if body_owns_content_type && self.public_headers.contains_key(CONTENT_TYPE) {
+            return Err(ApiError::configuration(
+                self.endpoint(),
+                self.method().clone(),
+                ConfigurationErrorKind::InvalidHeader,
+            ));
+        }
         if let Some(content_type) = content_type {
-            if self.public_headers.contains_key(CONTENT_TYPE) {
-                return Err(ApiError::configuration(
-                    self.endpoint(),
-                    self.method().clone(),
-                    ConfigurationErrorKind::InvalidHeader,
-                ));
-            }
             self.public_headers
                 .insert(CONTENT_TYPE, content_type.clone());
         }
@@ -460,7 +461,7 @@ mod tests {
             head.public_headers().get("X-Tenant"),
             Some(&HeaderValue::from_static("second"))
         );
-        head.apply_media_headers(Some("application/json"), None)
+        head.apply_media_headers(Some("application/json"), None, false)
             .expect("public Accept wins");
         assert_eq!(
             head.public_headers().get(ACCEPT),
@@ -499,6 +500,7 @@ mod tests {
         head.apply_media_headers(
             Some("application/vnd.example+json"),
             Some(&HeaderValue::from_static("application/json")),
+            true,
         )
         .expect("codec headers");
         assert_eq!(
@@ -510,7 +512,7 @@ mod tests {
             Some(&HeaderValue::from_static("application/json"))
         );
 
-        head.apply_media_headers(Some("text/plain"), None)
+        head.apply_media_headers(Some("text/plain"), None, false)
             .expect("an existing Accept value wins");
         assert_eq!(
             head.public_headers().get(ACCEPT),
@@ -518,7 +520,7 @@ mod tests {
         );
 
         let error = head
-            .apply_media_headers(None, Some(&HeaderValue::from_static("text/plain")))
+            .apply_media_headers(None, Some(&HeaderValue::from_static("text/plain")), true)
             .expect_err("a request codec owns Content-Type");
         assert_eq!(error.category(), ErrorCategory::Configuration);
         assert_eq!(
@@ -530,9 +532,33 @@ mod tests {
     #[test]
     fn invalid_static_accept_value_fails_during_public_preparation() {
         let error = prepared()
-            .apply_media_headers(Some("invalid\r\naccept"), None)
+            .apply_media_headers(Some("invalid\r\naccept"), None, false)
             .expect_err("invalid codec Accept value");
         assert_eq!(error.category(), ErrorCategory::Configuration);
+        assert_eq!(
+            error.configuration_kind(),
+            Some(ConfigurationErrorKind::InvalidHeader)
+        );
+    }
+
+    #[test]
+    fn bodyless_public_content_type_is_allowed_but_multipart_ownership_conflicts() {
+        let mut bodyless_builder = builder("https://example.test/");
+        bodyless_builder
+            .insert_header_value("Content-Type", &"application/example")
+            .expect("bodyless public Content-Type");
+        let mut head = bodyless_builder.finish();
+        head.apply_media_headers(None, None, false)
+            .expect("no body source owns Content-Type");
+
+        let mut multipart_builder = builder("https://example.test/");
+        multipart_builder
+            .insert_header_value("Content-Type", &"application/example")
+            .expect("public header is structurally valid");
+        let mut head = multipart_builder.finish();
+        let error = head
+            .apply_media_headers(None, None, true)
+            .expect_err("multipart owns its top-level Content-Type boundary");
         assert_eq!(
             error.configuration_kind(),
             Some(ConfigurationErrorKind::InvalidHeader)

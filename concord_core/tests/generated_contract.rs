@@ -18,15 +18,13 @@ fn structured_head_builder_encodes_values_only_when_prepared() {
         DebugLevel::None,
     );
     builder.push_static("resources").expect("static segment");
-    builder
-        .push_value("item/omega%2Ftail")
-        .expect("dynamic segment");
+    builder.push_value("item%2Ftail").expect("dynamic segment");
     let head = builder.finish();
     assert_eq!(head.endpoint(), "ProofApi::resources::ById");
     assert_eq!(head.method(), &Method::GET);
     assert_eq!(
         head.logical_url().as_str(),
-        "https://example.test/api/resources/item%2Fomega%252Ftail"
+        "https://example.test/api/resources/item%252Ftail"
     );
     assert!(head.public_headers().is_empty());
 }
@@ -47,13 +45,10 @@ fn structured_head_builder_enforces_one_non_dot_segment_per_atom() {
         Ok(builder.finish().logical_url().to_string())
     }
 
+    assert_eq!(dynamic("slash/value"), Err(ErrorCategory::Configuration));
     assert_eq!(
-        dynamic("slash/value").expect("slash is one encoded segment"),
-        "https://example.test/api/slash%2Fvalue"
-    );
-    assert_eq!(
-        dynamic(r"backslash\value").expect("backslash is one encoded segment"),
-        "https://example.test/api/backslash%5Cvalue"
+        dynamic(r"backslash\value"),
+        Err(ErrorCategory::Configuration)
     );
     assert_eq!(
         dynamic("already%2Fencoded").expect("percent is encoded once by this boundary"),

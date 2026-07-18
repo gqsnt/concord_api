@@ -130,8 +130,11 @@ where
             error,
         )));
     }
-    if let Err(error) = head.apply_media_headers(E::Response::ACCEPT, body_metadata.content_type())
-    {
+    if let Err(error) = head.apply_media_headers(
+        E::Response::ACCEPT,
+        body_metadata.content_type(),
+        body_metadata.owns_content_type(),
+    ) {
         return Ok(OperationPreparation::Failed(failure(
             core,
             operation_id,

@@ -123,6 +123,10 @@ impl BodyMetadata {
         self.content_type.as_ref()
     }
 
+    pub(crate) const fn owns_content_type(&self) -> bool {
+        self.content_type.is_some() || matches!(self.kind, BodyKind::Multipart)
+    }
+
     pub(crate) fn with_known_length(mut self, known_length: Option<u64>) -> Self {
         self.exact_length = known_length;
         self.lower_bound = known_length;

@@ -28,6 +28,16 @@ pub const fn assert_multipart_feature() {
     panic!("Concord multipart DSL requires the `concord_core/multipart` feature");
 }
 
+/// Produces a focused const-evaluation diagnostic for generated dangerous
+/// custom retry syntax when the runtime dependency omitted its feature.
+#[doc(hidden)]
+pub const fn assert_custom_retry_feature() {
+    #[cfg(not(feature = "dangerous-custom-retry"))]
+    panic!(
+        "Concord `retry custom PATH` requires the `concord_core/dangerous-custom-retry` feature"
+    );
+}
+
 #[doc(hidden)]
 pub use http::Method;
 #[doc(hidden)]
@@ -52,6 +62,27 @@ pub use crate::request::{
 #[doc(hidden)]
 #[must_use]
 pub fn default_http_config() -> crate::http::HttpConfigBuilder {
+    crate::http::HttpConfigBuilder::new()
+}
+
+/// Creates a generated-client HTTP baseline with a lazily selected dangerous
+/// custom retry factory. The factory is invoked only if no later builder
+/// operation replaces the selection.
+#[cfg(feature = "dangerous-custom-retry")]
+#[doc(hidden)]
+#[must_use]
+pub fn default_http_config_with_custom_retry(
+    factory: fn() -> crate::dangerous::ReqwestRetryBuilder,
+) -> crate::http::HttpConfigBuilder {
+    crate::http::HttpConfigBuilder::new().generated_custom_retry_factory(factory)
+}
+
+/// Keeps missing-feature generated code structurally type-checkable so the
+/// adjacent const feature assertion is the single focused diagnostic.
+#[cfg(not(feature = "dangerous-custom-retry"))]
+#[doc(hidden)]
+#[must_use]
+pub fn default_http_config_with_custom_retry<F>(_factory: F) -> crate::http::HttpConfigBuilder {
     crate::http::HttpConfigBuilder::new()
 }
 
@@ -84,6 +115,13 @@ pub fn duplicate_http_configuration_error() -> ClientBuildError {
 #[doc(hidden)]
 pub fn duplicate_runtime_configuration_error() -> ClientBuildError {
     ClientBuildError::new(crate::error::ClientBuildErrorKind::RuntimeConfiguration)
+}
+
+/// Produces the safe generated-builder classification for a missing required
+/// value without retaining or formatting that value's DSL name.
+#[doc(hidden)]
+pub fn missing_input_error() -> ClientBuildError {
+    ClientBuildError::new(crate::error::ClientBuildErrorKind::MissingInput)
 }
 
 /// Creates one side-effect-free stable pending request wrapper.
