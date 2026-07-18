@@ -27,9 +27,9 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 - Post-source governance commit:
   `c7dfd11906d453de27702a6ff69f7f79a60e4dd9`
 - Phase 6 evidence/report/state commit: `a4e4a004a6868f1d5dd462fef077cc948fd5109f`
-- Phase 6 evidence anchor: the subsequent documentation-only
-  `docs: anchor phase 6 evidence` commit; its object identity is intentionally external to its own
-  content because a commit cannot contain its own hash
+- Phase 6 evidence anchor: `c19f8cd976bae31180e797736c4d02ce1beb54bb`
+- Compatible post-anchor report correction:
+  `97b65b5a99053b8cbf280d61ba8546655b242cc6`
 - Phase 6 source patch SHA-256:
   `52089f9ed3dda85e73aa1e665dab00d1866f78ba950aad1c5459bf20a5ba8c6e`
 - Authoritative validation date: `2026-07-18`
@@ -58,7 +58,15 @@ validation log identifies only the immutable tested source commit.
 | Phase 6 source/test | `e4c1cca94962cf0ee6855bab3c252c1caba19202` | `feat: implement phase 6 authentication` | Added production credentials, typed public and generated authentication contracts, provider HTTP, OAuth2 client credentials, executor preflight/finalization/native materialization, and one bounded source-aware recovery on the existing request path. |
 | Post-source governance | `c7dfd11906d453de27702a6ff69f7f79a60e4dd9` | Git subject bytes: `\x20change config to\x20\x20allow commit` | Changed only repository-agent governance files after validation; no executable artifact changed. |
 | Evidence/report/state | `a4e4a004a6868f1d5dd462fef077cc948fd5109f` | `docs: record phase 6 conformance evidence` | Adds the report and actual evidence and reconciles coverage, planning, controller state, and current-state documentation. |
-| Evidence anchor | external identity | `docs: anchor phase 6 evidence` | Replaces the pending evidence-state/time markers and corrects tokenization in the recorded `P6-AUDIT-003` command; changes no executable artifact, classification, evidence ID, or count. |
+| Evidence anchor | `c19f8cd976bae31180e797736c4d02ce1beb54bb` | `docs: anchor phase 6 evidence` | Replaces the pending evidence-state/time markers and corrects tokenization in the recorded `P6-AUDIT-003` command; changes no executable artifact, classification, evidence ID, or count. |
+| Compatible post-anchor report correction | `97b65b5a99053b8cbf280d61ba8546655b242cc6` | `docs: correct phase 6 governance metadata` | Corrects the literal governance-commit subject in this report only; it does not replace the evidence anchor or invalidate the tested source identity. |
+
+`c19f8cd976bae31180e797736c4d02ce1beb54bb` is the immutable Phase 6 evidence anchor.
+`97b65b5a99053b8cbf280d61ba8546655b242cc6` is a compatible documentation-only descendant. The
+present controller-state correction records the already-existing anchor in another compatible
+descendant. Later documentation-only descendants do not replace the anchor and do not invalidate
+the tested source identity. The present correction commit's future object identity is intentionally
+not embedded in its own content.
 
 Phase 6 extends the one production compiler, generated client, request, prepared head, body,
 executor, application HTTP client, and provider HTTP client already in the repository. It does not
