@@ -30,7 +30,7 @@ This report does not claim full Concord 0.1 conformance. The normative status re
   `c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9`
 - Preliminary corrected evidence state: `7b1373f82b33e36325047643d735b2e15bb5a4bc`
 - Corrected evidence/report/state commit: `cb4640d4d4e21528c8e38f8104785e2c3ceac883`
-- Corrected evidence anchor: `PENDING_PHASE_7_CORRECTED_ANCHOR`
+- Corrected evidence anchor: `def42b74663df7b36755f61b8348d26449cce6ff`
 - Compatible post-anchor metadata descendant: the later documentation-only commit that records the
   real corrected anchor identity; it does not replace that anchor
 - Authoritative source validation completed: `2026-07-19T06:03:21Z`
@@ -53,7 +53,7 @@ traces. The ignored validation ledger is `git_diff/phase-7-correction-validation
 | Validation correction | `c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9` | Serialized shared-directory Trybuild cases without skipping, retrying, or weakening a test. |
 | Preliminary evidence state | `7b1373f82b33e36325047643d735b2e15bb5a4bc` | Established the clause-level rows; a strengthened audit then found 24 plural-owner coverage milestones rendered as `P7-partial-`. |
 | Corrected evidence/state | `cb4640d4d4e21528c8e38f8104785e2c3ceac883` | Replaces all 100 Phase 7 rows with clause-accurate traces, reconciles 98 coverage rows, this report, planning, and controller state. |
-| Corrected anchor | `PENDING_PHASE_7_CORRECTED_ANCHOR` | Finalizes the known evidence-state identity and audit time only; changes no executable artifact or evidence classification. |
+| Corrected anchor | `def42b74663df7b36755f61b8348d26449cce6ff` | Finalizes the known evidence-state identity and audit time only; changes no executable artifact or evidence classification. |
 | Anchor metadata descendant | later documentation-only commit | Records the real corrected anchor hash in the controller/report and retains `anchor-must-be-an-ancestor`. |
 
 The first authoritative `just test-all` at `8e3b1589` passed 504 of 505 tests but exposed a real
