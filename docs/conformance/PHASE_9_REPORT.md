@@ -26,7 +26,7 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 - Extension-certification source/test commit and final immutable tested source:
   `a8732c3fdefb676bfbb46bee9d756a8282ec531f`
 - Phase 9 evidence/report/state commit: `4f26b5d1336c6634068bbaac708bf05662880cf6`
-- Phase 9 evidence anchor: `PENDING_PHASE_9_ANCHOR`
+- Phase 9 evidence anchor: `854467ba40ebf5f1b0d190a165ef50d09519575d`
 - Compatible post-anchor metadata descendant: the final documentation-only commit with subject
   `docs: record phase 9 evidence anchor`; it records the real anchor identity and does not replace it
 - Authoritative source validation recorded: `2026-07-19T17:13:21Z`
@@ -50,7 +50,7 @@ review, and claim atoms are under `git_diff/phase-9-*.tsv`.
 | Prepared endpoint runtime and tests | `fdb5fed4c47b29831325e403620923bd52769250` | Adds the exact advanced prepared contracts, private body erasure, existing `EndpointSpec` integration, generated-client capability support, generated contract 10, deterministic runtime tests, and compile-fail privacy/capability proof. |
 | Stable extension certification | `a8732c3fdefb676bfbb46bee9d756a8282ec531f` | Adds one public-only downstream fixture for all stable extension workflows, feature variants, rendered public/generated Rustdoc audits, and complete extension obligation documentation. |
 | Evidence/report/state | `4f26b5d1336c6634068bbaac708bf05662880cf6` | Records Phase 9 evidence, coverage, report, program, README, and controller state without changing executable artifacts. |
-| Evidence anchor | `PENDING_PHASE_9_ANCHOR` | Finalizes the evidence-state self-reference only; it changes no executable artifact, evidence ID, or classification. |
+| Evidence anchor | `854467ba40ebf5f1b0d190a165ef50d09519575d` | Finalizes the evidence-state self-reference only; it changes no executable artifact, evidence ID, or classification. |
 | Anchor metadata descendant | `docs: record phase 9 evidence anchor` | Records the real anchor hash in this report and controller state while retaining `anchor-must-be-an-ancestor`. |
 
 No executable artifact changed after `a8732c3fdefb676bfbb46bee9d756a8282ec531f`.
