@@ -2,6 +2,8 @@ use concord_macros::api;
 
 pub struct WireCodec;
 
+pub struct PageCodec;
+
 impl runtime::advanced::EncodeBody for WireCodec {
     type Input = String;
 
@@ -26,6 +28,55 @@ impl runtime::advanced::DecodeBody for WireCodec {
     ) -> Result<Self::Output, runtime::advanced::CodecError> {
         String::from_utf8(body.to_vec())
             .map_err(|_| runtime::advanced::CodecError::new("wire decode failed"))
+    }
+}
+
+impl runtime::advanced::DecodeBody for PageCodec {
+    type Output = Vec<u8>;
+
+    const ACCEPT: Option<&'static str> = None;
+
+    fn validate_content_type(
+        _content_type: Option<&str>,
+    ) -> Result<(), runtime::advanced::CodecError> {
+        Ok(())
+    }
+
+    fn decode(
+        body: runtime::advanced::Bytes,
+        _context: runtime::advanced::DecodeContext<'_>,
+    ) -> Result<Self::Output, runtime::advanced::CodecError> {
+        Ok(body.to_vec())
+    }
+}
+
+#[derive(Clone)]
+struct RenamedController {
+    cursor: Option<String>,
+}
+
+fn renamed_controller(cursor: &Option<String>) -> RenamedController {
+    RenamedController {
+        cursor: cursor.clone(),
+    }
+}
+
+impl runtime::advanced::PaginationController<Vec<u8>> for RenamedController {
+    fn apply(
+        &self,
+        request: &mut runtime::advanced::PaginationRequest<'_>,
+    ) -> Result<(), runtime::advanced::PaginationError> {
+        match &self.cursor {
+            Some(cursor) => request.set_query("cursor", cursor),
+            None => request.remove_query("cursor"),
+        }
+    }
+
+    fn next(
+        &self,
+        _page: &Vec<u8>,
+    ) -> Result<Option<Self>, runtime::advanced::PaginationError> {
+        Ok(None)
     }
 }
 
@@ -58,6 +109,9 @@ api! {
             POST StreamUpload(body: Stream<OctetStream>) -> Bytes;
             GET StreamDownload() -> Stream<OctetStream>;
             POST MultipartUpload(body: Multipart) -> NoContent;
+            GET Pages(cursor: Option<String>) -> crate::PageCodec {
+                paginate custom crate::renamed_controller(ep.cursor);
+            }
         }
     }
 }
@@ -117,6 +171,10 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
     let _: runtime::Request<_> = client
         .resources("renamed-scope".to_owned())
         .stream_download();
+    let _: runtime::PaginatedRequest<_> = client
+        .resources("renamed-scope".to_owned())
+        .pages()
+        .paginate(runtime::prelude::PageLimit::Take(1));
     let multipart = runtime::advanced::MultipartBody::new().part(
         "field",
         runtime::advanced::MultipartPart::text("renamed multipart"),

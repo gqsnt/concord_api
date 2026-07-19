@@ -9,5 +9,6 @@ pub use crate::codec::Json;
 pub use crate::codec::{OctetStream, Text};
 pub use crate::error::{ApiError, ClientBuildError, ConfigurationError, ErrorCategory};
 pub use crate::hooks::DebugLevel;
+pub use crate::pagination::PageLimit;
 pub use crate::response::{DecodedResponse, NoContent, StreamResponse};
-pub use crate::{Request, ResponseRequest};
+pub use crate::{PaginatedRequest, Request, ResponseRequest};

@@ -128,3 +128,13 @@ fn phase7_dynamic_dimensions_require_display_without_a_clone_contract() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/fail/phase7_rate_display_required.rs");
 }
+
+#[test]
+fn phase8_pagination_diagnostics_are_source_only_and_focused() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/fail/phase8_pagination_syntax.rs");
+    cases.compile_fail("tests/ui/fail/phase8_pagination_types.rs");
+    cases.compile_fail("tests/ui/fail/phase8_pagination_modes.rs");
+    cases.compile_fail("tests/ui/fail/phase8_pagination_bounds.rs");
+    cases.compile_fail("tests/ui/fail/phase8_pagination_method_absence.rs");
+}

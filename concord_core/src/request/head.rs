@@ -63,9 +63,12 @@ impl RequestMeta {
 pub struct HeadBuilder {
     meta: RequestMeta,
     logical_url: Url,
+    safe_logical_url: Url,
     base_host: String,
     host_labels: Vec<String>,
+    safe_host_labels: Vec<String>,
     public_headers: HeaderMap,
+    pagination_sensitive_headers: HashSet<HeaderName>,
     timeout: Option<Duration>,
     debug: DebugLevel,
     appended_segment: bool,
@@ -91,9 +94,12 @@ impl HeadBuilder {
             debug: options.resolve_debug(inherited_debug),
             meta,
             logical_url: base.clone(),
+            safe_logical_url: base.clone(),
             base_host,
             host_labels: Vec::new(),
+            safe_host_labels: Vec::new(),
             public_headers: HeaderMap::new(),
+            pagination_sensitive_headers: HashSet::new(),
             appended_segment: false,
             auth: AuthPlan::default(),
             rate_limit_rules: Vec::new(),
@@ -160,7 +166,7 @@ impl HeadBuilder {
     /// Returns the final logical host for generated rate-key resolution.
     #[doc(hidden)]
     pub fn rate_limit_host(&self) -> &str {
-        self.logical_url
+        self.safe_logical_url
             .host_str()
             .expect("generated client logical URLs retain a host")
     }
@@ -192,7 +198,20 @@ impl HeadBuilder {
         self.push_host_label(&value.to_string())
     }
 
+    /// Formats and adds one pagination-sensitive dynamic host-prefix label.
+    #[doc(hidden)]
+    pub fn push_pagination_host_value<T>(&mut self, value: &T) -> Result<(), ApiError>
+    where
+        T: Display + ?Sized,
+    {
+        self.push_host_label_with_safe(&value.to_string(), "x")
+    }
+
     fn push_host_label(&mut self, label: &str) -> Result<(), ApiError> {
+        self.push_host_label_with_safe(label, label)
+    }
+
+    fn push_host_label_with_safe(&mut self, label: &str, safe_label: &str) -> Result<(), ApiError> {
         if !valid_dns_label(label) {
             return Err(invalid_route(self.meta.endpoint(), self.meta.method()));
         }
@@ -208,6 +227,13 @@ impl HeadBuilder {
             self.host_labels.pop();
             return Err(invalid_route(self.meta.endpoint(), self.meta.method()));
         }
+        self.safe_host_labels.push(safe_label.to_owned());
+        let mut safe_host = self.safe_host_labels.join(".");
+        safe_host.push('.');
+        safe_host.push_str(&self.base_host);
+        self.safe_logical_url
+            .set_host(Some(&safe_host))
+            .expect("validated pagination-safe host labels preserve a valid host");
         Ok(())
     }
 
@@ -230,7 +256,25 @@ impl HeadBuilder {
         self.push_segment(&segment)
     }
 
+    /// Formats and appends one pagination-sensitive dynamic path segment.
+    #[doc(hidden)]
+    pub fn push_pagination_value<T>(&mut self, value: &T) -> Result<(), ApiError>
+    where
+        T: Display + ?Sized,
+    {
+        let segment = value.to_string();
+        self.push_segment_with_safe(&segment, "<redacted>")
+    }
+
     fn push_segment(&mut self, segment: &str) -> Result<(), ApiError> {
+        self.push_segment_with_safe(segment, segment)
+    }
+
+    fn push_segment_with_safe(
+        &mut self,
+        segment: &str,
+        safe_segment: &str,
+    ) -> Result<(), ApiError> {
         if segment.is_empty()
             || matches!(segment, "." | "..")
             || segment.contains('/')
@@ -246,6 +290,15 @@ impl HeadBuilder {
             path.pop_if_empty();
         }
         path.push(segment);
+        drop(path);
+        let mut safe_path = self
+            .safe_logical_url
+            .path_segments_mut()
+            .map_err(|()| invalid_route(self.meta.endpoint(), self.meta.method()))?;
+        if !self.appended_segment {
+            safe_path.pop_if_empty();
+        }
+        safe_path.push(safe_segment);
         self.appended_segment = true;
         Ok(())
     }
@@ -256,9 +309,25 @@ impl HeadBuilder {
     where
         T: Display + ?Sized,
     {
+        let value = value.to_string();
+        self.logical_url.query_pairs_mut().append_pair(key, &value);
+        self.safe_logical_url
+            .query_pairs_mut()
+            .append_pair(key, &value);
+    }
+
+    /// Appends one pagination-sensitive public query pair.
+    #[doc(hidden)]
+    pub fn push_pagination_query_value<T>(&mut self, key: &str, value: &T)
+    where
+        T: Display + ?Sized,
+    {
         self.logical_url
             .query_pairs_mut()
             .append_pair(key, &value.to_string());
+        self.safe_logical_url
+            .query_pairs_mut()
+            .append_pair(key, "<redacted>");
     }
 
     /// Inserts or replaces one validated public header.
@@ -278,16 +347,40 @@ impl HeadBuilder {
         Ok(())
     }
 
+    /// Inserts one pagination-sensitive validated public header.
+    #[doc(hidden)]
+    pub fn insert_pagination_header_value<T>(
+        &mut self,
+        name: &str,
+        value: &T,
+    ) -> Result<(), ApiError>
+    where
+        T: Display + ?Sized,
+    {
+        let name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|_| invalid_header(self.meta.endpoint(), self.meta.method()))?;
+        if reserved_public_header(&name) {
+            return Err(invalid_header(self.meta.endpoint(), self.meta.method()));
+        }
+        let value = HeaderValue::from_str(&value.to_string())
+            .map_err(|_| invalid_header(self.meta.endpoint(), self.meta.method()))?;
+        self.pagination_sensitive_headers.insert(name.clone());
+        self.public_headers.insert(name, value);
+        Ok(())
+    }
+
     /// Finishes one immutable body-free public head.
     #[doc(hidden)]
     #[must_use]
     pub fn finish(self) -> PreparedHead {
-        let safe_url: Arc<str> = render_safe_url(&self.logical_url, &HashSet::new()).into();
+        let safe_url: Arc<str> = render_safe_url(&self.safe_logical_url, &HashSet::new()).into();
         PreparedHead {
             meta: self.meta,
             logical_url: self.logical_url,
+            safe_logical_url: self.safe_logical_url,
             safe_url,
             public_headers: self.public_headers,
+            pagination_sensitive_headers: self.pagination_sensitive_headers,
             timeout: self.timeout,
             debug: self.debug,
             auth: self.auth,
@@ -301,8 +394,10 @@ impl HeadBuilder {
 pub struct PreparedHead {
     meta: RequestMeta,
     logical_url: Url,
+    safe_logical_url: Url,
     safe_url: Arc<str>,
     public_headers: HeaderMap,
+    pagination_sensitive_headers: HashSet<HeaderName>,
     timeout: Option<Duration>,
     debug: DebugLevel,
     auth: AuthPlan,
@@ -310,6 +405,44 @@ pub struct PreparedHead {
 }
 
 impl PreparedHead {
+    pub(crate) fn apply_pagination_patch(
+        &mut self,
+        patch: crate::pagination::PaginationPatch,
+    ) -> Result<(), crate::pagination::PaginationError> {
+        use crate::error::PaginationErrorKind;
+        use crate::pagination::{HeaderPatch, QueryPatch};
+
+        for operation in patch.query {
+            match operation {
+                QueryPatch::Set { name, value } => {
+                    replace_query_values(&mut self.logical_url, &name, Some(&value));
+                    replace_query_values(&mut self.safe_logical_url, &name, Some("<redacted>"));
+                }
+                QueryPatch::Remove { name } => {
+                    replace_query_values(&mut self.logical_url, &name, None);
+                    replace_query_values(&mut self.safe_logical_url, &name, None);
+                }
+            }
+        }
+        for operation in patch.headers {
+            match operation {
+                HeaderPatch::Set { name, value } => {
+                    let value = HeaderValue::from_str(&value).map_err(|_| {
+                        crate::pagination::PaginationError::new(PaginationErrorKind::Controller)
+                    })?;
+                    self.pagination_sensitive_headers.insert(name.clone());
+                    self.public_headers.insert(name, value);
+                }
+                HeaderPatch::Remove { name } => {
+                    self.public_headers.remove(&name);
+                    self.pagination_sensitive_headers.remove(&name);
+                }
+            }
+        }
+        self.safe_url = render_safe_url(&self.safe_logical_url, &HashSet::new()).into();
+        Ok(())
+    }
+
     pub(crate) fn validate_auth(&self) -> Result<(), ApiError> {
         self.auth
             .validate_public(&self.logical_url, &self.public_headers)
@@ -385,6 +518,21 @@ impl PreparedHead {
         &self.public_headers
     }
 
+    pub(crate) fn sanitized_public_headers(&self) -> crate::redaction::SanitizedHeaders<'_> {
+        crate::redaction::SanitizedHeaders::with_sensitive(
+            &self.public_headers,
+            &self.pagination_sensitive_headers,
+        )
+    }
+
+    pub(crate) const fn pagination_sensitive_headers(&self) -> &HashSet<HeaderName> {
+        &self.pagination_sensitive_headers
+    }
+
+    pub(crate) fn safe_host(&self) -> Option<&str> {
+        self.safe_logical_url.host_str()
+    }
+
     #[doc(hidden)]
     pub const fn timeout(&self) -> Option<Duration> {
         self.timeout
@@ -444,7 +592,7 @@ fn valid_dns_label(label: &str) -> bool {
         && bytes.last().is_some_and(u8::is_ascii_alphanumeric)
 }
 
-fn reserved_public_header(name: &HeaderName) -> bool {
+pub(crate) fn reserved_public_header(name: &HeaderName) -> bool {
     matches!(
         name.as_str(),
         "host"
@@ -460,6 +608,21 @@ fn reserved_public_header(name: &HeaderName) -> bool {
             | "cookie"
             | "set-cookie"
     )
+}
+
+fn replace_query_values(url: &mut Url, name: &str, value: Option<&str>) {
+    let mut pairs = url
+        .query_pairs()
+        .filter(|(candidate, _)| candidate.as_ref() != name)
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect::<Vec<_>>();
+    if let Some(value) = value {
+        pairs.push((name.to_owned(), value.to_owned()));
+    }
+    url.set_query(None);
+    if !pairs.is_empty() {
+        url.query_pairs_mut().extend_pairs(pairs);
+    }
 }
 
 #[cfg(test)]

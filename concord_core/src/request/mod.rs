@@ -7,7 +7,8 @@ mod prepare;
 pub use pending::{Request, ResponseRequest};
 
 pub(crate) use prepare::{
-    OperationPreparation, PreparationFailure, PreparedOperation, prepare_operation,
+    OperationPreparation, PreparationFailure, PreparedOperation, PreparedPaginationPage,
+    prepare_operation, prepare_pagination_page,
 };
 
 #[doc(hidden)]
@@ -17,6 +18,7 @@ pub use endpoint::{
     BufferedResponse, BytesResponse, EndpointSpec, MetadataResponse, NoContentResponse,
     ResponseHandler, StreamResponseHandler,
 };
+pub(crate) use head::reserved_public_header;
 #[doc(hidden)]
 pub use head::{HeadBuilder, PreparedHead, RequestMeta};
 #[doc(hidden)]

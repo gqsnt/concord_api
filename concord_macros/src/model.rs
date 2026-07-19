@@ -71,7 +71,28 @@ pub(crate) struct Endpoint {
     pub(crate) body: Option<RequestBodyKind>,
     pub(crate) config: NormalizedConfig,
     pub(crate) response: ResponseKind,
+    pub(crate) pagination: Option<Pagination>,
     pub(crate) dsl_path: Vec<Ident>,
+}
+
+#[derive(Clone)]
+pub(crate) enum Pagination {
+    Offset {
+        offset: usize,
+        page_size: usize,
+    },
+    Page {
+        page: usize,
+        page_size: usize,
+    },
+    Cursor {
+        cursor: usize,
+        cursor_type: Type,
+    },
+    Custom {
+        factory: Path,
+        arguments: Vec<ResolvedExpr>,
+    },
 }
 
 #[derive(Clone)]

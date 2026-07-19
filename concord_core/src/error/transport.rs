@@ -23,6 +23,7 @@ pub struct ApiError {
     response: Option<Box<HttpResponseFailure>>,
     authentication_error: Option<Box<crate::auth::AuthError>>,
     rate_limit_error: Option<Box<crate::rate_limit::RateLimitError>>,
+    pagination_error: Option<Box<crate::pagination::PaginationError>>,
 }
 
 impl ApiError {
@@ -56,6 +57,7 @@ impl ApiError {
             response: Some(Box::new(response)),
             authentication_error: None,
             rate_limit_error: None,
+            pagination_error: None,
         }
     }
 
@@ -85,6 +87,7 @@ impl ApiError {
             response: None,
             authentication_error: None,
             rate_limit_error: None,
+            pagination_error: None,
         }
     }
 
@@ -124,6 +127,18 @@ impl ApiError {
         let mut result = Self::classified(endpoint, method, ErrorCategory::RateLimit);
         result.rate_limit_kind = Some(kind);
         result.rate_limit_error = Some(Box::new(error));
+        result
+    }
+
+    pub(crate) fn pagination(
+        endpoint: &'static str,
+        method: Method,
+        error: crate::pagination::PaginationError,
+    ) -> Self {
+        let kind = error.kind();
+        let mut result = Self::classified(endpoint, method, ErrorCategory::Pagination);
+        result.pagination_kind = Some(kind);
+        result.pagination_error = Some(Box::new(error));
         result
     }
 
@@ -278,6 +293,13 @@ impl fmt::Display for ApiError {
         {
             write!(formatter, ": {message}")?;
         }
+        if let Some(message) = self
+            .pagination_error
+            .as_deref()
+            .and_then(crate::pagination::PaginationError::safe_message)
+        {
+            write!(formatter, ": {message}")?;
+        }
         Ok(())
     }
 }
@@ -296,6 +318,7 @@ impl fmt::Debug for ApiError {
             .field("http_status", &self.http_status())
             .field("authentication_error", &self.authentication_error)
             .field("rate_limit_error", &self.rate_limit_error)
+            .field("pagination_error", &self.pagination_error)
             .finish()
     }
 }
@@ -307,6 +330,11 @@ impl Error for ApiError {
             .map(|error| error as &(dyn Error + 'static))
             .or_else(|| {
                 self.rate_limit_error
+                    .as_deref()
+                    .map(|error| error as &(dyn Error + 'static))
+            })
+            .or_else(|| {
+                self.pagination_error
                     .as_deref()
                     .map(|error| error as &(dyn Error + 'static))
             })

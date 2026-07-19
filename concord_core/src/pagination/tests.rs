@@ -1,740 +1,494 @@
-use std::collections::VecDeque;
+use std::error::Error;
+use std::num::{NonZeroU32, NonZeroU64};
+use std::sync::Arc;
+use std::time::Duration;
 
-use super::identity::{
-    CanonicalIdentity, EncodingLimits, HeaderField, IdentityEncodingError, IdentityInput,
-    deterministic_digest,
-};
-use super::limits::{CycleDetector, PaginationLimits};
-use super::model::{
-    AuthenticationMetadata, Controller, ControllerModel, Page, PaginationEngine, RequestModel,
-    SideEffectCounters,
-};
-use super::{Boundary, PaginationError};
+use http::{HeaderMap, HeaderName, HeaderValue, Method};
+use url::Url;
 
-fn request(label: &str) -> RequestModel {
-    RequestModel {
-        endpoint_discriminator: b"catalog::list_widgets".to_vec(),
-        method_token: b"GET".to_vec(),
-        canonical_logical_url: format!("https://api.invalid/widgets?page={label}").into_bytes(),
-        public_headers: vec![HeaderField::new("accept", b"application/test")],
-        authentication: AuthenticationMetadata::inert(1),
+use super::identity::{CanonicalIdentity, HeaderField, IdentityInput};
+use super::limits::CycleDetector;
+use super::*;
+use crate::auth::{AccessToken, Auth, CredentialRef, SlotSelector};
+use crate::error::PaginationErrorKind;
+use crate::hooks::DebugLevel;
+use crate::redaction::SanitizedHeaderValue;
+use crate::request::{HeadBuilder, RequestMeta, RequestOptions};
+
+fn identity(
+    endpoint: &[u8],
+    method: &[u8],
+    url: &[u8],
+    headers: &[HeaderField],
+) -> CanonicalIdentity {
+    CanonicalIdentity::encode(IdentityInput {
+        endpoint_discriminator: endpoint,
+        method_token: method,
+        canonical_logical_url: url,
+        public_headers: headers,
+    })
+    .expect("canonical identity")
+}
+
+#[test]
+fn page_limits_and_safe_errors_have_exact_stable_structure() {
+    assert_eq!(PageLimit::from(0), PageLimit::Take(0));
+    assert_eq!(PageLimit::from(7), PageLimit::Take(7));
+    assert_eq!(
+        PageLimit::HardCap(NonZeroU32::new(3).expect("nonzero")),
+        PageLimit::HardCap(NonZeroU32::new(3).expect("nonzero"))
+    );
+
+    let error = PaginationError::with_safe_message(
+        PaginationErrorKind::Controller,
+        "safe controller detail",
+    );
+    assert_eq!(error.kind(), PaginationErrorKind::Controller);
+    assert_eq!(
+        error.to_string(),
+        "pagination failed: safe controller detail"
+    );
+    assert!(format!("{error:?}").contains("Controller"));
+    assert!(error.source().is_none());
+}
+
+#[derive(Clone)]
+struct CursorPage {
+    next: Option<String>,
+}
+
+impl HasNextCursor<String> for CursorPage {
+    fn next_cursor(&self) -> Option<&String> {
+        self.next.as_ref()
     }
 }
 
-fn identity(request: &RequestModel) -> CanonicalIdentity {
-    CanonicalIdentity::encode(request.identity_input()).expect("fixture identity must encode")
+#[test]
+fn built_in_controllers_progress_checked_and_preserve_absent_vs_empty_cursor() {
+    let offset = OffsetPagination::new(7, NonZeroU32::new(4).expect("nonzero"));
+    let next = <OffsetPagination as PaginationController<()>>::next(&offset, &())
+        .expect("offset next")
+        .expect("offset continues");
+    assert_eq!(next.offset(), 11);
+    assert_eq!(next.page_size().get(), 4);
+    let overflow = OffsetPagination::new(u64::MAX, NonZeroU32::MIN);
+    let Err(error) = <OffsetPagination as PaginationController<()>>::next(&overflow, &()) else {
+        panic!("offset overflow must fail");
+    };
+    assert_eq!(error.kind(), PaginationErrorKind::Overflow);
+
+    let page = PagePagination::new(
+        NonZeroU64::new(9).expect("nonzero"),
+        NonZeroU32::new(2).expect("nonzero"),
+    );
+    let next = <PagePagination as PaginationController<()>>::next(&page, &())
+        .expect("page next")
+        .expect("page continues");
+    assert_eq!(next.page().get(), 10);
+    assert_eq!(next.page_size().get(), 2);
+    let overflow =
+        PagePagination::new(NonZeroU64::new(u64::MAX).expect("nonzero"), NonZeroU32::MIN);
+    let Err(error) = <PagePagination as PaginationController<()>>::next(&overflow, &()) else {
+        panic!("page overflow must fail");
+    };
+    assert_eq!(error.kind(), PaginationErrorKind::Overflow);
+
+    let cursor = CursorPagination::new(None::<String>);
+    let empty = cursor
+        .next(&CursorPage {
+            next: Some(String::new()),
+        })
+        .expect("cursor next")
+        .expect("present empty cursor continues");
+    assert_eq!(empty.cursor().map(String::as_str), Some(""));
+    assert!(
+        empty
+            .next(&CursorPage { next: None })
+            .expect("absent cursor")
+            .is_none()
+    );
 }
 
-fn limits(max_pages: usize, max_items: usize, identity_bytes: usize) -> PaginationLimits {
-    PaginationLimits {
-        max_pages,
-        max_items,
-        max_retained_identity_bytes: identity_bytes,
-    }
+#[test]
+fn custom_patch_changes_logical_identity_but_redacts_every_safe_view() {
+    const QUERY_SECRET: &str = "query-pagination-sentinel-96d152";
+    const HEADER_SECRET: &str = "header-pagination-sentinel-b8473e";
+    let mut patch = PaginationPatch::default();
+    let mut request = PaginationRequest::new(&mut patch);
+    request
+        .set_query("cursor", QUERY_SECRET)
+        .expect("query patch");
+    request
+        .set_header(HeaderName::from_static("x-page"), HEADER_SECRET)
+        .expect("header patch");
+
+    let mut builder = HeadBuilder::new(
+        &Url::parse("https://pagination.example.test/v1?keep=yes&cursor=old").expect("base"),
+        RequestMeta::new("PaginationApi::items", Method::GET, None),
+        &RequestOptions::new(),
+        DebugLevel::None,
+    );
+    builder
+        .insert_header_value("x-public", &"visible")
+        .expect("public header");
+    let mut head = builder.finish();
+    head.apply_pagination_patch(patch).expect("apply patch");
+
+    assert_eq!(
+        head.logical_url().query(),
+        Some("keep=yes&cursor=query-pagination-sentinel-96d152")
+    );
+    assert_eq!(head.public_headers()["x-page"], HEADER_SECRET);
+    assert!(!head.safe_url().contains(QUERY_SECRET));
+    assert!(head.safe_url().contains("%3Credacted%3E"));
+    assert_eq!(
+        head.sanitized_public_headers()
+            .get(&HeaderName::from_static("x-page")),
+        Some(SanitizedHeaderValue::Redacted)
+    );
+    let debug = format!("{:?}", head.sanitized_public_headers());
+    assert!(!debug.contains(HEADER_SECRET));
+
+    let identity = CanonicalIdentity::from_request_head(
+        head.endpoint(),
+        head.method(),
+        head.logical_url(),
+        head.public_headers(),
+    )
+    .expect("identity");
+    assert!(
+        identity
+            .bytes()
+            .windows(QUERY_SECRET.len())
+            .any(|bytes| bytes == QUERY_SECRET.as_bytes())
+    );
+    assert!(
+        identity
+            .bytes()
+            .windows(HEADER_SECRET.len())
+            .any(|bytes| bytes == HEADER_SECRET.as_bytes())
+    );
 }
 
-#[derive(Default)]
-struct ScriptController {
-    next_requests: VecDeque<RequestModel>,
-    fail: bool,
+#[test]
+fn custom_patch_rejects_reserved_or_invalid_values_without_retaining_them() {
+    let mut patch = PaginationPatch::default();
+    let mut request = PaginationRequest::new(&mut patch);
+    assert_eq!(
+        request
+            .set_query("", "value")
+            .expect_err("empty query name")
+            .kind(),
+        PaginationErrorKind::Controller
+    );
+    assert_eq!(
+        request
+            .set_header(http::header::AUTHORIZATION, "secret")
+            .expect_err("reserved header")
+            .kind(),
+        PaginationErrorKind::Controller
+    );
+    assert_eq!(
+        request
+            .set_header(HeaderName::from_static("x-page"), "bad\r\nvalue")
+            .expect_err("invalid value")
+            .kind(),
+        PaginationErrorKind::Controller
+    );
 }
 
-impl ScriptController {
-    fn continuing(requests: impl IntoIterator<Item = RequestModel>) -> Self {
-        Self {
-            next_requests: requests.into_iter().collect(),
-            fail: false,
-        }
-    }
+#[test]
+fn canonical_identity_sorts_names_lowercase_and_preserves_repeated_value_order() {
+    let first = identity(
+        b"Endpoint",
+        b"GET",
+        b"https://example.test/items?a=1&b=2",
+        &[
+            HeaderField::new("X-Zeta", b"z"),
+            HeaderField::new("x-alpha", b"one"),
+            HeaderField::new("X-ALPHA", b"two"),
+        ],
+    );
+    let same = identity(
+        b"Endpoint",
+        b"GET",
+        b"https://example.test/items?a=1&b=2",
+        &[
+            HeaderField::new("x-alpha", b"one"),
+            HeaderField::new("x-alpha", b"two"),
+            HeaderField::new("x-zeta", b"z"),
+        ],
+    );
+    assert_eq!(first, same);
+
+    let reversed_values = identity(
+        b"Endpoint",
+        b"GET",
+        b"https://example.test/items?a=1&b=2",
+        &[
+            HeaderField::new("x-alpha", b"two"),
+            HeaderField::new("x-alpha", b"one"),
+            HeaderField::new("x-zeta", b"z"),
+        ],
+    );
+    assert_ne!(first, reversed_values);
+    assert_ne!(
+        first,
+        identity(
+            b"OtherEndpoint",
+            b"GET",
+            b"https://example.test/items?a=1&b=2",
+            &[
+                HeaderField::new("x-alpha", b"one"),
+                HeaderField::new("x-alpha", b"two"),
+                HeaderField::new("x-zeta", b"z"),
+            ],
+        )
+    );
+    assert_ne!(
+        first,
+        identity(
+            b"Endpoint",
+            b"POST",
+            b"https://example.test/items?a=1&b=2",
+            &[
+                HeaderField::new("x-alpha", b"one"),
+                HeaderField::new("x-alpha", b"two"),
+                HeaderField::new("x-zeta", b"z"),
+            ],
+        )
+    );
 }
 
-impl Controller for ScriptController {
-    fn next(&mut self, _page: &Page) -> Result<Option<RequestModel>, PaginationError> {
-        if self.fail {
-            return Err(PaginationError::Controller);
-        }
-        Ok(self.next_requests.pop_front())
+#[test]
+fn authentication_plan_state_is_absent_from_canonical_logical_identity() {
+    fn protected_head(token: &'static str) -> crate::request::PreparedHead {
+        let selector = SlotSelector::static_value(AccessToken::new(token), Duration::ZERO);
+        let mut builder = HeadBuilder::new(
+            &Url::parse("https://pagination.example.test/v1/").expect("base"),
+            RequestMeta::new("PaginationApi::protected", Method::GET, None),
+            &RequestOptions::new(),
+            DebugLevel::None,
+        );
+        builder.push_static("items").expect("path");
+        builder
+            .push_auth(Auth::bearer(CredentialRef::new(Arc::clone(&selector))))
+            .expect("authentication plan");
+        builder.finish()
     }
+
+    let first = protected_head("authentication-state-sentinel-first-53c1");
+    let second = protected_head("authentication-state-sentinel-second-f2a0");
+    assert_eq!(first.logical_url(), second.logical_url());
+    assert_eq!(first.public_headers(), second.public_headers());
+    assert_eq!(
+        CanonicalIdentity::from_request_head(
+            first.endpoint(),
+            first.method(),
+            first.logical_url(),
+            first.public_headers(),
+        )
+        .expect("first identity"),
+        CanonicalIdentity::from_request_head(
+            second.endpoint(),
+            second.method(),
+            second.logical_url(),
+            second.public_headers(),
+        )
+        .expect("second identity"),
+        "credential and authentication state never enter the logical cycle identity"
+    );
 }
 
-mod pagination_identity {
-    use super::*;
+#[test]
+fn canonical_url_query_order_encoding_and_non_utf8_header_bytes_participate() {
+    let default_port = Url::parse("https://example.test:443/items").expect("default port");
+    let implicit_port = Url::parse("https://example.test/items").expect("implicit port");
+    assert_eq!(default_port.as_str(), implicit_port.as_str());
+    assert_eq!(
+        CanonicalIdentity::from_request_head(
+            "Endpoint",
+            &Method::GET,
+            &default_port,
+            &HeaderMap::new(),
+        )
+        .expect("default-port identity"),
+        CanonicalIdentity::from_request_head(
+            "Endpoint",
+            &Method::GET,
+            &implicit_port,
+            &HeaderMap::new(),
+        )
+        .expect("implicit-port identity")
+    );
 
-    #[test]
-    fn pagination_identity_is_deterministic() {
-        let first_instance = request("1");
-        let second_instance = request("1");
+    let encoded_path = Url::parse("https://example.test/%7Eitems").expect("encoded path");
+    let literal_path = Url::parse("https://example.test/~items").expect("literal path");
+    let encoded_identity = CanonicalIdentity::from_request_head(
+        "Endpoint",
+        &Method::GET,
+        &encoded_path,
+        &HeaderMap::new(),
+    )
+    .expect("encoded identity");
+    let literal_identity = CanonicalIdentity::from_request_head(
+        "Endpoint",
+        &Method::GET,
+        &literal_path,
+        &HeaderMap::new(),
+    )
+    .expect("literal identity");
+    assert_eq!(
+        encoded_identity == literal_identity,
+        encoded_path.as_str() == literal_path.as_str(),
+        "identity follows url's canonical serialization"
+    );
 
-        let first = identity(&first_instance);
-        let second = identity(&second_instance);
+    let first_url = Url::parse("https://example.test:443/%7Eitems?a=1&a=2").expect("url");
+    let second_url = Url::parse("https://example.test/~items?a=2&a=1").expect("url");
+    assert_eq!(first_url.port(), None);
+    let mut first_headers = HeaderMap::new();
+    first_headers.append(
+        "x-binary",
+        HeaderValue::from_bytes(&[0xff, 0xfe]).expect("binary header"),
+    );
+    let first =
+        CanonicalIdentity::from_request_head("Endpoint", &Method::GET, &first_url, &first_headers)
+            .expect("first");
+    let second =
+        CanonicalIdentity::from_request_head("Endpoint", &Method::GET, &second_url, &first_headers)
+            .expect("second");
+    assert_ne!(first, second, "repeated query order participates");
 
-        assert_eq!(first, second, "content-equal endpoint instances must match");
-        assert_eq!(
-            deterministic_digest(first.bytes()),
-            deterministic_digest(second.bytes())
-        );
-    }
+    let ordered = Url::parse("https://example.test/items?a=1&b=2").expect("ordered query");
+    let reordered = Url::parse("https://example.test/items?b=2&a=1").expect("reordered query");
+    assert_ne!(
+        CanonicalIdentity::from_request_head(
+            "Endpoint",
+            &Method::GET,
+            &ordered,
+            &HeaderMap::new(),
+        )
+        .expect("ordered identity"),
+        CanonicalIdentity::from_request_head(
+            "Endpoint",
+            &Method::GET,
+            &reordered,
+            &HeaderMap::new(),
+        )
+        .expect("reordered identity"),
+        "distinct query order participates"
+    );
 
-    #[test]
-    fn pagination_identity_includes_endpoint_discriminator() {
-        let left = request("1");
-        let mut right = left.clone();
-        right.endpoint_discriminator = b"catalog::search_widgets".to_vec();
+    let mut other_headers = HeaderMap::new();
+    other_headers.append(
+        "x-binary",
+        HeaderValue::from_bytes(&[0xff, 0xfd]).expect("binary header"),
+    );
+    let other =
+        CanonicalIdentity::from_request_head("Endpoint", &Method::GET, &first_url, &other_headers)
+            .expect("other");
+    assert_ne!(first, other);
 
-        assert_ne!(identity(&left), identity(&right));
-    }
+    let mut repeated = HeaderMap::new();
+    repeated.append("x-repeat", HeaderValue::from_static("first"));
+    repeated.append("x-repeat", HeaderValue::from_static("second"));
+    repeated.append("x-distinct", HeaderValue::from_static("value"));
+    let mut reordered_names = HeaderMap::new();
+    reordered_names.append("x-distinct", HeaderValue::from_static("value"));
+    reordered_names.append("x-repeat", HeaderValue::from_static("first"));
+    reordered_names.append("x-repeat", HeaderValue::from_static("second"));
+    assert_eq!(
+        CanonicalIdentity::from_request_head("Endpoint", &Method::GET, &first_url, &repeated)
+            .expect("repeated headers"),
+        CanonicalIdentity::from_request_head(
+            "Endpoint",
+            &Method::GET,
+            &first_url,
+            &reordered_names,
+        )
+        .expect("reordered distinct names"),
+        "distinct header names sort canonically"
+    );
+    let mut reversed_values = HeaderMap::new();
+    reversed_values.append("x-repeat", HeaderValue::from_static("second"));
+    reversed_values.append("x-repeat", HeaderValue::from_static("first"));
+    reversed_values.append("x-distinct", HeaderValue::from_static("value"));
+    assert_ne!(
+        CanonicalIdentity::from_request_head("Endpoint", &Method::GET, &first_url, &repeated)
+            .expect("repeated headers"),
+        CanonicalIdentity::from_request_head(
+            "Endpoint",
+            &Method::GET,
+            &first_url,
+            &reversed_values,
+        )
+        .expect("reversed repeated values"),
+        "repeated header value order participates"
+    );
+}
 
-    #[test]
-    fn pagination_identity_includes_exact_method() {
-        let upper = request("1");
-        let mut different_verb = upper.clone();
-        different_verb.method_token = b"POST".to_vec();
-        let mut different_case = upper.clone();
-        different_case.method_token = b"get".to_vec();
+#[test]
+fn identity_accounting_counts_only_canonical_components_and_collisions_use_full_equality() {
+    let headers = [
+        HeaderField::new("X-One", b"abc"),
+        HeaderField::new("x-one", [0xff, 0xfe]),
+    ];
+    let endpoint = b"Endpoint";
+    let method = b"GET";
+    let url = b"https://example.test/items";
+    let first_identity = identity(endpoint, method, url, &headers);
+    assert_eq!(
+        first_identity.retained_byte_len(),
+        endpoint.len()
+            + method.len()
+            + url.len()
+            + b"x-one".len()
+            + b"abc".len()
+            + b"x-one".len()
+            + 2
+    );
 
-        assert_ne!(identity(&upper), identity(&different_verb));
-        assert_ne!(identity(&upper), identity(&different_case));
-    }
-
-    #[test]
-    fn pagination_identity_includes_canonical_url() {
-        let left = request("1");
-        let mut right = left.clone();
-        right.canonical_logical_url = b"https://api.invalid/widgets?page=%31".to_vec();
-
-        let left_identity = identity(&left);
-        let right_identity = identity(&right);
-        assert_ne!(left_identity, right_identity);
-
-        let mut framed_url = vec![3];
-        framed_url.extend_from_slice(
-            &u64::try_from(left.canonical_logical_url.len())
-                .expect("fixture length fits")
-                .to_be_bytes(),
-        );
-        framed_url.extend_from_slice(&left.canonical_logical_url);
-        assert!(
-            left_identity
-                .bytes()
-                .windows(framed_url.len())
-                .any(|window| window == framed_url),
-            "the already-canonical logical URL must be included byte-for-byte"
-        );
-    }
-
-    #[test]
-    fn pagination_identity_preserves_query_order_through_canonical_url() {
-        let mut left = request("1");
-        left.canonical_logical_url = b"https://api.invalid/widgets?a=1&b=2".to_vec();
-        let mut right = left.clone();
-        right.canonical_logical_url = b"https://api.invalid/widgets?b=2&a=1".to_vec();
-
-        assert_ne!(identity(&left), identity(&right));
-    }
-
-    #[test]
-    fn pagination_identity_preserves_repeated_query_order_through_canonical_url() {
-        let mut left = request("1");
-        left.canonical_logical_url = b"https://api.invalid/widgets?a=1&a=2".to_vec();
-        let mut right = left.clone();
-        right.canonical_logical_url = b"https://api.invalid/widgets?a=2&a=1".to_vec();
-
-        assert_ne!(identity(&left), identity(&right));
-    }
-
-    #[test]
-    fn pagination_identity_has_no_redundant_query_representation() {
-        let candidate = request("1");
-        let input = IdentityInput {
-            endpoint_discriminator: &candidate.endpoint_discriminator,
-            method_token: &candidate.method_token,
-            canonical_logical_url: &candidate.canonical_logical_url,
-            public_headers: &candidate.public_headers,
-        };
-
-        assert_eq!(
-            CanonicalIdentity::encode(input).expect("structural identity input must encode"),
-            identity(&candidate)
-        );
-    }
-
-    #[test]
-    fn pagination_identity_canonicalizes_header_name_case() {
-        let mut lower = request("1");
-        lower.public_headers = vec![HeaderField::new("x-page", b"one")];
-        let mut mixed = lower.clone();
-        mixed.public_headers = vec![HeaderField::new("X-PaGe", b"one")];
-
-        assert_eq!(identity(&lower), identity(&mixed));
-    }
-
-    #[test]
-    fn pagination_identity_sorts_distinct_header_names() {
-        let mut left = request("1");
-        left.public_headers = vec![
-            HeaderField::new("z-last", b"z"),
-            HeaderField::new("a-first", b"a"),
-        ];
-        let mut right = left.clone();
-        right.public_headers.reverse();
-
-        assert_eq!(identity(&left), identity(&right));
-    }
-
-    #[test]
-    fn pagination_identity_preserves_repeated_header_value_order() {
-        let mut left = request("1");
-        left.public_headers = vec![
-            HeaderField::new("x-page", b"first"),
-            HeaderField::new("X-PAGE", b"second"),
-        ];
-        let mut right = left.clone();
-        right.public_headers.reverse();
-
-        assert_ne!(identity(&left), identity(&right));
-    }
-
-    #[test]
-    fn pagination_identity_preserves_exact_header_value_bytes() {
-        let mut spaced = request("1");
-        spaced.public_headers = vec![HeaderField::new("x-page", b" marker ")];
-        let mut trimmed = spaced.clone();
-        trimmed.public_headers = vec![HeaderField::new("x-page", b"marker")];
-
-        assert_ne!(identity(&spaced), identity(&trimmed));
-    }
-
-    #[test]
-    fn pagination_identity_encoding_is_unambiguous() {
-        let mut left = request("1");
-        left.endpoint_discriminator = b"ab".to_vec();
-        left.method_token = b"c".to_vec();
-        left.public_headers = vec![HeaderField::new("x-separator", b":|,\n\0")];
-
-        let mut right = left.clone();
-        right.endpoint_discriminator = b"a".to_vec();
-        right.method_token = b"bc".to_vec();
-
-        assert_ne!(identity(&left), identity(&right));
-        assert_eq!(identity(&left), identity(&left.clone()));
-    }
-
-    #[test]
-    fn pagination_identity_retained_bytes_count_canonical_components() {
-        let candidate = request("1");
-        let identity = identity(&candidate);
-        let expected = candidate.endpoint_discriminator.len()
-            + candidate.method_token.len()
-            + candidate.canonical_logical_url.len()
-            + candidate
-                .public_headers
-                .iter()
-                .map(|header| header.name.len() + header.value.len())
-                .sum::<usize>();
-
-        assert_eq!(identity.retained_byte_len(), expected);
-        assert!(
-            identity.bytes().len() > identity.retained_byte_len(),
-            "format tags and length prefixes are not canonical payload accounting"
-        );
-    }
-
-    #[test]
-    fn pagination_identity_retained_bytes_exclude_separate_query_accounting() {
-        let mut without_query = request("1");
-        without_query.canonical_logical_url = b"https://api.invalid/widgets".to_vec();
-        let mut with_query = without_query.clone();
-        with_query.canonical_logical_url = b"https://api.invalid/widgets?a=1&a=2".to_vec();
-
-        let retained_delta = identity(&with_query)
-            .retained_byte_len()
-            .checked_sub(identity(&without_query).retained_byte_len())
-            .expect("the query-bearing URL is longer");
-        let url_delta =
-            with_query.canonical_logical_url.len() - without_query.canonical_logical_url.len();
-
-        assert_eq!(retained_delta, url_delta);
-    }
-
-    #[test]
-    fn pagination_identity_excludes_authentication() {
-        let left = request("1");
-        let mut right = left.clone();
-        right.authentication = AuthenticationMetadata::inert(2);
-        assert_ne!(left.authentication, right.authentication);
-
-        let left_identity = identity(&left);
-        let right_identity = identity(&right);
-        assert_eq!(left_identity.bytes(), right_identity.bytes());
-        assert_eq!(
-            deterministic_digest(left_identity.bytes()),
-            deterministic_digest(right_identity.bytes())
-        );
-
-        let mut detector = CycleDetector::default();
+    let mut detector = CycleDetector::new(|_| 7);
+    let other = identity(b"Other", method, url, &headers);
+    detector
+        .check_and_retain(first_identity.clone(), usize::MAX)
+        .expect("first retain");
+    detector
+        .check_and_retain(other, usize::MAX)
+        .expect("digest collision with distinct bytes");
+    assert_eq!(detector.retained_identity_count(), 2);
+    assert_eq!(
         detector
-            .check_and_retain(left_identity, usize::MAX)
-            .expect("first identity is accepted");
-        assert_eq!(
-            detector.check_and_retain(right_identity, usize::MAX),
-            Err(PaginationError::RepeatedIdentity)
-        );
-    }
-
-    #[test]
-    fn pagination_identity_rejects_invalid_header_names() {
-        for invalid in [b"".as_slice(), b"bad name", b"x:\xff", "x-é".as_bytes()] {
-            let mut candidate = request("1");
-            candidate.public_headers = vec![HeaderField::new(invalid, b"marker")];
-            assert_eq!(
-                CanonicalIdentity::encode(candidate.identity_input()),
-                Err(IdentityEncodingError::InvalidHeaderName),
-                "invalid header name bytes: {invalid:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn pagination_identity_rejects_immediate_repeat() {
-        let a = identity(&request("A"));
-        let mut detector = CycleDetector::default();
-        detector
-            .check_and_retain(a.clone(), usize::MAX)
-            .expect("first A is accepted");
-        assert_eq!(
-            detector.check_and_retain(a, usize::MAX),
-            Err(PaginationError::RepeatedIdentity)
-        );
-    }
-
-    #[test]
-    fn pagination_identity_rejects_two_cycle() {
-        let mut detector = CycleDetector::default();
-        for label in ["A", "B"] {
-            detector
-                .check_and_retain(identity(&request(label)), usize::MAX)
-                .unwrap_or_else(|error| panic!("{label} should be accepted: {error:?}"));
-        }
-        assert_eq!(
-            detector.check_and_retain(identity(&request("A")), usize::MAX),
-            Err(PaginationError::RepeatedIdentity)
-        );
-    }
-
-    #[test]
-    fn pagination_identity_rejects_longer_cycle() {
-        let mut detector = CycleDetector::default();
-        for label in ["A", "B", "C"] {
-            detector
-                .check_and_retain(identity(&request(label)), usize::MAX)
-                .unwrap_or_else(|error| panic!("{label} should be accepted: {error:?}"));
-        }
-        assert_eq!(
-            detector.check_and_retain(identity(&request("B")), usize::MAX),
-            Err(PaginationError::RepeatedIdentity)
-        );
-    }
-
-    #[test]
-    fn pagination_identity_hash_collision_uses_full_equality() {
-        fn constant_digest(_: &[u8]) -> u64 {
-            7
-        }
-
-        let a = identity(&request("A"));
-        let b = identity(&request("B"));
-        let expected_bytes = a
-            .retained_byte_len()
-            .checked_add(b.retained_byte_len())
-            .expect("fixture byte total fits");
-        let mut detector = CycleDetector::new(constant_digest);
-
-        detector
-            .check_and_retain(a.clone(), usize::MAX)
-            .expect("A is accepted");
-        detector
-            .check_and_retain(b, usize::MAX)
-            .expect("unequal B is accepted despite the digest collision");
-        assert_eq!(detector.retained_identity_count(), 2);
-        assert_eq!(detector.retained_identity_bytes(), expected_bytes);
-        assert_eq!(
-            detector.check_and_retain(a, usize::MAX),
-            Err(PaginationError::RepeatedIdentity)
-        );
-    }
+            .check_and_retain(first_identity, usize::MAX)
+            .expect_err("full equality repeats")
+            .kind(),
+        PaginationErrorKind::RepeatedRequest
+    );
 }
 
-mod pagination_bounds {
-    use super::*;
+#[test]
+fn first_identity_above_the_byte_ceiling_is_not_retained() {
+    let first_identity = identity(b"Endpoint", b"GET", b"https://example.test/items", &[]);
+    let mut detector = CycleDetector::default();
+    let limit = first_identity.retained_byte_len() - 1;
+    assert_eq!(
+        detector
+            .check_and_retain(first_identity, limit)
+            .expect_err("identity ceiling")
+            .kind(),
+        PaginationErrorKind::IdentityStorageCeilingExceeded
+    );
+    assert_eq!(detector.retained_identity_count(), 0);
+    assert_eq!(detector.retained_identity_bytes(), 0);
 
-    #[test]
-    fn pagination_cycle_rejected_before_side_effects() {
-        let a = request("A");
-        let mut engine = PaginationEngine::new(limits(2, 10, usize::MAX), vec![]);
-        engine
-            .preload_identity(&a)
-            .expect("fixture identity is preloaded");
-        let retained_count = engine.retained_identity_count();
-        let retained_bytes = engine.retained_identity_bytes();
-
-        let result = engine.run(a, ControllerModel::Custom(ScriptController::default()));
-
-        assert_eq!(result, Err(PaginationError::RepeatedIdentity));
-        assert_eq!(engine.counters, SideEffectCounters::default());
-        assert_eq!(engine.retained_identity_count(), retained_count);
-        assert_eq!(engine.retained_identity_bytes(), retained_bytes);
-    }
-
-    #[test]
-    fn pagination_identity_limit_rejected_before_retention() {
-        let a = request("A");
-        let identity_len = identity(&a).retained_byte_len();
-        let mut engine = PaginationEngine::new(limits(2, 10, identity_len - 1), vec![]);
-
-        let result = engine.run(a, ControllerModel::Custom(ScriptController::default()));
-
-        assert_eq!(result, Err(PaginationError::RetainedIdentityByteLimit));
-        assert_eq!(engine.retained_identity_count(), 0);
-        assert_eq!(engine.retained_identity_bytes(), 0);
-    }
-
-    #[test]
-    fn pagination_identity_limit_rejected_before_side_effects() {
-        let a = request("A");
-        let mut engine = PaginationEngine::new(limits(2, 10, 0), vec![]);
-
-        let result = engine.run(a, ControllerModel::Custom(ScriptController::default()));
-
-        assert_eq!(result, Err(PaginationError::RetainedIdentityByteLimit));
-        assert_eq!(engine.counters, SideEffectCounters::default());
-    }
-
-    #[test]
-    fn pagination_retained_identity_overflow_fails_closed() {
-        let a = request("A");
-        let mut engine = PaginationEngine::new(limits(2, 10, usize::MAX), vec![]);
-        engine.set_retained_identity_bytes(usize::MAX);
-
-        let result = engine.run(a, ControllerModel::Custom(ScriptController::default()));
-
-        assert_eq!(result, Err(PaginationError::RetainedIdentityByteOverflow));
-        assert_eq!(engine.retained_identity_count(), 0);
-        assert_eq!(engine.retained_identity_bytes(), usize::MAX);
-        assert_eq!(engine.counters, SideEffectCounters::default());
-    }
-
-    #[test]
-    fn pagination_page_limit_rejected_before_first_request() {
-        let mut engine = PaginationEngine::new(limits(0, 10, usize::MAX), vec![]);
-
-        let result = engine.run(
-            request("A"),
-            ControllerModel::Custom(ScriptController::default()),
-        );
-
-        assert_eq!(result, Err(PaginationError::PageLimit));
-        assert_eq!(engine.retained_identity_count(), 0);
-        assert_eq!(engine.retained_identity_bytes(), 0);
-        assert_eq!(engine.counters, SideEffectCounters::default());
-    }
-
-    #[test]
-    fn pagination_page_limit_rejected_before_controller() {
-        let mut engine =
-            PaginationEngine::new(limits(1, 10, usize::MAX), vec![Page { items: vec![1] }]);
-        let controller = ScriptController::continuing([request("B")]);
-
-        let result = engine.run(request("A"), ControllerModel::Custom(controller));
-
-        assert_eq!(result, Err(PaginationError::PageLimit));
-        assert_eq!(engine.page_count(), 1);
-        assert_eq!(engine.counters.controller, 0);
-        assert_eq!(engine.counters.transport, 1);
-        assert_eq!(engine.retained_identity_count(), 1);
-    }
-
-    #[test]
-    fn pagination_page_limit_rejected_after_multiple_pages() {
-        let mut engine = PaginationEngine::new(
-            limits(2, 10, usize::MAX),
-            vec![Page { items: vec![1] }, Page { items: vec![2] }],
-        );
-        let controller = ScriptController::continuing([request("B"), request("C")]);
-
-        let result = engine.run(request("A"), ControllerModel::Custom(controller));
-
-        assert_eq!(result, Err(PaginationError::PageLimit));
-        assert_eq!(engine.page_count(), 2);
-        assert_eq!(engine.counters.controller, 1);
-        assert_eq!(engine.counters.transport, 2);
-        assert_eq!(engine.retained_identity_count(), 2);
-    }
-
-    #[test]
-    fn pagination_item_limit_rejected_before_append() {
-        let mut engine = PaginationEngine::new(
-            limits(2, 2, usize::MAX),
-            vec![Page {
-                items: vec![1, 2, 3],
-            }],
-        );
-
-        let result = engine.run(
-            request("A"),
-            ControllerModel::Custom(ScriptController::default()),
-        );
-
-        assert_eq!(result, Err(PaginationError::ItemLimit));
-        assert!(engine.aggregate().is_empty());
-        assert_eq!(engine.item_count(), 0);
-        assert_eq!(engine.page_count(), 0);
-        assert_eq!(engine.counters.transport, 1);
-        assert_eq!(engine.counters.controller, 0);
-    }
-
-    #[test]
-    fn pagination_item_exact_limit_append_succeeds() {
-        let mut engine =
-            PaginationEngine::new(limits(2, 2, usize::MAX), vec![Page { items: vec![1, 2] }]);
-
-        let result = engine.run(
-            request("A"),
-            ControllerModel::Custom(ScriptController::default()),
-        );
-
-        assert_eq!(result, Ok(vec![1, 2]));
-        assert_eq!(engine.item_count(), 2);
-        assert_eq!(engine.page_count(), 1);
-        assert_eq!(engine.counters.controller, 1);
-    }
-
-    #[test]
-    fn pagination_item_overflow_rejected_before_append() {
-        let mut engine = PaginationEngine::new(
-            limits(2, usize::MAX, usize::MAX),
-            vec![Page { items: vec![1] }],
-        );
-        engine.set_item_count(usize::MAX);
-
-        let result = engine.run(
-            request("A"),
-            ControllerModel::Custom(ScriptController::default()),
-        );
-
-        assert_eq!(result, Err(PaginationError::ItemCountOverflow));
-        assert!(engine.aggregate().is_empty());
-        assert_eq!(engine.item_count(), usize::MAX);
-        assert_eq!(engine.counters.controller, 0);
-    }
-
-    #[test]
-    fn pagination_identity_byte_overflow_fails_closed() {
-        let mut engine = PaginationEngine::new(limits(2, 10, usize::MAX), vec![]);
-        engine.set_encoding_limits(EncodingLimits {
-            max_field_length: 1,
-            max_total_length: usize::MAX,
-        });
-
-        let result = engine.run(
-            request("A"),
-            ControllerModel::Custom(ScriptController::default()),
-        );
-
-        assert_eq!(
-            result,
-            Err(PaginationError::IdentityEncoding(
-                IdentityEncodingError::EncodedFieldLengthOverflow
-            ))
-        );
-        assert_eq!(engine.retained_identity_count(), 0);
-        assert_eq!(engine.counters, SideEffectCounters::default());
-    }
-
-    #[test]
-    fn pagination_identity_total_byte_overflow_fails_closed() {
-        let mut engine = PaginationEngine::new(limits(2, 10, usize::MAX), vec![]);
-        engine.set_encoding_limits(EncodingLimits {
-            max_field_length: u64::MAX,
-            max_total_length: 1,
-        });
-
-        let result = engine.run(
-            request("A"),
-            ControllerModel::Custom(ScriptController::default()),
-        );
-
-        assert_eq!(
-            result,
-            Err(PaginationError::IdentityEncoding(
-                IdentityEncodingError::CanonicalIdentityLengthOverflow
-            ))
-        );
-        assert_eq!(engine.retained_identity_count(), 0);
-        assert_eq!(engine.counters, SideEffectCounters::default());
-    }
-
-    #[test]
-    fn pagination_page_count_overflow_fails_closed() {
-        let mut engine = PaginationEngine::new(limits(usize::MAX, 10, usize::MAX), vec![]);
-        engine.set_page_count(usize::MAX);
-
-        let result = engine.run(
-            request("A"),
-            ControllerModel::Custom(ScriptController::default()),
-        );
-
-        assert_eq!(result, Err(PaginationError::PageCountOverflow));
-        assert_eq!(engine.retained_identity_count(), 0);
-        assert_eq!(engine.counters, SideEffectCounters::default());
-    }
-
-    #[test]
-    fn pagination_boundary_counter_overflow_fails_closed() {
-        let mut engine = PaginationEngine::new(limits(2, 10, usize::MAX), vec![]);
-        engine.counters.hook = usize::MAX;
-
-        let result = engine.run(
-            request("A"),
-            ControllerModel::Custom(ScriptController::default()),
-        );
-
-        assert_eq!(
-            result,
-            Err(PaginationError::BoundaryCountOverflow(Boundary::Hook))
-        );
-        assert_eq!(engine.counters.hook, usize::MAX);
-        assert_eq!(engine.counters.credential, 0);
-        assert_eq!(engine.counters.limiter, 0);
-        assert_eq!(engine.counters.transport, 0);
-        assert_eq!(engine.retained_identity_count(), 1);
-    }
-
-    #[test]
-    fn pagination_each_boundary_counter_overflow_is_checked() {
-        for boundary in [
-            Boundary::Credential,
-            Boundary::Limiter,
-            Boundary::Transport,
-            Boundary::Controller,
-        ] {
-            let mut engine =
-                PaginationEngine::new(limits(2, 10, usize::MAX), vec![Page { items: vec![1] }]);
-            match boundary {
-                Boundary::Credential => engine.counters.credential = usize::MAX,
-                Boundary::Limiter => engine.counters.limiter = usize::MAX,
-                Boundary::Transport => engine.counters.transport = usize::MAX,
-                Boundary::Controller => engine.counters.controller = usize::MAX,
-                Boundary::Hook => unreachable!("hook has a focused test"),
-            }
-
-            let result = engine.run(
-                request("A"),
-                ControllerModel::Custom(ScriptController::default()),
-            );
-
-            assert_eq!(
-                result,
-                Err(PaginationError::BoundaryCountOverflow(boundary)),
-                "boundary counter must fail explicitly: {boundary:?}"
-            );
-            match boundary {
-                Boundary::Credential => {
-                    assert_eq!(engine.counters.hook, 1);
-                    assert_eq!(engine.counters.limiter, 0);
-                    assert_eq!(engine.counters.transport, 0);
-                }
-                Boundary::Limiter => {
-                    assert_eq!(engine.counters.hook, 1);
-                    assert_eq!(engine.counters.credential, 1);
-                    assert_eq!(engine.counters.transport, 0);
-                }
-                Boundary::Transport => {
-                    assert_eq!(engine.counters.hook, 1);
-                    assert_eq!(engine.counters.credential, 1);
-                    assert_eq!(engine.counters.limiter, 1);
-                }
-                Boundary::Controller => {
-                    assert_eq!(engine.counters.transport, 1);
-                    assert_eq!(engine.aggregate(), &[1]);
-                }
-                Boundary::Hook => unreachable!("hook has a focused test"),
-            }
-        }
-    }
-
-    #[test]
-    fn pagination_returns_no_partial_result_on_failure() {
-        let mut engine = PaginationEngine::new(
-            limits(3, 3, usize::MAX),
-            vec![Page { items: vec![1, 2] }, Page { items: vec![3, 4] }],
-        );
-        let controller = ScriptController::continuing([request("B")]);
-
-        let result = engine.run(request("A"), ControllerModel::Custom(controller));
-
-        assert_eq!(result, Err(PaginationError::ItemLimit));
-        assert_eq!(engine.aggregate(), &[1, 2]);
-        assert_eq!(engine.item_count(), 2);
-        assert_eq!(engine.page_count(), 1);
-        assert_eq!(engine.counters.transport, 2);
-        assert_eq!(engine.counters.controller, 1);
-    }
-}
-
-mod pagination_controller {
-    use super::*;
-
-    #[test]
-    fn custom_controller_continues_after_short_page() {
-        let mut engine = PaginationEngine::new(
-            limits(3, 10, usize::MAX),
-            vec![Page { items: vec![1] }, Page { items: vec![2, 3] }],
-        );
-        let controller = ScriptController::continuing([request("B")]);
-
-        let result = engine.run(request("A"), ControllerModel::Custom(controller));
-
-        assert_eq!(result, Ok(vec![1, 2, 3]));
-        assert_eq!(engine.counters.transport, 2);
-        assert_eq!(engine.counters.controller, 2);
-        assert_eq!(engine.page_count(), 2);
-    }
-
-    #[test]
-    fn private_builtin_controller_stops_after_short_page() {
-        let mut engine = PaginationEngine::new(
-            limits(3, 10, usize::MAX),
-            vec![Page { items: vec![1] }, Page { items: vec![2, 3] }],
-        );
-        let controller = ControllerModel::BuiltIn {
-            inner: ScriptController::continuing([request("B")]),
-            requested_page_size: 2,
-        };
-
-        let result = engine.run(request("A"), controller);
-
-        assert_eq!(result, Ok(vec![1]));
-        assert_eq!(engine.counters.transport, 1);
-        assert_eq!(engine.counters.controller, 0);
-        assert_eq!(engine.page_count(), 1);
-    }
-
-    #[test]
-    fn custom_controller_has_no_capacity_hint() {
-        struct NextOnlyController;
-
-        impl Controller for NextOnlyController {
-            fn next(&mut self, _page: &Page) -> Result<Option<RequestModel>, PaginationError> {
-                Ok(None)
-            }
-        }
-
-        let mut engine =
-            PaginationEngine::new(limits(2, 10, usize::MAX), vec![Page { items: vec![1] }]);
-
-        let result = engine.run(request("A"), ControllerModel::Custom(NextOnlyController));
-
-        assert_eq!(result, Ok(vec![1]));
-        assert_eq!(engine.counters.controller, 1);
-    }
+    let identity = identity(b"Endpoint", b"GET", b"https://example.test/items", &[]);
+    detector.set_retained_identity_bytes(usize::MAX);
+    assert_eq!(
+        detector
+            .preflight(&identity, usize::MAX)
+            .expect_err("identity byte arithmetic overflow")
+            .kind(),
+        PaginationErrorKind::Overflow
+    );
 }

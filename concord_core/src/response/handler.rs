@@ -14,7 +14,8 @@ use crate::request::{
 
 use super::{ExecutionMeta, StreamResponse};
 
-pub(crate) struct ResponseInput {
+#[doc(hidden)]
+pub struct ResponseInput {
     pub(crate) response: ApplicationResponse,
     pub(crate) limit: NonZeroUsize,
     pub(crate) stream_limit: NonZeroUsize,
@@ -25,7 +26,8 @@ pub(crate) struct ResponseInput {
     pub(crate) recovered_authentication: bool,
 }
 
-pub(crate) trait ExecuteResponse: ResponseHandler {
+#[doc(hidden)]
+pub trait ExecuteResponse: ResponseHandler {
     fn handle(input: ResponseInput) -> BoxFuture<'static, Result<Self::Output, ApiError>>;
 }
 

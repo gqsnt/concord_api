@@ -15,8 +15,8 @@ use crate::operation::{OperationDeadline, OperationId};
 use crate::rate_limit::{RateLimitRequest, RateLimitResponse};
 use crate::redaction::SanitizedHeaders;
 use crate::request::{
-    BodySpec, EndpointSpec, OperationPreparation, PreparationFailure, PreparedOperation, Request,
-    ResponseHandler, ResponseRequest, prepare_operation,
+    BodySpec, EndpointSpec, OperationPreparation, PreparationFailure, PreparedOperation,
+    PreparedPaginationPage, Request, ResponseHandler, ResponseRequest, prepare_operation,
 };
 use crate::response::{DecodedResponse, ExecuteResponse, ExecutionMeta, ResponseInput};
 
@@ -61,6 +61,107 @@ where
             return complete_preparation_failure(failure).await;
         }
     };
+    execute_prepared_operation(prepared, ExecutionContext::DIRECT)
+        .await
+        .result
+}
+
+#[derive(Clone, Copy)]
+struct ExecutionContext {
+    parent_operation_id: Option<OperationId>,
+    page_index: u32,
+}
+
+impl ExecutionContext {
+    const DIRECT: Self = Self {
+        parent_operation_id: None,
+        page_index: 0,
+    };
+
+    const fn page(parent_operation_id: OperationId, page_index: u32) -> Self {
+        Self {
+            parent_operation_id: Some(parent_operation_id),
+            page_index,
+        }
+    }
+}
+
+pub(crate) struct ExecutedPage<T> {
+    pub(crate) result: Result<DecodedResponse<T>, ApiError>,
+    pub(crate) final_status: Option<StatusCode>,
+    pub(crate) recovered_authentication: bool,
+}
+
+pub(crate) async fn execute_pagination_page<E>(
+    page: PreparedPaginationPage<E>,
+    parent_operation_id: OperationId,
+    page_index: u32,
+) -> Result<ExecutedPage<<E::Response as ResponseHandler>::Output>, ApiError>
+where
+    E: EndpointSpec,
+    E::Response: ExecuteResponse,
+{
+    let PreparedPaginationPage {
+        core,
+        endpoint,
+        head,
+        body_metadata,
+    } = page;
+    let started = tokio::time::Instant::now();
+    let operation_id = core.allocate_operation_id(head.endpoint(), head.method())?;
+    let context = ExecutionContext::page(parent_operation_id, page_index);
+    let deadline = match OperationDeadline::new(started, head.timeout()) {
+        Ok(deadline) => deadline,
+        Err(_) => {
+            let error = ApiError::configuration(
+                head.endpoint(),
+                head.method().clone(),
+                crate::error::ConfigurationErrorKind::InvalidValue,
+            );
+            let result = deliver_completion(
+                &core,
+                operation_id,
+                context,
+                head.endpoint(),
+                head.method(),
+                head.safe_url(),
+                head.debug(),
+                tokio::time::Instant::now().saturating_duration_since(started),
+                None,
+                CompletionOutcome::Success,
+                false,
+                Err(error),
+            )
+            .await;
+            return Ok(ExecutedPage {
+                result,
+                final_status: None,
+                recovered_authentication: false,
+            });
+        }
+    };
+    Ok(execute_prepared_operation(
+        PreparedOperation {
+            core,
+            endpoint,
+            operation_id,
+            deadline,
+            head,
+            body_metadata,
+        },
+        context,
+    )
+    .await)
+}
+
+async fn execute_prepared_operation<E>(
+    prepared: PreparedOperation<E>,
+    context: ExecutionContext,
+) -> ExecutedPage<<E::Response as ResponseHandler>::Output>
+where
+    E: EndpointSpec,
+    E::Response: ExecuteResponse,
+{
     let PreparedOperation {
         core,
         endpoint,
@@ -73,7 +174,16 @@ where
     let mut recovered_authentication = false;
 
     let result = async {
-        run_before_send(&core, operation_id, deadline, &head, &body_metadata, 0).await?;
+        run_before_send(
+            &core,
+            operation_id,
+            context,
+            deadline,
+            &head,
+            &body_metadata,
+            0,
+        )
+        .await?;
 
         check_deadline(deadline, head.endpoint(), head.method())?;
         let materialized = endpoint.into_body().materialize(
@@ -109,6 +219,7 @@ where
                 prepared_auth,
                 recovery_index,
                 &mut final_status,
+                context,
             )
             .await?;
             let status = attempt.response.status();
@@ -143,8 +254,16 @@ where
 
             // A response selected for recovery is dropped without polling its body.
             drop(attempt.response);
-            if let Err(error) =
-                run_before_send(&core, operation_id, deadline, &head, &body_metadata, 1).await
+            if let Err(error) = run_before_send(
+                &core,
+                operation_id,
+                context,
+                deadline,
+                &head,
+                &body_metadata,
+                1,
+            )
+            .await
             {
                 let _ = attempt
                     .applied_auth
@@ -228,7 +347,7 @@ where
             ExecutionMeta::new(
                 head.endpoint(),
                 head.method().clone(),
-                0,
+                context.page_index,
                 recovered_authentication,
             ),
             output,
@@ -238,9 +357,10 @@ where
 
     let fixed_at = tokio::time::Instant::now();
     let elapsed = deadline.elapsed_at(fixed_at);
-    deliver_completion(
+    let result = deliver_completion(
         &core,
         operation_id,
+        context,
         head.endpoint(),
         head.method(),
         head.safe_url(),
@@ -251,7 +371,12 @@ where
         recovered_authentication,
         result,
     )
-    .await
+    .await;
+    ExecutedPage {
+        result,
+        final_status,
+        recovered_authentication,
+    }
 }
 
 async fn complete_preparation_failure<E>(
@@ -269,6 +394,7 @@ async fn complete_preparation_failure<E>(
     deliver_completion(
         &core,
         operation_id,
+        ExecutionContext::DIRECT,
         meta.endpoint(),
         meta.method(),
         &safe_url,
@@ -285,6 +411,7 @@ async fn complete_preparation_failure<E>(
 async fn run_before_send(
     core: &ClientCore,
     operation_id: OperationId,
+    context: ExecutionContext,
     deadline: OperationDeadline,
     head: &crate::request::PreparedHead,
     body_metadata: &crate::request::BodyMetadata,
@@ -293,6 +420,7 @@ async fn run_before_send(
     check_deadline(deadline, head.endpoint(), head.method())?;
     let future = core.hooks().before_send(before_send_event(
         operation_id,
+        context,
         head,
         body_metadata,
         recovery_index,
@@ -330,19 +458,20 @@ async fn run_response_head_hook(
 
 fn before_send_event<'a>(
     operation_id: OperationId,
+    context: ExecutionContext,
     head: &'a crate::request::PreparedHead,
     body_metadata: &crate::request::BodyMetadata,
     recovery_index: u8,
 ) -> BeforeSend<'a> {
     BeforeSend {
         operation_id,
-        parent_operation_id: None,
+        parent_operation_id: context.parent_operation_id,
         endpoint: head.endpoint(),
         method: head.method(),
         safe_url: head.safe_url(),
-        page_index: 0,
+        page_index: context.page_index,
         recovery_index,
-        headers: SanitizedHeaders::new(head.public_headers()),
+        headers: head.sanitized_public_headers(),
         body_kind: body_metadata.kind(),
         known_body_length: body_metadata.known_length(),
     }
@@ -355,6 +484,7 @@ fn before_send_event<'a>(
 async fn deliver_completion<T>(
     core: &ClientCore,
     operation_id: OperationId,
+    context: ExecutionContext,
     endpoint: &'static str,
     method: &Method,
     safe_url: &str,
@@ -371,11 +501,11 @@ async fn deliver_completion<T>(
     };
     let event = CompletionEvent {
         operation_id,
-        parent_operation_id: None,
+        parent_operation_id: context.parent_operation_id,
         endpoint,
         method,
         safe_url,
-        page_index: 0,
+        page_index: context.page_index,
         recovered_authentication,
         elapsed,
         final_status,
@@ -405,8 +535,9 @@ async fn send_attempt(
     prepared_auth: PreparedAuthPlan,
     recovery_index: u8,
     final_status: &mut Option<StatusCode>,
+    context: ExecutionContext,
 ) -> Result<AttemptResponse, ApiError> {
-    acquire_rate_limit_authority(core, deadline, head).await?;
+    acquire_rate_limit_authority(core, context, deadline, head).await?;
     let (applied_auth, finalized_auth) = run_auth(
         core,
         deadline,
@@ -432,7 +563,8 @@ async fn send_attempt(
         head.public_headers(),
         native_body,
     )?;
-    let request_event = before_send_event(operation_id, head, body_metadata, recovery_index);
+    let request_event =
+        before_send_event(operation_id, context, head, body_metadata, recovery_index);
     core.debug_dispatcher(head.debug())
         .request_ready(&request_event);
     check_deadline(deadline, head.endpoint(), head.method())?;
@@ -445,6 +577,7 @@ async fn send_attempt(
             request,
             head.safe_url(),
             head.public_headers(),
+            head.pagination_sensitive_headers(),
             body_metadata.kind(),
             body_metadata.known_length(),
         ))
@@ -455,11 +588,11 @@ async fn send_attempt(
     *final_status = Some(status);
     let response_event = ResponseHeadEvent {
         operation_id,
-        parent_operation_id: None,
+        parent_operation_id: context.parent_operation_id,
         endpoint: head.endpoint(),
         method: head.method(),
         safe_url: head.safe_url(),
-        page_index: 0,
+        page_index: context.page_index,
         recovery_index,
         status,
         headers: SanitizedHeaders::new(response.headers()),
@@ -467,7 +600,7 @@ async fn send_attempt(
     core.debug_dispatcher(head.debug())
         .response_head(&response_event);
     run_response_head_hook(core, deadline, response_event).await?;
-    observe_rate_limit_response(core, head, status, response.headers()).await;
+    observe_rate_limit_response(core, context, head, status, response.headers()).await;
     Ok(AttemptResponse {
         response,
         applied_auth,
@@ -493,6 +626,7 @@ fn auth_api_error(head: &crate::request::PreparedHead, error: crate::auth::AuthE
 
 async fn acquire_rate_limit_authority(
     core: &ClientCore,
+    context: ExecutionContext,
     deadline: OperationDeadline,
     head: &crate::request::PreparedHead,
 ) -> Result<(), ApiError> {
@@ -501,8 +635,8 @@ async fn acquire_rate_limit_authority(
         endpoint: head.endpoint(),
         method: head.method(),
         safe_url: head.safe_url(),
-        host: head.logical_url().host_str(),
-        page_index: 0,
+        host: head.safe_host(),
+        page_index: context.page_index,
         plan: head.rate_limit_plan(),
     };
     let future = core.rate_limiter().acquire(request);
@@ -517,6 +651,7 @@ async fn acquire_rate_limit_authority(
 
 async fn observe_rate_limit_response(
     core: &ClientCore,
+    context: ExecutionContext,
     head: &crate::request::PreparedHead,
     status: StatusCode,
     headers: &http::HeaderMap,
@@ -526,8 +661,8 @@ async fn observe_rate_limit_response(
             endpoint: head.endpoint(),
             method: head.method(),
             safe_url: head.safe_url(),
-            host: head.logical_url().host_str(),
-            page_index: 0,
+            host: head.safe_host(),
+            page_index: context.page_index,
             plan: head.rate_limit_plan(),
         },
         status,

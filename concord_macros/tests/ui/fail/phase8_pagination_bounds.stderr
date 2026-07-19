@@ -1,0 +1,114 @@
+error[E0277]: `NotIterable` is not an iterator
+  --> tests/ui/fail/phase8_pagination_bounds.rs:41:1
+   |
+41 | / api! {
+42 | |     client MissingIntoIterator {
+43 | |         base "https://example.test";
+44 | |         GET Read() -> crate::NotIterableCodec {
+...  |
+48 | | }
+   | |_^ `NotIterable` is not an iterator
+   |
+   = help: the trait `Iterator` is not implemented for `NotIterable`
+   = note: required for `NotIterable` to implement `IntoIterator`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `NotIterable` is not an iterator
+  --> tests/ui/fail/phase8_pagination_bounds.rs:41:1
+   |
+41 | / api! {
+42 | |     client MissingIntoIterator {
+43 | |         base "https://example.test";
+44 | |         GET Read() -> crate::NotIterableCodec {
+...  |
+48 | | }
+   | |_^ `NotIterable` is not an iterator
+   |
+   = help: the trait `Iterator` is not implemented for `NotIterable`
+   = help: the trait `EndpointSpec` is implemented for `missing_into_iterator::endpoints::Read`
+   = note: required for `NotIterable` to implement `IntoIterator`
+note: required for `missing_into_iterator::endpoints::Read` to implement `EndpointSpec`
+  --> tests/ui/fail/phase8_pagination_bounds.rs:41:1
+   |
+41 | / api! {
+42 | |     client MissingIntoIterator {
+43 | |         base "https://example.test";
+44 | |         GET Read() -> crate::NotIterableCodec {
+   | |             ^^^^
+...  |
+48 | | }
+   | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `NotIterable` is not an iterator
+  --> tests/ui/fail/phase8_pagination_bounds.rs:41:1
+   |
+41 | / api! {
+42 | |     client MissingIntoIterator {
+43 | |         base "https://example.test";
+44 | |         GET Read() -> crate::NotIterableCodec {
+...  |
+48 | | }
+   | |_^ `NotIterable` is not an iterator
+   |
+   = help: the trait `Iterator` is not implemented for `NotIterable`
+   = help: the trait `PaginatedEndpoint` is implemented for `missing_into_iterator::endpoints::Read`
+   = note: required for `NotIterable` to implement `IntoIterator`
+note: required for `missing_into_iterator::endpoints::Read` to implement `PaginatedEndpoint`
+  --> tests/ui/fail/phase8_pagination_bounds.rs:41:1
+   |
+41 | / api! {
+42 | |     client MissingIntoIterator {
+43 | |         base "https://example.test";
+44 | |         GET Read() -> crate::NotIterableCodec {
+   | |             ^^^^
+...  |
+48 | | }
+   | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `NotIterable` is not an iterator
+  --> tests/ui/fail/phase8_pagination_bounds.rs:41:1
+   |
+41 | / api! {
+42 | |     client MissingIntoIterator {
+43 | |         base "https://example.test";
+44 | |         GET Read() -> crate::NotIterableCodec {
+...  |
+48 | | }
+   | |_^ `NotIterable` is not an iterator
+   |
+   = help: the trait `Iterator` is not implemented for `NotIterable`
+   = help: the trait `EndpointSpec` is implemented for `missing_into_iterator::endpoints::Read`
+   = note: required for `NotIterable` to implement `IntoIterator`
+note: required for `missing_into_iterator::endpoints::Read` to implement `EndpointSpec`
+  --> tests/ui/fail/phase8_pagination_bounds.rs:41:1
+   |
+41 | / api! {
+42 | |     client MissingIntoIterator {
+43 | |         base "https://example.test";
+44 | |         GET Read() -> crate::NotIterableCodec {
+   | |             ^^^^
+...  |
+48 | | }
+   | |_^
+note: required by a bound in `PaginatedEndpoint`
+  --> $WORKSPACE/concord_core/src/pagination/pending.rs
+   |
+   | pub trait PaginatedEndpoint: crate::request::EndpointSpec + Sized {
+   |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `PaginatedEndpoint`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `Vec<u8>: HasNextCursor<String>` is not satisfied
+  --> tests/ui/fail/phase8_pagination_bounds.rs:50:1
+   |
+50 | / api! {
+51 | |     client MissingCursorExtraction {
+52 | |         base "https://example.test";
+53 | |         GET Read(cursor: Option<String>) -> Json<Vec<u8>> {
+...  |
+57 | | }
+   | |_^ the trait `HasNextCursor<String>` is not implemented for `Vec<u8>`
+   |
+   = help: see issue #48214
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

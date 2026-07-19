@@ -1,16 +1,21 @@
 use std::cmp::Ordering;
 
+use http::HeaderMap;
+
+use super::PaginationError;
+use crate::error::PaginationErrorKind;
+
 const FORMAT_PREFIX: &[u8] = b"CONCORD-PAGE-IDENTITY\x01";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum IdentityEncodingError {
+pub(crate) enum IdentityEncodingError {
     InvalidHeaderName,
     EncodedFieldLengthOverflow,
     CanonicalIdentityLengthOverflow,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(super) struct EncodingLimits {
+pub(crate) struct EncodingLimits {
     pub(super) max_field_length: u64,
     pub(super) max_total_length: usize,
 }
@@ -25,13 +30,13 @@ impl Default for EncodingLimits {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct HeaderField {
-    pub(super) name: Vec<u8>,
-    pub(super) value: Vec<u8>,
+pub(crate) struct HeaderField {
+    pub(crate) name: Vec<u8>,
+    pub(crate) value: Vec<u8>,
 }
 
 impl HeaderField {
-    pub(super) fn new(name: impl AsRef<[u8]>, value: impl AsRef<[u8]>) -> Self {
+    pub(crate) fn new(name: impl AsRef<[u8]>, value: impl AsRef<[u8]>) -> Self {
         Self {
             name: name.as_ref().to_vec(),
             value: value.as_ref().to_vec(),
@@ -40,25 +45,25 @@ impl HeaderField {
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct IdentityInput<'a> {
-    pub(super) endpoint_discriminator: &'a [u8],
-    pub(super) method_token: &'a [u8],
-    pub(super) canonical_logical_url: &'a [u8],
-    pub(super) public_headers: &'a [HeaderField],
+pub(crate) struct IdentityInput<'a> {
+    pub(crate) endpoint_discriminator: &'a [u8],
+    pub(crate) method_token: &'a [u8],
+    pub(crate) canonical_logical_url: &'a [u8],
+    pub(crate) public_headers: &'a [HeaderField],
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct CanonicalIdentity {
+pub(crate) struct CanonicalIdentity {
     bytes: Vec<u8>,
     retained_byte_len: usize,
 }
 
 impl CanonicalIdentity {
-    pub(super) fn encode(input: IdentityInput<'_>) -> Result<Self, IdentityEncodingError> {
+    pub(crate) fn encode(input: IdentityInput<'_>) -> Result<Self, IdentityEncodingError> {
         Self::encode_with_limits(input, EncodingLimits::default())
     }
 
-    pub(super) fn encode_with_limits(
+    pub(crate) fn encode_with_limits(
         input: IdentityInput<'_>,
         limits: EncodingLimits,
     ) -> Result<Self, IdentityEncodingError> {
@@ -100,12 +105,31 @@ impl CanonicalIdentity {
         })
     }
 
-    pub(super) fn bytes(&self) -> &[u8] {
+    pub(crate) fn bytes(&self) -> &[u8] {
         &self.bytes
     }
 
-    pub(super) fn retained_byte_len(&self) -> usize {
+    pub(crate) fn retained_byte_len(&self) -> usize {
         self.retained_byte_len
+    }
+
+    pub(crate) fn from_request_head(
+        endpoint: &'static str,
+        method: &http::Method,
+        logical_url: &url::Url,
+        public_headers: &HeaderMap,
+    ) -> Result<Self, PaginationError> {
+        let fields = public_headers
+            .iter()
+            .map(|(name, value)| HeaderField::new(name.as_str().as_bytes(), value.as_bytes()))
+            .collect::<Vec<_>>();
+        Self::encode(IdentityInput {
+            endpoint_discriminator: endpoint.as_bytes(),
+            method_token: method.as_str().as_bytes(),
+            canonical_logical_url: logical_url.as_str().as_bytes(),
+            public_headers: &fields,
+        })
+        .map_err(|_error| PaginationError::new(PaginationErrorKind::Overflow))
     }
 }
 
@@ -228,7 +252,7 @@ impl Encoder {
     }
 }
 
-pub(super) fn deterministic_digest(bytes: &[u8]) -> u64 {
+pub(crate) fn deterministic_digest(bytes: &[u8]) -> u64 {
     const OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
     const PRIME: u64 = 0x0000_0100_0000_01b3;
 

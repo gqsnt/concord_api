@@ -30,6 +30,10 @@ pub use crate::http::provider::{
 };
 pub use crate::http::{HttpConfigBuilder, ProviderRetry, SafeProxy};
 pub use crate::operation::OperationId;
+pub use crate::pagination::{
+    CursorPagination, HasNextCursor, OffsetPagination, PagePagination, PaginationController,
+    PaginationError, PaginationRequest,
+};
 #[cfg(feature = "rate-limit-governor")]
 pub use crate::rate_limit::GovernorRateLimiter;
 pub use crate::rate_limit::{

@@ -12,13 +12,13 @@ use syn::{
 use url::Url;
 
 use crate::ast::{
-    AuthChallenge, AuthOperation, AuthPlacement, AuthPlacementKind, CodecKind, CredentialDecl,
-    CredentialSource, CredentialsBlock, DefaultExpr, DurationLiteral, HeaderEntry, HeaderOperation,
-    HostOperation, Layer, MediaKind, MethodKind, PathOperation, PublicExpr, QueryEntry,
-    QueryOperation, RateLimitDimension, RateLimitOperation, RateLimitTemplate, RateLimitUse,
-    RateLimitWindowLiteral, RateLimitsBlock, RequestBodyKind, ResponseKind, RetrySelection,
-    SecretDecl, SourceApi, SourceChild, SourceClient, SourceEndpoint, SourceScope,
-    TimeoutOperation, ValueDecl, ValueKind,
+    AuthChallenge, AuthOperation, AuthPlacement, AuthPlacementKind, BuiltInPagination, CodecKind,
+    CredentialDecl, CredentialSource, CredentialsBlock, DefaultExpr, DurationLiteral, HeaderEntry,
+    HeaderOperation, HostOperation, Layer, MediaKind, MethodKind, PaginationAssignment,
+    PaginationDecl, PathOperation, PublicExpr, QueryEntry, QueryOperation, RateLimitDimension,
+    RateLimitOperation, RateLimitTemplate, RateLimitUse, RateLimitWindowLiteral, RateLimitsBlock,
+    RequestBodyKind, ResponseKind, RetrySelection, SecretDecl, SourceApi, SourceChild,
+    SourceClient, SourceEndpoint, SourceScope, TimeoutOperation, ValueDecl, ValueKind,
 };
 use crate::names::canonical_ident;
 
@@ -264,19 +264,20 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
         let clauses;
         braced!(clauses in input);
         let layer = parse_ordered_layer(&clauses, true)?;
-        if clauses.peek(keyword::paginate) {
-            let marker: keyword::paginate = clauses.parse()?;
-            let incompatible = body.is_some()
+        let pagination = clauses
+            .peek(keyword::paginate)
+            .then(|| parse_pagination(&clauses))
+            .transpose()?;
+        if pagination.is_some()
+            && (body.is_some()
                 || matches!(
                     response,
                     ResponseKind::Stream(_) | ResponseKind::Bytes | ResponseKind::NoContent
-                );
-            let message = if incompatible {
-                "this body/response mode cannot declare pagination"
-            } else {
-                "pagination declarations are owned by Phase 8 and are not implemented"
-            };
-            return Err(marker.span().error(message));
+                ))
+        {
+            return Err(clauses.span().error(
+                "pagination requires a bodyless endpoint with a buffered decoded response",
+            ));
         }
         if clauses.peek(keyword::retry) {
             return Err(
@@ -291,7 +292,16 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
             }
             return Err(clauses.error("unsupported endpoint clause"));
         }
-        layer
+        return Ok(SourceEndpoint {
+            method,
+            name,
+            alias,
+            parameters,
+            body,
+            layer,
+            response,
+            pagination,
+        });
     };
 
     Ok(SourceEndpoint {
@@ -302,7 +312,147 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
         body,
         layer,
         response,
+        pagination: None,
     })
+}
+
+fn parse_pagination(input: ParseStream<'_>) -> syn::Result<PaginationDecl> {
+    input.parse::<keyword::paginate>()?;
+    if input.peek(keyword::custom) {
+        input.parse::<keyword::custom>()?;
+        let factory: syn::Path = input
+            .parse()
+            .map_err(|_| input.error("custom pagination requires a Rust item-path factory"))?;
+        if factory
+            .segments
+            .iter()
+            .any(|segment| !matches!(segment.arguments, PathArguments::None))
+        {
+            return Err(factory
+                .span()
+                .error("custom pagination factory paths do not accept path arguments"));
+        }
+        let arguments_body;
+        parenthesized!(arguments_body in input);
+        let mut arguments = Vec::new();
+        while !arguments_body.is_empty() {
+            arguments.push(parse_public_expr(&arguments_body, 0)?);
+            if arguments_body.is_empty() {
+                break;
+            }
+            arguments_body.parse::<Token![,]>().map_err(|_| {
+                arguments_body.error("custom pagination arguments must be separated by commas")
+            })?;
+            if arguments_body.is_empty() {
+                return Err(arguments_body
+                    .error("a trailing comma is not accepted in custom pagination arguments"));
+            }
+        }
+        input.parse::<Token![;]>()?;
+        return Ok(PaginationDecl::Custom { factory, arguments });
+    }
+
+    let controller_type: Type = input.parse().map_err(|_| {
+        input.error(
+            "pagination requires `OffsetPagination`, `PagePagination`, `CursorPagination<C>`, or `custom PATH(...)`",
+        )
+    })?;
+    let controller = parse_builtin_pagination_type(&controller_type)?;
+    if !input.peek(syn::token::Brace) {
+        return Err(controller_type
+            .span()
+            .error("a built-in pagination declaration requires an assignment block"));
+    }
+    let assignments_body;
+    braced!(assignments_body in input);
+    let expected: &[&str] = match &controller {
+        BuiltInPagination::Offset => &["offset", "page_size"],
+        BuiltInPagination::Page => &["page", "page_size"],
+        BuiltInPagination::Cursor(_) => &["cursor"],
+    };
+    let mut assignments = Vec::new();
+    let mut seen = HashSet::new();
+    while !assignments_body.is_empty() {
+        let name: Ident = assignments_body.parse().map_err(|_| {
+            assignments_body.error("a pagination assignment begins with its required name")
+        })?;
+        let canonical = canonical_ident(&name);
+        if !expected.contains(&canonical.as_str()) {
+            return Err(name.span().error(format!(
+                "additional built-in pagination assignment `{canonical}` is not accepted"
+            )));
+        }
+        if !seen.insert(canonical.clone()) {
+            return Err(name
+                .span()
+                .error(format!("duplicate pagination assignment `{canonical}`")));
+        }
+        assignments_body.parse::<Token![=]>()?;
+        let namespace: Ident = assignments_body.parse().map_err(|_| {
+            assignments_body.error("a built-in pagination assignment must be `ep.FIELD`")
+        })?;
+        if namespace != "ep" {
+            return Err(namespace
+                .span()
+                .error("a built-in pagination assignment must bind directly to `ep.FIELD`"));
+        }
+        assignments_body.parse::<Token![.]>()?;
+        let field: Ident = assignments_body.parse()?;
+        assignments.push(PaginationAssignment { name, field });
+        if assignments_body.is_empty() {
+            break;
+        }
+        assignments_body.parse::<Token![,]>().map_err(|_| {
+            assignments_body.error("built-in pagination assignments must be comma-separated")
+        })?;
+        if assignments_body.is_empty() {
+            return Err(assignments_body
+                .error("a trailing comma is not accepted in built-in pagination assignments"));
+        }
+    }
+    let missing = expected
+        .iter()
+        .copied()
+        .filter(|name| !seen.contains(*name))
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(controller_type.span().error(format!(
+            "missing required built-in pagination assignment(s): {}",
+            missing.join(", ")
+        )));
+    }
+    Ok(PaginationDecl::BuiltIn {
+        controller,
+        assignments,
+    })
+}
+
+fn parse_builtin_pagination_type(ty: &Type) -> syn::Result<BuiltInPagination> {
+    let Type::Path(path) = ty else {
+        return Err(ty
+            .span()
+            .error("a built-in pagination controller must be an unqualified supported type"));
+    };
+    if path.qself.is_some() || path.path.leading_colon.is_some() || path.path.segments.len() != 1 {
+        return Err(ty
+            .span()
+            .error("a built-in pagination controller must be an unqualified supported type"));
+    }
+    let segment = &path.path.segments[0];
+    match segment.ident.to_string().as_str() {
+        "OffsetPagination" if matches!(segment.arguments, PathArguments::None) => {
+            Ok(BuiltInPagination::Offset)
+        }
+        "PagePagination" if matches!(segment.arguments, PathArguments::None) => {
+            Ok(BuiltInPagination::Page)
+        }
+        "CursorPagination" => {
+            single_type_argument(path, "CursorPagination").map(BuiltInPagination::Cursor)
+        }
+        _ => Err(ty.span().error(
+            "built-in pagination uses exactly `OffsetPagination`, `PagePagination`, or `CursorPagination<C>`",
+        )),
+    }
 }
 
 fn endpoint_starts(input: ParseStream<'_>) -> bool {
@@ -1650,6 +1800,7 @@ fn is_layer_start(input: ParseStream<'_>) -> bool {
         || input.peek(keyword::auth)
         || input.peek(keyword::timeout)
         || input.peek(keyword::rate_limit)
+        || input.peek(keyword::paginate)
 }
 
 fn client_tail_error(input: ParseStream<'_>) -> syn::Error {
@@ -2292,5 +2443,166 @@ mod tests {
         .err()
         .expect("rate limit before timeout");
         assert!(endpoint_order.to_string().contains("endpoint clauses"));
+    }
+
+    #[test]
+    fn phase8_pagination_forms_parse_with_exact_final_clause_grammar() {
+        let api = parse_ok(quote! {
+            client Api {
+                base "https://example.test";
+                GET Offset(offset: u64, limit: u32) -> Json<Vec<u32>> {
+                    paginate OffsetPagination {
+                        offset = ep.offset,
+                        page_size = ep.limit
+                    }
+                }
+                GET Page(page: u64, per_page: u32) -> Json<Vec<u32>> {
+                    paginate PagePagination {
+                        page = ep.page,
+                        page_size = ep.per_page
+                    }
+                }
+                GET Cursor(cursor: Option<String>) -> Json<Vec<u32>> {
+                    paginate CursorPagination<String> { cursor = ep.cursor }
+                }
+                GET CustomZero() -> Json<Vec<u32>> {
+                    paginate custom crate::zero();
+                }
+                scope Regions(region: String) {
+                    GET Custom(cursor: Option<String>) -> Json<Vec<u32>> {
+                        paginate custom crate::vendor(ep.cursor, scope.region);
+                    }
+                }
+            }
+        });
+        assert_eq!(api.clients[0].children.len(), 5);
+    }
+
+    #[test]
+    fn phase8_pagination_rejects_invalid_assignments_modes_and_order() {
+        let cases = [
+            (
+                quote! {
+                    client Api { base "https://example.test";
+                        GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
+                            paginate OffsetPagination
+                        }
+                    }
+                },
+                "assignment block",
+            ),
+            (
+                quote! {
+                    client Api { base "https://example.test";
+                        GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
+                            paginate OffsetPagination { offset = ep.offset }
+                        }
+                    }
+                },
+                "missing required",
+            ),
+            (
+                quote! {
+                    client Api { base "https://example.test";
+                        GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
+                            paginate OffsetPagination {
+                                offset = ep.offset,
+                                offset = ep.offset,
+                                page_size = ep.limit
+                            }
+                        }
+                    }
+                },
+                "duplicate pagination assignment",
+            ),
+            (
+                quote! {
+                    client Api { base "https://example.test";
+                        GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
+                            paginate OffsetPagination {
+                                offset = ep.offset,
+                                page_size = ep.limit,
+                                extra = ep.limit
+                            }
+                        }
+                    }
+                },
+                "additional built-in",
+            ),
+            (
+                quote! {
+                    client Api { base "https://example.test";
+                        GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
+                            paginate OffsetPagination {
+                                offset = vars.offset,
+                                page_size = ep.limit
+                            }
+                        }
+                    }
+                },
+                "directly to `ep.FIELD`",
+            ),
+            (
+                quote! {
+                    client Api { base "https://example.test";
+                        GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
+                            paginate OffsetPagination {
+                                offset = ep.offset,
+                                page_size = ep.limit,
+                            }
+                        }
+                    }
+                },
+                "trailing comma",
+            ),
+            (
+                quote! {
+                    client Api { base "https://example.test";
+                        GET Read(body: Text) -> Json<Vec<u32>> {
+                            paginate custom crate::factory();
+                        }
+                    }
+                },
+                "bodyless endpoint",
+            ),
+            (
+                quote! {
+                    client Api { base "https://example.test";
+                        GET Read() -> Bytes {
+                            paginate custom crate::factory();
+                        }
+                    }
+                },
+                "buffered decoded response",
+            ),
+            (
+                quote! {
+                    client Api { base "https://example.test";
+                        GET Read() -> Json<Vec<u32>> {
+                            paginate custom crate::factory();
+                            query { "later" = "invalid"; }
+                        }
+                    }
+                },
+                "endpoint clauses",
+            ),
+            (
+                quote! {
+                    client Api { base "https://example.test";
+                        GET Read() -> Json<Vec<u32>> {
+                            paginate custom crate::factory("value",);
+                        }
+                    }
+                },
+                "trailing comma",
+            ),
+        ];
+        for (tokens, expected) in cases {
+            let error = parse(tokens).err().expect("invalid pagination");
+            assert!(
+                error.to_string().contains(expected),
+                "expected `{expected}`, got `{error}`"
+            );
+        }
     }
 }

@@ -1,6 +1,8 @@
 use std::fmt;
 
-use super::{BeforeSend, CompletionEvent, DebugLevel, ResponseHeadEvent};
+use super::{
+    BeforeSend, CompletionEvent, DebugLevel, PaginationCompletionEvent, ResponseHeadEvent,
+};
 
 /// Private body-free presentation dispatcher for built-in debug output.
 pub(crate) struct DebugDispatcher {
@@ -83,6 +85,21 @@ impl DebugDispatcher {
                 event.method,
                 event.safe_url,
                 event.page_index,
+                event.final_status,
+                event.outcome,
+                event.elapsed
+            ));
+        }
+    }
+
+    pub(crate) fn pagination_completion(&self, event: &PaginationCompletionEvent<'_>) {
+        if self.level != DebugLevel::None {
+            self.emit(format_args!(
+                "pagination-completion endpoint={} method={} pages={} items={} status={:?} outcome={:?} elapsed={:?}",
+                event.endpoint,
+                event.method,
+                event.pages_completed,
+                event.items_collected,
                 event.final_status,
                 event.outcome,
                 event.elapsed

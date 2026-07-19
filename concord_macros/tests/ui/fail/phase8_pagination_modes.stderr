@@ -1,0 +1,23 @@
+error: pagination requires a bodyless endpoint with a buffered decoded response
+ --> tests/ui/fail/phase8_pagination_modes.rs:8:9
+  |
+8 |         }
+  |         ^
+
+error: pagination requires a bodyless endpoint with a buffered decoded response
+  --> tests/ui/fail/phase8_pagination_modes.rs:17:9
+   |
+17 |         }
+   |         ^
+
+error: pagination requires a bodyless endpoint with a buffered decoded response
+  --> tests/ui/fail/phase8_pagination_modes.rs:26:9
+   |
+26 |         }
+   |         ^
+
+error: pagination requires a bodyless endpoint with a buffered decoded response
+  --> tests/ui/fail/phase8_pagination_modes.rs:35:9
+   |
+35 |         }
+   |         ^

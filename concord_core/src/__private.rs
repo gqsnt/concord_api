@@ -54,6 +54,8 @@ pub use crate::error::{ApiError, ClientBuildError};
 #[doc(hidden)]
 pub use crate::hooks::DebugLevel;
 #[doc(hidden)]
+pub use crate::pagination::{PaginatedEndpoint, paginate_with};
+#[doc(hidden)]
 pub use crate::rate_limit::{
     RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitRule, RateLimitWindow,
 };
@@ -63,6 +65,8 @@ pub use crate::request::{
     HeadBuilder, MetadataResponse, NoContentResponse, PreparedBody, PreparedHead, RequestMeta,
     RequestOptions, ResponseHandler, StreamResponseHandler, TimeoutOverride,
 };
+#[doc(hidden)]
+pub use crate::response::{ExecuteResponse, ResponseInput};
 
 /// Generated-private owner for one credential source selection.
 #[doc(hidden)]
@@ -352,6 +356,16 @@ pub fn missing_input_error() -> ClientBuildError {
 #[must_use]
 pub fn request<E>(core: &ClientCore, endpoint: E) -> crate::Request<E> {
     crate::Request::new(core.clone(), endpoint)
+}
+
+/// Creates one side-effect-free stable pagination wrapper.
+#[doc(hidden)]
+#[must_use]
+pub fn paginate_request<E, L>(request: crate::Request<E>, limit: L) -> crate::PaginatedRequest<E>
+where
+    L: Into<crate::PageLimit>,
+{
+    crate::PaginatedRequest::new(request, limit.into())
 }
 
 /// Consumes a pending request, maps its endpoint value, and preserves every

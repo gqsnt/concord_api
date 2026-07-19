@@ -18,6 +18,13 @@ pub(crate) struct PreparedOperation<E> {
     pub(crate) body_metadata: BodyMetadata,
 }
 
+pub(crate) struct PreparedPaginationPage<E> {
+    pub(crate) core: ClientCore,
+    pub(crate) endpoint: E,
+    pub(crate) head: PreparedHead,
+    pub(crate) body_metadata: BodyMetadata,
+}
+
 pub(crate) struct PreparationFailure {
     pub(crate) core: ClientCore,
     pub(crate) operation_id: OperationId,
@@ -102,88 +109,7 @@ where
             )));
         }
     };
-    if let Err(error) = body_metadata.validate_limit(core.request_body_limit()) {
-        drop(error);
-        let error = ApiError::classified(
-            meta.endpoint(),
-            meta.method().clone(),
-            ErrorCategory::RequestBody,
-        );
-        return Ok(OperationPreparation::Failed(failure(
-            core,
-            operation_id,
-            meta,
-            Arc::from(head.safe_url()),
-            debug,
-            started,
-            error,
-        )));
-    }
-    if let Err(error) = head.validate_rate_limit_key_limit(core.rate_limit_key_limit()) {
-        return Ok(OperationPreparation::Failed(failure(
-            core,
-            operation_id,
-            meta,
-            Arc::from(head.safe_url()),
-            debug,
-            started,
-            error,
-        )));
-    }
-    if let Err(error) = E::Response::validate_configuration(meta.endpoint(), meta.method()) {
-        return Ok(OperationPreparation::Failed(failure(
-            core,
-            operation_id,
-            meta,
-            Arc::from(head.safe_url()),
-            debug,
-            started,
-            error,
-        )));
-    }
-    if let Err(error) = head.apply_media_headers(
-        E::Response::ACCEPT,
-        body_metadata.content_type(),
-        body_metadata.owns_content_type(),
-    ) {
-        return Ok(OperationPreparation::Failed(failure(
-            core,
-            operation_id,
-            meta,
-            Arc::from(head.safe_url()),
-            debug,
-            started,
-            error,
-        )));
-    }
-    if let Err(error) = head.validate_auth() {
-        return Ok(OperationPreparation::Failed(failure(
-            core,
-            operation_id,
-            meta,
-            Arc::from(head.safe_url()),
-            debug,
-            started,
-            error,
-        )));
-    }
-    if let Err(error) = ensure_matching_meta(&meta, &head) {
-        return Ok(OperationPreparation::Failed(failure(
-            core,
-            operation_id,
-            meta,
-            Arc::from(head.safe_url()),
-            debug,
-            started,
-            error,
-        )));
-    }
-    let url_preflight = if head.auth().is_empty() {
-        core.preflight_url(meta.endpoint(), meta.method(), head.logical_url())
-    } else {
-        core.preflight_protected_url(meta.endpoint(), meta.method(), head.logical_url())
-    };
-    if let Err(error) = url_preflight {
+    if let Err(error) = validate_prepared_head::<E>(&core, &meta, &mut head, &body_metadata) {
         return Ok(OperationPreparation::Failed(failure(
             core,
             operation_id,
@@ -214,6 +140,71 @@ where
         head,
         body_metadata,
     }))
+}
+
+pub(crate) fn prepare_pagination_page<E>(
+    request: Request<E>,
+    patch: crate::pagination::PaginationPatch,
+) -> Result<PreparedPaginationPage<E>, ApiError>
+where
+    E: EndpointSpec,
+{
+    let Request {
+        core,
+        endpoint,
+        options,
+    } = request;
+    let meta = endpoint.request_meta();
+    let builder = HeadBuilder::new(
+        core.base_url(),
+        meta.clone(),
+        &options,
+        core.default_debug(),
+    );
+    let (mut head, body_metadata) = endpoint.prepare_head_and_body_metadata(builder)?;
+    head.apply_pagination_patch(patch)
+        .map_err(|error| ApiError::pagination(meta.endpoint(), meta.method().clone(), error))?;
+    validate_prepared_head::<E>(&core, &meta, &mut head, &body_metadata)?;
+    Ok(PreparedPaginationPage {
+        core,
+        endpoint,
+        head,
+        body_metadata,
+    })
+}
+
+fn validate_prepared_head<E>(
+    core: &ClientCore,
+    meta: &RequestMeta,
+    head: &mut PreparedHead,
+    body_metadata: &BodyMetadata,
+) -> Result<(), ApiError>
+where
+    E: EndpointSpec,
+{
+    if let Err(error) = body_metadata.validate_limit(core.request_body_limit()) {
+        drop(error);
+        return Err(ApiError::classified(
+            meta.endpoint(),
+            meta.method().clone(),
+            ErrorCategory::RequestBody,
+        ));
+    }
+    head.validate_rate_limit_key_limit(core.rate_limit_key_limit())?;
+    E::Response::validate_configuration(meta.endpoint(), meta.method())?;
+    head.apply_media_headers(
+        E::Response::ACCEPT,
+        body_metadata.content_type(),
+        body_metadata.owns_content_type(),
+    )?;
+    head.validate_auth()?;
+    ensure_matching_meta(meta, head)?;
+    if head.auth().is_empty() {
+        core.preflight_url(meta.endpoint(), meta.method(), head.logical_url())?;
+    } else {
+        core.preflight_protected_url(meta.endpoint(), meta.method(), head.logical_url())?;
+    }
+    Ok(())
 }
 
 fn failure(

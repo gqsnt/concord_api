@@ -1,43 +1,25 @@
-//! Private executable proof of pagination identity and aggregate bounds.
-//!
-//! This module is compiled only for `concord_core` unit tests. It is not the
-//! production pagination runtime and deliberately has no HTTP integration.
+//! Stable pagination contracts and the single production sequential page loop.
 
+mod controller;
+mod error;
+mod execute;
 mod identity;
 mod limits;
-mod model;
+mod pending;
+mod request;
+
+pub use controller::{
+    CursorPagination, HasNextCursor, OffsetPagination, PagePagination, PaginationController,
+};
+pub use error::PaginationError;
+pub use pending::{PageLimit, PaginatedEndpoint, PaginatedRequest};
+pub use request::PaginationRequest;
+
+#[doc(hidden)]
+pub use execute::paginate_with;
+pub(crate) use request::{HeaderPatch, PaginationPatch, QueryPatch};
 
 #[cfg(test)]
+mod runtime_tests;
+#[cfg(test)]
 mod tests;
-
-use identity::IdentityEncodingError;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Boundary {
-    Hook,
-    Credential,
-    Limiter,
-    Transport,
-    Controller,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum PaginationError {
-    IdentityEncoding(IdentityEncodingError),
-    RepeatedIdentity,
-    RetainedIdentityByteOverflow,
-    RetainedIdentityByteLimit,
-    PageCountOverflow,
-    PageLimit,
-    ItemCountOverflow,
-    ItemLimit,
-    BoundaryCountOverflow(Boundary),
-    Controller,
-    TransportScriptExhausted,
-}
-
-impl From<IdentityEncodingError> for PaginationError {
-    fn from(error: IdentityEncodingError) -> Self {
-        Self::IdentityEncoding(error)
-    }
-}

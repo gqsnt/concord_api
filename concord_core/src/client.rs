@@ -143,6 +143,18 @@ impl ClientCore {
         self.inner.runtime.request_body_limit
     }
 
+    pub(crate) fn pagination_max_pages(&self) -> std::num::NonZeroU32 {
+        self.inner.runtime.pagination_max_pages
+    }
+
+    pub(crate) fn pagination_max_items(&self) -> std::num::NonZeroUsize {
+        self.inner.runtime.pagination_max_items
+    }
+
+    pub(crate) fn pagination_identity_limit(&self) -> std::num::NonZeroUsize {
+        self.inner.runtime.pagination_identity_limit
+    }
+
     pub(crate) fn stream_response_limit(&self) -> std::num::NonZeroUsize {
         self.inner.runtime.stream_response_limit
     }

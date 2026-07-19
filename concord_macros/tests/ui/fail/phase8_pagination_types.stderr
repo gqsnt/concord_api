@@ -1,0 +1,17 @@
+error: unknown endpoint value `missing`
+ --> tests/ui/fail/phase8_pagination_types.rs:8:29
+  |
+8 |                 offset = ep.missing,
+  |                             ^^^^^^^
+
+error: built-in pagination assignment `offset` requires endpoint field type `u64`
+  --> tests/ui/fail/phase8_pagination_types.rs:18:18
+   |
+18 |         GET Read(offset: String, limit: u32) -> Json<Vec<u8>> {
+   |                  ^^^^^^
+
+error: a cursor pagination binding must have type `Option<C>` matching `CursorPagination<C>`
+  --> tests/ui/fail/phase8_pagination_types.rs:30:18
+   |
+30 |         GET Read(cursor: String) -> Json<Vec<u8>> {
+   |                  ^^^^^^

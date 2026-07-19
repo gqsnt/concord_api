@@ -43,6 +43,32 @@ pub(crate) struct SourceEndpoint {
     pub(crate) body: Option<RequestBodyKind>,
     pub(crate) layer: Layer,
     pub(crate) response: ResponseKind,
+    pub(crate) pagination: Option<PaginationDecl>,
+}
+
+#[derive(Clone)]
+pub(crate) enum PaginationDecl {
+    BuiltIn {
+        controller: BuiltInPagination,
+        assignments: Vec<PaginationAssignment>,
+    },
+    Custom {
+        factory: Path,
+        arguments: Vec<PublicExpr>,
+    },
+}
+
+#[derive(Clone)]
+pub(crate) enum BuiltInPagination {
+    Offset,
+    Page,
+    Cursor(Type),
+}
+
+#[derive(Clone)]
+pub(crate) struct PaginationAssignment {
+    pub(crate) name: Ident,
+    pub(crate) field: Ident,
 }
 
 #[derive(Clone)]

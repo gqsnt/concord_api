@@ -22,18 +22,17 @@ mod generated_contract;
 mod hooks;
 mod http;
 mod operation;
+mod pagination;
 mod rate_limit;
 mod redaction;
 mod request;
 mod response;
 mod runtime;
 
+pub use pagination::{PageLimit, PaginatedRequest};
 pub use request::{Request, ResponseRequest};
 
 mod execute;
-
-#[cfg(test)]
-mod pagination;
 
 #[doc(hidden)]
 pub mod __private;

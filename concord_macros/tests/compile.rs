@@ -129,6 +129,7 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
         "renamed_api/endpoints/resources/struct.StreamUpload.html",
         "renamed_api/endpoints/resources/struct.StreamDownload.html",
         "renamed_api/endpoints/resources/struct.MultipartUpload.html",
+        "renamed_api/endpoints/resources/struct.Pages.html",
         "renamed_rate_api/endpoints/struct.Read.html",
     ] {
         let path = documentation.join(relative);
@@ -206,6 +207,9 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
                     "scope_value",
                     "body",
                 ],
+                path if path.ends_with("struct.Pages.html") => {
+                    &["RenamedApi::resources::Pages", "GET", "PageCodec", "cursor"]
+                }
                 path if path.ends_with("renamed_rate_api/endpoints/struct.Read.html") => &[
                     "RenamedRateApi::Read",
                     "GET",
@@ -277,6 +281,10 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
         prelude_page.contains("RenamedApiResourcesByIdRequestExt"),
         "generated prelude Rustdoc omitted the deterministic request-extension alias"
     );
+    assert!(
+        prelude_page.contains("RenamedApiResourcesPagesRequestExt"),
+        "generated prelude Rustdoc omitted the paginated request-extension alias"
+    );
 
     let credentials_page = std::fs::read_to_string(
         documentation.join("renamed_api/credentials/struct.ApiKeyCredentialHandle.html"),
@@ -325,6 +333,43 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
         assert!(
             !request_ext_page.contains(forbidden),
             "generated request-extension Rustdoc exposed {forbidden}"
+        );
+    }
+
+    let pages_request_ext_path =
+        documentation.join("renamed_api/endpoints/resources/trait.PagesRequestExt.html");
+    let pages_request_ext_page =
+        std::fs::read_to_string(&pages_request_ext_path).unwrap_or_else(|error| {
+            panic!(
+                "failed to read {}: {error}",
+                pages_request_ext_path.display()
+            )
+        });
+    for expected in [
+        "Request&lt;Pages&gt;",
+        "RenamedApiResourcesPagesRequestExt",
+        "id=\"tymethod.paginate\"",
+        "PageLimit",
+        "PaginatedRequest",
+    ] {
+        assert!(
+            pages_request_ext_page.contains(expected),
+            "generated pagination Rustdoc omitted {expected}"
+        );
+    }
+    for forbidden in [
+        "__private",
+        "__concord_",
+        "PaginatedEndpoint",
+        "PaginationController",
+        "RenamedController",
+        "renamed_controller",
+        "reqwest",
+        "cursor-rustdoc-sentinel-73a4d1",
+    ] {
+        assert!(
+            !pages_request_ext_page.contains(forbidden),
+            "generated pagination Rustdoc exposed {forbidden}"
         );
     }
 }

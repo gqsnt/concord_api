@@ -21,14 +21,18 @@ use crate::body::{BodyError, BodyFactory, RequestBody, StreamBody};
 #[cfg(feature = "multipart")]
 use crate::body::{MultipartBody, MultipartPart};
 use crate::client::ClientCore;
-use crate::codec::OctetStream;
+use crate::codec::{CodecError, DecodeBody, DecodeContext, OctetStream};
 use crate::error::{ApiError, AuthErrorKind, ErrorCategory};
 use crate::hooks::{
-    BeforeSend, BoxFuture, CompletionEvent, DebugLevel, ResponseHeadEvent, RuntimeHooks,
+    BeforeSend, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel,
+    PaginationCompletionEvent, ResponseHeadEvent, RuntimeHooks,
 };
 use crate::http::HttpConfigBuilder;
 use crate::http::provider::{ProviderBody, ProviderRequest};
 use crate::operation::OperationId;
+use crate::pagination::{
+    PageLimit, PaginationController, PaginationError, PaginationRequest, paginate_with,
+};
 #[cfg(feature = "rate-limit-governor")]
 use crate::rate_limit::GovernorRateLimiter;
 use crate::rate_limit::{
@@ -36,8 +40,8 @@ use crate::rate_limit::{
     RateLimiter,
 };
 use crate::request::{
-    BodyMetadata, BodySpec, BytesResponse, EndpointSpec, HeadBuilder, PreparedHead, Request,
-    RequestMeta, StreamResponseHandler,
+    BodyMetadata, BodySpec, BufferedResponse, BytesResponse, EmptyBody, EndpointSpec, HeadBuilder,
+    PreparedHead, Request, RequestMeta, StreamResponseHandler,
 };
 use crate::runtime::RuntimeConfigBuilder;
 
@@ -56,6 +60,64 @@ struct ProtectedEndpoint {
 
 struct ProtectedStreamEndpoint {
     credential: CredentialRef<AccessToken>,
+}
+
+#[derive(Clone)]
+struct PaginatedProtectedEndpoint {
+    credential: CredentialRef<AccessToken>,
+}
+
+struct AuthenticationPageCodec;
+
+impl DecodeBody for AuthenticationPageCodec {
+    type Output = Vec<u8>;
+
+    const ACCEPT: Option<&'static str> = None;
+
+    fn validate_content_type(_content_type: Option<&str>) -> Result<(), CodecError> {
+        Ok(())
+    }
+
+    fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
+        Ok(body.to_vec())
+    }
+}
+
+impl EndpointSpec for PaginatedProtectedEndpoint {
+    type Body = EmptyBody;
+    type Response = BufferedResponse<AuthenticationPageCodec>;
+
+    fn request_meta(&self) -> RequestMeta {
+        RequestMeta::new(ENDPOINT, Method::GET, Some(Duration::from_secs(30)))
+    }
+
+    fn prepare_head_and_body_metadata(
+        &self,
+        mut builder: HeadBuilder,
+    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+        builder.push_static("paginated-protected")?;
+        builder.push_auth(
+            Auth::bearer(self.credential.clone()).challenge(ChallengePolicy::Unauthorized),
+        )?;
+        Ok((builder.finish(), EmptyBody::metadata()))
+    }
+
+    fn into_body(self) -> Self::Body {
+        EmptyBody::new()
+    }
+}
+
+#[derive(Clone)]
+struct OneAuthenticationPage;
+
+impl PaginationController<Vec<u8>> for OneAuthenticationPage {
+    fn apply(&self, _request: &mut PaginationRequest<'_>) -> Result<(), PaginationError> {
+        Ok(())
+    }
+
+    fn next(&self, _page: &Vec<u8>) -> Result<Option<Self>, PaginationError> {
+        Ok(None)
+    }
 }
 
 struct BasicEndpoint {
@@ -439,16 +501,37 @@ impl EndpointSpec for ProtectedEndpoint {
 #[derive(Clone)]
 struct HookRecord {
     operation_id: OperationId,
+    parent_operation_id: Option<OperationId>,
+    page_index: u32,
     recovery_index: u8,
     safe_url: String,
     known_body_length: Option<u64>,
 }
 
+type AuthResponseRecord = (OperationId, u8, StatusCode, Option<OperationId>, u32);
+type AuthCompletionRecord = (
+    OperationId,
+    bool,
+    Option<StatusCode>,
+    Option<OperationId>,
+    u32,
+    CompletionOutcome,
+);
+type AuthPaginationRecord = (
+    OperationId,
+    u32,
+    usize,
+    bool,
+    Option<StatusCode>,
+    CompletionOutcome,
+);
+
 #[derive(Default)]
 struct AuthHooks {
     before: Mutex<Vec<HookRecord>>,
-    response: Mutex<Vec<(OperationId, u8, StatusCode)>>,
-    completion: Mutex<Vec<(OperationId, bool, Option<StatusCode>)>>,
+    response: Mutex<Vec<AuthResponseRecord>>,
+    completion: Mutex<Vec<AuthCompletionRecord>>,
+    pagination: Mutex<Vec<AuthPaginationRecord>>,
     observed_ready_during_response_hook: AtomicBool,
     observed_selector: Mutex<Option<Arc<SlotSelector<AccessToken>>>>,
     ready_during_response: Mutex<Vec<bool>>,
@@ -480,6 +563,8 @@ impl RuntimeHooks for AuthHooks {
             .expect("before records")
             .push(HookRecord {
                 operation_id: context.operation_id,
+                parent_operation_id: context.parent_operation_id,
+                page_index: context.page_index,
                 recovery_index: context.recovery_index,
                 safe_url: context.safe_url.to_owned(),
                 known_body_length: context.known_body_length,
@@ -499,6 +584,8 @@ impl RuntimeHooks for AuthHooks {
             context.operation_id,
             context.recovery_index,
             context.status,
+            context.parent_operation_id,
+            context.page_index,
         ));
         let selector = self
             .observed_selector
@@ -531,6 +618,24 @@ impl RuntimeHooks for AuthHooks {
             context.operation_id,
             context.recovered_authentication,
             context.final_status,
+            context.parent_operation_id,
+            context.page_index,
+            context.outcome,
+        ));
+        Box::pin(async {})
+    }
+
+    fn on_pagination_complete<'a>(
+        &'a self,
+        context: PaginationCompletionEvent<'a>,
+    ) -> BoxFuture<'a, ()> {
+        self.pagination.lock().expect("pagination records").push((
+            context.operation_id,
+            context.pages_completed,
+            context.items_collected,
+            context.recovered_authentication,
+            context.final_status,
+            context.outcome,
         ));
         Box::pin(async {})
     }
@@ -575,6 +680,19 @@ impl CredentialProvider for RotatingProvider {
 
 struct CountingProvider {
     calls: Arc<AtomicUsize>,
+}
+
+struct FailingProvider;
+
+impl CredentialProvider for FailingProvider {
+    type Material = AccessToken;
+
+    fn acquire<'a>(
+        &'a self,
+        _context: CredentialRequest<'a>,
+    ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
+        Box::pin(async { Err(AuthError::new(AuthErrorKind::Acquisition)) })
+    }
 }
 
 type ObservedSelector = (Arc<SlotSelector<AccessToken>>, Arc<Mutex<Vec<bool>>>);
@@ -936,6 +1054,165 @@ async fn real_tls_authentication_recovery_performs_two_visible_limiter_acquisiti
 }
 
 #[tokio::test]
+async fn paginated_tls_recovery_keeps_one_page_identity_index_and_completion() {
+    let server = TlsServer::start().expect("TLS pagination recovery server");
+    server.queue_status(401).expect("challenge status");
+    server.queue_status(200).expect("success status");
+
+    let provider_acquires = Arc::new(AtomicUsize::new(0));
+    let provider_refreshes = Arc::new(AtomicUsize::new(0));
+    let exact_current = Arc::new(AtomicBool::new(false));
+    let selector = SlotSelector::provider(
+        RotatingProvider {
+            acquires: Arc::clone(&provider_acquires),
+            refreshes: Arc::clone(&provider_refreshes),
+            exact_current_seen: Arc::clone(&exact_current),
+        },
+        Duration::ZERO,
+    );
+    let limiter_acquires = Arc::new(AtomicUsize::new(0));
+    let limiter_observations = Arc::new(AtomicUsize::new(0));
+    let limiter: Arc<dyn RateLimiter> = Arc::new(AuthRateLimiter::counting(
+        &limiter_acquires,
+        &limiter_observations,
+    ));
+    let hooks = Arc::new(AuthHooks::default());
+    let core = ClientCore::build(
+        &server.url("localhost", "/v1/"),
+        HttpConfigBuilder::new()
+            .http1_only()
+            .add_root_certificate_pem(server.certificate_pem()),
+        RuntimeConfigBuilder::new()
+            .hooks(hooks.clone())
+            .rate_limiter(limiter),
+    )
+    .expect("managed TLS pagination core");
+
+    let items = paginate_with(
+        Request::new(
+            core,
+            PaginatedProtectedEndpoint {
+                credential: CredentialRef::new(Arc::clone(&selector)),
+            },
+        ),
+        PageLimit::Take(1),
+        |_endpoint| Ok(OneAuthenticationPage),
+        |_endpoint, _controller| Ok(()),
+        |_controller| None,
+    )
+    .await
+    .expect("paginated authentication recovery");
+    assert_eq!(items, b"ok");
+    server
+        .wait_for_requests(2, Duration::from_secs(2))
+        .expect("both page attempts reached TLS loopback");
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[0].header("authorization"),
+        Some("Bearer initial-auth-token-1148c7")
+    );
+    assert_eq!(
+        requests[1].header("authorization"),
+        Some("Bearer refreshed-auth-token-709fe2")
+    );
+    assert_eq!(provider_acquires.load(Ordering::SeqCst), 1);
+    assert_eq!(provider_refreshes.load(Ordering::SeqCst), 1);
+    assert!(exact_current.load(Ordering::SeqCst));
+    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 2);
+    assert_eq!(limiter_observations.load(Ordering::SeqCst), 2);
+
+    let before = hooks.before.lock().expect("before records").clone();
+    assert_eq!(before.len(), 2);
+    assert_eq!(before[0].operation_id, before[1].operation_id);
+    assert_eq!(before[0].parent_operation_id, before[1].parent_operation_id);
+    assert!(before[0].parent_operation_id.is_some());
+    assert_eq!([before[0].page_index, before[1].page_index], [0, 0]);
+    assert_eq!([before[0].recovery_index, before[1].recovery_index], [0, 1]);
+
+    let responses = hooks.response.lock().expect("response records");
+    assert_eq!(responses.len(), 2);
+    assert_eq!(responses[0].0, responses[1].0);
+    assert_eq!([responses[0].1, responses[1].1], [0, 1]);
+    assert_eq!([responses[0].4, responses[1].4], [0, 0]);
+    assert_eq!(responses[0].3, responses[1].3);
+    drop(responses);
+
+    let completion = hooks.completion.lock().expect("completion records");
+    assert_eq!(completion.len(), 1);
+    assert_eq!(completion[0].0, before[0].operation_id);
+    assert!(completion[0].1);
+    assert_eq!(completion[0].2, Some(StatusCode::OK));
+    assert_eq!(completion[0].3, before[0].parent_operation_id);
+    assert_eq!(completion[0].4, 0);
+    drop(completion);
+
+    let pagination = hooks.pagination.lock().expect("pagination records");
+    assert_eq!(pagination.len(), 1);
+    assert_eq!(Some(pagination[0].0), before[0].parent_operation_id);
+    assert_eq!(pagination[0].1, 1);
+    assert_eq!(pagination[0].2, 2);
+    assert!(pagination[0].3);
+    assert_eq!(pagination[0].4, Some(StatusCode::OK));
+    assert_eq!(pagination[0].5, CompletionOutcome::Success);
+}
+
+#[tokio::test]
+async fn paginated_authentication_failure_keeps_its_ordinary_category_and_correlated_completion() {
+    let executor = DeterministicExecutor::new();
+    let hooks = Arc::new(AuthHooks::default());
+    let (core, _debug) = core(&executor, Arc::clone(&hooks));
+    let selector = SlotSelector::provider(FailingProvider, Duration::ZERO);
+
+    let error = api_error(
+        paginate_with(
+            Request::new(
+                core,
+                PaginatedProtectedEndpoint {
+                    credential: CredentialRef::new(Arc::clone(&selector)),
+                },
+            ),
+            PageLimit::Take(1),
+            |_endpoint| Ok(OneAuthenticationPage),
+            |_endpoint, _controller| Ok(()),
+            |_controller| None,
+        )
+        .await,
+    );
+    assert_eq!(error.category(), ErrorCategory::AuthenticationProvider);
+    assert_eq!(error.auth_kind(), Some(AuthErrorKind::Acquisition));
+    assert_eq!(error.pagination_kind(), None);
+    assert_eq!(executor.application().request_count().expect("count"), 0);
+
+    let before = hooks.before.lock().expect("before records");
+    assert_eq!(before.len(), 1);
+    assert!(before[0].parent_operation_id.is_some());
+    let page_operation_id = before[0].operation_id;
+    let aggregate_operation_id = before[0]
+        .parent_operation_id
+        .expect("pagination parent operation");
+    drop(before);
+
+    assert!(hooks.response.lock().expect("response records").is_empty());
+    let completion = hooks.completion.lock().expect("completion records");
+    assert_eq!(completion.len(), 1);
+    assert_eq!(completion[0].0, page_operation_id);
+    assert_eq!(completion[0].2, None);
+    assert_eq!(completion[0].3, Some(aggregate_operation_id));
+    assert_eq!(completion[0].4, 0);
+    assert_eq!(completion[0].5, CompletionOutcome::AuthenticationProvider);
+    drop(completion);
+
+    let pagination = hooks.pagination.lock().expect("pagination records");
+    assert_eq!(pagination.len(), 1);
+    assert_eq!(pagination[0].0, aggregate_operation_id);
+    assert_eq!(pagination[0].1, 0);
+    assert_eq!(pagination[0].2, 0);
+    assert_eq!(pagination[0].4, None);
+    assert_eq!(pagination[0].5, CompletionOutcome::AuthenticationProvider);
+}
+
+#[tokio::test]
 async fn real_tls_provider_http_remains_outside_application_limiter_lifecycle() {
     let provider_server = TlsServer::start().expect("TLS provider loopback server");
     let application_server = TlsServer::start().expect("TLS application loopback server");
@@ -997,6 +1274,70 @@ async fn real_tls_provider_http_remains_outside_application_limiter_lifecycle() 
     assert_eq!(hooks.before.lock().expect("before hooks").len(), 1);
     assert_eq!(hooks.response.lock().expect("response hooks").len(), 1);
     assert_eq!(hooks.completion.lock().expect("completion hooks").len(), 1);
+    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 1);
+    assert_eq!(limiter_observations.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn paginated_provider_http_never_enters_page_lifecycle_or_limiter_work() {
+    let provider_server = TlsServer::start().expect("TLS pagination provider server");
+    let application_server = TlsServer::start().expect("TLS pagination application server");
+    let provider_calls = Arc::new(AtomicUsize::new(0));
+    let selector = SlotSelector::provider(
+        LoopbackHttpProvider {
+            url: url::Url::parse(&provider_server.url("localhost", "/token"))
+                .expect("provider URL"),
+            calls: Arc::clone(&provider_calls),
+        },
+        Duration::ZERO,
+    );
+    let hooks = Arc::new(AuthHooks::default());
+    let limiter_acquires = Arc::new(AtomicUsize::new(0));
+    let limiter_observations = Arc::new(AtomicUsize::new(0));
+    let limiter: Arc<dyn RateLimiter> = Arc::new(AuthRateLimiter::counting(
+        &limiter_acquires,
+        &limiter_observations,
+    ));
+    let core = ClientCore::build(
+        &application_server.url("localhost", "/v1/"),
+        HttpConfigBuilder::new()
+            .http1_only()
+            .add_root_certificate_pem(application_server.certificate_pem()),
+        RuntimeConfigBuilder::new()
+            .hooks(hooks.clone())
+            .rate_limiter(limiter),
+    )
+    .expect("managed pagination application/provider core");
+
+    let items = paginate_with(
+        Request::new(
+            core,
+            PaginatedProtectedEndpoint {
+                credential: CredentialRef::new(Arc::clone(&selector)),
+            },
+        ),
+        PageLimit::Take(1),
+        |_endpoint| Ok(OneAuthenticationPage),
+        |_endpoint, _controller| Ok(()),
+        |_controller| None,
+    )
+    .await
+    .expect("provider-backed pagination");
+    assert_eq!(items, b"ok");
+    provider_server
+        .wait_for_requests(1, Duration::from_secs(2))
+        .expect("provider request reached TLS loopback");
+    application_server
+        .wait_for_requests(1, Duration::from_secs(2))
+        .expect("application page reached TLS loopback");
+
+    assert_eq!(provider_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(provider_server.requests().len(), 1);
+    assert_eq!(application_server.requests().len(), 1);
+    assert_eq!(hooks.before.lock().expect("before hooks").len(), 1);
+    assert_eq!(hooks.response.lock().expect("response hooks").len(), 1);
+    assert_eq!(hooks.completion.lock().expect("completion hooks").len(), 1);
+    assert_eq!(hooks.pagination.lock().expect("pagination hooks").len(), 1);
     assert_eq!(limiter_acquires.load(Ordering::SeqCst), 1);
     assert_eq!(limiter_observations.load(Ordering::SeqCst), 1);
 }

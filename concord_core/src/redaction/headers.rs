@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fmt;
 
 use http::{HeaderMap, HeaderName, HeaderValue};
@@ -19,12 +20,26 @@ pub enum SanitizedHeaderValue<'a> {
 #[derive(Clone, Copy)]
 pub struct SanitizedHeaders<'a> {
     headers: &'a HeaderMap,
+    sensitive: Option<&'a HashSet<HeaderName>>,
 }
 
 impl<'a> SanitizedHeaders<'a> {
     #[allow(dead_code, reason = "used by later production metadata surfaces")]
     pub(crate) const fn new(headers: &'a HeaderMap) -> Self {
-        Self { headers }
+        Self {
+            headers,
+            sensitive: None,
+        }
+    }
+
+    pub(crate) const fn with_sensitive(
+        headers: &'a HeaderMap,
+        sensitive: &'a HashSet<HeaderName>,
+    ) -> Self {
+        Self {
+            headers,
+            sensitive: Some(sensitive),
+        }
     }
 
     /// Returns the number of values, including repeated values.
@@ -50,14 +65,15 @@ impl<'a> SanitizedHeaders<'a> {
     pub fn get(&self, name: &HeaderName) -> Option<SanitizedHeaderValue<'a>> {
         self.headers
             .get(name)
-            .map(|value| sanitize_value(name, value))
+            .map(|value| sanitize_value(name, value, self.sensitive))
     }
 
     /// Iterates over every header value while preserving repeated-value order.
     pub fn iter(&self) -> impl Iterator<Item = (&'a HeaderName, SanitizedHeaderValue<'a>)> + 'a {
+        let sensitive = self.sensitive;
         self.headers
             .iter()
-            .map(|(name, value)| (name, sanitize_value(name, value)))
+            .map(move |(name, value)| (name, sanitize_value(name, value, sensitive)))
     }
 }
 
@@ -95,7 +111,7 @@ impl SanitizedHeaderMap {
         let entries = headers
             .iter()
             .map(|(name, value)| {
-                let value = match sanitize_value(name, value) {
+                let value = match sanitize_value(name, value, None) {
                     SanitizedHeaderValue::Text(text) => {
                         OwnedSanitizedHeaderValue::Text(text.to_owned())
                     }
@@ -149,8 +165,14 @@ impl fmt::Debug for SanitizedHeaderMap {
     }
 }
 
-fn sanitize_value<'a>(name: &HeaderName, value: &'a HeaderValue) -> SanitizedHeaderValue<'a> {
-    if is_sensitive_name(name.as_str()) {
+fn sanitize_value<'a>(
+    name: &HeaderName,
+    value: &'a HeaderValue,
+    extra_sensitive: Option<&HashSet<HeaderName>>,
+) -> SanitizedHeaderValue<'a> {
+    if is_sensitive_name(name.as_str())
+        || extra_sensitive.is_some_and(|sensitive| sensitive.contains(name))
+    {
         SanitizedHeaderValue::Redacted
     } else {
         match value.to_str() {

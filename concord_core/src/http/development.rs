@@ -22,7 +22,33 @@ pub(super) fn boundary_request(
     known_body_length: Option<usize>,
     expectation_body: Option<Bytes>,
 ) -> BoundaryRequest {
-    let headers = SanitizedHeaders::new(headers)
+    boundary_request_with_sensitive(
+        endpoint,
+        method,
+        safe_url,
+        headers,
+        &std::collections::HashSet::new(),
+        body_category,
+        known_body_length,
+        expectation_body,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the deterministic boundary receives the exact safe request facts"
+)]
+pub(super) fn boundary_request_with_sensitive(
+    endpoint: &'static str,
+    method: Method,
+    safe_url: Option<String>,
+    headers: &HeaderMap,
+    pagination_sensitive_headers: &std::collections::HashSet<http::HeaderName>,
+    body_category: BodyCategory,
+    known_body_length: Option<usize>,
+    expectation_body: Option<Bytes>,
+) -> BoundaryRequest {
+    let headers = SanitizedHeaders::with_sensitive(headers, pagination_sensitive_headers)
         .iter()
         .map(|(name, value)| {
             let value = match value {

@@ -52,12 +52,17 @@ impl Gate {
 
     /// Waits until at least one execution has reached the gate.
     pub async fn wait_until_reached(&self) {
+        self.wait_until_arrivals(1).await;
+    }
+
+    /// Waits until at least `expected` executions have reached the gate.
+    pub async fn wait_until_arrivals(&self, expected: usize) {
         loop {
-            if self.arrivals() != 0 {
+            if self.arrivals() >= expected {
                 return;
             }
             let reached = self.inner.reached.notified();
-            if self.arrivals() != 0 {
+            if self.arrivals() >= expected {
                 return;
             }
             reached.await;

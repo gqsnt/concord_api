@@ -307,6 +307,7 @@ impl ApplicationHttp {
         request: ApplicationRequest,
         safe_url: &str,
         public_headers: &HeaderMap,
+        pagination_sensitive_headers: &std::collections::HashSet<http::HeaderName>,
         body_kind: BodyKind,
         known_body_length: Option<u64>,
     ) -> Result<ApplicationResponse, ApiError> {
@@ -329,11 +330,12 @@ impl ApplicationHttp {
                     })?,
                     None => Bytes::new(),
                 };
-                let boundary = super::development::boundary_request(
+                let boundary = super::development::boundary_request_with_sensitive(
                     endpoint,
                     method.clone(),
                     Some(safe_url.to_owned()),
                     native.headers(),
+                    pagination_sensitive_headers,
                     boundary_body_category(body_kind),
                     known_body_length.and_then(|length| usize::try_from(length).ok()),
                     Some(boundary_body),
@@ -368,7 +370,13 @@ impl ApplicationHttp {
 
         #[cfg(not(any(test, feature = "dangerous-dev-tools")))]
         let native = {
-            let _ = (safe_url, public_headers, body_kind, known_body_length);
+            let _ = (
+                safe_url,
+                public_headers,
+                pagination_sensitive_headers,
+                body_kind,
+                known_body_length,
+            );
             let body_failure = request.body_failure.clone();
             self.client.execute(request.native).await.map_err(|error| {
                 ApiError::from_reqwest(

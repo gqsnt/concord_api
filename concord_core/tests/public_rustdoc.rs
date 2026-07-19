@@ -62,6 +62,34 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
     let stream_response = std::fs::read_to_string(&stream_response_path).unwrap_or_else(|error| {
         panic!("failed to read {}: {error}", stream_response_path.display())
     });
+    let page_limit_path = documentation.join("enum.PageLimit.html");
+    let paginated_request_path = documentation.join("struct.PaginatedRequest.html");
+    let page_limit = std::fs::read_to_string(&page_limit_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", page_limit_path.display()));
+    let paginated_request =
+        std::fs::read_to_string(&paginated_request_path).unwrap_or_else(|error| {
+            panic!(
+                "failed to read {}: {error}",
+                paginated_request_path.display()
+            )
+        });
+    let pagination_pages = [
+        "struct.PaginationError.html",
+        "struct.PaginationRequest.html",
+        "struct.OffsetPagination.html",
+        "struct.PagePagination.html",
+        "struct.CursorPagination.html",
+        "trait.PaginationController.html",
+        "trait.HasNextCursor.html",
+    ]
+    .into_iter()
+    .map(|name| {
+        let path = documentation.join("advanced").join(name);
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
+    })
+    .collect::<Vec<_>>()
+    .join("\n");
     let rate_pages = [
         "struct.RateLimitError.html",
         "struct.RateLimitId.html",
@@ -123,6 +151,57 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         stream_response.contains("successful response head together with its bounded lazy body"),
         "stream response Rustdoc omitted its bounded lazy semantics"
     );
+    for expected in ["Take", "HardCap", "finite requested pagination limit"] {
+        assert!(
+            page_limit.contains(expected),
+            "page-limit Rustdoc omitted {expected:?}"
+        );
+    }
+    assert!(
+        paginated_request.contains("opaque directly awaitable sequential pagination operation")
+            && paginated_request.contains("pub struct PaginatedRequest"),
+        "paginated-request Rustdoc omitted its opaque directly awaitable contract"
+    );
+    for expected in [
+        "id=\"method.new\"",
+        "id=\"method.with_safe_message\"",
+        "id=\"method.kind\"",
+        "id=\"method.set_query\"",
+        "id=\"method.remove_query\"",
+        "id=\"method.set_header\"",
+        "id=\"method.remove_header\"",
+        "id=\"method.offset\"",
+        "id=\"method.page_size\"",
+        "id=\"method.page\"",
+        "id=\"method.cursor\"",
+        "id=\"tymethod.apply\"",
+        "id=\"tymethod.next\"",
+        "id=\"tymethod.next_cursor\"",
+        "public query or header state",
+        "absent cursor from a present",
+    ] {
+        assert!(
+            pagination_pages.contains(expected),
+            "pagination Rustdoc omitted {expected:?}"
+        );
+    }
+    for forbidden in [
+        "PaginatedEndpoint",
+        "paginate_with",
+        "PaginationPatch",
+        "CanonicalIdentity",
+        "CycleDetector",
+        "controller-rustdoc-sentinel-73a4d1",
+        "cursor-rustdoc-sentinel-73a4d1",
+        "reqwest",
+    ] {
+        assert!(
+            !pagination_pages.contains(forbidden)
+                && !paginated_request.contains(forbidden)
+                && !page_limit.contains(forbidden),
+            "pagination Rustdoc exposed private integration or continuation text {forbidden}"
+        );
+    }
     for expected in [
         "id=\"method.granted\"",
         "id=\"method.from_parts\"",
@@ -161,6 +240,12 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         !prelude.contains("RateLimitPlan") && !prelude.contains("GovernorRateLimiter"),
         "ordinary prelude unexpectedly exported advanced rate-limit contracts"
     );
+    assert!(
+        prelude.contains("PageLimit")
+            && !prelude.contains("PaginationController")
+            && !prelude.contains("PaginationRequest"),
+        "ordinary prelude pagination exports were not exact"
+    );
 
     for forbidden in [
         "MetadataResponse",
@@ -184,6 +269,9 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
                 &multipart_part,
                 &multipart_factory,
                 &stream_response,
+                &page_limit,
+                &paginated_request,
+                &pagination_pages,
                 &rate_pages,
             ]
             .iter()
