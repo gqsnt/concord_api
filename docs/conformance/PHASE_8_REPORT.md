@@ -18,6 +18,8 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 
 - Original Phase 8 starting HEAD: `10c43969cc86ff27df1fc61b273a1dc860f78b5f`
 - Correction starting HEAD: `cefedf4659ab2080d150eb0f48bb2b93b3bf07cd`
+- Atomic-reservation evidence-correction starting HEAD:
+  `afff05dbd34fa001d1a819a7e8a9e67b88800a70`
 - Branch: `master`
 - Initial tree: clean
 - Previous immutable source/test commit: `c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9`
@@ -26,11 +28,17 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 - Original Phase 8 source/test commit: `8101a3ab8f281fe37aa9132327cc6c06f2c88d47`
 - Phase 8 source/test correction commit and final immutable tested source:
   `515b33ebd345a5eae06a6f2681cbfa4ff403ab9e`
-- Corrected Phase 8 evidence/report/state commit: `ccf569a3072344b345d79d2d551ccb0c0ebce57d`
-- Corrected Phase 8 evidence anchor: `b86eb2e7516dcae4b26ac5d53f444351ebe15654`
+- Superseded corrected Phase 8 evidence/report/state commit:
+  `ccf569a3072344b345d79d2d551ccb0c0ebce57d`
+- Superseded corrected Phase 8 evidence anchor:
+  `b86eb2e7516dcae4b26ac5d53f444351ebe15654`
+- Atomic-reservation-corrected Phase 8 evidence/report/state commit:
+  `PENDING_CORRECTED_PHASE_8_EVIDENCE`
+- Atomic-reservation-corrected Phase 8 evidence anchor:
+  `PENDING_CORRECTED_PHASE_8_ANCHOR`
 - Compatible post-anchor metadata descendant: the final documentation-only commit with subject
-  `docs: record corrected phase 8 anchor identity`; it records the real anchor identity and does
-  not replace it
+  `docs: record phase 8 atomic evidence anchor`; it records the real corrected anchor identity and
+  does not replace it
 - Authoritative corrected-source validation recorded: `2026-07-19T13:05:36Z`
 - Focused correction patch SHA-256:
   `5089677710ce487050ea8781a43440d05c09fa6be70192a0bbd837b6fa0bc886`
@@ -40,10 +48,12 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 The ignored contract map is `git_diff/phase-8-contract-map.md` and contains exactly 122 unique
 requirement IDs: the original 115 Phase 8 traces plus seven preserved rate-limit authorities owned
 by this correction. The ignored correction ledger is `git_diff/phase-8-correction-validation.md`;
+the atomic-reservation evidence ledger is
+`git_diff/phase-8-evidence-correction-validation.md`;
 the focused and cumulative patches are `git_diff/phase-8-rate-key-correction.patch` and
 `git_diff/phase-8-corrected-cumulative-source.patch`. The corrected semantic map contains 124
 one-requirement evidence rows, including five catalog/state audits, and the independent claim-atom
-map contains 191 atoms: 162 proved and 29 precisely unresolved.
+map contains 193 atoms: 164 proved and 29 precisely unresolved.
 
 ## Commit outcome
 
@@ -51,9 +61,10 @@ map contains 191 atoms: 162 proved and 29 precisely unresolved.
 |---|---|---|
 | Original source and tests | `8101a3ab8f281fe37aa9132327cc6c06f2c88d47` | Replaced proof-only pagination with the production public/generated contracts, typed request-local page loop, macro DSL/IR/generation, and deterministic focused proof. |
 | Source/test correction | `515b33ebd345a5eae06a6f2681cbfa4ff403ab9e` | Removes the pagination rate-key placeholder, supplies the actual final logical host privately to rate limiting, and adds exact generated/core/governor/key-boundary/redaction proof. |
-| Corrected evidence/report/state | `ccf569a3072344b345d79d2d551ccb0c0ebce57d` | Rebuilds all Phase 8 evidence at claim-atom level, reconciles 122 current coverage rows, records corrected validation, and advances controller state without executable changes. |
-| Corrected evidence anchor | `b86eb2e7516dcae4b26ac5d53f444351ebe15654` | Finalizes the corrected evidence-state identity and audit time only; it changes no executable artifact, evidence ID, or classification. |
-| Anchor metadata descendant | `docs: record corrected phase 8 anchor identity` | Records the real corrected anchor hash in this report and controller state while retaining `anchor-must-be-an-ancestor`. |
+| Superseded corrected evidence/report/state | `ccf569a3072344b345d79d2d551ccb0c0ebce57d` | Rebuilt all Phase 8 evidence after the rate-key source correction; its `P8-CORR-007` owner mapping is superseded. |
+| Atomic-reservation-corrected evidence/report/state | `PENDING_CORRECTED_PHASE_8_EVIDENCE` | Corrects `P8-CORR-007`, binds every Phase 8 row to parsed normative authority, and changes no executable artifact. |
+| Atomic-reservation-corrected evidence anchor | `PENDING_CORRECTED_PHASE_8_ANCHOR` | Finalizes the corrected evidence-state self-reference only; it changes no executable artifact, evidence ID, or classification. |
+| Anchor metadata descendant | `docs: record phase 8 atomic evidence anchor` | Records the real corrected anchor hash in this report and controller state while retaining `anchor-must-be-an-ancestor`. |
 
 No executable artifact changed after `515b33ebd345a5eae06a6f2681cbfa4ff403ab9e`.
 
@@ -151,6 +162,48 @@ acquisition, debug events, authentication materialization, or send, and the reje
 enter the safe error chain. The built-in governor revalidates the same actual bytes before state
 insertion. Deterministic paused-time proof shows page-varying actual keys form distinct buckets and
 equivalent actual keys continue to aggregate under the Phase 7 contract.
+
+## Atomic-reservation evidence correction
+
+The evidence-only review found that `P8-CORR-007` named `EXEC-RATE-002` but described response
+observation, current-response immutability, and hidden native retry behavior. The normative owner
+is **Atomic multi-rule reservation**: the built-in limiter must reserve every effective rule/window
+cost atomically. The row and the unique `EXEC-RATE-002` coverage entry now cite only
+`concord_core/src/rate_limit/governor.rs` and this exact focused command:
+
+```text
+cargo nextest run -p concord_core --all-features --lib -E 'test(=rate_limit::governor::tests::unavailable_rule_causes_no_partial_reservation_or_lock_across_wait) | test(=rate_limit::governor::tests::multiple_rules_and_windows_wait_for_the_complete_maximum) | test(=rate_limit::governor::tests::duplicate_equivalent_contributions_cannot_undercount) | test(=rate_limit::governor::tests::page_varying_actual_keys_are_distinct_and_equivalent_keys_aggregate)'
+```
+
+Exactly four tests were selected and all four passed against immutable executable source
+`515b33ebd345a5eae06a6f2681cbfa4ff403ab9e`: unavailable components caused no partial
+reservation, multiple rules and windows waited for the complete maximum, duplicate equivalent
+contributions could not undercount, and page-varying actual keys remained distinct while
+equivalent keys aggregated.
+
+The complete owner review also tightened two existing evidence rows using already-recorded passing
+proof: `P8-EXEC-001` now states the actual `EXEC-BUILD-002` construction exclusions, and
+`P8-FEAT-001` now includes the maintained no-default managed-HTTP execution required by
+`FEAT-NODEFAULT-001`. No row count or classification changed.
+
+Response-observation prose was removed from `P8-CORR-007` and its coverage trace. Its real owners
+remain covered by existing evidence: `EXEC-RATE-001` for per-attempt acquisition,
+`EXEC-RESPHEAD-002` for response-head ordering, `EXEC-RESPHEAD-003` for current-response
+immutability, existing lifecycle evidence for hidden native retry containment, and `P8-CORR-002`
+under `API-RATE-004` for the actual selected-limiter plan and host.
+
+The strengthened ignored audit parses approved normative headings and complete requirement blocks
+into an authoritative 504-entry registry. It binds every one of the 124 Phase 8 evidence rows to
+the registry document, exact title, paragraph digest, coverage owner, reviewed assertion, and
+claim atoms. A manually supplied clause cannot replace that owner, and the audit explicitly prints
+`P8-CORR-007 EXEC-RATE-002 Atomic multi-rule reservation` while rejecting a synthetic
+response-observation mapping. Human source-grounded review of all 124 rows remains part of the
+recorded audit.
+
+Because the post-source range is exactly the five authorized documentation/catalog/state paths,
+the accepted executable identity and its complete focused and maintained matrix remain unchanged.
+This correction ran the exact four-test proof above and the strengthened semantic/catalog audits;
+it did not rerun or claim a new full Rust release matrix.
 
 ## One request-local pagination architecture
 
@@ -372,15 +425,18 @@ contains exactly one row for each of 504 normative requirement IDs; exactly 122 
 corrected Phase 8 evidence with taxonomy 93 `P8-pagination-correction`, 15 `P8-partial-P9`, and 14
 `P8-partial-P10`. Planned `PLAN-*` identifiers remain separate from actual passing evidence.
 
-The ignored claim-atom review represents every assertion in every Phase 8 row as 162 proved atoms
+The ignored claim-atom review represents every assertion in every Phase 8 row as 164 proved atoms
 and represents each of the 29 partial rows with one additional unresolved atom naming its exact
 Phase 9 or Phase 10 owner. Every proved atom names a source/test path and a command present in the
-immutable-source correction ledger; direct rows contain no unresolved Phase 8 atom.
+authoritative immutable-source or evidence-correction ledger; direct rows contain no unresolved
+Phase 8 atom. The complete map therefore contains 193 atoms.
 
 The evidence anchor runs the ignored semantic audit against the real evidence-state identity. It
-checks normative/coverage equality, evidence-ID and approved-label uniqueness, exact paths and
-passing commands, source/evidence ancestry, classification/owner agreement, counts, report/program/
-controller reconciliation, and the unchanged historical evidence prefix.
+derives a 504-entry owner registry from approved normative headings and paragraphs, checks all 124
+Phase 8 rows against those owners, and verifies normative/coverage equality, evidence-ID and
+approved-label uniqueness, exact paths and passing commands, source/evidence ancestry,
+classification/later-owner agreement, counts, report/program/controller reconciliation, and the
+unchanged historical evidence prefix.
 
 ## Remaining limitations and later owners
 

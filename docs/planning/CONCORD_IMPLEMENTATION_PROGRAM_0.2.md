@@ -360,10 +360,16 @@ use clause-accurate source paths, tests, commands, taxonomy, and later owners.
 The immutable final corrected Phase 8 source/test commit is
 `515b33ebd345a5eae06a6f2681cbfa4ff403ab9e`. All correction-focused, retained Phase 8, and Phase 7
 rate-limit regression commands plus all 16 maintained commands, including `just release`, passed
-against that exact source. The corrected evidence/report/state commit is
-`ccf569a3072344b345d79d2d551ccb0c0ebce57d`. A later documentation-only corrected evidence anchor fixes
-that evidence-state identity; the final two-file metadata descendant records the real anchor in the
-Phase 8 report and controller state without replacing it.
+against that exact source. Evidence/report/state commit
+`ccf569a3072344b345d79d2d551ccb0c0ebce57d` and anchor
+`b86eb2e7516dcae4b26ac5d53f444351ebe15654` are superseded because `P8-CORR-007` described response
+observation under `EXEC-RATE-002` instead of the normative atomic multi-rule reservation contract.
+The atomic-reservation-corrected evidence/report/state commit is
+`PENDING_CORRECTED_PHASE_8_EVIDENCE`; a later documentation-only anchor fixes that evidence-state
+identity, and the final two-file metadata descendant records the real anchor in the Phase 8 report
+and controller state without replacing it. The product and immutable source matrix are unchanged;
+this evidence-only correction ran the exact four-test atomic governor proof and the strengthened
+normative-owner audit rather than rerunning the full Rust matrix.
 
 The one generated request path now adds an opaque directly awaitable pagination wrapper, one sealed
 typed generated pagination specification, and one request-local sequential page state machine. Each
@@ -401,7 +407,9 @@ partial) and three requirement-trace audits (two direct, one partial). Two addit
 audits prove normative coverage and preservation. The corrected Phase 8 total is 124 rows: 95 direct
 and 29 partial. The complete catalog contains 1,192 unique evidence IDs; all 1,068 Phase 0-7 rows
 remain byte-identical, and all 504 normative requirements remain mapped once. The independent
-claim-atom map contains 162 proved atoms and 29 unresolved later-phase owner atoms. Exact paths,
+claim-atom map contains 164 proved atoms and 29 unresolved later-phase owner atoms (193 total). The
+owner audit parses all 504 approved requirement headings and paragraphs, binds all 124 Phase 8 rows
+to those owners, and rejects response-observation claims under `EXEC-RATE-002`. Exact paths,
 commands, classifications, and later owners are in `docs/conformance/PHASE_8_REPORT.md` and the
 evidence catalog.
 
