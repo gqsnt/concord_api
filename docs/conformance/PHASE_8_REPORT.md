@@ -35,7 +35,7 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 - Atomic-reservation-corrected Phase 8 evidence/report/state commit:
   `fe020a107770b0ea844a304efbcb73544c350949`
 - Atomic-reservation-corrected Phase 8 evidence anchor:
-  `PENDING_CORRECTED_PHASE_8_ANCHOR`
+  `163677c7e8c51ff3f3925809087dbac18ae788fa`
 - Compatible post-anchor metadata descendant: the final documentation-only commit with subject
   `docs: record phase 8 atomic evidence anchor`; it records the real corrected anchor identity and
   does not replace it
@@ -63,7 +63,7 @@ map contains 193 atoms: 164 proved and 29 precisely unresolved.
 | Source/test correction | `515b33ebd345a5eae06a6f2681cbfa4ff403ab9e` | Removes the pagination rate-key placeholder, supplies the actual final logical host privately to rate limiting, and adds exact generated/core/governor/key-boundary/redaction proof. |
 | Superseded corrected evidence/report/state | `ccf569a3072344b345d79d2d551ccb0c0ebce57d` | Rebuilt all Phase 8 evidence after the rate-key source correction; its `P8-CORR-007` owner mapping is superseded. |
 | Atomic-reservation-corrected evidence/report/state | `fe020a107770b0ea844a304efbcb73544c350949` | Corrects `P8-CORR-007`, binds every Phase 8 row to parsed normative authority, and changes no executable artifact. |
-| Atomic-reservation-corrected evidence anchor | `PENDING_CORRECTED_PHASE_8_ANCHOR` | Finalizes the corrected evidence-state self-reference only; it changes no executable artifact, evidence ID, or classification. |
+| Atomic-reservation-corrected evidence anchor | `163677c7e8c51ff3f3925809087dbac18ae788fa` | Finalizes the corrected evidence-state self-reference only; it changes no executable artifact, evidence ID, or classification. |
 | Anchor metadata descendant | `docs: record phase 8 atomic evidence anchor` | Records the real corrected anchor hash in this report and controller state while retaining `anchor-must-be-an-ancestor`. |
 
 No executable artifact changed after `515b33ebd345a5eae06a6f2681cbfa4ff403ab9e`.
