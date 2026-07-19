@@ -361,7 +361,7 @@ The immutable final corrected Phase 8 source/test commit is
 `515b33ebd345a5eae06a6f2681cbfa4ff403ab9e`. All correction-focused, retained Phase 8, and Phase 7
 rate-limit regression commands plus all 16 maintained commands, including `just release`, passed
 against that exact source. The corrected evidence/report/state commit is
-`PENDING_CORRECTED_PHASE_8_EVIDENCE`. A later documentation-only corrected evidence anchor fixes
+`ccf569a3072344b345d79d2d551ccb0c0ebce57d`. A later documentation-only corrected evidence anchor fixes
 that evidence-state identity; the final two-file metadata descendant records the real anchor in the
 Phase 8 report and controller state without replacing it.
 
