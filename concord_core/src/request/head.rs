@@ -166,7 +166,7 @@ impl HeadBuilder {
     /// Returns the final logical host for generated rate-key resolution.
     #[doc(hidden)]
     pub fn rate_limit_host(&self) -> &str {
-        self.safe_logical_url
+        self.logical_url
             .host_str()
             .expect("generated client logical URLs retain a host")
     }
@@ -529,8 +529,8 @@ impl PreparedHead {
         &self.pagination_sensitive_headers
     }
 
-    pub(crate) fn safe_host(&self) -> Option<&str> {
-        self.safe_logical_url.host_str()
+    pub(crate) fn rate_limit_host(&self) -> Option<&str> {
+        self.logical_url.host_str()
     }
 
     #[doc(hidden)]
@@ -660,6 +660,25 @@ mod tests {
         assert_eq!(head.logical_url().host_str(), Some("eu.api.example.test"));
         assert_eq!(head.logical_url().port(), Some(4317));
         assert_eq!(head.logical_url().path(), "/v1/");
+    }
+
+    #[test]
+    fn pagination_host_is_actual_for_rate_limiting_and_redacted_for_safe_surfaces() {
+        const SENTINEL: &str = "page-host-sentinel-7319";
+        let expected_host = format!("{SENTINEL}.example.test");
+        let mut builder = builder("https://example.test/v1/");
+        builder
+            .push_pagination_host_value(&SENTINEL)
+            .expect("pagination host label");
+        assert_eq!(builder.rate_limit_host(), expected_host);
+
+        let head = builder.finish();
+        assert_eq!(head.rate_limit_host(), Some(expected_host.as_str()));
+        assert_eq!(
+            Url::parse(head.safe_url()).expect("safe URL").host_str(),
+            Some("x.example.test")
+        );
+        assert!(!head.safe_url().contains(SENTINEL));
     }
 
     #[test]

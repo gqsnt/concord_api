@@ -2887,7 +2887,6 @@ fn rate_limit_statements(
     endpoint: &Endpoint,
     core_path: &TokenStream,
 ) -> TokenStream {
-    let pagination_values = pagination_continuation_values(endpoint);
     let statements = endpoint
         .config
         .rate_limits
@@ -2919,18 +2918,12 @@ fn rate_limit_statements(
                     ),
                     ResolvedRateLimitDimension::Value { name, value } => {
                         let name = syn::LitStr::new(name, rule.declared_name.span());
-                        let sensitive = pagination_values.contains(&value.reference);
-                        let value = if sensitive {
-                            quote!("<pagination>")
-                        } else {
-                            let access =
-                                resolved_value_access(value.reference, client, scopes, endpoint);
-                            quote!(::std::format!("{}", #access))
-                        };
+                        let access =
+                            resolved_value_access(value.reference, client, scopes, endpoint);
                         quote!(
                             #core_path::__private::RateLimitKeyPart::new(
                                 #name,
-                                #value,
+                                ::std::format!("{}", #access),
                             )
                         )
                     }

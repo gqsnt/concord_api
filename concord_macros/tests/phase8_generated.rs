@@ -327,16 +327,19 @@ mod repeated_nested_expansion {
 #[derive(Default)]
 struct PaginationHooks {
     before: Mutex<Vec<String>>,
+    response: Mutex<Vec<String>>,
+    completion: Mutex<Vec<String>>,
     aggregate: Mutex<Vec<GeneratedAggregateRecord>>,
 }
 
 type GeneratedAggregateRecord = (u32, usize, bool, Option<u16>);
-type GeneratedLimiterContext = (u32, String, Option<String>, Vec<String>);
+type GeneratedRateKeyPart = (String, String);
+type GeneratedLimiterContext = (u32, String, Option<String>, Vec<GeneratedRateKeyPart>);
 
 #[derive(Default)]
 struct PaginationLimiterProbe {
     contexts: Mutex<Vec<GeneratedLimiterContext>>,
-    observations: AtomicUsize,
+    observations: Mutex<Vec<GeneratedLimiterContext>>,
 }
 
 impl RateLimiter for PaginationLimiterProbe {
@@ -344,24 +347,40 @@ impl RateLimiter for PaginationLimiterProbe {
         &'a self,
         request: RateLimitRequest<'a>,
     ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
-        let values = request
+        let parts = request
             .plan
             .rules()
             .iter()
             .flat_map(|rule| rule.key().parts())
-            .map(|part| part.value().to_owned())
+            .map(|part| (part.name().to_owned(), part.value().to_owned()))
             .collect();
         self.contexts.lock().expect("limiter contexts").push((
             request.page_index,
             request.safe_url.to_owned(),
             request.host.map(str::to_owned),
-            values,
+            parts,
         ));
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 
-    fn observe<'a>(&'a self, _response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
-        self.observations.fetch_add(1, Ordering::SeqCst);
+    fn observe<'a>(&'a self, response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
+        let request = response.request;
+        let parts = request
+            .plan
+            .rules()
+            .iter()
+            .flat_map(|rule| rule.key().parts())
+            .map(|part| (part.name().to_owned(), part.value().to_owned()))
+            .collect();
+        self.observations
+            .lock()
+            .expect("limiter observations")
+            .push((
+                request.page_index,
+                request.safe_url.to_owned(),
+                request.host.map(str::to_owned),
+                parts,
+            ));
         Box::pin(async {})
     }
 }
@@ -391,6 +410,30 @@ impl RuntimeHooks for PaginationHooks {
                 context.recovered_authentication,
                 context.final_status.map(|status| status.as_u16()),
             ));
+        })
+    }
+
+    fn on_response_head<'a>(
+        &'a self,
+        context: concord_core::advanced::ResponseHeadEvent<'a>,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            self.response
+                .lock()
+                .expect("response lock")
+                .push(format!("{} {:?}", context.safe_url, context.headers));
+        })
+    }
+
+    fn on_complete<'a>(
+        &'a self,
+        context: concord_core::advanced::CompletionEvent<'a>,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            self.completion
+                .lock()
+                .expect("completion lock")
+                .push(context.safe_url.to_owned());
         })
     }
 }
@@ -733,11 +776,11 @@ async fn explicit_endpoint_nested_scope_alias_and_repeated_helpers_have_parity()
 }
 
 #[tokio::test]
-async fn generated_continuations_are_native_only_and_absent_from_limiter_contexts() {
+async fn generated_pagination_preserves_resolved_rate_keys_and_actual_hosts() {
     use pagination_rate_api::prelude::*;
 
-    const INITIAL: &str = "41082731";
-    const NEXT: &str = "41082733";
+    const INITIAL: &str = "7319058410827319461";
+    const NEXT: &str = "7319058410827319463";
     let server = ScriptedServer::start([
         ResponseScript::ok(br#"[1,2]"#.to_vec()).with_header("content-type", "application/json"),
         ResponseScript::ok(br#"[3]"#.to_vec()).with_header("content-type", "application/json"),
@@ -746,9 +789,15 @@ async fn generated_continuations_are_native_only_and_absent_from_limiter_context
     let proxy = SafeProxy::parse(server.url("")).expect("rate pagination proxy");
     let limiter = Arc::new(PaginationLimiterProbe::default());
     let configured_limiter: Arc<dyn RateLimiter> = limiter.clone();
+    let hooks = Arc::new(PaginationHooks::default());
+    let configured_hooks: Arc<dyn RuntimeHooks> = hooks.clone();
     let client = PaginationRateApi::builder()
         .http(move |http| http.proxy(proxy))
-        .runtime(move |runtime| runtime.rate_limiter(configured_limiter))
+        .runtime(move |runtime| {
+            runtime
+                .hooks(configured_hooks)
+                .rate_limiter(configured_limiter)
+        })
         .build()
         .expect("rate pagination client");
     let items = client
@@ -764,15 +813,56 @@ async fn generated_continuations_are_native_only_and_absent_from_limiter_context
     assert!(requests[1].target().contains(NEXT));
     let contexts = limiter.contexts.lock().expect("limiter contexts");
     assert_eq!(contexts.len(), 2);
-    assert_eq!(limiter.observations.load(Ordering::SeqCst), 2);
+    let observations = limiter.observations.lock().expect("limiter observations");
+    assert_eq!(observations.as_slice(), contexts.as_slice());
     assert_eq!(
         contexts.iter().map(|context| context.0).collect::<Vec<_>>(),
         [0, 1]
     );
-    for (_, safe_url, host, values) in contexts.iter() {
-        let rendered = format!("{safe_url}\n{host:?}\n{values:?}");
-        assert!(!rendered.contains(INITIAL));
-        assert!(!rendered.contains(NEXT));
-        assert!(values.iter().any(|value| value == "<pagination>"));
+    let first_host = format!("{INITIAL}.phase8-rate.example.test");
+    let next_host = format!("{NEXT}.phase8-rate.example.test");
+    assert_eq!(contexts[0].2.as_deref(), Some(first_host.as_str()));
+    assert_eq!(contexts[1].2.as_deref(), Some(next_host.as_str()));
+    assert_ne!(contexts[0].2, contexts[1].2);
+    assert_eq!(
+        contexts[0].3,
+        [
+            ("host".to_owned(), first_host),
+            ("ep.offset".to_owned(), INITIAL.to_owned()),
+        ]
+    );
+    assert_eq!(
+        contexts[1].3,
+        [
+            ("host".to_owned(), next_host),
+            ("ep.offset".to_owned(), NEXT.to_owned()),
+        ]
+    );
+    for (_, safe_url, _, parts) in contexts.iter() {
+        let rendered_safe = format!("{safe_url}\n{:?}", hooks.before.lock().expect("hooks"));
+        assert!(safe_url.contains("x.phase8-rate.example.test"));
+        assert!(!rendered_safe.contains(INITIAL));
+        assert!(!rendered_safe.contains(NEXT));
+        assert!(parts.iter().all(|(_, value)| value != "<pagination>"));
+    }
+    assert_eq!(
+        hooks
+            .aggregate
+            .lock()
+            .expect("aggregate capture")
+            .as_slice(),
+        [(2, 3, false, Some(200))]
+    );
+    for safe in hooks.before.lock().expect("before capture").iter() {
+        assert!(!safe.contains(INITIAL));
+        assert!(!safe.contains(NEXT));
+    }
+    for safe in hooks.response.lock().expect("response capture").iter() {
+        assert!(!safe.contains(INITIAL));
+        assert!(!safe.contains(NEXT));
+    }
+    for safe in hooks.completion.lock().expect("completion capture").iter() {
+        assert!(!safe.contains(INITIAL));
+        assert!(!safe.contains(NEXT));
     }
 }

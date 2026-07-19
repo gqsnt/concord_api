@@ -635,7 +635,7 @@ async fn acquire_rate_limit_authority(
         endpoint: head.endpoint(),
         method: head.method(),
         safe_url: head.safe_url(),
-        host: head.safe_host(),
+        host: head.rate_limit_host(),
         page_index: context.page_index,
         plan: head.rate_limit_plan(),
     };
@@ -661,7 +661,7 @@ async fn observe_rate_limit_response(
             endpoint: head.endpoint(),
             method: head.method(),
             safe_url: head.safe_url(),
-            host: head.safe_host(),
+            host: head.rate_limit_host(),
             page_index: context.page_index,
             plan: head.rate_limit_plan(),
         },

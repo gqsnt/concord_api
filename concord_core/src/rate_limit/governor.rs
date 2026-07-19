@@ -848,6 +848,44 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn page_varying_actual_keys_are_distinct_and_equivalent_keys_aggregate() {
+        let limiter = Arc::new(GovernorRateLimiter::new());
+        let first = Arc::new(plan(vec![rule(
+            "page",
+            "offset-41082731",
+            1,
+            &[(1, Duration::from_secs(60))],
+        )]));
+        let second = Arc::new(plan(vec![rule(
+            "page",
+            "offset-41082733",
+            1,
+            &[(1, Duration::from_secs(60))],
+        )]));
+
+        acquire(&limiter, &first, Some("first.example.test")).await;
+        acquire(&limiter, &second, Some("second.example.test")).await;
+        assert_eq!(
+            limiter.test_quota_entry_count(),
+            2,
+            "progressed page keys must occupy distinct governor buckets"
+        );
+
+        let repeated = spawn_acquire(
+            Arc::clone(&limiter),
+            Arc::clone(&first),
+            Some("first.example.test"),
+        );
+        tokio::task::yield_now().await;
+        assert!(
+            !repeated.is_finished(),
+            "an equivalent actual page key must aggregate with its existing bucket"
+        );
+        repeated.abort();
+        let _ = repeated.await;
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn multiple_rules_and_windows_wait_for_the_complete_maximum() {
         let limiter = Arc::new(GovernorRateLimiter::new());
         let plan = Arc::new(plan(vec![

@@ -13,6 +13,10 @@ use concord_test_support::script::{
 use http::{Method, StatusCode};
 
 use super::{PageLimit, PaginationController, PaginationError, PaginationRequest, paginate_with};
+#[cfg(feature = "rate-limit-governor")]
+use crate::auth::{
+    AccessToken, Auth, CredentialProvider, CredentialRef, CredentialRequest, SlotSelector,
+};
 use crate::body::EmptyBody;
 use crate::client::ClientCore;
 use crate::codec::{CodecError, DecodeBody, DecodeContext};
@@ -23,6 +27,9 @@ use crate::hooks::{
 };
 use crate::http::HttpConfigBuilder;
 use crate::operation::OperationId;
+#[cfg(feature = "rate-limit-governor")]
+use crate::rate_limit::GovernorRateLimiter;
+use crate::rate_limit::RateLimitKeyPart;
 use crate::rate_limit::{
     RateLimitError, RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimiter,
 };
@@ -119,6 +126,106 @@ impl EndpointSpec for PageEndpoint {
 }
 
 #[derive(Clone)]
+struct HostRateEndpoint {
+    host: String,
+}
+
+impl EndpointSpec for HostRateEndpoint {
+    type Body = EmptyBody;
+    type Response = BufferedResponse<PageCodec>;
+
+    fn request_meta(&self) -> RequestMeta {
+        RequestMeta::new(
+            "PaginationRuntimeApi::items::host_rate_key",
+            Method::GET,
+            Some(Duration::from_secs(30)),
+        )
+    }
+
+    fn prepare_head_and_body_metadata(
+        &self,
+        mut builder: HeadBuilder,
+    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+        builder.push_pagination_host_value(&self.host)?;
+        builder.push_static("host-rate-items")?;
+        builder.push_query_value("stable", &"public");
+        builder.push_rate_limit_rule(
+            "PaginationRuntimeApi::rate_limit::host_page_key",
+            [
+                RateLimitKeyPart::new("host", builder.rate_limit_host()),
+                RateLimitKeyPart::new("ep.host", self.host.clone()),
+            ],
+            1,
+            [(100, Duration::from_secs(60))],
+        )?;
+        Ok((builder.finish(), EmptyBody::metadata()))
+    }
+
+    fn into_body(self) -> Self::Body {
+        EmptyBody::new()
+    }
+}
+
+#[cfg(feature = "rate-limit-governor")]
+#[derive(Clone)]
+struct RateKeyEndpoint {
+    key: String,
+    credential: CredentialRef<AccessToken>,
+}
+
+#[cfg(feature = "rate-limit-governor")]
+impl EndpointSpec for RateKeyEndpoint {
+    type Body = EmptyBody;
+    type Response = BufferedResponse<PageCodec>;
+
+    fn request_meta(&self) -> RequestMeta {
+        RequestMeta::new(
+            "PaginationRuntimeApi::items::rate_key",
+            Method::GET,
+            Some(Duration::from_secs(30)),
+        )
+    }
+
+    fn prepare_head_and_body_metadata(
+        &self,
+        mut builder: HeadBuilder,
+    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+        builder.push_static("rate-key-items")?;
+        builder.push_query_value("stable", &"public");
+        builder.push_auth(Auth::bearer(self.credential.clone()))?;
+        builder.push_rate_limit_rule(
+            "PaginationRuntimeApi::rate_limit::page_key",
+            [RateLimitKeyPart::new("ep.cursor", self.key.clone())],
+            1,
+            [(1, Duration::from_secs(60))],
+        )?;
+        Ok((builder.finish(), EmptyBody::metadata()))
+    }
+
+    fn into_body(self) -> Self::Body {
+        EmptyBody::new()
+    }
+}
+
+#[cfg(feature = "rate-limit-governor")]
+struct CountingRateKeyProvider {
+    calls: Arc<AtomicUsize>,
+}
+
+#[cfg(feature = "rate-limit-governor")]
+impl CredentialProvider for CountingRateKeyProvider {
+    type Material = AccessToken;
+
+    fn acquire<'a>(
+        &'a self,
+        _context: CredentialRequest<'a>,
+    ) -> BoxFuture<'a, Result<Self::Material, crate::auth::AuthError>> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { Ok(AccessToken::new("rate-key-auth-token-8b71")) })
+    }
+}
+
+#[derive(Clone)]
 struct CursorController {
     state: String,
     apply_calls: Arc<AtomicUsize>,
@@ -202,6 +309,7 @@ struct CompletionRecord {
     final_status: Option<StatusCode>,
     outcome: CompletionOutcome,
     elapsed: Duration,
+    safe: String,
 }
 
 #[derive(Clone)]
@@ -215,7 +323,14 @@ struct AggregateRecord {
     elapsed: Duration,
 }
 
-type ResponseRecord = (OperationId, Option<OperationId>, u32, u8, StatusCode);
+type ResponseRecord = (
+    OperationId,
+    Option<OperationId>,
+    u32,
+    u8,
+    StatusCode,
+    String,
+);
 
 #[derive(Default)]
 struct PaginationProbe {
@@ -265,6 +380,7 @@ impl RuntimeHooks for PaginationProbe {
             context.page_index,
             context.recovery_index,
             context.status,
+            format!("{} {:?}", context.safe_url, context.headers),
         ));
         Box::pin(async {})
     }
@@ -281,6 +397,7 @@ impl RuntimeHooks for PaginationProbe {
                 final_status: context.final_status,
                 outcome: context.outcome,
                 elapsed: context.elapsed,
+                safe: context.safe_url.to_owned(),
             });
         let gate = (context.page_index == 0)
             .then(|| self.page_zero_completion_gate.clone())
@@ -349,6 +466,52 @@ struct RejectingLimiter {
     acquisitions: AtomicUsize,
 }
 
+type HostLimiterContext = (u32, String, Option<String>, Vec<(String, String)>);
+
+#[derive(Default)]
+struct HostLimiterProbe {
+    acquisitions: Mutex<Vec<HostLimiterContext>>,
+    observations: Mutex<Vec<HostLimiterContext>>,
+}
+
+impl HostLimiterProbe {
+    fn capture(request: &RateLimitRequest<'_>) -> HostLimiterContext {
+        (
+            request.page_index,
+            request.safe_url.to_owned(),
+            request.host.map(str::to_owned),
+            request
+                .plan
+                .rules()
+                .iter()
+                .flat_map(|rule| rule.key().parts())
+                .map(|part| (part.name().to_owned(), part.value().to_owned()))
+                .collect(),
+        )
+    }
+}
+
+impl RateLimiter for HostLimiterProbe {
+    fn acquire<'a>(
+        &'a self,
+        request: RateLimitRequest<'a>,
+    ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
+        self.acquisitions
+            .lock()
+            .expect("host limiter acquisitions")
+            .push(Self::capture(&request));
+        Box::pin(async { Ok(RateLimitPermit::granted()) })
+    }
+
+    fn observe<'a>(&'a self, response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
+        self.observations
+            .lock()
+            .expect("host limiter observations")
+            .push(Self::capture(&response.request));
+        Box::pin(async {})
+    }
+}
+
 impl RateLimiter for RejectingLimiter {
     fn acquire<'a>(
         &'a self,
@@ -397,6 +560,386 @@ fn collect(
 
 fn pagination_error(result: Result<Vec<String>, ApiError>) -> ApiError {
     result.expect_err("pagination operation should fail")
+}
+
+#[tokio::test]
+async fn selected_limiter_receives_actual_page_hosts_while_automatic_surfaces_stay_redacted() {
+    const INITIAL: &str = "page-host-initial-sentinel-73190584";
+    const SECOND: &str = "page-host-second-sentinel-10827319";
+    const THIRD: &str = "page-host-third-sentinel-46205731";
+
+    let executor = DeterministicExecutor::new();
+    for (host, cursor, response) in [
+        (
+            INITIAL,
+            INITIAL,
+            format!("first-item-sentinel-a38f|{SECOND}"),
+        ),
+        (SECOND, SECOND, format!("second-item-sentinel-b49e|{THIRD}")),
+    ] {
+        executor
+            .application()
+            .queue_expected_response(
+                ExpectedRequest::new()
+                    .native_url(format!(
+                        "https://{host}.pagination-runtime.example.test/v1/host-rate-items?stable=public&cursor={cursor}"
+                    ))
+                    .header(
+                        http::HeaderName::from_static("x-page-cursor"),
+                        http::HeaderValue::from_str(cursor).expect("cursor header"),
+                    ),
+                ScriptedResponse::success(Bytes::from(response)),
+            )
+            .expect("host page response");
+    }
+
+    let hooks = Arc::new(PaginationProbe::default());
+    let configured_hooks: Arc<dyn RuntimeHooks> = hooks.clone();
+    let limiter = Arc::new(HostLimiterProbe::default());
+    let configured_limiter: Arc<dyn RateLimiter> = limiter.clone();
+    let debug = Arc::new(Mutex::new(Vec::new()));
+    let core = ClientCore::build_with_development(
+        "https://pagination-runtime.example.test/v1/",
+        HttpConfigBuilder::new().http1_only(),
+        RuntimeConfigBuilder::new()
+            .hooks(configured_hooks)
+            .rate_limiter(configured_limiter)
+            .debug(DebugLevel::Headers),
+        &executor,
+    )
+    .expect("host pagination core")
+    .with_debug_output(Arc::clone(&debug));
+
+    let error = pagination_error(
+        paginate_with(
+            Request::new(
+                core,
+                HostRateEndpoint {
+                    host: INITIAL.to_owned(),
+                },
+            ),
+            PageLimit::HardCap(NonZeroU32::new(2).expect("hard cap")),
+            |_endpoint| Ok(CursorController::new(INITIAL)),
+            |endpoint, controller| {
+                endpoint.host.clone_from(&controller.state);
+                Ok(())
+            },
+            |_controller| None,
+        )
+        .await,
+    );
+    assert_eq!(
+        error.pagination_kind(),
+        Some(PaginationErrorKind::HardCapExceeded)
+    );
+
+    let acquisitions = limiter
+        .acquisitions
+        .lock()
+        .expect("host limiter acquisitions");
+    let observations = limiter
+        .observations
+        .lock()
+        .expect("host limiter observations");
+    assert_eq!(observations.as_slice(), acquisitions.as_slice());
+    assert_eq!(
+        acquisitions
+            .iter()
+            .map(|context| context.0)
+            .collect::<Vec<_>>(),
+        [0, 1]
+    );
+    let initial_host = format!("{INITIAL}.pagination-runtime.example.test");
+    let second_host = format!("{SECOND}.pagination-runtime.example.test");
+    assert_eq!(acquisitions[0].2.as_deref(), Some(initial_host.as_str()));
+    assert_eq!(acquisitions[1].2.as_deref(), Some(second_host.as_str()));
+    assert_ne!(acquisitions[0].2, acquisitions[1].2);
+    assert_eq!(
+        acquisitions[0].3,
+        [
+            ("host".to_owned(), initial_host),
+            ("ep.host".to_owned(), INITIAL.to_owned()),
+        ]
+    );
+    assert_eq!(
+        acquisitions[1].3,
+        [
+            ("host".to_owned(), second_host),
+            ("ep.host".to_owned(), SECOND.to_owned()),
+        ]
+    );
+
+    let mut automatic = Vec::new();
+    automatic.extend(acquisitions.iter().map(|context| context.1.clone()));
+    automatic.extend(
+        hooks
+            .before
+            .lock()
+            .expect("before")
+            .iter()
+            .map(|record| record.safe.clone()),
+    );
+    automatic.extend(
+        hooks
+            .response
+            .lock()
+            .expect("response")
+            .iter()
+            .map(|record| record.5.clone()),
+    );
+    automatic.extend(
+        hooks
+            .completion
+            .lock()
+            .expect("completion")
+            .iter()
+            .map(|record| record.safe.clone()),
+    );
+    automatic.push(debug.lock().expect("debug").join("\n"));
+    automatic.push(format!("{error} {error:?}"));
+    automatic.extend(
+        executor
+            .application()
+            .captures()
+            .expect("captures")
+            .into_iter()
+            .map(|capture| format!("{capture:?}")),
+    );
+    let automatic = automatic.join("\n");
+    for sentinel in [INITIAL, SECOND, THIRD] {
+        assert!(!automatic.contains(sentinel));
+    }
+    let mut source: Option<&(dyn std::error::Error + 'static)> = error.source();
+    while let Some(current) = source {
+        for sentinel in [INITIAL, SECOND, THIRD] {
+            assert!(!current.to_string().contains(sentinel));
+            assert!(!format!("{current:?}").contains(sentinel));
+        }
+        source = current.source();
+    }
+}
+
+#[cfg(feature = "rate-limit-governor")]
+fn rate_key_core(
+    executor: &DeterministicExecutor,
+    hooks: Arc<PaginationProbe>,
+    governor: Arc<GovernorRateLimiter>,
+    debug: Arc<Mutex<Vec<String>>>,
+) -> ClientCore {
+    let hooks: Arc<dyn RuntimeHooks> = hooks;
+    let limiter: Arc<dyn RateLimiter> = governor;
+    ClientCore::build_with_development(
+        "https://pagination-runtime.example.test/v1/",
+        HttpConfigBuilder::new().http1_only(),
+        RuntimeConfigBuilder::new()
+            .hooks(hooks)
+            .rate_limiter(limiter)
+            .debug(DebugLevel::Headers),
+        executor,
+    )
+    .expect("pagination rate-key development core")
+    .with_debug_output(debug)
+}
+
+#[cfg(feature = "rate-limit-governor")]
+fn collect_rate_key(
+    core: ClientCore,
+    key: String,
+    credential: CredentialRef<AccessToken>,
+) -> BoxFuture<'static, Result<Vec<String>, ApiError>> {
+    paginate_with(
+        Request::new(
+            core,
+            RateKeyEndpoint {
+                key: key.clone(),
+                credential,
+            },
+        ),
+        PageLimit::Take(1),
+        move |_endpoint| Ok(CursorController::new(key.clone())),
+        |endpoint, controller| {
+            endpoint.key.clone_from(&controller.state);
+            Ok(())
+        },
+        |_controller| None,
+    )
+}
+
+#[cfg(feature = "rate-limit-governor")]
+#[tokio::test]
+async fn pagination_rate_key_limit_uses_actual_value_and_cuts_off_protected_work() {
+    const BOUNDARY: &str = "page-rate-key-boundary-sentinel-4a871f";
+    const KEY_NAME: &str = "ep.cursor";
+    let key_limit = KEY_NAME.len() + BOUNDARY.len();
+
+    let accepted_executor = DeterministicExecutor::new();
+    accepted_executor
+        .application()
+        .queue_expected_response(
+            ExpectedRequest::new()
+                .native_url(format!(
+                    "https://pagination-runtime.example.test/v1/rate-key-items?stable=public&cursor={BOUNDARY}"
+                ))
+                .header(
+                    http::HeaderName::from_static("x-page-cursor"),
+                    http::HeaderValue::from_static(BOUNDARY),
+                ),
+            ScriptedResponse::success(Bytes::from_static(b"|-")),
+        )
+        .expect("accepted boundary response");
+    let accepted_provider_calls = Arc::new(AtomicUsize::new(0));
+    let accepted_selector = SlotSelector::provider(
+        CountingRateKeyProvider {
+            calls: Arc::clone(&accepted_provider_calls),
+        },
+        Duration::ZERO,
+    );
+    let accepted_hooks = Arc::new(PaginationProbe::default());
+    let accepted_governor = Arc::new(
+        GovernorRateLimiter::new()
+            .key_limit(key_limit)
+            .expect("accepted key limit"),
+    );
+    let accepted_debug = Arc::new(Mutex::new(Vec::new()));
+    let accepted_core = rate_key_core(
+        &accepted_executor,
+        Arc::clone(&accepted_hooks),
+        Arc::clone(&accepted_governor),
+        Arc::clone(&accepted_debug),
+    );
+    let items = collect_rate_key(
+        accepted_core,
+        BOUNDARY.to_owned(),
+        CredentialRef::new(accepted_selector),
+    )
+    .await
+    .expect("actual key at configured boundary");
+    assert!(items.is_empty());
+    assert_eq!(accepted_provider_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(accepted_governor.test_acquisition_count(), 1);
+    assert_eq!(accepted_governor.test_quota_entry_count(), 1);
+    assert_eq!(
+        accepted_executor
+            .application()
+            .request_count()
+            .expect("accepted request count"),
+        1
+    );
+    assert_eq!(accepted_hooks.before.lock().expect("before").len(), 1);
+    assert_eq!(accepted_hooks.response.lock().expect("response").len(), 1);
+    assert_eq!(
+        accepted_hooks.completion.lock().expect("completion").len(),
+        1
+    );
+    let accepted_hook_safe = {
+        let before = accepted_hooks.before.lock().expect("accepted before");
+        let response = accepted_hooks.response.lock().expect("accepted response");
+        let completion = accepted_hooks
+            .completion
+            .lock()
+            .expect("accepted completion");
+        format!(
+            "{}\n{}\n{}",
+            before
+                .iter()
+                .map(|record| record.safe.as_str())
+                .collect::<Vec<_>>()
+                .join("\n"),
+            response
+                .iter()
+                .map(|record| record.5.as_str())
+                .collect::<Vec<_>>()
+                .join("\n"),
+            completion
+                .iter()
+                .map(|record| record.safe.as_str())
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+    };
+    let accepted_automatic = format!(
+        "{:?}\n{}\n{accepted_hook_safe}",
+        accepted_executor
+            .application()
+            .captures()
+            .expect("accepted captures"),
+        accepted_debug.lock().expect("accepted debug").join("\n")
+    );
+    assert!(!accepted_automatic.contains(BOUNDARY));
+
+    let excess = format!("{BOUNDARY}x");
+    let excess_executor = DeterministicExecutor::new();
+    let excess_provider_calls = Arc::new(AtomicUsize::new(0));
+    let excess_selector = SlotSelector::provider(
+        CountingRateKeyProvider {
+            calls: Arc::clone(&excess_provider_calls),
+        },
+        Duration::ZERO,
+    );
+    let excess_hooks = Arc::new(PaginationProbe::default());
+    let excess_governor = Arc::new(
+        GovernorRateLimiter::new()
+            .key_limit(key_limit)
+            .expect("excess key limit"),
+    );
+    let excess_debug = Arc::new(Mutex::new(Vec::new()));
+    let excess_core = rate_key_core(
+        &excess_executor,
+        Arc::clone(&excess_hooks),
+        Arc::clone(&excess_governor),
+        Arc::clone(&excess_debug),
+    );
+    let error = collect_rate_key(
+        excess_core,
+        excess.clone(),
+        CredentialRef::new(excess_selector),
+    )
+    .await
+    .expect_err("first actual key byte above the configured limit");
+    assert_eq!(error.category(), ErrorCategory::Configuration);
+    assert_eq!(
+        error.configuration_kind(),
+        Some(crate::error::ConfigurationErrorKind::InvalidRateLimit)
+    );
+    assert_eq!(excess_provider_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(excess_governor.test_acquisition_count(), 0);
+    assert_eq!(excess_governor.test_quota_entry_count(), 0);
+    assert_eq!(
+        excess_executor
+            .application()
+            .request_count()
+            .expect("excess request count"),
+        0
+    );
+    assert!(excess_hooks.before.lock().expect("before").is_empty());
+    assert!(excess_hooks.response.lock().expect("response").is_empty());
+    assert!(
+        excess_hooks
+            .completion
+            .lock()
+            .expect("completion")
+            .is_empty()
+    );
+    let aggregate = excess_hooks.aggregate.lock().expect("aggregate");
+    assert_eq!(aggregate.len(), 1);
+    assert_eq!(aggregate[0].pages_completed, 0);
+    assert_eq!(aggregate[0].items_collected, 0);
+    assert_eq!(aggregate[0].final_status, None);
+    drop(aggregate);
+
+    let mut source: Option<&(dyn std::error::Error + 'static)> = Some(&error);
+    while let Some(current) = source {
+        assert!(!current.to_string().contains(&excess));
+        assert!(!format!("{current:?}").contains(&excess));
+        source = current.source();
+    }
+    assert!(
+        !excess_debug
+            .lock()
+            .expect("excess debug")
+            .join("\n")
+            .contains(&excess)
+    );
 }
 
 #[tokio::test]
@@ -528,6 +1071,8 @@ async fn page_lifecycle_is_sequential_correlated_and_limited_once_per_page() {
         assert_eq!(completion.final_status, Some(StatusCode::OK));
         assert_eq!(completion.outcome, CompletionOutcome::Success);
         assert!(completion.elapsed <= Duration::from_secs(30));
+        assert!(!completion.safe.contains(FIRST_CURSOR));
+        assert!(!completion.safe.contains(SECOND_CURSOR));
     }
 
     let aggregate = hooks.aggregate.lock().expect("aggregate lock").clone();
