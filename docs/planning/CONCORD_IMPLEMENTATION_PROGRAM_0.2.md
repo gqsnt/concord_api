@@ -421,7 +421,7 @@ The immutable Phase 9 source/test commit is
 `a8732c3fdefb676bfbb46bee9d756a8282ec531f`. The focused prepared/core, generated-client,
 Trybuild/UI, downstream fixture, rendered Rustdoc, no-default, no-governor, hidden-retry, and
 cancellation commands plus all 16 maintained commands, including `just release`, passed against
-that exact source. The evidence/report/state commit is `PENDING_PHASE_9_EVIDENCE`; a subsequent
+that exact source. The evidence/report/state commit is `4f26b5d1336c6634068bbaac708bf05662880cf6`; a subsequent
 documentation-only evidence anchor finalizes that evidence-state self-reference.
 
 The advanced namespace now exposes only the exact four prepared response markers and opaque
