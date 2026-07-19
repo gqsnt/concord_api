@@ -29,7 +29,7 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 - Corrected immutable tested source/test commit:
   `c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9`
 - Preliminary corrected evidence state: `7b1373f82b33e36325047643d735b2e15bb5a4bc`
-- Corrected evidence/report/state commit: `PENDING_PHASE_7_EVIDENCE_STATE`
+- Corrected evidence/report/state commit: `cb4640d4d4e21528c8e38f8104785e2c3ceac883`
 - Corrected evidence anchor: `PENDING_PHASE_7_CORRECTED_ANCHOR`
 - Compatible post-anchor metadata descendant: the later documentation-only commit that records the
   real corrected anchor identity; it does not replace that anchor
@@ -52,7 +52,7 @@ traces. The ignored validation ledger is `git_diff/phase-7-correction-validation
 | Key-limit correction | `8e3b1589ebf598c1850f273070cbc528b2dce66e` | Unified configured governor key limits at protected preparation and governor insertion; added exact lifecycle, API, parser, privacy, and redaction tests. |
 | Validation correction | `c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9` | Serialized shared-directory Trybuild cases without skipping, retrying, or weakening a test. |
 | Preliminary evidence state | `7b1373f82b33e36325047643d735b2e15bb5a4bc` | Established the clause-level rows; a strengthened audit then found 24 plural-owner coverage milestones rendered as `P7-partial-`. |
-| Corrected evidence/state | `PENDING_PHASE_7_EVIDENCE_STATE` | Replaces all 100 Phase 7 rows with clause-accurate traces, reconciles 98 coverage rows, this report, planning, and controller state. |
+| Corrected evidence/state | `cb4640d4d4e21528c8e38f8104785e2c3ceac883` | Replaces all 100 Phase 7 rows with clause-accurate traces, reconciles 98 coverage rows, this report, planning, and controller state. |
 | Corrected anchor | `PENDING_PHASE_7_CORRECTED_ANCHOR` | Finalizes the known evidence-state identity and audit time only; changes no executable artifact or evidence classification. |
 | Anchor metadata descendant | later documentation-only commit | Records the real corrected anchor hash in the controller/report and retains `anchor-must-be-an-ancestor`. |
 

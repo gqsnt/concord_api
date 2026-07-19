@@ -289,7 +289,7 @@ maintained all-feature matrix exposed a concrete concurrent fixture replacement.
 
 All 62 exact focused commands and all 16 maintained commands, including `just release`, passed
 from the beginning against `c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9`. The corrected
-evidence/report/state commit is `PENDING_PHASE_7_EVIDENCE_STATE`; preliminary evidence state
+evidence/report/state commit is `cb4640d4d4e21528c8e38f8104785e2c3ceac883`; preliminary evidence state
 `7b1373f82b33e36325047643d735b2e15bb5a4bc` was superseded after the strengthened semantic audit
 found 24 incomplete plural-owner coverage milestones. The documentation-only corrected
 anchor is `PENDING_PHASE_7_CORRECTED_ANCHOR`. A later documentation-only descendant records the
