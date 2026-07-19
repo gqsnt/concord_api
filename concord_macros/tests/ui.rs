@@ -138,3 +138,13 @@ fn phase8_pagination_diagnostics_are_source_only_and_focused() {
     cases.compile_fail("tests/ui/fail/phase8_pagination_bounds.rs");
     cases.compile_fail("tests/ui/fail/phase8_pagination_method_absence.rs");
 }
+
+#[test]
+fn phase9_prepared_capabilities_are_exact_and_private() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/fail/phase9_prepared_pagination_absent.rs");
+    cases.compile_fail("tests/ui/fail/phase9_prepared_stream_response_absent.rs");
+    cases.compile_fail("tests/ui/fail/phase9_prepared_builder_methods_absent.rs");
+    cases.compile_fail("tests/ui/fail/phase9_prepared_fields_private.rs");
+    cases.compile_fail("tests/ui/fail/phase9_prepared_no_prelude_export.rs");
+}

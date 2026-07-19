@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::future::IntoFuture;
 use std::io;
-use std::num::NonZeroUsize;
+use std::num::{NonZeroU32, NonZeroUsize};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -32,12 +32,12 @@ use crate::http::HttpConfigBuilder;
 #[cfg(feature = "rate-limit-governor")]
 use crate::rate_limit::GovernorRateLimiter;
 use crate::rate_limit::{
-    RateLimitError, RateLimitKeyPart, RateLimitPermit, RateLimitRequest, RateLimitResponse,
-    RateLimiter,
+    RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitRequest,
+    RateLimitResponse, RateLimitRule, RateLimitWindow, RateLimiter,
 };
 use crate::request::{
     BodyMetadata, BufferedResponse, BytesResponse, CodecBody, EmptyBody, HeadBuilder,
-    NoContentResponse, PreparedHead, RequestMeta, StreamResponseHandler,
+    NoContentResponse, PreparedEndpoint, PreparedHead, RequestMeta, StreamResponseHandler,
 };
 use crate::runtime::RuntimeConfigBuilder;
 
@@ -1154,6 +1154,84 @@ async fn original_deadline_cancels_limiter_wait_without_native_send() {
 }
 
 #[cfg(feature = "rate-limit-governor")]
+#[tokio::test]
+async fn prepared_plans_use_the_selected_governor_and_its_configured_key_limit() {
+    fn rule(id: &str, key: RateLimitKey) -> RateLimitRule {
+        RateLimitRule::new(
+            RateLimitId::new(id).expect("prepared governor rule ID"),
+            key,
+            NonZeroU32::new(1).expect("prepared governor cost"),
+            [RateLimitWindow::new(
+                NonZeroU32::new(10).expect("prepared governor capacity"),
+                Duration::from_secs(1),
+            )
+            .expect("prepared governor window")],
+        )
+        .expect("prepared governor rule")
+    }
+
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_response(ScriptedResponse::success(Bytes::from_static(b"governed")))
+        .expect("prepared governor response");
+    let governor = Arc::new(GovernorRateLimiter::new());
+    let configured: Arc<dyn RateLimiter> = governor.clone();
+    let core = development_core(
+        &executor,
+        Arc::new(ProbeHooks::new()),
+        RuntimeConfigBuilder::new().rate_limiter(configured),
+    );
+    let endpoint = PreparedEndpoint::builder("Prepared::governed", Method::GET)
+        .path_segment("governed")
+        .rate_limit(rule("Prepared::governed", RateLimitKey::global()))
+        .response_bytes()
+        .build()
+        .expect("prepared governed endpoint");
+    assert_eq!(
+        Request::new(core, endpoint)
+            .await
+            .expect("prepared governor execution"),
+        Bytes::from_static(b"governed")
+    );
+    assert_eq!(governor.test_acquisition_count(), 1);
+
+    let rejected_executor = DeterministicExecutor::new();
+    let restricted = Arc::new(
+        GovernorRateLimiter::new()
+            .key_limit(3)
+            .expect("configured prepared key limit"),
+    );
+    let configured: Arc<dyn RateLimiter> = restricted.clone();
+    let rejected_core = development_core(
+        &rejected_executor,
+        Arc::new(ProbeHooks::new()),
+        RuntimeConfigBuilder::new().rate_limiter(configured),
+    );
+    let rejected = PreparedEndpoint::builder("Prepared::key_limit", Method::GET)
+        .rate_limit(rule(
+            "Prepared::key_limit",
+            RateLimitKey::from_parts([RateLimitKeyPart::new("tenant", "sensitive-key")])
+                .expect("prepared oversized key"),
+        ))
+        .response_bytes()
+        .build()
+        .expect("prepared oversized-plan endpoint");
+    let error = Request::new(rejected_core, rejected)
+        .await
+        .expect_err("prepared key limit must fail during preparation");
+    assert_eq!(error.category(), ErrorCategory::Configuration);
+    assert_eq!(restricted.test_acquisition_count(), 0);
+    assert_eq!(
+        rejected_executor
+            .application()
+            .request_count()
+            .expect("rejected count"),
+        0
+    );
+}
+
+#[cfg(feature = "rate-limit-governor")]
 #[tokio::test(start_paused = true)]
 async fn deadline_cancellation_of_governor_wait_consumes_no_quota() {
     let executor = DeterministicExecutor::new();
@@ -1580,9 +1658,35 @@ async fn private_fallback_rejects_a_nonempty_runtime_plan_before_send() {
         Arc::new(ProbeHooks::new()),
         RuntimeConfigBuilder::new(),
     );
-    let error = rate_limited_bytes_request(core, Some(Duration::from_secs(30)), "nonempty")
+    let error = rate_limited_bytes_request(core.clone(), Some(Duration::from_secs(30)), "nonempty")
         .await
         .expect_err("fallback must reject a nonempty runtime plan");
+    assert_eq!(error.category(), ErrorCategory::RateLimit);
+    assert_eq!(
+        error.rate_limit_kind(),
+        Some(crate::error::RateLimitErrorKind::InvalidConfiguration)
+    );
+    assert_eq!(executor.application().request_count().expect("count"), 0);
+
+    let rule = RateLimitRule::new(
+        RateLimitId::new("Prepared::fallback").expect("prepared fallback ID"),
+        RateLimitKey::global(),
+        NonZeroU32::new(1).expect("prepared fallback cost"),
+        [RateLimitWindow::new(
+            NonZeroU32::new(1).expect("prepared fallback capacity"),
+            Duration::from_secs(1),
+        )
+        .expect("prepared fallback window")],
+    )
+    .expect("prepared fallback rule");
+    let endpoint = PreparedEndpoint::builder("Prepared::fallback", Method::GET)
+        .rate_limit(rule)
+        .response_bytes()
+        .build()
+        .expect("prepared fallback endpoint");
+    let error = Request::new(core, endpoint)
+        .await
+        .expect_err("fallback must reject a prepared nonempty plan");
     assert_eq!(error.category(), ErrorCategory::RateLimit);
     assert_eq!(
         error.rate_limit_kind(),
@@ -1627,6 +1731,51 @@ async fn hidden_reqwest_retry_does_not_reenter_custom_limiter_or_lifecycle() {
     );
     assert_eq!(
         records
+            .iter()
+            .filter(|record| matches!(record, LifecycleRecord::Response(_, _)))
+            .count(),
+        1
+    );
+
+    let prepared_server = crate::http::test_support::H2RefusedServer::start(1, 2).await;
+    let prepared_physical_attempts = prepared_server.physical_attempts();
+    let prepared_hooks = Arc::new(ProbeHooks::new());
+    let prepared_limiter = Arc::new(ProbeRateLimiter::new());
+    let configured: Arc<dyn RateLimiter> = prepared_limiter.clone();
+    let prepared_core = ClientCore::build(
+        &prepared_server.base_url(),
+        HttpConfigBuilder::new()
+            .http2_prior_knowledge()
+            .retry_reqwest_default(),
+        RuntimeConfigBuilder::new()
+            .hooks(prepared_hooks.clone())
+            .rate_limiter(configured),
+    )
+    .expect("prepared real HTTP/2 core");
+    let endpoint = PreparedEndpoint::builder("Prepared::hidden_retry", Method::GET)
+        .response_bytes()
+        .build()
+        .expect("prepared hidden-retry endpoint");
+    assert_eq!(
+        Request::new(prepared_core, endpoint)
+            .await
+            .expect("prepared native retry recovery"),
+        Bytes::new()
+    );
+    prepared_server.finish().await;
+    assert_eq!(prepared_physical_attempts.load(Ordering::SeqCst), 2);
+    assert_eq!(prepared_limiter.acquisitions.load(Ordering::SeqCst), 1);
+    assert_eq!(prepared_limiter.observations.load(Ordering::SeqCst), 1);
+    let prepared_records = prepared_hooks.records();
+    assert_eq!(
+        prepared_records
+            .iter()
+            .filter(|record| matches!(record, LifecycleRecord::Before { .. }))
+            .count(),
+        1
+    );
+    assert_eq!(
+        prepared_records
             .iter()
             .filter(|record| matches!(record, LifecycleRecord::Response(_, _)))
             .count(),
@@ -2878,6 +3027,53 @@ async fn timeout_in_before_send_is_fixed_then_completion_runs_outside_deadline()
 }
 
 #[tokio::test(start_paused = true)]
+async fn prepared_builder_deadline_is_fixed_and_completion_remains_outside_it() {
+    let executor = DeterministicExecutor::new();
+    let before_gate = Gate::closed();
+    let completion_gate = Gate::closed();
+    let hooks = Arc::new(ProbeHooks {
+        before_gate: Some(before_gate.clone()),
+        completion_gate: Some(completion_gate.clone()),
+        ..ProbeHooks::new()
+    });
+    let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
+    let endpoint = PreparedEndpoint::builder("Prepared::deadline", Method::GET)
+        .path_segment("prepared-deadline")
+        .timeout(Duration::from_secs(5))
+        .response_bytes()
+        .build()
+        .expect("prepared deadline endpoint");
+    let task = tokio::spawn(async move { Request::new(core, endpoint).await });
+
+    before_gate.wait_until_reached().await;
+    tokio::time::advance(Duration::from_secs(5)).await;
+    completion_gate.wait_until_reached().await;
+    assert!(!task.is_finished());
+    let records = hooks.records();
+    let before_id = match records.first() {
+        Some(LifecycleRecord::Before { operation_id, .. }) => *operation_id,
+        _ => panic!("prepared before-send record"),
+    };
+    let (completion_id, outcome, status, elapsed) = completion(&records);
+    assert_eq!(completion_id, before_id);
+    assert_eq!(outcome, CompletionOutcome::Timeout);
+    assert_eq!(status, None);
+    assert_eq!(elapsed, Duration::from_secs(5));
+
+    tokio::time::advance(Duration::from_secs(60)).await;
+    assert_eq!(completion(&hooks.records()).3, elapsed);
+    assert!(!task.is_finished());
+    completion_gate.open();
+    let error = task
+        .await
+        .expect("prepared deadline join")
+        .expect_err("prepared deadline timeout");
+    assert_eq!(error.category(), ErrorCategory::Timeout);
+    assert_eq!(executor.application().request_count().expect("count"), 0);
+    assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test(start_paused = true)]
 async fn success_and_status_results_remain_fixed_while_completion_is_delayed() {
     let success_executor = DeterministicExecutor::new();
     success_executor
@@ -3492,6 +3688,50 @@ async fn cancellation_drops_direct_and_factory_created_request_streams_without_c
     assert_eq!(factory_hooks.completion_returned.load(Ordering::SeqCst), 0);
     tokio::task::yield_now().await;
     assert_eq!(factory_polls.load(Ordering::SeqCst), factory_polls_at_drop);
+
+    let prepared_polls = Arc::new(AtomicUsize::new(0));
+    let prepared_dropped = Arc::new(AtomicBool::new(false));
+    let prepared_reached = Arc::new(tokio::sync::Notify::new());
+    let prepared_executor = DeterministicExecutor::new();
+    let prepared_hooks = Arc::new(ProbeHooks::new());
+    let prepared_core = development_core(
+        &prepared_executor,
+        Arc::clone(&prepared_hooks),
+        RuntimeConfigBuilder::new(),
+    );
+    let prepared_endpoint = PreparedEndpoint::builder("Prepared::cancellation", Method::POST)
+        .path_segment("prepared-cancellation")
+        .body(RequestBody::stream(StreamBody::from_stream(
+            PendingBodyStream {
+                polls: Arc::clone(&prepared_polls),
+                dropped: Arc::clone(&prepared_dropped),
+                reached: Arc::clone(&prepared_reached),
+            },
+        )))
+        .response_bytes()
+        .build()
+        .expect("prepared cancellation endpoint");
+    let prepared_task =
+        tokio::spawn(async move { Request::new(prepared_core, prepared_endpoint).await });
+    prepared_reached.notified().await;
+    assert_eq!(prepared_executor.application().request_count().unwrap(), 0);
+    prepared_task.abort();
+    assert!(
+        prepared_task
+            .await
+            .expect_err("prepared request must be cancelled")
+            .is_cancelled()
+    );
+    tokio::task::yield_now().await;
+    let prepared_polls_at_drop = prepared_polls.load(Ordering::SeqCst);
+    assert!(prepared_polls_at_drop > 0);
+    assert!(prepared_dropped.load(Ordering::SeqCst));
+    assert_eq!(prepared_hooks.completion_returned.load(Ordering::SeqCst), 0);
+    tokio::task::yield_now().await;
+    assert_eq!(
+        prepared_polls.load(Ordering::SeqCst),
+        prepared_polls_at_drop
+    );
 
     #[cfg(feature = "multipart")]
     {

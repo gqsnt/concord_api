@@ -160,6 +160,16 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
             .limit(20)
             .reset_limit(),
     );
+    let prepared = runtime::advanced::PreparedEndpoint::builder(
+        "RenamedApi::prepared",
+        runtime::advanced::Method::GET,
+    )
+    .path_segment("prepared")
+    .query_values("value", ["first", "second"])
+    .response::<runtime::advanced::Text>()
+    .build()
+    .expect("valid renamed prepared endpoint");
+    let _: runtime::Request<_> = client.request(prepared);
     let _: runtime::Request<_> = client
         .resources("renamed-scope".to_owned())
         .custom("custom-body".to_owned());

@@ -1,5 +1,6 @@
 #![cfg(feature = "default-tls")]
 
+use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -21,7 +22,7 @@ use crate::body::{BodyError, BodyFactory, RequestBody, StreamBody};
 #[cfg(feature = "multipart")]
 use crate::body::{MultipartBody, MultipartPart};
 use crate::client::ClientCore;
-use crate::codec::{CodecError, DecodeBody, DecodeContext, OctetStream};
+use crate::codec::{CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, OctetStream};
 use crate::error::{ApiError, AuthErrorKind, ErrorCategory};
 use crate::hooks::{
     BeforeSend, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel,
@@ -36,12 +37,12 @@ use crate::pagination::{
 #[cfg(feature = "rate-limit-governor")]
 use crate::rate_limit::GovernorRateLimiter;
 use crate::rate_limit::{
-    RateLimitError, RateLimitKeyPart, RateLimitPermit, RateLimitRequest, RateLimitResponse,
-    RateLimiter,
+    RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitRequest,
+    RateLimitResponse, RateLimitRule, RateLimitWindow, RateLimiter,
 };
 use crate::request::{
     BodyMetadata, BodySpec, BufferedResponse, BytesResponse, EmptyBody, EndpointSpec, HeadBuilder,
-    PreparedHead, Request, RequestMeta, StreamResponseHandler,
+    PreparedEndpoint, PreparedHead, Request, RequestMeta, StreamResponseHandler,
 };
 use crate::runtime::RuntimeConfigBuilder;
 
@@ -68,6 +69,42 @@ struct PaginatedProtectedEndpoint {
 }
 
 struct AuthenticationPageCodec;
+
+struct PreparedRecoveryCodec;
+
+struct PreparedRecoveryInput {
+    calls: Arc<AtomicUsize>,
+}
+
+#[derive(Clone)]
+struct OrderedPreparedCredential {
+    id: &'static str,
+    value: SecretString,
+    calls: Arc<Mutex<Vec<&'static str>>>,
+}
+
+impl CredentialMaterial for OrderedPreparedCredential {}
+
+impl SecretCredential for OrderedPreparedCredential {
+    fn expose_secret(&self) -> &str {
+        self.calls
+            .lock()
+            .expect("prepared authentication order")
+            .push(self.id);
+        self.value.expose_secret()
+    }
+}
+
+impl EncodeBody for PreparedRecoveryCodec {
+    type Input = PreparedRecoveryInput;
+
+    const CONTENT_TYPE: Option<&'static str> = None;
+
+    fn encode(input: Self::Input, _context: EncodeContext<'_>) -> Result<Bytes, CodecError> {
+        input.calls.fetch_add(1, Ordering::SeqCst);
+        Ok(Bytes::from_static(b"prepared-codec"))
+    }
+}
 
 impl DecodeBody for AuthenticationPageCodec {
     type Output = Vec<u8>;
@@ -938,6 +975,20 @@ fn query_request(
     )
 }
 
+fn prepared_rate_rule() -> RateLimitRule {
+    RateLimitRule::new(
+        RateLimitId::new("Prepared::rate_limit::recovery").expect("prepared rate ID"),
+        RateLimitKey::global(),
+        NonZeroU32::new(1).expect("prepared rate cost"),
+        [RateLimitWindow::new(
+            NonZeroU32::new(2).expect("prepared rate capacity"),
+            Duration::from_secs(1),
+        )
+        .expect("prepared rate window")],
+    )
+    .expect("prepared rate rule")
+}
+
 fn api_error<T>(result: Result<T, ApiError>) -> ApiError {
     match result {
         Ok(_) => panic!("expected API failure"),
@@ -1471,6 +1522,221 @@ async fn refresh_recovery_reuses_identity_reenters_full_attempt_and_keeps_secret
 }
 
 #[tokio::test]
+async fn prepared_codec_recovery_reuses_encoding_and_reenters_the_ordinary_limiter_lifecycle() {
+    const PUBLIC_QUERY: &str = "prepared-public-query-3fa67d2cae91";
+    const PUBLIC_HEADER: &str = "prepared-public-header-86d22d942a6b";
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_expected_response(
+            ExpectedRequest::new()
+                .method(Method::POST)
+                .native_url(
+                    "https://protected.example.test/v1/prepared?session_token=prepared-public-query-3fa67d2cae91",
+                )
+                .header(
+                    AUTHORIZATION,
+                    HeaderValue::from_static("Bearer initial-auth-token-1148c7"),
+                )
+                .header(
+                    http::HeaderName::from_static("x-sensitive-token"),
+                    HeaderValue::from_static(PUBLIC_HEADER),
+                )
+                .body(Bytes::from_static(b"prepared-codec")),
+            ScriptedResponse::status(StatusCode::UNAUTHORIZED, Bytes::from_static(b"challenge")),
+        )
+        .expect("prepared challenge response");
+    executor
+        .application()
+        .queue_expected_response(
+            ExpectedRequest::new()
+                .method(Method::POST)
+                .native_url(
+                    "https://protected.example.test/v1/prepared?session_token=prepared-public-query-3fa67d2cae91",
+                )
+                .header(
+                    AUTHORIZATION,
+                    HeaderValue::from_static("Bearer refreshed-auth-token-709fe2"),
+                )
+                .header(
+                    http::HeaderName::from_static("x-sensitive-token"),
+                    HeaderValue::from_static(PUBLIC_HEADER),
+                )
+                .body(Bytes::from_static(b"prepared-codec")),
+            ScriptedResponse::success(Bytes::from_static(b"ok")),
+        )
+        .expect("prepared recovery response");
+
+    let acquires = Arc::new(AtomicUsize::new(0));
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let exact = Arc::new(AtomicBool::new(false));
+    let selector = SlotSelector::provider(
+        RotatingProvider {
+            acquires: Arc::clone(&acquires),
+            refreshes: Arc::clone(&refreshes),
+            exact_current_seen: Arc::clone(&exact),
+        },
+        Duration::ZERO,
+    );
+    let hooks = Arc::new(AuthHooks::default());
+    let limiter_acquires = Arc::new(AtomicUsize::new(0));
+    let limiter_observations = Arc::new(AtomicUsize::new(0));
+    let limiter = Arc::new(AuthRateLimiter::counting(
+        &limiter_acquires,
+        &limiter_observations,
+    ));
+    let (core, debug) = core_with_runtime(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new().rate_limiter(limiter),
+    );
+    let encode_calls = Arc::new(AtomicUsize::new(0));
+    let endpoint = PreparedEndpoint::builder("Prepared::protected", Method::POST)
+        .path_segment("prepared")
+        .query("session_token", PUBLIC_QUERY)
+        .header(
+            http::HeaderName::from_static("x-sensitive-token"),
+            PUBLIC_HEADER,
+        )
+        .body_codec::<PreparedRecoveryCodec>(PreparedRecoveryInput {
+            calls: Arc::clone(&encode_calls),
+        })
+        .auth(
+            Auth::bearer(CredentialRef::new(Arc::clone(&selector)))
+                .challenge(ChallengePolicy::Unauthorized),
+        )
+        .rate_limit(prepared_rate_rule())
+        .response_bytes()
+        .build()
+        .expect("prepared protected endpoint");
+
+    let response = Request::new(core.clone(), endpoint)
+        .response()
+        .await
+        .expect("prepared bounded recovery");
+    assert_eq!(response.value(), &Bytes::from_static(b"ok"));
+    assert!(response.metadata().recovered_authentication());
+    assert_eq!(encode_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(acquires.load(Ordering::SeqCst), 1);
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+    assert!(exact.load(Ordering::SeqCst));
+    assert_eq!(core.operation_allocations(), 1);
+    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 2);
+    assert_eq!(limiter_observations.load(Ordering::SeqCst), 2);
+
+    let before = hooks.before.lock().expect("prepared before records");
+    assert_eq!(before.len(), 2);
+    assert_eq!(before[0].operation_id, before[1].operation_id);
+    assert_eq!([before[0].recovery_index, before[1].recovery_index], [0, 1]);
+    assert!(before.iter().all(|record| {
+        record.safe_url == "https://protected.example.test/v1/prepared?session_token=%3Credacted%3E"
+            && !record.safe_url.contains(INITIAL)
+            && !record.safe_url.contains(REFRESHED)
+            && !record.safe_url.contains(PUBLIC_QUERY)
+    }));
+    drop(before);
+    let completion = hooks.completion.lock().expect("prepared completion");
+    assert_eq!(completion.len(), 1);
+    assert!(completion[0].1);
+    assert_eq!(completion[0].2, Some(StatusCode::OK));
+    drop(completion);
+    let diagnostics = format!(
+        "{}\n{:?}",
+        debug.lock().expect("prepared debug output").join("\n"),
+        executor
+            .application()
+            .captures()
+            .expect("prepared captures")
+    );
+    for sentinel in [
+        INITIAL,
+        REFRESHED,
+        PUBLIC_QUERY,
+        PUBLIC_HEADER,
+        "prepared-codec",
+    ] {
+        assert!(!diagnostics.contains(sentinel));
+    }
+}
+
+#[tokio::test]
+async fn prepared_one_shot_body_does_not_perform_an_unsafe_recovery_resend() {
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_expected_response(
+            ExpectedRequest::new().body(Bytes::from_static(b"prepared-one-shot")),
+            ScriptedResponse::status(StatusCode::UNAUTHORIZED, Bytes::from_static(b"terminal")),
+        )
+        .expect("prepared one-shot challenge");
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let selector = SlotSelector::provider(
+        RotatingProvider {
+            acquires: Arc::new(AtomicUsize::new(0)),
+            refreshes: Arc::clone(&refreshes),
+            exact_current_seen: Arc::new(AtomicBool::new(false)),
+        },
+        Duration::ZERO,
+    );
+    let (core, _) = core(&executor, Arc::new(AuthHooks::default()));
+    let endpoint = PreparedEndpoint::builder("Prepared::one_shot", Method::POST)
+        .body(RequestBody::stream(StreamBody::from_bytes(
+            Bytes::from_static(b"prepared-one-shot"),
+        )))
+        .auth(Auth::bearer(CredentialRef::new(selector)).challenge(ChallengePolicy::Unauthorized))
+        .response_bytes()
+        .build()
+        .expect("prepared one-shot endpoint");
+
+    let error = api_error(Request::new(core, endpoint).await);
+    assert_eq!(error.category(), ErrorCategory::AuthenticationRejected);
+    assert_eq!(refreshes.load(Ordering::SeqCst), 0);
+    assert_eq!(executor.application().request_count().expect("count"), 1);
+}
+
+#[cfg(feature = "multipart")]
+#[tokio::test]
+async fn prepared_one_shot_multipart_does_not_perform_an_unsafe_recovery_resend() {
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_response(ScriptedResponse::status(
+            StatusCode::UNAUTHORIZED,
+            Bytes::from_static(b"terminal"),
+        ))
+        .expect("prepared multipart challenge");
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let selector = SlotSelector::provider(
+        RotatingProvider {
+            acquires: Arc::new(AtomicUsize::new(0)),
+            refreshes: Arc::clone(&refreshes),
+            exact_current_seen: Arc::new(AtomicBool::new(false)),
+        },
+        Duration::ZERO,
+    );
+    let (core, _) = core(&executor, Arc::new(AuthHooks::default()));
+    let multipart = MultipartBody::new()
+        .part(
+            "stream",
+            MultipartPart::stream(StreamBody::from_bytes(Bytes::from_static(
+                b"prepared-multipart-one-shot",
+            ))),
+        )
+        .expect("prepared one-shot multipart");
+    let endpoint = PreparedEndpoint::builder("Prepared::multipart_one_shot", Method::POST)
+        .body(RequestBody::multipart(multipart))
+        .auth(Auth::bearer(CredentialRef::new(selector)).challenge(ChallengePolicy::Unauthorized))
+        .response_bytes()
+        .build()
+        .expect("prepared one-shot multipart endpoint");
+
+    let error = api_error(Request::new(core, endpoint).await);
+    assert_eq!(error.category(), ErrorCategory::AuthenticationRejected);
+    assert_eq!(refreshes.load(Ordering::SeqCst), 0);
+    assert_eq!(executor.application().request_count().expect("count"), 1);
+}
+
+#[tokio::test]
 async fn recovered_stream_reports_recovery_in_owned_metadata() {
     let executor = DeterministicExecutor::new();
     executor
@@ -1578,6 +1844,179 @@ async fn basic_and_custom_header_material_exist_only_at_the_native_boundary() {
                 .iter()
                 .all(|header| header.value() == &CapturedHeaderValue::Redacted)
     }));
+}
+
+#[tokio::test]
+async fn prepared_bearer_basic_header_and_query_auth_use_only_the_native_boundary() {
+    const BEARER: &str = "prepared-bearer-69da8bc87d53";
+    const API_KEY: &str = "prepared-api-key-f22b7940bd61";
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_expected_response(
+            ExpectedRequest::new()
+                .safe_url("https://protected.example.test/v1/bearer")
+                .native_url("https://protected.example.test/v1/bearer")
+                .header(
+                    AUTHORIZATION,
+                    HeaderValue::from_static("Bearer prepared-bearer-69da8bc87d53"),
+                ),
+            ScriptedResponse::success(Bytes::from_static(b"bearer")),
+        )
+        .expect("prepared Bearer response");
+    executor
+        .application()
+        .queue_expected_response(
+            ExpectedRequest::new()
+                .safe_url("https://protected.example.test/v1/basic")
+                .native_url("https://protected.example.test/v1/basic")
+                .header(
+                    AUTHORIZATION,
+                    HeaderValue::from_static("Basic dXNlcjpwYXNzd29yZA=="),
+                ),
+            ScriptedResponse::success(Bytes::from_static(b"basic")),
+        )
+        .expect("prepared Basic response");
+    executor
+        .application()
+        .queue_expected_response(
+            ExpectedRequest::new()
+                .safe_url("https://protected.example.test/v1/header")
+                .native_url("https://protected.example.test/v1/header")
+                .header(
+                    http::HeaderName::from_static("x-api-key"),
+                    HeaderValue::from_static(API_KEY),
+                ),
+            ScriptedResponse::success(Bytes::from_static(b"header")),
+        )
+        .expect("prepared header response");
+    executor
+        .application()
+        .queue_expected_response(
+            ExpectedRequest::new()
+                .safe_url("https://protected.example.test/v1/query")
+                .native_url(
+                    "https://protected.example.test/v1/query?access=prepared-api-key-f22b7940bd61",
+                ),
+            ScriptedResponse::success(Bytes::from_static(b"query")),
+        )
+        .expect("prepared query response");
+    let (core, debug) = core(&executor, Arc::new(AuthHooks::default()));
+    let bearer = SlotSelector::static_value(AccessToken::new(BEARER), Duration::ZERO);
+    let basic =
+        SlotSelector::static_value(BasicCredential::new("user", "password"), Duration::ZERO);
+    let key = SlotSelector::static_value(ApiKey::new(API_KEY), Duration::ZERO);
+
+    let cases = [
+        (
+            "bearer",
+            Auth::bearer(CredentialRef::new(Arc::clone(&bearer))),
+            Bytes::from_static(b"bearer"),
+        ),
+        (
+            "basic",
+            Auth::basic(CredentialRef::new(basic)),
+            Bytes::from_static(b"basic"),
+        ),
+        (
+            "header",
+            Auth::header(
+                http::HeaderName::from_static("x-api-key"),
+                CredentialRef::new(Arc::clone(&key)),
+            ),
+            Bytes::from_static(b"header"),
+        ),
+        (
+            "query",
+            Auth::query("access", CredentialRef::new(key)),
+            Bytes::from_static(b"query"),
+        ),
+    ];
+    for (segment, auth, expected) in cases {
+        let endpoint = PreparedEndpoint::builder("Prepared::auth", Method::GET)
+            .path_segment(segment)
+            .auth(auth)
+            .response_bytes()
+            .build()
+            .expect("prepared authentication endpoint");
+        let actual = Request::new(core.clone(), endpoint)
+            .await
+            .expect("prepared authenticated request");
+        assert_eq!(actual, expected);
+    }
+
+    let diagnostics = format!(
+        "{}\n{:?}",
+        debug.lock().expect("prepared auth debug").join("\n"),
+        executor
+            .application()
+            .captures()
+            .expect("prepared auth captures")
+    );
+    for secret in [BEARER, API_KEY, "dXNlcjpwYXNzd29yZA=="] {
+        assert!(!diagnostics.contains(secret));
+    }
+}
+
+#[tokio::test]
+async fn prepared_authentication_attachments_materialize_in_builder_order() {
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_expected_response(
+            ExpectedRequest::new()
+                .header(
+                    http::HeaderName::from_static("x-first-auth"),
+                    HeaderValue::from_static("first-prepared-auth-1f31c4"),
+                )
+                .header(
+                    http::HeaderName::from_static("x-second-auth"),
+                    HeaderValue::from_static("second-prepared-auth-b4f28e"),
+                ),
+            ScriptedResponse::success(Bytes::new()),
+        )
+        .expect("ordered prepared authentication response");
+    let (core, debug) = core(&executor, Arc::new(AuthHooks::default()));
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let first = SlotSelector::static_value(
+        OrderedPreparedCredential {
+            id: "first",
+            value: SecretString::new("first-prepared-auth-1f31c4"),
+            calls: Arc::clone(&calls),
+        },
+        Duration::ZERO,
+    );
+    let second = SlotSelector::static_value(
+        OrderedPreparedCredential {
+            id: "second",
+            value: SecretString::new("second-prepared-auth-b4f28e"),
+            calls: Arc::clone(&calls),
+        },
+        Duration::ZERO,
+    );
+    let endpoint = PreparedEndpoint::builder("Prepared::ordered_auth", Method::GET)
+        .auth(Auth::header(
+            http::HeaderName::from_static("x-first-auth"),
+            CredentialRef::new(first),
+        ))
+        .auth(Auth::header(
+            http::HeaderName::from_static("x-second-auth"),
+            CredentialRef::new(second),
+        ))
+        .response_bytes()
+        .build()
+        .expect("ordered prepared authentication endpoint");
+
+    Request::new(core, endpoint)
+        .await
+        .expect("ordered prepared authentication request");
+    assert_eq!(
+        calls.lock().expect("ordered prepared calls").as_slice(),
+        ["first", "second"]
+    );
+    let debug = debug.lock().expect("ordered prepared debug").join("\n");
+    assert!(!debug.contains("first-prepared-auth-1f31c4"));
+    assert!(!debug.contains("second-prepared-auth-b4f28e"));
 }
 
 #[tokio::test]

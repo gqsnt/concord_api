@@ -72,8 +72,9 @@ pub struct HeadBuilder {
     timeout: Option<Duration>,
     debug: DebugLevel,
     appended_segment: bool,
-    auth: AuthPlan,
+    auth: Arc<AuthPlan>,
     rate_limit_rules: Vec<RateLimitRule>,
+    prepared_rate_limit_plan: Option<Arc<RateLimitPlan>>,
 }
 
 impl HeadBuilder {
@@ -101,15 +102,17 @@ impl HeadBuilder {
             public_headers: HeaderMap::new(),
             pagination_sensitive_headers: HashSet::new(),
             appended_segment: false,
-            auth: AuthPlan::default(),
+            auth: Arc::new(AuthPlan::default()),
             rate_limit_rules: Vec::new(),
+            prepared_rate_limit_plan: None,
         }
     }
 
     /// Appends one normalized generated authentication placement.
     #[doc(hidden)]
     pub fn push_auth(&mut self, auth: Auth) -> Result<(), ApiError> {
-        self.auth
+        Arc::get_mut(&mut self.auth)
+            .expect("generated authentication is composed before a prepared plan is installed")
             .push(auth, &self.logical_url, &self.public_headers)
             .map_err(|error| {
                 drop(error);
@@ -161,6 +164,16 @@ impl HeadBuilder {
         })?;
         self.rate_limit_rules.push(rule);
         Ok(())
+    }
+
+    pub(crate) fn use_prepared_auth_plan(&mut self, auth: Arc<AuthPlan>) {
+        debug_assert!(self.auth.is_empty());
+        self.auth = auth;
+    }
+
+    pub(crate) fn use_prepared_rate_limit_plan(&mut self, plan: Arc<RateLimitPlan>) {
+        debug_assert!(self.rate_limit_rules.is_empty());
+        self.prepared_rate_limit_plan = Some(plan);
     }
 
     /// Returns the final logical host for generated rate-key resolution.
@@ -303,6 +316,37 @@ impl HeadBuilder {
         Ok(())
     }
 
+    /// Appends an arbitrary formatted prepared value as exactly one encoded path segment.
+    pub(crate) fn push_prepared_segment(&mut self, segment: &str) -> Result<(), ApiError> {
+        // `url` normalizes literal single- and double-dot path segments. Feed those two values as
+        // percent text so the path-segment encoder escapes the percent signs and retains one inert
+        // segment instead of changing the base route.
+        let segment = match segment {
+            "." => "%2E",
+            ".." => "%2E%2E",
+            segment => segment,
+        };
+        let mut path = self
+            .logical_url
+            .path_segments_mut()
+            .map_err(|()| invalid_route(self.meta.endpoint(), self.meta.method()))?;
+        if !self.appended_segment {
+            path.pop_if_empty();
+        }
+        path.push(segment);
+        drop(path);
+        let mut safe_path = self
+            .safe_logical_url
+            .path_segments_mut()
+            .map_err(|()| invalid_route(self.meta.endpoint(), self.meta.method()))?;
+        if !self.appended_segment {
+            safe_path.pop_if_empty();
+        }
+        safe_path.push(segment);
+        self.appended_segment = true;
+        Ok(())
+    }
+
     /// Appends one public query pair after formatting its value.
     #[doc(hidden)]
     pub fn push_query_value<T>(&mut self, key: &str, value: &T)
@@ -338,13 +382,14 @@ impl HeadBuilder {
     {
         let name = HeaderName::from_bytes(name.as_bytes())
             .map_err(|_| invalid_header(self.meta.endpoint(), self.meta.method()))?;
-        if reserved_public_header(&name) {
-            return Err(invalid_header(self.meta.endpoint(), self.meta.method()));
-        }
-        let value = HeaderValue::from_str(&value.to_string())
+        let value = validate_public_header(&name, &value.to_string())
             .map_err(|_| invalid_header(self.meta.endpoint(), self.meta.method()))?;
         self.public_headers.insert(name, value);
         Ok(())
+    }
+
+    pub(crate) fn insert_prepared_header(&mut self, name: HeaderName, value: HeaderValue) {
+        self.public_headers.insert(name, value);
     }
 
     /// Inserts one pagination-sensitive validated public header.
@@ -384,7 +429,9 @@ impl HeadBuilder {
             timeout: self.timeout,
             debug: self.debug,
             auth: self.auth,
-            rate_limit_plan: RateLimitPlan::from_rules(self.rate_limit_rules),
+            rate_limit_plan: self
+                .prepared_rate_limit_plan
+                .unwrap_or_else(|| Arc::new(RateLimitPlan::from_rules(self.rate_limit_rules))),
         }
     }
 }
@@ -400,8 +447,8 @@ pub struct PreparedHead {
     pagination_sensitive_headers: HashSet<HeaderName>,
     timeout: Option<Duration>,
     debug: DebugLevel,
-    auth: AuthPlan,
-    rate_limit_plan: RateLimitPlan,
+    auth: Arc<AuthPlan>,
+    rate_limit_plan: Arc<RateLimitPlan>,
 }
 
 impl PreparedHead {
@@ -543,12 +590,12 @@ impl PreparedHead {
         self.debug
     }
 
-    pub(crate) const fn auth(&self) -> &AuthPlan {
-        &self.auth
+    pub(crate) fn auth(&self) -> &AuthPlan {
+        self.auth.as_ref()
     }
 
-    pub(crate) const fn rate_limit_plan(&self) -> &RateLimitPlan {
-        &self.rate_limit_plan
+    pub(crate) fn rate_limit_plan(&self) -> &RateLimitPlan {
+        self.rate_limit_plan.as_ref()
     }
 
     pub(crate) fn validate_rate_limit_key_limit(&self, limit: usize) -> Result<(), ApiError> {
@@ -608,6 +655,16 @@ pub(crate) fn reserved_public_header(name: &HeaderName) -> bool {
             | "cookie"
             | "set-cookie"
     )
+}
+
+pub(crate) fn validate_public_header(
+    name: &HeaderName,
+    value: &str,
+) -> Result<HeaderValue, ConfigurationErrorKind> {
+    if reserved_public_header(name) {
+        return Err(ConfigurationErrorKind::InvalidHeader);
+    }
+    HeaderValue::from_str(value).map_err(|_| ConfigurationErrorKind::InvalidHeader)
 }
 
 fn replace_query_values(url: &mut Url, name: &str, value: Option<&str>) {

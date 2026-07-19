@@ -14,7 +14,7 @@ use crate::model::{
 };
 use crate::names::{canonical_ident, public_ident, to_snake_case};
 
-const GENERATED_CONTRACT_VERSION: u32 = 9;
+const GENERATED_CONTRACT_VERSION: u32 = 10;
 
 pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
     let clients = api
@@ -59,7 +59,7 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
         "Builds `{client_name}` through the canonical builder. Constructor arguments are required client values, then protected secrets, then custom credential providers, each in normative declaration order. {value_summary} {credential_summary}"
     );
     let capability_doc = format!(
-        "Sealed capability implemented only by explicit endpoints generated for [`{client_name}`]."
+        "Sealed capability implemented by explicit endpoints generated for [`{client_name}`] and stable `PreparedEndpoint` response modes. Downstream types cannot implement this capability."
     );
 
     let value_fields = client
@@ -323,6 +323,19 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
                 }
             }
 
+            #[doc(hidden)]
+            impl<R> __concord_endpoint_seal::Sealed
+                for #core_path::advanced::PreparedEndpoint<R>
+            where
+                R: #core_path::__private::PreparedResponseMarker,
+            {}
+
+            #[doc(hidden)]
+            impl<R> #capability_name for #core_path::advanced::PreparedEndpoint<R>
+            where
+                R: #core_path::__private::PreparedResponseMarker,
+            {}
+
             #[doc = #prelude_doc]
             pub mod prelude {
                 #(#prelude_exports)*
@@ -362,7 +375,8 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
                 #credentials_method
 
                 #[must_use]
-                /// Creates a side-effect-free pending request from an endpoint generated for this client.
+                /// Creates a side-effect-free pending request from an explicit endpoint generated
+                /// for this client or a stable advanced prepared endpoint.
                 pub fn request<E>(&self, endpoint: E) -> #core_path::Request<E>
                 where
                     E: #capability_name,

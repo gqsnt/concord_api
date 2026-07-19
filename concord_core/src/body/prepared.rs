@@ -164,6 +164,77 @@ pub trait BodySpec: sealed::Body + Send + 'static {
     ) -> Result<PreparedBody, ApiError>;
 }
 
+trait ErasedPreparedBody: Send {
+    fn erased_metadata(
+        &self,
+        endpoint: &'static str,
+        method: &Method,
+    ) -> Result<BodyMetadata, ApiError>;
+
+    fn erased_materialize(
+        self: Box<Self>,
+        endpoint: &'static str,
+        method: &Method,
+        limit: NonZeroUsize,
+    ) -> Result<PreparedBody, ApiError>;
+}
+
+impl<B> ErasedPreparedBody for B
+where
+    B: BodySpec,
+{
+    fn erased_metadata(
+        &self,
+        endpoint: &'static str,
+        method: &Method,
+    ) -> Result<BodyMetadata, ApiError> {
+        BodySpec::metadata(self, endpoint, method)
+    }
+
+    fn erased_materialize(
+        self: Box<Self>,
+        endpoint: &'static str,
+        method: &Method,
+        limit: NonZeroUsize,
+    ) -> Result<PreparedBody, ApiError> {
+        BodySpec::materialize(*self, endpoint, method, limit)
+    }
+}
+
+/// Core-private type erasure for the body selected by a prepared endpoint.
+#[doc(hidden)]
+pub struct PreparedRequestBody {
+    body: Box<dyn ErasedPreparedBody>,
+}
+
+impl PreparedRequestBody {
+    pub(crate) fn new<B>(body: B) -> Self
+    where
+        B: BodySpec,
+    {
+        Self {
+            body: Box::new(body),
+        }
+    }
+}
+
+impl BodySpec for PreparedRequestBody {
+    fn metadata(&self, endpoint: &'static str, method: &Method) -> Result<BodyMetadata, ApiError> {
+        self.body.erased_metadata(endpoint, method)
+    }
+
+    fn materialize(
+        self,
+        endpoint: &'static str,
+        method: &Method,
+        limit: NonZeroUsize,
+    ) -> Result<PreparedBody, ApiError> {
+        self.body.erased_materialize(endpoint, method, limit)
+    }
+}
+
+impl sealed::Body for PreparedRequestBody {}
+
 /// Empty request-body value used by bodyless generated endpoints.
 #[doc(hidden)]
 #[derive(Clone, Copy, Debug, Default)]
@@ -332,7 +403,13 @@ impl<M> sealed::Body for StreamRequestBody<M> where M: MediaType {}
 ///
 /// `content_type` is metadata inspection and must be deterministic and
 /// side-effect-light. `create` is called only after `before_send` approves the
-/// attempt. Reqwest-internal retries cannot call this trait.
+/// attempt. Reqwest-internal retries cannot call this trait. Calls for
+/// independent operations may overlap. Bodies and factory state may be
+/// sensitive; implementations own their logging and storage and must bound CPU,
+/// memory, retries, maps, queues, spawned tasks, metric cardinality, and external
+/// I/O. Both callbacks are synchronous and cannot be preempted by Concord; the
+/// operation deadline is checked after return, cancellation prevents later work
+/// only, and Concord does not automatically bound custom factory state.
 pub trait BodyFactory: Send + Sync + 'static {
     fn content_type(&self) -> Option<HeaderValue> {
         None

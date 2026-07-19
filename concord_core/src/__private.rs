@@ -60,6 +60,8 @@ pub use crate::rate_limit::{
     RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitRule, RateLimitWindow,
 };
 #[doc(hidden)]
+pub use crate::request::PreparedResponseMarker;
+#[doc(hidden)]
 pub use crate::request::{
     BodyMetadata, BodySpec, BufferedResponse, BytesResponse, CodecBody, EmptyBody, EndpointSpec,
     HeadBuilder, MetadataResponse, NoContentResponse, PreparedBody, PreparedHead, RequestMeta,

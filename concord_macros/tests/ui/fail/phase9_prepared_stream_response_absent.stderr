@@ -1,0 +1,13 @@
+error[E0599]: the method `response` exists for struct `Request<PreparedEndpoint<PreparedStream<OctetStream>>>`, but its trait bounds were not satisfied
+  --> tests/ui/fail/phase9_prepared_stream_response_absent.rs:17:38
+   |
+17 |     let _ = client.request(endpoint).response();
+   |                                      ^^^^^^^^ method cannot be called due to unsatisfied trait bounds
+   |
+  ::: $WORKSPACE/concord_core/src/request/endpoint.rs
+   |
+   | pub struct StreamResponseHandler<M>(PhantomData<fn() -> M>);
+   | ----------------------------------- doesn't satisfy `_: MetadataResponse`
+   |
+   = note: the following trait bounds were not satisfied:
+           `StreamResponseHandler<OctetStream>: MetadataResponse`

@@ -1,1 +1,1 @@
-pub(crate) const VERSION: u32 = 9;
+pub(crate) const VERSION: u32 = 10;

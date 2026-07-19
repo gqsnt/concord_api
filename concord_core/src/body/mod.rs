@@ -13,7 +13,10 @@ pub use prepared::{BodyFactory, BodyKind, RequestBody};
 pub use stream::StreamBody;
 
 #[doc(hidden)]
-pub use prepared::{BodyMetadata, BodySpec, CodecBody, EmptyBody, PreparedBody, StreamRequestBody};
+pub use prepared::{
+    BodyMetadata, BodySpec, CodecBody, EmptyBody, PreparedBody, PreparedRequestBody,
+    StreamRequestBody,
+};
 
 #[cfg(feature = "multipart")]
 pub(crate) use prepared::wrap_multipart_native_body;

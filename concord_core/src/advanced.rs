@@ -43,5 +43,9 @@ pub use crate::rate_limit::{
     RateLimiter,
 };
 pub use crate::redaction::{SanitizedHeaderMap, SanitizedHeaderValue, SanitizedHeaders};
+pub use crate::request::{
+    PreparedBuffered, PreparedBytes, PreparedEndpoint, PreparedEndpointBuilder, PreparedNoContent,
+    PreparedStream,
+};
 pub use crate::response::{DecodedResponse, ExecutionMeta, NoContent, StreamResponse};
 pub use crate::runtime::RuntimeConfigBuilder;

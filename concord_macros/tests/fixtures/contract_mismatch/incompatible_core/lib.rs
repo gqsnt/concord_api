@@ -1,5 +1,9 @@
 #![forbid(unsafe_code)]
 
+pub mod advanced {
+    pub struct PreparedEndpoint<R>(std::marker::PhantomData<R>);
+}
+
 #[doc(hidden)]
 pub mod __private {
     #[doc(hidden)]
@@ -12,6 +16,8 @@ pub mod __private {
             "concord macro/core contract mismatch"
         );
     }
+
+    pub trait PreparedResponseMarker: Send + Sync + 'static {}
 
     pub struct ApiError;
     pub struct BodyMetadata;
