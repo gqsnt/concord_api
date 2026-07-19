@@ -2,13 +2,13 @@
 
 **Version:** 0.2
 **Status:** Internal Implementation Candidate
-**Authority:** Current delivery sequencing after Phase 6
+**Authority:** Current delivery sequencing after Phase 7
 **Depends on:** All normative and architecture documents
 **Supersedes:** `CONCORD_IMPLEMENTATION_PLAN_0.1.md` for future execution
 
 ## Purpose
 
-This program records the implementation state actually reached through Phase 6 and resets future
+This program records the implementation state actually reached through Phase 7 and resets future
 sequencing around the production vertical slice now in the repository. It does not change normative
 behavior, authorize a later phase, or claim full Concord 0.1 conformance. The normative documents
 remain `Normative Implementation Candidate`.
@@ -27,6 +27,7 @@ an execution queue because several foundations were delivered in a different ord
 | Phase 4 | `PHASE_4_COMPLETE_WITH_LIMITATIONS` | One finite body architecture now covers buffered values, lazy request streams, reconstructible factories, inferred replayability, lazy typed response streams, and feature-gated request multipart. Generated `Stream<M>`/`Multipart` markers, Reqwest-owned multipart framing, stream-open completion, cancellation, no-default support, and maintained independent dangerous-feature isolation all use the existing request executor. | Forty-six source rows and one audit row remain partial where their text also requires Phase 5 shaping, Phase 6 recovery/providers, Phase 7 limiter behavior, Phase 8 pagination, Phase 9 prepared endpoints/extension certification, or Phase 10 raw successful responses and release-wide grammar, security, documentation, platform, and evidence closure. |
 | Phase 5 | `PHASE_5_COMPLETE_WITH_LIMITATIONS` | One normalized compiler and generated runtime now support multiple clients, root endpoints, nested scopes, required/optional/default client-scope-endpoint values, immutable snapshots, sealed request extension traits through generated preludes, explicit endpoint parity, host/path/ordered-query/public-header shaping, timeout/retry, all standard methods, custom methods, aliases, and deterministic names on the existing first-poll executor. | Seventy-three source requirements and one audit row remain partial for complete compound clauses owned by Phase 6 credentials/auth/providers/recovery, Phase 7 limiting, Phase 8 pagination, Phase 9 prepared endpoints/extension certification, or Phase 10 positive raw success and release-wide closure. An independent controller correction reclassified 18 Phase 5 rows without changing product source. |
 | Phase 6 | `PHASE_6_COMPLETE_WITH_LIMITATIONS` | The one generated request path now supports all six credential sources, typed public and generated authentication contracts, bounded single-flight credential state, source-aware preflight/finalization/native materialization, isolated finite provider HTTP, JSON-owned OAuth2 client credentials, and at most one complete recovery attempt with the same identity and deadline. | Forty-six source rows and one audit row remain partial only for compound clauses owned by Phase 7 limiting, Phase 8 pagination, Phase 9 prepared endpoints/extension certification, or Phase 10 positive raw success and release-wide closure. The private no-op limiter seam is not Phase 7 evidence. |
+| Phase 7 | `PHASE_7_COMPLETE_WITH_LIMITATIONS` | The existing generated request path now supports exact rate-limit DSL composition, stable advanced limiter contracts, immutable generated plans, a bounded process-local governor, custom and explicit no-op limiters, fail-closed no-governor behavior, deadline/cancellation-safe per-attempt acquisition, response-head cooldown observation, and real recovery/Retry-After integration. | Thirty-seven source rows and one audit row remain partial only for compound clauses owned by Phase 8 pagination, Phase 9 prepared endpoints/extension certification, or Phase 10 positive raw success and release-wide closure. |
 
 Phase reports remain the detailed evidence owners:
 
@@ -37,6 +38,7 @@ Phase reports remain the detailed evidence owners:
 - `docs/conformance/PHASE_4_REPORT.md`
 - `docs/conformance/PHASE_5_REPORT.md`
 - `docs/conformance/PHASE_6_REPORT.md`
+- `docs/conformance/PHASE_7_REPORT.md`
 
 ## Phase 4 production baseline
 
@@ -273,36 +275,86 @@ partial. The complete catalog contains 968 unique IDs; all 771 Phase
 0-5 rows are byte-identical, all 504 normative requirements remain mapped once in coverage, and
 every Phase 6 partial names its Phase 7-10 owner.
 
+## Phase 7 production baseline
+
+The immutable final tested Phase 7 source/test commit is
+`52e4604fff4824f0061d78d38177d815e204ec78`. The initial implementation commit is
+`fa85a77da74566e68db0a59954c1172daf75d574`; focused correction commits
+`12691b5d5a5eec34507cb3e968fc35a8fe5c3a9d` and
+`52e4604fff4824f0061d78d38177d815e204ec78` align the generated-contract fixture and workspace
+feature-unification test. Every focused and maintained command, including `just release`, passed
+against the final immutable commit. Exact classifications, commands, results, traces, and remaining
+limitations are recorded in `docs/conformance/PHASE_7_REPORT.md`.
+
+The production direct-attempt path is now:
+
+```text
+normalized DSL rate-limit templates and attachments
+→ generated immutable effective plan and selected shared limiter
+→ existing concord_core::Request<E>, HeadBuilder, PreparedHead, and PreparedBody
+→ public preparation, canonical key resolution, and finite key-bound validation
+→ before-send hook and body materialization
+→ complete credential preflight
+→ one deadline-bounded limiter acquisition per Concord attempt
+→ credential finalization
+→ auth-free native construction and safe request debug
+→ private native-only authentication materialization
+→ managed application Reqwest execution
+→ response debug and response-head hook
+→ body-free limiter observation affecting future calls only
+→ ordinary status/decode or one source-aware recovery through a second acquisition
+→ completion and typed result
+```
+
+The stable advanced surface includes exact opaque rate-limit values, safe errors, custom limiter and
+observer contexts, cooldown scopes, the bounded governor, default observer, and explicit no-op
+limiter. The ordinary prelude remains unchanged. Generated `.runtime(...)` remains the only custom
+or no-op selection path; a DSL observer configures only the generated default governor. Generated
+contract version 8 is synchronized between core and macro.
+
+The default governor is finite at 4096 quota entries, 4096 cooldown entries, a 15-minute idle quota
+lifetime, a 1024-byte aggregate resolved-key limit, and the existing 60-second cooldown cap. It
+atomically accounts for multiple rules/windows and equivalent buckets, releases its lock before
+waiting, consumes no quota while waiting, retains successful reservations, prunes/evicts
+deterministically, and fails closed on poisoned or impossible state. Without governor support,
+custom and explicit no-op limiters remain usable, empty plans use a private fallback, and required
+nonempty plans fail before send.
+
+Phase 7 traces its 98 requirements through 95 source/test rows (58 direct, 37 partial) and three
+requirement-trace audit rows (two direct, one partial). Two additional direct catalog audits prove
+catalog identity and historical preservation. The Phase 7 total is 100 rows: 62 direct and 38
+partial. The complete catalog contains 1068 unique IDs; all 968 Phase 0-6 rows are byte-identical,
+all 504 normative requirements remain mapped once, and all Phase 7 coverage rows use current paths
+and taxonomy.
+
 ## Current non-goals
 
-Phase 6 intentionally does not provide:
+Phase 7 intentionally does not provide:
 
-- limiter waits, governors, or generated rate-limit configuration;
 - pagination execution or generated pagination terminals;
 - prepared public endpoints or dangerous raw success responses (the latter is explicitly owned by
   Phase 10);
 - streaming terminal-consumption hooks, SSE, WebSocket, record/CSV streaming, bidirectional
   streaming, or multipart response parsing.
 
-No placeholder public API was added for these capabilities.
+No placeholder public API was added for these capabilities. Page index remains zero for direct
+Phase 7 execution.
 
 ## Revised future sequence
 
 Future work should build outward from the single production request path rather than recreate proof
 loops or parallel request models. A later phase requires its own approved contract map and mission.
 
-1. **Phase 7 — rate limiting.** Integrate rate limiting and cooldown observation without exposing a
-   public transport.
-2. **Phase 8 — pagination.** Integrate sequential pagination using the retained identity/ceiling
+1. **Phase 8 — pagination.** Integrate sequential pagination using the retained identity/ceiling
    invariants and final hook contract.
-3. **Phase 9 — prepared endpoints and extension certification.** Add prepared endpoints only after
+2. **Phase 9 — prepared endpoints and extension certification.** Add prepared endpoints only after
    their public contract can reuse the same core executor, and certify the approved extension
    surfaces.
-4. **Phase 10 — product completion and release candidate.** Implement the positive dangerous raw
+3. **Phase 10 — product completion and release candidate.** Implement the positive dangerous raw
    successful-response surface and complete examples, compatibility matrices, security/property
    evidence, performance work, and release-final conformance.
 
-This sequence is planning context, not a Phase 7 implementation prompt. Phase 7 is not started.
+This sequence is planning context, not a Phase 8 implementation prompt. Phase 8 is not started.
 
 ## Continuing constraints
 
@@ -313,6 +365,6 @@ This sequence is planning context, not a Phase 7 implementation prompt. Phase 7 
 - Preserve the immutable source/evidence anchor sequence for each phase.
 - Keep normative status at `Normative Implementation Candidate` until full release evidence exists.
 
-`PHASE_6_COMPLETE_WITH_LIMITATIONS`
+`PHASE_7_COMPLETE_WITH_LIMITATIONS`
 
-`PHASE_7_NOT_STARTED`
+`PHASE_8_NOT_STARTED`

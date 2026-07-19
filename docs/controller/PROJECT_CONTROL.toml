@@ -5,7 +5,7 @@
 schema_version = 1
 project = "Concord"
 assurance_profile = "strict"
-last_reviewed_date = "2026-07-18"
+last_reviewed_date = "2026-07-19"
 
 [workflow]
 controller_prompt = "docs/controller/CONCORD_CONTROLLER_PROMPT.md"
@@ -29,38 +29,39 @@ evidence_catalog = "docs/conformance/CONFORMANCE_EVIDENCE_0.1.csv"
 
 [validated_state]
 expected_branch = "master"
-latest_validated_phase = "6"
-latest_verdict = "PHASE_6_COMPLETE_WITH_LIMITATIONS"
-source_commit = "e4c1cca94962cf0ee6855bab3c252c1caba19202"
-post_source_governance_commit = "c7dfd11906d453de27702a6ff69f7f79a60e4dd9"
-evidence_commit = "a4e4a004a6868f1d5dd462fef077cc948fd5109f"
-anchor_commit = "c19f8cd976bae31180e797736c4d02ce1beb54bb"
-phase_report = "docs/conformance/PHASE_6_REPORT.md"
+latest_validated_phase = "7"
+latest_verdict = "PHASE_7_COMPLETE_WITH_LIMITATIONS"
+source_commit = "52e4604fff4824f0061d78d38177d815e204ec78"
+post_source_governance_commit = ""
+evidence_commit = "PENDING_PHASE_7_EVIDENCE_STATE"
+anchor_commit = "PENDING_PHASE_7_EVIDENCE_ANCHOR"
+anchor_identity_policy = "anchor-object-identity-is-external-to-its-own-content"
+phase_report = "docs/conformance/PHASE_7_REPORT.md"
 normative_status = "Normative Implementation Candidate"
 head_policy = "anchor-must-be-an-ancestor"
-requirement_trace_rows = 195
-requirement_trace_direct_rows = 148
-requirement_trace_partial_rows = 47
-immutable_source_evidence_rows = 192
-source_direct_rows = 146
-source_partial_rows = 46
+requirement_trace_rows = 98
+requirement_trace_direct_rows = 60
+requirement_trace_partial_rows = 38
+immutable_source_evidence_rows = 95
+source_direct_rows = 58
+source_partial_rows = 37
 requirement_trace_audit_rows = 3
 cross_phase_catalog_audit_rows = 2
 evidence_state_audit_rows = 5
-phase_evidence_rows = 197
-phase_direct_rows = 150
-phase_partial_rows = 47
-catalog_evidence_rows = 968
+phase_evidence_rows = 100
+phase_direct_rows = 62
+phase_partial_rows = 38
+catalog_evidence_rows = 1068
 coverage_requirement_rows = 504
 
 [active_phase]
-id = "7"
-title = "Rate Limiting"
+id = "8"
+title = "Pagination"
 status = "NOT_STARTED"
 definition_kind = "implementation-program-entry"
 definition_document = "docs/planning/CONCORD_IMPLEMENTATION_PROGRAM_0.2.md"
-definition_heading = "Phase 7 — rate limiting"
-previous_limitations_owner = "docs/conformance/PHASE_6_REPORT.md"
+definition_heading = "Phase 8 — pagination"
+previous_limitations_owner = "docs/conformance/PHASE_7_REPORT.md"
 
 [implementation_agent]
 surface = "Codex external agent through Zed ACP"
