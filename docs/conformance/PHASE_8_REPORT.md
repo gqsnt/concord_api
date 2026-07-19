@@ -22,7 +22,7 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 - Previous evidence/report/state commit: `19ed74ba4ba64f772733096ea5ad16c8551e4a9e`
 - Previous evidence anchor: `1c1a1da8739daf13dacc43ea259ab8163e8835b3`
 - Phase 8 source/test commit: `8101a3ab8f281fe37aa9132327cc6c06f2c88d47`
-- Phase 8 evidence/report/state commit: `PENDING_PHASE_8_EVIDENCE_STATE`
+- Phase 8 evidence/report/state commit: `4158969da33e6590e56a35fd98f6453e21b61fb1`
 - Phase 8 evidence anchor: `PENDING_PHASE_8_ANCHOR`
 - Compatible post-anchor metadata descendant: the later report/controller-only commit that records
   the real anchor identity and does not replace that anchor
@@ -40,7 +40,7 @@ one-requirement evidence rows, including five catalog/state audits.
 | Unit | Commit | Durable result |
 |---|---|---|
 | Source and tests | `8101a3ab8f281fe37aa9132327cc6c06f2c88d47` | Replaces proof-only pagination with the production public/generated contracts, typed request-local page loop, macro DSL/IR/generation, and deterministic focused proof. |
-| Evidence/report/state | `PENDING_PHASE_8_EVIDENCE_STATE` | Appends Phase 8 evidence, reconciles the 115 current coverage rows, records validation, completes Phase 8 planning, and advances controller state without executable changes. |
+| Evidence/report/state | `4158969da33e6590e56a35fd98f6453e21b61fb1` | Appends Phase 8 evidence, reconciles the 115 current coverage rows, records validation, completes Phase 8 planning, and advances controller state without executable changes. |
 | Evidence anchor | `PENDING_PHASE_8_ANCHOR` | Finalizes the evidence-state identity and audit time only; it changes no executable artifact, evidence ID, or classification. |
 | Anchor metadata descendant | later documentation-only commit | Records the real anchor hash in this report and `PROJECT_CONTROL.toml` while retaining `anchor-must-be-an-ancestor`. |
 
