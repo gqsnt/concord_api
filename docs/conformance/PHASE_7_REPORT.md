@@ -33,7 +33,7 @@ This report does not claim full Concord 0.1 conformance. The normative status re
   `52e4604fff4824f0061d78d38177d815e204ec78`
 - Immutable final tested Phase 7 source/test commit:
   `52e4604fff4824f0061d78d38177d815e204ec78`
-- Phase 7 evidence/report/state commit: `PENDING_PHASE_7_EVIDENCE_STATE`
+- Phase 7 evidence/report/state commit: `377b4cde2196725447f37a0737bcc80721ba3d82`
 - Phase 7 evidence anchor: the subsequent documentation-only
   `docs: anchor phase 7 evidence` commit; its object identity is external to its own content
 - Complete Phase 7 executable patch SHA-256:
@@ -58,8 +58,8 @@ limitation and was not bypassed.
 | Phase 7 source/test | `fa85a77da74566e68db0a59954c1172daf75d574` | `feat: implement phase 7 rate limiting` | Added the complete executable DSL, public API, generated integration, governor, fallback, cooldown, lifecycle, security, and validation surface. |
 | Source correction 1 | `12691b5d5a5eec34507cb3e968fc35a8fe5c3a9d` | `test: align generated contract version` | Corrected the maintained generated-contract fixture from version 7 to the synchronized version 8. |
 | Source correction 2 | `52e4604fff4824f0061d78d38177d815e204ec78` | `test: account for workspace feature unification` | Made the generated default-limiter fixture assert the resolved feature graph under both isolated no-governor and workspace-unified governor builds. |
-| Evidence/report/state | `PENDING_PHASE_7_EVIDENCE_STATE` | `docs: record phase 7 conformance evidence` | Adds this report and prospective actual evidence and reconciles coverage, planning, controller state, and current-state documentation. |
-| Evidence anchor | external identity | `docs: anchor phase 7 evidence` | Replaces pending evidence-state/time markers only; changes no executable artifact, classification, evidence ID, or count. |
+| Evidence/report/state | `377b4cde2196725447f37a0737bcc80721ba3d82` | `docs: record phase 7 conformance evidence` | Adds this report and prospective actual evidence and reconciles coverage, planning, controller state, and current-state documentation. |
+| Evidence anchor | external identity | `docs: anchor phase 7 evidence` | Replaces pending evidence-state/time markers and records the passing catalog audits; changes no executable artifact, classification, evidence ID, or count. |
 
 The first correction was found by the required maintained `just test` run. The second was found on
 the restarted maintained run when Cargo workspace feature unification enabled the governor through
@@ -384,6 +384,9 @@ passing evidence.
 
 The controller records Phase 7 as the latest validated phase with this verdict and immutable source
 identity. Phase 8 — Pagination becomes the active planning entry with status `NOT_STARTED`.
+
+All five exact Phase 7 catalog-audit commands passed against evidence/report/state commit
+`377b4cde2196725447f37a0737bcc80721ba3d82` at `2026-07-19T00:27:39Z`.
 
 ## Remaining limitations and later-phase owners
 

@@ -286,6 +286,10 @@ feature-unification test. Every focused and maintained command, including `just 
 against the final immutable commit. Exact classifications, commands, results, traces, and remaining
 limitations are recorded in `docs/conformance/PHASE_7_REPORT.md`.
 
+The Phase 7 evidence/report/state commit is
+`377b4cde2196725447f37a0737bcc80721ba3d82`; the subsequent documentation-only anchor records
+that evidence identity without attempting impossible commit self-reference.
+
 The production direct-attempt path is now:
 
 ```text
