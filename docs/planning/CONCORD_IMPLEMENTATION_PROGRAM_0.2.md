@@ -365,7 +365,7 @@ against that exact source. Evidence/report/state commit
 `b86eb2e7516dcae4b26ac5d53f444351ebe15654` are superseded because `P8-CORR-007` described response
 observation under `EXEC-RATE-002` instead of the normative atomic multi-rule reservation contract.
 The atomic-reservation-corrected evidence/report/state commit is
-`PENDING_CORRECTED_PHASE_8_EVIDENCE`; a later documentation-only anchor fixes that evidence-state
+`fe020a107770b0ea844a304efbcb73544c350949`; a later documentation-only anchor fixes that evidence-state
 identity, and the final two-file metadata descendant records the real anchor in the Phase 8 report
 and controller state without replacing it. The product and immutable source matrix are unchanged;
 this evidence-only correction ran the exact four-test atomic governor proof and the strengthened

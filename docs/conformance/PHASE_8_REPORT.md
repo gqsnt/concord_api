@@ -33,7 +33,7 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 - Superseded corrected Phase 8 evidence anchor:
   `b86eb2e7516dcae4b26ac5d53f444351ebe15654`
 - Atomic-reservation-corrected Phase 8 evidence/report/state commit:
-  `PENDING_CORRECTED_PHASE_8_EVIDENCE`
+  `fe020a107770b0ea844a304efbcb73544c350949`
 - Atomic-reservation-corrected Phase 8 evidence anchor:
   `PENDING_CORRECTED_PHASE_8_ANCHOR`
 - Compatible post-anchor metadata descendant: the final documentation-only commit with subject
@@ -62,7 +62,7 @@ map contains 193 atoms: 164 proved and 29 precisely unresolved.
 | Original source and tests | `8101a3ab8f281fe37aa9132327cc6c06f2c88d47` | Replaced proof-only pagination with the production public/generated contracts, typed request-local page loop, macro DSL/IR/generation, and deterministic focused proof. |
 | Source/test correction | `515b33ebd345a5eae06a6f2681cbfa4ff403ab9e` | Removes the pagination rate-key placeholder, supplies the actual final logical host privately to rate limiting, and adds exact generated/core/governor/key-boundary/redaction proof. |
 | Superseded corrected evidence/report/state | `ccf569a3072344b345d79d2d551ccb0c0ebce57d` | Rebuilt all Phase 8 evidence after the rate-key source correction; its `P8-CORR-007` owner mapping is superseded. |
-| Atomic-reservation-corrected evidence/report/state | `PENDING_CORRECTED_PHASE_8_EVIDENCE` | Corrects `P8-CORR-007`, binds every Phase 8 row to parsed normative authority, and changes no executable artifact. |
+| Atomic-reservation-corrected evidence/report/state | `fe020a107770b0ea844a304efbcb73544c350949` | Corrects `P8-CORR-007`, binds every Phase 8 row to parsed normative authority, and changes no executable artifact. |
 | Atomic-reservation-corrected evidence anchor | `PENDING_CORRECTED_PHASE_8_ANCHOR` | Finalizes the corrected evidence-state self-reference only; it changes no executable artifact, evidence ID, or classification. |
 | Anchor metadata descendant | `docs: record phase 8 atomic evidence anchor` | Records the real corrected anchor hash in this report and controller state while retaining `anchor-must-be-an-ancestor`. |
 
