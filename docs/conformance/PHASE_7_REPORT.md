@@ -1,425 +1,313 @@
-# Phase 7 Integrated Conformance Report
+# Phase 7 Corrected Integrated Conformance Report
 
 ## Verdict
 
 `PHASE_7_COMPLETE_WITH_LIMITATIONS`
 
-All Phase 7-owned rate-limiting exit criteria pass at the immutable final source/test commit. The
-remaining limitations are clauses of compound Concord 0.1 requirements whose unimplemented
-behavior is explicitly owned by Phases 8-10. No Phase 7 limiter, governor, cooldown, DSL, public
-API, generated construction, lifecycle, security, feature, or local-integration criterion is
-deferred.
+Every Phase 7-owned rate-limiting criterion is implemented and directly proved at the corrected
+immutable source/test commit. The remaining limitations are only clauses explicitly owned by
+Phases 8-10.
 
 `PHASE_8_NOT_STARTED`
 
 This report does not claim full Concord 0.1 conformance. The normative status remains
 `Normative Implementation Candidate`.
 
-## Immutable evidence identity
+## Corrected immutable identities
 
-- Starting HEAD: `6972d0e93fc52205d433c7b4abb3e5e0e6d32086`
+- Correction starting HEAD: `1290ebfba618c3394ed13964bb3f355a03035588`
+- Phase 7 implementation baseline: `6972d0e93fc52205d433c7b4abb3e5e0e6d32086`
 - Branch: `master`
-- Initial working tree: clean
-- Prior immutable Phase 6 source/test commit:
-  `e4c1cca94962cf0ee6855bab3c252c1caba19202`
-- Prior Phase 6 evidence/report/state commit:
-  `a4e4a004a6868f1d5dd462fef077cc948fd5109f`
-- Prior Phase 6 evidence anchor:
-  `c19f8cd976bae31180e797736c4d02ce1beb54bb`
-- Initial Phase 7 source/test commit:
-  `fa85a77da74566e68db0a59954c1172daf75d574`
-- Source-correction commits:
-  `12691b5d5a5eec34507cb3e968fc35a8fe5c3a9d`,
+- Initial correction tree: clean
+- Original implementation: `fa85a77da74566e68db0a59954c1172daf75d574`
+- Original source corrections: `12691b5d5a5eec34507cb3e968fc35a8fe5c3a9d` and
   `52e4604fff4824f0061d78d38177d815e204ec78`
-- Immutable final tested Phase 7 source/test commit:
-  `52e4604fff4824f0061d78d38177d815e204ec78`
-- Phase 7 evidence/report/state commit: `377b4cde2196725447f37a0737bcc80721ba3d82`
-- Phase 7 evidence anchor: the subsequent documentation-only
-  `docs: anchor phase 7 evidence` commit; its object identity is external to its own content
-- Complete Phase 7 executable patch SHA-256:
-  `2d6eda8bb2d60bb91ed032061fa421221c980d687b9d43d777e297ccd68d6b87`
-- Authoritative validation date: `2026-07-19`
-- Rust edition: 2024
-- MSRV exercised: Rust 1.85.0
-- Cargo resolver: 3
-- Managed HTTP baseline: Reqwest 0.13.4 with default features disabled
+- Superseded evidence/report/state: `377b4cde2196725447f37a0737bcc80721ba3d82`
+- Superseded documentation anchor: `1290ebfba618c3394ed13964bb3f355a03035588`
+- Key-limit source/test correction: `8e3b1589ebf598c1850f273070cbc528b2dce66e`
+- Deterministic-validation source correction: `c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9`
+- Corrected immutable tested source/test commit:
+  `c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9`
+- Corrected evidence/report/state commit: `PENDING_PHASE_7_EVIDENCE_STATE`
+- Corrected evidence anchor: `PENDING_PHASE_7_CORRECTED_ANCHOR`
+- Compatible post-anchor metadata descendant: the later documentation-only commit that records the
+  real corrected anchor identity; it does not replace that anchor
+- Authoritative source validation completed: `2026-07-19T06:03:21Z`
+- Correction patch SHA-256:
+  `dc0c22a7ec75abc987a754e3679e307ed6e451ebec94fbe2c59ef3d99b3a491b`
+- Corrected cumulative Phase 7 executable patch SHA-256:
+  `9c5dbc1da3dd3362565aef6ff9682af043e07a05e086677a4fd8fb19a2a3e4f3`
 
-The ignored contract map is `git_diff/phase-7-contract-map.md`, the validation ledger is
-`git_diff/phase-7-validation-log.md`, and the complete executable patch is
-`git_diff/phase-7-rate-limiting.patch`. The contract map contains exactly 98 unique requirement
-IDs in 14 trace groups. The effective command policy forbids every `git worktree` invocation,
-including the otherwise read-only `git worktree list`; its unavailability is recorded as a policy
-limitation and was not bypassed.
+The ignored Phase 7 product contract map is `git_diff/phase-7-contract-map.md` and traces 98
+Phase 7 coverage requirements. The correction's ignored semantic map is
+`git_diff/phase-7-semantic-evidence-map.tsv` and contains exactly 100 unique evidence-to-clause
+traces. The ignored validation ledger is `git_diff/phase-7-correction-validation-log.md`.
 
-## Commit and correction boundary
+## Correction chain
 
-| Unit | Commit | Subject | Durable result |
-|---|---|---|---|
-| Phase 7 source/test | `fa85a77da74566e68db0a59954c1172daf75d574` | `feat: implement phase 7 rate limiting` | Added the complete executable DSL, public API, generated integration, governor, fallback, cooldown, lifecycle, security, and validation surface. |
-| Source correction 1 | `12691b5d5a5eec34507cb3e968fc35a8fe5c3a9d` | `test: align generated contract version` | Corrected the maintained generated-contract fixture from version 7 to the synchronized version 8. |
-| Source correction 2 | `52e4604fff4824f0061d78d38177d815e204ec78` | `test: account for workspace feature unification` | Made the generated default-limiter fixture assert the resolved feature graph under both isolated no-governor and workspace-unified governor builds. |
-| Evidence/report/state | `377b4cde2196725447f37a0737bcc80721ba3d82` | `docs: record phase 7 conformance evidence` | Adds this report and prospective actual evidence and reconciles coverage, planning, controller state, and current-state documentation. |
-| Evidence anchor | external identity | `docs: anchor phase 7 evidence` | Replaces pending evidence-state/time markers and records the passing catalog audits; changes no executable artifact, classification, evidence ID, or count. |
+| Unit | Commit | Durable result |
+|---|---|---|
+| Accepted Phase 7 source | `52e4604fff4824f0061d78d38177d815e204ec78` | Preserved the accepted DSL, API, generated integration, governor, custom/no-op/fallback, cooldown, lifecycle, and security behavior. |
+| Key-limit correction | `8e3b1589ebf598c1850f273070cbc528b2dce66e` | Unified configured governor key limits at protected preparation and governor insertion; added exact lifecycle, API, parser, privacy, and redaction tests. |
+| Validation correction | `c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9` | Serialized shared-directory Trybuild cases without skipping, retrying, or weakening a test. |
+| Corrected evidence/state | `PENDING_PHASE_7_EVIDENCE_STATE` | Replaces all 100 Phase 7 rows with clause-accurate traces, reconciles 98 coverage rows, this report, planning, and controller state. |
+| Corrected anchor | `PENDING_PHASE_7_CORRECTED_ANCHOR` | Finalizes the known evidence-state identity and audit time only; changes no executable artifact or evidence classification. |
+| Anchor metadata descendant | later documentation-only commit | Records the real corrected anchor hash in the controller/report and retains `anchor-must-be-an-ancestor`. |
 
-The first correction was found by the required maintained `just test` run. The second was found on
-the restarted maintained run when Cargo workspace feature unification enabled the governor through
-the core package. The isolated `cargo nextest run -p concord_macros --test phase7_generated` command
-continues to exercise the no-governor graph directly, while `just test` exercises the unified graph.
-No source, test, fixture, manifest, lockfile, generated contract, or executable validation
-configuration changed after `52e4604fff4824f0061d78d38177d815e204ec78`; the complete focused and
-maintained matrix was rerun from the beginning against that exact commit.
+The first authoritative `just test-all` at `8e3b1589` passed 504 of 505 tests but exposed a real
+pre-existing Trybuild race: separate Nextest cases in one `ui` binary concurrently replace files
+inside the same generated per-crate package directory. `.config/nextest.toml` now assigns
+`binary(ui)` to a one-thread test group with retries still disabled. The complete 62-command
+focused set and all 16 maintained recipes were then rerun from the beginning at `c5071c0e`.
 
-## Authority and phase boundary
+No executable artifact changed after `c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9`.
 
-The normative index and all eight normative owners were reviewed before implementation, followed
-by the current implementation program, Phase 6 report and chain, accepted decisions, core and macro
-architecture, repository guide, source, test architecture, and maintained recipes. No material
-authority conflict was found.
+## Configured key-limit defect and repair
 
-The implementation preserves ADR-002, ADR-013, ADR-014, ADR-017, ADR-018, ADR-030, ADR-035, and
-ADR-041. It extends the existing request/head/executor path and does not add another request,
-prepared head, executor, transport, retry loop, operation identity, deadline, authentication
-lifecycle, application client, or provider client.
+The accepted implementation kept two disconnected values: the runtime preparation snapshot always
+used 1,024 bytes, while `GovernorRateLimiter::key_limit(bytes)` affected only later acquisition.
+That made lower and zero limits too late and prevented increased limits from authorizing otherwise
+valid keys.
 
-Phase 8 pagination execution, Phase 9 prepared endpoints and extension certification, and Phase 10
-positive dangerous raw-success and release closure remain absent.
+The correction uses a crate-private blanket metadata supertrait. It gives the runtime builder a
+safe `Any` view of the already-selected limiter object. Only an actual built-in
+`GovernorRateLimiter` is downcast; its immutable configured bound is copied into the same
+`RuntimeConfig` snapshot as the selected `Arc<dyn RateLimiter>`. External custom and explicit
+no-op limiters retain the approved 1,024-byte preparation bound. The governor independently
+revalidates its same configured value immediately before state contribution or insertion.
 
-## Implemented DSL and normalization
+No public `RateLimiter` method was added. The approved `RateLimiter::acquire`/`observe`,
+`RuntimeConfigBuilder::rate_limiter(Arc<dyn RateLimiter>)`, and
+`GovernorRateLimiter::key_limit(self, usize)` method signatures are unchanged. External custom
+implementations compile with default and no-default features, the private metadata methods do not
+appear in rendered Rustdoc, no unsafe inspection is used, and generated contract version 8 is
+unchanged.
 
-The canonical macro compiler now supports:
+Exact deterministic lifecycle evidence proves:
 
-- client `rate_limits` blocks with multiple named templates, multiple positive windows, default or
-  explicit positive costs, and one optional `Default + RateLimitObserver` declaration;
-- exactly the dimensions `host`, `endpoint`, `method`, `vars.NAME`, `scope.NAME`, and `ep.NAME`,
-  with order preserved and `by []` producing a global key;
-- only required, non-secret, non-optional dynamic values with a generated `Display` bound and no
-  unnecessary `Clone` bound;
-- client, scope, and endpoint attachments; ordinary append; one leading `replace`; exclusive
-  `off`; and direct local rules;
-- exact client/scope/endpoint clause positions without adding pagination syntax;
-- deterministic IDs, names, ordering, inheritance, and collision diagnostics;
-- a normalized IR with no unresolved append, replace, off, or attachment operations.
+- default aggregate boundaries accept 1,024 bytes and reject 1,025 during preparation;
+- a configured limit of 16 accepts 16 and rejects 17 during preparation;
+- a configured limit of zero accepts a global key and rejects a nonempty key structure during
+  preparation;
+- a configured limit of 2,048 permits a key above 1,024 through acquisition and native execution,
+  and rejects 2,049 during preparation;
+- clones share the selected limiter and copied bound, independent default builds retain 1,024 and
+  independent state, and an already-created pending request retains its originating bound;
+- a preparation-time failure performs no before-send hook, body materialization, credential
+  acquisition or refresh, limiter acquisition, governor insertion, request debug, authentication
+  materialization, or native send; completion still occurs once;
+- `Display`, `Debug`, recursive sources, hooks, debug records, and completion diagnostics never
+  reproduce the high-entropy key sentinel;
+- direct governor acquisition rejects the same oversize key before inserting quota state.
 
-Focused parser, resolver, UI, generated-runtime, renamed-dependency, nested-invocation, and minimal
-bounds tests cover positive and negative syntax, every dimension, optional/secret/undefined and
-invalid namespace rejection, costs/windows, composition, order, collisions, and normalized plans.
+## Preserved Phase 7 implementation
 
-## Public and generated API surface
+The correction leaves the accepted Phase 7 architecture and behavior intact:
 
-`concord_core::advanced` now exports the approved stable contracts:
+- DSL templates, windows, costs, every approved dimension, global keys, observers, attachments,
+  append, replace, off, direct rules, ordering, diagnostics, and fully normalized plans;
+- exact advanced public value/error/context/limiter/observer/cooldown contracts and ordinary-prelude
+  exclusion;
+- static generated plans, `.runtime(...)` limiter selection, observer ownership, clone sharing,
+  independent default-governor state, pending-request snapshots, and generated contract version 8;
+- bounded best-effort process-local governor behavior with atomic multi-rule/multi-window
+  reservation, duplicate-bucket accounting, cancellation-safe waiting, pruning, deterministic
+  eviction, finite cooldowns, and fail-closed internal errors;
+- custom limiter, explicit no-op, and no-governor empty/fail-closed behavior without feature
+  leakage;
+- one request/head/executor/application-client/provider-client/authentication/deadline path, one
+  acquisition per Concord attempt, recovery reacquisition, hidden-Reqwest-retry containment,
+  response-head observation, and unchanged current responses;
+- body-free and credential-free built-in contexts, key-safe automatic diagnostics, and isolated
+  provider HTTP.
 
-- safe `RateLimitError` and the existing `RateLimitErrorKind` variants;
-- opaque `RateLimitId`, `RateLimitKeyPart`, `RateLimitKey`, `RateLimitWindow`, `RateLimitRule`,
-  `RateLimitPlan`, and `RateLimitPermit` values with the exact specified constructors/accessors;
-- body-free and credential-free `RateLimitRequest`, `RateLimitResponse`, `RateLimiter`,
-  `RateLimitResponseHead`, `RateLimitObserver`, `Cooldown`, and `CooldownScope` contracts;
-- `GovernorRateLimiter`, `DefaultRateLimitObserver`, and `NoopRateLimiter` with their approved
-  constructors and finite configuration methods;
-- `RuntimeConfigBuilder::rate_limiter(Arc<dyn RateLimiter>)` while retaining the existing finite
-  `rate_limit_cooldown_cap`.
+Defaults remain a 60-second cooldown cap, 4,096 quota entries, 4,096 cooldown entries, 15-minute
+idle quota lifetime, and 1,024 aggregate key bytes. Configured capacities remain finite and reject
+zero; configured key limit zero retains its normative global-key exception. No production
+dependency, manifest, lockfile, unsafe block, public transport/state/clock API, second executor, or
+later-phase capability was added.
 
-No limiter type was added to the ordinary prelude. Native requests/responses, Reqwest types, native
-URLs, clocks, schedulers, maps, buckets, entries, waiters, transports, and executors remain private.
-Negative UI and rendered Rustdoc tests prove the privacy boundary and the absence of key `Debug`.
+## Exact correction change surface
 
-Generated contract version 8 is synchronized between macro and core. Every generated request builds
-one canonical immutable plan before protected side effects. Generated `.runtime(...)` remains the
-only path for supplying a custom limiter or explicit no-op limiter. A DSL observer is constructed
-once per independent build only when the generated default governor is selected. Client clones
-share the selected limiter; independent default builds do not; pending requests retain their
-original client snapshot.
-
-## Governor, cooldown, and fallback behavior
-
-The repository-owned governor is bounded best-effort process-local pacing, not strict or
-distributed enforcement. Its default finite configuration is:
-
-| Bound | Default |
-|---|---:|
-| Cooldown cap | 60 seconds |
-| Quota-entry capacity | 4096 |
-| Cooldown-entry capacity | 4096 |
-| Idle quota-entry lifetime | 15 minutes |
-| Aggregate resolved-key limit | 1024 bytes |
-
-Configuration rejects zero quota or cooldown capacities and invalid idle TTL/key limits. A zero key
-limit accepts global keys and rejects nonempty keys without reproducing their values.
-
-Each acquisition prunes expired/idle state, refills applicable windows with bounded arithmetic,
-evaluates client/host/current-bucket cooldowns, computes the complete wait, releases its mutex
-before sleeping, reevaluates after waking, and reserves every effective cost atomically only when
-all buckets are available. Equivalent bucket contributions are aggregated, so repeated rules cannot
-undercount. Waiting consumes no quota or partial subset. Cancellation before grant leaves quota
-available; a granted reservation is never refunded. State is bounded with deterministic
-least-recently-used-equivalent eviction, and an evicted key receives a fresh local burst when seen
-again. Poisoned or impossible internal state fails closed.
-
-The default observer considers only final 429 responses, parses decimal delta seconds and HTTP
-dates with whitespace handling, ignores malformed/past/non-positive results, chooses current
-buckets or the empty-plan host fallback, and clamps positive results to the runtime cap. Later
-cooldowns extend but never shorten state. Observation pressure or failure cannot alter the current
-HTTP result.
-
-`NoopRateLimiter` explicitly grants every plan and ignores observation. Without
-`rate-limit-governor`, stable custom and no-op contracts remain available; the private fallback
-authorizes an empty plan and rejects a nonempty plan before send. A generated nonempty plan fails
-construction unless a custom functional limiter or explicit no-op limiter is supplied. JSON does
-not enable the governor.
-
-## Architecture and request lifecycle
-
-The direct Phase 7 attempt path is:
+The correction relative to `1290ebfba618c3394ed13964bb3f355a03035588` changes exactly:
 
 ```text
-public head and body metadata
-→ canonical immutable rate-limit plan and key-bound validation
-→ before-send hook
-→ body materialization
-→ complete credential preflight
-→ one deadline-bounded limiter acquisition
-→ credential finalization
-→ auth-free native request construction
-→ safe request debug
-→ native-only authentication materialization
-→ managed Reqwest execution
-→ response debug
-→ response-head hook
-→ body-free limiter observation
-→ authentication challenge or status/body/decode
-→ completion outside the already-fixed result deadline
-```
-
-Acquisition occurs once per Concord attempt, not construction and not hidden Reqwest physical
-attempts. Hook veto, body failure, credential-preflight failure, limiter failure, and key overflow
-stop at their exact boundaries. Limiter waiting uses the remaining original deadline and holds no
-governor lock across `await`. Credential clear, replacement, rejection, or expiry during waiting is
-seen by finalization. Authentication recovery retains identity/deadline and visibly reacquires real
-limiter authority. Provider HTTP remains outside application limiting.
-
-Response observation sees only endpoint, method, safe URL, logical host, page index zero, immutable
-plan, status, and sanitized headers. It precedes body polling and challenge mutation and cannot
-replace or retry the response. Final 429 remains `HttpStatus`; `ApiError::retry_after()` remains an
-independent safe and capped metadata path.
-
-## Security, redaction, cancellation, and state bounds
-
-- High-entropy sentinels cover rate keys, dynamic dimensions, credentials, auth query/header data,
-  request/response/status bodies, controller placeholders, and native authenticated URLs.
-- Recursive checks cover `Display`, `Debug`, sources, hooks, debug/completion events, built-in
-  limiter errors, safe URLs, sanitized headers, and rendered Rustdoc.
-- Key sentinels appear only in controlled custom-limiter fixtures proving intentional advanced key
-  inspection; built-in output remains key-free.
-- Plan construction excludes body and authentication data and enforces checked aggregate byte
-  counts before hooks or protected work.
-- Quota/cooldown maps, waits, idle entries, key bytes, cooldown duration, arithmetic, and state
-  insertion are finite.
-- Deterministic barriers and paused/controlled time, not timing sleeps, prove wait/refill,
-  cancellation, atomicity, cooldown, pruning, eviction, and future-call-only behavior.
-- No governor lock is held across `await` or user code; no detached cleanup task or unsafe block was
-  added.
-
-## Exact executable change surface
-
-The executable delta from the verified baseline through the final source commit contains exactly
-these 61 paths:
-
-```text
-concord_core/src/__private.rs
-concord_core/src/advanced.rs
-concord_core/src/client.rs
-concord_core/src/error/transport.rs
+.config/nextest.toml
 concord_core/src/execute/auth_tests.rs
-concord_core/src/execute/mod.rs
 concord_core/src/execute/tests.rs
-concord_core/src/generated_contract.rs
-concord_core/src/http/build.rs
-concord_core/src/http/mod.rs
-concord_core/src/http/test_support.rs
-concord_core/src/lib.rs
-concord_core/src/rate_limit/error.rs
 concord_core/src/rate_limit/governor.rs
 concord_core/src/rate_limit/limiter.rs
 concord_core/src/rate_limit/mod.rs
-concord_core/src/rate_limit/types.rs
-concord_core/src/request/head.rs
-concord_core/src/request/prepare.rs
 concord_core/src/runtime/config.rs
-concord_core/tests/config_methods.rs
-concord_core/tests/fixtures/config_features/Cargo.toml
-concord_core/tests/fixtures/config_features/src/bin/absence_governor.rs
-concord_core/tests/fixtures/config_features/src/bin/presence_governor.rs
-concord_core/tests/generated_contract.rs
 concord_core/tests/public_rustdoc.rs
 concord_core/tests/rate_limit_api.rs
-concord_core/tests/rate_limit_generated.rs
-concord_core/tests/ui.rs
-concord_core/tests/ui/fail/rate_limit_context_exclusions.rs
-concord_core/tests/ui/fail/rate_limit_context_exclusions.stderr
-concord_core/tests/ui/fail/rate_limit_key_debug_absent.rs
-concord_core/tests/ui/fail/rate_limit_key_debug_absent.stderr
-concord_core/tests/ui/fail/rate_limit_opaque_values.rs
-concord_core/tests/ui/fail/rate_limit_opaque_values.stderr
-concord_core/tests/ui/fail/rate_limit_private_state.rs
-concord_core/tests/ui/fail/rate_limit_private_state.stderr
-concord_macros/src/ast.rs
-concord_macros/src/codegen.rs
-concord_macros/src/model.rs
 concord_macros/src/parse.rs
-concord_macros/src/resolve.rs
-concord_macros/tests/compile.rs
-concord_macros/tests/fixtures/renamed_core/src/lib.rs
-concord_macros/tests/phase7_generated.rs
-concord_macros/tests/ui.rs
-concord_macros/tests/ui/fail/phase7_rate_clause_order.rs
-concord_macros/tests/ui/fail/phase7_rate_clause_order.stderr
-concord_macros/tests/ui/fail/phase7_rate_display_required.rs
-concord_macros/tests/ui/fail/phase7_rate_display_required.stderr
-concord_macros/tests/ui/fail/phase7_rate_invalid_cost.rs
-concord_macros/tests/ui/fail/phase7_rate_invalid_cost.stderr
-concord_macros/tests/ui/fail/phase7_rate_off_exclusive.rs
-concord_macros/tests/ui/fail/phase7_rate_off_exclusive.stderr
-concord_macros/tests/ui/fail/phase7_rate_optional_dimension.rs
-concord_macros/tests/ui/fail/phase7_rate_optional_dimension.stderr
-concord_macros/tests/ui/fail/phase7_rate_secret_dimension.rs
-concord_macros/tests/ui/fail/phase7_rate_secret_dimension.stderr
-concord_macros/tests/ui/fail/phase7_rate_undefined_attachment.rs
-concord_macros/tests/ui/fail/phase7_rate_undefined_attachment.stderr
-concord_test_support/src/tls.rs
 ```
 
-The final delta is 6522 insertions and 187 deletions. Cargo.lock and production manifests are
-unchanged; the only manifest path is the existing test-only feature fixture. No direct production
-dependency was added.
+The corrected cumulative executable Phase 7 delta contains 62 files, 7,046 insertions, and 187
+deletions. The key-limit correction itself adds no dependency, feature, manifest, lockfile, or
+generated-contract change.
 
-## Exact focused validation
+## Focused validation
 
-Every final command below ran from `F:\projects\concord_api` against
-`52e4604fff4824f0061d78d38177d815e204ec78` with exit status 0.
+All 62 unique clause-proof commands recorded in the corrected Phase 7 evidence rows ran from
+`F:\projects\concord_api` against
+`c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9`, with the exact features written in each command and
+exit status 0. They comprise:
 
-| Exact command | Configuration and result |
-|---|---|
-| `cargo nextest run -p concord_macros --lib` | Parser/resolver/codegen units; 26 passed |
-| `cargo nextest run -p concord_macros --test phase7_generated` | Isolated generated/no-governor graph; 7 passed |
-| `cargo nextest run -p concord_macros --test ui` | Trybuild/UI diagnostics and minimal bounds; 21 passed |
-| `cargo nextest run -p concord_macros --test compile` | Downstream, renamed dependency, contract mismatch, Rustdoc; 8 passed |
-| `cargo nextest run -p concord_core --lib rate_limit::governor::tests` | Deterministic governor; 18 passed, 290 filtered |
-| `cargo nextest run -p concord_core --lib real_tls_` | Real local TLS recovery and provider isolation; 3 passed, 305 filtered |
-| `cargo nextest run -p concord_core --test rate_limit_api` | Exact public API with defaults; 2 passed |
-| `cargo nextest run -p concord_core --test rate_limit_api --no-default-features` | Stable API without governor; 1 passed |
-| `cargo nextest run -p concord_core --test rate_limit_generated` | Ownership, retained reservation, loopback cooldown; 3 passed |
-| `cargo nextest run -p concord_core --test ui --all-features` | Core privacy UI; 1 passed |
-| `cargo nextest run -p concord_core --test config_methods` | Feature topology fixture; 1 passed |
-| `cargo nextest run -p concord_core --test public_rustdoc` | Rendered Rustdoc exclusions; 1 passed |
-| `cargo nextest run -p concord_core --no-default-features --features json --lib custom_limiter_context_and_response_observation_use_one_ordered_attempt` | JSON-only custom limiter; 1 passed, 255 filtered |
-| `cargo nextest run -p concord_core --no-default-features --features json --lib private_fallback_rejects_a_nonempty_runtime_plan_before_send` | JSON-only no-governor fail-closed path; 1 passed, 255 filtered |
-| `cargo check -p concord_core --no-default-features --features rate-limit-governor --all-targets` | Independent governor feature; passed |
+- 33 exact core-library filters covering key limits, cutoff/redaction, governor bounds and math,
+  atomicity, cancellation, deadlines, cooldowns, authentication mutation/recovery, provider
+  isolation, hidden native retry, and response immutability;
+- 12 exact core integration/UI/Rustdoc/generated/config/contract commands, including all-feature,
+  no-default, and JSON-only no-governor configurations;
+- 15 exact macro parser/resolver/UI/compile/generated commands, including no-default generated
+  ownership and renamed dependency;
+- `just deny` and the exact macro normal/build dependency-tree exclusion assertion.
+
+The exact command text, UTC start/finish, working directory, feature configuration, tested commit,
+exit status, and concise output for every command are retained in the ignored validation ledger and
+the exact command text is durable in `CONFORMANCE_EVIDENCE_0.1.csv`. Key correction results were
+4/4 for the combined boundary/snapshot/governor proof, 1/1 for the complete protected-side-effect
+cutoff, 5/5 for all-feature advanced API, 4/4 for no-default advanced API, 1/1 for rendered
+Rustdoc privacy, 7/7 for generated Phase 7 behavior in each applicable graph, and 21/21 for the
+serialized macro UI binary.
 
 ## Complete maintained validation
 
-| Exact command | Configuration | Exit/result |
+Every maintained command ran from `F:\projects\concord_api` against the same immutable commit:
+
+| Exact command | Configuration | Result |
 |---|---|---|
-| `just fmt-check` | `cargo fmt --all -- --check` | 0; passed |
-| `just check` | workspace, all targets, defaults | 0; passed |
-| `just check-all` | workspace, all targets, all features | 0; passed |
-| `just check-no-default` | core, all targets, no defaults | 0; passed |
-| `just clippy` | workspace defaults, `-D warnings` | 0; passed |
-| `just clippy-all` | workspace all features, `-D warnings` | 0; passed |
-| `just test` | workspace defaults, Nextest | 0; 493/493 passed |
-| `just test-all` | workspace all features, CI Nextest profile | 0; 497/497 passed |
-| `just test-no-default` | maintained no-default typed HTTP smoke | 0; 1/1 passed, 252 filtered |
-| `just doctest` | workspace default doctests | 0; two compile-fail doctests passed |
-| `just doctest-all` | workspace all-feature doctests | 0; two compile-fail doctests passed |
-| `just doc` | each library, defaults, Rustdoc `-D warnings` | 0; passed |
-| `just doc-all` | each library, all features, Rustdoc `-D warnings` | 0; passed |
-| `just deny` | advisories, bans, licenses, sources | 0; passed with existing allowed duplicate-version warnings only |
-| `just diff-check` | maintained diff/whitespace check | 0; passed |
-| `just release` | complete repository-owned local release recipe | 0; passed in 69.4 seconds |
+| `just fmt-check` | workspace formatting | exit 0; passed |
+| `just check` | workspace, all targets, defaults | exit 0; passed |
+| `just check-all` | workspace, all targets, all features | exit 0; passed |
+| `just check-no-default` | core, all targets, no defaults | exit 0; passed |
+| `just clippy` | workspace defaults, `-D warnings` | exit 0; passed |
+| `just clippy-all` | workspace all features, `-D warnings` | exit 0; passed |
+| `just test` | workspace default Nextest | exit 0; 501/501 passed |
+| `just test-all` | workspace all-feature CI Nextest | exit 0; 505/505 passed |
+| `just test-no-default` | maintained no-default HTTP smoke | exit 0; 1/1 passed, 252 skipped |
+| `just doctest` | workspace default doctests | exit 0; passed |
+| `just doctest-all` | workspace all-feature doctests | exit 0; passed |
+| `just doc` | each library, default Rustdoc, `-D warnings` | exit 0; passed |
+| `just doc-all` | each library, all-feature Rustdoc, `-D warnings` | exit 0; passed |
+| `just deny` | advisories, bans, licenses, sources | exit 0; passed |
+| `just diff-check` | whitespace/diff validation | exit 0; passed |
+| `just release` | complete repository-owned local matrix | exit 0; passed in 65.2 seconds |
 
-The final release recipe repeated the 493 default and 497 all-feature suites, the no-default smoke,
-both doctest/doc graphs, dependency policy, diff checks, and independent dangerous-feature suites:
-default 2/2, custom retry 3/3, development tools 2/2, and raw flag 2/2.
+The final release command repeated the applicable default, all-feature, no-default, dangerous
+feature, doctest, Rustdoc, dependency-policy, and diff matrices. No maintained command was
+unavailable. One obsolete exploratory JSON-only full-library invocation had previously selected TLS
+tests without a crypto provider; it is not an applicable maintained command and is not recorded as
+passing evidence. One superseded dependency-proof command had Windows quoting corrected before the
+final 62-command rerun.
 
-One non-maintained exploratory broad all-target no-default Nextest invocation was not applicable to
-the existing TLS/provider integration targets and failed before the final source boundary. It was
-not substituted for the maintained `just test-no-default` recipe; exact no-governor, JSON-only,
-public-API, fallback, and independent-governor commands above passed. A malformed exploratory
-Nextest filter selected zero tests; the corrected `real_tls_` command passed 3/3. Neither
-exploratory command is recorded as passing evidence.
+## Clause-level evidence correction
 
-The only required check unavailable was `git worktree list`, denied by effective repository policy.
-No maintained validation command was unavailable.
+All 100 current `P7-*` rows were audited as:
 
-## Requirement-to-source-to-test-to-command-to-evidence trace
+```text
+requirement ID
+→ exact normative clause
+→ exact source behavior
+→ exact observable test assertion or focused command
+→ direct or precise later-phase partial classification
+```
 
-| Trace | Requirements | Source/test owner | Evidence |
-|---|---|---|---|
-| T1 DSL declarations/composition | `DSL-RATE-001`-`007` | macro AST/parser/model/resolver, Phase 7 generated and UI suites | `P7-DSL-001`-`007` |
-| T2 public limiter API | `API-RATE-001`-`004` | core rate-limit modules, advanced exports, API/UI/Rustdoc tests | `P7-API-001`-`004` |
-| T3 generated observer ownership | `GEN-BUILD-004` | macro codegen, runtime/private build bridge, generated tests | `P7-GEN-001` |
-| T4 confidentiality and bounds | `SEC-RATE-001`-`002`; `BOUND-RATE-001`-`007` | rate-limit error/types/governor and security/runtime tests | `P7-SEC-001`-`002`; `P7-BOUND-001`-`007` |
-| T5 acquisition/observation | `EXEC-RATE-001`-`003` | prepared head and canonical executor tests | `P7-EXEC-001`-`003` |
-| T6 governor feature/fallback | `FEAT-GOV-001`-`002` | feature-gated rate module/runtime, no-governor generated/executor tests | `P7-FEAT-001`-`002` |
-| T7 product/state | five exact T7 requirements | client/runtime/pending ownership and executor/generated tests | `P7-PROD-001`-`005` |
-| T8 DSL cross-cuts | six exact T8 requirements | canonical macro grammar, normalization, UI | `P7-DSL-008`-`013` |
-| T9 API cross-cuts | four exact T9 requirements | safe errors, runtime selection, privacy UI/Rustdoc | `P7-API-005`-`008` |
-| T10 generated cross-cuts | five exact T10 requirements | codegen/private bridge, generated/compile/Rustdoc tests | `P7-GEN-002`-`006` |
-| T11 response/fail/sentinel/math | four exact T11 requirements | limiter/executor/security/governor tests | `P7-SEC-003`-`005`; `P7-BOUND-008` |
-| T12 executor/auth preservation | 22 exact T12 requirements | one executor, auth slot, real TLS and deterministic runtime tests | `P7-EXEC-004`-`025` |
-| T13 feature/compatibility | ten exact T13 requirements | manifests, contract v8, fixtures, compile/dependency/release tests | `P7-FEAT-003`-`006`; `P7-COMPAT-001`-`006` |
-| T14 conformance/trace | 16 exact T14 requirements | compiler/runtime/UI/docs/release plus evidence-state audits | `P7-CONF-001`-`013`; `P7-AUDIT-003`-`005` |
+Every row's clause statement, exact proof, immutable commit, and source/test paths were corrected,
+so the corrected set is all of:
 
-## Evidence, coverage, and controller state
+```text
+P7-DSL-001..013
+P7-API-001..008
+P7-GEN-001..006
+P7-SEC-001..005
+P7-BOUND-001..008
+P7-EXEC-001..025
+P7-FEAT-001..006
+P7-COMPAT-001..006
+P7-PROD-001..005
+P7-CONF-001..013
+P7-AUDIT-001..005
+```
 
-Phase 7 traces the 98 contract-map requirements through 95 immutable source/test rows (58 direct,
-37 partial) and three requirement-trace audit rows (two direct, one partial). Two additional direct
-catalog audits prove catalog identity and byte preservation of all earlier evidence. The Phase 7
-total is therefore 100 rows: 62 direct and 38 partial. The complete catalog contains 1068 unique
-evidence IDs: all 968 Phase 0-6 rows followed byte-for-byte by the 100 Phase 7 rows.
+The three classification changes are `P7-EXEC-004` direct to partial because Phase 8 owns
+pagination-controller construction, `P7-EXEC-005` partial to direct because client construction's
+network-free clause is fully proved, and `P7-FEAT-002` direct to partial because Phase 9 owns the
+public dynamically introduced prepared-endpoint plan clause.
 
-The coverage plan still has exactly one row for each of 504 normative IDs. Exactly 98 Phase 7 rows
-now use current `P7-*` taxonomy, actual source/test paths, maintained/focused commands, evidence IDs,
-and direct or explicit later-phase partial notes. Obsolete `M5-rate-limiting` ownership and stale
-planned rate-limit paths are absent. Planned `PLAN-*` rows remain structurally separate from actual
+Final totals are 100 rows: 61 direct and 39 partial. The 95 immutable source/test rows are 57
+direct and 38 partial. The five evidence-state audits are four direct and one partial. The 98
+Phase 7 coverage rows are 59 direct and 39 partial. The full catalog remains 1,068 rows, and all
+968 Phase 0-6 actual-evidence rows remain byte-identical and in their original order. Coverage
+still maps all 504 normative IDs exactly once and keeps `PLAN-*` planning distinct from actual
 passing evidence.
 
-The controller records Phase 7 as the latest validated phase with this verdict and immutable source
-identity. Phase 8 — Pagination becomes the active planning entry with status `NOT_STARTED`.
+The semantic audit additionally checks exact commit ancestry, approved labels, artifact existence,
+test-function presence in recorded paths, partial owners, coverage agreement, counts, report,
+program, and controller state. Audit rows are finalized by the corrected documentation anchor
+under the established evidence-state self-reference procedure.
 
-All five exact Phase 7 catalog-audit commands passed against evidence/report/state commit
-`377b4cde2196725447f37a0737bcc80721ba3d82` at `2026-07-19T00:27:39Z`.
+## Requirement trace groups
 
-## Remaining limitations and later-phase owners
-
-The 37 partial source/test rows and one partial evidence-state audit row are the complete 38 known
-later-phase limitations in the Phase 7 inventory:
-
-| Later owner | Exact partial requirements | Remaining clause |
+| Trace | Requirements | Evidence |
 |---|---|---|
-| Phase 8 | `DSL-END-004`; `DSL-NORM-001`; `SEC-FAIL-001`; `BOUND-MATH-001`; `EXEC-ORDER-001`; `EXEC-DEADLINE-001`; `PROD-GUAR-002`; `PROD-GUAR-008`; `PROD-GUAR-010`; `CONF-SEMA-001`; `CONF-ORDER-001` | Pagination grammar/order/normalization, per-page lifecycle/deadline/counting arithmetic, diagnostics, retry containment, cycles, and side-effect matrix. |
-| Phase 9 | `EXEC-CONSTRUCT-001` | Prepared-endpoint construction side-effect proof. |
-| Phases 8-9 | `DSL-NAME-002`; `GEN-NAME-001`; `GEN-NAME-002`; `EXEC-CREATE-001`; `EXEC-CREATE-002`; `EXEC-PREC-001`; `EXEC-CANCEL-001`; `EXEC-COUNT-001`; `EXEC-COUNT-002`; `CONF-COMPILE-002`; `CONF-DOWNSTREAM-001`; `CONF-DOWNSTREAM-002` | Pagination/prepared names, creation, precedence, cancellation, counts, downstream workflows, and final extension certification. |
-| Phases 8-10 | `DSL-FEAT-001`; `API-PRIVATE-001`; `API-PRIVATE-002`; `GEN-DOC-002`; `SEC-TEST-001`; `FEAT-DIAG-001`; `FEAT-DOC-001`; `CONF-PARSER-001`; `CONF-COMPILE-001`; `CONF-COMPILE-003`; `CONF-REQWEST-001`; `CONF-SEC-001`; `CONF-DOC-001` | Later syntax/features/private-surface/docs/security/Reqwest/downstream fixtures and release-final closure. |
-| Phase 10 | `CONF-TRACE-006` | Release-final actual evidence completeness for every applicable normative requirement. |
+| DSL declarations and cross-cuts | `DSL-RATE-001`-`007` plus six Phase 7-owned compound clauses | `P7-DSL-001`-`013` |
+| Public limiter API and cross-cuts | `API-RATE-001`-`004` plus four API clauses | `P7-API-001`-`008` |
+| Generated integration | `GEN-BUILD-004` plus five generated clauses | `P7-GEN-001`-`006` |
+| Security and arithmetic bounds | two dedicated security, seven dedicated bounds, and six shared clauses | `P7-SEC-001`-`005`; `P7-BOUND-001`-`008` |
+| Execution and authentication preservation | three dedicated and 22 shared execution clauses | `P7-EXEC-001`-`025` |
+| Feature and compatibility | two dedicated governor, four shared feature, and six compatibility clauses | `P7-FEAT-001`-`006`; `P7-COMPAT-001`-`006` |
+| Product and state | five shared product/state clauses | `P7-PROD-001`-`005` |
+| Conformance and catalog | 13 conformance clauses and five audit clauses | `P7-CONF-001`-`013`; `P7-AUDIT-001`-`005` |
 
-Phase 8 owns one-acquisition-per-page behavior and pagination integration. Phase 9 owns prepared
-endpoints and final extension certification. Phase 10 owns positive dangerous raw successful
-responses plus release-wide grammar, platforms, documentation, security, performance, MSRV, and
-evidence closure.
+The evidence catalog supplies the exact source-to-test-to-command mapping for each individual row;
+broad `just release` support is never used as the sole direct proof.
 
-## Engineering and architecture review
+## Remaining limitations and later owners
 
-- No unexplained work was overwritten; the baseline and final executable trees were clean.
-- The complete 61-path executable delta and public/generated surface were reviewed.
-- Two focused test corrections were committed without amendment; the complete matrix was restarted
-  after each executable change.
-- One `ClientCore`, `Request<E>`, `HeadBuilder`, `PreparedHead`, operation/deadline, authentication
-  lifecycle, executor, application Reqwest client, and provider client remain.
-- No lock is held across `await` or user callbacks; no quota subset is consumed while waiting.
-- No test was deleted, ignored, retried away, or weakened. The feature-unification correction
-  asserts both valid resolved graphs, and the isolated no-governor command remains direct evidence.
-- No new production dependency, unsafe block, public transport/clock/scheduler/state entry,
-  speculative API, silent fallback, second retry loop, or later-phase capability was added.
-- Historical evidence rows are byte-identical and remain in their original order.
+The 38 partial source rows and one partial audit row are the complete corrected limitation set:
+
+- Phase 8 only: `PROD-GUAR-002`, `PROD-GUAR-008`, `PROD-GUAR-010`, `DSL-END-004`,
+  `DSL-NORM-001`, `SEC-FAIL-001`, `BOUND-MATH-001`, `EXEC-BUILD-002`,
+  `EXEC-DEADLINE-001`, `CONF-SEMA-001`, and `CONF-ORDER-001` retain pagination grammar,
+  normalization, construction, cycle, deadline, arithmetic, diagnostic, and matrix clauses.
+- Phase 9 only: `FEAT-GOV-002` retains the public dynamically introduced prepared-endpoint plan
+  proof.
+- Phases 8 and 9: `DSL-NAME-002`, `GEN-NAME-001`, `GEN-NAME-002`, `EXEC-CREATE-001`,
+  `EXEC-CREATE-002`, `EXEC-ORDER-001`, `EXEC-PREC-001`, `EXEC-CANCEL-001`,
+  `EXEC-COUNT-001`, `EXEC-COUNT-002`, `CONF-COMPILE-002`, `CONF-DOWNSTREAM-001`, and
+  `CONF-DOWNSTREAM-002` retain pagination/prepared names, creation, ordering, precedence,
+  cancellation, counts, downstream workflows, and final extension certification.
+- Phases 8 and 10: `DSL-FEAT-001`, `GEN-DOC-002`, `SEC-TEST-001`, `CONF-PARSER-001`, and
+  `CONF-SEC-001` retain later syntax, cursor/sentinel, security, and release-final clauses.
+- Phases 8 through 10: `API-PRIVATE-001`, `API-PRIVATE-002`, `FEAT-DIAG-001`,
+  `FEAT-DOC-001`, `CONF-COMPILE-001`, `CONF-COMPILE-003`, `CONF-REQWEST-001`, and
+  `CONF-DOC-001` retain later public/private surfaces, diagnostics, examples, dependency probes,
+  and release-wide closure.
+- Phase 10: `CONF-TRACE-006` retains release-final actual-evidence completeness across the whole
+  specification.
+
+Phase 8 owns pagination execution and one acquisition per page. Phase 9 owns prepared endpoints and
+final extension certification. Phase 10 owns positive dangerous raw success and release-wide
+closure. No Phase 8 or later product capability was implemented by this correction.
+
+## Final architecture and governance review
+
+- One `ClientCore`, `Request<E>`, head/prepared-head path, executor, operation identity/deadline,
+  application client, provider client, and authentication lifecycle remain.
+- Hook/body/credential preflight, limiter acquisition, credential finalization, native-only auth,
+  response observation, recovery, and completion ordering remain unchanged except that the correct
+  configured key bound now fails at protected preparation.
+- No governor lock spans an await or user callback; successful reservations are not refunded;
+  waiting cancellation consumes no built-in quota.
+- No key, body, credential, auth material, native URL, or native request enters automatic
+  diagnostics, hooks, completion events, source chains, or generated documentation.
+- Tests use deterministic barriers, paused/controlled time, explicit counters, and local protocol
+  servers; no timing sleep is used as concurrency or cooldown proof.
+- No test was deleted, ignored, retried away, weakened, or reclassified to hide a failure.
+- Historical reports and Phase 0-6 evidence are unchanged.
+- Phase 8 remains the active planning entry with status `NOT_STARTED`.
 
 `PHASE_7_COMPLETE_WITH_LIMITATIONS`
 

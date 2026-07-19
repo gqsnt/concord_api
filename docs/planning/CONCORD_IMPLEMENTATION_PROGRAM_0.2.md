@@ -277,18 +277,22 @@ every Phase 6 partial names its Phase 7-10 owner.
 
 ## Phase 7 production baseline
 
-The immutable final tested Phase 7 source/test commit is
-`52e4604fff4824f0061d78d38177d815e204ec78`. The initial implementation commit is
-`fa85a77da74566e68db0a59954c1172daf75d574`; focused correction commits
-`12691b5d5a5eec34507cb3e968fc35a8fe5c3a9d` and
-`52e4604fff4824f0061d78d38177d815e204ec78` align the generated-contract fixture and workspace
-feature-unification test. Every focused and maintained command, including `just release`, passed
-against the final immutable commit. Exact classifications, commands, results, traces, and remaining
-limitations are recorded in `docs/conformance/PHASE_7_REPORT.md`.
+The corrected immutable final tested Phase 7 source/test commit is
+`c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9`. The accepted implementation chain remains
+`fa85a77da74566e68db0a59954c1172daf75d574`,
+`12691b5d5a5eec34507cb3e968fc35a8fe5c3a9d`, and
+`52e4604fff4824f0061d78d38177d815e204ec78`. Correction commit
+`8e3b1589ebf598c1850f273070cbc528b2dce66e` synchronizes the configured governor aggregate-key
+bound at protected preparation and governor insertion. Correction commit
+`c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9` serializes shared-directory Trybuild cases after the
+maintained all-feature matrix exposed a concrete concurrent fixture replacement.
 
-The Phase 7 evidence/report/state commit is
-`377b4cde2196725447f37a0737bcc80721ba3d82`; the subsequent documentation-only anchor records
-that evidence identity without attempting impossible commit self-reference.
+All 62 exact focused commands and all 16 maintained commands, including `just release`, passed
+from the beginning against `c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9`. The corrected
+evidence/report/state commit is `PENDING_PHASE_7_EVIDENCE_STATE`; its documentation-only corrected
+anchor is `PENDING_PHASE_7_CORRECTED_ANCHOR`. A later documentation-only descendant records the
+real anchor hash and does not replace that anchor. Exact classifications, commands, results,
+traces, and remaining limitations are in `docs/conformance/PHASE_7_REPORT.md`.
 
 The production direct-attempt path is now:
 
@@ -324,12 +328,18 @@ deterministically, and fails closed on poisoned or impossible state. Without gov
 custom and explicit no-op limiters remain usable, empty plans use a private fallback, and required
 nonempty plans fail before send.
 
-Phase 7 traces its 98 requirements through 95 source/test rows (58 direct, 37 partial) and three
-requirement-trace audit rows (two direct, one partial). Two additional direct catalog audits prove
-catalog identity and historical preservation. The Phase 7 total is 100 rows: 62 direct and 38
-partial. The complete catalog contains 1068 unique IDs; all 968 Phase 0-6 rows are byte-identical,
-all 504 normative requirements remain mapped once, and all Phase 7 coverage rows use current paths
-and taxonomy.
+The runtime builder now derives a private preparation-bound snapshot only for a selected built-in
+governor through a safe blanket metadata bridge; custom and no-op limiters retain the 1024-byte
+default. Lower, zero, default, increased, clone, independent-build, pending-request, side-effect
+cutoff, recursive redaction, and governor-revalidation cases pass without changing any approved
+public method signature or generated contract version.
+
+Phase 7 traces its 98 coverage requirements through 95 source/test rows (57 direct, 38 partial) and
+three requirement-trace audit rows (two direct, one partial). Two additional direct catalog audits
+prove catalog identity and historical preservation. The corrected Phase 7 total is 100 rows: 61
+direct and 39 partial. The complete catalog contains 1068 unique IDs; all 968 Phase 0-6 rows are
+byte-identical, all 504 normative requirements remain mapped once, and all Phase 7 coverage rows
+use clause-accurate source paths, tests, commands, taxonomy, and later owners.
 
 ## Current non-goals
 

@@ -31,26 +31,31 @@ evidence_catalog = "docs/conformance/CONFORMANCE_EVIDENCE_0.1.csv"
 expected_branch = "master"
 latest_validated_phase = "7"
 latest_verdict = "PHASE_7_COMPLETE_WITH_LIMITATIONS"
-source_commit = "52e4604fff4824f0061d78d38177d815e204ec78"
+source_commit = "c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9"
+accepted_phase_7_source_commit = "52e4604fff4824f0061d78d38177d815e204ec78"
+correction_source_commits = [
+  "8e3b1589ebf598c1850f273070cbc528b2dce66e",
+  "c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9",
+]
 post_source_governance_commit = ""
-evidence_commit = "377b4cde2196725447f37a0737bcc80721ba3d82"
-anchor_commit = "EXTERNAL_TO_PHASE_7_ANCHOR_CONTENT"
-anchor_identity_policy = "anchor-object-identity-is-external-to-its-own-content"
+evidence_commit = "PENDING_PHASE_7_EVIDENCE_STATE"
+anchor_commit = "PENDING_PHASE_7_CORRECTED_ANCHOR"
 phase_report = "docs/conformance/PHASE_7_REPORT.md"
 normative_status = "Normative Implementation Candidate"
 head_policy = "anchor-must-be-an-ancestor"
 requirement_trace_rows = 98
-requirement_trace_direct_rows = 60
-requirement_trace_partial_rows = 38
+requirement_trace_direct_rows = 59
+requirement_trace_partial_rows = 39
 immutable_source_evidence_rows = 95
-source_direct_rows = 58
-source_partial_rows = 37
+source_direct_rows = 57
+source_partial_rows = 38
 requirement_trace_audit_rows = 3
 cross_phase_catalog_audit_rows = 2
 evidence_state_audit_rows = 5
 phase_evidence_rows = 100
-phase_direct_rows = 62
-phase_partial_rows = 38
+phase_direct_rows = 61
+phase_partial_rows = 39
+phase_evidence_summary = "61 direct and 39 partial"
 catalog_evidence_rows = 1068
 coverage_requirement_rows = 504
 
