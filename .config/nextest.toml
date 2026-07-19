@@ -2,6 +2,7 @@ nextest-version = "0.9.115"
 
 [test-groups]
 cargo-processes = { max-threads = 2 }
+trybuild-processes = { max-threads = 1 }
 
 [profile.default]
 retries = 0
@@ -34,4 +35,13 @@ retries = 0
 # tests and ordinary public-surface tests use the normal profile. Report these
 # bounded Cargo processes after two minutes and terminate after ten minutes
 # rather than constraining unrelated loopback tests.
+slow-timeout = { period = "120s", terminate-after = 5 }
+
+[[profile.default.overrides]]
+filter = 'binary(ui)'
+test-group = "trybuild-processes"
+retries = 0
+# Trybuild binaries share one generated package directory per crate. Running
+# their individual nextest cases concurrently can replace another case's
+# source file and turn an expected compile failure into a spurious success.
 slow-timeout = { period = "120s", terminate-after = 5 }
