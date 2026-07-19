@@ -27,7 +27,7 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 - Phase 8 source/test correction commit and final immutable tested source:
   `515b33ebd345a5eae06a6f2681cbfa4ff403ab9e`
 - Corrected Phase 8 evidence/report/state commit: `ccf569a3072344b345d79d2d551ccb0c0ebce57d`
-- Corrected Phase 8 evidence anchor: `PENDING_CORRECTED_PHASE_8_ANCHOR`
+- Corrected Phase 8 evidence anchor: `b86eb2e7516dcae4b26ac5d53f444351ebe15654`
 - Compatible post-anchor metadata descendant: the final documentation-only commit with subject
   `docs: record corrected phase 8 anchor identity`; it records the real anchor identity and does
   not replace it
@@ -52,7 +52,7 @@ map contains 191 atoms: 162 proved and 29 precisely unresolved.
 | Original source and tests | `8101a3ab8f281fe37aa9132327cc6c06f2c88d47` | Replaced proof-only pagination with the production public/generated contracts, typed request-local page loop, macro DSL/IR/generation, and deterministic focused proof. |
 | Source/test correction | `515b33ebd345a5eae06a6f2681cbfa4ff403ab9e` | Removes the pagination rate-key placeholder, supplies the actual final logical host privately to rate limiting, and adds exact generated/core/governor/key-boundary/redaction proof. |
 | Corrected evidence/report/state | `ccf569a3072344b345d79d2d551ccb0c0ebce57d` | Rebuilds all Phase 8 evidence at claim-atom level, reconciles 122 current coverage rows, records corrected validation, and advances controller state without executable changes. |
-| Corrected evidence anchor | `PENDING_CORRECTED_PHASE_8_ANCHOR` | Finalizes the corrected evidence-state identity and audit time only; it changes no executable artifact, evidence ID, or classification. |
+| Corrected evidence anchor | `b86eb2e7516dcae4b26ac5d53f444351ebe15654` | Finalizes the corrected evidence-state identity and audit time only; it changes no executable artifact, evidence ID, or classification. |
 | Anchor metadata descendant | `docs: record corrected phase 8 anchor identity` | Records the real corrected anchor hash in this report and controller state while retaining `anchor-must-be-an-ancestor`. |
 
 No executable artifact changed after `515b33ebd345a5eae06a6f2681cbfa4ff403ab9e`.
