@@ -39,7 +39,7 @@ correction_source_commits = [
 ]
 post_source_governance_commit = ""
 preliminary_evidence_commit = "7b1373f82b33e36325047643d735b2e15bb5a4bc"
-evidence_commit = "PENDING_PHASE_7_EVIDENCE_STATE"
+evidence_commit = "19ed74ba4ba64f772733096ea5ad16c8551e4a9e"
 anchor_commit = "PENDING_PHASE_7_CORRECTED_ANCHOR"
 phase_report = "docs/conformance/PHASE_7_REPORT.md"
 normative_status = "Normative Implementation Candidate"

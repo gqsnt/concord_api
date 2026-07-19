@@ -292,7 +292,7 @@ from the beginning against `c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9`. Evidence/
 `cb4640d4d4e21528c8e38f8104785e2c3ceac883` and anchor
 `def42b74663df7b36755f61b8348d26449cce6ff` are superseded because their rows retained several
 command-to-claim mismatches. The evidence-command-corrected evidence/report/state commit is
-`PENDING_PHASE_7_EVIDENCE_STATE`. Preliminary evidence state
+`19ed74ba4ba64f772733096ea5ad16c8551e4a9e`. Preliminary evidence state
 `7b1373f82b33e36325047643d735b2e15bb5a4bc` was superseded after the strengthened semantic audit
 found 24 incomplete plural-owner coverage milestones. The documentation-only corrected
 anchor is `PENDING_PHASE_7_CORRECTED_ANCHOR`. A later documentation-only descendant records the
