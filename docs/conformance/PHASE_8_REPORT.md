@@ -4,7 +4,8 @@
 
 `PHASE_8_COMPLETE_WITH_LIMITATIONS`
 
-Every Phase 8-owned pagination exit criterion is implemented and directly proved at the immutable
+Every Phase 8-owned pagination exit criterion, including the corrected resolved-rate-key and
+actual-logical-host integration, is implemented and directly proved at the immutable corrected
 source/test commit. The 29 partial rows retain only exact Phase 9 prepared-endpoint/final-extension
 or Phase 10 release-final clauses.
 
@@ -15,36 +16,46 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 
 ## Immutable identities
 
-- Starting HEAD: `10c43969cc86ff27df1fc61b273a1dc860f78b5f`
+- Original Phase 8 starting HEAD: `10c43969cc86ff27df1fc61b273a1dc860f78b5f`
+- Correction starting HEAD: `cefedf4659ab2080d150eb0f48bb2b93b3bf07cd`
 - Branch: `master`
 - Initial tree: clean
 - Previous immutable source/test commit: `c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9`
 - Previous evidence/report/state commit: `19ed74ba4ba64f772733096ea5ad16c8551e4a9e`
 - Previous evidence anchor: `1c1a1da8739daf13dacc43ea259ab8163e8835b3`
-- Phase 8 source/test commit: `8101a3ab8f281fe37aa9132327cc6c06f2c88d47`
-- Phase 8 evidence/report/state commit: `4158969da33e6590e56a35fd98f6453e21b61fb1`
-- Phase 8 evidence anchor: `a86ee6bd784f48fae3329e08aece367377d13919`
+- Original Phase 8 source/test commit: `8101a3ab8f281fe37aa9132327cc6c06f2c88d47`
+- Phase 8 source/test correction commit and final immutable tested source:
+  `515b33ebd345a5eae06a6f2681cbfa4ff403ab9e`
+- Corrected Phase 8 evidence/report/state commit: `PENDING_CORRECTED_PHASE_8_EVIDENCE`
+- Corrected Phase 8 evidence anchor: `PENDING_CORRECTED_PHASE_8_ANCHOR`
 - Compatible post-anchor metadata descendant: the final documentation-only commit with subject
-  `Record Phase 8 evidence anchor`; it records the real anchor identity and does not replace it
-- Authoritative source validation recorded: `2026-07-19T10:54:35Z`
-- Cumulative executable patch SHA-256:
-  `6a99cded39cfca77f2ec84b6f5dce19f0f088185448b77560360e7214925d319`
+  `docs: record corrected phase 8 anchor identity`; it records the real anchor identity and does
+  not replace it
+- Authoritative corrected-source validation recorded: `2026-07-19T13:05:36Z`
+- Focused correction patch SHA-256:
+  `5089677710ce487050ea8781a43440d05c09fa6be70192a0bbd837b6fa0bc886`
+- Corrected cumulative executable patch SHA-256:
+  `eac2687443d863b53b0bc7c64d4cbc44fe3aaf58706e068b438e518905ad3ead`
 
-The ignored contract map is `git_diff/phase-8-contract-map.md` and contains exactly 115 unique
-requirement IDs. The ignored validation ledger is `git_diff/phase-8-validation.md`; the cumulative
-executable patch is `git_diff/phase-8-executable.patch`; and the ignored semantic map contains 117
-one-requirement evidence rows, including five catalog/state audits.
+The ignored contract map is `git_diff/phase-8-contract-map.md` and contains exactly 122 unique
+requirement IDs: the original 115 Phase 8 traces plus seven preserved rate-limit authorities owned
+by this correction. The ignored correction ledger is `git_diff/phase-8-correction-validation.md`;
+the focused and cumulative patches are `git_diff/phase-8-rate-key-correction.patch` and
+`git_diff/phase-8-corrected-cumulative-source.patch`. The corrected semantic map contains 124
+one-requirement evidence rows, including five catalog/state audits, and the independent claim-atom
+map contains 191 atoms: 162 proved and 29 precisely unresolved.
 
 ## Commit outcome
 
 | Unit | Commit | Durable result |
 |---|---|---|
-| Source and tests | `8101a3ab8f281fe37aa9132327cc6c06f2c88d47` | Replaces proof-only pagination with the production public/generated contracts, typed request-local page loop, macro DSL/IR/generation, and deterministic focused proof. |
-| Evidence/report/state | `4158969da33e6590e56a35fd98f6453e21b61fb1` | Appends Phase 8 evidence, reconciles the 115 current coverage rows, records validation, completes Phase 8 planning, and advances controller state without executable changes. |
-| Evidence anchor | `a86ee6bd784f48fae3329e08aece367377d13919` | Finalizes the evidence-state identity and audit time only; it changes no executable artifact, evidence ID, or classification. |
-| Anchor metadata descendant | `Record Phase 8 evidence anchor` | Records the real anchor hash in current-state documentation while retaining `anchor-must-be-an-ancestor`. |
+| Original source and tests | `8101a3ab8f281fe37aa9132327cc6c06f2c88d47` | Replaced proof-only pagination with the production public/generated contracts, typed request-local page loop, macro DSL/IR/generation, and deterministic focused proof. |
+| Source/test correction | `515b33ebd345a5eae06a6f2681cbfa4ff403ab9e` | Removes the pagination rate-key placeholder, supplies the actual final logical host privately to rate limiting, and adds exact generated/core/governor/key-boundary/redaction proof. |
+| Corrected evidence/report/state | `PENDING_CORRECTED_PHASE_8_EVIDENCE` | Rebuilds all Phase 8 evidence at claim-atom level, reconciles 122 current coverage rows, records corrected validation, and advances controller state without executable changes. |
+| Corrected evidence anchor | `PENDING_CORRECTED_PHASE_8_ANCHOR` | Finalizes the corrected evidence-state identity and audit time only; it changes no executable artifact, evidence ID, or classification. |
+| Anchor metadata descendant | `docs: record corrected phase 8 anchor identity` | Records the real corrected anchor hash in this report and controller state while retaining `anchor-must-be-an-ancestor`. |
 
-No executable artifact changed after `8101a3ab8f281fe37aa9132327cc6c06f2c88d47`.
+No executable artifact changed after `515b33ebd345a5eae06a6f2681cbfa4ff403ab9e`.
 
 ## Implemented product and public surface
 
@@ -114,6 +125,32 @@ between core and macros, and mismatch diagnostics pass.
 Nested scopes, explicit endpoints, aliases, collision cases, repeated/nested expansions, and a
 renamed `concord_core` dependency compile or fail deterministically without exposing generated
 private bridges in public signatures or rendered Rustdoc.
+
+## Corrected rate-limit integration
+
+Generated rate-limit plan construction now formats every approved `vars.NAME`, `scope.NAME`, and
+`ep.NAME` dimension from its actual resolved value, including pagination-bound endpoint fields.
+The former `"<pagination>"` substitution is removed. Across two generated pages the selected
+limiter observes the exact progressed endpoint values in declaration order; the first and second
+page values differ exactly according to controller progression.
+
+`HeadBuilder::rate_limit_host()` and the crate-private prepared-head integration now derive the
+limiter host from the actual final logical URL. `RateLimitRequest::host` therefore matches each
+page's actual logical host, while `RateLimitRequest::safe_url`, hooks, debug events, completion
+events, errors, and Rustdoc continue to use sanitized data. No public API signature or generated
+contract changed; generated contract version 9 remains exact.
+
+The selected custom limiter is an intentional recipient of the actual resolved `RateLimitPlan`,
+its ordered key parts, and the actual logical host. This access is distinct from Concord automatic
+observability. Custom limiters remain responsible for their own handling of these values, while
+Concord-provided governor diagnostics remain key-safe.
+
+Prepared-page validation measures actual formatted key bytes. A value exactly at the configured
+boundary succeeds, the first byte above it fails before hooks, credential/provider work, limiter
+acquisition, debug events, authentication materialization, or send, and the rejected value does not
+enter the safe error chain. The built-in governor revalidates the same actual bytes before state
+insertion. Deterministic paused-time proof shows page-varying actual keys form distinct buckets and
+equivalent actual keys continue to aggregate under the Phase 7 contract.
 
 ## One request-local pagination architecture
 
@@ -207,17 +244,20 @@ aggregate-ceiling/arithmetic failures use `ErrorCategory::Pagination`.
 High-entropy sentinel tests cover cursor, custom controller state, repeated logical URL, pagination
 query/header values, collected item, credential, authentication header/query, request/response
 body, rate key, and native authenticated URL. Recursive inspection covers `Display`, `Debug`, error
-sources, hooks, page and aggregate completion, built-in debug events, limiter contexts, wrapper
+sources, hooks, page and aggregate completion, built-in debug events and governor errors, wrapper
 privacy, and public/generated Rustdoc.
 
-Continuation values appear only in controlled native-request/controller assertions proving actual
-application. They do not appear in safe URLs, sanitized headers, hooks, events, errors, recursive
-sources, limiter contexts, wrapper debugging, or documentation. Request debug remains before
-native-only authentication materialization.
+Continuation values may intentionally appear in controlled native-request/controller fixtures and,
+when declared as a resolved rate-limit dimension or final logical host, in the selected custom
+limiter's exact plan/host inputs. They remain absent from safe URLs, sanitized headers, hooks,
+automatic debug/events/completion, Concord errors and recursive sources, built-in governor errors,
+wrapper debugging, and documentation. The tests audit intentional limiter fields separately from
+automatic safe fields rather than concatenating both and claiming global absence. Request debug
+remains before native-only authentication materialization.
 
 ## Exact executable change surface
 
-The source commit changes exactly 55 files (6,245 insertions and 1,204 deletions):
+The original Phase 8 source commit changes exactly 55 files (6,245 insertions and 1,204 deletions):
 
 ```text
 concord_core/src/{__private.rs,advanced.rs,client.rs,lib.rs,prelude.rs}
@@ -240,7 +280,20 @@ concord_macros/tests/ui/fail/phase8_pagination_{bounds,method_absence,modes,synt
 concord_test_support/src/gate.rs
 ```
 
-No manifest, lockfile, dependency, feature, unsafe block, or validation configuration changed.
+The correction commit changes exactly these seven source/test paths:
+
+```text
+concord_macros/src/codegen.rs
+concord_macros/tests/phase8_generated.rs
+concord_core/src/request/head.rs
+concord_core/src/execute/mod.rs
+concord_core/src/pagination/runtime_tests.rs
+concord_core/src/rate_limit/governor.rs
+concord_core/tests/pagination_rate_limit.rs
+```
+
+No manifest, lockfile, dependency, feature, public signature, unsafe block, or validation
+configuration changed.
 Generated contract version 9 is the private compatibility change required by the typed pagination
 bridge. The one new private state machine is the normative production page loop and replaces the
 proof-only model rather than existing beside it.
@@ -248,14 +301,16 @@ proof-only model rather than existing beside it.
 ## Focused validation
 
 Every command ran from `F:\projects\concord_api`, used no external service, exited 0, and tested
-`8101a3ab8f281fe37aa9132327cc6c06f2c88d47`:
+`515b33ebd345a5eae06a6f2681cbfa4ff403ab9e`:
 
 | Exact command | Result |
 |---|---|
 | `cargo nextest run -p concord_macros --lib -E 'test(/phase8/)'` | 4/4 parser/resolver units passed. |
 | `cargo nextest run -p concord_macros --test ui -E 'test(phase8_pagination_diagnostics_are_source_only_and_focused)'` | 1/1 Trybuild group passed. |
 | `cargo nextest run -p concord_macros --test phase8_generated` | 8/8 generated local-server tests passed. |
-| `cargo nextest run -p concord_core --all-features --lib -E 'test(/pagination::/)'` | 20/20 core identity/runtime tests passed. |
+| `cargo nextest run -p concord_core --all-features --lib -E 'test(/pagination::/)'` | 22/22 core identity/runtime tests passed. |
+| `cargo nextest run -p concord_core --all-features --lib -E 'test(/rate_limit::/)'` | 27/27 core rate-limit tests passed. |
+| `cargo nextest run -p concord_core --test pagination_rate_limit` | 1/1 generated actual-key boundary test passed. |
 | `cargo nextest run -p concord_core --all-features --lib -E 'test(/paginated_/)'` | 3/3 real TLS authentication/provider tests passed. |
 | `cargo nextest run -p concord_core --no-default-features --test pagination_api` | 2/2 no-default downstream API tests passed. |
 | `cargo nextest run -p concord_core --test ui -E 'test(source_only_public_surface_failures_use_trybuild)'` | 1/1 core privacy UI group passed. |
@@ -263,8 +318,20 @@ Every command ran from `F:\projects\concord_api`, used no external service, exit
 | `cargo nextest run -p concord_macros --test compile -E 'test(generated_public_rustdoc_uses_stable_paths_without_private_integration_names) \| test(renamed_core_dependency_resolves_through_package_metadata) \| test(incompatible_core_contract_fails_during_compilation)'` | 3/3 generated-doc/renamed-core/contract checks passed. |
 | `cargo nextest run -p concord_core -E 'test(=runtime::config::tests::defaults_are_exact_positive_finite_values) \| test(=runtime::config::tests::setters_preserve_positive_finite_types_and_zero_duration_caps) \| test(=downstream_runtime_configuration_requires_nonzero_ordinary_limits)'` | 3/3 runtime ceiling tests passed. |
 | `cargo nextest run -p concord_core --test generated_contract -E 'test(generated_contract_version_is_nine)'` | 1/1 private contract check passed. |
-| `powershell -NoProfile -File git_diff/validate-phase-8-manifest-dependencies.ps1 -SourceCommit 8101a3ab8f281fe37aa9132327cc6c06f2c88d47` | Manifest identity and locked dependency/feature ownership audit passed. |
+| `powershell -NoProfile -File git_diff/validate-phase-8-manifest-dependencies.ps1 -SourceCommit 515b33ebd345a5eae06a6f2681cbfa4ff403ab9e` | Manifest identity and locked dependency/feature ownership audit passed. |
 | `cargo nextest run -p concord_core --lib -E 'test(safe_url_property_auth_values_never_survive_rendering)'` | 1/1 deterministic seeded property test passed. |
+| `cargo nextest run -p concord_macros --test phase8_generated -E 'test(=generated_pagination_preserves_resolved_rate_keys_and_actual_hosts)'` | 1/1 passed: two pages exposed exact ordered actual endpoint/host limiter values with no placeholder. |
+| `cargo nextest run -p concord_core --test pagination_rate_limit -E 'test(=generated_pagination_key_limit_measures_actual_value_not_placeholder_text)'` | 1/1 passed: actual boundary accepted, first excess rejected before hook/send, and error chain redacted. |
+| `cargo nextest run -p concord_core --all-features --lib -E 'test(=pagination::runtime_tests::selected_limiter_receives_actual_page_hosts_while_automatic_surfaces_stay_redacted) \| test(=pagination::runtime_tests::pagination_rate_key_limit_uses_actual_value_and_cuts_off_protected_work) \| test(=request::head::tests::pagination_host_is_actual_for_rate_limiting_and_redacted_for_safe_surfaces)'` | 3/3 actual-host, protected-cutoff, and automatic-redaction proofs passed. |
+| `cargo nextest run -p concord_core --all-features --lib -E 'test(=rate_limit::governor::tests::page_varying_actual_keys_are_distinct_and_equivalent_keys_aggregate) \| test(=rate_limit::governor::tests::configured_key_limit_revalidates_before_governor_state_insertion)'` | 2/2 deterministic governor bucket and insertion-boundary proofs passed. |
+| `cargo nextest run -p concord_core --all-features --lib -E 'test(=pagination::runtime_tests::page_completion_delay_is_outside_deadline_and_later_page_gets_a_fresh_deadline)'` | 1/1 exact page-local deadline proof passed. |
+| `cargo nextest run -p concord_core --all-features --lib -E 'test(=pagination::tests::identity_accounting_counts_only_canonical_components_and_collisions_use_full_equality)'` | 1/1 exact canonical-accounting and deliberate full-equality collision proof passed. |
+| `cargo nextest run -p concord_macros --test phase8_generated -E 'test(=generated_offset_pagination_is_directly_awaitable_and_stops_on_short_page)'` | 1/1 positive bodyless generated pagination proof passed. |
+| `cargo nextest run -p concord_core --all-features --lib -E 'test(=execute::auth_tests::configured_key_limit_failure_cuts_off_every_protected_side_effect_and_redacts_key) \| test(=execute::tests::configured_key_limit_enforces_lower_zero_and_increased_boundaries) \| test(=execute::tests::default_key_limit_accepts_1024_bytes_and_rejects_the_first_excess)'` | 3/3 Phase 7 direct-request key-limit regressions passed. |
+| `cargo nextest run -p concord_core --all-features --lib -E 'test(=execute::tests::custom_limiter_context_and_response_observation_use_one_ordered_attempt) \| test(=execute::tests::hidden_reqwest_retry_does_not_reenter_custom_limiter_or_lifecycle) \| test(=pagination::runtime_tests::hidden_reqwest_retry_does_not_repeat_pagination_preparation_or_page_lifecycle)'` | 3/3 custom limiter and hidden-retry containment proofs passed. |
+| `cargo nextest run -p concord_core --all-features --lib -E 'test(=execute::auth_tests::paginated_tls_recovery_keeps_one_page_identity_index_and_completion)'` | 1/1 real TLS paginated recovery proof passed. |
+| `cargo nextest run -p concord_core --no-default-features --test rate_limit_api` | 4/4 no-default selected-limiter API proofs passed. |
+| `cargo nextest run -p concord_macros --test phase7_generated` | 7/7 direct rate-limit plan regression tests passed. |
 
 ## Complete maintained validation
 
@@ -278,8 +345,8 @@ All 16 maintained commands exited 0 against the same immutable source commit:
 | `just check-no-default` | Core/all targets/no defaults passed. |
 | `just clippy` | Workspace/default features with warnings denied passed. |
 | `just clippy-all` | Workspace/all features with warnings denied passed. |
-| `just test` | Nextest default workspace: 500/500 passed. |
-| `just test-all` | Nextest CI all features: 504/504 passed. |
+| `just test` | Nextest default workspace: 505/505 passed. |
+| `just test-all` | Nextest CI all features: 509/509 passed. |
 | `just test-no-default` | Maintained core no-default filter: 1/1 passed. |
 | `just doctest` | Maintained default Cargo doctests: 2/2 passed. |
 | `just doctest-all` | Maintained all-feature Cargo doctests: 2/2 passed. |
@@ -293,16 +360,22 @@ No applicable check was unavailable and no weaker substitute was used.
 
 ## Evidence and trace reconciliation
 
-Phase 8 adds 117 unique evidence rows: 88 direct and 29 partial. The 115 requirement traces are 86
-direct and 29 partial. Of those, 112 rows are immutable source/test evidence (84 direct and 28
-partial), three are requirement-trace state audits (two direct and one partial), and two additional
-direct catalog audits prove exact normative coverage and historical preservation.
+Corrected Phase 8 contains 124 unique evidence rows: 95 direct and 29 partial. The 122 requirement
+traces are 93 direct and 29 partial. Of those, 119 rows are immutable source/test evidence (91
+direct and 28 partial), three are requirement-trace state audits (two direct and one partial), and
+two additional direct catalog audits prove exact normative coverage and historical preservation.
 
-The complete evidence catalog contains 1,185 unique evidence IDs. All 1,068 Phase 0-7 rows remain
-byte-identical and in their original order. The coverage catalog still contains exactly one row for
-each of 504 normative requirement IDs; exactly 115 rows now point to Phase 8 evidence with taxonomy
-86 `P8-pagination`, 15 `P8-partial-P9`, and 14 `P8-partial-P10`. Planned `PLAN-*` identifiers remain
-separate from actual passing evidence.
+The complete evidence catalog contains 1,192 unique evidence IDs. All 1,068 Phase 0-7 rows remain
+byte-identical and in their original order with SHA-256
+`8e8691ffca76c3a3941264649cbaf479b4ef82740caaaaf1ec0d3de389e5a66f`. The coverage catalog still
+contains exactly one row for each of 504 normative requirement IDs; exactly 122 rows now point to
+corrected Phase 8 evidence with taxonomy 93 `P8-pagination-correction`, 15 `P8-partial-P9`, and 14
+`P8-partial-P10`. Planned `PLAN-*` identifiers remain separate from actual passing evidence.
+
+The ignored claim-atom review represents every assertion in every Phase 8 row as 162 proved atoms
+and represents each of the 29 partial rows with one additional unresolved atom naming its exact
+Phase 9 or Phase 10 owner. Every proved atom names a source/test path and a command present in the
+immutable-source correction ledger; direct rows contain no unresolved Phase 8 atom.
 
 The evidence anchor runs the ignored semantic audit against the real evidence-state identity. It
 checks normative/coverage equality, evidence-ID and approved-label uniqueness, exact paths and

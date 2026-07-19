@@ -31,30 +31,34 @@ evidence_catalog = "docs/conformance/CONFORMANCE_EVIDENCE_0.1.csv"
 expected_branch = "master"
 latest_validated_phase = "8"
 latest_verdict = "PHASE_8_COMPLETE_WITH_LIMITATIONS"
-source_commit = "8101a3ab8f281fe37aa9132327cc6c06f2c88d47"
+source_commit = "515b33ebd345a5eae06a6f2681cbfa4ff403ab9e"
 implementation_source_commits = [
   "8101a3ab8f281fe37aa9132327cc6c06f2c88d47",
+  "515b33ebd345a5eae06a6f2681cbfa4ff403ab9e",
 ]
 post_source_governance_commit = ""
-evidence_commit = "4158969da33e6590e56a35fd98f6453e21b61fb1"
-anchor_commit = "a86ee6bd784f48fae3329e08aece367377d13919"
+evidence_commit = "PENDING_CORRECTED_PHASE_8_EVIDENCE"
+anchor_commit = "PENDING_CORRECTED_PHASE_8_ANCHOR"
 phase_report = "docs/conformance/PHASE_8_REPORT.md"
 normative_status = "Normative Implementation Candidate"
 head_policy = "anchor-must-be-an-ancestor"
-requirement_trace_rows = 115
-requirement_trace_direct_rows = 86
+requirement_trace_rows = 122
+requirement_trace_direct_rows = 93
 requirement_trace_partial_rows = 29
-immutable_source_evidence_rows = 112
-source_direct_rows = 84
+immutable_source_evidence_rows = 119
+source_direct_rows = 91
 source_partial_rows = 28
 requirement_trace_audit_rows = 3
 cross_phase_catalog_audit_rows = 2
 evidence_state_audit_rows = 5
-phase_evidence_rows = 117
-phase_direct_rows = 88
+phase_evidence_rows = 124
+phase_direct_rows = 95
 phase_partial_rows = 29
-phase_evidence_summary = "88 direct and 29 partial"
-catalog_evidence_rows = 1185
+phase_evidence_summary = "95 direct and 29 partial"
+claim_atom_rows = 191
+proved_claim_atoms = 162
+unresolved_claim_atoms = 29
+catalog_evidence_rows = 1192
 coverage_requirement_rows = 504
 
 [active_phase]

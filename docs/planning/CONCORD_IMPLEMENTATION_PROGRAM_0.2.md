@@ -357,12 +357,13 @@ use clause-accurate source paths, tests, commands, taxonomy, and later owners.
 
 ## Phase 8 production baseline
 
-The immutable final tested Phase 8 source/test commit is
-`8101a3ab8f281fe37aa9132327cc6c06f2c88d47`. All focused commands and all 16 maintained commands,
-including `just release`, passed against that exact source. The evidence/report/state commit is
-`4158969da33e6590e56a35fd98f6453e21b61fb1`; the documentation-only evidence anchor is
-`a86ee6bd784f48fae3329e08aece367377d13919`. The later documentation-only metadata descendant
-records that real anchor identity without replacing it.
+The immutable final corrected Phase 8 source/test commit is
+`515b33ebd345a5eae06a6f2681cbfa4ff403ab9e`. All correction-focused, retained Phase 8, and Phase 7
+rate-limit regression commands plus all 16 maintained commands, including `just release`, passed
+against that exact source. The corrected evidence/report/state commit is
+`PENDING_CORRECTED_PHASE_8_EVIDENCE`. A later documentation-only corrected evidence anchor fixes
+that evidence-state identity; the final two-file metadata descendant records the real anchor in the
+Phase 8 report and controller state without replacing it.
 
 The one generated request path now adds an opaque directly awaitable pagination wrapper, one sealed
 typed generated pagination specification, and one request-local sequential page state machine. Each
@@ -380,16 +381,29 @@ cancellation, and one aggregate completion are deterministic and bounded.
 
 Defaults remain 1,000 requested pages, 100,000 collected items, and 4 MiB of retained canonical
 identity bytes. Cycle protection and every ceiling are always enabled; checked arithmetic covers
-page/item/identity counters and built-in progression. Continuation values affect controlled native
-requests and cycle identity while remaining absent from safe diagnostics, hooks, limiter contexts,
-events, errors, sources, and rendered documentation.
+page/item/identity counters and built-in progression.
 
-Phase 8 traces 115 requirements through 112 source/test evidence rows (84 direct, 28 partial) and
-three requirement-trace audits (two direct, one partial). Two additional direct catalog audits prove
-normative coverage and preservation. The Phase 8 total is 117 rows: 88 direct and 29 partial. The
-complete catalog contains 1,185 unique evidence IDs; all 1,068 Phase 0-7 rows remain byte-identical,
-and all 504 normative requirements remain mapped once. Exact paths, commands, classifications, and
-later owners are in `docs/conformance/PHASE_8_REPORT.md` and the evidence catalog.
+The Phase 8 correction removes generated `"<pagination>"` rate-key substitution. Required
+non-secret pagination-bound endpoint dimensions now retain their actual formatted per-page values,
+and a private prepared-head accessor supplies the actual final logical host to the selected limiter.
+Actual formatted key bytes are validated at preparation and revalidated by the built-in governor
+before insertion. Page-varying keys form distinct buckets while equivalent keys aggregate. No
+public signature, generated contract version, feature, dependency, or execution architecture
+changed.
+
+Continuation values affect controlled native requests and cycle identity and may intentionally
+reach a selected custom limiter when they are declared resolved rate-key dimensions or the final
+logical host. They remain absent from safe URLs, sanitized headers, hooks, automatic debug/events,
+completion, Concord errors and sources, built-in governor errors, and rendered documentation.
+
+Corrected Phase 8 traces 122 requirements through 119 source/test evidence rows (91 direct, 28
+partial) and three requirement-trace audits (two direct, one partial). Two additional direct catalog
+audits prove normative coverage and preservation. The corrected Phase 8 total is 124 rows: 95 direct
+and 29 partial. The complete catalog contains 1,192 unique evidence IDs; all 1,068 Phase 0-7 rows
+remain byte-identical, and all 504 normative requirements remain mapped once. The independent
+claim-atom map contains 162 proved atoms and 29 unresolved later-phase owner atoms. Exact paths,
+commands, classifications, and later owners are in `docs/conformance/PHASE_8_REPORT.md` and the
+evidence catalog.
 
 ## Current non-goals
 
