@@ -38,6 +38,15 @@ pub struct CredentialRequest<'a> {
 }
 
 /// Application-supplied or built-in credential provider.
+///
+/// Calls may overlap and receive sensitive credential material or provider
+/// inputs. Implementations own confidentiality in their logging and storage and
+/// must bound CPU, memory, retries, maps, queues, spawned tasks, metric
+/// cardinality, and external I/O. Provider futures run under the operation
+/// deadline and are dropped on cancellation; already completed provider effects
+/// are not rolled back. Concord bounds its credential state and provider HTTP
+/// bodies, but does not automatically bound custom provider state, synchronous
+/// work before a future is returned, or application-created background work.
 pub trait CredentialProvider: Send + Sync + 'static {
     /// Material produced by this provider.
     type Material: CredentialMaterial;

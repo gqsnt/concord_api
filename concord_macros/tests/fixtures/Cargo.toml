@@ -3,6 +3,7 @@ members = [
     "contract_mismatch",
     "custom_retry_disabled",
     "custom_retry_enabled",
+    "extension_certification",
     "json_disabled",
     "multipart_disabled",
     "missing_core",

@@ -30,7 +30,13 @@ pub enum DebugLevel {
 ///
 /// Calls may overlap. Result-determining hooks run under the operation
 /// deadline. Completion hooks observe an already-fixed result outside that
-/// deadline and must bound their own work.
+/// deadline and must bound their own work. Hook metadata is sanitized but may
+/// still be operationally sensitive; implementations own all logging and
+/// storage. They must bound CPU, memory, retries, maps, queues, spawned tasks,
+/// metric cardinality, and external I/O. Hook futures are dropped on
+/// cancellation, without rollback of completed extension effects. Concord does
+/// not automatically time-limit completion callbacks or bound custom hook state,
+/// synchronous work before a future is returned, or application-created tasks.
 pub trait RuntimeHooks: Send + Sync + 'static {
     fn before_send<'a>(&'a self, _context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
         Box::pin(async { Ok(()) })

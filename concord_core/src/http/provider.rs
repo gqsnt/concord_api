@@ -28,6 +28,13 @@ pub(super) struct ProviderHttpInner {
 }
 
 /// An isolated, bounded provider-HTTP capability borrowed for one credential operation.
+///
+/// Requests use Concord's separate managed provider client and finite body limits,
+/// and are constrained by the credential operation deadline plus any shorter
+/// request timeout. Dropping the provider future cancels later polling but does
+/// not roll back bytes already sent or other completed external effects. Provider
+/// URLs, headers, bodies, and responses may be sensitive; applications and
+/// providers remain responsible for their own logging and storage.
 #[derive(Clone, Copy)]
 pub struct ProviderHttp<'a> {
     inner: Option<&'a ProviderHttpInner>,
@@ -98,6 +105,14 @@ pub enum ProviderBody {
 }
 
 /// Produces complete provider request bytes.
+///
+/// Calls for independent provider operations may overlap. Inputs, output, and
+/// factory state may be sensitive; implementations own logging and storage and
+/// must bound CPU, memory, retries, maps, queues, spawned tasks, metric
+/// cardinality, and external I/O. The synchronous callback cannot be preempted;
+/// its bytes are checked against the provider limit and operation deadline after
+/// return. Cancellation prevents later work only, and Concord does not
+/// automatically bound custom factory state.
 pub trait ProviderBodyFactory: Send + Sync + 'static {
     /// Creates the complete bytes once for one provider operation.
     fn create(&self) -> Result<Bytes, AuthError>;

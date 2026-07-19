@@ -58,10 +58,16 @@ pub struct RateLimitResponse<'a> {
 
 /// Application-supplied or Concord-provided per-attempt limiter authority.
 ///
-/// Calls may overlap. Implementations own the boundedness of their external
-/// state and must treat resolved plan keys as potentially sensitive. Custom
-/// implementations are responsible for protecting those values in their own
-/// logs and storage.
+/// Calls may overlap. Implementations own the boundedness of CPU, memory,
+/// retries, maps, queues, spawned tasks, metric cardinality, and external I/O,
+/// and must treat resolved plan keys and logical hosts as potentially sensitive.
+/// Custom implementations are responsible for protecting those values in their
+/// own logs and storage. Acquisition is result-determining and runs under the
+/// operation deadline. Observation cannot replace the current result and is
+/// awaited before body processing; implementations must self-bound it because
+/// Concord checks the deadline only after it returns. Futures are dropped on
+/// cancellation, but completed reservations and external effects are not rolled
+/// back. Concord does not automatically bound custom limiter state or work.
 #[allow(
     private_bounds,
     reason = "a blanket private metadata bound preserves external implementations while keeping runtime selection metadata out of the public contract"
@@ -130,6 +136,15 @@ pub struct RateLimitResponseHead<'a> {
 }
 
 /// Synchronous policy for translating a response head into a future cooldown.
+///
+/// Calls for independent responses may overlap and receive resolved rate keys,
+/// logical hosts, and sanitized response metadata. Implementations own logging
+/// and storage and must bound synchronous CPU, memory, retries, maps, queues,
+/// spawned tasks, metric cardinality, and external I/O. Concord cannot preempt
+/// this callback. Observation is awaited before body processing but cannot
+/// replace the current result, so the implementation must self-bound its work;
+/// Concord checks the operation deadline after return. Cancellation prevents
+/// later work only, and custom observer state is not automatically bounded.
 pub trait RateLimitObserver: Send + Sync + 'static {
     /// Returns a future-acquisition cooldown, or `None` for no state change.
     fn observe(&self, response: &RateLimitResponseHead<'_>) -> Option<Cooldown>;

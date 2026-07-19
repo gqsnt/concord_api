@@ -118,6 +118,208 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
     })
     .collect::<Vec<_>>()
     .join("\n");
+    let prepared_pages = [
+        "struct.PreparedBuffered.html",
+        "struct.PreparedBytes.html",
+        "struct.PreparedNoContent.html",
+        "struct.PreparedStream.html",
+        "struct.PreparedEndpointBuilder.html",
+        "struct.PreparedEndpoint.html",
+    ]
+    .into_iter()
+    .map(|name| {
+        let path = documentation.join("advanced").join(name);
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
+    })
+    .collect::<Vec<_>>()
+    .join("\n");
+    let extension_contracts = [
+        (
+            "trait.MediaType.html",
+            &[
+                "concurrent operations",
+                "no runtime callback",
+                "non-sensitive",
+                "mutable global state",
+            ][..],
+        ),
+        (
+            "trait.EncodeBody.html",
+            &[
+                "synchronous work",
+                "operations may occur concurrently",
+                "operation deadline",
+                "cancellation",
+                "metric cardinality",
+                "external I/O",
+                "logging or storage",
+            ][..],
+        ),
+        (
+            "trait.DecodeBody.html",
+            &[
+                "synchronous callbacks",
+                "operations may occur concurrently",
+                "operation deadline",
+                "cancellation",
+                "metric cardinality",
+                "external I/O",
+                "logging or storage",
+            ][..],
+        ),
+        (
+            "trait.BodyFactory.html",
+            &[
+                "operations may overlap",
+                "sensitive",
+                "logging and storage",
+                "metric cardinality",
+                "external I/O",
+                "operation deadline",
+                "cancellation",
+                "does not automatically bound",
+            ][..],
+        ),
+        (
+            "trait.MultipartFactory.html",
+            &[
+                "operations may overlap",
+                "sensitive",
+                "logging and storage",
+                "metric cardinality",
+                "external I/O",
+                "operation deadline",
+                "cancellation",
+                "does not automatically bound",
+            ][..],
+        ),
+        (
+            "trait.CredentialMaterial.html",
+            &[
+                "overlapping credential operations",
+                "sensitive application-owned state",
+                "logging, storage",
+                "metric cardinality",
+                "external I/O",
+                "operation deadlines",
+                "cancellation",
+                "automatic limits",
+            ][..],
+        ),
+        (
+            "trait.SecretCredential.html",
+            &[
+                "native authentication boundary",
+                "logging, storage",
+                "concurrency",
+                "cancellation",
+                "deadline",
+                "boundedness obligations",
+            ][..],
+        ),
+        (
+            "trait.CredentialProvider.html",
+            &[
+                "Calls may overlap",
+                "sensitive credential material",
+                "logging and storage",
+                "metric cardinality",
+                "external I/O",
+                "operation deadline",
+                "cancellation",
+                "does not automatically bound",
+            ][..],
+        ),
+        (
+            "trait.ProviderBodyFactory.html",
+            &[
+                "operations may overlap",
+                "sensitive",
+                "logging and storage",
+                "metric cardinality",
+                "external I/O",
+                "operation deadline",
+                "Cancellation",
+                "does not automatically bound",
+            ][..],
+        ),
+        (
+            "trait.PaginationController.html",
+            &[
+                "concurrent pagination operations",
+                "sensitive",
+                "logging and storage",
+                "metric cardinality",
+                "no external I/O",
+                "outside the per-page operation deadline",
+                "Cancellation",
+                "does not automatically bound",
+            ][..],
+        ),
+        (
+            "trait.HasNextCursor.html",
+            &[
+                "sensitive",
+                "logging and storage",
+                "metric cardinality",
+                "no external I/O",
+                "concurrent operations",
+                "outside the per-page operation deadline",
+                "cancellation",
+            ][..],
+        ),
+        (
+            "trait.RateLimiter.html",
+            &[
+                "Calls may overlap",
+                "potentially sensitive",
+                "logs and storage",
+                "metric cardinality",
+                "external I/O",
+                "operation deadline",
+                "cancellation",
+                "does not automatically bound",
+            ][..],
+        ),
+        (
+            "trait.RateLimitObserver.html",
+            &[
+                "Calls for independent responses may overlap",
+                "resolved rate keys",
+                "logging and storage",
+                "metric cardinality",
+                "external I/O",
+                "operation deadline",
+                "Cancellation",
+                "not automatically bounded",
+            ][..],
+        ),
+        (
+            "trait.RuntimeHooks.html",
+            &[
+                "Calls may overlap",
+                "operationally sensitive",
+                "logging and storage",
+                "metric cardinality",
+                "external I/O",
+                "outside that deadline",
+                "cancellation",
+                "does not automatically time-limit completion callbacks",
+            ][..],
+        ),
+        (
+            "struct.ProviderHttp.html",
+            &[
+                "separate managed provider client",
+                "finite body limits",
+                "credential operation deadline",
+                "Dropping the provider future",
+                "sensitive",
+                "logging and storage",
+            ][..],
+        ),
+    ];
     let prelude = std::fs::read_to_string(documentation.join("prelude/index.html"))
         .expect("ordinary prelude Rustdoc");
 
@@ -203,6 +405,56 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         );
     }
     for expected in [
+        "id=\"method.builder\"",
+        "id=\"method.path_segment\"",
+        "id=\"method.query\"",
+        "id=\"method.query_optional\"",
+        "id=\"method.query_values\"",
+        "id=\"method.header\"",
+        "id=\"method.body\"",
+        "id=\"method.body_codec\"",
+        "id=\"method.auth\"",
+        "id=\"method.timeout\"",
+        "id=\"method.disable_timeout\"",
+        "id=\"method.rate_limit\"",
+        "id=\"method.response\"",
+        "id=\"method.response_bytes\"",
+        "id=\"method.response_no_content\"",
+        "id=\"method.response_stream\"",
+        "id=\"method.build\"",
+        "exactly one URL-encoded path segment",
+        "Fields are intentionally private",
+    ] {
+        assert!(
+            prepared_pages.contains(expected),
+            "prepared Rustdoc omitted {expected:?}"
+        );
+    }
+    for forbidden in [
+        "id=\"method.paginate\"",
+        "id=\"method.raw_path\"",
+        "id=\"method.raw_response\"",
+        "PreparedRaw",
+        "PreparedPagination",
+    ] {
+        assert!(
+            !prepared_pages.contains(forbidden),
+            "prepared Rustdoc exposed prohibited capability {forbidden:?}"
+        );
+    }
+    for (name, expected) in extension_contracts {
+        let path = documentation.join("advanced").join(name);
+        let page = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+        let page = page.split_whitespace().collect::<Vec<_>>().join(" ");
+        for expected in expected {
+            assert!(
+                page.contains(expected),
+                "extension Rustdoc {name} omitted obligation {expected:?}"
+            );
+        }
+    }
+    for expected in [
         "id=\"method.granted\"",
         "id=\"method.from_parts\"",
         "id=\"method.total_bytes\"",
@@ -246,6 +498,12 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             && !prelude.contains("PaginationRequest"),
         "ordinary prelude pagination exports were not exact"
     );
+    assert!(
+        !prelude.contains("PreparedEndpoint")
+            && !prelude.contains("PreparedEndpointBuilder")
+            && !prelude.contains("PreparedNoContent"),
+        "ordinary prelude unexpectedly exported prepared endpoint contracts"
+    );
 
     for forbidden in [
         "MetadataResponse",
@@ -260,6 +518,8 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "NativeMultipartStream",
         "ManagedRequestStream",
         "StreamResponseHandler",
+        "PreparedResponseMarker",
+        "PreparedRequestBody",
     ] {
         assert!(
             [
@@ -273,6 +533,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
                 &paginated_request,
                 &pagination_pages,
                 &rate_pages,
+                &prepared_pages,
             ]
             .iter()
             .all(|page| !page.contains(forbidden)),

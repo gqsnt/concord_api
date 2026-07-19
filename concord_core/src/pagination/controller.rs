@@ -3,7 +3,17 @@ use std::num::{NonZeroU32, NonZeroU64};
 use super::{PaginationError, PaginationRequest};
 use crate::error::PaginationErrorKind;
 
-/// Deterministic synchronous control for one sequential pagination operation.
+/// Deterministic application-defined continuation state for one sequential pagination operation.
+///
+/// Controller values can be cloned and used by independent concurrent
+/// pagination operations, while calls within one operation remain sequential.
+/// Decoded pages and continuation values may be sensitive; implementations own
+/// their logging and storage and must bound CPU, memory, retries, maps, queues,
+/// spawned tasks, and metric cardinality; they must be non-blocking and perform
+/// no external I/O. Both callbacks are synchronous, execute outside the
+/// per-page operation deadline, and cannot be preempted by Concord. Cancellation
+/// prevents later pages only, and Concord does not automatically bound custom
+/// controller state or callback time.
 pub trait PaginationController<Page>: Clone + Send + Sync + 'static {
     /// Applies the current continuation to public query or header state.
     fn apply(&self, request: &mut PaginationRequest<'_>) -> Result<(), PaginationError>;
@@ -13,6 +23,13 @@ pub trait PaginationController<Page>: Clone + Send + Sync + 'static {
 }
 
 /// A decoded page that can expose an optional next cursor by reference.
+///
+/// The cursor and page may be sensitive. Implementations own logging and storage
+/// and must keep synchronous CPU, memory, retries, maps, queues, tasks, metric
+/// cardinality finite; the callback must be non-blocking and perform no external
+/// I/O. Calls cannot be preempted, may occur in independent concurrent
+/// operations, execute outside the per-page operation deadline, and stop only
+/// before later work when cancellation is observed.
 pub trait HasNextCursor<C> {
     /// Returns the next cursor, distinguishing an absent cursor from a present
     /// cursor whose value is empty.

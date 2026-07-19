@@ -9,6 +9,11 @@ use bytes::Bytes;
 use http::{Method, StatusCode};
 
 /// Declares one static, syntactically valid media type for a typed body mode.
+///
+/// The marker is shared across concurrent operations and has no runtime callback or sensitive
+/// input. Its constant must be non-sensitive and valid for every use; implementations must not
+/// rely on mutable global state. Concord validates the constant when preparing a request but does
+/// not manage application-owned state associated with the marker.
 pub trait MediaType: Send + Sync + 'static {
     /// Valid HTTP media type owned by the marker.
     const MEDIA_TYPE: &'static str;
@@ -37,9 +42,12 @@ pub struct EncodeContext<'a> {
 /// Encoding is synchronous, runs at most once for a pending execution, and
 /// begins only after `before_send` approves the request. Input may be
 /// sensitive. Implementors are trusted application extensions: they must
-/// bound their own CPU, memory, logging, and external side effects. Concord
-/// cannot preempt synchronous codec work, but checks the operation deadline
-/// immediately after it returns.
+/// bound their own CPU, memory, retries, maps, queues, spawned tasks, metric
+/// cardinality, logging, storage, and external I/O. Calls for independent
+/// operations may occur concurrently. Concord cannot preempt or cancel this
+/// synchronous work; it checks the operation deadline immediately after return,
+/// and cancellation prevents only later Concord work. Implementors own the
+/// confidentiality of input and all application logging or storage.
 pub trait EncodeBody: Send + Sync + 'static {
     /// Application value accepted by the generated endpoint.
     type Input: Send + 'static;
@@ -101,9 +109,13 @@ pub struct DecodeContext<'a> {
 /// Validation runs after known-length preflight and before body polling.
 /// Decoding runs synchronously only after complete bounded collection. The
 /// body may be sensitive. Implementors are trusted application extensions and
-/// must bound their CPU, memory, logging, and external side effects; Concord
-/// checks the operation deadline immediately after synchronous callbacks
-/// return.
+/// must bound their CPU, memory, retries, maps, queues, spawned tasks, metric
+/// cardinality, logging, storage, and external I/O. Calls for independent
+/// operations may occur concurrently. Concord cannot preempt or cancel these
+/// synchronous callbacks; it checks the operation deadline immediately after
+/// return, and cancellation prevents only later Concord work. Implementors own
+/// the confidentiality of body and context data and all application logging or
+/// storage.
 pub trait DecodeBody: Send + Sync + 'static {
     /// Value produced by the decoder.
     type Output: Send + 'static;

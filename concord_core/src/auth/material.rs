@@ -47,6 +47,15 @@ impl fmt::Debug for SecretString {
 }
 
 /// Credential material retained by a Concord credential slot.
+///
+/// Values may be cloned and read by overlapping credential operations. They are
+/// sensitive application-owned state: implementations are responsible for safe
+/// `Debug`/`Display`, logging, storage, retention, and destruction behavior.
+/// Synchronous methods cannot be preempted; implementations must bound CPU,
+/// memory, maps, queues, tasks, metric cardinality, retries, and external I/O and
+/// must not assume Concord supplies automatic limits for custom state. Concord
+/// checks operation deadlines around the credential lifecycle, while cancellation
+/// prevents later Concord work without rolling back completed extension effects.
 pub trait CredentialMaterial: Clone + Send + Sync + 'static {
     /// Returns the provider-declared expiration instant, when present.
     fn expires_at(&self) -> Option<Instant> {
@@ -55,6 +64,12 @@ pub trait CredentialMaterial: Clone + Send + Sync + 'static {
 }
 
 /// Single-string credential material suitable for bearer, header, or query placement.
+///
+/// `expose_secret` is invoked only at the native authentication boundary, but the
+/// implementation remains responsible for protecting the returned value in its
+/// own memory, logging, storage, metrics, and synchronous work. The concurrency,
+/// cancellation, deadline, and boundedness obligations of [`CredentialMaterial`]
+/// continue to apply.
 pub trait SecretCredential: CredentialMaterial {
     /// Explicitly exposes the value at the native authentication boundary.
     fn expose_secret(&self) -> &str;

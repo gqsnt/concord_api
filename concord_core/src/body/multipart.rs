@@ -10,7 +10,16 @@ use super::{BodyError, BodyErrorKind, StreamBody};
 ///
 /// `create` is called only after `before_send` approves the attempt. A factory
 /// implementation must return a new complete recipe on every call.
+///
+/// Calls for independent operations may overlap and occur only after the
+/// before-send hook approves an attempt. Multipart values and factory state may
+/// be sensitive; implementations own logging and storage and must bound CPU,
+/// memory, retries, maps, queues, spawned tasks, metric cardinality, and external
+/// I/O. The synchronous callback cannot be preempted by Concord; the operation
+/// deadline is checked after return, cancellation prevents later work only, and
+/// Concord does not automatically bound custom factory state.
 pub trait MultipartFactory: Send + Sync + 'static {
+    /// Creates one fresh multipart recipe suitable for a single Concord attempt.
     fn create(&self) -> Result<MultipartBody, BodyError>;
 }
 

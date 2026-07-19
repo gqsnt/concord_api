@@ -41,9 +41,85 @@ fn assert_fixture_fails_with(name: &str, expected: &str) {
     );
 }
 
+fn check_extension_fixture(arguments: &[&str], key: &str) -> Output {
+    let manifest = fixture_root().join("extension_certification/Cargo.toml");
+    check_manifest(
+        &workspace_root(),
+        &format!("macros/extension-certification-{key}"),
+        &manifest,
+        arguments,
+    )
+}
+
 #[test]
 fn renamed_core_dependency_resolves_through_package_metadata() {
     assert_fixture_passes("renamed_core");
+}
+
+#[test]
+fn complete_extension_fixture_compiles_through_public_namespaces_for_every_owned_feature_set() {
+    for (key, arguments) in [
+        ("default", vec!["--lib"]),
+        ("no-default", vec!["--lib", "--no-default-features"]),
+        (
+            "json",
+            vec!["--lib", "--no-default-features", "--features", "json"],
+        ),
+        (
+            "multipart",
+            vec!["--lib", "--no-default-features", "--features", "multipart"],
+        ),
+        (
+            "all-extension-features",
+            vec![
+                "--lib",
+                "--no-default-features",
+                "--features",
+                "json,multipart",
+            ],
+        ),
+    ] {
+        let output = check_extension_fixture(&arguments, key);
+        assert!(
+            output.status.success(),
+            "extension fixture `{key}` failed\n{}",
+            diagnostics(&output)
+        );
+    }
+}
+
+#[test]
+fn complete_extension_fixture_has_no_private_native_or_integration_escape() {
+    let path = fixture_root().join("extension_certification/src/lib.rs");
+    let source = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+    for forbidden in [
+        "__private",
+        "__development",
+        "reqwest",
+        "ClientCore",
+        "EndpointSpec",
+        "ResponseHandler",
+        "PreparedHead",
+        "ExecutionPlan",
+        "PaginatedEndpoint",
+        "downcast",
+        "unsafe {",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "extension fixture exposed prohibited surface `{forbidden}`"
+        );
+    }
+    for line in source
+        .lines()
+        .filter(|line| line.contains("concord_core::"))
+    {
+        assert!(
+            line.contains("concord_core::advanced") || line.contains("concord_core::prelude"),
+            "extension fixture imported an unapproved core namespace: {line}"
+        );
+    }
 }
 
 #[test]
@@ -148,6 +224,8 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
             "BodySpec",
             "StreamRequestBody",
             "StreamResponseHandler",
+            "PreparedResponseMarker",
+            "PreparedRequestBody",
             "ManagedRequestStream",
             "Replayability",
             "reqwest",
@@ -246,6 +324,7 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
         "protected secret input",
         "static API key (replace)",
         "Application native retry is disabled",
+        "stable advanced prepared endpoint",
     ] {
         assert!(
             client_page.contains(expected),
