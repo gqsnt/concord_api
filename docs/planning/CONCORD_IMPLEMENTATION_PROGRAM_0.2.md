@@ -361,8 +361,8 @@ The immutable final tested Phase 8 source/test commit is
 `8101a3ab8f281fe37aa9132327cc6c06f2c88d47`. All focused commands and all 16 maintained commands,
 including `just release`, passed against that exact source. The evidence/report/state commit is
 `4158969da33e6590e56a35fd98f6453e21b61fb1`; the documentation-only evidence anchor is
-`PENDING_PHASE_8_ANCHOR`. A later documentation-only descendant records the real anchor identity
-without replacing it.
+`a86ee6bd784f48fae3329e08aece367377d13919`. The later documentation-only metadata descendant
+records that real anchor identity without replacing it.
 
 The one generated request path now adds an opaque directly awaitable pagination wrapper, one sealed
 typed generated pagination specification, and one request-local sequential page state machine. Each

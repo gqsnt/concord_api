@@ -23,9 +23,9 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 - Previous evidence anchor: `1c1a1da8739daf13dacc43ea259ab8163e8835b3`
 - Phase 8 source/test commit: `8101a3ab8f281fe37aa9132327cc6c06f2c88d47`
 - Phase 8 evidence/report/state commit: `4158969da33e6590e56a35fd98f6453e21b61fb1`
-- Phase 8 evidence anchor: `PENDING_PHASE_8_ANCHOR`
-- Compatible post-anchor metadata descendant: the later report/controller-only commit that records
-  the real anchor identity and does not replace that anchor
+- Phase 8 evidence anchor: `a86ee6bd784f48fae3329e08aece367377d13919`
+- Compatible post-anchor metadata descendant: the final documentation-only commit with subject
+  `Record Phase 8 evidence anchor`; it records the real anchor identity and does not replace it
 - Authoritative source validation recorded: `2026-07-19T10:54:35Z`
 - Cumulative executable patch SHA-256:
   `6a99cded39cfca77f2ec84b6f5dce19f0f088185448b77560360e7214925d319`
@@ -41,8 +41,8 @@ one-requirement evidence rows, including five catalog/state audits.
 |---|---|---|
 | Source and tests | `8101a3ab8f281fe37aa9132327cc6c06f2c88d47` | Replaces proof-only pagination with the production public/generated contracts, typed request-local page loop, macro DSL/IR/generation, and deterministic focused proof. |
 | Evidence/report/state | `4158969da33e6590e56a35fd98f6453e21b61fb1` | Appends Phase 8 evidence, reconciles the 115 current coverage rows, records validation, completes Phase 8 planning, and advances controller state without executable changes. |
-| Evidence anchor | `PENDING_PHASE_8_ANCHOR` | Finalizes the evidence-state identity and audit time only; it changes no executable artifact, evidence ID, or classification. |
-| Anchor metadata descendant | later documentation-only commit | Records the real anchor hash in this report and `PROJECT_CONTROL.toml` while retaining `anchor-must-be-an-ancestor`. |
+| Evidence anchor | `a86ee6bd784f48fae3329e08aece367377d13919` | Finalizes the evidence-state identity and audit time only; it changes no executable artifact, evidence ID, or classification. |
+| Anchor metadata descendant | `Record Phase 8 evidence anchor` | Records the real anchor hash in current-state documentation while retaining `anchor-must-be-an-ancestor`. |
 
 No executable artifact changed after `8101a3ab8f281fe37aa9132327cc6c06f2c88d47`.
 
