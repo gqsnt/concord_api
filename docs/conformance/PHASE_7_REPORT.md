@@ -15,6 +15,7 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 
 ## Corrected immutable identities
 
+- Evidence-command correction starting HEAD: `d41a38bf35274d56793c135a858cd06962ea99e9`
 - Correction starting HEAD: `1290ebfba618c3394ed13964bb3f355a03035588`
 - Phase 7 implementation baseline: `6972d0e93fc52205d433c7b4abb3e5e0e6d32086`
 - Branch: `master`
@@ -29,8 +30,13 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 - Corrected immutable tested source/test commit:
   `c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9`
 - Preliminary corrected evidence state: `7b1373f82b33e36325047643d735b2e15bb5a4bc`
-- Corrected evidence/report/state commit: `cb4640d4d4e21528c8e38f8104785e2c3ceac883`
-- Corrected evidence anchor: `def42b74663df7b36755f61b8348d26449cce6ff`
+- Superseded command-incomplete evidence/report/state:
+  `cb4640d4d4e21528c8e38f8104785e2c3ceac883`
+- Superseded command-incomplete evidence anchor:
+  `def42b74663df7b36755f61b8348d26449cce6ff`
+- Evidence-command-corrected evidence/report/state commit:
+  `PENDING_PHASE_7_EVIDENCE_STATE`
+- Evidence-command-corrected anchor: `PENDING_PHASE_7_CORRECTED_ANCHOR`
 - Compatible post-anchor metadata descendant: the later documentation-only commit that records the
   real corrected anchor identity; it does not replace that anchor
 - Authoritative source validation completed: `2026-07-19T06:03:21Z`
@@ -42,7 +48,10 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 The ignored Phase 7 product contract map is `git_diff/phase-7-contract-map.md` and traces 98
 Phase 7 coverage requirements. The correction's ignored semantic map is
 `git_diff/phase-7-semantic-evidence-map.tsv` and contains exactly 100 unique evidence-to-clause
-traces. The ignored validation ledger is `git_diff/phase-7-correction-validation-log.md`.
+traces. Its strengthened claim-atom map is `git_diff/phase-7-semantic-claim-atoms.tsv` and contains
+181 independent claims. The immutable-source validation ledger is
+`git_diff/phase-7-correction-validation-log.md`; the focused evidence-command correction ledger is
+`git_diff/phase-7-evidence-command-correction-validation-log.md`.
 
 ## Correction chain
 
@@ -52,8 +61,10 @@ traces. The ignored validation ledger is `git_diff/phase-7-correction-validation
 | Key-limit correction | `8e3b1589ebf598c1850f273070cbc528b2dce66e` | Unified configured governor key limits at protected preparation and governor insertion; added exact lifecycle, API, parser, privacy, and redaction tests. |
 | Validation correction | `c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9` | Serialized shared-directory Trybuild cases without skipping, retrying, or weakening a test. |
 | Preliminary evidence state | `7b1373f82b33e36325047643d735b2e15bb5a4bc` | Established the clause-level rows; a strengthened audit then found 24 plural-owner coverage milestones rendered as `P7-partial-`. |
-| Corrected evidence/state | `cb4640d4d4e21528c8e38f8104785e2c3ceac883` | Replaces all 100 Phase 7 rows with clause-accurate traces, reconciles 98 coverage rows, this report, planning, and controller state. |
-| Corrected anchor | `def42b74663df7b36755f61b8348d26449cce6ff` | Finalizes the known evidence-state identity and audit time only; changes no executable artifact or evidence classification. |
+| Superseded corrected evidence/state | `cb4640d4d4e21528c8e38f8104785e2c3ceac883` | Established the current classifications, but retained command-to-claim mismatches in a subset of Phase 7 rows. |
+| Superseded corrected anchor | `def42b74663df7b36755f61b8348d26449cce6ff` | Anchored the superseded command-incomplete evidence state. |
+| Evidence-command-corrected state | `PENDING_PHASE_7_EVIDENCE_STATE` | Aligns every Phase 7 factual assertion and proof surface with commands that directly establish it; updates report, planning, and controller state without changing executable artifacts. |
+| Evidence-command-corrected anchor | `PENDING_PHASE_7_CORRECTED_ANCHOR` | Finalizes the new evidence-state identity and audit time only; changes no executable artifact or evidence classification. |
 | Anchor metadata descendant | later documentation-only commit | Records the real corrected anchor hash in the controller/report and retains `anchor-must-be-an-ancestor`. |
 
 The first authoritative `just test-all` at `8e3b1589` passed 504 of 505 tests but exposed a real
@@ -70,6 +81,35 @@ require the exact owner taxonomy; the final 98-row split is 59 direct, 11 `P7-pa
 `P7-partial-P10`.
 
 No executable artifact changed after `c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9`.
+
+## Evidence-command alignment correction
+
+A second human source-grounded review found that several otherwise accurate rows named a command
+that proved only part of the row's factual assertion. Examples included positive plan inspection
+without the context-exclusion UI proof, rendered governor documentation without the fresh-burst
+eviction test, feature-method availability without an exact default-feature manifest audit, and
+`just deny` without a direct normal/build dependency inspection. Broad release validation remained
+supporting evidence but was not accepted as a substitute for an exact behavioral, UI, Rustdoc,
+manifest, or dependency proof.
+
+All 100 Phase 7 rows were therefore decomposed into 181 independent claim atoms. Each proved atom
+names a path present in the row and a command present in the row; each command has a passing entry
+in either the immutable-source ledger or the focused correction ledger. The 39 unresolved atoms
+belong one-for-one to the 39 partial rows and name their exact Phase 8, 9, or 10 owner. The
+strengthened audit checks these atom relationships in addition to IDs, labels, ancestry, paths,
+historical preservation, coverage, and cross-document counts.
+
+The focused structured manifest audit first proves that all five inspected manifests are
+byte-identical to the immutable source commit, then runs
+`cargo metadata --format-version 1 --no-deps --offline --locked`. It directly proves the exact core
+default feature set, mandatory non-optional Reqwest ownership, core-only runtime feature ownership,
+macro graph independence, absence of prohibited direct normal/build dependencies, and explicit
+compatible dependency requirements without wildcard, Git, or alternate-registry sources. Five
+focused existing tests were also executed for poisoned-state fail-closed behavior, no-default
+generated custom limiting, no-governor fallback behavior, equivalent-bucket atomic accounting, and
+bounded-state eviction with a fresh burst. No source, test, manifest, lockfile, generated contract,
+fixture, or validation configuration changed, so the authoritative Rust matrix remained valid and
+was not rerun.
 
 ## Configured key-limit defect and repair
 
@@ -159,7 +199,7 @@ generated-contract change.
 
 ## Focused validation
 
-All 62 unique clause-proof commands recorded in the corrected Phase 7 evidence rows ran from
+The immutable validation ledger retains all 62 original unique clause-proof commands run from
 `F:\projects\concord_api` against
 `c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9`, with the exact features written in each command and
 exit status 0. They comprise:
@@ -173,17 +213,20 @@ exit status 0. They comprise:
   ownership and renamed dependency;
 - `just deny` and the exact macro normal/build dependency-tree exclusion assertion.
 
-The exact command text, UTC start/finish, working directory, feature configuration, tested commit,
-exit status, and concise output for every command are retained in the ignored validation ledger and
-the exact command text is durable in `CONFORMANCE_EVIDENCE_0.1.csv`. Key correction results were
+The corrected evidence rows use those passing commands plus the focused structured metadata audit
+and five focused existing test invocations recorded in the evidence-command correction ledger.
+Every command component in a Phase 7 `exact_test` field now has a passing ledger entry. The exact
+command text is durable in `CONFORMANCE_EVIDENCE_0.1.csv`. Key source-correction results were
 4/4 for the combined boundary/snapshot/governor proof, 1/1 for the complete protected-side-effect
 cutoff, 5/5 for all-feature advanced API, 4/4 for no-default advanced API, 1/1 for rendered
 Rustdoc privacy, 7/7 for generated Phase 7 behavior in each applicable graph, and 21/21 for the
 serialized macro UI binary.
 
-## Complete maintained validation
+## Preserved complete maintained validation
 
-Every maintained command ran from `F:\projects\concord_api` against the same immutable commit:
+Every maintained command previously ran from `F:\projects\concord_api` against the same immutable
+commit. This evidence-only correction changed no executable artifact, so these commands were not
+rerun:
 
 | Exact command | Configuration | Result |
 |---|---|---|
@@ -223,39 +266,46 @@ requirement ID
 → direct or precise later-phase partial classification
 ```
 
-Every row's clause statement, exact proof, immutable commit, and source/test paths were corrected,
-so the corrected set is all of:
+The earlier clause audit established the 100-row classification set. This command-level correction
+changed the assertion, exact command, exact path, verification metadata, or evidence-state
+self-reference of these 48 rows:
 
 ```text
-P7-DSL-001..013
-P7-API-001..008
-P7-GEN-001..006
-P7-SEC-001..005
-P7-BOUND-001..008
-P7-EXEC-001..025
-P7-FEAT-001..006
-P7-COMPAT-001..006
-P7-PROD-001..005
-P7-CONF-001..013
-P7-AUDIT-001..005
+P7-DSL-006 P7-DSL-008 P7-DSL-010
+P7-API-002 P7-API-004 P7-API-006 P7-API-007 P7-API-008
+P7-GEN-001 P7-GEN-002 P7-GEN-003 P7-GEN-004
+P7-SEC-002 P7-SEC-003 P7-SEC-004 P7-BOUND-007
+P7-EXEC-001 P7-EXEC-002 P7-EXEC-008 P7-EXEC-009 P7-EXEC-022 P7-EXEC-025
+P7-FEAT-001 P7-FEAT-002 P7-FEAT-003 P7-FEAT-004 P7-FEAT-005 P7-FEAT-006
+P7-COMPAT-001 P7-COMPAT-002 P7-COMPAT-005 P7-COMPAT-006
+P7-PROD-001 P7-PROD-002 P7-PROD-003 P7-PROD-004
+P7-CONF-003 P7-CONF-004 P7-CONF-005 P7-CONF-006 P7-CONF-008 P7-CONF-010
+P7-CONF-013
+P7-AUDIT-001 P7-AUDIT-002 P7-AUDIT-003 P7-AUDIT-004 P7-AUDIT-005
 ```
 
-The three classification changes are `P7-EXEC-004` direct to partial because Phase 8 owns
+The other 52 Phase 7 rows retain their accurate requirement, classification, assertion, paths, and
+commands. The correction changes no direct/partial classification.
+
+The earlier clause correction's three classification changes are `P7-EXEC-004` direct to partial
+because Phase 8 owns
 pagination-controller construction, `P7-EXEC-005` partial to direct because client construction's
 network-free clause is fully proved, and `P7-FEAT-002` direct to partial because Phase 9 owns the
 public dynamically introduced prepared-endpoint plan clause.
 
-Final totals are 100 rows: 61 direct and 39 partial. The 95 immutable source/test rows are 57
-direct and 38 partial. The five evidence-state audits are four direct and one partial. The 98
-Phase 7 coverage rows are 59 direct and 39 partial. The full catalog remains 1,068 rows, and all
+Final totals are 100 rows: 61 direct and 39 partial. The immutable source catalog has 95
+source/test rows (57 direct, 38 partial). The five evidence-state audits are four direct and one
+partial. The 98 Phase 7 coverage rows are 59 direct and 39 partial. The full catalog remains 1,068
+rows, and all
 968 Phase 0-6 actual-evidence rows remain byte-identical and in their original order. Coverage
 still maps all 504 normative IDs exactly once and keeps `PLAN-*` planning distinct from actual
 passing evidence.
 
 The semantic audit additionally checks exact commit ancestry, approved labels, artifact existence,
-test-function presence in recorded paths, partial owners, coverage agreement, counts, report,
-program, and controller state. Audit rows are finalized by the corrected documentation anchor
-under the established evidence-state self-reference procedure.
+test-function presence in recorded paths, assertion-to-atom coverage, atom-to-row command and path
+membership, passing-log membership, partial owners, coverage agreement, counts, report, program,
+and controller state. Audit rows are finalized by the new documentation anchor under the
+established evidence-state self-reference procedure.
 
 ## Requirement trace groups
 
@@ -315,6 +365,8 @@ closure. No Phase 8 or later product capability was implemented by this correcti
 - Tests use deterministic barriers, paused/controlled time, explicit counters, and local protocol
   servers; no timing sleep is used as concurrency or cooldown proof.
 - No test was deleted, ignored, retried away, weakened, or reclassified to hide a failure.
+- This evidence-command correction changes only the five approved documentation/catalog paths and
+  requires no complete Rust matrix rerun.
 - Historical reports and Phase 0-6 evidence are unchanged.
 - Phase 8 remains the active planning entry with status `NOT_STARTED`.
 

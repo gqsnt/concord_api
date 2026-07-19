@@ -39,8 +39,8 @@ correction_source_commits = [
 ]
 post_source_governance_commit = ""
 preliminary_evidence_commit = "7b1373f82b33e36325047643d735b2e15bb5a4bc"
-evidence_commit = "cb4640d4d4e21528c8e38f8104785e2c3ceac883"
-anchor_commit = "def42b74663df7b36755f61b8348d26449cce6ff"
+evidence_commit = "PENDING_PHASE_7_EVIDENCE_STATE"
+anchor_commit = "PENDING_PHASE_7_CORRECTED_ANCHOR"
 phase_report = "docs/conformance/PHASE_7_REPORT.md"
 normative_status = "Normative Implementation Candidate"
 head_policy = "anchor-must-be-an-ancestor"

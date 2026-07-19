@@ -27,7 +27,7 @@ an execution queue because several foundations were delivered in a different ord
 | Phase 4 | `PHASE_4_COMPLETE_WITH_LIMITATIONS` | One finite body architecture now covers buffered values, lazy request streams, reconstructible factories, inferred replayability, lazy typed response streams, and feature-gated request multipart. Generated `Stream<M>`/`Multipart` markers, Reqwest-owned multipart framing, stream-open completion, cancellation, no-default support, and maintained independent dangerous-feature isolation all use the existing request executor. | Forty-six source rows and one audit row remain partial where their text also requires Phase 5 shaping, Phase 6 recovery/providers, Phase 7 limiter behavior, Phase 8 pagination, Phase 9 prepared endpoints/extension certification, or Phase 10 raw successful responses and release-wide grammar, security, documentation, platform, and evidence closure. |
 | Phase 5 | `PHASE_5_COMPLETE_WITH_LIMITATIONS` | One normalized compiler and generated runtime now support multiple clients, root endpoints, nested scopes, required/optional/default client-scope-endpoint values, immutable snapshots, sealed request extension traits through generated preludes, explicit endpoint parity, host/path/ordered-query/public-header shaping, timeout/retry, all standard methods, custom methods, aliases, and deterministic names on the existing first-poll executor. | Seventy-three source requirements and one audit row remain partial for complete compound clauses owned by Phase 6 credentials/auth/providers/recovery, Phase 7 limiting, Phase 8 pagination, Phase 9 prepared endpoints/extension certification, or Phase 10 positive raw success and release-wide closure. An independent controller correction reclassified 18 Phase 5 rows without changing product source. |
 | Phase 6 | `PHASE_6_COMPLETE_WITH_LIMITATIONS` | The one generated request path now supports all six credential sources, typed public and generated authentication contracts, bounded single-flight credential state, source-aware preflight/finalization/native materialization, isolated finite provider HTTP, JSON-owned OAuth2 client credentials, and at most one complete recovery attempt with the same identity and deadline. | Forty-six source rows and one audit row remain partial only for compound clauses owned by Phase 7 limiting, Phase 8 pagination, Phase 9 prepared endpoints/extension certification, or Phase 10 positive raw success and release-wide closure. The private no-op limiter seam is not Phase 7 evidence. |
-| Phase 7 | `PHASE_7_COMPLETE_WITH_LIMITATIONS` | The existing generated request path now supports exact rate-limit DSL composition, stable advanced limiter contracts, immutable generated plans, a bounded process-local governor, custom and explicit no-op limiters, fail-closed no-governor behavior, deadline/cancellation-safe per-attempt acquisition, response-head cooldown observation, and real recovery/Retry-After integration. | Thirty-seven source rows and one audit row remain partial only for compound clauses owned by Phase 8 pagination, Phase 9 prepared endpoints/extension certification, or Phase 10 positive raw success and release-wide closure. |
+| Phase 7 | `PHASE_7_COMPLETE_WITH_LIMITATIONS` | The existing generated request path now supports exact rate-limit DSL composition, stable advanced limiter contracts, immutable generated plans, a bounded process-local governor, custom and explicit no-op limiters, fail-closed no-governor behavior, deadline/cancellation-safe per-attempt acquisition, response-head cooldown observation, and real recovery/Retry-After integration. | Thirty-eight source/test rows and one audit row remain partial only for compound clauses owned by Phase 8 pagination, Phase 9 prepared endpoints/extension certification, or Phase 10 positive raw success and release-wide closure. |
 
 Phase reports remain the detailed evidence owners:
 
@@ -288,13 +288,23 @@ bound at protected preparation and governor insertion. Correction commit
 maintained all-feature matrix exposed a concrete concurrent fixture replacement.
 
 All 62 exact focused commands and all 16 maintained commands, including `just release`, passed
-from the beginning against `c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9`. The corrected
-evidence/report/state commit is `cb4640d4d4e21528c8e38f8104785e2c3ceac883`; preliminary evidence state
+from the beginning against `c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9`. Evidence/report/state commit
+`cb4640d4d4e21528c8e38f8104785e2c3ceac883` and anchor
+`def42b74663df7b36755f61b8348d26449cce6ff` are superseded because their rows retained several
+command-to-claim mismatches. The evidence-command-corrected evidence/report/state commit is
+`PENDING_PHASE_7_EVIDENCE_STATE`. Preliminary evidence state
 `7b1373f82b33e36325047643d735b2e15bb5a4bc` was superseded after the strengthened semantic audit
 found 24 incomplete plural-owner coverage milestones. The documentation-only corrected
 anchor is `PENDING_PHASE_7_CORRECTED_ANCHOR`. A later documentation-only descendant records the
 real anchor hash and does not replace that anchor. Exact classifications, commands, results,
 traces, and remaining limitations are in `docs/conformance/PHASE_7_REPORT.md`.
+
+The evidence-command correction changes no executable artifact. It atomizes all 100 Phase 7 rows
+into 181 independent claims, aligns every proof assertion with an exact path and passing command,
+and adds a structured source-identity/manifest/dependency audit plus five focused executions of
+existing tests. The complete Rust matrix remains the authoritative immutable-source ledger and was
+not rerun. Counts remain 61 direct and 39 partial overall: 57 direct and 38 partial source/test
+rows, plus four direct and one partial evidence-state audit rows.
 
 The production direct-attempt path is now:
 
