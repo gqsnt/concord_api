@@ -2227,6 +2227,10 @@ mod tests {
                 "must not exceed any window capacity",
             ),
             (
+                quote! { client Api { base "https://example.test"; rate_limits { q { by []; cost 2; 100 / 1s; 1 / 1m; } } } },
+                "must not exceed any window capacity",
+            ),
+            (
                 quote! { client Api { base "https://example.test"; rate_limits { q { by ["tenant"]; 1 / 1s; } } } },
                 "string literals are not valid",
             ),

@@ -1,3 +1,4 @@
+use std::any::Any;
 #[cfg(not(feature = "rate-limit-governor"))]
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -11,6 +12,23 @@ use crate::hooks::BoxFuture;
 use crate::redaction::{SanitizedHeaderValue, SanitizedHeaders};
 
 use super::{RateLimitError, RateLimitPermit, RateLimitPlan};
+
+pub(crate) const DEFAULT_KEY_LIMIT: usize = 1_024;
+
+mod private {
+    use super::Any;
+
+    #[doc(hidden)]
+    pub trait RateLimiterMetadata {
+        fn as_any(&self) -> &dyn Any;
+    }
+
+    impl<T: Any> RateLimiterMetadata for T {
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+    }
+}
 
 /// Safe request metadata supplied to a selected rate limiter.
 pub struct RateLimitRequest<'a> {
@@ -44,7 +62,11 @@ pub struct RateLimitResponse<'a> {
 /// state and must treat resolved plan keys as potentially sensitive. Custom
 /// implementations are responsible for protecting those values in their own
 /// logs and storage.
-pub trait RateLimiter: Send + Sync + 'static {
+#[allow(
+    private_bounds,
+    reason = "a blanket private metadata bound preserves external implementations while keeping runtime selection metadata out of the public contract"
+)]
+pub trait RateLimiter: private::RateLimiterMetadata + Send + Sync + 'static {
     /// Acquires authority for exactly one visible Concord attempt.
     fn acquire<'a>(
         &'a self,
@@ -55,6 +77,18 @@ pub trait RateLimiter: Send + Sync + 'static {
     fn observe<'a>(&'a self, _response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
         Box::pin(async {})
     }
+}
+
+pub(crate) fn preparation_key_limit(_limiter: &dyn RateLimiter) -> usize {
+    #[cfg(feature = "rate-limit-governor")]
+    if let Some(governor) = _limiter
+        .as_any()
+        .downcast_ref::<super::GovernorRateLimiter>()
+    {
+        return governor.preparation_key_limit();
+    }
+
+    DEFAULT_KEY_LIMIT
 }
 
 /// The future-acquisition scope of an observed cooldown.

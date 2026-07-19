@@ -20,6 +20,7 @@ pub use types::{
 
 #[cfg(not(feature = "rate-limit-governor"))]
 pub(crate) use limiter::fallback_limiter;
+pub(crate) use limiter::preparation_key_limit;
 
 use std::sync::Arc;
 use std::time::Duration;

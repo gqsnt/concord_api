@@ -17,6 +17,23 @@ impl RateLimiter for CustomLimiter {
         &'a self,
         request: RateLimitRequest<'a>,
     ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
+        for rule in request.plan.rules() {
+            let _ = (
+                rule.id().as_str(),
+                rule.key().is_global(),
+                rule.key().total_bytes(),
+                rule.key()
+                    .parts()
+                    .iter()
+                    .map(|part| (part.name(), part.value()))
+                    .collect::<Vec<_>>(),
+                rule.cost(),
+                rule.windows()
+                    .iter()
+                    .map(|window| (window.capacity(), window.duration()))
+                    .collect::<Vec<_>>(),
+            );
+        }
         let _ = (
             request.endpoint,
             request.method,
@@ -48,6 +65,21 @@ struct CustomObserver;
 
 impl RateLimitObserver for CustomObserver {
     fn observe(&self, response: &RateLimitResponseHead<'_>) -> Option<Cooldown> {
+        for rule in response.plan.rules() {
+            let _ = (
+                rule.id().as_str(),
+                rule.key()
+                    .parts()
+                    .iter()
+                    .map(|part| (part.name(), part.value()))
+                    .collect::<Vec<_>>(),
+                rule.cost(),
+                rule.windows()
+                    .iter()
+                    .map(|window| (window.capacity(), window.duration()))
+                    .collect::<Vec<_>>(),
+            );
+        }
         let _ = (
             response.endpoint,
             response.method,
@@ -70,6 +102,46 @@ fn configure_limiter(
     limiter: Arc<dyn RateLimiter>,
 ) -> RuntimeConfigBuilder {
     builder.rate_limiter(limiter)
+}
+
+fn observe_without_replacement<'a>(
+    limiter: &'a dyn RateLimiter,
+    response: RateLimitResponse<'a>,
+) -> BoxFuture<'a, ()> {
+    limiter.observe(response)
+}
+
+#[test]
+fn custom_observation_contract_returns_only_completion() {
+    let _: for<'a> fn(&'a dyn RateLimiter, RateLimitResponse<'a>) -> BoxFuture<'a, ()> =
+        observe_without_replacement;
+}
+
+#[test]
+fn extensions_construct_opaque_permits_and_typed_key_safe_errors() {
+    let _permit = RateLimitPermit::granted();
+    for kind in [
+        RateLimitErrorKind::InvalidConfiguration,
+        RateLimitErrorKind::InvalidKey,
+        RateLimitErrorKind::Acquire,
+        RateLimitErrorKind::Internal,
+    ] {
+        let error = RateLimitError::new(kind);
+        assert_eq!(error.kind(), kind);
+        assert!(error.source().is_none());
+    }
+    let safe = RateLimitError::with_safe_message(
+        RateLimitErrorKind::Acquire,
+        "operator-approved safe limiter message",
+    );
+    assert_eq!(safe.kind(), RateLimitErrorKind::Acquire);
+    assert!(safe.source().is_none());
+}
+
+#[test]
+fn custom_extensions_compile_with_body_free_plan_inspection() {
+    let _: Arc<dyn RateLimiter> = Arc::new(CustomLimiter);
+    let _: Arc<dyn RateLimitObserver> = Arc::new(CustomObserver);
 }
 
 #[test]

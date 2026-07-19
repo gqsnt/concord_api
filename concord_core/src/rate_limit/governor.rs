@@ -1,4 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
+#[cfg(test)]
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -9,13 +11,12 @@ use crate::hooks::BoxFuture;
 use super::{
     Cooldown, CooldownScope, DefaultRateLimitObserver, RateLimitError, RateLimitObserver,
     RateLimitPermit, RateLimitPlan, RateLimitRequest, RateLimitResponse, RateLimitResponseHead,
-    RateLimiter, observation_cooldown_cap,
+    RateLimiter, limiter::DEFAULT_KEY_LIMIT, observation_cooldown_cap,
 };
 
 const DEFAULT_QUOTA_CAPACITY: usize = 4_096;
 const DEFAULT_COOLDOWN_CAPACITY: usize = 4_096;
 const DEFAULT_IDLE_TTL: Duration = Duration::from_secs(15 * 60);
-const DEFAULT_KEY_LIMIT: usize = 1_024;
 const NANOS_PER_SECOND: u128 = 1_000_000_000;
 
 /// A bounded best-effort process-local pacing limiter.
@@ -32,6 +33,8 @@ pub struct GovernorRateLimiter {
     observer: Arc<dyn RateLimitObserver>,
     state: Mutex<GovernorState>,
     internal_failed: AtomicBool,
+    #[cfg(test)]
+    acquisition_calls: AtomicUsize,
 }
 
 struct GovernorConfig {
@@ -59,6 +62,8 @@ impl GovernorRateLimiter {
             observer: Arc::new(DefaultRateLimitObserver),
             state: Mutex::new(GovernorState::new()),
             internal_failed: AtomicBool::new(false),
+            #[cfg(test)]
+            acquisition_calls: AtomicUsize::new(0),
         }
     }
 
@@ -102,6 +107,20 @@ impl GovernorRateLimiter {
     pub fn key_limit(mut self, bytes: usize) -> Result<Self, RateLimitError> {
         self.config.key_limit = bytes;
         Ok(self)
+    }
+
+    pub(crate) const fn preparation_key_limit(&self) -> usize {
+        self.config.key_limit
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_acquisition_count(&self) -> usize {
+        self.acquisition_calls.load(AtomicOrdering::SeqCst)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_quota_entry_count(&self) -> usize {
+        self.state.lock().expect("governor state").quota.len()
     }
 
     fn acquire_loop<'a>(
@@ -233,6 +252,8 @@ impl RateLimiter for GovernorRateLimiter {
         &'a self,
         request: RateLimitRequest<'a>,
     ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
+        #[cfg(test)]
+        self.acquisition_calls.fetch_add(1, AtomicOrdering::SeqCst);
         self.acquire_loop(request)
     }
 
@@ -1447,6 +1468,43 @@ mod tests {
         assert_eq!(error.kind(), RateLimitErrorKind::InvalidKey);
         assert!(!error.to_string().contains(KEY_SENTINEL));
         assert!(!format!("{error:?}").contains(KEY_SENTINEL));
+    }
+
+    #[tokio::test]
+    async fn configured_key_limit_revalidates_before_governor_state_insertion() {
+        const KEY_SENTINEL: &str = "configured-governor-key-private-781d32";
+        let limit = "tenant".len() + KEY_SENTINEL.len() - 1;
+        let limiter = GovernorRateLimiter::new()
+            .key_limit(limit)
+            .expect("configured key limit");
+        let keyed = plan(vec![rule(
+            "keyed",
+            KEY_SENTINEL,
+            1,
+            &[(1, Duration::from_secs(1))],
+        )]);
+        let error = rate_error(
+            limiter
+                .acquire(RateLimitRequest {
+                    endpoint: "RateApi::get",
+                    method: &Method::GET,
+                    safe_url: "https://example.test/get",
+                    host: Some("example.test"),
+                    page_index: 0,
+                    plan: &keyed,
+                })
+                .await,
+            "oversized configured key unexpectedly granted",
+        );
+        assert_eq!(error.kind(), RateLimitErrorKind::InvalidKey);
+        assert_eq!(limiter.test_acquisition_count(), 1);
+        assert_eq!(limiter.test_quota_entry_count(), 0);
+        let mut source: Option<&(dyn std::error::Error + 'static)> = Some(&error);
+        while let Some(current) = source {
+            assert!(!current.to_string().contains(KEY_SENTINEL));
+            assert!(!format!("{current:?}").contains(KEY_SENTINEL));
+            source = current.source();
+        }
     }
 
     #[test]

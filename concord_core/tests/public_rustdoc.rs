@@ -148,6 +148,8 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "BucketKey",
         "OBSERVATION_COOLDOWN_CAP",
         "fallback_limiter",
+        "as_any",
+        "preparation_key_limit",
         "rate-key-rustdoc-sentinel-64c2e9",
     ] {
         assert!(

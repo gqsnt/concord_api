@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::hooks::{DebugLevel, RuntimeHooks, default_hooks};
-use crate::rate_limit::{RateLimitObserver, RateLimiter};
+use crate::rate_limit::{RateLimitObserver, RateLimiter, preparation_key_limit};
 
 const MIB: usize = 1_048_576;
 const KIB: usize = 1_024;
@@ -37,6 +37,8 @@ pub struct RuntimeConfigBuilder {
 impl RuntimeConfigBuilder {
     #[allow(dead_code, reason = "initialized by later generated client builders")]
     pub(crate) fn new() -> Self {
+        let rate_limiter = default_rate_limiter();
+        let rate_limit_key_limit = preparation_key_limit(rate_limiter.as_ref());
         Self {
             config: RuntimeConfig {
                 request_body_limit: nonzero_usize(16 * MIB),
@@ -51,8 +53,8 @@ impl RuntimeConfigBuilder {
                 pagination_identity_limit: nonzero_usize(4 * MIB),
                 auth_failure_cooldown_cap: Duration::from_secs(60),
                 rate_limit_cooldown_cap: Duration::from_secs(60),
-                rate_limit_key_limit: KIB,
-                rate_limiter: default_rate_limiter(),
+                rate_limit_key_limit,
+                rate_limiter,
                 hooks: default_hooks(),
                 debug: DebugLevel::None,
             },
@@ -147,6 +149,7 @@ impl RuntimeConfigBuilder {
     /// Replaces the immutable limiter shared by the built client and its clones.
     #[must_use]
     pub fn rate_limiter(mut self, limiter: Arc<dyn RateLimiter>) -> Self {
+        self.config.rate_limit_key_limit = preparation_key_limit(limiter.as_ref());
         self.config.rate_limiter = limiter;
         self.rate_limiter_explicit = true;
         self
@@ -200,9 +203,11 @@ impl RuntimeConfigBuilder {
         {
             let _ = requires_limiter;
             let mut builder = self;
-            builder.config.rate_limiter = Arc::new(
+            let limiter: Arc<dyn RateLimiter> = Arc::new(
                 crate::rate_limit::GovernorRateLimiter::new().observer(Arc::new(O::default())),
             );
+            builder.config.rate_limit_key_limit = preparation_key_limit(limiter.as_ref());
+            builder.config.rate_limiter = limiter;
             Ok(builder)
         }
         #[cfg(not(feature = "rate-limit-governor"))]
@@ -260,7 +265,35 @@ mod tests {
         assert_eq!(config.pagination_identity_limit.get(), 4 * MIB);
         assert_eq!(config.auth_failure_cooldown_cap, Duration::from_secs(60));
         assert_eq!(config.rate_limit_cooldown_cap, Duration::from_secs(60));
+        assert_eq!(config.rate_limit_key_limit, KIB);
         assert_eq!(config.debug, DebugLevel::None);
+    }
+
+    #[cfg(feature = "rate-limit-governor")]
+    #[test]
+    fn selected_governor_and_preparation_limit_form_one_runtime_snapshot() {
+        for limit in [0, 16, KIB, 2 * KIB] {
+            let governor = Arc::new(
+                crate::rate_limit::GovernorRateLimiter::new()
+                    .key_limit(limit)
+                    .expect("configured key limit"),
+            );
+            let limiter: Arc<dyn RateLimiter> = governor.clone();
+            let config = RuntimeConfigBuilder::new()
+                .rate_limiter(Arc::clone(&limiter))
+                .resolve();
+            assert_eq!(config.rate_limit_key_limit, limit);
+            assert!(Arc::ptr_eq(&config.rate_limiter, &limiter));
+            assert_eq!(governor.test_acquisition_count(), 0);
+            assert_eq!(governor.test_quota_entry_count(), 0);
+        }
+
+        let noop: Arc<dyn RateLimiter> = Arc::new(crate::rate_limit::NoopRateLimiter::new());
+        let config = RuntimeConfigBuilder::new()
+            .rate_limiter(Arc::clone(&noop))
+            .resolve();
+        assert_eq!(config.rate_limit_key_limit, KIB);
+        assert!(Arc::ptr_eq(&config.rate_limiter, &noop));
     }
 
     #[test]

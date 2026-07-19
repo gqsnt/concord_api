@@ -29,6 +29,8 @@ use crate::hooks::{
 use crate::http::HttpConfigBuilder;
 use crate::http::provider::{ProviderBody, ProviderRequest};
 use crate::operation::OperationId;
+#[cfg(feature = "rate-limit-governor")]
+use crate::rate_limit::GovernorRateLimiter;
 use crate::rate_limit::{
     RateLimitError, RateLimitKeyPart, RateLimitPermit, RateLimitRequest, RateLimitResponse,
     RateLimiter,
@@ -1805,8 +1807,12 @@ async fn default_never_preserves_static_material_and_query_auth_exists_only_in_n
     assert!(!format!("{query_capture:?}").contains(INITIAL));
 }
 
+#[cfg(feature = "rate-limit-governor")]
 #[tokio::test]
-async fn oversized_rate_key_precedes_hook_body_credentials_limiter_and_send() {
+async fn configured_key_limit_failure_cuts_off_every_protected_side_effect_and_redacts_key() {
+    const KEY_SENTINEL: &str = "configured-key-private-73cf9a0d";
+    const KEY_LIMIT: usize = 64;
+    const KEY_PART_NAME_BYTES: usize = "vars.tenant".len();
     let executor = DeterministicExecutor::new();
     let provider_calls = Arc::new(AtomicUsize::new(0));
     let selector = SlotSelector::provider(
@@ -1817,16 +1823,23 @@ async fn oversized_rate_key_precedes_hook_body_credentials_limiter_and_send() {
     );
     let body_calls = Arc::new(AtomicUsize::new(0));
     let hooks = Arc::new(AuthHooks::default());
-    let limiter_acquires = Arc::new(AtomicUsize::new(0));
-    let limiter: Arc<dyn RateLimiter> = Arc::new(AuthRateLimiter::counting(
-        &limiter_acquires,
-        &Arc::new(AtomicUsize::new(0)),
-    ));
+    let governor = Arc::new(
+        GovernorRateLimiter::new()
+            .key_limit(KEY_LIMIT)
+            .expect("configured key limit"),
+    );
+    let limiter: Arc<dyn RateLimiter> = governor.clone();
     let (core, debug) = core_with_runtime(
         &executor,
         Arc::clone(&hooks),
         RuntimeConfigBuilder::new().rate_limiter(limiter),
     );
+    let mut rate_key = KEY_SENTINEL.to_owned();
+    rate_key.extend(std::iter::repeat_n(
+        'x',
+        KEY_LIMIT + 1 - KEY_PART_NAME_BYTES - rate_key.len(),
+    ));
+    assert_eq!(rate_key.len() + KEY_PART_NAME_BYTES, KEY_LIMIT + 1);
     let error = api_error(
         Request::new(
             core,
@@ -1837,7 +1850,7 @@ async fn oversized_rate_key_precedes_hook_body_credentials_limiter_and_send() {
                     calls: Arc::clone(&body_calls),
                 }),
                 query: false,
-                rate_key: Some("k".repeat(1_025)),
+                rate_key: Some(rate_key),
             },
         )
         .await,
@@ -1849,13 +1862,25 @@ async fn oversized_rate_key_precedes_hook_body_credentials_limiter_and_send() {
     );
     assert_eq!(body_calls.load(Ordering::SeqCst), 0);
     assert_eq!(provider_calls.load(Ordering::SeqCst), 0);
-    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 0);
+    assert_eq!(governor.test_acquisition_count(), 0);
+    assert_eq!(governor.test_quota_entry_count(), 0);
     assert!(hooks.before.lock().expect("before records").is_empty());
     assert!(hooks.response.lock().expect("response records").is_empty());
+    assert_eq!(
+        hooks.completion.lock().expect("completion records").len(),
+        1
+    );
     assert_eq!(executor.application().request_count().expect("count"), 0);
+    let mut source: Option<&(dyn std::error::Error + 'static)> = Some(&error);
+    while let Some(current) = source {
+        assert!(!current.to_string().contains(KEY_SENTINEL));
+        assert!(!format!("{current:?}").contains(KEY_SENTINEL));
+        source = current.source();
+    }
     let debug = debug.lock().expect("debug output");
     assert_eq!(debug.len(), 1);
     assert!(debug[0].starts_with("completion "));
+    assert!(!debug[0].contains(KEY_SENTINEL));
 }
 
 #[tokio::test]
