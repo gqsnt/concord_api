@@ -36,9 +36,10 @@ This report does not claim full Concord 0.1 conformance. The normative status re
   `def42b74663df7b36755f61b8348d26449cce6ff`
 - Evidence-command-corrected evidence/report/state commit:
   `19ed74ba4ba64f772733096ea5ad16c8551e4a9e`
-- Evidence-command-corrected anchor: `PENDING_PHASE_7_CORRECTED_ANCHOR`
-- Compatible post-anchor metadata descendant: the later documentation-only commit that records the
-  real corrected anchor identity; it does not replace that anchor
+- Evidence-command-corrected anchor: `1c1a1da8739daf13dacc43ea259ab8163e8835b3`
+- Compatible post-anchor metadata descendant: the final report/controller-only commit with subject
+  `docs: record phase 7 evidence correction anchor`; it records the real corrected anchor identity
+  and does not replace that anchor
 - Authoritative source validation completed: `2026-07-19T06:03:21Z`
 - Correction patch SHA-256:
   `dc0c22a7ec75abc987a754e3679e307ed6e451ebec94fbe2c59ef3d99b3a491b`
@@ -64,8 +65,8 @@ traces. Its strengthened claim-atom map is `git_diff/phase-7-semantic-claim-atom
 | Superseded corrected evidence/state | `cb4640d4d4e21528c8e38f8104785e2c3ceac883` | Established the current classifications, but retained command-to-claim mismatches in a subset of Phase 7 rows. |
 | Superseded corrected anchor | `def42b74663df7b36755f61b8348d26449cce6ff` | Anchored the superseded command-incomplete evidence state. |
 | Evidence-command-corrected state | `19ed74ba4ba64f772733096ea5ad16c8551e4a9e` | Aligns every Phase 7 factual assertion and proof surface with commands that directly establish it; updates report, planning, and controller state without changing executable artifacts. |
-| Evidence-command-corrected anchor | `PENDING_PHASE_7_CORRECTED_ANCHOR` | Finalizes the new evidence-state identity and audit time only; changes no executable artifact or evidence classification. |
-| Anchor metadata descendant | later documentation-only commit | Records the real corrected anchor hash in the controller/report and retains `anchor-must-be-an-ancestor`. |
+| Evidence-command-corrected anchor | `1c1a1da8739daf13dacc43ea259ab8163e8835b3` | Finalizes the new evidence-state identity and audit time only; changes no executable artifact or evidence classification. |
+| Anchor metadata descendant | `docs: record phase 7 evidence correction anchor` | Records the real corrected anchor hash in the controller/report and retains `anchor-must-be-an-ancestor`. |
 
 The first authoritative `just test-all` at `8e3b1589` passed 504 of 505 tests but exposed a real
 pre-existing Trybuild race: separate Nextest cases in one `ui` binary concurrently replace files
