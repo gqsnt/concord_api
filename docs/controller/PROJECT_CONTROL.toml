@@ -29,45 +29,42 @@ evidence_catalog = "docs/conformance/CONFORMANCE_EVIDENCE_0.1.csv"
 
 [validated_state]
 expected_branch = "master"
-latest_validated_phase = "7"
-latest_verdict = "PHASE_7_COMPLETE_WITH_LIMITATIONS"
-source_commit = "c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9"
-accepted_phase_7_source_commit = "52e4604fff4824f0061d78d38177d815e204ec78"
-correction_source_commits = [
-  "8e3b1589ebf598c1850f273070cbc528b2dce66e",
-  "c5071c0eee2b1292d2762c669ff2a7d99cd6b3c9",
+latest_validated_phase = "8"
+latest_verdict = "PHASE_8_COMPLETE_WITH_LIMITATIONS"
+source_commit = "8101a3ab8f281fe37aa9132327cc6c06f2c88d47"
+implementation_source_commits = [
+  "8101a3ab8f281fe37aa9132327cc6c06f2c88d47",
 ]
 post_source_governance_commit = ""
-preliminary_evidence_commit = "7b1373f82b33e36325047643d735b2e15bb5a4bc"
-evidence_commit = "19ed74ba4ba64f772733096ea5ad16c8551e4a9e"
-anchor_commit = "1c1a1da8739daf13dacc43ea259ab8163e8835b3"
-phase_report = "docs/conformance/PHASE_7_REPORT.md"
+evidence_commit = "PENDING_PHASE_8_EVIDENCE_STATE"
+anchor_commit = "PENDING_PHASE_8_ANCHOR"
+phase_report = "docs/conformance/PHASE_8_REPORT.md"
 normative_status = "Normative Implementation Candidate"
 head_policy = "anchor-must-be-an-ancestor"
-requirement_trace_rows = 98
-requirement_trace_direct_rows = 59
-requirement_trace_partial_rows = 39
-immutable_source_evidence_rows = 95
-source_direct_rows = 57
-source_partial_rows = 38
+requirement_trace_rows = 115
+requirement_trace_direct_rows = 86
+requirement_trace_partial_rows = 29
+immutable_source_evidence_rows = 112
+source_direct_rows = 84
+source_partial_rows = 28
 requirement_trace_audit_rows = 3
 cross_phase_catalog_audit_rows = 2
 evidence_state_audit_rows = 5
-phase_evidence_rows = 100
-phase_direct_rows = 61
-phase_partial_rows = 39
-phase_evidence_summary = "61 direct and 39 partial"
-catalog_evidence_rows = 1068
+phase_evidence_rows = 117
+phase_direct_rows = 88
+phase_partial_rows = 29
+phase_evidence_summary = "88 direct and 29 partial"
+catalog_evidence_rows = 1185
 coverage_requirement_rows = 504
 
 [active_phase]
-id = "8"
-title = "Pagination"
+id = "9"
+title = "Prepared Endpoints and Extension Certification"
 status = "NOT_STARTED"
 definition_kind = "implementation-program-entry"
 definition_document = "docs/planning/CONCORD_IMPLEMENTATION_PROGRAM_0.2.md"
-definition_heading = "Phase 8 — pagination"
-previous_limitations_owner = "docs/conformance/PHASE_7_REPORT.md"
+definition_heading = "Phase 9 — prepared endpoints and extension certification"
+previous_limitations_owner = "docs/conformance/PHASE_8_REPORT.md"
 
 [implementation_agent]
 surface = "Codex external agent through Zed ACP"

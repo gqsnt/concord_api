@@ -2,13 +2,13 @@
 
 **Version:** 0.2
 **Status:** Internal Implementation Candidate
-**Authority:** Current delivery sequencing after Phase 7
+**Authority:** Current delivery sequencing after Phase 8
 **Depends on:** All normative and architecture documents
 **Supersedes:** `CONCORD_IMPLEMENTATION_PLAN_0.1.md` for future execution
 
 ## Purpose
 
-This program records the implementation state actually reached through Phase 7 and resets future
+This program records the implementation state actually reached through Phase 8 and resets future
 sequencing around the production vertical slice now in the repository. It does not change normative
 behavior, authorize a later phase, or claim full Concord 0.1 conformance. The normative documents
 remain `Normative Implementation Candidate`.
@@ -28,6 +28,7 @@ an execution queue because several foundations were delivered in a different ord
 | Phase 5 | `PHASE_5_COMPLETE_WITH_LIMITATIONS` | One normalized compiler and generated runtime now support multiple clients, root endpoints, nested scopes, required/optional/default client-scope-endpoint values, immutable snapshots, sealed request extension traits through generated preludes, explicit endpoint parity, host/path/ordered-query/public-header shaping, timeout/retry, all standard methods, custom methods, aliases, and deterministic names on the existing first-poll executor. | Seventy-three source requirements and one audit row remain partial for complete compound clauses owned by Phase 6 credentials/auth/providers/recovery, Phase 7 limiting, Phase 8 pagination, Phase 9 prepared endpoints/extension certification, or Phase 10 positive raw success and release-wide closure. An independent controller correction reclassified 18 Phase 5 rows without changing product source. |
 | Phase 6 | `PHASE_6_COMPLETE_WITH_LIMITATIONS` | The one generated request path now supports all six credential sources, typed public and generated authentication contracts, bounded single-flight credential state, source-aware preflight/finalization/native materialization, isolated finite provider HTTP, JSON-owned OAuth2 client credentials, and at most one complete recovery attempt with the same identity and deadline. | Forty-six source rows and one audit row remain partial only for compound clauses owned by Phase 7 limiting, Phase 8 pagination, Phase 9 prepared endpoints/extension certification, or Phase 10 positive raw success and release-wide closure. The private no-op limiter seam is not Phase 7 evidence. |
 | Phase 7 | `PHASE_7_COMPLETE_WITH_LIMITATIONS` | The existing generated request path now supports exact rate-limit DSL composition, stable advanced limiter contracts, immutable generated plans, a bounded process-local governor, custom and explicit no-op limiters, fail-closed no-governor behavior, deadline/cancellation-safe per-attempt acquisition, response-head cooldown observation, and real recovery/Retry-After integration. | Thirty-eight source/test rows and one audit row remain partial only for compound clauses owned by Phase 8 pagination, Phase 9 prepared endpoints/extension certification, or Phase 10 positive raw success and release-wide closure. |
+| Phase 8 | `PHASE_8_COMPLETE_WITH_LIMITATIONS` | The same generated request path now supports built-in/custom pagination DSL, exact stable page-limit/controller/safe-patch contracts, conditionally generated directly awaitable terminals, one typed request-local sequential page loop, canonical cycle protection, finite page/item/identity ceilings, ordinary per-page deadlines/authentication/limiting/completion, and one aggregate completion. | Twenty-eight source/test rows and one audit row remain partial only for Phase 9 prepared endpoints/final extension certification or Phase 10 release-final feature, namespace, documentation, security, dependency, and evidence closure. |
 
 Phase reports remain the detailed evidence owners:
 
@@ -39,6 +40,7 @@ Phase reports remain the detailed evidence owners:
 - `docs/conformance/PHASE_5_REPORT.md`
 - `docs/conformance/PHASE_6_REPORT.md`
 - `docs/conformance/PHASE_7_REPORT.md`
+- `docs/conformance/PHASE_8_REPORT.md`
 
 ## Phase 4 production baseline
 
@@ -295,7 +297,7 @@ command-to-claim mismatches. The evidence-command-corrected evidence/report/stat
 `19ed74ba4ba64f772733096ea5ad16c8551e4a9e`. Preliminary evidence state
 `7b1373f82b33e36325047643d735b2e15bb5a4bc` was superseded after the strengthened semantic audit
 found 24 incomplete plural-owner coverage milestones. The documentation-only corrected
-anchor is `PENDING_PHASE_7_CORRECTED_ANCHOR`. A later documentation-only descendant records the
+anchor is `1c1a1da8739daf13dacc43ea259ab8163e8835b3`. A later documentation-only descendant records the
 real anchor hash and does not replace that anchor. Exact classifications, commands, results,
 traces, and remaining limitations are in `docs/conformance/PHASE_7_REPORT.md`.
 
@@ -353,34 +355,67 @@ direct and 39 partial. The complete catalog contains 1068 unique IDs; all 968 Ph
 byte-identical, all 504 normative requirements remain mapped once, and all Phase 7 coverage rows
 use clause-accurate source paths, tests, commands, taxonomy, and later owners.
 
+## Phase 8 production baseline
+
+The immutable final tested Phase 8 source/test commit is
+`8101a3ab8f281fe37aa9132327cc6c06f2c88d47`. All focused commands and all 16 maintained commands,
+including `just release`, passed against that exact source. The evidence/report/state commit is
+`PENDING_PHASE_8_EVIDENCE_STATE`; the documentation-only evidence anchor is
+`PENDING_PHASE_8_ANCHOR`. A later documentation-only descendant records the real anchor identity
+without replacing it.
+
+The one generated request path now adds an opaque directly awaitable pagination wrapper, one sealed
+typed generated pagination specification, and one request-local sequential page state machine. Each
+page clones the original bodyless endpoint snapshot, applies typed built-in bindings or a safe
+query/header patch, constructs and retains a bounded canonical logical identity, and executes
+through the ordinary preparation/executor/authentication/limiter/response/completion pipeline under
+a fresh child operation identity and deadline. The proof-only pagination model was removed.
+
+The exact stable public surface includes `PageLimit`, `PaginationError`, `PaginationRequest`,
+`PaginationController`, `HasNextCursor`, and offset/page-number/cursor built-ins. Eligible generated
+requests expose `.paginate(limit)` directly as a future returning `Vec<IntoIterator::Item>` with no
+`.collect()` terminal or item trait. Soft/hard limits, empty and sealed built-in short termination,
+custom/cursor authority, all-or-error collection, authentication recovery, hidden retry,
+cancellation, and one aggregate completion are deterministic and bounded.
+
+Defaults remain 1,000 requested pages, 100,000 collected items, and 4 MiB of retained canonical
+identity bytes. Cycle protection and every ceiling are always enabled; checked arithmetic covers
+page/item/identity counters and built-in progression. Continuation values affect controlled native
+requests and cycle identity while remaining absent from safe diagnostics, hooks, limiter contexts,
+events, errors, sources, and rendered documentation.
+
+Phase 8 traces 115 requirements through 112 source/test evidence rows (84 direct, 28 partial) and
+three requirement-trace audits (two direct, one partial). Two additional direct catalog audits prove
+normative coverage and preservation. The Phase 8 total is 117 rows: 88 direct and 29 partial. The
+complete catalog contains 1,185 unique evidence IDs; all 1,068 Phase 0-7 rows remain byte-identical,
+and all 504 normative requirements remain mapped once. Exact paths, commands, classifications, and
+later owners are in `docs/conformance/PHASE_8_REPORT.md` and the evidence catalog.
+
 ## Current non-goals
 
-Phase 7 intentionally does not provide:
+Phase 8 intentionally does not provide:
 
-- pagination execution or generated pagination terminals;
-- prepared public endpoints or dangerous raw success responses (the latter is explicitly owned by
-  Phase 10);
+- prepared public endpoints or final prepared-extension certification;
+- dangerous raw success responses (explicitly owned by Phase 10);
 - streaming terminal-consumption hooks, SSE, WebSocket, record/CSV streaming, bidirectional
   streaming, or multipart response parsing.
 
-No placeholder public API was added for these capabilities. Page index remains zero for direct
-Phase 7 execution.
+No placeholder public API was added for these capabilities. Direct requests retain page index zero
+and no aggregate parent identity.
 
 ## Revised future sequence
 
 Future work should build outward from the single production request path rather than recreate proof
 loops or parallel request models. A later phase requires its own approved contract map and mission.
 
-1. **Phase 8 — pagination.** Integrate sequential pagination using the retained identity/ceiling
-   invariants and final hook contract.
-2. **Phase 9 — prepared endpoints and extension certification.** Add prepared endpoints only after
+1. **Phase 9 — prepared endpoints and extension certification.** Add prepared endpoints only after
    their public contract can reuse the same core executor, and certify the approved extension
    surfaces.
-3. **Phase 10 — product completion and release candidate.** Implement the positive dangerous raw
+2. **Phase 10 — product completion and release candidate.** Implement the positive dangerous raw
    successful-response surface and complete examples, compatibility matrices, security/property
    evidence, performance work, and release-final conformance.
 
-This sequence is planning context, not a Phase 8 implementation prompt. Phase 8 is not started.
+This sequence is planning context, not a Phase 9 implementation prompt. Phase 9 is not started.
 
 ## Continuing constraints
 
@@ -391,6 +426,6 @@ This sequence is planning context, not a Phase 8 implementation prompt. Phase 8 
 - Preserve the immutable source/evidence anchor sequence for each phase.
 - Keep normative status at `Normative Implementation Candidate` until full release evidence exists.
 
-`PHASE_7_COMPLETE_WITH_LIMITATIONS`
+`PHASE_8_COMPLETE_WITH_LIMITATIONS`
 
-`PHASE_8_NOT_STARTED`
+`PHASE_9_NOT_STARTED`
