@@ -52,6 +52,7 @@ Verification artifacts:
 - [`conformance/PHASE_6_REPORT.md`](conformance/PHASE_6_REPORT.md)
 - [`conformance/PHASE_7_REPORT.md`](conformance/PHASE_7_REPORT.md)
 - [`conformance/PHASE_8_REPORT.md`](conformance/PHASE_8_REPORT.md)
+- [`conformance/PHASE_9_REPORT.md`](conformance/PHASE_9_REPORT.md)
 - [`REVIEW_RESOLUTION_0.1.md`](REVIEW_RESOLUTION_0.1.md)
 
 Specification governance is review-based: reviewers inspect the normative documents, verify the coverage plan, verify exact executed evidence, and audit the maintained release command. No automated specification checker is authoritative or maintained.
@@ -74,14 +75,14 @@ Delivery and contribution:
 
 The normative documents are `Normative Implementation Candidate`: they are the approved design baseline for implementation, not evidence that a conforming release exists. Architecture and planning documents are `Internal Implementation Candidate`; contributor and decision documents are informative. A release becomes `Normative Release Final` only after actual conformance evidence passes. Any behavior change must follow the Specification Index and update both the coverage plan and, when implemented, actual evidence.
 
-Phase 8 is the current delivered implementation boundary. The one generated request path now
-supports explicit bounded sequential pagination, exact stable controller/page-limit/safe-patch
-contracts, built-in and custom pagination DSL, conditionally generated directly awaitable
-terminals, request-local canonical cycle protection, finite page/item/identity ceilings, ordinary
-per-page deadlines/authentication/limiting/completion, and one aggregate completion. See the
-[`Phase 8 report`](conformance/PHASE_8_REPORT.md) for exact source identity, validation, evidence,
-and limitations. Phase 9 — Prepared Endpoints and Extension Certification is next and remains
-`NOT_STARTED`; positive dangerous raw success and release completion remain assigned to Phase 10.
+Phase 9 is the current delivered implementation boundary. Exact stable advanced prepared endpoints
+now reuse the one generated-client request/executor architecture, including ordinary bodies,
+responses, authentication, limiting, deadlines, hooks, status handling, hidden-retry containment,
+cancellation, and completion. One downstream crate certifies the complete stable extension surface
+through public namespaces under default, no-default, JSON, and multipart feature ownership. See the
+[`Phase 9 report`](conformance/PHASE_9_REPORT.md) for exact source identity, validation, evidence,
+and limitations. Phase 10 — Product Completion and Release Candidate is next and remains
+`NOT_STARTED`; prepared pagination and positive dangerous raw success remain absent.
 
 
 ## Review closure

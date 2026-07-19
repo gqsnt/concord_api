@@ -29,46 +29,46 @@ evidence_catalog = "docs/conformance/CONFORMANCE_EVIDENCE_0.1.csv"
 
 [validated_state]
 expected_branch = "master"
-latest_validated_phase = "8"
-latest_verdict = "PHASE_8_COMPLETE_WITH_LIMITATIONS"
-source_commit = "515b33ebd345a5eae06a6f2681cbfa4ff403ab9e"
+latest_validated_phase = "9"
+latest_verdict = "PHASE_9_COMPLETE_WITH_LIMITATIONS"
+source_commit = "a8732c3fdefb676bfbb46bee9d756a8282ec531f"
 implementation_source_commits = [
-  "8101a3ab8f281fe37aa9132327cc6c06f2c88d47",
-  "515b33ebd345a5eae06a6f2681cbfa4ff403ab9e",
+  "fdb5fed4c47b29831325e403620923bd52769250",
+  "a8732c3fdefb676bfbb46bee9d756a8282ec531f",
 ]
 post_source_governance_commit = ""
-evidence_commit = "fe020a107770b0ea844a304efbcb73544c350949"
-anchor_commit = "163677c7e8c51ff3f3925809087dbac18ae788fa"
-phase_report = "docs/conformance/PHASE_8_REPORT.md"
+evidence_commit = "PENDING_PHASE_9_EVIDENCE"
+anchor_commit = "PENDING_PHASE_9_ANCHOR"
+phase_report = "docs/conformance/PHASE_9_REPORT.md"
 normative_status = "Normative Implementation Candidate"
 head_policy = "anchor-must-be-an-ancestor"
-requirement_trace_rows = 122
-requirement_trace_direct_rows = 93
-requirement_trace_partial_rows = 29
-immutable_source_evidence_rows = 119
-source_direct_rows = 91
-source_partial_rows = 28
+requirement_trace_rows = 279
+requirement_trace_direct_rows = 264
+requirement_trace_partial_rows = 15
+immutable_source_evidence_rows = 276
+source_direct_rows = 262
+source_partial_rows = 14
 requirement_trace_audit_rows = 3
 cross_phase_catalog_audit_rows = 2
 evidence_state_audit_rows = 5
-phase_evidence_rows = 124
-phase_direct_rows = 95
-phase_partial_rows = 29
-phase_evidence_summary = "95 direct and 29 partial"
-claim_atom_rows = 193
-proved_claim_atoms = 164
-unresolved_claim_atoms = 29
-catalog_evidence_rows = 1192
+phase_evidence_rows = 281
+phase_direct_rows = 266
+phase_partial_rows = 15
+phase_evidence_summary = "266 direct and 15 partial"
+claim_atom_rows = 296
+proved_claim_atoms = 281
+unresolved_claim_atoms = 15
+catalog_evidence_rows = 1473
 coverage_requirement_rows = 504
 
 [active_phase]
-id = "9"
-title = "Prepared Endpoints and Extension Certification"
+id = "10"
+title = "Product Completion and Release Candidate"
 status = "NOT_STARTED"
 definition_kind = "implementation-program-entry"
 definition_document = "docs/planning/CONCORD_IMPLEMENTATION_PROGRAM_0.2.md"
-definition_heading = "Phase 9 — prepared endpoints and extension certification"
-previous_limitations_owner = "docs/conformance/PHASE_8_REPORT.md"
+definition_heading = "Phase 10 — product completion and release candidate"
+previous_limitations_owner = "docs/conformance/PHASE_9_REPORT.md"
 
 [implementation_agent]
 surface = "Codex external agent through Zed ACP"

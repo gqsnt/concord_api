@@ -8,7 +8,7 @@
 
 ## Purpose
 
-This program records the implementation state actually reached through Phase 8 and resets future
+This program records the implementation state actually reached through Phase 9 and resets future
 sequencing around the production vertical slice now in the repository. It does not change normative
 behavior, authorize a later phase, or claim full Concord 0.1 conformance. The normative documents
 remain `Normative Implementation Candidate`.
@@ -29,6 +29,7 @@ an execution queue because several foundations were delivered in a different ord
 | Phase 6 | `PHASE_6_COMPLETE_WITH_LIMITATIONS` | The one generated request path now supports all six credential sources, typed public and generated authentication contracts, bounded single-flight credential state, source-aware preflight/finalization/native materialization, isolated finite provider HTTP, JSON-owned OAuth2 client credentials, and at most one complete recovery attempt with the same identity and deadline. | Forty-six source rows and one audit row remain partial only for compound clauses owned by Phase 7 limiting, Phase 8 pagination, Phase 9 prepared endpoints/extension certification, or Phase 10 positive raw success and release-wide closure. The private no-op limiter seam is not Phase 7 evidence. |
 | Phase 7 | `PHASE_7_COMPLETE_WITH_LIMITATIONS` | The existing generated request path now supports exact rate-limit DSL composition, stable advanced limiter contracts, immutable generated plans, a bounded process-local governor, custom and explicit no-op limiters, fail-closed no-governor behavior, deadline/cancellation-safe per-attempt acquisition, response-head cooldown observation, and real recovery/Retry-After integration. | Thirty-eight source/test rows and one audit row remain partial only for compound clauses owned by Phase 8 pagination, Phase 9 prepared endpoints/extension certification, or Phase 10 positive raw success and release-wide closure. |
 | Phase 8 | `PHASE_8_COMPLETE_WITH_LIMITATIONS` | The same generated request path now supports built-in/custom pagination DSL, exact stable page-limit/controller/safe-patch contracts, conditionally generated directly awaitable terminals, one typed request-local sequential page loop, canonical cycle protection, finite page/item/identity ceilings, ordinary per-page deadlines/authentication/limiting/completion, and one aggregate completion. | Twenty-eight source/test rows and one audit row remain partial only for Phase 9 prepared endpoints/final extension certification or Phase 10 release-final feature, namespace, documentation, security, dependency, and evidence closure. |
+| Phase 9 | `PHASE_9_COMPLETE_WITH_LIMITATIONS` | Stable advanced prepared endpoints now use the same `Request<E>`, private `EndpointSpec`, body/auth/limiter/deadline/hook/status/response/completion lifecycle, generated-client runtime, and managed HTTP clients as generated endpoints. One public-only downstream fixture certifies every stable extension workflow and feature-owned variant. | Fifteen rows remain partial only for Phase 10 release-final namespace, generated documentation, sentinel/security, feature/grammar/diagnostic, raw-success generated-category, dependency-assumption, canonical-example, MSRV, and evidence-completeness closure. |
 
 Phase reports remain the detailed evidence owners:
 
@@ -41,6 +42,7 @@ Phase reports remain the detailed evidence owners:
 - `docs/conformance/PHASE_6_REPORT.md`
 - `docs/conformance/PHASE_7_REPORT.md`
 - `docs/conformance/PHASE_8_REPORT.md`
+- `docs/conformance/PHASE_9_REPORT.md`
 
 ## Phase 4 production baseline
 
@@ -413,12 +415,66 @@ to those owners, and rejects response-observation claims under `EXEC-RATE-002`. 
 commands, classifications, and later owners are in `docs/conformance/PHASE_8_REPORT.md` and the
 evidence catalog.
 
+## Phase 9 production baseline
+
+The immutable Phase 9 source/test commit is
+`a8732c3fdefb676bfbb46bee9d756a8282ec531f`. The focused prepared/core, generated-client,
+Trybuild/UI, downstream fixture, rendered Rustdoc, no-default, no-governor, hidden-retry, and
+cancellation commands plus all 16 maintained commands, including `just release`, passed against
+that exact source. The evidence/report/state commit is `PENDING_PHASE_9_EVIDENCE`; a subsequent
+documentation-only evidence anchor finalizes that evidence-state self-reference.
+
+The advanced namespace now exposes only the exact four prepared response markers and opaque
+`PreparedEndpointBuilder<R>` / `PreparedEndpoint<R>` contracts. Builder composition is
+deterministic: one encoded segment per call; ordered repeated query pairs; case-insensitive public
+header replacement; body/response/deadline replacement; ordered authentication and rate rules; and
+typed body-safe `ConfigurationError`. There is no raw-path, pagination, raw-success, status-bypass,
+or limit-bypass prepared method.
+
+Prepared bodies use one private erasure wrapper over the existing sealed `BodySpec` lifecycle.
+Empty, bytes, one-shot stream, reconstructible factory, deferred codec, multipart, and multipart
+factory requests retain ordinary limit and replayability behavior. The four prepared response
+markers map directly to existing buffered, bytes, no-content, and stream handlers. Streaming has no
+metadata terminal and retains stream-open completion semantics.
+
+Generated contract version 10 adds only a local API-specific sealed capability implementation for
+supported `PreparedEndpoint<R>` markers. Generated explicit endpoints remain client-specific;
+cross-client endpoints, arbitrary values, and capability forgery still fail at compile time. The
+same prepared definition may intentionally use different generated clients, each supplying its own
+base URL, managed core, HTTP identity, credentials, hooks, limiter, and finite runtime snapshot.
+No runtime client ID, public response bridge, execution plan, downcast, or second executor exists.
+
+Prepared authentication and limiting feed the existing immutable plans and canonical executor.
+Credential preflight/finalization/native-only materialization, one recovery, limiter reacquisition,
+response observation, hidden native retry containment, operation identity/deadline, completion,
+cancellation, status/response errors, and safe diagnostics remain unchanged. Without governor or an
+explicit limiter, empty prepared plans execute and nonempty plans fail before native send; explicit
+no-op and custom limiters remain intentional opt-ins.
+
+The standalone downstream certification fixture imports core only through `prelude` and `advanced`.
+It compiles media/codecs, body/multipart factories, credential material/providers/provider HTTP,
+pagination controllers/cursors, limiters/observers, runtime hooks, all prepared response modes,
+custom/JSON/multipart bodies, safe proxy, and managed configuration across default, no-default,
+JSON, multipart, and combined features. Source and rendered Rustdoc audits reject private,
+generated-private, native Reqwest, plan/state, transport/executor, downcast, and pagination-adapter
+access. Extension Rustdoc records concurrency, cancellation, sensitivity, application logging and
+storage, boundedness, deadline, and completion obligations without promising automatic limits for
+custom code or state.
+
+Phase 9 traces 279 requirements through 276 immutable source/test rows (262 direct, 14 partial) and
+three trace audits (two direct, one partial). Two additional direct catalog audits prove normative
+coverage and historical preservation. The Phase 9 total is 281 rows: 266 direct and 15 partial. The
+complete catalog contains 1,473 unique evidence IDs; all 1,192 Phase 0-8 rows remain byte-identical,
+and all 504 normative requirements remain mapped once. The owner-aware map contains 296 claim atoms:
+281 proved and 15 exact unresolved Phase 10 atoms. Exact identities, paths, commands, and owners are
+in `docs/conformance/PHASE_9_REPORT.md` and the evidence catalog.
+
 ## Current non-goals
 
-Phase 8 intentionally does not provide:
+Phase 9 intentionally does not provide:
 
-- prepared public endpoints or final prepared-extension certification;
 - dangerous raw success responses (explicitly owned by Phase 10);
+- prepared pagination, prepared page controllers, or a prepared `.paginate(...)` method;
 - streaming terminal-consumption hooks, SSE, WebSocket, record/CSV streaming, bidirectional
   streaming, or multipart response parsing.
 
@@ -430,14 +486,11 @@ and no aggregate parent identity.
 Future work should build outward from the single production request path rather than recreate proof
 loops or parallel request models. A later phase requires its own approved contract map and mission.
 
-1. **Phase 9 — prepared endpoints and extension certification.** Add prepared endpoints only after
-   their public contract can reuse the same core executor, and certify the approved extension
-   surfaces.
-2. **Phase 10 — product completion and release candidate.** Implement the positive dangerous raw
+1. **Phase 10 — product completion and release candidate.** Implement the positive dangerous raw
    successful-response surface and complete examples, compatibility matrices, security/property
    evidence, performance work, and release-final conformance.
 
-This sequence is planning context, not a Phase 9 implementation prompt. Phase 9 is not started.
+This sequence is planning context, not a Phase 10 implementation prompt. Phase 10 is not started.
 
 ## Continuing constraints
 
@@ -448,6 +501,6 @@ This sequence is planning context, not a Phase 9 implementation prompt. Phase 9 
 - Preserve the immutable source/evidence anchor sequence for each phase.
 - Keep normative status at `Normative Implementation Candidate` until full release evidence exists.
 
-`PHASE_8_COMPLETE_WITH_LIMITATIONS`
+`PHASE_9_COMPLETE_WITH_LIMITATIONS`
 
-`PHASE_9_NOT_STARTED`
+`PHASE_10_NOT_STARTED`
