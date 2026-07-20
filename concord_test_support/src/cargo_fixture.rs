@@ -48,6 +48,8 @@ where
 ///
 /// Cargo's built-in flags follow `nextest run`, unlike built-in Cargo
 /// subcommands where [`run`] places them immediately after the subcommand.
+/// The standalone invocation uses its own default profile rather than an
+/// outer Nextest runner's inherited profile selection.
 #[must_use]
 pub fn run_nextest<I, S>(workspace_root: &Path, target_key: &str, arguments: I) -> Output
 where
@@ -67,6 +69,7 @@ where
             "never",
         ])
         .args(arguments)
+        .env_remove("NEXTEST_PROFILE")
         .env("CARGO_TARGET_DIR", target_dir);
     command.output().unwrap_or_else(|error| {
         panic!("failed to run Cargo Nextest for fixture target `{target_key}`: {error}")
