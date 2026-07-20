@@ -41,6 +41,7 @@ $script:Phase11EvidenceHash = "90d31f417690082af865850d6e1ce25331bca16c76f37c933
 $script:Phase11EvidenceRows = 1553
 $script:Phase11ReportBytes = 25109
 $script:Phase11ReportHash = "1de403491162bf39f36c530636f7b1dd03370ee45832c0dd2c7b9bc55d2b67fa"
+$script:Phase12PreviousSource = "d1aadcebcad0a65d92c4ed4a42d6b0a9c1f034b2"
 $script:ActiveRequirementCount = 563
 $script:Phase11SupersededRequirementIds = [string[]]@(
     "DSL-PAGE-004", "DSL-PAGE-005", "DSL-PAGE-006",
@@ -817,6 +818,25 @@ function Assert-Phase12Evidence {
     }
 }
 
+function Assert-InheritedPhase12SourceEvidence {
+    param([object[]]$Evidence, [string]$Source)
+    $rows = @($Evidence | Where-Object { $_.evidence_id -like 'P12-*' })
+    Assert-Condition ($rows.Count -eq $script:Phase12RequirementIds.Count) "correction source inherited $($rows.Count) Phase 12 rows rather than $($script:Phase12RequirementIds.Count)"
+    $ids = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($row in $rows) {
+        Assert-Condition $ids.Add($row.requirement_id) "duplicate inherited Phase 12 evidence requirement $($row.requirement_id)"
+        Assert-ExactCommit $row.verified_commit "inherited Phase 12 evidence"
+        Assert-Condition ($row.verified_commit -eq $script:Phase12PreviousSource) "correction source inherited an unexpected Phase 12 source identity: $($row.evidence_id)"
+        Assert-Condition ($row.verified_commit -ne $Source) "correction source already contains evidence claiming its own unvalidated identity: $($row.evidence_id)"
+        Assert-Ancestor $row.verified_commit $Source "inherited Phase 12 evidence/source lineage"
+        Assert-Condition ($row.result -eq 'passing' -and $row.configuration -match '^direct ') "inherited Phase 12 evidence is not direct passing: $($row.evidence_id)"
+        Assert-Condition ([string]::IsNullOrWhiteSpace($row.waiver)) "inherited Phase 12 evidence has a waiver: $($row.evidence_id)"
+    }
+    foreach ($id in $script:Phase12RequirementIds) {
+        Assert-Condition $ids.Contains($id) "correction source did not inherit Phase 12 evidence for $id"
+    }
+}
+
 function Assert-Phase12ValidationRegistry {
     param([object[]]$Rows, [string]$Source)
     $phaseRows = @($Rows | Where-Object { $_.validation_id -like 'P12-VAL-*' })
@@ -838,6 +858,22 @@ function Assert-Phase12ValidationRegistry {
         'just doc-all', 'just deny', 'just diff-check', 'just release'
     )) {
         Assert-Condition $commands.Contains($command) "required Phase 12 validation command was not recorded: $command"
+    }
+}
+
+function Assert-Phase12EvidenceCommandsRecorded {
+    param([object[]]$Evidence, [object[]]$Validation)
+    $commands = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($row in $Validation | Where-Object { $_.validation_id -like 'P12-VAL-*' }) {
+        [void]$commands.Add($row.exact_command)
+    }
+    foreach ($row in $Evidence | Where-Object { $_.evidence_id -like 'P12-*' }) {
+        $proofs = @($row.exact_test -split '\s+;;\s+')
+        Assert-Condition ($proofs.Count -gt 0) "Phase 12 evidence has no proof command: $($row.evidence_id)"
+        foreach ($proof in $proofs) {
+            Assert-Condition (-not [string]::IsNullOrWhiteSpace($proof)) "Phase 12 evidence has an empty proof command: $($row.evidence_id)"
+            Assert-Condition $commands.Contains($proof) "Phase 12 evidence command lacks a passing validation record: $($row.evidence_id): $proof"
+        }
     }
 }
 
@@ -1268,12 +1304,22 @@ function Invoke-SelfTests {
     Assert-Throws { Assert-OwnershipRegistry $duplicates @() } "duplicate ownership"
     $incompleteClaim = [pscustomobject]@{ claim_id = "X"; requirement_id = "TEST-REQ-001"; claim_atom = ""; result = "passing"; later_owner = "later" }
     Assert-Throws { Assert-CompleteClaim $incompleteClaim } "incomplete claim atom"
+    $commandEvidence = [pscustomobject]@{ evidence_id = "P12-TEST"; exact_test = "focused command ;; missing command" }
+    $commandValidation = [pscustomobject]@{ validation_id = "P12-VAL-TEST"; exact_command = "focused command" }
+    Assert-Throws {
+        Assert-Phase12EvidenceCommandsRecorded @($commandEvidence) @($commandValidation)
+    } "unrecorded Phase 12 evidence command"
+    $completeCommandValidation = @(
+        $commandValidation,
+        [pscustomobject]@{ validation_id = "P12-VAL-TEST-2"; exact_command = "missing command" }
+    )
+    Assert-Phase12EvidenceCommandsRecorded @($commandEvidence) $completeCommandValidation
     $expectedRequirements = [System.Collections.Generic.HashSet[string]]::new([string[]]@("A", "B"), [System.StringComparer]::Ordinal)
     $resolvedRequirements = [System.Collections.Generic.HashSet[string]]::new([string[]]@("A"), [System.StringComparer]::Ordinal)
     Assert-Throws {
         foreach ($id in $expectedRequirements) { Assert-Condition $resolvedRequirements.Contains($id) "unresolved release requirement $id" }
     } "unresolved release requirement"
-    Write-Output "release registry audit self-tests passed: 15 rejection/acceptance classes; parsed-claims=$($parsedClaims.Count)"
+    Write-Output "release registry audit self-tests passed: 16 rejection/acceptance classes; parsed-claims=$($parsedClaims.Count)"
 }
 
 if ($Mode -eq "SelfTest") {
@@ -1296,18 +1342,19 @@ if ($Mode -eq "Source") {
     $coverage = @(Import-GitCsv $SourceCommit $script:CoveragePath)
     $evidence = @(Import-GitCsv $SourceCommit $script:EvidencePath)
     Assert-BaseCatalogs $definitions $coverage $evidence
-    Assert-Condition ($evidence.Count -eq $script:Phase11EvidenceRows) "Phase 12 source has unexpected evidence rows: $($evidence.Count)"
+    Assert-Condition ($evidence.Count -eq ($script:Phase11EvidenceRows + $script:Phase12RequirementIds.Count)) "Phase 12 correction source has unexpected evidence rows: $($evidence.Count)"
     Assert-EvidencePaths $evidence $SourceCommit
     Assert-Phase10HistoricalCatalog $SourceCommit $false
     Assert-Phase10ReportPreserved $SourceCommit
-    Assert-Phase11HistoricalCatalog $SourceCommit $true
+    Assert-Phase11HistoricalCatalog $SourceCommit $false
     Assert-Phase0Through11ReportsPreserved $SourceCommit
     Assert-SupersededHistoricalEvidence $evidence
     Assert-InheritedPhase11SourceEvidence $evidence $SourceCommit
+    Assert-InheritedPhase12SourceEvidence $evidence $SourceCommit
     Assert-RequirementChangeRecord $SourceCommit
     Assert-CandidateStatus $documents $SourceCommit
     Assert-Phase12Authority $SourceCommit
-    Write-Output "implementation-candidate source audit passed: active-requirements=$($definitions.Count) superseded-requirements=$($script:SupersededRequirementIds.Count) historical-Phase-0-11-rows=$script:Phase11EvidenceRows Phase-12-evidence=not-assessed release-final=reserved-for-Phase-14"
+    Write-Output "implementation-candidate correction-source audit passed: active-requirements=$($definitions.Count) superseded-requirements=$($script:SupersededRequirementIds.Count) historical-Phase-0-11-rows=$script:Phase11EvidenceRows inherited-Phase-12-rows=$($script:Phase12RequirementIds.Count) corrected-Phase-12-evidence=not-assessed release-final=reserved-for-Phase-14"
     exit 0
 }
 
@@ -1360,6 +1407,7 @@ foreach ($row in $phase12Coverage) {
 }
 $validation = @(Import-GitCsv $StateCommit $script:ValidationRegistryPath)
 Assert-Phase12ValidationRegistry $validation $SourceCommit
+Assert-Phase12EvidenceCommandsRecorded $evidence $validation
 
 if ($Mode -eq "Final") {
     $anchorAllowed = @($script:Phase12ReportPath, $script:ControllerPath)
