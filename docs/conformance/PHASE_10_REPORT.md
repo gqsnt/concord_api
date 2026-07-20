@@ -24,7 +24,7 @@ documents are `Normative Release Final`.
 - Superseded metadata descendant: `8c8dc914194e99a4074bef378ae2ca481fb1b4b7`
 - Corrected immutable source/test commit: `9317a94cf020d81dbd216ed2a7dc999550586898`
 - Corrected evidence/report/state commit: `5b157225b387387664a202d4cbfe5f85ba8c5289`
-- Corrected evidence anchor: `ANCHOR_COMMIT_PENDING`
+- Corrected evidence anchor: `e0648e36ea9450741724ac067cfe184500e724c6`
 - Final metadata descendant: the documentation-only commit that replaces the anchor token above
 - Head policy: `anchor-must-be-an-ancestor`
 
@@ -254,7 +254,7 @@ and benchmark compilation.
 After the immutable source matrix passed, the separate evidence-mode audit validated the corrected
 evidence commit and all commit-scoped paths. The documentation-only anchor changes only the exact
 `5b157225b387387664a202d4cbfe5f85ba8c5289` self-reference in approved evidence documents. The final two-file
-metadata descendant changes only `ANCHOR_COMMIT_PENDING` in this report and the controller. The
+metadata descendant changes only `e0648e36ea9450741724ac067cfe184500e724c6` in this report and the controller. The
 tracked final audit then proves the exact source/evidence/anchor/metadata chain, clean worktree,
 504 requirements, 775 claims, 1,531 evidence rows, 1,473 byte-identical historical rows, zero
 waivers, zero partial final rows, zero unresolved atoms, zero missing paths, and nine
