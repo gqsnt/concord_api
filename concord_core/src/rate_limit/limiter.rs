@@ -40,7 +40,7 @@ pub struct RateLimitRequest<'a> {
     pub safe_url: &'a str,
     /// Final logical host when one exists.
     pub host: Option<&'a str>,
-    /// Zero-based page index; direct Phase 7 execution uses zero.
+    /// Zero-based page index; direct endpoint execution uses zero.
     pub page_index: u32,
     /// Canonical immutable effective plan.
     pub plan: &'a RateLimitPlan,
@@ -125,7 +125,7 @@ pub struct RateLimitResponseHead<'a> {
     pub safe_url: &'a str,
     /// Final logical host when one exists.
     pub host: Option<&'a str>,
-    /// Zero-based page index; direct Phase 7 execution uses zero.
+    /// Zero-based page index; direct endpoint execution uses zero.
     pub page_index: u32,
     /// Canonical immutable effective plan.
     pub plan: &'a RateLimitPlan,

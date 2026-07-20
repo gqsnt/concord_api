@@ -44,7 +44,7 @@ pub struct ConfigurationError {
 }
 
 impl ConfigurationError {
-    #[allow(dead_code, reason = "used by the Phase 1 configuration builders")]
+    #[allow(dead_code, reason = "used by the managed configuration builders")]
     pub(crate) const fn new(kind: ConfigurationErrorKind) -> Self {
         Self { kind }
     }

@@ -1485,7 +1485,7 @@ mod tests {
     }
 
     #[test]
-    fn phase7_rate_normalization_resolves_append_replace_off_direct_order_and_ids() {
+    fn rate_limit_normalization_resolves_append_replace_off_direct_order_and_ids() {
         let api = resolve_ok(quote! {
             client RateApi {
                 base "https://example.test";
@@ -1600,7 +1600,7 @@ mod tests {
     }
 
     #[test]
-    fn phase7_rate_semantics_reject_undefined_out_of_scope_and_optional_dimensions() {
+    fn rate_limit_semantics_reject_undefined_out_of_scope_and_optional_dimensions() {
         let undefined = resolve_error(quote! {
             client Api {
                 base "https://example.test";
@@ -1908,7 +1908,7 @@ mod tests {
     }
 
     #[test]
-    fn phase6_auth_normalization_appends_replaces_clears_and_resolves_defaults() {
+    fn authentication_normalization_appends_replaces_clears_and_resolves_defaults() {
         let api = resolve_ok(quote! {
             client AuthApi {
                 base "https://example.test";
@@ -1972,7 +1972,7 @@ mod tests {
     }
 
     #[test]
-    fn phase6_auth_semantics_reject_unknown_incompatible_ambiguous_and_colliding_plans() {
+    fn authentication_semantics_reject_unknown_incompatible_ambiguous_and_colliding_plans() {
         fn error(tokens: proc_macro2::TokenStream) -> String {
             match parse::parse(tokens) {
                 Ok(source) => resolve(source).err().expect("semantic error").to_string(),
@@ -2084,7 +2084,7 @@ mod tests {
     }
 
     #[test]
-    fn phase6_optional_public_values_defer_material_collision_to_request_preparation() {
+    fn optional_public_values_defer_authentication_material_collision_to_request_preparation() {
         resolve_ok(quote! {
             client Api {
                 base "https://example.test";
@@ -2106,7 +2106,7 @@ mod tests {
     }
 
     #[test]
-    fn phase6_endpoint_backed_dependency_and_authentication_cycles_are_rejected() {
+    fn endpoint_backed_dependency_and_authentication_cycles_are_rejected() {
         fn error(tokens: proc_macro2::TokenStream) -> String {
             resolve(parse::parse(tokens).expect("source AST"))
                 .err()
@@ -2201,7 +2201,7 @@ mod tests {
     }
 
     #[test]
-    fn phase6_generated_names_cover_builder_accessor_and_acquisition_namespaces() {
+    fn authentication_generated_names_cover_builder_accessor_and_acquisition_namespaces() {
         fn error(tokens: proc_macro2::TokenStream) -> String {
             resolve(parse::parse(tokens).expect("source AST"))
                 .err()
@@ -2268,7 +2268,7 @@ mod tests {
     }
 
     #[test]
-    fn phase8_pagination_normalizes_exact_typed_bindings_and_custom_arguments() {
+    fn pagination_normalizes_exact_typed_bindings_and_custom_arguments() {
         let api = resolve_ok(quote! {
             client Api {
                 base "https://example.test";
@@ -2329,7 +2329,7 @@ mod tests {
     }
 
     #[test]
-    fn phase8_pagination_rejects_undefined_and_incompatible_endpoint_bindings() {
+    fn pagination_rejects_undefined_and_incompatible_endpoint_bindings() {
         let wrong_offset = resolve(
             parse::parse(quote! {
                 client Api {

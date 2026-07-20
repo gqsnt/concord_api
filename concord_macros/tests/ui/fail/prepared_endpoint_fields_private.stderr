@@ -1,5 +1,5 @@
 error[E0423]: cannot initialize a tuple struct which contains private fields
- --> tests/ui/fail/phase9_prepared_fields_private.rs:8:13
+ --> tests/ui/fail/prepared_endpoint_fields_private.rs:8:13
   |
 8 |     let _ = PreparedBuffered::<Text>(PhantomData);
   |             ^^^^^^^^^^^^^^^^^^^^^^^^
@@ -11,7 +11,7 @@ note: constructor is not visible here due to private fields
   |                                ^^^^^^^^^^^^^^ private field
 
 error: cannot construct `PreparedEndpointBuilder` with struct literal syntax due to private fields
- --> tests/ui/fail/phase9_prepared_fields_private.rs:9:13
+ --> tests/ui/fail/prepared_endpoint_fields_private.rs:9:13
   |
 9 |     let _ = PreparedEndpointBuilder::<PreparedNoContent> {};
   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -19,7 +19,7 @@ error: cannot construct `PreparedEndpointBuilder` with struct literal syntax due
   = note: private fields that were not provided
 
 error: cannot construct `PreparedEndpoint` with struct literal syntax due to private fields
-  --> tests/ui/fail/phase9_prepared_fields_private.rs:10:13
+  --> tests/ui/fail/prepared_endpoint_fields_private.rs:10:13
    |
 10 |     let _ = PreparedEndpoint::<PreparedNoContent> {};
    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

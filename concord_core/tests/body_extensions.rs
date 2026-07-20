@@ -68,7 +68,7 @@ fn downstream_body_contracts_need_only_the_advanced_public_surface() {
 #[tokio::test]
 async fn file_constructor_is_public_and_sanitizes_native_failures() {
     let missing = std::env::temp_dir().join(format!(
-        "concord-phase4-missing-body-file-{}.tmp",
+        "concord-request-body-missing-file-{}.tmp",
         std::process::id()
     ));
     let error = StreamBody::from_file(&missing)

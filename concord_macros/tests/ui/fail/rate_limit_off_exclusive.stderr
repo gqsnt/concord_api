@@ -1,5 +1,5 @@
 error: `rate_limit off` is exclusive within its layer
- --> tests/ui/fail/phase7_rate_off_exclusive.rs:7:20
+ --> tests/ui/fail/rate_limit_off_exclusive.rs:7:20
   |
 7 |         rate_limit off;
   |                    ^^^

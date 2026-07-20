@@ -12,7 +12,7 @@ pub enum ProviderRetry {
     Disabled,
 }
 
-#[allow(dead_code, reason = "consumed by Phase 1 managed Reqwest construction")]
+#[allow(dead_code, reason = "consumed by managed Reqwest construction")]
 pub(crate) enum ApplicationRetry {
     Disabled,
     ReqwestDefault,
@@ -22,7 +22,7 @@ pub(crate) enum ApplicationRetry {
     DangerousFactory(fn() -> crate::dangerous::ReqwestRetryBuilder),
 }
 
-#[allow(dead_code, reason = "consumed by Phase 1 managed Reqwest construction")]
+#[allow(dead_code, reason = "consumed by managed Reqwest construction")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ProtocolMode {
     Negotiated,
@@ -34,7 +34,7 @@ pub(crate) enum ProtocolMode {
 /// Plain resolved HTTP configuration. It contains no Reqwest client or
 /// `reqwest::ClientBuilder`; the dangerous feature may retain only its exact
 /// reviewed native retry-builder value.
-#[allow(dead_code, reason = "consumed by Phase 1 managed Reqwest construction")]
+#[allow(dead_code, reason = "consumed by managed Reqwest construction")]
 pub(crate) struct HttpConfig {
     pub(crate) connect_timeout: Option<Duration>,
     pub(crate) read_timeout: Option<Duration>,
@@ -244,7 +244,7 @@ impl HttpConfigBuilder {
         self
     }
 
-    #[allow(dead_code, reason = "consumed by Phase 1 managed Reqwest construction")]
+    #[allow(dead_code, reason = "consumed by managed Reqwest construction")]
     pub(crate) fn resolve(self) -> HttpConfig {
         self.config
     }

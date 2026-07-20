@@ -1,5 +1,5 @@
 error[E0432]: unresolved imports `concord_core::prelude::PreparedEndpoint`, `concord_core::prelude::PreparedNoContent`
- --> tests/ui/fail/phase9_prepared_no_prelude_export.rs:1:29
+ --> tests/ui/fail/prepared_endpoint_no_prelude_export.rs:1:29
   |
 1 | use concord_core::prelude::{PreparedEndpoint, PreparedNoContent};
   |                             ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^ no `PreparedNoContent` in `prelude`

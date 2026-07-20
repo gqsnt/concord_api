@@ -1,5 +1,5 @@
 error[E0599]: the method `response` exists for struct `Request<PreparedEndpoint<PreparedStream<OctetStream>>>`, but its trait bounds were not satisfied
-  --> tests/ui/fail/phase9_prepared_stream_response_absent.rs:17:38
+  --> tests/ui/fail/prepared_endpoint_stream_response_absent.rs:17:38
    |
 17 |     let _ = client.request(endpoint).response();
    |                                      ^^^^^^^^ method cannot be called due to unsatisfied trait bounds

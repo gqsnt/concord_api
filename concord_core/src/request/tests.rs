@@ -191,7 +191,7 @@ async fn request_creation_and_setters_are_side_effect_free_until_first_poll() {
 }
 
 #[test]
-fn hand_authored_endpoint_types_select_only_phase2_handlers() {
+fn hand_authored_endpoint_types_select_only_declared_response_handlers() {
     fn assert_bytes<E>()
     where
         E: EndpointSpec<Body = EmptyBody, Response = BytesResponse>,

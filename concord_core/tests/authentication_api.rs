@@ -11,7 +11,7 @@ use concord_core::advanced::{
 };
 use concord_core::prelude::{AccessToken, ApiKey, BasicCredential, SecretString};
 
-const SENTINEL: &str = "phase6-public-api-f629cb6a8fe749ea";
+const SENTINEL: &str = "authentication-public-api-sentinel-f629cb6a8fe749ea";
 
 #[derive(Clone)]
 struct SessionToken(SecretString);

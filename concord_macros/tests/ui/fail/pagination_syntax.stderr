@@ -1,47 +1,47 @@
 error: a built-in pagination declaration requires an assignment block
- --> tests/ui/fail/phase8_pagination_syntax.rs:7:22
+ --> tests/ui/fail/pagination_syntax.rs:7:22
   |
 7 |             paginate OffsetPagination
   |                      ^^^^^^^^^^^^^^^^
 
 error: missing required built-in pagination assignment(s): page_size
-  --> tests/ui/fail/phase8_pagination_syntax.rs:16:22
+  --> tests/ui/fail/pagination_syntax.rs:16:22
    |
 16 |             paginate OffsetPagination { offset = ep.offset }
    |                      ^^^^^^^^^^^^^^^^
 
 error: duplicate pagination assignment `offset`
-  --> tests/ui/fail/phase8_pagination_syntax.rs:27:17
+  --> tests/ui/fail/pagination_syntax.rs:27:17
    |
 27 |                 offset = ep.offset,
    |                 ^^^^^^
 
 error: additional built-in pagination assignment `extra` is not accepted
-  --> tests/ui/fail/phase8_pagination_syntax.rs:41:17
+  --> tests/ui/fail/pagination_syntax.rs:41:17
    |
 41 |                 extra = ep.limit
    |                 ^^^^^
 
 error: a built-in pagination assignment must bind directly to `ep.FIELD`
-  --> tests/ui/fail/phase8_pagination_syntax.rs:53:26
+  --> tests/ui/fail/pagination_syntax.rs:53:26
    |
 53 |                 offset = vars.offset,
    |                          ^^^^
 
 error: unexpected end of input, a trailing comma is not accepted in built-in pagination assignments
-  --> tests/ui/fail/phase8_pagination_syntax.rs:67:13
+  --> tests/ui/fail/pagination_syntax.rs:67:13
    |
 67 |             }
    |             ^
 
 error: unexpected end of input, a trailing comma is not accepted in custom pagination arguments
-  --> tests/ui/fail/phase8_pagination_syntax.rs:76:52
+  --> tests/ui/fail/pagination_syntax.rs:76:52
    |
 76 |             paginate custom crate::factory("value",);
    |                                                    ^
 
 error: endpoint clauses must appear at most once and in `host`, `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, `paginate` order
-  --> tests/ui/fail/phase8_pagination_syntax.rs:86:13
+  --> tests/ui/fail/pagination_syntax.rs:86:13
    |
 86 |             timeout 1s;
    |             ^^^^^^^

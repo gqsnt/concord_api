@@ -59,7 +59,7 @@ impl PaginationController<Vec<u32>> for OnePageKeyController {
 
 api! {
     client PaginationKeyLimitApi {
-        base "http://phase8-key-limit.example.test/v1/";
+        base "http://pagination-key-limit.example.test/v1/";
         rate_limits {
             page_key {
                 by [ep.key];

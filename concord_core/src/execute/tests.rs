@@ -2391,7 +2391,7 @@ async fn bytes_reader_and_file_stream_constructors_use_the_same_native_path() {
     );
 
     let file_path = std::env::temp_dir().join(format!(
-        "concord-phase4-stream-{}-{}.tmp",
+        "concord-request-stream-{}-{}.tmp",
         std::process::id(),
         BODY_ENDPOINT.len()
     ));

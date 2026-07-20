@@ -1,5 +1,5 @@
 error: unknown client rate-limit template `missing`
- --> tests/ui/fail/phase7_rate_undefined_attachment.rs:6:20
+ --> tests/ui/fail/rate_limit_undefined_attachment.rs:6:20
   |
 6 |         rate_limit missing;
   |                    ^^^^^^^

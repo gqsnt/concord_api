@@ -1,5 +1,5 @@
 error[E0277]: `Displayless` doesn't implement `std::fmt::Display`
-  --> tests/ui/fail/phase7_rate_display_required.rs:8:1
+  --> tests/ui/fail/rate_limit_display_required.rs:8:1
    |
 8  | / api! {
 9  | |     client Api {

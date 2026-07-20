@@ -59,7 +59,7 @@ impl EncodeBody for CountingEncodeCodec {
 impl EncodeBody for EchoCodec {
     type Input = String;
 
-    const CONTENT_TYPE: Option<&'static str> = Some("application/x-phase9");
+    const CONTENT_TYPE: Option<&'static str> = Some("application/x-concord-prepared");
 
     fn encode(input: Self::Input, _context: EncodeContext<'_>) -> Result<Bytes, CodecError> {
         Ok(Bytes::from(input))
@@ -69,25 +69,25 @@ impl EncodeBody for EchoCodec {
 impl DecodeBody for EchoCodec {
     type Output = String;
 
-    const ACCEPT: Option<&'static str> = Some("application/x-phase9");
+    const ACCEPT: Option<&'static str> = Some("application/x-concord-prepared");
 
     fn validate_content_type(content_type: Option<&str>) -> Result<(), CodecError> {
         if content_type == Self::ACCEPT {
             Ok(())
         } else {
-            Err(CodecError::new("phase9 media mismatch"))
+            Err(CodecError::new("prepared media mismatch"))
         }
     }
 
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
-        String::from_utf8(body.to_vec()).map_err(|_| CodecError::new("phase9 utf8"))
+        String::from_utf8(body.to_vec()).map_err(|_| CodecError::new("prepared utf8"))
     }
 }
 
 struct VendorMedia;
 
 impl MediaType for VendorMedia {
-    const MEDIA_TYPE: &'static str = "application/x-phase9-stream";
+    const MEDIA_TYPE: &'static str = "application/x-concord-prepared-stream";
 }
 
 struct FreshFactory {
@@ -154,7 +154,7 @@ impl RuntimeHooks for RejectingHooks {
         &'a self,
         _context: concord_core::advanced::BeforeSend<'a>,
     ) -> BoxFuture<'a, Result<(), HookError>> {
-        Box::pin(async { Err(HookError::new("phase9 hook veto")) })
+        Box::pin(async { Err(HookError::new("prepared hook veto")) })
     }
 }
 
@@ -220,11 +220,12 @@ fn exact_prepared_types_are_available_from_advanced() {
 #[tokio::test]
 async fn prepared_modes_use_the_ordinary_generated_client_runtime() {
     let server = ScriptedServer::start([
-        ResponseScript::ok(b"decoded".to_vec()).with_header("content-type", "application/x-phase9"),
+        ResponseScript::ok(b"decoded".to_vec())
+            .with_header("content-type", "application/x-concord-prepared"),
         ResponseScript::ok(b"bytes".to_vec()),
         ResponseScript::ok(b"ignored".to_vec()),
         ResponseScript::ok(b"streamed".to_vec())
-            .with_header("content-type", "application/x-phase9-stream"),
+            .with_header("content-type", "application/x-concord-prepared-stream"),
     ])
     .expect("prepared mode server");
     let client = alpha(&server);
@@ -237,7 +238,7 @@ async fn prepared_modes_use_the_ordinary_generated_client_runtime() {
         .query("first", 1)
         .query_optional("omitted", Option::<u8>::None)
         .query_values("repeat", [2, 3])
-        .header(HeaderName::from_static("x-phase9"), "new")
+        .header(HeaderName::from_static("x-prepared-endpoint"), "new")
         .body_codec::<EchoCodec>("encoded".to_owned())
         .response::<EchoCodec>()
         .build()
@@ -292,10 +293,10 @@ async fn prepared_modes_use_the_ordinary_generated_client_runtime() {
     assert!(requests[0].target().contains(
         "/root/items/slash%2Fvalue/%252E%252E/tail%3Fquery%23fragment%25?first=1&repeat=2&repeat=3"
     ));
-    assert_eq!(requests[0].header("x-phase9"), Some("new"));
+    assert_eq!(requests[0].header("x-prepared-endpoint"), Some("new"));
     assert_eq!(
         requests[0].header("content-type"),
-        Some("application/x-phase9")
+        Some("application/x-concord-prepared")
     );
     assert_eq!(requests[0].body(), b"encoded");
     assert_eq!(requests[1].method(), "GET");

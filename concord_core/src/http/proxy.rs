@@ -29,10 +29,7 @@ impl SafeProxy {
         Ok(Self { url })
     }
 
-    #[allow(
-        dead_code,
-        reason = "used by Phase 1 managed Reqwest client construction"
-    )]
+    #[allow(dead_code, reason = "used by managed Reqwest client construction")]
     pub(crate) fn as_str(&self) -> &str {
         self.url.as_str()
     }

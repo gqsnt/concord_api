@@ -68,8 +68,8 @@ fn development_tools_are_available_without_other_dangerous_or_optional_features(
 ))]
 #[test]
 fn raw_response_flag_is_isolated_without_claiming_its_deferred_public_api() {
-    // Phase 4 certifies only the Cargo-feature boundary. Positive RawResponse
-    // and generated raw-response terminals remain assigned to Phase 10.
+    // The Cargo feature is independently selectable; positive RawResponse
+    // and generated raw-response terminals are covered by release-candidate tests.
     assert!(cfg!(feature = "dangerous-raw-response"));
     assert!(!cfg!(feature = "dangerous-custom-retry"));
     assert!(!cfg!(feature = "dangerous-dev-tools"));

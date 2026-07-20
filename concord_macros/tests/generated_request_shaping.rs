@@ -17,10 +17,10 @@ static SCOPE_DEFAULT_DROPS: AtomicUsize = AtomicUsize::new(0);
 static ENDPOINT_DEFAULT_DROPS: AtomicUsize = AtomicUsize::new(0);
 static EXPLICIT_DROPS: AtomicUsize = AtomicUsize::new(0);
 static SHAPING_FORMATS: AtomicUsize = AtomicUsize::new(0);
-static PHASE5_TEST_LOCK: Mutex<()> = Mutex::const_new(());
+static REQUEST_SHAPING_TEST_LOCK: Mutex<()> = Mutex::const_new(());
 
-async fn phase5_test_guard() -> MutexGuard<'static, ()> {
-    PHASE5_TEST_LOCK.lock().await
+async fn request_shaping_test_guard() -> MutexGuard<'static, ()> {
+    REQUEST_SHAPING_TEST_LOCK.lock().await
 }
 
 pub struct DropProbe {
@@ -77,7 +77,7 @@ pub const ENDPOINT_DEFAULT: DropProbe = DropProbe::new("endpoint-default", endpo
 
 api! {
     client ShapeApi {
-        base "http://phase5.example.test:4317/fixed/";
+        base "http://request-shaping.example.test:4317/fixed/";
         var tenant: String;
         var locale: Option<String>;
         var client_marker: crate::DropProbe = crate::CLIENT_DEFAULT;
@@ -185,7 +185,7 @@ api! {
     }
 
     client OtherApi {
-        base "http://other.phase5.example.test/";
+        base "http://other.request-shaping.example.test/";
         var label: Option<String> = None;
         GET Echo(verbose: Option<bool>) -> Bytes {
             path ["echo"];
@@ -205,7 +205,7 @@ api! {
     }
 
     client TimeoutApi {
-        base "http://timeout.phase5.example.test/";
+        base "http://timeout.request-shaping.example.test/";
         timeout 20ms;
         scope timed() {
             timeout 10ms;
@@ -248,7 +248,7 @@ async fn next_stream_chunk(
 
 #[tokio::test(flavor = "current_thread")]
 async fn required_optional_defaulted_client_values_and_missing_input_are_stable() {
-    let _guard = phase5_test_guard().await;
+    let _guard = request_shaping_test_guard().await;
     let missing = ShapeApi::builder()
         .build()
         .err()
@@ -279,14 +279,14 @@ async fn required_optional_defaulted_client_values_and_missing_input_are_stable(
 
 #[tokio::test(flavor = "current_thread")]
 async fn nested_facade_extension_setters_and_explicit_endpoint_have_head_parity() {
-    let _guard = phase5_test_guard().await;
+    let _guard = request_shaping_test_guard().await;
     let server = ScriptedServer::start([
         ResponseScript::ok(b"facade".to_vec()),
         ResponseScript::ok(b"explicit".to_vec()),
         ResponseScript::ok(b"root".to_vec()),
         ResponseScript::ok(b"other".to_vec()),
     ])
-    .expect("Phase 5 server");
+    .expect("request-shaping server");
     let client = shaped_client(&server);
     let other_proxy = proxy(&server);
     let other = OtherApi::builder()
@@ -344,7 +344,7 @@ async fn nested_facade_extension_setters_and_explicit_endpoint_have_head_parity(
     assert_eq!(requests[0].method(), "PROPFIND");
     assert_eq!(requests[0].target(), requests[1].target());
     assert!(requests[0].target().contains(
-        "http://eu.api.phase5.example.test:4317/fixed/v1/regions/eu/users/account-a/id-42?tenant=tenant-a&locale=fr&language=de&scope_marker=scope-default&verbose=true&endpoint_marker=endpoint-default"
+        "http://eu.api.request-shaping.example.test:4317/fixed/v1/regions/eu/users/account-a/id-42?tenant=tenant-a&locale=fr&language=de&scope_marker=scope-default&verbose=true&endpoint_marker=endpoint-default"
     ));
     assert_eq!(
         requests[0].header("x-client-marker"),
@@ -370,7 +370,7 @@ async fn nested_facade_extension_setters_and_explicit_endpoint_have_head_parity(
 
 #[tokio::test(flavor = "current_thread")]
 async fn scope_and_endpoint_resets_reuse_one_retained_default_without_clone_bounds() {
-    let _guard = phase5_test_guard().await;
+    let _guard = request_shaping_test_guard().await;
     let server = ScriptedServer::start([]).expect("drop-only server");
     let client = shaped_client(&server);
     let scope_before = SCOPE_DEFAULT_DROPS.load(Ordering::SeqCst);
@@ -404,7 +404,7 @@ async fn scope_and_endpoint_resets_reuse_one_retained_default_without_clone_boun
 
 #[tokio::test(flavor = "current_thread")]
 async fn consuming_request_setters_keep_sibling_snapshots_isolated() {
-    let _guard = phase5_test_guard().await;
+    let _guard = request_shaping_test_guard().await;
     let server = ScriptedServer::start([
         ResponseScript::ok(b"selected".to_vec()),
         ResponseScript::ok(b"cleared".to_vec()),
@@ -424,7 +424,7 @@ async fn consuming_request_setters_keep_sibling_snapshots_isolated() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn facade_setters_leave_the_source_scope_snapshot_unchanged() {
-    let _guard = phase5_test_guard().await;
+    let _guard = request_shaping_test_guard().await;
     let server = ScriptedServer::start([
         ResponseScript::ok(b"source".to_vec()),
         ResponseScript::ok(b"cleared".to_vec()),
@@ -457,7 +457,7 @@ async fn facade_setters_leave_the_source_scope_snapshot_unchanged() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn independently_built_clients_retain_independent_value_snapshots() {
-    let _guard = phase5_test_guard().await;
+    let _guard = request_shaping_test_guard().await;
     let server = ScriptedServer::start([
         ResponseScript::ok(b"first".to_vec()),
         ResponseScript::ok(b"second".to_vec()),
@@ -494,7 +494,7 @@ async fn independently_built_clients_retain_independent_value_snapshots() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn collection_queries_and_every_standard_method_preserve_runtime_order() {
-    let _guard = phase5_test_guard().await;
+    let _guard = request_shaping_test_guard().await;
     let server = ScriptedServer::start(
         [
             ResponseScript::ok(b"search-values".to_vec()),
@@ -556,7 +556,7 @@ async fn collection_queries_and_every_standard_method_preserve_runtime_order() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn generated_public_media_headers_obey_single_map_ownership() {
-    let _guard = phase5_test_guard().await;
+    let _guard = request_shaping_test_guard().await;
     let server = ScriptedServer::start([
         ResponseScript::ok(b"accepted".to_vec()),
         ResponseScript::ok(b"bodyless".to_vec()),
@@ -574,7 +574,7 @@ async fn generated_public_media_headers_obey_single_map_ownership() {
 
     assert_eq!(
         client
-            .accept("application/vnd.phase5".to_owned())
+            .accept("application/vnd.concord.request-shaping".to_owned())
             .await
             .expect("public Accept"),
         "accepted"
@@ -624,7 +624,10 @@ async fn generated_public_media_headers_obey_single_map_ownership() {
 
     let requests = server.requests();
     assert_eq!(requests.len(), 3);
-    assert_eq!(requests[0].header("accept"), Some("application/vnd.phase5"));
+    assert_eq!(
+        requests[0].header("accept"),
+        Some("application/vnd.concord.request-shaping")
+    );
     assert_eq!(
         requests[1].header("content-type"),
         Some("application/example")
@@ -638,7 +641,7 @@ async fn generated_public_media_headers_obey_single_map_ownership() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn dynamic_request_shaping_is_deferred_and_fails_before_native_execution() {
-    let _guard = phase5_test_guard().await;
+    let _guard = request_shaping_test_guard().await;
     SHAPING_FORMATS.store(0, Ordering::SeqCst);
     let server = ScriptedServer::start([]).expect("shaping trap");
     let client = shaped_client(&server);
@@ -664,7 +667,7 @@ async fn dynamic_request_shaping_is_deferred_and_fails_before_native_execution()
 
 #[tokio::test(flavor = "current_thread")]
 async fn generated_timeout_inheritance_off_and_request_overrides_remain_distinct() {
-    let _guard = phase5_test_guard().await;
+    let _guard = request_shaping_test_guard().await;
     let delayed = || ResponseScript::DelayBeforeHeaders {
         delay: Duration::from_millis(60),
         status: 200,

@@ -57,7 +57,7 @@ impl CredentialProvider for SessionProvider {
 
 api! {
     client AuthApi {
-        base "http://phase6.example.test/";
+        base "http://authentication.example.test/";
         var tenant: String;
         credentials {
             secret api_secret: String;
@@ -105,7 +105,7 @@ api! {
 }
 
 #[test]
-fn generated_phase6_surface_has_ordered_inputs_and_source_specific_handles() {
+fn generated_authentication_surface_has_ordered_inputs_and_source_specific_handles() {
     use auth_api::prelude::*;
 
     let client = AuthApi::new(

@@ -103,48 +103,48 @@ fn vector_values_are_rejected_for_public_headers() {
 #[test]
 fn generated_custom_provider_handles_do_not_expose_direct_set() {
     let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/fail/phase6_custom_set_absent.rs");
+    cases.compile_fail("tests/ui/fail/authentication_custom_set_absent.rs");
 }
 
 #[test]
 fn credential_references_do_not_expose_mutation() {
     let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/fail/phase6_credential_ref_mutation_absent.rs");
+    cases.compile_fail("tests/ui/fail/authentication_credential_ref_mutation_absent.rs");
 }
 
 #[test]
-fn phase7_rate_limit_diagnostics_are_source_only_and_focused() {
+fn rate_limit_diagnostics_are_source_only_and_focused() {
     let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/fail/phase7_rate_optional_dimension.rs");
-    cases.compile_fail("tests/ui/fail/phase7_rate_invalid_cost.rs");
-    cases.compile_fail("tests/ui/fail/phase7_rate_off_exclusive.rs");
-    cases.compile_fail("tests/ui/fail/phase7_rate_clause_order.rs");
-    cases.compile_fail("tests/ui/fail/phase7_rate_undefined_attachment.rs");
-    cases.compile_fail("tests/ui/fail/phase7_rate_secret_dimension.rs");
+    cases.compile_fail("tests/ui/fail/rate_limit_optional_dimension.rs");
+    cases.compile_fail("tests/ui/fail/rate_limit_invalid_cost.rs");
+    cases.compile_fail("tests/ui/fail/rate_limit_off_exclusive.rs");
+    cases.compile_fail("tests/ui/fail/rate_limit_clause_order.rs");
+    cases.compile_fail("tests/ui/fail/rate_limit_undefined_attachment.rs");
+    cases.compile_fail("tests/ui/fail/rate_limit_secret_dimension.rs");
 }
 
 #[test]
-fn phase7_dynamic_dimensions_require_display_without_a_clone_contract() {
+fn dynamic_rate_limit_dimensions_require_display_without_a_clone_contract() {
     let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/fail/phase7_rate_display_required.rs");
+    cases.compile_fail("tests/ui/fail/rate_limit_display_required.rs");
 }
 
 #[test]
-fn phase8_pagination_diagnostics_are_source_only_and_focused() {
+fn pagination_diagnostics_are_source_only_and_focused() {
     let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/fail/phase8_pagination_syntax.rs");
-    cases.compile_fail("tests/ui/fail/phase8_pagination_types.rs");
-    cases.compile_fail("tests/ui/fail/phase8_pagination_modes.rs");
-    cases.compile_fail("tests/ui/fail/phase8_pagination_bounds.rs");
-    cases.compile_fail("tests/ui/fail/phase8_pagination_method_absence.rs");
+    cases.compile_fail("tests/ui/fail/pagination_syntax.rs");
+    cases.compile_fail("tests/ui/fail/pagination_types.rs");
+    cases.compile_fail("tests/ui/fail/pagination_modes.rs");
+    cases.compile_fail("tests/ui/fail/pagination_bounds.rs");
+    cases.compile_fail("tests/ui/fail/pagination_method_absence.rs");
 }
 
 #[test]
-fn phase9_prepared_capabilities_are_exact_and_private() {
+fn prepared_endpoint_capabilities_are_exact_and_private() {
     let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/fail/phase9_prepared_pagination_absent.rs");
-    cases.compile_fail("tests/ui/fail/phase9_prepared_stream_response_absent.rs");
-    cases.compile_fail("tests/ui/fail/phase9_prepared_builder_methods_absent.rs");
-    cases.compile_fail("tests/ui/fail/phase9_prepared_fields_private.rs");
-    cases.compile_fail("tests/ui/fail/phase9_prepared_no_prelude_export.rs");
+    cases.compile_fail("tests/ui/fail/prepared_endpoint_pagination_absent.rs");
+    cases.compile_fail("tests/ui/fail/prepared_endpoint_stream_response_absent.rs");
+    cases.compile_fail("tests/ui/fail/prepared_endpoint_builder_methods_absent.rs");
+    cases.compile_fail("tests/ui/fail/prepared_endpoint_fields_private.rs");
+    cases.compile_fail("tests/ui/fail/prepared_endpoint_no_prelude_export.rs");
 }

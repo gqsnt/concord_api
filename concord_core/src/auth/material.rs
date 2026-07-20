@@ -188,7 +188,7 @@ mod tests {
 
     #[test]
     fn built_in_material_formatting_is_redacted() {
-        const SENTINEL: &str = "phase6-material-5874c229f7b04e59";
+        const SENTINEL: &str = "credential-material-sentinel-5874c229f7b04e59";
         let values: [&dyn fmt::Debug; 4] = [
             &SecretString::new(SENTINEL),
             &AccessToken::new(SENTINEL),

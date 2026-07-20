@@ -12,7 +12,7 @@ use concord_test_support::server::{ResponseScript, ScriptedServer};
 
 api! {
     client OffsetApi {
-        base "http://phase8-offset.example.test/v1/";
+        base "http://pagination-offset.example.test/v1/";
         GET Items(offset: u64, limit: u32) -> Json<Vec<u32>> {
             path ["items"];
             query {
@@ -29,7 +29,7 @@ api! {
 
 api! {
     client PageApi {
-        base "http://phase8-page.example.test/v1/";
+        base "http://pagination-page.example.test/v1/";
         GET Items(page: u64, per_page: u32) -> Json<Vec<u32>> {
             path ["items"];
             query {
@@ -144,7 +144,7 @@ impl PaginationController<Vec<NonCloneItem>> for OneNonClonePage {
 
 api! {
     client CursorApi {
-        base "http://phase8-cursor.example.test/v1/";
+        base "http://pagination-cursor.example.test/v1/";
         GET Items(cursor: Option<String>) -> crate::VendorPageCodec {
             path ["items"];
             query {
@@ -197,7 +197,7 @@ impl PaginationController<VendorPage> for VendorController {
 
 api! {
     client CustomApi {
-        base "http://phase8-custom.example.test/v1/";
+        base "http://pagination-custom.example.test/v1/";
         GET Items(cursor: Option<String>, region: String) -> crate::VendorPageCodec {
             path ["items"];
             paginate custom crate::vendor_controller(
@@ -220,7 +220,7 @@ pub fn zero_controller() -> VendorController {
 
 api! {
     client ZeroApi {
-        base "http://phase8-zero.example.test/v1/";
+        base "http://pagination-zero.example.test/v1/";
         GET Items() -> crate::VendorPageCodec {
             paginate custom crate::zero_controller();
         }
@@ -229,7 +229,7 @@ api! {
 
 api! {
     client NonCloneApi {
-        base "http://phase8-non-clone.example.test/v1/";
+        base "http://pagination-non-clone.example.test/v1/";
         GET Items() -> crate::NonClonePageCodec {
             paginate custom crate::one_non_clone_page();
         }
@@ -245,7 +245,7 @@ fn nested_controller(cursor: &Option<String>, region: &str) -> VendorController 
 
 api! {
     client NestedPaginationApi {
-        base "http://phase8-nested.example.test/v1/";
+        base "http://pagination-nested.example.test/v1/";
         scope Organizations(region: String) {
             path ["organizations", scope.region];
             scope Repositories(repository: String) {
@@ -261,7 +261,7 @@ api! {
 
 api! {
     client CollisionPaginationApi {
-        base "http://phase8-collision.example.test/v1/";
+        base "http://pagination-collision.example.test/v1/";
         scope Left() {
             path ["left"];
             GET Items(offset: u64, limit: u32) -> Json<Vec<u8>> {
@@ -285,7 +285,7 @@ api! {
 
 api! {
     client PaginationRateApi {
-        base "http://phase8-rate.example.test/v1/";
+        base "http://pagination-rate.example.test/v1/";
         rate_limits {
             page_key {
                 by [host, ep.offset];
@@ -313,7 +313,7 @@ mod repeated_nested_expansion {
 
     api! {
         client NestedMacroPaginationApi {
-            base "http://phase8-nested-macro.example.test/v1/";
+            base "http://pagination-nested-macro.example.test/v1/";
             GET Items(offset: u64, limit: u32) -> Json<Vec<u8>> {
                 paginate OffsetPagination {
                     offset = ep.offset,
@@ -819,8 +819,8 @@ async fn generated_pagination_preserves_resolved_rate_keys_and_actual_hosts() {
         contexts.iter().map(|context| context.0).collect::<Vec<_>>(),
         [0, 1]
     );
-    let first_host = format!("{INITIAL}.phase8-rate.example.test");
-    let next_host = format!("{NEXT}.phase8-rate.example.test");
+    let first_host = format!("{INITIAL}.pagination-rate.example.test");
+    let next_host = format!("{NEXT}.pagination-rate.example.test");
     assert_eq!(contexts[0].2.as_deref(), Some(first_host.as_str()));
     assert_eq!(contexts[1].2.as_deref(), Some(next_host.as_str()));
     assert_ne!(contexts[0].2, contexts[1].2);
@@ -840,7 +840,7 @@ async fn generated_pagination_preserves_resolved_rate_keys_and_actual_hosts() {
     );
     for (_, safe_url, _, parts) in contexts.iter() {
         let rendered_safe = format!("{safe_url}\n{:?}", hooks.before.lock().expect("hooks"));
-        assert!(safe_url.contains("x.phase8-rate.example.test"));
+        assert!(safe_url.contains("x.pagination-rate.example.test"));
         assert!(!rendered_safe.contains(INITIAL));
         assert!(!rendered_safe.contains(NEXT));
         assert!(parts.iter().all(|(_, value)| value != "<pagination>"));

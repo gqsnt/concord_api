@@ -2077,7 +2077,7 @@ mod tests {
                 credentials { }
             }
         })
-        .expect("an empty Phase 6 credentials block is structurally valid");
+        .expect("an empty credentials block is structurally valid");
 
         parse(quote! {
             client Api {
@@ -2085,11 +2085,11 @@ mod tests {
                 rate_limits { }
             }
         })
-        .expect("an empty Phase 7 template block is structurally valid");
+        .expect("an empty rate-limit template block is structurally valid");
     }
 
     #[test]
-    fn phase6_credentials_parse_all_sources_and_enforce_definition_order() {
+    fn credentials_parse_all_sources_and_enforce_definition_order() {
         let api = parse_ok(quote! {
             client AuthApi {
                 base "https://example.test";
@@ -2156,7 +2156,7 @@ mod tests {
     }
 
     #[test]
-    fn phase6_auth_layer_operations_and_challenge_suffixes_are_bounded() {
+    fn authentication_layer_operations_and_challenge_suffixes_are_bounded() {
         parse(quote! {
             client AuthApi {
                 base "https://example.test";
@@ -2206,7 +2206,7 @@ mod tests {
     }
 
     #[test]
-    fn phase6_oauth_fields_and_secret_shapes_have_focused_diagnostics() {
+    fn oauth_fields_and_secret_shapes_have_focused_diagnostics() {
         let optional = parse(quote! {
             client AuthApi {
                 base "https://example.test";
@@ -2256,7 +2256,7 @@ mod tests {
     }
 
     #[test]
-    fn phase7_rate_templates_dimensions_windows_observer_and_attachments_parse_in_order() {
+    fn rate_limit_templates_dimensions_windows_observer_and_attachments_parse_in_order() {
         let api = parse_ok(quote! {
             client RateApi {
                 base "https://example.test";
@@ -2324,7 +2324,7 @@ mod tests {
     }
 
     #[test]
-    fn phase7_rate_syntax_rejects_invalid_structure_values_dimensions_and_order() {
+    fn rate_limit_syntax_rejects_invalid_structure_values_dimensions_and_order() {
         let duplicate_template = parse(quote! {
             client Api {
                 base "https://example.test";
@@ -2446,7 +2446,7 @@ mod tests {
     }
 
     #[test]
-    fn phase8_pagination_forms_parse_with_exact_final_clause_grammar() {
+    fn pagination_forms_parse_with_exact_final_clause_grammar() {
         let api = parse_ok(quote! {
             client Api {
                 base "https://example.test";
@@ -2479,7 +2479,7 @@ mod tests {
     }
 
     #[test]
-    fn phase8_pagination_rejects_invalid_assignments_modes_and_order() {
+    fn pagination_rejects_invalid_assignments_modes_and_order() {
         let cases = [
             (
                 quote! {

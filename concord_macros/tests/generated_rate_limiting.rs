@@ -32,7 +32,7 @@ impl RateLimitObserver for CountingObserver {
 
 api! {
     client RateApi {
-        base "http://phase7.example.test/";
+        base "http://rate-limit.example.test/";
         var tenant: String;
         rate_limits {
             application {
@@ -281,7 +281,7 @@ async fn custom_limiter_receives_canonical_ordered_plan_and_owns_observation() {
     );
     assert_eq!(
         rules[0].parts,
-        [("host".to_owned(), "phase7.example.test".to_owned())]
+        [("host".to_owned(), "rate-limit.example.test".to_owned())]
     );
     assert_eq!(rules[0].cost, 1);
     assert_eq!(
@@ -298,7 +298,7 @@ async fn custom_limiter_receives_canonical_ordered_plan_and_owns_observation() {
     assert_eq!(
         rules[2].parts,
         [
-            ("host".to_owned(), "phase7.example.test".to_owned()),
+            ("host".to_owned(), "rate-limit.example.test".to_owned()),
             ("endpoint".to_owned(), "RateApi::Regions::Read".to_owned(),),
             ("method".to_owned(), "GET".to_owned()),
             ("vars.tenant".to_owned(), "tenant-west".to_owned()),

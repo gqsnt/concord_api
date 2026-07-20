@@ -1,5 +1,5 @@
 error[E0277]: `NotIterable` is not an iterator
-  --> tests/ui/fail/phase8_pagination_bounds.rs:41:1
+  --> tests/ui/fail/pagination_bounds.rs:41:1
    |
 41 | / api! {
 42 | |     client MissingIntoIterator {
@@ -14,7 +14,7 @@ error[E0277]: `NotIterable` is not an iterator
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `NotIterable` is not an iterator
-  --> tests/ui/fail/phase8_pagination_bounds.rs:41:1
+  --> tests/ui/fail/pagination_bounds.rs:41:1
    |
 41 | / api! {
 42 | |     client MissingIntoIterator {
@@ -28,7 +28,7 @@ error[E0277]: `NotIterable` is not an iterator
    = help: the trait `EndpointSpec` is implemented for `missing_into_iterator::endpoints::Read`
    = note: required for `NotIterable` to implement `IntoIterator`
 note: required for `missing_into_iterator::endpoints::Read` to implement `EndpointSpec`
-  --> tests/ui/fail/phase8_pagination_bounds.rs:41:1
+  --> tests/ui/fail/pagination_bounds.rs:41:1
    |
 41 | / api! {
 42 | |     client MissingIntoIterator {
@@ -41,7 +41,7 @@ note: required for `missing_into_iterator::endpoints::Read` to implement `Endpoi
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `NotIterable` is not an iterator
-  --> tests/ui/fail/phase8_pagination_bounds.rs:41:1
+  --> tests/ui/fail/pagination_bounds.rs:41:1
    |
 41 | / api! {
 42 | |     client MissingIntoIterator {
@@ -55,7 +55,7 @@ error[E0277]: `NotIterable` is not an iterator
    = help: the trait `PaginatedEndpoint` is implemented for `missing_into_iterator::endpoints::Read`
    = note: required for `NotIterable` to implement `IntoIterator`
 note: required for `missing_into_iterator::endpoints::Read` to implement `PaginatedEndpoint`
-  --> tests/ui/fail/phase8_pagination_bounds.rs:41:1
+  --> tests/ui/fail/pagination_bounds.rs:41:1
    |
 41 | / api! {
 42 | |     client MissingIntoIterator {
@@ -68,7 +68,7 @@ note: required for `missing_into_iterator::endpoints::Read` to implement `Pagina
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `NotIterable` is not an iterator
-  --> tests/ui/fail/phase8_pagination_bounds.rs:41:1
+  --> tests/ui/fail/pagination_bounds.rs:41:1
    |
 41 | / api! {
 42 | |     client MissingIntoIterator {
@@ -82,7 +82,7 @@ error[E0277]: `NotIterable` is not an iterator
    = help: the trait `EndpointSpec` is implemented for `missing_into_iterator::endpoints::Read`
    = note: required for `NotIterable` to implement `IntoIterator`
 note: required for `missing_into_iterator::endpoints::Read` to implement `EndpointSpec`
-  --> tests/ui/fail/phase8_pagination_bounds.rs:41:1
+  --> tests/ui/fail/pagination_bounds.rs:41:1
    |
 41 | / api! {
 42 | |     client MissingIntoIterator {
@@ -100,7 +100,7 @@ note: required by a bound in `PaginatedEndpoint`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `Vec<u8>: HasNextCursor<String>` is not satisfied
-  --> tests/ui/fail/phase8_pagination_bounds.rs:50:1
+  --> tests/ui/fail/pagination_bounds.rs:50:1
    |
 50 | / api! {
 51 | |     client MissingCursorExtraction {

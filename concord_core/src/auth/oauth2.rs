@@ -185,8 +185,8 @@ mod tests {
     use super::*;
     use crate::auth::{CredentialMaterial, CredentialReason, SecretCredential};
 
-    const CLIENT_ID: &str = "phase6-oauth-client-id-4db370ebb046";
-    const CLIENT_SECRET: &str = "phase6-oauth-client-secret-9f8b14c2e6a1";
+    const CLIENT_ID: &str = "oauth-client-id-sentinel-4db370ebb046";
+    const CLIENT_SECRET: &str = "oauth-client-secret-sentinel-9f8b14c2e6a1";
 
     fn core(executor: &DeterministicExecutor, response_limit: usize) -> ClientCore {
         ClientCore::build_with_development(

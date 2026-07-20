@@ -29,10 +29,7 @@ pub enum StatusBodyState {
     UnavailableDeadline,
 }
 
-#[allow(
-    dead_code,
-    reason = "constructed by the Phase 1 managed response collector"
-)]
+#[allow(dead_code, reason = "constructed by the managed response collector")]
 enum StatusBodyInner {
     Disabled,
     Empty,
@@ -48,10 +45,7 @@ pub struct StatusBody {
     inner: StatusBodyInner,
 }
 
-#[allow(
-    dead_code,
-    reason = "constructed by the Phase 1 managed response collector"
-)]
+#[allow(dead_code, reason = "constructed by the managed response collector")]
 impl StatusBody {
     pub(crate) const fn disabled() -> Self {
         Self {
@@ -227,10 +221,7 @@ pub struct HttpResponseFailure {
 }
 
 impl HttpResponseFailure {
-    #[allow(
-        dead_code,
-        reason = "constructed by the Phase 1 managed response collector"
-    )]
+    #[allow(dead_code, reason = "constructed by the managed response collector")]
     pub(crate) fn new(
         endpoint: &'static str,
         method: Method,
