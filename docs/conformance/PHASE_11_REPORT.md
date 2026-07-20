@@ -23,7 +23,7 @@ status `NOT_STARTED`. No Phase 12, Phase 13, or Phase 14 product behavior was im
 - Final immutable Phase 11 source/test commit:
   `1e5d3c9e4567cde54a1b27acae5d48bd7b5d8607`
 - Phase 11 evidence/report/state commit: `22868a9de9bd55daa975dbcd484f085033a52217`
-- Phase 11 evidence anchor: `ANCHOR_COMMIT_PENDING`
+- Phase 11 evidence anchor: `bec42412043d24b8bab01bd7049b430abfb8a46a`
 - Head policy: `anchor-must-be-an-ancestor`
 
 No branch was created. No remote Git, fetch, pull, push, merge, rebase, amend, tag, publication,
