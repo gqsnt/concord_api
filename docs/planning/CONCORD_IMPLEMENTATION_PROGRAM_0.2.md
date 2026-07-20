@@ -620,11 +620,16 @@ hooks. The package remains `Normative Implementation Candidate` throughout Phase
 
 The Phase 12 authority commit is `95a1b9075061184ff2fa5807bb28b16a4d172277`. The initial
 source/test commit is `e71ed0671359f443f5aa165391ff56bd10debdf2`; the final non-amended
-source-correction and immutable tested identity is
-`d1aadcebcad0a65d92c4ed4a42d6b0a9c1f034b2`. The correction makes three Unicode registry-audit
-markers portable to the maintained Windows PowerShell 5.1 runner without changing their asserted
-text. The complete focused and maintained matrix, including `just release`, passed after the
-correction against the exact final source identity on Rust 1.85.0.
+source correction for the original Phase 12 closure was
+`d1aadcebcad0a65d92c4ed4a42d6b0a9c1f034b2`. Focused conformance review later found that the
+downstream custom request specification lacked runtime proof through an explicit generated endpoint
+value and that several Phase 12 rows used broad command-to-claim allocation. The executable
+correction commit and new immutable tested identity is
+`8281c79d98406be7b88a20ea70d84af531e0b757`. It adds exact facade/explicit/prepared request-spec
+parity, hook-veto, contradiction, and macro-neutrality proof plus validation-audit enforcement; no
+product source, public contract, dependency, feature, or generated contract changed. The complete
+focused and maintained matrix, including `just release`, passed against that exact source identity
+on Rust 1.85.0.
 
 The validated implementation has one public `RequestBodySpec`, one managed outgoing
 `RequestBody`, one public `ResponseBodySpec`, exactly sealed `Buffered`, `Streaming`, and `Discard`
@@ -646,8 +651,11 @@ pagination, or record-stream pagination.
 Phase 12 adds exactly 127 direct and zero partial evidence rows after the byte-identical 1,553-row
 Phase 0-11 catalog. Coverage contains 563 active and 11 superseded IDs. The historical Phase 10
 release requirement, claim, and change-map registries remain historical; Phase 14 owns their whole-
-product regeneration. Exact commits, commands, source paths, features, lineage, security results,
-and anchor sequence are recorded in `docs/conformance/PHASE_12_REPORT.md`.
+product regeneration. The corrected claim-atom audit maps every complete active Phase 12 paragraph
+to principal source/test/fixture paths and one or more exact passing commands, with each filtered
+Nextest run backed by a nonzero inventory. Exact commits, commands, source paths, features, lineage,
+security results, and the corrected anchor sequence are recorded in
+`docs/conformance/PHASE_12_REPORT.md`.
 
 ## Release non-goals
 

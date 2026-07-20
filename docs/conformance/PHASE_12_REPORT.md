@@ -14,23 +14,35 @@ Phase 13 or Phase 14 product behavior and starts no Phase 15 work.
 
 ## Identities and Git boundary
 
-- Starting HEAD: `b66d2914609aec7b767481e09dedd5544b3d9130`
-- Starting branch/tree: clean `master`
+- Original Phase 12 starting HEAD: `b66d2914609aec7b767481e09dedd5544b3d9130`
+- Focused correction starting HEAD: `d0c7d0d3cfb4d7553b5a456c13be369d0b01bd3c`
+- Starting branch/tree for the correction: clean `master`
 - Phase 12 authority commit: `95a1b9075061184ff2fa5807bb28b16a4d172277`
 - Initial Phase 12 source/test commit: `e71ed0671359f443f5aa165391ff56bd10debdf2`
-- Focused source-correction commit: `d1aadcebcad0a65d92c4ed4a42d6b0a9c1f034b2`
-- Final immutable tested source commit: `d1aadcebcad0a65d92c4ed4a42d6b0a9c1f034b2`
-- Phase 12 evidence/report/state commit: `14942ce98c6e959c9cfe4f1fe328ddd95d3d7367`
-- Phase 12 evidence anchor: `793d6d30b75b7d7dd17831cdf60c4c504da90f7a`
+- Prior focused source correction: `d1aadcebcad0a65d92c4ed4a42d6b0a9c1f034b2`
+- Executable correction commit: `8281c79d98406be7b88a20ea70d84af531e0b757`
+- Final corrected immutable tested source commit: `8281c79d98406be7b88a20ea70d84af531e0b757`
+- Corrected Phase 12 evidence/report/state commit: `EVIDENCE_COMMIT_PENDING`
+- Corrected Phase 12 evidence anchor: `ANCHOR_COMMIT_PENDING`
 - Compatible anchor-metadata descendant: the final two-file commit titled
-  `docs: record phase 12 anchor`; its own identity is intentionally not self-embedded.
+  `docs: record corrected phase 12 anchor`; its own identity is intentionally not self-embedded.
 - Head policy: `anchor-must-be-an-ancestor`
 
-The initial source identity passed all source, test, feature, dependency, MSRV, documentation, and
-security work before the final source audit exposed three Unicode literals that Windows PowerShell
-5.1 decoded incorrectly from a BOM-less UTF-8 audit script. The non-amended correction expresses
-the same en/em dashes with ASCII-source Unicode code points. Direct self-test and Source-mode audits
-then passed, and the complete matrix was rerun against the corrected immutable source.
+The prior evidence state `14942ce98c6e959c9cfe4f1fe328ddd95d3d7367` and prior anchor
+`793d6d30b75b7d7dd17831cdf60c4c504da90f7a` remain immutable correction history. Their tested
+source was `d1aadcebcad0a65d92c4ed4a42d6b0a9c1f034b2`. Source review found the approved Phase 12 product
+architecture intact, but evidence review found two correction-class defects: no runtime probe had
+executed a downstream custom `RequestBodySpec` through an explicit generated endpoint value, and
+several Phase 12 rows used broad or unrelated commands instead of exact command-to-claim proof.
+
+The executable correction adds only the missing three-path tests and validation-audit enforcement;
+it changes no product source, public contract, dependency, feature, or generated contract. The new
+runtime proof executes distinct sentinels through the generated facade, an actual generated
+`extension_api::endpoints::*` value passed to `client.request(...)`, and a prepared endpoint using
+`body_spec::<DownstreamBody>`. Companion probes prove hook-veto and contradiction cutoffs on all
+three paths. The macro-neutrality audit pairs type-shaped source inspection with the successful
+explicit-endpoint runtime. All 127 Phase 12 rows were then reviewed against their complete current
+normative paragraphs, principal paths, and focused passing commands.
 
 No branch was created. No remote Git operation, push, pull, fetch, merge, rebase, amend, tag,
 publication, deployment, credential access, or history rewrite occurred. One pre-freeze fixture
@@ -143,6 +155,22 @@ protected work. Hook veto prevents `prepare`; hidden Reqwest retries do not reru
 factory construction; one-shot, reconstructible, reusable bytes, and multipart replayability retain
 their exact recovery behavior; the first excess request frame is withheld.
 
+The corrected downstream proof is
+`concord_core/tests/generic_spec_extensions.rs::downstream_request_spec_runs_through_facade_explicit_and_prepared_endpoints`.
+It observes three managed HTTP requests, exact per-path content types, one metadata call and one
+prepare call per request, one server receipt per distinct body sentinel, and declared response-spec
+decoding for facade, explicit generated endpoint, and prepared construction. The explicit path
+constructs the actual emitted endpoint value and calls `client.request(explicit_endpoint)`; it does
+not call the facade. The companion
+`downstream_request_spec_hook_veto_prevents_prepare_for_facade_explicit_and_prepared_paths` proves
+metadata once, hook observation, prepare zero, credential acquisition/materialization zero, limiter
+acquisition zero, request-debug zero, and native sends zero on every path. The companion
+`downstream_request_spec_contradictions_fail_before_protected_phases_for_facade_explicit_and_prepared_paths`
+proves representative body-kind, exact-length, content-type-ownership, and impossible-state
+contradictions after metadata, hook approval, and one prepare but before those same protected
+phases. Every returned category is `RequestBody`, and high-entropy body values remain absent from
+formatting and recursive sources.
+
 ## Response specification and sealed acquisition
 
 The stable public response contract is exactly:
@@ -213,6 +241,10 @@ The macro AST and normalized model store request body as `Option<syn::Type>` and
 `syn::Type`. Production macro source contains no `RequestBodyKind`, `ResponseKind`, `CodecKind`, or
 `MediaKind`, and no semantic branch for `Json`, `Text`, `Bytes`, `NoContent`, `Stream`, `Multipart`,
 `Records`, `Csv`, or `NdJson`. Feature diagnostics arise from core type and trait availability.
+The corrected production-source audit additionally verifies arbitrary application-name neutrality,
+`Option<syn::Type>` / `syn::Type` storage, and the same generated `RequestBodySpec` bound and
+endpoint capability used by facade and explicit values. `DownstreamBody` required no macro source
+change; its successful explicit generated-endpoint execution is the runtime half of that proof.
 
 Generated body arguments use `B::Input` under `B: RequestBodySpec`; responses use `R::Output` under
 `R: ResponseBodySpec`; metadata terminals use `ApiResponse<R::Output>`. Bodyless endpoints use one
@@ -289,11 +321,76 @@ one production executor.
 ## Validation
 
 Environment: Rust/Cargo 1.85.0, LLVM 19.1.7, cargo-nextest 0.9.140, just 1.46.0,
-cargo-deny 0.20.2, PowerShell 7.6.3, Windows PowerShell 5.1.26100.8655, and Git
+cargo-deny 0.20.2, PowerShell 7.6.3, and Git
 2.45.1.windows.1 on `x86_64-pc-windows-msvc`.
 
 Every command ran from `F:\projects\concord_api` against
-`d1aadcebcad0a65d92c4ed4a42d6b0a9c1f034b2` and exited zero:
+`8281c79d98406be7b88a20ea70d84af531e0b757` and exited zero. Every filtered Nextest run was
+preceded by its matching `cargo nextest list ...` command; the inventory selected the stated
+fully-qualified tests and no zero-test selection was accepted.
+
+The exact corrected request-specification and macro commands were:
+
+```text
+cargo nextest run --profile ci -p concord_core --test generic_spec_extensions -E 'test(=downstream_request_spec_runs_through_facade_explicit_and_prepared_endpoints) | test(=downstream_request_spec_hook_veto_prevents_prepare_for_facade_explicit_and_prepared_paths) | test(=downstream_request_spec_contradictions_fail_before_protected_phases_for_facade_explicit_and_prepared_paths)'
+cargo nextest run --profile ci -p concord_macros --test macro_type_neutrality -E 'test(=production_macro_model_is_type_shaped_and_semantically_neutral)'
+```
+
+They selected and passed 3/3 and 1/1 tests. The exact prior-guarantee correction commands were:
+
+```text
+cargo nextest run --profile ci -p concord_core --all-features --lib --test reqwest_contract -E 'test(/hidden_reqwest_retry_does_not_reenter_custom_limiter_or_lifecycle$/) | test(=hidden_retry_does_not_reenter_concord_boundaries) | test(/reconstructible_factory_runs_once_per_concord_attempt_and_no_third_attempt_occurs$/)'
+cargo nextest run --profile ci -p concord_core --all-features --lib -E 'test(/real_tls_provider_http_remains_outside_application_limiter_lifecycle$/) | test(/paginated_provider_http_never_enters_page_lifecycle_or_limiter_work$/) | test(/provider_http_data_stays_outside_application_hooks_debug_and_channel$/)'
+cargo nextest run --profile ci -p concord_core --all-features --lib -E 'test(/factory_content_type_is_captured_before_metadata_without_materialization$/) | test(/multipart_replayability_and_factory_freshness_are_internal$/) | test(/factory_materialization_and_explicit_reconstruction_are_attempt_scoped$/) | test(/request_stream_and_factory_remain_lazy_through_hook_veto$/) | test(/body_factory_is_created_once_after_approval_and_failure_is_pre_native$/) | test(/reconstructible_factory_runs_once_per_concord_attempt_and_no_third_attempt_occurs$/) | test(/hidden_reqwest_retry_does_not_reenter_custom_limiter_or_lifecycle$/)'
+cargo nextest run --profile ci -p concord_core --all-features --lib --test raw_response -E 'test(=raw_success_skips_decoder_media_validation_and_preserves_exact_metadata) | test(=raw_success_uses_known_length_preflight_and_never_returns_partial_excess) | test(=non_success_remains_the_ordinary_typed_status_error) | test(/raw_response_reuses_limiter_hooks_observation_and_success_completion$/) | test(/raw_response_contains_hidden_reqwest_retry_inside_one_logical_attempt$/) | test(/raw_response_keeps_the_fixed_deadline_and_cancellation_contract$/) | test(/raw_response_preserves_authentication_recovery_and_logical_native_url_separation$/)'
+```
+
+Those inventories selected 3 hidden-retry, 3 provider-isolation, 7 factory, and 7 raw-response
+tests, all passing. They prove logical-attempt-scoped hook/body/auth/limiter counts, no native-retry
+prepare/factory/credential/limiter re-entry, provider HTTP exclusion from every application
+lifecycle/channel, metadata without factory materialization, attempt-scoped fresh factory streams,
+one permitted recovery reconstruction and no third attempt, pre-native safe factory failure, and
+raw decoder bypass/status/bounds/logical URL/hooks/limiter/recovery/retry/deadline/cancellation/
+completion parity.
+
+The principal response and records commands were:
+
+```text
+cargo nextest run --profile ci -p concord_core --test generic_spec_extensions -E 'test(=downstream_request_and_all_sealed_response_modes_work_without_macro_changes) | test(=custom_response_modes_observe_status_preflight_validation_and_acquisition_order) | test(=synchronous_response_extension_return_is_checked_against_the_operation_deadline) | test(=application_response_errors_and_complete_body_bytes_are_sanitized_by_core)'
+cargo nextest run --profile ci -p concord_core --all-features --lib --test records_extensions -E 'test(/records::csv::tests::/) | test(/records::ndjson::tests::/) | test(/records::stream::tests::/) | test(=downstream_decoder_streams_and_batches_through_generated_public_contracts) | test(=csv_records_are_typed_chunk_independent_bounded_and_safe) | test(=ndjson_records_are_typed_chunk_independent_bounded_and_safe)'
+```
+
+They selected and passed 4/4 response-mode and 16/16 record tests. The records-only selectors passed
+4/4 under `records`, 9/9 under `csv`, 8/8 under `ndjson`, and 13/13 under `csv,ndjson`; the exact
+topology command `& .\scripts\audit-record-feature-topology.ps1` passed, as did
+`cargo nextest run --profile ci -p concord_macros --test dependency_policy` (4/4) and `just deny`.
+
+The corrected conformance rows use exact principal artifacts and commands rather than `just release`
+alone:
+
+- positive generated/downstream compilation uses `cargo nextest run --profile ci -p concord_macros
+  --test compile`, `cargo check --target-dir target/fixture-contracts --manifest-path
+  concord_macros/tests/fixtures/Cargo.toml -p concord-fixture-extension-certification
+  --all-features --offline --locked`, and the 30/30 generated neutrality/pagination/prepared/surface
+  command;
+- invalid specifications, sealed modes, non-`Send` input, disabled JSON/multipart, pagination
+  exclusions, and contract-13 mismatch use `cargo nextest run --profile ci -p concord_core --test
+  ui`, its `--all-features` counterpart, `cargo nextest run --profile ci -p concord_macros --test
+  ui`, and the macro compile fixtures;
+- public-only extensions use the focused three-test extension fixture command plus the corrected
+  request parity, four-mode response, records, and generated pagination commands;
+- the three exact high-entropy security selectors passed 9/9, 13/13, and 6/6 across request,
+  response, stream, records, raw, credential, rate, pagination, and documentation surfaces;
+- public/generated documentation and examples use `just doctest`, `just doctest-all`, `just doc`,
+  `just doc-all`, `cargo nextest run --profile ci -p concord_core --all-features --test
+  public_rustdoc`, the focused generated-Rustdoc compile test, both examples checks, and the 1/1
+  canonical examples test.
+
+The exact Rust 1.85 proof ran `rustc +1.85.0 --version --verbose` followed by `cargo +1.85.0 check`
+for core no-default, core all-features, `records`, `csv`, `ndjson`, `csv,ndjson`, macros all targets,
+the renamed-core locked/offline fixture, the all-feature public extension locked/offline fixture,
+all-feature examples, and the no-default JSON dangerous-raw example. Every command passed with
+rustc 1.85.0 and LLVM 19.1.7. The validation registry records each full command independently.
 
 | Exact command | Result |
 |---|---|
@@ -303,8 +400,8 @@ Every command ran from `F:\projects\concord_api` against
 | `just check-no-default` | passed |
 | `just clippy` | passed with warnings denied |
 | `just clippy-all` | passed with warnings denied |
-| `just test` | 558/558 passed |
-| `just test-all` | 583/583 passed |
+| `just test` | 561/561 passed |
+| `just test-all` | 586/586 passed |
 | `just test-no-default` | 1/1 passed; 244 skipped |
 | `just doctest` | 2/2 compile-fail doctests passed |
 | `just doctest-all` | 4/4 compile-fail doctests passed |
@@ -312,14 +409,15 @@ Every command ran from `F:\projects\concord_api` against
 | `just doc-all` | all four all-feature libraries passed with warnings denied |
 | `just deny` | advisories, bans, licenses, and sources passed; two accepted historical duplicate warnings only |
 | `just diff-check` | passed |
-| `just release` | passed in 117.2 seconds; complete maintained matrix and 11/11 benchmark categories |
+| `just release` | passed in 152.3 seconds; complete maintained matrix and 11/11 benchmark categories |
 
 The release wrapper also passed the exact default/all/no-default/records/CSV/NDJSON/combined/JSON/
 multipart feature matrix, dependency topology, dangerous-feature isolation, Rust 1.85 matrix,
 generic specification and record tests, grammar/UI/downstream fixtures, Reqwest assumptions,
 security/properties, examples, benchmarks, public/generated Rustdoc, naming, artifact, registry, and
-historical-prefix audits. Registry self-tests passed 15 acceptance/rejection classes with 943 parsed
-claims. Source mode reported 563 active, 11 superseded, and 1,553 historical rows.
+historical-prefix audits. Registry self-tests passed 16 acceptance/rejection classes with 943 parsed
+claims. Source mode reported 563 active, 11 superseded, 1,553 historical rows, and all 127 inherited
+Phase 12 rows while the corrected evidence was intentionally not yet assessed.
 
 Validation used deterministic barriers, controlled time, explicit counters, owned loopback protocol
 servers, no arbitrary sleep oracle, no automatic retry, and no external live application service.
@@ -331,15 +429,26 @@ active paragraph version. There are no waivers, missing paths, unresolved Phase 
 Phase 12 criteria. The catalog contains 1,680 rows: the exact 1,553 Phase 0-11 evidence rows followed
 by the 127 append-only Phase 12 rows.
 
+Each corrected Phase 12 row now embeds the complete active normative paragraph as its claim scope,
+names principal source/test/fixture files rather than broad crate roots, separates multiple exact
+commands with the audited ` ;; ` delimiter, and binds every command to an authoritative passing
+validation row for `8281c79d98406be7b88a20ea70d84af531e0b757`. Human review decomposed every
+paragraph conjunction and modal clause before assigning paths and commands. In particular,
+`P12-PROD-GUAR-008`, `P12-PROD-GUAR-009`, `P12-API-BODY-002`, `P12-EXEC-BODY-003`, and
+`P12-EXEC-RAW-001` now cite the exact hidden-retry, provider, factory, and raw probes, and all twelve
+named `P12-CONF-*` rows have focused principal proof with `just release` retained only as aggregate
+support where applicable.
+
 The historical Phase 0-11 owner remains exactly 1,099,185 bytes with SHA-256
 `90d31f417690082af865850d6e1ce25331bca16c76f37c9338382b71df85a91f`. Every Phase 0-11 evidence
 byte and every `PHASE_0_REPORT.md` through `PHASE_11_REPORT.md` byte remains unchanged. Superseded
 IDs remain resolvable through their change records and retain their exact historical evidence and
 source identities.
 
-Coverage contains all 563 active and 11 superseded IDs. The validation registry adds 28 Phase 12
-rows, including all 16 required maintained commands and the exact focused feature, extension,
-security, MSRV, documentation, dependency, example, benchmark, and release-audit recipes. The
+Coverage contains all 563 active and 11 superseded IDs. The validation registry contains 167 rows:
+71 preserved historical rows plus 96 corrected Phase 12 rows. Those Phase 12 rows include all 16
+required maintained commands, every passing focused execution command cited by evidence, and every
+matching Nextest inventory used to establish a nonzero exact selection. The
 historical Phase 10 release requirement, claim, and change-map registries remain historical; Phase
 14 owns whole-product regeneration and release-final closure.
 

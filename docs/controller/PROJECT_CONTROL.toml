@@ -35,14 +35,15 @@ release_validation_registry = "docs/conformance/RELEASE_VALIDATION_REGISTRY_0.1.
 expected_branch = "master"
 latest_validated_phase = "12"
 latest_verdict = "PHASE_12_COMPLETE_WITH_LIMITATIONS"
-source_commit = "d1aadcebcad0a65d92c4ed4a42d6b0a9c1f034b2"
+source_commit = "8281c79d98406be7b88a20ea70d84af531e0b757"
 implementation_source_commits = [
   "e71ed0671359f443f5aa165391ff56bd10debdf2",
   "d1aadcebcad0a65d92c4ed4a42d6b0a9c1f034b2",
+  "8281c79d98406be7b88a20ea70d84af531e0b757",
 ]
-post_source_governance_commit = "14942ce98c6e959c9cfe4f1fe328ddd95d3d7367"
-evidence_commit = "14942ce98c6e959c9cfe4f1fe328ddd95d3d7367"
-anchor_commit = "793d6d30b75b7d7dd17831cdf60c4c504da90f7a"
+post_source_governance_commit = "EVIDENCE_COMMIT_PENDING"
+evidence_commit = "EVIDENCE_COMMIT_PENDING"
+anchor_commit = "ANCHOR_COMMIT_PENDING"
 phase_report = "docs/conformance/PHASE_12_REPORT.md"
 normative_status = "Normative Implementation Candidate"
 head_policy = "anchor-must-be-an-ancestor"
@@ -69,7 +70,7 @@ release_change_map_rows = 152
 normative_language_allowlist_rows = 4
 normative_dependency_rows = 29
 normative_ownership_rows = 6
-release_validation_rows = 99
+release_validation_rows = 167
 release_final_closure_owner = "Phase 14"
 
 [active_phase]
