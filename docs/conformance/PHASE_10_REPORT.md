@@ -22,7 +22,7 @@ passed. This is a locally validated release candidate, not a published release.
 - Previous evidence anchor: `6c267878c6f62d2a9f45090f1172194e16b3b747`
 - Phase 10 immutable source/test commit: `52ceef99e7cca1fac256a55d85296480817b199a`
 - Phase 10 evidence/report/state commit: `5a6af781abf7551cc6da979c969f54f997572ffe`
-- Phase 10 evidence anchor: `PENDING_PHASE_10_ANCHOR`
+- Phase 10 evidence anchor: `1c662d2e20b9e5c267743c108415de437bac6278`
 - Anchor-identity metadata descendant: the final documentation-only commit with subject
   `docs: record phase 10 evidence anchor`
 - Head policy: `anchor-must-be-an-ancestor`

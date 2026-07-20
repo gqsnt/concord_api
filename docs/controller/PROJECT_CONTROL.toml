@@ -43,7 +43,7 @@ implementation_source_commits = [
 ]
 post_source_governance_commit = ""
 evidence_commit = "5a6af781abf7551cc6da979c969f54f997572ffe"
-anchor_commit = "PENDING_PHASE_10_ANCHOR"
+anchor_commit = "1c662d2e20b9e5c267743c108415de437bac6278"
 phase_report = "docs/conformance/PHASE_10_REPORT.md"
 normative_status = "Normative Release Final"
 head_policy = "anchor-must-be-an-ancestor"
