@@ -89,6 +89,7 @@ version = "0.0.0"
 dependencies = [
  "concord_core 0.1.0",
  "concord_macros",
+ "tokio",
 ]
 
 [[package]]

@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Output;
 
-use concord_test_support::cargo_fixture::{check_manifest, diagnostics, run};
+use concord_test_support::cargo_fixture::{check_manifest, diagnostics, run, run_nextest};
 
 fn fixture_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
@@ -90,34 +90,93 @@ fn complete_extension_fixture_compiles_through_public_namespaces_for_every_owned
 
 #[test]
 fn complete_extension_fixture_has_no_private_native_or_integration_escape() {
-    let path = fixture_root().join("extension_certification/src/lib.rs");
-    let source = std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
-    for forbidden in [
-        "__private",
-        "__development",
-        "reqwest",
-        "ClientCore",
-        "EndpointSpec",
-        "ResponseHandler",
-        "PreparedHead",
-        "ExecutionPlan",
-        "PaginatedEndpoint",
-        "downcast",
-        "unsafe {",
+    for relative in [
+        "extension_certification/src/lib.rs",
+        "extension_certification/tests/pagination_runtime.rs",
+    ] {
+        let path = fixture_root().join(relative);
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+        for forbidden in [
+            "__private",
+            "__development",
+            "reqwest",
+            "ClientCore",
+            "EndpointSpec",
+            "ResponseHandler",
+            "PreparedHead",
+            "ExecutionPlan",
+            "PaginatedEndpoint",
+            "downcast",
+            "unsafe {",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "extension fixture {relative} exposed prohibited surface `{forbidden}`"
+            );
+        }
+        for line in source
+            .lines()
+            .filter(|line| line.contains("concord_core::"))
+        {
+            assert!(
+                line.contains("concord_core::advanced") || line.contains("concord_core::prelude"),
+                "extension fixture {relative} imported an unapproved core namespace: {line}"
+            );
+        }
+    }
+}
+
+#[test]
+fn downstream_pagination_runtime_executes_generated_construction_and_binding() {
+    let manifest = fixture_root().join("Cargo.toml");
+    let output = run_nextest(
+        &workspace_root(),
+        "macros/extension-certification-pagination-runtime",
+        [
+            "--manifest-path",
+            manifest.to_str().expect("fixture manifest path"),
+            "-p",
+            "concord-fixture-extension-certification",
+            "--test",
+            "pagination_runtime",
+            "-E",
+            "test(=downstream_generated_controller_constructs_binds_and_collects_two_pages)",
+            "--no-tests",
+            "fail",
+            "--success-output",
+            "final",
+        ],
+    );
+    let diagnostic = diagnostics(&output);
+    assert!(
+        output.status.success(),
+        "downstream pagination runtime failed\n{diagnostic}"
+    );
+    assert!(
+        diagnostic.contains("1 test run: 1 passed"),
+        "downstream pagination runtime did not select exactly one passing test\n{diagnostic}"
+    );
+    assert!(
+        diagnostic.contains(
+            "CONCORD_DOWNSTREAM_PAGINATION_RUNTIME_OK pages=2 items=3 construction=1 validation=2 next=2"
+        ),
+        "downstream pagination runtime omitted its post-assertion proof sentinel\n{diagnostic}"
+    );
+
+    let runtime_path = fixture_root().join("extension_certification/tests/pagination_runtime.rs");
+    let runtime = std::fs::read_to_string(&runtime_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", runtime_path.display()));
+    for assertion in [
+        ".paginate(10_u32)",
+        "assert_eq!(items, [1, 2, 3])",
+        "cursor=initial",
+        "cursor=continuation",
+        "assert_eq!(probe_counts, (1, 2, 2))",
     ] {
         assert!(
-            !source.contains(forbidden),
-            "extension fixture exposed prohibited surface `{forbidden}`"
-        );
-    }
-    for line in source
-        .lines()
-        .filter(|line| line.contains("concord_core::"))
-    {
-        assert!(
-            line.contains("concord_core::advanced") || line.contains("concord_core::prelude"),
-            "extension fixture imported an unapproved core namespace: {line}"
+            runtime.contains(assertion),
+            "downstream pagination runtime omitted required assertion `{assertion}`"
         );
     }
 }

@@ -7,6 +7,19 @@ use std::process::{Command, Output};
 
 const DIAGNOSTIC_LIMIT: usize = 64 * 1024;
 
+fn fixture_target_dir(workspace_root: &Path, target_key: &str) -> std::path::PathBuf {
+    let target_key = Path::new(target_key);
+    assert!(
+        target_key
+            .components()
+            .all(|component| matches!(component, Component::Normal(_))),
+        "Cargo fixture target key must contain only normal relative components"
+    );
+    workspace_root
+        .join("target/cargo-fixtures")
+        .join(target_key)
+}
+
 /// Runs one locked, offline Cargo command with an isolated target directory.
 ///
 /// This helper is intentionally confined to the unpublished test-support
@@ -18,17 +31,7 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let target_key = Path::new(target_key);
-    assert!(
-        target_key
-            .components()
-            .all(|component| matches!(component, Component::Normal(_))),
-        "Cargo fixture target key must contain only normal relative components"
-    );
-
-    let target_dir = workspace_root
-        .join("target/cargo-fixtures")
-        .join(target_key);
+    let target_dir = fixture_target_dir(workspace_root, target_key);
     let mut command = Command::new(env!("CARGO"));
     command
         .current_dir(workspace_root)
@@ -38,6 +41,35 @@ where
         .env("CARGO_TARGET_DIR", target_dir);
     command.output().unwrap_or_else(|error| {
         panic!("failed to run Cargo {subcommand} for fixture target `{target_key:?}`: {error}")
+    })
+}
+
+/// Runs locked, offline Cargo Nextest with an isolated target directory.
+///
+/// Cargo's built-in flags follow `nextest run`, unlike built-in Cargo
+/// subcommands where [`run`] places them immediately after the subcommand.
+#[must_use]
+pub fn run_nextest<I, S>(workspace_root: &Path, target_key: &str, arguments: I) -> Output
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let target_dir = fixture_target_dir(workspace_root, target_key);
+    let mut command = Command::new(env!("CARGO"));
+    command
+        .current_dir(workspace_root)
+        .args([
+            "nextest",
+            "run",
+            "--offline",
+            "--locked",
+            "--color",
+            "never",
+        ])
+        .args(arguments)
+        .env("CARGO_TARGET_DIR", target_dir);
+    command.output().unwrap_or_else(|error| {
+        panic!("failed to run Cargo Nextest for fixture target `{target_key}`: {error}")
     })
 }
 

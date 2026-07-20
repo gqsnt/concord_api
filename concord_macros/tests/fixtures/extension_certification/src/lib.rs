@@ -1,21 +1,21 @@
 #![forbid(unsafe_code)]
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+#[cfg(feature = "json")]
+use concord_core::advanced::Json;
 use concord_core::advanced::{
     Auth, AuthError, AuthErrorKind, BeforeSend, BodyError, BodyFactory, BoxFuture, CodecError,
     CompletionEvent, Cooldown, CooldownScope, CredentialMaterial, CredentialProvider,
-    CredentialRequest, DecodeBody,
-    DecodeContext, EncodeBody, EncodeContext, HasNextCursor, HeaderName, HeaderValue, HookError,
-    MediaType, Method, PaginationCompletionEvent, PaginationController, PaginationError,
-    PreparedEndpoint, ProviderBody, ProviderBodyFactory, ProviderRequest, RateLimitError,
-    RateLimitObserver, RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimitResponseHead,
-    RateLimiter, RequestBody, ResponseHeadEvent, RuntimeHooks, SafeProxy, SecretCredential,
-    StatusCode, Url,
+    CredentialRequest, DecodeBody, DecodeContext, EncodeBody, EncodeContext, HasNextCursor,
+    HeaderName, HeaderValue, HookError, MediaType, Method, PaginationCompletionEvent,
+    PaginationController, PaginationError, PreparedEndpoint, ProviderBody, ProviderBodyFactory,
+    ProviderRequest, RateLimitError, RateLimitObserver, RateLimitPermit, RateLimitRequest,
+    RateLimitResponse, RateLimitResponseHead, RateLimiter, RequestBody, ResponseHeadEvent,
+    RuntimeHooks, SafeProxy, SecretCredential, StatusCode, Url,
 };
-#[cfg(feature = "json")]
-use concord_core::advanced::Json;
 #[cfg(feature = "multipart")]
 use concord_core::advanced::{MultipartBody, MultipartFactory, MultipartPart};
 use concord_core::prelude::{Bytes, ClientBuildError, Request, SecretString, StreamBody};
@@ -60,9 +60,7 @@ pub struct ExtensionBodyFactory;
 
 impl BodyFactory for ExtensionBodyFactory {
     fn content_type(&self) -> Option<HeaderValue> {
-        Some(HeaderValue::from_static(
-            "application/x-concord-extension",
-        ))
+        Some(HeaderValue::from_static("application/x-concord-extension"))
     }
 
     fn create(&self) -> Result<StreamBody, BodyError> {
@@ -162,21 +160,86 @@ impl DecodeBody for ExtensionPageCodec {
     const ACCEPT: Option<&'static str> = Some("application/x-concord-page");
 
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
+        let text =
+            std::str::from_utf8(&body).map_err(|_| CodecError::new("extension page UTF-8"))?;
+        let (items, next) = text
+            .split_once('|')
+            .ok_or_else(|| CodecError::new("extension page structure"))?;
+        let items = if items.is_empty() {
+            Vec::new()
+        } else {
+            items
+                .split(',')
+                .map(|item| {
+                    item.parse::<u8>()
+                        .map_err(|_| CodecError::new("extension page item"))
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        };
         Ok(ExtensionPage {
-            items: body.to_vec(),
-            next: None,
+            items,
+            next: (next != "-").then(|| next.to_owned()),
         })
     }
 }
 
+static EXTENSION_CONSTRUCTION_EVALUATIONS: AtomicUsize = AtomicUsize::new(0);
+static EXTENSION_VALIDATION_CALLS: AtomicUsize = AtomicUsize::new(0);
+static EXTENSION_NEXT_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+pub struct ExtensionConstructionProbe;
+
+impl ExtensionConstructionProbe {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for ExtensionConstructionProbe {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Clone for ExtensionConstructionProbe {
+    fn clone(&self) -> Self {
+        EXTENSION_CONSTRUCTION_EVALUATIONS.fetch_add(1, Ordering::SeqCst);
+        Self
+    }
+}
+
+pub fn reset_extension_pagination_probes() {
+    EXTENSION_CONSTRUCTION_EVALUATIONS.store(0, Ordering::SeqCst);
+    EXTENSION_VALIDATION_CALLS.store(0, Ordering::SeqCst);
+    EXTENSION_NEXT_CALLS.store(0, Ordering::SeqCst);
+}
+
+#[must_use]
+pub fn extension_pagination_probe_counts() -> (usize, usize, usize) {
+    (
+        EXTENSION_CONSTRUCTION_EVALUATIONS.load(Ordering::SeqCst),
+        EXTENSION_VALIDATION_CALLS.load(Ordering::SeqCst),
+        EXTENSION_NEXT_CALLS.load(Ordering::SeqCst),
+    )
+}
+
 pub struct ExtensionController {
     pub cursor: Option<String>,
+    pub construction: ExtensionConstructionProbe,
 }
 
 impl PaginationController<ExtensionPage> for ExtensionController {
+    fn validate(&self) -> Result<(), PaginationError> {
+        EXTENSION_VALIDATION_CALLS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+
     fn next(self, page: &ExtensionPage) -> Result<Option<Self>, PaginationError> {
+        EXTENSION_NEXT_CALLS.fetch_add(1, Ordering::SeqCst);
         Ok(page.next_cursor().cloned().map(|cursor| Self {
             cursor: Some(cursor),
+            construction: self.construction,
         }))
     }
 }
@@ -213,10 +276,7 @@ impl RateLimitObserver for ExtensionObserver {
 pub struct ExtensionHooks;
 
 impl RuntimeHooks for ExtensionHooks {
-    fn before_send<'a>(
-        &'a self,
-        _context: BeforeSend<'a>,
-    ) -> BoxFuture<'a, Result<(), HookError>> {
+    fn before_send<'a>(&'a self, _context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
         Box::pin(async { Ok(()) })
     }
 
@@ -239,6 +299,7 @@ impl RuntimeHooks for ExtensionHooks {
 concord_macros::api! {
     client ExtensionApi {
         base "http://extension.example.test/v1/";
+        var construction: crate::ExtensionConstructionProbe;
         credentials {
             credential session = custom crate::ExtensionCredential;
         }
@@ -259,6 +320,7 @@ concord_macros::api! {
             query { "cursor" = ep.cursor; }
             paginate crate::ExtensionController {
                 cursor: bind ep.cursor,
+                construction: vars.construction,
             }
         }
     }
@@ -267,6 +329,7 @@ concord_macros::api! {
 /// Compiles every stable extension workflow without private or native integration imports.
 pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
     let client = ExtensionApi::builder()
+        .construction(ExtensionConstructionProbe::new())
         .session_provider(ExtensionProvider)
         .http(|http| {
             http.proxy(
@@ -283,7 +346,10 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
 
     let credential = client.credentials().session().credential();
     let _: Request<_> = client.protected();
-    let _: Auth = Auth::header(HeaderName::from_static("x-prepared-session"), credential.clone());
+    let _: Auth = Auth::header(
+        HeaderName::from_static("x-prepared-session"),
+        credential.clone(),
+    );
 
     let buffered = PreparedEndpoint::builder("ExtensionApi::prepared_buffered", Method::POST)
         .path_segment("buffered")
@@ -322,7 +388,10 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
         items: vec![1, 2],
         next: Some("next".to_owned()),
     };
-    let controller = ExtensionController { cursor: None };
+    let controller = ExtensionController {
+        cursor: None,
+        construction: ExtensionConstructionProbe::new(),
+    };
     let _next_cursor: Option<&String> = page.next_cursor();
     let _next_controller: Option<ExtensionController> = controller
         .next(&page)
