@@ -7,7 +7,7 @@ publish = false
 autobenches = false
 
 [dependencies]
-concord_core = { version = "=0.1.0", path = "../concord_core", default-features = false }
+concord_core = { version = "=0.1.0", path = "../concord_core", default-features = false, features = ["dangerous-dev-tools", "default-tls"] }
 concord_macros = { version = "=0.1.0", path = "../concord_macros" }
 concord_test_support = { version = "=0.1.0", path = "../concord_test_support", default-features = false }
 tokio.workspace = true

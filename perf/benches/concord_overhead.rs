@@ -1,14 +1,18 @@
 #![forbid(unsafe_code)]
 
+use std::collections::BTreeSet;
 use std::future::IntoFuture;
 use std::hint::black_box;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use concord_core::__development::{
+    BenchmarkOperation, benchmark_public_head, benchmark_ready_credentials,
+};
 use concord_core::advanced::{
     CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, Method, NoopRateLimiter,
-    PreparedEndpoint, SafeProxy, StatusCode,
+    SafeProxy, StatusCode,
 };
 use concord_core::prelude::{Bytes, PageLimit, StreamBody};
 use concord_core::{PaginatedRequest, Request};
@@ -96,6 +100,65 @@ api! {
     }
 }
 
+api! {
+    client CredentialBenchApi {
+        base "https://credential-benchmark.example.test/";
+        credentials {
+            secret api_secret: String;
+            credential application_key = bearer(secret.api_secret);
+        }
+        GET CredentialReady() -> Bytes {
+            auth bearer application_key;
+            rate_limit off;
+        }
+    }
+}
+
+const EXPECTED_CATEGORIES: [&str; 9] = [
+    "core client construction",
+    "generated client, facade, and request creation",
+    "public head preparation",
+    "codec encoding and decoding",
+    "body-limit polling",
+    "credential ready-path preparation and finalization",
+    "limiter ready-path acquisition",
+    "pagination loop overhead",
+    "stream wrapping",
+];
+
+#[derive(Default)]
+struct CategoryAudit {
+    executed: BTreeSet<&'static str>,
+}
+
+impl CategoryAudit {
+    fn record(&mut self, name: &'static str) {
+        assert!(
+            EXPECTED_CATEGORIES.contains(&name),
+            "unregistered benchmark category {name}"
+        );
+        assert!(
+            self.executed.insert(name),
+            "duplicate benchmark category {name}"
+        );
+    }
+
+    fn finish(self) {
+        assert_eq!(
+            self.executed.len(),
+            EXPECTED_CATEGORIES.len(),
+            "not every benchmark category executed"
+        );
+        for expected in EXPECTED_CATEGORIES {
+            assert!(
+                self.executed.contains(expected),
+                "benchmark category did not execute: {expected}"
+            );
+        }
+        println!("benchmark operation audit: 9/9 named categories executed");
+    }
+}
+
 fn iterations() -> usize {
     if std::env::args().any(|argument| argument == "--smoke") {
         return 1;
@@ -107,8 +170,9 @@ fn iterations() -> usize {
         .clamp(1, 1_000)
 }
 
-fn report(name: &str, iterations: usize, started: Instant) {
+fn report(audit: &mut CategoryAudit, name: &'static str, iterations: usize, started: Instant) {
     let elapsed = started.elapsed();
+    audit.record(name);
     println!("{name}: {iterations} iteration(s) in {elapsed:?}");
 }
 
@@ -118,16 +182,20 @@ fn configured_builder() -> BenchApiBuilder {
         .runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
 }
 
-fn core_client_construction(iterations: usize) {
+fn configured_credential_builder() -> CredentialBenchApiBuilder {
+    CredentialBenchApi::builder().api_secret("benchmark-only-ready-credential")
+}
+
+fn core_client_construction(iterations: usize, audit: &mut CategoryAudit) {
     let started = Instant::now();
     for _ in 0..iterations {
         let client = configured_builder().build().expect("benchmark client");
         black_box(client);
     }
-    report("core client construction", iterations, started);
+    report(audit, "core client construction", iterations, started);
 }
 
-fn generated_client_facade_and_request_creation(iterations: usize) {
+fn generated_client_facade_and_request_creation(iterations: usize, audit: &mut CategoryAudit) {
     let client = configured_builder().build().expect("benchmark client");
     let started = Instant::now();
     for index in 0..iterations {
@@ -136,6 +204,7 @@ fn generated_client_facade_and_request_creation(iterations: usize) {
         black_box(request);
     }
     report(
+        audit,
         "generated client, facade, and request creation",
         iterations,
         started,
@@ -145,27 +214,27 @@ fn generated_client_facade_and_request_creation(iterations: usize) {
 fn public_head_preparation(
     iterations: usize,
     runtime: &tokio::runtime::Runtime,
+    audit: &mut CategoryAudit,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let server =
-        ScriptedServer::start((0..iterations).map(|_| ResponseScript::ok(Vec::<u8>::new())))?;
-    let proxy = SafeProxy::parse(server.url(""))?;
-    let client = configured_builder()
-        .http(move |http| http.proxy(proxy))
-        .build()?;
+    let client = configured_builder().build()?;
+    let requests: Vec<_> = (0..iterations)
+        .map(|index| client.records("archive".to_owned()).show(index.to_string()))
+        .collect();
     let started = Instant::now();
-    for index in 0..iterations {
-        let endpoint = PreparedEndpoint::builder("BenchApi::prepared", Method::GET)
-            .path_segment("prepared")
-            .query("iteration", index)
-            .response_bytes()
-            .build()?;
-        black_box(runtime.block_on(client.request(endpoint).into_future())?);
+    for request in requests {
+        let observation = runtime.block_on(benchmark_public_head(request))?;
+        assert_eq!(
+            observation.operation(),
+            BenchmarkOperation::PublicHeadPreparation
+        );
+        assert!(observation.work_units() > 0);
+        black_box(observation);
     }
-    report("public head preparation", iterations, started);
+    report(audit, "public head preparation", iterations, started);
     Ok(())
 }
 
-fn codec_encoding_and_decoding(iterations: usize) {
+fn codec_encoding_and_decoding(iterations: usize, audit: &mut CategoryAudit) {
     let method = Method::POST;
     let started = Instant::now();
     for _ in 0..iterations {
@@ -190,12 +259,13 @@ fn codec_encoding_and_decoding(iterations: usize) {
         .expect("benchmark decode");
         black_box(decoded);
     }
-    report("codec encoding and decoding", iterations, started);
+    report(audit, "codec encoding and decoding", iterations, started);
 }
 
 fn body_limit_polling(
     iterations: usize,
     runtime: &tokio::runtime::Runtime,
+    audit: &mut CategoryAudit,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let server = ScriptedServer::start((0..iterations).map(|_| ResponseScript::Chunked {
         status: 200,
@@ -216,23 +286,40 @@ fn body_limit_polling(
     for _ in 0..iterations {
         black_box(runtime.block_on(client.bounded().into_future())?);
     }
-    report("body-limit polling", iterations, started);
+    report(audit, "body-limit polling", iterations, started);
     Ok(())
 }
 
-fn credential_ready_path_preparation(iterations: usize) {
-    let client = configured_builder().build().expect("benchmark client");
+fn credential_ready_path_preparation(
+    iterations: usize,
+    runtime: &tokio::runtime::Runtime,
+    audit: &mut CategoryAudit,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let client = configured_credential_builder().build()?;
+    let requests: Vec<_> = (0..iterations).map(|_| client.credential_ready()).collect();
     let started = Instant::now();
-    for _ in 0..iterations {
-        let handle = client.credentials().application_key();
-        black_box(handle.credential());
+    for request in requests {
+        let observation = runtime.block_on(benchmark_ready_credentials(request))?;
+        assert_eq!(
+            observation.operation(),
+            BenchmarkOperation::CredentialReadyPreparation
+        );
+        assert_eq!(observation.work_units(), 1);
+        black_box(observation);
     }
-    report("credential ready-path preparation", iterations, started);
+    report(
+        audit,
+        "credential ready-path preparation and finalization",
+        iterations,
+        started,
+    );
+    Ok(())
 }
 
 fn limiter_ready_path_acquisition(
     iterations: usize,
     runtime: &tokio::runtime::Runtime,
+    audit: &mut CategoryAudit,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let server =
         ScriptedServer::start((0..iterations).map(|_| ResponseScript::ok(b"limited".to_vec())))?;
@@ -244,13 +331,14 @@ fn limiter_ready_path_acquisition(
     for _ in 0..iterations {
         black_box(runtime.block_on(client.limited().into_future())?);
     }
-    report("limiter ready-path acquisition", iterations, started);
+    report(audit, "limiter ready-path acquisition", iterations, started);
     Ok(())
 }
 
 fn pagination_loop_overhead(
     iterations: usize,
     runtime: &tokio::runtime::Runtime,
+    audit: &mut CategoryAudit,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use bench_api::prelude::*;
 
@@ -270,33 +358,35 @@ fn pagination_loop_overhead(
         let pages: PaginatedRequest<_> = client.pages(0, 1).paginate(PageLimit::Take(2));
         black_box(runtime.block_on(pages.into_future())?);
     }
-    report("pagination loop overhead", iterations, started);
+    report(audit, "pagination loop overhead", iterations, started);
     Ok(())
 }
 
-fn stream_wrapping(iterations: usize) {
+fn stream_wrapping(iterations: usize, audit: &mut CategoryAudit) {
     let started = Instant::now();
     for _ in 0..iterations {
         let stream =
             StreamBody::from_bytes(Bytes::from_static(b"stream benchmark")).exact_length(16);
         black_box(stream);
     }
-    report("stream wrapping", iterations, started);
+    report(audit, "stream wrapping", iterations, started);
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let iterations = iterations();
     let runtime = tokio::runtime::Runtime::new()?;
+    let mut audit = CategoryAudit::default();
 
-    core_client_construction(iterations);
-    generated_client_facade_and_request_creation(iterations);
-    public_head_preparation(iterations, &runtime)?;
-    codec_encoding_and_decoding(iterations);
-    body_limit_polling(iterations, &runtime)?;
-    credential_ready_path_preparation(iterations);
-    limiter_ready_path_acquisition(iterations, &runtime)?;
-    pagination_loop_overhead(iterations, &runtime)?;
-    stream_wrapping(iterations);
+    core_client_construction(iterations, &mut audit);
+    generated_client_facade_and_request_creation(iterations, &mut audit);
+    public_head_preparation(iterations, &runtime, &mut audit)?;
+    codec_encoding_and_decoding(iterations, &mut audit);
+    body_limit_polling(iterations, &runtime, &mut audit)?;
+    credential_ready_path_preparation(iterations, &runtime, &mut audit)?;
+    limiter_ready_path_acquisition(iterations, &runtime, &mut audit)?;
+    pagination_loop_overhead(iterations, &runtime, &mut audit)?;
+    stream_wrapping(iterations, &mut audit);
+    audit.finish();
 
     black_box(Duration::ZERO);
     Ok(())

@@ -52,10 +52,13 @@ Require-Marker "perf/benches/concord_overhead.rs" @(
     '"public head preparation"',
     '"codec encoding and decoding"',
     '"body-limit polling"',
-    '"credential ready-path preparation"',
+    '"credential ready-path preparation and finalization"',
     '"limiter ready-path acquisition"',
     '"pagination loop overhead"',
-    '"stream wrapping"'
+    '"stream wrapping"',
+    'benchmark_public_head',
+    'benchmark_ready_credentials',
+    'benchmark operation audit: 9/9 named categories executed'
 )
 
 $grammarRows = (Get-Content -LiteralPath "concord_macros/tests/release/grammar_registry.csv").Count - 1

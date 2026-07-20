@@ -8,8 +8,15 @@ body collection, credential preparation, limiter acquisition, and pagination can
 without internet latency or an external service. Those dependencies are benchmark-only support;
 they add no dependency to `concord_core` or `concord_macros`.
 
-The credential ready-path probe observes a pre-populated generated credential handle without
-performing native execution; it does not weaken Concord's HTTPS-only authentication boundary.
+The public-head probe calls Concord's actual production head preparation and validation path, then
+stops before hooks, body work, authentication, limiting, native HTTP, or response handling. The
+credential ready-path probe uses an HTTPS logical endpoint with a pre-populated static credential
+and calls the actual production preflight and post-limiter finalization operations; it stops before
+native materialization and performs no provider acquisition, refresh, or transport. Both probes use
+the explicitly unstable, feature-gated `concord_core::__development` boundary and receive only a
+body-free aggregate observation.
 
-`--smoke` forces one bounded iteration. Otherwise `CONCORD_BENCH_ITERATIONS` selects between 1 and
-1,000 iterations, with a default of 100. Timings are observational only.
+`--smoke` forces one bounded iteration. The executable records each category only after its named
+operation completes and asserts that all nine distinct categories ran. Otherwise
+`CONCORD_BENCH_ITERATIONS` selects between 1 and 1,000 iterations, with a default of 100. Timings
+are observational only.

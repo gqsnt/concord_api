@@ -52,6 +52,31 @@ fn validate_registry(
     ids
 }
 
+fn assert_role_selects_every_probe(registry: &str, reference_column: usize, role_name: &str) {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("workspace root");
+    let justfile = std::fs::read_to_string(root.join("justfile")).expect("workspace justfile");
+    let start_marker = format!("{role_name}:");
+    let start = justfile
+        .find(&start_marker)
+        .unwrap_or_else(|| panic!("missing maintained role {role_name}"));
+    let remainder = &justfile[start..];
+    let end = remainder.find("\n[private]").unwrap_or(remainder.len());
+    let role = &remainder[..end];
+
+    for line in registry.lines().skip(1) {
+        let columns: Vec<_> = line.split(',').collect();
+        let (_, marker) = columns[reference_column]
+            .split_once('#')
+            .expect("probe references use path#test");
+        assert!(
+            role.contains(marker),
+            "maintained role {role_name} does not select registered probe {marker}"
+        );
+    }
+}
+
 #[test]
 fn selected_reqwest_assumptions_have_exact_executable_probes() {
     let ids = validate_registry(
@@ -123,6 +148,7 @@ fn whole_product_security_sentinel_registry_covers_every_required_class() {
     ] {
         assert!(ids.contains(required), "missing sentinel class {required}");
     }
+    assert_role_selects_every_probe(SECURITY, 3, "_security-and-properties");
 }
 
 #[test]
@@ -134,4 +160,5 @@ fn release_property_registry_retains_reproducible_cases() {
         2,
     );
     assert_eq!(ids.len(), 5);
+    assert_role_selects_every_probe(PROPERTIES, 2, "_security-and-properties");
 }
