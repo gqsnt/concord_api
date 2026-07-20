@@ -421,8 +421,12 @@ The immutable Phase 9 source/test commit is
 `a8732c3fdefb676bfbb46bee9d756a8282ec531f`. The focused prepared/core, generated-client,
 Trybuild/UI, downstream fixture, rendered Rustdoc, no-default, no-governor, hidden-retry, and
 cancellation commands plus all 16 maintained commands, including `just release`, passed against
-that exact source. The evidence/report/state commit is `4f26b5d1336c6634068bbaac708bf05662880cf6`; a subsequent
-documentation-only evidence anchor finalizes that evidence-state self-reference.
+that exact source. The original evidence/report/state commit
+`4f26b5d1336c6634068bbaac708bf05662880cf6` and anchor
+`854467ba40ebf5f1b0d190a165ef50d09519575d` are superseded evidence history. The corrected
+evidence/report/state commit is `PENDING_PHASE_9_EVIDENCE`; a subsequent documentation-only
+corrected evidence anchor finalizes that evidence-state self-reference without changing executable
+artifacts.
 
 The advanced namespace now exposes only the exact four prepared response markers and opaque
 `PreparedEndpointBuilder<R>` / `PreparedEndpoint<R>` contracts. Builder composition is
@@ -465,8 +469,11 @@ Phase 9 traces 279 requirements through 276 immutable source/test rows (262 dire
 three trace audits (two direct, one partial). Two additional direct catalog audits prove normative
 coverage and historical preservation. The Phase 9 total is 281 rows: 266 direct and 15 partial. The
 complete catalog contains 1,473 unique evidence IDs; all 1,192 Phase 0-8 rows remain byte-identical,
-and all 504 normative requirements remain mapped once. The owner-aware map contains 296 claim atoms:
-281 proved and 15 exact unresolved Phase 10 atoms. Exact identities, paths, commands, and owners are
+and all 504 normative requirements remain mapped once. The corrected owner-aware map contains 595
+claim atoms: 580 proved and 15 exact unresolved Phase 10 atoms. It separates each direct row's
+Phase 9 assertion from its parsed normative clause and expands the five corrected runtime,
+no-governor, and extension rows into independent command-bound atoms. Exact identities, paths,
+commands, and owners are
 in `docs/conformance/PHASE_9_REPORT.md` and the evidence catalog.
 
 ## Current non-goals

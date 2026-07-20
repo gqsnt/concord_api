@@ -25,8 +25,8 @@ This report does not claim full Concord 0.1 conformance. The normative status re
   `fdb5fed4c47b29831325e403620923bd52769250`
 - Extension-certification source/test commit and final immutable tested source:
   `a8732c3fdefb676bfbb46bee9d756a8282ec531f`
-- Phase 9 evidence/report/state commit: `4f26b5d1336c6634068bbaac708bf05662880cf6`
-- Phase 9 evidence anchor: `854467ba40ebf5f1b0d190a165ef50d09519575d`
+- Original Phase 9 evidence/report/state commit: `4f26b5d1336c6634068bbaac708bf05662880cf6`
+- Original Phase 9 evidence anchor: `854467ba40ebf5f1b0d190a165ef50d09519575d`
 - Compatible post-anchor metadata descendant: the final documentation-only commit with subject
   `docs: record phase 9 evidence anchor`; it records the real anchor identity and does not replace it
 - Authoritative source validation recorded: `2026-07-19T17:13:21Z`
@@ -36,6 +36,13 @@ This report does not claim full Concord 0.1 conformance. The normative status re
   `1594f316782922274323b39de4aab3d96bcf99cd475c04bd454ab27f7dc5dbf0`
 - Cumulative executable patch SHA-256:
   `5d2489e81d78759f64ceaccc8b162be3831cec0732a56350437f1a7ab03c6f1c`
+- Evidence-correction starting HEAD: `4eac35d10b238532e574c550cffe9865303ea353`
+- Superseded evidence/report/state commit: `4f26b5d1336c6634068bbaac708bf05662880cf6`
+- Superseded evidence anchor: `854467ba40ebf5f1b0d190a165ef50d09519575d`
+- Corrected Phase 9 evidence/report/state commit: `PENDING_PHASE_9_EVIDENCE`
+- Corrected Phase 9 evidence anchor: `PENDING_PHASE_9_ANCHOR`
+- Corrected anchor-metadata descendant: the final documentation-only commit with subject
+  `docs: record phase 9 evidence correction anchor`
 
 The ignored contract map is `git_diff/phase-9-contract-map.md` and contains exactly 279 unique
 requirement IDs in 14 trace families. Its SHA-256 is
@@ -43,15 +50,27 @@ requirement IDs in 14 trace families. Its SHA-256 is
 command ledger is `git_diff/phase-9-validation.md`; the semantic evidence map, normative-owner
 review, and claim atoms are under `git_diff/phase-9-*.tsv`.
 
+The focused correction contract map is
+`git_diff/phase-9-evidence-correction-contract-map.md`. It covers the five command-to-claim defects
+under `API-PREP-001`, `API-RUNTIME-001`, `API-RUNTIME-002`, `FEAT-GOV-002`, and
+`COMPAT-SURF-001`, plus the complete
+281-row review, immutable-executable equivalence, preservation, and anchoring obligations. It
+contains 10 unique requirement IDs: those five corrected owners plus the five exact catalog and
+trace-audit owners. The
+supplemental command ledger is `git_diff/phase-9-evidence-correction-validation.md`.
+
 ## Commit outcome
 
 | Unit | Commit | Durable result |
 |---|---|---|
 | Prepared endpoint runtime and tests | `fdb5fed4c47b29831325e403620923bd52769250` | Adds the exact advanced prepared contracts, private body erasure, existing `EndpointSpec` integration, generated-client capability support, generated contract 10, deterministic runtime tests, and compile-fail privacy/capability proof. |
 | Stable extension certification | `a8732c3fdefb676bfbb46bee9d756a8282ec531f` | Adds one public-only downstream fixture for all stable extension workflows, feature variants, rendered public/generated Rustdoc audits, and complete extension obligation documentation. |
-| Evidence/report/state | `4f26b5d1336c6634068bbaac708bf05662880cf6` | Records Phase 9 evidence, coverage, report, program, README, and controller state without changing executable artifacts. |
-| Evidence anchor | `854467ba40ebf5f1b0d190a165ef50d09519575d` | Finalizes the evidence-state self-reference only; it changes no executable artifact, evidence ID, or classification. |
+| Original evidence/report/state | `4f26b5d1336c6634068bbaac708bf05662880cf6` | Superseded evidence history; records the initial Phase 9 evidence state without changing executable artifacts. |
+| Original evidence anchor | `854467ba40ebf5f1b0d190a165ef50d09519575d` | Superseded evidence history; finalized the original evidence-state self-reference only. |
 | Anchor metadata descendant | `docs: record phase 9 evidence anchor` | Records the real anchor hash in this report and controller state while retaining `anchor-must-be-an-ancestor`. |
+| Corrected evidence/report/state | `PENDING_PHASE_9_EVIDENCE` | Supersedes the earlier Phase 9 evidence state by aligning commands, paths, assertions, coverage notes, and independent claim atoms; executable artifacts remain unchanged. |
+| Corrected evidence anchor | `PENDING_PHASE_9_ANCHOR` | Finalizes the corrected evidence-state self-reference only. |
+| Corrected anchor metadata descendant | `docs: record phase 9 evidence correction anchor` | Records the actual corrected anchor in this report and controller without creating another anchor. |
 
 No executable artifact changed after `a8732c3fdefb676bfbb46bee9d756a8282ec531f`.
 
@@ -360,6 +379,39 @@ concord_macros/tests/ui/fail/phase9_prepared_stream_response_absent.stderr
 Generated contract version 10 is the sole private macro/core compatibility revision. No test was
 deleted, ignored, retried, weakened, or reclassified to conceal a failure.
 
+## Evidence correction and executable equivalence
+
+The evidence correction found five command-to-claim defects in the accepted Phase 9 catalog:
+
+- `P9-API-001` cited public API, UI, namespace, and Rustdoc proof but omitted the prepared runtime
+  tests required by `API-PREP-001`;
+- `P9-API-006` inferred finite ordinary runtime ceilings from unrelated prepared-marker and Rustdoc
+  checks instead of `RuntimeConfigBuilder`, its downstream type check, and method-absence audit;
+- `P9-API-007` did not execute the status collection and disablement tests required by
+  `API-RUNTIME-002`;
+- `P9-FEAT-008` executed the exact no-governor test but omitted its runtime source/test path and did
+  not independently bind empty-plan execution versus nonempty-plan fail-closed behavior for
+  `FEAT-GOV-002`;
+- `P9-FEAT-012` omitted
+  `concord_macros/tests/fixtures/extension_certification/src/lib.rs`, the primary downstream
+  implementation artifact for `COMPAT-SURF-001`, and used a broad feature matrix instead of the two
+  exact fixture tests.
+
+The complete 281-row review found no other inaccurate Phase 9 path, command, assertion, or
+classification. All other source rows already name a focused Phase 9 command and a maintained
+matrix command that passed at the immutable source identity. The strengthened verifier now parses
+authority directly from the approved normative Markdown, represents the row assertion separately
+from the complete normative clause, validates named Nextest or read-only-audit surfaces against the
+command that actually selects them, and retains one exact unresolved atom for each partial row.
+Human source-grounded owner review remains recorded for all 281 rows.
+
+Before focused execution, an ordered `path + blob` audit compared 314 executable inputs at
+`a8732c3fdefb676bfbb46bee9d756a8282ec531f` and the correction starting HEAD. Both sets had SHA-256
+`4747a087576a62e604b450c6e0c521fccb4ac7a831ec3473e99d4bee91c1c382`; no executable path or blob
+differed. Source, tests, fixtures, manifests, lockfile, generated contracts, Nextest configuration,
+maintained recipes, toolchain, and dependency policy therefore remain exactly the validated Phase 9
+inputs.
+
 ## Focused validation
 
 Every command ran from `F:\projects\concord_api`, used no external service or environment override,
@@ -375,6 +427,11 @@ exited 0, and tested `a8732c3fdefb676bfbb46bee9d756a8282ec531f`:
 | `cargo nextest run -p concord_core --no-default-features -E 'test(/prepared/)'` | 13/13 no-default prepared/body tests passed. |
 | `cargo nextest run -p concord_core --no-default-features private_fallback_rejects_a_nonempty_runtime_plan_before_send` | 1/1 no-governor fail-closed test passed. |
 | `cargo nextest run -p concord_core --all-features -E 'test(/hidden_reqwest_retry\|cancellation_drops_direct_and_factory_created_request_streams/)'` | 3/3 hidden-retry/cancellation tests passed. |
+| `cargo nextest run -p concord_core --test runtime_config` | 1/1 downstream nonzero-limit signature test passed. |
+| `cargo nextest run -p concord_core --test status_body_contract` | 12/12 finite complete-only status-body tests passed. |
+| `cargo nextest run -p concord_core --lib -E 'test(=runtime::config::tests::status_capture_disablement_is_none_and_finite_limit_reenables)'` | 1/1 exact discard-only disablement test passed. |
+| `cargo nextest run -p concord_macros --test compile -E 'test(complete_extension_fixture_compiles_through_public_namespaces_for_every_owned_feature_set) \| test(complete_extension_fixture_has_no_private_native_or_integration_escape)'` | 2/2 exact extension compilation/privacy tests passed across default, no-default, JSON, multipart, and combined features. |
+| `powershell -NoProfile -File git_diff/validate-phase-9-runtime-api.ps1` | Immutable-source signature/absence/status/prepared-bypass audit passed. |
 
 ## Complete maintained validation
 
@@ -399,9 +456,13 @@ All 16 maintained commands exited 0 against the same immutable source commit:
 | `just diff-check` | Tracked diff integrity passed. |
 | `just release` | Complete maintained aggregate, including dangerous-feature isolation, exited 0. |
 
-No applicable check was unavailable and no weaker substitute was used. The exact environment and
-command ledger has SHA-256
+No applicable check was unavailable and no weaker substitute was used. The original exact
+environment and command ledger has SHA-256
 `607266de07508b39b9fcfde44c6f00ab15e05edd43092f734389b82e375ceff8`.
+Because the executable input tree is byte-identical and this correction changes documentation and
+catalogs only, the complete maintained Rust matrix was not rerun. Its immutable results remain
+authoritative; only the focused existing tests and read-only audits needed for corrected evidence
+traceability were rerun.
 
 ## Evidence and trace reconciliation
 
@@ -418,12 +479,16 @@ exactly one row for each of 504 normative requirements; exactly 279 rows point t
 with taxonomy 264 `P9-prepared-extension` and 15 `P9-partial-P10`. Planned `PLAN-*` identifiers
 remain distinct from actual evidence.
 
-The owner-aware claim-atom map contains one proved atom for every Phase 9 evidence row and one exact
-unresolved Phase 10 atom for every partial row: 296 atoms total, 281 proved and 15 unresolved.
-Every direct row has no unresolved Phase 9 atom. Every partial row names one exact Phase 10 owner.
+The owner-aware claim-atom map contains 595 atoms total, 580 proved and 15 unresolved. Each of the
+261 non-corrected direct rows has separate proved atoms for its Phase 9 assertion and its parsed
+complete normative clause. The five corrected direct rows expand into 43 independent runtime,
+finite-limit, status-capture, no-governor, and extension-workflow atoms. Each partial row has one
+proved Phase 9 atom plus one exact unresolved Phase 10 owner atom. Every direct row has no unresolved
+Phase 9 atom.
 
-The evidence anchor runs the ignored semantic audit against the real evidence-state identity. It
-derives 504 approved normative owners, checks all 281 Phase 9 rows and 296 claim atoms, validates
+The corrected evidence anchor runs the ignored semantic audit against the real corrected
+evidence-state identity. It derives 504 approved normative owners, checks all 281 Phase 9 rows and
+595 claim atoms, validates
 paths, commands, labels, results, identities, ancestry, counts, report/program/controller
 reconciliation, coverage equality, and the unchanged Phase 0-8 byte prefix.
 

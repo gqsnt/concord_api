@@ -5,7 +5,7 @@
 schema_version = 1
 project = "Concord"
 assurance_profile = "strict"
-last_reviewed_date = "2026-07-19"
+last_reviewed_date = "2026-07-20"
 
 [workflow]
 controller_prompt = "docs/controller/CONCORD_CONTROLLER_PROMPT.md"
@@ -37,8 +37,8 @@ implementation_source_commits = [
   "a8732c3fdefb676bfbb46bee9d756a8282ec531f",
 ]
 post_source_governance_commit = ""
-evidence_commit = "4f26b5d1336c6634068bbaac708bf05662880cf6"
-anchor_commit = "854467ba40ebf5f1b0d190a165ef50d09519575d"
+evidence_commit = "PENDING_PHASE_9_EVIDENCE"
+anchor_commit = "PENDING_PHASE_9_ANCHOR"
 phase_report = "docs/conformance/PHASE_9_REPORT.md"
 normative_status = "Normative Implementation Candidate"
 head_policy = "anchor-must-be-an-ancestor"
@@ -55,8 +55,8 @@ phase_evidence_rows = 281
 phase_direct_rows = 266
 phase_partial_rows = 15
 phase_evidence_summary = "266 direct and 15 partial"
-claim_atom_rows = 296
-proved_claim_atoms = 281
+claim_atom_rows = 595
+proved_claim_atoms = 580
 unresolved_claim_atoms = 15
 catalog_evidence_rows = 1473
 coverage_requirement_rows = 504
