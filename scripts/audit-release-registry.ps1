@@ -597,7 +597,7 @@ function Assert-RequirementChangeRecord {
         'user-approved Phase 12 directive',
         'implementation phase is Phase 12',
         'historical evidence remains valid only for the exact prior requirement paragraph',
-        'All 1,553 Phase 0–11 evidence rows',
+        ('All 1,553 Phase 0' + [char]0x2013 + '11 evidence rows'),
         'No row authorizes Phase 13 lexical rate limits or Phase 14 release-final closure'
     )) {
         Assert-Condition $record.Contains($required) "requirement change record is missing: $required"
@@ -681,9 +681,9 @@ function Assert-Phase12Authority {
         Assert-Condition $index.Contains($required) "specification index is missing: $required"
     }
     foreach ($required in @(
-        '## ADR-045 — Generic body and response specifications use sealed core acquisition modes',
+        ('## ADR-045 ' + [char]0x2014 + ' Generic body and response specifications use sealed core acquisition modes'),
         '**Status:** Accepted; supersedes ADR-022',
-        '## ADR-022 — Specialized protocols live outside core',
+        ('## ADR-022 ' + [char]0x2014 + ' Specialized protocols live outside core'),
         '**Status:** Superseded by ADR-045',
         'one stable `RequestBodySpec`', 'one stable `ResponseBodySpec`',
         'public-but-sealed core modes', '`ByteStream`', '`ApiResponse<T>`',
