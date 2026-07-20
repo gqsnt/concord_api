@@ -28,9 +28,10 @@ $script:Phase10ReportPath = "docs/conformance/PHASE_10_REPORT.md"
 $script:Phase11ReportPath = "docs/conformance/PHASE_11_REPORT.md"
 $script:ControllerPath = "docs/controller/PROJECT_CONTROL.toml"
 $script:Phase10Source = "9317a94cf020d81dbd216ed2a7dc999550586898"
-$script:Phase10Evidence = "5b157225b387387664a202d4cbfe5f85ba8c5289"
-$script:Phase10EvidenceBytes = 1080912
-$script:Phase10EvidenceHash = "ca38cc6b3b3a8a5a0134329a5012480b8a174829533392ce827f45da5da12dc0"
+$script:Phase10EvidenceState = "5b157225b387387664a202d4cbfe5f85ba8c5289"
+$script:Phase10HistoricalBaseline = "6f7c3b69ec7f86a3eef4a9b70d94cf1ce449e52a"
+$script:Phase10EvidenceBytes = 1081762
+$script:Phase10EvidenceHash = "aadd64241a2dc42bb19dd01643915724df1a55390debbe52f7d7becbdc71e091"
 $script:Phase10EvidenceRows = 1531
 $script:ActiveRequirementCount = 511
 $script:SupersededRequirementIds = [string[]]@(
@@ -471,7 +472,7 @@ function Assert-BaseCatalogs {
 
 function Assert-Phase10HistoricalCatalog {
     param([string]$StateCommit, [bool]$RequireExact)
-    $historical = [byte[]](Get-GitBlobBytes $script:Phase10Evidence $script:EvidencePath)
+    $historical = [byte[]](Get-GitBlobBytes $script:Phase10HistoricalBaseline $script:EvidencePath)
     Assert-Condition ($historical.Length -eq $script:Phase10EvidenceBytes) "Phase 0-10 evidence byte count changed at its owner: $($historical.Length)"
     Assert-Condition ((Get-Sha256Hex $historical) -eq $script:Phase10EvidenceHash) "Phase 0-10 evidence owner hash changed"
     $current = [byte[]](Get-GitBlobBytes $StateCommit $script:EvidencePath)
@@ -484,13 +485,13 @@ function Assert-Phase10HistoricalCatalog {
     if ($RequireExact) {
         Assert-Condition ($current.Length -eq $historical.Length) "source identity contains post-Phase-10 evidence"
     }
-    $historicalRows = @(Get-GitBlobText $script:Phase10Evidence $script:EvidencePath | ConvertFrom-Csv)
+    $historicalRows = @(Get-GitBlobText $script:Phase10HistoricalBaseline $script:EvidencePath | ConvertFrom-Csv)
     Assert-Condition ($historicalRows.Count -eq $script:Phase10EvidenceRows) "Phase 0-10 evidence row count changed: $($historicalRows.Count)"
 }
 
 function Assert-Phase10ReportPreserved {
     param([string]$StateCommit)
-    $historical = [byte[]](Get-GitBlobBytes $script:Phase10Evidence $script:Phase10ReportPath)
+    $historical = [byte[]](Get-GitBlobBytes $script:Phase10HistoricalBaseline $script:Phase10ReportPath)
     $current = [byte[]](Get-GitBlobBytes $StateCommit $script:Phase10ReportPath)
     Assert-Condition ($historical.Length -eq $current.Length) "Phase 10 report byte count changed"
     Assert-Condition ((Get-Sha256Hex $historical) -eq (Get-Sha256Hex $current)) "Phase 10 report changed"
