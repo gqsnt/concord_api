@@ -26,12 +26,16 @@ implementation_program = "docs/planning/CONCORD_IMPLEMENTATION_PROGRAM_0.2.md"
 superseded_plan = "docs/planning/CONCORD_IMPLEMENTATION_PLAN_0.1.md"
 coverage_plan = "docs/conformance/REQUIREMENT_COVERAGE_PLAN_0.1.csv"
 evidence_catalog = "docs/conformance/CONFORMANCE_EVIDENCE_0.1.csv"
+release_requirement_registry = "docs/conformance/RELEASE_REQUIREMENT_REGISTRY_0.1.csv"
+release_claim_registry = "docs/conformance/RELEASE_CLAIM_REGISTRY_0.1.csv"
+release_change_map = "docs/conformance/RELEASE_CHANGE_MAP_0.1.csv"
+release_validation_registry = "docs/conformance/RELEASE_VALIDATION_REGISTRY_0.1.csv"
 
 [validated_state]
 expected_branch = "master"
 latest_validated_phase = "10"
 latest_verdict = "PHASE_10_COMPLETE"
-source_commit = "52ceef99e7cca1fac256a55d85296480817b199a"
+source_commit = "9317a94cf020d81dbd216ed2a7dc999550586898"
 implementation_source_commits = [
   "148251e6f08a577fa9cad0ad54be273af60ed02f",
   "c9ed133f7c48e1b8104d85013e90290ff6cc10e8",
@@ -40,31 +44,42 @@ implementation_source_commits = [
   "d14afe6528f4a9e368e7d013d7954cdfcd263aa8",
   "22fff7668523ed434680a4dbb41bc58eeb439c2b",
   "52ceef99e7cca1fac256a55d85296480817b199a",
+  "7fa5de2cbc079a153e74ab8383dd19be42a7a33b",
+  "a6126319947cdc019bca3696a7bf9dffb2ddb5b2",
+  "42719f520d7e363a14c3b24502c3697e32c5678e",
+  "9317a94cf020d81dbd216ed2a7dc999550586898",
 ]
-post_source_governance_commit = ""
-evidence_commit = "5a6af781abf7551cc6da979c969f54f997572ffe"
-anchor_commit = "1c662d2e20b9e5c267743c108415de437bac6278"
+post_source_governance_commit = "EVIDENCE_COMMIT_PENDING"
+evidence_commit = "EVIDENCE_COMMIT_PENDING"
+anchor_commit = "ANCHOR_COMMIT_PENDING"
 phase_report = "docs/conformance/PHASE_10_REPORT.md"
 normative_status = "Normative Release Final"
 head_policy = "anchor-must-be-an-ancestor"
 requirement_trace_rows = 36
 requirement_trace_direct_rows = 36
 requirement_trace_partial_rows = 0
-immutable_source_evidence_rows = 36
-source_direct_rows = 36
+immutable_source_evidence_rows = 33
+source_direct_rows = 33
 source_partial_rows = 0
-requirement_trace_audit_rows = 0
-cross_phase_catalog_audit_rows = 22
-evidence_state_audit_rows = 0
+requirement_trace_audit_rows = 25
+cross_phase_catalog_audit_rows = 24
+evidence_state_audit_rows = 25
 phase_evidence_rows = 58
 phase_direct_rows = 58
 phase_partial_rows = 0
 phase_evidence_summary = "58 direct and 0 partial"
-claim_atom_rows = 595
-proved_claim_atoms = 595
+claim_atom_rows = 775
+proved_claim_atoms = 775
 unresolved_claim_atoms = 0
 catalog_evidence_rows = 1531
 coverage_requirement_rows = 504
+release_requirement_registry_rows = 504
+release_claim_registry_rows = 775
+release_change_map_rows = 152
+normative_language_allowlist_rows = 4
+normative_dependency_rows = 29
+normative_ownership_rows = 6
+release_validation_rows = 33
 
 [active_phase]
 id = "10"

@@ -480,14 +480,23 @@ in `docs/conformance/PHASE_9_REPORT.md` and the evidence catalog.
 
 ## Phase 10 release-candidate baseline
 
-The immutable Phase 10 source/test commit is
-`52ceef99e7cca1fac256a55d85296480817b199a`. Seven focused source commits normalize current
-executable naming, add the feature-gated raw-success surface, supply canonical examples and local
-benchmarks, add release registries and the complete maintained release graph, and correct two
-validation-discovered defects. Every focused role and all maintained commands, including
-`just release`, passed against the final source identity with Rust 1.85.0. The Phase 10
-evidence/report/state commit is `5a6af781abf7551cc6da979c969f54f997572ffe`; a subsequent documentation-only anchor
-finalizes that evidence-state self-reference without changing executable artifacts.
+The original Phase 10 evidence chain based on source
+`52ceef99e7cca1fac256a55d85296480817b199a`, evidence
+`5a6af781abf7551cc6da979c969f54f997572ffe`, anchor
+`1c662d2e20b9e5c267743c108415de437bac6278`, and metadata
+`8c8dc914194e99a4074bef378ae2ca481fb1b4b7` is retained as superseded correction history. Its raw
+response product, behavior-oriented naming, examples, and release architecture remain accepted,
+but its benchmark category labels and release evidence authority were not commit-exact.
+
+The corrected immutable Phase 10 source/test commit is
+`9317a94cf020d81dbd216ed2a7dc999550586898`. Four focused correction commits make the public-head
+and credential-ready benchmarks exercise their named production operations, make the release
+registry audit commit-scoped and owner-aware, select every registered security probe, preserve
+feature-isolation proof under workspace feature unification, and give post-source paths exact
+evidence-state precedence. Every focused role and all maintained commands, including `just
+release`, passed against that exact source identity with Rust 1.85.0. The corrected
+evidence/report/state identity is `EVIDENCE_COMMIT_PENDING`; a documentation-only anchor
+substitutes that identity without changing evidence classifications or executable artifacts.
 
 Under `dangerous-raw-response`, eligible generated buffered, text, JSON, custom buffered, bytes,
 and no-content requests expose `.raw_response()` and return the stable private-field
@@ -499,20 +508,26 @@ terminals remain absent.
 
 Ten canonical example targets compile all required product workflows without real credentials or
 live external requests. One private harness-free benchmark target covers nine required local
-overhead categories without a product threshold. Release registries contain 68 grammar entries, 18
-selected Reqwest assumptions with deterministic probes, 15 high-entropy security classes, and five
-reproducible property families. The maintained release command compiles examples and benchmarks,
-executes the complete dangerous-feature and MSRV matrices, and retains warning denial, zero Nextest
-retries, finite timeouts, bounded Cargo concurrency, and doctest-only `cargo test` use.
+overhead categories without a product threshold. Its public-head category calls the actual
+preparation path without managed transport, and its ready-credential category runs static ready
+preflight and finalization without acquisition or refresh. Release registries contain 68 grammar
+entries, 18 selected Reqwest assumptions with deterministic probes, 15 high-entropy security
+classes, and five reproducible property families. The maintained release command compiles examples
+and benchmarks, executes the complete dangerous-feature and MSRV matrices, and retains warning
+denial, zero Nextest retries, finite timeouts, bounded Cargo concurrency, and doctest-only
+`cargo test` use.
 
 Phase 10 traces 36 exact product and release-final requirements and adds 58 direct passing evidence
-rows. The complete evidence catalog contains 1,531 unique rows. The release registry reconciles all
-504 normative requirements to current direct passing evidence, zero approved or unapproved
-waivers, and all 595 owner-aware claim atoms proved with zero unresolved while preserving all Phase
-0-9 evidence rows. After those
-gates passed, the nine normative owners transitioned to `Normative Release Final`. Concord 0.1 is a
-locally validated release candidate; no remote publication, tag, registry upload, or deployment was
-performed.
+rows: 33 immutable-source rows and 25 evidence-state rows, including 24 cross-phase catalog or
+governance audits. The complete evidence catalog contains 1,531 unique rows. Durable release
+registries reconcile all 504 normative requirements to current direct passing evidence and derive
+775 independent claim atoms from the authoritative paragraphs. All 775 pass with zero unresolved
+atoms, zero waivers, and zero missing commit-scoped paths while preserving the 1,473-row Phase 0-9
+prefix byte-for-byte. Source mode validates executable inputs without claiming final evidence
+completeness; the separate final mode validates the evidence, anchor, and metadata identities.
+After those gates passed, the nine normative owners retained `Normative Release Final`. Concord 0.1
+is a locally validated release candidate; no remote publication, tag, registry upload, or
+deployment was performed.
 
 ## Release non-goals
 

@@ -1,0 +1,7 @@
+"subject","authoritative_document","requirement_prefixes","audit_rule","result"
+"public_signatures","03_CONCORD_PUBLIC_API_SPEC_0.1.md","API-","unique-prefix-owner-and-language-audit","passing"
+"dsl_productions","02_CONCORD_DSL_SPEC_0.1.md","DSL-","unique-prefix-owner-and-language-audit","passing"
+"generated_naming","04_CONCORD_GENERATED_API_SPEC_0.1.md","GEN-","unique-prefix-owner-and-language-audit","passing"
+"finite_limits","05_CONCORD_SECURITY_AND_LIMITS_SPEC_0.1.md","SEC-;BOUND-","unique-prefix-owner-and-language-audit","passing"
+"lifecycle_ordering","06_CONCORD_EXECUTION_SPEC_0.1.md","EXEC-","unique-prefix-owner-and-language-audit","passing"
+"feature_and_compatibility","07_CONCORD_FEATURE_AND_COMPATIBILITY_SPEC_0.1.md","FEAT-;COMPAT-","unique-prefix-owner-and-language-audit","passing"

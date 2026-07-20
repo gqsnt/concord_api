@@ -13,6 +13,7 @@ application-supplied custom limiter. The optional `dangerous-raw-response` featu
 binary-wide compiled-crate raw-success capability. Its `RawResponse` exposes complete bounded
 successful bytes and actual response headers to the caller, so it intentionally provides a reduced
 secrecy guarantee while retaining logical/native URL separation and private Reqwest ownership.
+Availability follows normal Cargo feature unification across the compiled binary.
 
 Start with the [documentation overview](docs/README.md) and the
 [normative specification index](docs/normative/00_CONCORD_SPECIFICATION_INDEX_0.1.md). For current
@@ -56,3 +57,6 @@ The release registry records direct passing evidence for every normative require
 planned and partial evidence remains immutable and separate from current release evidence. This
 repository state is not a published release: no remote publication, tag, registry upload, or
 deployment was performed.
+
+Concord is pre-1.0. A breaking public-contract change requires a minor-version increment; patch
+releases preserve the documented public contract and may contain compatible corrections only.

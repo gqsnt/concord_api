@@ -859,11 +859,11 @@ pub fn new(
 ) -> Self;
 ```
 
-Public constructor parameter bindings use the sanitized DSL names shown above. Collision-resistant
-private field and helper bindings remain implementation details and MUST NOT replace ordinary DSL
-names in the public Rust signature. If two visible DSL namespaces use the same binding name, the
-generated public bindings MUST be deterministically namespace-qualified rather than exposing a
-private generated identifier.
+Public constructor parameter bindings use the sanitized DSL names shown above. `GEN-EXPL-002` and
+`GEN-NAME-002` govern those public names: collision-resistant private field and helper bindings
+remain implementation details instead of replacing ordinary DSL names in the public Rust
+signature, and collisions between visible DSL namespaces use deterministic namespace-qualified
+public bindings rather than private generated identifiers.
 
 The explicit endpoint exposes the same optional/defaulted enclosing-scope and endpoint setters/resetters needed to construct the immutable snapshots used by facade execution:
 

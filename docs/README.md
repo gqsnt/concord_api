@@ -43,6 +43,13 @@ Verification artifacts:
 
 - [`conformance/REQUIREMENT_COVERAGE_PLAN_0.1.csv`](conformance/REQUIREMENT_COVERAGE_PLAN_0.1.csv)
 - [`conformance/CONFORMANCE_EVIDENCE_0.1.csv`](conformance/CONFORMANCE_EVIDENCE_0.1.csv)
+- [`conformance/RELEASE_REQUIREMENT_REGISTRY_0.1.csv`](conformance/RELEASE_REQUIREMENT_REGISTRY_0.1.csv)
+- [`conformance/RELEASE_CLAIM_REGISTRY_0.1.csv`](conformance/RELEASE_CLAIM_REGISTRY_0.1.csv)
+- [`conformance/RELEASE_CHANGE_MAP_0.1.csv`](conformance/RELEASE_CHANGE_MAP_0.1.csv)
+- [`conformance/NORMATIVE_LANGUAGE_ALLOWLIST_0.1.csv`](conformance/NORMATIVE_LANGUAGE_ALLOWLIST_0.1.csv)
+- [`conformance/NORMATIVE_DEPENDENCY_REGISTRY_0.1.csv`](conformance/NORMATIVE_DEPENDENCY_REGISTRY_0.1.csv)
+- [`conformance/NORMATIVE_OWNERSHIP_REGISTRY_0.1.csv`](conformance/NORMATIVE_OWNERSHIP_REGISTRY_0.1.csv)
+- [`conformance/RELEASE_VALIDATION_REGISTRY_0.1.csv`](conformance/RELEASE_VALIDATION_REGISTRY_0.1.csv)
 - [`conformance/PHASE_0_REPORT.md`](conformance/PHASE_0_REPORT.md)
 - [`conformance/PHASE_1_REPORT.md`](conformance/PHASE_1_REPORT.md)
 - [`conformance/PHASE_2_REPORT.md`](conformance/PHASE_2_REPORT.md)
@@ -75,8 +82,9 @@ Delivery and contribution:
 ## Status
 
 The normative documents are `Normative Release Final`. Concord 0.1 is a locally validated release
-candidate: all 504 normative requirements have direct passing release evidence, with zero unresolved
-claim atoms and no waivers. Architecture and planning documents remain internal; contributor and
+candidate: all 504 normative requirements and all 775 source-derived claim atoms have direct
+passing release evidence, with zero unresolved claim atoms and no waivers. Architecture and
+planning documents remain internal; contributor and
 decision documents remain informative. Any behavior change must follow the Specification Index and
 update both the coverage plan and, when implemented, actual evidence.
 
