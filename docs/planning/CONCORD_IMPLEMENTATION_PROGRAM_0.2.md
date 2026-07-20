@@ -551,6 +551,35 @@ publication, tag, registry upload, or deployment was performed. The approved Pha
 change creates a new current implementation-candidate contract without changing that historical
 result.
 
+## Phase 11 corrected production baseline
+
+The original Phase 11 closure based on source
+`1e5d3c9e4567cde54a1b27acae5d48bd7b5d8607`, evidence
+`22868a9de9bd55daa975dbcd484f085033a52217`, anchor
+`bec42412043d24b8bab01bd7049b430abfb8a46a`, and metadata
+`462faa033b5252c729e17f1c28fbd156b169376c` remains reachable correction history. Its product
+contract and uniform typed-controller implementation remain accepted, but its downstream
+extension evidence compiled the controller without executing generated construction, live binding,
+and the core page loop. Several evidence commands also did not independently execute every claim
+atom attributed to them.
+
+The corrected immutable Phase 11 source/test commit is
+`1ee2ce99800af671e173679efeb573cb06b0c713`. The correction adds a stable-public downstream
+application controller and an ephemeral loopback two-page runtime, invokes that fixture through a
+locked, offline, isolated-target Nextest harness, makes the source audit distinguish inherited
+Phase 11 rows from new-source proof, and prevents an outer Nextest profile from changing fixture
+selection. It changes no pagination product or macro implementation source. Every focused proof and
+all 16 maintained commands, including `just release`, passed against that exact source with Rust
+1.85.0.
+
+The complete 22-row Phase 11 evidence set was re-audited claim by claim. All 22 current Phase 11
+requirements have direct passing proof, with no partial row, waiver, unresolved atom, or missing
+source path. The corrected catalog retains the exact 1,531-row, 1,081,762-byte Phase 0-10 prefix
+with SHA-256 `aadd64241a2dc42bb19dd01643915724df1a55390debbe52f7d7becbdc71e091`.
+The package remains `Normative Implementation Candidate`; Phase 12 remains active and
+`NOT_STARTED`, no Phase 12-14 product behavior was added, and only Phase 14 may restore
+`Normative Release Final`.
+
 ## Release non-goals
 
 Concord 0.1 intentionally does not provide:
