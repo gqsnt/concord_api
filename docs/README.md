@@ -32,6 +32,7 @@ Start with:
 8. [`normative/07_CONCORD_FEATURE_AND_COMPATIBILITY_SPEC_0.1.md`](normative/07_CONCORD_FEATURE_AND_COMPATIBILITY_SPEC_0.1.md)
 9. [`normative/08_CONCORD_CONFORMANCE_PLAN_0.1.md`](normative/08_CONCORD_CONFORMANCE_PLAN_0.1.md)
 10. [`normative/09_CONCORD_REQUIREMENT_CHANGE_RECORD_0.2.md`](normative/09_CONCORD_REQUIREMENT_CHANGE_RECORD_0.2.md)
+11. [`normative/10_CONCORD_REQUIREMENT_CHANGE_RECORD_0.3.md`](normative/10_CONCORD_REQUIREMENT_CHANGE_RECORD_0.3.md)
 
 Internal design:
 
@@ -63,6 +64,7 @@ Verification artifacts:
 - [`conformance/PHASE_9_REPORT.md`](conformance/PHASE_9_REPORT.md)
 - [`conformance/PHASE_10_REPORT.md`](conformance/PHASE_10_REPORT.md)
 - [`conformance/PHASE_11_REPORT.md`](conformance/PHASE_11_REPORT.md)
+- [`conformance/PHASE_12_REPORT.md`](conformance/PHASE_12_REPORT.md)
 - [`REVIEW_RESOLUTION_0.1.md`](REVIEW_RESOLUTION_0.1.md)
 
 Specification governance is review-based: reviewers inspect the normative documents, verify the coverage plan, verify exact executed evidence, and audit the maintained release command. No automated specification checker is authoritative or maintained.
@@ -85,20 +87,21 @@ Delivery and contribution:
 
 The current normative documents are `Normative Implementation Candidate`. Phase 10 remains a
 historically validated local release-candidate baseline for its exact 504-requirement contract and
-775 source-derived claim atoms. Phase 11 directly validates each of its 22 owned active pagination
-requirements while preserving every Phase 0-10 evidence row byte-for-byte. Architecture and
-planning documents remain internal; contributor and
+775 source-derived claim atoms. Phase 12 directly validates each of its 127 owned active paragraph
+versions while preserving every Phase 0-11 evidence row byte-for-byte. Architecture and planning
+documents remain internal; contributor and
 decision documents remain informative. Any behavior change must follow the Specification Index and
 update both the coverage plan and, when implemented, actual evidence.
 
-Phase 11 — Uniform Typed Pagination State is `PHASE_11_COMPLETE_WITH_LIMITATIONS`; its only
-limitations are the unimplemented Phases 12, 13, and 14. The uniform pagination DSL, public
-controller trait, generated associated controller, and core-owned loop are validated at generated
-contract 12. See the [`Phase 11 report`](conformance/PHASE_11_REPORT.md) for the exact source,
-validation, evidence, and anchor chain, and the historical
-[`Phase 10 report`](conformance/PHASE_10_REPORT.md) for the prior release-candidate baseline. Phase
-12 is active and `NOT_STARTED`; only Phase 14 may restore `Normative Release Final`. No remote
-publication, tag, registry upload, or deployment was performed.
+Phase 12 — Generic Body/Response Specifications and Integrated Streaming Records is
+`PHASE_12_COMPLETE_WITH_LIMITATIONS`; its only limitations are the unimplemented Phases 13 and 14.
+Generic request/response specifications, sealed buffered/streaming/discard acquisition, universal
+metadata, bounded byte streaming, type-neutral generated/prepared integration, capability-based
+pagination, and integrated records/CSV/NDJSON are validated at generated contract 13. See the
+[`Phase 12 report`](conformance/PHASE_12_REPORT.md) for the exact source, validation, evidence, and
+anchor chain, and the historical [`Phase 10 report`](conformance/PHASE_10_REPORT.md) for the prior
+release-candidate baseline. Phase 13 is active and `NOT_STARTED`; only Phase 14 may restore
+`Normative Release Final`. No remote publication, tag, registry upload, or deployment was performed.
 
 
 ## Review closure

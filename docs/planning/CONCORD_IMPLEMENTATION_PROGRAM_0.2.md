@@ -2,7 +2,7 @@
 
 **Version:** 0.2
 **Status:** Internal Implementation Candidate
-**Authority:** Validated history through Phase 11 and approved delivery sequence through Phase 14
+**Authority:** Validated history through Phase 12 and approved delivery sequence through Phase 14
 **Depends on:** All normative and architecture documents
 **Supersedes:** `CONCORD_IMPLEMENTATION_PLAN_0.1.md` for future execution
 
@@ -32,19 +32,21 @@ an execution queue because several foundations were delivered in a different ord
 | Phase 8 | `PHASE_8_COMPLETE_WITH_LIMITATIONS` | The same generated request path now supports built-in/custom pagination DSL, exact stable page-limit/controller/safe-patch contracts, conditionally generated directly awaitable terminals, one typed request-local sequential page loop, canonical cycle protection, finite page/item/identity ceilings, ordinary per-page deadlines/authentication/limiting/completion, and one aggregate completion. | Twenty-eight source/test rows and one audit row remain partial only for Phase 9 prepared endpoints/final extension certification or Phase 10 release-final feature, namespace, documentation, security, dependency, and evidence closure. |
 | Phase 9 | `PHASE_9_COMPLETE_WITH_LIMITATIONS` | Stable advanced prepared endpoints now use the same `Request<E>`, private `EndpointSpec`, body/auth/limiter/deadline/hook/status/response/completion lifecycle, generated-client runtime, and managed HTTP clients as generated endpoints. One public-only downstream fixture certifies every stable extension workflow and feature-owned variant. | Fifteen rows remain partial only for Phase 10 release-final namespace, generated documentation, sentinel/security, feature/grammar/diagnostic, raw-success generated-category, dependency-assumption, canonical-example, MSRV, and evidence-completeness closure. |
 | Phase 10 | `PHASE_10_COMPLETE` | Concord 0.1 release-candidate closure: bounded dangerous raw success, release-stable executable naming, canonical examples, local benchmarks, complete grammar/diagnostic, dependency, security, property, Rustdoc, feature, MSRV, and maintained-release validation, and direct evidence for all 504 normative requirements. | None. No waiver or unresolved release criterion remains. |
+| Phase 11 | `PHASE_11_COMPLETE_WITH_LIMITATIONS` | One typed pagination state struct, consuming public controller trait, generated associated-controller integration, and controller-agnostic core loop; generated contract `11 -> 12`. | Only the then-unimplemented Phases 12-14. |
+| Phase 12 | `PHASE_12_COMPLETE_WITH_LIMITATIONS` | Arbitrary request/response specification types, sealed buffered/streaming/discard acquisition, universal metadata, bounded byte streaming, type-neutral generated/prepared integration, pagination capability, and integrated optional records/CSV/NDJSON; generated contract `12 -> 13`. | Only unimplemented Phase 13 lexical rate limits and Phase 14 product/release-final closure. |
 
 ## Approved Phases 11-14 roadmap
 
 | Phase | Title | Current status | Exact boundary |
 |---|---|---|---|
 | Phase 11 | Uniform Typed Pagination State | `COMPLETE_WITH_LIMITATIONS` | One struct DSL, one public consuming state-machine trait, one generated associated-controller integration, and one controller-agnostic core loop are validated; generated contract `11 -> 12`. |
-| Phase 12 | Generic Body/Response Specifications and Integrated Streaming Records | `NOT_STARTED` (active; authority approved) | Arbitrary Rust request/response specifications, three sealed core response modes, universal metadata, one bounded byte stream, type-neutral generated/prepared integration, pagination capability, and integrated optional records/CSV/NDJSON; generated contract `12 -> 13`. |
-| Phase 13 | Lexically Scoped Rate Limits | `NOT_STARTED` | Lexically scoped rate-limit semantics; Phase 11 preserves the current rate-limit model. |
+| Phase 12 | Generic Body/Response Specifications and Integrated Streaming Records | `COMPLETE_WITH_LIMITATIONS` | Arbitrary Rust request/response specifications, three sealed core response modes, universal metadata, one bounded byte stream, type-neutral generated/prepared integration, pagination capability, and integrated optional records/CSV/NDJSON; generated contract `12 -> 13`. |
+| Phase 13 | Lexically Scoped Rate Limits | `NOT_STARTED` (active) | Lexically scoped rate-limit semantics; Phase 12 preserves the current rate-limit model. |
 | Phase 14 | Product Completion, Conformance Closure, and Release Finalization | `NOT_STARTED` | Whole-product closure, deferred release-evidence hardening, and the only authorized restoration of `Normative Release Final`. |
 
-Phase 11 is validated with limitations owned only by Phases 12-14. Phase 12 is active while
-retaining `NOT_STARTED`. Phases 12-14 are roadmap authority only until their own approved missions;
-Phase 11 implements none of their product behavior.
+Phase 12 is validated with limitations owned only by Phases 13-14. Phase 13 is active while
+retaining `NOT_STARTED`; Phase 14 remains roadmap authority until its approved mission. Phase 12
+implements none of their product behavior.
 
 Phase reports remain the detailed evidence owners:
 
@@ -60,6 +62,7 @@ Phase reports remain the detailed evidence owners:
 - `docs/conformance/PHASE_9_REPORT.md`
 - `docs/conformance/PHASE_10_REPORT.md`
 - `docs/conformance/PHASE_11_REPORT.md`
+- `docs/conformance/PHASE_12_REPORT.md`
 
 ## Phase 4 production baseline
 
@@ -613,6 +616,39 @@ access, prepared pagination, pagination over records, unbounded buffering, multi
 parsing, SSE, WebSocket, reconnection, bidirectional streaming, and terminal stream-consumption
 hooks. The package remains `Normative Implementation Candidate` throughout Phase 12.
 
+## Phase 12 validated production baseline
+
+The Phase 12 authority commit is `95a1b9075061184ff2fa5807bb28b16a4d172277`. The initial
+source/test commit is `e71ed0671359f443f5aa165391ff56bd10debdf2`; the final non-amended
+source-correction and immutable tested identity is
+`d1aadcebcad0a65d92c4ed4a42d6b0a9c1f034b2`. The correction makes three Unicode registry-audit
+markers portable to the maintained Windows PowerShell 5.1 runner without changing their asserted
+text. The complete focused and maintained matrix, including `just release`, passed after the
+correction against the exact final source identity on Rust 1.85.0.
+
+The validated implementation has one public `RequestBodySpec`, one managed outgoing
+`RequestBody`, one public `ResponseBodySpec`, exactly sealed `Buffered`, `Streaming`, and `Discard`
+modes, one `ApiResponse<T>`, one metadata-free `ByteStream`, generic codec adapters, and a single
+generated/prepared executor lifecycle. `DecodedResponse<T>` is only an alias; `StreamResponse<M>`
+and the prepared response-marker taxonomy are absent. Macro body and response storage is type-
+shaped and contains no semantic built-in-name classification. Pagination uses explicit
+`PageResponseSpec` capability rather than response-name recognition. Core and macro generated
+contract constants are 13.
+
+Integrated feature-gated records remain inside `concord_core`. `records` has no Serde or CSV
+dependency; `csv` enables records, Serde, and exact optional `csv = 1.3.1`; `ndjson` enables records,
+Serde, and `serde_json` without enabling the general JSON endpoint feature. One `RecordDecoder`,
+`Records<D>`, `RecordStream<D>`, and consumer-only `RecordBatches<D>` path provides bounded
+chunk-independent framing. Built-in CSV and NDJSON use a 1 MiB staging maximum and withhold the
+first excess append or framed record. There is no records crate, second runtime, prepared
+pagination, or record-stream pagination.
+
+Phase 12 adds exactly 127 direct and zero partial evidence rows after the byte-identical 1,553-row
+Phase 0-11 catalog. Coverage contains 563 active and 11 superseded IDs. The historical Phase 10
+release requirement, claim, and change-map registries remain historical; Phase 14 owns their whole-
+product regeneration. Exact commits, commands, source paths, features, lineage, security results,
+and anchor sequence are recorded in `docs/conformance/PHASE_12_REPORT.md`.
+
 ## Release non-goals
 
 Concord 0.1 intentionally does not provide:
@@ -627,10 +663,11 @@ and no aggregate parent identity.
 
 ## Current phase state
 
-Phase 10 remains historically complete. Phase 11 — Uniform Typed Pagination State is
-`PHASE_11_COMPLETE_WITH_LIMITATIONS`; its limitations are only Phases 12-14. Phase 12 is active and
-`NOT_STARTED`; Phases 13-14 remain `NOT_STARTED`. Final release promotion is deferred exclusively to
-Phase 14.
+Phase 10 remains historically complete. Phase 11 remains validated for its exact source and
+paragraph versions. Phase 12 — Generic Body/Response Specifications and Integrated Streaming
+Records is `PHASE_12_COMPLETE_WITH_LIMITATIONS`; its limitations are only Phases 13-14. Phase 13 is
+active and `NOT_STARTED`; Phase 14 remains `NOT_STARTED`. Final release promotion is deferred
+exclusively to Phase 14.
 
 ## Continuing constraints
 
@@ -642,6 +679,6 @@ Phase 14.
 - Keep the current package at `Normative Implementation Candidate` through Phases 11-13; only
   Phase 14 may restore `Normative Release Final` after complete direct release evidence is valid.
 
-`PHASE_11_COMPLETE_WITH_LIMITATIONS`
+`PHASE_12_COMPLETE_WITH_LIMITATIONS`
 
 `NORMATIVE_IMPLEMENTATION_CANDIDATE`
