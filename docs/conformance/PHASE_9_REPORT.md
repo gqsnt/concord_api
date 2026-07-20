@@ -40,7 +40,7 @@ This report does not claim full Concord 0.1 conformance. The normative status re
 - Superseded evidence/report/state commit: `4f26b5d1336c6634068bbaac708bf05662880cf6`
 - Superseded evidence anchor: `854467ba40ebf5f1b0d190a165ef50d09519575d`
 - Corrected Phase 9 evidence/report/state commit: `7c01ec2d52d2612020b16928a848b970a27db4eb`
-- Corrected Phase 9 evidence anchor: `PENDING_PHASE_9_ANCHOR`
+- Corrected Phase 9 evidence anchor: `6c267878c6f62d2a9f45090f1172194e16b3b747`
 - Corrected anchor-metadata descendant: the final documentation-only commit with subject
   `docs: record phase 9 evidence correction anchor`
 
@@ -69,7 +69,7 @@ supplemental command ledger is `git_diff/phase-9-evidence-correction-validation.
 | Original evidence anchor | `854467ba40ebf5f1b0d190a165ef50d09519575d` | Superseded evidence history; finalized the original evidence-state self-reference only. |
 | Anchor metadata descendant | `docs: record phase 9 evidence anchor` | Records the real anchor hash in this report and controller state while retaining `anchor-must-be-an-ancestor`. |
 | Corrected evidence/report/state | `7c01ec2d52d2612020b16928a848b970a27db4eb` | Supersedes the earlier Phase 9 evidence state by aligning commands, paths, assertions, coverage notes, and independent claim atoms; executable artifacts remain unchanged. |
-| Corrected evidence anchor | `PENDING_PHASE_9_ANCHOR` | Finalizes the corrected evidence-state self-reference only. |
+| Corrected evidence anchor | `6c267878c6f62d2a9f45090f1172194e16b3b747` | Finalizes the corrected evidence-state self-reference only. |
 | Corrected anchor metadata descendant | `docs: record phase 9 evidence correction anchor` | Records the actual corrected anchor in this report and controller without creating another anchor. |
 
 No executable artifact changed after `a8732c3fdefb676bfbb46bee9d756a8282ec531f`.
