@@ -5,6 +5,7 @@
 //! integration for managed typed execution.
 
 #![forbid(unsafe_code)]
+#![deny(missing_docs)]
 
 #[cfg(feature = "dangerous-dev-tools")]
 pub mod __development;

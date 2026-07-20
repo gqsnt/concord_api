@@ -20,9 +20,12 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 /// Built-in body-free debug presentation volume.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum DebugLevel {
+    /// Disables built-in request and response debug events.
     #[default]
     None,
+    /// Emits structural request and response metadata without headers.
     Basic,
+    /// Also emits sanitized request and response headers.
     Headers,
 }
 
@@ -38,18 +41,22 @@ pub enum DebugLevel {
 /// not automatically time-limit completion callbacks or bound custom hook state,
 /// synchronous work before a future is returned, or application-created tasks.
 pub trait RuntimeHooks: Send + Sync + 'static {
+    /// Approves or rejects one attempt before body work and native execution begin.
     fn before_send<'a>(&'a self, _context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
         Box::pin(async { Ok(()) })
     }
 
+    /// Observes one final response head before challenge or body handling.
     fn on_response_head<'a>(&'a self, _context: ResponseHeadEvent<'a>) -> BoxFuture<'a, ()> {
         Box::pin(async {})
     }
 
+    /// Observes one already-fixed direct request or page result outside its deadline.
     fn on_complete<'a>(&'a self, _context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
         Box::pin(async {})
     }
 
+    /// Observes one already-fixed aggregate pagination result outside its deadline.
     fn on_pagination_complete<'a>(
         &'a self,
         _context: PaginationCompletionEvent<'a>,

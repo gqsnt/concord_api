@@ -411,10 +411,12 @@ impl<M> sealed::Body for StreamRequestBody<M> where M: MediaType {}
 /// operation deadline is checked after return, cancellation prevents later work
 /// only, and Concord does not automatically bound custom factory state.
 pub trait BodyFactory: Send + Sync + 'static {
+    /// Returns the stable content type for every body produced by this factory.
     fn content_type(&self) -> Option<HeaderValue> {
         None
     }
 
+    /// Creates one fresh request stream for the current Concord attempt.
     fn create(&self) -> Result<StreamBody, BodyError>;
 }
 

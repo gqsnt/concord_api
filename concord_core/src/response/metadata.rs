@@ -30,21 +30,25 @@ impl ExecutionMeta {
     }
 
     #[must_use]
+    /// Returns the stable generated or prepared endpoint identity.
     pub const fn endpoint(&self) -> &'static str {
         self.endpoint
     }
 
     #[must_use]
+    /// Returns the application HTTP method.
     pub const fn method(&self) -> &Method {
         &self.method
     }
 
     #[must_use]
+    /// Returns the zero-based page index; direct requests use zero.
     pub const fn page_index(&self) -> u32 {
         self.page_index
     }
 
     #[must_use]
+    /// Returns whether the result followed one authentication recovery.
     pub const fn recovered_authentication(&self) -> bool {
         self.recovered_authentication
     }
@@ -93,35 +97,42 @@ impl<T> DecodedResponse<T> {
     }
 
     #[must_use]
+    /// Returns the logical URL without native-only authentication.
     pub const fn url(&self) -> &Url {
         &self.url
     }
 
     #[must_use]
+    /// Returns the successful response status.
     pub const fn status(&self) -> StatusCode {
         self.status
     }
 
     #[must_use]
+    /// Returns the response HTTP version.
     pub const fn version(&self) -> Version {
         self.version
     }
 
     #[must_use]
+    /// Returns the actual successful response headers.
     pub const fn headers(&self) -> &HeaderMap {
         &self.headers
     }
 
     #[must_use]
+    /// Returns the safe structural execution metadata.
     pub const fn metadata(&self) -> &ExecutionMeta {
         &self.metadata
     }
 
     #[must_use]
+    /// Borrows the decoded application value.
     pub const fn value(&self) -> &T {
         &self.value
     }
 
+    /// Extracts the decoded application value.
     pub fn into_value(self) -> T {
         self.value
     }
@@ -189,36 +200,49 @@ impl RawResponse {
     }
 
     #[must_use]
+    /// Returns the logical URL without native-only authentication.
     pub fn url(&self) -> &Url {
         &self.url
     }
 
     #[must_use]
+    /// Returns the successful response status.
     pub fn status(&self) -> StatusCode {
         self.status
     }
 
     #[must_use]
+    /// Returns the response HTTP version.
     pub fn version(&self) -> Version {
         self.version
     }
 
     #[must_use]
+    /// Returns the actual successful response headers.
+    ///
+    /// Header values may contain secrets and have reduced secrecy guarantees.
     pub fn headers(&self) -> &HeaderMap {
         &self.headers
     }
 
     #[must_use]
+    /// Returns the safe structural execution metadata.
     pub fn metadata(&self) -> &ExecutionMeta {
         &self.metadata
     }
 
     #[must_use]
+    /// Borrows the complete bounded successful response bytes.
+    ///
+    /// Body bytes may contain secrets and have reduced secrecy guarantees.
     pub fn body(&self) -> &Bytes {
         &self.body
     }
 
     #[must_use]
+    /// Extracts the complete bounded successful response bytes.
+    ///
+    /// Body bytes may contain secrets and have reduced secrecy guarantees.
     pub fn into_body(self) -> Bytes {
         self.body
     }

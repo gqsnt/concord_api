@@ -47,7 +47,7 @@ fn development_tools_exclude_stable_custom_retry_and_raw_response_surfaces() {
 #[test]
 fn raw_response_flag_excludes_custom_retry_and_development_surfaces() {
     let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/fail/dangerous_custom_retry_absent.rs");
+    cases.compile_fail("tests/ui/fail/dangerous_custom_retry_absent_with_raw_response.rs");
     cases.compile_fail("tests/ui/fail/dangerous_development_absent.rs");
     cases.compile_fail("tests/ui/fail/dangerous_raw_response_fields_private.rs");
     cases.compile_fail("tests/ui/fail/dangerous_raw_stream_absent.rs");

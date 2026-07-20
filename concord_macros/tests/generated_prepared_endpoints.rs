@@ -486,7 +486,7 @@ async fn hook_rejection_prevents_prepared_factory_and_native_work() {
 }
 
 #[tokio::test]
-async fn prepared_protected_http_fails_during_first_poll_before_later_phases() {
+async fn prepared_protected_http_fails_before_hooks_or_body_materialization() {
     let server = ScriptedServer::start([]).expect("protected preparation server");
     let hook_calls = Arc::new(AtomicUsize::new(0));
     let selected_hooks = Arc::clone(&hook_calls);

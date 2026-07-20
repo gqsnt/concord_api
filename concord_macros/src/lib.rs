@@ -1,6 +1,7 @@
 //! Procedural macros for declaring Concord APIs.
 
 #![forbid(unsafe_code)]
+#![deny(missing_docs)]
 
 mod ast;
 mod codegen;

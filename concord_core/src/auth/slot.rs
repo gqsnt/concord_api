@@ -1096,6 +1096,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn credential_versions_remain_monotonic_across_deterministic_mutations() {
+        const SEED: u64 = 0x6372_6564_5f32_3032;
+        let executor = DeterministicExecutor::new();
+        let core = core(&executor);
+        let selector = SlotSelector::endpoint(Duration::ZERO);
+        let mut state = SEED;
+        let mut previous = 0_u64;
+        for case_index in 0..256_usize {
+            state = state
+                .wrapping_mul(2_862_933_555_777_941_757)
+                .wrapping_add(3_037_000_493);
+            if state & 1 == 0 && selector.is_set() {
+                selector
+                    .clear()
+                    .unwrap_or_else(|_| panic!("seed={SEED:#x} clear case={case_index}"));
+            }
+            selector
+                .set(TestMaterial {
+                    id: case_index + 1,
+                    expires_at: None,
+                })
+                .unwrap_or_else(|_| panic!("seed={SEED:#x} set case={case_index}"));
+            let prepared = selector
+                .preflight(core.provider_http(None))
+                .await
+                .unwrap_or_else(|_| panic!("seed={SEED:#x} preflight case={case_index}"));
+            assert!(
+                prepared.version > previous,
+                "seed={SEED:#x} case={case_index} previous={previous} current={}",
+                prepared.version
+            );
+            previous = prepared.version;
+        }
+    }
+
+    #[tokio::test]
     async fn failure_cohort_is_shared_and_later_no_cooldown_call_retries() {
         let executor = DeterministicExecutor::new();
         let core = core(&executor);

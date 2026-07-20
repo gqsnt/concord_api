@@ -825,9 +825,9 @@ impl ProbeHooks {
         self.records.lock().expect("records lock").clone()
     }
 
-    fn push_trace(&self, phase: &str) {
+    fn push_trace(&self, stage: &str) {
         if let Some(trace) = &self.trace {
-            trace.lock().expect("trace lock").push(phase.into());
+            trace.lock().expect("trace lock").push(stage.into());
         }
     }
 }
@@ -3032,7 +3032,7 @@ async fn encoding_failure_and_request_limit_prevent_native_execution_safely() {
 }
 
 #[tokio::test]
-async fn content_type_and_decoder_failures_are_safe_and_phase_ordered() {
+async fn content_type_and_decoder_failures_are_safe_and_lifecycle_ordered() {
     REJECTING_DECODER_CALLS.store(0, Ordering::SeqCst);
     let contract_executor = DeterministicExecutor::new();
     contract_executor

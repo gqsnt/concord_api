@@ -1,0 +1,16 @@
+error[E0432]: unresolved import `concord_core::dangerous::ReqwestRetryBuilder`
+ --> tests/ui/fail/dangerous_custom_retry_absent_with_raw_response.rs:1:5
+  |
+1 | use concord_core::dangerous::ReqwestRetryBuilder;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `ReqwestRetryBuilder` in `dangerous`
+  |
+note: found an item that was configured out
+ --> src/dangerous.rs
+  |
+  | pub use reqwest::retry::Builder as ReqwestRetryBuilder;
+  |                                    ^^^^^^^^^^^^^^^^^^^
+note: the item is gated behind the `dangerous-custom-retry` feature
+ --> src/dangerous.rs
+  |
+  | #[cfg(feature = "dangerous-custom-retry")]
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

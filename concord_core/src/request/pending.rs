@@ -33,6 +33,7 @@ impl<E> Request<E> {
     }
 
     #[must_use]
+    /// Replaces the generated operation deadline with one explicit duration.
     pub fn timeout(mut self, duration: Duration) -> Self {
         self.options = self
             .options
@@ -41,18 +42,21 @@ impl<E> Request<E> {
     }
 
     #[must_use]
+    /// Disables the generated operation deadline for this request.
     pub fn disable_timeout(mut self) -> Self {
         self.options = self.options.with_timeout(TimeoutOverride::Disabled);
         self
     }
 
     #[must_use]
+    /// Restores the endpoint's inherited deadline selection.
     pub fn inherit_timeout(mut self) -> Self {
         self.options = self.options.with_timeout(TimeoutOverride::Inherit);
         self
     }
 
     #[must_use]
+    /// Replaces the built-in body-free debug level for this request.
     pub fn debug(mut self, level: DebugLevel) -> Self {
         self.options = self.options.with_debug(level);
         self

@@ -791,6 +791,33 @@ mod tests {
     }
 
     #[test]
+    fn path_segmentation_property_preserves_one_owned_segment() {
+        const SEED: u64 = 0x7061_7468_5f32_3032;
+        let mut state = SEED;
+        for case_index in 0..256_u32 {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            let segment = format!("item-{case_index}-{state:016x} %?#");
+            let mut builder = builder("https://example.test/root/");
+            builder
+                .push_value(&segment)
+                .unwrap_or_else(|_| panic!("seed={SEED:#x} case={case_index}"));
+            let url = builder.finish().logical_url().clone();
+            assert_eq!(url.query(), None, "seed={SEED:#x} case={case_index}");
+            assert_eq!(url.fragment(), None, "seed={SEED:#x} case={case_index}");
+            assert!(
+                url.path().starts_with("/root/item-"),
+                "seed={SEED:#x} case={case_index}"
+            );
+            assert!(
+                url.path().ends_with("%20%25%3F%23"),
+                "seed={SEED:#x} case={case_index} url={url}"
+            );
+        }
+    }
+
+    #[test]
     fn ordered_query_and_safe_redaction_are_finalized_together() {
         let mut builder = builder("https://example.test/v1");
         builder.push_query_value("keep", &"first");

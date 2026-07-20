@@ -2030,7 +2030,7 @@ mod tests {
     }
 
     #[test]
-    fn defaults_formats_static_atoms_and_later_phase_boundaries_are_restricted() {
+    fn defaults_formats_and_static_atoms_obey_grammar_boundaries() {
         parse(quote! {
             client Api {
                 base "https://example.test";
