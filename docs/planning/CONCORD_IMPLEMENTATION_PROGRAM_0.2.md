@@ -424,7 +424,7 @@ cancellation commands plus all 16 maintained commands, including `just release`,
 that exact source. The original evidence/report/state commit
 `4f26b5d1336c6634068bbaac708bf05662880cf6` and anchor
 `854467ba40ebf5f1b0d190a165ef50d09519575d` are superseded evidence history. The corrected
-evidence/report/state commit is `PENDING_PHASE_9_EVIDENCE`; a subsequent documentation-only
+evidence/report/state commit is `7c01ec2d52d2612020b16928a848b970a27db4eb`; a subsequent documentation-only
 corrected evidence anchor finalizes that evidence-state self-reference without changing executable
 artifacts.
 
