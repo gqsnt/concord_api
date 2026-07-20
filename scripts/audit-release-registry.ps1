@@ -575,6 +575,24 @@ function Assert-Phase11Evidence {
     }
 }
 
+function Assert-InheritedPhase11SourceEvidence {
+    param([object[]]$Evidence, [string]$Source)
+    $rows = @($Evidence | Where-Object { $_.evidence_id -like 'P11-*' })
+    Assert-Condition ($rows.Count -eq $script:Phase11RequirementIds.Count) "correction source inherited $($rows.Count) Phase 11 rows rather than $($script:Phase11RequirementIds.Count)"
+    $ids = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($row in $rows) {
+        Assert-Condition $ids.Add($row.requirement_id) "duplicate inherited Phase 11 evidence requirement $($row.requirement_id)"
+        Assert-ExactCommit $row.verified_commit "inherited Phase 11 evidence"
+        Assert-Condition ($row.verified_commit -ne $Source) "correction source already contains evidence claiming its own unvalidated identity: $($row.evidence_id)"
+        Assert-Ancestor $row.verified_commit $Source "inherited Phase 11 evidence/source lineage"
+        Assert-Condition ($row.result -eq 'passing' -and $row.configuration -match '^direct ') "inherited Phase 11 evidence is not direct passing: $($row.evidence_id)"
+        Assert-Condition ([string]::IsNullOrWhiteSpace($row.waiver)) "inherited Phase 11 evidence has a waiver: $($row.evidence_id)"
+    }
+    foreach ($id in $script:Phase11RequirementIds) {
+        Assert-Condition $ids.Contains($id) "correction source did not inherit Phase 11 evidence for $id"
+    }
+}
+
 function Assert-Phase11ValidationRegistry {
     param([object[]]$Rows, [string]$Source)
     $phaseRows = @($Rows | Where-Object { $_.validation_id -like 'P11-VAL-*' })
@@ -1053,14 +1071,15 @@ if ($Mode -eq "Source") {
     $coverage = @(Import-GitCsv $SourceCommit $script:CoveragePath)
     $evidence = @(Import-GitCsv $SourceCommit $script:EvidencePath)
     Assert-BaseCatalogs $definitions $coverage $evidence
-    Assert-Condition ($evidence.Count -eq $script:Phase10EvidenceRows) "source identity has unexpected evidence rows: $($evidence.Count)"
+    Assert-Condition ($evidence.Count -eq ($script:Phase10EvidenceRows + $script:Phase11RequirementIds.Count)) "correction source has unexpected evidence rows: $($evidence.Count)"
     Assert-EvidencePaths $evidence $SourceCommit
-    Assert-Phase10HistoricalCatalog $SourceCommit $true
+    Assert-Phase10HistoricalCatalog $SourceCommit $false
     Assert-Phase10ReportPreserved $SourceCommit
     Assert-SupersededHistoricalEvidence $evidence
+    Assert-InheritedPhase11SourceEvidence $evidence $SourceCommit
     Assert-RequirementChangeRecord $SourceCommit
     Assert-CandidateStatus $documents $SourceCommit
-    Write-Output "implementation-candidate source audit passed: active-requirements=$($definitions.Count) superseded-requirements=$($script:SupersededRequirementIds.Count) historical-rows=$($evidence.Count) Phase-11-evidence=not-assessed release-final=reserved-for-Phase-14"
+    Write-Output "implementation-candidate source audit passed: active-requirements=$($definitions.Count) superseded-requirements=$($script:SupersededRequirementIds.Count) historical-rows=$script:Phase10EvidenceRows inherited-Phase-11-rows=$($script:Phase11RequirementIds.Count) Phase-11-evidence=not-assessed release-final=reserved-for-Phase-14"
     exit 0
 }
 
