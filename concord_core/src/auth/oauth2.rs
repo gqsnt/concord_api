@@ -237,7 +237,7 @@ mod tests {
                     .header(
                         AUTHORIZATION,
                         HeaderValue::from_static(
-                            "Basic cGhhc2U2LW9hdXRoLWNsaWVudC1pZC00ZGIzNzBlYmIwNDY6cGhhc2U2LW9hdXRoLWNsaWVudC1zZWNyZXQtOWY4YjE0YzJlNmEx",
+                            "Basic b2F1dGgtY2xpZW50LWlkLXNlbnRpbmVsLTRkYjM3MGViYjA0NjpvYXV0aC1jbGllbnQtc2VjcmV0LXNlbnRpbmVsLTlmOGIxNGMyZTZhMQ==",
                         ),
                     )
                     .header(
