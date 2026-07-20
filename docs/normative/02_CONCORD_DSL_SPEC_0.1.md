@@ -1,7 +1,7 @@
 # CONCORD_DSL_SPEC_0.1
 
 **Version:** 0.1  
-**Status:** Normative Release Final
+**Status:** Normative Implementation Candidate
 **Authority:** Concord DSL language specification  
 **Requirement prefix:** `DSL`  
 **Depends on:** Specification Index, Product Contract  
@@ -1177,68 +1177,42 @@ The type must implement the public response codec contract.
 
 ## 22. Pagination declaration
 
-### 22.1 Built-in controllers
+### 22.1 Uniform controller struct
 
-Built-in offset:
+Every pagination declaration names one arbitrary Rust type and constructs that controller through a mandatory struct-shaped field block. Built-in and application controllers use the same form:
 
 ```text
-paginate OffsetPagination {
-    offset = ep.offset,
-    page_size = ep.limit
+paginate concord_core::advanced::OffsetPagination {
+    offset: bind ep.offset,
+    page_size: bind ep.limit,
+}
+
+paginate concord_core::advanced::PagePagination {
+    page: bind ep.page,
+    page_size: bind ep.per_page,
+}
+
+paginate concord_core::advanced::CursorPagination<String> {
+    cursor: bind ep.cursor,
+}
+
+paginate crate::pagination::VendorCursor {
+    cursor: bind ep.cursor,
+    region: scope.region,
+    empty_pages: 0,
+    max_empty_pages: vars.max_empty_pages,
 }
 ```
 
-Built-in page number:
+Each named field is one member of the complete Rust struct literal generated for the controller. Ordinary Rust checking diagnoses missing, unknown, inaccessible, or type-incompatible fields and types that do not implement the controller contract.
 
-```text
-paginate PagePagination {
-    page = ep.page,
-    page_size = ep.per_page
-}
-```
+### 22.2 Live bindings and stable initializers
 
-Built-in cursor:
+`bind ep.FIELD` and `bind scope.FIELD` are the only writable binding forms. Initial construction reads the destination value into the controller field once. Before each page, generated code clones the original endpoint snapshot and copies the current controller field into that request-local endpoint or scope field. The per-page clone is never copied back into the controller.
 
-```text
-paginate CursorPagination<String> {
-    cursor = ep.cursor
-}
-```
+An unbound initializer is evaluated once during controller construction and remains controller-local. Accepted stable initializers are direct `vars.FIELD`, `scope.FIELD`, or `ep.FIELD` references; string, integer, and boolean literals; and the simple Rust paths or constants accepted by the restricted public-expression grammar. Calls, method calls, closures, async blocks, arbitrary blocks, formatting expressions, secrets, credentials, request bodies, and transport/native values are outside this grammar.
 
-Built-in controller declarations require these exact direct endpoint bindings:
-
-| Controller | Required assignments |
-|---|---|
-| `OffsetPagination` | `offset = ep.FIELD`, `page_size = ep.FIELD` |
-| `PagePagination` | `page = ep.FIELD`, `page_size = ep.FIELD` |
-| `CursorPagination<C>` | `cursor = ep.FIELD` |
-
-The assignment block is mandatory for a built-in controller. Missing, duplicate, additional, or non-direct built-in assignments are rejected. The referenced endpoint fields must have types compatible with the built-in controller inputs.
-
-### 22.2 Custom controller factory
-
-A custom controller is created atomically by a Rust item-path factory called with restricted public expressions:
-
-```text
-paginate custom crate::pagination::vendor_cursor(
-    ep.cursor,
-    scope.region
-);
-```
-
-The generated call is conceptually:
-
-```rust
-let controller =
-    crate::pagination::vendor_cursor(
-        endpoint.cursor_snapshot(),
-        scope.region_snapshot(),
-    );
-```
-
-The factory result must implement the public `PaginationController<Page>` contract. The macro does not require `Default`, does not write controller fields, and does not require controller fields to be public.
-
-A custom controller applies its evolving state through the safe `PaginationRequest` query/header patch API. Concord 0.1 custom controllers cannot directly replace host labels, path segments, bodies, credentials, or native request data.
+Only direct request-local endpoint and scope snapshot fields are writable. Client configuration, shared client state, variables, secrets, credentials, bodies, and transport/native state are not binding destinations.
 
 ### 22.3 Grammar
 
@@ -1246,40 +1220,36 @@ Informative grammar:
 
 ```text
 pagination_clause =
-      builtin_pagination_clause
-    | custom_pagination_clause ;
+    "paginate" rust_type "{" pagination_field_list? "}" ;
 
-builtin_pagination_clause =
-    "paginate" builtin_pagination_type
-    "{" pagination_assignment_list "}" ;
+pagination_field_list =
+    pagination_field ("," pagination_field)* ","? ;
 
-custom_pagination_clause =
-    "paginate" "custom" rust_item_path
-    "(" public_expr_list? ")" ";" ;
+pagination_field =
+    identifier ":" pagination_initializer ;
 
-pagination_assignment_list =
-    pagination_assignment
-    ("," pagination_assignment)* ;
-
-pagination_assignment =
-    identifier "=" "ep" "." identifier ;
+pagination_initializer =
+      "bind" ("ep" | "scope") "." identifier
+    | restricted_public_expr ;
 ```
 
-Trailing commas are not accepted in either 0.1 pagination form.
+Field shorthand, struct rest syntax, indirect binding expressions, and a missing block are rejected. The block may end in a trailing comma. Pagination remains permitted only on bodyless endpoints, and the pagination clause remains the final endpoint clause.
 
-Pagination is permitted only on bodyless endpoints, and the pagination clause is the final endpoint clause.
+The macro validates declaration structure, unique controller fields, unique resolved binding destinations, restricted initializer syntax, reference ownership, and writable-destination ownership. Rust type checking owns controller field visibility, completeness, names, types, and the controller trait bound.
 
 **DSL-PAGE-001 — Bodyless pagination.** An endpoint with a request body MUST NOT declare pagination.
 
-**DSL-PAGE-002 — Unique built-in assignments.** Duplicate built-in pagination assignment names MUST be rejected.
+**DSL-PAGE-002 — Unique pagination fields and bindings.** Duplicate controller field names or duplicate resolved binding destinations MUST be rejected.
 
 **DSL-PAGE-003 — Last clause.** Pagination MUST be the final endpoint clause.
 
-**DSL-PAGE-004 — Atomic custom construction.** A custom pagination controller MUST be produced by one factory call and MUST NOT require `Default`, public fields, or generated field mutation.
+**DSL-PAGE-007 — Complete controller struct construction.** A pagination declaration MUST name one Rust type and a mandatory field block that generates one complete ordinary Rust struct literal; every declared field initializer MUST be evaluated exactly once during initial controller construction.
 
-**DSL-PAGE-005 — Built-in binding completeness.** A built-in pagination controller MUST use its mandatory exact direct endpoint-field assignments so every next controller state can affect the next logical request.
+**DSL-PAGE-008 — Inline live binding round trip.** A `bind ep.FIELD` or `bind scope.FIELD` initializer MUST copy that request-local destination into the identically named controller field exactly once during construction and MUST copy the current controller field into the same destination of each fresh per-page endpoint clone.
 
-**DSL-PAGE-006 — Custom patch boundary.** A custom controller factory result MUST apply state only through the public safe pagination query/header patch contract.
+**DSL-PAGE-009 — Writable binding boundary.** `bind` MUST accept only a direct `ep.FIELD` or `scope.FIELD` destination and MUST NOT target variables, secrets, credentials, bodies, transport/native values, or shared client configuration.
+
+**DSL-PAGE-010 — Restricted controller initializer grammar.** An unbound controller initializer MUST be limited to a direct `vars.FIELD`, `scope.FIELD`, or `ep.FIELD` reference, a string, integer, or boolean literal, or an approved simple Rust path or constant; shorthand, rest syntax, calls, method calls, closures, async blocks, arbitrary blocks, formatting expressions, and protected references MUST be rejected.
 
 ## 23. Name resolution
 

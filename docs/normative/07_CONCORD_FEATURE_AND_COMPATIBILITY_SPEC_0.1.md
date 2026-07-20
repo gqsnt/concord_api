@@ -1,7 +1,7 @@
 # CONCORD_FEATURE_AND_COMPATIBILITY_SPEC_0.1
 
 **Version:** 0.1  
-**Status:** Normative Release Final
+**Status:** Normative Implementation Candidate
 **Authority:** Crate topology, Cargo features, MSRV, dependency baseline, stability, and build compatibility  
 **Requirement prefixes:** `FEAT`, `COMPAT`  
 **Depends on:** Specification Index, Product Contract, Public API Specification, Security and Limits Specification, Execution Specification  
@@ -262,6 +262,8 @@ A caller-provided path override may be added only through a later DSL contract r
 **COMPAT-MACRO-002 — Renamed dependency support.** Generated code MUST resolve and use the caller-visible core crate path and MUST compile when the `concord_core` package is renamed in `Cargo.toml`.
 
 **COMPAT-MACRO-003 — Expansion isolation.** Nested and repeated macro expansions MUST use collision-safe internal aliases and MUST NOT depend on invocation at crate root.
+
+**COMPAT-MACRO-004 — Pagination type neutrality.** Pagination parsing, normalized IR, generated binding, and runtime integration MUST NOT recognize controller names, crate origin, built-in/custom category, arithmetic, cursor semantics, validation policy, or short-page policy; adding a downstream controller MUST require no `concord_macros` source change.
 
 ## 15. Feature-gated diagnostics
 

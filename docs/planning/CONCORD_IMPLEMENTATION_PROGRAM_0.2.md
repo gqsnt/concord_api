@@ -2,16 +2,17 @@
 
 **Version:** 0.2
 **Status:** Internal Implementation Candidate
-**Authority:** Completed Concord 0.1 delivery sequence through Phase 10
+**Authority:** Validated history through Phase 10 and approved delivery sequence through Phase 14
 **Depends on:** All normative and architecture documents
 **Supersedes:** `CONCORD_IMPLEMENTATION_PLAN_0.1.md` for future execution
 
 ## Purpose
 
-This program records the implementation state actually reached through terminal Phase 10. It does
-not change normative behavior or authorize a later phase. The complete local release matrix passed,
-all 504 requirements have direct passing evidence, and the normative documents are
-`Normative Release Final`.
+This program preserves the implementation state validated through historical Phase 10 and records
+the approved Phases 11-14 delivery sequence. Phase 10 remains valid for its exact source and 504
+then-active requirements. The Phase 11 contract amendment returns the current normative package to
+`Normative Implementation Candidate`; only Phase 14 may restore `Normative Release Final` after
+whole-product conformance closure.
 
 The 0.1 implementation plan remains available as historical evidence. Its unchecked tasks are not
 an execution queue because several foundations were delivered in a different order.
@@ -31,6 +32,19 @@ an execution queue because several foundations were delivered in a different ord
 | Phase 8 | `PHASE_8_COMPLETE_WITH_LIMITATIONS` | The same generated request path now supports built-in/custom pagination DSL, exact stable page-limit/controller/safe-patch contracts, conditionally generated directly awaitable terminals, one typed request-local sequential page loop, canonical cycle protection, finite page/item/identity ceilings, ordinary per-page deadlines/authentication/limiting/completion, and one aggregate completion. | Twenty-eight source/test rows and one audit row remain partial only for Phase 9 prepared endpoints/final extension certification or Phase 10 release-final feature, namespace, documentation, security, dependency, and evidence closure. |
 | Phase 9 | `PHASE_9_COMPLETE_WITH_LIMITATIONS` | Stable advanced prepared endpoints now use the same `Request<E>`, private `EndpointSpec`, body/auth/limiter/deadline/hook/status/response/completion lifecycle, generated-client runtime, and managed HTTP clients as generated endpoints. One public-only downstream fixture certifies every stable extension workflow and feature-owned variant. | Fifteen rows remain partial only for Phase 10 release-final namespace, generated documentation, sentinel/security, feature/grammar/diagnostic, raw-success generated-category, dependency-assumption, canonical-example, MSRV, and evidence-completeness closure. |
 | Phase 10 | `PHASE_10_COMPLETE` | Concord 0.1 release-candidate closure: bounded dangerous raw success, release-stable executable naming, canonical examples, local benchmarks, complete grammar/diagnostic, dependency, security, property, Rustdoc, feature, MSRV, and maintained-release validation, and direct evidence for all 504 normative requirements. | None. No waiver or unresolved release criterion remains. |
+
+## Approved Phases 11-14 roadmap
+
+| Phase | Title | Current status | Exact boundary |
+|---|---|---|---|
+| Phase 11 | Uniform Typed Pagination State | `IN_PROGRESS` | Replace the built-in/custom pagination split with one struct DSL, one public consuming state-machine trait, one generated associated-controller integration, and one controller-agnostic core loop; generated contract `11 -> 12`. |
+| Phase 12 | Generic Body/Response Specifications and Integrated Streaming Records | `NOT_STARTED` | Generic body/response specifications and integrated streaming records; no Phase 12 product behavior is authorized in Phase 11. |
+| Phase 13 | Lexically Scoped Rate Limits | `NOT_STARTED` | Lexically scoped rate-limit semantics; Phase 11 preserves the current rate-limit model. |
+| Phase 14 | Product Completion, Conformance Closure, and Release Finalization | `NOT_STARTED` | Whole-product closure, deferred release-evidence hardening, and the only authorized restoration of `Normative Release Final`. |
+
+Phase 11 is the active implementation phase. Its successful evidence/state transition makes Phase
+12 active while retaining `NOT_STARTED`. Phases 12-14 are roadmap authority only until their own
+approved missions; Phase 11 implements none of their product behavior.
 
 Phase reports remain the detailed evidence owners:
 
@@ -525,9 +539,11 @@ registries reconcile all 504 normative requirements to current direct passing ev
 atoms, zero waivers, and zero missing commit-scoped paths while preserving the 1,473-row Phase 0-9
 prefix byte-for-byte. Source mode validates executable inputs without claiming final evidence
 completeness; the separate final mode validates the evidence, anchor, and metadata identities.
-After those gates passed, the nine normative owners retained `Normative Release Final`. Concord 0.1
-is a locally validated release candidate; no remote publication, tag, registry upload, or
-deployment was performed.
+After those gates passed, the nine normative owners retained `Normative Release Final` for the exact
+historical Phase 10 contract. Concord 0.1 was a locally validated release candidate; no remote
+publication, tag, registry upload, or deployment was performed. The approved Phase 11 requirement
+change creates a new current implementation-candidate contract without changing that historical
+result.
 
 ## Release non-goals
 
@@ -541,10 +557,11 @@ Concord 0.1 intentionally does not provide:
 No placeholder public API was added for these capabilities. Direct requests retain page index zero
 and no aggregate parent identity.
 
-## Terminal phase state
+## Current phase state
 
-Phase 10 — Product Completion and Release Candidate is complete and is the terminal phase in this
-approved implementation program. No later phase is defined or authorized here.
+Phase 10 remains historically complete. Phase 11 — Uniform Typed Pagination State is active under
+the corrected project directive. Phases 12-14 are defined above and remain `NOT_STARTED`; final
+release promotion is deferred exclusively to Phase 14.
 
 ## Continuing constraints
 
@@ -553,8 +570,9 @@ approved implementation program. No later phase is defined or authorized here.
 - Keep deterministic support private and out of generated signatures.
 - Use Nextest for unit/integration tests and `cargo test` only for maintained doctest recipes.
 - Preserve the immutable source/evidence anchor sequence for each phase.
-- Preserve `Normative Release Final` only while complete direct release evidence remains valid.
+- Keep the current package at `Normative Implementation Candidate` through Phases 11-13; only
+  Phase 14 may restore `Normative Release Final` after complete direct release evidence is valid.
 
-`PHASE_10_COMPLETE`
+`PHASE_11_IN_PROGRESS`
 
-`CONCORD_0_1_RELEASE_CANDIDATE`
+`NORMATIVE_IMPLEMENTATION_CANDIDATE`

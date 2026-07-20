@@ -1,7 +1,7 @@
 # CONCORD_GENERATED_API_SPEC_0.1
 
 **Version:** 0.1  
-**Status:** Normative Release Final
+**Status:** Normative Implementation Candidate
 **Authority:** Exact generated Rust API specification  
 **Requirement prefix:** `GEN`  
 **Depends on:** Specification Index, Product Contract, DSL Specification, Public API Specification  
@@ -791,6 +791,10 @@ There is no `.collect()` terminal and no loop-detection opt-out.
 **GEN-PAGE-002 — No collect method.** Generated pagination MUST NOT require or expose a separate `.collect()` terminal.
 
 **GEN-PAGE-003 — Conditional availability.** Non-paginated or incompatible endpoints MUST NOT expose pagination methods.
+
+Generated-private integration uses one sealed endpoint capability with an associated item type, an associated controller type, complete initial controller construction, and binding of the current controller into a fresh endpoint clone. Generated code invokes the one core-owned page loop exactly once and contains no page-loop algorithm. The synchronized private generated contract version is `12`.
+
+**GEN-PAGE-004 — Associated typed controller integration.** A generated paginated endpoint MUST expose to core, through a generated-private sealed capability, one associated controller type implementing `PaginationController` for the decoded page, one complete initial-controller operation, one current-controller-to-fresh-endpoint binding operation, and one item type; it MUST NOT pass separate runtime factory, binder, or short-page callbacks, generate another page loop, erase the controller, or expose this integration publicly.
 
 ## 14. Endpoint-backed credential acquisition
 

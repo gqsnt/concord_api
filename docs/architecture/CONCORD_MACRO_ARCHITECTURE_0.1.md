@@ -301,6 +301,8 @@ Validation includes:
 - valid rate-limit costs/windows/dimensions;
 - endpoint body/response/pagination compatibility;
 - duplicate pagination controller fields;
+- duplicate resolved pagination binding destinations;
+- pagination initializer and writable-destination ownership;
 - endpoint-backed cycles;
 - feature-dependent syntax markers;
 - static route literal restrictions.
@@ -309,7 +311,8 @@ Some type-bound failures remain normal Rust errors:
 
 - missing `Display`;
 - missing codec implementation;
-- wrong custom controller fields;
+- missing, unknown, inaccessible, or wrong controller fields;
+- non-controller and non-`Send` pagination types;
 - custom provider material mismatch;
 - `IntoIterator` output mismatch.
 
@@ -415,14 +418,20 @@ Response markers map to typed handlers:
 
 Generate:
 
-- built-in controller construction and typed endpoint-field bindings;
-- one atomic custom-controller factory call for custom pagination;
+- one arbitrary controller type from the normalized pagination IR;
+- one complete ordinary controller struct literal;
+- one generated-private associated controller type;
+- one initial construction operation;
+- one endpoint/scope bound-field operation into a fresh endpoint clone;
 - compile-time `PaginationController<Page>` bounds;
-- safe custom query/header patch integration;
 - item associated type;
 - configured page/item/identity ceiling plumbing.
 
-Generated code does not require custom controller `Default`, public fields, or field mutation. No runtime adapter object or `Any` state is generated.
+The parser, IR, resolution, and generation contain no semantic controller-name, crate-origin,
+built-in/custom, arithmetic, cursor, validation, or short-page branch. Ordinary Rust checks struct
+field completeness, visibility, types, and controller bounds. Only declared `bind` fields enter
+continuation-redaction classification. No factory, public patch, runtime adapter, callback set,
+generated loop, erased registry, or `Any` state is generated.
 
 ## 11. Generated core-path resolution
 
@@ -451,6 +460,9 @@ Diagnostics should point to the DSL declaration rather than only a missing Rust 
 Every generated client module emits a const-time assertion against a private semantic contract marker.
 
 The marker version changes whenever generated code and core `__private` integration are incompatible.
+
+Uniform typed pagination changes that integration; the synchronized Phase 11 marker is `12` in
+both macro output and core.
 
 The marker must not rely solely on Cargo package version strings.
 
@@ -532,7 +544,7 @@ Deterministic tests compile actual generated clients and exercise core runtime b
 2. Normalized endpoint IR contains no local inheritance operations.
 3. Every generated public name is collision-checked.
 4. Every generated endpoint has one static body type and one static response handler.
-5. Pagination generation uses no runtime downcast.
+5. Pagination generation uses one type-neutral IR and no controller-name branch or runtime downcast.
 6. Codegen never imports macro-private symbols into generated public signatures.
 7. Generated Rust requires only documented public APIs plus `__private` integration.
 

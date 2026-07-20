@@ -1,7 +1,7 @@
 # CONCORD_EXECUTION_SPEC_0.1
 
 **Version:** 0.1  
-**Status:** Normative Release Final
+**Status:** Normative Implementation Candidate
 **Authority:** Runtime phases, side effects, attempts, recovery, precedence, and cancellation  
 **Requirement prefix:** `EXEC`  
 **Depends on:** Specification Index, Product Contract, Public API Specification, Security and Limits Specification  
@@ -843,7 +843,7 @@ For any nonzero limit, Concord validates the requested page count against the co
 
 ### 23.2 Initial state
 
-Concord then creates:
+Concord then constructs the complete controller exactly once from the original endpoint snapshot and creates:
 
 - one initial controller;
 - one empty result vector;
@@ -855,15 +855,18 @@ Concord then creates:
 
 For each page:
 
-1. clone the original bodyless endpoint value;
-2. apply built-in generated bindings or invoke the custom controller's safe query/header patch;
-3. assign the page index;
-4. prepare the public request head and body metadata;
-5. construct the canonical logical request identity;
-6. reject an already-seen identity;
-7. reject retention that would exceed the configured identity-storage ceiling;
-8. retain the identity;
-9. execute the page through the ordinary application pipeline.
+1. call `validate` on the current controller;
+2. clone the original bodyless endpoint value;
+3. copy every current bound controller field into its declared endpoint or scope field on that fresh clone;
+4. assign the page index;
+5. prepare the public request head and body metadata through the ordinary endpoint path;
+6. construct the canonical logical request identity;
+7. reject an already-seen identity;
+8. reject retention that would exceed the configured identity-storage ceiling;
+9. retain the identity;
+10. execute and decode the page through the ordinary application pipeline.
+
+Initial construction reads each bound destination once. Evolving state thereafter belongs only to the controller. Unbound controller fields remain stable controller-local configuration, no per-page endpoint clone is copied back into the controller, and original endpoint, scope, facade, and client snapshots remain unchanged.
 
 Loop and identity-cap failures occur before page hooks, providers, limiter acquisition, or native send for that repeated/unretainable page.
 
@@ -873,7 +876,7 @@ The identity contains:
 
 1. the generated stable endpoint discriminator;
 2. the exact HTTP method token bytes;
-3. the canonical serialized logical URL after all public endpoint shaping and pagination patching;
+3. the canonical serialized logical URL after all generated bound-field writes and ordinary public endpoint shaping;
 4. the canonical final public request headers before authentication insertion.
 
 Logical URL serialization uses the selected `url` crate's canonical `Url` serialization after host/path/query construction. Query pair order is preserved. Default ports and percent encoding therefore compare according to that canonical serialization.
@@ -904,17 +907,19 @@ The ceiling measures this canonical payload, not allocator or hash-table overhea
 
 After successful page decoding:
 
-1. if this is the final soft `Take` page, consume items, enforcing the configured item ceiling, and return success without calling `next`;
-2. otherwise call the side-effect-free controller `next` method and retain its `Result` without propagating an error yet;
-3. consume the page through `IntoIterator` in iterator order;
-4. fail before appending any item that would exceed the configured item ceiling;
-5. count and append accepted items;
-6. stop on an empty page and ignore the retained candidate result;
-7. for sealed built-in offset or page-number pagination only, stop when the private exact requested capacity is present and the actual count is smaller, ignoring the retained candidate result;
-8. only after applicable natural stop checks, propagate a retained controller error;
+1. if this is the final soft `Take` page, consume items in iterator order, enforce the configured item ceiling before the first excess append, and return success without calling `next`;
+2. otherwise read `short_page_size` from the current controller;
+3. consume the current controller through `next(self, &page)` and retain its `Result` without propagating an error yet;
+4. consume the page through `IntoIterator` in iterator order;
+5. fail before appending any item that would exceed the configured item ceiling;
+6. count and append accepted items;
+7. when `short_page_size` is `Some(n)` and the decoded item count is less than `n`, stop and ignore the retained candidate result;
+8. when count termination does not apply, propagate a retained controller error;
 9. stop when the candidate controller is absent;
 10. fail if a hard cap is reached while a next controller exists;
-11. commit the candidate controller and increment the page index with checked arithmetic.
+11. commit the candidate controller only after accepted item processing, then increment the page index with checked arithmetic.
+
+There is no universal empty-page termination. `Some(1)` supplies empty-page termination; `None` means decoded item count does not independently stop pagination. Controller origin or type name does not alter this ordering.
 
 ### 23.6 Failure and completion
 
@@ -926,7 +931,7 @@ One aggregate pagination completion event records final success/failure, complet
 
 One pagination collection has at most one active page operation. Separate pagination collections may execute concurrently.
 
-**EXEC-PAGE-001 — Zero page no-op.** `Take(0)` MUST perform no controller construction, endpoint planning, page extension invocation, credential work, limiter work, or HTTP.
+**EXEC-PAGE-001 — Zero page no-op.** `Take(0)` MUST perform no controller construction, validation, advancement, short-page query, binding, endpoint planning, page extension invocation, credential work, limiter work, or HTTP.
 
 **EXEC-PAGE-002 — Sequential pages.** One pagination operation MUST have at most one active page operation.
 
@@ -934,13 +939,11 @@ One pagination collection has at most one active page operation. Separate pagina
 
 **EXEC-PAGE-004 — No repeated send.** A repeated page identity MUST NOT invoke hooks, providers, limiter, or transport for the repeated page.
 
-**EXEC-PAGE-005 — Controller commit after acceptance.** Candidate next controller state MUST be committed only after successful page decode and accepted item processing.
+**EXEC-PAGE-005 — Controller commit after acceptance.** Candidate next controller state MUST be committed only after successful page decode, accepted item processing, item-limit enforcement, natural-stop selection, and retained-error handling.
 
 **EXEC-PAGE-006 — All or error.** Pagination failure MUST return no partial item vector.
 
-**EXEC-PAGE-007 — Same page recovery.** Authentication recovery within a page MUST retain the same page index and controller state.
-
-**EXEC-PAGE-008 — Natural stop precedence.** Empty-page termination and sealed built-in exact-short-page termination MUST take precedence over a speculative next-controller error, and the final soft page MUST not invoke `next`.
+**EXEC-PAGE-007 — Same page recovery.** Authentication recovery within a page MUST retain the same page index, bound page identity, and current controller state.
 
 **EXEC-PAGE-009 — Canonical identity.** Page-cycle equality MUST use the exact endpoint, method, logical URL, and public-header canonicalization defined in this section and MUST confirm full equality after any hash match.
 
@@ -952,7 +955,11 @@ One pagination collection has at most one active page operation. Separate pagina
 
 **EXEC-PAGE-013 — Deterministic identity accounting.** Identity-ceiling accounting MUST use the canonical component-byte sum defined in this section and MUST use checked arithmetic.
 
-**EXEC-PAGE-014 — Custom continuation authority.** A public custom pagination controller MUST terminate through `next(&Page) -> None` or universal empty-page handling; Concord MUST NOT apply item-count-based short-page inference to a custom controller.
+**EXEC-PAGE-015 — Controller-selected natural-stop precedence.** The final soft page MUST NOT invoke `next`; on every other successful page, controller-selected count termination MUST be evaluated after item acceptance and before a retained `next` error, `None`, hard-cap failure, or next-controller commit.
+
+**EXEC-PAGE-016 — Uniform controller authority.** The core loop MUST apply identical construction, validation, binding, advancement, count-termination, error, and commit semantics to every controller without recognizing controller name, crate origin, arithmetic, cursor semantics, or built-in/custom status; decoded item count MUST NOT terminate independently when `short_page_size` is `None`.
+
+**EXEC-PAGE-017 — Per-page controller validation.** For every attempted page, the current controller's synchronous `validate` method MUST run before endpoint cloning, binding, request preparation, cycle preflight, hooks, credentials, limiter work, or transport, and validation failure MUST prevent all later work for that page.
 
 ## 24. Provider HTTP execution
 
@@ -1024,7 +1031,7 @@ Specific rules:
 - terminal status remains primary while bounded body capture may add only structural status-body state;
 - response-body failures occur before decoder invocation;
 - ordinary page errors retain their ordinary category instead of being wrapped as generic pagination errors;
-- empty-page and sealed built-in exact-short-page termination precede speculative next-controller errors.
+- controller-selected count termination precedes a retained next-controller error.
 
 **EXEC-PREC-001 — Earliest phase.** The earliest completed failing phase MUST determine the returned error, subject to the explicit managed-body and pagination-natural-stop precedence rules.
 

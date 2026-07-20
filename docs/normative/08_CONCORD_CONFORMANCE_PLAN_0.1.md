@@ -1,7 +1,7 @@
 # CONCORD_CONFORMANCE_PLAN_0.1
 
 **Version:** 0.1  
-**Status:** Normative Release Final
+**Status:** Normative Implementation Candidate
 **Authority:** Required evidence for Concord 0.1 conformance  
 **Requirement prefix:** `CONF`  
 **Depends on:** Every preceding normative Concord 0.1 specification  
@@ -54,9 +54,14 @@ Allowed coverage-plan status values are:
 ```text
 planned
 implemented
+superseded
 ```
 
-One coverage-plan row per normative requirement proves that verification work has been designed. It does not prove conformance.
+One coverage-plan row per active normative requirement proves that verification work has been designed. It does not prove conformance. Superseded historical identifiers remain in the requirement change record and may remain on byte-preserved historical evidence rows, but they are absent from current active coverage.
+
+A `superseded` coverage row is lineage metadata rather than current planned coverage; its notes name
+the active replacement and requirement-change record. Current active coverage is the exact set of
+`planned` and `implemented` rows.
 
 ### 2.2 Actual conformance evidence
 
@@ -329,8 +334,8 @@ Compile-fail fixtures cover:
 - endpoint-backed cycles;
 - invalid rate-limit cost/window/dimensions;
 - pagination on body/bytes/no-content/stream endpoints;
-- invalid built-in pagination assignment;
-- invalid custom pagination factory call or controller contract;
+- old built-in assignment or custom-factory pagination syntax;
+- invalid pagination struct fields, bindings, initializers, controller bounds, or visibility;
 - missing features;
 - unavailable generated methods;
 - endpoint request setter use without its generated prelude import;
@@ -702,16 +707,28 @@ Required cases:
 - no page beyond cap;
 - `Vec<T>` works directly;
 - custom `IntoIterator` page works;
-- custom controller factory preserves private fields and applies only safe query/header patches;
-- public custom controller has no exact-capacity or short-page inference method;
-- a short custom page with `next() -> Some` continues;
+- one built-in and one application controller share the parser, normalized IR, generated binding, public trait, and core loop;
+- an application controller is added without changing macro source;
+- qualified, imported, generic, nested, repeated-expansion, renamed-core, bindings-only, stable-unbound, mixed, and trailing-comma declarations compile;
+- old built-in assignment and custom-factory syntax fail with focused struct-and-`bind` migration diagnostics;
+- duplicate fields/destinations, invalid bind ownership, indirect binds, shorthand, rest syntax, calls, methods, closures, async/blocks, and protected initializers fail structurally;
+- Rust reports inaccessible, missing, unknown, wrong-type, non-controller, and non-`Send` controller failures;
+- a `Send` controller that is neither `Clone` nor `Sync` executes and moves state between pages;
+- controller construction occurs once after nonzero ceiling preflight, while `Take(0)` and failed preflight construct nothing;
+- validation occurs before every attempted page;
+- bound endpoint/scope values transfer into the controller once and current values bind into every fresh endpoint clone;
+- stable unbound fields initialize once and never rebind;
+- original endpoint, facade, scope, client, and stable snapshots remain unchanged;
+- bound dynamic host, path, ordered query, public header, current rate key, and canonical identity change together across pages;
+- an application controller may select the same exact count termination as offset and page-number controllers;
+- `Some(1)` selects empty-page termination;
+- a custom controller with no count policy continues after an empty page when `next` returns `Some`;
+- cursor pagination continues after an empty item page when metadata supplies a continuation;
 - item order across pages;
-- empty page stop;
 - offset short-page stop;
 - page-number short-page stop;
-- cursor continues despite short item count when next cursor exists;
-- missing cursor stop;
-- empty present cursor distinct from absent;
+- `next -> None` stops;
+- count termination precedes a retained next error, while a non-count-terminated page propagates it;
 - repeated identical request blocked;
 - two-state and longer cycles blocked;
 - exact canonical identity equality for URL default ports, query order, lowercase header names, repeated header values, and full equality after hash collision;
@@ -726,6 +743,8 @@ Required cases:
 - cancellation prevents later pages.
 
 **CONF-PAGE-001 — No item-trait dependency.** A downstream compile test MUST prove that `Vec<T>` and a custom `IntoIterator` page require no Concord-specific item extraction implementation.
+
+**CONF-PAGE-002 — Downstream controller without macro modification.** A downstream compile-and-runtime fixture using only stable public namespaces MUST prove that an application pagination controller uses generated struct construction and binding without a controller-specific `concord_macros` implementation branch or private import.
 
 ## 17. Hook and debug tests
 

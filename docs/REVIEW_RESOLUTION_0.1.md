@@ -119,6 +119,16 @@ Accepted.
 
 The current package is `Normative Implementation Candidate`, not release-final evidence. `Normative Release Final` is assigned only after a conforming implementation and complete passing or explicitly waived evidence exist.
 
+### 3.11 Phase 11 pagination authority addendum
+
+The corrected Phase 11 directive supersedes the pagination-specific outcomes recorded by CR-008
+and CR-018 while preserving them as historical review decisions for the Phase 8-10 source line.
+ADR-044 replaces the factory/safe-patch and sealed built-in short-page split with one typed
+controller struct, inline endpoint/scope bindings, controller-selected count termination, and one
+controller-agnostic core loop. This addendum does not reopen Phase 10 evidence; current Phase 11
+requirements and their exact lineage are recorded in
+`normative/09_CONCORD_REQUIREMENT_CHANGE_RECORD_0.2.md`.
+
 ### 3.10 Coverage planning versus evidence
 
 Accepted.

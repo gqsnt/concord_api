@@ -1,7 +1,7 @@
 # CONCORD_SECURITY_AND_LIMITS_SPEC_0.1
 
 **Version:** 0.1  
-**Status:** Normative Release Final
+**Status:** Normative Implementation Candidate
 **Authority:** Security, secrecy, redaction, fail-closed behavior, and exact resource bounds  
 **Requirement prefixes:** `SEC`, `BOUND`  
 **Depends on:** Specification Index, Product Contract, Public API Specification  
@@ -316,7 +316,7 @@ Safe pagination errors may expose:
 - error kind;
 - configured hard cap.
 
-**SEC-PAGE-002 — Pagination diagnostic exclusions.** Pagination errors and completion events MUST NOT expose:
+**SEC-PAGE-002 — Pagination diagnostic exclusions.** Safe errors, recursive sources, structural `Debug`, hooks, request/response debug events, page completion, aggregate completion, and generated Rustdoc MUST NOT expose:
 
 - cursor values;
 - controller state;
@@ -324,7 +324,9 @@ Safe pagination errors may expose:
 - repeated query/header values;
 - collected items.
 
-**SEC-PAGE-001 — Continuation secrecy.** Pagination continuation and repeated-request identity values MUST not appear in safe errors or debug output.
+**SEC-PAGE-001 — Continuation secrecy.** Declared bound pagination continuation values and repeated-request identities MUST NOT appear on automatic diagnostic or observation surfaces; their intentional use in ordinary request shaping, canonical identity, and selected-limiter inputs remains governed by those existing contracts.
+
+**SEC-PAGE-003 — Bound-state continuation classification.** Only controller fields declared with `bind` MUST be classified as evolving pagination continuation state; stable unbound controller configuration MUST NOT be classified as continuation merely because the controller stores it.
 
 ## 12. Rate-limit keys
 

@@ -23,6 +23,29 @@ $script:LanguageAllowlistPath = "docs/conformance/NORMATIVE_LANGUAGE_ALLOWLIST_0
 $script:DependencyRegistryPath = "docs/conformance/NORMATIVE_DEPENDENCY_REGISTRY_0.1.csv"
 $script:OwnershipRegistryPath = "docs/conformance/NORMATIVE_OWNERSHIP_REGISTRY_0.1.csv"
 $script:ValidationRegistryPath = "docs/conformance/RELEASE_VALIDATION_REGISTRY_0.1.csv"
+$script:RequirementChangeRecordPath = "docs/normative/09_CONCORD_REQUIREMENT_CHANGE_RECORD_0.2.md"
+$script:Phase10ReportPath = "docs/conformance/PHASE_10_REPORT.md"
+$script:Phase11ReportPath = "docs/conformance/PHASE_11_REPORT.md"
+$script:ControllerPath = "docs/controller/PROJECT_CONTROL.toml"
+$script:Phase10Source = "9317a94cf020d81dbd216ed2a7dc999550586898"
+$script:Phase10Evidence = "5b157225b387387664a202d4cbfe5f85ba8c5289"
+$script:Phase10EvidenceBytes = 1081762
+$script:Phase10EvidenceHash = "aadd64241a2dc42bb19dd01643915724df1a55390debbe52f7d7becbdc71e091"
+$script:Phase10EvidenceRows = 1531
+$script:ActiveRequirementCount = 511
+$script:SupersededRequirementIds = [string[]]@(
+    "DSL-PAGE-004", "DSL-PAGE-005", "DSL-PAGE-006",
+    "API-PAGE-004", "API-PAGE-005", "API-PAGE-006",
+    "EXEC-PAGE-008", "EXEC-PAGE-014"
+)
+$script:Phase11RequirementIds = [string[]]@(
+    "DSL-PAGE-002", "API-PAGE-002", "SEC-PAGE-001", "SEC-PAGE-002",
+    "EXEC-PAGE-001", "EXEC-PAGE-005", "EXEC-PAGE-007",
+    "DSL-PAGE-007", "DSL-PAGE-008", "DSL-PAGE-009", "DSL-PAGE-010",
+    "API-PAGE-007", "API-PAGE-008", "API-PAGE-009", "API-PAGE-010",
+    "GEN-PAGE-004", "EXEC-PAGE-015", "EXEC-PAGE-016", "EXEC-PAGE-017",
+    "SEC-PAGE-003", "COMPAT-MACRO-004", "CONF-PAGE-002"
+)
 $script:NormativePaths = @(
     "docs/normative/00_CONCORD_SPECIFICATION_INDEX_0.1.md",
     "docs/normative/01_CONCORD_PRODUCT_CONTRACT_0.1.md",
@@ -404,30 +427,196 @@ function Assert-HistoricalPrefix {
 
 function Assert-BaseCatalogs {
     param([object[]]$Definitions, [object[]]$Coverage, [object[]]$Evidence)
-    Assert-Condition ($Definitions.Count -eq 504) "normative owner set contains $($Definitions.Count) definitions rather than 504"
-    Assert-Condition ($Coverage.Count -eq 504) "coverage registry contains $($Coverage.Count) rows rather than 504"
+    Assert-Condition ($Definitions.Count -eq $script:ActiveRequirementCount) "normative owner set contains $($Definitions.Count) definitions rather than $($script:ActiveRequirementCount)"
+    Assert-Condition ($Coverage.Count -eq ($script:ActiveRequirementCount + $script:SupersededRequirementIds.Count)) "coverage registry has the wrong active/superseded row count: $($Coverage.Count)"
     $definitionIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
     foreach ($definition in $Definitions) {
         Assert-Condition $definitionIds.Add($definition.requirement_id) "duplicate normative owner $($definition.requirement_id)"
     }
     $coverageIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    $activeCoverageIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    $supersededCoverageIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
     foreach ($row in $Coverage) {
         Assert-Condition $coverageIds.Add($row.requirement_id) "duplicate coverage requirement $($row.requirement_id)"
-        Assert-KnownRequirement $row.requirement_id $definitionIds "coverage row"
+        if ($row.status -eq "superseded") {
+            Assert-Condition ($script:SupersededRequirementIds -contains $row.requirement_id) "unexpected superseded coverage row $($row.requirement_id)"
+            Assert-Condition $supersededCoverageIds.Add($row.requirement_id) "duplicate superseded coverage row $($row.requirement_id)"
+            Assert-Condition ($row.document -eq "normative/09_CONCORD_REQUIREMENT_CHANGE_RECORD_0.2.md") "superseded coverage owner mismatch for $($row.requirement_id)"
+        } else {
+            Assert-Condition ($row.status -in @("planned", "implemented")) "invalid active coverage status $($row.status) for $($row.requirement_id)"
+            Assert-KnownRequirement $row.requirement_id $definitionIds "active coverage row"
+            [void]$activeCoverageIds.Add($row.requirement_id)
+        }
     }
     foreach ($id in $definitionIds) {
-        Assert-Condition $coverageIds.Contains($id) "normative ID is absent from coverage: $id"
+        Assert-Condition $activeCoverageIds.Contains($id) "active normative ID is absent from coverage: $id"
+    }
+    foreach ($id in $script:SupersededRequirementIds) {
+        Assert-Condition $supersededCoverageIds.Contains($id) "superseded ID is absent from lineage coverage: $id"
     }
 
+    $knownEvidenceRequirements = [System.Collections.Generic.HashSet[string]]::new([string[]]$Definitions.requirement_id, [System.StringComparer]::Ordinal)
+    foreach ($id in $script:SupersededRequirementIds) { [void]$knownEvidenceRequirements.Add($id) }
     $evidenceIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
     foreach ($row in $Evidence) {
-        Assert-KnownRequirement $row.requirement_id $definitionIds "evidence row $($row.evidence_id)"
+        Assert-KnownRequirement $row.requirement_id $knownEvidenceRequirements "evidence row $($row.evidence_id)"
         Assert-Condition $evidenceIds.Add($row.evidence_id) "duplicate evidence ID $($row.evidence_id)"
         Assert-Condition $script:AllowedLabels.Contains($row.evidence_type) "unapproved evidence label $($row.evidence_type) in $($row.evidence_id)"
         Assert-Condition ($row.result -in @("passing", "waived")) "invalid result in $($row.evidence_id): $($row.result)"
         Assert-Condition (-not [string]::IsNullOrWhiteSpace($row.exact_path)) "missing exact path in $($row.evidence_id)"
         Assert-Condition (-not [string]::IsNullOrWhiteSpace($row.exact_test)) "missing exact command in $($row.evidence_id)"
         Assert-Condition (-not [string]::IsNullOrWhiteSpace($row.verified_commit)) "missing verified commit in $($row.evidence_id)"
+    }
+}
+
+function Assert-Phase10HistoricalCatalog {
+    param([string]$StateCommit, [bool]$RequireExact)
+    $historical = [byte[]](Get-GitBlobBytes $script:Phase10Evidence $script:EvidencePath)
+    Assert-Condition ($historical.Length -eq $script:Phase10EvidenceBytes) "Phase 0-10 evidence byte count changed at its owner: $($historical.Length)"
+    Assert-Condition ((Get-Sha256Hex $historical) -eq $script:Phase10EvidenceHash) "Phase 0-10 evidence owner hash changed"
+    $current = [byte[]](Get-GitBlobBytes $StateCommit $script:EvidencePath)
+    Assert-Condition ($current.Length -ge $historical.Length) "current evidence is shorter than the Phase 0-10 catalog"
+    for ($index = 0; $index -lt $historical.Length; $index++) {
+        if ($historical[$index] -ne $current[$index]) {
+            throw "Phase 0-10 evidence differs at byte $index"
+        }
+    }
+    if ($RequireExact) {
+        Assert-Condition ($current.Length -eq $historical.Length) "source identity contains post-Phase-10 evidence"
+    }
+    $historicalRows = @(Get-GitBlobText $script:Phase10Evidence $script:EvidencePath | ConvertFrom-Csv)
+    Assert-Condition ($historicalRows.Count -eq $script:Phase10EvidenceRows) "Phase 0-10 evidence row count changed: $($historicalRows.Count)"
+}
+
+function Assert-Phase10ReportPreserved {
+    param([string]$StateCommit)
+    $historical = [byte[]](Get-GitBlobBytes $script:Phase10Evidence $script:Phase10ReportPath)
+    $current = [byte[]](Get-GitBlobBytes $StateCommit $script:Phase10ReportPath)
+    Assert-Condition ($historical.Length -eq $current.Length) "Phase 10 report byte count changed"
+    Assert-Condition ((Get-Sha256Hex $historical) -eq (Get-Sha256Hex $current)) "Phase 10 report changed"
+}
+
+function Assert-RequirementChangeRecord {
+    param([string]$Commit)
+    $record = Get-GitBlobText $Commit $script:RequirementChangeRecordPath
+    foreach ($required in @(
+        '**Status:** Normative Implementation Candidate',
+        '9317a94cf020d81dbd216ed2a7dc999550586898',
+        '`DSL-PAGE-002` | Unique built-in assignments | `4ea966edd376dc9c47253423c97cb719b1fa1f2305f6c69343517a29f1d88eca` | retained with explicit version change | `DSL-PAGE-002` |',
+        '`API-PAGE-002` | Controller purity | `fe3ec685b4c3ba4dfa197d3c3ee9b98df0b8e2e8ee6db1e9205d4e1b4cac2663` | retained with explicit version change | `API-PAGE-002` |',
+        '`SEC-PAGE-001` | Continuation secrecy | `c35edeff32063e2fcd316a98401b304f88f812c03823bedae4a9db0035e77b25` | retained with explicit version change | `SEC-PAGE-001` |',
+        '`SEC-PAGE-002` | Pagination diagnostic exclusions | `a1c1ec39b522988542e78f42e586b541a7ed4e171b70a3e6cf0ebe671fbb1c76` | retained with explicit version change | `SEC-PAGE-002` |',
+        '`EXEC-PAGE-001` | Zero page no-op | `4fbe87f5cfa903789f51f85db5ce327b2c46da99e910e264baa08c46b70386e7` | retained with explicit version change | `EXEC-PAGE-001` |',
+        '`EXEC-PAGE-005` | Controller commit after acceptance | `a0976d5f791e6834b125e6c8718b5dc18e55f7e40d83906afbf32ac164980e9d` | retained with explicit version change | `EXEC-PAGE-005` |',
+        '`EXEC-PAGE-007` | Same page recovery | `0d13f1a0fff64b94479f13255a4bda536c0d5d8ef5a47e148e65952d98d5b66c` | retained with explicit version change | `EXEC-PAGE-007` |',
+        '`DSL-PAGE-004` | Atomic custom construction | `8f2a8a34b610f543a767ad96968792253c9deb0a7dbeb4dbf4a381b8c41e7e02` | superseded | `DSL-PAGE-007` |',
+        '`DSL-PAGE-005` | Built-in binding completeness | `c3708e0c94d8507205fb612719de718f9865e280716b0b6a6152e4d961124929` | superseded | `DSL-PAGE-008` |',
+        '`DSL-PAGE-006` | Custom patch boundary | `94822158e0c60722740c111964c98a406ed872220de8b68697a5fe2c62248272` | superseded | `DSL-PAGE-009`, `DSL-PAGE-010` |',
+        '`API-PAGE-004` | Private controller state | `47094f4e4cb564460c6983f0c98911a468e1f07d3ebfed8a4868bc9ee2ff1f43` | superseded | `API-PAGE-007` |',
+        '`API-PAGE-005` | No custom short-page inference | `06b091911c21011d98e6090faf9bd8e27d00602ad94cd3c6f30abaa2c707b3c8` | superseded | `API-PAGE-008` |',
+        '`API-PAGE-006` | Safe patch boundary | `419efe495e3b1d5e20bdfa449e60630808ef2f6aae0e5bc15c8c9d988a32e4a6` | superseded | `API-PAGE-009` |',
+        '`EXEC-PAGE-008` | Natural stop precedence | `9d5f651e6d9b7c556b26e469510daed000216efcb18e995a5fdb79319a788a3a` | superseded | `EXEC-PAGE-015` |',
+        '`EXEC-PAGE-014` | Custom continuation authority | `404cdecf4d1b5c2372ee3a32a982f3d398fd69e171182109cb76d6eb8685fa56` | superseded | `EXEC-PAGE-016` |',
+        'retained with explicit version change', 'Historical evidence remains valid'
+    )) {
+        Assert-Condition $record.Contains($required) "requirement change record is missing: $required"
+    }
+    foreach ($id in $script:Phase11RequirementIds) {
+        Assert-Condition $record.Contains("``$id``") "requirement change record does not resolve $id"
+    }
+    foreach ($id in $script:SupersededRequirementIds) {
+        Assert-Condition $record.Contains("``$id``") "requirement change record does not resolve historical $id"
+    }
+}
+
+function Assert-CandidateStatus {
+    param([hashtable]$Documents, [string]$Commit)
+    foreach ($path in $script:NormativePaths) {
+        Assert-Condition $Documents[$path].Contains('**Status:** Normative Implementation Candidate') "normative document is not implementation-candidate: $path"
+    }
+    $record = Get-GitBlobText $Commit $script:RequirementChangeRecordPath
+    Assert-Condition $record.Contains('**Status:** Normative Implementation Candidate') "requirement change record is not implementation-candidate"
+    $program = Get-GitBlobText $Commit "docs/planning/CONCORD_IMPLEMENTATION_PROGRAM_0.2.md"
+    foreach ($required in @(
+        'Phase 11 | Uniform Typed Pagination State',
+        'Phase 12 | Generic Body/Response Specifications and Integrated Streaming Records',
+        'Phase 13 | Lexically Scoped Rate Limits',
+        'Phase 14 | Product Completion, Conformance Closure, and Release Finalization',
+        'only Phase 14 may restore `Normative Release Final`'
+    )) {
+        Assert-Condition $program.Contains($required) "implementation program is missing: $required"
+    }
+}
+
+function Assert-SupersededHistoricalEvidence {
+    param([object[]]$Evidence)
+    foreach ($row in @($Evidence | Where-Object { $script:SupersededRequirementIds -contains $_.requirement_id })) {
+        Assert-ExactCommit $row.verified_commit "superseded historical evidence"
+        Assert-Ancestor $row.verified_commit $script:Phase10Source "superseded evidence/source lineage"
+        Assert-Condition ($row.evidence_id -notlike 'P11-*') "Phase 11 evidence uses superseded requirement $($row.requirement_id)"
+    }
+}
+
+function Assert-Phase11Evidence {
+    param([object[]]$Evidence, [string]$Source)
+    $rows = @($Evidence | Where-Object { $_.evidence_id -like 'P11-*' })
+    Assert-Condition ($rows.Count -eq $script:Phase11RequirementIds.Count) "Phase 11 evidence row count is $($rows.Count) rather than $($script:Phase11RequirementIds.Count)"
+    $ids = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($row in $rows) {
+        Assert-Condition $ids.Add($row.requirement_id) "duplicate Phase 11 evidence requirement $($row.requirement_id)"
+        Assert-Condition ($row.verified_commit -eq $Source) "Phase 11 evidence $($row.evidence_id) does not name the tested source"
+        Assert-Condition ($row.result -eq 'passing' -and $row.configuration -match '^direct ') "Phase 11 evidence is not direct passing: $($row.evidence_id)"
+        Assert-Condition ([string]::IsNullOrWhiteSpace($row.waiver)) "Phase 11 evidence has a waiver: $($row.evidence_id)"
+    }
+    foreach ($id in $script:Phase11RequirementIds) {
+        Assert-Condition $ids.Contains($id) "Phase 11 direct evidence is absent for $id"
+    }
+}
+
+function Assert-Phase11ValidationRegistry {
+    param([object[]]$Rows, [string]$Source)
+    $phaseRows = @($Rows | Where-Object { $_.validation_id -like 'P11-VAL-*' })
+    Assert-Condition ($phaseRows.Count -ge 16) "Phase 11 validation registry is incomplete"
+    $commands = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($row in $phaseRows) {
+        Assert-Condition $commands.Add($row.exact_command) "duplicate Phase 11 validation command $($row.exact_command)"
+        Assert-Condition ($row.working_directory -eq 'F:\projects\concord_api') "wrong Phase 11 validation working directory $($row.validation_id)"
+        Assert-Condition ($row.source_commit -eq $Source) "Phase 11 validation used wrong source $($row.validation_id)"
+        Assert-Condition ($row.exit_status -eq '0' -and $row.result -eq 'passing') "Phase 11 validation did not pass $($row.validation_id)"
+        foreach ($field in @('tool_versions', 'feature_configuration', 'selected_tests', 'observed_at')) {
+            Assert-Condition (-not [string]::IsNullOrWhiteSpace($row.$field)) "Phase 11 validation omitted $field in $($row.validation_id)"
+        }
+    }
+    foreach ($command in @(
+        'just fmt-check', 'just check', 'just check-all', 'just check-no-default',
+        'just clippy', 'just clippy-all', 'just test', 'just test-all',
+        'just test-no-default', 'just doctest', 'just doctest-all', 'just doc',
+        'just doc-all', 'just deny', 'just diff-check', 'just release'
+    )) {
+        Assert-Condition $commands.Contains($command) "required Phase 11 validation command was not recorded: $command"
+    }
+}
+
+function Assert-Phase11StateDocumentation {
+    param([string]$Commit, [string]$Source, [string]$EvidenceState, [string]$Anchor)
+    $report = Get-GitBlobText $Commit $script:Phase11ReportPath
+    $controller = Get-GitBlobText $Commit $script:ControllerPath
+    foreach ($required in @(
+        'PHASE_11_COMPLETE_WITH_LIMITATIONS', $Source, $EvidenceState, $Anchor,
+        'generated contract `11 -> 12`', 'Phase 12', '`NOT_STARTED`',
+        'Normative Implementation Candidate', 'Phase 14'
+    )) {
+        Assert-Condition $report.Contains($required) "Phase 11 report is missing: $required"
+    }
+    foreach ($required in @(
+        'latest_validated_phase = "11"', 'latest_verdict = "PHASE_11_COMPLETE_WITH_LIMITATIONS"',
+        "source_commit = `"$Source`"", "evidence_commit = `"$EvidenceState`"",
+        "anchor_commit = `"$Anchor`"", 'head_policy = "anchor-must-be-an-ancestor"',
+        'normative_status = "Normative Implementation Candidate"',
+        'id = "12"', 'title = "Generic Body/Response Specifications and Integrated Streaming Records"',
+        'status = "NOT_STARTED"'
+    )) {
+        Assert-Condition $controller.Contains($required) "Phase 11 controller state is missing: $required"
     }
 }
 
@@ -785,8 +974,8 @@ function Invoke-SelfTests {
     $documents = Get-NormativeDocuments $head
     $parsedDefinitions = @(Get-NormativeDefinitions $documents)
     $parsedClaims = @(Get-ExpectedClaims $parsedDefinitions)
-    Assert-Condition ($parsedDefinitions.Count -eq 504) "self-test normative parser did not find 504 requirements"
-    Assert-Condition ($parsedClaims.Count -gt 504) "self-test claim parser did not decompose compound requirements"
+    Assert-Condition ($parsedDefinitions.Count -eq $script:ActiveRequirementCount) "self-test normative parser did not find $($script:ActiveRequirementCount) active requirements"
+    Assert-Condition ($parsedClaims.Count -gt $script:ActiveRequirementCount) "self-test claim parser did not decompose compound requirements"
     $fileType = (& git cat-file -t "$head`:Cargo.toml").Trim()
     $directoryType = (& git cat-file -t "$head`:concord_core/src").Trim()
     Assert-Condition ($fileType -eq "blob") "self-test did not accept a valid file"
@@ -862,17 +1051,22 @@ if ($Mode -eq "Source") {
     $coverage = @(Import-GitCsv $SourceCommit $script:CoveragePath)
     $evidence = @(Import-GitCsv $SourceCommit $script:EvidencePath)
     Assert-BaseCatalogs $definitions $coverage $evidence
-    $historicalRows = @($evidence | Where-Object { $_.evidence_id -notlike "P10-*" })
-    Assert-Condition ($historicalRows.Count -eq 1473) "source mode historical row count changed: $($historicalRows.Count)"
-    Assert-EvidencePaths $historicalRows $SourceCommit
-    Assert-HistoricalPrefix $SourceCommit
-    Write-Output "release registry source audit passed: requirements=504 historical-rows=1473 final-evidence-completeness=not-assessed"
+    Assert-Condition ($evidence.Count -eq $script:Phase10EvidenceRows) "source identity has unexpected evidence rows: $($evidence.Count)"
+    Assert-EvidencePaths $evidence $SourceCommit
+    Assert-Phase10HistoricalCatalog $SourceCommit $true
+    Assert-Phase10ReportPreserved $SourceCommit
+    Assert-SupersededHistoricalEvidence $evidence
+    Assert-RequirementChangeRecord $SourceCommit
+    Assert-CandidateStatus $documents $SourceCommit
+    Write-Output "implementation-candidate source audit passed: active-requirements=$($definitions.Count) superseded-requirements=$($script:SupersededRequirementIds.Count) historical-rows=$($evidence.Count) Phase-11-evidence=not-assessed release-final=reserved-for-Phase-14"
     exit 0
 }
 
 Assert-ExactCommit $EvidenceCommit "EvidenceCommit"
 Assert-Ancestor $SourceCommit $EvidenceCommit "source/evidence chain"
 if ($Mode -eq "Evidence") {
+    $head = (& git rev-parse HEAD).Trim()
+    Assert-Condition ($head -eq $EvidenceCommit) "evidence mode must run at EvidenceCommit"
     $StateCommit = $EvidenceCommit
     $DescendantCommit = $EvidenceCommit
 } else {
@@ -895,60 +1089,34 @@ $documents = Get-NormativeDocuments $StateCommit
 $definitions = @(Get-NormativeDefinitions $documents)
 $coverage = @(Import-GitCsv $StateCommit $script:CoveragePath)
 $evidence = @(Import-GitCsv $StateCommit $script:EvidencePath)
-foreach ($row in $evidence) {
-    $row.verified_commit = Resolve-EvidenceCommitValue $row.verified_commit $EvidenceCommit
-}
 Assert-BaseCatalogs $definitions $coverage $evidence
 foreach ($row in $evidence) {
     Assert-Condition ($row.result -ne "waived" -and [string]::IsNullOrWhiteSpace($row.waiver)) "unapproved waiver in $($row.evidence_id)"
 }
 Assert-EvidencePaths $evidence $DescendantCommit
-Assert-HistoricalPrefix $StateCommit
-
-$requirements = @(Import-GitCsv $StateCommit $script:RequirementRegistryPath)
-$claims = @(Import-GitCsv $StateCommit $script:ClaimRegistryPath)
-foreach ($claim in $claims) { $claim.proof_commit = Resolve-EvidenceCommitValue $claim.proof_commit $EvidenceCommit }
-$claimCount = Assert-RequirementAndClaimRegistries $definitions $evidence $requirements $claims $SourceCommit $EvidenceCommit $HistoricalBaseline
-
-$allowlist = @(Import-GitCsv $StateCommit $script:LanguageAllowlistPath)
-$outsideStatements = @(Get-OutsideNormativeStatements $documents $definitions)
-Assert-NormativeLanguage $outsideStatements $allowlist
-$dependencies = @(Import-GitCsv $StateCommit $script:DependencyRegistryPath)
-Assert-DependencyRegistry $dependencies $definitions
-$ownership = @(Import-GitCsv $StateCommit $script:OwnershipRegistryPath)
-Assert-OwnershipRegistry $ownership $definitions
-$changes = @(Import-GitCsv $StateCommit $script:ChangeMapPath)
-Assert-ChangeMap $changes $definitions $SourceCommit $EvidenceCommit
-$validation = @(Import-GitCsv $StateCommit $script:ValidationRegistryPath)
-Assert-ValidationRegistry $validation $SourceCommit
-
-foreach ($path in $script:NormativePaths) {
-    Assert-Condition $documents[$path].Contains('**Status:** Normative Release Final') "normative document is not release-final: $path"
+Assert-Phase10HistoricalCatalog $StateCommit $false
+Assert-Phase10ReportPreserved $StateCommit
+Assert-SupersededHistoricalEvidence $evidence
+Assert-RequirementChangeRecord $StateCommit
+Assert-CandidateStatus $documents $StateCommit
+Assert-Phase11Evidence $evidence $SourceCommit
+$phase11Coverage = @($coverage | Where-Object { $script:Phase11RequirementIds -contains $_.requirement_id })
+Assert-Condition ($phase11Coverage.Count -eq $script:Phase11RequirementIds.Count) "Phase 11 active coverage count mismatch"
+foreach ($row in $phase11Coverage) {
+    Assert-Condition ($row.status -eq 'implemented') "Phase 11 coverage is not implemented: $($row.requirement_id)"
 }
-Assert-ReleaseDocumentation $StateCommit
+$validation = @(Import-GitCsv $StateCommit $script:ValidationRegistryPath)
+Assert-Phase11ValidationRegistry $validation $SourceCommit
 
 if ($Mode -eq "Final") {
-    $anchorAllowed = @(
-        $script:EvidencePath, $script:RequirementRegistryPath, $script:ClaimRegistryPath,
-        "docs/conformance/PHASE_10_REPORT.md", "docs/controller/PROJECT_CONTROL.toml",
-        "docs/planning/CONCORD_IMPLEMENTATION_PROGRAM_0.2.md", "README.md", "docs/README.md"
-    )
+    $anchorAllowed = @($script:Phase11ReportPath, $script:ControllerPath)
     Assert-SubstitutionCommit $EvidenceCommit $AnchorCommit $script:EvidenceToken $EvidenceCommit $anchorAllowed
     Assert-SubstitutionCommit $AnchorCommit $MetadataCommit $script:AnchorToken $AnchorCommit @(
-        "docs/conformance/PHASE_10_REPORT.md", "docs/controller/PROJECT_CONTROL.toml"
+        $script:Phase11ReportPath, $script:ControllerPath
     )
-    $controller = Get-GitBlobText $MetadataCommit "docs/controller/PROJECT_CONTROL.toml"
-    foreach ($required in @(
-        'latest_validated_phase = "10"', 'latest_verdict = "PHASE_10_COMPLETE"',
-        "source_commit = `"$SourceCommit`"", "evidence_commit = `"$EvidenceCommit`"",
-        "anchor_commit = `"$AnchorCommit`"", 'head_policy = "anchor-must-be-an-ancestor"',
-        'normative_status = "Normative Release Final"', 'unresolved_claim_atoms = 0',
-        'status = "COMPLETE"'
-    )) {
-        Assert-Condition $controller.Contains($required) "controller state missing: $required"
-    }
+    Assert-Phase11StateDocumentation $MetadataCommit $SourceCommit $EvidenceCommit $AnchorCommit
     $status = @(& git status --porcelain)
     Assert-Condition ($status.Count -eq 0) "final worktree is not clean"
 }
 
-Write-Output "release registry audit passed: mode=$Mode requirements=504 claims=$claimCount evidence=$($evidence.Count) waivers=0 missing-paths=0"
+Write-Output "implementation-candidate audit passed: mode=$Mode active-requirements=$($definitions.Count) superseded-requirements=$($script:SupersededRequirementIds.Count) Phase-11-evidence=$($script:Phase11RequirementIds.Count) evidence=$($evidence.Count) waivers=0 missing-paths=0 release-final=reserved-for-Phase-14"

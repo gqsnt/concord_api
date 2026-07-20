@@ -551,7 +551,7 @@ Limiter response observation returns `()` and cannot replace the current respons
 
 ## 21. Pagination integration
 
-Generated paginated endpoints implement one sealed trait whose exact private shape may differ for built-in and custom controllers.
+Generated paginated endpoints implement one uniform sealed trait for every controller type.
 
 Common typed facts are:
 
@@ -567,15 +567,30 @@ pub trait PaginatedEndpoint:
 
     fn initial_controller(
         &self,
-    ) -> Result<Self::Controller, ApiError>;
+    ) -> Result<Self::Controller, PaginationError>;
+
+    fn bind_controller(
+        endpoint: &mut Self,
+        controller: &Self::Controller,
+    ) -> Result<(), PaginationError>;
 }
 ```
 
-Built-in DSL controllers use generated-private typed endpoint-field bindings. Custom controllers are created by one factory call and later apply state through the stable safe `PaginationRequest` query/header patch API.
+The generated constructor emits one complete ordinary controller struct literal. For each declared
+`bind`, it reads the original request-local endpoint or scope snapshot once. Before each page the
+core validates the current controller, clones the original endpoint, and asks the generated sealed
+capability to write each current bound controller field into that fresh clone. Ordinary endpoint
+preparation then shapes host, path, query, public headers, current rate dimensions, and canonical
+identity. Unbound controller fields remain controller-local and are never rebound.
 
-The runtime owns page index, configured ceilings, seen logical identities and retained identity bytes, result vector, and aggregate completion counters.
+The runtime owns the single loop, current typed controller, page index, configured ceilings, seen
+logical identities and retained identity bytes, result vector, and aggregate completion counters.
+It receives no factory, binder, or short-page callback. Count termination is read directly from the
+controller; no empty-page or built-in policy exists independently in core.
 
-No `Any`, state registry, public controller field write, or runtime downcast is used.
+No `Any`, state registry, public binding protocol, endpoint-generic public factory, controller-name
+branch, or runtime downcast is used. Controller methods execute outside core locks, and the
+request-local controller needs `Send` but not `Clone` or `Sync`.
 
 ## 22. Canonical page identity
 

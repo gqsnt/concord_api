@@ -411,6 +411,8 @@ Decision statuses:
 
 ## ADR-028 — Custom pagination uses factories and a safe request patch
 
+**Status:** Superseded by ADR-044
+
 **Context:** Requiring `Default` and generated writes to public controller fields prevents invariants and freezes field layout as an extension ABI.
 
 **Decision:** Custom pagination is created by one typed factory expression. Controllers keep private state and may modify only a safe `PaginationRequest` patch containing public query/header pagination inputs.
@@ -693,3 +695,40 @@ unchanged 0.1 authority to a new path or version.
 `docs/conformance/REQUIREMENT_COVERAGE_PLAN_0.1.csv`, and
 `docs/conformance/CONFORMANCE_EVIDENCE_0.1.csv`; both catalogs are interpreted but remain
 byte-identical.
+
+---
+
+## ADR-044 — Pagination uses one typed state struct and inline bindings
+
+**Status:** Accepted
+
+**Context:** The built-in/custom split gave macro-recognized controller categories privileged
+binding and short-page semantics, while application controllers used factories and a separate safe
+query/header patch. That split duplicated runtime roles, prevented one uniform typed state machine,
+and required macro changes for controller-specific behavior.
+
+**Decision:** Every pagination declaration names one arbitrary controller type and one complete
+struct-shaped field block. `bind ep.FIELD` and `bind scope.FIELD` initialize controller fields from
+request-local snapshots once and write current controller fields into a fresh endpoint clone before
+each page. One public consuming `PaginationController<Page>` state-machine trait and one
+generated-private associated-controller capability feed the single core-owned page loop. Controller
+validation and count termination belong to the controller, not to macro-recognized categories.
+
+This decision supersedes ADR-028. It preserves ADR-009, ADR-010, ADR-011, ADR-012, ADR-027, and
+ADR-029 except for the narrow pagination wording required by uniform typed state and binding.
+
+**Consequences:** Built-in and downstream controllers use the same parser, IR, generated binding,
+trait, and runtime. Controller values need `Send` but not `Clone` or `Sync`. Bound state can shape
+every ordinary endpoint-derived surface while remaining subject to existing secrecy, canonical
+identity, limiter, deadline, recovery, and completion contracts. Stable unbound controller fields
+are initialized once and are not classified as evolving continuation values.
+
+**Rejected alternatives:** Controller factories; separate safe query/header controller patches;
+macro-recognized built-in or custom categories; separate runtime binder or short-page callbacks;
+public binding protocols; endpoint-generic public factories; erased controller registries;
+generated page loops.
+
+**Affected requirements:** `DSL-PAGE-002`, `DSL-PAGE-007` through `DSL-PAGE-010`, `API-PAGE-002`,
+`API-PAGE-007` through `API-PAGE-010`, `GEN-PAGE-004`, `SEC-PAGE-001` through `SEC-PAGE-003`,
+`EXEC-PAGE-001`, `EXEC-PAGE-005`, `EXEC-PAGE-007`, `EXEC-PAGE-015` through `EXEC-PAGE-017`,
+`COMPAT-MACRO-004`, `CONF-PAGE-002`.

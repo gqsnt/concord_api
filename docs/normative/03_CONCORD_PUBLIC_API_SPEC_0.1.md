@@ -1,7 +1,7 @@
 # CONCORD_PUBLIC_API_SPEC_0.1
 
 **Version:** 0.1  
-**Status:** Normative Release Final
+**Status:** Normative Implementation Candidate
 **Authority:** Stable hand-written public Rust API  
 **Requirement prefix:** `API`  
 **Depends on:** Specification Index, Product Contract  
@@ -1332,67 +1332,30 @@ impl PaginationError {
 
 It implements safe `Display`, `Debug`, and `Error` and has a structured `PaginationErrorKind` including controller, arithmetic, repeated-request, hard-cap, configured-page-ceiling, collected-item-ceiling, and identity-storage-ceiling failures.
 
-### 13.3 Safe request patch
-
-Custom controllers apply their current state through a safe public request patch.
+### 13.3 Controller
 
 ```rust
-pub struct PaginationRequest<'a> { /* private */ }
-
-impl<'a> PaginationRequest<'a> {
-    pub fn set_query<T>(
-        &mut self,
-        name: impl AsRef<str>,
-        value: T,
-    ) -> Result<(), PaginationError>
-    where
-        T: Display;
-
-    pub fn remove_query(
-        &mut self,
-        name: impl AsRef<str>,
-    ) -> Result<(), PaginationError>;
-
-    pub fn set_header<T>(
-        &mut self,
-        name: HeaderName,
-        value: T,
-    ) -> Result<(), PaginationError>
-    where
-        T: Display;
-
-    pub fn remove_header(
-        &mut self,
-        name: &HeaderName,
-    ) -> Result<(), PaginationError>;
-}
-```
-
-The patch modifies only public query and public header state before logical request identity is calculated. It exposes no native request, credentials, body, transport object, or private generated endpoint storage.
-
-### 13.4 Controller
-
-```rust
-pub trait PaginationController<Page>:
-    Clone + Send + Sync + 'static
-{
-    fn apply(
-        &self,
-        request: &mut PaginationRequest<'_>,
-    ) -> Result<(), PaginationError>;
+pub trait PaginationController<Page>: Sized + Send + 'static {
+    fn validate(&self) -> Result<(), PaginationError> {
+        Ok(())
+    }
 
     fn next(
-        &self,
+        self,
         page: &Page,
     ) -> Result<Option<Self>, PaginationError>;
+
+    fn short_page_size(&self) -> Option<NonZeroUsize> {
+        None
+    }
 }
 ```
 
-`apply` and `next` are synchronous, deterministic, non-blocking, and externally side-effect-free. They perform no transport I/O. Custom pagination continuation is determined only by `next(&Page)` plus universal empty-page termination. Short-page optimization is private to sealed built-in offset and page-number controllers.
+`validate`, `next`, and `short_page_size` are synchronous, deterministic, non-blocking, and externally side-effect-free. They perform no transport or external I/O and execute without a core lock. Validation runs before each page request. `next` consumes the current state, and `short_page_size` selects count-based natural termination. The controller needs neither `Clone` nor `Sync`; it remains local to one pagination operation while the pagination future remains `Send`.
 
-A custom controller is constructed atomically by the DSL-selected factory expression. Concord does not require `Default`, public controller fields, or generated mutation of controller internals.
+Controller state influences a request only through fields declared with DSL `bind`. There is no public pagination request patch, controller factory, endpoint-generic controller factory, binder protocol, or short-page callback hierarchy.
 
-### 13.5 Cursor page support
+### 13.4 Cursor page support
 
 ```rust
 pub trait HasNextCursor<C> {
@@ -1400,12 +1363,22 @@ pub trait HasNextCursor<C> {
 }
 ```
 
-### 13.6 Built-in controllers
+### 13.5 Built-in controllers
 
 ```rust
-pub struct OffsetPagination { /* private */ }
-pub struct PagePagination { /* private */ }
-pub struct CursorPagination<C> { /* private */ }
+pub struct OffsetPagination {
+    pub offset: u64,
+    pub page_size: NonZeroU32,
+}
+
+pub struct PagePagination {
+    pub page: NonZeroU64,
+    pub page_size: NonZeroU32,
+}
+
+pub struct CursorPagination<C> {
+    pub cursor: Option<C>,
+}
 ```
 
 Stable constructors and accessors:
@@ -1437,19 +1410,21 @@ impl<C> CursorPagination<C> {
 }
 ```
 
-Built-ins use checked progression. Offset and page-number controllers may use a private sealed exact-capacity optimization. Cursor and custom pagination continue only according to `next(&Page)` and universal empty-page termination.
+Built-ins use the same public trait and generated binding path as application controllers. Offset and page-number progression uses checked addition, and each reports its exact requested size through `short_page_size`. Cursor pagination reports no count termination and may continue after an empty decoded item page when `HasNextCursor` supplies a continuation.
 
 **API-PAGE-001 — Iterable pages.** Pagination page outputs MUST use `IntoIterator`; no Concord-specific item extraction trait is public.
 
-**API-PAGE-002 — Controller purity.** `PaginationController::apply` and `PaginationController::next` MUST be deterministic, side-effect-free, non-blocking, and perform no transport I/O.
+**API-PAGE-002 — Controller purity.** `PaginationController::validate`, `PaginationController::next`, and `PaginationController::short_page_size` MUST be synchronous, deterministic, side-effect-free, non-blocking, perform no transport or external I/O, and execute without a core lock.
 
 **API-PAGE-003 — Controller error construction.** Custom pagination controllers MUST be able to construct typed, cursor-safe `PaginationError` values.
 
-**API-PAGE-004 — Private controller state.** Concord MUST NOT require custom pagination controller fields to be public or writable by generated code.
+**API-PAGE-007 — Declared controller-state visibility.** Every controller field named by a pagination declaration MUST be accessible to the generated ordinary Rust struct literal and every bound field MUST be readable for generated per-page binding under ordinary Rust visibility rules.
 
-**API-PAGE-005 — No custom short-page inference.** Concord MUST NOT infer terminal pagination from page length for a public custom controller; custom continuation MUST be controlled by `next(&Page)` except for universal empty-page termination.
+**API-PAGE-008 — Controller-selected count termination.** `short_page_size() == Some(n)` MUST select count termination exactly when the decoded item count is less than `n`; `Some(1)` MUST therefore select empty-page termination, while `None` MUST disable item-count termination.
 
-**API-PAGE-006 — Safe patch boundary.** A custom pagination controller MUST be able to modify only the safe public pagination request surface defined in this section.
+**API-PAGE-009 — Binding-only request influence.** A pagination controller MUST influence ordinary request preparation only through declared bound endpoint or scope fields and MUST receive no public query/header patch, body, credential, authentication plan, native request or URL, Reqwest value, transport, or shared-client mutation capability.
+
+**API-PAGE-010 — Request-local controller bounds.** `PaginationController<Page>` MUST require exactly `Sized + Send + 'static` at the trait level, MUST NOT require `Clone` or `Sync`, and its controller value MUST remain local to one pagination operation whose future remains `Send`.
 
 ## 14. Rate limiting
 
