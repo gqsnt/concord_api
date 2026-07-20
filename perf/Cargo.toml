@@ -1,0 +1,20 @@
+[package]
+name = "concord_perf"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+autobenches = false
+
+[dependencies]
+concord_core = { version = "=0.1.0", path = "../concord_core", default-features = false }
+concord_macros = { version = "=0.1.0", path = "../concord_macros" }
+concord_test_support = { version = "=0.1.0", path = "../concord_test_support", default-features = false }
+tokio.workspace = true
+
+[[bench]]
+name = "concord_overhead"
+harness = false
+
+[lints]
+workspace = true

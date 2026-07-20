@@ -4,6 +4,7 @@ members = [
     "concord_macros",
     "concord_test_support",
     "concord_examples",
+    "perf",
 ]
 resolver = "3"
 

@@ -5,5 +5,40 @@ edition.workspace = true
 rust-version.workspace = true
 publish = false
 
+[features]
+default = ["default-tls", "http2", "rate-limit-governor", "json", "multipart"]
+default-tls = ["concord_core/default-tls"]
+http2 = ["concord_core/http2"]
+rate-limit-governor = ["concord_core/rate-limit-governor"]
+json = ["concord_core/json"]
+multipart = ["concord_core/multipart"]
+dangerous-raw-response = ["concord_core/dangerous-raw-response"]
+dangerous-custom-retry = ["concord_core/dangerous-custom-retry", "dep:reqwest"]
+
+[dependencies]
+concord_core = { version = "=0.1.0", path = "../concord_core", default-features = false }
+concord_macros = { version = "=0.1.0", path = "../concord_macros" }
+reqwest = { workspace = true, optional = true }
+
+[[example]]
+name = "dangerous_raw_response"
+required-features = ["dangerous-raw-response", "json"]
+
+[[example]]
+name = "dangerous_custom_retry"
+required-features = ["dangerous-custom-retry"]
+
+[[example]]
+name = "body_workflows"
+required-features = ["json", "multipart"]
+
+[[example]]
+name = "pagination"
+required-features = ["json"]
+
+[[example]]
+name = "regional_api"
+required-features = ["json"]
+
 [lints]
 workspace = true

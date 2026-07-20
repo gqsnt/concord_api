@@ -155,6 +155,11 @@ dependencies = [
 [[package]]
 name = "concord_examples"
 version = "0.1.0"
+dependencies = [
+ "concord_core",
+ "concord_macros",
+ "reqwest",
+]
 
 [[package]]
 name = "concord_macros"
@@ -171,6 +176,16 @@ dependencies = [
  "tokio",
  "trybuild",
  "url",
+]
+
+[[package]]
+name = "concord_perf"
+version = "0.1.0"
+dependencies = [
+ "concord_core",
+ "concord_macros",
+ "concord_test_support",
+ "tokio",
 ]
 
 [[package]]
