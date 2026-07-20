@@ -22,7 +22,7 @@ status `NOT_STARTED`. No Phase 12, Phase 13, or Phase 14 product behavior was im
 - Phase 10 compatible metadata descendant: `6f7c3b69ec7f86a3eef4a9b70d94cf1ce449e52a`
 - Final immutable Phase 11 source/test commit:
   `1e5d3c9e4567cde54a1b27acae5d48bd7b5d8607`
-- Phase 11 evidence/report/state commit: `EVIDENCE_COMMIT_PENDING`
+- Phase 11 evidence/report/state commit: `22868a9de9bd55daa975dbcd484f085033a52217`
 - Phase 11 evidence anchor: `ANCHOR_COMMIT_PENDING`
 - Head policy: `anchor-must-be-an-ancestor`
 
