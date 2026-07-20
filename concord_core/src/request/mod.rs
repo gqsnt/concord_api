@@ -5,6 +5,8 @@ mod pending;
 mod prepare;
 mod prepared;
 
+#[cfg(feature = "dangerous-raw-response")]
+pub use pending::RawResponseRequest;
 pub use pending::{Request, ResponseRequest};
 pub use prepared::{
     PreparedBuffered, PreparedBytes, PreparedEndpoint, PreparedEndpointBuilder, PreparedNoContent,
@@ -21,7 +23,7 @@ pub use crate::body::{BodyMetadata, BodySpec, CodecBody, EmptyBody, PreparedBody
 #[doc(hidden)]
 pub use endpoint::{
     BufferedResponse, BytesResponse, EndpointSpec, MetadataResponse, NoContentResponse,
-    ResponseHandler, StreamResponseHandler,
+    RawResponseEndpoint, ResponseHandler, StreamResponseHandler,
 };
 #[doc(hidden)]
 pub use head::{HeadBuilder, PreparedHead, RequestMeta};

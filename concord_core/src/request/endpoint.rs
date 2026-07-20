@@ -117,3 +117,11 @@ pub trait EndpointSpec: Send + 'static {
 
     fn into_body(self) -> Self::Body;
 }
+
+/// Generated-private capability for endpoints whose declared shape permits
+/// the dangerous buffered raw-success terminal.
+///
+/// Generated streaming endpoints and public prepared endpoints intentionally
+/// do not implement this capability.
+#[doc(hidden)]
+pub trait RawResponseEndpoint: EndpointSpec {}

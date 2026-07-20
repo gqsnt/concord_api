@@ -67,9 +67,19 @@ fn development_tools_are_available_without_other_dangerous_or_optional_features(
     not(feature = "dangerous-dev-tools")
 ))]
 #[test]
-fn raw_response_flag_is_isolated_without_claiming_its_deferred_public_api() {
-    // The Cargo feature is independently selectable; positive RawResponse
-    // and generated raw-response terminals are covered by release-candidate tests.
+fn raw_response_api_is_available_without_other_dangerous_or_optional_features() {
+    use concord_core::advanced::{Bytes, ExecutionMeta, HeaderMap, StatusCode, Url, Version};
+    use concord_core::dangerous::{RawResponse, RawResponseRequest};
+
+    let _: fn(&RawResponse) -> &Url = RawResponse::url;
+    let _: fn(&RawResponse) -> StatusCode = RawResponse::status;
+    let _: fn(&RawResponse) -> Version = RawResponse::version;
+    let _: fn(&RawResponse) -> &HeaderMap = RawResponse::headers;
+    let _: fn(&RawResponse) -> &ExecutionMeta = RawResponse::metadata;
+    let _: fn(&RawResponse) -> &Bytes = RawResponse::body;
+    let _: fn(RawResponse) -> Bytes = RawResponse::into_body;
+    let _: Option<RawResponseRequest<()>> = None;
+
     assert!(cfg!(feature = "dangerous-raw-response"));
     assert!(!cfg!(feature = "dangerous-custom-retry"));
     assert!(!cfg!(feature = "dangerous-dev-tools"));
@@ -81,4 +91,13 @@ fn raw_response_flag_is_isolated_without_claiming_its_deferred_public_api() {
     assert!(!cfg!(feature = "gzip"));
     assert!(!cfg!(feature = "brotli"));
     assert!(!cfg!(feature = "deflate"));
+}
+
+#[cfg(all(feature = "dangerous-raw-response", feature = "dangerous-custom-retry"))]
+#[test]
+fn raw_response_and_custom_retry_surfaces_coexist() {
+    use concord_core::dangerous::{RawResponse, ReqwestRetryBuilder};
+
+    let _: Option<RawResponse> = None;
+    let _: Option<ReqwestRetryBuilder> = None;
 }

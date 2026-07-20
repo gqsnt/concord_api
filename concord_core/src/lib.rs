@@ -9,7 +9,7 @@
 #[cfg(feature = "dangerous-dev-tools")]
 pub mod __development;
 pub mod advanced;
-#[cfg(feature = "dangerous-custom-retry")]
+#[cfg(any(feature = "dangerous-custom-retry", feature = "dangerous-raw-response"))]
 pub mod dangerous;
 pub mod prelude;
 

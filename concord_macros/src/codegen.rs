@@ -14,7 +14,7 @@ use crate::model::{
 };
 use crate::names::{canonical_ident, public_ident, to_snake_case};
 
-const GENERATED_CONTRACT_VERSION: u32 = 10;
+const GENERATED_CONTRACT_VERSION: u32 = 11;
 
 pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
     let clients = api
@@ -1708,6 +1708,16 @@ fn generate_endpoint(
         core_path,
         &where_clause,
     );
+    let raw_response_impl = if matches!(endpoint.response, ResponseKind::Stream(_)) {
+        quote!()
+    } else {
+        quote! {
+            #[doc(hidden)]
+            impl #generated_core::__private::RawResponseEndpoint for #endpoint_name
+            #where_clause
+            {}
+        }
+    };
 
     quote! {
         #[doc = #endpoint_doc]
@@ -1803,6 +1813,7 @@ fn generate_endpoint(
             }
         }
 
+        #raw_response_impl
         #pagination_impl
         #extension_trait
     }
@@ -3719,10 +3730,10 @@ fn request_body_doc(body: Option<&RequestBodyKind>) -> String {
 fn response_doc(response: &ResponseKind) -> &'static str {
     match response {
         ResponseKind::Stream(_) => {
-            "Direct await returns `StreamResponse<M>` with a finite stream-response limit; `.response()` is intentionally unavailable."
+            "Direct await returns `StreamResponse<M>` with a finite stream-response limit; `.response()` and the dangerous `.raw_response()` terminal are intentionally unavailable."
         }
         _ => {
-            "Direct await returns the semantic value and `.response()` selects successful metadata."
+            "Direct await returns the semantic value and `.response()` selects successful metadata. With `concord_core/dangerous-raw-response`, `.raw_response()` instead returns complete bounded successful bytes and actual headers without invoking the declared decoder; those values have reduced secrecy guarantees."
         }
     }
 }

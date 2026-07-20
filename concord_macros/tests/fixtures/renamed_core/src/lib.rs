@@ -170,9 +170,10 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
     .build()
     .expect("valid renamed prepared endpoint");
     let _: runtime::Request<_> = client.request(prepared);
-    let _: runtime::Request<_> = client
+    let raw_request: runtime::Request<_> = client
         .resources("renamed-scope".to_owned())
         .custom("custom-body".to_owned());
+    let _: runtime::dangerous::RawResponseRequest<_> = raw_request.raw_response();
     let _: runtime::Request<_> = client
         .resources("renamed-scope".to_owned())
         .stream_upload(runtime::prelude::StreamBody::from_bytes(

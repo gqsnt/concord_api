@@ -86,4 +86,6 @@ pub mod __private {
         ) -> Result<(PreparedHead, BodyMetadata), ApiError>;
         fn into_body(self) -> Self::Body;
     }
+
+    pub trait RawResponseEndpoint: EndpointSpec {}
 }

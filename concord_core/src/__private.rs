@@ -64,8 +64,9 @@ pub use crate::request::PreparedResponseMarker;
 #[doc(hidden)]
 pub use crate::request::{
     BodyMetadata, BodySpec, BufferedResponse, BytesResponse, CodecBody, EmptyBody, EndpointSpec,
-    HeadBuilder, MetadataResponse, NoContentResponse, PreparedBody, PreparedHead, RequestMeta,
-    RequestOptions, ResponseHandler, StreamResponseHandler, TimeoutOverride,
+    HeadBuilder, MetadataResponse, NoContentResponse, PreparedBody, PreparedHead,
+    RawResponseEndpoint, RequestMeta, RequestOptions, ResponseHandler, StreamResponseHandler,
+    TimeoutOverride,
 };
 #[doc(hidden)]
 pub use crate::response::{ExecuteResponse, ResponseInput};

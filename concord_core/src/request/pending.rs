@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+#[cfg(feature = "dangerous-raw-response")]
+use super::RawResponseEndpoint;
 use super::{EndpointSpec, MetadataResponse, RequestOptions, TimeoutOverride};
 use crate::client::ClientCore;
 use crate::hooks::DebugLevel;
@@ -90,6 +92,42 @@ where
     }
 }
 
+// As with `response`, Rustdoc cannot render the generated-private capability
+// bound without exposing an integration name. Documentation builds retain the
+// public signature and state the exact generated availability rule.
+#[cfg(all(doc, feature = "dangerous-raw-response"))]
+impl<E> Request<E> {
+    /// Selects the complete bounded successful response without decoding it.
+    ///
+    /// Requires the Cargo feature `dangerous-raw-response`.
+    ///
+    /// Generated buffered, text, JSON, custom buffered, bytes, and no-content
+    /// requests expose this terminal. Generated streaming requests and public
+    /// prepared endpoints intentionally do not. Response headers and body bytes
+    /// may contain secrets; callers assume responsibility for their storage and
+    /// diagnostics.
+    #[must_use]
+    pub fn raw_response(self) -> RawResponseRequest<E> {
+        RawResponseRequest { request: self }
+    }
+}
+
+#[cfg(all(not(doc), feature = "dangerous-raw-response"))]
+#[doc(hidden)]
+impl<E> Request<E>
+where
+    E: RawResponseEndpoint,
+{
+    /// Selects the complete bounded successful response without invoking the
+    /// endpoint decoder.
+    ///
+    /// Requires the Cargo feature `dangerous-raw-response`.
+    #[must_use]
+    pub fn raw_response(self) -> RawResponseRequest<E> {
+        RawResponseRequest { request: self }
+    }
+}
+
 /// An opaque pending request selecting successful response metadata.
 ///
 /// Fields are intentionally private:
@@ -98,5 +136,23 @@ where
 /// let _ = concord_core::ResponseRequest::<()> {};
 /// ```
 pub struct ResponseRequest<E> {
+    pub(crate) request: Request<E>,
+}
+
+/// An opaque pending request selecting a dangerous buffered raw success.
+///
+/// Execution retains ordinary status classification, limits, authentication,
+/// limiting, hooks, retry containment, deadlines, cancellation, and completion.
+/// The successful response's actual headers and complete bounded body may hold
+/// secrets, so callers assume responsibility for every later diagnostic and
+/// storage surface.
+///
+/// Fields are intentionally private:
+///
+/// ```compile_fail
+/// let _ = concord_core::dangerous::RawResponseRequest::<()> {};
+/// ```
+#[cfg(feature = "dangerous-raw-response")]
+pub struct RawResponseRequest<E> {
     pub(crate) request: Request<E>,
 }

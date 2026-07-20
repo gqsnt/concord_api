@@ -9,8 +9,8 @@ note: found an item that was configured out
   |
   | pub mod dangerous;
   |         ^^^^^^^^^
-note: the item is gated behind the `dangerous-custom-retry` feature
+note: the item is gated here
  --> src/lib.rs
   |
-  | #[cfg(feature = "dangerous-custom-retry")]
-  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  | #[cfg(any(feature = "dangerous-custom-retry", feature = "dangerous-raw-response"))]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

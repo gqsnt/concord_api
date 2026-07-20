@@ -1,0 +1,19 @@
+error[E0599]: the method `raw_response` exists for struct `Request<Download>`, but its trait bounds were not satisfied
+  --> tests/ui/fail/dangerous_raw_stream_absent.rs:12:31
+   |
+3  | / api! {
+4  | |     client RawStreamApi {
+5  | |         base "http://raw-stream.example.test/";
+6  | |         GET Download() -> Stream<OctetStream>;
+   | |____________________- doesn't satisfy `Download: RawResponseEndpoint`
+...
+12 |       let _ = client.download().raw_response();
+   |                                 ^^^^^^^^^^^^ method cannot be called on `Request<Download>` due to unsatisfied trait bounds
+   |
+   = note: the following trait bounds were not satisfied:
+           `Download: RawResponseEndpoint`
+note: the trait `RawResponseEndpoint` must be implemented
+  --> src/request/endpoint.rs
+   |
+   | pub trait RawResponseEndpoint: EndpointSpec {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

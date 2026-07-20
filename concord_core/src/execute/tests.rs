@@ -37,7 +37,8 @@ use crate::rate_limit::{
 };
 use crate::request::{
     BodyMetadata, BufferedResponse, BytesResponse, CodecBody, EmptyBody, HeadBuilder,
-    NoContentResponse, PreparedEndpoint, PreparedHead, RequestMeta, StreamResponseHandler,
+    NoContentResponse, PreparedEndpoint, PreparedHead, RawResponseEndpoint, RequestMeta,
+    StreamResponseHandler,
 };
 use crate::runtime::RuntimeConfigBuilder;
 
@@ -319,6 +320,13 @@ where
     }
 }
 
+impl<Encoder, Decoder> RawResponseEndpoint for CodecEndpoint<Encoder, Decoder>
+where
+    Encoder: EncodeBody,
+    Decoder: DecodeBody,
+{
+}
+
 struct EncoderInput {
     bytes: Bytes,
     calls: Arc<AtomicUsize>,
@@ -500,6 +508,8 @@ impl EndpointSpec for BytesEndpoint {
     }
 }
 
+impl RawResponseEndpoint for BytesEndpoint {}
+
 struct RateLimitedBytesEndpoint {
     inherited_timeout: Option<Duration>,
     key: String,
@@ -555,6 +565,8 @@ impl EndpointSpec for RateLimitedBytesEndpoint {
         EmptyBody::new()
     }
 }
+
+impl RawResponseEndpoint for RateLimitedBytesEndpoint {}
 
 #[cfg(feature = "rate-limit-governor")]
 struct GlobalRateLimitedBytesEndpoint;
@@ -624,6 +636,8 @@ impl EndpointSpec for NoContentEndpoint {
         EmptyBody::new()
     }
 }
+
+impl RawResponseEndpoint for NoContentEndpoint {}
 
 struct InvalidEndpoint;
 
@@ -1071,6 +1085,64 @@ async fn custom_limiter_context_and_response_observation_use_one_ordered_attempt
         !ordinary_diagnostics.contains(KEY_SENTINEL),
         "resolved keys are visible only in the controlled custom-limiter capture"
     );
+}
+
+#[cfg(feature = "dangerous-raw-response")]
+#[tokio::test]
+async fn raw_response_reuses_limiter_hooks_observation_and_success_completion() {
+    const RAW_BODY: &[u8] = b"raw-lifecycle-body-secret-2f5e";
+    const RATE_KEY: &str = "raw-lifecycle-rate-key-secret-e3b1";
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_response(ScriptedResponse::success(Bytes::from_static(RAW_BODY)))
+        .expect("raw lifecycle response");
+    let hooks = Arc::new(ProbeHooks::new());
+    let limiter = Arc::new(ProbeRateLimiter::new());
+    let configured: Arc<dyn RateLimiter> = limiter.clone();
+    let debug = Arc::new(Mutex::new(Vec::new()));
+    let core = development_core(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new()
+            .rate_limiter(configured)
+            .debug(DebugLevel::Headers),
+    )
+    .with_debug_output(Arc::clone(&debug));
+
+    let raw = rate_limited_bytes_request(core, Some(Duration::from_secs(30)), RATE_KEY)
+        .raw_response()
+        .await
+        .expect("raw lifecycle success");
+    assert_eq!(raw.body(), RAW_BODY);
+    assert_eq!(raw.status(), StatusCode::OK);
+    assert_eq!(
+        raw.url().as_str(),
+        "http://execution.example.test/v1/health/bytes"
+    );
+    assert_eq!(raw.metadata().endpoint(), ENDPOINT);
+    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 1);
+    assert_eq!(limiter.observations.load(Ordering::SeqCst), 1);
+    assert_eq!(executor.application().request_count().expect("count"), 1);
+    assert!(matches!(
+        hooks.records().as_slice(),
+        [
+            LifecycleRecord::Before { .. },
+            LifecycleRecord::Response(_, StatusCode::OK),
+            LifecycleRecord::Complete {
+                outcome: CompletionOutcome::Success,
+                status: Some(StatusCode::OK),
+                ..
+            }
+        ]
+    ));
+    let automatic = format!(
+        "{}\n{:?}\n{raw:?}",
+        debug.lock().expect("debug output").join("\n"),
+        hooks.records(),
+    );
+    assert!(!automatic.contains("raw-lifecycle-body-secret-2f5e"));
+    assert!(!automatic.contains(RATE_KEY));
 }
 
 #[tokio::test]
@@ -1781,6 +1853,52 @@ async fn hidden_reqwest_retry_does_not_reenter_custom_limiter_or_lifecycle() {
             .count(),
         1
     );
+}
+
+#[cfg(all(feature = "http2", feature = "dangerous-raw-response"))]
+#[tokio::test]
+async fn raw_response_contains_hidden_reqwest_retry_inside_one_logical_attempt() {
+    let server = crate::http::test_support::H2RefusedServer::start(1, 2).await;
+    let physical_attempts = server.physical_attempts();
+    let hooks = Arc::new(ProbeHooks::new());
+    let limiter = Arc::new(ProbeRateLimiter::new());
+    let configured: Arc<dyn RateLimiter> = limiter.clone();
+    let core = ClientCore::build(
+        &server.base_url(),
+        HttpConfigBuilder::new()
+            .http2_prior_knowledge()
+            .retry_reqwest_default(),
+        RuntimeConfigBuilder::new()
+            .hooks(hooks.clone())
+            .rate_limiter(configured),
+    )
+    .expect("raw HTTP/2 core");
+
+    let raw = bytes_request(core)
+        .raw_response()
+        .await
+        .expect("raw native retry recovery");
+    assert!(raw.body().is_empty());
+    server.finish().await;
+    assert_eq!(physical_attempts.load(Ordering::SeqCst), 2);
+    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 1);
+    assert_eq!(limiter.observations.load(Ordering::SeqCst), 1);
+    let records = hooks.records();
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| matches!(record, LifecycleRecord::Before { .. }))
+            .count(),
+        1
+    );
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| matches!(record, LifecycleRecord::Response(_, _)))
+            .count(),
+        1
+    );
+    assert_eq!(completion(&records).1, CompletionOutcome::Success);
 }
 
 #[tokio::test]
@@ -3162,6 +3280,85 @@ async fn cancellation_while_awaiting_completion_may_prevent_delivery() {
     tokio::task::yield_now().await;
     assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 0);
     assert_eq!(hooks.records().len(), 3);
+}
+
+#[cfg(feature = "dangerous-raw-response")]
+#[tokio::test(start_paused = true)]
+async fn raw_response_keeps_the_fixed_deadline_and_cancellation_contract() {
+    let timeout_executor = DeterministicExecutor::new();
+    let before_gate = Gate::closed();
+    let completion_gate = Gate::closed();
+    let timeout_hooks = Arc::new(ProbeHooks {
+        before_gate: Some(before_gate.clone()),
+        completion_gate: Some(completion_gate.clone()),
+        ..ProbeHooks::new()
+    });
+    let timeout_core = development_core(
+        &timeout_executor,
+        Arc::clone(&timeout_hooks),
+        RuntimeConfigBuilder::new(),
+    );
+    let timeout_task = tokio::spawn(async move {
+        bytes_request(timeout_core)
+            .timeout(Duration::from_secs(5))
+            .raw_response()
+            .await
+    });
+    before_gate.wait_until_reached().await;
+    tokio::time::advance(Duration::from_secs(5)).await;
+    completion_gate.wait_until_reached().await;
+    let fixed_elapsed = completion(&timeout_hooks.records()).3;
+    assert_eq!(fixed_elapsed, Duration::from_secs(5));
+    tokio::time::advance(Duration::from_secs(60)).await;
+    assert_eq!(completion(&timeout_hooks.records()).3, fixed_elapsed);
+    assert!(!timeout_task.is_finished());
+    completion_gate.open();
+    let error = timeout_task
+        .await
+        .expect("raw timeout join")
+        .expect_err("raw fixed timeout");
+    assert_eq!(error.category(), ErrorCategory::Timeout);
+    assert_eq!(
+        timeout_executor
+            .application()
+            .request_count()
+            .expect("count"),
+        0
+    );
+
+    let cancellation_executor = DeterministicExecutor::new();
+    cancellation_executor
+        .application()
+        .queue_response(ScriptedResponse::success(Bytes::from_static(b"fixed raw")))
+        .expect("raw cancellation response");
+    let cancellation_gate = Gate::closed();
+    let cancellation_hooks = Arc::new(ProbeHooks {
+        completion_gate: Some(cancellation_gate.clone()),
+        ..ProbeHooks::new()
+    });
+    let cancellation_core = development_core(
+        &cancellation_executor,
+        Arc::clone(&cancellation_hooks),
+        RuntimeConfigBuilder::new(),
+    );
+    let cancellation_task =
+        tokio::spawn(async move { bytes_request(cancellation_core).raw_response().await });
+    cancellation_gate.wait_until_reached().await;
+    cancellation_task.abort();
+    assert!(
+        cancellation_task
+            .await
+            .expect_err("raw request task must be cancelled")
+            .is_cancelled()
+    );
+    cancellation_gate.open();
+    tokio::task::yield_now().await;
+    assert_eq!(
+        cancellation_hooks
+            .completion_returned
+            .load(Ordering::SeqCst),
+        0
+    );
 }
 
 #[tokio::test(start_paused = true)]

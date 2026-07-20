@@ -322,6 +322,14 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
     ];
     let prelude = std::fs::read_to_string(documentation.join("prelude/index.html"))
         .expect("ordinary prelude Rustdoc");
+    let dangerous = std::fs::read_to_string(documentation.join("dangerous/index.html"))
+        .expect("dangerous namespace Rustdoc");
+    let raw_response_path = documentation.join("dangerous/struct.RawResponse.html");
+    let raw_request_path = documentation.join("dangerous/struct.RawResponseRequest.html");
+    let raw_response = std::fs::read_to_string(&raw_response_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", raw_response_path.display()));
+    let raw_request = std::fs::read_to_string(&raw_request_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", raw_request_path.display()));
 
     for expected in [
         "id=\"method.response\"",
@@ -332,6 +340,78 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         assert!(
             request.contains(expected),
             "Request Rustdoc omitted the public response terminal fact {expected:?}"
+        );
+    }
+    for expected in [
+        "id=\"method.raw_response\"",
+        "dangerous-raw-response",
+        "complete bounded successful response",
+        "Generated streaming requests and public",
+        "prepared endpoints intentionally do not",
+        "callers assume responsibility",
+    ] {
+        assert!(
+            request.contains(expected),
+            "Request Rustdoc omitted the gated raw terminal fact {expected:?}"
+        );
+    }
+    for expected in [
+        "pub struct RawResponse",
+        "id=\"method.url\"",
+        "id=\"method.status\"",
+        "id=\"method.version\"",
+        "id=\"method.headers\"",
+        "id=\"method.metadata\"",
+        "id=\"method.body\"",
+        "id=\"method.into_body\"",
+        "actual successful",
+        "may contain secrets",
+        "callers assume responsibility",
+        "never exposes a Reqwest",
+        "response. Unlike ordinary",
+        "Fields are intentionally private",
+    ] {
+        assert!(
+            raw_response.contains(expected),
+            "RawResponse Rustdoc omitted {expected:?}"
+        );
+    }
+    for expected in [
+        "pub struct RawResponseRequest",
+        "ordinary status classification",
+        "retry containment",
+        "actual headers and complete bounded body",
+        "callers assume responsibility",
+        "Fields are intentionally private",
+    ] {
+        assert!(
+            raw_request.contains(expected),
+            "RawResponseRequest Rustdoc omitted {expected:?}"
+        );
+    }
+    assert!(
+        dangerous.contains("RawResponse")
+            && dangerous.contains("RawResponseRequest")
+            && dangerous.contains("ReqwestRetryBuilder")
+            && dangerous.contains("unified for the compiled crate")
+            && dangerous.contains("Neither capability is enabled by default"),
+        "dangerous namespace Rustdoc omitted feature-unification or owned capabilities"
+    );
+    assert!(
+        !prelude.contains("RawResponse") && !prepared_pages.contains("RawResponse"),
+        "raw response escaped its dangerous namespace or entered prepared docs"
+    );
+    for forbidden in [
+        "RawResponseEndpoint",
+        "DecodedResponse",
+        "BytesResponse",
+        "ClientCore",
+        "execute_request_as",
+        "__private",
+    ] {
+        assert!(
+            !raw_response.contains(forbidden) && !raw_request.contains(forbidden),
+            "dangerous raw Rustdoc exposed private integration {forbidden}"
         );
     }
     assert!(
@@ -534,6 +614,8 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
                 &pagination_pages,
                 &rate_pages,
                 &prepared_pages,
+                &raw_response,
+                &raw_request,
             ]
             .iter()
             .all(|page| !page.contains(forbidden)),

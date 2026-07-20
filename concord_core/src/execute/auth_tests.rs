@@ -42,7 +42,8 @@ use crate::rate_limit::{
 };
 use crate::request::{
     BodyMetadata, BodySpec, BufferedResponse, BytesResponse, EmptyBody, EndpointSpec, HeadBuilder,
-    PreparedEndpoint, PreparedHead, Request, RequestMeta, StreamResponseHandler,
+    PreparedEndpoint, PreparedHead, RawResponseEndpoint, Request, RequestMeta,
+    StreamResponseHandler,
 };
 use crate::runtime::RuntimeConfigBuilder;
 
@@ -534,6 +535,8 @@ impl EndpointSpec for ProtectedEndpoint {
         self.body
     }
 }
+
+impl RawResponseEndpoint for ProtectedEndpoint {}
 
 #[derive(Clone)]
 struct HookRecord {
@@ -1519,6 +1522,138 @@ async fn refresh_recovery_reuses_identity_reenters_full_attempt_and_keeps_secret
             && !format!("{capture:?}").contains(INITIAL)
             && !format!("{capture:?}").contains(REFRESHED)
     }));
+}
+
+#[cfg(feature = "dangerous-raw-response")]
+#[tokio::test]
+async fn raw_response_preserves_authentication_recovery_and_logical_native_url_separation() {
+    let executor = DeterministicExecutor::new();
+    let challenge_body_polls = Arc::new(AtomicUsize::new(0));
+    executor
+        .application()
+        .queue_expected_response(
+            ExpectedRequest::new()
+                .method(Method::POST)
+                .native_url("https://protected.example.test/v1/protected")
+                .header(
+                    AUTHORIZATION,
+                    HeaderValue::from_static("Bearer initial-auth-token-1148c7"),
+                )
+                .body(Bytes::from_static(b"raw-auth-body")),
+            ScriptedResponse::status(
+                StatusCode::UNAUTHORIZED,
+                Bytes::from_static(b"raw-auth-challenge-secret"),
+            )
+            .body_poll_counter(Arc::clone(&challenge_body_polls)),
+        )
+        .expect("raw challenge response");
+    executor
+        .application()
+        .queue_expected_response(
+            ExpectedRequest::new()
+                .method(Method::POST)
+                .native_url("https://protected.example.test/v1/protected")
+                .header(
+                    AUTHORIZATION,
+                    HeaderValue::from_static("Bearer refreshed-auth-token-709fe2"),
+                )
+                .body(Bytes::from_static(b"raw-auth-body")),
+            ScriptedResponse::success(Bytes::from_static(b"raw-auth-success-secret")),
+        )
+        .expect("raw recovery response");
+    executor
+        .application()
+        .queue_expected_response(
+            ExpectedRequest::new()
+                .method(Method::POST)
+                .native_url(
+                    "https://protected.example.test/v1/protected?access=refreshed-auth-token-709fe2",
+                )
+                .body(Bytes::new()),
+            ScriptedResponse::success(Bytes::from_static(b"raw-query-success")),
+        )
+        .expect("raw query-auth response");
+
+    let acquires = Arc::new(AtomicUsize::new(0));
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let exact = Arc::new(AtomicBool::new(false));
+    let selector = SlotSelector::provider(
+        RotatingProvider {
+            acquires: Arc::clone(&acquires),
+            refreshes: Arc::clone(&refreshes),
+            exact_current_seen: Arc::clone(&exact),
+        },
+        Duration::ZERO,
+    );
+    let hooks = Arc::new(AuthHooks::default());
+    hooks.observe(Arc::clone(&selector));
+    let (core, debug) = core(&executor, Arc::clone(&hooks));
+
+    let raw = request(
+        core.clone(),
+        &selector,
+        ChallengePolicy::Unauthorized,
+        RequestBody::bytes(Bytes::from_static(b"raw-auth-body")),
+    )
+    .raw_response()
+    .await
+    .expect("raw response after one authentication recovery");
+    assert_eq!(raw.body(), b"raw-auth-success-secret".as_slice());
+    assert_eq!(
+        raw.url().as_str(),
+        "https://protected.example.test/v1/protected"
+    );
+    assert!(raw.metadata().recovered_authentication());
+    assert_eq!(acquires.load(Ordering::SeqCst), 1);
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+    assert!(exact.load(Ordering::SeqCst));
+    assert_eq!(challenge_body_polls.load(Ordering::SeqCst), 0);
+
+    let query_raw = query_request(core.clone(), &selector)
+        .raw_response()
+        .await
+        .expect("raw query-auth response");
+    assert_eq!(query_raw.body(), b"raw-query-success".as_slice());
+    assert_eq!(
+        query_raw.url().as_str(),
+        "https://protected.example.test/v1/protected"
+    );
+    assert!(!query_raw.url().as_str().contains("access="));
+    assert_eq!(core.operation_allocations(), 2);
+    assert_eq!(executor.application().request_count().expect("count"), 3);
+
+    let before = hooks.before.lock().expect("before records");
+    assert_eq!(before.len(), 3);
+    assert_eq!([before[0].recovery_index, before[1].recovery_index], [0, 1]);
+    assert_eq!(before[2].recovery_index, 0);
+    assert!(before.iter().all(|record| {
+        !record.safe_url.contains(INITIAL)
+            && !record.safe_url.contains(REFRESHED)
+            && !record.safe_url.contains("access=")
+    }));
+    drop(before);
+    let completion = hooks.completion.lock().expect("completion records");
+    assert_eq!(completion.len(), 2);
+    assert!(completion.iter().all(|record| {
+        record.2 == Some(StatusCode::OK) && record.5 == CompletionOutcome::Success
+    }));
+    drop(completion);
+    let automatic = format!(
+        "{}\n{raw:?}\n{query_raw:?}",
+        debug.lock().expect("debug output").join("\n")
+    );
+    for forbidden in [
+        INITIAL,
+        REFRESHED,
+        "raw-auth-success-secret",
+        "raw-query-success",
+        "access=",
+    ] {
+        assert!(
+            !automatic.contains(forbidden),
+            "automatic surface leaked {forbidden}"
+        );
+    }
 }
 
 #[tokio::test]

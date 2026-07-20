@@ -216,6 +216,7 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
             "__concord_endpoint_seal",
             "ClientCore",
             "EndpointSpec",
+            "RawResponseEndpoint",
             "MetadataResponse",
             "ResponseHandler",
             "CodecBody",
@@ -300,6 +301,22 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
                 assert!(
                     page.contains(expected),
                     "generated endpoint Rustdoc omitted public identity or parameter {expected}"
+                );
+            }
+            let raw_expectations: &[&str] = if relative.ends_with("struct.StreamDownload.html") {
+                &["raw_response", "intentionally unavailable"]
+            } else {
+                &[
+                    "concord_core/dangerous-raw-response",
+                    "raw_response",
+                    "complete bounded successful bytes",
+                    "reduced secrecy guarantees",
+                ]
+            };
+            for expected in raw_expectations {
+                assert!(
+                    page.contains(expected),
+                    "generated endpoint Rustdoc omitted raw-terminal fact {expected}"
                 );
             }
             for forbidden in ["__concord_scope_0", "__concord_endpoint_0"] {

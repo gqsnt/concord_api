@@ -4,6 +4,8 @@ mod handler;
 mod metadata;
 mod stream;
 
+#[cfg(feature = "dangerous-raw-response")]
+pub use metadata::RawResponse;
 pub use metadata::{DecodedResponse, ExecutionMeta};
 pub use stream::StreamResponse;
 

@@ -3,3 +3,14 @@ error[E0432]: unresolved import `concord_core::dangerous::RawResponse`
   |
 1 | use concord_core::dangerous::RawResponse;
   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `RawResponse` in `dangerous`
+  |
+note: found an item that was configured out
+ --> src/dangerous.rs
+  |
+  | pub use crate::response::RawResponse;
+  |                          ^^^^^^^^^^^
+note: the item is gated behind the `dangerous-raw-response` feature
+ --> src/dangerous.rs
+  |
+  | #[cfg(feature = "dangerous-raw-response")]
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
