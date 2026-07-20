@@ -33,62 +33,54 @@ release_validation_registry = "docs/conformance/RELEASE_VALIDATION_REGISTRY_0.1.
 
 [validated_state]
 expected_branch = "master"
-latest_validated_phase = "10"
-latest_verdict = "PHASE_10_COMPLETE"
-source_commit = "9317a94cf020d81dbd216ed2a7dc999550586898"
+latest_validated_phase = "11"
+latest_verdict = "PHASE_11_COMPLETE_WITH_LIMITATIONS"
+source_commit = "1e5d3c9e4567cde54a1b27acae5d48bd7b5d8607"
 implementation_source_commits = [
-  "148251e6f08a577fa9cad0ad54be273af60ed02f",
-  "c9ed133f7c48e1b8104d85013e90290ff6cc10e8",
-  "5db2936d50f7a0729bf8f39a289a80c00908271e",
-  "f0f4111b9438508eff4963bb29ac2ad68e209601",
-  "d14afe6528f4a9e368e7d013d7954cdfcd263aa8",
-  "22fff7668523ed434680a4dbb41bc58eeb439c2b",
-  "52ceef99e7cca1fac256a55d85296480817b199a",
-  "7fa5de2cbc079a153e74ab8383dd19be42a7a33b",
-  "a6126319947cdc019bca3696a7bf9dffb2ddb5b2",
-  "42719f520d7e363a14c3b24502c3697e32c5678e",
-  "9317a94cf020d81dbd216ed2a7dc999550586898",
+  "539faa7816fbb20ad7ed4a73d58bde5df2aa59ff",
+  "fcdf3c0b10229b18b9ae99d2b68e25672c2d341f",
+  "1e5d3c9e4567cde54a1b27acae5d48bd7b5d8607",
 ]
-post_source_governance_commit = "5b157225b387387664a202d4cbfe5f85ba8c5289"
-evidence_commit = "5b157225b387387664a202d4cbfe5f85ba8c5289"
-anchor_commit = "e0648e36ea9450741724ac067cfe184500e724c6"
-phase_report = "docs/conformance/PHASE_10_REPORT.md"
-normative_status = "Normative Release Final"
+post_source_governance_commit = "EVIDENCE_COMMIT_PENDING"
+evidence_commit = "EVIDENCE_COMMIT_PENDING"
+anchor_commit = "ANCHOR_COMMIT_PENDING"
+phase_report = "docs/conformance/PHASE_11_REPORT.md"
+normative_status = "Normative Implementation Candidate"
 head_policy = "anchor-must-be-an-ancestor"
-requirement_trace_rows = 36
-requirement_trace_direct_rows = 36
+requirement_trace_rows = 22
+requirement_trace_direct_rows = 22
 requirement_trace_partial_rows = 0
-immutable_source_evidence_rows = 33
-source_direct_rows = 33
+immutable_source_evidence_rows = 22
+source_direct_rows = 22
 source_partial_rows = 0
-requirement_trace_audit_rows = 25
-cross_phase_catalog_audit_rows = 24
-evidence_state_audit_rows = 25
-phase_evidence_rows = 58
-phase_direct_rows = 58
+phase_evidence_rows = 22
+phase_direct_rows = 22
 phase_partial_rows = 0
-phase_evidence_summary = "58 direct and 0 partial"
+phase_evidence_summary = "22 direct and 0 partial"
+historical_evidence_rows = 1531
+superseded_requirement_rows = 8
 claim_atom_rows = 775
 proved_claim_atoms = 775
 unresolved_claim_atoms = 0
-catalog_evidence_rows = 1531
-coverage_requirement_rows = 504
+catalog_evidence_rows = 1553
+coverage_requirement_rows = 511
 release_requirement_registry_rows = 504
 release_claim_registry_rows = 775
 release_change_map_rows = 152
 normative_language_allowlist_rows = 4
 normative_dependency_rows = 29
 normative_ownership_rows = 6
-release_validation_rows = 33
+release_validation_rows = 60
+release_final_closure_owner = "Phase 14"
 
 [active_phase]
-id = "10"
-title = "Product Completion and Release Candidate"
-status = "COMPLETE"
+id = "12"
+title = "Generic Body/Response Specifications and Integrated Streaming Records"
+status = "NOT_STARTED"
 definition_kind = "implementation-program-entry"
 definition_document = "docs/planning/CONCORD_IMPLEMENTATION_PROGRAM_0.2.md"
-definition_heading = "Phase 10 — product completion and release candidate"
-previous_limitations_owner = "docs/conformance/PHASE_9_REPORT.md"
+definition_heading = "Approved Phases 11-14 roadmap"
+previous_limitations_owner = "docs/conformance/PHASE_11_REPORT.md"
 
 [implementation_agent]
 surface = "Codex external agent through Zed ACP"

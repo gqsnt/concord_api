@@ -37,14 +37,14 @@ an execution queue because several foundations were delivered in a different ord
 
 | Phase | Title | Current status | Exact boundary |
 |---|---|---|---|
-| Phase 11 | Uniform Typed Pagination State | `IN_PROGRESS` | Replace the built-in/custom pagination split with one struct DSL, one public consuming state-machine trait, one generated associated-controller integration, and one controller-agnostic core loop; generated contract `11 -> 12`. |
-| Phase 12 | Generic Body/Response Specifications and Integrated Streaming Records | `NOT_STARTED` | Generic body/response specifications and integrated streaming records; no Phase 12 product behavior is authorized in Phase 11. |
+| Phase 11 | Uniform Typed Pagination State | `COMPLETE_WITH_LIMITATIONS` | One struct DSL, one public consuming state-machine trait, one generated associated-controller integration, and one controller-agnostic core loop are validated; generated contract `11 -> 12`. |
+| Phase 12 | Generic Body/Response Specifications and Integrated Streaming Records | `NOT_STARTED` (active) | Generic body/response specifications and integrated streaming records; no Phase 12 product behavior was implemented in Phase 11. |
 | Phase 13 | Lexically Scoped Rate Limits | `NOT_STARTED` | Lexically scoped rate-limit semantics; Phase 11 preserves the current rate-limit model. |
 | Phase 14 | Product Completion, Conformance Closure, and Release Finalization | `NOT_STARTED` | Whole-product closure, deferred release-evidence hardening, and the only authorized restoration of `Normative Release Final`. |
 
-Phase 11 is the active implementation phase. Its successful evidence/state transition makes Phase
-12 active while retaining `NOT_STARTED`. Phases 12-14 are roadmap authority only until their own
-approved missions; Phase 11 implements none of their product behavior.
+Phase 11 is validated with limitations owned only by Phases 12-14. Phase 12 is active while
+retaining `NOT_STARTED`. Phases 12-14 are roadmap authority only until their own approved missions;
+Phase 11 implements none of their product behavior.
 
 Phase reports remain the detailed evidence owners:
 
@@ -59,6 +59,7 @@ Phase reports remain the detailed evidence owners:
 - `docs/conformance/PHASE_8_REPORT.md`
 - `docs/conformance/PHASE_9_REPORT.md`
 - `docs/conformance/PHASE_10_REPORT.md`
+- `docs/conformance/PHASE_11_REPORT.md`
 
 ## Phase 4 production baseline
 
@@ -564,9 +565,10 @@ and no aggregate parent identity.
 
 ## Current phase state
 
-Phase 10 remains historically complete. Phase 11 — Uniform Typed Pagination State is active under
-the corrected project directive. Phases 12-14 are defined above and remain `NOT_STARTED`; final
-release promotion is deferred exclusively to Phase 14.
+Phase 10 remains historically complete. Phase 11 — Uniform Typed Pagination State is
+`PHASE_11_COMPLETE_WITH_LIMITATIONS`; its limitations are only Phases 12-14. Phase 12 is active and
+`NOT_STARTED`; Phases 13-14 remain `NOT_STARTED`. Final release promotion is deferred exclusively to
+Phase 14.
 
 ## Continuing constraints
 
@@ -578,6 +580,6 @@ release promotion is deferred exclusively to Phase 14.
 - Keep the current package at `Normative Implementation Candidate` through Phases 11-13; only
   Phase 14 may restore `Normative Release Final` after complete direct release evidence is valid.
 
-`PHASE_11_IN_PROGRESS`
+`PHASE_11_COMPLETE_WITH_LIMITATIONS`
 
 `NORMATIVE_IMPLEMENTATION_CANDIDATE`

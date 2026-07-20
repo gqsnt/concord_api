@@ -31,6 +31,7 @@ Start with:
 7. [`normative/06_CONCORD_EXECUTION_SPEC_0.1.md`](normative/06_CONCORD_EXECUTION_SPEC_0.1.md)
 8. [`normative/07_CONCORD_FEATURE_AND_COMPATIBILITY_SPEC_0.1.md`](normative/07_CONCORD_FEATURE_AND_COMPATIBILITY_SPEC_0.1.md)
 9. [`normative/08_CONCORD_CONFORMANCE_PLAN_0.1.md`](normative/08_CONCORD_CONFORMANCE_PLAN_0.1.md)
+10. [`normative/09_CONCORD_REQUIREMENT_CHANGE_RECORD_0.2.md`](normative/09_CONCORD_REQUIREMENT_CHANGE_RECORD_0.2.md)
 
 Internal design:
 
@@ -61,6 +62,7 @@ Verification artifacts:
 - [`conformance/PHASE_8_REPORT.md`](conformance/PHASE_8_REPORT.md)
 - [`conformance/PHASE_9_REPORT.md`](conformance/PHASE_9_REPORT.md)
 - [`conformance/PHASE_10_REPORT.md`](conformance/PHASE_10_REPORT.md)
+- [`conformance/PHASE_11_REPORT.md`](conformance/PHASE_11_REPORT.md)
 - [`REVIEW_RESOLUTION_0.1.md`](REVIEW_RESOLUTION_0.1.md)
 
 Specification governance is review-based: reviewers inspect the normative documents, verify the coverage plan, verify exact executed evidence, and audit the maintained release command. No automated specification checker is authoritative or maintained.
@@ -81,21 +83,22 @@ Delivery and contribution:
 
 ## Status
 
-The normative documents are `Normative Release Final`. Concord 0.1 is a locally validated release
-candidate: all 504 normative requirements and all 775 source-derived claim atoms have direct
-passing release evidence, with zero unresolved claim atoms and no waivers. Architecture and
+The current normative documents are `Normative Implementation Candidate`. Phase 10 remains a
+historically validated local release-candidate baseline for its exact 504-requirement contract and
+775 source-derived claim atoms. Phase 11 directly validates each of its 22 owned active pagination
+requirements while preserving every Phase 0-10 evidence row byte-for-byte. Architecture and
 planning documents remain internal; contributor and
 decision documents remain informative. Any behavior change must follow the Specification Index and
 update both the coverage plan and, when implemented, actual evidence.
 
-Phase 10 — Product Completion and Release Candidate is complete. Positive bounded raw successful
-responses are available only under the binary-wide `dangerous-raw-response` compiled-crate feature;
-that surface exposes actual successful headers and body bytes and therefore has an explicitly
-reduced secrecy guarantee. Streaming raw response, prepared raw response, raw pagination, and native
-Reqwest response exposure remain absent. See the
-[`Phase 10 report`](conformance/PHASE_10_REPORT.md) for the exact source identity, validation,
-evidence, and anchor chain. No remote publication, tag, registry upload, or deployment was
-performed.
+Phase 11 — Uniform Typed Pagination State is `PHASE_11_COMPLETE_WITH_LIMITATIONS`; its only
+limitations are the unimplemented Phases 12, 13, and 14. The uniform pagination DSL, public
+controller trait, generated associated controller, and core-owned loop are validated at generated
+contract 12. See the [`Phase 11 report`](conformance/PHASE_11_REPORT.md) for the exact source,
+validation, evidence, and anchor chain, and the historical
+[`Phase 10 report`](conformance/PHASE_10_REPORT.md) for the prior release-candidate baseline. Phase
+12 is active and `NOT_STARTED`; only Phase 14 may restore `Normative Release Final`. No remote
+publication, tag, registry upload, or deployment was performed.
 
 
 ## Review closure
