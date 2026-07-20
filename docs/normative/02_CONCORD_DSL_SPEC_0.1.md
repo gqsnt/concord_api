@@ -1359,7 +1359,6 @@ api! {
         var region: String;
         var tenant: String;
         var locale: Option<String>;
-        var default_page_size: u32 = 100;
 
         credentials {
             secret api_key: String;
@@ -1436,16 +1435,16 @@ api! {
 
             GET List(
                 offset: u64 = 0,
-                limit: u32 = 100,
+                limit: std::num::NonZeroU32,
             ) -> Json<Vec<User>> {
                 query {
                     "offset" = ep.offset;
                     "limit" = ep.limit;
                 }
                 auth bearer oauth;
-                paginate OffsetPagination {
-                    offset = ep.offset,
-                    page_size = ep.limit
+                paginate concord_core::advanced::OffsetPagination {
+                    offset: bind ep.offset,
+                    page_size: bind ep.limit,
                 }
             }
 

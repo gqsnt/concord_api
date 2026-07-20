@@ -375,6 +375,11 @@ use clause-accurate source paths, tests, commands, taxonomy, and later owners.
 
 ## Phase 8 production baseline
 
+This section records the immutable historical Phase 8 contract and source line. Its pagination
+factory, safe-patch, and built-in-category statements are superseded for current implementation by
+the Phase 11 authority and requirement-change record; they remain here only to describe the
+historical evidence they originally validated.
+
 The immutable final corrected Phase 8 source/test commit is
 `515b33ebd345a5eae06a6f2681cbfa4ff403ab9e`. All correction-focused, retained Phase 8, and Phase 7
 rate-limit regression commands plus all 16 maintained commands, including `just release`, passed
