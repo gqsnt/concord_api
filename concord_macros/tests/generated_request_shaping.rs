@@ -1,5 +1,6 @@
 use std::fmt::{self, Display, Formatter};
 use std::pin::Pin;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
@@ -8,7 +9,7 @@ use concord_core::prelude::{
     Bytes, DecodedResponse, ErrorCategory, OctetStream, Request, StreamBody, StreamResponse,
 };
 use concord_macros::api;
-use concord_test_support::server::{ResponseScript, ScriptedServer};
+use concord_test_support::server::{BodyGate, ResponseScript, ScriptedServer};
 use futures_core::Stream;
 use tokio::sync::{Mutex, MutexGuard};
 
@@ -227,6 +228,13 @@ use shape_api::prelude::*;
 
 fn proxy(server: &ScriptedServer) -> SafeProxy {
     SafeProxy::parse(server.url("")).expect("local proxy")
+}
+
+async fn wait_for_requests(server: Arc<ScriptedServer>, expected: usize) {
+    tokio::task::spawn_blocking(move || server.wait_for_requests(expected, Duration::from_secs(3)))
+        .await
+        .expect("request barrier task")
+        .expect("request barrier");
 }
 
 fn shaped_client(server: &ScriptedServer) -> ShapeApi {
@@ -668,67 +676,105 @@ async fn dynamic_request_shaping_is_deferred_and_fails_before_native_execution()
 #[tokio::test(flavor = "current_thread")]
 async fn generated_timeout_inheritance_off_and_request_overrides_remain_distinct() {
     let _guard = request_shaping_test_guard().await;
-    let delayed = || ResponseScript::DelayBeforeHeaders {
-        delay: Duration::from_millis(60),
-        status: 200,
-        body: b"done".to_vec(),
-    };
-    let server = ScriptedServer::start((0..6).map(|_| delayed())).expect("timeout server");
+    let gate = BodyGate::closed();
+    let server = Arc::new(
+        ScriptedServer::start((0..6).map(|_| ResponseScript::GatedBody {
+            status: 200,
+            body: b"done".to_vec(),
+            gate: gate.clone(),
+        }))
+        .expect("timeout server"),
+    );
     let timeout_proxy = proxy(&server);
     let client = TimeoutApi::builder()
         .http(move |http| http.proxy(timeout_proxy))
         .build()
         .expect("timeout client");
 
-    let inherited = client
-        .timed()
-        .scope_inherited()
+    let inherited = tokio::spawn({
+        let client = client.clone();
+        async move { client.timed().scope_inherited().await }
+    });
+    let endpoint_override = tokio::spawn({
+        let client = client.clone();
+        async move { client.timed().endpoint_override().await }
+    });
+    let endpoint_off = tokio::spawn({
+        let client = client.clone();
+        async move { client.timed().endpoint_off().await }
+    });
+    let local = tokio::spawn({
+        let client = client.clone();
+        async move {
+            client
+                .timed()
+                .endpoint_off()
+                .timeout(Duration::from_millis(10))
+                .await
+        }
+    });
+    let disabled = tokio::spawn({
+        let client = client.clone();
+        async move {
+            client
+                .timed()
+                .endpoint_off()
+                .timeout(Duration::from_millis(10))
+                .disable_timeout()
+                .await
+        }
+    });
+    let reinherited = tokio::spawn({
+        let client = client.clone();
+        async move {
+            client
+                .timed()
+                .endpoint_override()
+                .disable_timeout()
+                .inherit_timeout()
+                .await
+        }
+    });
+
+    wait_for_requests(Arc::clone(&server), 6).await;
+
+    let inherited = inherited
         .await
+        .expect("scope timeout task")
         .expect_err("scope timeout must inherit");
     assert_eq!(inherited.category(), ErrorCategory::Timeout);
+    let local = local
+        .await
+        .expect("request-local timeout task")
+        .expect_err("request-local timeout must override endpoint off");
+    assert_eq!(local.category(), ErrorCategory::Timeout);
 
+    gate.release();
     assert_eq!(
-        client
-            .timed()
-            .endpoint_override()
+        endpoint_override
             .await
+            .expect("endpoint timeout override task")
             .expect("endpoint timeout override"),
         b"done"[..]
     );
     assert_eq!(
-        client
-            .timed()
-            .endpoint_off()
+        endpoint_off
             .await
+            .expect("endpoint timeout off task")
             .expect("endpoint timeout off"),
         b"done"[..]
     );
-
-    let local = client
-        .timed()
-        .endpoint_off()
-        .timeout(Duration::from_millis(10))
-        .await
-        .expect_err("request-local timeout must override endpoint off");
-    assert_eq!(local.category(), ErrorCategory::Timeout);
-
     assert_eq!(
-        client
-            .timed()
-            .endpoint_off()
-            .timeout(Duration::from_millis(10))
-            .disable_timeout()
+        disabled
             .await
+            .expect("request-local disable task")
             .expect("request-local disable"),
         b"done"[..]
     );
     assert_eq!(
-        client
-            .timed()
-            .endpoint_override()
-            .disable_timeout()
-            .inherit_timeout()
+        reinherited
             .await
+            .expect("return to endpoint inheritance task")
             .expect("return to endpoint inheritance"),
         b"done"[..]
     );
