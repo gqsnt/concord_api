@@ -2,19 +2,20 @@ use std::collections::{HashMap, HashSet};
 
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{ToTokens, quote};
-use syn::Type;
+use syn::{PathArguments, Type};
 
 use crate::ast::{
     AuthChallenge, AuthPlacementKind, CodecKind, DefaultExpr, MediaKind, MethodKind,
     RequestBodyKind, ResponseKind, RetrySelection, ValueKind,
 };
 use crate::model::{
-    Api, Child, Client, Credential, CredentialSource, Endpoint, NormalizedConfig, Pagination,
-    ResolvedExpr, ResolvedRateLimitDimension, Scope, Value, ValueReference, ValueShape,
+    Api, Child, Client, Credential, CredentialSource, Endpoint, NormalizedConfig,
+    PaginationInitializer, PaginationValue, ResolvedExpr, ResolvedRateLimitDimension, Scope, Value,
+    ValueReference, ValueShape,
 };
 use crate::names::{canonical_ident, public_ident, to_snake_case};
 
-const GENERATED_CONTRACT_VERSION: u32 = 11;
+const GENERATED_CONTRACT_VERSION: u32 = 12;
 
 pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
     let clients = api
@@ -1691,7 +1692,7 @@ fn generate_endpoint(
     let header_statements = header_statements(client, scopes, endpoint);
     let auth_statements = auth_statements(client, endpoint, core_path);
     let rate_limit_statements = rate_limit_statements(client, scopes, endpoint, core_path);
-    let where_clause = endpoint_where_clause(client, scopes, endpoint, core_path);
+    let where_clause = endpoint_where_clause(client, scopes, endpoint, core_path, &invocation_path);
     let extension_trait = generate_request_extension_trait(
         client,
         scopes,
@@ -1706,6 +1707,7 @@ fn generate_endpoint(
         endpoint,
         &generated_core,
         core_path,
+        &invocation_path,
         &where_clause,
     );
     let raw_response_impl = if matches!(endpoint.response, ResponseKind::Stream(_)) {
@@ -1867,6 +1869,7 @@ fn generate_pagination_impl(
     endpoint: &Endpoint,
     generated_core: &TokenStream,
     core_path: &TokenStream,
+    invocation_path: &TokenStream,
     where_clause: &TokenStream,
 ) -> TokenStream {
     let Some(pagination) = &endpoint.pagination else {
@@ -1874,149 +1877,60 @@ fn generate_pagination_impl(
     };
     let endpoint_name = &endpoint.name;
     let page_type = response_output_type(&endpoint.response, core_path);
-    let (controller_factory, bind_controller, short_page_size) = match pagination {
-        Pagination::Offset { offset, page_size } => {
-            let offset_field = endpoint_value_field(*offset, &endpoint.parameters[*offset]);
-            let page_size_field =
-                endpoint_value_field(*page_size, &endpoint.parameters[*page_size]);
-            (
-                quote! {
-                    |__concord_endpoint: &#endpoint_name| {
-                        let __concord_page_size = ::std::num::NonZeroU32::new(
-                            *__concord_endpoint.#page_size_field,
-                        ).ok_or_else(|| #generated_core::advanced::PaginationError::new(
-                            #generated_core::advanced::PaginationErrorKind::InvalidLimit,
-                        ))?;
-                        ::std::result::Result::Ok(
-                            #generated_core::advanced::OffsetPagination::new(
-                                *__concord_endpoint.#offset_field,
-                                __concord_page_size,
-                            ),
-                        )
-                    }
-                },
-                quote! {
-                    |__concord_endpoint: &mut #endpoint_name, __concord_controller| {
-                        __concord_endpoint.#offset_field = ::std::sync::Arc::new(
-                            __concord_controller.offset(),
-                        );
-                        __concord_endpoint.#page_size_field = ::std::sync::Arc::new(
-                            __concord_controller.page_size().get(),
-                        );
-                        ::std::result::Result::Ok(())
-                    }
-                },
-                quote! {
-                    |__concord_controller| {
-                        ::std::option::Option::Some(
-                            ::std::primitive::usize::try_from(
-                                __concord_controller.page_size().get(),
-                            ).expect("u32 page sizes fit the supported usize targets"),
-                        )
-                    }
-                },
-            )
-        }
-        Pagination::Page { page, page_size } => {
-            let page_field = endpoint_value_field(*page, &endpoint.parameters[*page]);
-            let page_size_field =
-                endpoint_value_field(*page_size, &endpoint.parameters[*page_size]);
-            (
-                quote! {
-                    |__concord_endpoint: &#endpoint_name| {
-                        let __concord_page = ::std::num::NonZeroU64::new(
-                            *__concord_endpoint.#page_field,
-                        ).ok_or_else(|| #generated_core::advanced::PaginationError::new(
-                            #generated_core::advanced::PaginationErrorKind::InvalidLimit,
-                        ))?;
-                        let __concord_page_size = ::std::num::NonZeroU32::new(
-                            *__concord_endpoint.#page_size_field,
-                        ).ok_or_else(|| #generated_core::advanced::PaginationError::new(
-                            #generated_core::advanced::PaginationErrorKind::InvalidLimit,
-                        ))?;
-                        ::std::result::Result::Ok(
-                            #generated_core::advanced::PagePagination::new(
-                                __concord_page,
-                                __concord_page_size,
-                            ),
-                        )
-                    }
-                },
-                quote! {
-                    |__concord_endpoint: &mut #endpoint_name, __concord_controller| {
-                        __concord_endpoint.#page_field = ::std::sync::Arc::new(
-                            __concord_controller.page().get(),
-                        );
-                        __concord_endpoint.#page_size_field = ::std::sync::Arc::new(
-                            __concord_controller.page_size().get(),
-                        );
-                        ::std::result::Result::Ok(())
-                    }
-                },
-                quote! {
-                    |__concord_controller| {
-                        ::std::option::Option::Some(
-                            ::std::primitive::usize::try_from(
-                                __concord_controller.page_size().get(),
-                            ).expect("u32 page sizes fit the supported usize targets"),
-                        )
-                    }
-                },
-            )
-        }
-        Pagination::Cursor {
-            cursor,
-            cursor_type: _,
-        } => {
-            let cursor_field = endpoint_value_field(*cursor, &endpoint.parameters[*cursor]);
-            (
-                quote! {
-                    |__concord_endpoint: &#endpoint_name| {
-                        ::std::result::Result::Ok(
-                            #generated_core::advanced::CursorPagination::new(
-                                (*__concord_endpoint.#cursor_field).clone(),
-                            ),
-                        )
-                    }
-                },
-                quote! {
-                    |__concord_endpoint: &mut #endpoint_name, __concord_controller| {
-                        __concord_endpoint.#cursor_field = ::std::sync::Arc::new(
-                            __concord_controller.cursor().cloned(),
-                        );
-                        ::std::result::Result::Ok(())
-                    }
-                },
-                quote!(|_controller| ::std::option::Option::None),
-            )
-        }
-        Pagination::Custom { factory, arguments } => {
-            let arguments = arguments
-                .iter()
-                .map(|argument| pagination_factory_argument(argument, client, scopes, endpoint))
-                .collect::<Vec<_>>();
-            (
-                quote! {
-                    |__concord_endpoint: &#endpoint_name| {
-                        let __concord_client_values = __concord_endpoint
-                            .__concord_client_values
-                            .as_ref()
-                            .expect("generated endpoint is bound by the sealed client request path");
-                        ::std::result::Result::Ok(#factory(#(#arguments),*))
-                    }
-                },
-                quote! {
-                    |_endpoint: &mut #endpoint_name, _controller| {
-                        ::std::result::Result::<
-                            (),
-                            #generated_core::advanced::PaginationError,
-                        >::Ok(())
-                    }
-                },
-                quote!(|_controller| ::std::option::Option::None),
-            )
-        }
-    };
+    let controller = &pagination.controller;
+    let controller_type = pagination_controller_type(controller, invocation_path, false);
+    let controller_fields = pagination
+        .fields
+        .iter()
+        .map(|field| {
+            let name = &field.name;
+            let value = match &field.initializer {
+                PaginationInitializer::Bound(value) => {
+                    pagination_owned_value_access(value.reference, client, scopes, endpoint)
+                }
+                PaginationInitializer::Value(PaginationValue::Reference(value)) => {
+                    pagination_owned_value_access(value.reference, client, scopes, endpoint)
+                }
+                PaginationInitializer::Value(PaginationValue::Stable(value)) => default_expr(value),
+            };
+            quote!(#name: #value,)
+        })
+        .collect::<Vec<_>>();
+    let controller_constructor =
+        pagination_controller_constructor(controller, invocation_path, &controller_fields);
+    let binding_statements = pagination
+        .fields
+        .iter()
+        .filter_map(|field| {
+            let PaginationInitializer::Bound(value) = &field.initializer else {
+                return None;
+            };
+            let controller_field = &field.name;
+            let endpoint_field = match value.reference {
+                ValueReference::Client(_) => {
+                    unreachable!("the parser rejects client values as pagination bindings")
+                }
+                ValueReference::Scope {
+                    scope_id,
+                    parameter,
+                } => {
+                    let scope = scopes
+                        .iter()
+                        .find(|scope| scope.id == scope_id)
+                        .expect("resolved scope identity appears in the endpoint lexical chain");
+                    scope_value_field(scope_id, parameter, &scope.parameters[parameter])
+                }
+                ValueReference::Endpoint(index) => {
+                    endpoint_value_field(index, &endpoint.parameters[index])
+                }
+            };
+            Some(quote! {
+                __concord_endpoint.#endpoint_field = ::std::sync::Arc::new(
+                    ::std::clone::Clone::clone(&__concord_controller.#controller_field),
+                );
+            })
+        })
+        .collect::<Vec<_>>();
 
     quote! {
         #[doc(hidden)]
@@ -2024,26 +1938,72 @@ fn generate_pagination_impl(
         #where_clause
         {
             type Item = <#page_type as ::std::iter::IntoIterator>::Item;
+            type Controller = #controller_type;
 
-            fn __concord_execute_pagination(
-                request: #generated_core::Request<Self>,
-                limit: #generated_core::prelude::PageLimit,
-            ) -> #generated_core::advanced::BoxFuture<
-                'static,
-                ::std::result::Result<
-                    ::std::vec::Vec<Self::Item>,
-                    #generated_core::prelude::ApiError,
-                >,
+            fn initial_controller(
+                &self,
+            ) -> ::std::result::Result<
+                Self::Controller,
+                #generated_core::advanced::PaginationError,
             > {
-                #generated_core::__private::paginate_with(
-                    request,
-                    limit,
-                    #controller_factory,
-                    #bind_controller,
-                    #short_page_size,
-                )
+                let __concord_endpoint = self;
+                let __concord_client_values = __concord_endpoint
+                    .__concord_client_values
+                    .as_ref()
+                    .expect("generated endpoint is bound by the sealed client request path");
+                let _ = __concord_client_values;
+                ::std::result::Result::Ok(#controller_constructor)
+            }
+
+            fn bind_controller(
+                __concord_endpoint: &mut Self,
+                __concord_controller: &Self::Controller,
+            ) -> ::std::result::Result<
+                (),
+                #generated_core::advanced::PaginationError,
+            > {
+                #(#binding_statements)*
+                ::std::result::Result::Ok(())
             }
         }
+    }
+}
+
+fn pagination_controller_constructor(
+    controller: &Type,
+    invocation_path: &TokenStream,
+    fields: &[TokenStream],
+) -> TokenStream {
+    let constructor = pagination_controller_type(controller, invocation_path, true);
+    quote!(#constructor { #(#fields)* })
+}
+
+fn pagination_controller_type(
+    controller: &Type,
+    invocation_path: &TokenStream,
+    expression_position: bool,
+) -> TokenStream {
+    let mut controller = controller.clone();
+    let unqualified = matches!(
+        &controller,
+        Type::Path(type_path)
+            if type_path.qself.is_none()
+                && type_path.path.leading_colon.is_none()
+                && type_path.path.segments.len() == 1
+    );
+    if expression_position {
+        if let Type::Path(type_path) = &mut controller {
+            if let Some(segment) = type_path.path.segments.last_mut() {
+                if let PathArguments::AngleBracketed(arguments) = &mut segment.arguments {
+                    arguments.colon2_token.get_or_insert_with(Default::default);
+                }
+            }
+        }
+    }
+    if unqualified {
+        quote!(#invocation_path::#controller)
+    } else {
+        quote!(#controller)
     }
 }
 
@@ -2698,41 +2658,17 @@ fn host_statements(client: &Client, scopes: &[&Scope], endpoint: &Endpoint) -> T
 }
 
 fn pagination_continuation_values(endpoint: &Endpoint) -> Vec<ValueReference> {
-    match &endpoint.pagination {
-        Some(Pagination::Offset { offset, page_size }) => vec![
-            ValueReference::Endpoint(*offset),
-            ValueReference::Endpoint(*page_size),
-        ],
-        Some(Pagination::Page { page, page_size }) => vec![
-            ValueReference::Endpoint(*page),
-            ValueReference::Endpoint(*page_size),
-        ],
-        Some(Pagination::Cursor { cursor, .. }) => vec![ValueReference::Endpoint(*cursor)],
-        Some(Pagination::Custom { arguments, .. }) => {
-            let mut values = Vec::new();
-            for argument in arguments {
-                collect_resolved_value_references(argument, &mut values);
+    let mut values = Vec::new();
+    if let Some(pagination) = &endpoint.pagination {
+        for field in &pagination.fields {
+            if let PaginationInitializer::Bound(value) = &field.initializer {
+                if !values.contains(&value.reference) {
+                    values.push(value.reference);
+                }
             }
-            values
         }
-        None => Vec::new(),
     }
-}
-
-fn collect_resolved_value_references(expression: &ResolvedExpr, values: &mut Vec<ValueReference>) {
-    match expression {
-        ResolvedExpr::Value(value) => {
-            if !values.contains(&value.reference) {
-                values.push(value.reference);
-            }
-        }
-        ResolvedExpr::Format(parts) => {
-            for part in parts {
-                collect_resolved_value_references(part, values);
-            }
-        }
-        ResolvedExpr::String(_) | ResolvedExpr::Integer(_) => {}
-    }
+    values
 }
 
 fn resolved_expr_uses_any_value(expression: &ResolvedExpr, values: &[ValueReference]) -> bool {
@@ -3019,38 +2955,14 @@ fn display_argument(
     }
 }
 
-fn pagination_factory_argument(
-    expression: &ResolvedExpr,
+fn pagination_owned_value_access(
+    reference: ValueReference,
     client: &Client,
     scopes: &[&Scope],
     endpoint: &Endpoint,
 ) -> TokenStream {
-    match expression {
-        ResolvedExpr::String(value) => quote!(#value),
-        ResolvedExpr::Integer(value) => quote!(#value),
-        ResolvedExpr::Value(value) => {
-            pagination_value_access(value.reference, client, scopes, endpoint)
-        }
-        ResolvedExpr::Format(values) => {
-            let writes = values
-                .iter()
-                .map(|value| {
-                    let value = pagination_factory_argument(value, client, scopes, endpoint);
-                    quote! {
-                        ::std::fmt::Write::write_fmt(
-                            &mut __concord_formatted,
-                            format_args!("{}", #value),
-                        ).expect("formatting into a String is infallible");
-                    }
-                })
-                .collect::<Vec<_>>();
-            quote!({
-                let mut __concord_formatted = ::std::string::String::new();
-                #(#writes)*
-                __concord_formatted
-            })
-        }
-    }
+    let value = pagination_value_access(reference, client, scopes, endpoint);
+    quote!(::std::clone::Clone::clone(#value))
 }
 
 fn pagination_value_access(
@@ -3063,7 +2975,7 @@ fn pagination_value_access(
         ValueReference::Client(index) => {
             let value = &client.values[index];
             let field = client_value_field(index, value);
-            quote!((&*__concord_client_values.#field))
+            quote!((&__concord_client_values.#field))
         }
         ValueReference::Scope {
             scope_id,
@@ -3118,6 +3030,7 @@ fn endpoint_where_clause(
     scopes: &[&Scope],
     endpoint: &Endpoint,
     core_path: &TokenStream,
+    invocation_path: &TokenStream,
 ) -> TokenStream {
     let mut bounds = Vec::new();
     for value in client
@@ -3166,23 +3079,15 @@ fn endpoint_where_clause(
     }
     if let Some(pagination) = &endpoint.pagination {
         let page = response_output_type(&endpoint.response, core_path);
+        let controller = pagination_controller_type(&pagination.controller, invocation_path, false);
         bounds.push(quote!(#page: ::std::iter::IntoIterator));
         bounds.push(quote!(
             <#page as ::std::iter::IntoIterator>::Item:
                 ::std::marker::Send + 'static
         ));
-        if let Pagination::Cursor { cursor_type, .. } = pagination {
-            bounds.push(quote!(
-                #cursor_type:
-                    ::std::clone::Clone
-                    + ::std::marker::Send
-                    + ::std::marker::Sync
-                    + 'static
-            ));
-            bounds.push(quote!(
-                #page: #core_path::advanced::HasNextCursor<#cursor_type>
-            ));
-        }
+        bounds.push(quote!(
+            #controller: #core_path::advanced::PaginationController<#page>
+        ));
     }
     let mut seen = HashSet::new();
     bounds.retain(|bound| seen.insert(bound.to_string()));
@@ -3214,25 +3119,6 @@ fn collect_config_display_types(
             if let ResolvedRateLimitDimension::Value { value, .. } = dimension {
                 output.push(resolved_value_type(value.reference, client, scopes, endpoint).clone());
             }
-        }
-    }
-    if let Some(Pagination::Custom { arguments, .. }) = &endpoint.pagination {
-        for argument in arguments {
-            collect_pagination_argument_display_types(argument, client, scopes, endpoint, output);
-        }
-    }
-}
-
-fn collect_pagination_argument_display_types(
-    expression: &ResolvedExpr,
-    client: &Client,
-    scopes: &[&Scope],
-    endpoint: &Endpoint,
-    output: &mut Vec<Type>,
-) {
-    if let ResolvedExpr::Format(values) = expression {
-        for value in values {
-            collect_expression_display_types(value, client, scopes, endpoint, false, output);
         }
     }
 }

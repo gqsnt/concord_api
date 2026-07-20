@@ -1,6 +1,5 @@
 use concord_core::advanced::{
     Bytes, CodecError, DecodeBody, DecodeContext, PaginationController, PaginationError,
-    PaginationRequest,
 };
 use concord_macros::api;
 
@@ -21,28 +20,29 @@ impl DecodeBody for NotIterableCodec {
     }
 }
 
-#[derive(Clone)]
-pub struct Controller;
+pub struct Controller {}
 
 impl PaginationController<NotIterable> for Controller {
-    fn apply(&self, _request: &mut PaginationRequest<'_>) -> Result<(), PaginationError> {
-        Ok(())
-    }
-
-    fn next(&self, _page: &NotIterable) -> Result<Option<Self>, PaginationError> {
+    fn next(self, _page: &NotIterable) -> Result<Option<Self>, PaginationError> {
         Ok(None)
     }
 }
 
-pub fn controller() -> Controller {
-    Controller
+pub struct NonSendController {
+    pub state: std::rc::Rc<()>,
+}
+
+impl PaginationController<Vec<u8>> for NonSendController {
+    fn next(self, _page: &Vec<u8>) -> Result<Option<Self>, PaginationError> {
+        Ok(None)
+    }
 }
 
 api! {
     client MissingIntoIterator {
         base "https://example.test";
         GET Read() -> crate::NotIterableCodec {
-            paginate custom crate::controller();
+            paginate crate::Controller {}
         }
     }
 }
@@ -51,7 +51,20 @@ api! {
     client MissingCursorExtraction {
         base "https://example.test";
         GET Read(cursor: Option<String>) -> Json<Vec<u8>> {
-            paginate CursorPagination<String> { cursor = ep.cursor }
+            paginate concord_core::advanced::CursorPagination<String> {
+                cursor: bind ep.cursor,
+            }
+        }
+    }
+}
+
+api! {
+    client NonSendControllerApi {
+        base "https://example.test";
+        GET Read(state: std::rc::Rc<()>) -> Json<Vec<u8>> {
+            paginate crate::NonSendController {
+                state: bind ep.state,
+            }
         }
     }
 }

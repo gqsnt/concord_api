@@ -12,20 +12,26 @@ note: `PaginatedRequestExt` defines an item `paginate`, perhaps you need to impl
 4  | |     client MethodSurface {
 5  | |         base "https://example.test";
 6  | |         GET Ordinary() -> Json<Vec<u8>>;
-7  | |         GET Paginated(offset: u64, limit: u32) -> Json<Vec<u8>> {
+7  | |         GET Paginated(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
    | |_____________________^
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0599]: `PaginatedRequest<Paginated>` is not an iterator
-  --> tests/ui/fail/pagination_method_absence.rs:21:52
+  --> tests/ui/fail/pagination_method_absence.rs:24:10
    |
-21 |     let _ = client.paginated(0, 1).paginate(1_u32).collect::<Vec<_>>();
-   |                                                    ^^^^^^^ `PaginatedRequest<Paginated>` is not an iterator
+21 |       let _ = client
+   |  _____________-
+22 | |         .paginated(0, std::num::NonZeroU32::MIN)
+23 | |         .paginate(1_u32)
+24 | |         .collect::<Vec<_>>();
+   | |         -^^^^^^^ `PaginatedRequest<Paginated>` is not an iterator
+   | |_________|
+   |
    |
   ::: $WORKSPACE/concord_core/src/pagination/pending.rs
    |
-   | pub struct PaginatedRequest<E> {
-   | ------------------------------ doesn't satisfy `PaginatedRequest<Paginated>: Iterator`
+   |   pub struct PaginatedRequest<E> {
+   |   ------------------------------ doesn't satisfy `PaginatedRequest<Paginated>: Iterator`
    |
    = note: the following trait bounds were not satisfied:
            `PaginatedRequest<Paginated>: Iterator`

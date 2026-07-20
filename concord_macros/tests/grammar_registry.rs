@@ -63,10 +63,10 @@ fn completed_dsl_grammar_registry_has_exact_trace_families() {
         "auth_replace",
         "request_multipart",
         "response_stream",
-        "paginate_offset",
-        "paginate_page_number",
-        "paginate_cursor",
-        "paginate_custom",
+        "paginate_controller_type",
+        "paginate_bound_field",
+        "paginate_stable_field",
+        "paginate_struct_block",
     ] {
         assert!(productions.contains(required), "missing {required}");
     }

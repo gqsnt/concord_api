@@ -1,9 +1,9 @@
 use std::error::Error;
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::{NonZeroU32, NonZeroU64, NonZeroUsize};
 use std::sync::Arc;
 use std::time::Duration;
 
-use http::{HeaderMap, HeaderName, HeaderValue, Method};
+use http::{HeaderMap, HeaderValue, Method};
 use url::Url;
 
 use super::identity::{CanonicalIdentity, HeaderField, IdentityInput};
@@ -12,7 +12,6 @@ use super::*;
 use crate::auth::{AccessToken, Auth, CredentialRef, SlotSelector};
 use crate::error::PaginationErrorKind;
 use crate::hooks::DebugLevel;
-use crate::redaction::SanitizedHeaderValue;
 use crate::request::{HeadBuilder, RequestMeta, RequestOptions};
 
 fn identity(
@@ -66,13 +65,17 @@ impl HasNextCursor<String> for CursorPage {
 #[test]
 fn built_in_controllers_progress_checked_and_preserve_absent_vs_empty_cursor() {
     let offset = OffsetPagination::new(7, NonZeroU32::new(4).expect("nonzero"));
-    let next = <OffsetPagination as PaginationController<()>>::next(&offset, &())
+    assert_eq!(
+        <OffsetPagination as PaginationController<()>>::short_page_size(&offset),
+        NonZeroUsize::new(4)
+    );
+    let next = <OffsetPagination as PaginationController<()>>::next(offset, &())
         .expect("offset next")
         .expect("offset continues");
     assert_eq!(next.offset(), 11);
     assert_eq!(next.page_size().get(), 4);
     let overflow = OffsetPagination::new(u64::MAX, NonZeroU32::MIN);
-    let Err(error) = <OffsetPagination as PaginationController<()>>::next(&overflow, &()) else {
+    let Err(error) = <OffsetPagination as PaginationController<()>>::next(overflow, &()) else {
         panic!("offset overflow must fail");
     };
     assert_eq!(error.kind(), PaginationErrorKind::Overflow);
@@ -81,19 +84,27 @@ fn built_in_controllers_progress_checked_and_preserve_absent_vs_empty_cursor() {
         NonZeroU64::new(9).expect("nonzero"),
         NonZeroU32::new(2).expect("nonzero"),
     );
-    let next = <PagePagination as PaginationController<()>>::next(&page, &())
+    assert_eq!(
+        <PagePagination as PaginationController<()>>::short_page_size(&page),
+        NonZeroUsize::new(2)
+    );
+    let next = <PagePagination as PaginationController<()>>::next(page, &())
         .expect("page next")
         .expect("page continues");
     assert_eq!(next.page().get(), 10);
     assert_eq!(next.page_size().get(), 2);
     let overflow =
         PagePagination::new(NonZeroU64::new(u64::MAX).expect("nonzero"), NonZeroU32::MIN);
-    let Err(error) = <PagePagination as PaginationController<()>>::next(&overflow, &()) else {
+    let Err(error) = <PagePagination as PaginationController<()>>::next(overflow, &()) else {
         panic!("page overflow must fail");
     };
     assert_eq!(error.kind(), PaginationErrorKind::Overflow);
 
     let cursor = CursorPagination::new(None::<String>);
+    assert_eq!(
+        <CursorPagination<String> as PaginationController<CursorPage>>::short_page_size(&cursor),
+        None
+    );
     let empty = cursor
         .next(&CursorPage {
             next: Some(String::new()),
@@ -106,94 +117,6 @@ fn built_in_controllers_progress_checked_and_preserve_absent_vs_empty_cursor() {
             .next(&CursorPage { next: None })
             .expect("absent cursor")
             .is_none()
-    );
-}
-
-#[test]
-fn custom_patch_changes_logical_identity_but_redacts_every_safe_view() {
-    const QUERY_SECRET: &str = "query-pagination-sentinel-96d152";
-    const HEADER_SECRET: &str = "header-pagination-sentinel-b8473e";
-    let mut patch = PaginationPatch::default();
-    let mut request = PaginationRequest::new(&mut patch);
-    request
-        .set_query("cursor", QUERY_SECRET)
-        .expect("query patch");
-    request
-        .set_header(HeaderName::from_static("x-page"), HEADER_SECRET)
-        .expect("header patch");
-
-    let mut builder = HeadBuilder::new(
-        &Url::parse("https://pagination.example.test/v1?keep=yes&cursor=old").expect("base"),
-        RequestMeta::new("PaginationApi::items", Method::GET, None),
-        &RequestOptions::new(),
-        DebugLevel::None,
-    );
-    builder
-        .insert_header_value("x-public", &"visible")
-        .expect("public header");
-    let mut head = builder.finish();
-    head.apply_pagination_patch(patch).expect("apply patch");
-
-    assert_eq!(
-        head.logical_url().query(),
-        Some("keep=yes&cursor=query-pagination-sentinel-96d152")
-    );
-    assert_eq!(head.public_headers()["x-page"], HEADER_SECRET);
-    assert!(!head.safe_url().contains(QUERY_SECRET));
-    assert!(head.safe_url().contains("%3Credacted%3E"));
-    assert_eq!(
-        head.sanitized_public_headers()
-            .get(&HeaderName::from_static("x-page")),
-        Some(SanitizedHeaderValue::Redacted)
-    );
-    let debug = format!("{:?}", head.sanitized_public_headers());
-    assert!(!debug.contains(HEADER_SECRET));
-
-    let identity = CanonicalIdentity::from_request_head(
-        head.endpoint(),
-        head.method(),
-        head.logical_url(),
-        head.public_headers(),
-    )
-    .expect("identity");
-    assert!(
-        identity
-            .bytes()
-            .windows(QUERY_SECRET.len())
-            .any(|bytes| bytes == QUERY_SECRET.as_bytes())
-    );
-    assert!(
-        identity
-            .bytes()
-            .windows(HEADER_SECRET.len())
-            .any(|bytes| bytes == HEADER_SECRET.as_bytes())
-    );
-}
-
-#[test]
-fn custom_patch_rejects_reserved_or_invalid_values_without_retaining_them() {
-    let mut patch = PaginationPatch::default();
-    let mut request = PaginationRequest::new(&mut patch);
-    assert_eq!(
-        request
-            .set_query("", "value")
-            .expect_err("empty query name")
-            .kind(),
-        PaginationErrorKind::Controller
-    );
-    assert_eq!(
-        request
-            .set_header(http::header::AUTHORIZATION, "secret")
-            .expect_err("reserved header")
-            .kind(),
-        PaginationErrorKind::Controller
-    );
-    assert_eq!(
-        request
-            .set_header(HeaderName::from_static("x-page"), "bad\r\nvalue")
-            .expect_err("invalid value")
-            .kind(),
-        PaginationErrorKind::Controller
     );
 }
 

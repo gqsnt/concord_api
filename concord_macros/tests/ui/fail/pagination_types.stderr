@@ -1,17 +1,152 @@
 error: unknown endpoint value `missing`
- --> tests/ui/fail/pagination_types.rs:8:29
-  |
-8 |                 offset = ep.missing,
-  |                             ^^^^^^^
-
-error: built-in pagination assignment `offset` requires endpoint field type `u64`
-  --> tests/ui/fail/pagination_types.rs:18:18
+  --> tests/ui/fail/pagination_types.rs:27:33
    |
-18 |         GET Read(offset: String, limit: u32) -> Json<Vec<u8>> {
-   |                  ^^^^^^
+27 |                 offset: bind ep.missing,
+   |                                 ^^^^^^^
 
-error: a cursor pagination binding must have type `Option<C>` matching `CursorPagination<C>`
-  --> tests/ui/fail/pagination_types.rs:30:18
+error[E0277]: the trait bound `Vec<u8>: HasNextCursor<String>` is not satisfied
+  --> tests/ui/fail/pagination_types.rs:46:1
    |
-30 |         GET Read(cursor: String) -> Json<Vec<u8>> {
-   |                  ^^^^^^
+46 | / api! {
+47 | |     client WrongCursorType {
+48 | |         base "https://example.test";
+49 | |         GET Read(cursor: String) -> Json<Vec<u8>> {
+...  |
+55 | | }
+   | |_^ the trait `HasNextCursor<String>` is not implemented for `Vec<u8>`
+   |
+   = help: the trait `PaginationController<Page>` is implemented for `CursorPagination<C>`
+   = note: required for `CursorPagination<String>` to implement `PaginationController<Vec<u8>>`
+   = help: see issue #48214
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `NotController: PaginationController<Vec<u8>>` is not satisfied
+  --> tests/ui/fail/pagination_types.rs:81:1
+   |
+81 | / api! {
+82 | |     client NonControllerType {
+83 | |         base "https://example.test";
+84 | |         GET Read(value: u64) -> Json<Vec<u8>> {
+...  |
+90 | | }
+   | |_^ the trait `PaginationController<Vec<u8>>` is not implemented for `NotController`
+   |
+   = help: the following other types implement trait `PaginationController<Page>`:
+             `CursorPagination<C>` implements `PaginationController<Page>`
+             `OffsetPagination` implements `PaginationController<Page>`
+             `PagePagination` implements `PaginationController<Page>`
+             `private_controller::Controller` implements `PaginationController<Vec<u8>>`
+   = help: see issue #48214
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/ui/fail/pagination_types.rs:34:1
+   |
+34 | / api! {
+35 | |     client WrongOffsetType {
+36 | |         base "https://example.test";
+37 | |         GET Read(offset: String, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
+...  |
+44 | | }
+   | | ^
+   | | |
+   | |_expected `&u64`, found `&String`
+   |   arguments to this function are incorrect
+   |
+   = note: expected reference `&u64`
+              found reference `&String`
+note: method defined here
+  --> $RUST/core/src/clone.rs
+   |
+   |     fn clone(&self) -> Self;
+   |        ^^^^^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/ui/fail/pagination_types.rs:34:1
+   |
+34 | / api! {
+35 | |     client WrongOffsetType {
+36 | |         base "https://example.test";
+37 | |         GET Read(offset: String, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
+...  |
+44 | | }
+   | | ^
+   | | |
+   | |_expected `&String`, found `&u64`
+   |   arguments to this function are incorrect
+   |
+   = note: expected reference `&String`
+              found reference `&u64`
+note: method defined here
+  --> $RUST/core/src/clone.rs
+   |
+   |     fn clone(&self) -> Self;
+   |        ^^^^^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/ui/fail/pagination_types.rs:46:1
+   |
+46 | / api! {
+47 | |     client WrongCursorType {
+48 | |         base "https://example.test";
+49 | |         GET Read(cursor: String) -> Json<Vec<u8>> {
+...  |
+55 | | }
+   | | ^
+   | | |
+   | |_expected `&Option<String>`, found `&String`
+   |   arguments to this function are incorrect
+   |
+   = note: expected reference `&Option<String>`
+              found reference `&String`
+note: method defined here
+  --> $RUST/core/src/clone.rs
+   |
+   |     fn clone(&self) -> Self;
+   |        ^^^^^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/ui/fail/pagination_types.rs:46:1
+   |
+46 | / api! {
+47 | |     client WrongCursorType {
+48 | |         base "https://example.test";
+49 | |         GET Read(cursor: String) -> Json<Vec<u8>> {
+...  |
+55 | | }
+   | | ^
+   | | |
+   | |_expected `&String`, found `&Option<String>`
+   |   arguments to this function are incorrect
+   |
+   = note: expected reference `&String`
+              found reference `&Option<String>`
+note: method defined here
+  --> $RUST/core/src/clone.rs
+   |
+   |     fn clone(&self) -> Self;
+   |        ^^^^^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0063]: missing field `page_size` in initializer of `OffsetPagination`
+  --> tests/ui/fail/pagination_types.rs:61:22
+   |
+61 |             paginate concord_core::advanced::OffsetPagination {
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `page_size`
+
+error[E0560]: struct `OffsetPagination` has no field named `unknown`
+  --> tests/ui/fail/pagination_types.rs:75:17
+   |
+75 |                 unknown: 0,
+   |                 ^^^^^^^ `OffsetPagination` does not have this field
+   |
+   = note: all struct fields are already assigned
+
+error[E0616]: field `state` of struct `private_controller::Controller` is private
+  --> tests/ui/fail/pagination_types.rs:97:17
+   |
+97 |                 state: bind ep.state,
+   |                 ^^^^^ private field

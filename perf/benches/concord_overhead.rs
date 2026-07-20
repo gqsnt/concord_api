@@ -83,11 +83,14 @@ api! {
             auth off;
             rate_limit ready;
         }
-        GET Pages(offset: u64, limit: u32) -> crate::PageCodec {
+        GET Pages(offset: u64, limit: std::num::NonZeroU32) -> crate::PageCodec {
             query { "offset" = ep.offset; "limit" = ep.limit; }
             auth off;
             rate_limit off;
-            paginate OffsetPagination { offset = ep.offset, page_size = ep.limit }
+            paginate concord_core::advanced::OffsetPagination {
+                offset: bind ep.offset,
+                page_size: bind ep.limit,
+            }
         }
         POST Codec(body: crate::BenchCodec) -> crate::BenchCodec {
             auth off;
@@ -355,7 +358,9 @@ fn pagination_loop_overhead(
         .build()?;
     let started = Instant::now();
     for _ in 0..iterations {
-        let pages: PaginatedRequest<_> = client.pages(0, 1).paginate(PageLimit::Take(2));
+        let pages: PaginatedRequest<_> = client
+            .pages(0, std::num::NonZeroU32::MIN)
+            .paginate(PageLimit::Take(2));
         black_box(runtime.block_on(pages.into_future())?);
     }
     report(audit, "pagination loop overhead", iterations, started);

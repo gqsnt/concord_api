@@ -41,11 +41,14 @@ api! {
                 path [ep.match_id];
                 rate_limit method;
             }
-            GET ByAccount(account_id: String, start: u64, count: u32) -> Json<Vec<String>> {
+            GET ByAccount(account_id: String, start: u64, count: std::num::NonZeroU32) -> Json<Vec<String>> {
                 path ["by-account", ep.account_id];
                 query { "start" = ep.start; "count" = ep.count; }
                 rate_limit method;
-                paginate OffsetPagination { offset = ep.start, page_size = ep.count }
+                paginate concord_core::advanced::OffsetPagination {
+                    offset: bind ep.start,
+                    page_size: bind ep.count,
+                }
             }
             GET Timeline(match_id: String) -> Json<Vec<String>> {
                 path [ep.match_id, "timeline"];

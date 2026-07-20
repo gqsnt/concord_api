@@ -12,13 +12,14 @@ use syn::{
 use url::Url;
 
 use crate::ast::{
-    AuthChallenge, AuthOperation, AuthPlacement, AuthPlacementKind, BuiltInPagination, CodecKind,
-    CredentialDecl, CredentialSource, CredentialsBlock, DefaultExpr, DurationLiteral, HeaderEntry,
-    HeaderOperation, HostOperation, Layer, MediaKind, MethodKind, PaginationAssignment,
-    PaginationDecl, PathOperation, PublicExpr, QueryEntry, QueryOperation, RateLimitDimension,
-    RateLimitOperation, RateLimitTemplate, RateLimitUse, RateLimitWindowLiteral, RateLimitsBlock,
-    RequestBodyKind, ResponseKind, RetrySelection, SecretDecl, SourceApi, SourceChild,
-    SourceClient, SourceEndpoint, SourceScope, TimeoutOperation, ValueDecl, ValueKind,
+    AuthChallenge, AuthOperation, AuthPlacement, AuthPlacementKind, CodecKind, CredentialDecl,
+    CredentialSource, CredentialsBlock, DefaultExpr, DurationLiteral, HeaderEntry, HeaderOperation,
+    HostOperation, Layer, MediaKind, MethodKind, PaginationDecl, PaginationField,
+    PaginationInitializer, PaginationValue, PathOperation, PublicExpr, QueryEntry, QueryOperation,
+    RateLimitDimension, RateLimitOperation, RateLimitTemplate, RateLimitUse,
+    RateLimitWindowLiteral, RateLimitsBlock, RequestBodyKind, ResponseKind, RetrySelection,
+    SecretDecl, SourceApi, SourceChild, SourceClient, SourceEndpoint, SourceScope,
+    TimeoutOperation, ValueDecl, ValueKind,
 };
 use crate::names::canonical_ident;
 
@@ -29,6 +30,7 @@ mod keyword {
     syn::custom_keyword!(auth);
     syn::custom_keyword!(base);
     syn::custom_keyword!(basic);
+    syn::custom_keyword!(bind);
     syn::custom_keyword!(bearer);
     syn::custom_keyword!(by);
     syn::custom_keyword!(challenge);
@@ -319,140 +321,131 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
 fn parse_pagination(input: ParseStream<'_>) -> syn::Result<PaginationDecl> {
     input.parse::<keyword::paginate>()?;
     if input.peek(keyword::custom) {
-        input.parse::<keyword::custom>()?;
-        let factory: syn::Path = input
-            .parse()
-            .map_err(|_| input.error("custom pagination requires a Rust item-path factory"))?;
-        if factory
-            .segments
-            .iter()
-            .any(|segment| !matches!(segment.arguments, PathArguments::None))
-        {
-            return Err(factory
-                .span()
-                .error("custom pagination factory paths do not accept path arguments"));
-        }
-        let arguments_body;
-        parenthesized!(arguments_body in input);
-        let mut arguments = Vec::new();
-        while !arguments_body.is_empty() {
-            arguments.push(parse_public_expr(&arguments_body, 0)?);
-            if arguments_body.is_empty() {
-                break;
-            }
-            arguments_body.parse::<Token![,]>().map_err(|_| {
-                arguments_body.error("custom pagination arguments must be separated by commas")
-            })?;
-            if arguments_body.is_empty() {
-                return Err(arguments_body
-                    .error("a trailing comma is not accepted in custom pagination arguments"));
-            }
-        }
-        input.parse::<Token![;]>()?;
-        return Ok(PaginationDecl::Custom { factory, arguments });
+        return Err(input.error(
+            "old `paginate custom factory(...)` syntax is no longer supported; use `paginate TYPE { field: bind ep.field, ... }`",
+        ));
     }
 
     let controller_type: Type = input.parse().map_err(|_| {
-        input.error(
-            "pagination requires `OffsetPagination`, `PagePagination`, `CursorPagination<C>`, or `custom PATH(...)`",
-        )
+        input.error("pagination requires one Rust controller type followed by a struct field block")
     })?;
-    let controller = parse_builtin_pagination_type(&controller_type)?;
     if !input.peek(syn::token::Brace) {
-        return Err(controller_type
-            .span()
-            .error("a built-in pagination declaration requires an assignment block"));
+        return Err(controller_type.span().error(
+            "pagination requires a struct field block; use `paginate TYPE { field: bind ep.field, ... }`",
+        ));
     }
-    let assignments_body;
-    braced!(assignments_body in input);
-    let expected: &[&str] = match &controller {
-        BuiltInPagination::Offset => &["offset", "page_size"],
-        BuiltInPagination::Page => &["page", "page_size"],
-        BuiltInPagination::Cursor(_) => &["cursor"],
-    };
-    let mut assignments = Vec::new();
-    let mut seen = HashSet::new();
-    while !assignments_body.is_empty() {
-        let name: Ident = assignments_body.parse().map_err(|_| {
-            assignments_body.error("a pagination assignment begins with its required name")
+    let fields_body;
+    braced!(fields_body in input);
+    let mut fields = Vec::new();
+    let mut seen_fields = HashSet::new();
+    let mut seen_bindings = HashSet::new();
+    while !fields_body.is_empty() {
+        if fields_body.peek(Token![..]) {
+            return Err(fields_body
+                .error("pagination controller construction does not accept struct rest syntax"));
+        }
+        let name: Ident = fields_body.parse().map_err(|_| {
+            fields_body.error("a pagination controller field begins with its field name")
         })?;
         let canonical = canonical_ident(&name);
-        if !expected.contains(&canonical.as_str()) {
+        if !seen_fields.insert(canonical.clone()) {
             return Err(name.span().error(format!(
-                "additional built-in pagination assignment `{canonical}` is not accepted"
+                "duplicate pagination controller field `{canonical}`"
             )));
         }
-        if !seen.insert(canonical.clone()) {
-            return Err(name
-                .span()
-                .error(format!("duplicate pagination assignment `{canonical}`")));
+        if fields_body.peek(Token![=]) {
+            return Err(fields_body.error(
+                "old `field = ep.field` pagination syntax is no longer supported; use `field: bind ep.field`",
+            ));
         }
-        assignments_body.parse::<Token![=]>()?;
-        let namespace: Ident = assignments_body.parse().map_err(|_| {
-            assignments_body.error("a built-in pagination assignment must be `ep.FIELD`")
+        fields_body.parse::<Token![:]>().map_err(|_| {
+            name.span()
+                .error("pagination field shorthand is not supported; provide `field: initializer`")
         })?;
-        if namespace != "ep" {
-            return Err(namespace
-                .span()
-                .error("a built-in pagination assignment must bind directly to `ep.FIELD`"));
-        }
-        assignments_body.parse::<Token![.]>()?;
-        let field: Ident = assignments_body.parse()?;
-        assignments.push(PaginationAssignment { name, field });
-        if assignments_body.is_empty() {
+        let initializer = if fields_body.peek(keyword::bind) {
+            fields_body.parse::<keyword::bind>()?;
+            let namespace: Ident = fields_body.parse().map_err(|_| {
+                fields_body.error("`bind` requires direct `ep.FIELD` or `scope.FIELD`")
+            })?;
+            if !matches!(namespace.to_string().as_str(), "ep" | "scope") {
+                return Err(namespace
+                    .span()
+                    .error("`bind` accepts only direct `ep.FIELD` or `scope.FIELD` destinations"));
+            }
+            fields_body.parse::<Token![.]>().map_err(|_| {
+                namespace
+                    .span()
+                    .error("`bind` requires direct `ep.FIELD` or `scope.FIELD`")
+            })?;
+            let destination: Ident = fields_body.parse()?;
+            if fields_body.peek(Token![.])
+                || fields_body.peek(syn::token::Paren)
+                || fields_body.peek(syn::token::Bracket)
+                || fields_body.peek(Token![!])
+            {
+                return Err(fields_body.error(
+                    "pagination bindings must be direct `ep.FIELD` or `scope.FIELD` destinations",
+                ));
+            }
+            let binding_key = format!(
+                "{}.{}",
+                canonical_ident(&namespace),
+                canonical_ident(&destination)
+            );
+            if !seen_bindings.insert(binding_key.clone()) {
+                return Err(destination.span().error(format!(
+                    "duplicate pagination binding destination `{binding_key}`"
+                )));
+            }
+            PaginationInitializer::Bind {
+                namespace,
+                destination,
+            }
+        } else {
+            PaginationInitializer::Value(parse_pagination_value(&fields_body)?)
+        };
+        fields.push(PaginationField { name, initializer });
+        if fields_body.is_empty() {
             break;
         }
-        assignments_body.parse::<Token![,]>().map_err(|_| {
-            assignments_body.error("built-in pagination assignments must be comma-separated")
+        fields_body.parse::<Token![,]>().map_err(|_| {
+            fields_body.error("pagination controller fields must be comma-separated")
         })?;
-        if assignments_body.is_empty() {
-            return Err(assignments_body
-                .error("a trailing comma is not accepted in built-in pagination assignments"));
-        }
     }
-    let missing = expected
-        .iter()
-        .copied()
-        .filter(|name| !seen.contains(*name))
-        .collect::<Vec<_>>();
-    if !missing.is_empty() {
-        return Err(controller_type.span().error(format!(
-            "missing required built-in pagination assignment(s): {}",
-            missing.join(", ")
-        )));
-    }
-    Ok(PaginationDecl::BuiltIn {
-        controller,
-        assignments,
+    Ok(PaginationDecl {
+        controller: controller_type,
+        fields,
     })
 }
 
-fn parse_builtin_pagination_type(ty: &Type) -> syn::Result<BuiltInPagination> {
-    let Type::Path(path) = ty else {
-        return Err(ty
-            .span()
-            .error("a built-in pagination controller must be an unqualified supported type"));
-    };
-    if path.qself.is_some() || path.path.leading_colon.is_some() || path.path.segments.len() != 1 {
-        return Err(ty
-            .span()
-            .error("a built-in pagination controller must be an unqualified supported type"));
+fn parse_pagination_value(input: ParseStream<'_>) -> syn::Result<PaginationValue> {
+    if input.peek(LitStr) || input.peek(LitInt) || input.peek(LitBool) || input.peek(Token![-]) {
+        return parse_default(input).map(PaginationValue::Stable);
     }
-    let segment = &path.path.segments[0];
-    match segment.ident.to_string().as_str() {
-        "OffsetPagination" if matches!(segment.arguments, PathArguments::None) => {
-            Ok(BuiltInPagination::Offset)
+    let fork = input.fork();
+    if let Ok(namespace) = fork.parse::<Ident>() {
+        if matches!(namespace.to_string().as_str(), "vars" | "scope" | "ep") && fork.peek(Token![.])
+        {
+            let namespace: Ident = input.parse()?;
+            input.parse::<Token![.]>()?;
+            let name: Ident = input.parse()?;
+            if input.peek(Token![.])
+                || input.peek(syn::token::Paren)
+                || input.peek(syn::token::Bracket)
+                || input.peek(Token![!])
+            {
+                return Err(input.error(
+                    "pagination value references must be direct `vars.FIELD`, `scope.FIELD`, or `ep.FIELD`",
+                ));
+            }
+            return Ok(PaginationValue::Reference { namespace, name });
         }
-        "PagePagination" if matches!(segment.arguments, PathArguments::None) => {
-            Ok(BuiltInPagination::Page)
-        }
-        "CursorPagination" => {
-            single_type_argument(path, "CursorPagination").map(BuiltInPagination::Cursor)
-        }
-        _ => Err(ty.span().error(
-            "built-in pagination uses exactly `OffsetPagination`, `PagePagination`, or `CursorPagination<C>`",
-        )),
     }
+    parse_default(input).map(PaginationValue::Stable).map_err(|_| {
+        input.error(
+            "pagination initializers accept only direct public value references, string/integer/boolean literals, or Rust const paths; calls, methods, macros, closures, async blocks, blocks, and formatting expressions are not supported",
+        )
+    })
 }
 
 fn endpoint_starts(input: ParseStream<'_>) -> bool {
@@ -2446,40 +2439,45 @@ mod tests {
     }
 
     #[test]
-    fn pagination_forms_parse_with_exact_final_clause_grammar() {
+    fn pagination_struct_forms_parse_with_restricted_initializers() {
         let api = parse_ok(quote! {
             client Api {
                 base "https://example.test";
                 GET Offset(offset: u64, limit: u32) -> Json<Vec<u32>> {
-                    paginate OffsetPagination {
-                        offset = ep.offset,
-                        page_size = ep.limit
+                    paginate concord_core::advanced::OffsetPagination {
+                        offset: bind ep.offset,
+                        page_size: bind ep.limit,
                     }
                 }
                 GET Page(page: u64, per_page: u32) -> Json<Vec<u32>> {
                     paginate PagePagination {
-                        page = ep.page,
-                        page_size = ep.per_page
+                        page: bind ep.page,
+                        page_size: bind ep.per_page,
                     }
                 }
                 GET Cursor(cursor: Option<String>) -> Json<Vec<u32>> {
-                    paginate CursorPagination<String> { cursor = ep.cursor }
-                }
-                GET CustomZero() -> Json<Vec<u32>> {
-                    paginate custom crate::zero();
+                    paginate CursorPagination<String> { cursor: bind ep.cursor }
                 }
                 scope Regions(region: String) {
-                    GET Custom(cursor: Option<String>) -> Json<Vec<u32>> {
-                        paginate custom crate::vendor(ep.cursor, scope.region);
+                    GET Custom(cursor: Option<String>, maximum: u32) -> Json<Vec<u32>> {
+                        paginate crate::pagination::VendorCursor {
+                            cursor: bind ep.cursor,
+                            region: scope.region,
+                            empty_pages: 0,
+                            enabled: true,
+                            label: "vendor",
+                            maximum: vars.maximum,
+                            policy: crate::pagination::DEFAULT_POLICY,
+                        }
                     }
                 }
             }
         });
-        assert_eq!(api.clients[0].children.len(), 5);
+        assert_eq!(api.clients[0].children.len(), 4);
     }
 
     #[test]
-    fn pagination_rejects_invalid_assignments_modes_and_order() {
+    fn pagination_rejects_old_forms_and_unsafe_initializers() {
         let cases = [
             (
                 quote! {
@@ -2489,7 +2487,7 @@ mod tests {
                         }
                     }
                 },
-                "assignment block",
+                "struct field block",
             ),
             (
                 quote! {
@@ -2499,102 +2497,93 @@ mod tests {
                         }
                     }
                 },
-                "missing required",
+                "field: bind ep.field",
             ),
             (
                 quote! {
                     client Api { base "https://example.test";
                         GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
                             paginate OffsetPagination {
-                                offset = ep.offset,
-                                offset = ep.offset,
-                                page_size = ep.limit
+                                offset: bind ep.offset,
+                                offset: bind ep.limit,
                             }
                         }
                     }
                 },
-                "duplicate pagination assignment",
+                "duplicate pagination controller field",
             ),
             (
                 quote! {
                     client Api { base "https://example.test";
                         GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
                             paginate OffsetPagination {
-                                offset = ep.offset,
-                                page_size = ep.limit,
-                                extra = ep.limit
+                                offset: bind ep.offset,
+                                page_size: bind ep.offset,
                             }
                         }
                     }
                 },
-                "additional built-in",
+                "duplicate pagination binding destination",
             ),
             (
                 quote! {
                     client Api { base "https://example.test";
                         GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
-                            paginate OffsetPagination {
-                                offset = vars.offset,
-                                page_size = ep.limit
-                            }
+                            paginate OffsetPagination { offset: bind vars.offset }
                         }
                     }
                 },
-                "directly to `ep.FIELD`",
+                "accepts only direct `ep.FIELD` or `scope.FIELD`",
             ),
             (
                 quote! {
                     client Api { base "https://example.test";
                         GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
-                            paginate OffsetPagination {
-                                offset = ep.offset,
-                                page_size = ep.limit,
-                            }
+                            paginate OffsetPagination { offset: bind ep.state.offset }
                         }
                     }
                 },
-                "trailing comma",
+                "must be direct",
             ),
             (
                 quote! {
                     client Api { base "https://example.test";
-                        GET Read(body: Text) -> Json<Vec<u32>> {
-                            paginate custom crate::factory();
+                        GET Read(offset: u64) -> Json<Vec<u32>> {
+                            paginate OffsetPagination { offset }
                         }
                     }
                 },
-                "bodyless endpoint",
+                "field shorthand",
             ),
             (
                 quote! {
                     client Api { base "https://example.test";
-                        GET Read() -> Bytes {
-                            paginate custom crate::factory();
+                        GET Read(offset: u64) -> Json<Vec<u32>> {
+                            paginate OffsetPagination { .. }
                         }
                     }
                 },
-                "buffered decoded response",
+                "rest syntax",
+            ),
+            (
+                quote! {
+                    client Api { base "https://example.test";
+                        GET Read() -> Json<Vec<u32>> {
+                            paginate crate::Controller { value: crate::make() }
+                        }
+                    }
+                },
+                "calls, methods, macros",
             ),
             (
                 quote! {
                     client Api { base "https://example.test";
                         GET Read() -> Json<Vec<u32>> {
                             paginate custom crate::factory();
-                            query { "later" = "invalid"; }
                         }
                     }
                 },
-                "endpoint clauses",
-            ),
-            (
-                quote! {
-                    client Api { base "https://example.test";
-                        GET Read() -> Json<Vec<u32>> {
-                            paginate custom crate::factory("value",);
-                        }
-                    }
-                },
-                "trailing comma",
+                "old `paginate custom factory(...)` syntax",
             ),
         ];
         for (tokens, expected) in cases {

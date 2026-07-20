@@ -47,28 +47,30 @@ pub(crate) struct SourceEndpoint {
 }
 
 #[derive(Clone)]
-pub(crate) enum PaginationDecl {
-    BuiltIn {
-        controller: BuiltInPagination,
-        assignments: Vec<PaginationAssignment>,
-    },
-    Custom {
-        factory: Path,
-        arguments: Vec<PublicExpr>,
-    },
+pub(crate) struct PaginationDecl {
+    pub(crate) controller: Type,
+    pub(crate) fields: Vec<PaginationField>,
 }
 
 #[derive(Clone)]
-pub(crate) enum BuiltInPagination {
-    Offset,
-    Page,
-    Cursor(Type),
-}
-
-#[derive(Clone)]
-pub(crate) struct PaginationAssignment {
+pub(crate) struct PaginationField {
     pub(crate) name: Ident,
-    pub(crate) field: Ident,
+    pub(crate) initializer: PaginationInitializer,
+}
+
+#[derive(Clone)]
+pub(crate) enum PaginationInitializer {
+    Bind {
+        namespace: Ident,
+        destination: Ident,
+    },
+    Value(PaginationValue),
+}
+
+#[derive(Clone)]
+pub(crate) enum PaginationValue {
+    Reference { namespace: Ident, name: Ident },
+    Stable(DefaultExpr),
 }
 
 #[derive(Clone)]

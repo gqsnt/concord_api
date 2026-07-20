@@ -1,22 +1,22 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use proc_macro2::Span;
-use quote::ToTokens;
 use syn::spanned::Spanned;
 use syn::{GenericArgument, Ident, PathArguments, Type, TypePath};
 
 use crate::ast::{
-    AuthChallenge, AuthOperation, AuthPlacementKind, BuiltInPagination,
-    CredentialSource as SourceCredentialSource, CredentialsBlock, HeaderEntry, HeaderOperation,
-    HostOperation, Layer, PaginationAssignment, PaginationDecl, PathOperation, PublicExpr,
-    QueryEntry, QueryOperation, RateLimitDimension, RateLimitOperation, RateLimitTemplate,
-    RateLimitUse, SourceApi, SourceChild, SourceEndpoint, SourceScope, TimeoutOperation, ValueDecl,
+    AuthChallenge, AuthOperation, AuthPlacementKind, CredentialSource as SourceCredentialSource,
+    CredentialsBlock, HeaderEntry, HeaderOperation, HostOperation, Layer, PaginationDecl,
+    PaginationInitializer as SourcePaginationInitializer, PaginationValue as SourcePaginationValue,
+    PathOperation, PublicExpr, QueryEntry, QueryOperation, RateLimitDimension, RateLimitOperation,
+    RateLimitTemplate, RateLimitUse, SourceApi, SourceChild, SourceEndpoint, SourceScope,
+    TimeoutOperation, ValueDecl,
 };
 use crate::model::{
     Api, Child, Client, Credential, CredentialSource, Endpoint, NormalizedAuth, NormalizedConfig,
     NormalizedHeader, NormalizedQuery, NormalizedRateLimitRule, NormalizedRateLimitWindow,
-    Pagination, ResolvedExpr, ResolvedRateLimitDimension, ResolvedValue, Scope, Secret, Value,
-    ValueReference, ValueShape,
+    Pagination, PaginationField, PaginationInitializer, PaginationValue, ResolvedExpr,
+    ResolvedRateLimitDimension, ResolvedValue, Scope, Secret, Value, ValueReference, ValueShape,
 };
 use crate::names::{
     RESERVED_GENERATED_METHODS, canonical_ident, prelude_alias, public_ident, request_ext_name,
@@ -44,7 +44,6 @@ enum ExpressionUse {
     Single,
     Query,
     Header,
-    Argument,
 }
 
 pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
@@ -271,50 +270,51 @@ impl Resolver<'_> {
         let Some(pagination) = pagination else {
             return Ok(None);
         };
-        let pagination = match pagination {
-            PaginationDecl::BuiltIn {
-                controller,
-                assignments,
-            } => match controller {
-                BuiltInPagination::Offset => {
-                    let offset = pagination_assignment(&assignments, "offset", endpoint)?;
-                    let page_size = pagination_assignment(&assignments, "page_size", endpoint)?;
-                    require_pagination_type(&endpoint[offset], "u64", "offset")?;
-                    require_pagination_type(&endpoint[page_size], "u32", "page_size")?;
-                    Pagination::Offset { offset, page_size }
-                }
-                BuiltInPagination::Page => {
-                    let page = pagination_assignment(&assignments, "page", endpoint)?;
-                    let page_size = pagination_assignment(&assignments, "page_size", endpoint)?;
-                    require_pagination_type(&endpoint[page], "u64", "page")?;
-                    require_pagination_type(&endpoint[page_size], "u32", "page_size")?;
-                    Pagination::Page { page, page_size }
-                }
-                BuiltInPagination::Cursor(cursor_type) => {
-                    let cursor = pagination_assignment(&assignments, "cursor", endpoint)?;
-                    let expected: Type = syn::parse_quote!(Option<#cursor_type>);
-                    if !same_type(&endpoint[cursor].ty, &expected) {
-                        return Err(endpoint[cursor].name.span().error(
-                            "a cursor pagination binding must have type `Option<C>` matching `CursorPagination<C>`",
-                        ));
+        let PaginationDecl { controller, fields } = pagination;
+        let mut bound_destinations = HashSet::new();
+        let fields = fields
+            .into_iter()
+            .map(|field| {
+                let initializer = match field.initializer {
+                    SourcePaginationInitializer::Bind {
+                        namespace,
+                        destination,
+                    } => {
+                        let value = self.resolve_value_reference(
+                            &namespace,
+                            &destination,
+                            scopes,
+                            Some(endpoint),
+                        )?;
+                        if !bound_destinations.insert(value.reference) {
+                            return Err(destination.span().error(
+                                "duplicate pagination binding destination after resolution",
+                            ));
+                        }
+                        PaginationInitializer::Bound(value)
                     }
-                    Pagination::Cursor {
-                        cursor,
-                        cursor_type,
+                    SourcePaginationInitializer::Value(value) => {
+                        let value = match value {
+                            SourcePaginationValue::Reference { namespace, name } => {
+                                PaginationValue::Reference(self.resolve_value_reference(
+                                    &namespace,
+                                    &name,
+                                    scopes,
+                                    Some(endpoint),
+                                )?)
+                            }
+                            SourcePaginationValue::Stable(value) => PaginationValue::Stable(value),
+                        };
+                        PaginationInitializer::Value(value)
                     }
-                }
-            },
-            PaginationDecl::Custom { factory, arguments } => Pagination::Custom {
-                factory,
-                arguments: arguments
-                    .iter()
-                    .map(|argument| {
-                        self.resolve_expr(argument, scopes, Some(endpoint), ExpressionUse::Argument)
-                    })
-                    .collect::<syn::Result<Vec<_>>>()?,
-            },
-        };
-        Ok(Some(pagination))
+                };
+                Ok(PaginationField {
+                    name: field.name,
+                    initializer,
+                })
+            })
+            .collect::<syn::Result<Vec<_>>>()?;
+        Ok(Some(Pagination { controller, fields }))
     }
 
     fn normalize_layer(
@@ -619,10 +619,7 @@ impl Resolver<'_> {
                             .span()
                             .error("public header declarations do not accept vector values"));
                     }
-                    ExpressionUse::Single
-                    | ExpressionUse::Query
-                    | ExpressionUse::Header
-                    | ExpressionUse::Argument => {}
+                    ExpressionUse::Single | ExpressionUse::Query | ExpressionUse::Header => {}
                 }
                 Ok(ResolvedExpr::Value(reference))
             }
@@ -689,33 +686,6 @@ impl Resolver<'_> {
                 .error("value references use only `vars.NAME`, `scope.NAME`, or `ep.NAME`")),
         }
     }
-}
-
-fn pagination_assignment(
-    assignments: &[PaginationAssignment],
-    name: &str,
-    endpoint: &[Value],
-) -> syn::Result<usize> {
-    let assignment = assignments
-        .iter()
-        .find(|assignment| canonical_ident(&assignment.name) == name)
-        .expect("the parser validates exact built-in pagination assignments");
-    find_unique_value(endpoint, &assignment.field, "endpoint value")
-}
-
-fn require_pagination_type(value: &Value, expected: &str, assignment: &str) -> syn::Result<()> {
-    let expected_type: Type = syn::parse_str(expected).expect("built-in pagination type");
-    if same_type(&value.ty, &expected_type) {
-        Ok(())
-    } else {
-        Err(value.name.span().error(format!(
-            "built-in pagination assignment `{assignment}` requires endpoint field type `{expected}`"
-        )))
-    }
-}
-
-fn same_type(left: &Type, right: &Type) -> bool {
-    left.to_token_stream().to_string() == right.to_token_stream().to_string()
 }
 
 fn source_tree_declares_rate_limits(layer: &Layer, children: &[SourceChild]) -> bool {
@@ -2268,22 +2238,23 @@ mod tests {
     }
 
     #[test]
-    fn pagination_normalizes_exact_typed_bindings_and_custom_arguments() {
+    fn pagination_normalizes_one_controller_type_and_field_initializer_ir() {
         let api = resolve_ok(quote! {
             client Api {
                 base "https://example.test";
                 var tenant: String;
                 GET Offset(offset: u64, limit: u32) -> Json<Vec<u32>> {
-                    paginate OffsetPagination {
-                        offset = ep.offset,
-                        page_size = ep.limit
+                    paginate concord_core::advanced::OffsetPagination {
+                        offset: bind ep.offset,
+                        page_size: bind ep.limit,
                     }
                 }
-                GET Cursor(cursor: Option<String>) -> Json<Vec<u32>> {
-                    paginate CursorPagination<String> { cursor = ep.cursor }
-                }
-                GET Custom(cursor: Option<String>) -> Json<Vec<u32>> {
-                    paginate custom crate::factory(ep.cursor, vars.tenant);
+                GET Vendor(cursor: Option<String>) -> Json<Vec<u32>> {
+                    paginate crate::Vendor<String> {
+                        cursor: bind ep.cursor,
+                        tenant: vars.tenant,
+                        attempts: 0,
+                    }
                 }
             }
         });
@@ -2291,94 +2262,81 @@ mod tests {
         let Child::Endpoint(offset) = &endpoints[0] else {
             panic!("offset endpoint");
         };
+        let pagination = offset.pagination.as_ref().expect("offset pagination");
+        assert_eq!(pagination.fields.len(), 2);
         assert!(matches!(
-            offset.pagination,
-            Some(Pagination::Offset {
-                offset: 0,
-                page_size: 1
-            })
-        ));
-        let Child::Endpoint(cursor) = &endpoints[1] else {
-            panic!("cursor endpoint");
-        };
-        assert!(matches!(
-            cursor.pagination,
-            Some(Pagination::Cursor { cursor: 0, .. })
-        ));
-        let Child::Endpoint(custom) = &endpoints[2] else {
-            panic!("custom endpoint");
-        };
-        let Some(Pagination::Custom { arguments, .. }) = &custom.pagination else {
-            panic!("custom pagination");
-        };
-        assert_eq!(arguments.len(), 2);
-        assert!(matches!(
-            arguments[0],
-            ResolvedExpr::Value(ResolvedValue {
+            pagination.fields[0].initializer,
+            PaginationInitializer::Bound(ResolvedValue {
                 reference: ValueReference::Endpoint(0),
                 ..
             })
         ));
         assert!(matches!(
-            arguments[1],
-            ResolvedExpr::Value(ResolvedValue {
-                reference: ValueReference::Client(0),
+            pagination.fields[1].initializer,
+            PaginationInitializer::Bound(ResolvedValue {
+                reference: ValueReference::Endpoint(1),
                 ..
             })
+        ));
+
+        let Child::Endpoint(vendor) = &endpoints[1] else {
+            panic!("vendor endpoint");
+        };
+        let pagination = vendor.pagination.as_ref().expect("vendor pagination");
+        assert_eq!(pagination.fields.len(), 3);
+        assert!(matches!(
+            pagination.fields[0].initializer,
+            PaginationInitializer::Bound(ResolvedValue {
+                reference: ValueReference::Endpoint(0),
+                ..
+            })
+        ));
+        assert!(matches!(
+            pagination.fields[1].initializer,
+            PaginationInitializer::Value(PaginationValue::Reference(ResolvedValue {
+                reference: ValueReference::Client(0),
+                ..
+            }))
+        ));
+        assert!(matches!(
+            pagination.fields[2].initializer,
+            PaginationInitializer::Value(PaginationValue::Stable(_))
         ));
     }
 
     #[test]
-    fn pagination_rejects_undefined_and_incompatible_endpoint_bindings() {
-        let wrong_offset = resolve(
-            parse::parse(quote! {
-                client Api {
-                    base "https://example.test";
-                    GET Read(offset: String, limit: u32) -> Json<Vec<u32>> {
-                        paginate OffsetPagination {
-                            offset = ep.offset,
-                            page_size = ep.limit
-                        }
+    fn pagination_resolution_validates_destination_ownership_not_controller_semantics() {
+        let api = resolve_ok(quote! {
+            client Api {
+                base "https://example.test";
+                GET Read(offset: String, limit: bool) -> Json<Vec<u32>> {
+                    paginate crate::ArbitraryController {
+                        anything: bind ep.offset,
+                        another: bind ep.limit,
                     }
                 }
-            })
-            .expect("source AST"),
-        )
-        .err()
-        .expect("wrong offset type");
-        assert!(
-            wrong_offset
-                .to_string()
-                .contains("requires endpoint field type `u64`")
-        );
-
-        let wrong_cursor = resolve(
-            parse::parse(quote! {
-                client Api {
-                    base "https://example.test";
-                    GET Read(cursor: String) -> Json<Vec<u32>> {
-                        paginate CursorPagination<String> { cursor = ep.cursor }
-                    }
-                }
-            })
-            .expect("source AST"),
-        )
-        .err()
-        .expect("wrong cursor type");
-        assert!(
-            wrong_cursor
-                .to_string()
-                .contains("must have type `Option<C>`")
+            }
+        });
+        let Child::Endpoint(endpoint) = &api.clients[0].children[0] else {
+            panic!("endpoint");
+        };
+        assert_eq!(
+            endpoint
+                .pagination
+                .as_ref()
+                .expect("pagination")
+                .fields
+                .len(),
+            2
         );
 
         let undefined = resolve(
             parse::parse(quote! {
                 client Api {
                     base "https://example.test";
-                    GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
-                        paginate OffsetPagination {
-                            offset = ep.missing,
-                            page_size = ep.limit
+                    GET Read(offset: u64) -> Json<Vec<u32>> {
+                        paginate crate::Controller {
+                            state: bind ep.missing,
                         }
                     }
                 }

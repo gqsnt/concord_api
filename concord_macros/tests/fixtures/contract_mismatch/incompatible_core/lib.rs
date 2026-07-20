@@ -12,8 +12,12 @@ pub mod __private {
     #[doc(hidden)]
     pub const fn assert_generated_contract(expected: u32) {
         assert!(
+            expected == 12,
+            "concord macro emitted an unexpected generated contract version"
+        );
+        assert!(
             GENERATED_CONTRACT_VERSION == expected,
-            "concord macro/core contract mismatch"
+            "concord macro/core contract mismatch: core 999, generated 12"
         );
     }
 

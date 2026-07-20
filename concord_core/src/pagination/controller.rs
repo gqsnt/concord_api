@@ -1,25 +1,35 @@
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::{NonZeroU32, NonZeroU64, NonZeroUsize};
 
-use super::{PaginationError, PaginationRequest};
+use super::PaginationError;
 use crate::error::PaginationErrorKind;
 
 /// Deterministic application-defined continuation state for one sequential pagination operation.
 ///
-/// Controller values can be cloned and used by independent concurrent
-/// pagination operations, while calls within one operation remain sequential.
+/// Each controller value is local to one pagination operation and moves from
+/// one page to the next.
+/// Distinct controller values may be active in concurrent pagination operations;
+/// the controller itself need not be `Sync`, and no method executes under a
+/// core lock.
 /// Decoded pages and continuation values may be sensitive; implementations own
 /// their logging and storage and must bound CPU, memory, retries, maps, queues,
 /// spawned tasks, and metric cardinality; they must be non-blocking and perform
-/// no external I/O. Both callbacks are synchronous, execute outside the
+/// no external I/O. All methods are synchronous, execute outside the
 /// per-page operation deadline, and cannot be preempted by Concord. Cancellation
 /// prevents later pages only, and Concord does not automatically bound custom
 /// controller state or callback time.
-pub trait PaginationController<Page>: Clone + Send + Sync + 'static {
-    /// Applies the current continuation to public query or header state.
-    fn apply(&self, request: &mut PaginationRequest<'_>) -> Result<(), PaginationError>;
+pub trait PaginationController<Page>: Sized + Send + 'static {
+    /// Validates the current state before one page request is prepared.
+    fn validate(&self) -> Result<(), PaginationError> {
+        Ok(())
+    }
 
-    /// Derives the next immutable controller state from one decoded page.
-    fn next(&self, page: &Page) -> Result<Option<Self>, PaginationError>;
+    /// Consumes the current state and derives the optional next state.
+    fn next(self, page: &Page) -> Result<Option<Self>, PaginationError>;
+
+    /// Selects exact decoded-item count termination for this state.
+    fn short_page_size(&self) -> Option<NonZeroUsize> {
+        None
+    }
 }
 
 /// A decoded page that can expose an optional next cursor by reference.
@@ -39,8 +49,10 @@ pub trait HasNextCursor<C> {
 /// Built-in checked offset pagination state.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct OffsetPagination {
-    offset: u64,
-    page_size: NonZeroU32,
+    /// Current zero-based offset.
+    pub offset: u64,
+    /// Exact requested page size.
+    pub page_size: NonZeroU32,
 }
 
 impl OffsetPagination {
@@ -64,11 +76,7 @@ impl OffsetPagination {
 }
 
 impl<Page> PaginationController<Page> for OffsetPagination {
-    fn apply(&self, _request: &mut PaginationRequest<'_>) -> Result<(), PaginationError> {
-        Ok(())
-    }
-
-    fn next(&self, _page: &Page) -> Result<Option<Self>, PaginationError> {
+    fn next(self, _page: &Page) -> Result<Option<Self>, PaginationError> {
         let offset = self
             .offset
             .checked_add(u64::from(self.page_size.get()))
@@ -78,13 +86,25 @@ impl<Page> PaginationController<Page> for OffsetPagination {
             page_size: self.page_size,
         }))
     }
+
+    fn short_page_size(&self) -> Option<NonZeroUsize> {
+        Some(
+            NonZeroUsize::new(
+                usize::try_from(self.page_size.get())
+                    .expect("u32 page sizes fit the supported usize targets"),
+            )
+            .expect("the stored page size is nonzero"),
+        )
+    }
 }
 
 /// Built-in checked one-based page-number pagination state.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct PagePagination {
-    page: NonZeroU64,
-    page_size: NonZeroU32,
+    /// Current one-based page number.
+    pub page: NonZeroU64,
+    /// Exact requested page size.
+    pub page_size: NonZeroU32,
 }
 
 impl PagePagination {
@@ -108,11 +128,7 @@ impl PagePagination {
 }
 
 impl<Page> PaginationController<Page> for PagePagination {
-    fn apply(&self, _request: &mut PaginationRequest<'_>) -> Result<(), PaginationError> {
-        Ok(())
-    }
-
-    fn next(&self, _page: &Page) -> Result<Option<Self>, PaginationError> {
+    fn next(self, _page: &Page) -> Result<Option<Self>, PaginationError> {
         let page = self
             .page
             .get()
@@ -124,12 +140,23 @@ impl<Page> PaginationController<Page> for PagePagination {
             page_size: self.page_size,
         }))
     }
+
+    fn short_page_size(&self) -> Option<NonZeroUsize> {
+        Some(
+            NonZeroUsize::new(
+                usize::try_from(self.page_size.get())
+                    .expect("u32 page sizes fit the supported usize targets"),
+            )
+            .expect("the stored page size is nonzero"),
+        )
+    }
 }
 
 /// Built-in typed cursor pagination state.
 #[derive(Clone, Eq, PartialEq)]
 pub struct CursorPagination<C> {
-    cursor: Option<C>,
+    /// Current optional cursor value.
+    pub cursor: Option<C>,
 }
 
 impl<C> CursorPagination<C> {
@@ -149,13 +176,9 @@ impl<C> CursorPagination<C> {
 impl<Page, C> PaginationController<Page> for CursorPagination<C>
 where
     Page: HasNextCursor<C>,
-    C: Clone + Send + Sync + 'static,
+    C: Clone + Send + 'static,
 {
-    fn apply(&self, _request: &mut PaginationRequest<'_>) -> Result<(), PaginationError> {
-        Ok(())
-    }
-
-    fn next(&self, page: &Page) -> Result<Option<Self>, PaginationError> {
+    fn next(self, page: &Page) -> Result<Option<Self>, PaginationError> {
         Ok(page
             .next_cursor()
             .cloned()

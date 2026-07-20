@@ -11,6 +11,6 @@ note: `PagesRequestExt` defines an item `paginate`, perhaps you need to implemen
 4  | / api! {
 5  | |     client PreparedPaginationApi {
 6  | |         base "https://example.test";
-7  | |         GET Pages(offset: u64, limit: u32) -> Json<Vec<u8>> {
+7  | |         GET Pages(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
    | |_________________^
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

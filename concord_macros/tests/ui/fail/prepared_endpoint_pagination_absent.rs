@@ -4,10 +4,10 @@ use concord_macros::api;
 api! {
     client PreparedPaginationApi {
         base "https://example.test";
-        GET Pages(offset: u64, limit: u32) -> Json<Vec<u8>> {
-            paginate OffsetPagination {
-                offset = ep.offset,
-                page_size = ep.limit
+        GET Pages(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
+            paginate concord_core::advanced::OffsetPagination {
+                offset: bind ep.offset,
+                page_size: bind ep.limit,
             }
         }
     }

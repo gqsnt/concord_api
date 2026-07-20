@@ -76,23 +76,27 @@ pub(crate) struct Endpoint {
 }
 
 #[derive(Clone)]
-pub(crate) enum Pagination {
-    Offset {
-        offset: usize,
-        page_size: usize,
-    },
-    Page {
-        page: usize,
-        page_size: usize,
-    },
-    Cursor {
-        cursor: usize,
-        cursor_type: Type,
-    },
-    Custom {
-        factory: Path,
-        arguments: Vec<ResolvedExpr>,
-    },
+pub(crate) struct Pagination {
+    pub(crate) controller: Type,
+    pub(crate) fields: Vec<PaginationField>,
+}
+
+#[derive(Clone)]
+pub(crate) struct PaginationField {
+    pub(crate) name: Ident,
+    pub(crate) initializer: PaginationInitializer,
+}
+
+#[derive(Clone)]
+pub(crate) enum PaginationInitializer {
+    Bound(ResolvedValue),
+    Value(PaginationValue),
+}
+
+#[derive(Clone)]
+pub(crate) enum PaginationValue {
+    Reference(ResolvedValue),
+    Stable(DefaultExpr),
 }
 
 #[derive(Clone)]
@@ -245,7 +249,7 @@ pub(crate) struct ResolvedValue {
     pub(crate) shape: ValueShape,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum ValueReference {
     Client(usize),
     Scope { scope_id: usize, parameter: usize },

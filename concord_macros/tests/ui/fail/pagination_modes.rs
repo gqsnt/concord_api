@@ -1,10 +1,21 @@
 use concord_macros::api;
 
+pub struct Controller {}
+
+impl<Page> concord_core::advanced::PaginationController<Page> for Controller {
+    fn next(
+        self,
+        _page: &Page,
+    ) -> Result<Option<Self>, concord_core::advanced::PaginationError> {
+        Ok(None)
+    }
+}
+
 api! {
     client RequestBodyPagination {
         base "https://example.test";
         POST Read(body: Text) -> Json<Vec<u8>> {
-            paginate custom crate::factory();
+            paginate crate::Controller {}
         }
     }
 }
@@ -13,7 +24,7 @@ api! {
     client BytesPagination {
         base "https://example.test";
         GET Read() -> Bytes {
-            paginate custom crate::factory();
+            paginate crate::Controller {}
         }
     }
 }
@@ -22,7 +33,7 @@ api! {
     client NoContentPagination {
         base "https://example.test";
         GET Read() -> NoContent {
-            paginate custom crate::factory();
+            paginate crate::Controller {}
         }
     }
 }
@@ -31,7 +42,7 @@ api! {
     client StreamPagination {
         base "https://example.test";
         GET Read() -> Stream<OctetStream> {
-            paginate custom crate::factory();
+            paginate crate::Controller {}
         }
     }
 }

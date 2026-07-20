@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::error::Error as _;
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -12,7 +13,8 @@ use concord_test_support::script::{
 };
 use http::{Method, StatusCode};
 
-use super::{PageLimit, PaginationController, PaginationError, PaginationRequest, paginate_with};
+use super::execute::paginate_with;
+use super::{PageLimit, PaginatedEndpoint, PaginationController, PaginationError};
 #[cfg(feature = "rate-limit-governor")]
 use crate::auth::{
     AccessToken, Auth, CredentialProvider, CredentialRef, CredentialRequest, SlotSelector,
@@ -91,15 +93,39 @@ struct PageEndpoint {
     endpoint: &'static str,
     method: Method,
     timeout: Option<Duration>,
+    cursor: String,
+    validate_calls: Arc<AtomicUsize>,
+    next_calls: Arc<AtomicUsize>,
+    construction_calls: Arc<AtomicUsize>,
+    binding_calls: Arc<AtomicUsize>,
+    fail_construction: bool,
+    fail_validate: bool,
+    fail_next: bool,
+    short_page_size: Option<NonZeroUsize>,
 }
 
 impl PageEndpoint {
-    fn get(timeout: Option<Duration>) -> Self {
+    fn get(timeout: Option<Duration>, controller: CursorController) -> Self {
         Self {
             endpoint: ENDPOINT,
             method: Method::GET,
             timeout,
+            cursor: controller.state,
+            validate_calls: controller.validate_calls,
+            next_calls: controller.next_calls,
+            construction_calls: Arc::new(AtomicUsize::new(0)),
+            binding_calls: Arc::new(AtomicUsize::new(0)),
+            fail_construction: false,
+            fail_validate: controller.fail_validate,
+            fail_next: controller.fail_next,
+            short_page_size: controller.short_page_size,
         }
+    }
+
+    fn failing_construction(timeout: Option<Duration>) -> Self {
+        let mut endpoint = Self::get(timeout, CursorController::new("unused"));
+        endpoint.fail_construction = true;
+        endpoint
     }
 }
 
@@ -117,11 +143,43 @@ impl EndpointSpec for PageEndpoint {
     ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
         builder.push_static("items")?;
         builder.push_query_value("stable", &"public");
+        builder.push_pagination_query_value("cursor", &self.cursor);
+        builder.insert_pagination_header_value("x-page-cursor", &self.cursor)?;
         Ok((builder.finish(), EmptyBody::metadata()))
     }
 
     fn into_body(self) -> Self::Body {
         EmptyBody::new()
+    }
+}
+
+impl PaginatedEndpoint for PageEndpoint {
+    type Item = String;
+    type Controller = CursorController;
+
+    fn initial_controller(&self) -> Result<Self::Controller, PaginationError> {
+        self.construction_calls.fetch_add(1, Ordering::SeqCst);
+        if self.fail_construction {
+            return Err(PaginationError::new(PaginationErrorKind::Controller));
+        }
+        Ok(CursorController {
+            state: self.cursor.clone(),
+            validate_calls: Arc::clone(&self.validate_calls),
+            next_calls: Arc::clone(&self.next_calls),
+            fail_validate: self.fail_validate,
+            fail_next: self.fail_next,
+            short_page_size: self.short_page_size,
+            _not_sync: Cell::new(()),
+        })
+    }
+
+    fn bind_controller(
+        endpoint: &mut Self,
+        controller: &Self::Controller,
+    ) -> Result<(), PaginationError> {
+        endpoint.binding_calls.fetch_add(1, Ordering::SeqCst);
+        endpoint.cursor.clone_from(&controller.state);
+        Ok(())
     }
 }
 
@@ -149,6 +207,8 @@ impl EndpointSpec for HostRateEndpoint {
         builder.push_pagination_host_value(&self.host)?;
         builder.push_static("host-rate-items")?;
         builder.push_query_value("stable", &"public");
+        builder.push_pagination_query_value("cursor", &self.host);
+        builder.insert_pagination_header_value("x-page-cursor", &self.host)?;
         builder.push_rate_limit_rule(
             "PaginationRuntimeApi::rate_limit::host_page_key",
             [
@@ -163,6 +223,23 @@ impl EndpointSpec for HostRateEndpoint {
 
     fn into_body(self) -> Self::Body {
         EmptyBody::new()
+    }
+}
+
+impl PaginatedEndpoint for HostRateEndpoint {
+    type Item = String;
+    type Controller = CursorController;
+
+    fn initial_controller(&self) -> Result<Self::Controller, PaginationError> {
+        Ok(CursorController::new(self.host.clone()))
+    }
+
+    fn bind_controller(
+        endpoint: &mut Self,
+        controller: &Self::Controller,
+    ) -> Result<(), PaginationError> {
+        endpoint.host.clone_from(&controller.state);
+        Ok(())
     }
 }
 
@@ -192,6 +269,8 @@ impl EndpointSpec for RateKeyEndpoint {
     ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
         builder.push_static("rate-key-items")?;
         builder.push_query_value("stable", &"public");
+        builder.push_pagination_query_value("cursor", &self.key);
+        builder.insert_pagination_header_value("x-page-cursor", &self.key)?;
         builder.push_auth(Auth::bearer(self.credential.clone()))?;
         builder.push_rate_limit_rule(
             "PaginationRuntimeApi::rate_limit::page_key",
@@ -204,6 +283,24 @@ impl EndpointSpec for RateKeyEndpoint {
 
     fn into_body(self) -> Self::Body {
         EmptyBody::new()
+    }
+}
+
+#[cfg(feature = "rate-limit-governor")]
+impl PaginatedEndpoint for RateKeyEndpoint {
+    type Item = String;
+    type Controller = CursorController;
+
+    fn initial_controller(&self) -> Result<Self::Controller, PaginationError> {
+        Ok(CursorController::new(self.key.clone()))
+    }
+
+    fn bind_controller(
+        endpoint: &mut Self,
+        controller: &Self::Controller,
+    ) -> Result<(), PaginationError> {
+        endpoint.key.clone_from(&controller.state);
+        Ok(())
     }
 }
 
@@ -225,69 +322,86 @@ impl CredentialProvider for CountingRateKeyProvider {
     }
 }
 
-#[derive(Clone)]
 struct CursorController {
     state: String,
-    apply_calls: Arc<AtomicUsize>,
+    validate_calls: Arc<AtomicUsize>,
     next_calls: Arc<AtomicUsize>,
-    fail_apply: bool,
+    fail_validate: bool,
     fail_next: bool,
+    short_page_size: Option<NonZeroUsize>,
+    _not_sync: Cell<()>,
 }
 
 impl CursorController {
     fn new(state: impl Into<String>) -> Self {
         Self {
             state: state.into(),
-            apply_calls: Arc::new(AtomicUsize::new(0)),
+            validate_calls: Arc::new(AtomicUsize::new(0)),
             next_calls: Arc::new(AtomicUsize::new(0)),
-            fail_apply: false,
+            fail_validate: false,
             fail_next: false,
+            short_page_size: None,
+            _not_sync: Cell::new(()),
         }
     }
 
-    fn failing_apply(state: impl Into<String>) -> Self {
+    fn failing_validate(state: impl Into<String>) -> Self {
         Self {
             state: state.into(),
-            apply_calls: Arc::new(AtomicUsize::new(0)),
+            validate_calls: Arc::new(AtomicUsize::new(0)),
             next_calls: Arc::new(AtomicUsize::new(0)),
-            fail_apply: true,
+            fail_validate: true,
             fail_next: false,
+            short_page_size: None,
+            _not_sync: Cell::new(()),
         }
     }
 
     fn failing_next(state: impl Into<String>) -> Self {
         Self {
             state: state.into(),
-            apply_calls: Arc::new(AtomicUsize::new(0)),
+            validate_calls: Arc::new(AtomicUsize::new(0)),
             next_calls: Arc::new(AtomicUsize::new(0)),
-            fail_apply: false,
+            fail_validate: false,
             fail_next: true,
+            short_page_size: None,
+            _not_sync: Cell::new(()),
         }
+    }
+
+    fn with_short_page_size(mut self, value: NonZeroUsize) -> Self {
+        self.short_page_size = Some(value);
+        self
     }
 }
 
 impl PaginationController<TestPage> for CursorController {
-    fn apply(&self, request: &mut PaginationRequest<'_>) -> Result<(), PaginationError> {
-        self.apply_calls.fetch_add(1, Ordering::SeqCst);
-        if self.fail_apply {
+    fn validate(&self) -> Result<(), PaginationError> {
+        self.validate_calls.fetch_add(1, Ordering::SeqCst);
+        if self.fail_validate {
             return Err(PaginationError::new(PaginationErrorKind::Controller));
         }
-        request.set_query("cursor", &self.state)?;
-        request.set_header(http::HeaderName::from_static("x-page-cursor"), &self.state)
+        Ok(())
     }
 
-    fn next(&self, page: &TestPage) -> Result<Option<Self>, PaginationError> {
+    fn next(self, page: &TestPage) -> Result<Option<Self>, PaginationError> {
         self.next_calls.fetch_add(1, Ordering::SeqCst);
         if self.fail_next {
             return Err(PaginationError::new(PaginationErrorKind::Controller));
         }
         Ok(page.next.as_ref().map(|state| Self {
             state: state.clone(),
-            apply_calls: Arc::clone(&self.apply_calls),
+            validate_calls: Arc::clone(&self.validate_calls),
             next_calls: Arc::clone(&self.next_calls),
-            fail_apply: false,
+            fail_validate: false,
             fail_next: false,
+            short_page_size: self.short_page_size,
+            _not_sync: Cell::new(()),
         }))
+    }
+
+    fn short_page_size(&self) -> Option<NonZeroUsize> {
+        self.short_page_size
     }
 }
 
@@ -550,11 +664,8 @@ fn collect(
     timeout: Option<Duration>,
 ) -> BoxFuture<'static, Result<Vec<String>, ApiError>> {
     paginate_with(
-        Request::new(core, PageEndpoint::get(timeout)),
+        Request::new(core, PageEndpoint::get(timeout, controller)),
         limit,
-        move |_endpoint| Ok(controller),
-        |_endpoint, _controller| Ok(()),
-        |_controller| None,
     )
 }
 
@@ -619,12 +730,6 @@ async fn selected_limiter_receives_actual_page_hosts_while_automatic_surfaces_st
                 },
             ),
             PageLimit::HardCap(NonZeroU32::new(2).expect("hard cap")),
-            |_endpoint| Ok(CursorController::new(INITIAL)),
-            |endpoint, controller| {
-                endpoint.host.clone_from(&controller.state);
-                Ok(())
-            },
-            |_controller| None,
         )
         .await,
     );
@@ -756,12 +861,6 @@ fn collect_rate_key(
             },
         ),
         PageLimit::Take(1),
-        move |_endpoint| Ok(CursorController::new(key.clone())),
-        |endpoint, controller| {
-            endpoint.key.clone_from(&controller.state);
-            Ok(())
-        },
-        |_controller| None,
     )
 }
 
@@ -1120,6 +1219,42 @@ async fn page_lifecycle_is_sequential_correlated_and_limited_once_per_page() {
     }
 }
 
+#[tokio::test]
+async fn non_clone_non_sync_controller_is_constructed_once_validated_and_bound_per_page() {
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_response(ScriptedResponse::success(Bytes::from_static(b"|second")))
+        .expect("empty first page");
+    executor
+        .application()
+        .queue_response(ScriptedResponse::success(Bytes::from_static(b"item|-")))
+        .expect("second page");
+    let core = core(
+        &executor,
+        Arc::new(PaginationProbe::default()),
+        Arc::new(LimiterProbe::default()),
+        |runtime| runtime,
+    );
+    let controller = CursorController::new("first");
+    let validate_calls = Arc::clone(&controller.validate_calls);
+    let next_calls = Arc::clone(&controller.next_calls);
+    let endpoint = PageEndpoint::get(Some(Duration::from_secs(30)), controller);
+    let construction_calls = Arc::clone(&endpoint.construction_calls);
+    let binding_calls = Arc::clone(&endpoint.binding_calls);
+    let original = endpoint.clone();
+
+    let items = paginate_with(Request::new(core, endpoint), PageLimit::Take(5))
+        .await
+        .expect("moved controller pagination");
+    assert_eq!(items, ["item"]);
+    assert_eq!(construction_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(validate_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(binding_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(next_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(original.cursor, "first");
+}
+
 #[cfg(feature = "http2")]
 #[tokio::test]
 async fn hidden_reqwest_retry_does_not_repeat_pagination_preparation_or_page_lifecycle() {
@@ -1140,29 +1275,20 @@ async fn hidden_reqwest_retry_does_not_repeat_pagination_preparation_or_page_lif
     )
     .expect("HTTP/2 pagination core");
     let controller = CursorController::new("native-retry-cursor-sentinel-f120");
-    let apply_calls = Arc::clone(&controller.apply_calls);
+    let validate_calls = Arc::clone(&controller.validate_calls);
     let next_calls = Arc::clone(&controller.next_calls);
-    let factory_calls = Arc::new(AtomicUsize::new(0));
-    let calls = Arc::clone(&factory_calls);
+    let endpoint = PageEndpoint::get(Some(Duration::from_secs(30)), controller);
+    let construction_calls = Arc::clone(&endpoint.construction_calls);
 
-    let items = paginate_with(
-        Request::new(core, PageEndpoint::get(Some(Duration::from_secs(30)))),
-        PageLimit::Take(1),
-        move |_endpoint| {
-            calls.fetch_add(1, Ordering::SeqCst);
-            Ok(controller)
-        },
-        |_endpoint, _controller| Ok(()),
-        |_controller| None,
-    )
-    .await
-    .expect("native retry pagination");
+    let items = paginate_with(Request::new(core, endpoint), PageLimit::Take(1))
+        .await
+        .expect("native retry pagination");
     assert!(items.is_empty());
     server.finish().await;
 
     assert_eq!(physical_attempts.load(Ordering::SeqCst), 2);
-    assert_eq!(factory_calls.load(Ordering::SeqCst), 1);
-    assert_eq!(apply_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(construction_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(validate_calls.load(Ordering::SeqCst), 1);
     assert_eq!(next_calls.load(Ordering::SeqCst), 0);
     assert_eq!(hooks.before.lock().expect("before lock").len(), 1);
     assert_eq!(hooks.response.lock().expect("response lock").len(), 1);
@@ -1280,22 +1406,16 @@ async fn zero_page_and_configured_ceilings_cut_off_the_first_forbidden_work() {
         Arc::clone(&zero_limiter),
         |runtime| runtime,
     );
-    let zero_factory_calls = Arc::new(AtomicUsize::new(0));
-    let calls = Arc::clone(&zero_factory_calls);
-    let zero = paginate_with(
-        Request::new(zero_core, PageEndpoint::get(Some(Duration::from_secs(30)))),
-        PageLimit::Take(0),
-        move |_endpoint| {
-            calls.fetch_add(1, Ordering::SeqCst);
-            Ok(CursorController::new("unused"))
-        },
-        |_endpoint, _controller| Ok(()),
-        |_controller| None,
-    )
-    .await
-    .expect("zero-page success");
+    let zero_endpoint = PageEndpoint::get(
+        Some(Duration::from_secs(30)),
+        CursorController::new("unused"),
+    );
+    let zero_construction_calls = Arc::clone(&zero_endpoint.construction_calls);
+    let zero = paginate_with(Request::new(zero_core, zero_endpoint), PageLimit::Take(0))
+        .await
+        .expect("zero-page success");
     assert!(zero.is_empty());
-    assert_eq!(zero_factory_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(zero_construction_calls.load(Ordering::SeqCst), 0);
     assert_eq!(
         zero_executor.application().request_count().expect("count"),
         0
@@ -1325,26 +1445,19 @@ async fn zero_page_and_configured_ceilings_cut_off_the_first_forbidden_work() {
         Arc::clone(&page_limiter),
         |runtime| runtime.pagination_max_pages(NonZeroU32::MIN),
     );
-    let page_factory_calls = Arc::new(AtomicUsize::new(0));
-    let calls = Arc::clone(&page_factory_calls);
+    let page_endpoint = PageEndpoint::get(
+        Some(Duration::from_secs(30)),
+        CursorController::new("unused"),
+    );
+    let page_construction_calls = Arc::clone(&page_endpoint.construction_calls);
     let error = pagination_error(
-        paginate_with(
-            Request::new(page_core, PageEndpoint::get(Some(Duration::from_secs(30)))),
-            PageLimit::Take(2),
-            move |_endpoint| {
-                calls.fetch_add(1, Ordering::SeqCst);
-                Ok(CursorController::new("unused"))
-            },
-            |_endpoint, _controller| Ok(()),
-            |_controller| None,
-        )
-        .await,
+        paginate_with(Request::new(page_core, page_endpoint), PageLimit::Take(2)).await,
     );
     assert_eq!(
         error.pagination_kind(),
         Some(PaginationErrorKind::PageCeilingExceeded)
     );
-    assert_eq!(page_factory_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(page_construction_calls.load(Ordering::SeqCst), 0);
     assert_eq!(
         page_executor.application().request_count().expect("count"),
         0
@@ -1493,8 +1606,7 @@ async fn zero_page_and_configured_ceilings_cut_off_the_first_forbidden_work() {
 }
 
 #[tokio::test]
-async fn controller_construction_and_apply_failures_are_pagination_only_and_page_side_effect_free()
-{
+async fn controller_construction_and_validation_failures_are_page_side_effect_free() {
     let factory_executor = DeterministicExecutor::new();
     let factory_hooks = Arc::new(PaginationProbe::default());
     let factory_limiter = Arc::new(LimiterProbe::default());
@@ -1508,14 +1620,9 @@ async fn controller_construction_and_apply_failures_are_pagination_only_and_page
         paginate_with(
             Request::new(
                 factory_core,
-                PageEndpoint::get(Some(Duration::from_secs(30))),
+                PageEndpoint::failing_construction(Some(Duration::from_secs(30))),
             ),
             PageLimit::Take(1),
-            |_endpoint| -> Result<CursorController, PaginationError> {
-                Err(PaginationError::new(PaginationErrorKind::Controller))
-            },
-            |_endpoint, _controller| Ok(()),
-            |_controller| None,
         )
         .await,
     );
@@ -1551,52 +1658,61 @@ async fn controller_construction_and_apply_failures_are_pagination_only_and_page
             .is_empty()
     );
 
-    let apply_executor = DeterministicExecutor::new();
-    let apply_hooks = Arc::new(PaginationProbe::default());
-    let apply_limiter = Arc::new(LimiterProbe::default());
-    let apply_core = core(
-        &apply_executor,
-        Arc::clone(&apply_hooks),
-        Arc::clone(&apply_limiter),
+    let validate_executor = DeterministicExecutor::new();
+    let validate_hooks = Arc::new(PaginationProbe::default());
+    let validate_limiter = Arc::new(LimiterProbe::default());
+    let validate_core = core(
+        &validate_executor,
+        Arc::clone(&validate_hooks),
+        Arc::clone(&validate_limiter),
         |runtime| runtime,
     );
-    let controller = CursorController::failing_apply("private-controller-state-sentinel-287e");
-    let apply_calls = Arc::clone(&controller.apply_calls);
-    let apply_error = pagination_error(
+    let controller = CursorController::failing_validate("private-controller-state-sentinel-287e");
+    let validate_calls = Arc::clone(&controller.validate_calls);
+    let validate_error = pagination_error(
         collect(
-            apply_core,
+            validate_core,
             PageLimit::Take(1),
             controller,
             Some(Duration::from_secs(30)),
         )
         .await,
     );
-    assert_eq!(apply_calls.load(Ordering::SeqCst), 1);
-    assert_eq!(apply_error.category(), ErrorCategory::Pagination);
+    assert_eq!(validate_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(validate_error.category(), ErrorCategory::Pagination);
     assert_eq!(
-        apply_error.pagination_kind(),
+        validate_error.pagination_kind(),
         Some(PaginationErrorKind::Controller)
     );
-    let rendered = format!("{apply_error}\n{apply_error:?}");
+    let rendered = format!("{validate_error}\n{validate_error:?}");
     assert!(!rendered.contains("private-controller-state-sentinel-287e"));
     assert_eq!(
-        apply_executor.application().request_count().expect("count"),
+        validate_executor
+            .application()
+            .request_count()
+            .expect("count"),
         0
     );
-    assert!(apply_hooks.before.lock().expect("before lock").is_empty());
     assert!(
-        apply_hooks
+        validate_hooks
+            .before
+            .lock()
+            .expect("before lock")
+            .is_empty()
+    );
+    assert!(
+        validate_hooks
             .completion
             .lock()
             .expect("completion lock")
             .is_empty()
     );
     assert_eq!(
-        apply_hooks.aggregate.lock().expect("aggregate lock")[0].outcome,
+        validate_hooks.aggregate.lock().expect("aggregate lock")[0].outcome,
         CompletionOutcome::Pagination
     );
     assert!(
-        apply_limiter
+        validate_limiter
             .acquisitions
             .lock()
             .expect("acquisition lock")
@@ -1605,7 +1721,7 @@ async fn controller_construction_and_apply_failures_are_pagination_only_and_page
 }
 
 #[tokio::test]
-async fn final_soft_and_empty_pages_apply_the_exact_next_precedence() {
+async fn final_soft_and_controller_selected_count_pages_apply_exact_next_precedence() {
     let soft_executor = DeterministicExecutor::new();
     soft_executor
         .application()
@@ -1646,7 +1762,8 @@ async fn final_soft_and_empty_pages_apply_the_exact_next_precedence() {
         Arc::new(LimiterProbe::default()),
         |runtime| runtime,
     );
-    let controller = CursorController::failing_next("empty");
+    let controller =
+        CursorController::failing_next("empty").with_short_page_size(NonZeroUsize::MIN);
     let next_calls = Arc::clone(&controller.next_calls);
     let items = collect(
         empty_core,
@@ -1655,9 +1772,61 @@ async fn final_soft_and_empty_pages_apply_the_exact_next_precedence() {
         Some(Duration::from_secs(30)),
     )
     .await
-    .expect("empty page overrides speculative controller error");
+    .expect("controller-selected count stop overrides retained next error");
     assert!(items.is_empty());
     assert_eq!(next_calls.load(Ordering::SeqCst), 1);
+
+    let continuing_executor = DeterministicExecutor::new();
+    continuing_executor
+        .application()
+        .queue_response(ScriptedResponse::success(Bytes::from_static(b"|continued")))
+        .expect("empty continuing page");
+    continuing_executor
+        .application()
+        .queue_response(ScriptedResponse::success(Bytes::from_static(b"item|-")))
+        .expect("page after empty page");
+    let continuing_core = core(
+        &continuing_executor,
+        Arc::new(PaginationProbe::default()),
+        Arc::new(LimiterProbe::default()),
+        |runtime| runtime,
+    );
+    let items = collect(
+        continuing_core,
+        PageLimit::HardCap(NonZeroU32::new(2).expect("two-page cap")),
+        CursorController::new("empty-first"),
+        Some(Duration::from_secs(30)),
+    )
+    .await
+    .expect("empty page continues when the controller selects no count termination");
+    assert_eq!(items, ["item"]);
+
+    let retained_error_executor = DeterministicExecutor::new();
+    retained_error_executor
+        .application()
+        .queue_response(ScriptedResponse::success(Bytes::from_static(
+            b"item|unused",
+        )))
+        .expect("non-count-terminated page");
+    let retained_error_core = core(
+        &retained_error_executor,
+        Arc::new(PaginationProbe::default()),
+        Arc::new(LimiterProbe::default()),
+        |runtime| runtime,
+    );
+    let error = pagination_error(
+        collect(
+            retained_error_core,
+            PageLimit::HardCap(NonZeroU32::MIN),
+            CursorController::failing_next("retained-error"),
+            Some(Duration::from_secs(30)),
+        )
+        .await,
+    );
+    assert_eq!(
+        error.pagination_kind(),
+        Some(PaginationErrorKind::Controller)
+    );
 }
 
 #[tokio::test]

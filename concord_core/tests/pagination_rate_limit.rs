@@ -5,8 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use concord_core::advanced::{
     BoxFuture, CodecError, DecodeBody, DecodeContext, ErrorCategory, GovernorRateLimiter,
-    HookError, PaginationController, PaginationError, PaginationRequest, RateLimiter, RuntimeHooks,
-    SafeProxy,
+    HookError, PaginationController, PaginationError, RateLimiter, RuntimeHooks, SafeProxy,
 };
 use concord_core::prelude::Bytes;
 use concord_macros::api;
@@ -36,23 +35,12 @@ impl DecodeBody for KeyPageCodec {
     }
 }
 
-#[derive(Clone)]
 pub struct OnePageKeyController {
-    key: String,
-}
-
-pub fn one_page_key_controller(key: &str) -> OnePageKeyController {
-    OnePageKeyController {
-        key: key.to_owned(),
-    }
+    pub key: String,
 }
 
 impl PaginationController<Vec<u32>> for OnePageKeyController {
-    fn apply(&self, request: &mut PaginationRequest<'_>) -> Result<(), PaginationError> {
-        request.set_query("cursor", &self.key)
-    }
-
-    fn next(&self, _page: &Vec<u32>) -> Result<Option<Self>, PaginationError> {
+    fn next(self, _page: &Vec<u32>) -> Result<Option<Self>, PaginationError> {
         Ok(None)
     }
 }
@@ -68,8 +56,11 @@ api! {
         }
         GET Items(key: String) -> crate::KeyPageCodec {
             path ["items"];
+            query { "cursor" = ep.key; }
             rate_limit page_key;
-            paginate custom crate::one_page_key_controller(ep.key);
+            paginate crate::OnePageKeyController {
+                key: bind ep.key,
+            }
         }
     }
 }

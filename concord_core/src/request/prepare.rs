@@ -144,7 +144,6 @@ where
 
 pub(crate) fn prepare_pagination_page<E>(
     request: Request<E>,
-    patch: crate::pagination::PaginationPatch,
 ) -> Result<PreparedPaginationPage<E>, ApiError>
 where
     E: EndpointSpec,
@@ -162,8 +161,6 @@ where
         core.default_debug(),
     );
     let (mut head, body_metadata) = endpoint.prepare_head_and_body_metadata(builder)?;
-    head.apply_pagination_patch(patch)
-        .map_err(|error| ApiError::pagination(meta.endpoint(), meta.method().clone(), error))?;
     validate_prepared_head::<E>(&core, &meta, &mut head, &body_metadata)?;
     Ok(PreparedPaginationPage {
         core,

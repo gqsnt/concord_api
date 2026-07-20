@@ -5,33 +5,21 @@ use crate::response::ExecuteResponse;
 
 use super::identity::CanonicalIdentity;
 use super::limits::CycleDetector;
-use super::{PageLimit, PaginationController, PaginationError, PaginationPatch, PaginationRequest};
+use super::{PageLimit, PaginatedEndpoint, PaginationController, PaginationError};
 
 type DecodedPage<E> = <<E as EndpointSpec>::Response as ResponseHandler>::Output;
 type PageItem<E> = <DecodedPage<E> as IntoIterator>::Item;
 type PaginationResult<E> = Result<Vec<PageItem<E>>, ApiError>;
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "the generated-private bridge keeps each typed pagination role explicit"
-)]
-#[doc(hidden)]
-pub fn paginate_with<E, C, F, B, S>(
+pub(super) fn paginate_with<E>(
     request: Request<E>,
     limit: PageLimit,
-    controller_factory: F,
-    bind_controller: B,
-    short_page_size: S,
 ) -> BoxFuture<'static, PaginationResult<E>>
 where
-    E: EndpointSpec + Clone + Sync,
+    E: PaginatedEndpoint,
     E::Response: ExecuteResponse,
-    DecodedPage<E>: IntoIterator + Send + 'static,
+    DecodedPage<E>: IntoIterator<Item = E::Item> + Send + 'static,
     PageItem<E>: Send + 'static,
-    C: PaginationController<DecodedPage<E>>,
-    F: FnOnce(&E) -> Result<C, PaginationError> + Send + 'static,
-    B: Fn(&mut E, &C) -> Result<(), PaginationError> + Send + Sync + 'static,
-    S: Fn(&C) -> Option<usize> + Send + Sync + 'static,
 {
     Box::pin(async move {
         let Request {
@@ -64,16 +52,14 @@ where
                 PaginationError::new(PaginationErrorKind::PageCeilingExceeded),
             ))
         } else {
-            match controller_factory(&endpoint) {
+            match E::initial_controller(&endpoint) {
                 Ok(controller) => {
                     run_pages(
                         &core,
-                        &endpoint,
+                        endpoint,
                         options,
                         limit,
                         controller,
-                        bind_controller,
-                        short_page_size,
                         aggregate_operation_id,
                         max_pages,
                         max_items,
@@ -116,14 +102,12 @@ where
     clippy::too_many_arguments,
     reason = "the request-local page state mirrors the normative aggregate state"
 )]
-async fn run_pages<E, C, B, S>(
+async fn run_pages<E>(
     core: &crate::client::ClientCore,
-    original_endpoint: &E,
+    original_endpoint: E,
     options: crate::request::RequestOptions,
     limit: PageLimit,
-    mut controller: C,
-    bind_controller: B,
-    short_page_size: S,
+    mut controller: E::Controller,
     aggregate_operation_id: crate::operation::OperationId,
     max_pages: u32,
     max_items: usize,
@@ -134,13 +118,10 @@ async fn run_pages<E, C, B, S>(
     final_status: &mut Option<http::StatusCode>,
 ) -> PaginationResult<E>
 where
-    E: EndpointSpec + Clone + Sync,
+    E: PaginatedEndpoint,
     E::Response: ExecuteResponse,
-    DecodedPage<E>: IntoIterator + Send + 'static,
+    DecodedPage<E>: IntoIterator<Item = E::Item> + Send + 'static,
     PageItem<E>: Send + 'static,
-    C: PaginationController<DecodedPage<E>>,
-    B: Fn(&mut E, &C) -> Result<(), PaginationError> + Send + Sync + 'static,
-    S: Fn(&C) -> Option<usize> + Send + Sync + 'static,
 {
     let meta = original_endpoint.request_meta();
     let mut items = Vec::new();
@@ -148,22 +129,18 @@ where
     let mut page_index = 0_u32;
 
     loop {
-        let mut endpoint = original_endpoint.clone();
-        let mut patch = PaginationPatch::default();
         controller
-            .apply(&mut PaginationRequest::new(&mut patch))
+            .validate()
             .map_err(|error| pagination_api_error(&meta, error))?;
-        bind_controller(&mut endpoint, &controller)
+        let mut endpoint = original_endpoint.clone();
+        E::bind_controller(&mut endpoint, &controller)
             .map_err(|error| pagination_api_error(&meta, error))?;
 
-        let page = prepare_pagination_page(
-            Request {
-                core: core.clone(),
-                endpoint,
-                options,
-            },
-            patch,
-        )?;
+        let page = prepare_pagination_page(Request {
+            core: core.clone(),
+            endpoint,
+            options,
+        })?;
 
         let identity = CanonicalIdentity::from_request_head(
             page.head.endpoint(),
@@ -204,7 +181,8 @@ where
         let candidate = if final_soft_page {
             None
         } else {
-            Some(controller.next(&page))
+            let short_page_size = controller.short_page_size();
+            Some((short_page_size, controller.next(&page)))
         };
 
         let mut page_item_count = 0_usize;
@@ -230,16 +208,13 @@ where
         if final_soft_page {
             return Ok(items);
         }
-        if page_item_count == 0 {
-            return Ok(items);
-        }
-        if short_page_size(&controller).is_some_and(|size| page_item_count < size) {
+        let (short_page_size, candidate) =
+            candidate.expect("non-final soft and hard-cap pages retain one controller result");
+        if short_page_size.is_some_and(|size| page_item_count < size.get()) {
             return Ok(items);
         }
 
-        let candidate = candidate
-            .expect("non-final soft and hard-cap pages retain one controller result")
-            .map_err(|error| pagination_api_error(&meta, error))?;
+        let candidate = candidate.map_err(|error| pagination_api_error(&meta, error))?;
         let Some(next_controller) = candidate else {
             return Ok(items);
         };

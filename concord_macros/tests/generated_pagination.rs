@@ -1,27 +1,37 @@
+use std::cell::Cell;
+use std::num::{NonZeroU32, NonZeroU64, NonZeroUsize};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use concord_core::advanced::{
     BoxFuture, CodecError, DecodeBody, DecodeContext, HasNextCursor, HookError,
-    PaginationController, PaginationError, PaginationRequest, RateLimitError, RateLimitPermit,
-    RateLimitRequest, RateLimitResponse, RateLimiter, RuntimeHooks, SafeProxy,
+    PaginationController, PaginationError, RateLimitError, RateLimitPermit, RateLimitRequest,
+    RateLimitResponse, RateLimiter, RuntimeHooks, SafeProxy,
 };
 use concord_core::prelude::Bytes;
 use concord_macros::api;
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 
+fn nz32(value: u32) -> NonZeroU32 {
+    NonZeroU32::new(value).expect("positive u32")
+}
+
+fn nz64(value: u64) -> NonZeroU64 {
+    NonZeroU64::new(value).expect("positive u64")
+}
+
 api! {
     client OffsetApi {
         base "http://pagination-offset.example.test/v1/";
-        GET Items(offset: u64, limit: u32) -> Json<Vec<u32>> {
+        GET Items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
             path ["items"];
             query {
                 "offset" = ep.offset;
                 "limit" = ep.limit;
             }
-            paginate OffsetPagination {
-                offset = ep.offset,
-                page_size = ep.limit
+            paginate concord_core::advanced::OffsetPagination {
+                offset: bind ep.offset,
+                page_size: bind ep.limit,
             }
         }
     }
@@ -30,15 +40,103 @@ api! {
 api! {
     client PageApi {
         base "http://pagination-page.example.test/v1/";
-        GET Items(page: u64, per_page: u32) -> Json<Vec<u32>> {
+        GET Items(page: std::num::NonZeroU64, per_page: std::num::NonZeroU32) -> Json<Vec<u32>> {
             path ["items"];
             query {
                 "page" = ep.page;
                 "per_page" = ep.per_page;
             }
-            paginate PagePagination {
-                page = ep.page,
-                page_size = ep.per_page
+            paginate concord_core::advanced::PagePagination {
+                page: bind ep.page,
+                page_size: bind ep.per_page,
+            }
+        }
+    }
+}
+
+static APPLICATION_BOUND_CLONES: AtomicUsize = AtomicUsize::new(0);
+static APPLICATION_STABLE_CLONES: AtomicUsize = AtomicUsize::new(0);
+
+pub struct CountedOffset(u64);
+
+impl Clone for CountedOffset {
+    fn clone(&self) -> Self {
+        APPLICATION_BOUND_CLONES.fetch_add(1, Ordering::SeqCst);
+        Self(self.0)
+    }
+}
+
+impl std::fmt::Display for CountedOffset {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+pub struct StablePolicy(&'static str);
+
+impl Clone for StablePolicy {
+    fn clone(&self) -> Self {
+        APPLICATION_STABLE_CLONES.fetch_add(1, Ordering::SeqCst);
+        Self(self.0)
+    }
+}
+
+mod application_count_controller {
+    use super::*;
+
+    pub struct ApplicationCountController {
+        pub offset: CountedOffset,
+        pub page_size: NonZeroU32,
+        pub policy: StablePolicy,
+        pub attempts: u8,
+        pub enabled: bool,
+        pub label: &'static str,
+    }
+
+    impl PaginationController<Vec<u32>> for ApplicationCountController {
+        fn next(self, _page: &Vec<u32>) -> Result<Option<Self>, PaginationError> {
+            let offset = self
+                .offset
+                .0
+                .checked_add(u64::from(self.page_size.get()))
+                .ok_or_else(|| {
+                    PaginationError::new(concord_core::advanced::PaginationErrorKind::Overflow)
+                })?;
+            Ok(Some(Self {
+                offset: CountedOffset(offset),
+                page_size: self.page_size,
+                policy: self.policy,
+                attempts: self.attempts,
+                enabled: self.enabled,
+                label: self.label,
+            }))
+        }
+
+        fn short_page_size(&self) -> Option<NonZeroUsize> {
+            NonZeroUsize::new(self.page_size.get() as usize)
+        }
+    }
+}
+
+use application_count_controller::ApplicationCountController;
+
+api! {
+    client ApplicationCountApi {
+        base "http://pagination-application-count.example.test/v1/";
+        var policy: crate::StablePolicy;
+        GET Items(offset: crate::CountedOffset, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
+            path ["items"];
+            query {
+                "offset" = ep.offset;
+                "limit" = ep.limit;
+            }
+            paginate ApplicationCountController {
+                offset: bind ep.offset,
+                page_size: bind ep.limit,
+                policy: vars.policy,
+                attempts: 0,
+                enabled: true,
+                label: "count",
             }
         }
     }
@@ -125,19 +223,18 @@ impl DecodeBody for NonClonePageCodec {
     }
 }
 
-#[derive(Clone)]
-struct OneNonClonePage;
-
-fn one_non_clone_page() -> OneNonClonePage {
-    OneNonClonePage
+pub struct OneNonClonePage {
+    pub marker: Cell<()>,
 }
 
-impl PaginationController<Vec<NonCloneItem>> for OneNonClonePage {
-    fn apply(&self, _request: &mut PaginationRequest<'_>) -> Result<(), PaginationError> {
-        Ok(())
-    }
+#[allow(
+    clippy::declare_interior_mutable_const,
+    reason = "the fixture intentionally constructs a Send but non-Sync controller"
+)]
+pub const NOT_SYNC_MARKER: Cell<()> = Cell::new(());
 
-    fn next(&self, _page: &Vec<NonCloneItem>) -> Result<Option<Self>, PaginationError> {
+impl PaginationController<Vec<NonCloneItem>> for OneNonClonePage {
+    fn next(self, _page: &Vec<NonCloneItem>) -> Result<Option<Self>, PaginationError> {
         Ok(None)
     }
 }
@@ -150,47 +247,48 @@ api! {
             query {
                 "cursor" = ep.cursor;
             }
-            paginate CursorPagination<String> {
-                cursor = ep.cursor
+            paginate concord_core::advanced::CursorPagination<String> {
+                cursor: bind ep.cursor,
             }
         }
     }
 }
 
-static CUSTOM_FACTORY_CALLS: AtomicUsize = AtomicUsize::new(0);
+static CUSTOM_VALIDATE_CALLS: AtomicUsize = AtomicUsize::new(0);
 static CUSTOM_NEXT_CALLS: AtomicUsize = AtomicUsize::new(0);
 
-#[derive(Clone)]
 pub struct VendorController {
-    cursor: Option<String>,
-    region: String,
-}
-
-pub fn vendor_controller(cursor: &Option<String>, region: &str) -> VendorController {
-    CUSTOM_FACTORY_CALLS.fetch_add(1, Ordering::SeqCst);
-    VendorController {
-        cursor: cursor.clone(),
-        region: region.to_owned(),
-    }
+    pub cursor: Option<String>,
+    pub region: String,
 }
 
 impl PaginationController<VendorPage> for VendorController {
-    fn apply(&self, request: &mut PaginationRequest<'_>) -> Result<(), PaginationError> {
-        match &self.cursor {
-            Some(cursor) => request.set_query("cursor", cursor)?,
-            None => request.remove_query("cursor")?,
-        }
-        request.set_header(
-            concord_core::advanced::HeaderName::from_static("x-region"),
-            &self.region,
-        )
+    fn validate(&self) -> Result<(), PaginationError> {
+        CUSTOM_VALIDATE_CALLS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
     }
 
-    fn next(&self, page: &VendorPage) -> Result<Option<Self>, PaginationError> {
+    fn next(self, page: &VendorPage) -> Result<Option<Self>, PaginationError> {
         CUSTOM_NEXT_CALLS.fetch_add(1, Ordering::SeqCst);
         Ok(page.next.as_ref().map(|cursor| Self {
             cursor: Some(cursor.clone()),
-            region: self.region.clone(),
+            region: self.region,
+        }))
+    }
+}
+
+pub struct ScopeBindingController {
+    pub cursor: Option<String>,
+    pub region: String,
+    pub repository: String,
+}
+
+impl PaginationController<VendorPage> for ScopeBindingController {
+    fn next(self, page: &VendorPage) -> Result<Option<Self>, PaginationError> {
+        Ok(page.next.as_ref().map(|next| Self {
+            cursor: Some(next.clone()),
+            region: next.clone(),
+            repository: self.repository,
         }))
     }
 }
@@ -200,21 +298,21 @@ api! {
         base "http://pagination-custom.example.test/v1/";
         GET Items(cursor: Option<String>, region: String) -> crate::VendorPageCodec {
             path ["items"];
-            paginate custom crate::vendor_controller(
-                ep.cursor,
-                ep.region
-            );
+            query { "cursor" = ep.cursor; }
+            headers { "x-region" = ep.region; }
+            paginate crate::VendorController {
+                cursor: bind ep.cursor,
+                region: ep.region,
+            }
         }
     }
 }
 
-static ZERO_FACTORY_CALLS: AtomicUsize = AtomicUsize::new(0);
+pub struct ZeroController {}
 
-pub fn zero_controller() -> VendorController {
-    ZERO_FACTORY_CALLS.fetch_add(1, Ordering::SeqCst);
-    VendorController {
-        cursor: None,
-        region: "zero".to_owned(),
+impl PaginationController<VendorPage> for ZeroController {
+    fn next(self, _page: &VendorPage) -> Result<Option<Self>, PaginationError> {
+        Ok(None)
     }
 }
 
@@ -222,7 +320,7 @@ api! {
     client ZeroApi {
         base "http://pagination-zero.example.test/v1/";
         GET Items() -> crate::VendorPageCodec {
-            paginate custom crate::zero_controller();
+            paginate crate::ZeroController {}
         }
     }
 }
@@ -231,15 +329,10 @@ api! {
     client NonCloneApi {
         base "http://pagination-non-clone.example.test/v1/";
         GET Items() -> crate::NonClonePageCodec {
-            paginate custom crate::one_non_clone_page();
+            paginate crate::OneNonClonePage {
+                marker: crate::NOT_SYNC_MARKER,
+            }
         }
-    }
-}
-
-fn nested_controller(cursor: &Option<String>, region: &str) -> VendorController {
-    VendorController {
-        cursor: cursor.clone(),
-        region: region.to_owned(),
     }
 }
 
@@ -252,7 +345,13 @@ api! {
                 path ["repositories", scope.repository];
                 GET Entries(cursor: Option<String>) as fetch -> crate::VendorPageCodec {
                     path ["entries"];
-                    paginate custom crate::nested_controller(ep.cursor, scope.region);
+                    query { "cursor" = ep.cursor; }
+                    headers { "x-region" = scope.region; }
+                    paginate crate::ScopeBindingController {
+                        cursor: bind ep.cursor,
+                        region: bind scope.region,
+                        repository: scope.repository,
+                    }
                 }
             }
         }
@@ -264,19 +363,19 @@ api! {
         base "http://pagination-collision.example.test/v1/";
         scope Left() {
             path ["left"];
-            GET Items(offset: u64, limit: u32) -> Json<Vec<u8>> {
-                paginate OffsetPagination {
-                    offset = ep.offset,
-                    page_size = ep.limit
+            GET Items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
+                paginate concord_core::advanced::OffsetPagination {
+                    offset: bind ep.offset,
+                    page_size: bind ep.limit,
                 }
             }
         }
         scope Right() {
             path ["right"];
-            GET Items(page: u64, per_page: u32) -> Json<Vec<u8>> {
-                paginate PagePagination {
-                    page = ep.page,
-                    page_size = ep.per_page
+            GET Items(page: std::num::NonZeroU64, per_page: std::num::NonZeroU32) -> Json<Vec<u8>> {
+                paginate concord_core::advanced::PagePagination {
+                    page: bind ep.page,
+                    page_size: bind ep.per_page,
                 }
             }
         }
@@ -292,17 +391,18 @@ api! {
                 100 / 1s;
             }
         }
-        GET Items(offset: u64, limit: u32) -> Json<Vec<u32>> {
+        GET Items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
             host [ep.offset];
-            path ["items"];
+            path ["items", ep.offset];
             query {
                 "offset" = ep.offset;
                 "limit" = ep.limit;
             }
+            headers { "X-Page-Offset" = ep.offset; }
             rate_limit page_key;
-            paginate OffsetPagination {
-                offset = ep.offset,
-                page_size = ep.limit
+            paginate concord_core::advanced::OffsetPagination {
+                offset: bind ep.offset,
+                page_size: bind ep.limit,
             }
         }
     }
@@ -314,10 +414,10 @@ mod repeated_nested_expansion {
     api! {
         client NestedMacroPaginationApi {
             base "http://pagination-nested-macro.example.test/v1/";
-            GET Items(offset: u64, limit: u32) -> Json<Vec<u8>> {
-                paginate OffsetPagination {
-                    offset = ep.offset,
-                    page_size = ep.limit
+            GET Items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
+                paginate concord_core::advanced::OffsetPagination {
+                    offset: bind ep.offset,
+                    page_size: bind ep.limit,
                 }
             }
         }
@@ -438,6 +538,62 @@ impl RuntimeHooks for PaginationHooks {
     }
 }
 
+#[test]
+fn production_macro_pipeline_has_no_controller_category_or_callback_branches() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    for relative in [
+        "src/ast.rs",
+        "src/model.rs",
+        "src/parse.rs",
+        "src/resolve.rs",
+        "src/codegen.rs",
+    ] {
+        let path = root.join(relative);
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production source");
+        for forbidden in [
+            "OffsetPagination",
+            "PagePagination",
+            "CursorPagination",
+            "BuiltInPagination",
+            "Pagination::Offset",
+            "Pagination::Page",
+            "Pagination::Cursor",
+            "Pagination::Custom",
+            "controller_factory",
+            "short_page_callback",
+        ] {
+            assert!(
+                !production.contains(forbidden),
+                "{relative} retains controller-category semantics {forbidden}"
+            );
+        }
+    }
+
+    let core_root = root
+        .parent()
+        .expect("workspace root")
+        .join("concord_core/src");
+    let execute = std::fs::read_to_string(core_root.join("pagination/execute.rs"))
+        .expect("core pagination loop source");
+    for forbidden in [
+        "controller_factory",
+        "short_page_callback",
+        "PaginationRequest",
+        "PaginationPatch",
+        "page_item_count == 0",
+    ] {
+        assert!(
+            !execute.contains(forbidden),
+            "core loop retains superseded pagination mechanism {forbidden}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn generated_offset_pagination_is_directly_awaitable_and_stops_on_short_page() {
     use offset_api::prelude::*;
@@ -454,12 +610,43 @@ async fn generated_offset_pagination_is_directly_awaitable_and_stops_on_short_pa
         .expect("generated pagination client");
 
     let items = client
-        .items(0, 2)
+        .items(0, nz32(2))
         .paginate(10_u32)
         .await
         .expect("paginated items");
     assert_eq!(items, [1, 2, 3]);
 
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2);
+    assert!(requests[0].target().contains("offset=0&limit=2"));
+    assert!(requests[1].target().contains("offset=2&limit=2"));
+}
+
+#[tokio::test]
+async fn application_controller_selects_the_same_count_termination_without_macro_privilege() {
+    use application_count_api::prelude::*;
+
+    let server = ScriptedServer::start([
+        ResponseScript::ok(br#"[1,2]"#.to_vec()).with_header("content-type", "application/json"),
+        ResponseScript::ok(br#"[3]"#.to_vec()).with_header("content-type", "application/json"),
+    ])
+    .expect("application count server");
+    let proxy = SafeProxy::parse(server.url("")).expect("local proxy");
+    let client = ApplicationCountApi::builder()
+        .policy(StablePolicy("stable-policy"))
+        .http(move |http| http.proxy(proxy))
+        .build()
+        .expect("application count client");
+
+    let pagination = client.items(CountedOffset(0), nz32(2)).paginate(10_u32);
+    APPLICATION_BOUND_CLONES.store(0, Ordering::SeqCst);
+    APPLICATION_STABLE_CLONES.store(0, Ordering::SeqCst);
+    let items = pagination
+        .await
+        .expect("application-selected count termination");
+    assert_eq!(items, [1, 2, 3]);
+    assert_eq!(APPLICATION_BOUND_CLONES.load(Ordering::SeqCst), 3);
+    assert_eq!(APPLICATION_STABLE_CLONES.load(Ordering::SeqCst), 1);
     let requests = server.requests();
     assert_eq!(requests.len(), 2);
     assert!(requests[0].target().contains("offset=0&limit=2"));
@@ -481,7 +668,7 @@ async fn generated_page_number_soft_and_hard_limits_are_deterministic() {
         .build()
         .expect("page client");
     let items = soft_client
-        .items(1, 2)
+        .items(nz64(1), nz32(2))
         .paginate(2_u32)
         .await
         .expect("soft limit succeeds");
@@ -498,7 +685,7 @@ async fn generated_page_number_soft_and_hard_limits_are_deterministic() {
         .build()
         .expect("page client");
     let error = hard_client
-        .items(1, 2)
+        .items(nz64(1), nz32(2))
         .paginate(concord_core::prelude::PageLimit::HardCap(
             std::num::NonZeroU32::MIN,
         ))
@@ -512,12 +699,12 @@ async fn generated_page_number_soft_and_hard_limits_are_deterministic() {
 }
 
 #[tokio::test]
-async fn cursor_and_custom_short_pages_follow_controller_authority_and_redact_continuations() {
+async fn cursor_and_custom_empty_pages_follow_controller_authority_and_redact_continuations() {
     use cursor_api::prelude::*;
     use custom_api::prelude::*;
 
     let cursor_server = ScriptedServer::start([
-        ResponseScript::ok(b"1|next-cursor".to_vec())
+        ResponseScript::ok(b"|next-cursor".to_vec())
             .with_header("content-type", "application/x-concord-page"),
         ResponseScript::ok(b"2|-".to_vec())
             .with_header("content-type", "application/x-concord-page"),
@@ -533,18 +720,18 @@ async fn cursor_and_custom_short_pages_follow_controller_authority_and_redact_co
         .paginate(5_u32)
         .await
         .expect("cursor pages");
-    assert_eq!(cursor_items, [1, 2]);
+    assert_eq!(cursor_items, [2]);
     let cursor_requests = cursor_server.requests();
     assert_eq!(cursor_requests.len(), 2);
     assert!(!cursor_requests[0].target().contains("cursor="));
     assert!(cursor_requests[1].target().contains("cursor=next-cursor"));
 
-    CUSTOM_FACTORY_CALLS.store(0, Ordering::SeqCst);
+    CUSTOM_VALIDATE_CALLS.store(0, Ordering::SeqCst);
     CUSTOM_NEXT_CALLS.store(0, Ordering::SeqCst);
     let hooks = Arc::new(PaginationHooks::default());
     let configured_hooks: Arc<dyn RuntimeHooks> = hooks.clone();
     let custom_server = ScriptedServer::start([
-        ResponseScript::ok(b"3|custom-cursor-sentinel-6d91".to_vec())
+        ResponseScript::ok(b"|custom-cursor-sentinel-6d91".to_vec())
             .with_header("content-type", "application/x-concord-page"),
         ResponseScript::ok(b"4|-".to_vec())
             .with_header("content-type", "application/x-concord-page"),
@@ -561,8 +748,8 @@ async fn cursor_and_custom_short_pages_follow_controller_authority_and_redact_co
         .paginate(5_u32)
         .await
         .expect("custom pages");
-    assert_eq!(custom_items, [3, 4]);
-    assert_eq!(CUSTOM_FACTORY_CALLS.load(Ordering::SeqCst), 1);
+    assert_eq!(custom_items, [4]);
+    assert_eq!(CUSTOM_VALIDATE_CALLS.load(Ordering::SeqCst), 2);
     assert_eq!(CUSTOM_NEXT_CALLS.load(Ordering::SeqCst), 2);
     let requests = custom_server.requests();
     assert_eq!(requests.len(), 2, "a nonempty short custom page continues");
@@ -577,7 +764,7 @@ async fn cursor_and_custom_short_pages_follow_controller_authority_and_redact_co
     );
     for safe in hooks.before.lock().expect("before capture").iter() {
         assert!(!safe.contains("custom-cursor-sentinel-6d91"));
-        assert!(!safe.contains("region-header-sentinel-b17"));
+        assert!(safe.contains("region-header-sentinel-b17"));
     }
     assert_eq!(
         hooks
@@ -585,15 +772,14 @@ async fn cursor_and_custom_short_pages_follow_controller_authority_and_redact_co
             .lock()
             .expect("aggregate capture")
             .as_slice(),
-        [(2, 2, false, Some(200))]
+        [(2, 1, false, Some(200))]
     );
 }
 
 #[tokio::test]
-async fn take_zero_skips_factory_and_page_work_but_emits_one_aggregate_success() {
+async fn take_zero_skips_controller_and_page_work_but_emits_one_aggregate_success() {
     use zero_api::prelude::*;
 
-    ZERO_FACTORY_CALLS.store(0, Ordering::SeqCst);
     let hooks = Arc::new(PaginationHooks::default());
     let configured_hooks: Arc<dyn RuntimeHooks> = hooks.clone();
     let client = ZeroApi::builder()
@@ -602,7 +788,6 @@ async fn take_zero_skips_factory_and_page_work_but_emits_one_aggregate_success()
         .expect("zero client");
     let items = client.items().paginate(0_u32).await.expect("zero pages");
     assert!(items.is_empty());
-    assert_eq!(ZERO_FACTORY_CALLS.load(Ordering::SeqCst), 0);
     assert!(hooks.before.lock().expect("before capture").is_empty());
     assert_eq!(
         hooks
@@ -629,7 +814,7 @@ async fn built_in_overflow_is_ignored_on_short_stop_and_hard_cap_can_end_natural
         .build()
         .expect("offset overflow client");
     let items = offset_client
-        .items(u64::MAX, 2)
+        .items(u64::MAX, nz32(2))
         .paginate(2_u32)
         .await
         .expect("short page overrides speculative offset overflow");
@@ -646,7 +831,7 @@ async fn built_in_overflow_is_ignored_on_short_stop_and_hard_cap_can_end_natural
         .build()
         .expect("page hard-cap client");
     let items = page_client
-        .items(u64::MAX, 2)
+        .items(nz64(u64::MAX), nz32(2))
         .paginate(concord_core::prelude::PageLimit::HardCap(
             std::num::NonZeroU32::MIN,
         ))
@@ -654,23 +839,15 @@ async fn built_in_overflow_is_ignored_on_short_stop_and_hard_cap_can_end_natural
         .expect("short page naturally terminates at hard cap");
     assert_eq!(items, [6]);
     assert_eq!(page_server.requests().len(), 1);
-
-    let invalid = PageApi::new()
-        .expect("invalid-page client construction")
-        .items(0, 2)
-        .paginate(1_u32)
-        .await
-        .expect_err("zero page number is invalid");
-    assert_eq!(
-        invalid.pagination_kind(),
-        Some(concord_core::advanced::PaginationErrorKind::InvalidLimit)
-    );
 }
 
 #[tokio::test]
 async fn empty_present_cursor_is_distinct_and_items_need_not_clone() {
     use cursor_api::prelude::*;
     use non_clone_api::prelude::*;
+
+    fn assert_send<T: Send>() {}
+    assert_send::<OneNonClonePage>();
 
     let cursor_server = ScriptedServer::start([
         ResponseScript::ok(b"1|".to_vec())
@@ -729,7 +906,7 @@ async fn explicit_endpoint_nested_scope_alias_and_repeated_helpers_have_parity()
         .http(move |http| http.proxy(explicit_proxy))
         .build()
         .expect("explicit client");
-    let endpoint = offset_api::endpoints::Items::new(0, 2);
+    let endpoint = offset_api::endpoints::Items::new(0, nz32(2));
     let explicit_items = explicit_client
         .request(endpoint)
         .paginate(1_u32)
@@ -737,8 +914,14 @@ async fn explicit_endpoint_nested_scope_alias_and_repeated_helpers_have_parity()
         .expect("explicit paginated endpoint");
     assert_eq!(explicit_items, [9]);
 
-    let nested_server = ScriptedServer::start([ResponseScript::ok(b"11|-".to_vec())
-        .with_header("content-type", "application/x-concord-page")])
+    let nested_server = ScriptedServer::start([
+        ResponseScript::ok(b"|region-b".to_vec())
+            .with_header("content-type", "application/x-concord-page"),
+        ResponseScript::ok(b"11|-".to_vec())
+            .with_header("content-type", "application/x-concord-page"),
+        ResponseScript::ok(b"12|-".to_vec())
+            .with_header("content-type", "application/x-concord-page"),
+    ])
     .expect("nested server");
     let nested_proxy = SafeProxy::parse(nested_server.url("")).expect("nested proxy");
     let nested_hooks = Arc::new(PaginationHooks::default());
@@ -748,31 +931,55 @@ async fn explicit_endpoint_nested_scope_alias_and_repeated_helpers_have_parity()
         .runtime(move |runtime| runtime.hooks(configured_nested_hooks))
         .build()
         .expect("nested client");
-    let nested_items = nested_client
+    let repositories = nested_client
         .organizations("region-a".to_owned())
-        .repositories("repository-b".to_owned())
+        .repositories("repository-b".to_owned());
+    let nested_items = repositories
         .fetch()
-        .paginate(1_u32)
+        .paginate(3_u32)
         .await
         .expect("nested aliased pagination");
     assert_eq!(nested_items, [11]);
+    let original_snapshot_items = repositories
+        .fetch()
+        .paginate(1_u32)
+        .await
+        .expect("original scope snapshot remains unchanged");
+    assert_eq!(original_snapshot_items, [12]);
+    let nested_requests = nested_server.requests();
     assert!(
-        nested_server.requests()[0]
+        nested_requests[0]
+            .target()
+            .contains("/organizations/region-a/repositories/repository-b/entries")
+    );
+    assert!(
+        nested_requests[1]
+            .target()
+            .contains("/organizations/region-b/repositories/repository-b/entries")
+    );
+    assert!(
+        nested_requests[2]
             .target()
             .contains("/organizations/region-a/repositories/repository-b/entries")
     );
     let nested_safe = nested_hooks.before.lock().expect("nested safe capture");
-    assert_eq!(nested_safe.len(), 1);
-    assert!(!nested_safe[0].contains("region-a"));
+    assert_eq!(nested_safe.len(), 3);
+    assert!(nested_safe.iter().all(|safe| !safe.contains("region-a")));
+    assert!(nested_safe.iter().all(|safe| !safe.contains("region-b")));
     assert!(nested_safe[0].contains("repository-b"));
 
     let collision_client = CollisionPaginationApi::new().expect("collision client");
-    let _: concord_core::PaginatedRequest<_> = collision_client.left().items(0, 1).paginate(1_u32);
-    let _: concord_core::PaginatedRequest<_> = collision_client.right().items(1, 1).paginate(1_u32);
+    let _: concord_core::PaginatedRequest<_> =
+        collision_client.left().items(0, nz32(1)).paginate(1_u32);
+    let _: concord_core::PaginatedRequest<_> = collision_client
+        .right()
+        .items(nz64(1), nz32(1))
+        .paginate(1_u32);
 
     let nested_macro_client =
         repeated_nested_expansion::NestedMacroPaginationApi::new().expect("nested macro client");
-    let _: concord_core::PaginatedRequest<_> = nested_macro_client.items(0, 1).paginate(1_u32);
+    let _: concord_core::PaginatedRequest<_> =
+        nested_macro_client.items(0, nz32(1)).paginate(1_u32);
 }
 
 #[tokio::test]
@@ -801,7 +1008,7 @@ async fn generated_pagination_preserves_resolved_rate_keys_and_actual_hosts() {
         .build()
         .expect("rate pagination client");
     let items = client
-        .items(INITIAL.parse().expect("offset"), 2)
+        .items(INITIAL.parse().expect("offset"), nz32(2))
         .paginate(5_u32)
         .await
         .expect("rate pagination");
@@ -811,6 +1018,8 @@ async fn generated_pagination_preserves_resolved_rate_keys_and_actual_hosts() {
     assert_eq!(requests.len(), 2);
     assert!(requests[0].target().contains(INITIAL));
     assert!(requests[1].target().contains(NEXT));
+    assert_eq!(requests[0].header("x-page-offset"), Some(INITIAL));
+    assert_eq!(requests[1].header("x-page-offset"), Some(NEXT));
     let contexts = limiter.contexts.lock().expect("limiter contexts");
     assert_eq!(contexts.len(), 2);
     let observations = limiter.observations.lock().expect("limiter observations");

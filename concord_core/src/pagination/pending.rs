@@ -3,7 +3,10 @@ use std::num::NonZeroU32;
 
 use crate::error::ApiError;
 use crate::hooks::BoxFuture;
-use crate::request::Request;
+use crate::request::{Request, ResponseHandler};
+use crate::response::ExecuteResponse;
+
+use super::{PaginationController, PaginationError};
 
 /// A finite requested pagination limit.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -41,30 +44,41 @@ impl<E> PaginatedRequest<E> {
 
 /// Generated-private typed pagination integration.
 ///
-/// Generated implementations monomorphize controller construction and the
-/// page loop inside this method. The stable wrapper therefore exposes neither
-/// a controller type nor generated endpoint capability in its public shape.
+/// Generated implementations provide only typed construction and binding;
+/// core owns the single page loop. The stable wrapper exposes neither this
+/// capability nor its associated controller in public Rustdoc.
 #[doc(hidden)]
-pub trait PaginatedEndpoint: crate::request::EndpointSpec + Sized {
+pub trait PaginatedEndpoint: crate::request::EndpointSpec + Clone + Sized
+where
+    <Self::Response as ResponseHandler>::Output: IntoIterator<Item = Self::Item> + Send + 'static,
+{
     /// One collected item from the decoded page's ordinary `IntoIterator`.
     type Item: Send + 'static;
 
-    /// Starts the monomorphized pagination future on first poll.
-    fn __concord_execute_pagination(
-        request: Request<Self>,
-        limit: PageLimit,
-    ) -> BoxFuture<'static, Result<Vec<Self::Item>, ApiError>>;
+    /// Request-local typed pagination controller.
+    type Controller: PaginationController<<Self::Response as ResponseHandler>::Output>;
+
+    /// Constructs the complete initial controller exactly once.
+    fn initial_controller(&self) -> Result<Self::Controller, PaginationError>;
+
+    /// Writes current bound controller fields into one fresh endpoint clone.
+    fn bind_controller(
+        endpoint: &mut Self,
+        controller: &Self::Controller,
+    ) -> Result<(), PaginationError>;
 }
 
 #[doc(hidden)]
 impl<E> IntoFuture for PaginatedRequest<E>
 where
     E: PaginatedEndpoint,
+    E::Response: ExecuteResponse,
+    <E::Response as ResponseHandler>::Output: IntoIterator<Item = E::Item> + Send + 'static,
 {
     type Output = Result<Vec<E::Item>, ApiError>;
     type IntoFuture = BoxFuture<'static, Self::Output>;
 
     fn into_future(self) -> Self::IntoFuture {
-        E::__concord_execute_pagination(self.request, self.limit)
+        super::execute::paginate_with(self.request, self.limit)
     }
 }

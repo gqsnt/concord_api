@@ -54,7 +54,7 @@ pub use crate::error::{ApiError, ClientBuildError};
 #[doc(hidden)]
 pub use crate::hooks::DebugLevel;
 #[doc(hidden)]
-pub use crate::pagination::{PaginatedEndpoint, paginate_with};
+pub use crate::pagination::PaginatedEndpoint;
 #[doc(hidden)]
 pub use crate::rate_limit::{
     RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitRule, RateLimitWindow,

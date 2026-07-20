@@ -25,9 +25,9 @@ pub use endpoint::{
     BufferedResponse, BytesResponse, EndpointSpec, MetadataResponse, NoContentResponse,
     RawResponseEndpoint, ResponseHandler, StreamResponseHandler,
 };
+pub(crate) use head::validate_public_header;
 #[doc(hidden)]
 pub use head::{HeadBuilder, PreparedHead, RequestMeta};
-pub(crate) use head::{reserved_public_header, validate_public_header};
 #[doc(hidden)]
 pub use options::{RequestOptions, TimeoutOverride};
 #[doc(hidden)]

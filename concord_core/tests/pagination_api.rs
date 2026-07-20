@@ -1,9 +1,10 @@
+use std::cell::Cell;
 use std::error::Error;
 use std::num::{NonZeroU32, NonZeroU64};
 
 use concord_core::advanced::{
-    CursorPagination, HasNextCursor, HeaderName, OffsetPagination, PagePagination,
-    PaginationController, PaginationError, PaginationErrorKind, PaginationRequest,
+    CursorPagination, HasNextCursor, OffsetPagination, PagePagination, PaginationController,
+    PaginationError, PaginationErrorKind,
 };
 use concord_core::prelude::PageLimit;
 
@@ -27,30 +28,23 @@ impl<T> HasNextCursor<String> for CustomPage<T> {
     }
 }
 
-#[derive(Clone)]
 struct PrivateController {
     private_cursor: Option<String>,
-    private_header: HeaderName,
+    _not_sync: Cell<()>,
 }
 
 impl PaginationController<CustomPage<u64>> for PrivateController {
-    fn apply(&self, request: &mut PaginationRequest<'_>) -> Result<(), PaginationError> {
-        match &self.private_cursor {
-            Some(cursor) => request.set_query("cursor", cursor)?,
-            None => request.remove_query("cursor")?,
-        }
-        request.set_header(self.private_header.clone(), "page")
-    }
-
-    fn next(&self, page: &CustomPage<u64>) -> Result<Option<Self>, PaginationError> {
+    fn next(self, page: &CustomPage<u64>) -> Result<Option<Self>, PaginationError> {
+        let _previous_cursor = self.private_cursor;
         Ok(page.cursor.as_ref().map(|cursor| Self {
             private_cursor: Some(cursor.clone()),
-            private_header: self.private_header.clone(),
+            _not_sync: Cell::new(()),
         }))
     }
 }
 
 fn assert_send_sync_static<T: Send + Sync + 'static>() {}
+fn assert_send_static<T: Send + 'static>() {}
 
 #[test]
 fn stable_pagination_contracts_compile_without_private_imports_or_item_traits() {
@@ -75,7 +69,7 @@ fn stable_pagination_contracts_compile_without_private_imports_or_item_traits() 
     assert_send_sync_static::<OffsetPagination>();
     assert_send_sync_static::<PagePagination>();
     assert_send_sync_static::<CursorPagination<String>>();
-    assert_send_sync_static::<PrivateController>();
+    assert_send_static::<PrivateController>();
 
     let ordinary_vec_page = vec![1_u64, 2, 3];
     let ordinary_items: Vec<_> = ordinary_vec_page.into_iter().collect();
@@ -90,7 +84,7 @@ fn stable_pagination_contracts_compile_without_private_imports_or_item_traits() 
 
     let controller = PrivateController {
         private_cursor: None,
-        private_header: HeaderName::from_static("x-page"),
+        _not_sync: Cell::new(()),
     };
     assert!(
         controller

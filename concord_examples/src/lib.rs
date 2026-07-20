@@ -8,8 +8,8 @@ use concord_core::advanced::{
     AuthError, AuthErrorKind, BoxFuture, CodecError, CredentialMaterial, CredentialProvider,
     CredentialRequest, DecodeBody, DecodeContext, DefaultRateLimitObserver, EncodeBody,
     EncodeContext, HasNextCursor, HeaderName, HeaderValue, Method, PaginationController,
-    PaginationError, PaginationRequest, ProviderBody, ProviderRequest, RateLimitObserver,
-    RateLimitResponseHead, SecretCredential, Url,
+    PaginationError, ProviderBody, ProviderRequest, RateLimitObserver, RateLimitResponseHead,
+    SecretCredential, Url,
 };
 use concord_core::prelude::{Bytes, SecretString};
 
@@ -163,27 +163,13 @@ impl DecodeBody for ExamplePageCodec {
 }
 
 /// Custom cursor controller used by the canonical custom pagination example.
-#[derive(Clone)]
 pub struct ExampleController {
-    cursor: Option<String>,
-}
-
-/// Creates one custom pagination controller from the endpoint cursor.
-pub fn example_controller(cursor: &Option<String>) -> ExampleController {
-    ExampleController {
-        cursor: cursor.clone(),
-    }
+    /// Current optional cursor bound to the generated endpoint snapshot.
+    pub cursor: Option<String>,
 }
 
 impl PaginationController<ExamplePage> for ExampleController {
-    fn apply(&self, request: &mut PaginationRequest<'_>) -> Result<(), PaginationError> {
-        match &self.cursor {
-            Some(cursor) => request.set_query("cursor", cursor),
-            None => request.remove_query("cursor"),
-        }
-    }
-
-    fn next(&self, page: &ExamplePage) -> Result<Option<Self>, PaginationError> {
+    fn next(self, page: &ExamplePage) -> Result<Option<Self>, PaginationError> {
         Ok(page.next.as_ref().map(|cursor| Self {
             cursor: Some(cursor.clone()),
         }))

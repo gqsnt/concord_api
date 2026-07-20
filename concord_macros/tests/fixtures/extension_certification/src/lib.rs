@@ -9,10 +9,10 @@ use concord_core::advanced::{
     CredentialRequest, DecodeBody,
     DecodeContext, EncodeBody, EncodeContext, HasNextCursor, HeaderName, HeaderValue, HookError,
     MediaType, Method, PaginationCompletionEvent, PaginationController, PaginationError,
-    PaginationRequest, PreparedEndpoint, ProviderBody, ProviderBodyFactory, ProviderRequest,
-    RateLimitError, RateLimitObserver, RateLimitPermit, RateLimitRequest, RateLimitResponse,
-    RateLimitResponseHead, RateLimiter, RequestBody, ResponseHeadEvent, RuntimeHooks, SafeProxy,
-    SecretCredential, StatusCode, Url,
+    PreparedEndpoint, ProviderBody, ProviderBodyFactory, ProviderRequest, RateLimitError,
+    RateLimitObserver, RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimitResponseHead,
+    RateLimiter, RequestBody, ResponseHeadEvent, RuntimeHooks, SafeProxy, SecretCredential,
+    StatusCode, Url,
 };
 #[cfg(feature = "json")]
 use concord_core::advanced::Json;
@@ -169,26 +169,12 @@ impl DecodeBody for ExtensionPageCodec {
     }
 }
 
-#[derive(Clone)]
 pub struct ExtensionController {
-    cursor: Option<String>,
-}
-
-pub fn extension_controller(cursor: &Option<String>) -> ExtensionController {
-    ExtensionController {
-        cursor: cursor.clone(),
-    }
+    pub cursor: Option<String>,
 }
 
 impl PaginationController<ExtensionPage> for ExtensionController {
-    fn apply(&self, request: &mut PaginationRequest<'_>) -> Result<(), PaginationError> {
-        match &self.cursor {
-            Some(cursor) => request.set_query("cursor", cursor),
-            None => request.remove_query("cursor"),
-        }
-    }
-
-    fn next(&self, page: &ExtensionPage) -> Result<Option<Self>, PaginationError> {
+    fn next(self, page: &ExtensionPage) -> Result<Option<Self>, PaginationError> {
         Ok(page.next_cursor().cloned().map(|cursor| Self {
             cursor: Some(cursor),
         }))
@@ -270,7 +256,10 @@ concord_macros::api! {
         }
 
         GET Pages(cursor: Option<String>) -> crate::ExtensionPageCodec {
-            paginate custom crate::extension_controller(ep.cursor);
+            query { "cursor" = ep.cursor; }
+            paginate crate::ExtensionController {
+                cursor: bind ep.cursor,
+            }
         }
     }
 }
@@ -333,7 +322,7 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
         items: vec![1, 2],
         next: Some("next".to_owned()),
     };
-    let controller = extension_controller(&None);
+    let controller = ExtensionController { cursor: None };
     let _next_cursor: Option<&String> = page.next_cursor();
     let _next_controller: Option<ExtensionController> = controller
         .next(&page)

@@ -422,7 +422,6 @@ impl HeadBuilder {
         PreparedHead {
             meta: self.meta,
             logical_url: self.logical_url,
-            safe_logical_url: self.safe_logical_url,
             safe_url,
             public_headers: self.public_headers,
             pagination_sensitive_headers: self.pagination_sensitive_headers,
@@ -441,7 +440,6 @@ impl HeadBuilder {
 pub struct PreparedHead {
     meta: RequestMeta,
     logical_url: Url,
-    safe_logical_url: Url,
     safe_url: Arc<str>,
     public_headers: HeaderMap,
     pagination_sensitive_headers: HashSet<HeaderName>,
@@ -452,44 +450,6 @@ pub struct PreparedHead {
 }
 
 impl PreparedHead {
-    pub(crate) fn apply_pagination_patch(
-        &mut self,
-        patch: crate::pagination::PaginationPatch,
-    ) -> Result<(), crate::pagination::PaginationError> {
-        use crate::error::PaginationErrorKind;
-        use crate::pagination::{HeaderPatch, QueryPatch};
-
-        for operation in patch.query {
-            match operation {
-                QueryPatch::Set { name, value } => {
-                    replace_query_values(&mut self.logical_url, &name, Some(&value));
-                    replace_query_values(&mut self.safe_logical_url, &name, Some("<redacted>"));
-                }
-                QueryPatch::Remove { name } => {
-                    replace_query_values(&mut self.logical_url, &name, None);
-                    replace_query_values(&mut self.safe_logical_url, &name, None);
-                }
-            }
-        }
-        for operation in patch.headers {
-            match operation {
-                HeaderPatch::Set { name, value } => {
-                    let value = HeaderValue::from_str(&value).map_err(|_| {
-                        crate::pagination::PaginationError::new(PaginationErrorKind::Controller)
-                    })?;
-                    self.pagination_sensitive_headers.insert(name.clone());
-                    self.public_headers.insert(name, value);
-                }
-                HeaderPatch::Remove { name } => {
-                    self.public_headers.remove(&name);
-                    self.pagination_sensitive_headers.remove(&name);
-                }
-            }
-        }
-        self.safe_url = render_safe_url(&self.safe_logical_url, &HashSet::new()).into();
-        Ok(())
-    }
-
     pub(crate) fn validate_auth(&self) -> Result<(), ApiError> {
         self.auth
             .validate_public(&self.logical_url, &self.public_headers)
@@ -665,21 +625,6 @@ pub(crate) fn validate_public_header(
         return Err(ConfigurationErrorKind::InvalidHeader);
     }
     HeaderValue::from_str(value).map_err(|_| ConfigurationErrorKind::InvalidHeader)
-}
-
-fn replace_query_values(url: &mut Url, name: &str, value: Option<&str>) {
-    let mut pairs = url
-        .query_pairs()
-        .filter(|(candidate, _)| candidate.as_ref() != name)
-        .map(|(key, value)| (key.into_owned(), value.into_owned()))
-        .collect::<Vec<_>>();
-    if let Some(value) = value {
-        pairs.push((name.to_owned(), value.to_owned()));
-    }
-    url.set_query(None);
-    if !pairs.is_empty() {
-        url.query_pairs_mut().extend_pairs(pairs);
-    }
 }
 
 #[cfg(test)]

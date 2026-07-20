@@ -75,7 +75,6 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         });
     let pagination_pages = [
         "struct.PaginationError.html",
-        "struct.PaginationRequest.html",
         "struct.OffsetPagination.html",
         "struct.PagePagination.html",
         "struct.CursorPagination.html",
@@ -90,6 +89,12 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
     })
     .collect::<Vec<_>>()
     .join("\n");
+    assert!(
+        !documentation
+            .join("advanced/struct.PaginationRequest.html")
+            .exists(),
+        "removed PaginationRequest unexpectedly remains in public Rustdoc"
+    );
     let rate_pages = [
         "struct.RateLimitError.html",
         "struct.RateLimitId.html",
@@ -448,18 +453,19 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "id=\"method.new\"",
         "id=\"method.with_safe_message\"",
         "id=\"method.kind\"",
-        "id=\"method.set_query\"",
-        "id=\"method.remove_query\"",
-        "id=\"method.set_header\"",
-        "id=\"method.remove_header\"",
         "id=\"method.offset\"",
         "id=\"method.page_size\"",
         "id=\"method.page\"",
         "id=\"method.cursor\"",
-        "id=\"tymethod.apply\"",
+        "id=\"method.validate\"",
         "id=\"tymethod.next\"",
+        "id=\"method.short_page_size\"",
         "id=\"tymethod.next_cursor\"",
-        "public query or header state",
+        "id=\"structfield.offset\"",
+        "id=\"structfield.page_size\"",
+        "id=\"structfield.page\"",
+        "id=\"structfield.cursor\"",
+        "moves from",
         "absent cursor from a present",
     ] {
         assert!(

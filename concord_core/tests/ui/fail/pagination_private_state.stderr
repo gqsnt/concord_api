@@ -1,62 +1,26 @@
-error[E0599]: no method named `set_body` found for mutable reference `&mut PaginationRequest<'_>` in the current scope
- --> tests/ui/fail/pagination_private_state.rs:5:13
+error[E0432]: unresolved import `concord_core::advanced::PaginationRequest`
+ --> tests/ui/fail/pagination_private_state.rs:1:5
   |
-5 |     request.set_body("forbidden");
-  |             ^^^^^^^^ method not found in `&mut PaginationRequest<'_>`
-
-error[E0599]: no method named `set_host` found for mutable reference `&mut PaginationRequest<'_>` in the current scope
- --> tests/ui/fail/pagination_private_state.rs:6:13
-  |
-6 |     request.set_host("forbidden");
-  |             ^^^^^^^^ method not found in `&mut PaginationRequest<'_>`
-
-error[E0599]: no method named `set_path` found for mutable reference `&mut PaginationRequest<'_>` in the current scope
- --> tests/ui/fail/pagination_private_state.rs:7:13
-  |
-7 |     request.set_path("forbidden");
-  |             ^^^^^^^^ method not found in `&mut PaginationRequest<'_>`
-
-error[E0599]: no method named `set_credential` found for mutable reference `&mut PaginationRequest<'_>` in the current scope
- --> tests/ui/fail/pagination_private_state.rs:8:13
-  |
-8 |     request.set_credential("forbidden");
-  |             ^^^^^^^^^^^^^^ method not found in `&mut PaginationRequest<'_>`
-
-error[E0599]: no method named `native_url` found for mutable reference `&mut PaginationRequest<'_>` in the current scope
- --> tests/ui/fail/pagination_private_state.rs:9:13
-  |
-9 |     request.native_url();
-  |             ^^^^^^^^^^ method not found in `&mut PaginationRequest<'_>`
-
-error[E0599]: no method named `native_request` found for mutable reference `&mut PaginationRequest<'_>` in the current scope
-  --> tests/ui/fail/pagination_private_state.rs:10:13
-   |
-10 |     request.native_request();
-   |             ^^^^^^^^^^^^^^ method not found in `&mut PaginationRequest<'_>`
-
-error[E0616]: field `patch` of struct `PaginationRequest` is private
-  --> tests/ui/fail/pagination_private_state.rs:11:22
-   |
-11 |     let _ = &request.patch;
-   |                      ^^^^^ private field
+1 | use concord_core::advanced::PaginationRequest;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `PaginationRequest` in `advanced`
 
 error[E0616]: field `request` of struct `PaginatedRequest` is private
-  --> tests/ui/fail/pagination_private_state.rs:15:22
-   |
-15 |     let _ = &request.request;
-   |                      ^^^^^^^ private field
+ --> tests/ui/fail/pagination_private_state.rs:5:22
+  |
+5 |     let _ = &request.request;
+  |                      ^^^^^^^ private field
 
 error[E0616]: field `limit` of struct `PaginatedRequest` is private
-  --> tests/ui/fail/pagination_private_state.rs:16:22
-   |
-16 |     let _ = &request.limit;
-   |                      ^^^^^ private field
+ --> tests/ui/fail/pagination_private_state.rs:6:22
+  |
+6 |     let _ = &request.limit;
+  |                      ^^^^^ private field
 
 error[E0277]: `PaginatedRequest<()>` doesn't implement `Debug`
-  --> tests/ui/fail/pagination_private_state.rs:17:22
-   |
-17 |     let _ = format!("{request:?}");
-   |                      ^^^^^^^^^^^ `PaginatedRequest<()>` cannot be formatted using `{:?}` because it doesn't implement `Debug`
-   |
-   = help: the trait `Debug` is not implemented for `PaginatedRequest<()>`
-   = note: this error originates in the macro `$crate::__export::format_args` which comes from the expansion of the macro `format` (in Nightly builds, run with -Z macro-backtrace for more info)
+ --> tests/ui/fail/pagination_private_state.rs:7:22
+  |
+7 |     let _ = format!("{request:?}");
+  |                      ^^^^^^^^^^^ `PaginatedRequest<()>` cannot be formatted using `{:?}` because it doesn't implement `Debug`
+  |
+  = help: the trait `Debug` is not implemented for `PaginatedRequest<()>`
+  = note: this error originates in the macro `$crate::__export::format_args` which comes from the expansion of the macro `format` (in Nightly builds, run with -Z macro-backtrace for more info)

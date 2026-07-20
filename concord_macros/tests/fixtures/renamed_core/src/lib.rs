@@ -50,30 +50,13 @@ impl runtime::advanced::DecodeBody for PageCodec {
     }
 }
 
-#[derive(Clone)]
-struct RenamedController {
-    cursor: Option<String>,
-}
-
-fn renamed_controller(cursor: &Option<String>) -> RenamedController {
-    RenamedController {
-        cursor: cursor.clone(),
-    }
+pub struct RenamedController {
+    pub cursor: Option<String>,
 }
 
 impl runtime::advanced::PaginationController<Vec<u8>> for RenamedController {
-    fn apply(
-        &self,
-        request: &mut runtime::advanced::PaginationRequest<'_>,
-    ) -> Result<(), runtime::advanced::PaginationError> {
-        match &self.cursor {
-            Some(cursor) => request.set_query("cursor", cursor),
-            None => request.remove_query("cursor"),
-        }
-    }
-
     fn next(
-        &self,
+        self,
         _page: &Vec<u8>,
     ) -> Result<Option<Self>, runtime::advanced::PaginationError> {
         Ok(None)
@@ -110,7 +93,10 @@ api! {
             GET StreamDownload() -> Stream<OctetStream>;
             POST MultipartUpload(body: Multipart) -> NoContent;
             GET Pages(cursor: Option<String>) -> crate::PageCodec {
-                paginate custom crate::renamed_controller(ep.cursor);
+                query { "cursor" = ep.cursor; }
+                paginate crate::RenamedController {
+                    cursor: bind ep.cursor,
+                }
             }
         }
     }

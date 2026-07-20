@@ -32,7 +32,7 @@ use crate::http::HttpConfigBuilder;
 use crate::http::provider::{ProviderBody, ProviderRequest};
 use crate::operation::OperationId;
 use crate::pagination::{
-    PageLimit, PaginationController, PaginationError, PaginationRequest, paginate_with,
+    PageLimit, PaginatedEndpoint, PaginatedRequest, PaginationController, PaginationError,
 };
 #[cfg(feature = "rate-limit-governor")]
 use crate::rate_limit::GovernorRateLimiter;
@@ -149,12 +149,24 @@ impl EndpointSpec for PaginatedProtectedEndpoint {
 struct OneAuthenticationPage;
 
 impl PaginationController<Vec<u8>> for OneAuthenticationPage {
-    fn apply(&self, _request: &mut PaginationRequest<'_>) -> Result<(), PaginationError> {
-        Ok(())
+    fn next(self, _page: &Vec<u8>) -> Result<Option<Self>, PaginationError> {
+        Ok(None)
+    }
+}
+
+impl PaginatedEndpoint for PaginatedProtectedEndpoint {
+    type Item = u8;
+    type Controller = OneAuthenticationPage;
+
+    fn initial_controller(&self) -> Result<Self::Controller, PaginationError> {
+        Ok(OneAuthenticationPage)
     }
 
-    fn next(&self, _page: &Vec<u8>) -> Result<Option<Self>, PaginationError> {
-        Ok(None)
+    fn bind_controller(
+        _endpoint: &mut Self,
+        _controller: &Self::Controller,
+    ) -> Result<(), PaginationError> {
+        Ok(())
     }
 }
 
@@ -1142,7 +1154,7 @@ async fn paginated_tls_recovery_keeps_one_page_identity_index_and_completion() {
     )
     .expect("managed TLS pagination core");
 
-    let items = paginate_with(
+    let items = PaginatedRequest::new(
         Request::new(
             core,
             PaginatedProtectedEndpoint {
@@ -1150,9 +1162,6 @@ async fn paginated_tls_recovery_keeps_one_page_identity_index_and_completion() {
             },
         ),
         PageLimit::Take(1),
-        |_endpoint| Ok(OneAuthenticationPage),
-        |_endpoint, _controller| Ok(()),
-        |_controller| None,
     )
     .await
     .expect("paginated authentication recovery");
@@ -1219,7 +1228,7 @@ async fn paginated_authentication_failure_keeps_its_ordinary_category_and_correl
     let selector = SlotSelector::provider(FailingProvider, Duration::ZERO);
 
     let error = api_error(
-        paginate_with(
+        PaginatedRequest::new(
             Request::new(
                 core,
                 PaginatedProtectedEndpoint {
@@ -1227,9 +1236,6 @@ async fn paginated_authentication_failure_keeps_its_ordinary_category_and_correl
                 },
             ),
             PageLimit::Take(1),
-            |_endpoint| Ok(OneAuthenticationPage),
-            |_endpoint, _controller| Ok(()),
-            |_controller| None,
         )
         .await,
     );
@@ -1363,7 +1369,7 @@ async fn paginated_provider_http_never_enters_page_lifecycle_or_limiter_work() {
     )
     .expect("managed pagination application/provider core");
 
-    let items = paginate_with(
+    let items = PaginatedRequest::new(
         Request::new(
             core,
             PaginatedProtectedEndpoint {
@@ -1371,9 +1377,6 @@ async fn paginated_provider_http_never_enters_page_lifecycle_or_limiter_work() {
             },
         ),
         PageLimit::Take(1),
-        |_endpoint| Ok(OneAuthenticationPage),
-        |_endpoint, _controller| Ok(()),
-        |_controller| None,
     )
     .await
     .expect("provider-backed pagination");
