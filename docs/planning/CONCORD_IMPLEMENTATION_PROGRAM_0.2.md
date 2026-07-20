@@ -495,7 +495,7 @@ registry audit commit-scoped and owner-aware, select every registered security p
 feature-isolation proof under workspace feature unification, and give post-source paths exact
 evidence-state precedence. Every focused role and all maintained commands, including `just
 release`, passed against that exact source identity with Rust 1.85.0. The corrected
-evidence/report/state identity is `EVIDENCE_COMMIT_PENDING`; a documentation-only anchor
+evidence/report/state identity is `5b157225b387387664a202d4cbfe5f85ba8c5289`; a documentation-only anchor
 substitutes that identity without changing evidence classifications or executable artifacts.
 
 Under `dangerous-raw-response`, eligible generated buffered, text, JSON, custom buffered, bytes,

@@ -23,7 +23,7 @@ documents are `Normative Release Final`.
 - Superseded evidence anchor: `1c662d2e20b9e5c267743c108415de437bac6278`
 - Superseded metadata descendant: `8c8dc914194e99a4074bef378ae2ca481fb1b4b7`
 - Corrected immutable source/test commit: `9317a94cf020d81dbd216ed2a7dc999550586898`
-- Corrected evidence/report/state commit: `EVIDENCE_COMMIT_PENDING`
+- Corrected evidence/report/state commit: `5b157225b387387664a202d4cbfe5f85ba8c5289`
 - Corrected evidence anchor: `ANCHOR_COMMIT_PENDING`
 - Final metadata descendant: the documentation-only commit that replaces the anchor token above
 - Head policy: `anchor-must-be-an-ancestor`
@@ -105,7 +105,7 @@ Every semicolon-delimited path is trimmed, required to be durable, and resolved 
 tree at the row's own `verified_commit`. Current-worktree existence is never substituted. Each
 recorded commit must exist and be ancestral to the audited descendant. Source rows use
 `9317a94cf020d81dbd216ed2a7dc999550586898`; report, final catalogs, normative status, and release
-governance rows use `EVIDENCE_COMMIT_PENDING`; the anchor is used only to freeze that state; and the
+governance rows use `5b157225b387387664a202d4cbfe5f85ba8c5289`; the anchor is used only to freeze that state; and the
 metadata descendant records the actual anchor. No final row cites `git_diff/`.
 
 ## Durable release registries
@@ -253,7 +253,7 @@ and benchmark compilation.
 
 After the immutable source matrix passed, the separate evidence-mode audit validated the corrected
 evidence commit and all commit-scoped paths. The documentation-only anchor changes only the exact
-`EVIDENCE_COMMIT_PENDING` self-reference in approved evidence documents. The final two-file
+`5b157225b387387664a202d4cbfe5f85ba8c5289` self-reference in approved evidence documents. The final two-file
 metadata descendant changes only `ANCHOR_COMMIT_PENDING` in this report and the controller. The
 tracked final audit then proves the exact source/evidence/anchor/metadata chain, clean worktree,
 504 requirements, 775 claims, 1,531 evidence rows, 1,473 byte-identical historical rows, zero
