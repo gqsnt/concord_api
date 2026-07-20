@@ -518,7 +518,8 @@ function Assert-RequirementChangeRecord {
         '`API-PAGE-006` | Safe patch boundary | `419efe495e3b1d5e20bdfa449e60630808ef2f6aae0e5bc15c8c9d988a32e4a6` | superseded | `API-PAGE-009` |',
         '`EXEC-PAGE-008` | Natural stop precedence | `9d5f651e6d9b7c556b26e469510daed000216efcb18e995a5fdb79319a788a3a` | superseded | `EXEC-PAGE-015` |',
         '`EXEC-PAGE-014` | Custom continuation authority | `404cdecf4d1b5c2372ee3a32a982f3d398fd69e171182109cb76d6eb8685fa56` | superseded | `EXEC-PAGE-016` |',
-        'retained with explicit version change', 'Historical evidence remains valid'
+        'retained with explicit version change',
+        'Every Phase 0-10 evidence row remains byte-identical and valid'
     )) {
         Assert-Condition $record.Contains($required) "requirement change record is missing: $required"
     }
