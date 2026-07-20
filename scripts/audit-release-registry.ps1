@@ -689,6 +689,11 @@ function Assert-ChangeMap {
         [System.StringComparer]::Ordinal
     )
     Assert-Condition ($LASTEXITCODE -eq 0) "unable to derive source change set"
+    $evidenceStatePaths = [System.Collections.Generic.HashSet[string]]::new(
+        [string[]]@(& git diff --name-only "$Source..$EvidenceState"),
+        [System.StringComparer]::Ordinal
+    )
+    Assert-Condition ($LASTEXITCODE -eq 0) "unable to derive evidence-state change set"
     $actualPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
     $changeIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
     foreach ($row in $Rows) {
@@ -698,7 +703,12 @@ function Assert-ChangeMap {
         Assert-Condition (-not [string]::IsNullOrWhiteSpace($row.observable_change)) "release change has no description $($row.change_id)"
         Assert-Condition (-not [string]::IsNullOrWhiteSpace($row.proof_command)) "release change has no proof command $($row.change_id)"
         Assert-Condition ($row.result -eq "passing") "release change did not pass $($row.change_id)"
-        $expectedClass = if ($sourcePaths.Contains($row.exact_path)) { "immutable_source" } else { "evidence_state" }
+        $expectedClass = if ($evidenceStatePaths.Contains($row.exact_path)) {
+            "evidence_state"
+        } else {
+            Assert-Condition $sourcePaths.Contains($row.exact_path) "change path has no source or evidence-state owner: $($row.exact_path)"
+            "immutable_source"
+        }
         Assert-Condition ($row.proof_commit_class -eq $expectedClass) "wrong change commit class for $($row.exact_path)"
         $ids = @($row.requirement_ids -split ';')
         Assert-Condition ($ids.Count -gt 0 -and $ids -contains "DOC-CHG-001") "change lacks DOC-CHG-001 mapping: $($row.exact_path)"
@@ -789,6 +799,12 @@ function Invoke-SelfTests {
     Assert-CommitClass "b" "evidence_state" "a" "b" "h" $alwaysAncestor "EVIDENCE"
     Assert-Throws { Assert-CommitClass "b" "immutable_source" "a" "b" "h" $alwaysAncestor "WRONG-SOURCE" } "source identity class"
     Assert-Throws { Assert-CommitClass "a" "evidence_state" "a" "b" "h" $alwaysAncestor "WRONG-EVIDENCE" } "evidence identity class"
+    $sourceChangePaths = [System.Collections.Generic.HashSet[string]]::new([string[]]@("source-only", "changed-again"), [System.StringComparer]::Ordinal)
+    $evidenceChangePaths = [System.Collections.Generic.HashSet[string]]::new([string[]]@("evidence-only", "changed-again"), [System.StringComparer]::Ordinal)
+    $sourceOnlyClass = if ($evidenceChangePaths.Contains("source-only")) { "evidence_state" } elseif ($sourceChangePaths.Contains("source-only")) { "immutable_source" }
+    $changedAgainClass = if ($evidenceChangePaths.Contains("changed-again")) { "evidence_state" } elseif ($sourceChangePaths.Contains("changed-again")) { "immutable_source" }
+    Assert-Condition ($sourceOnlyClass -eq "immutable_source") "source-only change classification failed"
+    Assert-Condition ($changedAgainClass -eq "evidence_state") "post-source change did not take evidence-state precedence"
     $neverAncestor = { param($left, $right) return $false }
     Assert-Throws { Assert-CommitClass "x" "historical" "a" "b" "h" $neverAncestor "NON-ANCESTOR" } "non-ancestral commit"
 
