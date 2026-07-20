@@ -41,7 +41,15 @@ fn custom_retry_is_available_without_other_dangerous_or_optional_features() {
 #[cfg(all(
     feature = "dangerous-dev-tools",
     not(feature = "dangerous-custom-retry"),
-    not(feature = "dangerous-raw-response")
+    not(feature = "dangerous-raw-response"),
+    not(feature = "default-tls"),
+    not(feature = "http2"),
+    not(feature = "rate-limit-governor"),
+    not(feature = "json"),
+    not(feature = "multipart"),
+    not(feature = "gzip"),
+    not(feature = "brotli"),
+    not(feature = "deflate")
 ))]
 #[test]
 fn development_tools_are_available_without_other_dangerous_or_optional_features() {
@@ -59,6 +67,28 @@ fn development_tools_are_available_without_other_dangerous_or_optional_features(
     assert!(!cfg!(feature = "gzip"));
     assert!(!cfg!(feature = "brotli"));
     assert!(!cfg!(feature = "deflate"));
+}
+
+#[cfg(all(
+    feature = "dangerous-dev-tools",
+    feature = "default-tls",
+    feature = "http2",
+    feature = "rate-limit-governor",
+    not(feature = "dangerous-custom-retry"),
+    not(feature = "dangerous-raw-response")
+))]
+#[test]
+fn development_tools_coexist_with_default_runtime_features_when_workspace_unified() {
+    use concord_core::__development::DeterministicExecutor;
+
+    let _ = DeterministicExecutor::new();
+
+    assert!(cfg!(feature = "dangerous-dev-tools"));
+    assert!(cfg!(feature = "default-tls"));
+    assert!(cfg!(feature = "http2"));
+    assert!(cfg!(feature = "rate-limit-governor"));
+    assert!(!cfg!(feature = "dangerous-custom-retry"));
+    assert!(!cfg!(feature = "dangerous-raw-response"));
 }
 
 #[cfg(all(
