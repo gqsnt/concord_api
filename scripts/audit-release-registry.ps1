@@ -86,7 +86,7 @@ $historicalDiff = @(& git diff --unified=0 $HistoricalBaseline -- $evidencePath)
 if ($LASTEXITCODE -ne 0) {
     throw "historical evidence diff failed"
 }
-$removedHistoricalLines = @($historicalDiff | Where-Object { $_ -match '^-(?!---)' })
+$removedHistoricalLines = @($historicalDiff | Where-Object { $_ -match '^-(?!--)' })
 if ($removedHistoricalLines.Count -ne 0) {
     throw "historical evidence rows were removed or rewritten"
 }
