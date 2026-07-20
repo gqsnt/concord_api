@@ -57,7 +57,7 @@ endpoint-specification, execution-plan, response-handler, ClientCore, Reqwest, o
 - Final immutable Phase 11 source/test commit:
   `1ee2ce99800af671e173679efeb573cb06b0c713`
 - Corrected Phase 11 evidence/report/state commit: `374938a4f509b16ff354f7898515fdd7dd3d11c8`
-- Corrected Phase 11 evidence anchor: `ANCHOR_COMMIT_PENDING`
+- Corrected Phase 11 evidence anchor: `490d4a4dd29a56adab65d8c8cac3f4b0b929af09`
 - Corrected anchor-metadata descendant: the final two-file commit titled
   `docs: record corrected phase 11 anchor`; its own identity is intentionally not self-embedded.
 - Head policy: `anchor-must-be-an-ancestor`
