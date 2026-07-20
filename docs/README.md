@@ -53,6 +53,7 @@ Verification artifacts:
 - [`conformance/PHASE_7_REPORT.md`](conformance/PHASE_7_REPORT.md)
 - [`conformance/PHASE_8_REPORT.md`](conformance/PHASE_8_REPORT.md)
 - [`conformance/PHASE_9_REPORT.md`](conformance/PHASE_9_REPORT.md)
+- [`conformance/PHASE_10_REPORT.md`](conformance/PHASE_10_REPORT.md)
 - [`REVIEW_RESOLUTION_0.1.md`](REVIEW_RESOLUTION_0.1.md)
 
 Specification governance is review-based: reviewers inspect the normative documents, verify the coverage plan, verify exact executed evidence, and audit the maintained release command. No automated specification checker is authoritative or maintained.
@@ -73,16 +74,20 @@ Delivery and contribution:
 
 ## Status
 
-The normative documents are `Normative Implementation Candidate`: they are the approved design baseline for implementation, not evidence that a conforming release exists. Architecture and planning documents are `Internal Implementation Candidate`; contributor and decision documents are informative. A release becomes `Normative Release Final` only after actual conformance evidence passes. Any behavior change must follow the Specification Index and update both the coverage plan and, when implemented, actual evidence.
+The normative documents are `Normative Release Final`. Concord 0.1 is a locally validated release
+candidate: all 504 normative requirements have direct passing release evidence, with zero unresolved
+claim atoms and no waivers. Architecture and planning documents remain internal; contributor and
+decision documents remain informative. Any behavior change must follow the Specification Index and
+update both the coverage plan and, when implemented, actual evidence.
 
-Phase 9 is the current delivered implementation boundary. Exact stable advanced prepared endpoints
-now reuse the one generated-client request/executor architecture, including ordinary bodies,
-responses, authentication, limiting, deadlines, hooks, status handling, hidden-retry containment,
-cancellation, and completion. One downstream crate certifies the complete stable extension surface
-through public namespaces under default, no-default, JSON, and multipart feature ownership. See the
-[`Phase 9 report`](conformance/PHASE_9_REPORT.md) for exact source identity, validation, evidence,
-and limitations. Phase 10 — Product Completion and Release Candidate is next and remains
-`NOT_STARTED`; prepared pagination and positive dangerous raw success remain absent.
+Phase 10 — Product Completion and Release Candidate is complete. Positive bounded raw successful
+responses are available only under the binary-wide `dangerous-raw-response` compiled-crate feature;
+that surface exposes actual successful headers and body bytes and therefore has an explicitly
+reduced secrecy guarantee. Streaming raw response, prepared raw response, raw pagination, and native
+Reqwest response exposure remain absent. See the
+[`Phase 10 report`](conformance/PHASE_10_REPORT.md) for the exact source identity, validation,
+evidence, and anchor chain. No remote publication, tag, registry upload, or deployment was
+performed.
 
 
 ## Review closure

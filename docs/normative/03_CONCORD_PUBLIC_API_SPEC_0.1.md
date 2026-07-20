@@ -1,7 +1,7 @@
 # CONCORD_PUBLIC_API_SPEC_0.1
 
 **Version:** 0.1  
-**Status:** Normative Implementation Candidate  
+**Status:** Normative Release Final
 **Authority:** Stable hand-written public Rust API  
 **Requirement prefix:** `API`  
 **Depends on:** Specification Index, Product Contract  

@@ -2,16 +2,16 @@
 
 **Version:** 0.2
 **Status:** Internal Implementation Candidate
-**Authority:** Current delivery sequencing after Phase 8
+**Authority:** Completed Concord 0.1 delivery sequence through Phase 10
 **Depends on:** All normative and architecture documents
 **Supersedes:** `CONCORD_IMPLEMENTATION_PLAN_0.1.md` for future execution
 
 ## Purpose
 
-This program records the implementation state actually reached through Phase 9 and resets future
-sequencing around the production vertical slice now in the repository. It does not change normative
-behavior, authorize a later phase, or claim full Concord 0.1 conformance. The normative documents
-remain `Normative Implementation Candidate`.
+This program records the implementation state actually reached through terminal Phase 10. It does
+not change normative behavior or authorize a later phase. The complete local release matrix passed,
+all 504 requirements have direct passing evidence, and the normative documents are
+`Normative Release Final`.
 
 The 0.1 implementation plan remains available as historical evidence. Its unchecked tasks are not
 an execution queue because several foundations were delivered in a different order.
@@ -30,6 +30,7 @@ an execution queue because several foundations were delivered in a different ord
 | Phase 7 | `PHASE_7_COMPLETE_WITH_LIMITATIONS` | The existing generated request path now supports exact rate-limit DSL composition, stable advanced limiter contracts, immutable generated plans, a bounded process-local governor, custom and explicit no-op limiters, fail-closed no-governor behavior, deadline/cancellation-safe per-attempt acquisition, response-head cooldown observation, and real recovery/Retry-After integration. | Thirty-eight source/test rows and one audit row remain partial only for compound clauses owned by Phase 8 pagination, Phase 9 prepared endpoints/extension certification, or Phase 10 positive raw success and release-wide closure. |
 | Phase 8 | `PHASE_8_COMPLETE_WITH_LIMITATIONS` | The same generated request path now supports built-in/custom pagination DSL, exact stable page-limit/controller/safe-patch contracts, conditionally generated directly awaitable terminals, one typed request-local sequential page loop, canonical cycle protection, finite page/item/identity ceilings, ordinary per-page deadlines/authentication/limiting/completion, and one aggregate completion. | Twenty-eight source/test rows and one audit row remain partial only for Phase 9 prepared endpoints/final extension certification or Phase 10 release-final feature, namespace, documentation, security, dependency, and evidence closure. |
 | Phase 9 | `PHASE_9_COMPLETE_WITH_LIMITATIONS` | Stable advanced prepared endpoints now use the same `Request<E>`, private `EndpointSpec`, body/auth/limiter/deadline/hook/status/response/completion lifecycle, generated-client runtime, and managed HTTP clients as generated endpoints. One public-only downstream fixture certifies every stable extension workflow and feature-owned variant. | Fifteen rows remain partial only for Phase 10 release-final namespace, generated documentation, sentinel/security, feature/grammar/diagnostic, raw-success generated-category, dependency-assumption, canonical-example, MSRV, and evidence-completeness closure. |
+| Phase 10 | `PHASE_10_COMPLETE` | Concord 0.1 release-candidate closure: bounded dangerous raw success, release-stable executable naming, canonical examples, local benchmarks, complete grammar/diagnostic, dependency, security, property, Rustdoc, feature, MSRV, and maintained-release validation, and direct evidence for all 504 normative requirements. | None. No waiver or unresolved release criterion remains. |
 
 Phase reports remain the detailed evidence owners:
 
@@ -43,6 +44,7 @@ Phase reports remain the detailed evidence owners:
 - `docs/conformance/PHASE_7_REPORT.md`
 - `docs/conformance/PHASE_8_REPORT.md`
 - `docs/conformance/PHASE_9_REPORT.md`
+- `docs/conformance/PHASE_10_REPORT.md`
 
 ## Phase 4 production baseline
 
@@ -476,28 +478,58 @@ no-governor, and extension rows into independent command-bound atoms. Exact iden
 commands, and owners are
 in `docs/conformance/PHASE_9_REPORT.md` and the evidence catalog.
 
-## Current non-goals
+## Phase 10 release-candidate baseline
 
-Phase 9 intentionally does not provide:
+The immutable Phase 10 source/test commit is
+`52ceef99e7cca1fac256a55d85296480817b199a`. Seven focused source commits normalize current
+executable naming, add the feature-gated raw-success surface, supply canonical examples and local
+benchmarks, add release registries and the complete maintained release graph, and correct two
+validation-discovered defects. Every focused role and all maintained commands, including
+`just release`, passed against the final source identity with Rust 1.85.0. The Phase 10
+evidence/report/state commit is `PENDING_PHASE_10_EVIDENCE`; a subsequent documentation-only anchor
+finalizes that evidence-state self-reference without changing executable artifacts.
 
-- dangerous raw success responses (explicitly owned by Phase 10);
+Under `dangerous-raw-response`, eligible generated buffered, text, JSON, custom buffered, bytes,
+and no-content requests expose `.raw_response()` and return the stable private-field
+`concord_core::dangerous::RawResponse`. Raw execution shares the ordinary request pipeline through
+successful status classification, applies the ordinary bounded complete collection, skips only the
+endpoint decoder, returns the logical URL and actual response head, and emits ordinary successful
+completion. The native Reqwest response remains private. Streaming, prepared, and paginated raw
+terminals remain absent.
+
+Ten canonical example targets compile all required product workflows without real credentials or
+live external requests. One private harness-free benchmark target covers nine required local
+overhead categories without a product threshold. Release registries contain 68 grammar entries, 18
+selected Reqwest assumptions with deterministic probes, 15 high-entropy security classes, and five
+reproducible property families. The maintained release command compiles examples and benchmarks,
+executes the complete dangerous-feature and MSRV matrices, and retains warning denial, zero Nextest
+retries, finite timeouts, bounded Cargo concurrency, and doctest-only `cargo test` use.
+
+Phase 10 traces 36 exact product and release-final requirements and adds 58 direct passing evidence
+rows. The complete evidence catalog contains 1,531 unique rows. The release registry reconciles all
+504 normative requirements to current direct passing evidence, zero approved or unapproved
+waivers, and all 595 owner-aware claim atoms proved with zero unresolved while preserving all Phase
+0-9 evidence rows. After those
+gates passed, the nine normative owners transitioned to `Normative Release Final`. Concord 0.1 is a
+locally validated release candidate; no remote publication, tag, registry upload, or deployment was
+performed.
+
+## Release non-goals
+
+Concord 0.1 intentionally does not provide:
+
 - prepared pagination, prepared page controllers, or a prepared `.paginate(...)` method;
+- prepared raw response, streaming raw response, or raw pagination;
 - streaming terminal-consumption hooks, SSE, WebSocket, record/CSV streaming, bidirectional
   streaming, or multipart response parsing.
 
 No placeholder public API was added for these capabilities. Direct requests retain page index zero
 and no aggregate parent identity.
 
-## Revised future sequence
+## Terminal phase state
 
-Future work should build outward from the single production request path rather than recreate proof
-loops or parallel request models. A later phase requires its own approved contract map and mission.
-
-1. **Phase 10 — product completion and release candidate.** Implement the positive dangerous raw
-   successful-response surface and complete examples, compatibility matrices, security/property
-   evidence, performance work, and release-final conformance.
-
-This sequence is planning context, not a Phase 10 implementation prompt. Phase 10 is not started.
+Phase 10 — Product Completion and Release Candidate is complete and is the terminal phase in this
+approved implementation program. No later phase is defined or authorized here.
 
 ## Continuing constraints
 
@@ -506,8 +538,8 @@ This sequence is planning context, not a Phase 10 implementation prompt. Phase 1
 - Keep deterministic support private and out of generated signatures.
 - Use Nextest for unit/integration tests and `cargo test` only for maintained doctest recipes.
 - Preserve the immutable source/evidence anchor sequence for each phase.
-- Keep normative status at `Normative Implementation Candidate` until full release evidence exists.
+- Preserve `Normative Release Final` only while complete direct release evidence remains valid.
 
-`PHASE_9_COMPLETE_WITH_LIMITATIONS`
+`PHASE_10_COMPLETE`
 
-`PHASE_10_NOT_STARTED`
+`CONCORD_0_1_RELEASE_CANDIDATE`

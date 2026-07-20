@@ -1,7 +1,7 @@
 # CONCORD_SPECIFICATION_INDEX_0.1
 
 **Version:** 0.1  
-**Status:** Normative Implementation Candidate  
+**Status:** Normative Release Final
 **Authority:** Documentation governance and precedence  
 **Requirement prefix:** `DOC`  
 **Depends on:** None  

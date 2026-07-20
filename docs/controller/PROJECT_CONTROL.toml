@@ -29,42 +29,47 @@ evidence_catalog = "docs/conformance/CONFORMANCE_EVIDENCE_0.1.csv"
 
 [validated_state]
 expected_branch = "master"
-latest_validated_phase = "9"
-latest_verdict = "PHASE_9_COMPLETE_WITH_LIMITATIONS"
-source_commit = "a8732c3fdefb676bfbb46bee9d756a8282ec531f"
+latest_validated_phase = "10"
+latest_verdict = "PHASE_10_COMPLETE"
+source_commit = "52ceef99e7cca1fac256a55d85296480817b199a"
 implementation_source_commits = [
-  "fdb5fed4c47b29831325e403620923bd52769250",
-  "a8732c3fdefb676bfbb46bee9d756a8282ec531f",
+  "148251e6f08a577fa9cad0ad54be273af60ed02f",
+  "c9ed133f7c48e1b8104d85013e90290ff6cc10e8",
+  "5db2936d50f7a0729bf8f39a289a80c00908271e",
+  "f0f4111b9438508eff4963bb29ac2ad68e209601",
+  "d14afe6528f4a9e368e7d013d7954cdfcd263aa8",
+  "22fff7668523ed434680a4dbb41bc58eeb439c2b",
+  "52ceef99e7cca1fac256a55d85296480817b199a",
 ]
 post_source_governance_commit = ""
-evidence_commit = "7c01ec2d52d2612020b16928a848b970a27db4eb"
-anchor_commit = "6c267878c6f62d2a9f45090f1172194e16b3b747"
-phase_report = "docs/conformance/PHASE_9_REPORT.md"
-normative_status = "Normative Implementation Candidate"
+evidence_commit = "PENDING_PHASE_10_EVIDENCE"
+anchor_commit = "PENDING_PHASE_10_ANCHOR"
+phase_report = "docs/conformance/PHASE_10_REPORT.md"
+normative_status = "Normative Release Final"
 head_policy = "anchor-must-be-an-ancestor"
-requirement_trace_rows = 279
-requirement_trace_direct_rows = 264
-requirement_trace_partial_rows = 15
-immutable_source_evidence_rows = 276
-source_direct_rows = 262
-source_partial_rows = 14
-requirement_trace_audit_rows = 3
-cross_phase_catalog_audit_rows = 2
-evidence_state_audit_rows = 5
-phase_evidence_rows = 281
-phase_direct_rows = 266
-phase_partial_rows = 15
-phase_evidence_summary = "266 direct and 15 partial"
+requirement_trace_rows = 36
+requirement_trace_direct_rows = 36
+requirement_trace_partial_rows = 0
+immutable_source_evidence_rows = 36
+source_direct_rows = 36
+source_partial_rows = 0
+requirement_trace_audit_rows = 0
+cross_phase_catalog_audit_rows = 22
+evidence_state_audit_rows = 0
+phase_evidence_rows = 58
+phase_direct_rows = 58
+phase_partial_rows = 0
+phase_evidence_summary = "58 direct and 0 partial"
 claim_atom_rows = 595
-proved_claim_atoms = 580
-unresolved_claim_atoms = 15
-catalog_evidence_rows = 1473
+proved_claim_atoms = 595
+unresolved_claim_atoms = 0
+catalog_evidence_rows = 1531
 coverage_requirement_rows = 504
 
 [active_phase]
 id = "10"
 title = "Product Completion and Release Candidate"
-status = "NOT_STARTED"
+status = "COMPLETE"
 definition_kind = "implementation-program-entry"
 definition_document = "docs/planning/CONCORD_IMPLEMENTATION_PROGRAM_0.2.md"
 definition_heading = "Phase 10 — product completion and release candidate"
