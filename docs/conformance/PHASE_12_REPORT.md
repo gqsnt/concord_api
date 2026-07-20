@@ -23,7 +23,7 @@ Phase 13 or Phase 14 product behavior and starts no Phase 15 work.
 - Executable correction commit: `8281c79d98406be7b88a20ea70d84af531e0b757`
 - Final corrected immutable tested source commit: `8281c79d98406be7b88a20ea70d84af531e0b757`
 - Corrected Phase 12 evidence/report/state commit: `21309a579e3df05847cb42b358775215dfdee544`
-- Corrected Phase 12 evidence anchor: `ANCHOR_COMMIT_PENDING`
+- Corrected Phase 12 evidence anchor: `d781081634ebf50fe5a5c5c41d0ae53fb6192081`
 - Compatible anchor-metadata descendant: the final two-file commit titled
   `docs: record corrected phase 12 anchor`; its own identity is intentionally not self-embedded.
 - Head policy: `anchor-must-be-an-ancestor`
