@@ -16,7 +16,8 @@ Concord transforms a compile-time API declaration into:
 - concrete generated client types;
 - scope facades;
 - typed endpoint requests;
-- typed request and response bodies;
+- type-owned request and response specifications;
+- typed incremental record streams;
 - managed credential and authentication behavior;
 - optional rate limiting;
 - explicit page-based pagination;
@@ -25,9 +26,9 @@ Concord transforms a compile-time API declaration into:
 
 **PROD-CORE-001 — Concrete managed transport.** Production execution MUST use private managed Reqwest clients.
 
-**PROD-CORE-002 — Typed endpoint results.** Normal endpoint outputs MUST remain statically typed through request preparation and response decoding.
+**PROD-CORE-002 — Typed endpoint results.** Normal endpoint request inputs and response outputs MUST remain statically typed through request-specification preparation, core-owned response acquisition, response-specification conversion, and record decoding without runtime output downcasting.
 
-**PROD-CORE-003 — One execution runtime.** Generated endpoints, explicit generated endpoint values, and advanced prepared endpoints MUST use the same core execution runtime.
+**PROD-CORE-003 — One execution runtime.** Generated endpoints, explicit generated endpoint values, advanced prepared endpoints, byte streams, and integrated record streams MUST use one core request/response execution runtime and MUST NOT introduce a second request, response, stream, record, or prepared executor.
 
 **PROD-CORE-004 — No runtime API tree.** Concord MUST NOT construct or mutate a runtime representation of the declared API tree.
 
@@ -81,6 +82,8 @@ Direct `await` returns the semantic endpoint result. Optional terminals expose s
 **PROD-MODEL-007 — Credential isolation boundary.** Credential material, provider failures, rejected state, and in-flight credential operations MUST be shared only by clones of the same independently built client snapshot.
 
 **PROD-MODEL-005 — Request-local pagination.** Pagination controller state, request identities, and collected items MUST be local to one pagination operation.
+
+**PROD-MODEL-008 — Type-owned body and response semantics.** Request-body and successful-response semantics MUST be selected by arbitrary Rust specification types whose lifecycle is owned by core; the DSL compiler MUST retain only the selected types and structural endpoint facts and MUST NOT classify application or built-in specifications by semantic name, crate origin, codec, media policy, or acquisition mode.
 
 ## 4. Canonical workflows
 
@@ -174,7 +177,8 @@ Concord supports:
 - reusable bytes;
 - one-shot byte streams;
 - reconstructible body factories;
-- request-side multipart.
+- request-side multipart;
+- application-defined request-body specification types producing the same managed `RequestBody`.
 
 ### 5.3 Responses
 
@@ -184,6 +188,7 @@ Concord supports:
 - bounded bytes;
 - no-content results;
 - bounded lazy streams;
+- incremental typed record streams;
 - successful metadata wrappers;
 - feature-gated bounded raw successful responses;
 - explicit access to a small finite complete terminal non-success body when capture succeeds.
@@ -234,8 +239,10 @@ Concord supports application-defined:
 
 - request codecs;
 - response codecs;
+- request-body and response-body specifications;
 - media markers;
 - body factories;
+- record decoders;
 - credential materials and providers;
 - pagination controllers;
 - rate limiters and response observers;
@@ -246,11 +253,11 @@ Concord supports application-defined:
 
 **PROD-GUAR-001 — Logical URL safety.** Concord-managed query authentication MUST NOT become part of the logical URL exposed through ordinary public APIs.
 
-**PROD-GUAR-002 — Body-free automatic diagnostics.** Error formatting and source chains, hooks, debug output, limiter contexts, completion events, and pagination diagnostics MUST NOT expose request or response body bytes; the explicit bounded terminal status-body accessor defined by `PROD-GUAR-011` is not an automatic diagnostic surface.
+**PROD-GUAR-002 — Body-free automatic diagnostics.** Error formatting and source chains, hooks, debug output, limiter contexts, completion events, pagination diagnostics, response-wrapper debugging, and record errors MUST NOT expose request or response body bytes, record bytes, CSV fields, JSON values, or parser-authored unsafe text; the explicit bounded terminal status-body accessor defined by `PROD-GUAR-011` is not an automatic diagnostic surface.
 
 **PROD-GUAR-003 — Credential-free ordinary diagnostics.** Ordinary errors, hooks, debug output, limiter contexts, pagination diagnostics, and generated Rustdoc MUST NOT expose credential material.
 
-**PROD-GUAR-004 — Bounded ordinary I/O.** Ordinary request bodies, buffered responses, streaming responses, and provider HTTP bodies MUST be subject to the bounds defined by the Security and Limits Specification.
+**PROD-GUAR-004 — Bounded ordinary I/O.** Ordinary request bodies, buffered responses, byte streams, record staging, and provider HTTP bodies MUST be subject to the positive finite bounds defined by the Security and Limits Specification.
 
 **PROD-GUAR-011 — Bounded terminal status body.** A final non-success HTTP response MAY expose only a finite complete body through the explicit opaque status-response API defined by the Public API and Security specifications; ordinary formatting and callbacks MUST remain body-free.
 
@@ -264,11 +271,13 @@ Concord supports application-defined:
 
 **PROD-GUAR-007 — No partial pagination result.** A failed pagination operation MUST NOT return a partial item collection.
 
-**PROD-GUAR-008 — Hidden retry containment.** Reqwest-internal retries MUST NOT rerun Concord hooks, credential preparation, limiter acquisition, body factories, or pagination preparation.
+**PROD-GUAR-008 — Hidden retry containment.** Reqwest-internal retries MUST NOT rerun Concord hooks, request-specification preparation, managed body factories, credential preparation, limiter acquisition, response-specification validation, record-decoder construction, or pagination preparation.
 
-**PROD-GUAR-009 — Provider isolation.** Provider HTTP MUST NOT use application hooks, application rate limiting, application pagination, endpoint codecs, or application custom retry.
+**PROD-GUAR-009 — Provider isolation.** Provider HTTP MUST NOT use application hooks, application rate limiting, application pagination, request or response specifications, endpoint codecs, record decoders, or application custom retry and MUST remain outside the application response-mode lifecycle.
 
-**PROD-GUAR-010 — Fail closed.** Invalid auth placement, unavailable TLS, body-limit violations, unavailable required rate-limit enforcement, and pagination cycles MUST fail rather than silently weakening the declared behavior.
+**PROD-GUAR-010 — Fail closed.** Invalid auth placement, unavailable TLS, request metadata/produced-body contradiction, body or record-staging limit violation, unavailable required rate-limit enforcement, and pagination cycles MUST fail rather than silently weakening the declared behavior.
+
+**PROD-GUAR-014 — Bounded record staging.** Incremental record decoding MUST use a decoder-selected positive finite staging bound independent of the cumulative byte-stream limit and MUST reject the first append or framed record that would exceed that bound without retaining or yielding the offending bytes.
 
 ## 7. State and clone model
 
@@ -364,9 +373,11 @@ Concord 0.1 does not provide:
 
 - WebSocket sessions;
 - server-sent event parsing or reconnection;
-- CSV or record streaming;
 - multipart response parsing;
 - bidirectional streaming protocols.
+
+CSV and NDJSON record streaming are integrated optional response specifications. They do not add a
+second protocol executor, reconnection, or bidirectional behavior.
 
 ### 9.5 Pagination
 
@@ -380,6 +391,7 @@ Concord 0.1 does not provide:
 - pagination for request-body endpoints;
 - loop-detection disablement;
 - a separate `.collect()` terminal.
+- pagination over record streams.
 
 ### 9.6 Error bodies
 
@@ -454,6 +466,6 @@ A conforming Concord implementation must make the ordinary user model simple:
 4. Concord obtains credentials and local rate-limit authority.
 5. Concord sends through Reqwest.
 6. Concord may recover authentication once.
-7. Concord bounds and decodes the successful response or returns a bounded stream.
+7. Concord acquires one sealed successful-response mode and converts it through the selected response specification, returning a bounded byte or record stream when selected.
 
 Application extension points must remain explainable as one-purpose contracts. If a normal extension requires transport adapters, runtime plans, response downcasts, credential generations, or pagination runtime machinery, the implementation is not conforming to the intended product boundary.

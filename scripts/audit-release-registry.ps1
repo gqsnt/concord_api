@@ -23,9 +23,11 @@ $script:LanguageAllowlistPath = "docs/conformance/NORMATIVE_LANGUAGE_ALLOWLIST_0
 $script:DependencyRegistryPath = "docs/conformance/NORMATIVE_DEPENDENCY_REGISTRY_0.1.csv"
 $script:OwnershipRegistryPath = "docs/conformance/NORMATIVE_OWNERSHIP_REGISTRY_0.1.csv"
 $script:ValidationRegistryPath = "docs/conformance/RELEASE_VALIDATION_REGISTRY_0.1.csv"
-$script:RequirementChangeRecordPath = "docs/normative/09_CONCORD_REQUIREMENT_CHANGE_RECORD_0.2.md"
+$script:RequirementChangeRecordPath = "docs/normative/10_CONCORD_REQUIREMENT_CHANGE_RECORD_0.3.md"
+$script:PriorRequirementChangeRecordPath = "docs/normative/09_CONCORD_REQUIREMENT_CHANGE_RECORD_0.2.md"
 $script:Phase10ReportPath = "docs/conformance/PHASE_10_REPORT.md"
 $script:Phase11ReportPath = "docs/conformance/PHASE_11_REPORT.md"
+$script:Phase12ReportPath = "docs/conformance/PHASE_12_REPORT.md"
 $script:ControllerPath = "docs/controller/PROJECT_CONTROL.toml"
 $script:Phase10Source = "9317a94cf020d81dbd216ed2a7dc999550586898"
 $script:Phase10EvidenceState = "5b157225b387387664a202d4cbfe5f85ba8c5289"
@@ -33,11 +35,24 @@ $script:Phase10HistoricalBaseline = "6f7c3b69ec7f86a3eef4a9b70d94cf1ce449e52a"
 $script:Phase10EvidenceBytes = 1081762
 $script:Phase10EvidenceHash = "aadd64241a2dc42bb19dd01643915724df1a55390debbe52f7d7becbdc71e091"
 $script:Phase10EvidenceRows = 1531
-$script:ActiveRequirementCount = 511
-$script:SupersededRequirementIds = [string[]]@(
+$script:Phase11HistoricalBaseline = "b66d2914609aec7b767481e09dedd5544b3d9130"
+$script:Phase11EvidenceBytes = 1099185
+$script:Phase11EvidenceHash = "90d31f417690082af865850d6e1ce25331bca16c76f37c9338382b71df85a91f"
+$script:Phase11EvidenceRows = 1553
+$script:Phase11ReportBytes = 25109
+$script:Phase11ReportHash = "1de403491162bf39f36c530636f7b1dd03370ee45832c0dd2c7b9bc55d2b67fa"
+$script:ActiveRequirementCount = 563
+$script:Phase11SupersededRequirementIds = [string[]]@(
     "DSL-PAGE-004", "DSL-PAGE-005", "DSL-PAGE-006",
     "API-PAGE-004", "API-PAGE-005", "API-PAGE-006",
     "EXEC-PAGE-008", "EXEC-PAGE-014"
+)
+$script:Phase12SupersededRequirementIds = [string[]]@(
+    "DSL-RESP-002", "SEC-RESP-004", "SEC-RESP-005"
+)
+$script:SupersededRequirementIds = [string[]]@(
+    $script:Phase11SupersededRequirementIds +
+    $script:Phase12SupersededRequirementIds
 )
 $script:Phase11RequirementIds = [string[]]@(
     "DSL-PAGE-002", "API-PAGE-002", "SEC-PAGE-001", "SEC-PAGE-002",
@@ -47,6 +62,41 @@ $script:Phase11RequirementIds = [string[]]@(
     "GEN-PAGE-004", "EXEC-PAGE-015", "EXEC-PAGE-016", "EXEC-PAGE-017",
     "SEC-PAGE-003", "COMPAT-MACRO-004", "CONF-PAGE-002"
 )
+$script:Phase12RequirementIds = [string[]]@(
+    "PROD-CORE-002", "PROD-CORE-003", "PROD-GUAR-002", "PROD-GUAR-004",
+    "PROD-GUAR-008", "PROD-GUAR-009", "PROD-GUAR-010", "DSL-BODY-001",
+    "DSL-BODY-002", "DSL-END-001", "DSL-RESP-001", "DSL-FEAT-001",
+    "DSL-FEAT-002", "API-CODEC-001",
+    "API-CODEC-002", "API-CODEC-003", "API-CODEC-004", "API-BODY-001",
+    "API-BODY-002", "API-BODY-003", "API-RESP-001", "API-PREP-001",
+    "API-PREP-003", "GEN-END-001", "GEN-END-002", "GEN-TERM-001",
+    "GEN-TERM-002", "GEN-PAGE-003", "GEN-PAGE-004", "SEC-BODY-001",
+    "SEC-BODY-002", "SEC-RESP-003", "SEC-RESP-006", "SEC-RESP-007",
+    "SEC-RESP-008", "BOUND-BODY-001", "BOUND-BODY-002", "BOUND-BODY-003",
+    "BOUND-BODY-006", "BOUND-BODY-007", "BOUND-BODY-011", "EXEC-BODYMETA-001",
+    "EXEC-BODY-001", "EXEC-BODY-002", "EXEC-BODY-003", "EXEC-BODY-004",
+    "EXEC-BODY-005", "EXEC-BUFFER-001", "EXEC-BUFFER-002", "EXEC-BUFFER-003",
+    "EXEC-NOCONTENT-001", "EXEC-STREAM-001", "EXEC-STREAM-002", "EXEC-STREAM-003",
+    "EXEC-DEADLINE-001", "EXEC-DEADLINE-005", "EXEC-COMPLETE-003", "EXEC-RAW-001", "FEAT-JSON-001",
+    "FEAT-MULTIPART-001", "FEAT-COMPRESS-001", "COMPAT-MACRO-001", "COMPAT-SURF-001",
+    "COMPAT-BUILD-001", "CONF-COMPILE-001", "CONF-COMPILE-002", "CONF-COMPILE-003",
+    "CONF-DOWNSTREAM-001", "CONF-DOWNSTREAM-002", "CONF-SEC-001", "CONF-MSRV-001",
+    "CONF-DOC-001", "PROD-MODEL-008", "PROD-GUAR-014", "DSL-BODY-003",
+    "DSL-RESP-003", "DSL-RESP-004", "DSL-FEAT-004", "API-BODYSPEC-001",
+    "API-BODYSPEC-002", "API-BODYSPEC-003", "API-BODYSPEC-004", "API-RESPSPEC-001",
+    "API-RESPSPEC-002", "API-RESPSPEC-003", "API-RESPSPEC-004", "API-RESP-002",
+    "API-STREAM-001", "API-PAGE-011", "API-RECORD-001", "API-RECORD-002",
+    "API-RECORD-003", "API-RECORD-004", "API-RECORD-005", "API-RECORD-006",
+    "API-PREP-004", "GEN-BODY-001", "GEN-RESP-001", "GEN-RESP-002",
+    "GEN-PAGE-005", "GEN-PREP-001", "SEC-BODY-003", "SEC-RESP-009",
+    "SEC-STREAM-001", "SEC-RECORD-001", "SEC-RECORD-002", "BOUND-RECORD-001",
+    "BOUND-RECORD-002", "BOUND-RECORD-003", "EXEC-BODY-006", "EXEC-BODY-007",
+    "EXEC-RESP-001", "EXEC-RESP-002", "EXEC-STREAM-004", "EXEC-RECORD-001",
+    "EXEC-RECORD-002", "EXEC-RECORD-003", "EXEC-RECORD-004", "EXEC-RECORD-005",
+    "FEAT-RECORDS-001", "FEAT-CSV-001", "FEAT-NDJSON-001", "COMPAT-MACRO-005",
+    "CONF-BODY-001", "CONF-RESP-001", "CONF-RECORD-001", "CONF-RECORD-002"
+)
+
 $script:NormativePaths = @(
     "docs/normative/00_CONCORD_SPECIFICATION_INDEX_0.1.md",
     "docs/normative/01_CONCORD_PRODUCT_CONTRACT_0.1.md",
@@ -442,7 +492,12 @@ function Assert-BaseCatalogs {
         if ($row.status -eq "superseded") {
             Assert-Condition ($script:SupersededRequirementIds -contains $row.requirement_id) "unexpected superseded coverage row $($row.requirement_id)"
             Assert-Condition $supersededCoverageIds.Add($row.requirement_id) "duplicate superseded coverage row $($row.requirement_id)"
-            Assert-Condition ($row.document -eq "normative/09_CONCORD_REQUIREMENT_CHANGE_RECORD_0.2.md") "superseded coverage owner mismatch for $($row.requirement_id)"
+            $expectedOwner = if ($script:Phase12SupersededRequirementIds -contains $row.requirement_id) {
+                "normative/10_CONCORD_REQUIREMENT_CHANGE_RECORD_0.3.md"
+            } else {
+                "normative/09_CONCORD_REQUIREMENT_CHANGE_RECORD_0.2.md"
+            }
+            Assert-Condition ($row.document -eq $expectedOwner) "superseded coverage owner mismatch for $($row.requirement_id)"
         } else {
             Assert-Condition ($row.status -in @("planned", "implemented")) "invalid active coverage status $($row.status) for $($row.requirement_id)"
             Assert-KnownRequirement $row.requirement_id $definitionIds "active coverage row"
@@ -497,37 +552,98 @@ function Assert-Phase10ReportPreserved {
     Assert-Condition ((Get-Sha256Hex $historical) -eq (Get-Sha256Hex $current)) "Phase 10 report changed"
 }
 
+function Assert-Phase11HistoricalCatalog {
+    param([string]$StateCommit, [bool]$RequireExact)
+    $historical = [byte[]](Get-GitBlobBytes $script:Phase11HistoricalBaseline $script:EvidencePath)
+    Assert-Condition ($historical.Length -eq $script:Phase11EvidenceBytes) "Phase 0-11 evidence byte count changed at its owner: $($historical.Length)"
+    Assert-Condition ((Get-Sha256Hex $historical) -eq $script:Phase11EvidenceHash) "Phase 0-11 evidence owner hash changed"
+    $current = [byte[]](Get-GitBlobBytes $StateCommit $script:EvidencePath)
+    Assert-Condition ($current.Length -ge $historical.Length) "current evidence is shorter than the Phase 0-11 catalog"
+    for ($index = 0; $index -lt $historical.Length; $index++) {
+        if ($historical[$index] -ne $current[$index]) {
+            throw "Phase 0-11 evidence differs at byte $index"
+        }
+    }
+    if ($RequireExact) {
+        Assert-Condition ($current.Length -eq $historical.Length) "source identity contains Phase 12 evidence"
+    }
+    $historicalRows = @(Get-GitBlobText $script:Phase11HistoricalBaseline $script:EvidencePath | ConvertFrom-Csv)
+    Assert-Condition ($historicalRows.Count -eq $script:Phase11EvidenceRows) "Phase 0-11 evidence row count changed: $($historicalRows.Count)"
+}
+
+function Assert-Phase0Through11ReportsPreserved {
+    param([string]$StateCommit)
+    foreach ($phase in 0..11) {
+        $path = "docs/conformance/PHASE_$($phase)_REPORT.md"
+        $historical = [byte[]](Get-GitBlobBytes $script:Phase11HistoricalBaseline $path)
+        $current = [byte[]](Get-GitBlobBytes $StateCommit $path)
+        Assert-Condition ($historical.Length -eq $current.Length) "Phase $phase report byte count changed"
+        Assert-Condition ((Get-Sha256Hex $historical) -eq (Get-Sha256Hex $current)) "Phase $phase report changed"
+    }
+    $phase11 = [byte[]](Get-GitBlobBytes $script:Phase11HistoricalBaseline $script:Phase11ReportPath)
+    Assert-Condition ($phase11.Length -eq $script:Phase11ReportBytes) "Phase 11 report owner byte count changed"
+    Assert-Condition ((Get-Sha256Hex $phase11) -eq $script:Phase11ReportHash) "Phase 11 report owner hash changed"
+    $priorRecord = [byte[]](Get-GitBlobBytes $script:Phase11HistoricalBaseline $script:PriorRequirementChangeRecordPath)
+    $currentRecord = [byte[]](Get-GitBlobBytes $StateCommit $script:PriorRequirementChangeRecordPath)
+    Assert-Condition ($priorRecord.Length -eq $currentRecord.Length) "Phase 11 requirement-change record byte count changed"
+    Assert-Condition ((Get-Sha256Hex $priorRecord) -eq (Get-Sha256Hex $currentRecord)) "Phase 11 requirement-change record changed"
+}
+
 function Assert-RequirementChangeRecord {
     param([string]$Commit)
     $record = Get-GitBlobText $Commit $script:RequirementChangeRecordPath
     foreach ($required in @(
         '**Status:** Normative Implementation Candidate',
-        '9317a94cf020d81dbd216ed2a7dc999550586898',
-        '`DSL-PAGE-002` | Unique built-in assignments | `4ea966edd376dc9c47253423c97cb719b1fa1f2305f6c69343517a29f1d88eca` | retained with explicit version change | `DSL-PAGE-002` |',
-        '`API-PAGE-002` | Controller purity | `fe3ec685b4c3ba4dfa197d3c3ee9b98df0b8e2e8ee6db1e9205d4e1b4cac2663` | retained with explicit version change | `API-PAGE-002` |',
-        '`SEC-PAGE-001` | Continuation secrecy | `c35edeff32063e2fcd316a98401b304f88f812c03823bedae4a9db0035e77b25` | retained with explicit version change | `SEC-PAGE-001` |',
-        '`SEC-PAGE-002` | Pagination diagnostic exclusions | `a1c1ec39b522988542e78f42e586b541a7ed4e171b70a3e6cf0ebe671fbb1c76` | retained with explicit version change | `SEC-PAGE-002` |',
-        '`EXEC-PAGE-001` | Zero page no-op | `4fbe87f5cfa903789f51f85db5ce327b2c46da99e910e264baa08c46b70386e7` | retained with explicit version change | `EXEC-PAGE-001` |',
-        '`EXEC-PAGE-005` | Controller commit after acceptance | `a0976d5f791e6834b125e6c8718b5dc18e55f7e40d83906afbf32ac164980e9d` | retained with explicit version change | `EXEC-PAGE-005` |',
-        '`EXEC-PAGE-007` | Same page recovery | `0d13f1a0fff64b94479f13255a4bda536c0d5d8ef5a47e148e65952d98d5b66c` | retained with explicit version change | `EXEC-PAGE-007` |',
-        '`DSL-PAGE-004` | Atomic custom construction | `8f2a8a34b610f543a767ad96968792253c9deb0a7dbeb4dbf4a381b8c41e7e02` | superseded | `DSL-PAGE-007` |',
-        '`DSL-PAGE-005` | Built-in binding completeness | `c3708e0c94d8507205fb612719de718f9865e280716b0b6a6152e4d961124929` | superseded | `DSL-PAGE-008` |',
-        '`DSL-PAGE-006` | Custom patch boundary | `94822158e0c60722740c111964c98a406ed872220de8b68697a5fe2c62248272` | superseded | `DSL-PAGE-009`, `DSL-PAGE-010` |',
-        '`API-PAGE-004` | Private controller state | `47094f4e4cb564460c6983f0c98911a468e1f07d3ebfed8a4868bc9ee2ff1f43` | superseded | `API-PAGE-007` |',
-        '`API-PAGE-005` | No custom short-page inference | `06b091911c21011d98e6090faf9bd8e27d00602ad94cd3c6f30abaa2c707b3c8` | superseded | `API-PAGE-008` |',
-        '`API-PAGE-006` | Safe patch boundary | `419efe495e3b1d5e20bdfa449e60630808ef2f6aae0e5bc15c8c9d988a32e4a6` | superseded | `API-PAGE-009` |',
-        '`EXEC-PAGE-008` | Natural stop precedence | `9d5f651e6d9b7c556b26e469510daed000216efcb18e995a5fdb79319a788a3a` | superseded | `EXEC-PAGE-015` |',
-        '`EXEC-PAGE-014` | Custom continuation authority | `404cdecf4d1b5c2372ee3a32a982f3d398fd69e171182109cb76d6eb8685fa56` | superseded | `EXEC-PAGE-016` |',
-        'retained with explicit version change',
-        'Every Phase 0-10 evidence row remains byte-identical and valid'
+        'user-approved Phase 12 directive',
+        'implementation phase is Phase 12',
+        'historical evidence remains valid only for the exact prior requirement paragraph',
+        'All 1,553 Phase 0–11 evidence rows',
+        'No row authorizes Phase 13 lexical rate limits or Phase 14 release-final closure'
     )) {
         Assert-Condition $record.Contains($required) "requirement change record is missing: $required"
     }
-    foreach ($id in $script:Phase11RequirementIds) {
-        Assert-Condition $record.Contains("``$id``") "requirement change record does not resolve $id"
+
+    $historicalDocuments = Get-NormativeDocuments $script:Phase11HistoricalBaseline
+    $historicalDefinitions = @(Get-NormativeDefinitions $historicalDocuments)
+    $currentDocuments = Get-NormativeDocuments $Commit
+    $currentDefinitions = @(Get-NormativeDefinitions $currentDocuments)
+    $historicalById = @{}
+    foreach ($definition in $historicalDefinitions) { $historicalById[$definition.requirement_id] = $definition }
+    $currentById = @{}
+    foreach ($definition in $currentDefinitions) { $currentById[$definition.requirement_id] = $definition }
+
+    $retainedCount = 0
+    $newCount = 0
+    foreach ($id in $script:Phase12RequirementIds) {
+        Assert-Condition $currentById.ContainsKey($id) "current Phase 12 requirement is absent: $id"
+        $current = $currentById[$id]
+        if ($historicalById.ContainsKey($id)) {
+            $prior = $historicalById[$id]
+            $prefix = "| ``$id`` | $($prior.normative_title) | ``$($prior.normative_paragraph_digest)`` |"
+            Assert-Condition ($record.Contains($prefix) -and $record.Contains("retained with explicit version change as ``$id``")) "retained lineage is incomplete for $id"
+            $retainedCount++
+        } else {
+            $newRow = "| ``$id`` | $($current.normative_title) | ``$((Split-Path $current.normative_document -Leaf))`` |"
+            Assert-Condition $record.Contains($newRow) "new lineage is incomplete for $id"
+            $newCount++
+        }
     }
-    foreach ($id in $script:SupersededRequirementIds) {
-        Assert-Condition $record.Contains("``$id``") "requirement change record does not resolve historical $id"
+    Assert-Condition ($retainedCount -eq 72 -and $newCount -eq 55) "Phase 12 lineage counts changed: retained=$retainedCount new=$newCount"
+
+    $replacementById = @{
+        'DSL-RESP-002' = 'DSL-RESP-004'
+        'SEC-RESP-004' = 'SEC-RESP-009'
+        'SEC-RESP-005' = 'SEC-STREAM-001'
+    }
+    foreach ($id in $script:Phase12SupersededRequirementIds) {
+        $prior = $historicalById[$id]
+        $row = "| ``$id`` | $($prior.normative_title) | ``$($prior.normative_paragraph_digest)`` | ``$((Split-Path $prior.normative_document -Leaf))`` | superseded | ``$($replacementById[$id])`` |"
+        Assert-Condition $record.Contains($row) "superseded lineage is incomplete for $id"
+    }
+
+    $priorRecord = Get-GitBlobText $Commit $script:PriorRequirementChangeRecordPath
+    foreach ($id in $script:Phase11SupersededRequirementIds) {
+        Assert-Condition $priorRecord.Contains("``$id``") "prior lineage record does not resolve historical $id"
     }
 }
 
@@ -544,9 +660,54 @@ function Assert-CandidateStatus {
         'Phase 12 | Generic Body/Response Specifications and Integrated Streaming Records',
         'Phase 13 | Lexically Scoped Rate Limits',
         'Phase 14 | Product Completion, Conformance Closure, and Release Finalization',
+        'generated contract `12 -> 13`',
+        'Phase 12 approved implementation authority',
         'only Phase 14 may restore `Normative Release Final`'
     )) {
         Assert-Condition $program.Contains($required) "implementation program is missing: $required"
+    }
+}
+
+function Assert-Phase12Authority {
+    param([string]$Commit)
+    $index = Get-GitBlobText $Commit 'docs/normative/00_CONCORD_SPECIFICATION_INDEX_0.1.md'
+    $decisions = Get-GitBlobText $Commit 'docs/decisions/CONCORD_DECISIONS.md'
+    $coreArchitecture = Get-GitBlobText $Commit 'docs/architecture/CONCORD_CORE_ARCHITECTURE_0.1.md'
+    $macroArchitecture = Get-GitBlobText $Commit 'docs/architecture/CONCORD_MACRO_ARCHITECTURE_0.1.md'
+    foreach ($required in @(
+        '10_CONCORD_REQUIREMENT_CHANGE_RECORD_0.3.md',
+        'Normative Implementation Candidate'
+    )) {
+        Assert-Condition $index.Contains($required) "specification index is missing: $required"
+    }
+    foreach ($required in @(
+        '## ADR-045 — Generic body and response specifications use sealed core acquisition modes',
+        '**Status:** Accepted; supersedes ADR-022',
+        '## ADR-022 — Specialized protocols live outside core',
+        '**Status:** Superseded by ADR-045',
+        'one stable `RequestBodySpec`', 'one stable `ResponseBodySpec`',
+        'public-but-sealed core modes', '`ByteStream`', '`ApiResponse<T>`',
+        'integrated in feature-gated `concord_core::records`',
+        'neither a records crate, second executor'
+    )) {
+        Assert-Condition $decisions.Contains($required) "ADR authority is missing: $required"
+    }
+    foreach ($required in @(
+        'type Body: RequestBodySpec;', 'type Response: ResponseBodySpec;',
+        'Buffered  -> Bytes', 'Streaming -> ByteStream', 'Discard   -> ()',
+        '`DecodedResponse<T>` is only a type alias',
+        '`RecordBatches<D>` is a consumer adapter',
+        'one execution engine serves generated and prepared endpoints'
+    )) {
+        Assert-Condition $coreArchitecture.Contains($required) "core architecture is missing: $required"
+    }
+    foreach ($required in @(
+        'body: Option<syn::Type>', 'response: syn::Type',
+        'B: RequestBodySpec', 'R: ResponseBodySpec',
+        'R: PageResponseSpec', 'synchronized Phase 12 marker is `13`',
+        'no body/response semantic enum or built-in-name branch'
+    )) {
+        Assert-Condition $macroArchitecture.Contains($required) "macro architecture is missing: $required"
     }
 }
 
@@ -637,6 +798,70 @@ function Assert-Phase11StateDocumentation {
         'status = "NOT_STARTED"'
     )) {
         Assert-Condition $controller.Contains($required) "Phase 11 controller state is missing: $required"
+    }
+}
+
+function Assert-Phase12Evidence {
+    param([object[]]$Evidence, [string]$Source)
+    $rows = @($Evidence | Where-Object { $_.evidence_id -like 'P12-*' })
+    Assert-Condition ($rows.Count -eq $script:Phase12RequirementIds.Count) "Phase 12 evidence row count is $($rows.Count) rather than $($script:Phase12RequirementIds.Count)"
+    $ids = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($row in $rows) {
+        Assert-Condition $ids.Add($row.requirement_id) "duplicate Phase 12 evidence requirement $($row.requirement_id)"
+        Assert-Condition ($row.verified_commit -eq $Source) "Phase 12 evidence $($row.evidence_id) does not name the tested source"
+        Assert-Condition ($row.result -eq 'passing' -and $row.configuration -match '^direct ') "Phase 12 evidence is not direct passing: $($row.evidence_id)"
+        Assert-Condition ([string]::IsNullOrWhiteSpace($row.waiver)) "Phase 12 evidence has a waiver: $($row.evidence_id)"
+    }
+    foreach ($id in $script:Phase12RequirementIds) {
+        Assert-Condition $ids.Contains($id) "Phase 12 direct evidence is absent for $id"
+    }
+}
+
+function Assert-Phase12ValidationRegistry {
+    param([object[]]$Rows, [string]$Source)
+    $phaseRows = @($Rows | Where-Object { $_.validation_id -like 'P12-VAL-*' })
+    Assert-Condition ($phaseRows.Count -ge 16) "Phase 12 validation registry is incomplete"
+    $commands = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($row in $phaseRows) {
+        Assert-Condition $commands.Add($row.exact_command) "duplicate Phase 12 validation command $($row.exact_command)"
+        Assert-Condition ($row.working_directory -eq 'F:\projects\concord_api') "wrong Phase 12 validation working directory $($row.validation_id)"
+        Assert-Condition ($row.source_commit -eq $Source) "Phase 12 validation used wrong source $($row.validation_id)"
+        Assert-Condition ($row.exit_status -eq '0' -and $row.result -eq 'passing') "Phase 12 validation did not pass $($row.validation_id)"
+        foreach ($field in @('tool_versions', 'feature_configuration', 'selected_tests', 'observed_at')) {
+            Assert-Condition (-not [string]::IsNullOrWhiteSpace($row.$field)) "Phase 12 validation omitted $field in $($row.validation_id)"
+        }
+    }
+    foreach ($command in @(
+        'just fmt-check', 'just check', 'just check-all', 'just check-no-default',
+        'just clippy', 'just clippy-all', 'just test', 'just test-all',
+        'just test-no-default', 'just doctest', 'just doctest-all', 'just doc',
+        'just doc-all', 'just deny', 'just diff-check', 'just release'
+    )) {
+        Assert-Condition $commands.Contains($command) "required Phase 12 validation command was not recorded: $command"
+    }
+}
+
+function Assert-Phase12StateDocumentation {
+    param([string]$Commit, [string]$Source, [string]$EvidenceState, [string]$Anchor)
+    $report = Get-GitBlobText $Commit $script:Phase12ReportPath
+    $controller = Get-GitBlobText $Commit $script:ControllerPath
+    foreach ($required in @(
+        'PHASE_12_COMPLETE_WITH_LIMITATIONS', $Source, $EvidenceState, $Anchor,
+        'generated contract `12 -> 13`', 'Phase 13', '`NOT_STARTED`',
+        'Normative Implementation Candidate', 'Phase 14',
+        '127 direct and 0 partial', '1,553 Phase 0-11 evidence rows'
+    )) {
+        Assert-Condition $report.Contains($required) "Phase 12 report is missing: $required"
+    }
+    foreach ($required in @(
+        'latest_validated_phase = "12"', 'latest_verdict = "PHASE_12_COMPLETE_WITH_LIMITATIONS"',
+        "source_commit = `"$Source`"", "evidence_commit = `"$EvidenceState`"",
+        "anchor_commit = `"$Anchor`"", 'head_policy = "anchor-must-be-an-ancestor"',
+        'normative_status = "Normative Implementation Candidate"',
+        'id = "13"', 'title = "Lexically Scoped Rate Limits"',
+        'status = "NOT_STARTED"'
+    )) {
+        Assert-Condition $controller.Contains($required) "Phase 12 controller state is missing: $required"
     }
 }
 
@@ -1071,15 +1296,18 @@ if ($Mode -eq "Source") {
     $coverage = @(Import-GitCsv $SourceCommit $script:CoveragePath)
     $evidence = @(Import-GitCsv $SourceCommit $script:EvidencePath)
     Assert-BaseCatalogs $definitions $coverage $evidence
-    Assert-Condition ($evidence.Count -eq ($script:Phase10EvidenceRows + $script:Phase11RequirementIds.Count)) "correction source has unexpected evidence rows: $($evidence.Count)"
+    Assert-Condition ($evidence.Count -eq $script:Phase11EvidenceRows) "Phase 12 source has unexpected evidence rows: $($evidence.Count)"
     Assert-EvidencePaths $evidence $SourceCommit
     Assert-Phase10HistoricalCatalog $SourceCommit $false
     Assert-Phase10ReportPreserved $SourceCommit
+    Assert-Phase11HistoricalCatalog $SourceCommit $true
+    Assert-Phase0Through11ReportsPreserved $SourceCommit
     Assert-SupersededHistoricalEvidence $evidence
     Assert-InheritedPhase11SourceEvidence $evidence $SourceCommit
     Assert-RequirementChangeRecord $SourceCommit
     Assert-CandidateStatus $documents $SourceCommit
-    Write-Output "implementation-candidate source audit passed: active-requirements=$($definitions.Count) superseded-requirements=$($script:SupersededRequirementIds.Count) historical-rows=$script:Phase10EvidenceRows inherited-Phase-11-rows=$($script:Phase11RequirementIds.Count) Phase-11-evidence=not-assessed release-final=reserved-for-Phase-14"
+    Assert-Phase12Authority $SourceCommit
+    Write-Output "implementation-candidate source audit passed: active-requirements=$($definitions.Count) superseded-requirements=$($script:SupersededRequirementIds.Count) historical-Phase-0-11-rows=$script:Phase11EvidenceRows Phase-12-evidence=not-assessed release-final=reserved-for-Phase-14"
     exit 0
 }
 
@@ -1117,27 +1345,31 @@ foreach ($row in $evidence) {
 Assert-EvidencePaths $evidence $DescendantCommit
 Assert-Phase10HistoricalCatalog $StateCommit $false
 Assert-Phase10ReportPreserved $StateCommit
+Assert-Phase11HistoricalCatalog $StateCommit $false
+Assert-Phase0Through11ReportsPreserved $StateCommit
 Assert-SupersededHistoricalEvidence $evidence
 Assert-RequirementChangeRecord $StateCommit
 Assert-CandidateStatus $documents $StateCommit
-Assert-Phase11Evidence $evidence $SourceCommit
-$phase11Coverage = @($coverage | Where-Object { $script:Phase11RequirementIds -contains $_.requirement_id })
-Assert-Condition ($phase11Coverage.Count -eq $script:Phase11RequirementIds.Count) "Phase 11 active coverage count mismatch"
-foreach ($row in $phase11Coverage) {
-    Assert-Condition ($row.status -eq 'implemented') "Phase 11 coverage is not implemented: $($row.requirement_id)"
+Assert-Phase12Authority $StateCommit
+Assert-Condition ($evidence.Count -eq ($script:Phase11EvidenceRows + $script:Phase12RequirementIds.Count)) "Phase 12 evidence catalog has unexpected rows: $($evidence.Count)"
+Assert-Phase12Evidence $evidence $SourceCommit
+$phase12Coverage = @($coverage | Where-Object { $script:Phase12RequirementIds -contains $_.requirement_id })
+Assert-Condition ($phase12Coverage.Count -eq $script:Phase12RequirementIds.Count) "Phase 12 active coverage count mismatch"
+foreach ($row in $phase12Coverage) {
+    Assert-Condition ($row.status -eq 'implemented') "Phase 12 coverage is not implemented: $($row.requirement_id)"
 }
 $validation = @(Import-GitCsv $StateCommit $script:ValidationRegistryPath)
-Assert-Phase11ValidationRegistry $validation $SourceCommit
+Assert-Phase12ValidationRegistry $validation $SourceCommit
 
 if ($Mode -eq "Final") {
-    $anchorAllowed = @($script:Phase11ReportPath, $script:ControllerPath)
+    $anchorAllowed = @($script:Phase12ReportPath, $script:ControllerPath)
     Assert-SubstitutionCommit $EvidenceCommit $AnchorCommit $script:EvidenceToken $EvidenceCommit $anchorAllowed
     Assert-SubstitutionCommit $AnchorCommit $MetadataCommit $script:AnchorToken $AnchorCommit @(
-        $script:Phase11ReportPath, $script:ControllerPath
+        $script:Phase12ReportPath, $script:ControllerPath
     )
-    Assert-Phase11StateDocumentation $MetadataCommit $SourceCommit $EvidenceCommit $AnchorCommit
+    Assert-Phase12StateDocumentation $MetadataCommit $SourceCommit $EvidenceCommit $AnchorCommit
     $status = @(& git status --porcelain)
     Assert-Condition ($status.Count -eq 0) "final worktree is not clean"
 }
 
-Write-Output "implementation-candidate audit passed: mode=$Mode active-requirements=$($definitions.Count) superseded-requirements=$($script:SupersededRequirementIds.Count) Phase-11-evidence=$($script:Phase11RequirementIds.Count) evidence=$($evidence.Count) waivers=0 missing-paths=0 release-final=reserved-for-Phase-14"
+Write-Output "implementation-candidate audit passed: mode=$Mode active-requirements=$($definitions.Count) superseded-requirements=$($script:SupersededRequirementIds.Count) Phase-12-evidence=$($script:Phase12RequirementIds.Count) evidence=$($evidence.Count) waivers=0 missing-paths=0 release-final=reserved-for-Phase-14"

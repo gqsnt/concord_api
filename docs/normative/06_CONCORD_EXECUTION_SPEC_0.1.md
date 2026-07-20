@@ -134,26 +134,27 @@ When an endpoint/page future is first polled, Concord allocates one opaque opera
 An initial Concord attempt uses this ordering:
 
 ```text
-1. Prepare public request head and body metadata
-2. Run before-send hook
-3. Materialize and validate request body
-4. Preflight credentials
-5. Acquire rate-limit authority
-6. Finalize current credentials
-7. Build native public Reqwest request
-8. Emit request debug event
-9. Materialize authentication
-10. Execute Reqwest
-11. Emit response-head debug event
-12. Run response-head hook
-13. Run limiter response observation
+1. Prepare the public request head
+2. Compute request-specification metadata
+3. Apply known metadata limit checks
+4. Run the before-send hook
+5. Run request-specification preparation once
+6. Validate metadata against the produced managed RequestBody
+7. Perform ordinary managed-body materialization for the Concord attempt
+8. Preflight credentials
+9. Acquire rate-limit authority
+10. Finalize current credentials
+11. Build the native public Reqwest request and emit request debug
+12. Materialize authentication and execute Reqwest
+13. Emit response-head debug, run the response-head hook, and observe the limiter
 14. Handle authentication challenge
 15. Classify terminal status
-16. Capture a finite complete terminal status body, or select the success response limit
-17. Collect, ignore, or expose bounded stream
-18. Validate response contract
-19. Decode buffered success response
-20. Fix the application result, completion outcome, final status, and elapsed time
+16. Capture a finite complete terminal body, or perform successful mode known-length preflight
+17. Run ResponseBodySpec::validate
+18. Acquire the sealed buffered, streaming, or discard mode body
+19. Run ResponseBodySpec::from_body
+20. Check synchronous extension work against the deadline and fix the application result,
+    completion outcome, final status, and elapsed time
 21. Await one request/page completion event outside the operation deadline
 22. Return the already-fixed result
 ```
@@ -164,7 +165,7 @@ A failure stops at its phase. Later phases do not run. Earlier completed side ef
 
 **EXEC-ORDER-001 — Canonical ordering.** Every generated and prepared application endpoint MUST follow this ordering.
 
-**EXEC-DEADLINE-001 — Operation-wide result deadline.** A resolved endpoint timeout MUST bound asynchronous work that can determine the result for that endpoint or page operation: `before_send`, `on_response_head`, body materialization when asynchronous, credential/provider work, limiter waiting, credential finalization, native HTTP, authentication recovery, terminal status-body capture, and buffered-success-response work. It MUST NOT bound `on_complete` or `on_pagination_complete`, which observe an already-fixed result outside the operation deadline.
+**EXEC-DEADLINE-001 — Operation-wide result deadline.** A resolved endpoint timeout MUST bound every result-determining request-specification, hook, credential/provider, limiter, credential-finalization, native HTTP, authentication-recovery, terminal capture, response-mode opening/acquisition, response-specification validation, and conversion phase through result fixation; synchronous extension work MUST be checked immediately after return, while completion observation and later caller-driven byte or record stream polling MUST remain outside that deadline.
 
 **EXEC-DEADLINE-002 — Recovery budget.** Authentication recovery MUST use the remaining original operation-deadline budget and MUST NOT reset the deadline.
 
@@ -178,7 +179,7 @@ A failure stops at its phase. Later phases do not run. Earlier completed side ef
 
 ### 6.1 Inputs
 
-The phase receives:
+Public-head preparation receives:
 
 - parsed base URL;
 - immutable client values;
@@ -186,8 +187,8 @@ The phase receives:
 - endpoint values;
 - endpoint metadata;
 - request-local timeout/debug overrides;
-- body media ownership and replayability metadata;
-- response accept metadata;
+- the request specification type and stored input;
+- the response specification's default accept value;
 - auth requirements;
 - rate-limit declarations.
 
@@ -200,8 +201,8 @@ Concord performs:
 3. path-segment resolution and validation;
 4. ordered public query resolution;
 5. public header resolution and validation;
-6. response-handler default `Accept` insertion only when public headers do not already provide `Accept`;
-7. `Content-Type` ownership validation;
+6. `ResponseBodySpec::accept` default `Accept` insertion only when public headers do not already provide `Accept`;
+7. request-specification metadata computation using only `RequestBodyContext`;
 8. operation-deadline resolution;
 9. rate-limit plan resolution and key validation;
 10. auth placement resolution;
@@ -209,7 +210,7 @@ Concord performs:
 12. challenge-policy resolution and single-automatic-challenger validation;
 13. auth/public header collision validation;
 14. auth/public query collision validation;
-15. body-kind, replayability, exact-length, and lower-bound metadata validation without encoding or factory invocation;
+15. structural body-kind, exact-length, and lower-bound metadata limit validation without encoding, preparation, or factory invocation;
 16. logical URL construction;
 17. safe URL rendering;
 18. dynamic TLS capability validation;
@@ -217,7 +218,11 @@ Concord performs:
 
 ### 6.3 Prohibited side effects
 
-This phase does not invoke a request codec or body factory, poll a request stream, invoke a credential provider, mutate credential state, invoke hooks, acquire limiter state, construct a native request, or execute HTTP.
+This phase does not encode a codec, invoke `RequestBodySpec::prepare`, invoke a body or multipart
+factory, poll a request stream, open a file, build a native body, invoke a credential provider,
+mutate credential state, invoke hooks, acquire limiter state, construct a native request, or execute
+HTTP. Request-specification metadata receives no URL, headers, credentials, authentication, limiter,
+native request, Reqwest, or transport state.
 
 ### 6.4 Failure
 
@@ -231,7 +236,7 @@ Examples include invalid routing, invalid public headers, auth collisions, sever
 
 **EXEC-HEAD-003 — Protected HTTPS preflight.** A non-empty effective authentication plan MUST fail during public preparation when the logical URL uses HTTP, before hook, body materialization, provider, limiter, or native request activity. The structured result is `ErrorCategory::Configuration` with `ConfigurationErrorKind::InvalidAuthentication`.
 
-**EXEC-BODYMETA-001 — No eager materialization.** Public request preparation MUST NOT invoke a request codec, request body factory, multipart factory, or request stream.
+**EXEC-BODYMETA-001 — No eager materialization.** `RequestBodySpec::metadata` MUST run during public preparation before `before_send` and MUST NOT encode a codec, invoke `prepare`, invoke a body or multipart factory, poll a stream, open a file, build a native body, or access URL, headers, credentials, authentication, limiter, Reqwest, or transport state.
 
 ## 7. Before-send hook
 
@@ -255,39 +260,58 @@ Dropping the operation while the hook future is pending drops that future. Appli
 
 **EXEC-HOOK-002 — No protected inputs.** The hook MUST NOT receive credential values, body bytes, native URL, or native request access.
 
-## 8. Request-body materialization
+## 8. Request-body specification and materialization
 
 ### 8.1 Ordering
 
-Body materialization begins only after hook approval and completes before credential preparation.
+`RequestBodySpec::prepare` runs synchronously exactly once after hook approval for each pending
+request execution and produces the one stable managed `RequestBody`. Core then validates the earlier
+metadata against that produced value before ordinary attempt-local materialization. Every body phase
+completes before credential preparation.
 
 ### 8.2 Buffered codec and reusable bytes
 
-A selected request codec is invoked once. Concord validates the resulting complete bytes against the request limit and retains them for possible authentication recovery. Reusable bytes are validated and retained directly.
+A selected request codec runs only through the generic request-specification adapter and is invoked
+once by `prepare`. Concord validates the resulting complete bytes against metadata and the request
+limit and retains them for possible authentication recovery. Reusable bytes are validated and
+retained directly.
 
 ### 8.3 Direct stream
 
-A direct stream remains one-shot and unpolled until native Reqwest execution. Exact or lower-bound metadata may already have failed during preflight.
+A produced direct stream remains one-shot and unpolled until native Reqwest execution. Exact or
+lower-bound metadata may already have failed during preflight. Application code cannot label
+replayability; core derives it only from the produced `RequestBody` form.
 
 ### 8.4 Body and multipart factories
 
-A reconstructible body or multipart factory is invoked once for the initial Concord attempt and once again only for an authentication-recovery attempt. Reqwest-internal retries reuse the already materialized native request and do not reinvoke the factory.
+A produced reconstructible body or multipart factory is invoked once for the initial Concord
+attempt and once again only for an authentication-recovery attempt. `RequestBodySpec::prepare` is
+not rerun for recovery. Reqwest-internal retries reuse the already materialized native request and
+do not rerun `prepare` or reinvoke the factory.
 
 Multipart aggregate framing remains subject to the request limit during native body polling.
 
 ### 8.5 Failure effects
 
-Materialization or known-size failure causes no credential operation, limiter acquisition, request debug event, authentication materialization, or native request. The already approved hook is not rolled back.
+Metadata/produced-body contradiction, materialization, or known-size failure causes no credential
+operation, limiter acquisition, request debug event, authentication materialization, native request,
+or send. Contradictions include incompatible `BodyKind`, exact-length or lower-bound mismatch,
+conflicting content-type ownership, invalid `Generated` ownership, bodyless/body-present mismatch,
+and impossible managed-body state. The already approved hook is not rolled back.
 
-**EXEC-BODY-001 — Body before provider and quota.** Request body materialization MUST finish before credential, limiter, or native request activity.
+**EXEC-BODY-001 — Body before provider and quota.** Request-specification preparation, metadata consistency validation, and attempt-local managed-body materialization MUST finish before credential, limiter, request debug, authentication, native request, or send activity.
 
-**EXEC-BODY-002 — Codec once.** A buffered request codec MUST be invoked at most once per pending request execution.
+**EXEC-BODY-002 — Codec once.** `RequestBodySpec::prepare` and a buffered request codec adapted through it MUST each be invoked at most once per pending request execution, including authentication recovery and hidden native retries.
 
-**EXEC-BODY-003 — Factory per Concord attempt.** A reconstructible body factory MUST be invoked once per Concord attempt and never for Reqwest-internal attempts.
+**EXEC-BODY-003 — Factory per Concord attempt.** A factory retained inside the produced `RequestBody` MUST be invoked once per Concord attempt, including at most one authentication-recovery attempt, and never for Reqwest-internal attempts; factory invocation MUST NOT rerun request-specification preparation.
 
-**EXEC-BODY-004 — Stream laziness.** A direct request stream MUST NOT be polled before native Reqwest execution.
+**EXEC-BODY-004 — Stream laziness.** A one-shot stream produced by a request specification MUST NOT be polled before native Reqwest execution and MUST NOT be resent for authentication recovery.
 
-**EXEC-BODY-005 — Exact-length enforcement.** A request stream declaring an exact length MUST fail with `RequestBody` when it ends before that length or when the next data frame would exceed it; the first frame causing exact-length overflow MUST NOT be delivered through the managed native-body boundary.
+**EXEC-BODY-005 — Exact-length enforcement.** Core MUST enforce request-specification exact and lower-bound metadata plus produced-stream exact length, fail with `RequestBody` on contradiction, early EOF, or overflow, and withhold the first frame causing overflow from the managed native-body boundary.
+
+**EXEC-BODY-006 — Metadata before hook.** Core MUST compute request-specification metadata and apply every known limit check requiring no materialization before `before_send`; a hook veto MUST prevent `prepare` and every body factory or stream action.
+
+**EXEC-BODY-007 — Metadata and produced-body contradiction.** After hook approval and exactly one `prepare`, core MUST validate metadata against the produced `RequestBody` and fail closed on incompatible kind, length, content-type ownership, generated ownership, body presence, or impossible managed state before every credential, limiter, debug, authentication, native-construction, or send phase.
 
 ## 9. Credential preflight
 
@@ -692,78 +716,110 @@ A final `429` remains an `HttpStatus` result; `RateLimit` is reserved for client
 
 **EXEC-STATUS-006 — Terminal challenge capture.** A final authentication challenge MAY use the bounded terminal status-body capture path, while a challenge followed by recovery MUST remain unread.
 
-## 18. Buffered response processing
+## 18. Sealed successful response acquisition
 
-### 18.1 Limit selection
+After response-head hooks, limiter observation, challenge handling, and successful `2xx`
+classification, every response specification follows exactly:
+
+```text
+mode-specific known-length preflight
+-> ResponseBodySpec::validate
+-> core-owned mode acquisition
+-> ResponseBodySpec::from_body
+-> synchronous extension deadline check
+-> result fixation and ordinary completion
+```
+
+The public-but-sealed modes are exactly buffered, streaming, and discard. A custom response
+specification receives a successful logical `ResponseHead` and the core-acquired mode body, never a
+native response or transport. It cannot bypass status handling, change limits, replace completion,
+or define a fourth acquisition mode.
+
+**EXEC-RESP-001 — Sealed response-mode acquisition.** After successful status classification, core MUST acquire response bodies only through the exact sealed buffered, streaming, or discard mode, MUST retain native response ownership, and MUST run `from_body` only after the selected mode body is ready.
+
+**EXEC-RESP-002 — Response-specification validation before polling.** Core MUST perform mode-specific known-length preflight before `ResponseBodySpec::validate`, MUST finish validation before the first body poll, and MUST check synchronous validation and conversion work against the operation deadline immediately after return.
+
+### 18.1 Buffered mode
+
+#### 18.1.1 Limit selection
 
 The buffered-response limit applies to:
 
-- JSON;
-- text;
-- custom buffered codecs;
-- bytes;
+- every `ResponseBodySpec<Mode = Buffered>`;
 - dangerous raw response.
 
-### 18.2 Known length
+#### 18.1.2 Known length
 
 A known content length above the selected limit fails before body polling.
 
-### 18.3 Contract validation
+#### 18.1.3 Contract validation
 
-After known-length validation and before body polling, the selected codec may validate response media type from the response head.
+After known-length validation and before body polling, the selected response specification validates
+the successful `ResponseHead`.
 
-A response-contract failure does not poll the body or invoke the decoder.
+A response-contract failure does not poll the body or invoke `from_body`.
 
-### 18.4 Collection
+#### 18.1.4 Collection
 
-Concord polls body frames, counts data bytes, and rejects before passing the first excess frame to a decoder or caller.
+Concord polls body frames, counts post-decompression data bytes, and rejects before passing the first
+excess frame to a response specification, decoder, or caller.
 
 Native body failures become safe response-body errors.
 
-### 18.5 Decode
+#### 18.1.5 Conversion
 
-The decoder receives complete bounded bytes only.
+`ResponseBodySpec::from_body` receives complete bounded `Bytes` only. A generic buffered codec
+adapter then invokes `DecodeBody` once on those complete bytes.
 
 A decode failure becomes a safe response-decoding error.
 
-### 18.6 Metadata terminal
+#### 18.1.6 Metadata terminal
 
-A metadata response wraps the decoded semantic result after successful decoding.
+A metadata terminal wraps the converted semantic result in `ApiResponse<T>` after successful
+conversion. Direct await returns the semantic value.
 
-**EXEC-BUFFER-001 — Known excess preflight.** A known excessive response length MUST fail before body polling.
+**EXEC-BUFFER-001 — Known excess preflight.** A known excessive buffered response length MUST fail before response-specification validation, body polling, or `from_body`.
 
-**EXEC-BUFFER-002 — Excess frame withholding.** The first frame causing a response-limit excess MUST NOT be delivered to the decoder or caller.
+**EXEC-BUFFER-002 — Excess frame withholding.** The first frame causing a buffered response-limit excess MUST NOT be retained or delivered to the response specification, decoder, or caller.
 
-**EXEC-BUFFER-003 — Complete body before decode.** Buffered decoding MUST begin only after complete bounded collection.
+**EXEC-BUFFER-003 — Complete body before decode.** Buffered `ResponseBodySpec::from_body` and any adapted codec decode MUST begin only after complete bounded post-decompression collection.
 
-## 19. No-content response
+## 19. Discard response mode
 
-For a `NoContent` endpoint after successful status classification:
+For a `ResponseBodySpec<Mode = Discard>` after successful status classification:
 
-1. drop the native response without polling its body;
-2. emit completion success;
-3. return `()` or `DecodedResponse<()>`.
+1. perform known-length mode preflight;
+2. run response-specification validation;
+3. drop the native response without polling its body;
+4. call `from_body((), &head)`;
+5. emit completion success;
+6. return the output directly or through `ApiResponse<T>`.
 
-No strict requirement for `204` or `205` applies.
+`NoContent` accepts every successful `2xx` and returns `()`. No strict requirement for `204` or
+`205` applies. A custom discard specification may return another safe output but cannot poll the
+body.
 
-**EXEC-NOCONTENT-001 — Ignore successful body.** `NoContent` MUST accept every successful `2xx` and MUST NOT poll the response body.
+**EXEC-NOCONTENT-001 — Ignore successful body.** `NoContent` and every discard-mode response specification MUST validate before discard, MUST receive only `()` in `from_body`, and MUST never poll the successful response body; `NoContent` MUST accept every successful `2xx`.
 
-## 20. Streaming response
+## 20. Streaming response mode
 
-Before returning a stream, Concord completes:
+Before returning a streaming output, Concord completes:
 
 1. response-head observation;
 2. auth challenge handling;
 3. success status classification;
 4. known-length limit validation;
-5. media-type validation.
+5. response-specification validation;
+6. construction of one unpolled `ByteStream`;
+7. `ResponseBodySpec::from_body` conversion and immediate deadline check.
 
 Unknown body chunks remain unpolled.
 
-The returned stream:
+The `ByteStream` passed to the response specification and retained by an ordinary streaming output:
 
-- polls Reqwest lazily;
-- counts cumulative data bytes;
+- exclusively owns and polls the native body lazily;
+- contains no response metadata or media marker;
+- counts cumulative post-decompression data bytes;
 - rejects before yielding the first excess chunk;
 - converts native body failures to safe response-body errors.
 
@@ -771,13 +827,43 @@ The user-operation completion event is emitted with outcome `StreamOpened` when 
 
 Later chunk errors do not emit another endpoint completion event.
 
-**EXEC-STREAM-001 — Lazy unknown body.** Unknown response chunks MUST remain unpolled before `StreamResponse` is returned.
+**EXEC-STREAM-001 — Lazy unknown body.** Unknown response chunks MUST remain unpolled through response-specification validation and until the selected streaming output containing the `ByteStream` has been returned.
 
-**EXEC-STREAM-002 — Chunk bound.** A stream MUST fail before yielding the first chunk that would exceed the cumulative stream limit.
+**EXEC-STREAM-002 — Chunk bound.** `ByteStream` MUST count cumulative post-decompression bytes and fail before retaining or yielding the first chunk that would exceed the finite stream limit.
 
-**EXEC-STREAM-003 — Stream-open outcome.** Successful stream creation MUST emit `StreamOpened` and MUST NOT claim that later stream consumption completed successfully.
+**EXEC-STREAM-003 — Stream-open outcome.** Successful streaming-specification conversion and return, direct or metadata-wrapped, MUST emit `StreamOpened` and MUST NOT claim that later byte or record stream consumption completed successfully or emit a second completion on later failure.
 
-**EXEC-DEADLINE-005 — Returned stream boundary.** An endpoint operation deadline governs stream creation through successful `StreamResponse` return but does not govern later caller-driven polling of the returned stream.
+**EXEC-STREAM-004 — ByteStream ownership and lazy boundary.** Core MUST transfer exactly one private native successful body into one metadata-free, media-free `ByteStream`; dropping it MUST cancel and drop native body ownership, and no response specification may access the native response directly.
+
+**EXEC-DEADLINE-005 — Returned stream boundary.** An endpoint operation deadline MUST govern response validation and synchronous streaming conversion through successful direct or `ApiResponse` output return, but MUST NOT govern later caller-driven polling of the returned `ByteStream` or `RecordStream`.
+
+### 20.1 Integrated record stream execution
+
+For `Records<D>`, response-specification validation calls `D::validate` and conversion calls
+`D::start`, both before the first `ByteStream` poll. One decoder and its one positive finite staging
+bound belong to each returned `RecordStream<D>`.
+
+Network chunks are appended only when the current staging buffer cannot produce another record.
+Decoder calls repeat without a core lock until `decode` returns `None`; then the stream may poll one
+more body chunk. A record can span arbitrary chunks and one chunk can contain several records. The
+first append that would exceed the independent staging bound is rejected without retaining the
+offending bytes, and the first completely framed oversized record is not yielded.
+
+At body EOF, the stream calls `decode_eof` repeatedly as allowed by decoder progress. A decoder may
+emit a complete final record without a trailing newline. Residual incomplete framing returns
+`IncompleteRecord`. Body read and decode failures after return are `RecordStream` items. Dropping the
+record or batch stream drops its decoder, staging buffer, and underlying `ByteStream` immediately;
+no post-return event changes the already emitted `StreamOpened` completion.
+
+**EXEC-RECORD-001 — Record stream opening.** `Records<D>` MUST run `D::validate` and construct exactly one decoder with `D::start` before body polling, then return one `RecordStream<D>` over the one unpolled `ByteStream` with `StreamOpened` completion.
+
+**EXEC-RECORD-002 — Chunk-independent record framing.** Record decoding MUST treat transport chunks only as byte delivery, MUST support records split across arbitrary chunks and several records in one chunk, and MUST repeatedly decode available records before polling another chunk.
+
+**EXEC-RECORD-003 — Bounded record staging.** Record-stream staging MUST enforce `D::max_buffered_bytes()` independently of the cumulative byte-stream limit and MUST reject the first excessive append or framed record without retaining offending bytes or yielding the oversized record.
+
+**EXEC-RECORD-004 — Exact record EOF semantics.** Record-stream EOF MUST call `decode_eof`, MAY emit a decoder-permitted complete final record without a terminal newline, and MUST return `IncompleteRecord` for residual incomplete framing rather than silently discarding it.
+
+**EXEC-RECORD-005 — Record-stream drop cancellation.** Dropping `RecordStream<D>` or `RecordBatches<D>` MUST synchronously drop its decoder state, staging bytes, and underlying `ByteStream`; later body or decoder failures MUST remain stream items and MUST emit no second completion event.
 
 ## 21. Dangerous raw response
 
@@ -793,7 +879,7 @@ It then:
 
 It does not expose a native Reqwest response or non-success body.
 
-**EXEC-RAW-001 — Runtime parity.** Dangerous raw response MUST retain ordinary auth, limiter, hooks, status, and buffered-limit behavior.
+**EXEC-RAW-001 — Runtime parity.** Dangerous raw response MUST retain ordinary request-specification preparation, auth, limiter, hooks, status, buffered-limit, deadline, cancellation, and completion behavior, MUST use a core-private eligibility capability rather than macro type-name matching, and MUST never expose a native response.
 
 ## 22. Completion observation
 
@@ -825,7 +911,7 @@ Normal terminal results emit request/page completion for success and every ordin
 
 **EXEC-COMPLETE-002 — One aggregate pagination event.** Each pagination collection MUST emit exactly one aggregate pagination completion event during normal result return, including zero-page success.
 
-**EXEC-COMPLETE-003 — Stream-open semantics.** A stream endpoint MUST use the `StreamOpened` outcome when returning its lazy stream.
+**EXEC-COMPLETE-003 — Stream-open semantics.** Every streaming-mode endpoint MUST use the `StreamOpened` outcome when returning its lazy `ByteStream`, record stream, custom streaming output, or metadata wrapper and MUST emit no second completion after later polling failure or drop.
 
 **EXEC-COMPLETE-004 — Aggregate outcome parity.** Pagination aggregate completion MUST preserve the returned ordinary page-error category and use `Pagination` only for pagination-specific cycle, controller, cap, or aggregate-ceiling failures.
 

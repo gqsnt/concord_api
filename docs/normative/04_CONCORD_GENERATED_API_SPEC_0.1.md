@@ -550,7 +550,10 @@ They become request setters.
 
 ### 8.4 Body argument
 
-When present, the body argument follows all required non-body endpoint arguments.
+When present, the final parameter named `body` is an arbitrary Rust request specification type `B`.
+It follows all required non-body endpoint arguments. Generated code requires
+`B: RequestBodySpec` and gives the public method argument type `B::Input`; it does not classify the
+type by name, crate, media, codec, mode, or semantic category.
 
 Example DSL:
 
@@ -571,6 +574,9 @@ pub fn create(
 ) -> Request<CreateEndpoint>;
 ```
 
+A bodyless endpoint exposes no body argument and uses one core-private empty specification solely to
+join the ordinary lifecycle. Adding a downstream request specification requires no macro change.
+
 ### 8.5 Endpoint return
 
 Endpoint methods return:
@@ -585,11 +591,19 @@ display `concord_core::__private`.
 
 The endpoint method performs no request execution.
 
-**GEN-END-001 — Required argument order.** Required endpoint method arguments MUST preserve declaration order, with the body argument last.
+The response following `->` is an arbitrary Rust response specification type `R`. Generated code
+requires `R: ResponseBodySpec`; its direct output is `R::Output`, and its metadata output is
+`ApiResponse<R::Output>`. The macro does not classify response semantics.
 
-**GEN-END-002 — Request creation only.** Calling a generated endpoint method MUST NOT execute HTTP or invoke body codecs, providers, hooks, or limiters.
+**GEN-END-001 — Required argument order.** Required endpoint method arguments MUST preserve declaration order, with the arbitrary request-specification body argument last and typed as `B::Input`.
+
+**GEN-END-002 — Request creation only.** Calling a generated endpoint method MUST only store the typed request-specification input and MUST NOT execute HTTP or invoke request metadata, preparation, codecs, factories, providers, hooks, or limiters.
 
 **GEN-END-003 — Stable request-wrapper path.** Generated endpoint methods and `client.request(endpoint)` MUST return `concord_core::Request<E>`. Each generated client's `request` method MUST use a public, API-specific, sealed endpoint capability so an endpoint generated for another client, an arbitrary application value, or a downstream implementation is rejected at compile time. The public signature MAY name that API-specific capability, but MUST NOT expose its private seal, generated-private core endpoint bounds, or `concord_core::__private` in public signatures or public Rustdoc.
+
+**GEN-BODY-001 — Type-shaped request-body generation.** For an endpoint body type `B`, generated code MUST require `B: RequestBodySpec`, expose an argument of `B::Input`, store the typed input without preparation, and use the one core lifecycle; bodyless endpoints MUST expose no body argument and use only the core-private empty specification.
+
+**GEN-RESP-001 — Type-shaped response generation.** For a response type `R`, generated code MUST require `R: ResponseBodySpec`, map direct await to `R::Output`, and select behavior only through core traits and capabilities without macro semantic classification.
 
 ## 9. Endpoint request setters
 
@@ -689,22 +703,15 @@ Explicit generated endpoint values use inherent optional/defaulted setters befor
 let value = request.await?;
 ```
 
-Output mapping:
+For every endpoint response specification `R`, the direct-await output is exactly `R::Output`.
+This includes buffered codecs, bytes, discard, `ByteStream`, record streams, and downstream custom
+outputs without a generated semantic branch.
 
-| DSL response | Direct-await output |
-|---|---|
-| `Json<T>` | `T` |
-| `Text` | `String` |
-| custom buffered codec `C` | `<C as DecodeBody>::Output` |
-| `Bytes` | `bytes::Bytes` |
-| `NoContent` | `()` |
-| `Stream<M>` | `StreamResponse<M>` |
-
-**GEN-TERM-001 — Direct semantic output.** Direct await MUST return the endpoint's semantic result without a redundant execution wrapper.
+**GEN-TERM-001 — Direct semantic output.** Direct await MUST return `R::Output` for the endpoint's arbitrary `ResponseBodySpec` without a redundant execution or metadata wrapper.
 
 ## 11. Metadata terminal
 
-Buffered, bytes, and no-content requests expose:
+Every ordinary response specification exposes:
 
 ```rust
 pub fn response(
@@ -717,20 +724,21 @@ The wrapper is also available as `ResponseRequest` from `concord_core::prelude`.
 Awaiting the returned value produces:
 
 ```rust
-Result<DecodedResponse<T>, ApiError>
+Result<ApiResponse<R::Output>, ApiError>
 ```
 
-where `T` is the direct-await output.
+The same terminal therefore wraps buffered output, `Bytes`, `()`, `ByteStream`, `RecordStream<D>`,
+and downstream custom outputs. Streaming endpoints expose `.response()`; stream opening completion
+remains `StreamOpened` whether direct or wrapped. `DecodedResponse<T>` remains only the public
+compatibility alias for `ApiResponse<T>`.
 
-For `NoContent`, `T` is `()`.
+**GEN-TERM-002 — Metadata availability.** `.response()` MUST be available for every `ResponseBodySpec` and MUST return the one universal `ApiResponse<R::Output>` without changing response-mode completion.
 
-Streaming endpoints do not expose `.response()` because `StreamResponse<M>` already carries successful metadata.
-
-**GEN-TERM-002 — Metadata availability.** `.response()` MUST be available only when it adds meaningful metadata beyond the direct output.
+**GEN-RESP-002 — Universal metadata terminal.** Generated metadata terminals MUST use the same `ResponseBodySpec` and executor as direct await and MUST return `ApiResponse<R::Output>` for buffered, streaming, discard, records, and downstream outputs.
 
 ## 12. Dangerous raw response
 
-Under `dangerous-raw-response`, buffered, bytes, text, JSON, custom-codec, and no-content requests expose:
+Under `dangerous-raw-response`, eligible requests expose:
 
 ```rust
 pub fn raw_response(
@@ -744,15 +752,16 @@ Awaiting returns:
 Result<RawResponse, ApiError>
 ```
 
-The endpoint decoder is not invoked.
-
-Streaming endpoints do not expose `raw_response()` in 0.1.
+The endpoint response specification is not invoked. Eligibility is selected through one core-private
+bounded raw-success capability and never through macro response-name or category matching. Streaming
+and record-stream response specifications do not expose `raw_response()` in 0.1.
 
 **GEN-TERM-003 — Feature-gated raw method.** `raw_response()` MUST be absent when `dangerous-raw-response` is disabled.
 
 ## 13. Pagination
 
-A request exposes pagination only when its endpoint has a pagination declaration and its decoded output implements the required `IntoIterator` bound.
+A request exposes pagination only when its endpoint has a pagination declaration, its response type
+implements `PageResponseSpec`, and `R::Output: IntoIterator`.
 
 ### 13.1 Pagination method
 
@@ -790,11 +799,17 @@ There is no `.collect()` terminal and no loop-detection opt-out.
 
 **GEN-PAGE-002 — No collect method.** Generated pagination MUST NOT require or expose a separate `.collect()` terminal.
 
-**GEN-PAGE-003 — Conditional availability.** Non-paginated or incompatible endpoints MUST NOT expose pagination methods.
+**GEN-PAGE-003 — Conditional availability.** Pagination MUST require the explicit declaration plus `R: PageResponseSpec` and `R::Output: IntoIterator`; non-paginated responses and bytes, no-content, stream, and records specifications MUST NOT expose pagination methods.
 
-Generated-private integration uses one sealed endpoint capability with an associated item type, an associated controller type, complete initial controller construction, and binding of the current controller into a fresh endpoint clone. Generated code invokes the one core-owned page loop exactly once and contains no page-loop algorithm. The synchronized private generated contract version is `12`.
+Generated-private integration uses one sealed endpoint capability with an associated response
+specification and item type, an associated controller type, complete initial controller
+construction, and binding of the current controller into a fresh endpoint clone. Generated code
+invokes the one core-owned page loop exactly once and contains no page-loop algorithm. The
+synchronized private generated contract version is `13`.
 
-**GEN-PAGE-004 — Associated typed controller integration.** A generated paginated endpoint MUST expose to core, through a generated-private sealed capability, one associated controller type implementing `PaginationController` for the decoded page, one complete initial-controller operation, one current-controller-to-fresh-endpoint binding operation, and one item type; it MUST NOT pass separate runtime factory, binder, or short-page callbacks, generate another page loop, erase the controller, or expose this integration publicly.
+**GEN-PAGE-004 — Associated typed controller integration.** A generated paginated endpoint MUST expose to core, through a generated-private sealed capability, one associated response specification implementing `PageResponseSpec`, one associated controller type implementing `PaginationController` for `R::Output`, one complete initial-controller operation, one current-controller-to-fresh-endpoint binding operation, and one item type; it MUST NOT pass separate runtime factory, binder, or short-page callbacks, generate another page loop, erase the response or controller, or expose this integration publicly.
+
+**GEN-PAGE-005 — Capability-based page response.** Macro production code MUST gate pagination through `PageResponseSpec` and `R::Output: IntoIterator`, MUST NOT inspect a response name, and MUST allow downstream custom buffered page-response specifications without a macro change.
 
 ## 14. Endpoint-backed credential acquisition
 
@@ -841,7 +856,7 @@ Its constructor accepts, in order:
 
 1. every required enclosing scope value from outermost scope to innermost scope, preserving lexical declaration order within each scope;
 2. every required non-body endpoint argument in endpoint declaration order;
-3. the request body last, when present.
+3. the request-specification input `B::Input` last, when present.
 
 For:
 
@@ -886,7 +901,11 @@ let user = client.request(endpoint).await?;
 
 `client.request(endpoint)` returns the same `Request<E>` type used by facades. It supplies only the generated client's fixed client-value snapshot, credential handles, and core runtime; it does not infer or replace missing scope values. Every generated API owns a distinct sealed endpoint capability. Only that API's generated endpoint types implement the capability, downstream code cannot implement it, and facade methods construct an endpoint value and call the same capability-constrained request path. No runtime client identifier or dynamic ownership check is used.
 
-The same `request` method accepts stable advanced `PreparedEndpoint<R>` values. Prepared endpoints use the generated client's base URL, core runtime, hooks, limiter, and limits, plus credentials explicitly attached to the prepared endpoint.
+The same `request` method accepts stable advanced `PreparedEndpoint<R>` values where
+`R: ResponseBodySpec`. Prepared request and response specifications use the same generated-client
+base URL, core body lifecycle, sealed acquisition, executor, hooks, limiter, limits, status,
+recovery, cancellation, and completion path, plus credentials explicitly attached to the prepared
+endpoint. No prepared response-marker dispatch or prepared-specific executor is generated.
 
 Explicit endpoint values do not expose private generated context or storage types.
 
@@ -895,6 +914,8 @@ Explicit endpoint values do not expose private generated context or storage type
 **GEN-EXPL-002 — Scope-complete construction.** An explicit endpoint constructor MUST accept every required enclosing scope value in lexical outer-to-inner order, followed by required endpoint arguments in declaration order and the body argument last when present. The explicit endpoint MUST expose the optional/defaulted scope controls needed for parity with facade-created execution.
 
 **GEN-EXPL-003 — No inferred scope.** `client.request(explicit_endpoint)` MUST NOT infer a required scope value from unrelated client state.
+
+**GEN-PREP-001 — Prepared generic body and response specifications.** Generated clients MUST accept `PreparedEndpoint<R>` with arbitrary core-supported request and response specifications through the same runtime and MUST NOT generate a prepared-specific executor, response-marker taxonomy, or pagination path.
 
 ## 16. Names and collisions
 
@@ -1015,14 +1036,10 @@ traits, and private request fields are not rendered.
 | `GET ById(id: String)` | `.by_id(id)` |
 | endpoint `Option<bool>` | request `.field(value)`, `.clear_field()` |
 | endpoint default | request `.field(value)`, `.reset_field()` |
-| `body: Json<T>` | method argument `T` |
-| `body: Text` | method argument `String` |
-| `body: Stream<M>` | method argument `StreamBody` |
-| `body: Multipart` | method argument `MultipartBody` |
-| `-> Json<T>` | await `T` |
-| `-> Text` | await `String` |
-| `-> Bytes` | await `Bytes` |
-| `-> NoContent` | await `()` |
-| `-> Stream<M>` | await `StreamResponse<M>` |
-| endpoint `paginate ...` | `.paginate(n).await -> Vec<Item>` |
+| `body: B` where `B: RequestBodySpec` | method argument `B::Input`, body last |
+| bodyless endpoint | no body argument; core-private empty specification |
+| `-> R` where `R: ResponseBodySpec` | direct await `R::Output` |
+| metadata terminal for `-> R` | `.response().await -> ApiResponse<R::Output>` |
+| compatible endpoint `paginate ...` | requires `R: PageResponseSpec`, `R::Output: IntoIterator`; `.paginate(n).await -> Vec<Item>` |
+| prepared endpoint | generic request and response specifications through the same executor |
 | endpoint-backed credential | `.acquire_as_name().await -> Result<(), ApiError>` |

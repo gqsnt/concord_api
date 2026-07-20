@@ -129,6 +129,22 @@ controller-agnostic core loop. This addendum does not reopen Phase 10 evidence; 
 requirements and their exact lineage are recorded in
 `normative/09_CONCORD_REQUIREMENT_CHANGE_RECORD_0.2.md`.
 
+### 3.12 Phase 12 generic body/response and records authority addendum
+
+The user-approved Phase 12 directive supersedes the closed macro body/response category model and
+ADR-022's placement of all record streaming outside core. ADR-045 establishes arbitrary Rust
+`RequestBodySpec` and `ResponseBodySpec` types over one managed request lifecycle, exactly three
+sealed core response acquisition modes, one metadata-free bounded `ByteStream`, one universal
+`ApiResponse<T>`, generic prepared selection, capability-based pagination, and integrated optional
+records/CSV/NDJSON support inside `concord_core`.
+
+The valid boundedness, Reqwest ownership, status, hook ordering, security, extension isolation,
+completion, and single-executor outcomes from prior review remain in force. Phase 12 adds no native
+response access, unbounded body mode, second runtime, separate records crate, multipart response
+parser, or specialized reconnecting protocol. Current exact requirement lineage is recorded in
+`normative/10_CONCORD_REQUIREMENT_CHANGE_RECORD_0.3.md`; historical evidence remains evidence only
+for its recorded requirement paragraph and immutable source.
+
 ### 3.10 Coverage planning versus evidence
 
 Accepted.
@@ -145,7 +161,7 @@ Concord 0.1 still does not add:
 - automatically generated endpoint-specific typed status-error enums;
 - unbounded, streaming, or truncated terminal status bodies;
 - a strict built-in rate-limit capacity mode;
-- incremental page/item streams;
+- incremental pagination page/item streams or pagination over record streams;
 - terminal stream-consumption hooks;
 - a Concord-owned general retry engine;
 - credential partition-key DSL;

@@ -205,7 +205,9 @@ Successful logical URL accessors intentionally retain ordinary public query valu
 
 ## 8. Request bodies
 
-**SEC-BODY-002 — Request body diagnostic exclusion.** Request body bytes MUST NOT appear in:
+**SEC-BODY-002 — Request body diagnostic exclusion.** Request-specification inputs, prepared request
+bodies, stream chunks, multipart values, encoded bytes, factory error text, and produced managed
+body values MUST NOT appear in:
 
 - `ApiError` display/debug;
 - built-in source chains;
@@ -225,6 +227,11 @@ This includes:
 - multipart filenames;
 - body producer error text containing body fragments.
 
+The selected request specification intentionally receives its documented input and owns its own
+logging behavior. Concord forwards only structural `RequestBodyMetadata` to `before_send`; no hook,
+limiter, debug surface, authentication surface, or native request diagnostic receives the input or
+produced body.
+
 Safe body errors may include numeric metadata:
 
 - configured limit;
@@ -232,7 +239,9 @@ Safe body errors may include numeric metadata:
 - observed byte count;
 - body category.
 
-**SEC-BODY-001 — No request body diagnostics.** Concord-owned ordinary diagnostics MUST contain no request body bytes or multipart values.
+**SEC-BODY-001 — No request body diagnostics.** Concord-owned ordinary formatting, recursive sources, callbacks, request debug, response debug, completion, pagination, limiter contexts, Rustdoc, and generated Rustdoc MUST contain no request-specification input, encoded bytes, stream chunks, multipart values, filenames, or managed outgoing body values.
+
+**SEC-BODY-003 — Request-specification extension isolation.** A selected `RequestBodySpec` MAY receive only its documented input and `RequestBodyContext`; metadata MUST expose only structural facts, and no request specification MAY receive URL, headers, credentials, authentication, limiter, native request, Reqwest, or transport state.
 
 ## 9. Response bodies
 
@@ -250,17 +259,26 @@ A challenge response that will be followed by authentication recovery remains un
 
 Successful bytes are intentionally provided to:
 
-- the selected response codec;
+- the selected buffered response specification or codec;
 - bytes response callers;
 - dangerous raw response callers.
 
 ### 9.3 Successful streams
 
-Successful stream chunks are intentionally provided to the application.
+Successful stream chunks are intentionally provided only through the selected streaming response
+specification's `ByteStream` and its returned application value. The selected response extension
+intentionally receives the documented successful `ResponseHead` and owns its own logging behavior.
 
-### 9.4 Diagnostics
+### 9.4 Record streams
 
-**SEC-RESP-003 — Response body diagnostic exclusion.** Response body bytes MUST NOT appear in:
+Record bytes, CSV headers and fields, JSON values, parser-authored text, and downstream decoder state
+are intentionally available only to the selected record decoder as required by its public contract.
+Concord record errors, sources, stream debugging, completion, and other automatic surfaces contain
+only safe structural categories and approved safe messages.
+
+### 9.5 Diagnostics
+
+**SEC-RESP-003 — Response body diagnostic exclusion.** Buffered bytes, `ByteStream` chunks, record bytes, decoded values, response-specification output, and parser-authored unsafe text MUST NOT appear in:
 
 - `ApiError` display or debug;
 - Concord-controlled source chains;
@@ -270,19 +288,23 @@ Successful stream chunks are intentionally provided to the application.
 - completion events;
 - wrapper `Debug`.
 
-**SEC-RESP-004 — Structural decoded-response debugging.** `DecodedResponse<T>::Debug` MUST be structural and MUST NOT format `T`.
-
-**SEC-RESP-005 — Non-consuming stream debugging.** `StreamResponse<M>::Debug` MUST NOT consume or inspect stream chunks.
-
-**SEC-RESP-006 — Structural raw-response debugging.** `RawResponse::Debug` MUST report body length rather than body bytes.
+**SEC-RESP-006 — Structural raw-response debugging.** `RawResponse::Debug` MUST report only structural successful metadata and body length rather than headers or body bytes, and response-specification errors MUST not reproduce application text or response data.
 
 **SEC-RESP-001 — Explicit terminal-body boundary.** A terminal non-success body MUST be exposed only through the finite opaque `HttpResponseFailure` status-body API and MUST remain absent from every automatic diagnostic or callback surface.
 
 **SEC-RESP-002 — Structural wrapper debug.** Successful and terminal status-response wrapper `Debug` implementations MUST NOT print decoded values or body bytes.
 
-**SEC-RESP-007 — No truncated body exposure.** Concord MUST discard all collected terminal status-body bytes when complete capture cannot finish within the configured limit.
+**SEC-RESP-007 — No truncated body exposure.** Concord MUST discard all collected terminal status-body bytes when complete capture cannot finish within the configured limit; buffered and streaming success acquisition MUST withhold the first excess chunk from response specifications and callers.
 
-**SEC-RESP-008 — Terminal status preservation.** Status-body read failure, limit exhaustion, or deadline expiry MUST NOT replace a known terminal HTTP status with a response-body category.
+**SEC-RESP-008 — Terminal status preservation.** Status-body read failure, limit exhaustion, deadline expiry, or response-specification eligibility MUST NOT replace a known terminal HTTP status with a response-body category or invoke successful response validation.
+
+**SEC-RESP-009 — Structural ApiResponse debugging.** `ApiResponse<T>::Debug` MUST be structural and MUST NOT format `T`, response headers, or response body data; `DecodedResponse<T>` MUST inherit exactly that implementation through its alias.
+
+**SEC-STREAM-001 — ByteStream diagnostic exclusion.** `ByteStream::Debug` MUST NOT consume or inspect native body state, stream chunks, response metadata, or media data, and safe stream errors and recursive sources MUST reproduce none of those values.
+
+**SEC-RECORD-001 — Record-data diagnostic exclusion.** Record bytes, CSV headers or fields, JSON values, downstream decoder state, and parser-authored text MUST remain absent from Concord formatting, recursive sources, hooks, debug, completion, limiter contexts, Rustdoc, and generated Rustdoc.
+
+**SEC-RECORD-002 — Record-parser error sanitization.** CSV, NDJSON, and downstream record-parser failures MUST map to structural `RecordErrorKind` plus only explicitly application-approved safe messages; native or parser-authored unsafe text MUST NOT enter formatting or recursive sources.
 
 
 ## 10. Provider data
@@ -474,11 +496,11 @@ The binary unit `MiB` is:
 1 MiB = 1,048,576 bytes
 ```
 
-**BOUND-BODY-001 — Request default.** The default application request-body limit is 16 MiB.
+**BOUND-BODY-001 — Request default.** The default application request-body limit is 16 MiB for every generated or prepared `RequestBodySpec` and its one produced managed `RequestBody`.
 
-**BOUND-BODY-002 — Buffered response default.** The default application buffered-response limit is 16 MiB.
+**BOUND-BODY-002 — Buffered response default.** The default application buffered-response limit is 16 MiB for every `ResponseBodySpec<Mode = Buffered>` before `from_body` receives complete bytes.
 
-**BOUND-BODY-003 — Stream response default.** The default application stream-response limit is 16 MiB.
+**BOUND-BODY-003 — Stream response default.** The default application stream-response limit is 16 MiB for every `ResponseBodySpec<Mode = Streaming>` and its media-independent `ByteStream`.
 
 **BOUND-BODY-004 — Provider request default.** The default provider request-body limit is 1 MiB.
 
@@ -496,7 +518,7 @@ For multipart, it includes framing, boundaries, part headers, and payload.
 
 Response limits count bytes yielded by Reqwest after enabled decompression.
 
-**BOUND-BODY-011 — Post-decompression response accounting.** Response-body limits MUST count bytes yielded by Reqwest after enabled decompression.
+**BOUND-BODY-011 — Post-decompression response accounting.** Buffered acquisition, `ByteStream`, and record-stream cumulative response limits MUST count bytes yielded by Reqwest after enabled decompression.
 
 ### 17.3 Known and unknown lengths
 
@@ -512,7 +534,19 @@ It does not guarantee that a custom synchronous codec's transient internal alloc
 
 **BOUND-CODEC-001 — Codec allocation awareness.** A codec receives the configured limit and SHOULD reject before excessive allocation when practical.
 
-**BOUND-BODY-006 — Excess-frame withholding.** Concord MUST not deliver or decode the first frame or chunk that causes a body limit to be exceeded.
+**BOUND-BODY-006 — Excess-frame withholding.** Concord MUST not retain, deliver to a response specification or record decoder, or decode the first request frame, response chunk, or record-staging append that causes its applicable limit to be exceeded.
+
+### 17.5 Record staging
+
+Record staging is bounded independently of the cumulative streaming response limit. Every
+`RecordDecoder::max_buffered_bytes()` value is positive and finite. The built-in CSV and NDJSON
+decoders use exactly 1 MiB as the maximum undecoded record or logical-line staging bound.
+
+**BOUND-RECORD-001 — Positive finite decoder staging.** Every record decoder MUST declare a positive finite `max_buffered_bytes()` bound that is enforced independently of the cumulative `ByteStream` limit.
+
+**BOUND-RECORD-002 — Record first-excess withholding.** The first append or completely framed record that exceeds the decoder staging bound MUST be rejected without retaining its offending bytes or yielding the oversized record.
+
+**BOUND-RECORD-003 — Built-in record staging default.** `Csv<T>` and `NdJson<T>` MUST each use a 1 MiB positive finite maximum undecoded record or logical-line staging bound.
 
 ## 18. Finite limit configuration
 
@@ -524,7 +558,7 @@ Terminal status-body capture may use another positive finite limit or may be dis
 
 No ordinary Concord 0.1 API disables an application or provider success/request body limit. Zero is invalid for those limits.
 
-**BOUND-BODY-007 — Finite ordinary limits.** Application request, buffered-response, stream-response, provider-request, and provider-response limits MUST remain positive and finite through every ordinary API.
+**BOUND-BODY-007 — Finite ordinary limits.** Application request, buffered-response, stream-response, record-staging, provider-request, and provider-response limits MUST remain positive and finite through every generated, prepared, and ordinary advanced API.
 
 **BOUND-BODY-008 — Provider cap.** A provider request MAY reduce its response limit but MUST NOT increase or disable the client-wide provider response cap.
 
@@ -625,6 +659,8 @@ Concord does not impose an automatic timeout or memory cap on custom:
 
 - hooks;
 - codecs;
+- request and response specifications;
+- record decoders and batching consumers;
 - credential providers;
 - body factories;
 - limiters;

@@ -264,9 +264,10 @@ endpoint setter. Explicit endpoint values remain local generated types and use i
 before they enter `Request<E>`.
 
 The wrappers implement `IntoFuture` with a publicly nameable boxed future alias without allocating a
-runtime endpoint descriptor. Generated-private `EndpointSpec`, `BodySpec`, `ResponseHandler`,
-`ClientCore`, and execution bounds remain hidden from generated public signatures and public
-Rustdoc; they are not promoted merely to satisfy Rust type visibility.
+runtime endpoint descriptor. Generated-private `EndpointSpec`, `ClientCore`, and execution bounds
+remain hidden from generated public signatures and public Rustdoc. Public `RequestBodySpec` and
+`ResponseBodySpec` are intentional extension contracts; their native adapters and executor remain
+private.
 
 ## 10. Generated-private endpoint integration
 
@@ -276,16 +277,24 @@ Recommended shape:
 
 ```rust
 pub trait EndpointSpec: Send + 'static {
-    type Body: BodySpec;
-    type Response: ResponseHandler;
+    type Body: RequestBodySpec;
+    type Response: ResponseBodySpec;
 
-    fn prepare_head_and_body_metadata(
+    fn prepare_head(
         &self,
         base: &Url,
         options: &RequestOptions,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError>;
+    ) -> Result<PreparedHead, ApiError>;
 
-    fn into_body(self) -> Self::Body;
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError>;
+
+    fn prepare_body(
+        self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBody, BodyError>;
 }
 ```
 
@@ -296,7 +305,18 @@ the existing pending wrapper, not an executor, endpoint plan, public mutation AP
 wrapper. Generated extension-trait signatures name only the stable `Request<E>` and declared value
 types; they do not name `EndpointSpec`, `ClientCore`, `RequestOptions`, or `__private`.
 
-Borrowed metadata preparation permits route, auth-collision, TLS, content-type ownership, replayability, exact-length, and lower-bound validation before consuming or encoding the body. `into_body(self)` then transfers body ownership exactly once after hook approval.
+Borrowed public-head preparation and request-specification metadata permit route, auth-collision,
+TLS, content-type ownership, exact-length, and lower-bound validation before consuming or encoding
+the body. `prepare_body(self)` dispatches the selected public `RequestBodySpec::prepare` exactly once
+after hook approval and transfers the input into the one managed `RequestBody`. A bodyless endpoint
+uses one core-private empty specification and exposes no public input.
+
+Because the stable prepared type is parameterized only by response specification `R`,
+`PreparedEndpoint<R>` stores its selected request specification behind one private owned adapter.
+That adapter captures `B::Input` and delegates exactly to `B::metadata` and `B::prepare`; it has no
+independent materialization, retry, native body, executor, or output-downcast behavior. This private
+storage erasure preserves the one public request lifecycle without adding `B` to the prepared public
+type.
 
 One-shot bodies need no `Mutex<Option<T>>` workaround.
 
@@ -339,56 +359,61 @@ The builder should not reproduce DSL inheritance; that is macro normalization wo
 
 ## 13. Typed response architecture
 
-Normal responses remain typed through an internal handler trait:
-
-```rust
-pub trait ResponseHandler: Send + Sync + 'static {
-    type Output: Send + 'static;
-
-    fn accept() -> Option<HeaderValue>;
-
-    fn handle<'a>(
-        input: ResponseInput<'a>,
-    ) -> BoxFuture<'a, Result<Self::Output, ApiError>>;
-}
-```
-
-Core handler types:
+Normal responses are statically typed through the stable public `ResponseBodySpec`. Its associated
+`Mode` selects one of three public markers whose `ResponseMode` implementation is sealed inside
+core:
 
 ```text
-Buffered<C: DecodeBody>
-BytesResponse
-NoContentResponse
-Streaming<M: MediaType>
-RawResponseHandler        // dangerous feature
+Buffered  -> Bytes
+Streaming -> ByteStream
+Discard   -> ()
 ```
 
-The handler trait is generated-private/internal. Application codecs implement `DecodeBody`, not `ResponseHandler`.
+The executor owns successful status classification, mode-specific known-length preflight, native
+response ownership, bounded acquisition, deadline checks, error reduction, and completion. It
+constructs a borrowed logical `ResponseHead`, calls `R::validate` before the first body poll, and
+calls `R::from_body` only after the selected mode body is ready. No application specification
+receives a native response or can introduce a fourth mode.
 
-This preserves static output typing while centralizing status/limit behavior in the executor.
+One blanket adapter maps every `DecodeBody` codec to buffered `ResponseBodySpec`. `Text`, `Json<T>`,
+`Bytes`, `NoContent`, `Stream<M>`, and feature-gated `Records<D>` use the same contract. Dangerous
+raw success remains a separate private capability that reuses bounded execution but skips the
+selected specification; it is not a public acquisition mode.
+
+`ApiResponse<T>` is the single successful metadata wrapper for every mode.
+`DecodedResponse<T>` is only a type alias and there is no `StreamResponse<M>` implementation.
 
 ## 14. Body architecture
 
-### 14.1 Sealed body specification
+### 14.1 Public request specification
 
 ```rust
-pub trait BodySpec: Send + 'static {
-    fn metadata(&self) -> Result<BodyMetadata, ApiError>;
+pub trait RequestBodySpec: Send + Sync + 'static {
+    type Input: Send + 'static;
 
-    fn materialize(
-        self,
-        context: BodyMaterializeContext<'_>,
-    ) -> Result<PreparedBody, ApiError>;
+    fn metadata(
+        input: &Self::Input,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError>;
+
+    fn prepare(
+        input: Self::Input,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBody, BodyError>;
 }
 ```
 
-`metadata()` is side-effect-light and does not invoke codecs, factories, multipart factories, or streams. It reports content-type ownership, body kind, replayability category, and trustworthy exact/lower-bound length information.
+`metadata()` is structural and does not invoke codecs, body or multipart factories, streams, file
+I/O, or native body construction. It reports request content-type ownership, body kind, and
+trustworthy exact/lower-bound length facts; it cannot label replayability.
 
-`materialize()` runs only after before-send hook approval.
+`prepare()` runs synchronously exactly once after before-send hook approval. Core validates its
+result against metadata before protected phases. Built-in and downstream implementations all
+return the one stable managed `RequestBody`; there is no parallel outgoing-body type or lifecycle.
 
-### 14.2 Prepared body variants
+### 14.2 Managed request-body forms
 
-Private `PreparedBody` variants represent behavior:
+The public `RequestBody` has private representation. Its internal forms represent behavior:
 
 ```text
 Empty
@@ -400,11 +425,16 @@ OneShotMultipart
 MultipartFactory
 ```
 
-Each variant provides current-attempt native body construction, replayability, safe body-kind metadata, and known length.
+Each form provides current-attempt native body construction, replayability inferred by core, safe
+body-kind metadata, and known length. Metadata/produced-body validation rejects kind, exact or lower
+bound, content-type ownership, generated ownership, body-presence, and impossible-state
+contradictions before credentials, limiter, debug, authentication, native construction, or send.
 
 ### 14.3 Buffered codec
 
-A `CodecBody<C>` owns `C::Input`. Materialization invokes `C::encode`, validates returned bytes, and creates reusable `Bytes`.
+The generic `C: EncodeBody` request-specification adapter owns `C::Input`. `prepare` invokes
+`C::encode`, validates returned bytes, and creates reusable `Bytes`. A complete custom codec
+implements only `EncodeBody`.
 
 ### 14.4 Native body wrapper
 
@@ -414,24 +444,46 @@ All streaming native bodies pass through one private wrapper that counts data by
 
 Reqwest owns multipart serialization. Concord wraps the resulting Reqwest body with the same aggregate byte-counting layer.
 
+### 14.6 Byte and record streams
+
+`ByteStream` privately owns exactly one native successful response body plus its cumulative
+post-decompression counter and finite limit. It owns no response metadata or media marker, withholds
+the first excess chunk, safely reduces native errors, and cancels by ordinary drop. It is the only
+streaming acquisition body delivered to `ResponseBodySpec`.
+
+Under `records`, `RecordStream<D>` owns one `ByteStream`, one `D: RecordDecoder`, one `BytesMut`
+staging buffer, and explicit EOF/progress state. Decoder calls run synchronously without a core lock.
+The independent positive staging bound is checked before append, so offending bytes and oversized
+framed records are withheld. `RecordBatches<D>` is a consumer adapter around one record stream, not
+another response mode or executor. `Csv<T>` and `NdJson<T>` are isolated decoder implementations
+under their features and use a 1 MiB staging bound.
+
 ## 15. Execution engine structure
 
-The executor is generic over the endpoint response handler and follows the normative ordering in `EXEC-ORDER-001`.
+The executor is generic over the endpoint request and response specifications and follows the
+normative ordering in `EXEC-ORDER-001`.
 
 Suggested private decomposition:
 
 ```text
 record_operation_start_and_id
-prepare_head_and_body_metadata
+prepare_public_head
+compute_request_spec_metadata_and_known_checks
 run_before_send_hook
-materialize_body
+prepare_request_spec_once
+validate_metadata_against_request_body
+materialize_managed_body_for_attempt
 preflight_credentials
 acquire_limiter
 finalize_credentials
 build_and_run_attempt
 observe_response_head
 handle_challenge
-capture_terminal_status_or_handle_success
+capture_terminal_status_or_classify_success
+preflight_response_mode_length
+validate_response_spec_before_poll
+acquire_sealed_mode
+convert_response_spec_and_check_deadline
 emit_request_or_page_completion
 ```
 
@@ -558,11 +610,15 @@ Common typed facts are:
 ```rust
 pub trait PaginatedEndpoint:
     EndpointSpec + Clone
+where
+    Self::Response: PageResponseSpec,
+    <Self::Response as ResponseBodySpec>::Output:
+        IntoIterator,
 {
     type Item: Send + 'static;
     type Controller:
         PaginationController<
-            <Self::Response as ResponseHandler>::Output
+            <Self::Response as ResponseBodySpec>::Output
         >;
 
     fn initial_controller(
@@ -589,8 +645,9 @@ It receives no factory, binder, or short-page callback. Count termination is rea
 controller; no empty-page or built-in policy exists independently in core.
 
 No `Any`, state registry, public binding protocol, endpoint-generic public factory, controller-name
-branch, or runtime downcast is used. Controller methods execute outside core locks, and the
-request-local controller needs `Send` but not `Clone` or `Sync`.
+or response-name branch, or runtime downcast is used. `Bytes`, `NoContent`, `Stream<M>`, and
+`Records<D>` have no accidental page capability. Controller methods execute outside core locks, and
+the request-local controller needs `Send` but not `Clone` or `Sync`.
 
 ## 22. Canonical page identity
 
@@ -658,13 +715,13 @@ Production client and generated types remain unchanged.
 
 The branch exists at the final Reqwest request execution boundary, after auth materialization, so tests exercise:
 
-- public validation and body metadata;
+- public validation and request-specification metadata;
 - before-send hooks;
-- body materialization;
+- request-specification preparation, consistency validation, and managed-body materialization;
 - credential preflight and post-limiter finalization;
 - limiter;
 - auth insertion;
-- response processing.
+- sealed response-mode processing and record streaming.
 
 Ordinary deterministic capture remains safe; explicit fake-value expectations remain inside test infrastructure.
 
@@ -687,7 +744,8 @@ Cancellation behavior should emerge from ownership:
 - limiter sleeping future owns no reserved quota;
 - one-shot body lives in the active native request;
 - buffered response future owns body polling;
-- returned stream owns later polling;
+- returned `ByteStream` owns later native polling;
+- returned record or batch stream owns decoder state, staging, and its `ByteStream`;
 - pagination future owns result/controller/identity state.
 
 No asynchronous work should be spawned merely to simplify cancellation unless the contract requires work to outlive the caller. Concord 0.1 has no such requirement.
@@ -700,8 +758,9 @@ No asynchronous work should be spawned merely to simplify cancellation unless th
 - one `HeaderMap` for public request headers;
 - one request-local auth preflight map plus short-lived finalized material;
 - one pagination result vector, bounded identity set, and aggregate counters;
+- one bounded `BytesMut` staging buffer per record stream;
 - boxed futures only at dynamic extension boundaries;
-- monomorphized response handlers for normal output paths.
+- monomorphized request and response specifications for normal output paths.
 
 Avoid cloning full request bodies or decoded pages except where user types explicitly do so.
 
@@ -729,6 +788,7 @@ concord_core/src/
 ├── codec/
 ├── body/
 ├── response/
+├── records/              # feature-gated, integrated over response/ByteStream
 ├── auth/
 ├── rate_limit/
 ├── pagination/
@@ -777,6 +837,16 @@ Rejected because fixed independently built client snapshots prevent credential r
 
 Rejected because it requires generic runtime knowledge of page internals and creates truncation/proof semantics unrelated to page transport.
 
+### 32.9 Unsealed or native response extensions
+
+Rejected because a fourth acquisition mode or native response access could bypass status, bounds,
+deadline, cancellation, completion, and Reqwest ownership.
+
+### 32.10 Separate prepared or records runtime
+
+Rejected because generic prepared endpoints and incremental record framing compose with the one
+request/response lifecycle and executor; another runtime would duplicate security-critical order.
+
 ## 33. Architecture acceptance criteria
 
 The implementation architecture is acceptable when:
@@ -784,9 +854,12 @@ The implementation architecture is acceptable when:
 - generated clients have no transport/executor generic;
 - public advanced code needs no private import;
 - normal endpoint outputs use no runtime downcast;
+- arbitrary request and response specifications use public-only contracts and one executor;
+- response acquisition has exactly three core-sealed modes and no native escape;
 - public client values require no mutation locks;
-- body consumption is enforced by ownership;
+- one managed request body and `ByteStream` enforce body consumption by ownership;
+- record staging is independently positive and finite;
 - auth type erasure is private and limited to heterogeneous credential materialization;
-- pagination controller state is typed;
+- pagination controller state and page-response capability are typed;
 - one execution engine serves generated and prepared endpoints;
 - all normative ordering/security/bounds pass their conformance tests.

@@ -99,6 +99,20 @@ struct ClientAst {
 ```
 
 Scopes and endpoints similarly retain local layer declarations rather than inherited configuration.
+An endpoint AST retains body and response types without semantic classification:
+
+```rust
+struct EndpointAst {
+    // structural endpoint fields omitted
+    body: Option<syn::Type>,
+    response: syn::Type,
+    pagination: Option<PaginationAst>,
+}
+```
+
+The parser establishes only that the final parameter named `body`, when present, is last and that
+the type following `->` is the response type. It does not inspect a type name, path, generic
+argument, crate of origin, codec, media policy, response mode, or application semantics.
 
 ### 4.3 Spans
 
@@ -202,9 +216,10 @@ Build a credential dependency graph containing:
 
 Reject direct and statically discoverable cycles.
 
-## 6. Type-shape classification
+## 6. Structural value-shape classification
 
-The macro cannot fully type-check Rust types, but it must classify syntactically recognized shapes needed by the DSL:
+The macro classifies only syntactically recognized value cardinality and query expansion shapes
+needed by the DSL:
 
 ```rust
 enum Cardinality {
@@ -273,8 +288,8 @@ struct EndpointIr {
     auth: Vec<ResolvedAuthUse>,
     timeout: ResolvedTimeout,
     rate_limits: Vec<ResolvedRateLimitUse>,
-    body: BodyIr,
-    response: ResponseIr,
+    body: Option<syn::Type>,
+    response: syn::Type,
     pagination: Option<PaginationIr>,
     spans: EndpointSpans,
 }
@@ -299,18 +314,18 @@ Validation includes:
 - query/header duplicate entries;
 - reserved header names;
 - valid rate-limit costs/windows/dimensions;
-- endpoint body/response/pagination compatibility;
+- endpoint body position and pagination declaration structure;
 - duplicate pagination controller fields;
 - duplicate resolved pagination binding destinations;
 - pagination initializer and writable-destination ownership;
 - endpoint-backed cycles;
-- feature-dependent syntax markers;
 - static route literal restrictions.
 
 Some type-bound failures remain normal Rust errors:
 
 - missing `Display`;
 - missing codec implementation;
+- missing `RequestBodySpec`, `ResponseBodySpec`, `PageResponseSpec`, or feature-gated core type;
 - missing, unknown, inaccessible, or wrong controller fields;
 - non-controller and non-`Send` pagination types;
 - custom provider material mismatch;
@@ -383,7 +398,9 @@ Code generation must not:
 
 For each API, generate one public but sealed API-specific endpoint capability. For each endpoint,
 generate one concrete endpoint value, implement that API-specific capability, and implement one
-generated-private `EndpointSpec` with static `Body` and `Response` associated types. The generated
+generated-private `EndpointSpec` with static request and response specification associated types.
+For a declared body `B`, the endpoint stores `B::Input`; for a response `R`, direct output is
+`R::Output` and metadata output is `ApiResponse<R::Output>`. The generated
 client request method is constrained by the API-specific capability; the private seal and
 `EndpointSpec` bound do not appear in public Rustdoc. Facade methods construct their endpoint value
 and call that same request method.
@@ -398,21 +415,19 @@ The macro should avoid unnecessary `Clone` bounds.
 
 ### 10.5 Body generation
 
-Body markers map to generated-private body types:
-
-- no body → empty body spec;
-- JSON/custom/text → codec body;
-- stream → stream body spec;
-- multipart → multipart body spec.
+For `body: B`, generation emits only the ordinary `B: RequestBodySpec` bound, a method and explicit
+constructor argument of `B::Input`, typed input storage, and private endpoint dispatch to the one
+core request-specification lifecycle. A bodyless endpoint exposes no body argument and selects one
+core-private empty specification. Production macro source has no body semantic enum or branch for
+`Json`, `Text`, `Bytes`, `NoContent`, `Stream`, `Multipart`, `Records`, `Csv`, `NdJson`, or any
+application type.
 
 ### 10.6 Response generation
 
-Response markers map to typed handlers:
-
-- buffered codec;
-- bytes;
-- no-content;
-- stream.
+For `-> R`, generation emits only `R: ResponseBodySpec`, direct `R::Output`, and metadata
+`ApiResponse<R::Output>` integration. Core trait implementations and sealed modes select behavior.
+Raw-success eligibility uses a core-private capability bound. Production macro source has no
+response semantic enum and no type-name, crate, codec, media, or mode branch.
 
 ### 10.7 Pagination generation
 
@@ -424,11 +439,13 @@ Generate:
 - one initial construction operation;
 - one endpoint/scope bound-field operation into a fresh endpoint clone;
 - compile-time `PaginationController<Page>` bounds;
+- compile-time `R: PageResponseSpec` and `R::Output: IntoIterator` bounds;
 - item associated type;
 - configured page/item/identity ceiling plumbing.
 
-The parser, IR, resolution, and generation contain no semantic controller-name, crate-origin,
-built-in/custom, arithmetic, cursor, validation, or short-page branch. Ordinary Rust checks struct
+The parser, IR, resolution, and generation contain no semantic controller-name or response-name,
+crate-origin, built-in/custom, arithmetic, cursor, validation, mode, media, or short-page branch.
+Ordinary Rust checks struct
 field completeness, visibility, types, and controller bounds. Only declared `bind` fields enter
 continuation-redaction classification. No factory, public patch, runtime adapter, callback set,
 generated loop, erased registry, or `Any` state is generated.
@@ -443,15 +460,12 @@ The naming service ensures aliases do not collide across nested or repeated macr
 
 The macro crate has no mirrored feature flags.
 
-Generated code uses feature-gated core marker paths or compile-time assertions producing focused messages.
-
-Examples:
-
-- generated JSON code references a `__private::require_json_feature()` marker;
-- custom retry references the dangerous retry marker;
-- multipart references the multipart marker.
-
-The exact marker mechanism is private.
+Body and response feature availability is owned entirely by core public type and trait availability.
+Generated code emits the same structural bounds for built-in and downstream types, so selecting
+`Json<T>`, `Multipart`, `Records<D>`, `Csv<T>`, or `NdJson<T>` without its feature fails at compile
+time and cannot silently select another behavior. The macro may retain structural markers for
+non-type DSL capabilities such as dangerous custom retry, but cannot recognize a body or response
+name to choose a marker or mode.
 
 Diagnostics should point to the DSL declaration rather than only a missing Rust item when practical.
 
@@ -461,7 +475,8 @@ Every generated client module emits a const-time assertion against a private sem
 
 The marker version changes whenever generated code and core `__private` integration are incompatible.
 
-Uniform typed pagination changes that integration; the synchronized Phase 11 marker is `12` in
+Generic body/response specifications, universal metadata terminals, prepared selection, and
+capability-based pagination change that integration; the synchronized Phase 12 marker is `13` in
 both macro output and core.
 
 The marker must not rely solely on Cargo package version strings.
@@ -543,10 +558,13 @@ Deterministic tests compile actual generated clients and exercise core runtime b
 1. Every AST user reference is either resolved to a semantic ID or has a diagnostic.
 2. Normalized endpoint IR contains no local inheritance operations.
 3. Every generated public name is collision-checked.
-4. Every generated endpoint has one static body type and one static response handler.
-5. Pagination generation uses one type-neutral IR and no controller-name branch or runtime downcast.
-6. Codegen never imports macro-private symbols into generated public signatures.
-7. Generated Rust requires only documented public APIs plus `__private` integration.
+4. Every endpoint body is `Option<syn::Type>` and every response is `syn::Type` in AST and IR.
+5. Every generated endpoint has one static request specification and one static response specification.
+6. Production parsing, resolution, IR, and codegen have no body/response semantic enum or built-in-name branch.
+7. Pagination generation uses one type-neutral IR, `PageResponseSpec`, and no controller/response-name branch or runtime downcast.
+8. Adding a downstream request, response in any sealed mode, page response, or record decoder requires no macro source change.
+9. Codegen never imports macro-private symbols into generated public signatures.
+10. Generated Rust requires only documented public APIs plus `__private` integration.
 
 ## 19. Rejected macro designs
 

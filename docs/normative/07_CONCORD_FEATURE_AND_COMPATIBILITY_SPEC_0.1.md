@@ -17,6 +17,9 @@ concord_macros
 concord_examples
 ```
 
+Integrated record support remains a feature-gated module inside `concord_core`; there is no
+`concord_records` workspace crate or second runtime.
+
 **FEAT-WORKSPACE-001 — Optional test-support crate.** A `concord_test_support` crate MAY be added for downstream deterministic tests without changing product behavior.
 
 ### 1.1 `concord_core`
@@ -60,6 +63,9 @@ A Reqwest upgrade that changes the dangerous retry builder type, retry defaults,
 | `rate-limit-governor` | Yes | Built-in process-local governor limiter |
 | `json` | No | `Json<T>` request/response codecs and built-in OAuth2 client credentials |
 | `multipart` | No | Request-side `MultipartBody` and DSL `Multipart` |
+| `records` | No | Record decoder traits, errors, `Records`, `RecordStream`, and `RecordBatches` |
+| `csv` | No | Typed incremental `Csv<T>` decoder; enables `records` and optional Serde/CSV support |
+| `ndjson` | No | Typed incremental `NdJson<T>` decoder; enables `records`, optional Serde, and `serde_json` |
 | `gzip` | No | Reqwest gzip response decompression |
 | `brotli` | No | Reqwest Brotli response decompression |
 | `deflate` | No | Reqwest Deflate response decompression |
@@ -89,6 +95,7 @@ It does not provide:
 
 - JSON;
 - multipart;
+- records, CSV, and NDJSON;
 - response decompression features listed above;
 - dangerous raw response;
 - dangerous custom retry;
@@ -114,7 +121,8 @@ It does not provide:
 
 - TLS/HTTPS;
 - HTTP/2-specific configuration;
-- built-in governor enforcement.
+- built-in governor enforcement;
+- records, CSV, and NDJSON unless individually enabled.
 
 A fixed HTTPS generated client fails construction without TLS.
 
@@ -131,12 +139,12 @@ A dynamic HTTPS request fails during public request preparation before body, hoo
 - public `Json<T>` marker;
 - Serde request encoding;
 - Serde response decoding;
-- generated JSON DSL support;
+- the `Json<T>` request and response specification types through core type and trait availability;
 - built-in OAuth2 client-credentials provider.
 
 It does not enable TLS, HTTP/2, governor, compression, or multipart.
 
-**FEAT-JSON-001 — Independent JSON.** `--no-default-features --features json` MUST enable JSON without enabling unrelated default capabilities.
+**FEAT-JSON-001 — Independent JSON.** `--no-default-features --features json` MUST enable core-owned `Json<T>` request and response specifications and OAuth2 JSON support without enabling records, CSV, NDJSON, or unrelated default capabilities, and the macro MUST NOT classify the type by name.
 
 ## 7. Multipart feature
 
@@ -144,12 +152,37 @@ It does not enable TLS, HTTP/2, governor, compression, or multipart.
 
 - public `MultipartBody`;
 - request-side multipart part APIs;
-- DSL `body: Multipart`;
+- the real request-only `Multipart` specification type;
 - Reqwest multipart integration.
 
 It does not enable response multipart parsing.
 
-**FEAT-MULTIPART-001 — Request-only multipart.** The multipart feature MUST add no multipart response mode.
+**FEAT-MULTIPART-001 — Request-only multipart.** The multipart feature MUST expose `Multipart: RequestBodySpec<Input = MultipartBody>`, MUST add no multipart response mode, and MUST rely on core type availability rather than macro name recognition.
+
+## 7.1 Records feature
+
+`records` enables only the integrated base record traits, safe errors, `Records<D>`,
+`RecordStream<D>`, and `RecordBatches<D>`. It adds no Serde or CSV dependency and enables no JSON,
+multipart, TLS, governor, compression, or dangerous feature.
+
+**FEAT-RECORDS-001 — Optional records base.** `records` MUST be non-default, remain integrated in `concord_core`, provide the record decoder and stream base without Serde or CSV dependencies, and enable no unrelated feature or second executor.
+
+## 7.2 CSV feature
+
+`csv` enables `records`, optional Serde support, and at most one exact-version optional CSV parsing
+dependency that compiles on Rust 1.85. It does not enable `json`, `ndjson`, multipart, TLS, governor,
+compression, or dangerous features. That dependency remains absent from the default graph and from
+every `concord_macros` graph.
+
+**FEAT-CSV-001 — Optional CSV isolation.** `csv` MUST be non-default, enable only `records`, optional Serde support, and at most one exact-version Rust-1.85-compatible optional CSV parser, and MUST NOT enable `json`, `ndjson`, multipart, TLS, governor, compression, dangerous features, or a macro dependency.
+
+## 7.3 NDJSON feature
+
+`ndjson` enables `records`, optional Serde support, and the existing optional `serde_json`
+dependency. It does not enable the general `json` endpoint feature, `csv`, multipart, TLS, governor,
+compression, or dangerous features.
+
+**FEAT-NDJSON-001 — Optional NDJSON isolation.** `ndjson` MUST be non-default, enable only `records`, optional Serde, and `serde_json`, and MUST NOT enable the general `json` endpoint feature, `csv`, multipart, TLS, governor, compression, dangerous features, or a macro runtime dependency.
 
 ## 8. Compression features
 
@@ -159,7 +192,7 @@ When enabled, response limits count bytes after decompression as required by `BO
 
 Each feature exposes only its reviewed safe configuration methods.
 
-**FEAT-COMPRESS-001 — Independent decompression.** Enabling one decompression feature MUST NOT enable another.
+**FEAT-COMPRESS-001 — Independent decompression.** Enabling one decompression feature MUST NOT enable another or records, CSV, NDJSON, JSON, or multipart; all streaming and record cumulative limits MUST continue counting post-decompression bytes.
 
 ## 9. HTTP/2 feature
 
@@ -239,11 +272,13 @@ Core unit tests may compile equivalent private support under `cfg(test)`.
 
 `concord_macros` has no runtime feature matrix in 0.1.
 
-The parser recognizes feature-dependent syntax, and generated Rust produces focused compile-time errors when the corresponding core capability is absent.
+The parser accepts arbitrary Rust body and response types without recognizing feature-dependent
+semantic names. Generated ordinary trait bounds produce focused compile-time errors when a selected
+core type or capability is absent.
 
 The macro crate does not duplicate core features.
 
-**COMPAT-MACRO-001 — Single feature authority.** Runtime capability feature selection MUST be owned by `concord_core`, not mirrored by unrelated macro features.
+**COMPAT-MACRO-001 — Single feature authority.** Request/response specification and runtime capability feature selection MUST be owned exclusively by `concord_core` type and trait availability, not mirrored by macro features or semantic type-name diagnostics.
 
 ### 14.1 Generated core-path resolution
 
@@ -265,6 +300,8 @@ A caller-provided path override may be added only through a later DSL contract r
 
 **COMPAT-MACRO-004 — Pagination type neutrality.** Pagination parsing, normalized IR, generated binding, and runtime integration MUST NOT recognize controller names, crate origin, built-in/custom category, arithmetic, cursor semantics, validation policy, or short-page policy; adding a downstream controller MUST require no `concord_macros` source change.
 
+**COMPAT-MACRO-005 — Body and response type neutrality.** Macro AST and normalized models MUST store request bodies as `Option<syn::Type>` and responses as `syn::Type`, production macro code MUST contain no request/response semantic category or built-in-name branch, and adding any downstream request, buffered, streaming, discard, page-capable, or records specification MUST require no macro source change.
+
 ## 15. Feature-gated diagnostics
 
 Disabled feature use must fail during compilation where statically knowable.
@@ -274,6 +311,9 @@ Examples:
 - `Json<T>` without `json`;
 - OAuth2 client credentials without `json`;
 - `Multipart` without `multipart`;
+- `Records<D>` without `records`;
+- `Csv<T>` without `csv`;
+- `NdJson<T>` without `ndjson`;
 - `.raw_response()` without `dangerous-raw-response`;
 - `retry custom` without `dangerous-custom-retry`;
 - `__development` without `dangerous-dev-tools`.
@@ -286,9 +326,12 @@ Diagnostics identify the exact required feature and do not expose application va
 
 | Enabled | Does not automatically enable |
 |---|---|
-| `json` | TLS, HTTP/2, governor, compression, multipart |
-| `multipart` | JSON, compression, dangerous features |
-| `gzip` | Brotli, Deflate, JSON, multipart |
+| `json` | TLS, HTTP/2, governor, compression, multipart, records, CSV, NDJSON |
+| `multipart` | JSON, records, CSV, NDJSON, compression, dangerous features |
+| `records` | Serde, CSV parser, JSON, CSV, NDJSON, multipart, TLS, governor, compression |
+| `csv` | JSON endpoint feature, NDJSON, multipart, TLS, governor, compression |
+| `ndjson` | JSON endpoint feature, CSV, multipart, TLS, governor, compression |
+| `gzip`, `brotli`, or `deflate` | other decompression features, JSON, multipart, records, CSV, NDJSON |
 | `dangerous-raw-response` | dangerous retry, development tools |
 | `dangerous-custom-retry` | raw response, development tools |
 | `dangerous-dev-tools` | raw response, dangerous retry, TLS |
@@ -339,7 +382,7 @@ Dangerous APIs are feature-gated and follow the same patch/minor policy for sign
 
 `__private` may change whenever the macro/core generated contract marker changes. `__development` may change without normal semver compatibility and is not a production API.
 
-**COMPAT-SURF-001 — Public extension sufficiency.** Every documented stable extension workflow MUST be implementable without importing `__private` or `__development`.
+**COMPAT-SURF-001 — Public extension sufficiency.** Every documented stable request specification, response specification in each sealed mode, page-response capability, record decoder, codec, body factory, provider, limiter, hook, and controller workflow MUST be implementable using public imports without `__private`, `__development`, native response, or macro changes.
 
 **COMPAT-SURF-002 — Pre-1.0 break policy.** Breaking normal or advanced API changes MUST occur in a documented Concord minor release, not silently in a patch release.
 
@@ -371,7 +414,12 @@ A release candidate must compile and test at least:
 | Core defaults | check, Clippy, tests, docs |
 | Core all features | check, Clippy, tests, docs |
 | Core no default | check and focused tests |
+| Core no default + `records` | check and focused base record tests |
+| Core no default + `csv` | check and focused CSV tests |
+| Core no default + `ndjson` | check and focused NDJSON tests |
+| Core no default + `csv,ndjson` | check and combined isolation tests |
 | Core no default + `json` | check and focused JSON tests |
+| Core no default + `multipart` | check and focused multipart tests |
 | Core each dangerous feature independently | compile and boundary tests |
 | Macro crate | check, Clippy, unit/trybuild tests |
 | Public extension fixture | current compiler and MSRV |
@@ -380,7 +428,7 @@ A release candidate must compile and test at least:
 
 Exact CI commands are owned by the Conformance Plan.
 
-**COMPAT-BUILD-001 — MSRV evidence.** Core, macro, generated API fixtures, and public extension fixtures MUST compile on the declared MSRV.
+**COMPAT-BUILD-001 — MSRV evidence.** Core, macro, every records/CSV/NDJSON feature combination, generated API fixtures, and public request/response/record extension fixtures MUST compile on Rust 1.85 with exact feature and dependency isolation evidence.
 
 ## 22. Documentation annotations
 

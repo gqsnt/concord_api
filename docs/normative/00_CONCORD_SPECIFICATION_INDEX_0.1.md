@@ -42,7 +42,8 @@ These documents own exact behavior in their domain:
 | `06_CONCORD_EXECUTION_SPEC_0.1.md` | Runtime phases, side effects, recovery, precedence, cancellation |
 | `07_CONCORD_FEATURE_AND_COMPATIBILITY_SPEC_0.1.md` | Features, MSRV, crate topology, stability, build matrix |
 | `08_CONCORD_CONFORMANCE_PLAN_0.1.md` | Required evidence proving normative requirements |
-| `09_CONCORD_REQUIREMENT_CHANGE_RECORD_0.2.md` | Active requirement lineage and superseded historical identifiers |
+| `09_CONCORD_REQUIREMENT_CHANGE_RECORD_0.2.md` | Phase 11 requirement lineage and superseded historical identifiers |
+| `10_CONCORD_REQUIREMENT_CHANGE_RECORD_0.3.md` | Active Phase 12 requirement lineage and superseded historical identifiers |
 
 ### 3.3 Internal architecture
 
@@ -273,6 +274,8 @@ normative/05_CONCORD_SECURITY_AND_LIMITS_SPEC_0.1.md
 normative/06_CONCORD_EXECUTION_SPEC_0.1.md
 normative/07_CONCORD_FEATURE_AND_COMPATIBILITY_SPEC_0.1.md
 normative/08_CONCORD_CONFORMANCE_PLAN_0.1.md
+normative/09_CONCORD_REQUIREMENT_CHANGE_RECORD_0.2.md
+normative/10_CONCORD_REQUIREMENT_CHANGE_RECORD_0.3.md
 architecture/CONCORD_CORE_ARCHITECTURE_0.1.md
 architecture/CONCORD_MACRO_ARCHITECTURE_0.1.md
 architecture/CONCORD_AUTH_STATE_MACHINE_0.1.md

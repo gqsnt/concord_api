@@ -2,7 +2,7 @@
 
 **Version:** 0.2
 **Status:** Internal Implementation Candidate
-**Authority:** Validated history through Phase 10 and approved delivery sequence through Phase 14
+**Authority:** Validated history through Phase 11 and approved delivery sequence through Phase 14
 **Depends on:** All normative and architecture documents
 **Supersedes:** `CONCORD_IMPLEMENTATION_PLAN_0.1.md` for future execution
 
@@ -38,7 +38,7 @@ an execution queue because several foundations were delivered in a different ord
 | Phase | Title | Current status | Exact boundary |
 |---|---|---|---|
 | Phase 11 | Uniform Typed Pagination State | `COMPLETE_WITH_LIMITATIONS` | One struct DSL, one public consuming state-machine trait, one generated associated-controller integration, and one controller-agnostic core loop are validated; generated contract `11 -> 12`. |
-| Phase 12 | Generic Body/Response Specifications and Integrated Streaming Records | `NOT_STARTED` (active) | Generic body/response specifications and integrated streaming records; no Phase 12 product behavior was implemented in Phase 11. |
+| Phase 12 | Generic Body/Response Specifications and Integrated Streaming Records | `NOT_STARTED` (active; authority approved) | Arbitrary Rust request/response specifications, three sealed core response modes, universal metadata, one bounded byte stream, type-neutral generated/prepared integration, pagination capability, and integrated optional records/CSV/NDJSON; generated contract `12 -> 13`. |
 | Phase 13 | Lexically Scoped Rate Limits | `NOT_STARTED` | Lexically scoped rate-limit semantics; Phase 11 preserves the current rate-limit model. |
 | Phase 14 | Product Completion, Conformance Closure, and Release Finalization | `NOT_STARTED` | Whole-product closure, deferred release-evidence hardening, and the only authorized restoration of `Normative Release Final`. |
 
@@ -580,14 +580,47 @@ The package remains `Normative Implementation Candidate`; Phase 12 remains activ
 `NOT_STARTED`, no Phase 12-14 product behavior was added, and only Phase 14 may restore
 `Normative Release Final`.
 
+## Phase 12 approved implementation authority
+
+The user-approved Phase 12 mission authorizes the current requirement amendment, ADR-045, both
+architecture updates, prospective coverage, implementation, tests, features, exact optional CSV
+dependency, generated contract `12 -> 13`, validation, evidence, and anchoring required for:
+
+- one public `RequestBodySpec`, one managed outgoing `RequestBody`, metadata before hooks,
+  preparation once, consistency validation, and inferred replayability;
+- one public `ResponseBodySpec` selecting exactly sealed `Buffered`, `Streaming`, or `Discard`
+  acquisition while core retains status, limits, deadline, completion, and native ownership;
+- one `ApiResponse<T>` implementation, a `DecodedResponse<T>` alias, removal of
+  `StreamResponse<M>`, and one bounded metadata-independent `ByteStream`;
+- macro AST and normalized body `Option<syn::Type>` plus response `syn::Type`, with no semantic
+  categories or built-in-name behavior;
+- generated and prepared generic specification selection through the one existing executor;
+- explicit `PageResponseSpec` capability rather than response-name pagination;
+- integrated `records`, `csv`, and `ndjson` features inside `concord_core`, with one incremental
+  record decoder/stream primitive, batching adapter, typed CSV and NDJSON, independent positive
+  staging, and no separate crate or executor;
+- complete downstream request, response-mode, page-response, and record-decoder proof plus exact
+  feature, dependency, MSRV, security, lifecycle, regression, Rustdoc, and historical-prefix proof.
+
+The authority commit changes no product source and makes no prospective row passing evidence.
+Source and tests must be committed before validation; the final source identity then remains
+immutable through the full maintained and focused matrix. Evidence/report/state, one self-reference
+anchor, and one compatible metadata descendant follow only after successful validation.
+
+Phase 12 explicitly excludes Phase 13 lexical rate-limit changes, Phase 14 release-final closure,
+a records workspace crate, another request/response/records executor, unsealed or native response
+access, prepared pagination, pagination over records, unbounded buffering, multipart response
+parsing, SSE, WebSocket, reconnection, bidirectional streaming, and terminal stream-consumption
+hooks. The package remains `Normative Implementation Candidate` throughout Phase 12.
+
 ## Release non-goals
 
 Concord 0.1 intentionally does not provide:
 
 - prepared pagination, prepared page controllers, or a prepared `.paginate(...)` method;
 - prepared raw response, streaming raw response, or raw pagination;
-- streaming terminal-consumption hooks, SSE, WebSocket, record/CSV streaming, bidirectional
-  streaming, or multipart response parsing.
+- streaming terminal-consumption hooks, SSE, WebSocket, reconnecting or bidirectional streaming,
+  pagination over record streams, or multipart response parsing.
 
 No placeholder public API was added for these capabilities. Direct requests retain page index zero
 and no aggregate parent identity.

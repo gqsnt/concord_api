@@ -30,9 +30,16 @@ Json
 Text
 NoContent
 Bytes
+Stream
 StreamBody
-StreamResponse
+ByteStream
+ApiResponse
 DecodedResponse
+Records
+RecordStream
+RecordBatches
+Csv
+NdJson
 Request
 ResponseRequest
 PageLimit
@@ -53,7 +60,9 @@ Stable advanced extension contracts.
 This namespace re-exports the contracts defined in this document, including:
 
 - codec and media traits;
-- request body and multipart types;
+- request-body specification context, metadata, trait, managed bodies, and multipart types;
+- response-head, response-specification, sealed-mode, byte-stream, and successful-metadata types;
+- feature-gated record decoder, stream, batching, CSV, and NDJSON contracts;
 - prepared endpoint builders;
 - credential materials, providers, references, and endpoint-backed handles;
 - provider HTTP;
@@ -65,7 +74,7 @@ This namespace re-exports the contracts defined in this document, including:
 It also re-exports the common wire types used in those signatures:
 
 ```rust
-pub use bytes::Bytes;
+pub use bytes::{Bytes, BytesMut};
 pub use http::{
     HeaderMap,
     HeaderName,
@@ -889,9 +898,13 @@ pub struct OctetStream;
 
 with media type `application/octet-stream`.
 
-A media marker's value must parse as one valid media type. For `body: Stream<M>`, it owns request `Content-Type`. For `-> Stream<M>`, it supplies the default `Accept` and the expected response type/subtype and parameters.
+A media marker's value must parse as one valid exact media type. It is a small helper rather than a
+universal request/response contract. For `body: Stream<M>`, it supplies exact request
+`Content-Type` ownership. For `-> Stream<M>`, it supplies the default `Accept` and exact successful
+response validation. Other response specifications may implement suffix, parameter, missing,
+vendor, or multi-media policies directly.
 
-Built-in request/response marker types are:
+Built-in request/response specification types are:
 
 ```rust
 #[cfg(feature = "json")]
@@ -899,6 +912,10 @@ pub struct Json<T>(PhantomData<T>);
 
 pub struct Text;
 pub struct NoContent;
+pub struct Stream<M>(PhantomData<M>);
+
+#[cfg(feature = "multipart")]
+pub struct Multipart;
 ```
 
 `Json<T>` implements request encoding when `T: serde::Serialize` and response decoding when `T: serde::de::DeserializeOwned`.
@@ -907,7 +924,9 @@ Its request content type and default response accept value are `application/json
 
 `Text` implements `EncodeBody<Input = String>` and `DecodeBody<Output = String>`. It encodes and decodes UTF-8, uses request content type `text/plain; charset=utf-8`, uses default accept `text/plain`, and does not reject a successful response solely because the server supplied another or missing media type. Invalid UTF-8 is a response-decoding error.
 
-`NoContent` is a generated response marker handled by the core no-content response mode; it is not a general body codec.
+`NoContent` is a discard-mode response specification and is not a request-body specification or a
+general body codec. `Stream<M>` is a real request and response specification type. `Multipart` is a
+real request-only specification type.
 
 ### 10.2 `CodecError`
 
@@ -986,13 +1005,13 @@ pub trait DecodeBody:
 }
 ```
 
-**API-CODEC-001 — Bounded decoder input.** `DecodeBody::decode` MUST receive only a complete body that has passed the buffered response limit.
+**API-CODEC-001 — Bounded decoder input.** `DecodeBody::decode` MUST receive only a complete body acquired through the sealed buffered mode after known-length preflight and bounded collection.
 
-**API-CODEC-002 — No request metadata privilege.** `EncodeBody` MUST NOT receive URL, headers, credentials, limiter state, or native request access.
+**API-CODEC-002 — No request metadata privilege.** `EncodeBody` and its generic `RequestBodySpec` adapter MUST NOT receive URL, headers, credentials, auth state, limiter state, native request, Reqwest, or transport access and MUST run only from `RequestBodySpec::prepare` after hook approval.
 
-**API-CODEC-003 — Media header ownership.** A response codec's `ACCEPT` value MUST be inserted only when the public request does not already provide `Accept`. A request codec whose `CONTENT_TYPE` is `Some` MUST own `Content-Type` and conflicting public configuration MUST fail; when `CONTENT_TYPE` is `None`, an explicit public `Content-Type` MAY be used.
+**API-CODEC-003 — Media header ownership.** A response codec adapter's `ACCEPT` value MUST be returned through `ResponseBodySpec::accept` and inserted only when the public request does not already provide `Accept`. A request codec adapter whose `CONTENT_TYPE` is `Some` MUST report exact ownership through `RequestBodyMetadata` and conflicting public or produced-body ownership MUST fail; when `CONTENT_TYPE` is `None`, an explicit public `Content-Type` MAY be used.
 
-**API-CODEC-004 — Stream media contract.** A stream media marker MUST define one valid media type; request streams own that `Content-Type`, and response streams use it for default `Accept` and response media validation.
+**API-CODEC-004 — Stream media contract.** A `Stream<M>` media marker MUST define one valid exact media type; its request specification MUST own that `Content-Type`, and its response specification MUST use it for default `Accept` and successful-head validation before any body poll, while non-stream response specifications MUST remain free to define other direction-specific media policies.
 
 ## 11. Request bodies
 
@@ -1035,7 +1054,66 @@ pub enum BodyKind {
 
 `BodyError` implements safe `Display`, `Debug`, and `Error` and never exposes body contents or producer-provided unsafe text.
 
-### 11.2 `StreamBody`
+### 11.2 Request specification context and metadata
+
+```rust
+pub struct RequestBodyContext<'a> {
+    pub endpoint: &'static str,
+    pub method: &'a Method,
+    pub body_limit: NonZeroUsize,
+}
+
+#[non_exhaustive]
+pub enum LengthHint {
+    Unknown,
+    AtLeast(u64),
+    Exact(u64),
+}
+
+#[non_exhaustive]
+pub enum RequestContentType {
+    None,
+    Exact(HeaderValue),
+    Generated,
+}
+
+pub struct RequestBodyMetadata {
+    pub length: LengthHint,
+    pub content_type: RequestContentType,
+    pub kind: BodyKind,
+}
+```
+
+`RequestBodyMetadata` contains only structural facts available before `before_send`. Computing it
+does not encode a codec; invoke a body or multipart factory; poll a stream; open a file; build a
+native body; or access URL, headers, credentials, authentication, limiter, native request, Reqwest,
+or transport state.
+
+### 11.3 Request body specification
+
+```rust
+pub trait RequestBodySpec:
+    Send + Sync + 'static
+{
+    type Input: Send + 'static;
+
+    fn metadata(
+        input: &Self::Input,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError>;
+
+    fn prepare(
+        input: Self::Input,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBody, BodyError>;
+}
+```
+
+Core calls `metadata` before the hook and calls `prepare` synchronously exactly once after hook
+approval for one pending request execution. It derives replayability only from the produced
+`RequestBody`.
+
+### 11.4 `StreamBody`
 
 ```rust
 pub struct StreamBody { /* private */ }
@@ -1071,7 +1149,7 @@ impl StreamBody {
 
 Producer errors are sanitized by Concord.
 
-### 11.3 Body factories
+### 11.5 Body factories
 
 A general replay factory creates a fresh request stream for each Concord attempt:
 
@@ -1106,7 +1184,7 @@ pub trait MultipartFactory:
 
 Factory methods are synchronous. A factory is invoked once per Concord attempt and never for a Reqwest-internal retry.
 
-### 11.4 `RequestBody`
+### 11.6 `RequestBody`
 
 Advanced prepared endpoints use an opaque request-body value:
 
@@ -1151,7 +1229,32 @@ Replayability is inferred internally:
 - multipart replayability follows its parts;
 - a multipart factory is reconstructible.
 
-### 11.5 Multipart
+Core validates the pre-hook metadata against the produced `RequestBody` after preparation and
+before credentials, limiter acquisition, request debug, authentication materialization, native
+request construction, or send. Incompatible `BodyKind`, exact-length contradiction, lower-bound
+contradiction, conflicting content-type ownership, invalid `Generated` ownership,
+bodyless/body-present contradiction, or an impossible managed-body state fails closed.
+
+There is one generic implementation of `RequestBodySpec` for every `C: EncodeBody`, with
+`Input = C::Input`. It reports codec content-type ownership without encoding, invokes `C::encode`
+only from `prepare`, and produces one complete buffered `RequestBody`. A custom complete codec
+implements only `EncodeBody` and does not implement another request lifecycle.
+
+Built-in request specifications are:
+
+| Specification | Input and behavior |
+|---|---|
+| `Text` | `String` through the generic codec adapter |
+| `Json<T>` | `T` through the generic codec adapter under `json` |
+| `Bytes` | reusable exact-length `Bytes` |
+| `Stream<M>` | `StreamBody` with exact media type `M` |
+| `Multipart` | `MultipartBody` under `multipart` |
+| `RequestBody` | the managed value itself, selectable by prepared endpoints |
+
+`NoContent` does not implement `RequestBodySpec`. A bodyless generated endpoint uses a core-private
+empty specification and exposes no public request specification parameter.
+
+### 11.7 Multipart
 
 Under `multipart`:
 
@@ -1198,24 +1301,147 @@ impl MultipartPart {
 
 Text and bytes parts are reusable. A direct stream part makes the direct multipart recipe one-shot. `RequestBody::multipart_factory` makes the complete request reconstructible.
 
-**API-BODY-001 — Internal replayability.** Application code MUST NOT manually label a body as replayable; Concord derives replayability from the body form.
+**API-BODY-001 — Internal replayability.** Application code and `RequestBodySpec` implementations MUST NOT manually label a body as replayable; Concord MUST derive replayability only from the produced managed `RequestBody` form.
 
-**API-BODY-002 — Factory metadata and freshness.** `BodyFactory::content_type` MUST be deterministic and side-effect-free, and every factory `create` call MUST return a fresh complete stream suitable for one Concord attempt.
+**API-BODY-002 — Factory metadata and freshness.** `BodyFactory::content_type` and request-specification metadata MUST be deterministic and side-effect-free; every factory `create` call MUST return a fresh complete stream suitable for one Concord attempt, and metadata computation MUST NOT invoke a factory.
 
-**API-BODY-003 — Extension error construction.** Body factories and multipart extensions MUST be able to construct typed, application-safe `BodyError` values without exposing body contents.
+**API-BODY-003 — Extension error construction.** Request specifications, body factories, and multipart extensions MUST be able to construct typed, application-safe `BodyError` values without exposing input, body, multipart, filename, or producer-authored unsafe text through Concord formatting or sources.
+
+**API-BODYSPEC-001 — Request body specification contract.** `RequestBodySpec` MUST have the exact associated input and synchronous `metadata`/`prepare` contract defined in this section, MUST be selectable by generated and prepared endpoints, and MUST receive only `RequestBodyContext`.
+
+**API-BODYSPEC-002 — Pre-hook body metadata.** `RequestBodySpec::metadata` MUST run before `before_send` and MUST NOT encode, invoke a body or multipart factory, poll a stream, open a file, build a native body, or access URL, headers, credentials, authentication, limiter, native request, Reqwest, or transport state.
+
+**API-BODYSPEC-003 — Produced-body consistency.** Core MUST validate metadata against the produced `RequestBody` and MUST fail closed on incompatible kind, exact/lower-bound length, content-type ownership, generated ownership, body presence, or impossible managed state before credentials, limiter acquisition, request debug, authentication materialization, native construction, or send.
+
+**API-BODYSPEC-004 — One managed outgoing body.** Every request specification MUST produce the one stable `RequestBody`; Concord MUST add no second public outgoing-body value or parallel request lifecycle, and replayability MUST remain derived only from that produced value.
 
 ## 12. Successful responses
 
-### 12.1 `DecodedResponse<T>`
+### 12.1 `ResponseHead<'a>`
+
+Successful response extensions receive only the logical, core-owned response head:
 
 ```rust
-pub struct DecodedResponse<T> { /* private */ }
+pub struct ResponseHead<'a> {
+    pub endpoint: &'static str,
+    pub method: &'a Method,
+    pub url: &'a Url,
+    pub status: StatusCode,
+    pub version: Version,
+    pub headers: &'a HeaderMap,
+    pub content_length: Option<u64>,
+    pub metadata: &'a ExecutionMeta,
+}
 ```
 
-Methods:
+The URL is the logical application URL. A selected response extension intentionally receives the
+successful response head and owns its own logging and storage behavior, but receives no native
+response or transport value.
+
+### 12.2 Response-body errors
 
 ```rust
-impl<T> DecodedResponse<T> {
+pub struct ResponseBodyError { /* private */ }
+
+#[non_exhaustive]
+pub enum ResponseBodyErrorKind {
+    InvalidMediaType,
+    Decode,
+    InvalidOutput,
+    Internal,
+}
+
+impl ResponseBodyError {
+    pub fn new(kind: ResponseBodyErrorKind) -> Self;
+
+    pub fn with_safe_message(
+        kind: ResponseBodyErrorKind,
+        message: impl Into<String>,
+    ) -> Self;
+
+    pub fn kind(&self) -> ResponseBodyErrorKind;
+}
+```
+
+Concord formatting and recursive sources do not reproduce application text, response data, or
+parser-authored unsafe text.
+
+### 12.3 Sealed acquisition modes
+
+```rust
+pub struct Buffered;
+pub struct Streaming;
+pub struct Discard;
+
+pub trait ResponseMode:
+    private::Sealed + Send + Sync + 'static
+{
+    type Body: Send + 'static;
+}
+```
+
+The public marker types are selectable by application response specifications, while the trait is
+sealed so only core can implement a mode. The exact core-owned mode bodies are:
+
+```text
+Buffered  -> Bytes
+Streaming -> ByteStream
+Discard   -> ()
+```
+
+No application can create an unbounded or native acquisition mode.
+
+### 12.4 Response body specification
+
+```rust
+pub trait ResponseBodySpec:
+    Send + Sync + 'static
+{
+    type Output: Send + 'static;
+    type Mode: ResponseMode;
+
+    fn accept() -> Option<&'static str> {
+        None
+    }
+
+    fn validate(
+        head: &ResponseHead<'_>,
+    ) -> Result<(), ResponseBodyError> {
+        Ok(())
+    }
+
+    fn from_body(
+        body: <Self::Mode as ResponseMode>::Body,
+        head: &ResponseHead<'_>,
+    ) -> Result<Self::Output, ResponseBodyError>;
+}
+```
+
+Successful `2xx` status classification occurs first. Known-length mode preflight occurs before
+`validate`; validation occurs before the first body poll; core owns acquisition; and `from_body`
+runs only after the selected mode body is ready. Core checks synchronous `validate` and `from_body`
+work against the operation deadline immediately after return. A response specification cannot
+replace status handling, limits, completion, or native response ownership.
+
+Every `C: DecodeBody` receives one generic `ResponseBodySpec<Mode = Buffered>` implementation whose
+output is `C::Output`; its decoder receives complete bounded bytes only. A custom complete buffered
+codec therefore implements only `DecodeBody`.
+
+The built-in response specifications are:
+
+- `Text` and feature-gated `Json<T>`, through the buffered codec adapter;
+- `Bytes`, returning complete bounded `Bytes`;
+- `NoContent`, using `Discard`, accepting every successful `2xx`, and never polling;
+- `Stream<M>`, using `Streaming`, validating media before polling, and returning `ByteStream`;
+- feature-gated `Records<D>`, using `Streaming` and returning `RecordStream<D>`;
+- any application-defined `ResponseBodySpec` selecting one sealed mode.
+
+### 12.5 Universal successful metadata
+
+```rust
+pub struct ApiResponse<T> { /* private */ }
+
+impl<T> ApiResponse<T> {
     pub fn url(&self) -> &Url;
     pub fn status(&self) -> StatusCode;
     pub fn version(&self) -> Version;
@@ -1224,9 +1450,18 @@ impl<T> DecodedResponse<T> {
     pub fn value(&self) -> &T;
     pub fn into_value(self) -> T;
 }
+
+pub type DecodedResponse<T> = ApiResponse<T>;
 ```
 
-### 12.2 `ExecutionMeta`
+`ApiResponse<T>` is the single successful metadata implementation. Its `Debug` output is structural
+and never formats `T`; `DecodedResponse<T>` is only a non-duplicating compatibility alias during the
+implementation-candidate roadmap. Direct await returns `T`, while `.response()` returns
+`ApiResponse<T>` for buffered values, bytes, no-content, byte streams, record streams, and custom
+outputs. Streaming endpoints expose `.response()`, and direct or wrapped streaming completion
+remains `StreamOpened`.
+
+### 12.6 `ExecutionMeta`
 
 ```rust
 pub struct ExecutionMeta { /* private */ }
@@ -1244,24 +1479,10 @@ impl ExecutionMeta {
 }
 ```
 
-### 12.3 `StreamResponse<M>`
+### 12.7 `ByteStream`
 
 ```rust
-pub struct StreamResponse<M> { /* private */ }
-```
-
-Methods:
-
-```rust
-impl<M> StreamResponse<M> {
-    pub fn url(&self) -> &Url;
-    pub fn status(&self) -> StatusCode;
-    pub fn version(&self) -> Version;
-    pub fn headers(&self) -> &HeaderMap;
-    pub fn content_length(&self)
-        -> Option<u64>;
-    pub fn metadata(&self) -> &ExecutionMeta;
-}
+pub struct ByteStream { /* private */ }
 ```
 
 It implements:
@@ -1270,7 +1491,149 @@ It implements:
 Stream<Item = Result<Bytes, ApiError>>
 ```
 
-### 12.4 Dangerous raw response
+`ByteStream` owns one bounded lazy application response body and contains neither response metadata
+nor a media marker. Unknown chunks remain unpolled before return; known-length stream-limit
+preflight occurs before return; and cumulative counting occurs after decompression. The first chunk
+that would exceed the limit is withheld. Native body errors become safe `ApiError` values. `Debug`
+does not inspect body or response metadata, drop cancels and drops the native body, and polling after
+return is outside the endpoint deadline. Stream opening emits `StreamOpened`; a later stream error
+emits no second completion event.
+
+### 12.8 Integrated record streams
+
+Under `records`:
+
+```rust
+pub struct RecordError { /* private */ }
+
+#[non_exhaustive]
+pub enum RecordErrorKind {
+    InvalidMediaType,
+    InvalidFraming,
+    Decode,
+    IncompleteRecord,
+    LimitExceeded,
+    Body,
+    Internal,
+}
+
+impl RecordError {
+    pub fn new(kind: RecordErrorKind) -> Self;
+
+    pub fn with_safe_message(
+        kind: RecordErrorKind,
+        message: impl Into<String>,
+    ) -> Self;
+
+    pub fn kind(&self) -> RecordErrorKind;
+}
+```
+
+Record error formatting and sources never reproduce record bytes, parser-authored unsafe text,
+response headers, filenames, JSON values, CSV fields, or body values.
+
+```rust
+pub trait RecordDecoder:
+    Sized + Send + 'static
+{
+    type Record: Send + 'static;
+
+    fn accept() -> Option<&'static str> {
+        None
+    }
+
+    fn validate(
+        head: &ResponseHead<'_>,
+    ) -> Result<(), RecordError> {
+        Ok(())
+    }
+
+    fn start(
+        head: &ResponseHead<'_>,
+    ) -> Result<Self, RecordError>;
+
+    fn decode(
+        &mut self,
+        buffer: &mut BytesMut,
+    ) -> Result<Option<Self::Record>, RecordError>;
+
+    fn decode_eof(
+        &mut self,
+        buffer: &mut BytesMut,
+    ) -> Result<Option<Self::Record>, RecordError>;
+
+    fn max_buffered_bytes() -> NonZeroUsize;
+}
+```
+
+Validation and decoder construction run before body polling. Each returned stream owns one decoder;
+decoder calls are synchronous, occur without a core lock, receive no transport or native access,
+and have a positive finite staging bound.
+
+```rust
+pub struct Records<D>(PhantomData<D>);
+pub struct RecordStream<D> { /* private */ }
+pub struct RecordBatches<D> { /* private */ }
+```
+
+`Records<D>` implements `ResponseBodySpec<Mode = Streaming, Output = RecordStream<D>>` and forwards
+its default `Accept` value to `D::accept`.
+`RecordStream<D>` implements `Stream<Item = Result<D::Record, RecordError>>` and provides:
+
+```rust
+impl<D> RecordStream<D>
+where
+    D: RecordDecoder,
+{
+    pub fn batches(
+        self,
+        size: NonZeroUsize,
+    ) -> RecordBatches<D>;
+}
+```
+
+`RecordBatches<D>` implements `Stream<Item = Result<Vec<D::Record>, RecordError>>`. One-record
+streaming is primitive; batching is only a consumer adapter.
+
+Network chunks are never record boundaries. A record can span chunks and a chunk can contain several
+records. The decoder is called repeatedly before another chunk is polled while records remain. Its
+staging limit is independent of the cumulative `ByteStream` limit: an append that first exceeds the
+bound is rejected without retaining offending bytes, and an oversized framed record is never
+yielded. EOF calls `decode_eof`; complete final records may be emitted when the decoder permits, and
+incomplete final framing returns `IncompleteRecord`. Dropping the record stream drops the underlying
+`ByteStream`; post-return body and decode failures are stream items and do not change the already
+emitted `StreamOpened` completion.
+
+Under `csv`:
+
+```rust
+pub struct Csv<T>(PhantomData<T>);
+```
+
+`Csv<T>` is a typed `RecordDecoder` for `T: serde::de::DeserializeOwned + Send + 'static` with a
+1 MiB staging bound, default accept value
+`text/csv`, and support for `text/csv` parameters. Its exact initial dialect is UTF-8, comma
+delimiter, double-quote quoting with doubled-quote escaping, a required unique valid header row,
+header-driven typed deserialization, LF or CRLF endings, quoted delimiters and newlines, arbitrary
+chunk splits, multiple rows per chunk, an optional final record without a terminal newline, and
+ignored empty physical lines outside quoted fields. Malformed quoting, invalid or duplicate headers,
+and typed decode failures produce safe `RecordError` values.
+
+Under `ndjson`:
+
+```rust
+pub struct NdJson<T>(PhantomData<T>);
+```
+
+`NdJson<T>` is a typed `RecordDecoder` for `T: serde::de::DeserializeOwned + Send + 'static` with a
+1 MiB staging bound and default accept
+value `application/x-ndjson`. It accepts `application/x-ndjson` and `application/ndjson` with ordinary
+parameters. Each nonempty logical UTF-8 line is one JSON value; LF and CRLF, arbitrary chunk splits,
+multiple values per chunk, an optional final newline, and ignored whitespace-only lines are
+supported. Malformed JSON, incomplete final values, and oversized lines produce safe `RecordError`
+values, with raw JSON and parser-authored unsafe text excluded from formatting and sources.
+
+### 12.9 Dangerous raw response
 
 Under `dangerous-raw-response`:
 
@@ -1292,11 +1655,50 @@ It exposes successful logical URL, status, version, actual headers, metadata, an
 
 It never exposes a native Reqwest response.
 
-**API-RESP-001 — Successful accessor boundary.** Successful response accessors MAY expose actual successful headers and application data; their `Debug` implementations remain sanitized as specified by the Security and Limits Specification.
+**API-RESP-001 — Successful accessor boundary.** `ApiResponse<T>` and explicit dangerous raw accessors MAY expose actual successful headers and application data, and a selected `ResponseBodySpec` MAY receive its documented successful logical `ResponseHead`; none receives a native response, and every wrapper `Debug` MUST remain structural and sanitized as specified by the Security and Limits Specification.
+
+**API-RESPSPEC-001 — Response body specification contract.** `ResponseBodySpec` MUST have the exact output, sealed mode, accept, validation, and synchronous `from_body` contract defined in this section and MUST receive only a successful `ResponseHead` and its core-acquired mode body.
+
+**API-RESPSPEC-002 — Sealed acquisition modes.** Core MUST be the only implementor of `ResponseMode`, with exactly `Buffered -> Bytes`, `Streaming -> ByteStream`, and `Discard -> ()`; application specifications MAY select but MUST NOT define acquisition modes.
+
+**API-RESPSPEC-003 — Response-head validation before polling.** Successful status classification and known-length mode preflight MUST precede `ResponseBodySpec::validate`, and validation MUST complete before the first response-body poll.
+
+**API-RESPSPEC-004 — Buffered codec adaptation.** Every `DecodeBody` codec MUST adapt through the one generic buffered response-specification implementation and MUST receive only complete bounded bytes.
+
+**API-RESP-002 — Universal successful metadata wrapper.** `ApiResponse<T>` MUST be the only successful metadata-wrapper implementation, direct await MUST return `T`, `.response()` MUST return `ApiResponse<T>` for every response mode, `DecodedResponse<T>` MUST be only an alias, and no separate stream metadata wrapper MAY remain.
+
+**API-STREAM-001 — Media-independent bounded byte stream.** `ByteStream` MUST be a metadata-free and media-free lazy stream of bounded post-decompression bytes, MUST withhold the first excess chunk, MUST safely classify native read errors, and MUST cancel by dropping its owned native body.
+
+**API-RECORD-001 — Incremental record decoder.** `RecordDecoder` MUST provide the exact public validation, construction, incremental decode, EOF decode, and positive finite staging-bound contract defined in this section without native or transport access.
+
+**API-RECORD-002 — Records response and record stream.** `Records<D>` MUST select `Streaming`, return one `RecordStream<D>` over one decoder and one `ByteStream`, and surface post-return body or decoder failures as safe stream items.
+
+**API-RECORD-003 — Record batching adapter.** `RecordStream::batches` MUST provide a nonzero-size `RecordBatches<D>` consumer adapter without adding a response mode or changing one-record streaming as the primitive.
+
+**API-RECORD-004 — Typed CSV decoder.** Under `csv`, `Csv<T>` MUST implement the exact typed, header-driven, incremental CSV dialect and 1 MiB staging policy defined in this section.
+
+**API-RECORD-005 — Typed NDJSON decoder.** Under `ndjson`, `NdJson<T>` MUST implement the exact typed, line-delimited, incremental JSON behavior and 1 MiB staging policy defined in this section without enabling the general `json` endpoint feature.
+
+**API-RECORD-006 — Safe record errors.** `RecordError` formatting and recursive sources MUST exclude record bytes, parser-authored unsafe text, response headers, filenames, JSON values, CSV fields, and body values.
 
 ## 13. Pagination API
 
-### 13.1 Page limits
+### 13.1 Page-response capability
+
+```rust
+pub trait PageResponseSpec:
+    ResponseBodySpec<Mode = Buffered>
+{
+}
+```
+
+Core provides a blanket implementation for buffered codecs whose output implements `IntoIterator`.
+A downstream custom buffered `ResponseBodySpec` can implement `PageResponseSpec` explicitly.
+Generated pagination requires both `R: PageResponseSpec` and `R::Output: IntoIterator`; it does not
+classify the response type by name. `Bytes`, `NoContent`, `Stream<M>`, and `Records<D>` do not
+accidentally implement the capability, and record streams are not paginated.
+
+### 13.2 Page limits
 
 ```rust
 pub enum PageLimit {
@@ -1313,7 +1715,7 @@ impl From<u32> for PageLimit {
 
 The runtime validates every nonzero requested limit against its configured maximum page count before constructing a pagination controller.
 
-### 13.2 Pagination error
+### 13.3 Pagination error
 
 ```rust
 pub struct PaginationError { /* private */ }
@@ -1332,7 +1734,7 @@ impl PaginationError {
 
 It implements safe `Display`, `Debug`, and `Error` and has a structured `PaginationErrorKind` including controller, arithmetic, repeated-request, hard-cap, configured-page-ceiling, collected-item-ceiling, and identity-storage-ceiling failures.
 
-### 13.3 Controller
+### 13.4 Controller
 
 ```rust
 pub trait PaginationController<Page>: Sized + Send + 'static {
@@ -1355,7 +1757,7 @@ pub trait PaginationController<Page>: Sized + Send + 'static {
 
 Controller state influences a request only through fields declared with DSL `bind`. There is no public pagination request patch, controller factory, endpoint-generic controller factory, binder protocol, or short-page callback hierarchy.
 
-### 13.4 Cursor page support
+### 13.5 Cursor page support
 
 ```rust
 pub trait HasNextCursor<C> {
@@ -1363,7 +1765,7 @@ pub trait HasNextCursor<C> {
 }
 ```
 
-### 13.5 Built-in controllers
+### 13.6 Built-in controllers
 
 ```rust
 pub struct OffsetPagination {
@@ -1425,6 +1827,8 @@ Built-ins use the same public trait and generated binding path as application co
 **API-PAGE-009 — Binding-only request influence.** A pagination controller MUST influence ordinary request preparation only through declared bound endpoint or scope fields and MUST receive no public query/header patch, body, credential, authentication plan, native request or URL, Reqwest value, transport, or shared-client mutation capability.
 
 **API-PAGE-010 — Request-local controller bounds.** `PaginationController<Page>` MUST require exactly `Sized + Send + 'static` at the trait level, MUST NOT require `Clone` or `Sync`, and its controller value MUST remain local to one pagination operation whose future remains `Send`.
+
+**API-PAGE-011 — Explicit page-response capability.** Generated pagination MUST require `R: PageResponseSpec` and `R::Output: IntoIterator`; buffered codecs with iterable output MUST receive the core blanket capability, custom buffered response specifications MAY implement it explicitly, and bytes, discard, streaming, and records specifications MUST NOT gain it accidentally.
 
 ## 14. Rate limiting
 
@@ -2200,37 +2604,26 @@ They are executed through:
 client.request(endpoint)
 ```
 
-### 18.2 Response mode markers
-
-```rust
-pub struct PreparedBuffered<C>(PhantomData<C>);
-pub struct PreparedBytes;
-pub struct PreparedNoContent;
-pub struct PreparedStream<M>(PhantomData<M>);
-```
-
-The marker types are advanced API implementation selectors; their fields are private.
-
-### 18.3 Builder
+### 18.2 Generic specification selection
 
 ```rust
 pub struct PreparedEndpointBuilder<
-    R = PreparedNoContent,
+    R = NoContent,
 > { /* private */ }
 
 pub struct PreparedEndpoint<
-    R = PreparedNoContent,
+    R = NoContent,
 > { /* private */ }
 ```
 
 Construction starts as a no-content endpoint:
 
 ```rust
-impl PreparedEndpoint<PreparedNoContent> {
+impl PreparedEndpoint<NoContent> {
     pub fn builder(
         endpoint: &'static str,
         method: Method,
-    ) -> PreparedEndpointBuilder<PreparedNoContent>;
+    ) -> PreparedEndpointBuilder<NoContent>;
 }
 ```
 
@@ -2283,6 +2676,13 @@ impl<R> PreparedEndpointBuilder<R> {
         body: RequestBody,
     ) -> Self;
 
+    pub fn body_spec<B>(
+        self,
+        input: B::Input,
+    ) -> Self
+    where
+        B: RequestBodySpec;
+
     pub fn body_codec<C>(
         self,
         value: C::Input,
@@ -2307,23 +2707,23 @@ impl<R> PreparedEndpointBuilder<R> {
         rule: RateLimitRule,
     ) -> Self;
 
-    pub fn response<C>(
+    pub fn response<S>(
         self,
-    ) -> PreparedEndpointBuilder<PreparedBuffered<C>>
+    ) -> PreparedEndpointBuilder<S>
     where
-        C: DecodeBody;
+        S: ResponseBodySpec;
 
     pub fn response_bytes(
         self,
-    ) -> PreparedEndpointBuilder<PreparedBytes>;
+    ) -> PreparedEndpointBuilder<Bytes>;
 
     pub fn response_no_content(
         self,
-    ) -> PreparedEndpointBuilder<PreparedNoContent>;
+    ) -> PreparedEndpointBuilder<NoContent>;
 
     pub fn response_stream<M>(
         self,
-    ) -> PreparedEndpointBuilder<PreparedStream<M>>
+    ) -> PreparedEndpointBuilder<Stream<M>>
     where
         M: MediaType;
 
@@ -2333,25 +2733,30 @@ impl<R> PreparedEndpointBuilder<R> {
 }
 ```
 
-Every body-selection method replaces an earlier body selection. Every response-selection method replaces the response-mode type and consumes the previous builder. Repeated public header names replace the earlier value case-insensitively. Query calls append ordered pairs. Authentication and rate-limit calls append in call order. Timeout methods replace the earlier Concord operation-deadline selection.
+`body_spec<B>` is the generic request path. `body(RequestBody)` and `body_codec<C: EncodeBody>`
+delegate to it. `response<S>` is the generic response path; `response_bytes`,
+`response_no_content`, and `response_stream<M>` forward to `Bytes`, `NoContent`, and `Stream<M>`.
+There are no parallel prepared response-marker types.
 
-### 18.4 Path and query safety
+Every body-selection method replaces an earlier body selection. Every response-selection method replaces the response-specification type and consumes the previous builder. Repeated public header names replace the earlier value case-insensitively. Query calls append ordered pairs. Authentication and rate-limit calls append in call order. Timeout methods replace the earlier Concord operation-deadline selection.
+
+### 18.3 Path and query safety
 
 Every `path_segment` is encoded as exactly one segment. The prepared endpoint API has no raw path-fragment method in 0.1.
 
 Query methods preserve insertion order and repeated values.
 
-### 18.5 Authentication and rate limits
+### 18.4 Authentication and rate limits
 
 Multiple `.auth(...)` and `.rate_limit(...)` calls append in call order. Ordinary collision and limiter-plan validation remains active.
 
-### 18.6 Execution
+### 18.5 Execution
 
-A `PreparedEndpoint<R>` is an owned value accepted by the generated client's `request` method. Its direct-await output is selected by `R` using the same mapping as generated endpoints.
+A `PreparedEndpoint<R>` is an owned value accepted by the generated client's `request` method. Its direct-await output is `R::Output` and `.response()` returns `ApiResponse<R::Output>` through the same request specification, response specification, sealed acquisition mode, body lifecycle, executor, limits, authentication, limiter, hooks, status handling, recovery, cancellation, and completion path as generated endpoints.
 
 Prepared endpoints do not support pagination in 0.1.
 
-### 18.7 Restrictions
+### 18.6 Restrictions
 
 Prepared endpoints provide no access to:
 
@@ -2364,11 +2769,13 @@ Prepared endpoints provide no access to:
 - auth-recovery bypass;
 - limiter bypass.
 
-**API-PREP-001 — Runtime containment.** Prepared endpoints MUST use the same validation, body, auth, limiter, hook, status, and response-limit runtime as generated endpoints.
+**API-PREP-001 — Runtime containment.** Prepared endpoints MUST use the same request specification, response specification, body lifecycle, sealed acquisition, validation, executor, auth, limiter, hook, status, limit, recovery, cancellation, and completion runtime as generated endpoints.
 
 **API-PREP-002 — Segment-safe routes.** Prepared endpoints MUST expose encoded path segments rather than raw path-fragment insertion.
 
-**API-PREP-003 — Deterministic builder composition.** Prepared endpoint body, response, header, query, auth, rate-limit, and timeout calls MUST compose with the deterministic replacement/append rules defined in this section.
+**API-PREP-003 — Deterministic builder composition.** Prepared endpoint generic body and response selections and their conveniences, header, query, auth, rate-limit, and timeout calls MUST compose with the deterministic replacement/append rules defined in this section and delegate to one semantic path.
+
+**API-PREP-004 — Prepared generic specification selection.** `PreparedEndpointBuilder<R = NoContent>` and `PreparedEndpoint<R = NoContent>` MUST support arbitrary `RequestBodySpec` and `ResponseBodySpec` selection through `body_spec<B>` and `response<S>` without response-marker taxonomy, prepared-specific executor, or pagination.
 
 ## 19. Dangerous API
 

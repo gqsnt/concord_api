@@ -292,6 +292,9 @@ Pass fixtures include:
 - JSON under feature;
 - text;
 - custom request/response codec;
+- downstream arbitrary `RequestBodySpec`;
+- downstream buffered, streaming, and discard `ResponseBodySpec` implementations;
+- downstream explicit `PageResponseSpec`;
 - bytes;
 - no-content;
 - request stream;
@@ -304,14 +307,17 @@ Pass fixtures include:
 - explicit generated endpoints, including nested-scope constructor parity;
 - renamed `concord_core` dependency and nested-module macro invocation;
 - prepared endpoints;
+- generic prepared request and response specification selection;
+- custom `RecordDecoder`, record streaming, and batching under `records`;
+- typed CSV and NDJSON under their independent features;
 - runtime hooks;
 - dangerous raw and custom retry under features.
 
 Each pass fixture must import only documented public namespaces.
 
-**CONF-COMPILE-001 — Canonical generated use.** Every generated API category defined by `GEN-*` MUST have at least one downstream compile-pass fixture.
+**CONF-COMPILE-001 — Canonical generated use.** Every type-shaped request/response generation, universal metadata, pagination capability, explicit endpoint, prepared endpoint, and records category defined by `GEN-*` MUST have a downstream public-only compile-pass fixture with generated contract `13`.
 
-**CONF-COMPILE-002 — Advanced extension use.** Every stable advanced extension trait MUST have a downstream implementation fixture.
+**CONF-COMPILE-002 — Advanced extension use.** Every stable advanced request, response, sealed-mode selection, page-response, record-decoder, codec, factory, provider, limiter, hook, and pagination extension contract MUST have a downstream implementation fixture using only supported public imports.
 
 ## 7. Compile-fail tests
 
@@ -343,6 +349,11 @@ Compile-fail fixtures cover:
 - an endpoint request extension trait used with the wrong endpoint request type;
 - generated-prelude trait alias collisions;
 - invalid custom trait implementations;
+- `NoContent` or a response-only custom specification used as a request specification;
+- non-`Send` request input and malformed request metadata;
+- bytes, no-content, stream, or records pagination without `PageResponseSpec`;
+- attempts to implement the sealed `ResponseMode` trait;
+- records, CSV, and NDJSON types without their exact core features;
 - private-module imports in supported fixtures.
 
 Checked-in expected diagnostics must be reviewed for:
@@ -354,7 +365,7 @@ Checked-in expected diagnostics must be reviewed for:
 - absence of sensitive values;
 - absence of private generated internals.
 
-**CONF-COMPILE-003 — Diagnostic fixtures.** Every explicit DSL diagnostic rule MUST have a compile-fail fixture with reviewed expected output.
+**CONF-COMPILE-003 — Diagnostic fixtures.** Every explicit structural DSL, trait-bound, sealed-mode, pagination-capability, generated-contract-13 mismatch, and feature-availability diagnostic MUST have a reviewed compile-fail fixture whose behavior is not selected by macro built-in-name recognition.
 
 ## 8. Downstream generated API fixture
 
@@ -373,6 +384,9 @@ It exercises:
 - direct await type checking;
 - metadata terminal;
 - stream terminal;
+- streaming `.response()` returning `ApiResponse<ByteStream>`;
+- record-stream direct and metadata terminals;
+- arbitrary downstream request and response specification endpoints;
 - pagination;
 - credential handles;
 - endpoint-backed acquisition;
@@ -385,11 +399,12 @@ It must not import:
 - `__development` except in a dedicated feature-boundary fixture;
 - internal architecture modules.
 
-**CONF-DOWNSTREAM-001 — Generated public sufficiency.** Normal generated workflows MUST compile downstream without application awareness of generated-private integration types.
+**CONF-DOWNSTREAM-001 — Generated public sufficiency.** Type-shaped generated request and response specifications, direct and universal metadata terminals, capability-based pagination, records, and prepared requests MUST compile downstream without application awareness of generated-private integration types or macro semantic categories.
 
 The generated-request proof additionally checks that generic timeout/debug methods remain inherent,
-stream requests retain direct await without the metadata terminal, renamed runtime dependencies use
-the same public prelude contract, and no application import from `concord_core::__private` appears.
+stream requests retain direct await and gain the universal metadata terminal, renamed runtime
+dependencies use the same public prelude contract, and no application import from
+`concord_core::__private` appears.
 
 ## 9. Downstream public extension fixture
 
@@ -398,6 +413,10 @@ A standalone crate implements every intentional advanced extension:
 - `MediaType`;
 - `EncodeBody`;
 - `DecodeBody`;
+- `RequestBodySpec`;
+- buffered, streaming, and discard `ResponseBodySpec`;
+- downstream `PageResponseSpec`;
+- custom `RecordDecoder`, `Records`, record stream, and batching;
 - `BodyFactory` and `MultipartFactory`;
 - custom credential material;
 - custom credential provider;
@@ -407,13 +426,20 @@ A standalone crate implements every intentional advanced extension:
 - custom rate limiter;
 - custom rate-limit observer;
 - runtime hooks;
-- prepared buffered endpoint;
-- prepared streaming endpoint;
+- prepared arbitrary request, buffered, streaming, and discard specifications;
 - safe proxy and HTTP configuration.
 
 The fixture imports only `prelude`, `advanced`, and an explicitly tested dangerous namespace.
 
-**CONF-DOWNSTREAM-002 — Extension surface sufficiency.** Every documented stable extension workflow MUST compile without private imports.
+**CONF-DOWNSTREAM-002 — Extension surface sufficiency.** Every documented stable request, response, page-response, record, codec, body, prepared, credential, limiter, hook, and controller extension workflow MUST compile and run where applicable without private imports, native response access, or macro modification.
+
+**CONF-BODY-001 — Downstream request specification without macro modification.** A public-only downstream fixture MUST implement `RequestBodySpec`, use it from generated, explicit generated, and prepared endpoints, prove metadata/hook/prepare ordering and contradiction failure, and require no `concord_macros` source change.
+
+**CONF-RESP-001 — Downstream response specifications for every sealed mode.** Public-only downstream fixtures MUST implement buffered, streaming, and discard `ResponseBodySpec` values, prove each exact mode lifecycle plus direct and `ApiResponse` terminals, fail to define a fourth mode, receive no native response, and require no macro change.
+
+**CONF-RECORD-001 — Incremental CSV and NDJSON framing matrix.** Deterministic tests MUST cover the complete approved CSV and NDJSON framing, chunk-split, EOF, error, 1 MiB first-excess, batching, body-failure, drop-cancellation, and redaction matrices.
+
+**CONF-RECORD-002 — Records feature and MSRV isolation.** Cargo-graph, compile, test, Rustdoc, dependency-audit, and Rust-1.85 evidence MUST prove `records`, `csv`, and `ndjson` are non-default and isolated exactly as specified, including a Serde/CSV-free records base and no macro dependency leakage.
 
 ## 10. Deterministic native executor
 
@@ -483,9 +509,12 @@ Runtime tests record deterministic phase events and verify the Execution Specifi
 Required ordering cases:
 
 ```text
-public head + body metadata
+public head
+< request-spec metadata + known checks
 < before-send hook
-< body materialization
+< request-spec prepare
+< metadata/produced-body consistency
+< attempt-local managed-body materialization
 < credential preflight
 < limiter acquisition
 < credential finalization
@@ -495,7 +524,11 @@ public head + body metadata
 < response-head debug
 < response-head hook
 < limiter observation
-< auth challenge/status/body/decode
+< auth challenge/status
+< response mode known-length preflight
+< response-spec validation
+< sealed acquisition
+< response-spec conversion
 < completion
 ```
 
@@ -504,8 +537,10 @@ Failure tests verify absence of every later phase.
 Examples:
 
 - invalid host calls nothing protected;
-- hook veto calls no codec/body factory/provider/limiter/send;
-- codec or body-factory failure occurs after hook approval and calls no provider/limiter/send;
+- request metadata performs no materialization and precedes the hook;
+- hook veto calls no request preparation, codec, body factory, provider, limiter, or send;
+- request preparation or body-factory failure occurs after hook approval and calls no provider/limiter/send;
+- metadata/produced-body contradiction calls no credential, limiter, debug, auth, native construction, or send;
 - credential preflight failure calls no limiter/send;
 - limiter failure calls no finalization/send;
 - credential clear, replacement, rejection, or expiry during limiter wait is observed at finalization and prevents stale send;
@@ -535,6 +570,11 @@ Required cases:
 - multipart framing counts;
 - one-shot multipart cannot recover;
 - multipart factory can recover.
+- real `Text`, `Json<T>`, `Bytes`, `Stream<M>`, `Multipart`, direct `RequestBody`, custom codec, and custom request specifications;
+- request-spec metadata exact, at-least, and unknown behavior;
+- request-spec preparation exactly once across authentication recovery and hidden native retry;
+- produced replayability for reusable, one-shot, and reconstructible forms;
+- metadata contradictions for kind, lengths, content-type ownership, generated ownership, and body presence.
 
 ## 13. Response tests
 
@@ -556,12 +596,27 @@ Required cases:
 - decoder receives complete bounded bytes;
 - JSON media matching including `+json` and parameters;
 - custom media validation;
+- status classification before response-specification validation;
+- known-length preflight before validation;
+- custom buffered, streaming, and discard response specifications;
+- synchronous response extension deadline checks;
 - no-content accepts every `2xx` and does not poll body;
-- stream unknown body remains lazy;
+- discard validation before a never-polled body;
+- stream unknown body remains lazy through `ByteStream` return;
 - stream known-length excess before return;
 - stream first excess chunk withheld;
+- direct `ByteStream` and `ApiResponse<ByteStream>`;
+- `ApiResponse<T>::Debug` never formats custom output;
+- later stream failure emits no second completion;
 - raw response bounded and success-only;
 - wrapper `Debug` contains no body/value.
+
+Record tests additionally cover a public-only custom decoder and the exact CSV/NDJSON matrices:
+headers, typed records, quoted delimiter/newline, doubled quotes, LF/CRLF, one-byte splits, several
+records per chunk, optional or absent final newline, empty-line policies, invalid/duplicate headers,
+malformed and incomplete input, typed decode failure, first excessive staging append, oversized
+framed record, batching, body-read failure, drop cancellation, safe formatting and recursive
+sources, and absence of raw values.
 
 ### 13.1 Operation-deadline tests
 
@@ -789,7 +844,7 @@ For each sentinel class from `SEC-TEST-001`, tests inspect applicable:
 
 A test fails if a sentinel appears on a prohibited automatic surface. The positive-access fixture proves the same sentinel is available only through the explicit complete status-body accessor.
 
-**CONF-SEC-001 — Source-chain scan.** Security tests MUST recursively inspect every retained source in a built-in error chain.
+**CONF-SEC-001 — Source-chain scan.** Security tests MUST use high-entropy sentinels for every request-specification input and body form, response bytes and headers, byte-stream chunk, CSV/NDJSON/custom record value and state, credential/native URL/rate/pagination value, and recursively inspect every retained source plus all hook, debug, completion, limiter, Rustdoc, and generated-Rustdoc surfaces where the value is prohibited.
 
 ## 19. Property tests
 
@@ -845,8 +900,13 @@ Required fixtures:
 - no-default fixed and dynamic HTTPS failure;
 - no-default custom limiter;
 - no-default + JSON independence;
+- no-default + records base independence;
+- no-default + CSV independence and exact optional dependency graph;
+- no-default + NDJSON independence without general JSON;
+- no-default + CSV and NDJSON together;
 - JSON absence diagnostics;
 - multipart absence diagnostics;
+- records, CSV, and NDJSON absence diagnostics;
 - each compression feature independently;
 - HTTP/2 API gate;
 - governor absence fail closed;
@@ -864,13 +924,17 @@ On Rust 1.85, CI must compile:
 
 - `concord_core --no-default-features`;
 - `concord_core --all-features`;
+- `concord_core --no-default-features --features records`;
+- `concord_core --no-default-features --features csv`;
+- `concord_core --no-default-features --features ndjson`;
+- `concord_core --no-default-features --features csv,ndjson`;
 - `concord_macros`;
 - downstream generated API fixture;
 - downstream public extension fixture.
 
 Tests that require a newer auxiliary tool may be skipped in the MSRV job, but library compilation and public type checking may not.
 
-**CONF-MSRV-001 — Public MSRV.** Every stable public signature and generated workflow MUST compile on Rust 1.85.
+**CONF-MSRV-001 — Public MSRV.** Every stable request/response/record signature, each records feature combination, generated contract-13 workflow, prepared generic workflow, and public-only extension fixture MUST compile on Rust 1.85.
 
 ## 23. Documentation tests
 
@@ -890,7 +954,7 @@ generated-private endpoint bounds, request fields, and `concord_core::__private`
 fixture includes multiple clients, nested scopes, repeated endpoint names, and a renamed core
 dependency.
 
-**CONF-DOC-001 — No uncompiled canonical example.** A canonical example presented as valid MUST have compile evidence.
+**CONF-DOC-001 — No uncompiled canonical example.** Every canonical arbitrary request/response specification, universal metadata, `ByteStream`, prepared generic, page-response capability, records, CSV, and NDJSON example presented as valid MUST have compile evidence under its exact feature, and public/generated Rustdoc MUST exclude private integration and sensitive sentinels.
 
 ## 24. Examples
 
@@ -1039,7 +1103,9 @@ Requires:
 
 ### 28.3 Body/response milestone
 
-Requires complete body and response-limit matrices, codecs, streams, and multipart tests.
+Requires complete generic request and response specification lifecycles, sealed modes, universal
+metadata, byte and record stream limits, codecs, integrated CSV/NDJSON, macro type neutrality,
+prepared parity, pagination capability, downstream extensions, and multipart tests.
 
 ### 28.4 Macro milestone
 

@@ -331,6 +331,7 @@ Decision statuses:
 
 ## ADR-022 — Specialized protocols live outside core
 
+**Status:** Superseded by ADR-045
 
 **Context:** SSE, WebSocket, record streaming, and multipart response parsing have distinct state machines and reconnection/framing semantics.
 
@@ -732,3 +733,72 @@ generated page loops.
 `API-PAGE-007` through `API-PAGE-010`, `GEN-PAGE-004`, `SEC-PAGE-001` through `SEC-PAGE-003`,
 `EXEC-PAGE-001`, `EXEC-PAGE-005`, `EXEC-PAGE-007`, `EXEC-PAGE-015` through `EXEC-PAGE-017`,
 `COMPAT-MACRO-004`, `CONF-PAGE-002`.
+
+---
+
+## ADR-045 — Generic body and response specifications use sealed core acquisition modes
+
+**Status:** Accepted; supersedes ADR-022
+
+**Context:** Macro-owned request and response categories tied extensibility, generated output,
+prepared endpoints, pagination eligibility, media policy, and execution to a closed list of names.
+The separate `StreamResponse<M>` metadata/stream primitive and prepared response markers duplicated
+semantic taxonomies. Applications could extend complete codecs but could not define an arbitrary
+body or response contract, and incremental CSV or NDJSON records had no integrated bounded seam.
+
+**Decision:** Concord owns one stable `RequestBodySpec`, one stable `ResponseBodySpec`, and one
+managed outgoing `RequestBody`. Request metadata is structural and computed before the hook;
+preparation runs once after hook approval; core validates metadata against the produced body before
+credentials, limiter, debug, authentication, native construction, or send. Replayability remains a
+property inferred only from the produced managed body.
+
+Response specifications select exactly one of three public-but-sealed core modes: `Buffered` yields
+complete bounded `Bytes`, `Streaming` yields one bounded lazy metadata-free and media-free
+`ByteStream`, and `Discard` yields `()`. Core retains native response ownership, performs successful
+status classification and known-length preflight before specification validation, validates before
+body polling, owns acquisition and completion, and checks synchronous extension work against the
+deadline. `ApiResponse<T>` is the one universal successful metadata wrapper;
+`DecodedResponse<T>` is only its compatibility alias and `StreamResponse<M>` is removed.
+
+The macro stores arbitrary `syn::Type` body and response shapes and generates only structural trait
+bounds. It recognizes no application or built-in semantic type name. Prepared endpoints select the
+same generic specifications and executor. Pagination uses the explicit buffered
+`PageResponseSpec` capability rather than response-name matching. Direction-specific request and
+response media ownership replaces a universal media policy while retaining `MediaType` as an exact
+helper for `Stream<M>`.
+
+Incremental record framing is integrated in feature-gated `concord_core::records` over the same
+`ByteStream`, with one `RecordDecoder`, `Records<D>`, `RecordStream<D>`, and batching adapter. CSV
+and NDJSON are optional isolated decoders with independent 1 MiB undecoded staging bounds. Concord
+adds neither a records crate, second executor, fourth response mode, native response access,
+unbounded buffering, multipart response parsing, nor protocol reconnection behavior.
+
+This decision supersedes ADR-022's placement of all record streaming outside core. It preserves the
+valid intent of ADR-007 (type-owned endpoint results without runtime downcast), ADR-013 (metadata
+before the hook and expensive preparation afterward), ADR-019 (all-success discard semantics),
+ADR-021 (bounded explicit terminal status bodies), ADR-023 (central exact limits), ADR-024
+(generated-private integration is not an application extension API), ADR-026 (ordinary application
+I/O remains finite), ADR-029 (stream-opening and pagination-aggregate completion are distinct), and
+ADR-039 (Reqwest transport ownership and prohibited production dependencies).
+
+**Consequences:** Downstream request specifications, each sealed response-mode specification,
+page-capable responses, and record decoders use public-only imports and need no macro modification.
+Generated and prepared endpoints share one lifecycle, executor, limits, authentication, limiter,
+hooks, status, recovery, cancellation, and completion behavior. Streaming direct and metadata
+terminals both report `StreamOpened`; later byte or record errors are stream items and emit no
+second completion. Feature-disabled built-ins fail through core type and trait availability.
+
+**Rejected alternatives:** Keep macro body/response categories; expose native responses or a
+public execution plan; let applications implement acquisition modes; add another outgoing body or
+prepared executor; retain `StreamResponse<M>`; use runtime `Any` output; create a records workspace
+crate or executor; make complete vectors the record primitive; add an unbounded mode; parse
+multipart responses; add SSE, WebSocket, reconnection, or terminal stream-consumption hooks.
+
+**Affected requirements:** Phase 12 retained-version rows and new requirements recorded by
+`docs/normative/10_CONCORD_REQUIREMENT_CHANGE_RECORD_0.3.md`, including `PROD-MODEL-008`,
+`API-BODYSPEC-*`, `API-RESPSPEC-*`, `API-RESP-002`, `API-STREAM-001`, `API-RECORD-*`,
+`API-PREP-004`, `GEN-BODY-001`, `GEN-RESP-*`, `GEN-PAGE-005`, `GEN-PREP-001`,
+`SEC-BODY-003`, `SEC-RESP-009`, `SEC-STREAM-001`, `SEC-RECORD-*`, `BOUND-RECORD-*`,
+`EXEC-BODY-006`, `EXEC-BODY-007`, `EXEC-RESP-*`, `EXEC-STREAM-004`, `EXEC-RECORD-*`,
+`FEAT-RECORDS-001`, `FEAT-CSV-001`, `FEAT-NDJSON-001`, `COMPAT-MACRO-005`,
+`CONF-BODY-001`, `CONF-RESP-001`, and `CONF-RECORD-*`.

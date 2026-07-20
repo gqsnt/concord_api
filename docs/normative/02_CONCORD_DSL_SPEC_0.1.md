@@ -1038,7 +1038,7 @@ Defaulted:
 limit: u32 = 100
 ```
 
-Body parameter:
+Body specification parameter:
 
 ```text
 body: Json<CreateUser>
@@ -1067,7 +1067,7 @@ Repeated auth and rate-limit clauses retain declaration order.
 
 `paginate` must be last.
 
-**DSL-END-001 — Typed response header.** The response marker MUST appear in the endpoint header after `->`.
+**DSL-END-001 — Typed response header.** One arbitrary Rust response specification type MUST appear in the endpoint header after `->` and MUST remain a `syn::Type` rather than a macro semantic category.
 
 **DSL-END-002 — Parentheses required.** Every endpoint declaration MUST include parentheses.
 
@@ -1075,7 +1075,12 @@ Repeated auth and rate-limit clauses retain declaration order.
 
 **DSL-END-004 — Clause order.** Endpoint clauses MUST follow the order defined in this section.
 
-## 20. Request body markers
+## 20. Request body specification types
+
+The final parameter named `body` selects one arbitrary Rust type. That type is checked by Rust as a
+`RequestBodySpec`, and the generated method argument is its associated `Input`. The macro retains
+the type without determining whether it is a codec, byte body, stream, multipart body, managed
+body, built-in, or application extension.
 
 ### 20.1 JSON
 
@@ -1093,15 +1098,24 @@ body: Text
 
 Generated input is `String`.
 
-### 20.3 Custom buffered codec
+### 20.3 Custom buffered codec or request specification
 
 ```text
 body: crate::codec::MessagePack<CreateUser>
 ```
 
-The type must implement the public request codec contract.
+An `EncodeBody` type automatically supplies the buffered request specification. Any other type may
+implement the public `RequestBodySpec` contract directly.
 
-### 20.4 Stream
+### 20.4 Bytes
+
+```text
+body: Bytes
+```
+
+Generated input is `bytes::Bytes`.
+
+### 20.5 Stream
 
 ```text
 body: Stream<OctetStream>
@@ -1109,7 +1123,7 @@ body: Stream<OctetStream>
 
 The media marker must implement the public media contract.
 
-### 20.5 Multipart
+### 20.6 Multipart
 
 ```text
 body: Multipart
@@ -1119,11 +1133,24 @@ Requires `multipart`.
 
 Concord 0.1 multipart is constructed through `MultipartBody`; the DSL does not define a typed multipart form model.
 
-**DSL-BODY-001 — No-content request marker.** `NoContent` is not a request body marker; a bodyless request omits the body parameter.
+### 20.7 Managed request body
 
-**DSL-BODY-002 — Multipart request only.** `Multipart` is valid only as a request body marker.
+```text
+body: RequestBody
+```
 
-## 21. Response markers
+Generated input is the one public managed outgoing `RequestBody` value.
+
+**DSL-BODY-001 — No-content request marker.** `NoContent` MUST NOT satisfy the request-body specification contract; a bodyless request MUST omit the body parameter and expose no public request-specification parameter.
+
+**DSL-BODY-002 — Multipart request only.** `Multipart` MUST be available only as a request specification under the `multipart` feature and MUST NOT become a response specification or multipart response parser.
+
+**DSL-BODY-003 — Arbitrary request specification type.** The final parameter named `body` MUST retain one arbitrary `syn::Type`, generated code MUST require that type to implement `RequestBodySpec`, and the macro MUST NOT classify it by name, crate origin, input type, codec, media policy, managed-body form, or semantic category.
+
+## 21. Response specification types
+
+The type following `->` is one arbitrary Rust type checked by Rust as a `ResponseBodySpec`. The
+macro retains the type without selecting a response mode, codec, media rule, or built-in category.
 
 ### 21.1 JSON
 
@@ -1141,13 +1168,15 @@ Requires `json`.
 
 Direct output is `String`.
 
-### 21.3 Custom buffered codec
+### 21.3 Custom buffered codec or response specification
 
 ```text
 -> crate::codec::MessagePack<User>
 ```
 
-The type must implement the public response codec contract.
+`DecodeBody` types automatically supply buffered response specifications. Any other type may
+implement the public `ResponseBodySpec` contract directly and select one core-sealed acquisition
+mode.
 
 ### 21.4 Bytes
 
@@ -1167,13 +1196,24 @@ The type must implement the public response codec contract.
 -> Stream<OctetStream>
 ```
 
-### 21.7 Unsupported response markers
+### 21.7 Records
 
-`Multipart` is not a response marker.
+```text
+-> Records<crate::records::Decoder>
+```
 
-**DSL-RESP-001 — Response compatibility.** Pagination may be declared only when the decoded response type satisfies the generated pagination bounds.
+Requires the specification type and decoder to be available under the selected core records
+features. `Records<Csv<T>>` and `Records<NdJson<T>>` are the built-in typed record forms.
 
-**DSL-RESP-002 — No pagination for streams.** Stream, bytes, and no-content response markers MUST NOT declare pagination.
+### 21.8 Unsupported response specifications
+
+`Multipart` does not implement `ResponseBodySpec`.
+
+**DSL-RESP-001 — Response compatibility.** Pagination MUST be declared only when the selected response specification implements `PageResponseSpec` and its output implements `IntoIterator`; body/response compatibility and direct/metadata output typing MUST otherwise be determined by public specification traits rather than macro semantic categories.
+
+**DSL-RESP-003 — Arbitrary response specification type.** The type following `->` MUST be retained as one arbitrary `syn::Type`, generated code MUST require that type to implement `ResponseBodySpec`, and the macro MUST NOT classify it by name, crate origin, output type, codec, media policy, acquisition mode, or semantic category.
+
+**DSL-RESP-004 — Capability-gated pagination response.** A pagination declaration MUST require the selected response type to implement `PageResponseSpec` and its output to implement `IntoIterator`; `Bytes`, `NoContent`, `Stream<M>`, and `Records<D>` MUST NOT acquire pagination through macro name matching or an accidental blanket capability.
 
 ## 22. Pagination declaration
 
@@ -1316,13 +1356,15 @@ Before code generation, every scope and endpoint receives a fully normalized con
 
 ## 25. Feature validation
 
-**DSL-FEAT-001 — JSON gate.** JSON request/response markers and built-in OAuth2 client credentials require `json`.
+**DSL-FEAT-001 — JSON gate.** The `Json<T>` request/response specification and built-in OAuth2 client credentials MUST require the core `json` feature through type and trait availability rather than macro category selection.
 
-**DSL-FEAT-002 — Multipart gate.** Multipart request syntax requires `multipart`.
+**DSL-FEAT-002 — Multipart gate.** The `Multipart` request specification and multipart request APIs MUST require the core `multipart` feature through type and trait availability and MUST add no multipart response behavior.
 
 **DSL-FEAT-003 — Custom retry gate.** `retry custom` requires `dangerous-custom-retry`.
 
 Feature failures must identify the required feature and the declaration requiring it.
+
+**DSL-FEAT-004 — Type-owned body and response feature gates.** Request/response feature gating MUST be owned by `concord_core` type and trait availability; the macro MUST NOT recognize built-in or application specification names to select, reject, or silently substitute body/response behavior, and a disabled required feature MUST fail compilation.
 
 ## 26. Compile-time bounds
 
