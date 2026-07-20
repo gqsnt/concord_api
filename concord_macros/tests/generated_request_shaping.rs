@@ -6,11 +6,11 @@ use std::time::Duration;
 
 use concord_core::advanced::{ClientBuildErrorKind, MultipartBody, MultipartPart, SafeProxy};
 use concord_core::prelude::{
-    Bytes, DecodedResponse, ErrorCategory, OctetStream, Request, StreamBody, StreamResponse,
+    ByteStream, Bytes, DecodedResponse, ErrorCategory, OctetStream, Request, StreamBody,
 };
 use concord_macros::api;
 use concord_test_support::server::{BodyGate, ResponseScript, ScriptedServer};
-use futures_core::Stream;
+use futures_core::Stream as FuturesStream;
 use tokio::sync::{Mutex, MutexGuard};
 
 static CLIENT_DEFAULT_DROPS: AtomicUsize = AtomicUsize::new(0);
@@ -249,7 +249,7 @@ fn shaped_client(server: &ScriptedServer) -> ShapeApi {
 }
 
 async fn next_stream_chunk(
-    response: &mut StreamResponse<OctetStream>,
+    response: &mut ByteStream,
 ) -> Option<Result<Bytes, concord_core::prelude::ApiError>> {
     std::future::poll_fn(|context| Pin::new(&mut *response).poll_next(context)).await
 }
@@ -595,7 +595,7 @@ async fn generated_public_media_headers_obey_single_map_ownership() {
         b"bodyless"[..]
     );
 
-    let mut streamed: StreamResponse<OctetStream> = client
+    let mut streamed: ByteStream = client
         .streamed()
         .verbose(true)
         .await

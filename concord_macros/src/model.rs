@@ -3,8 +3,7 @@ use std::time::Duration;
 use syn::{Ident, LitInt, LitStr, Path, Type};
 
 pub(crate) use crate::ast::{
-    AuthChallenge, AuthPlacementKind, DefaultExpr, MethodKind, RequestBodyKind, ResponseKind,
-    RetrySelection, ValueKind,
+    AuthChallenge, AuthPlacementKind, DefaultExpr, MethodKind, RetrySelection, ValueKind,
 };
 
 #[derive(Clone)]
@@ -68,9 +67,9 @@ pub(crate) struct Endpoint {
     pub(crate) request_ext_name: Ident,
     pub(crate) prelude_alias: Ident,
     pub(crate) parameters: Vec<Value>,
-    pub(crate) body: Option<RequestBodyKind>,
+    pub(crate) body: Option<Type>,
     pub(crate) config: NormalizedConfig,
-    pub(crate) response: ResponseKind,
+    pub(crate) response: Type,
     pub(crate) pagination: Option<Pagination>,
     pub(crate) dsl_path: Vec<Ident>,
 }

@@ -55,10 +55,7 @@ pub struct RenamedController {
 }
 
 impl runtime::advanced::PaginationController<Vec<u8>> for RenamedController {
-    fn next(
-        self,
-        _page: &Vec<u8>,
-    ) -> Result<Option<Self>, runtime::advanced::PaginationError> {
+    fn next(self, _page: &Vec<u8>) -> Result<Option<Self>, runtime::advanced::PaginationError> {
         Ok(None)
     }
 }
@@ -160,11 +157,11 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
         .resources("renamed-scope".to_owned())
         .custom("custom-body".to_owned());
     let _: runtime::dangerous::RawResponseRequest<_> = raw_request.raw_response();
-    let _: runtime::Request<_> = client
-        .resources("renamed-scope".to_owned())
-        .stream_upload(runtime::prelude::StreamBody::from_bytes(
-            runtime::prelude::Bytes::from_static(b"renamed stream"),
-        ));
+    let _: runtime::Request<_> = client.resources("renamed-scope".to_owned()).stream_upload(
+        runtime::prelude::StreamBody::from_bytes(runtime::prelude::Bytes::from_static(
+            b"renamed stream",
+        )),
+    );
     let _: runtime::Request<_> = client
         .resources("renamed-scope".to_owned())
         .stream_download();
@@ -172,11 +169,12 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
         .resources("renamed-scope".to_owned())
         .pages()
         .paginate(runtime::prelude::PageLimit::Take(1));
-    let multipart = runtime::advanced::MultipartBody::new().part(
-        "field",
-        runtime::advanced::MultipartPart::text("renamed multipart"),
-    )
-    .expect("valid renamed multipart recipe");
+    let multipart = runtime::advanced::MultipartBody::new()
+        .part(
+            "field",
+            runtime::advanced::MultipartPart::text("renamed multipart"),
+        )
+        .expect("valid renamed multipart recipe");
     let _: runtime::Request<_> = client
         .resources("renamed-scope".to_owned())
         .multipart_upload(multipart);

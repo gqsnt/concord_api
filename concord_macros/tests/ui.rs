@@ -35,12 +35,6 @@ fn downstream_types_cannot_implement_generated_endpoint_capabilities() {
 }
 
 #[test]
-fn generated_stream_endpoints_have_no_metadata_terminal() {
-    let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/fail/stream_terminal_absent.rs");
-}
-
-#[test]
 fn endpoint_setters_require_the_generated_prelude_import() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/fail/missing_request_prelude.rs");
@@ -65,7 +59,7 @@ fn generated_stream_endpoints_have_no_pagination_terminal() {
 }
 
 #[test]
-fn multipart_is_rejected_as_a_generated_response_marker() {
+fn request_only_multipart_fails_through_the_response_specification_bound() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/fail/multipart_response.rs");
 }
@@ -143,7 +137,6 @@ fn pagination_diagnostics_are_source_only_and_focused() {
 fn prepared_endpoint_capabilities_are_exact_and_private() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/fail/prepared_endpoint_pagination_absent.rs");
-    cases.compile_fail("tests/ui/fail/prepared_endpoint_stream_response_absent.rs");
     cases.compile_fail("tests/ui/fail/prepared_endpoint_builder_methods_absent.rs");
     cases.compile_fail("tests/ui/fail/prepared_endpoint_fields_private.rs");
     cases.compile_fail("tests/ui/fail/prepared_endpoint_no_prelude_export.rs");

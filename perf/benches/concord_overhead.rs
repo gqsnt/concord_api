@@ -11,8 +11,8 @@ use concord_core::__development::{
     BenchmarkOperation, benchmark_public_head, benchmark_ready_credentials,
 };
 use concord_core::advanced::{
-    CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, Method, NoopRateLimiter,
-    SafeProxy, StatusCode,
+    BytesMut, CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, Method,
+    NoopRateLimiter, PreparedEndpoint, RecordDecoder, RecordError, SafeProxy, StatusCode,
 };
 use concord_core::prelude::{Bytes, PageLimit, StreamBody};
 use concord_core::{PaginatedRequest, Request};
@@ -50,6 +50,33 @@ impl DecodeBody for PageCodec {
 
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
         Ok(body.to_vec())
+    }
+}
+
+pub struct BenchRecords;
+
+impl RecordDecoder for BenchRecords {
+    type Record = Bytes;
+
+    fn start(_head: &concord_core::advanced::ResponseHead<'_>) -> Result<Self, RecordError> {
+        Ok(Self)
+    }
+
+    fn decode(&mut self, buffer: &mut BytesMut) -> Result<Option<Bytes>, RecordError> {
+        let Some(end) = buffer.iter().position(|byte| *byte == b'\n') else {
+            return Ok(None);
+        };
+        let mut record = buffer.split_to(end + 1);
+        record.truncate(end);
+        Ok(Some(record.freeze()))
+    }
+
+    fn decode_eof(&mut self, buffer: &mut BytesMut) -> Result<Option<Bytes>, RecordError> {
+        Ok((!buffer.is_empty()).then(|| buffer.split_to(buffer.len()).freeze()))
+    }
+
+    fn max_buffered_bytes() -> NonZeroUsize {
+        NonZeroUsize::new(64 * 1024).expect("positive benchmark staging bound")
     }
 }
 
@@ -117,7 +144,7 @@ api! {
     }
 }
 
-const EXPECTED_CATEGORIES: [&str; 9] = [
+const EXPECTED_CATEGORIES: [&str; 11] = [
     "core client construction",
     "generated client, facade, and request creation",
     "public head preparation",
@@ -127,6 +154,8 @@ const EXPECTED_CATEGORIES: [&str; 9] = [
     "limiter ready-path acquisition",
     "pagination loop overhead",
     "stream wrapping",
+    "generic specification selection",
+    "record framing",
 ];
 
 #[derive(Default)]
@@ -158,7 +187,7 @@ impl CategoryAudit {
                 "benchmark category did not execute: {expected}"
             );
         }
-        println!("benchmark operation audit: 9/9 named categories executed");
+        println!("benchmark operation audit: 11/11 named categories executed");
     }
 }
 
@@ -377,6 +406,50 @@ fn stream_wrapping(iterations: usize, audit: &mut CategoryAudit) {
     report(audit, "stream wrapping", iterations, started);
 }
 
+fn generic_specification_selection(iterations: usize, audit: &mut CategoryAudit) {
+    let started = Instant::now();
+    for _ in 0..iterations {
+        let endpoint = PreparedEndpoint::builder("BenchApi::generic", Method::POST)
+            .body_spec::<BenchCodec>("benchmark generic body".to_owned())
+            .response::<BenchCodec>()
+            .build()
+            .expect("generic benchmark endpoint");
+        black_box(endpoint);
+    }
+    report(
+        audit,
+        "generic specification selection",
+        iterations,
+        started,
+    );
+}
+
+fn record_framing(iterations: usize, audit: &mut CategoryAudit) {
+    let started = Instant::now();
+    for _ in 0..iterations {
+        let mut decoder = BenchRecords;
+        let mut buffer = BytesMut::from(&b"first\nsecond\nthird"[..]);
+        let mut count = 0;
+        while decoder
+            .decode(&mut buffer)
+            .expect("benchmark record framing")
+            .is_some()
+        {
+            count += 1;
+        }
+        if decoder
+            .decode_eof(&mut buffer)
+            .expect("benchmark record EOF")
+            .is_some()
+        {
+            count += 1;
+        }
+        assert_eq!(count, 3);
+        black_box(decoder);
+    }
+    report(audit, "record framing", iterations, started);
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let iterations = iterations();
     let runtime = tokio::runtime::Runtime::new()?;
@@ -391,6 +464,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     limiter_ready_path_acquisition(iterations, &runtime, &mut audit)?;
     pagination_loop_overhead(iterations, &runtime, &mut audit)?;
     stream_wrapping(iterations, &mut audit);
+    generic_specification_selection(iterations, &mut audit);
+    record_framing(iterations, &mut audit);
     audit.finish();
 
     black_box(Duration::ZERO);

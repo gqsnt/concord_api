@@ -1,13 +1,13 @@
 use crate::error::{ApiError, PaginationErrorKind};
 use crate::hooks::{BoxFuture, CompletionOutcome, PaginationCompletionEvent};
-use crate::request::{EndpointSpec, Request, ResponseHandler, prepare_pagination_page};
-use crate::response::ExecuteResponse;
+use crate::request::{EndpointSpec, Request, prepare_pagination_page};
+use crate::response::{PageResponseSpec, ResponseBodySpec};
 
 use super::identity::CanonicalIdentity;
 use super::limits::CycleDetector;
 use super::{PageLimit, PaginatedEndpoint, PaginationController, PaginationError};
 
-type DecodedPage<E> = <<E as EndpointSpec>::Response as ResponseHandler>::Output;
+type DecodedPage<E> = <<E as EndpointSpec>::Response as ResponseBodySpec>::Output;
 type PageItem<E> = <DecodedPage<E> as IntoIterator>::Item;
 type PaginationResult<E> = Result<Vec<PageItem<E>>, ApiError>;
 
@@ -17,7 +17,7 @@ pub(super) fn paginate_with<E>(
 ) -> BoxFuture<'static, PaginationResult<E>>
 where
     E: PaginatedEndpoint,
-    E::Response: ExecuteResponse,
+    E::Response: PageResponseSpec,
     DecodedPage<E>: IntoIterator<Item = E::Item> + Send + 'static,
     PageItem<E>: Send + 'static,
 {
@@ -119,7 +119,7 @@ async fn run_pages<E>(
 ) -> PaginationResult<E>
 where
     E: PaginatedEndpoint,
-    E::Response: ExecuteResponse,
+    E::Response: PageResponseSpec,
     DecodedPage<E>: IntoIterator<Item = E::Item> + Send + 'static,
     PageItem<E>: Send + 'static,
 {

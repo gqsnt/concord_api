@@ -1,0 +1,16 @@
+error[E0432]: unresolved import `concord_core::prelude::Json`
+ --> tests/ui/fail/json_spec_feature_absent.rs:1:5
+  |
+1 | use concord_core::prelude::Json;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `Json` in `prelude`
+  |
+note: found an item that was configured out
+ --> src/prelude.rs
+  |
+  | pub use crate::codec::Json;
+  |                       ^^^^
+note: the item is gated behind the `json` feature
+ --> src/prelude.rs
+  |
+  | #[cfg(feature = "json")]
+  |       ^^^^^^^^^^^^^^^^

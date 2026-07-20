@@ -124,3 +124,54 @@ fn stream_media_is_common_and_json_data_dependencies_remain_feature_owned() {
         );
     }
 }
+
+#[test]
+fn record_dependencies_are_optional_and_directionally_isolated() {
+    let records = core_feature_tree(Some("records"), "dependency-policy/core-records");
+    for package in ["csv", "serde", "serde_json"] {
+        assert!(
+            !has_direct_package(&records, package),
+            "the records base unexpectedly activates {package}\n{records}"
+        );
+    }
+
+    let csv = core_feature_tree(Some("csv"), "dependency-policy/core-csv");
+    for package in ["csv", "serde"] {
+        assert!(
+            has_direct_package(&csv, package),
+            "CSV support omitted {package}\n{csv}"
+        );
+    }
+    assert!(
+        !has_direct_package(&csv, "serde_json"),
+        "CSV support unexpectedly activates serde_json\n{csv}"
+    );
+    assert!(
+        csv.lines().any(|line| line.contains("csv v1.3.1")),
+        "CSV support must use the reviewed exact parser version\n{csv}"
+    );
+
+    let ndjson = core_feature_tree(Some("ndjson"), "dependency-policy/core-ndjson");
+    for package in ["serde", "serde_json"] {
+        assert!(
+            has_direct_package(&ndjson, package),
+            "NDJSON support omitted {package}\n{ndjson}"
+        );
+    }
+    assert!(
+        !has_direct_package(&ndjson, "csv"),
+        "NDJSON support unexpectedly activates csv\n{ndjson}"
+    );
+
+    let macros = direct_tree(
+        "concord_macros",
+        "normal,build",
+        "dependency-policy/macro-record-isolation",
+    );
+    for package in ["csv", "serde_json"] {
+        assert!(
+            !has_direct_package(&macros, package),
+            "the macro crate unexpectedly depends on {package}\n{macros}"
+        );
+    }
+}

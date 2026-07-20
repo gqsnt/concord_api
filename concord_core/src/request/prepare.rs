@@ -1,9 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use super::{
-    BodyMetadata, EndpointSpec, HeadBuilder, PreparedHead, Request, RequestMeta, ResponseHandler,
-};
+use super::{EndpointSpec, HeadBuilder, PreparedHead, Request, RequestMeta};
+use crate::body::{RequestBodyContext, RequestBodyMetadata, RequestContentType};
 use crate::client::ClientCore;
 use crate::error::{ApiError, ConfigurationErrorKind, ErrorCategory};
 use crate::hooks::DebugLevel;
@@ -15,14 +14,14 @@ pub(crate) struct PreparedOperation<E> {
     pub(crate) operation_id: OperationId,
     pub(crate) deadline: OperationDeadline,
     pub(crate) head: PreparedHead,
-    pub(crate) body_metadata: BodyMetadata,
+    pub(crate) body_metadata: RequestBodyMetadata,
 }
 
 pub(crate) struct PreparedPaginationPage<E> {
     pub(crate) core: ClientCore,
     pub(crate) endpoint: E,
     pub(crate) head: PreparedHead,
-    pub(crate) body_metadata: BodyMetadata,
+    pub(crate) body_metadata: RequestBodyMetadata,
 }
 
 pub(crate) struct PreparationFailure {
@@ -95,7 +94,7 @@ where
         &options,
         core.default_debug(),
     );
-    let (mut head, body_metadata) = match endpoint.prepare_head_and_body_metadata(builder) {
+    let mut head = match endpoint.prepare_head(builder) {
         Ok(prepared) => prepared,
         Err(error) => {
             return Ok(OperationPreparation::Failed(failure(
@@ -106,6 +105,29 @@ where
                 debug,
                 started,
                 error,
+            )));
+        }
+    };
+    let body_metadata = match endpoint.body_metadata(RequestBodyContext {
+        endpoint: meta.endpoint(),
+        method: meta.method(),
+        body_limit: core.request_body_limit(),
+    }) {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            let category = if error.kind() == crate::body::BodyErrorKind::Producer {
+                ErrorCategory::RequestEncoding
+            } else {
+                ErrorCategory::RequestBody
+            };
+            return Ok(OperationPreparation::Failed(failure(
+                core,
+                operation_id,
+                meta.clone(),
+                Arc::from(head.safe_url()),
+                debug,
+                started,
+                ApiError::classified(meta.endpoint(), meta.method().clone(), category),
             )));
         }
     };
@@ -160,7 +182,21 @@ where
         &options,
         core.default_debug(),
     );
-    let (mut head, body_metadata) = endpoint.prepare_head_and_body_metadata(builder)?;
+    let mut head = endpoint.prepare_head(builder)?;
+    let body_metadata = endpoint
+        .body_metadata(RequestBodyContext {
+            endpoint: meta.endpoint(),
+            method: meta.method(),
+            body_limit: core.request_body_limit(),
+        })
+        .map_err(|error| {
+            let category = if error.kind() == crate::body::BodyErrorKind::Producer {
+                ErrorCategory::RequestEncoding
+            } else {
+                ErrorCategory::RequestBody
+            };
+            ApiError::classified(meta.endpoint(), meta.method().clone(), category)
+        })?;
     validate_prepared_head::<E>(&core, &meta, &mut head, &body_metadata)?;
     Ok(PreparedPaginationPage {
         core,
@@ -174,7 +210,7 @@ fn validate_prepared_head<E>(
     core: &ClientCore,
     meta: &RequestMeta,
     head: &mut PreparedHead,
-    body_metadata: &BodyMetadata,
+    body_metadata: &RequestBodyMetadata,
 ) -> Result<(), ApiError>
 where
     E: EndpointSpec,
@@ -188,12 +224,23 @@ where
         ));
     }
     head.validate_rate_limit_key_limit(core.rate_limit_key_limit())?;
-    E::Response::validate_configuration(meta.endpoint(), meta.method())?;
-    head.apply_media_headers(
-        E::Response::ACCEPT,
-        body_metadata.content_type(),
-        body_metadata.owns_content_type(),
-    )?;
+    let (content_type, owns_content_type) = match &body_metadata.content_type {
+        RequestContentType::None => (None, false),
+        RequestContentType::Exact(value) => (Some(value), true),
+        RequestContentType::Generated => (None, true),
+    };
+    let accept = <E::Response as crate::response::ResponseBodySpec>::accept();
+    if let Some(value) = accept {
+        crate::response::validate_accept(value).map_err(|error| {
+            drop(error);
+            ApiError::classified(
+                meta.endpoint(),
+                meta.method().clone(),
+                ErrorCategory::ResponseContract,
+            )
+        })?;
+    }
+    head.apply_media_headers(accept, content_type, owns_content_type)?;
     head.validate_auth()?;
     ensure_matching_meta(meta, head)?;
     if head.auth().is_empty() {

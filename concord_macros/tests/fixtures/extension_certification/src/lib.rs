@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "records")]
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -7,18 +9,111 @@ use std::time::Duration;
 #[cfg(feature = "json")]
 use concord_core::advanced::Json;
 use concord_core::advanced::{
-    Auth, AuthError, AuthErrorKind, BeforeSend, BodyError, BodyFactory, BoxFuture, CodecError,
-    CompletionEvent, Cooldown, CooldownScope, CredentialMaterial, CredentialProvider,
-    CredentialRequest, DecodeBody, DecodeContext, EncodeBody, EncodeContext, HasNextCursor,
-    HeaderName, HeaderValue, HookError, MediaType, Method, PaginationCompletionEvent,
-    PaginationController, PaginationError, PreparedEndpoint, ProviderBody, ProviderBodyFactory,
-    ProviderRequest, RateLimitError, RateLimitObserver, RateLimitPermit, RateLimitRequest,
-    RateLimitResponse, RateLimitResponseHead, RateLimiter, RequestBody, ResponseHeadEvent,
-    RuntimeHooks, SafeProxy, SecretCredential, StatusCode, Url,
+    Auth, AuthError, AuthErrorKind, BeforeSend, BodyError, BodyFactory, BodyKind, BoxFuture,
+    Buffered, ByteStream, CodecError, CompletionEvent, Cooldown, CooldownScope, CredentialMaterial,
+    CredentialProvider, CredentialRequest, DecodeBody, DecodeContext, Discard, EncodeBody,
+    EncodeContext, HasNextCursor, HeaderName, HeaderValue, HookError, LengthHint, MediaType,
+    Method, PaginationCompletionEvent, PaginationController, PaginationError, PreparedEndpoint,
+    ProviderBody, ProviderBodyFactory, ProviderRequest, RateLimitError, RateLimitObserver,
+    RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimiter,
+    RequestBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestContentType,
+    ResponseBodyError, ResponseBodySpec, ResponseHead, ResponseHeadEvent, RuntimeHooks, SafeProxy,
+    SecretCredential, StatusCode, Streaming, Url,
 };
+#[cfg(feature = "records")]
+use concord_core::advanced::{BytesMut, RecordDecoder, RecordError};
 #[cfg(feature = "multipart")]
 use concord_core::advanced::{MultipartBody, MultipartFactory, MultipartPart};
 use concord_core::prelude::{Bytes, ClientBuildError, Request, SecretString, StreamBody};
+
+pub struct ExtensionRequestSpec;
+
+impl RequestBodySpec for ExtensionRequestSpec {
+    type Input = Bytes;
+
+    fn metadata(
+        input: &Self::Input,
+        _context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        Ok(RequestBodyMetadata {
+            length: LengthHint::Exact(u64::try_from(input.len()).unwrap_or(u64::MAX)),
+            content_type: RequestContentType::None,
+            kind: BodyKind::Buffered,
+        })
+    }
+
+    fn prepare(
+        input: Self::Input,
+        _context: RequestBodyContext<'_>,
+    ) -> Result<RequestBody, BodyError> {
+        Ok(RequestBody::bytes(input))
+    }
+}
+
+pub struct ExtensionBufferedSpec;
+
+impl ResponseBodySpec for ExtensionBufferedSpec {
+    type Output = usize;
+    type Mode = Buffered;
+
+    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<usize, ResponseBodyError> {
+        Ok(body.len())
+    }
+}
+
+pub struct ExtensionStreamingSpec;
+
+impl ResponseBodySpec for ExtensionStreamingSpec {
+    type Output = ByteStream;
+    type Mode = Streaming;
+
+    fn from_body(
+        body: ByteStream,
+        _head: &ResponseHead<'_>,
+    ) -> Result<ByteStream, ResponseBodyError> {
+        Ok(body)
+    }
+}
+
+pub struct ExtensionDiscardSpec;
+
+impl ResponseBodySpec for ExtensionDiscardSpec {
+    type Output = ();
+    type Mode = Discard;
+
+    fn from_body((): (), _head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
+        Ok(())
+    }
+}
+
+#[cfg(feature = "records")]
+pub struct ExtensionRecordDecoder;
+
+#[cfg(feature = "records")]
+impl RecordDecoder for ExtensionRecordDecoder {
+    type Record = Bytes;
+
+    fn start(_head: &ResponseHead<'_>) -> Result<Self, RecordError> {
+        Ok(Self)
+    }
+
+    fn decode(&mut self, buffer: &mut BytesMut) -> Result<Option<Bytes>, RecordError> {
+        let Some(end) = buffer.iter().position(|byte| *byte == b'|') else {
+            return Ok(None);
+        };
+        let mut record = buffer.split_to(end + 1);
+        record.truncate(end);
+        Ok(Some(record.freeze()))
+    }
+
+    fn decode_eof(&mut self, buffer: &mut BytesMut) -> Result<Option<Bytes>, RecordError> {
+        Ok((!buffer.is_empty()).then(|| buffer.split_to(buffer.len()).freeze()))
+    }
+
+    fn max_buffered_bytes() -> NonZeroUsize {
+        NonZeroUsize::new(64 * 1024).expect("positive extension staging bound")
+    }
+}
 
 pub struct ExtensionMedia;
 
@@ -323,6 +418,34 @@ concord_macros::api! {
                 construction: vars.construction,
             }
         }
+
+        POST GenericBody(body: crate::ExtensionRequestSpec) -> crate::ExtensionBufferedSpec;
+        GET GenericStream() -> crate::ExtensionStreamingSpec;
+        GET GenericDiscard() -> crate::ExtensionDiscardSpec;
+    }
+}
+
+#[cfg(feature = "records")]
+concord_macros::api! {
+    client RecordExtensionApi {
+        base "http://record-extension.example.test/";
+        GET Custom() -> Records<crate::ExtensionRecordDecoder>;
+    }
+}
+
+#[cfg(feature = "csv")]
+concord_macros::api! {
+    client CsvExtensionApi {
+        base "http://csv-extension.example.test/";
+        GET Rows() -> Records<Csv<Vec<String>>>;
+    }
+}
+
+#[cfg(feature = "ndjson")]
+concord_macros::api! {
+    client NdJsonExtensionApi {
+        base "http://ndjson-extension.example.test/";
+        GET Values() -> Records<NdJson<u32>>;
     }
 }
 
@@ -346,6 +469,9 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
 
     let credential = client.credentials().session().credential();
     let _: Request<_> = client.protected();
+    let _: Request<_> = client.generic_body(Bytes::from_static(b"generic extension input"));
+    let _: Request<_> = client.generic_stream();
+    let _: Request<_> = client.generic_discard();
     let _: Auth = Auth::header(
         HeaderName::from_static("x-prepared-session"),
         credential.clone(),
@@ -384,6 +510,14 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
         .expect("valid streaming prepared endpoint");
     let _: Request<_> = client.request(stream);
 
+    let generic = PreparedEndpoint::builder("ExtensionApi::prepared_generic", Method::POST)
+        .path_segment("generic")
+        .body_spec::<ExtensionRequestSpec>(Bytes::from_static(b"prepared generic input"))
+        .response::<ExtensionBufferedSpec>()
+        .build()
+        .expect("valid generic prepared endpoint");
+    let _: Request<_> = client.request(generic);
+
     let page = ExtensionPage {
         items: vec![1, 2],
         next: Some("next".to_owned()),
@@ -414,6 +548,24 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
             .build()
             .expect("valid multipart prepared endpoint");
         let _: Request<_> = client.request(multipart);
+    }
+
+    #[cfg(feature = "records")]
+    {
+        let records = RecordExtensionApi::new().expect("record extension client");
+        let _: Request<_> = records.custom();
+    }
+
+    #[cfg(feature = "csv")]
+    {
+        let records = CsvExtensionApi::new().expect("CSV extension client");
+        let _: Request<_> = records.rows();
+    }
+
+    #[cfg(feature = "ndjson")]
+    {
+        let records = NdJsonExtensionApi::new().expect("NDJSON extension client");
+        let _: Request<_> = records.values();
     }
 
     Ok(())

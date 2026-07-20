@@ -4,9 +4,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use concord_core::advanced::{
-    BoxFuture, CodecError, DecodeBody, DecodeContext, HasNextCursor, HookError,
-    PaginationController, PaginationError, RateLimitError, RateLimitPermit, RateLimitRequest,
-    RateLimitResponse, RateLimiter, RuntimeHooks, SafeProxy,
+    BoxFuture, Buffered, CodecError, DecodeBody, DecodeContext, HasNextCursor, HookError,
+    PageResponseSpec, PaginationController, PaginationError, RateLimitError, RateLimitPermit,
+    RateLimitRequest, RateLimitResponse, RateLimiter, ResponseBodyError, ResponseBodyErrorKind,
+    ResponseBodySpec, ResponseHead, RuntimeHooks, SafeProxy,
 };
 use concord_core::prelude::Bytes;
 use concord_macros::api;
@@ -143,6 +144,65 @@ api! {
 }
 
 pub struct VendorPageCodec;
+
+pub struct CustomPageSpec;
+
+impl ResponseBodySpec for CustomPageSpec {
+    type Output = Vec<u32>;
+    type Mode = Buffered;
+
+    fn accept() -> Option<&'static str> {
+        Some("application/x-concord-custom-page")
+    }
+
+    fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
+        if head
+            .headers
+            .get("content-type")
+            .is_some_and(|value| value == "application/x-concord-custom-page")
+        {
+            Ok(())
+        } else {
+            Err(ResponseBodyError::new(
+                ResponseBodyErrorKind::InvalidMediaType,
+            ))
+        }
+    }
+
+    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
+        let text = std::str::from_utf8(&body)
+            .map_err(|_error| ResponseBodyError::new(ResponseBodyErrorKind::Decode))?;
+        if text.is_empty() {
+            return Ok(Vec::new());
+        }
+        text.split(',')
+            .map(|value| {
+                value
+                    .parse::<u32>()
+                    .map_err(|_error| ResponseBodyError::new(ResponseBodyErrorKind::Decode))
+            })
+            .collect()
+    }
+}
+
+impl PageResponseSpec for CustomPageSpec {}
+
+api! {
+    client CustomResponsePageApi {
+        base "http://pagination-custom-response.example.test/v1/";
+        GET Items(offset: u64, limit: std::num::NonZeroU32) -> crate::CustomPageSpec {
+            path ["items"];
+            query {
+                "offset" = ep.offset;
+                "limit" = ep.limit;
+            }
+            paginate concord_core::advanced::OffsetPagination {
+                offset: bind ep.offset,
+                page_size: bind ep.limit,
+            }
+        }
+    }
+}
 
 pub struct VendorPage {
     items: Vec<u32>,
@@ -620,6 +680,39 @@ async fn generated_offset_pagination_is_directly_awaitable_and_stops_on_short_pa
     assert_eq!(requests.len(), 2);
     assert!(requests[0].target().contains("offset=0&limit=2"));
     assert!(requests[1].target().contains("offset=2&limit=2"));
+}
+
+#[tokio::test]
+async fn downstream_page_response_capability_requires_no_macro_semantics() {
+    use custom_response_page_api::prelude::*;
+
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"1,2".to_vec())
+            .with_header("content-type", "application/x-concord-custom-page"),
+        ResponseScript::ok(b"3".to_vec())
+            .with_header("content-type", "application/x-concord-custom-page"),
+    ])
+    .expect("custom page response server");
+    let proxy = SafeProxy::parse(server.url("")).expect("custom page response proxy");
+    let client = CustomResponsePageApi::builder()
+        .http(move |http| http.proxy(proxy))
+        .build()
+        .expect("custom page response client");
+
+    let items = client
+        .items(0, nz32(2))
+        .paginate(10_u32)
+        .await
+        .expect("downstream page response specification");
+    assert_eq!(items, [1, 2, 3]);
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2);
+    assert!(
+        requests.iter().all(|request| {
+            request.header("accept") == Some("application/x-concord-custom-page")
+        })
+    );
 }
 
 #[tokio::test]

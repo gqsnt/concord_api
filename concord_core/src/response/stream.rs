@@ -1,111 +1,36 @@
 use std::fmt;
-use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use bytes::Bytes;
 use futures_core::Stream;
-use http::{HeaderMap, StatusCode, Version};
-use url::Url;
 
-use crate::error::{ApiError, ErrorCategory};
+use crate::error::ApiError;
 use crate::http::application::ApplicationByteStream;
 
-use super::ExecutionMeta;
-
-/// A successful response head together with its bounded lazy body stream.
+/// A bounded media-independent lazy successful response body.
 ///
 /// The endpoint operation is complete once this value is returned. Later
 /// caller-driven polling is not governed by the endpoint deadline. Every
-/// yielded chunk has passed the configured cumulative stream limit.
-pub struct StreamResponse<M> {
-    url: Url,
-    status: StatusCode,
-    version: Version,
-    headers: HeaderMap,
-    content_length: Option<u64>,
-    metadata: ExecutionMeta,
+/// yielded chunk has passed the configured cumulative stream limit, measured
+/// post-decompression. Unknown chunks remain unpolled at return, and the first chunk that
+/// would exceed the cumulative limit is withheld. Native read failures become
+/// safe [`ApiError`] items. Dropping the stream cancels and drops the owned
+/// native body; later failures do not emit another completion event.
+///
+/// `ByteStream` contains neither response metadata nor a media marker. Its
+/// `Debug` implementation does not inspect the body or any response data.
+pub struct ByteStream {
     body: Option<ApplicationByteStream>,
-    limit: u64,
-    observed: u64,
-    marker: PhantomData<fn() -> M>,
 }
 
-impl<M> StreamResponse<M> {
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "the stream response owns the exact normative response metadata"
-    )]
-    pub(crate) fn new(
-        url: Url,
-        status: StatusCode,
-        version: Version,
-        headers: HeaderMap,
-        content_length: Option<u64>,
-        metadata: ExecutionMeta,
-        body: ApplicationByteStream,
-        limit: u64,
-    ) -> Self {
-        Self {
-            url,
-            status,
-            version,
-            headers,
-            content_length,
-            metadata,
-            body: Some(body),
-            limit,
-            observed: 0,
-            marker: PhantomData,
-        }
-    }
-
-    /// Returns the logical application URL.
-    #[must_use]
-    pub const fn url(&self) -> &Url {
-        &self.url
-    }
-
-    /// Returns the successful HTTP status.
-    #[must_use]
-    pub const fn status(&self) -> StatusCode {
-        self.status
-    }
-
-    /// Returns the HTTP version observed on the response head.
-    #[must_use]
-    pub const fn version(&self) -> Version {
-        self.version
-    }
-
-    /// Returns the actual successful response headers.
-    #[must_use]
-    pub const fn headers(&self) -> &HeaderMap {
-        &self.headers
-    }
-
-    /// Returns the known decoded response length, when one remains available.
-    #[must_use]
-    pub const fn content_length(&self) -> Option<u64> {
-        self.content_length
-    }
-
-    /// Returns Concord execution metadata for the stream-opening operation.
-    #[must_use]
-    pub const fn metadata(&self) -> &ExecutionMeta {
-        &self.metadata
-    }
-
-    fn response_body_error(&self) -> ApiError {
-        ApiError::classified(
-            self.metadata.endpoint(),
-            self.metadata.method().clone(),
-            ErrorCategory::ResponseBody,
-        )
+impl ByteStream {
+    pub(crate) const fn new(body: ApplicationByteStream) -> Self {
+        Self { body: Some(body) }
     }
 }
 
-impl<M> Stream for StreamResponse<M> {
+impl Stream for ByteStream {
     type Item = Result<Bytes, ApiError>;
 
     fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -123,36 +48,15 @@ impl<M> Stream for StreamResponse<M> {
                 this.body = None;
                 Poll::Ready(Some(Err(error)))
             }
-            Poll::Ready(Some(Ok(bytes))) => {
-                let Some(next) = this
-                    .observed
-                    .checked_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX))
-                else {
-                    let error = this.response_body_error();
-                    this.body = None;
-                    return Poll::Ready(Some(Err(error)));
-                };
-                if next > this.limit {
-                    let error = this.response_body_error();
-                    this.body = None;
-                    return Poll::Ready(Some(Err(error)));
-                }
-                this.observed = next;
-                Poll::Ready(Some(Ok(bytes)))
-            }
+            Poll::Ready(Some(Ok(bytes))) => Poll::Ready(Some(Ok(bytes))),
         }
     }
 }
 
-impl<M> fmt::Debug for StreamResponse<M> {
+impl fmt::Debug for ByteStream {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("StreamResponse")
-            .field("status", &self.status)
-            .field("version", &self.version)
-            .field("header_count", &self.headers.len())
-            .field("content_length", &self.content_length)
-            .field("metadata", &self.metadata)
+            .debug_struct("ByteStream")
             .field("body", &"<response stream omitted>")
             .finish()
     }
@@ -166,6 +70,7 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use super::*;
+    use crate::error::ErrorCategory;
 
     struct ProbeStream {
         chunks: VecDeque<Result<Bytes, ApiError>>,
@@ -191,39 +96,26 @@ mod tests {
         }
     }
 
-    struct MarkerWithoutDebug;
-
     fn response(
         chunks: impl IntoIterator<Item = Result<Bytes, ApiError>>,
         polls: &Arc<AtomicUsize>,
         dropped: &Arc<AtomicBool>,
         limit: u64,
-    ) -> StreamResponse<MarkerWithoutDebug> {
+    ) -> ByteStream {
         let body: ApplicationByteStream = Box::pin(ProbeStream {
             chunks: chunks.into_iter().collect(),
             polls: Arc::clone(polls),
             dropped: Arc::clone(dropped),
         });
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            "x-stream-secret",
-            http::HeaderValue::from_static("stream-debug-header-secret-d6f9"),
-        );
-        StreamResponse::new(
-            Url::parse("https://stream.example.test/private?token=secret").unwrap(),
-            StatusCode::OK,
-            Version::HTTP_2,
-            headers,
-            None,
-            ExecutionMeta::new("StreamApi::download", http::Method::GET, 0, false),
+        ByteStream::new(crate::http::application::bounded_byte_stream(
             body,
+            "StreamApi::download",
+            http::Method::GET,
             limit,
-        )
+        ))
     }
 
-    async fn next(
-        response: &mut StreamResponse<MarkerWithoutDebug>,
-    ) -> Option<Result<Bytes, ApiError>> {
+    async fn next(response: &mut ByteStream) -> Option<Result<Bytes, ApiError>> {
         poll_fn(|context| Pin::new(&mut *response).poll_next(context)).await
     }
 
@@ -239,12 +131,7 @@ mod tests {
         );
         let debug = format!("{response:?}");
         assert_eq!(polls.load(Ordering::SeqCst), 0);
-        for forbidden in [
-            "stream-debug-body-secret-a119",
-            "stream-debug-header-secret-d6f9",
-            "stream.example.test",
-            "token=secret",
-        ] {
+        for forbidden in ["stream-debug-body-secret-a119", "StreamApi::download"] {
             assert!(!debug.contains(forbidden));
         }
         drop(response);

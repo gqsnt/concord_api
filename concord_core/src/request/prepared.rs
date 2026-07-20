@@ -6,69 +6,16 @@ use std::time::Duration;
 use http::{HeaderMap, HeaderName, Method};
 use url::Url;
 
-use super::{
-    BufferedResponse, BytesResponse, EndpointSpec, HeadBuilder, NoContentResponse, PreparedHead,
-    RequestMeta, ResponseHandler, StreamResponseHandler, validate_public_header,
-};
+use super::{EndpointSpec, HeadBuilder, PreparedHead, RequestMeta, validate_public_header};
 use crate::auth::{Auth, AuthPlan};
-use crate::body::{BodyMetadata, BodySpec, CodecBody, EmptyBody, PreparedRequestBody, RequestBody};
-use crate::codec::{DecodeBody, EncodeBody, MediaType};
+use crate::body::{
+    EmptyBody, PreparedBodySpec, PreparedRequestBody, RequestBody, RequestBodyContext,
+    RequestBodyMetadata, RequestBodySpec, Stream,
+};
+use crate::codec::{EncodeBody, MediaType};
 use crate::error::{ApiError, ConfigurationError, ConfigurationErrorKind};
 use crate::rate_limit::{RateLimitPlan, RateLimitRule};
-
-/// Selects a complete bounded successful response decoded by `C`.
-/// Its tuple field is intentionally private.
-pub struct PreparedBuffered<C>(PhantomData<C>);
-
-/// Selects a complete bounded successful response returned as bytes.
-pub struct PreparedBytes;
-
-/// Selects a successful response whose body is intentionally ignored.
-pub struct PreparedNoContent;
-
-/// Selects a lazy bounded successful response stream with media marker `M`.
-/// Its tuple field is intentionally private.
-pub struct PreparedStream<M>(PhantomData<M>);
-
-mod response_sealed {
-    pub trait Sealed {}
-}
-
-/// Core-private mapping from a stable prepared response marker to the ordinary response handler.
-#[doc(hidden)]
-pub trait PreparedResponseMarker: response_sealed::Sealed + Send + Sync + 'static {
-    type Handler: ResponseHandler;
-}
-
-impl<C> response_sealed::Sealed for PreparedBuffered<C> where C: DecodeBody {}
-
-impl<C> PreparedResponseMarker for PreparedBuffered<C>
-where
-    C: DecodeBody,
-{
-    type Handler = BufferedResponse<C>;
-}
-
-impl response_sealed::Sealed for PreparedBytes {}
-
-impl PreparedResponseMarker for PreparedBytes {
-    type Handler = BytesResponse;
-}
-
-impl response_sealed::Sealed for PreparedNoContent {}
-
-impl PreparedResponseMarker for PreparedNoContent {
-    type Handler = NoContentResponse;
-}
-
-impl<M> response_sealed::Sealed for PreparedStream<M> where M: MediaType {}
-
-impl<M> PreparedResponseMarker for PreparedStream<M>
-where
-    M: MediaType,
-{
-    type Handler = StreamResponseHandler<M>;
-}
+use crate::response::{NoContent, ResponseBodySpec};
 
 enum DeadlineSelection {
     Inherit,
@@ -82,7 +29,7 @@ enum DeadlineSelection {
 /// operation identity, invoke codecs or factories, acquire credentials or limiter capacity, call
 /// hooks, construct a native request, or perform HTTP.
 /// Fields are intentionally private.
-pub struct PreparedEndpointBuilder<R = PreparedNoContent> {
+pub struct PreparedEndpointBuilder<R = NoContent> {
     endpoint: &'static str,
     method: Method,
     path_segments: Vec<String>,
@@ -101,7 +48,7 @@ pub struct PreparedEndpointBuilder<R = PreparedNoContent> {
 /// authentication explicitly attached through [`PreparedEndpointBuilder::auth`] belongs to this
 /// endpoint.
 /// Fields are intentionally private.
-pub struct PreparedEndpoint<R = PreparedNoContent> {
+pub struct PreparedEndpoint<R = NoContent> {
     endpoint: &'static str,
     method: Method,
     path_segments: Box<[String]>,
@@ -114,20 +61,17 @@ pub struct PreparedEndpoint<R = PreparedNoContent> {
     response: PhantomData<R>,
 }
 
-impl PreparedEndpoint<PreparedNoContent> {
+impl PreparedEndpoint<NoContent> {
     /// Starts a no-content prepared endpoint with the supplied stable identity and HTTP method.
     #[must_use]
-    pub fn builder(
-        endpoint: &'static str,
-        method: Method,
-    ) -> PreparedEndpointBuilder<PreparedNoContent> {
+    pub fn builder(endpoint: &'static str, method: Method) -> PreparedEndpointBuilder<NoContent> {
         PreparedEndpointBuilder {
             endpoint,
             method,
             path_segments: Vec::new(),
             query: Vec::new(),
             headers: Vec::new(),
-            body: PreparedRequestBody::new(EmptyBody::new()),
+            body: PreparedRequestBody::new::<EmptyBody>(()),
             auth: Vec::new(),
             deadline: DeadlineSelection::Inherit,
             rate_limits: Vec::new(),
@@ -206,19 +150,27 @@ impl<R> PreparedEndpointBuilder<R> {
 
     /// Replaces the selected request body with one existing advanced body value.
     #[must_use]
-    pub fn body(mut self, body: RequestBody) -> Self {
-        self.body = PreparedRequestBody::new(body);
+    pub fn body(self, body: RequestBody) -> Self {
+        self.body_spec::<RequestBody>(body)
+    }
+
+    /// Replaces the selected request body with an arbitrary request specification.
+    #[must_use]
+    pub fn body_spec<B>(mut self, input: B::Input) -> Self
+    where
+        B: RequestBodySpec,
+    {
+        self.body = PreparedRequestBody::new::<B>(input);
         self
     }
 
     /// Replaces the selected request body with one lazily encoded codec input.
     #[must_use]
-    pub fn body_codec<C>(mut self, value: C::Input) -> PreparedEndpointBuilder<R>
+    pub fn body_codec<C>(self, value: C::Input) -> PreparedEndpointBuilder<R>
     where
         C: EncodeBody,
     {
-        self.body = PreparedRequestBody::new(CodecBody::<C>::new(value));
-        self
+        self.body_spec::<C>(value)
     }
 
     /// Appends one typed authentication placement.
@@ -249,30 +201,30 @@ impl<R> PreparedEndpointBuilder<R> {
         self
     }
 
-    /// Selects a complete bounded successful response decoded by `C`.
+    /// Selects an arbitrary successful response specification.
     #[must_use]
-    pub fn response<C>(self) -> PreparedEndpointBuilder<PreparedBuffered<C>>
+    pub fn response<S>(self) -> PreparedEndpointBuilder<S>
     where
-        C: DecodeBody,
+        S: ResponseBodySpec,
     {
         self.with_response()
     }
 
     /// Selects a complete bounded successful bytes response.
     #[must_use]
-    pub fn response_bytes(self) -> PreparedEndpointBuilder<PreparedBytes> {
+    pub fn response_bytes(self) -> PreparedEndpointBuilder<bytes::Bytes> {
         self.with_response()
     }
 
     /// Selects a successful response whose body is intentionally ignored.
     #[must_use]
-    pub fn response_no_content(self) -> PreparedEndpointBuilder<PreparedNoContent> {
+    pub fn response_no_content(self) -> PreparedEndpointBuilder<NoContent> {
         self.with_response()
     }
 
     /// Selects a lazy bounded successful response stream with media marker `M`.
     #[must_use]
-    pub fn response_stream<M>(self) -> PreparedEndpointBuilder<PreparedStream<M>>
+    pub fn response_stream<M>(self) -> PreparedEndpointBuilder<Stream<M>>
     where
         M: MediaType,
     {
@@ -280,7 +232,10 @@ impl<R> PreparedEndpointBuilder<R> {
     }
 
     /// Validates structural configuration and returns one immutable endpoint value.
-    pub fn build(self) -> Result<PreparedEndpoint<R>, ConfigurationError> {
+    pub fn build(self) -> Result<PreparedEndpoint<R>, ConfigurationError>
+    where
+        R: ResponseBodySpec,
+    {
         let Self {
             endpoint,
             method,
@@ -364,19 +319,16 @@ impl<R> PreparedEndpointBuilder<R> {
 
 impl<R> EndpointSpec for PreparedEndpoint<R>
 where
-    R: PreparedResponseMarker,
+    R: ResponseBodySpec,
 {
-    type Body = PreparedRequestBody;
-    type Response = R::Handler;
+    type Body = PreparedBodySpec;
+    type Response = R;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(self.endpoint, self.method.clone(), self.inherited_timeout)
     }
 
-    fn prepare_head_and_body_metadata(
-        &self,
-        mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         for segment in &self.path_segments {
             builder.push_prepared_segment(segment)?;
         }
@@ -388,12 +340,17 @@ where
         }
         builder.use_prepared_auth_plan(Arc::clone(&self.auth));
         builder.use_prepared_rate_limit_plan(Arc::clone(&self.rate_limit_plan));
-        let head = builder.finish();
-        let body_metadata = self.body.metadata(self.endpoint, &self.method)?;
-        Ok((head, body_metadata))
+        Ok(builder.finish())
     }
 
-    fn into_body(self) -> Self::Body {
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, crate::body::BodyError> {
+        PreparedBodySpec::metadata(&self.body, context)
+    }
+
+    fn into_body(self) -> <Self::Body as RequestBodySpec>::Input {
         self.body
     }
 }
@@ -413,7 +370,7 @@ mod tests {
 
     fn head<R>(endpoint: &PreparedEndpoint<R>, base: &str) -> PreparedHead
     where
-        R: PreparedResponseMarker,
+        R: ResponseBodySpec,
     {
         let builder = HeadBuilder::new(
             &Url::parse(base).expect("base URL"),
@@ -421,10 +378,7 @@ mod tests {
             &RequestOptions::new(),
             DebugLevel::None,
         );
-        endpoint
-            .prepare_head_and_body_metadata(builder)
-            .expect("prepared head")
-            .0
+        endpoint.prepare_head(builder).expect("prepared head")
     }
 
     fn rule(id: &str, value: &str) -> RateLimitRule {
@@ -443,11 +397,11 @@ mod tests {
     }
 
     #[test]
-    fn exact_response_markers_replace_the_previous_selection() {
-        fn buffered(_: PreparedEndpointBuilder<PreparedBuffered<Text>>) {}
-        fn bytes(_: PreparedEndpointBuilder<PreparedBytes>) {}
-        fn no_content(_: PreparedEndpointBuilder<PreparedNoContent>) {}
-        fn stream(_: PreparedEndpointBuilder<PreparedStream<OctetStream>>) {}
+    fn generic_response_specifications_replace_the_previous_selection() {
+        fn buffered(_: PreparedEndpointBuilder<Text>) {}
+        fn bytes(_: PreparedEndpointBuilder<Bytes>) {}
+        fn no_content(_: PreparedEndpointBuilder<NoContent>) {}
+        fn stream(_: PreparedEndpointBuilder<Stream<OctetStream>>) {}
 
         buffered(
             PreparedEndpoint::builder("Prepared::buffered", Method::GET)
@@ -495,10 +449,15 @@ mod tests {
         assert_eq!(endpoint.rate_limit_plan.rules().len(), 2);
         assert_eq!(endpoint.rate_limit_plan.rules()[0].id().as_str(), "first");
         assert_eq!(endpoint.rate_limit_plan.rules()[1].id().as_str(), "second");
-        let metadata = endpoint
-            .body
-            .metadata(endpoint.endpoint, &endpoint.method)
-            .expect("body metadata");
+        let metadata = PreparedBodySpec::metadata(
+            &endpoint.body,
+            RequestBodyContext {
+                endpoint: endpoint.endpoint,
+                method: &endpoint.method,
+                body_limit: std::num::NonZeroUsize::new(1024).expect("positive body limit"),
+            },
+        )
+        .expect("body metadata");
         assert_eq!(metadata.known_length(), Some(8));
 
         let head = head(&endpoint, "https://example.test/base/");

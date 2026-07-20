@@ -67,7 +67,14 @@ impl fmt::Debug for ExecutionMeta {
 }
 
 /// A successful semantic value together with its logical response metadata.
-pub struct DecodedResponse<T> {
+///
+/// This is the single metadata wrapper for buffered values, bytes, no-content,
+/// byte streams, record streams, and application-defined outputs. Its `Debug`
+/// implementation is structural: it never formats `T`, the logical URL, or any
+/// response header value. Accessors intentionally expose the actual successful
+/// headers and logical URL to application code, which owns later logging and
+/// storage.
+pub struct ApiResponse<T> {
     url: Url,
     status: StatusCode,
     version: Version,
@@ -76,7 +83,7 @@ pub struct DecodedResponse<T> {
     value: T,
 }
 
-impl<T> DecodedResponse<T> {
+impl<T> ApiResponse<T> {
     #[allow(dead_code, reason = "constructed by the production executor")]
     pub(crate) fn new(
         url: Url,
@@ -138,10 +145,10 @@ impl<T> DecodedResponse<T> {
     }
 }
 
-impl<T> fmt::Debug for DecodedResponse<T> {
+impl<T> fmt::Debug for ApiResponse<T> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("DecodedResponse")
+            .debug_struct("ApiResponse")
             .field("status", &self.status)
             .field("version", &self.version)
             .field("header_count", &self.headers.len())
@@ -150,6 +157,11 @@ impl<T> fmt::Debug for DecodedResponse<T> {
             .finish()
     }
 }
+
+/// Compatibility alias for the universal successful response wrapper.
+///
+/// This alias has no second implementation or storage representation.
+pub type DecodedResponse<T> = ApiResponse<T>;
 
 /// A complete bounded successful response whose declared decoder was skipped.
 ///
@@ -180,8 +192,8 @@ pub struct RawResponse {
 
 #[cfg(feature = "dangerous-raw-response")]
 impl RawResponse {
-    pub(crate) fn from_decoded(response: DecodedResponse<Bytes>) -> Self {
-        let DecodedResponse {
+    pub(crate) fn from_decoded(response: ApiResponse<Bytes>) -> Self {
+        let ApiResponse {
             url,
             status,
             version,
@@ -276,7 +288,7 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(AUTHORIZATION, HeaderValue::from_static(HEADER_SECRET));
         headers.insert("x-public", HeaderValue::from_static("public-header-value"));
-        let response = DecodedResponse::new(
+        let response = ApiResponse::new(
             Url::parse("https://metadata.example.test/sensitive-route?token=query-sentinel")
                 .expect("logical URL"),
             StatusCode::OK,

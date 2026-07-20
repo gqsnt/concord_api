@@ -1,17 +1,19 @@
 use std::fmt;
-use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use bytes::Bytes;
 use concord_test_support::executor::DeterministicExecutor;
 use http::Method;
 
 use super::*;
+use crate::body::{EmptyBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec};
 use crate::client::ClientCore;
 use crate::error::{ClientBuildErrorKind, ErrorCategory};
 use crate::hooks::{BoxFuture, DebugLevel, RuntimeHooks};
 use crate::http::HttpConfigBuilder;
+use crate::response::NoContent;
 use crate::runtime::RuntimeConfigBuilder;
 
 struct CountingHooks {
@@ -54,7 +56,7 @@ struct BytesEndpoint {
 
 impl EndpointSpec for BytesEndpoint {
     type Body = EmptyBody;
-    type Response = BytesResponse;
+    type Response = Bytes;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(
@@ -64,26 +66,31 @@ impl EndpointSpec for BytesEndpoint {
         )
     }
 
-    fn prepare_head_and_body_metadata(
+    fn prepare_head(
         &self,
         mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), crate::error::ApiError> {
+    ) -> Result<PreparedHead, crate::error::ApiError> {
         builder.push_static("accounts")?;
         builder.push_value(&self.account)?;
         builder.push_static("bytes")?;
-        Ok((builder.finish(), EmptyBody::metadata()))
+        Ok(builder.finish())
     }
 
-    fn into_body(self) -> Self::Body {
-        EmptyBody::new()
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, crate::body::BodyError> {
+        EmptyBody::metadata(&(), context)
     }
+
+    fn into_body(self) {}
 }
 
 struct NoContentEndpoint;
 
 impl EndpointSpec for NoContentEndpoint {
     type Body = EmptyBody;
-    type Response = NoContentResponse;
+    type Response = NoContent;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(
@@ -93,18 +100,23 @@ impl EndpointSpec for NoContentEndpoint {
         )
     }
 
-    fn prepare_head_and_body_metadata(
+    fn prepare_head(
         &self,
         mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), crate::error::ApiError> {
+    ) -> Result<PreparedHead, crate::error::ApiError> {
         builder.push_static("health")?;
         builder.push_static("ping")?;
-        Ok((builder.finish(), EmptyBody::metadata()))
+        Ok(builder.finish())
     }
 
-    fn into_body(self) -> Self::Body {
-        EmptyBody::new()
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, crate::body::BodyError> {
+        EmptyBody::metadata(&(), context)
     }
+
+    fn into_body(self) {}
 }
 
 fn core(executor: &DeterministicExecutor, hooks: Arc<dyn RuntimeHooks>) -> ClientCore {
@@ -177,29 +189,21 @@ async fn request_creation_and_setters_are_side_effect_free_until_first_poll() {
     assert_eq!(prepared.head.timeout(), Some(Duration::from_secs(20)));
     assert_eq!(prepared.head.debug(), DebugLevel::Headers);
     assert!(prepared.head.public_headers().is_empty());
-    assert_eq!(prepared.body_metadata.kind(), crate::hooks::BodyKind::Empty);
+    assert_eq!(prepared.body_metadata.kind, crate::hooks::BodyKind::Empty);
     assert_eq!(prepared.body_metadata.known_length(), Some(0));
-    prepared
-        .endpoint
-        .into_body()
-        .materialize(
-            prepared.head.endpoint(),
-            prepared.head.method(),
-            NonZeroUsize::new(16).expect("positive test body limit"),
-        )
-        .expect("empty body materialization");
+    prepared.endpoint.into_body();
 }
 
 #[test]
 fn hand_authored_endpoint_types_select_only_declared_response_handlers() {
     fn assert_bytes<E>()
     where
-        E: EndpointSpec<Body = EmptyBody, Response = BytesResponse>,
+        E: EndpointSpec<Body = EmptyBody, Response = Bytes>,
     {
     }
     fn assert_no_content<E>()
     where
-        E: EndpointSpec<Body = EmptyBody, Response = NoContentResponse>,
+        E: EndpointSpec<Body = EmptyBody, Response = NoContent>,
     {
     }
     assert_bytes::<BytesEndpoint>();

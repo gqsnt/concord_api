@@ -1,5 +1,17 @@
-error: `Multipart` is request-only and cannot be used as a response
- --> tests/ui/fail/multipart_response.rs:8:30
-  |
-8 |             GET Invalid() -> Multipart;
-  |                              ^^^^^^^^^
+error[E0277]: the trait bound `concord_core::advanced::Multipart: ResponseBodySpec` is not satisfied
+  --> tests/ui/fail/multipart_response.rs:3:1
+   |
+3  | / api! {
+4  | |     client MultipartApi {
+5  | |         base "http://multipart.example.test";
+6  | |         scope uploads() {
+...  |
+11 | | }
+   | |_^ the trait `DecodeBody` is not implemented for `concord_core::advanced::Multipart`
+   |
+   = help: the following other types implement trait `DecodeBody`:
+             Json<T>
+             concord_core::advanced::Text
+   = note: required for `concord_core::advanced::Multipart` to implement `ResponseBodySpec`
+   = help: see issue #48214
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

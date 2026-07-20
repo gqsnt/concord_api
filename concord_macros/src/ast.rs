@@ -40,9 +40,9 @@ pub(crate) struct SourceEndpoint {
     pub(crate) name: Ident,
     pub(crate) alias: Option<Ident>,
     pub(crate) parameters: Vec<ValueDecl>,
-    pub(crate) body: Option<RequestBodyKind>,
+    pub(crate) body: Option<Type>,
     pub(crate) layer: Layer,
-    pub(crate) response: ResponseKind,
+    pub(crate) response: Type,
     pub(crate) pagination: Option<PaginationDecl>,
 }
 
@@ -301,32 +301,4 @@ pub(crate) enum MethodKind {
     Trace,
     Connect,
     Custom(LitStr),
-}
-
-#[derive(Clone)]
-pub(crate) enum ResponseKind {
-    Bytes,
-    NoContent,
-    Buffered(CodecKind),
-    Stream(MediaKind),
-}
-
-#[derive(Clone)]
-pub(crate) enum RequestBodyKind {
-    Buffered(CodecKind),
-    Stream(MediaKind),
-    Multipart,
-}
-
-#[derive(Clone)]
-pub(crate) enum MediaKind {
-    OctetStream,
-    Custom(Type),
-}
-
-#[derive(Clone)]
-pub(crate) enum CodecKind {
-    Text,
-    Json(Type),
-    Custom(Type),
 }

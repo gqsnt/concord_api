@@ -1,6 +1,6 @@
 //! Stable advanced types used to integrate with Concord.
 
-pub use bytes::Bytes;
+pub use bytes::{Bytes, BytesMut};
 pub use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Version};
 pub use url::Url;
 
@@ -8,9 +8,12 @@ pub use crate::auth::{
     Auth, AuthError, ChallengePolicy, CredentialHandle, CredentialMaterial, CredentialProvider,
     CredentialReason, CredentialRef, CredentialRequest, RecoveryMode, SecretCredential,
 };
-pub use crate::body::{BodyError, BodyErrorKind, BodyFactory, BodyKind, RequestBody, StreamBody};
+pub use crate::body::{
+    BodyError, BodyErrorKind, BodyFactory, BodyKind, LengthHint, RequestBody, RequestBodyContext,
+    RequestBodyMetadata, RequestBodySpec, RequestContentType, Stream, StreamBody,
+};
 #[cfg(feature = "multipart")]
-pub use crate::body::{MultipartBody, MultipartFactory, MultipartPart};
+pub use crate::body::{Multipart, MultipartBody, MultipartFactory, MultipartPart};
 #[cfg(feature = "json")]
 pub use crate::codec::Json;
 pub use crate::codec::{
@@ -42,10 +45,19 @@ pub use crate::rate_limit::{
     RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimitRule, RateLimitWindow,
     RateLimiter,
 };
-pub use crate::redaction::{SanitizedHeaderMap, SanitizedHeaderValue, SanitizedHeaders};
-pub use crate::request::{
-    PreparedBuffered, PreparedBytes, PreparedEndpoint, PreparedEndpointBuilder, PreparedNoContent,
-    PreparedStream,
+#[cfg(feature = "csv")]
+pub use crate::records::Csv;
+#[cfg(feature = "ndjson")]
+pub use crate::records::NdJson;
+#[cfg(feature = "records")]
+pub use crate::records::{
+    RecordBatches, RecordDecoder, RecordError, RecordErrorKind, RecordStream, Records,
 };
-pub use crate::response::{DecodedResponse, ExecutionMeta, NoContent, StreamResponse};
+pub use crate::redaction::{SanitizedHeaderMap, SanitizedHeaderValue, SanitizedHeaders};
+pub use crate::request::{PreparedEndpoint, PreparedEndpointBuilder};
+pub use crate::response::{
+    ApiResponse, Buffered, ByteStream, DecodedResponse, Discard, ExecutionMeta, NoContent,
+    PageResponseSpec, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec, ResponseHead,
+    ResponseMode, Streaming,
+};
 pub use crate::runtime::RuntimeConfigBuilder;

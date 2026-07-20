@@ -11,12 +11,12 @@ use concord_core::advanced::{
     MultipartBody, MultipartPart, ResponseHeadEvent, RuntimeHooks, SafeProxy,
 };
 use concord_core::prelude::{
-    Bytes, ClientBuildError, DecodedResponse, OctetStream, Request, ResponseRequest, StreamBody,
-    StreamResponse,
+    ApiResponse, ByteStream, Bytes, ClientBuildError, DecodedResponse, OctetStream, Request,
+    RequestBody, ResponseRequest, StreamBody,
 };
 use concord_macros::api;
 use concord_test_support::server::{ResponseScript, ScriptedServer};
-use futures_core::Stream;
+use futures_core::Stream as FuturesStream;
 
 api! {
     client ExampleApi {
@@ -94,6 +94,8 @@ api! {
             POST JsonEcho(body: Json<Vec<u32>>) -> Json<Vec<u32>>;
             POST CustomEcho(body: crate::WireCodec) -> crate::WireCodec;
             POST BytesEcho(body: Text) -> Bytes;
+            POST RawBytes(body: Bytes) -> Bytes;
+            POST ManagedBody(body: RequestBody) -> Bytes;
             POST NoContentEcho(body: Text) -> NoContent;
         }
     }
@@ -280,8 +282,8 @@ fn proxied_streaming(server: &ScriptedServer, hooks: Arc<dyn RuntimeHooks>) -> S
         .expect("proxied streaming generated client")
 }
 
-async fn next_stream_chunk<M>(
-    response: &mut StreamResponse<M>,
+async fn next_stream_chunk(
+    response: &mut ByteStream,
 ) -> Option<Result<Bytes, concord_core::prelude::ApiError>> {
     std::future::poll_fn(|context| Pin::new(&mut *response).poll_next(context)).await
 }
@@ -399,6 +401,8 @@ async fn generated_buffered_facade_and_explicit_endpoints_use_typed_codecs_end_t
         ResponseScript::ok(b"custom-explicit-response".to_vec())
             .with_header("Content-Type", "application/x-concord-wire"),
         ResponseScript::ok(b"bytes-response".to_vec()),
+        ResponseScript::ok(b"raw-bytes-response".to_vec()),
+        ResponseScript::ok(b"managed-body-response".to_vec()),
         ResponseScript::status(205, b"successful-body-is-ignored".to_vec()),
     ])
     .expect("generated buffered proxy");
@@ -449,6 +453,20 @@ async fn generated_buffered_facade_and_explicit_endpoints_use_typed_codecs_end_t
         .await
         .expect("bytes regression");
     assert_eq!(bytes, b"bytes-response"[..]);
+    let raw_bytes: Bytes = client
+        .messages()
+        .raw_bytes(Bytes::from_static(b"raw-bytes-request"))
+        .await
+        .expect("raw bytes request specification");
+    assert_eq!(raw_bytes, b"raw-bytes-response"[..]);
+    let managed_body: Bytes = client
+        .messages()
+        .managed_body(RequestBody::bytes(Bytes::from_static(
+            b"managed-body-request",
+        )))
+        .await
+        .expect("managed request body specification");
+    assert_eq!(managed_body, b"managed-body-response"[..]);
     let no_content: DecodedResponse<()> = client
         .messages()
         .no_content_echo("no-content-request".to_owned())
@@ -458,16 +476,18 @@ async fn generated_buffered_facade_and_explicit_endpoints_use_typed_codecs_end_t
     assert_eq!(no_content.status().as_u16(), 205);
 
     server
-        .wait_for_requests(7, Duration::from_secs(1))
+        .wait_for_requests(9, Duration::from_secs(1))
         .expect("all generated requests recorded");
     let requests = server.requests();
-    let expected_bodies: [&[u8]; 7] = [
+    let expected_bodies: [&[u8]; 9] = [
         b"facade-text-request",
         b"explicit-text-request",
         b"[1,2,3]",
         b"custom-facade-request",
         b"custom-explicit-request",
         b"bytes-request",
+        b"raw-bytes-request",
+        b"managed-body-request",
         b"no-content-request",
     ];
     for (request, expected_body) in requests.iter().zip(expected_bodies) {
@@ -535,11 +555,14 @@ async fn generated_stream_and_multipart_facade_and_explicit_endpoints_use_one_ru
         .expect("explicit generated vendor stream upload");
     assert_eq!(vendor_upload, b"vendor-upload-ok"[..]);
 
-    let mut download: StreamResponse<OctetStream> = client
+    let response: ApiResponse<ByteStream> = client
         .transfers()
         .download()
+        .response()
         .await
-        .expect("generated stream response");
+        .expect("generated stream metadata response");
+    assert_eq!(response.status(), concord_core::advanced::StatusCode::OK);
+    let mut download = response.into_value();
     let mut downloaded = Vec::new();
     while let Some(chunk) = next_stream_chunk(&mut download).await {
         downloaded.extend_from_slice(&chunk.expect("generated stream chunk"));
@@ -547,10 +570,12 @@ async fn generated_stream_and_multipart_facade_and_explicit_endpoints_use_one_ru
     assert_eq!(downloaded, b"facade-download");
 
     let vendor_endpoint = streaming_api::endpoints::transfers::VendorDownload::new();
-    let mut vendor: StreamResponse<VendorStreamMedia> = client
+    let response: ApiResponse<ByteStream> = client
         .request(vendor_endpoint)
+        .response()
         .await
-        .expect("explicit generated vendor stream response");
+        .expect("explicit generated vendor stream metadata response");
+    let mut vendor = response.into_value();
     let mut vendor_downloaded = Vec::new();
     while let Some(chunk) = next_stream_chunk(&mut vendor).await {
         vendor_downloaded.extend_from_slice(&chunk.expect("vendor stream chunk"));

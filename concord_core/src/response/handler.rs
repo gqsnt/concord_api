@@ -1,20 +1,13 @@
 use std::num::NonZeroUsize;
 
 use bytes::{Bytes, BytesMut};
-use http::header::CONTENT_TYPE;
 
-use crate::codec::{DecodeBody, DecodeContext, MediaType};
 use crate::error::{ApiError, ErrorCategory};
-use crate::hooks::BoxFuture;
 use crate::http::application::ApplicationResponse;
 use crate::operation::OperationDeadline;
-use crate::request::{
-    BufferedResponse, BytesResponse, NoContentResponse, ResponseHandler, StreamResponseHandler,
-};
 
-use super::{ExecutionMeta, StreamResponse};
+use super::{ByteStream, ResponseBodyErrorKind, ResponseBodySpec, ResponseHead};
 
-#[doc(hidden)]
 pub struct ResponseInput {
     pub(crate) response: ApplicationResponse,
     pub(crate) limit: NonZeroUsize,
@@ -22,192 +15,99 @@ pub struct ResponseInput {
     pub(crate) deadline: OperationDeadline,
     pub(crate) endpoint: &'static str,
     pub(crate) method: http::Method,
-    pub(crate) logical_url: url::Url,
-    pub(crate) recovered_authentication: bool,
 }
 
-#[doc(hidden)]
-pub trait ExecuteResponse: ResponseHandler {
-    fn handle(input: ResponseInput) -> BoxFuture<'static, Result<Self::Output, ApiError>>;
-}
-
-impl ExecuteResponse for BytesResponse {
-    fn handle(input: ResponseInput) -> BoxFuture<'static, Result<Self::Output, ApiError>> {
-        Box::pin(async move {
-            preflight_length(&input)?;
-            collect_bounded(input).await
-        })
-    }
-}
-
-impl<C> ExecuteResponse for BufferedResponse<C>
+pub(crate) async fn execute_response<R>(
+    input: ResponseInput,
+    head: &ResponseHead<'_>,
+) -> Result<R::Output, ApiError>
 where
-    C: DecodeBody,
+    R: ResponseBodySpec,
 {
-    fn handle(input: ResponseInput) -> BoxFuture<'static, Result<Self::Output, ApiError>> {
-        Box::pin(async move {
-            preflight_length(&input)?;
-            let content_type = input
-                .response
-                .headers()
-                .get(CONTENT_TYPE)
-                .and_then(|value| value.to_str().ok())
-                .map(str::to_owned);
-            let validation = C::validate_content_type(content_type.as_deref());
-            input
-                .deadline
-                .check()
-                .map_err(|_| timeout(input.endpoint, &input.method))?;
-            validation.map_err(|error| {
-                drop(error);
-                ApiError::classified(
-                    input.endpoint,
-                    input.method.clone(),
-                    ErrorCategory::ResponseContract,
-                )
-            })?;
+    <R::Mode as super::spec::private::Sealed>::preflight(&input)?;
 
-            let endpoint = input.endpoint;
-            let method = input.method.clone();
-            let status = input.response.status();
-            let deadline = input.deadline;
-            let body = collect_bounded(input).await?;
-            let decoded = C::decode(
-                body,
-                DecodeContext {
-                    endpoint,
-                    method: &method,
-                    status,
-                    content_type: content_type.as_deref(),
-                },
-            );
-            deadline.check().map_err(|_| timeout(endpoint, &method))?;
-            decoded.map_err(|error| {
-                drop(error);
-                ApiError::classified(endpoint, method, ErrorCategory::ResponseDecoding)
-            })
-        })
-    }
+    let validation = R::validate(head);
+    input
+        .deadline
+        .check()
+        .map_err(|_| timeout(input.endpoint, &input.method))?;
+    validation.map_err(|error| response_spec_error(input.endpoint, &input.method, error.kind()))?;
+
+    let deadline = input.deadline;
+    let endpoint = input.endpoint;
+    let method = input.method.clone();
+    let body = <R::Mode as super::spec::private::Sealed>::acquire(input).await?;
+    let output = R::from_body(body, head);
+    deadline.check().map_err(|_| timeout(endpoint, &method))?;
+    output.map_err(|error| response_spec_error(endpoint, &method, error.kind()))
 }
 
-impl ExecuteResponse for NoContentResponse {
-    fn handle(input: ResponseInput) -> BoxFuture<'static, Result<Self::Output, ApiError>> {
-        Box::pin(async move {
-            input
-                .deadline
-                .check()
-                .map_err(|_| timeout(input.endpoint, &input.method))?;
-            drop(input.response);
-            input
-                .deadline
-                .check()
-                .map_err(|_| timeout(input.endpoint, &input.method))?;
-            Ok(())
-        })
-    }
+pub(crate) fn preflight_buffered(input: &ResponseInput) -> Result<(), ApiError> {
+    preflight_length(input, input.limit)
 }
 
-impl<M> ExecuteResponse for StreamResponseHandler<M>
-where
-    M: MediaType,
-{
-    fn handle(input: ResponseInput) -> BoxFuture<'static, Result<Self::Output, ApiError>> {
-        Box::pin(async move {
-            input
-                .deadline
-                .check()
-                .map_err(|_| timeout(input.endpoint, &input.method))?;
-            let content_length = input.response.content_length();
-            let stream_limit = u64::try_from(input.stream_limit.get()).unwrap_or(u64::MAX);
-            if content_length.is_some_and(|length| length > stream_limit) {
-                return Err(ApiError::classified(
-                    input.endpoint,
-                    input.method,
-                    ErrorCategory::ResponseBody,
-                ));
-            }
-
-            let required = validate_stream_media_marker::<M>(input.endpoint, &input.method)?;
-            let valid_media = input
-                .response
-                .headers()
-                .get(CONTENT_TYPE)
-                .and_then(|value| value.to_str().ok())
-                .and_then(|value| value.parse::<mime::Mime>().ok())
-                .is_some_and(|actual| stream_media_matches(&required, &actual));
-            input
-                .deadline
-                .check()
-                .map_err(|_| timeout(input.endpoint, &input.method))?;
-            if !valid_media {
-                return Err(ApiError::classified(
-                    input.endpoint,
-                    input.method,
-                    ErrorCategory::ResponseContract,
-                ));
-            }
-
-            let status = input.response.status();
-            let version = input.response.version();
-            let headers = input.response.headers().clone();
-            let metadata = ExecutionMeta::new(
-                input.endpoint,
-                input.method.clone(),
-                0,
-                input.recovered_authentication,
-            );
-            let body = input.response.into_byte_stream();
-            input
-                .deadline
-                .check()
-                .map_err(|_| timeout(input.endpoint, &input.method))?;
-            Ok(StreamResponse::new(
-                input.logical_url,
-                status,
-                version,
-                headers,
-                content_length,
-                metadata,
-                body,
-                stream_limit,
-            ))
-        })
-    }
+pub(crate) fn preflight_streaming(input: &ResponseInput) -> Result<(), ApiError> {
+    preflight_length(input, input.stream_limit)
 }
 
-pub(crate) fn validate_stream_media_marker<M>(
+pub(crate) fn preflight_discard(input: &ResponseInput) -> Result<(), ApiError> {
+    input
+        .deadline
+        .check()
+        .map_err(|_| timeout(input.endpoint, &input.method))
+}
+
+pub(crate) async fn acquire_buffered(input: ResponseInput) -> Result<Bytes, ApiError> {
+    collect_bounded(input).await
+}
+
+pub(crate) async fn acquire_streaming(input: ResponseInput) -> Result<ByteStream, ApiError> {
+    input
+        .deadline
+        .check()
+        .map_err(|_| timeout(input.endpoint, &input.method))?;
+    let limit = u64::try_from(input.stream_limit.get()).unwrap_or(u64::MAX);
+    let body = input.response.into_byte_stream(limit);
+    input
+        .deadline
+        .check()
+        .map_err(|_| timeout(input.endpoint, &input.method))?;
+    Ok(ByteStream::new(body))
+}
+
+pub(crate) async fn acquire_discard(input: ResponseInput) -> Result<(), ApiError> {
+    input
+        .deadline
+        .check()
+        .map_err(|_| timeout(input.endpoint, &input.method))?;
+    drop(input.response);
+    input
+        .deadline
+        .check()
+        .map_err(|_| timeout(input.endpoint, &input.method))?;
+    Ok(())
+}
+
+fn response_spec_error(
     endpoint: &'static str,
     method: &http::Method,
-) -> Result<mime::Mime, ApiError>
-where
-    M: MediaType,
-{
-    let parsed = M::MEDIA_TYPE.parse::<mime::Mime>().map_err(|_| {
-        ApiError::classified(endpoint, method.clone(), ErrorCategory::ResponseContract)
-    })?;
-    if parsed.type_() == mime::STAR || parsed.subtype() == mime::STAR {
-        return Err(ApiError::classified(
-            endpoint,
-            method.clone(),
-            ErrorCategory::ResponseContract,
-        ));
-    }
-    Ok(parsed)
-}
-
-fn stream_media_matches(required: &mime::Mime, actual: &mime::Mime) -> bool {
-    required.type_() == actual.type_()
-        && required.subtype() == actual.subtype()
-        && required
-            .params()
-            .all(|(name, value)| actual.get_param(name) == Some(value))
+    kind: ResponseBodyErrorKind,
+) -> ApiError {
+    let category = match kind {
+        ResponseBodyErrorKind::InvalidMediaType | ResponseBodyErrorKind::InvalidOutput => {
+            ErrorCategory::ResponseContract
+        }
+        ResponseBodyErrorKind::Decode => ErrorCategory::ResponseDecoding,
+        ResponseBodyErrorKind::Internal => ErrorCategory::Internal,
+    };
+    ApiError::classified(endpoint, method.clone(), category)
 }
 
 fn timeout(endpoint: &'static str, method: &http::Method) -> ApiError {
     ApiError::classified(endpoint, method.clone(), ErrorCategory::Timeout)
 }
 
-fn preflight_length(input: &ResponseInput) -> Result<(), ApiError> {
+fn preflight_length(input: &ResponseInput, limit: NonZeroUsize) -> Result<(), ApiError> {
     input
         .deadline
         .check()
@@ -215,7 +115,7 @@ fn preflight_length(input: &ResponseInput) -> Result<(), ApiError> {
     if input
         .response
         .content_length()
-        .is_some_and(|length| length > input.limit.get() as u64)
+        .is_some_and(|length| length > u64::try_from(limit.get()).unwrap_or(u64::MAX))
     {
         return Err(ApiError::classified(
             input.endpoint,

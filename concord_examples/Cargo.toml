@@ -12,6 +12,9 @@ http2 = ["concord_core/http2"]
 rate-limit-governor = ["concord_core/rate-limit-governor"]
 json = ["concord_core/json"]
 multipart = ["concord_core/multipart"]
+records = ["concord_core/records"]
+csv = ["records", "concord_core/csv"]
+ndjson = ["records", "concord_core/ndjson"]
 dangerous-raw-response = ["concord_core/dangerous-raw-response"]
 dangerous-custom-retry = ["concord_core/dangerous-custom-retry", "dep:reqwest"]
 
@@ -39,6 +42,10 @@ required-features = ["json"]
 [[example]]
 name = "regional_api"
 required-features = ["json"]
+
+[[example]]
+name = "records"
+required-features = ["csv", "ndjson"]
 
 [lints]
 workspace = true

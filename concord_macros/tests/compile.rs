@@ -190,16 +190,17 @@ fn missing_core_dependency_has_a_focused_macro_diagnostic() {
 fn incompatible_core_contract_fails_during_compilation() {
     assert_fixture_fails_with(
         "contract_mismatch",
-        "concord macro/core contract mismatch: core 999, generated 12",
+        "concord macro/core contract mismatch: core 999, generated 13",
     );
 }
 
 #[test]
-fn json_and_oauth_dsl_without_runtime_feature_have_a_focused_diagnostic() {
-    assert_fixture_fails_with(
-        "json_disabled",
-        "Concord JSON DSL requires the `concord_core/json` feature",
-    );
+fn json_body_and_response_without_runtime_feature_fail_through_core_type_availability() {
+    assert_fixture_fails_with("json_disabled", "cannot find type `Json` in this scope");
+}
+
+#[test]
+fn oauth_without_runtime_json_support_has_a_focused_provider_diagnostic() {
     assert_fixture_fails_with(
         "oauth_disabled",
         "Concord JSON DSL requires the `concord_core/json` feature",
@@ -207,10 +208,10 @@ fn json_and_oauth_dsl_without_runtime_feature_have_a_focused_diagnostic() {
 }
 
 #[test]
-fn multipart_dsl_without_runtime_feature_has_a_focused_diagnostic() {
+fn multipart_dsl_without_runtime_feature_fails_through_core_type_availability() {
     assert_fixture_fails_with(
         "multipart_disabled",
-        "Concord multipart DSL requires the `concord_core/multipart` feature",
+        "cannot find type `Multipart` in this scope",
     );
 }
 
@@ -284,7 +285,6 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
             "CodecBody",
             "BufferedResponse",
             "PreparedBody",
-            "BodySpec",
             "StreamRequestBody",
             "StreamResponseHandler",
             "PreparedResponseMarker",
@@ -325,26 +325,26 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
                 path if path.ends_with("struct.StreamUpload.html") => &[
                     "RenamedApi::resources::StreamUpload",
                     "POST",
-                    "Stream&lt;OctetStream&gt;",
-                    "one-shot",
-                    "StreamBody",
+                    "Stream &lt; OctetStream &gt;",
+                    "structural metadata",
+                    "hook approval",
                     "scope_value",
                     "body",
                 ],
                 path if path.ends_with("struct.StreamDownload.html") => &[
                     "RenamedApi::resources::StreamDownload",
                     "GET",
-                    "StreamResponse",
-                    "finite stream-response limit",
-                    "intentionally unavailable",
+                    "Stream &lt; OctetStream &gt;",
+                    "universal successful metadata",
+                    "core-owned capability bounds",
                     "scope_value",
                 ],
                 path if path.ends_with("struct.MultipartUpload.html") => &[
                     "RenamedApi::resources::MultipartUpload",
                     "POST",
-                    "MultipartBody",
-                    "concord_core/multipart",
-                    "aggregate framing limits",
+                    "Multipart",
+                    "request specification",
+                    "feature availability is owned by",
                     "scope_value",
                     "body",
                 ],
@@ -365,16 +365,13 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
                     "generated endpoint Rustdoc omitted public identity or parameter {expected}"
                 );
             }
-            let raw_expectations: &[&str] = if relative.ends_with("struct.StreamDownload.html") {
-                &["raw_response", "intentionally unavailable"]
-            } else {
-                &[
-                    "concord_core/dangerous-raw-response",
-                    "raw_response",
-                    "complete bounded successful bytes",
-                    "reduced secrecy guarantees",
-                ]
-            };
+            let raw_expectations: &[&str] = &[
+                "concord_core/dangerous-raw-response",
+                "raw_response",
+                "core-owned capability",
+                "complete bounded successful bytes",
+                "reduced secrecy guarantees",
+            ];
             for expected in raw_expectations {
                 assert!(
                     page.contains(expected),

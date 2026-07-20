@@ -14,6 +14,9 @@ runtime-default = [
 ]
 json = ["concord_core/json"]
 multipart = ["concord_core/multipart"]
+records = ["concord_core/records"]
+csv = ["records", "concord_core/csv"]
+ndjson = ["records", "concord_core/ndjson"]
 
 [dependencies]
 concord_core = { path = "../../../../concord_core", default-features = false }

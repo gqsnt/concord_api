@@ -18,7 +18,10 @@ use crate::auth::{
     CredentialProvider, CredentialReason, CredentialRef, CredentialRequest, RecoveryMode,
     SecretCredential, SecretString, SlotSelector,
 };
-use crate::body::{BodyError, BodyFactory, RequestBody, StreamBody};
+use crate::body::{
+    BodyError, BodyFactory, EmptyBody, RequestBody, RequestBodyContext, RequestBodyMetadata,
+    RequestBodySpec, Stream as StreamSpec, StreamBody,
+};
 #[cfg(feature = "multipart")]
 use crate::body::{MultipartBody, MultipartPart};
 use crate::client::ClientCore;
@@ -41,9 +44,7 @@ use crate::rate_limit::{
     RateLimitResponse, RateLimitRule, RateLimitWindow, RateLimiter,
 };
 use crate::request::{
-    BodyMetadata, BodySpec, BufferedResponse, BytesResponse, EmptyBody, EndpointSpec, HeadBuilder,
-    PreparedEndpoint, PreparedHead, RawResponseEndpoint, Request, RequestMeta,
-    StreamResponseHandler,
+    EndpointSpec, HeadBuilder, PreparedEndpoint, PreparedHead, Request, RequestMeta,
 };
 use crate::runtime::RuntimeConfigBuilder;
 
@@ -123,26 +124,28 @@ impl DecodeBody for AuthenticationPageCodec {
 
 impl EndpointSpec for PaginatedProtectedEndpoint {
     type Body = EmptyBody;
-    type Response = BufferedResponse<AuthenticationPageCodec>;
+    type Response = AuthenticationPageCodec;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::GET, Some(Duration::from_secs(30)))
     }
 
-    fn prepare_head_and_body_metadata(
-        &self,
-        mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("paginated-protected")?;
         builder.push_auth(
             Auth::bearer(self.credential.clone()).challenge(ChallengePolicy::Unauthorized),
         )?;
-        Ok((builder.finish(), EmptyBody::metadata()))
+        Ok(builder.finish())
     }
 
-    fn into_body(self) -> Self::Body {
-        EmptyBody::new()
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        EmptyBody::metadata(&(), context)
     }
+
+    fn into_body(self) {}
 }
 
 #[derive(Clone)]
@@ -176,20 +179,24 @@ struct BasicEndpoint {
 
 impl EndpointSpec for BasicEndpoint {
     type Body = RequestBody;
-    type Response = BytesResponse;
+    type Response = Bytes;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::GET, Some(Duration::from_secs(30)))
     }
 
-    fn prepare_head_and_body_metadata(
-        &self,
-        mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("basic")?;
         builder.push_auth(Auth::basic(self.credential.clone()))?;
+        Ok(builder.finish())
+    }
+
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
         let body = RequestBody::bytes(Bytes::new());
-        Ok((builder.finish(), body.metadata(ENDPOINT, &Method::GET)?))
+        RequestBody::metadata(&body, context)
     }
 
     fn into_body(self) -> Self::Body {
@@ -203,23 +210,26 @@ struct HeaderEndpoint {
 
 impl EndpointSpec for HeaderEndpoint {
     type Body = RequestBody;
-    type Response = BytesResponse;
+    type Response = Bytes;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::GET, Some(Duration::from_secs(30)))
     }
 
-    fn prepare_head_and_body_metadata(
-        &self,
-        mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("header")?;
         builder.push_auth(Auth::header(
             http::HeaderName::from_static("x-api-key"),
             self.credential.clone(),
         ))?;
-        let body = RequestBody::bytes(Bytes::new());
-        Ok((builder.finish(), body.metadata(ENDPOINT, &Method::GET)?))
+        Ok(builder.finish())
+    }
+
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        RequestBody::metadata(&RequestBody::bytes(Bytes::new()), context)
     }
 
     fn into_body(self) -> Self::Body {
@@ -229,22 +239,25 @@ impl EndpointSpec for HeaderEndpoint {
 
 impl EndpointSpec for ProtectedStreamEndpoint {
     type Body = RequestBody;
-    type Response = StreamResponseHandler<OctetStream>;
+    type Response = StreamSpec<OctetStream>;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::GET, Some(Duration::from_secs(30)))
     }
 
-    fn prepare_head_and_body_metadata(
-        &self,
-        mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("protected-stream")?;
         builder.push_auth(
             Auth::bearer(self.credential.clone()).challenge(ChallengePolicy::Unauthorized),
         )?;
-        let body = RequestBody::bytes(Bytes::new());
-        Ok((builder.finish(), body.metadata(ENDPOINT, &Method::GET)?))
+        Ok(builder.finish())
+    }
+
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        RequestBody::metadata(&RequestBody::bytes(Bytes::new()), context)
     }
 
     fn into_body(self) -> Self::Body {
@@ -261,26 +274,32 @@ struct MultiAuthEndpoint {
 
 impl EndpointSpec for MultiAuthEndpoint {
     type Body = RequestBody;
-    type Response = BytesResponse;
+    type Response = Bytes;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::POST, Some(Duration::from_secs(30)))
     }
 
-    fn prepare_head_and_body_metadata(
-        &self,
-        mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("protected")?;
         builder.push_auth(Auth::bearer(self.first.clone()).challenge(self.first_challenge))?;
         builder.push_auth(Auth::header(
             http::HeaderName::from_static("x-secondary-token"),
             self.second.clone(),
         ))?;
-        let body = RequestBody::factory(ReplayFactory {
-            calls: Arc::clone(&self.body_calls),
-        });
-        Ok((builder.finish(), body.metadata(ENDPOINT, &Method::POST)?))
+        Ok(builder.finish())
+    }
+
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        RequestBody::metadata(
+            &RequestBody::factory(ReplayFactory {
+                calls: Arc::clone(&self.body_calls),
+            }),
+            context,
+        )
     }
 
     fn into_body(self) -> Self::Body {
@@ -297,22 +316,28 @@ struct DynamicCollisionEndpoint {
 
 impl EndpointSpec for DynamicCollisionEndpoint {
     type Body = RequestBody;
-    type Response = BytesResponse;
+    type Response = Bytes;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::POST, Some(Duration::from_secs(30)))
     }
 
-    fn prepare_head_and_body_metadata(
-        &self,
-        mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_auth(Auth::query("access", self.credential.clone()))?;
         builder.push_query_value("access", &"materially-present-public-value");
-        let body = RequestBody::factory(ReplayFactory {
-            calls: Arc::clone(&self.body_calls),
-        });
-        Ok((builder.finish(), body.metadata(ENDPOINT, &Method::POST)?))
+        Ok(builder.finish())
+    }
+
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        RequestBody::metadata(
+            &RequestBody::factory(ReplayFactory {
+                calls: Arc::clone(&self.body_calls),
+            }),
+            context,
+        )
     }
 
     fn into_body(self) -> Self::Body {
@@ -411,20 +436,23 @@ struct LimiterWaitExpiryEndpoint {
 
 impl EndpointSpec for LimiterWaitExpiryEndpoint {
     type Body = RequestBody;
-    type Response = BytesResponse;
+    type Response = Bytes;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::POST, Some(Duration::from_secs(30)))
     }
 
-    fn prepare_head_and_body_metadata(
-        &self,
-        mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("expiry-refresh")?;
         builder.push_auth(Auth::bearer(self.credential.clone()))?;
-        let body = RequestBody::bytes(Bytes::new());
-        Ok((builder.finish(), body.metadata(ENDPOINT, &Method::POST)?))
+        Ok(builder.finish())
+    }
+
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        RequestBody::metadata(&RequestBody::bytes(Bytes::new()), context)
     }
 
     fn into_body(self) -> Self::Body {
@@ -461,20 +489,23 @@ struct ExposureEndpoint {
 
 impl EndpointSpec for ExposureEndpoint {
     type Body = RequestBody;
-    type Response = BytesResponse;
+    type Response = Bytes;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::GET, Some(Duration::from_secs(30)))
     }
 
-    fn prepare_head_and_body_metadata(
-        &self,
-        mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("exposure")?;
         builder.push_auth(Auth::bearer(self.credential.clone()))?;
-        let body = RequestBody::bytes(Bytes::new());
-        Ok((builder.finish(), body.metadata(ENDPOINT, &Method::GET)?))
+        Ok(builder.finish())
+    }
+
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        RequestBody::metadata(&RequestBody::bytes(Bytes::new()), context)
     }
 
     fn into_body(self) -> Self::Body {
@@ -484,16 +515,13 @@ impl EndpointSpec for ExposureEndpoint {
 
 impl EndpointSpec for FinalizationExpiryEndpoint {
     type Body = RequestBody;
-    type Response = BytesResponse;
+    type Response = Bytes;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::POST, Some(Duration::from_secs(30)))
     }
 
-    fn prepare_head_and_body_metadata(
-        &self,
-        mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_rate_limit_rule(
             "AuthenticationApi::rate_limit::finalization",
             std::iter::empty::<RateLimitKeyPart>(),
@@ -501,8 +529,14 @@ impl EndpointSpec for FinalizationExpiryEndpoint {
             [(1, Duration::from_secs(10))],
         )?;
         builder.push_auth(Auth::bearer(self.credential.clone()))?;
-        let body = RequestBody::bytes(Bytes::new());
-        Ok((builder.finish(), body.metadata(ENDPOINT, &Method::POST)?))
+        Ok(builder.finish())
+    }
+
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        RequestBody::metadata(&RequestBody::bytes(Bytes::new()), context)
     }
 
     fn into_body(self) -> Self::Body {
@@ -512,16 +546,13 @@ impl EndpointSpec for FinalizationExpiryEndpoint {
 
 impl EndpointSpec for ProtectedEndpoint {
     type Body = RequestBody;
-    type Response = BytesResponse;
+    type Response = Bytes;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::POST, Some(Duration::from_secs(30)))
     }
 
-    fn prepare_head_and_body_metadata(
-        &self,
-        mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("protected")?;
         let auth = if self.query {
             Auth::query("access", self.credential.clone())
@@ -537,10 +568,14 @@ impl EndpointSpec for ProtectedEndpoint {
                 [(1, Duration::from_secs(1))],
             )?;
         }
-        Ok((
-            builder.finish(),
-            self.body.metadata(ENDPOINT, &Method::POST)?,
-        ))
+        Ok(builder.finish())
+    }
+
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        RequestBody::metadata(&self.body, context)
     }
 
     fn into_body(self) -> Self::Body {
@@ -548,7 +583,7 @@ impl EndpointSpec for ProtectedEndpoint {
     }
 }
 
-impl RawResponseEndpoint for ProtectedEndpoint {}
+impl crate::request::RawResponseEndpoint for ProtectedEndpoint {}
 
 #[derive(Clone)]
 struct HookRecord {
@@ -1908,6 +1943,7 @@ async fn recovered_stream_reports_recovery_in_owned_metadata() {
             credential: CredentialRef::new(selector),
         },
     )
+    .response()
     .await
     .expect("recovered stream should open");
     assert!(response.metadata().recovered_authentication());

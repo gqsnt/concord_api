@@ -3,8 +3,8 @@ use std::num::NonZeroU32;
 
 use crate::error::ApiError;
 use crate::hooks::BoxFuture;
-use crate::request::{Request, ResponseHandler};
-use crate::response::ExecuteResponse;
+use crate::request::Request;
+use crate::response::{PageResponseSpec, ResponseBodySpec};
 
 use super::{PaginationController, PaginationError};
 
@@ -50,13 +50,14 @@ impl<E> PaginatedRequest<E> {
 #[doc(hidden)]
 pub trait PaginatedEndpoint: crate::request::EndpointSpec + Clone + Sized
 where
-    <Self::Response as ResponseHandler>::Output: IntoIterator<Item = Self::Item> + Send + 'static,
+    Self::Response: PageResponseSpec,
+    <Self::Response as ResponseBodySpec>::Output: IntoIterator<Item = Self::Item> + Send + 'static,
 {
     /// One collected item from the decoded page's ordinary `IntoIterator`.
     type Item: Send + 'static;
 
     /// Request-local typed pagination controller.
-    type Controller: PaginationController<<Self::Response as ResponseHandler>::Output>;
+    type Controller: PaginationController<<Self::Response as ResponseBodySpec>::Output>;
 
     /// Constructs the complete initial controller exactly once.
     fn initial_controller(&self) -> Result<Self::Controller, PaginationError>;
@@ -72,8 +73,8 @@ where
 impl<E> IntoFuture for PaginatedRequest<E>
 where
     E: PaginatedEndpoint,
-    E::Response: ExecuteResponse,
-    <E::Response as ResponseHandler>::Output: IntoIterator<Item = E::Item> + Send + 'static,
+    E::Response: PageResponseSpec,
+    <E::Response as ResponseBodySpec>::Output: IntoIterator<Item = E::Item> + Send + 'static,
 {
     type Output = Result<Vec<E::Item>, ApiError>;
     type IntoFuture = BoxFuture<'static, Self::Output>;

@@ -5,7 +5,9 @@ use std::future::IntoFuture;
 use http::{Method, StatusCode};
 
 use crate::auth::PreparedAuthPlan;
-use crate::body::Replayability;
+use crate::body::{
+    Replayability, RequestBodyContext, RequestBodyMetadata, RequestBodySpec, validate_produced_body,
+};
 use crate::client::ClientCore;
 use crate::error::{ApiError, ErrorCategory};
 use crate::hooks::{
@@ -14,27 +16,29 @@ use crate::hooks::{
 use crate::operation::{OperationDeadline, OperationId};
 use crate::rate_limit::{RateLimitRequest, RateLimitResponse};
 use crate::redaction::SanitizedHeaders;
+#[cfg(feature = "dangerous-raw-response")]
+use crate::request::RawResponseRequest;
 use crate::request::{
-    BodySpec, EndpointSpec, OperationPreparation, PreparationFailure, PreparedOperation,
-    PreparedPaginationPage, Request, ResponseHandler, ResponseRequest, prepare_operation,
+    EndpointSpec, OperationPreparation, PreparationFailure, PreparedOperation,
+    PreparedPaginationPage, Request, ResponseRequest, prepare_operation,
 };
 #[cfg(feature = "dangerous-raw-response")]
-use crate::request::{BytesResponse, RawResponseEndpoint, RawResponseRequest};
-#[cfg(feature = "dangerous-raw-response")]
 use crate::response::RawResponse;
-use crate::response::{DecodedResponse, ExecuteResponse, ExecutionMeta, ResponseInput};
+use crate::response::{
+    ApiResponse, ExecutionMeta, ResponseBodySpec, ResponseHead, ResponseInput, completion_outcome,
+    execute_response,
+};
 
 #[doc(hidden)]
 impl<E> IntoFuture for Request<E>
 where
     E: EndpointSpec,
-    E::Response: ExecuteResponse,
 {
-    type Output = Result<<E::Response as ResponseHandler>::Output, ApiError>;
+    type Output = Result<<E::Response as ResponseBodySpec>::Output, ApiError>;
     type IntoFuture = BoxFuture<'static, Self::Output>;
 
     fn into_future(self) -> Self::IntoFuture {
-        Box::pin(async move { execute_request(self).await.map(DecodedResponse::into_value) })
+        Box::pin(async move { execute_request(self).await.map(ApiResponse::into_value) })
     }
 }
 
@@ -42,9 +46,8 @@ where
 impl<E> IntoFuture for ResponseRequest<E>
 where
     E: EndpointSpec,
-    E::Response: ExecuteResponse,
 {
-    type Output = Result<DecodedResponse<<E::Response as ResponseHandler>::Output>, ApiError>;
+    type Output = Result<ApiResponse<<E::Response as ResponseBodySpec>::Output>, ApiError>;
     type IntoFuture = BoxFuture<'static, Self::Output>;
 
     fn into_future(self) -> Self::IntoFuture {
@@ -56,14 +59,15 @@ where
 #[doc(hidden)]
 impl<E> IntoFuture for RawResponseRequest<E>
 where
-    E: RawResponseEndpoint,
+    E: EndpointSpec,
+    <E::Response as ResponseBodySpec>::Mode: crate::response::RawResponseMode,
 {
     type Output = Result<RawResponse, ApiError>;
     type IntoFuture = BoxFuture<'static, Self::Output>;
 
     fn into_future(self) -> Self::IntoFuture {
         Box::pin(async move {
-            execute_request_as::<E, BytesResponse>(self.request)
+            execute_request_as::<E, bytes::Bytes>(self.request)
                 .await
                 .map(RawResponse::from_decoded)
         })
@@ -72,20 +76,19 @@ where
 
 async fn execute_request<E>(
     request: Request<E>,
-) -> Result<DecodedResponse<<E::Response as ResponseHandler>::Output>, ApiError>
+) -> Result<ApiResponse<<E::Response as ResponseBodySpec>::Output>, ApiError>
 where
     E: EndpointSpec,
-    E::Response: ExecuteResponse,
 {
     execute_request_as::<E, E::Response>(request).await
 }
 
 async fn execute_request_as<E, R>(
     request: Request<E>,
-) -> Result<DecodedResponse<<R as ResponseHandler>::Output>, ApiError>
+) -> Result<ApiResponse<<R as ResponseBodySpec>::Output>, ApiError>
 where
     E: EndpointSpec,
-    R: ExecuteResponse,
+    R: ResponseBodySpec,
 {
     let prepared = match prepare_operation(request).await? {
         OperationPreparation::Ready(prepared) => prepared,
@@ -119,7 +122,7 @@ impl ExecutionContext {
 }
 
 pub(crate) struct ExecutedPage<T> {
-    pub(crate) result: Result<DecodedResponse<T>, ApiError>,
+    pub(crate) result: Result<ApiResponse<T>, ApiError>,
     pub(crate) final_status: Option<StatusCode>,
     pub(crate) recovered_authentication: bool,
 }
@@ -128,10 +131,9 @@ pub(crate) async fn execute_pagination_page<E>(
     page: PreparedPaginationPage<E>,
     parent_operation_id: OperationId,
     page_index: u32,
-) -> Result<ExecutedPage<<E::Response as ResponseHandler>::Output>, ApiError>
+) -> Result<ExecutedPage<<E::Response as ResponseBodySpec>::Output>, ApiError>
 where
     E: EndpointSpec,
-    E::Response: ExecuteResponse,
 {
     let PreparedPaginationPage {
         core,
@@ -189,10 +191,10 @@ where
 async fn execute_prepared_operation<E, R>(
     prepared: PreparedOperation<E>,
     context: ExecutionContext,
-) -> ExecutedPage<<R as ResponseHandler>::Output>
+) -> ExecutedPage<<R as ResponseBodySpec>::Output>
 where
     E: EndpointSpec,
-    R: ExecuteResponse,
+    R: ResponseBodySpec,
 {
     let PreparedOperation {
         core,
@@ -218,14 +220,25 @@ where
         .await?;
 
         check_deadline(deadline, head.endpoint(), head.method())?;
-        let materialized = endpoint.into_body().materialize(
-            head.endpoint(),
-            head.method(),
-            core.request_body_limit(),
+        let input = endpoint.into_body();
+        let body = <E::Body as RequestBodySpec>::prepare(
+            input,
+            RequestBodyContext {
+                endpoint: head.endpoint(),
+                method: head.method(),
+                body_limit: core.request_body_limit(),
+            },
         );
         check_deadline(deadline, head.endpoint(), head.method())?;
-        let mut prepared_body = materialized?;
-        debug_assert_eq!(prepared_body.kind(), body_metadata.kind());
+        let body = body.map_err(|error| request_body_error(&head, error))?;
+        validate_produced_body(&body_metadata, &body)
+            .map_err(|error| request_body_error(&head, error))?;
+        check_deadline(deadline, head.endpoint(), head.method())?;
+        let mut prepared_body = body
+            .into_prepared(core.request_body_limit())
+            .map_err(|error| request_body_error(&head, error))?;
+        check_deadline(deadline, head.endpoint(), head.method())?;
+        debug_assert_eq!(prepared_body.kind(), body_metadata.kind);
         let known_body_length = prepared_body.known_length();
         let materialized_metadata = body_metadata.clone().with_known_length(known_body_length);
 
@@ -360,28 +373,41 @@ where
 
         let version = response.version();
         let headers = response.headers().clone();
-        let output = <R as ExecuteResponse>::handle(ResponseInput {
-            response,
-            limit: core.response_body_limit(),
-            stream_limit: core.stream_response_limit(),
-            deadline,
-            endpoint: head.endpoint(),
-            method: head.method().clone(),
-            logical_url: head.logical_url().clone(),
+        let content_length = response.content_length();
+        let metadata = ExecutionMeta::new(
+            head.endpoint(),
+            head.method().clone(),
+            context.page_index,
             recovered_authentication,
-        })
+        );
+        let response_head = ResponseHead {
+            endpoint: head.endpoint(),
+            method: head.method(),
+            url: head.logical_url(),
+            status,
+            version,
+            headers: &headers,
+            content_length,
+            metadata: &metadata,
+        };
+        let output = execute_response::<R>(
+            ResponseInput {
+                response,
+                limit: core.response_body_limit(),
+                stream_limit: core.stream_response_limit(),
+                deadline,
+                endpoint: head.endpoint(),
+                method: head.method().clone(),
+            },
+            &response_head,
+        )
         .await?;
-        Ok(DecodedResponse::new(
+        Ok(ApiResponse::new(
             head.logical_url().clone(),
             status,
             version,
             headers,
-            ExecutionMeta::new(
-                head.endpoint(),
-                head.method().clone(),
-                context.page_index,
-                recovered_authentication,
-            ),
+            metadata,
             output,
         ))
     }
@@ -399,7 +425,7 @@ where
         head.debug(),
         elapsed,
         final_status,
-        R::COMPLETION_OUTCOME,
+        completion_outcome::<R>(),
         recovered_authentication,
         result,
     )
@@ -413,7 +439,7 @@ where
 
 async fn complete_preparation_failure<E>(
     failure: PreparationFailure,
-) -> Result<DecodedResponse<E>, ApiError> {
+) -> Result<ApiResponse<E>, ApiError> {
     let PreparationFailure {
         core,
         operation_id,
@@ -446,7 +472,7 @@ async fn run_before_send(
     context: ExecutionContext,
     deadline: OperationDeadline,
     head: &crate::request::PreparedHead,
-    body_metadata: &crate::request::BodyMetadata,
+    body_metadata: &RequestBodyMetadata,
     recovery_index: u8,
 ) -> Result<(), ApiError> {
     check_deadline(deadline, head.endpoint(), head.method())?;
@@ -492,7 +518,7 @@ fn before_send_event<'a>(
     operation_id: OperationId,
     context: ExecutionContext,
     head: &'a crate::request::PreparedHead,
-    body_metadata: &crate::request::BodyMetadata,
+    body_metadata: &RequestBodyMetadata,
     recovery_index: u8,
 ) -> BeforeSend<'a> {
     BeforeSend {
@@ -504,7 +530,7 @@ fn before_send_event<'a>(
         page_index: context.page_index,
         recovery_index,
         headers: head.sanitized_public_headers(),
-        body_kind: body_metadata.kind(),
+        body_kind: body_metadata.kind,
         known_body_length: body_metadata.known_length(),
     }
 }
@@ -563,7 +589,7 @@ async fn send_attempt(
     deadline: OperationDeadline,
     head: &crate::request::PreparedHead,
     prepared_body: &mut crate::request::PreparedBody,
-    body_metadata: &crate::request::BodyMetadata,
+    body_metadata: &RequestBodyMetadata,
     prepared_auth: PreparedAuthPlan,
     recovery_index: u8,
     final_status: &mut Option<StatusCode>,
@@ -610,7 +636,7 @@ async fn send_attempt(
             head.safe_url(),
             head.public_headers(),
             head.pagination_sensitive_headers(),
-            body_metadata.kind(),
+            body_metadata.kind,
             body_metadata.known_length(),
         ))
         .await
@@ -700,6 +726,19 @@ where
 
 fn auth_api_error(head: &crate::request::PreparedHead, error: crate::auth::AuthError) -> ApiError {
     ApiError::authentication(head.endpoint(), head.method().clone(), error)
+}
+
+fn request_body_error(
+    head: &crate::request::PreparedHead,
+    error: crate::body::BodyError,
+) -> ApiError {
+    let category = if error.kind() == crate::body::BodyErrorKind::Producer {
+        ErrorCategory::RequestEncoding
+    } else {
+        ErrorCategory::RequestBody
+    };
+    drop(error);
+    ApiError::classified(head.endpoint(), head.method().clone(), category)
 }
 
 async fn acquire_rate_limit_authority(

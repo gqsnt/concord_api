@@ -20,7 +20,10 @@ use futures_core::Stream;
 use http::{Method, StatusCode};
 
 use super::*;
-use crate::body::{BodyError, BodyFactory, RequestBody, StreamBody};
+use crate::body::{
+    BodyError, BodyFactory, EmptyBody, RequestBody, RequestBodyContext, RequestBodyMetadata,
+    RequestBodySpec, Stream as StreamSpec, StreamBody,
+};
 #[cfg(feature = "multipart")]
 use crate::body::{MultipartBody, MultipartFactory, MultipartPart};
 use crate::codec::{
@@ -35,11 +38,8 @@ use crate::rate_limit::{
     RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitRequest,
     RateLimitResponse, RateLimitRule, RateLimitWindow, RateLimiter,
 };
-use crate::request::{
-    BodyMetadata, BufferedResponse, BytesResponse, CodecBody, EmptyBody, HeadBuilder,
-    NoContentResponse, PreparedEndpoint, PreparedHead, RawResponseEndpoint, RequestMeta,
-    StreamResponseHandler,
-};
+use crate::request::{HeadBuilder, PreparedEndpoint, PreparedHead, RequestMeta};
+use crate::response::{ByteStream, NoContent};
 use crate::runtime::RuntimeConfigBuilder;
 
 const ENDPOINT: &str = "ExecutionApi::health::bytes";
@@ -65,24 +65,26 @@ where
     M: MediaType,
 {
     type Body = EmptyBody;
-    type Response = StreamResponseHandler<M>;
+    type Response = StreamSpec<M>;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(STREAM_ENDPOINT, Method::GET, Some(Duration::from_secs(30)))
     }
 
-    fn prepare_head_and_body_metadata(
-        &self,
-        mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("stream")?;
         builder.push_static("download")?;
-        Ok((builder.finish(), EmptyBody::metadata()))
+        Ok(builder.finish())
     }
 
-    fn into_body(self) -> Self::Body {
-        EmptyBody::new()
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        EmptyBody::metadata(&(), context)
     }
+
+    fn into_body(self) {}
 }
 
 struct VendorStream;
@@ -109,25 +111,26 @@ impl BodyEndpoint {
 
 impl EndpointSpec for BodyEndpoint {
     type Body = RequestBody;
-    type Response = BytesResponse;
+    type Response = Bytes;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(BODY_ENDPOINT, Method::POST, Some(Duration::from_secs(30)))
     }
 
-    fn prepare_head_and_body_metadata(
-        &self,
-        mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("body")?;
         builder.push_static("upload")?;
-        Ok((
-            builder.finish(),
-            self.body.metadata(BODY_ENDPOINT, &Method::POST)?,
-        ))
+        Ok(builder.finish())
     }
 
-    fn into_body(self) -> Self::Body {
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        RequestBody::metadata(&self.body, context)
+    }
+
+    fn into_body(self) -> RequestBody {
         self.body
     }
 }
@@ -296,35 +299,29 @@ where
     Encoder: EncodeBody,
     Decoder: DecodeBody,
 {
-    type Body = CodecBody<Encoder>;
-    type Response = BufferedResponse<Decoder>;
+    type Body = Encoder;
+    type Response = Decoder;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(CODEC_ENDPOINT, Method::POST, Some(Duration::from_secs(30)))
     }
 
-    fn prepare_head_and_body_metadata(
-        &self,
-        mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("codec")?;
         builder.push_static("round-trip")?;
-        Ok((
-            builder.finish(),
-            CodecBody::<Encoder>::metadata_for(CODEC_ENDPOINT, &Method::POST)?,
-        ))
+        Ok(builder.finish())
     }
 
-    fn into_body(self) -> Self::Body {
-        CodecBody::new(self.input)
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        Encoder::metadata(&self.input, context)
     }
-}
 
-impl<Encoder, Decoder> RawResponseEndpoint for CodecEndpoint<Encoder, Decoder>
-where
-    Encoder: EncodeBody,
-    Decoder: DecodeBody,
-{
+    fn into_body(self) -> Encoder::Input {
+        self.input
+    }
 }
 
 struct EncoderInput {
@@ -482,16 +479,13 @@ impl BytesEndpoint {
 
 impl EndpointSpec for BytesEndpoint {
     type Body = EmptyBody;
-    type Response = BytesResponse;
+    type Response = Bytes;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::GET, self.inherited_timeout)
     }
 
-    fn prepare_head_and_body_metadata(
-        &self,
-        mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         if let Some(trace) = &self.trace {
             trace
                 .lock()
@@ -500,15 +494,20 @@ impl EndpointSpec for BytesEndpoint {
         }
         builder.push_static("health")?;
         builder.push_static("bytes")?;
-        Ok((builder.finish(), EmptyBody::metadata()))
+        Ok(builder.finish())
     }
 
-    fn into_body(self) -> Self::Body {
-        EmptyBody::new()
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        EmptyBody::metadata(&(), context)
     }
+
+    fn into_body(self) {}
 }
 
-impl RawResponseEndpoint for BytesEndpoint {}
+impl crate::request::RawResponseEndpoint for BytesEndpoint {}
 
 struct RateLimitedBytesEndpoint {
     inherited_timeout: Option<Duration>,
@@ -540,16 +539,13 @@ impl RateLimitedBytesEndpoint {
 
 impl EndpointSpec for RateLimitedBytesEndpoint {
     type Body = EmptyBody;
-    type Response = BytesResponse;
+    type Response = Bytes;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::GET, self.inherited_timeout)
     }
 
-    fn prepare_head_and_body_metadata(
-        &self,
-        mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("health")?;
         builder.push_static("bytes")?;
         builder.push_rate_limit_rule(
@@ -558,15 +554,20 @@ impl EndpointSpec for RateLimitedBytesEndpoint {
             1,
             [(self.capacity, self.window)],
         )?;
-        Ok((builder.finish(), EmptyBody::metadata()))
+        Ok(builder.finish())
     }
 
-    fn into_body(self) -> Self::Body {
-        EmptyBody::new()
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        EmptyBody::metadata(&(), context)
     }
+
+    fn into_body(self) {}
 }
 
-impl RawResponseEndpoint for RateLimitedBytesEndpoint {}
+impl crate::request::RawResponseEndpoint for RateLimitedBytesEndpoint {}
 
 #[cfg(feature = "rate-limit-governor")]
 struct GlobalRateLimitedBytesEndpoint;
@@ -574,16 +575,13 @@ struct GlobalRateLimitedBytesEndpoint;
 #[cfg(feature = "rate-limit-governor")]
 impl EndpointSpec for GlobalRateLimitedBytesEndpoint {
     type Body = EmptyBody;
-    type Response = BytesResponse;
+    type Response = Bytes;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::GET, Some(Duration::from_secs(30)))
     }
 
-    fn prepare_head_and_body_metadata(
-        &self,
-        mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("health")?;
         builder.push_static("bytes")?;
         builder.push_rate_limit_rule(
@@ -592,12 +590,17 @@ impl EndpointSpec for GlobalRateLimitedBytesEndpoint {
             1,
             [(100, Duration::from_secs(1))],
         )?;
-        Ok((builder.finish(), EmptyBody::metadata()))
+        Ok(builder.finish())
     }
 
-    fn into_body(self) -> Self::Body {
-        EmptyBody::new()
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        EmptyBody::metadata(&(), context)
     }
+
+    fn into_body(self) {}
 }
 
 #[cfg(feature = "rate-limit-governor")]
@@ -613,7 +616,7 @@ struct NoContentEndpoint;
 
 impl EndpointSpec for NoContentEndpoint {
     type Body = EmptyBody;
-    type Response = NoContentResponse;
+    type Response = NoContent;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(
@@ -623,43 +626,45 @@ impl EndpointSpec for NoContentEndpoint {
         )
     }
 
-    fn prepare_head_and_body_metadata(
-        &self,
-        mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("health")?;
         builder.push_static("ping")?;
-        Ok((builder.finish(), EmptyBody::metadata()))
+        Ok(builder.finish())
     }
 
-    fn into_body(self) -> Self::Body {
-        EmptyBody::new()
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        EmptyBody::metadata(&(), context)
     }
+
+    fn into_body(self) {}
 }
-
-impl RawResponseEndpoint for NoContentEndpoint {}
 
 struct InvalidEndpoint;
 
 impl EndpointSpec for InvalidEndpoint {
     type Body = EmptyBody;
-    type Response = BytesResponse;
+    type Response = Bytes;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::GET, Some(Duration::from_secs(30)))
     }
 
-    fn prepare_head_and_body_metadata(
-        &self,
-        mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_value(&"")?;
-        Ok((builder.finish(), EmptyBody::metadata()))
+        Ok(builder.finish())
     }
 
-    fn into_body(self) -> Self::Body {
-        EmptyBody::new()
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        EmptyBody::metadata(&(), context)
     }
+
+    fn into_body(self) {}
 }
 
 #[derive(Clone, Debug)]
@@ -969,9 +974,7 @@ where
     Request::new(core, StreamEndpoint::new())
 }
 
-async fn next_stream_chunk<M>(
-    response: &mut crate::response::StreamResponse<M>,
-) -> Option<Result<Bytes, ApiError>> {
+async fn next_stream_chunk(response: &mut ByteStream) -> Option<Result<Bytes, ApiError>> {
     std::future::poll_fn(|context| Pin::new(&mut *response).poll_next(context)).await
 }
 
@@ -2096,7 +2099,7 @@ async fn request_stream_and_factory_remain_lazy_through_hook_veto() {
             fail: false,
         }),
     );
-    assert_eq!(content_type_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(content_type_calls.load(Ordering::SeqCst), 1);
     assert_eq!(create_calls.load(Ordering::SeqCst), 0);
     assert_eq!(factory_polls.load(Ordering::SeqCst), 0);
     let error = request.await.expect_err("factory hook veto");
@@ -2424,7 +2427,7 @@ async fn body_factory_is_created_once_after_approval_and_failure_is_pre_native()
             fail: false,
         }),
     );
-    assert_eq!(content_type_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(content_type_calls.load(Ordering::SeqCst), 1);
     assert_eq!(create_calls.load(Ordering::SeqCst), 0);
     assert_eq!(polls.load(Ordering::SeqCst), 0);
     assert_eq!(request.await.expect("factory request"), b"factory-ok"[..]);
@@ -2555,7 +2558,8 @@ async fn stream_response_carries_metadata_and_completes_once_when_opened() {
         .queue_response(ScriptedResponse::success("stream-value-secret-8d0a").headers(headers))
         .expect("stream response script");
 
-    let mut response = stream_request::<OctetStream>(core)
+    let response = stream_request::<OctetStream>(core)
+        .response()
         .await
         .expect("stream response");
     assert_eq!(
@@ -2563,7 +2567,6 @@ async fn stream_response_carries_metadata_and_completes_once_when_opened() {
         "http://execution.example.test/v1/stream/download"
     );
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(response.content_length(), Some(24));
     assert_eq!(response.metadata().endpoint(), STREAM_ENDPOINT);
     assert_eq!(response.metadata().method(), Method::GET);
     assert_eq!(response.metadata().page_index(), 0);
@@ -2592,6 +2595,7 @@ async fn stream_response_carries_metadata_and_completes_once_when_opened() {
             "stream Debug leaked {forbidden}"
         );
     }
+    let mut response = response.into_value();
     assert_eq!(
         next_stream_chunk(&mut response)
             .await
@@ -2739,7 +2743,6 @@ async fn unknown_stream_is_lazy_and_first_cumulative_excess_chunk_is_withheld() 
     .await
     .expect("unknown stream must return before body gate")
     .expect("lazy stream response");
-    assert_eq!(lazy.content_length(), None);
     assert_eq!(
         completion(&hooks.records()).1,
         CompletionOutcome::StreamOpened
@@ -2809,7 +2812,6 @@ async fn response_stream_limit_counts_reqwest_post_decompression_bytes() {
     let mut response = stream_request::<OctetStream>(core)
         .await
         .expect("compressed stream opens");
-    assert_eq!(response.content_length(), None);
     let error = next_stream_chunk(&mut response)
         .await
         .expect("post-decompression limit result")

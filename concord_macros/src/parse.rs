@@ -12,13 +12,12 @@ use syn::{
 use url::Url;
 
 use crate::ast::{
-    AuthChallenge, AuthOperation, AuthPlacement, AuthPlacementKind, CodecKind, CredentialDecl,
+    AuthChallenge, AuthOperation, AuthPlacement, AuthPlacementKind, CredentialDecl,
     CredentialSource, CredentialsBlock, DefaultExpr, DurationLiteral, HeaderEntry, HeaderOperation,
-    HostOperation, Layer, MediaKind, MethodKind, PaginationDecl, PaginationField,
-    PaginationInitializer, PaginationValue, PathOperation, PublicExpr, QueryEntry, QueryOperation,
-    RateLimitDimension, RateLimitOperation, RateLimitTemplate, RateLimitUse,
-    RateLimitWindowLiteral, RateLimitsBlock, RequestBodyKind, ResponseKind, RetrySelection,
-    SecretDecl, SourceApi, SourceChild, SourceClient, SourceEndpoint, SourceScope,
+    HostOperation, Layer, MethodKind, PaginationDecl, PaginationField, PaginationInitializer,
+    PaginationValue, PathOperation, PublicExpr, QueryEntry, QueryOperation, RateLimitDimension,
+    RateLimitOperation, RateLimitTemplate, RateLimitUse, RateLimitWindowLiteral, RateLimitsBlock,
+    RetrySelection, SecretDecl, SourceApi, SourceChild, SourceClient, SourceEndpoint, SourceScope,
     TimeoutOperation, ValueDecl, ValueKind,
 };
 use crate::names::canonical_ident;
@@ -257,7 +256,7 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
         None
     };
     input.parse::<Token![->]>()?;
-    let response = parse_response(input.parse()?)?;
+    let response = input.parse()?;
 
     let layer = if input.peek(Token![;]) {
         input.parse::<Token![;]>()?;
@@ -270,16 +269,10 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
             .peek(keyword::paginate)
             .then(|| parse_pagination(&clauses))
             .transpose()?;
-        if pagination.is_some()
-            && (body.is_some()
-                || matches!(
-                    response,
-                    ResponseKind::Stream(_) | ResponseKind::Bytes | ResponseKind::NoContent
-                ))
-        {
-            return Err(clauses.span().error(
-                "pagination requires a bodyless endpoint with a buffered decoded response",
-            ));
+        if pagination.is_some() && body.is_some() {
+            return Err(clauses
+                .span()
+                .error("pagination requires a bodyless endpoint"));
         }
         if clauses.peek(keyword::retry) {
             return Err(
@@ -502,7 +495,7 @@ fn parse_parameters(
     input: ParseStream<'_>,
     owner: &str,
     body_is_special: bool,
-) -> syn::Result<(Vec<ValueDecl>, Option<RequestBodyKind>)> {
+) -> syn::Result<(Vec<ValueDecl>, Option<Type>)> {
     let mut parameters = Vec::new();
     let mut body = None;
     let mut names = HashSet::new();
@@ -522,7 +515,7 @@ fn parse_parameters(
             if input.peek(Token![=]) {
                 return Err(input.error("a request body parameter cannot have a default"));
             }
-            body = Some(parse_request_body(ty)?);
+            body = Some(ty);
         } else {
             let kind = parse_value_kind(input, &ty)?;
             parameters.push(ValueDecl { name, ty, kind });
@@ -1495,87 +1488,6 @@ fn parse_public_expr(input: ParseStream<'_>, depth: usize) -> syn::Result<Public
     Ok(PublicExpr::Reference { namespace, name })
 }
 
-fn parse_request_body(ty: Type) -> syn::Result<RequestBodyKind> {
-    if is_named_marker(&ty, "NoContent") {
-        return Err(ty
-            .span()
-            .error("`NoContent` is a response marker and cannot be used as a request body"));
-    }
-    if is_named_marker(&ty, "Bytes") {
-        return Err(ty.span().error(
-            "`Bytes` is not a request body marker; use `Text`, `Json<T>`, `Stream<M>`, `Multipart`, or a custom codec",
-        ));
-    }
-    if let Type::Path(path) = &ty {
-        if is_unqualified(path, "Stream") {
-            return stream_media_inner(path).map(RequestBodyKind::Stream);
-        }
-        if is_unqualified(path, "Multipart") {
-            ensure_no_arguments(path, "Multipart")?;
-            return Ok(RequestBodyKind::Multipart);
-        }
-    }
-    parse_buffered_codec(ty).map(RequestBodyKind::Buffered)
-}
-
-fn parse_response(ty: Type) -> syn::Result<ResponseKind> {
-    if is_named_marker(&ty, "Bytes") {
-        let Type::Path(path) = &ty else {
-            unreachable!()
-        };
-        ensure_no_arguments(path, "Bytes")?;
-        return Ok(ResponseKind::Bytes);
-    }
-    if is_named_marker(&ty, "NoContent") {
-        let Type::Path(path) = &ty else {
-            unreachable!()
-        };
-        ensure_no_arguments(path, "NoContent")?;
-        return Ok(ResponseKind::NoContent);
-    }
-    if let Type::Path(path) = &ty {
-        if is_unqualified(path, "Stream") {
-            return stream_media_inner(path).map(ResponseKind::Stream);
-        }
-        if is_unqualified(path, "Multipart") {
-            return Err(ty
-                .span()
-                .error("`Multipart` is request-only and cannot be used as a response"));
-        }
-    }
-    parse_buffered_codec(ty).map(ResponseKind::Buffered)
-}
-
-fn parse_buffered_codec(ty: Type) -> syn::Result<CodecKind> {
-    let Type::Path(path) = &ty else {
-        return Ok(CodecKind::Custom(ty));
-    };
-    if is_unqualified(path, "Text") {
-        ensure_no_arguments(path, "Text")?;
-        return Ok(CodecKind::Text);
-    }
-    if is_unqualified(path, "Json") {
-        return single_type_argument(path, "Json").map(CodecKind::Json);
-    }
-    Ok(CodecKind::Custom(ty))
-}
-
-fn stream_media_inner(path: &TypePath) -> syn::Result<MediaKind> {
-    let ty = single_type_argument(path, "Stream")?;
-    if is_named_marker(&ty, "Stream") || is_named_marker(&ty, "Multipart") {
-        return Err(ty
-            .span()
-            .error("a `Stream` media marker cannot itself be a stream or multipart marker"));
-    }
-    if let Type::Path(path) = &ty {
-        if is_unqualified(path, "OctetStream") {
-            ensure_no_arguments(path, "OctetStream")?;
-            return Ok(MediaKind::OctetStream);
-        }
-    }
-    Ok(MediaKind::Custom(ty))
-}
-
 fn single_type_argument(path: &TypePath, marker: &str) -> syn::Result<Type> {
     let segment = &path.path.segments[0];
     let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
@@ -1616,18 +1528,6 @@ fn is_unqualified(path: &TypePath, expected: &str) -> bool {
         && path.path.leading_colon.is_none()
         && path.path.segments.len() == 1
         && path.path.segments[0].ident == expected
-}
-
-fn ensure_no_arguments(path: &TypePath, marker: &str) -> syn::Result<()> {
-    let segment = &path.path.segments[0];
-    if matches!(segment.arguments, PathArguments::None) {
-        Ok(())
-    } else {
-        Err(segment
-            .arguments
-            .span()
-            .error(format!("`{marker}` does not accept type arguments")))
-    }
 }
 
 fn parse_duration(literal: &LitInt) -> syn::Result<Duration> {

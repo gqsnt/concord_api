@@ -46,7 +46,7 @@ pub use url::Url;
 #[doc(hidden)]
 pub use crate::auth::Auth;
 #[doc(hidden)]
-pub use crate::body::StreamRequestBody;
+pub use crate::body::{EmptyBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec};
 #[doc(hidden)]
 pub use crate::client::ClientCore;
 #[doc(hidden)]
@@ -60,16 +60,13 @@ pub use crate::rate_limit::{
     RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitRule, RateLimitWindow,
 };
 #[doc(hidden)]
-pub use crate::request::PreparedResponseMarker;
 #[doc(hidden)]
 pub use crate::request::{
-    BodyMetadata, BodySpec, BufferedResponse, BytesResponse, CodecBody, EmptyBody, EndpointSpec,
-    HeadBuilder, MetadataResponse, NoContentResponse, PreparedBody, PreparedHead,
-    RawResponseEndpoint, RequestMeta, RequestOptions, ResponseHandler, StreamResponseHandler,
+    EndpointSpec, HeadBuilder, PreparedHead, RawResponseEndpoint, RequestMeta, RequestOptions,
     TimeoutOverride,
 };
 #[doc(hidden)]
-pub use crate::response::{ExecuteResponse, ResponseInput};
+pub use crate::response::{ApiResponse, PageResponseSpec, ResponseBodySpec};
 
 /// Generated-private owner for one credential source selection.
 #[doc(hidden)]

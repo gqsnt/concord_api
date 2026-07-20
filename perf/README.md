@@ -4,7 +4,8 @@
 It defines no product threshold and is not part of the Concord production dependency graph.
 
 The package reuses the workspace-pinned Tokio runtime and `concord_test_support` loopback server so
-body collection, credential preparation, limiter acquisition, and pagination can be exercised
+body collection, credential preparation, limiter acquisition, pagination, generic specification
+selection, and bounded record framing can be exercised
 without internet latency or an external service. Those dependencies are benchmark-only support;
 they add no dependency to `concord_core` or `concord_macros`.
 
@@ -17,6 +18,6 @@ the explicitly unstable, feature-gated `concord_core::__development` boundary an
 body-free aggregate observation.
 
 `--smoke` forces one bounded iteration. The executable records each category only after its named
-operation completes and asserts that all nine distinct categories ran. Otherwise
+operation completes and asserts that all eleven distinct categories ran. Otherwise
 `CONCORD_BENCH_ITERATIONS` selects between 1 and 1,000 iterations, with a default of 100. Timings
 are observational only.

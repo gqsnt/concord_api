@@ -1,12 +1,9 @@
-use std::marker::PhantomData;
-
 use concord_core::advanced::{
-    Method, PreparedBuffered, PreparedEndpoint, PreparedEndpointBuilder, PreparedNoContent, Text,
+    Method, NoContent, PreparedEndpoint, PreparedEndpointBuilder,
 };
 
 fn main() {
-    let _ = PreparedBuffered::<Text>(PhantomData);
-    let _ = PreparedEndpointBuilder::<PreparedNoContent> {};
-    let _ = PreparedEndpoint::<PreparedNoContent> {};
+    let _ = PreparedEndpointBuilder::<NoContent> {};
+    let _ = PreparedEndpoint::<NoContent> {};
     let _ = PreparedEndpoint::builder("Prepared::private", Method::GET);
 }

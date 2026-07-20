@@ -1,25 +1,19 @@
 use std::fmt;
-use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::task::{Context, Poll};
 
 use bytes::Bytes;
 use futures_core::Stream;
-use http::{HeaderValue, Method};
+use http::HeaderValue;
 
-use crate::codec::{EncodeBody, EncodeContext, MediaType};
-use crate::error::{ApiError, ErrorCategory};
-
+use super::spec::{LengthHint, RequestBodyMetadata, RequestContentType};
 use super::{BodyError, BodyErrorKind, StreamBody};
 #[cfg(feature = "multipart")]
 use super::{MultipartBody, MultipartFactory};
-
-pub(super) mod sealed {
-    pub trait Body {}
-}
 
 /// Structural category of a request body visible to lifecycle observers.
 #[non_exhaustive]
@@ -42,368 +36,13 @@ pub(crate) enum Replayability {
     Reconstructible,
 }
 
-/// Generated-private safe request-body facts available before materialization.
-#[doc(hidden)]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BodyMetadata {
-    kind: BodyKind,
-    replayability: Replayability,
-    exact_length: Option<u64>,
-    lower_bound: Option<u64>,
-    content_type: Option<HeaderValue>,
-}
-
-impl BodyMetadata {
-    pub(crate) fn empty() -> Self {
-        Self {
-            kind: BodyKind::Empty,
-            replayability: Replayability::Reusable,
-            exact_length: Some(0),
-            lower_bound: Some(0),
-            content_type: None,
-        }
-    }
-
-    pub(crate) fn buffered(content_type: Option<HeaderValue>) -> Self {
-        Self {
-            kind: BodyKind::Buffered,
-            replayability: Replayability::Reusable,
-            exact_length: None,
-            lower_bound: None,
-            content_type,
-        }
-    }
-
-    pub(crate) fn stream(
-        stream: &StreamBody,
-        replayability: Replayability,
-        content_type: Option<HeaderValue>,
-    ) -> Result<Self, BodyError> {
-        stream.validate_metadata()?;
-        Ok(Self {
-            kind: BodyKind::Stream,
-            replayability,
-            exact_length: stream.exact_length_value(),
-            lower_bound: stream.lower_bound(),
-            content_type,
-        })
-    }
-
-    #[cfg(feature = "multipart")]
-    pub(crate) const fn multipart(replayability: Replayability, lower_bound: Option<u64>) -> Self {
-        Self {
-            kind: BodyKind::Multipart,
-            replayability,
-            exact_length: None,
-            lower_bound,
-            content_type: None,
-        }
-    }
-
-    #[doc(hidden)]
-    pub const fn kind(&self) -> BodyKind {
-        self.kind
-    }
-
-    #[doc(hidden)]
-    pub fn known_length(&self) -> Option<u64> {
-        self.exact_length.or(self.lower_bound)
-    }
-
-    pub(crate) const fn exact_length(&self) -> Option<u64> {
-        self.exact_length
-    }
-
-    #[cfg(test)]
-    pub(crate) const fn replayability(&self) -> Replayability {
-        self.replayability
-    }
-
-    pub(crate) const fn content_type(&self) -> Option<&HeaderValue> {
-        self.content_type.as_ref()
-    }
-
-    pub(crate) const fn owns_content_type(&self) -> bool {
-        self.content_type.is_some() || matches!(self.kind, BodyKind::Multipart)
-    }
-
-    pub(crate) fn with_known_length(mut self, known_length: Option<u64>) -> Self {
-        self.exact_length = known_length;
-        self.lower_bound = known_length;
-        self
-    }
-
-    pub(crate) fn validate_limit(&self, limit: NonZeroUsize) -> Result<(), BodyError> {
-        if self
-            .exact_length
-            .zip(self.lower_bound)
-            .is_some_and(|(exact, lower)| lower > exact)
-        {
-            return Err(BodyError::new(BodyErrorKind::InvalidLength));
-        }
-        let limit = u64::try_from(limit.get()).unwrap_or(u64::MAX);
-        if self.exact_length.is_some_and(|length| length > limit)
-            || self.lower_bound.is_some_and(|length| length > limit)
-        {
-            return Err(BodyError::new(BodyErrorKind::LimitExceeded));
-        }
-        Ok(())
-    }
-}
-
-/// The one generated-private request-body integration contract.
-#[doc(hidden)]
-pub trait BodySpec: sealed::Body + Send + 'static {
-    fn metadata(&self, endpoint: &'static str, method: &Method) -> Result<BodyMetadata, ApiError>;
-
-    fn materialize(
-        self,
-        endpoint: &'static str,
-        method: &Method,
-        limit: NonZeroUsize,
-    ) -> Result<PreparedBody, ApiError>;
-}
-
-trait ErasedPreparedBody: Send {
-    fn erased_metadata(
-        &self,
-        endpoint: &'static str,
-        method: &Method,
-    ) -> Result<BodyMetadata, ApiError>;
-
-    fn erased_materialize(
-        self: Box<Self>,
-        endpoint: &'static str,
-        method: &Method,
-        limit: NonZeroUsize,
-    ) -> Result<PreparedBody, ApiError>;
-}
-
-impl<B> ErasedPreparedBody for B
-where
-    B: BodySpec,
-{
-    fn erased_metadata(
-        &self,
-        endpoint: &'static str,
-        method: &Method,
-    ) -> Result<BodyMetadata, ApiError> {
-        BodySpec::metadata(self, endpoint, method)
-    }
-
-    fn erased_materialize(
-        self: Box<Self>,
-        endpoint: &'static str,
-        method: &Method,
-        limit: NonZeroUsize,
-    ) -> Result<PreparedBody, ApiError> {
-        BodySpec::materialize(*self, endpoint, method, limit)
-    }
-}
-
-/// Core-private type erasure for the body selected by a prepared endpoint.
-#[doc(hidden)]
-pub struct PreparedRequestBody {
-    body: Box<dyn ErasedPreparedBody>,
-}
-
-impl PreparedRequestBody {
-    pub(crate) fn new<B>(body: B) -> Self
-    where
-        B: BodySpec,
-    {
-        Self {
-            body: Box::new(body),
-        }
-    }
-}
-
-impl BodySpec for PreparedRequestBody {
-    fn metadata(&self, endpoint: &'static str, method: &Method) -> Result<BodyMetadata, ApiError> {
-        self.body.erased_metadata(endpoint, method)
-    }
-
-    fn materialize(
-        self,
-        endpoint: &'static str,
-        method: &Method,
-        limit: NonZeroUsize,
-    ) -> Result<PreparedBody, ApiError> {
-        self.body.erased_materialize(endpoint, method, limit)
-    }
-}
-
-impl sealed::Body for PreparedRequestBody {}
-
-/// Empty request-body value used by bodyless generated endpoints.
-#[doc(hidden)]
-#[derive(Clone, Copy, Debug, Default)]
-pub struct EmptyBody;
-
-impl EmptyBody {
-    #[doc(hidden)]
-    #[must_use]
-    pub const fn new() -> Self {
-        Self
-    }
-
-    #[doc(hidden)]
-    #[must_use]
-    pub fn metadata() -> BodyMetadata {
-        BodyMetadata::empty()
-    }
-}
-
-impl BodySpec for EmptyBody {
-    fn metadata(
-        &self,
-        _endpoint: &'static str,
-        _method: &Method,
-    ) -> Result<BodyMetadata, ApiError> {
-        Ok(BodyMetadata::empty())
-    }
-
-    fn materialize(
-        self,
-        _endpoint: &'static str,
-        _method: &Method,
-        _limit: NonZeroUsize,
-    ) -> Result<PreparedBody, ApiError> {
-        Ok(PreparedBody::Empty)
-    }
-}
-
-impl sealed::Body for EmptyBody {}
-
-/// Generated-private request body backed by one public buffered codec.
-#[doc(hidden)]
-pub struct CodecBody<C>
-where
-    C: EncodeBody,
-{
-    input: C::Input,
-    marker: PhantomData<C>,
-}
-
-impl<C> CodecBody<C>
-where
-    C: EncodeBody,
-{
-    #[doc(hidden)]
-    #[must_use]
-    pub fn new(input: C::Input) -> Self {
-        Self {
-            input,
-            marker: PhantomData,
-        }
-    }
-
-    pub(crate) fn metadata_for(
-        endpoint: &'static str,
-        method: &Method,
-    ) -> Result<BodyMetadata, ApiError> {
-        let content_type = C::CONTENT_TYPE
-            .map(validated_content_type)
-            .transpose()
-            .map_err(|error| body_api_error(endpoint, method, error))?;
-        Ok(BodyMetadata::buffered(content_type))
-    }
-}
-
-impl<C> BodySpec for CodecBody<C>
-where
-    C: EncodeBody,
-{
-    fn metadata(&self, endpoint: &'static str, method: &Method) -> Result<BodyMetadata, ApiError> {
-        Self::metadata_for(endpoint, method)
-    }
-
-    fn materialize(
-        self,
-        endpoint: &'static str,
-        method: &Method,
-        limit: NonZeroUsize,
-    ) -> Result<PreparedBody, ApiError> {
-        let bytes = C::encode(
-            self.input,
-            EncodeContext {
-                endpoint,
-                method,
-                body_limit: Some(limit.get()),
-            },
-        )
-        .map_err(|error| {
-            drop(error);
-            ApiError::classified(endpoint, method.clone(), ErrorCategory::RequestEncoding)
-        })?;
-        if bytes.len() > limit.get() {
-            return Err(ApiError::classified(
-                endpoint,
-                method.clone(),
-                ErrorCategory::RequestBody,
-            ));
-        }
-        Ok(PreparedBody::ReusableBytes(bytes))
-    }
-}
-
-impl<C> sealed::Body for CodecBody<C> where C: EncodeBody {}
-
-/// Generated-private typed request-stream adapter.
-#[doc(hidden)]
-pub struct StreamRequestBody<M> {
-    body: StreamBody,
-    marker: PhantomData<fn() -> M>,
-}
-
-impl<M> StreamRequestBody<M> {
-    #[doc(hidden)]
-    #[must_use]
-    pub fn new(body: StreamBody) -> Self {
-        Self {
-            body,
-            marker: PhantomData,
-        }
-    }
-}
-
-impl<M> BodySpec for StreamRequestBody<M>
-where
-    M: MediaType,
-{
-    fn metadata(&self, endpoint: &'static str, method: &Method) -> Result<BodyMetadata, ApiError> {
-        let content_type = validated_content_type(M::MEDIA_TYPE)
-            .map_err(|error| body_api_error(endpoint, method, error))?;
-        BodyMetadata::stream(&self.body, Replayability::OneShot, Some(content_type))
-            .map_err(|error| body_api_error(endpoint, method, error))
-    }
-
-    fn materialize(
-        self,
-        endpoint: &'static str,
-        method: &Method,
-        limit: NonZeroUsize,
-    ) -> Result<PreparedBody, ApiError> {
-        let metadata = BodyMetadata::stream(&self.body, Replayability::OneShot, None)
-            .and_then(|metadata| {
-                metadata.validate_limit(limit)?;
-                Ok(metadata)
-            })
-            .map_err(|error| body_api_error(endpoint, method, error))?;
-        Ok(PreparedBody::OneShotStream {
-            body: Some(self.body),
-            exact_length: metadata.exact_length(),
-        })
-    }
-}
-
-impl<M> sealed::Body for StreamRequestBody<M> where M: MediaType {}
-
 /// Creates a fresh complete stream for one Concord attempt.
 ///
-/// `content_type` is metadata inspection and must be deterministic and
-/// side-effect-light. `create` is called only after `before_send` approves the
-/// attempt. Reqwest-internal retries cannot call this trait. Calls for
+/// `content_type` is captured once when [`RequestBody::factory`] constructs the
+/// managed value and must be deterministic and side-effect-light. Metadata
+/// computation does not call the factory. `create` is called only after
+/// `before_send` approves the attempt. Reqwest-internal retries cannot call
+/// this trait. Calls for
 /// independent operations may overlap. Bodies and factory state may be
 /// sensitive; implementations own their logging and storage and must bound CPU,
 /// memory, retries, maps, queues, spawned tasks, metric cardinality, and external
@@ -429,10 +68,13 @@ pub struct RequestBody {
 enum RequestBodyValue {
     Empty,
     Bytes(Bytes),
-    Stream(StreamBody),
-    Factory(Arc<dyn BodyFactory>),
+    Stream(Mutex<Option<StreamBody>>),
+    Factory {
+        factory: Arc<dyn BodyFactory>,
+        default_content_type: Result<Option<HeaderValue>, BodyErrorKind>,
+    },
     #[cfg(feature = "multipart")]
-    Multipart(MultipartBody),
+    Multipart(Mutex<Option<MultipartBody>>),
     #[cfg(feature = "multipart")]
     MultipartFactory(Arc<dyn MultipartFactory>),
 }
@@ -460,19 +102,27 @@ impl RequestBody {
     #[must_use]
     pub fn stream(value: StreamBody) -> Self {
         Self {
-            value: RequestBodyValue::Stream(value),
+            value: RequestBodyValue::Stream(Mutex::new(Some(value))),
             content_type: None,
         }
     }
 
-    /// Creates a reconstructible body from a downstream factory.
+    /// Creates a reconstructible body and captures its structural content type.
     #[must_use]
     pub fn factory<F>(factory: F) -> Self
     where
         F: BodyFactory,
     {
+        let default_content_type = factory
+            .content_type()
+            .map(validate_header_content_type)
+            .transpose()
+            .map_err(|error| error.kind());
         Self {
-            value: RequestBodyValue::Factory(Arc::new(factory)),
+            value: RequestBodyValue::Factory {
+                factory: Arc::new(factory),
+                default_content_type,
+            },
             content_type: None,
         }
     }
@@ -482,7 +132,7 @@ impl RequestBody {
     #[must_use]
     pub fn multipart(value: MultipartBody) -> Self {
         Self {
-            value: RequestBodyValue::Multipart(value),
+            value: RequestBodyValue::Multipart(Mutex::new(Some(value))),
             content_type: None,
         }
     }
@@ -504,7 +154,7 @@ impl RequestBody {
     pub fn content_type(mut self, media_type: impl AsRef<str>) -> Result<Self, BodyError> {
         #[cfg(feature = "multipart")]
         if matches!(
-            self.value,
+            &self.value,
             RequestBodyValue::Multipart(_) | RequestBodyValue::MultipartFactory(_)
         ) {
             return Err(BodyError::new(BodyErrorKind::InvalidContentType));
@@ -515,11 +165,11 @@ impl RequestBody {
 
     /// Returns the structural body kind without materializing the body.
     #[must_use]
-    pub const fn kind(&self) -> BodyKind {
-        match self.value {
+    pub fn kind(&self) -> BodyKind {
+        match &self.value {
             RequestBodyValue::Empty => BodyKind::Empty,
             RequestBodyValue::Bytes(_) => BodyKind::Buffered,
-            RequestBodyValue::Stream(_) | RequestBodyValue::Factory(_) => BodyKind::Stream,
+            RequestBodyValue::Stream(_) | RequestBodyValue::Factory { .. } => BodyKind::Stream,
             #[cfg(feature = "multipart")]
             RequestBodyValue::Multipart(_) | RequestBodyValue::MultipartFactory(_) => {
                 BodyKind::Multipart
@@ -542,119 +192,127 @@ impl fmt::Debug for RequestBody {
     }
 }
 
-impl BodySpec for RequestBody {
-    fn metadata(&self, endpoint: &'static str, method: &Method) -> Result<BodyMetadata, ApiError> {
+impl RequestBody {
+    pub(crate) fn structural_metadata(&self) -> Result<RequestBodyMetadata, BodyError> {
+        #[cfg(feature = "multipart")]
+        if matches!(
+            &self.value,
+            RequestBodyValue::Multipart(_) | RequestBodyValue::MultipartFactory(_)
+        ) {
+            let length = match &self.value {
+                RequestBodyValue::Multipart(body) => {
+                    let body = body
+                        .lock()
+                        .map_err(|_| BodyError::new(BodyErrorKind::Internal))?;
+                    let body = body
+                        .as_ref()
+                        .ok_or_else(|| BodyError::new(BodyErrorKind::Internal))?;
+                    LengthHint::AtLeast(body.metadata()?.lower_bound)
+                }
+                RequestBodyValue::MultipartFactory(_) => LengthHint::Unknown,
+                _ => unreachable!("multipart branch checked above"),
+            };
+            return Ok(RequestBodyMetadata {
+                length,
+                content_type: RequestContentType::Generated,
+                kind: BodyKind::Multipart,
+            });
+        }
+
         let content_type = match &self.content_type {
             Some(value) => Some(value.clone()),
             None => match &self.value {
-                RequestBodyValue::Factory(factory) => factory
-                    .content_type()
-                    .map(validate_header_content_type)
-                    .transpose()
-                    .map_err(|error| body_api_error(endpoint, method, error))?,
-                #[cfg(feature = "multipart")]
-                RequestBodyValue::Multipart(_) | RequestBodyValue::MultipartFactory(_) => None,
+                RequestBodyValue::Factory {
+                    default_content_type,
+                    ..
+                } => default_content_type.clone().map_err(BodyError::new)?,
                 _ => None,
             },
-        };
-        let metadata = match &self.value {
-            RequestBodyValue::Empty => {
-                let mut metadata = BodyMetadata::empty();
-                metadata.content_type = content_type;
-                metadata
+        }
+        .map_or(RequestContentType::None, RequestContentType::Exact);
+
+        let (kind, length) = match &self.value {
+            RequestBodyValue::Empty => (BodyKind::Empty, LengthHint::Exact(0)),
+            RequestBodyValue::Bytes(bytes) => (
+                BodyKind::Buffered,
+                LengthHint::Exact(u64::try_from(bytes.len()).unwrap_or(u64::MAX)),
+            ),
+            RequestBodyValue::Stream(body) => {
+                let body = body
+                    .lock()
+                    .map_err(|_| BodyError::new(BodyErrorKind::Internal))?;
+                let body = body
+                    .as_ref()
+                    .ok_or_else(|| BodyError::new(BodyErrorKind::Internal))?;
+                body.validate_metadata()?;
+                let length = match body.exact_length_value() {
+                    Some(length) => LengthHint::Exact(length),
+                    None => body
+                        .lower_bound()
+                        .map_or(LengthHint::Unknown, LengthHint::AtLeast),
+                };
+                (BodyKind::Stream, length)
             }
-            RequestBodyValue::Bytes(bytes) => BodyMetadata {
-                kind: BodyKind::Buffered,
-                replayability: Replayability::Reusable,
-                exact_length: Some(u64::try_from(bytes.len()).unwrap_or(u64::MAX)),
-                lower_bound: Some(u64::try_from(bytes.len()).unwrap_or(u64::MAX)),
-                content_type,
-            },
-            RequestBodyValue::Stream(stream) => {
-                BodyMetadata::stream(stream, Replayability::OneShot, content_type)
-                    .map_err(|error| body_api_error(endpoint, method, error))?
-            }
-            RequestBodyValue::Factory(_) => BodyMetadata {
-                kind: BodyKind::Stream,
-                replayability: Replayability::Reconstructible,
-                exact_length: None,
-                lower_bound: None,
-                content_type,
-            },
+            RequestBodyValue::Factory { .. } => (BodyKind::Stream, LengthHint::Unknown),
             #[cfg(feature = "multipart")]
-            RequestBodyValue::Multipart(body) => multipart_body_metadata(body)
-                .map_err(|error| body_api_error(endpoint, method, error))?,
-            #[cfg(feature = "multipart")]
-            RequestBodyValue::MultipartFactory(_) => {
-                BodyMetadata::multipart(Replayability::Reconstructible, None)
+            RequestBodyValue::Multipart(_) | RequestBodyValue::MultipartFactory(_) => {
+                unreachable!("multipart branch returned above")
             }
         };
-        Ok(metadata)
+        Ok(RequestBodyMetadata {
+            length,
+            content_type,
+            kind,
+        })
     }
 
-    fn materialize(
-        self,
-        endpoint: &'static str,
-        method: &Method,
-        limit: NonZeroUsize,
-    ) -> Result<PreparedBody, ApiError> {
+    pub(crate) fn into_prepared(self, limit: NonZeroUsize) -> Result<PreparedBody, BodyError> {
         match self.value {
             RequestBodyValue::Empty => Ok(PreparedBody::Empty),
             RequestBodyValue::Bytes(bytes) => {
                 if bytes.len() > limit.get() {
-                    return Err(ApiError::classified(
-                        endpoint,
-                        method.clone(),
-                        ErrorCategory::RequestBody,
-                    ));
+                    return Err(BodyError::new(BodyErrorKind::LimitExceeded));
                 }
                 Ok(PreparedBody::ReusableBytes(bytes))
             }
             RequestBodyValue::Stream(body) => {
-                let metadata = BodyMetadata::stream(&body, Replayability::OneShot, None)
-                    .and_then(|metadata| {
-                        metadata.validate_limit(limit)?;
-                        Ok(metadata)
-                    })
-                    .map_err(|error| body_api_error(endpoint, method, error))?;
+                let body = body
+                    .into_inner()
+                    .map_err(|_| BodyError::new(BodyErrorKind::Internal))?
+                    .ok_or_else(|| BodyError::new(BodyErrorKind::Internal))?;
+                let exact_length = validate_stream_limit(&body, limit)?;
                 Ok(PreparedBody::OneShotStream {
                     body: Some(body),
-                    exact_length: metadata.exact_length(),
+                    exact_length,
                 })
             }
-            RequestBodyValue::Factory(factory) => {
+            RequestBodyValue::Factory { factory, .. } => {
                 let body = factory.create().map_err(|error| {
                     drop(error);
-                    ApiError::classified(endpoint, method.clone(), ErrorCategory::RequestBody)
+                    BodyError::new(BodyErrorKind::Factory)
                 })?;
-                let metadata = BodyMetadata::stream(&body, Replayability::OneShot, None)
-                    .and_then(|metadata| {
-                        metadata.validate_limit(limit)?;
-                        Ok(metadata)
-                    })
-                    .map_err(|error| body_api_error(endpoint, method, error))?;
+                let exact_length = validate_stream_limit(&body, limit)?;
                 Ok(PreparedBody::StreamFactory {
                     factory,
                     current: Some(body),
-                    exact_length: metadata.exact_length(),
+                    exact_length,
                 })
             }
             #[cfg(feature = "multipart")]
             RequestBodyValue::Multipart(body) => {
-                materialize_multipart(body, endpoint, method, limit)
+                let body = body
+                    .into_inner()
+                    .map_err(|_| BodyError::new(BodyErrorKind::Internal))?
+                    .ok_or_else(|| BodyError::new(BodyErrorKind::Internal))?;
+                materialize_multipart(body, limit)
             }
             #[cfg(feature = "multipart")]
             RequestBodyValue::MultipartFactory(factory) => {
                 let body = factory.create().map_err(|error| {
                     drop(error);
-                    ApiError::classified(endpoint, method.clone(), ErrorCategory::RequestBody)
+                    BodyError::new(BodyErrorKind::Factory)
                 })?;
-                multipart_body_metadata(&body)
-                    .and_then(|metadata| {
-                        metadata.validate_limit(limit)?;
-                        Ok(metadata)
-                    })
-                    .map_err(|error| body_api_error(endpoint, method, error))?;
+                validate_multipart_limit(&body, limit)?;
                 Ok(PreparedBody::MultipartFactory {
                     factory,
                     current: Some(body),
@@ -664,63 +322,60 @@ impl BodySpec for RequestBody {
     }
 }
 
-impl sealed::Body for RequestBody {}
-
-#[cfg(feature = "multipart")]
-impl BodySpec for MultipartBody {
-    fn metadata(&self, endpoint: &'static str, method: &Method) -> Result<BodyMetadata, ApiError> {
-        multipart_body_metadata(self).map_err(|error| body_api_error(endpoint, method, error))
+fn validate_stream_limit(body: &StreamBody, limit: NonZeroUsize) -> Result<Option<u64>, BodyError> {
+    body.validate_metadata()?;
+    let limit = u64::try_from(limit.get()).unwrap_or(u64::MAX);
+    if body
+        .exact_length_value()
+        .is_some_and(|length| length > limit)
+        || body.lower_bound().is_some_and(|length| length > limit)
+    {
+        return Err(BodyError::new(BodyErrorKind::LimitExceeded));
     }
-
-    fn materialize(
-        self,
-        endpoint: &'static str,
-        method: &Method,
-        limit: NonZeroUsize,
-    ) -> Result<PreparedBody, ApiError> {
-        materialize_multipart(self, endpoint, method, limit)
-    }
+    Ok(body.exact_length_value())
 }
 
 #[cfg(feature = "multipart")]
-impl sealed::Body for MultipartBody {}
-
-#[cfg(feature = "multipart")]
-fn multipart_body_metadata(body: &MultipartBody) -> Result<BodyMetadata, BodyError> {
+fn multipart_body_metadata(body: &MultipartBody) -> Result<(Replayability, u64), BodyError> {
     let metadata = body.metadata()?;
-    Ok(BodyMetadata::multipart(
+    Ok((
         if metadata.reusable {
             Replayability::Reusable
         } else {
             Replayability::OneShot
         },
-        Some(metadata.lower_bound),
+        metadata.lower_bound,
     ))
 }
 
 #[cfg(feature = "multipart")]
 fn materialize_multipart(
     body: MultipartBody,
-    endpoint: &'static str,
-    method: &Method,
     limit: NonZeroUsize,
-) -> Result<PreparedBody, ApiError> {
-    let metadata = multipart_body_metadata(&body)
-        .and_then(|metadata| {
-            metadata.validate_limit(limit)?;
-            Ok(metadata)
-        })
-        .map_err(|error| body_api_error(endpoint, method, error))?;
-    if metadata.replayability == Replayability::Reusable {
+) -> Result<PreparedBody, BodyError> {
+    let (replayability, _) = validate_multipart_limit(&body, limit)?;
+    if replayability == Replayability::Reusable {
         Ok(PreparedBody::ReplayableMultipart { recipe: body })
     } else {
         Ok(PreparedBody::OneShotMultipart { body: Some(body) })
     }
 }
 
+#[cfg(feature = "multipart")]
+fn validate_multipart_limit(
+    body: &MultipartBody,
+    limit: NonZeroUsize,
+) -> Result<(Replayability, u64), BodyError> {
+    let metadata = multipart_body_metadata(body)?;
+    if metadata.1 > u64::try_from(limit.get()).unwrap_or(u64::MAX) {
+        return Err(BodyError::new(BodyErrorKind::LimitExceeded));
+    }
+    Ok(metadata)
+}
+
 /// The one private materialized application-body representation.
 #[doc(hidden)]
-pub enum PreparedBody {
+pub(crate) enum PreparedBody {
     Empty,
     ReusableBytes(Bytes),
     OneShotStream {
@@ -857,9 +512,7 @@ impl PreparedBody {
                     drop(error);
                     BodyError::new(BodyErrorKind::Factory)
                 })?;
-                let metadata = BodyMetadata::stream(&body, Replayability::OneShot, None)?;
-                metadata.validate_limit(limit)?;
-                *exact_length = metadata.exact_length();
+                *exact_length = validate_stream_limit(&body, limit)?;
                 *current = Some(body);
                 Ok(())
             }
@@ -873,8 +526,7 @@ impl PreparedBody {
                     drop(error);
                     BodyError::new(BodyErrorKind::Factory)
                 })?;
-                let metadata = multipart_body_metadata(&body)?;
-                metadata.validate_limit(limit)?;
+                validate_multipart_limit(&body, limit)?;
                 *current = Some(body);
                 Ok(())
             }
@@ -1088,11 +740,6 @@ fn validate_header_content_type(value: HeaderValue) -> Result<HeaderValue, BodyE
     Ok(value)
 }
 
-fn body_api_error(endpoint: &'static str, method: &Method, error: BodyError) -> ApiError {
-    drop(error);
-    ApiError::classified(endpoint, method.clone(), ErrorCategory::RequestBody)
-}
-
 const fn body_error_code(kind: BodyErrorKind) -> u8 {
     match kind {
         BodyErrorKind::InvalidContentType => 1,
@@ -1135,6 +782,11 @@ mod tests {
         calls: Arc<AtomicUsize>,
     }
 
+    struct MetadataFactory {
+        content_type_calls: Arc<AtomicUsize>,
+        create_calls: Arc<AtomicUsize>,
+    }
+
     #[cfg(feature = "multipart")]
     struct MultipartFactoryProbe {
         calls: Arc<AtomicUsize>,
@@ -1151,6 +803,18 @@ mod tests {
         }
     }
 
+    impl BodyFactory for MetadataFactory {
+        fn content_type(&self) -> Option<HeaderValue> {
+            self.content_type_calls.fetch_add(1, Ordering::SeqCst);
+            Some(HeaderValue::from_static("application/x-captured"))
+        }
+
+        fn create(&self) -> Result<StreamBody, BodyError> {
+            self.create_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(StreamBody::from_bytes(Bytes::from_static(b"factory")))
+        }
+    }
+
     #[cfg(feature = "multipart")]
     impl MultipartFactory for MultipartFactoryProbe {
         fn create(&self) -> Result<MultipartBody, BodyError> {
@@ -1162,38 +826,59 @@ mod tests {
         }
     }
 
-    fn metadata(body: &RequestBody) -> BodyMetadata {
-        body.metadata("BodyApi::upload", &Method::POST)
-            .expect("body metadata")
+    fn metadata(body: &RequestBody) -> RequestBodyMetadata {
+        body.structural_metadata().expect("body metadata")
     }
 
     #[test]
     fn request_body_kinds_and_replayability_are_inferred() {
         let empty = RequestBody::empty();
         assert_eq!(empty.kind(), BodyKind::Empty);
-        assert_eq!(metadata(&empty).replayability(), Replayability::Reusable);
+        assert_eq!(metadata(&empty).length, LengthHint::Exact(0));
+        assert_eq!(
+            empty
+                .into_prepared(NonZeroUsize::new(64).unwrap())
+                .unwrap()
+                .replayability(),
+            Replayability::Reusable
+        );
 
         let bytes = RequestBody::bytes(Bytes::from_static(b"bytes"));
         assert_eq!(bytes.kind(), BodyKind::Buffered);
-        assert_eq!(metadata(&bytes).replayability(), Replayability::Reusable);
         assert_eq!(metadata(&bytes).known_length(), Some(5));
+        assert_eq!(
+            bytes
+                .into_prepared(NonZeroUsize::new(64).unwrap())
+                .unwrap()
+                .replayability(),
+            Replayability::Reusable
+        );
 
         let stream = RequestBody::stream(StreamBody::from_bytes(Bytes::from_static(b"bytes")));
         assert_eq!(stream.kind(), BodyKind::Stream);
-        assert_eq!(metadata(&stream).replayability(), Replayability::OneShot);
+        assert_eq!(
+            stream
+                .into_prepared(NonZeroUsize::new(64).unwrap())
+                .unwrap()
+                .replayability(),
+            Replayability::OneShot
+        );
 
         let calls = Arc::new(AtomicUsize::new(0));
         let factory = RequestBody::factory(Factory {
             calls: Arc::clone(&calls),
         });
-        assert_eq!(
-            metadata(&factory).replayability(),
-            Replayability::Reconstructible
-        );
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         assert_eq!(
-            metadata(&factory).content_type(),
-            Some(&HeaderValue::from_static("application/x-factory"))
+            metadata(&factory).content_type,
+            RequestContentType::Exact(HeaderValue::from_static("application/x-factory"))
+        );
+        assert_eq!(
+            factory
+                .into_prepared(NonZeroUsize::new(64).unwrap())
+                .unwrap()
+                .replayability(),
+            Replayability::Reconstructible
         );
     }
 
@@ -1204,8 +889,8 @@ mod tests {
             .content_type("application/x-override; version=1")
             .expect("valid media type");
         assert_eq!(
-            metadata(&body).content_type(),
-            Some(&HeaderValue::from_static(
+            metadata(&body).content_type,
+            RequestContentType::Exact(HeaderValue::from_static(
                 "application/x-override; version=1"
             ))
         );
@@ -1216,6 +901,27 @@ mod tests {
                 .kind(),
             BodyErrorKind::InvalidContentType
         );
+    }
+
+    #[test]
+    fn factory_content_type_is_captured_before_metadata_without_materialization() {
+        let content_type_calls = Arc::new(AtomicUsize::new(0));
+        let create_calls = Arc::new(AtomicUsize::new(0));
+        let body = RequestBody::factory(MetadataFactory {
+            content_type_calls: Arc::clone(&content_type_calls),
+            create_calls: Arc::clone(&create_calls),
+        });
+        assert_eq!(content_type_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(create_calls.load(Ordering::SeqCst), 0);
+
+        for _ in 0..2 {
+            assert_eq!(
+                metadata(&body).content_type,
+                RequestContentType::Exact(HeaderValue::from_static("application/x-captured"))
+            );
+        }
+        assert_eq!(content_type_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(create_calls.load(Ordering::SeqCst), 0);
     }
 
     #[cfg(feature = "multipart")]
@@ -1237,7 +943,10 @@ mod tests {
                 .expect("bytes part"),
         );
         assert_eq!(reusable.kind(), BodyKind::Multipart);
-        assert_eq!(metadata(&reusable).replayability(), Replayability::Reusable);
+        assert_eq!(
+            metadata(&reusable).content_type,
+            RequestContentType::Generated
+        );
         assert!(
             reusable
                 .content_type("multipart/form-data; boundary=application-owned")
@@ -1249,11 +958,7 @@ mod tests {
                 .part("text", crate::body::MultipartPart::text("fresh recipe"))
                 .expect("text part"),
         )
-        .materialize(
-            "BodyApi::upload",
-            &Method::POST,
-            NonZeroUsize::new(4096).expect("positive limit"),
-        )
+        .into_prepared(NonZeroUsize::new(4096).expect("positive limit"))
         .expect("reusable multipart materialization");
         assert_eq!(reusable_prepared.replayability(), Replayability::Reusable);
         let _ = reusable_prepared
@@ -1276,13 +981,8 @@ mod tests {
                 )
                 .expect("stream part"),
         );
-        assert_eq!(metadata(&one_shot).replayability(), Replayability::OneShot);
         let mut one_shot = one_shot
-            .materialize(
-                "BodyApi::upload",
-                &Method::POST,
-                NonZeroUsize::new(4096).expect("positive limit"),
-            )
+            .into_prepared(NonZeroUsize::new(4096).expect("positive limit"))
             .expect("one-shot multipart materialization");
         assert!(
             one_shot
@@ -1294,17 +994,9 @@ mod tests {
         let factory = RequestBody::multipart_factory(MultipartFactoryProbe {
             calls: Arc::clone(&calls),
         });
-        assert_eq!(
-            metadata(&factory).replayability(),
-            Replayability::Reconstructible
-        );
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         let mut prepared = factory
-            .materialize(
-                "BodyApi::upload",
-                &Method::POST,
-                NonZeroUsize::new(4096).expect("positive limit"),
-            )
+            .into_prepared(NonZeroUsize::new(4096).expect("positive limit"))
             .expect("multipart factory materialization");
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         assert_eq!(prepared.replayability(), Replayability::Reconstructible);
@@ -1393,11 +1085,7 @@ mod tests {
             calls: Arc::clone(&calls),
         });
         let mut prepared = body
-            .materialize(
-                "BodyApi::upload",
-                &Method::POST,
-                NonZeroUsize::new(64).unwrap(),
-            )
+            .into_prepared(NonZeroUsize::new(64).unwrap())
             .expect("initial factory body");
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         assert_eq!(prepared.replayability(), Replayability::Reconstructible);

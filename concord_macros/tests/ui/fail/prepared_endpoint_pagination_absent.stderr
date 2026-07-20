@@ -2,7 +2,7 @@ error[E0599]: no method named `paginate` found for struct `concord_core::Request
   --> tests/ui/fail/prepared_endpoint_pagination_absent.rs:24:38
    |
 24 |     let _ = client.request(endpoint).paginate(1_u32);
-   |                                      ^^^^^^^^ method not found in `Request<PreparedEndpoint<PreparedBuffered<Json<Vec<u8>>>>>`
+   |                                      ^^^^^^^^ method not found in `Request<PreparedEndpoint<Json<Vec<u8>>>>`
    |
    = help: items from traits can only be used if the trait is implemented and in scope
 note: `PagesRequestExt` defines an item `paginate`, perhaps you need to implement it

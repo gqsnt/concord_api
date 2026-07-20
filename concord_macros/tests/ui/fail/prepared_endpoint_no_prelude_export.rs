@@ -1,5 +1,5 @@
-use concord_core::prelude::{PreparedEndpoint, PreparedNoContent};
+use concord_core::prelude::PreparedEndpoint;
 
 fn main() {
-    let _: Option<PreparedEndpoint<PreparedNoContent>> = None;
+    let _: Option<PreparedEndpoint> = None;
 }

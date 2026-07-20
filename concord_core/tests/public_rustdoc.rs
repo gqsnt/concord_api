@@ -45,7 +45,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
     let multipart_body_path = documentation.join("advanced/struct.MultipartBody.html");
     let multipart_part_path = documentation.join("advanced/struct.MultipartPart.html");
     let multipart_factory_path = documentation.join("advanced/trait.MultipartFactory.html");
-    let stream_response_path = documentation.join("advanced/struct.StreamResponse.html");
+    let byte_stream_path = documentation.join("advanced/struct.ByteStream.html");
     let multipart_body = std::fs::read_to_string(&multipart_body_path).unwrap_or_else(|error| {
         panic!("failed to read {}: {error}", multipart_body_path.display())
     });
@@ -59,9 +59,8 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
                 multipart_factory_path.display()
             )
         });
-    let stream_response = std::fs::read_to_string(&stream_response_path).unwrap_or_else(|error| {
-        panic!("failed to read {}: {error}", stream_response_path.display())
-    });
+    let byte_stream = std::fs::read_to_string(&byte_stream_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", byte_stream_path.display()));
     let page_limit_path = documentation.join("enum.PageLimit.html");
     let paginated_request_path = documentation.join("struct.PaginatedRequest.html");
     let page_limit = std::fs::read_to_string(&page_limit_path)
@@ -123,11 +122,18 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
     })
     .collect::<Vec<_>>()
     .join("\n");
-    let prepared_pages = [
+    for removed in [
         "struct.PreparedBuffered.html",
         "struct.PreparedBytes.html",
         "struct.PreparedNoContent.html",
         "struct.PreparedStream.html",
+    ] {
+        assert!(
+            !documentation.join("advanced").join(removed).exists(),
+            "removed prepared response marker remains in Rustdoc: {removed}"
+        );
+    }
+    let prepared_pages = [
         "struct.PreparedEndpointBuilder.html",
         "struct.PreparedEndpoint.html",
     ]
@@ -139,6 +145,118 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
     })
     .collect::<Vec<_>>()
     .join("\n");
+    let generic_spec_record_contracts = [
+        (
+            "advanced/trait.RequestBodySpec.html",
+            &[
+                "single managed outgoing-body lifecycle",
+                "before the before-send hook",
+                "must not encode data",
+                "hook veto",
+                "derives replayability",
+                "operation deadline",
+                "Inputs may be sensitive",
+            ][..],
+        ),
+        (
+            "advanced/trait.ResponseBodySpec.html",
+            &[
+                "ordinary non-2xx status handling",
+                "known-length preflight",
+                "before the first body poll",
+                "three sealed modes",
+                "operation deadline",
+                "No native response",
+                "sensitive application data",
+            ][..],
+        ),
+        (
+            "advanced/trait.ResponseMode.html",
+            &[
+                "core-owned successful-response acquisition mode",
+                "cannot implement another mode",
+                "native or unbounded response body",
+            ][..],
+        ),
+        (
+            "advanced/struct.ResponseHead.html",
+            &[
+                "logical application URL",
+                "actual successful response headers",
+                "owns their logging and storage",
+                "No native response or transport handle",
+            ][..],
+        ),
+        (
+            "advanced/struct.ApiResponse.html",
+            &[
+                "single metadata wrapper",
+                "never formats",
+                "logical URL",
+                "actual successful headers",
+                "id=\"method.into_value\"",
+            ][..],
+        ),
+        (
+            "advanced/struct.ByteStream.html",
+            &[
+                "media-independent",
+                "post-decompression",
+                "first chunk",
+                "withheld",
+                "Dropping the stream cancels",
+                "neither response metadata nor a media marker",
+            ][..],
+        ),
+        (
+            "records/trait.RecordDecoder.html",
+            &[
+                "before the first body poll",
+                "one decoder per returned record stream",
+                "without a core lock",
+                "network chunks are never record boundaries",
+                "positive finite staging bound",
+            ][..],
+        ),
+        (
+            "records/struct.RecordStream.html",
+            &[
+                "bounded independently",
+                "rejected without retaining its bytes",
+                "stream items",
+                "cancels native body consumption",
+                "never formats records",
+            ][..],
+        ),
+        (
+            "records/struct.RecordBatches.html",
+            &[
+                "One-record streaming remains the primitive",
+                "positive batch size",
+                "never formats records",
+            ][..],
+        ),
+        (
+            "records/struct.Csv.html",
+            &[
+                "required header row",
+                "quoted embedded newlines",
+                "final record may omit its newline",
+                "bounded to 1 MiB",
+                "absent from errors",
+            ][..],
+        ),
+        (
+            "records/struct.NdJson.html",
+            &[
+                "whitespace-only lines are ignored",
+                "bounded to 1 MiB",
+                "absent from errors",
+                "independent",
+                "general endpoint",
+            ][..],
+        ),
+    ];
     let extension_contracts = [
         (
             "trait.MediaType.html",
@@ -340,7 +458,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "id=\"method.response\"",
         "Selects successful response metadata",
         "ResponseRequest",
-        "buffered, bytes, or no-content",
+        "every successful response specification",
     ] {
         assert!(
             request.contains(expected),
@@ -351,8 +469,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "id=\"method.raw_response\"",
         "dangerous-raw-response",
         "complete bounded successful response",
-        "Generated streaming requests and public",
-        "prepared endpoints intentionally do not",
+        "Streaming and record-stream declarations do not",
         "callers assume responsibility",
     ] {
         assert!(
@@ -435,8 +552,66 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "multipart Rustdoc omitted its public lifecycle and ownership semantics"
     );
     assert!(
-        stream_response.contains("successful response head together with its bounded lazy body"),
-        "stream response Rustdoc omitted its bounded lazy semantics"
+        byte_stream.contains("bounded media-independent lazy successful response body")
+            && byte_stream.contains("caller-driven polling")
+            && byte_stream.contains("cumulative stream limit"),
+        "ByteStream Rustdoc omitted its bounded lazy semantics"
+    );
+    for (relative, expected) in generic_spec_record_contracts {
+        let path = documentation.join(relative);
+        let page = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+        let normalized = page.split_whitespace().collect::<Vec<_>>().join(" ");
+        for expected in expected {
+            assert!(
+                normalized.contains(expected),
+                "generic specification or records Rustdoc {relative} omitted {expected:?}"
+            );
+        }
+        for forbidden in [
+            "ResponseHandler",
+            "ResponseInput",
+            "ApplicationResponse",
+            "ClientCore",
+            "PreparedBody",
+            "PreparedRequestBody",
+            "reqwest",
+        ] {
+            assert!(
+                !normalized.contains(forbidden),
+                "generic specification or records Rustdoc {relative} exposed private integration {forbidden}"
+            );
+        }
+    }
+    for relative in [
+        "advanced/struct.Buffered.html",
+        "advanced/struct.Streaming.html",
+        "advanced/struct.Discard.html",
+        "advanced/struct.ResponseBodyError.html",
+        "advanced/enum.ResponseBodyErrorKind.html",
+        "records/struct.Records.html",
+        "records/struct.RecordError.html",
+        "records/enum.RecordErrorKind.html",
+    ] {
+        assert!(
+            documentation.join(relative).is_file(),
+            "generic specification or records Rustdoc omitted {relative}"
+        );
+    }
+    assert!(
+        documentation
+            .join("advanced/type.DecodedResponse.html")
+            .is_file()
+            && !documentation
+                .join("advanced/struct.DecodedResponse.html")
+                .exists(),
+        "DecodedResponse must remain only an ApiResponse compatibility alias"
+    );
+    assert!(
+        !documentation
+            .join("advanced/struct.StreamResponse.html")
+            .exists(),
+        "removed StreamResponse unexpectedly remains in public Rustdoc"
     );
     for expected in ["Take", "HardCap", "finite requested pagination limit"] {
         assert!(
@@ -498,6 +673,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "id=\"method.query_values\"",
         "id=\"method.header\"",
         "id=\"method.body\"",
+        "id=\"method.body_spec\"",
         "id=\"method.body_codec\"",
         "id=\"method.auth\"",
         "id=\"method.timeout\"",
@@ -585,9 +761,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "ordinary prelude pagination exports were not exact"
     );
     assert!(
-        !prelude.contains("PreparedEndpoint")
-            && !prelude.contains("PreparedEndpointBuilder")
-            && !prelude.contains("PreparedNoContent"),
+        !prelude.contains("PreparedEndpoint") && !prelude.contains("PreparedEndpointBuilder"),
         "ordinary prelude unexpectedly exported prepared endpoint contracts"
     );
 
@@ -614,7 +788,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
                 &multipart_body,
                 &multipart_part,
                 &multipart_factory,
-                &stream_response,
+                &byte_stream,
                 &page_limit,
                 &paginated_request,
                 &pagination_pages,

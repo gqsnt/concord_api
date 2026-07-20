@@ -1,23 +1,269 @@
-error: pagination requires a bodyless endpoint with a buffered decoded response
+error: pagination requires a bodyless endpoint
   --> tests/ui/fail/pagination_modes.rs:19:9
    |
 19 |         }
    |         ^
 
-error: pagination requires a bodyless endpoint with a buffered decoded response
-  --> tests/ui/fail/pagination_modes.rs:28:9
+error[E0277]: the trait bound `concord_core::advanced::Bytes: PageResponseSpec` is not satisfied
+  --> tests/ui/fail/pagination_modes.rs:23:1
    |
-28 |         }
-   |         ^
+23 | / api! {
+24 | |     client BytesPagination {
+25 | |         base "https://example.test";
+26 | |         GET Read() -> Bytes {
+...  |
+30 | | }
+   | |_^ the trait `DecodeBody` is not implemented for `concord_core::advanced::Bytes`
+   |
+   = help: the following other types implement trait `DecodeBody`:
+             Json<T>
+             concord_core::advanced::Text
+   = note: required for `concord_core::advanced::Bytes` to implement `PageResponseSpec`
+   = help: see issue #48214
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error: pagination requires a bodyless endpoint with a buffered decoded response
-  --> tests/ui/fail/pagination_modes.rs:37:9
+error[E0277]: `()` is not an iterator
+  --> tests/ui/fail/pagination_modes.rs:32:1
    |
-37 |         }
-   |         ^
+32 | / api! {
+33 | |     client NoContentPagination {
+34 | |         base "https://example.test";
+35 | |         GET Read() -> NoContent {
+...  |
+39 | | }
+   | |_^ `()` is not an iterator
+   |
+   = help: the trait `Iterator` is not implemented for `()`
+   = note: required for `()` to implement `IntoIterator`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error: pagination requires a bodyless endpoint with a buffered decoded response
-  --> tests/ui/fail/pagination_modes.rs:46:9
+error[E0271]: type mismatch resolving `<NoContent as ResponseBodySpec>::Mode == Buffered`
+  --> tests/ui/fail/pagination_modes.rs:32:1
    |
-46 |         }
-   |         ^
+32 | / api! {
+33 | |     client NoContentPagination {
+34 | |         base "https://example.test";
+35 | |         GET Read() -> NoContent {
+...  |
+39 | | }
+   | |_^ expected `Buffered`, found `Discard`
+   |
+   = help: see issue #48214
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `concord_core::advanced::NoContent: PageResponseSpec` is not satisfied
+  --> tests/ui/fail/pagination_modes.rs:32:1
+   |
+32 | / api! {
+33 | |     client NoContentPagination {
+34 | |         base "https://example.test";
+35 | |         GET Read() -> NoContent {
+...  |
+39 | | }
+   | |_^ the trait `DecodeBody` is not implemented for `concord_core::advanced::NoContent`
+   |
+   = help: the following other types implement trait `DecodeBody`:
+             Json<T>
+             concord_core::advanced::Text
+   = note: required for `concord_core::advanced::NoContent` to implement `PageResponseSpec`
+   = help: see issue #48214
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `()` is not an iterator
+  --> tests/ui/fail/pagination_modes.rs:32:1
+   |
+32 | / api! {
+33 | |     client NoContentPagination {
+34 | |         base "https://example.test";
+35 | |         GET Read() -> NoContent {
+...  |
+39 | | }
+   | |_^ `()` is not an iterator
+   |
+   = help: the trait `Iterator` is not implemented for `()`
+   = help: the trait `EndpointSpec` is implemented for `no_content_pagination::endpoints::Read`
+   = note: required for `()` to implement `IntoIterator`
+note: required for `no_content_pagination::endpoints::Read` to implement `EndpointSpec`
+  --> tests/ui/fail/pagination_modes.rs:32:1
+   |
+32 | / api! {
+33 | |     client NoContentPagination {
+34 | |         base "https://example.test";
+35 | |         GET Read() -> NoContent {
+   | |             ^^^^
+...  |
+39 | | }
+   | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `()` is not an iterator
+  --> tests/ui/fail/pagination_modes.rs:36:22
+   |
+36 |             paginate crate::Controller {}
+   |                      ^^^^^^^^^^^^^^^^^ `()` is not an iterator
+   |
+   = help: the trait `Iterator` is not implemented for `()`
+   = help: the trait `EndpointSpec` is implemented for `no_content_pagination::endpoints::Read`
+   = note: required for `()` to implement `IntoIterator`
+note: required for `no_content_pagination::endpoints::Read` to implement `EndpointSpec`
+  --> tests/ui/fail/pagination_modes.rs:32:1
+   |
+32 | / api! {
+33 | |     client NoContentPagination {
+34 | |         base "https://example.test";
+35 | |         GET Read() -> NoContent {
+   | |             ^^^^
+...  |
+39 | | }
+   | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `()` is not an iterator
+  --> tests/ui/fail/pagination_modes.rs:32:1
+   |
+32 | / api! {
+33 | |     client NoContentPagination {
+34 | |         base "https://example.test";
+35 | |         GET Read() -> NoContent {
+...  |
+39 | | }
+   | |_^ `()` is not an iterator
+   |
+   = help: the trait `Iterator` is not implemented for `()`
+   = help: the trait `PaginatedEndpoint` is implemented for `no_content_pagination::endpoints::Read`
+   = note: required for `()` to implement `IntoIterator`
+note: required for `no_content_pagination::endpoints::Read` to implement `PaginatedEndpoint`
+  --> tests/ui/fail/pagination_modes.rs:32:1
+   |
+32 | / api! {
+33 | |     client NoContentPagination {
+34 | |         base "https://example.test";
+35 | |         GET Read() -> NoContent {
+   | |             ^^^^
+...  |
+39 | | }
+   | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `ByteStream` is not an iterator
+  --> tests/ui/fail/pagination_modes.rs:41:1
+   |
+41 | / api! {
+42 | |     client StreamPagination {
+43 | |         base "https://example.test";
+44 | |         GET Read() -> Stream<OctetStream> {
+...  |
+48 | | }
+   | |_^ `ByteStream` is not an iterator
+   |
+   = help: the trait `Iterator` is not implemented for `ByteStream`
+   = note: required for `ByteStream` to implement `IntoIterator`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0271]: type mismatch resolving `<Stream<OctetStream> as ResponseBodySpec>::Mode == Buffered`
+  --> tests/ui/fail/pagination_modes.rs:41:1
+   |
+41 | / api! {
+42 | |     client StreamPagination {
+43 | |         base "https://example.test";
+44 | |         GET Read() -> Stream<OctetStream> {
+...  |
+48 | | }
+   | |_^ expected `Buffered`, found `Streaming`
+   |
+   = help: see issue #48214
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `concord_core::advanced::Stream<concord_core::advanced::OctetStream>: PageResponseSpec` is not satisfied
+  --> tests/ui/fail/pagination_modes.rs:41:1
+   |
+41 | / api! {
+42 | |     client StreamPagination {
+43 | |         base "https://example.test";
+44 | |         GET Read() -> Stream<OctetStream> {
+...  |
+48 | | }
+   | |_^ the trait `DecodeBody` is not implemented for `concord_core::advanced::Stream<concord_core::advanced::OctetStream>`
+   |
+   = help: the following other types implement trait `DecodeBody`:
+             Json<T>
+             concord_core::advanced::Text
+   = note: required for `concord_core::advanced::Stream<concord_core::advanced::OctetStream>` to implement `PageResponseSpec`
+   = help: see issue #48214
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `ByteStream` is not an iterator
+  --> tests/ui/fail/pagination_modes.rs:41:1
+   |
+41 | / api! {
+42 | |     client StreamPagination {
+43 | |         base "https://example.test";
+44 | |         GET Read() -> Stream<OctetStream> {
+...  |
+48 | | }
+   | |_^ `ByteStream` is not an iterator
+   |
+   = help: the trait `Iterator` is not implemented for `ByteStream`
+   = help: the trait `EndpointSpec` is implemented for `stream_pagination::endpoints::Read`
+   = note: required for `ByteStream` to implement `IntoIterator`
+note: required for `stream_pagination::endpoints::Read` to implement `EndpointSpec`
+  --> tests/ui/fail/pagination_modes.rs:41:1
+   |
+41 | / api! {
+42 | |     client StreamPagination {
+43 | |         base "https://example.test";
+44 | |         GET Read() -> Stream<OctetStream> {
+   | |             ^^^^
+...  |
+48 | | }
+   | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `ByteStream` is not an iterator
+  --> tests/ui/fail/pagination_modes.rs:45:22
+   |
+45 |             paginate crate::Controller {}
+   |                      ^^^^^^^^^^^^^^^^^ `ByteStream` is not an iterator
+   |
+   = help: the trait `Iterator` is not implemented for `ByteStream`
+   = help: the trait `EndpointSpec` is implemented for `stream_pagination::endpoints::Read`
+   = note: required for `ByteStream` to implement `IntoIterator`
+note: required for `stream_pagination::endpoints::Read` to implement `EndpointSpec`
+  --> tests/ui/fail/pagination_modes.rs:41:1
+   |
+41 | / api! {
+42 | |     client StreamPagination {
+43 | |         base "https://example.test";
+44 | |         GET Read() -> Stream<OctetStream> {
+   | |             ^^^^
+...  |
+48 | | }
+   | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `ByteStream` is not an iterator
+  --> tests/ui/fail/pagination_modes.rs:41:1
+   |
+41 | / api! {
+42 | |     client StreamPagination {
+43 | |         base "https://example.test";
+44 | |         GET Read() -> Stream<OctetStream> {
+...  |
+48 | | }
+   | |_^ `ByteStream` is not an iterator
+   |
+   = help: the trait `Iterator` is not implemented for `ByteStream`
+   = help: the trait `PaginatedEndpoint` is implemented for `stream_pagination::endpoints::Read`
+   = note: required for `ByteStream` to implement `IntoIterator`
+note: required for `stream_pagination::endpoints::Read` to implement `PaginatedEndpoint`
+  --> tests/ui/fail/pagination_modes.rs:41:1
+   |
+41 | / api! {
+42 | |     client StreamPagination {
+43 | |         base "https://example.test";
+44 | |         GET Read() -> Stream<OctetStream> {
+   | |             ^^^^
+...  |
+48 | | }
+   | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

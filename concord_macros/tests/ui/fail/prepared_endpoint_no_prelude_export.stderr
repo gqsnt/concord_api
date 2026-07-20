@@ -1,12 +1,10 @@
-error[E0432]: unresolved imports `concord_core::prelude::PreparedEndpoint`, `concord_core::prelude::PreparedNoContent`
- --> tests/ui/fail/prepared_endpoint_no_prelude_export.rs:1:29
+error[E0432]: unresolved import `concord_core::prelude::PreparedEndpoint`
+ --> tests/ui/fail/prepared_endpoint_no_prelude_export.rs:1:5
   |
-1 | use concord_core::prelude::{PreparedEndpoint, PreparedNoContent};
-  |                             ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^ no `PreparedNoContent` in `prelude`
-  |                             |
-  |                             no `PreparedEndpoint` in `prelude`
+1 | use concord_core::prelude::PreparedEndpoint;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `PreparedEndpoint` in `prelude`
   |
-  = help: consider importing this struct instead:
-          concord_core::advanced::PreparedEndpoint
-  = help: consider importing this struct instead:
-          concord_core::advanced::PreparedNoContent
+help: consider importing this struct instead
+  |
+1 | use concord_core::advanced::PreparedEndpoint;
+  |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

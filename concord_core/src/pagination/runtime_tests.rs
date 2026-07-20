@@ -19,7 +19,7 @@ use super::{PageLimit, PaginatedEndpoint, PaginationController, PaginationError}
 use crate::auth::{
     AccessToken, Auth, CredentialProvider, CredentialRef, CredentialRequest, SlotSelector,
 };
-use crate::body::EmptyBody;
+use crate::body::{EmptyBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec};
 use crate::client::ClientCore;
 use crate::codec::{CodecError, DecodeBody, DecodeContext};
 use crate::error::{ApiError, ErrorCategory, PaginationErrorKind, RateLimitErrorKind};
@@ -35,9 +35,7 @@ use crate::rate_limit::RateLimitKeyPart;
 use crate::rate_limit::{
     RateLimitError, RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimiter,
 };
-use crate::request::{
-    BodyMetadata, BufferedResponse, EndpointSpec, HeadBuilder, PreparedHead, Request, RequestMeta,
-};
+use crate::request::{EndpointSpec, HeadBuilder, PreparedHead, Request, RequestMeta};
 use crate::runtime::RuntimeConfigBuilder;
 
 const ENDPOINT: &str = "PaginationRuntimeApi::items::list";
@@ -131,26 +129,28 @@ impl PageEndpoint {
 
 impl EndpointSpec for PageEndpoint {
     type Body = EmptyBody;
-    type Response = BufferedResponse<PageCodec>;
+    type Response = PageCodec;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(self.endpoint, self.method.clone(), self.timeout)
     }
 
-    fn prepare_head_and_body_metadata(
-        &self,
-        mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("items")?;
         builder.push_query_value("stable", &"public");
         builder.push_pagination_query_value("cursor", &self.cursor);
         builder.insert_pagination_header_value("x-page-cursor", &self.cursor)?;
-        Ok((builder.finish(), EmptyBody::metadata()))
+        Ok(builder.finish())
     }
 
-    fn into_body(self) -> Self::Body {
-        EmptyBody::new()
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, crate::body::BodyError> {
+        EmptyBody::metadata(&(), context)
     }
+
+    fn into_body(self) {}
 }
 
 impl PaginatedEndpoint for PageEndpoint {
@@ -190,7 +190,7 @@ struct HostRateEndpoint {
 
 impl EndpointSpec for HostRateEndpoint {
     type Body = EmptyBody;
-    type Response = BufferedResponse<PageCodec>;
+    type Response = PageCodec;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(
@@ -200,10 +200,7 @@ impl EndpointSpec for HostRateEndpoint {
         )
     }
 
-    fn prepare_head_and_body_metadata(
-        &self,
-        mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_pagination_host_value(&self.host)?;
         builder.push_static("host-rate-items")?;
         builder.push_query_value("stable", &"public");
@@ -218,12 +215,17 @@ impl EndpointSpec for HostRateEndpoint {
             1,
             [(100, Duration::from_secs(60))],
         )?;
-        Ok((builder.finish(), EmptyBody::metadata()))
+        Ok(builder.finish())
     }
 
-    fn into_body(self) -> Self::Body {
-        EmptyBody::new()
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, crate::body::BodyError> {
+        EmptyBody::metadata(&(), context)
     }
+
+    fn into_body(self) {}
 }
 
 impl PaginatedEndpoint for HostRateEndpoint {
@@ -253,7 +255,7 @@ struct RateKeyEndpoint {
 #[cfg(feature = "rate-limit-governor")]
 impl EndpointSpec for RateKeyEndpoint {
     type Body = EmptyBody;
-    type Response = BufferedResponse<PageCodec>;
+    type Response = PageCodec;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(
@@ -263,10 +265,7 @@ impl EndpointSpec for RateKeyEndpoint {
         )
     }
 
-    fn prepare_head_and_body_metadata(
-        &self,
-        mut builder: HeadBuilder,
-    ) -> Result<(PreparedHead, BodyMetadata), ApiError> {
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("rate-key-items")?;
         builder.push_query_value("stable", &"public");
         builder.push_pagination_query_value("cursor", &self.key);
@@ -278,12 +277,17 @@ impl EndpointSpec for RateKeyEndpoint {
             1,
             [(1, Duration::from_secs(60))],
         )?;
-        Ok((builder.finish(), EmptyBody::metadata()))
+        Ok(builder.finish())
     }
 
-    fn into_body(self) -> Self::Body {
-        EmptyBody::new()
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, crate::body::BodyError> {
+        EmptyBody::metadata(&(), context)
     }
+
+    fn into_body(self) {}
 }
 
 #[cfg(feature = "rate-limit-governor")]

@@ -1,0 +1,20 @@
+error[E0277]: the trait bound `NativeOrUnboundedMode: concord_core::response::spec::private::Sealed` is not satisfied
+ --> tests/ui/fail/response_mode_is_sealed.rs:5:23
+  |
+5 | impl ResponseMode for NativeOrUnboundedMode {
+  |                       ^^^^^^^^^^^^^^^^^^^^^ the trait `concord_core::response::spec::private::Sealed` is not implemented for `NativeOrUnboundedMode`
+  |
+  = help: the following other types implement trait `concord_core::response::spec::private::Sealed`:
+            Discard
+            Streaming
+            concord_core::advanced::Buffered
+note: required by a bound in `ResponseMode`
+ --> src/response/spec.rs
+  |
+  | pub trait ResponseMode: private::Sealed + Send + Sync + 'static {
+  |                         ^^^^^^^^^^^^^^^ required by this bound in `ResponseMode`
+  = note: `ResponseMode` is a "sealed trait", because to implement it you also need to implement `concord_core::response::spec::private::Sealed`, which is not accessible; this is usually done to force you to use one of the provided types that already implement it
+  = help: the following types implement the trait:
+            concord_core::advanced::Buffered
+            concord_core::advanced::Streaming
+            concord_core::advanced::Discard

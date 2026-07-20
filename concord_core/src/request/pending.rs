@@ -1,8 +1,6 @@
 use std::time::Duration;
 
-#[cfg(feature = "dangerous-raw-response")]
-use super::RawResponseEndpoint;
-use super::{EndpointSpec, MetadataResponse, RequestOptions, TimeoutOverride};
+use super::{EndpointSpec, RequestOptions, TimeoutOverride};
 use crate::client::ClientCore;
 use crate::hooks::DebugLevel;
 
@@ -72,9 +70,8 @@ impl<E> Request<E> {
 impl<E> Request<E> {
     /// Selects successful response metadata.
     ///
-    /// This terminal is available on generated requests whose successful
-    /// response mode is buffered, bytes, or no-content. Streaming responses
-    /// carry their successful metadata directly and do not expose this method.
+    /// This terminal is available for every successful response specification,
+    /// including streaming and discard modes.
     #[must_use]
     pub fn response(self) -> ResponseRequest<E> {
         ResponseRequest { request: self }
@@ -86,10 +83,8 @@ impl<E> Request<E> {
 impl<E> Request<E>
 where
     E: EndpointSpec,
-    E::Response: MetadataResponse,
 {
-    /// Selects successful response metadata for response modes with a buffered
-    /// metadata-bearing completion.
+    /// Selects universal successful response metadata.
     #[must_use]
     pub fn response(self) -> ResponseRequest<E> {
         ResponseRequest { request: self }
@@ -105,11 +100,11 @@ impl<E> Request<E> {
     ///
     /// Requires the Cargo feature `dangerous-raw-response`.
     ///
-    /// Generated buffered, text, JSON, custom buffered, bytes, and no-content
-    /// requests expose this terminal. Generated streaming requests and public
-    /// prepared endpoints intentionally do not. Response headers and body bytes
-    /// may contain secrets; callers assume responsibility for their storage and
-    /// diagnostics.
+    /// Generated requests whose declared response mode is buffered or discard
+    /// expose this terminal. Streaming and record-stream declarations do not,
+    /// and public prepared endpoints retain their existing exclusion. Response
+    /// headers and body bytes may contain secrets; callers assume responsibility
+    /// for their storage and diagnostics.
     #[must_use]
     pub fn raw_response(self) -> RawResponseRequest<E> {
         RawResponseRequest { request: self }
@@ -118,9 +113,11 @@ impl<E> Request<E> {
 
 #[cfg(all(not(doc), feature = "dangerous-raw-response"))]
 #[doc(hidden)]
+#[allow(private_bounds)]
 impl<E> Request<E>
 where
-    E: RawResponseEndpoint,
+    E: EndpointSpec + super::RawResponseEndpoint,
+    <E::Response as crate::response::ResponseBodySpec>::Mode: crate::response::RawResponseMode,
 {
     /// Selects the complete bounded successful response without invoking the
     /// endpoint decoder.

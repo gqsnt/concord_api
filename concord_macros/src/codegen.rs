@@ -5,8 +5,7 @@ use quote::{ToTokens, quote};
 use syn::{PathArguments, Type};
 
 use crate::ast::{
-    AuthChallenge, AuthPlacementKind, CodecKind, DefaultExpr, MediaKind, MethodKind,
-    RequestBodyKind, ResponseKind, RetrySelection, ValueKind,
+    AuthChallenge, AuthPlacementKind, DefaultExpr, MethodKind, RetrySelection, ValueKind,
 };
 use crate::model::{
     Api, Child, Client, Credential, CredentialSource, Endpoint, NormalizedConfig,
@@ -15,7 +14,7 @@ use crate::model::{
 };
 use crate::names::{canonical_ident, public_ident, to_snake_case};
 
-const GENERATED_CONTRACT_VERSION: u32 = 12;
+const GENERATED_CONTRACT_VERSION: u32 = 13;
 
 pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
     let clients = api
@@ -33,6 +32,8 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
     let capability_name = &client.endpoint_capability_name;
     let values_type = &client.values_type_name;
     let credentials_store = credentials_store_name(client);
+    let specification_module = specification_module_name(client);
+    let specification_aliases = generate_specification_aliases(&client.children);
     let base = &client.base;
     let contract_version = GENERATED_CONTRACT_VERSION;
 
@@ -236,11 +237,6 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
             const _: () = __core::__private::assert_json_feature();
         )
     });
-    let multipart_assertion = client_uses_multipart(client).then(|| {
-        quote!(
-            const _: () = __core::__private::assert_multipart_feature();
-        )
-    });
     let requires_limiter = client.requires_limiter;
     let prepare_runtime = client.rate_observer.as_ref().map_or_else(
         || {
@@ -267,6 +263,16 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
     let prelude_exports = collect_prelude_exports(client, &client.children, &[]);
 
     quote! {
+        #[doc(hidden)]
+        pub mod #specification_module {
+            #[allow(unused_imports)]
+            use super::*;
+            #[allow(unused_imports)]
+            use #core_path::prelude::*;
+
+            #specification_aliases
+        }
+
         struct #values_type {
             #(#value_fields)*
         }
@@ -303,7 +309,6 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
 
                 const _: () = __core::__private::assert_generated_contract(#contract_version);
                 #json_assertion
-                #multipart_assertion
                 #custom_retry_assertion
             }
 
@@ -328,13 +333,13 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
             impl<R> __concord_endpoint_seal::Sealed
                 for #core_path::advanced::PreparedEndpoint<R>
             where
-                R: #core_path::__private::PreparedResponseMarker,
+                R: #core_path::advanced::ResponseBodySpec,
             {}
 
             #[doc(hidden)]
             impl<R> #capability_name for #core_path::advanced::PreparedEndpoint<R>
             where
-                R: #core_path::__private::PreparedResponseMarker,
+                R: #core_path::advanced::ResponseBodySpec,
             {}
 
             #[doc = #prelude_doc]
@@ -985,22 +990,8 @@ fn credential_material_type(
     }
 }
 
-fn response_output_type(response: &ResponseKind, core_path: &TokenStream) -> TokenStream {
-    match response {
-        ResponseKind::Bytes => quote!(#core_path::prelude::Bytes),
-        ResponseKind::NoContent => quote!(()),
-        ResponseKind::Buffered(CodecKind::Text) => quote!(::std::string::String),
-        ResponseKind::Buffered(CodecKind::Json(ty)) => quote!(#ty),
-        ResponseKind::Buffered(CodecKind::Custom(ty)) => {
-            quote!(<#ty as #core_path::advanced::DecodeBody>::Output)
-        }
-        ResponseKind::Stream(MediaKind::OctetStream) => {
-            quote!(#core_path::prelude::StreamResponse<#core_path::prelude::OctetStream>)
-        }
-        ResponseKind::Stream(MediaKind::Custom(ty)) => {
-            quote!(#core_path::prelude::StreamResponse<#ty>)
-        }
-    }
+fn response_output_type(response: &Type, core_path: &TokenStream) -> TokenStream {
+    quote!(<#response as #core_path::advanced::ResponseBodySpec>::Output)
 }
 
 fn find_endpoint_by_id(children: &[Child], id: usize) -> Option<&Endpoint> {
@@ -1500,6 +1491,12 @@ fn generate_endpoint_method(
 ) -> TokenStream {
     let method = &endpoint.public_method_name;
     let endpoint_type_path = endpoint_type_path_from_context(scopes, endpoint, on_client);
+    let invocation_path = if on_client {
+        quote!(super)
+    } else {
+        super_chain(scopes.len() + 2)
+    };
+    let specification_module = specification_module_name(client);
     let required = endpoint
         .parameters
         .iter()
@@ -1513,10 +1510,13 @@ fn generate_endpoint_method(
             quote!(#name: #ty,)
         })
         .collect::<Vec<_>>();
-    let body_type = endpoint
-        .body
-        .as_ref()
-        .map(|body| request_body_input_type(body, core_path));
+    let body_type = endpoint.body.as_ref().map(|_| {
+        let body_specification = body_specification_name(endpoint);
+        quote!(
+            <#invocation_path::#specification_module::#body_specification
+                as #core_path::advanced::RequestBodySpec>::Input
+        )
+    });
     let body_parameter = body_type.as_ref().map(|ty| quote!(body: #ty,));
     let scope_arguments = if on_client {
         quote!()
@@ -1615,6 +1615,9 @@ fn generate_endpoint(
     let support_path = super_chain(depth + 1);
     let invocation_path = super_chain(depth + 2);
     let generated_core = quote!(#support_path::__concord_generated::__core);
+    let specification_module = specification_module_name(client);
+    let response_specification = response_specification_name(endpoint);
+    let response = quote!(#invocation_path::#specification_module::#response_specification);
     let endpoint_identity = endpoint_identity(client, scopes, endpoint);
     let endpoint_doc = endpoint_type_doc(client, scopes, endpoint);
     let constructor_doc = format!(
@@ -1623,8 +1626,15 @@ fn generate_endpoint(
 
     let scope_fields = endpoint_scope_fields(scopes);
     let endpoint_fields = endpoint_value_fields(endpoint);
-    let body_type = body_handler(endpoint.body.as_ref(), core_path);
-    let body_field = quote!(__concord_body: #body_type,);
+    let body_type = endpoint.body.as_ref().map_or_else(
+        || quote!(#core_path::__private::EmptyBody),
+        |_| {
+            let body_specification = body_specification_name(endpoint);
+            quote!(#invocation_path::#specification_module::#body_specification)
+        },
+    );
+    let body_input = request_body_input_type(&body_type, core_path);
+    let body_field = quote!(__concord_body: #body_input,);
     let client_values_field = quote!(
         __concord_client_values: ::std::option::Option<::std::sync::Arc<#invocation_path::#values_type>>,
     );
@@ -1640,6 +1650,7 @@ fn generate_endpoint(
         &scope_bindings,
         &endpoint_bindings,
         body_binding.as_ref(),
+        &body_type,
         core_path,
     );
     let explicit_initialization = initialize_explicit_endpoint(
@@ -1651,7 +1662,8 @@ fn generate_endpoint(
         &generated_core,
         core_path,
     );
-    let facade_parameters = endpoint_facade_constructor_parameters(scopes, endpoint, core_path);
+    let facade_parameters =
+        endpoint_facade_constructor_parameters(scopes, endpoint, &body_type, core_path);
     let facade_initialization =
         initialize_facade_endpoint(scopes, endpoint, &generated_core, core_path);
     let inherent_setters = generate_explicit_endpoint_setters(scopes, endpoint);
@@ -1685,7 +1697,6 @@ fn generate_endpoint(
             quote!(::std::option::Option::Some(::std::time::Duration::new(#seconds, #nanos)))
         },
     );
-    let response = response_handler(&endpoint.response, core_path);
     let host_statements = host_statements(client, scopes, endpoint);
     let path_statements = path_statements(client, scopes, endpoint);
     let query_statements = query_statements(client, scopes, endpoint);
@@ -1710,17 +1721,6 @@ fn generate_endpoint(
         &invocation_path,
         &where_clause,
     );
-    let raw_response_impl = if matches!(endpoint.response, ResponseKind::Stream(_)) {
-        quote!()
-    } else {
-        quote! {
-            #[doc(hidden)]
-            impl #generated_core::__private::RawResponseEndpoint for #endpoint_name
-            #where_clause
-            {}
-        }
-    };
-
     quote! {
         #[doc = #endpoint_doc]
         #clone_derive
@@ -1780,14 +1780,11 @@ fn generate_endpoint(
                 )
             }
 
-            fn prepare_head_and_body_metadata(
+            fn prepare_head(
                 &self,
                 mut __concord_builder: #generated_core::__private::HeadBuilder,
             ) -> ::std::result::Result<
-                (
-                    #generated_core::__private::PreparedHead,
-                    #generated_core::__private::BodyMetadata,
-                ),
+                #generated_core::__private::PreparedHead,
                 #generated_core::__private::ApiError,
             > {
                 let __concord_client_values = self
@@ -1800,22 +1797,34 @@ fn generate_endpoint(
                 #header_statements
                 #auth_statements
                 #rate_limit_statements
-                let __concord_head = __concord_builder.finish();
-                let __concord_method = #method;
-                let __concord_body_metadata = <Self::Body as #generated_core::__private::BodySpec>::metadata(
-                    &self.__concord_body,
-                    #endpoint_identity,
-                    &__concord_method,
-                )?;
-                ::std::result::Result::Ok((__concord_head, __concord_body_metadata))
+                ::std::result::Result::Ok(__concord_builder.finish())
             }
 
-            fn into_body(self) -> Self::Body {
+            fn body_metadata(
+                &self,
+                __concord_context: #generated_core::__private::RequestBodyContext<'_>,
+            ) -> ::std::result::Result<
+                #generated_core::__private::RequestBodyMetadata,
+                #generated_core::advanced::BodyError,
+            > {
+                <Self::Body as #generated_core::__private::RequestBodySpec>::metadata(
+                    &self.__concord_body,
+                    __concord_context,
+                )
+            }
+
+            fn into_body(
+                self,
+            ) -> <Self::Body as #generated_core::__private::RequestBodySpec>::Input {
                 self.__concord_body
             }
         }
 
-        #raw_response_impl
+        #[doc(hidden)]
+        impl #generated_core::__private::RawResponseEndpoint for #endpoint_name
+        #where_clause
+        {}
+
         #pagination_impl
         #extension_trait
     }
@@ -1876,7 +1885,10 @@ fn generate_pagination_impl(
         return quote!();
     };
     let endpoint_name = &endpoint.name;
-    let page_type = response_output_type(&endpoint.response, core_path);
+    let specification_module = specification_module_name(client);
+    let response_specification = response_specification_name(endpoint);
+    let response = quote!(#invocation_path::#specification_module::#response_specification);
+    let page_type = quote!(<#response as #core_path::advanced::ResponseBodySpec>::Output);
     let controller = &pagination.controller;
     let controller_type = pagination_controller_type(controller, invocation_path, false);
     let controller_fields = pagination
@@ -2013,6 +2025,7 @@ fn explicit_constructor_parameters(
     scope_bindings: &[Ident],
     endpoint_bindings: &[Ident],
     body_binding: Option<&Ident>,
+    body_specification: &TokenStream,
     core_path: &TokenStream,
 ) -> TokenStream {
     let mut scope_index = 0;
@@ -2038,9 +2051,9 @@ fn explicit_constructor_parameters(
             quote!(#binding: #ty,)
         })
         .collect::<Vec<_>>();
-    let body = endpoint.body.as_ref().map(|kind| {
+    let body = endpoint.body.as_ref().map(|_| {
         let binding = body_binding.expect("body binding");
-        let ty = request_body_input_type(kind, core_path);
+        let ty = request_body_input_type(body_specification, core_path);
         quote!(#binding: #ty,)
     });
     quote!(#(#scope_parameters)* #(#endpoint_parameters)* #body)
@@ -2133,6 +2146,7 @@ fn initialize_explicit_endpoint(
 fn endpoint_facade_constructor_parameters(
     scopes: &[&Scope],
     endpoint: &Endpoint,
+    body_specification: &TokenStream,
     core_path: &TokenStream,
 ) -> TokenStream {
     let scope_parameters = facade_scope_fields_as_parameters(scopes);
@@ -2147,8 +2161,8 @@ fn endpoint_facade_constructor_parameters(
             quote!(#binding: #ty,)
         })
         .collect::<Vec<_>>();
-    let body = endpoint.body.as_ref().map(|kind| {
-        let ty = request_body_input_type(kind, core_path);
+    let body = endpoint.body.as_ref().map(|_| {
+        let ty = request_body_input_type(body_specification, core_path);
         quote!(__concord_body_input: #ty,)
     });
     quote!(#scope_parameters #(#endpoint_parameters)* #body)
@@ -3053,33 +3067,22 @@ fn endpoint_where_clause(
     for ty in display_types {
         bounds.push(quote!(#ty: ::std::fmt::Display));
     }
-    if let Some(body) = &endpoint.body {
-        match body {
-            RequestBodyKind::Buffered(codec) => {
-                let codec = codec_type(codec, core_path);
-                bounds.push(quote!(#codec: #core_path::advanced::EncodeBody));
-            }
-            RequestBodyKind::Stream(media) => {
-                let media = media_type(media, core_path);
-                bounds.push(quote!(#media: #core_path::advanced::MediaType));
-            }
-            RequestBodyKind::Multipart => {}
-        }
-    }
-    match &endpoint.response {
-        ResponseKind::Buffered(codec) => {
-            let codec = codec_type(codec, core_path);
-            bounds.push(quote!(#codec: #core_path::advanced::DecodeBody));
-        }
-        ResponseKind::Stream(media) => {
-            let media = media_type(media, core_path);
-            bounds.push(quote!(#media: #core_path::advanced::MediaType));
-        }
-        ResponseKind::Bytes | ResponseKind::NoContent => {}
-    }
+    let specification_module = specification_module_name(client);
+    let body = endpoint.body.as_ref().map_or_else(
+        || quote!(#core_path::__private::EmptyBody),
+        |_| {
+            let body_specification = body_specification_name(endpoint);
+            quote!(#invocation_path::#specification_module::#body_specification)
+        },
+    );
+    bounds.push(quote!(#body: #core_path::advanced::RequestBodySpec));
+    let response_specification = response_specification_name(endpoint);
+    let response = quote!(#invocation_path::#specification_module::#response_specification);
+    bounds.push(quote!(#response: #core_path::advanced::ResponseBodySpec));
     if let Some(pagination) = &endpoint.pagination {
-        let page = response_output_type(&endpoint.response, core_path);
+        let page = quote!(<#response as #core_path::advanced::ResponseBodySpec>::Output);
         let controller = pagination_controller_type(&pagination.controller, invocation_path, false);
+        bounds.push(quote!(#response: #core_path::advanced::PageResponseSpec));
         bounds.push(quote!(#page: ::std::iter::IntoIterator));
         bounds.push(quote!(
             <#page as ::std::iter::IntoIterator>::Item:
@@ -3239,22 +3242,14 @@ fn endpoint_constructor_binding(index: usize, value: &Value) -> Ident {
 }
 
 fn body_constructor(
-    body: Option<&RequestBodyKind>,
+    body: Option<&Type>,
     binding: Option<&Ident>,
-    generated_core: &TokenStream,
-    core_path: &TokenStream,
+    _generated_core: &TokenStream,
+    _core_path: &TokenStream,
 ) -> TokenStream {
     match (body, binding) {
-        (Some(RequestBodyKind::Buffered(codec)), Some(binding)) => {
-            let codec = codec_type(codec, core_path);
-            quote!(#generated_core::__private::CodecBody::<#codec>::new(#binding))
-        }
-        (Some(RequestBodyKind::Stream(media)), Some(binding)) => {
-            let media = media_type(media, core_path);
-            quote!(#generated_core::__private::StreamRequestBody::<#media>::new(#binding))
-        }
-        (Some(RequestBodyKind::Multipart), Some(binding)) => quote!(#binding),
-        (None, None) => quote!(#generated_core::__private::EmptyBody::new()),
+        (Some(_), Some(binding)) => quote!(#binding),
+        (None, None) => quote!(()),
         _ => unreachable!("body and binding are modeled together"),
     }
 }
@@ -3281,7 +3276,7 @@ fn endpoint_method_doc(client: &Client, scopes: &[&Scope], endpoint: &Endpoint) 
     let configuration = endpoint_configuration_summary(client, endpoint);
     let features = endpoint_feature_summary(client, endpoint);
     format!(
-        "Creates a side-effect-free pending `{method}` request for `{identity}` at `{route}`. {values} {control_doc} {configuration} {} Direct await uses the `{}` response mode. {} {features}",
+        "Creates a side-effect-free pending `{method}` request for `{identity}` at `{route}`. {values} {control_doc} {configuration} {} Direct await uses the `{}` response specification. {} {features}",
         request_body_doc(endpoint.body.as_ref()),
         response_name(&endpoint.response),
         response_doc(&endpoint.response),
@@ -3305,7 +3300,7 @@ fn endpoint_type_doc(client: &Client, scopes: &[&Scope], endpoint: &Endpoint) ->
     let configuration = endpoint_configuration_summary(client, endpoint);
     let features = endpoint_feature_summary(client, endpoint);
     format!(
-        "Explicit `{method}` endpoint snapshot for `{identity}` at route `{route}`. It executes through the same client request path as its facade method. {scope_values} {endpoint_values} {configuration} {} Direct await uses the `{}` response mode. {} {features}",
+        "Explicit `{method}` endpoint snapshot for `{identity}` at route `{route}`. It executes through the same client request path as its facade method. {scope_values} {endpoint_values} {configuration} {} Direct await uses the `{}` response specification. {} {features}",
         request_body_doc(endpoint.body.as_ref()),
         response_name(&endpoint.response),
         response_doc(&endpoint.response),
@@ -3447,26 +3442,17 @@ fn endpoint_configuration_summary(client: &Client, endpoint: &Endpoint) -> Strin
 }
 
 fn endpoint_feature_summary(client: &Client, endpoint: &Endpoint) -> String {
-    let uses_json = matches!(
-        &endpoint.body,
-        Some(RequestBodyKind::Buffered(CodecKind::Json(_)))
-    ) || matches!(
-        &endpoint.response,
-        ResponseKind::Buffered(CodecKind::Json(_))
-    ) || client
+    let uses_json = client
         .credentials
         .iter()
         .any(|credential| matches!(credential.source, CredentialSource::OAuth2Client { .. }));
-    let uses_multipart = matches!(&endpoint.body, Some(RequestBodyKind::Multipart));
     let mut requirements = Vec::new();
     if uses_json {
         requirements.push("`concord_core/json`");
     }
-    if uses_multipart {
-        requirements.push("`concord_core/multipart`");
-    }
     if requirements.is_empty() {
-        "No endpoint-specific Cargo feature is required by this body/response mode.".to_owned()
+        let _ = endpoint;
+        "Request and response specification feature availability is owned by `concord_core` type and trait exports.".to_owned()
     } else {
         format!("Required Cargo feature(s): {}.", requirements.join(", "))
     }
@@ -3531,121 +3517,26 @@ fn method_token(method: &MethodKind, core_path: &TokenStream) -> TokenStream {
     }
 }
 
-fn response_handler(response: &ResponseKind, core_path: &TokenStream) -> TokenStream {
-    match response {
-        ResponseKind::Bytes => quote!(#core_path::__private::BytesResponse),
-        ResponseKind::NoContent => quote!(#core_path::__private::NoContentResponse),
-        ResponseKind::Buffered(codec) => {
-            let codec = codec_type(codec, core_path);
-            quote!(#core_path::__private::BufferedResponse<#codec>)
-        }
-        ResponseKind::Stream(media) => {
-            let media = media_type(media, core_path);
-            quote!(#core_path::__private::StreamResponseHandler<#media>)
-        }
-    }
+fn request_body_input_type(body: &TokenStream, core_path: &TokenStream) -> TokenStream {
+    quote!(<#body as #core_path::advanced::RequestBodySpec>::Input)
 }
 
-fn body_handler(body: Option<&RequestBodyKind>, core_path: &TokenStream) -> TokenStream {
-    match body {
-        Some(RequestBodyKind::Buffered(codec)) => {
-            let codec = codec_type(codec, core_path);
-            quote!(#core_path::__private::CodecBody<#codec>)
-        }
-        Some(RequestBodyKind::Stream(media)) => {
-            let media = media_type(media, core_path);
-            quote!(#core_path::__private::StreamRequestBody<#media>)
-        }
-        Some(RequestBodyKind::Multipart) => quote!(#core_path::advanced::MultipartBody),
-        None => quote!(#core_path::__private::EmptyBody),
-    }
-}
-
-fn request_body_input_type(body: &RequestBodyKind, core_path: &TokenStream) -> TokenStream {
-    match body {
-        RequestBodyKind::Buffered(codec) => codec_input_type(codec, core_path),
-        RequestBodyKind::Stream(_) => quote!(#core_path::prelude::StreamBody),
-        RequestBodyKind::Multipart => quote!(#core_path::advanced::MultipartBody),
-    }
-}
-
-fn codec_type(codec: &CodecKind, core_path: &TokenStream) -> TokenStream {
-    match codec {
-        CodecKind::Text => quote!(#core_path::prelude::Text),
-        CodecKind::Json(ty) => quote!(#core_path::prelude::Json<#ty>),
-        CodecKind::Custom(ty) => quote!(#ty),
-    }
-}
-
-fn media_type(media: &MediaKind, core_path: &TokenStream) -> TokenStream {
-    match media {
-        MediaKind::OctetStream => quote!(#core_path::prelude::OctetStream),
-        MediaKind::Custom(ty) => quote!(#ty),
-    }
-}
-
-fn codec_input_type(codec: &CodecKind, core_path: &TokenStream) -> TokenStream {
-    match codec {
-        CodecKind::Text => quote!(::std::string::String),
-        CodecKind::Json(ty) => quote!(#ty),
-        CodecKind::Custom(ty) => quote!(<#ty as #core_path::advanced::EncodeBody>::Input),
-    }
-}
-
-fn request_body_doc(body: Option<&RequestBodyKind>) -> String {
+fn request_body_doc(body: Option<&Type>) -> String {
     match body {
         None => "The request is bodyless.".to_owned(),
-        Some(RequestBodyKind::Buffered(codec)) => {
-            format!(
-                "The final `body` argument uses the `{}` buffered body mode and is encoded only after protected public-head preparation and the before-send hook.",
-                codec_name(codec)
-            )
-        }
-        Some(RequestBodyKind::Stream(media)) => {
-            format!(
-                "The final `body` argument uses `Stream<{}>` with an owned one-shot `StreamBody`; it remains unpolled until managed native execution.",
-                media_name(media)
-            )
-        }
-        Some(RequestBodyKind::Multipart) => {
-            "The final `body` argument is `MultipartBody`, requires `concord_core/multipart`, and remains subject to aggregate framing limits while the managed HTTP layer owns the top-level boundary header.".to_owned()
-        }
+        Some(body) => format!(
+            "The final `body` argument is the input of request specification `{}`. Concord obtains structural metadata before the hook and prepares the managed body only after hook approval.",
+            body.to_token_stream()
+        ),
     }
 }
 
-fn response_doc(response: &ResponseKind) -> &'static str {
-    match response {
-        ResponseKind::Stream(_) => {
-            "Direct await returns `StreamResponse<M>` with a finite stream-response limit; `.response()` and the dangerous `.raw_response()` terminal are intentionally unavailable."
-        }
-        _ => {
-            "Direct await returns the semantic value and `.response()` selects successful metadata. With `concord_core/dangerous-raw-response`, `.raw_response()` instead returns complete bounded successful bytes and actual headers without invoking the declared decoder; those values have reduced secrecy guarantees."
-        }
-    }
+fn response_doc(_response: &Type) -> &'static str {
+    "Direct await returns the response specification output and `.response()` selects universal successful metadata. Acquisition mode, media validation, limits, and raw-response eligibility are enforced by core-owned capability bounds. The `raw_response()` terminal additionally requires `concord_core/dangerous-raw-response`; when the selected core capability permits it, that terminal returns complete bounded successful bytes with reduced secrecy guarantees."
 }
 
-fn response_name(response: &ResponseKind) -> String {
-    match response {
-        ResponseKind::Bytes => "Bytes".to_owned(),
-        ResponseKind::NoContent => "NoContent".to_owned(),
-        ResponseKind::Buffered(codec) => codec_name(codec),
-        ResponseKind::Stream(media) => format!("Stream<{}>", media_name(media)),
-    }
-}
-
-fn codec_name(codec: &CodecKind) -> String {
-    match codec {
-        CodecKind::Text => "Text".to_owned(),
-        CodecKind::Json(ty) => format!("Json<{}>", ty.to_token_stream()),
-        CodecKind::Custom(ty) => ty.to_token_stream().to_string(),
-    }
-}
-
-fn media_name(media: &MediaKind) -> String {
-    match media {
-        MediaKind::OctetStream => "OctetStream".to_owned(),
-        MediaKind::Custom(ty) => ty.to_token_stream().to_string(),
-    }
+fn response_name(response: &Type) -> String {
+    response.to_token_stream().to_string()
 }
 
 fn client_uses_json(client: &Client) -> bool {
@@ -3653,30 +3544,53 @@ fn client_uses_json(client: &Client) -> bool {
         .credentials
         .iter()
         .any(|credential| matches!(credential.source, CredentialSource::OAuth2Client { .. }))
-        || endpoints(&client.children).any(|endpoint| {
-            endpoint
-                .body
-                .as_ref()
-                .is_some_and(|body| matches!(body, RequestBodyKind::Buffered(CodecKind::Json(_))))
-                || matches!(
-                    &endpoint.response,
-                    ResponseKind::Buffered(CodecKind::Json(_))
-                )
+}
+
+fn generate_specification_aliases(children: &[Child]) -> TokenStream {
+    let aliases = children
+        .iter()
+        .map(|child| match child {
+            Child::Endpoint(endpoint) => {
+                let response_name = response_specification_name(endpoint);
+                let response = &endpoint.response;
+                let body = endpoint.body.as_ref().map(|body| {
+                    let body_name = body_specification_name(endpoint);
+                    quote!(#[doc(hidden)] pub type #body_name = #body;)
+                });
+                quote! {
+                    #body
+                    #[doc(hidden)]
+                    pub type #response_name = #response;
+                }
+            }
+            Child::Scope(scope) => generate_specification_aliases(&scope.children),
         })
+        .collect::<Vec<_>>();
+    quote!(#(#aliases)*)
 }
 
-fn client_uses_multipart(client: &Client) -> bool {
-    endpoints(&client.children)
-        .any(|endpoint| matches!(&endpoint.body, Some(RequestBodyKind::Multipart)))
+fn specification_module_name(client: &Client) -> Ident {
+    Ident::new(
+        &format!(
+            "__concord_{}_specifications",
+            to_snake_case(&canonical_ident(&client.name))
+        ),
+        Span::mixed_site(),
+    )
 }
 
-fn endpoints(children: &[Child]) -> Box<dyn Iterator<Item = &Endpoint> + '_> {
-    Box::new(children.iter().flat_map(|child| match child {
-        Child::Endpoint(endpoint) => {
-            Box::new(std::iter::once(endpoint)) as Box<dyn Iterator<Item = &Endpoint>>
-        }
-        Child::Scope(scope) => endpoints(&scope.children),
-    }))
+fn body_specification_name(endpoint: &Endpoint) -> Ident {
+    Ident::new(
+        &format!("BodySpecification{}", endpoint.id),
+        Span::mixed_site(),
+    )
+}
+
+fn response_specification_name(endpoint: &Endpoint) -> Ident {
+    Ident::new(
+        &format!("ResponseSpecification{}", endpoint.id),
+        Span::mixed_site(),
+    )
 }
 
 fn default_expr(value: &DefaultExpr) -> TokenStream {

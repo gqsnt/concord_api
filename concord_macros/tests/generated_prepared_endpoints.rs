@@ -8,12 +8,12 @@ use std::time::Duration;
 use concord_core::advanced::{
     Auth, BodyError, BodyFactory, BoxFuture, ChallengePolicy, CodecError, DecodeBody,
     DecodeContext, EncodeBody, EncodeContext, ErrorCategory, HeaderName, HookError, MediaType,
-    Method, MultipartBody, MultipartFactory, MultipartPart, NoopRateLimiter, PreparedBuffered,
-    PreparedBytes, PreparedEndpoint, PreparedEndpointBuilder, PreparedNoContent, PreparedStream,
-    RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitRequest,
-    RateLimitRule, RateLimitWindow, RateLimiter, RequestBody, RuntimeHooks, SafeProxy, StreamBody,
+    Method, MultipartBody, MultipartFactory, MultipartPart, NoopRateLimiter, PreparedEndpoint,
+    PreparedEndpointBuilder, RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart,
+    RateLimitPermit, RateLimitRequest, RateLimitRule, RateLimitWindow, RateLimiter, RequestBody,
+    RuntimeHooks, SafeProxy, Stream as StreamSpec, StreamBody,
 };
-use concord_core::prelude::{Bytes, StreamResponse};
+use concord_core::prelude::{ByteStream, Bytes, NoContent};
 use concord_macros::api;
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 use futures_core::Stream;
@@ -201,15 +201,14 @@ fn rule(id: &str, value: &str) -> RateLimitRule {
 }
 
 fn exact_builder_contracts() {
-    let default: PreparedEndpointBuilder<PreparedNoContent> =
+    let default: PreparedEndpointBuilder<NoContent> =
         PreparedEndpoint::builder("Prepared::default", Method::GET);
-    let buffered: PreparedEndpointBuilder<PreparedBuffered<EchoCodec>> =
-        default.response::<EchoCodec>();
-    let bytes: PreparedEndpointBuilder<PreparedBytes> = buffered.response_bytes();
-    let stream: PreparedEndpointBuilder<PreparedStream<VendorMedia>> =
+    let buffered: PreparedEndpointBuilder<EchoCodec> = default.response::<EchoCodec>();
+    let bytes: PreparedEndpointBuilder<Bytes> = buffered.response_bytes();
+    let stream: PreparedEndpointBuilder<StreamSpec<VendorMedia>> =
         bytes.response_stream::<VendorMedia>();
-    let no_content: PreparedEndpointBuilder<PreparedNoContent> = stream.response_no_content();
-    let _: PreparedEndpoint<PreparedNoContent> = no_content.build().expect("exact endpoint");
+    let no_content: PreparedEndpointBuilder<NoContent> = stream.response_no_content();
+    let _: PreparedEndpoint<NoContent> = no_content.build().expect("exact endpoint");
 }
 
 #[test]
@@ -272,8 +271,7 @@ async fn prepared_modes_use_the_ordinary_generated_client_runtime() {
         .response_stream::<VendorMedia>()
         .build()
         .expect("stream prepared endpoint");
-    let mut response: StreamResponse<VendorMedia> =
-        client.request(stream).await.expect("stream response");
+    let mut response: ByteStream = client.request(stream).await.expect("stream response");
     let first = poll_fn(|context| Pin::new(&mut response).poll_next(context))
         .await
         .expect("stream chunk")

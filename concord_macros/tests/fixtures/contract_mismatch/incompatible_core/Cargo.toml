@@ -7,3 +7,6 @@ publish = false
 
 [lib]
 path = "lib.rs"
+
+[dependencies]
+concord_core_actual = { package = "concord_core", path = "../../../../../concord_core" }

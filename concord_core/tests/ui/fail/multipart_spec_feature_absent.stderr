@@ -1,0 +1,24 @@
+error[E0432]: unresolved import `concord_core::prelude::Multipart`
+ --> tests/ui/fail/multipart_spec_feature_absent.rs:1:5
+  |
+1 | use concord_core::prelude::Multipart;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `Multipart` in `prelude`
+  |
+note: found an item that was configured out
+ --> src/prelude.rs
+  |
+  | pub use crate::body::Multipart;
+  |                      ^^^^^^^^^
+note: the item is gated behind the `multipart` feature
+ --> src/prelude.rs
+  |
+  | #[cfg(feature = "multipart")]
+  |       ^^^^^^^^^^^^^^^^^^^^^
+help: consider importing one of these variants instead
+  |
+1 | use concord_core::advanced::BodyErrorKind::Multipart;
+  |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+1 | use concord_core::advanced::BodyKind::Multipart;
+  |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+1 | use concord_test_support::script::BodyCategory::Multipart;
+  |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -76,14 +76,15 @@ impl ApplicationResponse {
         })
     }
 
-    pub(crate) fn into_byte_stream(self) -> ApplicationByteStream {
+    pub(crate) fn into_byte_stream(self, limit: u64) -> ApplicationByteStream {
         let endpoint = self.endpoint;
-        let method = self.method;
-        Box::pin(ReducedResponseStream {
+        let method = self.method.clone();
+        let source: ApplicationByteStream = Box::pin(ReducedResponseStream {
             inner: Box::pin(self.native.bytes_stream()),
             endpoint,
-            method,
-        })
+            method: self.method,
+        });
+        bounded_byte_stream(source, endpoint, method, limit)
     }
 
     fn into_native(self) -> reqwest::Response {
@@ -93,6 +94,76 @@ impl ApplicationResponse {
 
 pub(crate) type ApplicationByteStream =
     Pin<Box<dyn Stream<Item = Result<Bytes, ApiError>> + Send + 'static>>;
+
+pub(crate) fn bounded_byte_stream(
+    source: ApplicationByteStream,
+    endpoint: &'static str,
+    method: Method,
+    limit: u64,
+) -> ApplicationByteStream {
+    Box::pin(BoundedResponseStream {
+        source,
+        endpoint,
+        method,
+        limit,
+        observed: 0,
+        finished: false,
+    })
+}
+
+struct BoundedResponseStream {
+    source: ApplicationByteStream,
+    endpoint: &'static str,
+    method: Method,
+    limit: u64,
+    observed: u64,
+    finished: bool,
+}
+
+impl Stream for BoundedResponseStream {
+    type Item = Result<Bytes, ApiError>;
+
+    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        if this.finished {
+            return Poll::Ready(None);
+        }
+        match this.source.as_mut().poll_next(context) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(None) => {
+                this.finished = true;
+                Poll::Ready(None)
+            }
+            Poll::Ready(Some(Err(error))) => {
+                this.finished = true;
+                Poll::Ready(Some(Err(error)))
+            }
+            Poll::Ready(Some(Ok(bytes))) => {
+                let Some(next) = this
+                    .observed
+                    .checked_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX))
+                else {
+                    this.finished = true;
+                    return Poll::Ready(Some(Err(ApiError::classified(
+                        this.endpoint,
+                        this.method.clone(),
+                        crate::error::ErrorCategory::ResponseBody,
+                    ))));
+                };
+                if next > this.limit {
+                    this.finished = true;
+                    return Poll::Ready(Some(Err(ApiError::classified(
+                        this.endpoint,
+                        this.method.clone(),
+                        crate::error::ErrorCategory::ResponseBody,
+                    ))));
+                }
+                this.observed = next;
+                Poll::Ready(Some(Ok(bytes)))
+            }
+        }
+    }
+}
 
 struct ReducedResponseStream<S> {
     inner: Pin<Box<S>>,

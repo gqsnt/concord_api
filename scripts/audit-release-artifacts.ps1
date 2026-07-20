@@ -26,8 +26,8 @@ function Require-Marker {
 
 Require-Marker "Cargo.toml" @('"concord_examples"', '"perf"', 'rust-version = "1.85"', 'reqwest = { version = "=0.13.4", default-features = false }')
 Require-Marker "rust-toolchain.toml" @('channel = "1.85.0"')
-Require-Marker "concord_core/Cargo.toml" @('dangerous-raw-response = []', 'dangerous-custom-retry = []', 'reqwest = { workspace = true, features = ["stream"] }')
-Require-Marker "concord_examples/Cargo.toml" @('publish = false', 'dangerous-raw-response = ["concord_core/dangerous-raw-response"]', 'dangerous-custom-retry = ["concord_core/dangerous-custom-retry", "dep:reqwest"]')
+Require-Marker "concord_core/Cargo.toml" @('records = []', 'csv = ["records", "dep:csv", "dep:serde"]', 'ndjson = ["records", "dep:serde", "dep:serde_json"]', 'dangerous-raw-response = []', 'dangerous-custom-retry = []', 'reqwest = { workspace = true, features = ["stream"] }')
+Require-Marker "concord_examples/Cargo.toml" @('publish = false', 'records = ["concord_core/records"]', 'csv = ["records", "concord_core/csv"]', 'ndjson = ["records", "concord_core/ndjson"]', 'dangerous-raw-response = ["concord_core/dangerous-raw-response"]', 'dangerous-custom-retry = ["concord_core/dangerous-custom-retry", "dep:reqwest"]')
 Require-Marker "perf/Cargo.toml" @('name = "concord_perf"', 'publish = false', 'harness = false')
 
 $examples = @{
@@ -38,6 +38,8 @@ $examples = @{
     "concord_examples/examples/rate_limiting.rs" = @("RetryAfterObserver", "rate_limits")
     "concord_examples/examples/pagination.rs" = @("OffsetPagination", "PagePagination", "CursorPagination", "paginate concord_examples::ExampleController", "bind ep.cursor")
     "concord_examples/examples/prepared_endpoint.rs" = @("PreparedEndpoint::builder")
+    "concord_examples/examples/generic_specifications.rs" = @("RequestBodySpec", "ResponseBodySpec", "body_spec::<ExampleRequestSpec>", "response::<ExampleBufferedSpec>")
+    "concord_examples/examples/records.rs" = @("RecordDecoder", "Records<crate::PipeRecords>", "Records<Csv<(String, u32)>>", "Records<NdJson<u32>>")
     "concord_examples/examples/dangerous_raw_response.rs" = @("RawResponseRequest", ".raw_response()")
     "concord_examples/examples/dangerous_custom_retry.rs" = @("ReqwestRetryBuilder", "retry custom")
     "concord_examples/examples/regional_api.rs" = @("client RegionalGameApi", "scope Accounts", "scope Matches", "scope League")
@@ -56,9 +58,11 @@ Require-Marker "perf/benches/concord_overhead.rs" @(
     '"limiter ready-path acquisition"',
     '"pagination loop overhead"',
     '"stream wrapping"',
+    '"generic specification selection"',
+    '"record framing"',
     'benchmark_public_head',
     'benchmark_ready_credentials',
-    'benchmark operation audit: 9/9 named categories executed'
+    'benchmark operation audit: 11/11 named categories executed'
 )
 
 $grammarRows = (Get-Content -LiteralPath "concord_macros/tests/release/grammar_registry.csv").Count - 1
@@ -80,4 +84,4 @@ foreach ($package in @("concord_core", "concord_macros", "concord_test_support",
     }
 }
 
-Write-Output "release artifact audit passed: examples=$($examples.Count) benchmark-categories=9 grammar=$grammarRows reqwest=$reqwestRows security=$securityRows properties=$propertyRows"
+Write-Output "release artifact audit passed: examples=$($examples.Count) benchmark-categories=11 grammar=$grammarRows reqwest=$reqwestRows security=$securityRows properties=$propertyRows"

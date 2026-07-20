@@ -8,12 +8,12 @@ use std::marker::PhantomData;
 use bytes::Bytes;
 use http::{Method, StatusCode};
 
-/// Declares one static, syntactically valid media type for a typed body mode.
+/// Declares the one exact media type used by [`crate::body::Stream<M>`].
 ///
 /// The marker is shared across concurrent operations and has no runtime callback or sensitive
 /// input. Its constant must be non-sensitive and valid for every use; implementations must not
-/// rely on mutable global state. Concord validates the constant when preparing a request but does
-/// not manage application-owned state associated with the marker.
+/// rely on mutable global state. Request content-type ownership and response acceptance remain
+/// direction-specific responsibilities of the selected body and response specifications.
 pub trait MediaType: Send + Sync + 'static {
     /// Valid HTTP media type owned by the marker.
     const MEDIA_TYPE: &'static str;
