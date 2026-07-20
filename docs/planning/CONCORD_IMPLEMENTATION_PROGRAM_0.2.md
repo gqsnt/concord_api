@@ -486,7 +486,7 @@ executable naming, add the feature-gated raw-success surface, supply canonical e
 benchmarks, add release registries and the complete maintained release graph, and correct two
 validation-discovered defects. Every focused role and all maintained commands, including
 `just release`, passed against the final source identity with Rust 1.85.0. The Phase 10
-evidence/report/state commit is `PENDING_PHASE_10_EVIDENCE`; a subsequent documentation-only anchor
+evidence/report/state commit is `5a6af781abf7551cc6da979c969f54f997572ffe`; a subsequent documentation-only anchor
 finalizes that evidence-state self-reference without changing executable artifacts.
 
 Under `dangerous-raw-response`, eligible generated buffered, text, JSON, custom buffered, bytes,
