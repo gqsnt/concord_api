@@ -829,7 +829,8 @@ Generated-private integration uses one sealed endpoint capability with an associ
 specification and item type, an associated controller type, complete initial controller
 construction, and binding of the current controller into a fresh endpoint clone. Generated code
 invokes the one core-owned page loop exactly once and contains no page-loop algorithm. The
-synchronized private generated contract version is `13`.
+the historical Phase 12 synchronized private generated contract version was `13`; Phase 13
+synchronizes the macro and core marker at version `14`.
 
 **GEN-PAGE-004 — Associated typed controller integration.** A generated paginated endpoint MUST expose to core, through a generated-private sealed capability, one associated response specification implementing `PageResponseSpec`, one associated controller type implementing `PaginationController` for `R::Output`, one complete initial-controller operation, one current-controller-to-fresh-endpoint binding operation, and one item type; it MUST NOT pass separate runtime factory, binder, or short-page callbacks, generate another page loop, erase the response or controller, or expose this integration publicly.
 

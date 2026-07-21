@@ -486,8 +486,8 @@ Every generated client module emits a const-time assertion against a private sem
 The marker version changes whenever generated code and core `__private` integration are incompatible.
 
 Generic body/response specifications, universal metadata terminals, prepared selection, and
-capability-based pagination change that integration; the synchronized Phase 12 marker is `13` in
-both macro output and core.
+capability-based pagination changed that integration; the historical Phase 12 marker was `13`.
+The synchronized Phase 13 marker is `14` in both macro output and core.
 
 The marker must not rely solely on Cargo package version strings.
 
