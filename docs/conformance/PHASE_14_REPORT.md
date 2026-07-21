@@ -69,7 +69,14 @@ The initial evidence-state commit `dc14225a301f2058ab56216e532a80457750157a` was
 Evidence mode because five Phase 13-superseded coverage notes preserved their historical proof but
 did not literally identify the requirement change record. A documentation-only correction added
 that exact lineage to all five rows. The rejected audit is not entered as passing validation, and
-the non-amended corrected descendant is the release-final evidence commit recorded by this report.
+the rejected commit remains superseded history.
+
+Evidence mode at the first correction `611010dcab4114121f99ed6b3f55397236c560fd` then found that
+159 new Phase 14 source-bound rows had copied at least one path valid only at their historical proof
+commit. The final documentation-only correction maps those components to the current consolidated
+authentication, rate-limit, pagination, prepared-endpoint, generated-surface, and UI proof files.
+All 2,135 Phase 14 source-path components exist at the immutable source commit. The non-amended
+corrected descendant is the release-final evidence commit recorded by this report.
 
 No product architecture, public abstraction, dependency, feature, unsafe block, normative
 requirement, generated-contract version, waiver, or state machine was added. Generated contract
