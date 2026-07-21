@@ -902,7 +902,7 @@ function Assert-Phase13ValidationRegistry {
         'cargo nextest run --profile ci -p concord_core --test pagination_rate_limit --all-features -E "test(pagination_pages_share_the_same_lexical_governor_bucket)"',
         'cargo nextest run --profile ci -p concord_core --test pagination_rate_limit --all-features -E "test(pagination_cancellation_prevents_later_lexical_plan_acquisition)"',
         'cargo nextest run --profile ci -p concord_core --all-features --lib -E "test(/execute::auth_tests::paginated_tls_recovery_keeps_one_page_identity_index_and_completion$/)"',
-        'cargo nextest run --profile ci -p concord_core --all-features --lib -E "test(/execute::tests::default_key_limit_accepts_1024_bytes_and_rejects_the_first_excess$/) | test(/execute::tests::configured_key_limit_revalidates_before_governor_state_insertion$/)"',
+        'cargo nextest run --profile ci -p concord_core --all-features --lib -E "test(/execute::tests::default_key_limit_accepts_1024_bytes_and_rejects_the_first_excess$/) | test(/rate_limit::governor::tests::configured_key_limit_revalidates_before_governor_state_insertion$/)"',
         'cargo nextest run --profile ci -p concord_core --all-features --lib -E "test(/execute::auth_tests::configured_key_limit_failure_cuts_off_every_protected_side_effect_and_redacts_key$/) | test(/execute::tests::prepared_plans_use_the_selected_governor_and_its_configured_key_limit$/)"',
         'cargo nextest run --profile ci -p concord_macros --test compile --all-features -E "test(generated_public_rustdoc_uses_stable_paths_without_private_integration_names)"',
         'cargo nextest run --profile ci -p concord_core --test public_rustdoc --all-features',
