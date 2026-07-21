@@ -1049,7 +1049,7 @@ function Assert-Phase13ClaimAudit {
         }
     }
     foreach ($row in $Validation | Where-Object { $_.validation_id -like 'P13-VAL-*' }) {
-        Assert-Condition ($row.verified_commit -eq $Source) "Phase 13 validation source is stale for $($row.validation_id)"
+        Assert-Condition ($row.source_commit -eq $Source) "Phase 13 validation source is stale for $($row.validation_id)"
     }
 }
 
