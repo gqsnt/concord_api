@@ -60,9 +60,9 @@ $script:Phase13SupersededRequirementIds = [string[]]@(
     "DSL-RATE-003", "DSL-RATE-004", "DSL-RATE-005", "DSL-RATE-006", "DSL-RATE-007"
 )
 $script:SupersededRequirementIds = [string[]]@(
-    $script:Phase11SupersededRequirementIds +
-    $script:Phase12SupersededRequirementIds +
-    $script:Phase13SupersededRequirementIds
+    "DSL-PAGE-004", "DSL-PAGE-005", "DSL-PAGE-006", "API-PAGE-004", "API-PAGE-005", "API-PAGE-006",
+    "EXEC-PAGE-008", "EXEC-PAGE-014", "DSL-RESP-002", "SEC-RESP-004", "SEC-RESP-005",
+    "DSL-RATE-003", "DSL-RATE-004", "DSL-RATE-005", "DSL-RATE-006", "DSL-RATE-007"
 )
 $script:Phase13RetainedRequirementIds = [string[]]@(
     "PROD-GUAR-010", "PROD-STATE-001", "DSL-RATE-001", "DSL-RATE-002", "API-RATE-004",
