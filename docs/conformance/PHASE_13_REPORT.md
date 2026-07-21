@@ -229,7 +229,7 @@ build-time selections, static cost validation, observer ownership, atomic reserv
 compile and downstream workflows, and the complete limiter lifecycle to focused commands rather
 than identity, cancellation-only, UI-only, or aggregate-only evidence.
 
-New source-matched validation records `P13-VAL-053` through `P13-VAL-056` cover the complete runtime
+New source-matched validation records `P13-VAL-053` through `P13-VAL-055` cover the complete runtime
 snapshot, response/stream first-excess, cooldown/finite-state, and independent generated-handle
 proofs. Together with `P13-VAL-041` through `P13-VAL-052`, they cover the parser boundary,
 runtime-state snapshots, fail-closed product cases, governor observer/atomicity cases, public
@@ -240,6 +240,6 @@ at the final source; no Phase 13 row uses only `just release`.
 The completed ignored claim audit has one reviewed section for every Phase 13 evidence row, including
 the active owner, paragraph digest, independent atoms, principal paths, exact commands, selected
 tests, source-matched validation IDs, and direct conclusion. Final counts are 1,726 evidence rows,
-46 direct Phase 13 rows, 597 coverage rows (581 active and 16 superseded), and 235 validation rows
-(56 Phase 13). The exact 1,344,331-byte historical prefix remains unchanged with SHA-256
+46 direct Phase 13 rows, 597 coverage rows (581 active and 16 superseded), and 234 validation rows
+(55 Phase 13). The exact 1,344,331-byte historical prefix remains unchanged with SHA-256
 `8300c71829e3ed5f4049d74832bea64a3ed3c46de7b731555de4567a05334b05`.

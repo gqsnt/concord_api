@@ -102,7 +102,7 @@ release_change_map_rows = 152
 normative_language_allowlist_rows = 4
 normative_dependency_rows = 29
 normative_ownership_rows = 6
-release_validation_rows = 235
+release_validation_rows = 234
 release_final_closure_owner = "Phase 14"
 
 [active_phase]
