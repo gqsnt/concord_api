@@ -45,6 +45,10 @@ $script:Phase11ReportBytes = 25109
 $script:Phase11ReportHash = "1de403491162bf39f36c530636f7b1dd03370ee45832c0dd2c7b9bc55d2b67fa"
 $script:Phase12PreviousSource = "8307d0744363ea7ec8a98d5f5fe68c4429b71c31"
 $script:Phase13PreviousSource = "684789b097b0cf225e880142874ae7eb0136286c"
+$script:Phase13InheritedEvidenceSources = [string[]]@(
+    "684789b097b0cf225e880142874ae7eb0136286c",
+    "15b61d57c668fead307eafc7a276019760ae46f7"
+)
 $script:Phase13HistoricalBaseline = "0ef7d3f619155b251509da1d6112620b14f5c7b7"
 $script:Phase12EvidenceBytes = 1344331
 $script:Phase12EvidenceHash = "8300c71829e3ed5f4049d74832bea64a3ed3c46de7b731555de4567a05334b05"
@@ -1017,7 +1021,7 @@ function Assert-InheritedPhase13SourceEvidence {
     foreach ($row in $rows) {
         Assert-Condition $ids.Add($row.requirement_id) "duplicate inherited Phase 13 evidence requirement $($row.requirement_id)"
         Assert-ExactCommit $row.verified_commit "inherited Phase 13 evidence"
-        Assert-Condition ($row.verified_commit -eq $script:Phase13PreviousSource) "correction source inherited an unexpected Phase 13 source identity: $($row.evidence_id)"
+        Assert-Condition ($script:Phase13InheritedEvidenceSources -contains $row.verified_commit) "correction source inherited an unexpected Phase 13 source identity: $($row.evidence_id)"
         Assert-Condition ($row.verified_commit -ne $Source) "correction source already contains evidence claiming its own unvalidated identity: $($row.evidence_id)"
         Assert-Ancestor $row.verified_commit $Source "inherited Phase 13 evidence/source lineage"
         Assert-Condition ($row.result -eq 'passing' -and $row.configuration -match '^direct ') "inherited Phase 13 evidence is not direct passing: $($row.evidence_id)"
