@@ -35,7 +35,7 @@ release_validation_registry = "docs/conformance/RELEASE_VALIDATION_REGISTRY_0.1.
 expected_branch = "master"
 latest_validated_phase = "13"
 latest_verdict = "PHASE_13_COMPLETE_WITH_LIMITATIONS"
-source_commit = "dfc15d16aad6157c535f6e398bdf8317a79c71c7"
+source_commit = "3ff65c60dc4f360663f13d0e122fa102f6d21999"
 implementation_source_commits = [
   "25016f4",
   "9f102aa4fcfa4c1ec3e881677b78426a8ccf3c74",
@@ -60,10 +60,16 @@ implementation_source_commits = [
   "ceb3d9b",
   "93ec979353f24642ca11b9107c603b874a643556",
   "dfc15d16aad6157c535f6e398bdf8317a79c71c7",
+  "97df1708b46fb4119c3683fb75148cc403de2be6",
+  "62809cf5e25ca12974ffa2a93c5c95cb54b8e864",
+  "8cd5a60d1c64595b9235e58f7b0664d587e8cf82",
+  "b739454a79df9ee0e521a235123aec4d209f1f15",
+  "1ecd41d9173cc24654742efbf1a6f27ec42783fb",
+  "3ff65c60dc4f360663f13d0e122fa102f6d21999",
 ]
-post_source_governance_commit = "68003f049814418ebee5a5ff3b9fc2d1462a4ec9"
-evidence_commit = "68003f049814418ebee5a5ff3b9fc2d1462a4ec9"
-anchor_commit = "185c4a5c1c29211ccc5910dc3c1c3424d5eef8d4"
+post_source_governance_commit = "EVIDENCE_COMMIT_PENDING"
+evidence_commit = "EVIDENCE_COMMIT_PENDING"
+anchor_commit = "ANCHOR_COMMIT_PENDING"
 phase_report = "docs/conformance/PHASE_13_REPORT.md"
 normative_status = "Normative Implementation Candidate"
 head_policy = "anchor-must-be-an-ancestor"
@@ -90,7 +96,7 @@ release_change_map_rows = 152
 normative_language_allowlist_rows = 4
 normative_dependency_rows = 29
 normative_ownership_rows = 6
-release_validation_rows = 215
+release_validation_rows = 219
 release_final_closure_owner = "Phase 14"
 
 [active_phase]
