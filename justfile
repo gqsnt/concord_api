@@ -169,6 +169,6 @@ _release-audits:
     & ./scripts/audit-release-naming.ps1
     & ./scripts/audit-release-artifacts.ps1
     & ./scripts/audit-release-registry.ps1 -Mode SelfTest
-    $sourceCommit = (& git rev-parse HEAD).Trim(); & ./scripts/audit-release-registry.ps1 -Mode Source -SourceCommit $sourceCommit
+    $phaseBaseline = '59e888a352b6bb612972066c07596b5ac28ad36b'; $sourceCommit = (& git rev-parse HEAD).Trim(); & ./scripts/audit-release-registry.ps1 -Mode Source -PhaseBaseline $phaseBaseline -SourceCommit $sourceCommit
 
 release: fmt-check check check-all check-no-default clippy clippy-all _test-ci-default test-all test-no-default _test-dangerous-features _feature-matrix _generic-spec-record-contracts _record-feature-topology _examples _benchmarks _msrv _grammar-and-diagnostics _reqwest-assumptions _security-and-properties doctest doctest-all doc doc-all _rustdoc-audits deny _release-audits diff-check

@@ -68,6 +68,7 @@ struct ProtectedStreamEndpoint {
 #[derive(Clone)]
 struct PaginatedProtectedEndpoint {
     credential: CredentialRef<AccessToken>,
+    page: u8,
 }
 
 struct AuthenticationPageCodec;
@@ -132,6 +133,7 @@ impl EndpointSpec for PaginatedProtectedEndpoint {
 
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("paginated-protected")?;
+        builder.push_value(&self.page)?;
         builder.push_rate_limit_rule(
             "AuthenticationApi::rate_limit::pagination",
             std::iter::empty::<RateLimitKeyPart>(),
@@ -155,26 +157,33 @@ impl EndpointSpec for PaginatedProtectedEndpoint {
 }
 
 #[derive(Clone)]
-struct OneAuthenticationPage;
+struct TwoAuthenticationPages {
+    page: u8,
+}
 
-impl PaginationController<Vec<u8>> for OneAuthenticationPage {
+impl PaginationController<Vec<u8>> for TwoAuthenticationPages {
     fn next(self, _page: &Vec<u8>) -> Result<Option<Self>, PaginationError> {
-        Ok(None)
+        if self.page == 0 {
+            Ok(Some(Self { page: 1 }))
+        } else {
+            Ok(None)
+        }
     }
 }
 
 impl PaginatedEndpoint for PaginatedProtectedEndpoint {
     type Item = u8;
-    type Controller = OneAuthenticationPage;
+    type Controller = TwoAuthenticationPages;
 
     fn initial_controller(&self) -> Result<Self::Controller, PaginationError> {
-        Ok(OneAuthenticationPage)
+        Ok(TwoAuthenticationPages { page: 0 })
     }
 
     fn bind_controller(
-        _endpoint: &mut Self,
-        _controller: &Self::Controller,
+        endpoint: &mut Self,
+        controller: &Self::Controller,
     ) -> Result<(), PaginationError> {
+        endpoint.page = controller.page;
         Ok(())
     }
 }
@@ -1220,10 +1229,11 @@ async fn real_tls_authentication_recovery_performs_two_visible_limiter_acquisiti
 }
 
 #[tokio::test]
-async fn paginated_tls_recovery_keeps_one_page_identity_index_and_completion() {
+async fn paginated_tls_recovery_reuses_lexical_plan_across_recovery_and_later_page() {
     let server = TlsServer::start().expect("TLS pagination recovery server");
     server.queue_status(401).expect("challenge status");
-    server.queue_status(200).expect("success status");
+    server.queue_status(200).expect("recovered page status");
+    server.queue_status(200).expect("later page status");
 
     let provider_acquires = Arc::new(AtomicUsize::new(0));
     let provider_refreshes = Arc::new(AtomicUsize::new(0));
@@ -1261,18 +1271,19 @@ async fn paginated_tls_recovery_keeps_one_page_identity_index_and_completion() {
             core,
             PaginatedProtectedEndpoint {
                 credential: CredentialRef::new(Arc::clone(&selector)),
+                page: 0,
             },
         ),
-        PageLimit::Take(1),
+        PageLimit::Take(2),
     )
     .await
     .expect("paginated authentication recovery");
-    assert_eq!(items, b"ok");
+    assert_eq!(items, b"okok");
     server
-        .wait_for_requests(2, Duration::from_secs(2))
-        .expect("both page attempts reached TLS loopback");
+        .wait_for_requests(3, Duration::from_secs(2))
+        .expect("recovery and later-page attempts reached TLS loopback");
     let requests = server.requests();
-    assert_eq!(requests.len(), 2);
+    assert_eq!(requests.len(), 3);
     assert_eq!(
         requests[0].header("authorization"),
         Some("Bearer initial-auth-token-1148c7")
@@ -1281,50 +1292,88 @@ async fn paginated_tls_recovery_keeps_one_page_identity_index_and_completion() {
         requests[1].header("authorization"),
         Some("Bearer refreshed-auth-token-709fe2")
     );
+    assert_eq!(
+        requests[2].header("authorization"),
+        Some("Bearer refreshed-auth-token-709fe2")
+    );
     assert_eq!(provider_acquires.load(Ordering::SeqCst), 1);
     assert_eq!(provider_refreshes.load(Ordering::SeqCst), 1);
     assert!(exact_current.load(Ordering::SeqCst));
-    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 2);
-    assert_eq!(limiter_observations.load(Ordering::SeqCst), 2);
+    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 3);
+    assert_eq!(limiter_observations.load(Ordering::SeqCst), 3);
     let captured_plans = plans.lock().expect("captured pagination recovery plans");
-    assert_eq!(captured_plans.len(), 2);
+    assert_eq!(captured_plans.len(), 3);
     assert_eq!(captured_plans[0], captured_plans[1]);
-    assert_eq!(captured_plans[0].page_index, 0);
-    assert_eq!(captured_plans[0].rules.len(), 1);
-    assert!(captured_plans[0].rules[0].1.is_empty());
-    assert_eq!(captured_plans[0].rules[0].2, 1);
-    assert_eq!(captured_plans[0].rules[0].3, [(1, Duration::from_secs(1))]);
+    assert_eq!(
+        captured_plans
+            .iter()
+            .map(|plan| plan.page_index)
+            .collect::<Vec<_>>(),
+        [0, 0, 1]
+    );
+    for plan in captured_plans.iter() {
+        assert_eq!(plan.rules.len(), 1);
+        assert_eq!(plan.rules[0].0, "AuthenticationApi::rate_limit::pagination");
+        assert!(plan.rules[0].1.is_empty());
+        assert_eq!(plan.rules[0].2, 1);
+        assert_eq!(plan.rules[0].3, [(1, Duration::from_secs(1))]);
+    }
+    assert_eq!(captured_plans[0].rules, captured_plans[2].rules);
+    drop(captured_plans);
 
     let before = hooks.before.lock().expect("before records").clone();
-    assert_eq!(before.len(), 2);
+    assert_eq!(before.len(), 3);
     assert_eq!(before[0].operation_id, before[1].operation_id);
+    assert_ne!(before[0].operation_id, before[2].operation_id);
     assert_eq!(before[0].parent_operation_id, before[1].parent_operation_id);
+    assert_eq!(before[0].parent_operation_id, before[2].parent_operation_id);
     assert!(before[0].parent_operation_id.is_some());
-    assert_eq!([before[0].page_index, before[1].page_index], [0, 0]);
-    assert_eq!([before[0].recovery_index, before[1].recovery_index], [0, 1]);
+    assert_eq!(
+        [
+            before[0].page_index,
+            before[1].page_index,
+            before[2].page_index
+        ],
+        [0, 0, 1]
+    );
+    assert_eq!(
+        [
+            before[0].recovery_index,
+            before[1].recovery_index,
+            before[2].recovery_index,
+        ],
+        [0, 1, 0]
+    );
 
     let responses = hooks.response.lock().expect("response records");
-    assert_eq!(responses.len(), 2);
+    assert_eq!(responses.len(), 3);
     assert_eq!(responses[0].0, responses[1].0);
-    assert_eq!([responses[0].1, responses[1].1], [0, 1]);
-    assert_eq!([responses[0].4, responses[1].4], [0, 0]);
+    assert_ne!(responses[0].0, responses[2].0);
+    assert_eq!([responses[0].1, responses[1].1, responses[2].1], [0, 1, 0]);
+    assert_eq!([responses[0].4, responses[1].4, responses[2].4], [0, 0, 1]);
     assert_eq!(responses[0].3, responses[1].3);
+    assert_eq!(responses[0].3, responses[2].3);
     drop(responses);
 
     let completion = hooks.completion.lock().expect("completion records");
-    assert_eq!(completion.len(), 1);
+    assert_eq!(completion.len(), 2);
     assert_eq!(completion[0].0, before[0].operation_id);
     assert!(completion[0].1);
     assert_eq!(completion[0].2, Some(StatusCode::OK));
     assert_eq!(completion[0].3, before[0].parent_operation_id);
     assert_eq!(completion[0].4, 0);
+    assert_eq!(completion[1].0, before[2].operation_id);
+    assert!(!completion[1].1);
+    assert_eq!(completion[1].2, Some(StatusCode::OK));
+    assert_eq!(completion[1].3, before[2].parent_operation_id);
+    assert_eq!(completion[1].4, 1);
     drop(completion);
 
     let pagination = hooks.pagination.lock().expect("pagination records");
     assert_eq!(pagination.len(), 1);
     assert_eq!(Some(pagination[0].0), before[0].parent_operation_id);
-    assert_eq!(pagination[0].1, 1);
-    assert_eq!(pagination[0].2, 2);
+    assert_eq!(pagination[0].1, 2);
+    assert_eq!(pagination[0].2, 4);
     assert!(pagination[0].3);
     assert_eq!(pagination[0].4, Some(StatusCode::OK));
     assert_eq!(pagination[0].5, CompletionOutcome::Success);
@@ -1343,6 +1392,7 @@ async fn paginated_authentication_failure_keeps_its_ordinary_category_and_correl
                 core,
                 PaginatedProtectedEndpoint {
                     credential: CredentialRef::new(Arc::clone(&selector)),
+                    page: 0,
                 },
             ),
             PageLimit::Take(1),
@@ -1484,6 +1534,7 @@ async fn paginated_provider_http_never_enters_page_lifecycle_or_limiter_work() {
             core,
             PaginatedProtectedEndpoint {
                 credential: CredentialRef::new(Arc::clone(&selector)),
+                page: 0,
             },
         ),
         PageLimit::Take(1),
