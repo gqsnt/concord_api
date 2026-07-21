@@ -67,8 +67,8 @@ implementation_source_commits = [
   "1ecd41d9173cc24654742efbf1a6f27ec42783fb",
   "3ff65c60dc4f360663f13d0e122fa102f6d21999",
 ]
-post_source_governance_commit = "EVIDENCE_COMMIT_PENDING"
-evidence_commit = "EVIDENCE_COMMIT_PENDING"
+post_source_governance_commit = "5feb3fabe6372a9b08c595caf8b6199c127d5181"
+evidence_commit = "5feb3fabe6372a9b08c595caf8b6199c127d5181"
 anchor_commit = "ANCHOR_COMMIT_PENDING"
 phase_report = "docs/conformance/PHASE_13_REPORT.md"
 normative_status = "Normative Implementation Candidate"
