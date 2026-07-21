@@ -2265,16 +2265,22 @@ function Assert-Phase14EvidenceCommands {
 
 function Assert-Phase14ChangeMap {
     param([object[]]$Rows, [object[]]$Definitions, [object[]]$Validation, [string]$Source, [string]$EvidenceState, [bool]$RequireProofCommands = $true)
-    $expectedPaths = @(& git diff --name-only "$($script:Phase14HistoricalReleaseSource)..$EvidenceState")
-    Assert-Condition ($LASTEXITCODE -eq 0) "unable to derive the final release change surface"
+    $historicalSourcePaths = @(& git diff --name-only "$($script:Phase14HistoricalReleaseSource)..$Source")
+    Assert-Condition ($LASTEXITCODE -eq 0) "unable to derive the post-Phase-10 source change surface"
+    $currentEvidencePaths = @(& git diff --name-only "$Source..$EvidenceState")
+    Assert-Condition ($LASTEXITCODE -eq 0) "unable to derive the Phase 14 evidence-state change surface"
     $sourcePaths = [System.Collections.Generic.HashSet[string]]::new(
-        [string[]]@(& git diff --name-only "$($script:Phase14HistoricalReleaseSource)..$Source"),
+        [string[]]@($historicalSourcePaths | Where-Object { Test-Phase14SourcePath $_ }),
         [System.StringComparer]::Ordinal
     )
     $evidencePaths = [System.Collections.Generic.HashSet[string]]::new(
-        [string[]]@(& git diff --name-only "$Source..$EvidenceState"),
+        [string[]]$currentEvidencePaths,
         [System.StringComparer]::Ordinal
     )
+    $expectedPathSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($path in $sourcePaths) { [void]$expectedPathSet.Add($path) }
+    foreach ($path in $evidencePaths) { [void]$expectedPathSet.Add($path) }
+    $expectedPaths = @($expectedPathSet | Sort-Object)
     $known = [System.Collections.Generic.HashSet[string]]::new([string[]]$Definitions.requirement_id, [System.StringComparer]::Ordinal)
     $commands = [System.Collections.Generic.HashSet[string]]::new([string[]]$Validation.exact_command, [System.StringComparer]::Ordinal)
     $ids = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
