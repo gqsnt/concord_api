@@ -71,15 +71,17 @@ struct KeyLimitHooks {
     safe: Mutex<Vec<String>>,
 }
 
+type CapturedPaginationRule = (
+    String,
+    Vec<(String, String)>,
+    u32,
+    Vec<(u32, std::time::Duration)>,
+);
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct PageCapture {
     page_index: u32,
-    rules: Vec<(
-        String,
-        Vec<(String, String)>,
-        u32,
-        Vec<(u32, std::time::Duration)>,
-    )>,
+    rules: Vec<CapturedPaginationRule>,
 }
 
 #[derive(Default)]
