@@ -46,6 +46,7 @@ $script:Phase11ReportHash = "1de403491162bf39f36c530636f7b1dd03370ee45832c0dd2c7
 $script:Phase12PreviousSource = "8307d0744363ea7ec8a98d5f5fe68c4429b71c31"
 $script:Phase13PreviousSource = "684789b097b0cf225e880142874ae7eb0136286c"
 $script:Phase13InheritedEvidenceSources = [string[]]@(
+    "47bee70ffea62e669c65f3ec8970730fab7b802d",
     "684789b097b0cf225e880142874ae7eb0136286c",
     "15b61d57c668fead307eafc7a276019760ae46f7",
     "dfc15d16aad6157c535f6e398bdf8317a79c71c7",
