@@ -94,14 +94,17 @@ decision documents remain informative. Any behavior change must follow the Speci
 update both the coverage plan and, when implemented, actual evidence.
 
 Phase 12 — Generic Body/Response Specifications and Integrated Streaming Records is
-`PHASE_12_COMPLETE_WITH_LIMITATIONS`; its only limitations are the unimplemented Phases 13 and 14.
+`PHASE_12_COMPLETE_WITH_LIMITATIONS`; its historical limitations were the then-unimplemented
+Phases 13 and 14.
 Generic request/response specifications, sealed buffered/streaming/discard acquisition, universal
 metadata, bounded byte streaming, type-neutral generated/prepared integration, capability-based
 pagination, and integrated records/CSV/NDJSON are validated at generated contract 13. See the
 [`Phase 12 report`](conformance/PHASE_12_REPORT.md) for the exact source, validation, evidence, and
 anchor chain, and the historical [`Phase 10 report`](conformance/PHASE_10_REPORT.md) for the prior
-release-candidate baseline. Phase 13 is active and `NOT_STARTED`; only Phase 14 may restore
-`Normative Release Final`. No remote publication, tag, registry upload, or deployment was performed.
+release-candidate baseline. Phase 13 — Lexically Scoped Rate Limits is
+`PHASE_13_COMPLETE_WITH_LIMITATIONS`; see the [`Phase 13 report`](conformance/PHASE_13_REPORT.md).
+Phase 14 remains `NOT_STARTED` and alone may restore `Normative Release Final`. No remote
+publication, tag, registry upload, or deployment was performed.
 
 
 ## Review closure

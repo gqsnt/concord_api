@@ -41,11 +41,11 @@ an execution queue because several foundations were delivered in a different ord
 |---|---|---|---|
 | Phase 11 | Uniform Typed Pagination State | `COMPLETE_WITH_LIMITATIONS` | One struct DSL, one public consuming state-machine trait, one generated associated-controller integration, and one controller-agnostic core loop are validated; generated contract `11 -> 12`. |
 | Phase 12 | Generic Body/Response Specifications and Integrated Streaming Records | `COMPLETE_WITH_LIMITATIONS` | Arbitrary Rust request/response specifications, three sealed core response modes, universal metadata, one bounded byte stream, type-neutral generated/prepared integration, pagination capability, and integrated optional records/CSV/NDJSON; generated contract `12 -> 13`. |
-| Phase 13 | Lexically Scoped Rate Limits | `NOT_STARTED` (active) | Lexically scoped rate-limit semantics; Phase 12 preserves the current rate-limit model. |
+| Phase 13 | Lexically Scoped Rate Limits | `COMPLETE_WITH_LIMITATIONS` | Direct lexical ownership, ancestor composition, deterministic identities, global generated keys, advanced explicit-key preservation, and the preserved limiter lifecycle; generated contract `13 -> 14`. |
 | Phase 14 | Product Completion, Conformance Closure, and Release Finalization | `NOT_STARTED` | Whole-product closure, deferred release-evidence hardening, and the only authorized restoration of `Normative Release Final`. |
 
-Phase 12 is validated with limitations owned only by Phases 13-14. Phase 13 is active while
-retaining `NOT_STARTED`; Phase 14 remains roadmap authority until its approved mission. Phase 12
+Phase 13 is validated with limitations owned only by Phase 14. Phase 14 remains roadmap authority
+until its approved mission. Phase 12
 implements none of their product behavior.
 
 Phase reports remain the detailed evidence owners:
@@ -683,9 +683,9 @@ and no aggregate parent identity.
 
 Phase 10 remains historically complete. Phase 11 remains validated for its exact source and
 paragraph versions. Phase 12 — Generic Body/Response Specifications and Integrated Streaming
-Records is `PHASE_12_COMPLETE_WITH_LIMITATIONS`; its limitations are only Phases 13-14. Phase 13 is
-active and `NOT_STARTED`; Phase 14 remains `NOT_STARTED`. Final release promotion is deferred
-exclusively to Phase 14.
+Records is `PHASE_12_COMPLETE_WITH_LIMITATIONS`; its limitations were owned by Phases 13-14.
+Phase 13 — Lexically Scoped Rate Limits is `PHASE_13_COMPLETE_WITH_LIMITATIONS`; Phase 14 remains
+`NOT_STARTED`. Final release promotion is deferred exclusively to Phase 14.
 
 ## Continuing constraints
 
@@ -720,4 +720,5 @@ The proven governor, limiter, hook, credential, cancellation, recovery, observat
 bounded-state, redaction, pagination, and advanced prepared explicit-key lifecycles remain owned by
 their existing core paths. Phase 13 adds no new dependency, feature, public identity API, executor,
 runtime state machine, or Phase 14 behavior. The package remains `Normative Implementation Candidate`;
-Phase 14 remains `NOT_STARTED` and alone owns release-final promotion.
+Phase 13 is complete with only Phase 14 as a limitation; Phase 14 remains `NOT_STARTED` and alone
+owns release-final promotion.

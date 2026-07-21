@@ -33,50 +33,54 @@ release_validation_registry = "docs/conformance/RELEASE_VALIDATION_REGISTRY_0.1.
 
 [validated_state]
 expected_branch = "master"
-latest_validated_phase = "12"
-latest_verdict = "PHASE_12_COMPLETE_WITH_LIMITATIONS"
-source_commit = "8307d0744363ea7ec8a98d5f5fe68c4429b71c31"
+latest_validated_phase = "13"
+latest_verdict = "PHASE_13_COMPLETE_WITH_LIMITATIONS"
+source_commit = "f38ac7b0a47a9a855fa77e16464955d6a144eb95"
 implementation_source_commits = [
-  "e71ed0671359f443f5aa165391ff56bd10debdf2",
-  "d1aadcebcad0a65d92c4ed4a42d6b0a9c1f034b2",
-  "8281c79d98406be7b88a20ea70d84af531e0b757",
-  "8307d0744363ea7ec8a98d5f5fe68c4429b71c31",
+  "25016f4",
+  "9f102aa4fcfa4c1ec3e881677b78426a8ccf3c74",
+  "1e8bfe1124638535ca6641b8a890d0139f698093",
+  "66423ac753bc5394f0f39b62779d590386a95ffe",
+  "24d427d6e3ccb2df0e7310dd0f59123195ddf050",
+  "6a43e3c",
+  "3d9da62",
+  "f38ac7b0a47a9a855fa77e16464955d6a144eb95",
 ]
-post_source_governance_commit = "6369a5c2b1742359847b780a7eea455c6bbac921"
-evidence_commit = "6369a5c2b1742359847b780a7eea455c6bbac921"
-anchor_commit = "d02e2d86e7da3029c439e564b432e97f01353691"
-phase_report = "docs/conformance/PHASE_12_REPORT.md"
+post_source_governance_commit = "EVIDENCE_COMMIT_PENDING"
+evidence_commit = "EVIDENCE_COMMIT_PENDING"
+anchor_commit = "ANCHOR_COMMIT_PENDING"
+phase_report = "docs/conformance/PHASE_13_REPORT.md"
 normative_status = "Normative Implementation Candidate"
 head_policy = "anchor-must-be-an-ancestor"
-requirement_trace_rows = 127
-requirement_trace_direct_rows = 127
+requirement_trace_rows = 46
+requirement_trace_direct_rows = 46
 requirement_trace_partial_rows = 0
-immutable_source_evidence_rows = 127
-source_direct_rows = 127
+immutable_source_evidence_rows = 46
+source_direct_rows = 46
 source_partial_rows = 0
-phase_evidence_rows = 127
-phase_direct_rows = 127
+phase_evidence_rows = 46
+phase_direct_rows = 46
 phase_partial_rows = 0
-phase_evidence_summary = "127 direct and 0 partial"
-historical_evidence_rows = 1553
-superseded_requirement_rows = 11
+phase_evidence_summary = "46 direct and 0 partial"
+historical_evidence_rows = 1680
+superseded_requirement_rows = 16
 claim_atom_rows = 775
 proved_claim_atoms = 775
 unresolved_claim_atoms = 0
-catalog_evidence_rows = 1680
-coverage_requirement_rows = 563
+catalog_evidence_rows = 1726
+coverage_requirement_rows = 597
 release_requirement_registry_rows = 504
 release_claim_registry_rows = 775
 release_change_map_rows = 152
 normative_language_allowlist_rows = 4
 normative_dependency_rows = 29
 normative_ownership_rows = 6
-release_validation_rows = 179
+release_validation_rows = 182
 release_final_closure_owner = "Phase 14"
 
 [active_phase]
-id = "13"
-title = "Lexically Scoped Rate Limits"
+id = "14"
+title = "Product Completion, Conformance Closure, and Release Finalization"
 status = "NOT_STARTED"
 definition_kind = "implementation-program-entry"
 definition_document = "docs/planning/CONCORD_IMPLEMENTATION_PROGRAM_0.2.md"

@@ -21,8 +21,8 @@ Start with the [documentation overview](docs/README.md) and the
 [normative specification index](docs/normative/00_CONCORD_SPECIFICATION_INDEX_0.1.md). For current
 delivery state, see the
 [implementation program](docs/planning/CONCORD_IMPLEMENTATION_PROGRAM_0.2.md) and the
-[Phase 12 report](docs/conformance/PHASE_12_REPORT.md). Phase 13 is active and `NOT_STARTED`; Phase
-14 owns whole-product conformance closure and is the only phase that may restore
+[Phase 13 report](docs/conformance/PHASE_13_REPORT.md). Phase 13 is
+`PHASE_13_COMPLETE_WITH_LIMITATIONS`; Phase 14 owns whole-product conformance closure and is the only phase that may restore
 `Normative Release Final`.
 
 Current validation entry points are:
