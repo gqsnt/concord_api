@@ -25,7 +25,7 @@ Phase 13 or Phase 14 product behavior and starts no Phase 15 work.
 - Record lifecycle/security/Rustdoc correction commit:
   `8307d0744363ea7ec8a98d5f5fe68c4429b71c31`
 - Final corrected immutable tested source commit: `8307d0744363ea7ec8a98d5f5fe68c4429b71c31`
-- Corrected Phase 12 evidence/report/state commit: `EVIDENCE_COMMIT_PENDING`
+- Corrected Phase 12 evidence/report/state commit: `6369a5c2b1742359847b780a7eea455c6bbac921`
 - Corrected Phase 12 evidence anchor: `ANCHOR_COMMIT_PENDING`
 - Compatible anchor-metadata descendant: the final two-file commit titled
   `docs: record corrected phase 12 records anchor`; its own identity is intentionally not
