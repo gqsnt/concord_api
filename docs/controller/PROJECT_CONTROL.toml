@@ -81,7 +81,7 @@ implementation_source_commits = [
   "8d6441aee39e3fc8051961fad284165dc1022f91",
 ]
 post_source_governance_commit = "8d6441aee39e3fc8051961fad284165dc1022f91"
-evidence_commit = "EVIDENCE_COMMIT_PENDING"
+evidence_commit = "e3abd4960d151432843a8767c2dd3067c92045cf"
 anchor_commit = "ANCHOR_COMMIT_PENDING"
 phase_report = "docs/conformance/PHASE_14_REPORT.md"
 normative_status = "Normative Release Final"
@@ -109,7 +109,7 @@ release_change_map_rows = 190
 normative_language_allowlist_rows = 4
 normative_dependency_rows = 29
 normative_ownership_rows = 6
-release_validation_rows = 270
+release_validation_rows = 271
 release_final_closure_owner = "Phase 14"
 
 [active_phase]
