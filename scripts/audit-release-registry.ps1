@@ -1637,7 +1637,7 @@ Assert-CandidateStatus $documents $StateCommit
 Assert-Phase12Authority $StateCommit
 Assert-Phase13Authority $StateCommit
 Assert-Condition ($evidence.Count -eq ($script:Phase12EvidenceRows + 46)) "Phase 13 evidence catalog has unexpected rows: $($evidence.Count)"
-Assert-Phase12Evidence $evidence $SourceCommit
+Assert-InheritedPhase12SourceEvidence $evidence $SourceCommit
 Assert-Phase13Evidence $evidence $SourceCommit
 $phase12Coverage = @($coverage | Where-Object { $script:Phase12RequirementIds -contains $_.requirement_id })
 Assert-Condition ($phase12Coverage.Count -eq $script:Phase12RequirementIds.Count) "Phase 12 active coverage count mismatch"
@@ -1650,7 +1650,7 @@ foreach ($row in $phase13Coverage) {
     Assert-Condition ($row.status -eq 'implemented') "Phase 13 coverage is not implemented: $($row.requirement_id)"
 }
 $validation = @(Import-GitCsv $StateCommit $script:ValidationRegistryPath)
-Assert-Phase12ValidationRegistry $validation $SourceCommit
+Assert-Phase12ValidationRegistry $validation $script:Phase12PreviousSource
 Assert-Phase13ValidationRegistry $validation $SourceCommit
 Assert-Phase12EvidenceCommandsRecorded $evidence $validation
 Assert-Phase12HighRiskEvidenceAllocation $evidence
