@@ -47,7 +47,8 @@ $script:Phase12PreviousSource = "8307d0744363ea7ec8a98d5f5fe68c4429b71c31"
 $script:Phase13PreviousSource = "684789b097b0cf225e880142874ae7eb0136286c"
 $script:Phase13InheritedEvidenceSources = [string[]]@(
     "684789b097b0cf225e880142874ae7eb0136286c",
-    "15b61d57c668fead307eafc7a276019760ae46f7"
+    "15b61d57c668fead307eafc7a276019760ae46f7",
+    "dfc15d16aad6157c535f6e398bdf8317a79c71c7"
 )
 $script:Phase13HistoricalBaseline = "0ef7d3f619155b251509da1d6112620b14f5c7b7"
 $script:Phase12EvidenceBytes = 1344331
