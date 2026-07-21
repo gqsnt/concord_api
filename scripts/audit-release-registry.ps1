@@ -842,11 +842,11 @@ function Assert-Phase13ValidationRegistry {
         'just _examples',
         'just _msrv',
         'cargo nextest run --profile ci -p concord_core --all-features --lib -E "test(/execute::tests::deadline_cancellation_of_governor_wait_consumes_no_quota$/) | test(/execute::auth_tests::real_tls_authentication_recovery_performs_two_visible_limiter_acquisitions$/) | test(/execute::auth_tests::paginated_tls_recovery_keeps_one_page_identity_index_and_completion$/) | test(/execute::tests::hidden_reqwest_retry_does_not_reenter_custom_limiter_or_lifecycle$/)"',
-        'cargo nextest run --profile ci -p concord_core --test pagination_rate_limit --all-features -E "test(generated_pagination_uses_a_value_neutral_global_bucket)",
+        'cargo nextest run --profile ci -p concord_core --test pagination_rate_limit --all-features -E "test(generated_pagination_uses_a_value_neutral_global_bucket)"',
         'cargo nextest run --offline --locked --target-dir target/cargo-fixtures/phase13-no-governor-direct --manifest-path concord_macros/tests/fixtures/Cargo.toml -p concord-fixture-no-governor-rate-limits --test no_governor_rate_limits --no-tests fail --success-output final',
         'cargo tree --offline --locked --manifest-path concord_macros/tests/fixtures/Cargo.toml -e features -p concord-fixture-no-governor-rate-limits',
-        'cargo nextest run --profile ci -p concord_macros --test compile --all-features -E "test(governor_disabled_generated_and_prepared_plans_fail_closed_or_require_deliberate_limiter)",
-        'cargo nextest run --profile ci -p concord_macros --test generated_prepared_endpoints --all-features -E "test(prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_order)",
+        'cargo nextest run --profile ci -p concord_macros --test compile --all-features -E "test(governor_disabled_generated_and_prepared_plans_fail_closed_or_require_deliberate_limiter)"',
+        'cargo nextest run --profile ci -p concord_macros --test generated_prepared_endpoints --all-features -E "test(prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_order)"'
     )) {
         Assert-Condition $commands.Contains($command) "required Phase 13 validation command was not recorded: $command"
     }
