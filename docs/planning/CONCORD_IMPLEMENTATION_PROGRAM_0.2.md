@@ -725,16 +725,21 @@ owns release-final promotion.
 
 ### Phase 13 correction closure
 
-The Phase 13 correction mission stabilized generated lexical declaration identities at the generated
-root, added collision-safe private symbols, descendant-module and real-governor bucket proofs,
-expanded pagination validation to multiple pages with exact recovery/cancellation capture, and
-rebuilt evidence from the exact Phase 0–12 catalog blob. The final executable source is the
-immutable commit `d0891ac8de5e44c5da7d8d1202c3a9e4cfa4b304`, following executable correction commits
-`14c0d18`, `23b1b32`, `6dd7791`, `47bee70`, `116c5dc`, and `d0891ac`; Phase 13 evidence and validation state records
-focused commands and the complete maintained matrix against that source, including the complete
-runtime-snapshot proof, buffered/streaming first-excess proof, cooldown and finite-state proof,
-locked/offline governor-disabled fixture, feature graph, outer harness, prepared plan inspection,
-parser cost boundary, and retained/conformance claim allocations.
-The superseded
-source/evidence/anchor chain remains historical. Phase 14 remains `NOT_STARTED` and continues to
-own product-completion, conformance-closure, and release-final work.
+The Phase 13 correction missions stabilized generated lexical declaration identities at the
+generated root, added collision-safe private symbols, descendant-module and real-governor bucket
+proofs, expanded pagination validation to multiple pages with exact recovery/cancellation capture,
+and rebuilt evidence from the exact Phase 0–12 catalog blob. The prospective source-boundary
+correction then retained that complete product and semantic proof while superseding the historically
+mixed `d0891ac…` source classification without rewriting it. The explicit correction baseline is
+`44799306fbf1bd039b73c5e57903aed30e5e7a0d`; the final executable source is
+`91378c1a0ac748ab029d6c396871920b63366716`, reached through script-only commits `985f6e5` and
+`91378c1`. The authoritative baseline-to-source range changes only
+`scripts/audit-release-registry.ps1`.
+
+Phase 13 evidence and validation state records every focused command and the complete maintained
+matrix against that prospective source, including the complete runtime-snapshot proof,
+buffered/streaming first-excess proof, cooldown and finite-state proof, locked/offline
+governor-disabled fixture, feature graph, outer harness, prepared plan inspection, parser cost
+boundary, retained/conformance claim allocations, and explicit prospective source-boundary audit.
+The superseded source/evidence/anchor chains remain historical. Phase 14 remains `NOT_STARTED` and
+continues to own product-completion, conformance-closure, and release-final work.
