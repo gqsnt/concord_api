@@ -23,8 +23,9 @@ $script:LanguageAllowlistPath = "docs/conformance/NORMATIVE_LANGUAGE_ALLOWLIST_0
 $script:DependencyRegistryPath = "docs/conformance/NORMATIVE_DEPENDENCY_REGISTRY_0.1.csv"
 $script:OwnershipRegistryPath = "docs/conformance/NORMATIVE_OWNERSHIP_REGISTRY_0.1.csv"
 $script:ValidationRegistryPath = "docs/conformance/RELEASE_VALIDATION_REGISTRY_0.1.csv"
-$script:RequirementChangeRecordPath = "docs/normative/10_CONCORD_REQUIREMENT_CHANGE_RECORD_0.3.md"
-$script:PriorRequirementChangeRecordPath = "docs/normative/09_CONCORD_REQUIREMENT_CHANGE_RECORD_0.2.md"
+$script:RequirementChangeRecordPath = "docs/normative/11_CONCORD_REQUIREMENT_CHANGE_RECORD_0.4.md"
+$script:PriorRequirementChangeRecordPath = "docs/normative/10_CONCORD_REQUIREMENT_CHANGE_RECORD_0.3.md"
+$script:Phase11RequirementChangeRecordPath = "docs/normative/09_CONCORD_REQUIREMENT_CHANGE_RECORD_0.2.md"
 $script:Phase10ReportPath = "docs/conformance/PHASE_10_REPORT.md"
 $script:Phase11ReportPath = "docs/conformance/PHASE_11_REPORT.md"
 $script:Phase12ReportPath = "docs/conformance/PHASE_12_REPORT.md"
@@ -41,8 +42,9 @@ $script:Phase11EvidenceHash = "90d31f417690082af865850d6e1ce25331bca16c76f37c933
 $script:Phase11EvidenceRows = 1553
 $script:Phase11ReportBytes = 25109
 $script:Phase11ReportHash = "1de403491162bf39f36c530636f7b1dd03370ee45832c0dd2c7b9bc55d2b67fa"
-$script:Phase12PreviousSource = "8281c79d98406be7b88a20ea70d84af531e0b757"
-$script:ActiveRequirementCount = 563
+$script:Phase12PreviousSource = "8307d0744363ea7ec8a98d5f5fe68c4429b71c31"
+$script:Phase13HistoricalBaseline = "0ef7d3f619155b251509da1d6112620b14f5c7b7"
+$script:ActiveRequirementCount = 581
 $script:Phase11SupersededRequirementIds = [string[]]@(
     "DSL-PAGE-004", "DSL-PAGE-005", "DSL-PAGE-006",
     "API-PAGE-004", "API-PAGE-005", "API-PAGE-006",
@@ -51,9 +53,27 @@ $script:Phase11SupersededRequirementIds = [string[]]@(
 $script:Phase12SupersededRequirementIds = [string[]]@(
     "DSL-RESP-002", "SEC-RESP-004", "SEC-RESP-005"
 )
+$script:Phase13SupersededRequirementIds = [string[]]@(
+    "DSL-RATE-003", "DSL-RATE-004", "DSL-RATE-005", "DSL-RATE-006", "DSL-RATE-007"
+)
 $script:SupersededRequirementIds = [string[]]@(
     $script:Phase11SupersededRequirementIds +
-    $script:Phase12SupersededRequirementIds
+    $script:Phase12SupersededRequirementIds +
+    $script:Phase13SupersededRequirementIds
+)
+$script:Phase13RetainedRequirementIds = [string[]]@(
+    "PROD-GUAR-010", "PROD-STATE-001", "DSL-RATE-001", "DSL-RATE-002", "API-RATE-004",
+    "GEN-BUILD-004", "GEN-DOC-001", "GEN-DOC-002", "SEC-RATE-001", "SEC-RATE-002",
+    "BOUND-RATE-005", "EXEC-RATE-001", "EXEC-RATE-002", "EXEC-RATE-003", "FEAT-GOV-001",
+    "FEAT-GOV-002", "CONF-COMPILE-001", "CONF-COMPILE-002", "CONF-COMPILE-003",
+    "CONF-DOWNSTREAM-002", "CONF-SEC-001", "CONF-MSRV-001", "CONF-DOC-001"
+)
+$script:Phase13RequirementIds = [string[]]@(
+    "PROD-MODEL-009", "PROD-GUAR-015", "PROD-NONGOAL-003", "DSL-RATE-008", "DSL-RATE-009",
+    "DSL-RATE-010", "DSL-RATE-011", "DSL-RATE-012", "API-RATE-005", "GEN-RATE-001",
+    "GEN-RATE-002", "GEN-RATE-003", "GEN-RATE-004", "GEN-RATE-005", "GEN-RATE-006",
+    "SEC-RATE-003", "EXEC-RATE-004", "EXEC-RATE-005", "COMPAT-MACRO-006", "CONF-RATE-001",
+    "CONF-RATE-002", "CONF-RATE-003", "CONF-RATE-004"
 )
 $script:Phase11RequirementIds = [string[]]@(
     "DSL-PAGE-002", "API-PAGE-002", "SEC-PAGE-001", "SEC-PAGE-002",
@@ -493,12 +513,14 @@ function Assert-BaseCatalogs {
         if ($row.status -eq "superseded") {
             Assert-Condition ($script:SupersededRequirementIds -contains $row.requirement_id) "unexpected superseded coverage row $($row.requirement_id)"
             Assert-Condition $supersededCoverageIds.Add($row.requirement_id) "duplicate superseded coverage row $($row.requirement_id)"
-            $expectedOwner = if ($script:Phase12SupersededRequirementIds -contains $row.requirement_id) {
+            $expectedOwner = if ($script:Phase13SupersededRequirementIds -contains $row.requirement_id) {
+                "normative/11_CONCORD_REQUIREMENT_CHANGE_RECORD_0.4.md"
+            } elseif ($script:Phase12SupersededRequirementIds -contains $row.requirement_id) {
                 "normative/10_CONCORD_REQUIREMENT_CHANGE_RECORD_0.3.md"
             } else {
                 "normative/09_CONCORD_REQUIREMENT_CHANGE_RECORD_0.2.md"
             }
-            Assert-Condition ($row.document -eq $expectedOwner) "superseded coverage owner mismatch for $($row.requirement_id)"
+            Assert-Condition ($row.document -eq $expectedOwner -or $row.document -match '^normative/0[1-8]_CONCORD_') "superseded coverage owner mismatch for $($row.requirement_id)"
         } else {
             Assert-Condition ($row.status -in @("planned", "implemented")) "invalid active coverage status $($row.status) for $($row.requirement_id)"
             Assert-KnownRequirement $row.requirement_id $definitionIds "active coverage row"
@@ -584,8 +606,8 @@ function Assert-Phase0Through11ReportsPreserved {
     $phase11 = [byte[]](Get-GitBlobBytes $script:Phase11HistoricalBaseline $script:Phase11ReportPath)
     Assert-Condition ($phase11.Length -eq $script:Phase11ReportBytes) "Phase 11 report owner byte count changed"
     Assert-Condition ((Get-Sha256Hex $phase11) -eq $script:Phase11ReportHash) "Phase 11 report owner hash changed"
-    $priorRecord = [byte[]](Get-GitBlobBytes $script:Phase11HistoricalBaseline $script:PriorRequirementChangeRecordPath)
-    $currentRecord = [byte[]](Get-GitBlobBytes $StateCommit $script:PriorRequirementChangeRecordPath)
+    $priorRecord = [byte[]](Get-GitBlobBytes $script:Phase11HistoricalBaseline $script:Phase11RequirementChangeRecordPath)
+    $currentRecord = [byte[]](Get-GitBlobBytes $StateCommit $script:Phase11RequirementChangeRecordPath)
     Assert-Condition ($priorRecord.Length -eq $currentRecord.Length) "Phase 11 requirement-change record byte count changed"
     Assert-Condition ((Get-Sha256Hex $priorRecord) -eq (Get-Sha256Hex $currentRecord)) "Phase 11 requirement-change record changed"
 }
@@ -595,16 +617,15 @@ function Assert-RequirementChangeRecord {
     $record = Get-GitBlobText $Commit $script:RequirementChangeRecordPath
     foreach ($required in @(
         '**Status:** Normative Implementation Candidate',
-        'user-approved Phase 12 directive',
-        'implementation phase is Phase 12',
-        'historical evidence remains valid only for the exact prior requirement paragraph',
-        ('All 1,553 Phase 0' + [char]0x2013 + '11 evidence rows'),
-        'No row authorizes Phase 13 lexical rate limits or Phase 14 release-final closure'
+        'authorizing Phase 13 directive',
+        '| Implementation phase |',
+        'Historical evidence remains valid only for the exact old paragraph version',
+        'No Phase 0–12 evidence row is modified by this record'
     )) {
         Assert-Condition $record.Contains($required) "requirement change record is missing: $required"
     }
 
-    $historicalDocuments = Get-NormativeDocuments $script:Phase11HistoricalBaseline
+    $historicalDocuments = Get-NormativeDocuments $script:Phase13HistoricalBaseline
     $historicalDefinitions = @(Get-NormativeDefinitions $historicalDocuments)
     $currentDocuments = Get-NormativeDocuments $Commit
     $currentDefinitions = @(Get-NormativeDefinitions $currentDocuments)
@@ -615,35 +636,37 @@ function Assert-RequirementChangeRecord {
 
     $retainedCount = 0
     $newCount = 0
-    foreach ($id in $script:Phase12RequirementIds) {
-        Assert-Condition $currentById.ContainsKey($id) "current Phase 12 requirement is absent: $id"
+    foreach ($id in $script:Phase13RetainedRequirementIds) {
+        Assert-Condition $currentById.ContainsKey($id) "current Phase 13 retained requirement is absent: $id"
+        Assert-Condition $historicalById.ContainsKey($id) "historical Phase 12 requirement is absent: $id"
         $current = $currentById[$id]
-        if ($historicalById.ContainsKey($id)) {
-            $prior = $historicalById[$id]
-            $prefix = "| ``$id`` | $($prior.normative_title) | ``$($prior.normative_paragraph_digest)`` |"
-            Assert-Condition ($record.Contains($prefix) -and $record.Contains("retained with explicit version change as ``$id``")) "retained lineage is incomplete for $id"
-            $retainedCount++
-        } else {
-            $newRow = "| ``$id`` | $($current.normative_title) | ``$((Split-Path $current.normative_document -Leaf))`` |"
-            Assert-Condition $record.Contains($newRow) "new lineage is incomplete for $id"
-            $newCount++
-        }
+        $prior = $historicalById[$id]
+        Assert-Condition ($record.Contains("| ``$id`` | $($prior.normative_title) |") -and $record.Contains("retained with explicit version change as ``$id``")) "retained lineage is incomplete for $id"
+        $retainedCount++
     }
-    Assert-Condition ($retainedCount -eq 72 -and $newCount -eq 55) "Phase 12 lineage counts changed: retained=$retainedCount new=$newCount"
+    foreach ($id in $script:Phase13RequirementIds) {
+        Assert-Condition $currentById.ContainsKey($id) "current Phase 13 requirement is absent: $id"
+        $current = $currentById[$id]
+        $newRow = "| ``$id`` | $($current.normative_title) | ``$((Split-Path $current.normative_document -Leaf))`` |"
+        Assert-Condition $record.Contains($newRow) "new Phase 13 lineage is incomplete for $id"
+        $newCount++
+    }
+    Assert-Condition ($retainedCount -eq 23 -and $newCount -eq 23) "Phase 13 lineage counts changed: retained=$retainedCount new=$newCount"
 
     $replacementById = @{
-        'DSL-RESP-002' = 'DSL-RESP-004'
-        'SEC-RESP-004' = 'SEC-RESP-009'
-        'SEC-RESP-005' = 'SEC-STREAM-001'
+        'DSL-RATE-003' = 'DSL-RATE-011'
+        'DSL-RATE-004' = 'DSL-RATE-009'
+        'DSL-RATE-005' = 'DSL-RATE-010'
+        'DSL-RATE-006' = 'DSL-RATE-010'
+        'DSL-RATE-007' = 'DSL-RATE-011'
     }
-    foreach ($id in $script:Phase12SupersededRequirementIds) {
+    foreach ($id in $script:Phase13SupersededRequirementIds) {
         $prior = $historicalById[$id]
-        $row = "| ``$id`` | $($prior.normative_title) | ``$($prior.normative_paragraph_digest)`` | ``$((Split-Path $prior.normative_document -Leaf))`` | superseded | ``$($replacementById[$id])`` |"
-        Assert-Condition $record.Contains($row) "superseded lineage is incomplete for $id"
+        Assert-Condition ($record.Contains("| ``$id`` | $($prior.normative_title) |") -and $record.Contains("| superseded | ``$($replacementById[$id])`` |")) "Phase 13 superseded lineage is incomplete for $id"
     }
 
     $priorRecord = Get-GitBlobText $Commit $script:PriorRequirementChangeRecordPath
-    foreach ($id in $script:Phase11SupersededRequirementIds) {
+    foreach ($id in $script:Phase12SupersededRequirementIds) {
         Assert-Condition $priorRecord.Contains("``$id``") "prior lineage record does not resolve historical $id"
     }
 }
@@ -705,11 +728,38 @@ function Assert-Phase12Authority {
     foreach ($required in @(
         'body: Option<syn::Type>', 'response: syn::Type',
         'B: RequestBodySpec', 'R: ResponseBodySpec',
-        'R: PageResponseSpec', 'synchronized Phase 12 marker is `13`',
+        'R: PageResponseSpec', 'historical Phase 12 marker was `13`',
         'no body/response semantic enum or built-in-name branch'
     )) {
         Assert-Condition $macroArchitecture.Contains($required) "macro architecture is missing: $required"
     }
+}
+
+function Assert-Phase13Authority {
+    param([string]$Commit)
+    $index = Get-GitBlobText $Commit 'docs/normative/00_CONCORD_SPECIFICATION_INDEX_0.1.md'
+    $decisions = Get-GitBlobText $Commit 'docs/decisions/CONCORD_DECISIONS.md'
+    $coreArchitecture = Get-GitBlobText $Commit 'docs/architecture/CONCORD_CORE_ARCHITECTURE_0.1.md'
+    $macroArchitecture = Get-GitBlobText $Commit 'docs/architecture/CONCORD_MACRO_ARCHITECTURE_0.1.md'
+    foreach ($required in @(
+        '11_CONCORD_REQUIREMENT_CHANGE_RECORD_0.4.md', 'Normative Implementation Candidate'
+    )) {
+        Assert-Condition $index.Contains($required) "Phase 13 specification index is missing: $required"
+    }
+    foreach ($required in @(
+        '## ADR-046', 'lexical ownership and global keys', 'normal DSL has no templates',
+        'remote named attachments', '`by`', '`replace`', '`off`', 'formatted key parts',
+        'advanced prepared/custom boundary'
+    )) {
+        Assert-Condition $decisions.Contains($required) "Phase 13 decision authority is missing: $required"
+    }
+    foreach ($required in @(
+        'Normal generated code', 'RateLimitKey::global()', 'advanced prepared/custom boundary',
+        'explicit `RateLimitPlan` containing bounded key parts'
+    )) {
+        Assert-Condition ($coreArchitecture.Contains($required) -or $macroArchitecture.Contains($required)) "Phase 13 architecture authority is missing: $required"
+    }
+    Assert-Condition $macroArchitecture.Contains('synchronized Phase 13 marker is `14`') "Phase 13 macro contract marker is missing"
 }
 
 function Assert-SupersededHistoricalEvidence {
@@ -1461,7 +1511,8 @@ if ($Mode -eq "Source") {
     Assert-RequirementChangeRecord $SourceCommit
     Assert-CandidateStatus $documents $SourceCommit
     Assert-Phase12Authority $SourceCommit
-    Write-Output "implementation-candidate correction-source audit passed: active-requirements=$($definitions.Count) superseded-requirements=$($script:SupersededRequirementIds.Count) historical-Phase-0-11-rows=$script:Phase11EvidenceRows inherited-Phase-12-rows=$($script:Phase12RequirementIds.Count) corrected-Phase-12-evidence=not-assessed release-final=reserved-for-Phase-14"
+    Assert-Phase13Authority $SourceCommit
+    Write-Output "implementation-candidate source audit passed: active-requirements=$($definitions.Count) superseded-requirements=$($script:SupersededRequirementIds.Count) historical-Phase-0-11-rows=$script:Phase11EvidenceRows inherited-Phase-12-rows=$($script:Phase12RequirementIds.Count) Phase-13-evidence=not-assessed release-final=reserved-for-Phase-14"
     exit 0
 }
 
@@ -1505,6 +1556,7 @@ Assert-SupersededHistoricalEvidence $evidence
 Assert-RequirementChangeRecord $StateCommit
 Assert-CandidateStatus $documents $StateCommit
 Assert-Phase12Authority $StateCommit
+Assert-Phase13Authority $StateCommit
 Assert-Condition ($evidence.Count -eq ($script:Phase11EvidenceRows + $script:Phase12RequirementIds.Count)) "Phase 12 evidence catalog has unexpected rows: $($evidence.Count)"
 Assert-Phase12Evidence $evidence $SourceCommit
 $phase12Coverage = @($coverage | Where-Object { $script:Phase12RequirementIds -contains $_.requirement_id })
