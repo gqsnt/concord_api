@@ -1478,7 +1478,8 @@ function Assert-ValidationRegistry {
     param([object[]]$Rows, [string]$Source)
     $commands = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
     foreach ($row in $Rows) {
-        Assert-Condition $commands.Add($row.exact_command) "duplicate validation command $($row.exact_command)"
+        $commandIdentity = "$($row.exact_command)|$($row.source_commit)"
+        Assert-Condition $commands.Add($commandIdentity) "duplicate validation command/source $($row.exact_command) / $($row.source_commit)"
         Assert-Condition ($row.working_directory -eq "F:\projects\concord_api") "wrong validation working directory $($row.validation_id)"
         Assert-Condition ($row.source_commit -eq $Source) "validation used wrong source $($row.validation_id)"
         Assert-Condition ($row.exit_status -eq "0" -and $row.result -eq "passing") "validation did not pass $($row.validation_id)"
