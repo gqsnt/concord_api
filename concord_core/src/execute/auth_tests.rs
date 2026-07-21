@@ -799,10 +799,12 @@ struct AuthRateLimiter {
     plans: Option<Arc<Mutex<Vec<CapturedAuthPlan>>>>,
 }
 
+type CapturedAuthRule = (String, Vec<(String, String)>, u32, Vec<(u32, Duration)>);
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct CapturedAuthPlan {
     page_index: u32,
-    rules: Vec<(String, Vec<(String, String)>, u32, Vec<(u32, Duration)>)>,
+    rules: Vec<CapturedAuthRule>,
 }
 
 fn capture_auth_plan(request: &RateLimitRequest<'_>) -> CapturedAuthPlan {

@@ -453,21 +453,22 @@ async fn pagination_cancellation_prevents_later_lexical_plan_acquisition() {
     });
     waiting.await;
     assert_eq!(server.request_count(), 1);
-    let captures = acquisitions.lock().expect("cancellation captures");
-    assert_eq!(
-        captures
-            .iter()
-            .map(|capture| capture.page_index)
-            .collect::<Vec<_>>(),
-        [0, 1]
-    );
-    assert_eq!(captures[0].rules, captures[1].rules);
-    assert!(
-        captures
-            .iter()
-            .all(|capture| { capture.rules.iter().all(|rule| rule.1.is_empty()) })
-    );
-    drop(captures);
+    {
+        let captures = acquisitions.lock().expect("cancellation captures");
+        assert_eq!(
+            captures
+                .iter()
+                .map(|capture| capture.page_index)
+                .collect::<Vec<_>>(),
+            [0, 1]
+        );
+        assert_eq!(captures[0].rules, captures[1].rules);
+        assert!(
+            captures
+                .iter()
+                .all(|capture| { capture.rules.iter().all(|rule| rule.1.is_empty()) })
+        );
+    }
     operation.abort();
     assert!(operation.await.is_err());
     assert_eq!(server.request_count(), 1);
