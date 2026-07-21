@@ -17,7 +17,7 @@ is active and `NOT_STARTED`, and only Phase 14 may restore `Normative Release Fi
   `985f6e56b6e2ec6a8980062cc1e57b52d31267c9` and
   `91378c1a0ac748ab029d6c396871920b63366716`.
 - Final immutable tested source: `91378c1a0ac748ab029d6c396871920b63366716`.
-- Evidence/report/state commit: `EVIDENCE_COMMIT_PENDING`.
+- Evidence/report/state commit: `51941379ed153204c7d5f5da824c96b0d4078153`.
 - Evidence anchor: `ANCHOR_COMMIT_PENDING`.
 - Metadata descendant: the compatible documentation-only descendant that records the actual
   anchor after it exists.
