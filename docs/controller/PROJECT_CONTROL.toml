@@ -68,10 +68,14 @@ implementation_source_commits = [
   "3ff65c60dc4f360663f13d0e122fa102f6d21999",
   "1dabc1b",
   "40cc4e7",
+  "14c0d18f60cc6376179cfebb452b8b54b8293671",
+  "23b1b32",
+  "6dd7791",
+  "47bee70ffea62e669c65f3ec8970730fab7b802d",
 ]
-post_source_governance_commit = "77f9b2c4fae5c4a63a4898eb4fd23d55c07c0932"
-evidence_commit = "77f9b2c4fae5c4a63a4898eb4fd23d55c07c0932"
-anchor_commit = "826d240d96b74741a543320d377f949abb2fa6b6"
+post_source_governance_commit = "47bee70ffea62e669c65f3ec8970730fab7b802d"
+evidence_commit = "EVIDENCE_COMMIT_PENDING"
+anchor_commit = "ANCHOR_COMMIT_PENDING"
 phase_report = "docs/conformance/PHASE_13_REPORT.md"
 normative_status = "Normative Implementation Candidate"
 head_policy = "anchor-must-be-an-ancestor"
@@ -98,7 +102,7 @@ release_change_map_rows = 152
 normative_language_allowlist_rows = 4
 normative_dependency_rows = 29
 normative_ownership_rows = 6
-release_validation_rows = 231
+release_validation_rows = 235
 release_final_closure_owner = "Phase 14"
 
 [active_phase]
