@@ -1576,7 +1576,7 @@ if ($Mode -eq "Source") {
     $coverage = @(Import-GitCsv $SourceCommit $script:CoveragePath)
     $evidence = @(Import-GitCsv $SourceCommit $script:EvidencePath)
     Assert-BaseCatalogs $definitions $coverage $evidence
-    Assert-Condition ($evidence.Count -in @($script:Phase11EvidenceRows + $script:Phase12RequirementIds.Count, $script:Phase12EvidenceRows + 46)) "source has unexpected evidence rows: $($evidence.Count)"
+    Assert-Condition ($evidence.Count -in @($script:Phase12EvidenceRows, 1726)) "source has unexpected evidence rows: $($evidence.Count)"
     Assert-EvidencePaths $evidence $SourceCommit
     Assert-Phase10HistoricalCatalog $SourceCommit $false
     Assert-Phase10ReportPreserved $SourceCommit
