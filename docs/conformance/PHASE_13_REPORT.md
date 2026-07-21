@@ -19,12 +19,13 @@ implemented, and no Phase 15 work was started.
 - Source/test commits: `25016f44114b65aa922de109bce57278da269990`, `9f102aa4fcfa4c1ec3e881677b78426a8ccf3c74`, `1e8bfe1124638535ca6641b8a890d0139f698093`, `66423ac753bc5394f0f39b62779d590386a95ffe`, `24d427d6e3ccb2df0e7310dd0f59123195ddf050`
 - Source-correction commits: `6a43e3c24ddfaff5835e19bc0275d1ab62f664ae`, `3d9da62f4eb13a7e8e4af6de984f4cef9a8cdf10`, `f38ac7b0a47a9a855fa77e16464955d6a144eb95`, `adbca38ad1df407fc55e1fe0dbb08ee319070e30`, `dedf999e204cc7e580a8a0d71392291de9518848`, `74519a183f953b50d18d3f7094b4bbbf2066cb7f`, `ea370cfb07384f399cfd6709f669d5078c6474ab`, `f7ddcec1b898f385b1d00eaf0514ac9505939ed7`, `3e942f299426aa76fbeca6887c26db89d7509363`, `8a5bfee7c227aad4be4ee5d5d898da033a4fa10b`, `d7f418b0792ec05e747fe9c3e7c533701617d47c`, and `684789b097b0cf225e880142874ae7eb0136286c`.
 - Superseded correction source: `684789b097b0cf225e880142874ae7eb0136286c` (endpoint-module-dependent inherited IDs and incomplete evidence sequencing).
-- Final immutable tested source: `15b61d57c668fead307eafc7a276019760ae46f7`
+- Superseded source/test state: `15b61d57c668fead307eafc7a276019760ae46f7`.
+- Final immutable tested source: `dfc15d16aad6157c535f6e398bdf8317a79c71c7`
 - Superseded evidence/report/state: `7158894bf636803014999f38635a002bfe7e7728`; superseded anchor: `0602840f942cb62a0f9f29661c6d42edf03960f5`.
-- Evidence/report/state commit: `03e6356e3841c6895bdd7c097064f9c8489ef710`
-- Evidence anchor: `cb58af662199784628efe972f701bbf8f393740e`
-- Metadata descendant: recorded in the controller after the compatible two-file descendant
-- Additional executable correction commits after the superseded source: `369ce1b82c4012c298d55c3ef6df90bf1ff0b8fc`, `738ab67409d955519e7b449f81b3b028637a504c`, and `15b61d57c668fead307eafc7a276019760ae46f7`.
+- Evidence/report/state commit: `EVIDENCE_COMMIT_PENDING`
+- Evidence anchor: `ANCHOR_COMMIT_PENDING`
+- Metadata descendant: compatible documentation-only descendant recorded after the corrected anchor
+- Additional executable correction commits after the superseded source: `369ce1b82c4012c298d55c3ef6df90bf1ff0b8fc`, `738ab67409d955519e7b449f81b3b028637a504c`, `15b61d57c668fead307eafc7a276019760ae46f7`, `ceb3d9be48d6e19fbab85a71c9f38804013226f9`, `93ec979353f24642ca11b9107c603b874a643556`, and `dfc15d16aad6157c535f6e398bdf8317a79c71c7`.
 - Branch: `master`; final tree is required to be clean
 - Head policy: `anchor-must-be-an-ancestor`
 
@@ -131,12 +132,12 @@ Focused proof covered parser passes/fails and migration UI, lexical normalizatio
 bucket semantics, deterministic identity under shared limiters, no-`Display` compilation,
 advanced explicit keys, no-governor fail-closed behavior, observer ownership, governor lifecycle,
 pagination plan reuse, security sentinels, generated/public Rustdoc, examples, downstream
-extension, feature matrix, and MSRV. The maintained all-feature inventory selected 603 tests and
-all passed; default Nextest selected 578 tests and all passed. The source-matched validation registry
-contains 204 rows, including 25 Phase 13 rows and every maintained matrix command at the final source.
+extension, feature matrix, and MSRV. The maintained all-feature inventory selected 605 tests and
+all passed; default Nextest selected 580 tests and all passed. The source-matched validation registry
+contains 215 rows, including 36 Phase 13 rows and every maintained matrix command at the final source.
 
 The Phase 13 evidence catalog contains 46 direct and 0 partial Phase 13 rows: 23 retained-version rows
-and 23 new-requirement rows, all verified against `15b61d57c668fead307eafc7a276019760ae46f7`.
+and 23 new-requirement rows, all verified against `dfc15d16aad6157c535f6e398bdf8317a79c71c7`.
 There are no Phase 13-owned partial rows and no waivers. The catalog has 1,726 total rows after
 the Phase 13 additions; coverage has 581 active requirements and 16 superseded historical rows.
 
@@ -167,7 +168,7 @@ reprove reacquisition and cancellation behavior without changing the pagination 
 
 The old source was not executable-only because it already contained Phase 13 evidence/state, and its
 inherited IDs were assembled inside endpoint modules. The corrected source sequence is executable-only
-commits `369ce1b…`, `738ab67…`, and `15b61d5…`, followed only by evidence/state, one anchor, and one
+commits `369ce1b…`, `738ab67…`, `15b61d5…`, `ceb3d9b…`, `93ec979…`, and `dfc15d1…`, followed only by evidence/state, one anchor, and one
 metadata descendant. Every Phase 13 evidence command is now bound verbatim to a passing validation row
 for the final source; no Phase 13 row uses only `just release`.
 
@@ -175,7 +176,23 @@ The exact historical Phase 0–12 catalog blob was restored before appending the
 1,344,331 bytes, SHA-256
 `8300c71829e3ed5f4049d74832bea64a3ed3c46de7b731555de4567a05334b05`, 1,680 rows. A binary prefix
 comparison, rather than parsed-row equality, proves its preservation. The corrected catalog has 1,726
-rows, 581 active coverage requirements, 16 superseded requirements, and 204 validation records.
+rows, 581 active coverage requirements, 16 superseded requirements, and 215 validation records.
+
+## Focused correction closure
+
+The superseded `15b61d5…` state had three remaining classes of defects: lossy private symbol names,
+non-positive real-governor wait oracles, and incomplete pagination recovery/cancellation capture.
+The final correction uses generated client name plus deterministic declaration ordinal for private
+symbols while retaining canonical runtime identity strings. The `A__B` versus nested `A::B` legal
+DSL regression compiles and produces distinct IDs.
+
+Real-governor tests now include unrelated transport controls, controlled Tokio time, and successful
+post-cancellation acquisitions. Pagination executes multiple pages, captures identical IDs/global
+keys/costs/windows, compares recovery reacquisitions exactly, and uses a deterministic later-page
+gate proving cancellation prevents later acquisition and send.
+
+The 46-row claim audit is complete in `git_diff/phase-13-evidence-claim-audit.md`; every row is
+direct, passing, source-matched to `dfc15d16aad6157c535f6e398bdf8317a79c71c7`, and waiver-free.
 
 ## Closure boundary
 
