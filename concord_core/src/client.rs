@@ -390,13 +390,15 @@ mod tests {
             &first_limiter
         ));
         assert_eq!(second.inner.runtime.debug, DebugLevel::Basic);
-        assert!(second
-            .preflight_url(
-                "snapshot",
-                &Method::GET,
-                &Url::parse("http://second.example").expect("URL"),
-            )
-            .is_ok());
+        assert!(
+            second
+                .preflight_url(
+                    "snapshot",
+                    &Method::GET,
+                    &Url::parse("http://second.example").expect("URL"),
+                )
+                .is_ok()
+        );
 
         assert_eq!(first.inner.runtime.request_body_limit, one);
         assert_eq!(first.inner.runtime.pagination_max_pages.get(), 37);
