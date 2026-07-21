@@ -44,6 +44,7 @@ $script:Phase11EvidenceRows = 1553
 $script:Phase11ReportBytes = 25109
 $script:Phase11ReportHash = "1de403491162bf39f36c530636f7b1dd03370ee45832c0dd2c7b9bc55d2b67fa"
 $script:Phase12PreviousSource = "8307d0744363ea7ec8a98d5f5fe68c4429b71c31"
+$script:Phase13PreviousSource = "684789b097b0cf225e880142874ae7eb0136286c"
 $script:Phase13HistoricalBaseline = "0ef7d3f619155b251509da1d6112620b14f5c7b7"
 $script:Phase12EvidenceBytes = 1344331
 $script:Phase12EvidenceHash = "8300c71829e3ed5f4049d74832bea64a3ed3c46de7b731555de4567a05334b05"
@@ -807,12 +808,45 @@ function Assert-Phase13Evidence {
 function Assert-Phase13ValidationRegistry {
     param([object[]]$Rows, [string]$Source)
     $phaseRows = @($Rows | Where-Object { $_.validation_id -like 'P13-VAL-*' })
-    Assert-Condition ($phaseRows.Count -eq 3) "Phase 13 validation registry row count is $($phaseRows.Count) rather than 3"
+    Assert-Condition ($phaseRows.Count -ge 24) "Phase 13 validation registry row count is $($phaseRows.Count) rather than at least 24"
+    $commands = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
     foreach ($row in $phaseRows) {
+        Assert-Condition $commands.Add($row.exact_command) "duplicate Phase 13 validation command $($row.exact_command)"
         Assert-Condition ($row.working_directory -eq 'F:\projects\concord_api') "wrong Phase 13 validation working directory $($row.validation_id)"
         Assert-Condition ($row.source_commit -eq $Source -and $row.exit_status -eq '0' -and $row.result -eq 'passing') "Phase 13 validation did not pass $($row.validation_id)"
         foreach ($field in @('tool_versions', 'feature_configuration', 'selected_tests', 'observed_at')) {
             Assert-Condition (-not [string]::IsNullOrWhiteSpace($row.$field)) "Phase 13 validation omitted $field in $($row.validation_id)"
+        }
+    }
+    foreach ($command in @(
+        'just fmt-check', 'just check', 'just check-all', 'just check-no-default',
+        'just clippy', 'just clippy-all', 'just test', 'just test-all',
+        'just test-no-default', 'just doctest', 'just doctest-all', 'just doc',
+        'just doc-all', 'just deny', 'just diff-check', 'just release',
+        'cargo nextest run --profile ci -p concord_macros --test generated_rate_limiting --all-features -E "test(inherited_lexical_declarations_keep_one_identity_across_descendant_modules)"',
+        'cargo nextest run --profile ci -p concord_macros --test generated_rate_limiting --all-features -E "test(declaration_identities_are_deterministic_and_collision_resistant)"',
+        'cargo nextest run --profile ci -p concord_macros --test generated_rate_limiting --all-features -E "test(client_rule_quota_is_shared_across_direct_and_scoped_endpoints) | test(scope_rule_quota_is_shared_across_immediate_and_nested_descendants) | test(sibling_and_endpoint_local_rules_do_not_share_unrelated_buckets)"',
+        'cargo nextest run --profile ci -p concord_core --test pagination_rate_limit --all-features -E "test(pagination_reuses_identical_lexical_plan_across_multiple_pages)"',
+        'cargo nextest run --profile ci -p concord_core --test pagination_rate_limit --all-features -E "test(pagination_pages_share_the_same_lexical_governor_bucket)"',
+        'cargo nextest run --profile ci -p concord_core --test pagination_rate_limit --all-features -E "test(generated_pagination_uses_a_value_neutral_global_bucket)"'
+    )) {
+        Assert-Condition $commands.Contains($command) "required Phase 13 validation command was not recorded: $command"
+    }
+}
+
+function Assert-Phase13EvidenceCommandsRecorded {
+    param([object[]]$Evidence, [object[]]$Validation)
+    $commands = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($row in $Validation | Where-Object { $_.validation_id -like 'P13-VAL-*' }) {
+        [void]$commands.Add($row.exact_command)
+    }
+    foreach ($row in $Evidence | Where-Object { $_.evidence_id -like 'P13-*' }) {
+        $proofs = @($row.exact_test -split '\s+;;\s+')
+        Assert-Condition ($proofs.Count -gt 0) "Phase 13 evidence has no proof command: $($row.evidence_id)"
+        foreach ($proof in $proofs) {
+            Assert-Condition (-not [string]::IsNullOrWhiteSpace($proof)) "Phase 13 evidence has an empty proof command: $($row.evidence_id)"
+            Assert-Condition ($proof -ne 'just release') "Phase 13 evidence uses only just release: $($row.evidence_id)"
+            Assert-Condition $commands.Contains($proof) "Phase 13 evidence command lacks a passing validation record: $($row.evidence_id): $proof"
         }
     }
 }
@@ -963,6 +997,23 @@ function Assert-InheritedPhase12SourceEvidence {
     foreach ($id in $script:Phase12RequirementIds) {
         Assert-Condition $ids.Contains($id) "correction source did not inherit Phase 12 evidence for $id"
     }
+}
+
+function Assert-InheritedPhase13SourceEvidence {
+    param([object[]]$Evidence, [string]$Source)
+    $rows = @($Evidence | Where-Object { $_.evidence_id -like 'P13-*' })
+    Assert-Condition ($rows.Count -eq 46) "correction source inherited $($rows.Count) Phase 13 rows rather than 46"
+    $ids = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($row in $rows) {
+        Assert-Condition $ids.Add($row.requirement_id) "duplicate inherited Phase 13 evidence requirement $($row.requirement_id)"
+        Assert-ExactCommit $row.verified_commit "inherited Phase 13 evidence"
+        Assert-Condition ($row.verified_commit -eq $script:Phase13PreviousSource) "correction source inherited an unexpected Phase 13 source identity: $($row.evidence_id)"
+        Assert-Condition ($row.verified_commit -ne $Source) "correction source already contains evidence claiming its own unvalidated identity: $($row.evidence_id)"
+        Assert-Ancestor $row.verified_commit $Source "inherited Phase 13 evidence/source lineage"
+        Assert-Condition ($row.result -eq 'passing' -and $row.configuration -match '^direct ') "inherited Phase 13 evidence is not direct passing: $($row.evidence_id)"
+        Assert-Condition ([string]::IsNullOrWhiteSpace($row.waiver)) "inherited Phase 13 evidence has a waiver: $($row.evidence_id)"
+    }
+    Assert-Condition ($ids.Count -eq 46) "correction source did not inherit all Phase 13 evidence rows"
 }
 
 function Assert-Phase12ValidationRegistry {
@@ -1586,6 +1637,7 @@ if ($Mode -eq "Source") {
     Assert-SupersededHistoricalEvidence $evidence
     Assert-InheritedPhase11SourceEvidence $evidence $SourceCommit
     Assert-InheritedPhase12SourceEvidence $evidence $SourceCommit
+    Assert-InheritedPhase13SourceEvidence $evidence $SourceCommit
     Assert-RequirementChangeRecord $SourceCommit
     Assert-CandidateStatus $documents $SourceCommit
     Assert-Phase12Authority $SourceCommit
@@ -1654,6 +1706,7 @@ $validation = @(Import-GitCsv $StateCommit $script:ValidationRegistryPath)
 Assert-Phase12ValidationRegistry $validation $script:Phase12PreviousSource
 Assert-Phase13ValidationRegistry $validation $SourceCommit
 Assert-Phase12EvidenceCommandsRecorded $evidence $validation
+Assert-Phase13EvidenceCommandsRecorded $evidence $validation
 Assert-Phase12HighRiskEvidenceAllocation $evidence
 
 if ($Mode -eq "Final") {

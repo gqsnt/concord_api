@@ -260,8 +260,11 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
     let endpoint_modules = generate_endpoint_children(client, &client.children, &[], core_path);
     let client_child_methods = generate_client_child_methods(client, core_path);
     let prelude_exports = collect_prelude_exports(client, &client.children, &[]);
+    let rate_limit_identity_constants = rate_limit_identity_constants(client);
 
     quote! {
+        #rate_limit_identity_constants
+
         #[doc(hidden)]
         pub mod #specification_module {
             #[allow(unused_imports)]
@@ -1701,7 +1704,8 @@ fn generate_endpoint(
     let query_statements = query_statements(client, scopes, endpoint);
     let header_statements = header_statements(client, scopes, endpoint);
     let auth_statements = auth_statements(client, endpoint, core_path);
-    let rate_limit_statements = rate_limit_statements(client, scopes, endpoint, core_path);
+    let rate_limit_statements =
+        rate_limit_statements(client, scopes, endpoint, core_path, &invocation_path);
     let where_clause = endpoint_where_clause(client, scopes, endpoint, core_path, &invocation_path);
     let extension_trait = generate_request_extension_trait(
         client,
@@ -2860,13 +2864,14 @@ fn rate_limit_statements(
     _scopes: &[&Scope],
     endpoint: &Endpoint,
     _core_path: &TokenStream,
+    identity_path: &TokenStream,
 ) -> TokenStream {
     let statements = endpoint
         .config
         .rate_limits
         .iter()
         .map(|rule| {
-            let relative_id = syn::LitStr::new(&rule.id, Span::call_site());
+            let identity = rate_limit_identity_const(&rule.id);
             let cost = rule.cost;
             let windows = rule
                 .windows
@@ -2883,7 +2888,7 @@ fn rate_limit_statements(
                 .collect::<Vec<_>>();
             quote! {
                 __concord_builder.push_generated_rate_limit_rule(
-                    ::std::concat!(::std::module_path!(), "::", #relative_id),
+                    #identity_path::#identity,
                     #cost,
                     [#(#windows,)*],
                 )?;
@@ -2891,6 +2896,55 @@ fn rate_limit_statements(
         })
         .collect::<Vec<_>>();
     quote!(#(#statements)*)
+}
+
+fn rate_limit_identity_constants(client: &Client) -> TokenStream {
+    let mut ids = Vec::new();
+    collect_rate_limit_ids(&client.config, &mut ids);
+    collect_child_rate_limit_ids(&client.children, &mut ids);
+    let constants = ids.into_iter().map(|id| {
+        let identity = rate_limit_identity_const(&id);
+        let id = syn::LitStr::new(&id, Span::call_site());
+        quote! {
+            #[doc(hidden)]
+            const #identity: &str = ::std::concat!(::std::module_path!(), "::", #id);
+        }
+    });
+    quote!(#(#constants)*)
+}
+
+fn collect_child_rate_limit_ids(children: &[Child], ids: &mut Vec<String>) {
+    for child in children {
+        match child {
+            Child::Scope(scope) => {
+                collect_rate_limit_ids(&scope.config, ids);
+                collect_child_rate_limit_ids(&scope.children, ids);
+            }
+            Child::Endpoint(endpoint) => collect_rate_limit_ids(&endpoint.config, ids),
+        }
+    }
+}
+
+fn collect_rate_limit_ids(config: &NormalizedConfig, ids: &mut Vec<String>) {
+    for rule in &config.rate_limits {
+        if !ids.iter().any(|existing| existing == &rule.id) {
+            ids.push(rule.id.clone());
+        }
+    }
+}
+
+fn rate_limit_identity_const(id: &str) -> Ident {
+    let suffix = id
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || character == '_' {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    Ident::new(&format!("__CONCORD_RATE_ID_{suffix}"), Span::mixed_site())
 }
 
 fn display_argument(

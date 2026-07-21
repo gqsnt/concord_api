@@ -35,13 +35,19 @@ impl DecodeBody for KeyPageCodec {
     }
 }
 
-pub struct OnePageKeyController {
+pub struct MultiPageKeyController {
     pub key: String,
 }
 
-impl PaginationController<Vec<u32>> for OnePageKeyController {
+impl PaginationController<Vec<u32>> for MultiPageKeyController {
     fn next(self, _page: &Vec<u32>) -> Result<Option<Self>, PaginationError> {
-        Ok(None)
+        if self.key.ends_with("-page-1") {
+            Ok(None)
+        } else {
+            Ok(Some(Self {
+                key: format!("{}-page-1", self.key),
+            }))
+        }
     }
 }
 
@@ -52,7 +58,7 @@ api! {
             path ["items"];
             query { "cursor" = ep.key; }
             rate_limit { 1 / 1m; }
-            paginate crate::OnePageKeyController {
+            paginate crate::MultiPageKeyController {
                 key: bind ep.key,
             }
         }
@@ -63,6 +69,76 @@ api! {
 struct KeyLimitHooks {
     before_calls: AtomicUsize,
     safe: Mutex<Vec<String>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PageCapture {
+    page_index: u32,
+    rules: Vec<(
+        String,
+        Vec<(String, String)>,
+        u32,
+        Vec<(u32, std::time::Duration)>,
+    )>,
+}
+
+#[derive(Default)]
+struct PaginationCapturingLimiter {
+    acquisitions: Mutex<Vec<PageCapture>>,
+}
+
+impl PaginationCapturingLimiter {
+    fn capture(request: &concord_core::advanced::RateLimitRequest<'_>) -> PageCapture {
+        PageCapture {
+            page_index: request.page_index,
+            rules: request
+                .plan
+                .rules()
+                .iter()
+                .map(|rule| {
+                    (
+                        rule.id().as_str().to_owned(),
+                        rule.key()
+                            .parts()
+                            .iter()
+                            .map(|part| (part.name().to_owned(), part.value().to_owned()))
+                            .collect(),
+                        rule.cost().get(),
+                        rule.windows()
+                            .iter()
+                            .map(|window| (window.capacity().get(), window.duration()))
+                            .collect(),
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+
+impl RateLimiter for PaginationCapturingLimiter {
+    fn acquire<'a>(
+        &'a self,
+        request: concord_core::advanced::RateLimitRequest<'a>,
+    ) -> BoxFuture<
+        'a,
+        Result<concord_core::advanced::RateLimitPermit, concord_core::advanced::RateLimitError>,
+    > {
+        let capture = Self::capture(&request);
+        Box::pin(async move {
+            self.acquisitions
+                .lock()
+                .expect("pagination capture lock")
+                .push(capture);
+            Ok(concord_core::advanced::RateLimitPermit::granted())
+        })
+    }
+
+    fn observe<'a>(
+        &'a self,
+        _response: concord_core::advanced::RateLimitResponse<'a>,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(async {})
+    }
 }
 
 impl RuntimeHooks for KeyLimitHooks {
@@ -148,4 +224,90 @@ async fn generated_pagination_uses_a_value_neutral_global_bucket() {
     assert_eq!(excess_hooks.before_calls.load(Ordering::SeqCst), 1);
     assert_eq!(excess_server.requests().len(), 1);
     assert!(excess_server.requests()[0].target().contains(&excess));
+}
+
+#[tokio::test]
+async fn pagination_reuses_identical_lexical_plan_across_multiple_pages() {
+    use pagination_key_limit_api::prelude::*;
+
+    const BOUNDARY: &str = "pagination-continuation-sentinel-2fb8";
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"10".to_vec()),
+        ResponseScript::ok(b"20".to_vec()),
+    ])
+    .expect("multi-page capture server");
+    let proxy = SafeProxy::parse(server.url("")).expect("multi-page capture proxy");
+    let limiter = Arc::new(PaginationCapturingLimiter::default());
+    let client = PaginationKeyLimitApi::builder()
+        .http(move |http| http.proxy(proxy))
+        .runtime({
+            let limiter = Arc::clone(&limiter);
+            move |runtime| runtime.rate_limiter(limiter)
+        })
+        .build()
+        .expect("multi-page capture client");
+
+    let items = client
+        .items(BOUNDARY.to_owned())
+        .paginate(2_u32)
+        .await
+        .expect("two-page capture");
+    assert_eq!(items, [10, 20]);
+    let captures = limiter.acquisitions.lock().expect("page captures");
+    assert_eq!(
+        captures
+            .iter()
+            .map(|capture| capture.page_index)
+            .collect::<Vec<_>>(),
+        [0, 1]
+    );
+    assert_eq!(captures[0].rules, captures[1].rules);
+    assert_eq!(captures[0].rules.len(), 1);
+    assert!(captures[0].rules[0].1.is_empty());
+    assert_eq!(captures[0].rules[0].2, 1);
+    assert_eq!(
+        captures[0].rules[0].3,
+        [(1, std::time::Duration::from_secs(60))]
+    );
+    assert!(server.requests()[0].target().contains(BOUNDARY));
+    assert!(
+        server.requests()[1]
+            .target()
+            .contains(&format!("{BOUNDARY}-page-1"))
+    );
+}
+
+#[tokio::test]
+async fn pagination_pages_share_the_same_lexical_governor_bucket() {
+    use pagination_key_limit_api::prelude::*;
+
+    const BOUNDARY: &str = "pagination-governor-sentinel-91c2";
+    let server = ScriptedServer::start([ResponseScript::ok(b"10".to_vec())])
+        .expect("pagination governor server");
+    let proxy = SafeProxy::parse(server.url("")).expect("pagination governor proxy");
+    let limiter: Arc<dyn RateLimiter> = Arc::new(
+        GovernorRateLimiter::new()
+            .key_limit(64)
+            .expect("bounded governor key limit"),
+    );
+    let client = PaginationKeyLimitApi::builder()
+        .http(move |http| http.proxy(proxy))
+        .runtime({
+            let limiter = Arc::clone(&limiter);
+            move |runtime| runtime.rate_limiter(limiter)
+        })
+        .build()
+        .expect("pagination governor client");
+    let operation =
+        tokio::spawn(async move { client.items(BOUNDARY.to_owned()).paginate(2_u32).await });
+    for _ in 0..32 {
+        tokio::task::yield_now().await;
+    }
+    server
+        .wait_for_requests(1, std::time::Duration::from_secs(1))
+        .expect("first page reached server");
+    tokio::task::yield_now().await;
+    assert_eq!(server.request_count(), 1);
+    operation.abort();
+    assert!(operation.await.is_err());
 }

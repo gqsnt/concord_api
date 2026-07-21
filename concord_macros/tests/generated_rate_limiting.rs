@@ -3,8 +3,9 @@ use std::sync::{Arc, Mutex};
 use std::{fmt, fmt::Display};
 
 use concord_core::advanced::{
-    BoxFuture, ClientBuildErrorKind, NoopRateLimiter, RateLimitError, RateLimitObserver,
-    RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimiter, SafeProxy,
+    BoxFuture, ClientBuildErrorKind, GovernorRateLimiter, NoopRateLimiter, RateLimitError,
+    RateLimitObserver, RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimiter,
+    SafeProxy,
 };
 use concord_core::prelude::Bytes;
 use concord_macros::api;
@@ -79,6 +80,57 @@ api! {
         GET Read(item: crate::DisplayOnly) -> Bytes {
             rate_limit { 1 / 1s; }
         }
+    }
+}
+
+api! {
+    client IdentityRateApi {
+        base "http://identity-rate.example.test/";
+        rate_limit { 100 / 1h; }
+        GET Direct() -> Bytes;
+        scope Outer(region: String) {
+            rate_limit { 20 / 1h; }
+            GET Immediate() -> Bytes;
+            scope Inner(kind: String) {
+                rate_limit { 10 / 1h; }
+                GET Nested() -> Bytes {
+                    rate_limit { cost 2; 30 / 1h; }
+                }
+            }
+        }
+        scope Sibling(region: String) {
+            rate_limit { 7 / 1h; }
+            GET SiblingEndpoint() -> Bytes {
+                rate_limit { 5 / 1h; }
+            }
+        }
+        GET Outside() -> Bytes;
+    }
+}
+
+api! {
+    client ClientBucketRateApi {
+        base "http://client-bucket.example.test/";
+        rate_limit { 1 / 1h; }
+        GET Direct() -> Bytes;
+        scope Descendant(value: String) {
+            GET Nested() -> Bytes;
+        }
+    }
+}
+
+api! {
+    client ScopeBucketRateApi {
+        base "http://scope-bucket.example.test/";
+        rate_limit { 100 / 1h; }
+        scope Branch(value: String) {
+            rate_limit { 1 / 1h; }
+            GET Immediate() -> Bytes;
+            scope Nested(value: String) {
+                GET Descendant() -> Bytes;
+            }
+        }
+        GET Outside() -> Bytes;
     }
 }
 
@@ -278,6 +330,249 @@ async fn custom_limiter_receives_canonical_ordered_plan_and_owns_observation() {
     let observations = limiter.observations.lock().expect("observation capture");
     assert_eq!(observations.len(), 1);
     assert_eq!(observations[0], rules_from_limiter(&limiter));
+}
+
+#[tokio::test]
+async fn inherited_lexical_declarations_keep_one_identity_across_descendant_modules() {
+    let responses = (0..5).map(|_| ResponseScript::ok(b"identity".to_vec()));
+    let server = ScriptedServer::start(responses).expect("identity server");
+    let proxy = SafeProxy::parse(server.url("")).expect("identity proxy");
+    let limiter = Arc::new(CapturingLimiter::default());
+    let configured = Arc::clone(&limiter);
+    let client = IdentityRateApi::builder()
+        .http(move |http| http.proxy(proxy))
+        .runtime(move |runtime| runtime.rate_limiter(configured))
+        .build()
+        .expect("identity client");
+
+    client.direct().await.expect("direct request");
+    client
+        .outer("eu".to_owned())
+        .immediate()
+        .await
+        .expect("immediate request");
+    client
+        .outer("eu".to_owned())
+        .inner("nested".to_owned())
+        .nested()
+        .await
+        .expect("nested request");
+    client
+        .sibling("us".to_owned())
+        .sibling_endpoint()
+        .await
+        .expect("sibling request");
+    client.outside().await.expect("outside request");
+
+    let acquisitions = limiter.acquisitions.lock().expect("identity captures");
+    assert_eq!(acquisitions.len(), 5);
+    let direct_client_id = &acquisitions[0][0].id;
+    assert_eq!(direct_client_id, &acquisitions[1][0].id);
+    assert_eq!(direct_client_id, &acquisitions[2][0].id);
+    assert_eq!(direct_client_id, &acquisitions[3][0].id);
+    assert_eq!(direct_client_id, &acquisitions[4][0].id);
+
+    let outer_id = &acquisitions[1][1].id;
+    assert_eq!(outer_id, &acquisitions[2][1].id);
+    assert_ne!(outer_id, &acquisitions[3][1].id);
+    assert_ne!(outer_id, direct_client_id);
+    assert!(!acquisitions[2][2].id.is_empty());
+    assert_eq!(acquisitions[2][2].cost, 1);
+    assert_eq!(
+        acquisitions[2][2].windows,
+        [(10, std::time::Duration::from_secs(3600))]
+    );
+    assert_eq!(acquisitions[2][3].cost, 2);
+    assert_eq!(
+        acquisitions[2][3].windows,
+        [(30, std::time::Duration::from_secs(3600))]
+    );
+    assert_eq!(acquisitions[3].len(), 3);
+    assert_ne!(acquisitions[3][1].id, acquisitions[1][1].id);
+    assert_ne!(acquisitions[3][2].id, acquisitions[2][3].id);
+    assert!(
+        acquisitions
+            .iter()
+            .all(|plan| plan.iter().all(|rule| rule.parts.is_empty()))
+    );
+}
+
+#[tokio::test]
+async fn declaration_identities_are_deterministic_and_collision_resistant() {
+    let server = ScriptedServer::start((0..6).map(|_| ResponseScript::ok(b"identity".to_vec())))
+        .expect("identity collision server");
+    let limiter = Arc::new(CapturingLimiter::default());
+    let first = IdentityRateApi::builder()
+        .http({
+            let proxy = SafeProxy::parse(server.url("")).expect("first identity proxy");
+            move |http| http.proxy(proxy)
+        })
+        .runtime({
+            let limiter = Arc::clone(&limiter);
+            move |runtime| runtime.rate_limiter(limiter)
+        })
+        .build()
+        .expect("first identity client");
+    let clone = first.clone();
+    clone.direct().await.expect("clone request");
+    let second = IdentityRateApi::builder()
+        .http({
+            let proxy = SafeProxy::parse(server.url("")).expect("second identity proxy");
+            move |http| http.proxy(proxy)
+        })
+        .runtime({
+            let limiter = Arc::clone(&limiter);
+            move |runtime| runtime.rate_limiter(limiter)
+        })
+        .build()
+        .expect("independent identity client");
+    second.direct().await.expect("independent request");
+
+    let nested = nested_rate::NestedRateApi::builder()
+        .http({
+            let proxy = SafeProxy::parse(server.url("")).expect("nested identity proxy");
+            move |http| http.proxy(proxy)
+        })
+        .runtime({
+            let limiter = Arc::clone(&limiter);
+            move |runtime| runtime.rate_limiter(limiter)
+        })
+        .build()
+        .expect("nested-module client");
+    nested.read().await.expect("nested-module request");
+
+    let first_repeated = repeated_rate::FirstRateApi::builder()
+        .http({
+            let proxy = SafeProxy::parse(server.url("")).expect("first repeated proxy");
+            move |http| http.proxy(proxy)
+        })
+        .runtime({
+            let limiter = Arc::clone(&limiter);
+            move |runtime| runtime.rate_limiter(limiter)
+        })
+        .build()
+        .expect("first repeated client");
+    first_repeated.read().await.expect("first repeated request");
+
+    let second_repeated = repeated_rate::SecondRateApi::builder()
+        .http({
+            let proxy = SafeProxy::parse(server.url("")).expect("second repeated proxy");
+            move |http| http.proxy(proxy)
+        })
+        .runtime({
+            let limiter = Arc::clone(&limiter);
+            move |runtime| runtime.rate_limiter(limiter)
+        })
+        .build()
+        .expect("second repeated client");
+    second_repeated
+        .read()
+        .await
+        .expect("second repeated request");
+
+    let acquisitions = limiter.acquisitions.lock().expect("collision captures");
+    assert_eq!(acquisitions.len(), 5);
+    assert_eq!(acquisitions[0][0].id, acquisitions[1][0].id);
+    assert_ne!(acquisitions[0][0].id, acquisitions[2][0].id);
+    assert_ne!(acquisitions[3][0].id, acquisitions[4][0].id);
+    assert!(acquisitions.iter().all(|plan| plan[0].parts.is_empty()));
+}
+
+#[tokio::test]
+async fn sibling_and_endpoint_local_rules_do_not_share_unrelated_buckets() {
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"sibling".to_vec()),
+        ResponseScript::ok(b"outside".to_vec()),
+    ])
+    .expect("unrelated bucket server");
+    let limiter = Arc::new(CapturingLimiter::default());
+    let client = IdentityRateApi::builder()
+        .http({
+            let proxy = SafeProxy::parse(server.url("")).expect("unrelated bucket proxy");
+            move |http| http.proxy(proxy)
+        })
+        .runtime({
+            let limiter = Arc::clone(&limiter);
+            move |runtime| runtime.rate_limiter(limiter)
+        })
+        .build()
+        .expect("unrelated bucket client");
+    client
+        .sibling("sibling-value".to_owned())
+        .sibling_endpoint()
+        .await
+        .expect("sibling request");
+    client.outside().await.expect("outside request");
+
+    let acquisitions = limiter.acquisitions.lock().expect("unrelated captures");
+    assert_eq!(acquisitions.len(), 2);
+    assert_eq!(acquisitions[0].len(), 3);
+    assert_eq!(acquisitions[1].len(), 1);
+    assert_ne!(acquisitions[0][1].id, acquisitions[0][2].id);
+    assert_ne!(acquisitions[0][2].id, acquisitions[1][0].id);
+}
+
+#[tokio::test(start_paused = true)]
+async fn client_rule_quota_is_shared_across_direct_and_scoped_endpoints() {
+    let server = ScriptedServer::start([ResponseScript::ok(b"first".to_vec())])
+        .expect("client bucket server");
+    let proxy = SafeProxy::parse(server.url("")).expect("client bucket proxy");
+    let governor = Arc::new(GovernorRateLimiter::new());
+    let client = ClientBucketRateApi::builder()
+        .http(move |http| http.proxy(proxy))
+        .runtime({
+            let governor = Arc::clone(&governor);
+            move |runtime| runtime.rate_limiter(governor)
+        })
+        .build()
+        .expect("client bucket client");
+    client.direct().await.expect("first bucket reservation");
+    server
+        .wait_for_requests(1, std::time::Duration::from_secs(1))
+        .expect("first request reached server");
+
+    let pending =
+        tokio::spawn(async move { client.descendant("same-scope".to_owned()).nested().await });
+    tokio::task::yield_now().await;
+    assert_eq!(server.request_count(), 1);
+    pending.abort();
+    assert!(pending.await.is_err());
+}
+
+#[tokio::test(start_paused = true)]
+async fn scope_rule_quota_is_shared_across_immediate_and_nested_descendants() {
+    let server = ScriptedServer::start([ResponseScript::ok(b"first".to_vec())])
+        .expect("scope bucket server");
+    let proxy = SafeProxy::parse(server.url("")).expect("scope bucket proxy");
+    let governor = Arc::new(GovernorRateLimiter::new());
+    let client = ScopeBucketRateApi::builder()
+        .http(move |http| http.proxy(proxy))
+        .runtime({
+            let governor = Arc::clone(&governor);
+            move |runtime| runtime.rate_limiter(governor)
+        })
+        .build()
+        .expect("scope bucket client");
+    client
+        .branch("same-scope".to_owned())
+        .immediate()
+        .await
+        .expect("first scope reservation");
+    server
+        .wait_for_requests(1, std::time::Duration::from_secs(1))
+        .expect("first scope request reached server");
+
+    let pending = tokio::spawn(async move {
+        client
+            .branch("same-scope".to_owned())
+            .nested("same-nested".to_owned())
+            .descendant()
+            .await
+    });
+    tokio::task::yield_now().await;
+    assert_eq!(server.request_count(), 1);
+    pending.abort();
+    assert!(pending.await.is_err());
 }
 
 fn rules_from_limiter(limiter: &CapturingLimiter) -> Vec<CapturedRule> {
