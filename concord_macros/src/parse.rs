@@ -1539,6 +1539,11 @@ fn client_tail_error(input: ParseStream<'_>) -> syn::Error {
             "`rate_limits { ... }` was removed; declare `rate_limit { ... }` at each lexical owner",
         );
     }
+    if input.peek(keyword::observe) {
+        return input.error(
+            "`observe PATH;` was removed; declare `rate_limit_observer PATH;` on the client",
+        );
+    }
     input.error("unsupported client declaration")
 }
 
