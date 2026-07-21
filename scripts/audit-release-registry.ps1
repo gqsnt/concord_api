@@ -29,6 +29,7 @@ $script:Phase11RequirementChangeRecordPath = "docs/normative/09_CONCORD_REQUIREM
 $script:Phase10ReportPath = "docs/conformance/PHASE_10_REPORT.md"
 $script:Phase11ReportPath = "docs/conformance/PHASE_11_REPORT.md"
 $script:Phase12ReportPath = "docs/conformance/PHASE_12_REPORT.md"
+$script:Phase13ReportPath = "docs/conformance/PHASE_13_REPORT.md"
 $script:ControllerPath = "docs/controller/PROJECT_CONTROL.toml"
 $script:Phase10Source = "9317a94cf020d81dbd216ed2a7dc999550586898"
 $script:Phase10EvidenceState = "5b157225b387387664a202d4cbfe5f85ba8c5289"
