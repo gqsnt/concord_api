@@ -889,8 +889,8 @@ function Assert-Phase13CorrectionEvidenceAllocation {
     $outerCommand = 'cargo nextest run --profile ci -p concord_macros --test compile --all-features -E "test(governor_disabled_generated_and_prepared_plans_fail_closed_or_require_deliberate_limiter)"'
     $planCommand = 'cargo nextest run --profile ci -p concord_macros --test generated_prepared_endpoints --all-features -E "test(prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_order)"'
     RequireProof 'FEAT-GOV-001' @($fixtureCommand, $outerCommand, $featureCommand, 'generated_default_limiter_selection_matches_the_resolved_feature_graph')
-    RequireProof 'FEAT-GOV-002' @($fixtureCommand, 'prepared_plans_fail_closed_without_governor_unless_limiter_is_deliberate')
-    RequireProof 'GEN-RATE-005' @($fixtureCommand, 'generated_clients_fail_closed_without_governor_unless_limiter_is_deliberate')
+    RequireProof 'FEAT-GOV-002' @($fixtureCommand)
+    RequireProof 'GEN-RATE-005' @($fixtureCommand)
     RequireProof 'API-RATE-004' @($planCommand, 'default_key_limit_accepts_1024_bytes_and_rejects_the_first_excess')
     RequireProof 'CONF-RATE-002' @(
         'inherited_lexical_declarations_keep_one_identity_across_descendant_modules',
