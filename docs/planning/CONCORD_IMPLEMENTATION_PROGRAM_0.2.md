@@ -729,7 +729,7 @@ The Phase 13 correction mission stabilized generated lexical declaration identit
 root, added collision-safe private symbols, descendant-module and real-governor bucket proofs,
 expanded pagination validation to multiple pages with exact recovery/cancellation capture, and
 rebuilt evidence from the exact Phase 0–12 catalog blob. The final executable source is the
-immutable commit `8cd5a60d1c64595b9235e58f7b0664d587e8cf82`; Phase 13 evidence and validation state
+immutable commit `1ecd41d9173cc24654742efbf1a6f27ec42783fb`; Phase 13 evidence and validation state
 records focused commands and the complete maintained matrix against that source, including the
 locked/offline governor-disabled fixture, feature graph, outer harness, and prepared plan inspection.
 The superseded
