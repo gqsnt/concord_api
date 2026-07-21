@@ -17,8 +17,8 @@ is active and `NOT_STARTED`, and only Phase 14 may restore `Normative Release Fi
   `985f6e56b6e2ec6a8980062cc1e57b52d31267c9` and
   `91378c1a0ac748ab029d6c396871920b63366716`.
 - Final immutable tested source: `91378c1a0ac748ab029d6c396871920b63366716`.
-- Evidence/report/state commit: `11c47d751f57ae369bccc40e4548e80100d48e12`.
-- Evidence anchor: `76efa827596efbdea988705fb02f23f175c5df04`.
+- Evidence/report/state commit: `EVIDENCE_COMMIT_PENDING`.
+- Evidence anchor: `ANCHOR_COMMIT_PENDING`.
 - Metadata descendant: the compatible documentation-only descendant that records the actual
   anchor after it exists.
 - Branch: `master`; head policy: `anchor-must-be-an-ancestor`.
@@ -42,6 +42,10 @@ The blocked historical classification remains immutable superseded history:
 - blocked evidence: `847679cff263ce642227bd0a042456a20495416b`;
 - blocked anchor: `c305edafcbb8131ed86c62a38d25104f5e7c80ac`;
 - blocked metadata descendant: `44799306fbf1bd039b73c5e57903aed30e5e7a0d`.
+
+The initial prospective documentation sequence `11c47d75… → 76efa827… → 4f60b3f9…` is also
+superseded: its Final-mode report audit rejected a line break inside one required literal status
+phrase. That failure changed no executable source, test, evidence row, or validation result.
 
 That older source classification was invalid because the historical correction range leading to
 `d0891ac…` interleaved executable audit corrections with Phase 13 evidence, report, planning, and
@@ -75,8 +79,7 @@ execution passed 2/2. No product or test semantics changed.
 ## Authority and implemented contract
 
 The Phase 13 authority remains `docs/normative/11_CONCORD_REQUIREMENT_CHANGE_RECORD_0.4.md` and
-`ADR-046 — Generated rate limits use lexical ownership and global keys`. The generated contract
-transition exactly `13 → 14` remains unchanged.
+`ADR-046 — Generated rate limits use lexical ownership and global keys`. The generated contract transition exactly `13 → 14` remains unchanged.
 
 The approved grammar remains:
 
