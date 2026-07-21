@@ -166,6 +166,45 @@ impl HeadBuilder {
         Ok(())
     }
 
+    /// Adds one generated lexical rule with a declaration-scoped global key.
+    #[doc(hidden)]
+    pub fn push_generated_rate_limit_rule<W>(
+        &mut self,
+        id: &str,
+        cost: u32,
+        windows: W,
+    ) -> Result<(), ApiError>
+    where
+        W: IntoIterator<Item = (u32, Duration)>,
+    {
+        let rule = (|| -> Result<RateLimitRule, RateLimitError> {
+            let id = RateLimitId::new(id)?;
+            let cost = NonZeroU32::new(cost).ok_or_else(|| {
+                RateLimitError::new(crate::error::RateLimitErrorKind::InvalidConfiguration)
+            })?;
+            let windows = windows
+                .into_iter()
+                .map(|(capacity, duration)| {
+                    let capacity = NonZeroU32::new(capacity).ok_or_else(|| {
+                        RateLimitError::new(crate::error::RateLimitErrorKind::InvalidConfiguration)
+                    })?;
+                    RateLimitWindow::new(capacity, duration)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            RateLimitRule::new(id, RateLimitKey::global(), cost, windows)
+        })()
+        .map_err(|error| {
+            drop(error);
+            ApiError::configuration(
+                self.meta.endpoint(),
+                self.meta.method().clone(),
+                ConfigurationErrorKind::InvalidRateLimit,
+            )
+        })?;
+        self.rate_limit_rules.push(rule);
+        Ok(())
+    }
+
     pub(crate) fn use_prepared_auth_plan(&mut self, auth: Arc<AuthPlan>) {
         debug_assert!(self.auth.is_empty());
         self.auth = auth;
@@ -174,26 +213,6 @@ impl HeadBuilder {
     pub(crate) fn use_prepared_rate_limit_plan(&mut self, plan: Arc<RateLimitPlan>) {
         debug_assert!(self.rate_limit_rules.is_empty());
         self.prepared_rate_limit_plan = Some(plan);
-    }
-
-    /// Returns the final logical host for generated rate-key resolution.
-    #[doc(hidden)]
-    pub fn rate_limit_host(&self) -> &str {
-        self.logical_url
-            .host_str()
-            .expect("generated client logical URLs retain a host")
-    }
-
-    /// Returns the stable endpoint identity for generated rate-key resolution.
-    #[doc(hidden)]
-    pub const fn rate_limit_endpoint(&self) -> &'static str {
-        self.meta.endpoint()
-    }
-
-    /// Returns the HTTP method text for generated rate-key resolution.
-    #[doc(hidden)]
-    pub fn rate_limit_method(&self) -> &str {
-        self.meta.method().as_str()
     }
 
     /// Adds one macro-validated static host-prefix label.
@@ -218,6 +237,14 @@ impl HeadBuilder {
         T: Display + ?Sized,
     {
         self.push_host_label_with_safe(&value.to_string(), "x")
+    }
+
+    /// Returns the final logical host for advanced rate-key construction.
+    #[doc(hidden)]
+    pub fn rate_limit_host(&self) -> &str {
+        self.logical_url
+            .host_str()
+            .expect("logical URLs retain a host")
     }
 
     fn push_host_label(&mut self, label: &str) -> Result<(), ApiError> {

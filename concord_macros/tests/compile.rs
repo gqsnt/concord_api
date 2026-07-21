@@ -241,7 +241,7 @@ fn missing_core_dependency_has_a_focused_macro_diagnostic() {
 fn incompatible_core_contract_fails_during_compilation() {
     assert_fixture_fails_with(
         "contract_mismatch",
-        "concord macro/core contract mismatch: core 999, generated 13",
+        "concord macro/core contract mismatch: core 999, generated 14",
     );
 }
 
@@ -405,8 +405,9 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
                 path if path.ends_with("renamed_rate_api/endpoints/struct.Read.html") => &[
                     "RenamedRateApi::Read",
                     "GET",
-                    "tenant_quota",
-                    "Resolved key values are absent",
+                    "client",
+                    "global bucket",
+                    "key parts are absent",
                 ],
                 _ => panic!("unexpected generated endpoint Rustdoc path {relative}"),
             };

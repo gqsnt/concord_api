@@ -75,11 +75,9 @@ mod benchmark_operations {
             GET PublicHead(value: String) -> Bytes {
                 path ["public", ep.value];
                 auth off;
-                rate_limit off;
             }
             GET CredentialReady() -> Bytes {
                 auth bearer application_key;
-                rate_limit off;
             }
         }
     }

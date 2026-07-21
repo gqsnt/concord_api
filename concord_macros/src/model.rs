@@ -194,18 +194,9 @@ pub(crate) struct NormalizedConfig {
 #[derive(Clone)]
 pub(crate) struct NormalizedRateLimitRule {
     pub(crate) id: String,
-    pub(crate) declared_name: Ident,
-    pub(crate) dimensions: Vec<ResolvedRateLimitDimension>,
+    pub(crate) origin: String,
     pub(crate) cost: u32,
     pub(crate) windows: Vec<NormalizedRateLimitWindow>,
-}
-
-#[derive(Clone)]
-pub(crate) enum ResolvedRateLimitDimension {
-    Host,
-    Endpoint,
-    Method,
-    Value { name: String, value: ResolvedValue },
 }
 
 #[derive(Clone)]

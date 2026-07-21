@@ -7,8 +7,7 @@ api! {
             secret token: String;
             credential bearer = bearer(secret.token);
         }
-        rate_limits { quota { by [secret.token]; 1 / 1s; } }
-        rate_limit quota;
+        rate_limit { by [secret.token]; 1 / 1s; }
         GET Read() -> Bytes;
     }
 }

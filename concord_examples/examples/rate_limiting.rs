@@ -10,21 +10,15 @@ api! {
     client RateLimitApi {
         base "https://rate-limit.example.test/";
         var tenant: String;
-        rate_limits {
-            application {
-                by [host];
-                500 / 10s;
-            }
-            tenant {
-                by [host, endpoint, method, vars.tenant, ep.item];
+        rate_limit { 500 / 10s; }
+        rate_limit_observer concord_examples::RetryAfterObserver;
+        GET Item(item: String) -> Bytes {
+            rate_limit {
                 cost 2;
                 100 / 1m;
             }
-            observe concord_examples::RetryAfterObserver;
         }
-        rate_limit application;
-        GET Item(item: String) -> Bytes { rate_limit tenant; }
-        GET Public() -> Bytes { rate_limit off; }
+        GET Public() -> Bytes;
     }
 }
 

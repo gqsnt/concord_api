@@ -103,13 +103,7 @@ api! {
     client RenamedRateApi {
         base "http://renamed-rate.example.test";
         var tenant: String;
-        rate_limits {
-            tenant_quota {
-                by [host, endpoint, vars.tenant];
-                10 / 1m;
-            }
-        }
-        rate_limit tenant_quota;
+        rate_limit { 10 / 1m; }
         GET Read() -> Bytes;
     }
 }

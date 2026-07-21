@@ -22,21 +22,16 @@ api! {
         }
         headers { "X-Client" = "canonical-reference"; }
         timeout 15s;
-        rate_limits {
-            application {
-                by [host];
-                100 / 1s;
-                1000 / 1m;
-            }
+        rate_limit {
+            100 / 1s;
+            1000 / 1m;
         }
-        rate_limit application;
 
         GET Status(verbose: Option<bool>) -> Bytes {
             path ["status"];
             query { "verbose" = ep.verbose; }
             auth off;
             timeout off;
-            rate_limit off;
         }
 
         scope Regions(region: String, language: Option<String>) {

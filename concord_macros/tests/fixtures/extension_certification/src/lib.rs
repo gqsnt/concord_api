@@ -461,14 +461,8 @@ concord_macros::api! {
         credentials {
             credential session = custom crate::ExtensionCredential;
         }
-        rate_limits {
-            workload {
-                by [endpoint];
-                10 / 1s;
-            }
-            observe crate::ExtensionObserver;
-        }
-        rate_limit workload;
+        rate_limit { 10 / 1s; }
+        rate_limit_observer crate::ExtensionObserver;
 
         GET Protected() -> Bytes {
             auth header "X-Session" = session challenge unauthorized;
@@ -494,14 +488,8 @@ concord_macros::api! {
         credentials {
             credential session = custom crate::ExtensionCredential;
         }
-        rate_limits {
-            workload {
-                by [endpoint];
-                10 / 1s;
-            }
-            observe crate::ExtensionObserver;
-        }
-        rate_limit workload;
+        rate_limit { 10 / 1s; }
+        rate_limit_observer crate::ExtensionObserver;
 
         GET Protected() -> Bytes {
             auth header "X-Session" = session challenge unauthorized;

@@ -15,10 +15,9 @@ use crate::ast::{
     AuthChallenge, AuthOperation, AuthPlacement, AuthPlacementKind, CredentialDecl,
     CredentialSource, CredentialsBlock, DefaultExpr, DurationLiteral, HeaderEntry, HeaderOperation,
     HostOperation, Layer, MethodKind, PaginationDecl, PaginationField, PaginationInitializer,
-    PaginationValue, PathOperation, PublicExpr, QueryEntry, QueryOperation, RateLimitDimension,
-    RateLimitOperation, RateLimitTemplate, RateLimitUse, RateLimitWindowLiteral, RateLimitsBlock,
-    RetrySelection, SecretDecl, SourceApi, SourceChild, SourceClient, SourceEndpoint, SourceScope,
-    TimeoutOperation, ValueDecl, ValueKind,
+    PaginationValue, PathOperation, PublicExpr, QueryEntry, QueryOperation, RateLimitDecl,
+    RateLimitWindowLiteral, RetrySelection, SecretDecl, SourceApi, SourceChild, SourceClient,
+    SourceEndpoint, SourceScope, TimeoutOperation, ValueDecl, ValueKind,
 };
 use crate::names::canonical_ident;
 
@@ -54,6 +53,7 @@ mod keyword {
     syn::custom_keyword!(path);
     syn::custom_keyword!(query);
     syn::custom_keyword!(rate_limit);
+    syn::custom_keyword!(rate_limit_observer);
     syn::custom_keyword!(rate_limits);
     syn::custom_keyword!(remove);
     syn::custom_keyword!(replace);
@@ -135,14 +135,20 @@ impl Parse for SourceClient {
         } else {
             RetrySelection::Disabled
         };
-        let mut layer = parse_ordered_layer(&body, false)?;
-        let rate_limits = body
-            .peek(keyword::rate_limits)
-            .then(|| parse_rate_limits(&body))
-            .transpose()?;
-        if body.peek(keyword::rate_limit) {
-            layer.rate_limit = Some(parse_rate_limit(&body)?);
-        }
+        let layer = parse_ordered_layer(&body, true)?;
+        let rate_limit_observer = if body.peek(keyword::rate_limit_observer) {
+            body.parse::<keyword::rate_limit_observer>()?;
+            let path = body.parse()?;
+            body.parse::<Token![;]>()?;
+            if body.peek(keyword::rate_limit_observer) {
+                return Err(body.error(
+                    "a client may contain at most one `rate_limit_observer PATH;` declaration",
+                ));
+            }
+            Some(path)
+        } else {
+            None
+        };
         let children = parse_children(&body, 0, "client")?;
 
         if !body.is_empty() {
@@ -156,7 +162,7 @@ impl Parse for SourceClient {
             credentials,
             retry,
             layer,
-            rate_limits,
+            rate_limit_observer,
             children,
         })
     }
@@ -213,6 +219,9 @@ fn parse_scope(input: ParseStream<'_>, depth: usize) -> syn::Result<SourceScope>
     if !body.is_empty() {
         if body.peek(keyword::retry) {
             return Err(body.error("`retry` is client-only and cannot be declared in a scope"));
+        }
+        if body.peek(keyword::rate_limit_observer) {
+            return Err(body.error("rate-limit observers are client-only; use `rate_limit_observer PATH;` on the client"));
         }
         if body.peek(keyword::var)
             || body.peek(keyword::base)
@@ -280,6 +289,9 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
             );
         }
         if !clauses.is_empty() {
+            if clauses.peek(keyword::rate_limit_observer) {
+                return Err(clauses.error("rate-limit observers are client-only; use `rate_limit_observer PATH;` on the client"));
+            }
             if is_layer_start(&clauses) {
                 return Err(clauses.error(
                     "endpoint clauses must appear at most once and in `host`, `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, `paginate` order",
@@ -642,7 +654,13 @@ fn parse_ordered_layer(input: ParseStream<'_>, include_rate_limit: bool) -> syn:
         .then(|| parse_timeout(input))
         .transpose()?;
     let rate_limit = if include_rate_limit && input.peek(keyword::rate_limit) {
-        Some(parse_rate_limit(input)?)
+        let declaration = parse_rate_limit(input)?;
+        if input.peek(keyword::rate_limit) {
+            return Err(input.error(
+                "a lexical layer may contain at most one direct `rate_limit { ... }` declaration",
+            ));
+        }
+        Some(declaration)
     } else {
         None
     };
@@ -657,138 +675,15 @@ fn parse_ordered_layer(input: ParseStream<'_>, include_rate_limit: bool) -> syn:
     })
 }
 
-fn parse_rate_limits(input: ParseStream<'_>) -> syn::Result<RateLimitsBlock> {
-    input.parse::<keyword::rate_limits>()?;
+fn parse_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitDecl> {
+    input.parse::<keyword::rate_limit>()?;
+    if !input.peek(syn::token::Brace) {
+        return Err(input.error(
+            "rate-limit rules are now direct `rate_limit { ... }` declarations; named attachments, `replace`, and `off` were removed",
+        ));
+    }
     let body;
     braced!(body in input);
-    let mut templates = Vec::new();
-    let mut observer = None;
-    let mut names = HashSet::new();
-    while !body.is_empty() {
-        if body.peek(keyword::observe) {
-            let marker: keyword::observe = body.parse()?;
-            if observer.is_some() {
-                return Err(marker
-                    .span()
-                    .error("a `rate_limits` block permits at most one observer"));
-            }
-            observer = Some(body.parse()?);
-            body.parse::<Token![;]>()?;
-            if !body.is_empty() {
-                return Err(body.error(
-                    "the rate-limit observer must follow every template and be the final declaration in the block",
-                ));
-            }
-            break;
-        }
-        let name: Ident = body.parse().map_err(|_| {
-            body.error(
-                "a `rate_limits` block accepts named templates and one final `observe PATH;`",
-            )
-        })?;
-        let canonical = canonical_ident(&name);
-        if !names.insert(canonical.clone()) {
-            return Err(name
-                .span()
-                .error(format!("duplicate rate-limit template `{canonical}`")));
-        }
-        templates.push(parse_rate_limit_template(&body, name)?);
-    }
-    Ok(RateLimitsBlock {
-        templates,
-        observer,
-    })
-}
-
-fn parse_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitOperation> {
-    let mut replacement = None;
-    let mut additions = Vec::new();
-    let mut direct_names = HashSet::new();
-    while input.peek(keyword::rate_limit) {
-        input.parse::<keyword::rate_limit>()?;
-        if input.peek(keyword::off) {
-            let marker: keyword::off = input.parse()?;
-            input.parse::<Token![;]>()?;
-            if replacement.is_some() || !additions.is_empty() || input.peek(keyword::rate_limit) {
-                return Err(marker
-                    .span()
-                    .error("`rate_limit off` is exclusive within its layer"));
-            }
-            return Ok(RateLimitOperation::Off);
-        }
-        if input.peek(keyword::replace) {
-            let marker: keyword::replace = input.parse()?;
-            if replacement.is_some() || !additions.is_empty() {
-                return Err(marker.span().error(
-                    "at most one `rate_limit replace` is allowed and it must precede local rate-limit declarations",
-                ));
-            }
-            replacement = Some(input.parse().map_err(|_| {
-                input.error("`rate_limit replace` requires one client template name")
-            })?);
-            input.parse::<Token![;]>()?;
-            continue;
-        }
-        let name: Ident = input.parse().map_err(|_| {
-            input.error(
-                "`rate_limit` requires a client template name, a direct named rule, or `off`",
-            )
-        })?;
-        if input.peek(syn::token::Brace) {
-            let canonical = canonical_ident(&name);
-            if !direct_names.insert(canonical.clone()) {
-                return Err(name.span().error(format!(
-                    "duplicate direct rate-limit rule `{canonical}` in this layer"
-                )));
-            }
-            additions.push(RateLimitUse::Direct(parse_rate_limit_template(
-                input, name,
-            )?));
-        } else {
-            input.parse::<Token![;]>()?;
-            additions.push(RateLimitUse::Named(name));
-        }
-    }
-    Ok(RateLimitOperation::Modify {
-        replacement,
-        additions,
-    })
-}
-
-fn parse_rate_limit_template(
-    input: ParseStream<'_>,
-    name: Ident,
-) -> syn::Result<RateLimitTemplate> {
-    let body;
-    braced!(body in input);
-    if !body.peek(keyword::by) {
-        return Err(body.error("a rate-limit rule must begin with exactly one `by [...]` clause"));
-    }
-    body.parse::<keyword::by>()?;
-    let dimensions_body;
-    bracketed!(dimensions_body in body);
-    let mut dimensions = Vec::new();
-    let mut dimension_names = HashSet::new();
-    while !dimensions_body.is_empty() {
-        let dimension = parse_rate_limit_dimension(&dimensions_body)?;
-        let key = rate_limit_dimension_name(&dimension);
-        if !dimension_names.insert(key.clone()) {
-            return Err(rate_limit_dimension_span(&dimension)
-                .error(format!("duplicate rate-limit dimension `{key}`")));
-        }
-        dimensions.push(dimension);
-        if dimensions_body.is_empty() {
-            break;
-        }
-        dimensions_body.parse::<Token![,]>().map_err(|_| {
-            dimensions_body.error("rate-limit dimensions must be separated by commas")
-        })?;
-        if dimensions_body.is_empty() {
-            break;
-        }
-    }
-    body.parse::<Token![;]>()?;
-
     let cost = if body.peek(keyword::cost) {
         body.parse::<keyword::cost>()?;
         let literal: LitInt = body.parse().map_err(|_| {
@@ -804,7 +699,7 @@ fn parse_rate_limit_template(
     let mut windows = Vec::new();
     while !body.is_empty() {
         if body.peek(keyword::by) {
-            return Err(body.error("a rate-limit rule requires exactly one leading `by` clause"));
+            return Err(body.error("`by [...]` dimensions were removed; normal generated rules use declaration-scoped global buckets"));
         }
         if body.peek(keyword::cost) {
             return Err(
@@ -830,9 +725,7 @@ fn parse_rate_limit_template(
         });
     }
     if windows.is_empty() {
-        return Err(name
-            .span()
-            .error("a rate-limit rule requires at least one positive window"));
+        return Err(input.error("a rate-limit declaration requires at least one positive window"));
     }
     if let Some(window) = windows.iter().find(|window| cost > window.capacity) {
         return Err(window
@@ -840,79 +733,7 @@ fn parse_rate_limit_template(
             .span
             .error("rate-limit cost must not exceed any window capacity"));
     }
-    Ok(RateLimitTemplate {
-        name,
-        dimensions,
-        cost,
-        windows,
-    })
-}
-
-fn parse_rate_limit_dimension(input: ParseStream<'_>) -> syn::Result<RateLimitDimension> {
-    if input.peek(LitStr) {
-        let literal: LitStr = input.parse()?;
-        return Err(literal
-            .span()
-            .error("string literals are not valid rate-limit dimensions"));
-    }
-    if input.peek(keyword::fmt) {
-        let marker: keyword::fmt = input.parse()?;
-        return Err(marker
-            .span()
-            .error("arbitrary or formatted expressions are not valid rate-limit dimensions"));
-    }
-    if input.peek(keyword::host) {
-        let marker: keyword::host = input.parse()?;
-        return Ok(RateLimitDimension::Host(marker.span()));
-    }
-    if input.peek(keyword::endpoint) {
-        let marker: keyword::endpoint = input.parse()?;
-        return Ok(RateLimitDimension::Endpoint(marker.span()));
-    }
-    if input.peek(keyword::method) {
-        let marker: keyword::method = input.parse()?;
-        return Ok(RateLimitDimension::Method(marker.span()));
-    }
-    let namespace: Ident = input.parse().map_err(|_| {
-        input.error(
-            "a rate-limit dimension must be `host`, `endpoint`, `method`, `vars.NAME`, `scope.NAME`, or `ep.NAME`",
-        )
-    })?;
-    if !input.peek(Token![.]) {
-        return Err(namespace.span().error(
-            "a rate-limit dimension must be `host`, `endpoint`, `method`, `vars.NAME`, `scope.NAME`, or `ep.NAME`",
-        ));
-    }
-    input.parse::<Token![.]>()?;
-    let name: Ident = input.parse().map_err(|_| {
-        input.error("a dynamic rate-limit dimension requires a value name after the namespace")
-    })?;
-    if !matches!(namespace.to_string().as_str(), "vars" | "scope" | "ep") {
-        return Err(namespace.span().error(
-            "dynamic rate-limit dimensions use only `vars.NAME`, `scope.NAME`, or `ep.NAME`; secrets and credentials are forbidden",
-        ));
-    }
-    Ok(RateLimitDimension::Value { namespace, name })
-}
-
-fn rate_limit_dimension_name(dimension: &RateLimitDimension) -> String {
-    match dimension {
-        RateLimitDimension::Host(_) => "host".to_owned(),
-        RateLimitDimension::Endpoint(_) => "endpoint".to_owned(),
-        RateLimitDimension::Method(_) => "method".to_owned(),
-        RateLimitDimension::Value { namespace, name } => {
-            format!("{}.{}", namespace, canonical_ident(name))
-        }
-    }
-}
-
-fn rate_limit_dimension_span(dimension: &RateLimitDimension) -> proc_macro2::Span {
-    match dimension {
-        RateLimitDimension::Host(span)
-        | RateLimitDimension::Endpoint(span)
-        | RateLimitDimension::Method(span) => *span,
-        RateLimitDimension::Value { namespace, .. } => namespace.span(),
-    }
+    Ok(RateLimitDecl { cost, windows })
 }
 
 fn parse_positive_u32(literal: &LitInt, owner: &str) -> syn::Result<u32> {
@@ -1700,6 +1521,11 @@ fn client_tail_error(input: ParseStream<'_>) -> syn::Error {
     if input.peek(keyword::base) {
         return input.error("a client requires exactly one `base` declaration");
     }
+    if input.peek(keyword::rate_limit) {
+        return input.error(
+            "a lexical layer may contain at most one direct `rate_limit { ... }` declaration",
+        );
+    }
     if input.peek(keyword::var) || input.peek(keyword::retry) || is_layer_start(input) {
         return input.error(
             "client configuration must appear once, in normative order, before every child scope or endpoint",
@@ -1709,7 +1535,9 @@ fn client_tail_error(input: ParseStream<'_>) -> syn::Error {
         return input.error("a client may contain at most one `credentials` block, before retry and request configuration");
     }
     if input.peek(keyword::rate_limits) {
-        return input.error("a client may contain at most one `rate_limits` block after timeout and before rate-limit attachments");
+        return input.error(
+            "`rate_limits { ... }` was removed; declare `rate_limit { ... }` at each lexical owner",
+        );
     }
     input.error("unsupported client declaration")
 }
@@ -1978,7 +1806,8 @@ mod tests {
                 rate_limits { }
             }
         })
-        .expect("an empty rate-limit template block is structurally valid");
+        .err()
+        .expect("removed rate-limit template block");
     }
 
     #[test]
@@ -2149,150 +1978,89 @@ mod tests {
     }
 
     #[test]
-    fn rate_limit_templates_dimensions_windows_observer_and_attachments_parse_in_order() {
+    fn lexical_rate_limit_declarations_parse_in_order() {
         let api = parse_ok(quote! {
             client RateApi {
                 base "https://example.test";
                 var tenant: String;
                 timeout 5s;
-                rate_limits {
-                    global {
-                        by [];
-                        1 / 1s;
-                    }
-                    application {
-                        by [host, endpoint, method, vars.tenant];
-                        cost 2;
-                        500 / 10s;
-                        30000 / 10m;
-                    }
-                    observe crate::ProviderObserver;
+                rate_limit {
+                    500 / 10s;
+                    30000 / 10m;
                 }
-                rate_limit global;
+                rate_limit_observer crate::ProviderObserver;
                 scope tenants(tenant: String) {
-                    rate_limit replace application;
-                    rate_limit local_scope {
-                        by [host, scope.tenant];
+                    rate_limit {
                         100 / 1m;
                     }
                     GET Read(item: String) -> Bytes {
                         timeout 2s;
-                        rate_limit application;
-                        rate_limit local_endpoint {
-                            by [endpoint, ep.item];
+                        rate_limit {
+                            cost 2;
                             10 / 1s;
                         }
                     }
-                    GET Public() -> Bytes {
-                        rate_limit off;
-                    }
+                    GET Public() -> Bytes;
                 }
             }
         });
         let client = &api.clients[0];
-        let block = client.rate_limits.as_ref().expect("rate-limits block");
-        assert_eq!(block.templates.len(), 2);
-        assert!(block.observer.is_some());
-        assert!(matches!(
-            client.layer.rate_limit,
-            Some(RateLimitOperation::Modify { .. })
-        ));
+        assert_eq!(
+            client.rate_limit_observer.as_ref().unwrap().segments.len(),
+            2
+        );
+        assert_eq!(client.layer.rate_limit.as_ref().unwrap().windows.len(), 2);
         let SourceChild::Scope(scope) = &client.children[0] else {
             panic!("scope")
         };
+        assert!(scope.layer.rate_limit.is_some());
         let SourceChild::Endpoint(read) = &scope.children[0] else {
             panic!("read endpoint")
         };
-        assert!(matches!(
-            read.layer.rate_limit,
-            Some(RateLimitOperation::Modify { .. })
-        ));
+        assert_eq!(read.layer.rate_limit.as_ref().unwrap().cost, 2);
         let SourceChild::Endpoint(public) = &scope.children[1] else {
             panic!("public endpoint")
         };
-        assert!(matches!(
-            public.layer.rate_limit,
-            Some(RateLimitOperation::Off)
-        ));
+        assert!(public.layer.rate_limit.is_none());
     }
 
     #[test]
     fn rate_limit_syntax_rejects_invalid_structure_values_dimensions_and_order() {
-        let duplicate_template = parse(quote! {
+        let duplicate_rule = parse(quote! {
             client Api {
                 base "https://example.test";
-                rate_limits {
-                    quota { by []; 1 / 1s; }
-                    quota { by []; 1 / 1s; }
-                }
+                rate_limit { 1 / 1s; }
+                rate_limit { 1 / 1s; }
             }
         })
         .err()
-        .expect("duplicate template");
-        assert!(
-            duplicate_template
-                .to_string()
-                .contains("duplicate rate-limit template")
-        );
-
-        let duplicate_dimension = parse(quote! {
-            client Api {
-                base "https://example.test";
-                rate_limits { quota { by [host, host]; 1 / 1s; } }
-            }
-        })
-        .err()
-        .expect("duplicate dimension");
-        assert!(
-            duplicate_dimension
-                .to_string()
-                .contains("duplicate rate-limit dimension")
-        );
+        .expect("duplicate direct rule");
+        assert!(duplicate_rule.to_string().contains("at most one direct"));
 
         for (tokens, expected) in [
             (
-                quote! { client Api { base "https://example.test"; rate_limits { q { by []; cost 0; 1 / 1s; } } } },
+                quote! { client Api { base "https://example.test"; rate_limit { cost 0; 1 / 1s; } } },
                 "cost must be greater than zero",
             ),
             (
-                quote! { client Api { base "https://example.test"; rate_limits { q { by []; 0 / 1s; } } } },
+                quote! { client Api { base "https://example.test"; rate_limit { 0 / 1s; } } },
                 "capacity must be greater than zero",
             ),
             (
-                quote! { client Api { base "https://example.test"; rate_limits { q { by []; 1 / 0s; } } } },
+                quote! { client Api { base "https://example.test"; rate_limit { 1 / 0s; } } },
                 "duration must be greater than zero",
             ),
             (
-                quote! { client Api { base "https://example.test"; rate_limits { q { by []; 1 / 0x10s; } } } },
+                quote! { client Api { base "https://example.test"; rate_limit { 1 / 0x10s; } } },
                 "duration integer literals must be base-10",
             ),
             (
-                quote! { client Api { base "https://example.test"; rate_limits { q { by []; cost 2; 1 / 1s; } } } },
+                quote! { client Api { base "https://example.test"; rate_limit { cost 2; 1 / 1s; } } },
                 "must not exceed any window capacity",
             ),
             (
-                quote! { client Api { base "https://example.test"; rate_limits { q { by []; cost 2; 100 / 1s; 1 / 1m; } } } },
+                quote! { client Api { base "https://example.test"; rate_limit { cost 2; 100 / 1s; 1 / 1m; } } },
                 "must not exceed any window capacity",
-            ),
-            (
-                quote! { client Api { base "https://example.test"; rate_limits { q { by ["tenant"]; 1 / 1s; } } } },
-                "string literals are not valid",
-            ),
-            (
-                quote! { client Api { base "https://example.test"; rate_limits { q { by [secrets.token]; 1 / 1s; } } } },
-                "secrets and credentials are forbidden",
-            ),
-            (
-                quote! { client Api { base "https://example.test"; rate_limits { q { by [credentials.token]; 1 / 1s; } } } },
-                "secrets and credentials are forbidden",
-            ),
-            (
-                quote! { client Api { base "https://example.test"; rate_limits { q { by [query.tenant]; 1 / 1s; } } } },
-                "use only `vars.NAME`, `scope.NAME`, or `ep.NAME`",
-            ),
-            (
-                quote! { client Api { base "https://example.test"; rate_limits { q { by [fmt[vars.tenant]]; 1 / 1s; } } } },
-                "arbitrary or formatted expressions are not valid",
             ),
         ] {
             let error = parse(tokens).err().expect("invalid rate syntax");
@@ -2302,34 +2070,32 @@ mod tests {
             );
         }
 
-        let off = parse(quote! {
+        let old_syntax = parse(quote! {
             client Api {
                 base "https://example.test";
-                rate_limit off;
-                rate_limit quota;
+                rate_limits { quota { 1 / 1s; } }
             }
         })
         .err()
-        .expect("off exclusivity");
-        assert!(off.to_string().contains("exclusive"));
+        .expect("removed template syntax");
+        assert!(old_syntax.to_string().contains("was removed"));
 
-        let late_replace = parse(quote! {
+        let old_observer = parse(quote! {
             client Api {
                 base "https://example.test";
-                rate_limit first;
-                rate_limit replace second;
+                observe crate::Observer;
             }
         })
         .err()
-        .expect("late replacement");
-        assert!(late_replace.to_string().contains("must precede"));
+        .expect("removed observer syntax");
+        assert!(old_observer.to_string().contains("rate_limit_observer"));
 
         let endpoint_order = parse(quote! {
             client Api {
                 base "https://example.test";
                 GET Read() -> Bytes {
-                    rate_limit direct { by []; 1 / 1s; }
                     timeout 1s;
+                    rate_limit { 1 / 1s; }
                 }
             }
         })

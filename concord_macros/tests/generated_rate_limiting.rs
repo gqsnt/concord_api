@@ -34,31 +34,22 @@ api! {
     client RateApi {
         base "http://rate-limit.example.test/";
         var tenant: String;
-        rate_limits {
-            application {
-                by [host];
-                500 / 10s;
-                30000 / 10m;
-            }
-            tenant_rule {
-                by [host, endpoint, method, vars.tenant, scope.region, ep.item];
-                cost 2;
-                100 / 1m;
-            }
-            observe crate::CountingObserver;
+        rate_limit {
+            500 / 10s;
+            30000 / 10m;
         }
-        rate_limit application;
+        rate_limit_observer crate::CountingObserver;
         scope Regions(region: String) {
-            rate_limit regional {
-                by [scope.region];
+            rate_limit {
                 20 / 1s;
             }
             GET Read(item: String) -> Bytes {
-                rate_limit tenant_rule;
+                rate_limit {
+                    cost 2;
+                    100 / 1m;
+                }
             }
-            GET Public() -> Bytes {
-                rate_limit off;
-            }
+            GET Public() -> Bytes;
         }
     }
 }
@@ -85,9 +76,8 @@ impl Display for DisplayOnly {
 api! {
     client MinimalBoundsApi {
         base "http://minimal-rate.example.test/";
-        rate_limits { item { by [ep.item]; 1 / 1s; } }
         GET Read(item: crate::DisplayOnly) -> Bytes {
-            rate_limit item;
+            rate_limit { 1 / 1s; }
         }
     }
 }
@@ -98,8 +88,7 @@ mod nested_rate {
     api! {
         client NestedRateApi {
             base "http://nested-rate.example.test/";
-            rate_limits { global { by []; 1 / 1s; } }
-            rate_limit global;
+            rate_limit { 1 / 1s; }
             GET Read() -> Bytes;
         }
     }
@@ -111,8 +100,7 @@ mod repeated_rate {
     api! {
         client FirstRateApi {
             base "http://first-rate.example.test/";
-            rate_limits { global { by []; 1 / 1s; } }
-            rate_limit global;
+            rate_limit { 1 / 1s; }
             GET Read() -> Bytes;
         }
     }
@@ -120,8 +108,7 @@ mod repeated_rate {
     api! {
         client SecondRateApi {
             base "http://second-rate.example.test/";
-            rate_limits { global { by []; 1 / 1s; } }
-            rate_limit global;
+            rate_limit { 1 / 1s; }
             GET Read() -> Bytes;
         }
     }
@@ -268,42 +255,21 @@ async fn custom_limiter_receives_canonical_ordered_plan_and_owns_observation() {
     assert_eq!(acquisitions.len(), 1);
     let rules = &acquisitions[0];
     assert_eq!(rules.len(), 3);
-    assert_eq!(
-        rules
-            .iter()
-            .map(|rule| rule.id.as_str())
-            .collect::<Vec<_>>(),
-        [
-            "RateApi::rate_limit::application",
-            "RateApi::Regions::rate_limit::regional",
-            "RateApi::rate_limit::tenant_rule",
-        ]
+    assert!(rules[0].id.ends_with("::RateApi::rate_limit"));
+    assert!(rules[1].id.ends_with("::RateApi::Regions::rate_limit"));
+    assert!(
+        rules[2]
+            .id
+            .ends_with("::RateApi::Regions::Read::rate_limit")
     );
-    assert_eq!(
-        rules[0].parts,
-        [("host".to_owned(), "rate-limit.example.test".to_owned())]
-    );
+    assert!(rules.windows(2).all(|pair| pair[0].id != pair[1].id));
+    assert!(rules.iter().all(|rule| rule.parts.is_empty()));
     assert_eq!(rules[0].cost, 1);
     assert_eq!(
         rules[0].windows,
         [
             (500, std::time::Duration::from_secs(10)),
             (30_000, std::time::Duration::from_secs(600)),
-        ]
-    );
-    assert_eq!(
-        rules[1].parts,
-        [("scope.region".to_owned(), "eu".to_owned())]
-    );
-    assert_eq!(
-        rules[2].parts,
-        [
-            ("host".to_owned(), "rate-limit.example.test".to_owned()),
-            ("endpoint".to_owned(), "RateApi::Regions::Read".to_owned(),),
-            ("method".to_owned(), "GET".to_owned()),
-            ("vars.tenant".to_owned(), "tenant-west".to_owned()),
-            ("scope.region".to_owned(), "eu".to_owned()),
-            ("ep.item".to_owned(), "item-42".to_owned()),
         ]
     );
     assert_eq!(rules[2].cost, 2);
@@ -360,7 +326,7 @@ async fn no_governor_private_fallback_executes_an_empty_generated_plan() {
 }
 
 #[tokio::test]
-async fn generated_rate_dimensions_add_only_the_required_display_bound() {
+async fn generated_rate_limits_add_no_display_bound_or_runtime_formatting() {
     let server = ScriptedServer::start([ResponseScript::ok(b"display".to_vec())])
         .expect("display-bound server");
     let proxy = SafeProxy::parse(server.url("")).expect("local proxy");
@@ -378,7 +344,7 @@ async fn generated_rate_dimensions_add_only_the_required_display_bound() {
         client.read(value).await.expect("display-only request"),
         Bytes::from_static(b"display")
     );
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
 }
 
 #[test]

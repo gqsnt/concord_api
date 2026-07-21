@@ -29,14 +29,8 @@ impl RateLimitObserver for GeneratedObserver {
 api! {
     client GovernorApi {
         base "http://generated-governor.example.test/";
-        rate_limits {
-            application {
-                by [host];
-                1 / 1h;
-            }
-            observe crate::GeneratedObserver;
-        }
-        rate_limit application;
+        rate_limit { 1 / 1h; }
+        rate_limit_observer crate::GeneratedObserver;
         GET Read() -> Bytes;
     }
 }

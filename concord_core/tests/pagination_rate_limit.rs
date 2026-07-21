@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use concord_core::advanced::{
-    BoxFuture, CodecError, DecodeBody, DecodeContext, ErrorCategory, GovernorRateLimiter,
-    HookError, PaginationController, PaginationError, RateLimiter, RuntimeHooks, SafeProxy,
+    BoxFuture, CodecError, DecodeBody, DecodeContext, GovernorRateLimiter, HookError,
+    PaginationController, PaginationError, RateLimiter, RuntimeHooks, SafeProxy,
 };
 use concord_core::prelude::Bytes;
 use concord_macros::api;
@@ -48,16 +48,10 @@ impl PaginationController<Vec<u32>> for OnePageKeyController {
 api! {
     client PaginationKeyLimitApi {
         base "http://pagination-key-limit.example.test/v1/";
-        rate_limits {
-            page_key {
-                by [ep.key];
-                1 / 1m;
-            }
-        }
         GET Items(key: String) -> crate::KeyPageCodec {
             path ["items"];
             query { "cursor" = ep.key; }
-            rate_limit page_key;
+            rate_limit { 1 / 1m; }
             paginate crate::OnePageKeyController {
                 key: bind ep.key,
             }
@@ -86,12 +80,11 @@ impl RuntimeHooks for KeyLimitHooks {
 }
 
 #[tokio::test]
-async fn generated_pagination_key_limit_measures_actual_value_not_placeholder_text() {
+async fn generated_pagination_uses_a_value_neutral_global_bucket() {
     use pagination_key_limit_api::prelude::*;
 
     const BOUNDARY: &str = "generated-page-key-boundary-sentinel-c7105e";
-    const KEY_NAME: &str = "ep.key";
-    let key_limit = KEY_NAME.len() + BOUNDARY.len();
+    let key_limit = 1;
 
     let accepted_server =
         ScriptedServer::start([ResponseScript::ok(b"1".to_vec())]).expect("accepted server");
@@ -116,7 +109,7 @@ async fn generated_pagination_key_limit_measures_actual_value_not_placeholder_te
         .items(BOUNDARY.to_owned())
         .paginate(1_u32)
         .await
-        .expect("actual boundary key");
+        .expect("global generated key");
     assert_eq!(items, [1]);
     assert_eq!(accepted_hooks.before_calls.load(Ordering::SeqCst), 1);
     assert_eq!(accepted_server.requests().len(), 1);
@@ -146,20 +139,13 @@ async fn generated_pagination_key_limit_measures_actual_value_not_placeholder_te
         .runtime(move |runtime| runtime.hooks(configured_hooks).rate_limiter(excess_limiter))
         .build()
         .expect("excess key client");
-    let error = excess_client
+    let items = excess_client
         .items(excess.clone())
         .paginate(1_u32)
         .await
-        .expect_err("first actual byte above the generated key limit");
-    assert_eq!(error.category(), ErrorCategory::Configuration);
-    assert_eq!(excess_hooks.before_calls.load(Ordering::SeqCst), 0);
-    assert!(excess_hooks.safe.lock().expect("excess safe").is_empty());
-    assert!(excess_server.requests().is_empty());
-
-    let mut source: Option<&(dyn std::error::Error + 'static)> = Some(&error);
-    while let Some(current) = source {
-        assert!(!current.to_string().contains(&excess));
-        assert!(!format!("{current:?}").contains(&excess));
-        source = current.source();
-    }
+        .expect("request values do not enter generated keys");
+    assert_eq!(items, [2]);
+    assert_eq!(excess_hooks.before_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(excess_server.requests().len(), 1);
+    assert!(excess_server.requests()[0].target().contains(&excess));
 }

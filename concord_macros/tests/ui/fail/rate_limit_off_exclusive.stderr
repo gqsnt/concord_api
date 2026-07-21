@@ -1,5 +1,5 @@
-error: `rate_limit off` is exclusive within its layer
- --> tests/ui/fail/rate_limit_off_exclusive.rs:7:20
+error: rate-limit rules are now direct `rate_limit { ... }` declarations; named attachments, `replace`, and `off` were removed
+ --> tests/ui/fail/rate_limit_off_exclusive.rs:6:20
   |
-7 |         rate_limit off;
+6 |         rate_limit off;
   |                    ^^^

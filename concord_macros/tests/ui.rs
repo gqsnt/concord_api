@@ -115,12 +115,13 @@ fn rate_limit_diagnostics_are_source_only_and_focused() {
     cases.compile_fail("tests/ui/fail/rate_limit_clause_order.rs");
     cases.compile_fail("tests/ui/fail/rate_limit_undefined_attachment.rs");
     cases.compile_fail("tests/ui/fail/rate_limit_secret_dimension.rs");
+    cases.compile_fail("tests/ui/fail/rate_limit_removed_syntax.rs");
 }
 
 #[test]
-fn dynamic_rate_limit_dimensions_require_display_without_a_clone_contract() {
+fn lexical_rate_limits_do_not_require_display_for_stored_values() {
     let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/fail/rate_limit_display_required.rs");
+    cases.pass("tests/ui/pass/rate_limit_no_display.rs");
 }
 
 #[test]

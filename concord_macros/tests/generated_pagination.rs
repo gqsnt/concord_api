@@ -445,12 +445,6 @@ api! {
 api! {
     client PaginationRateApi {
         base "http://pagination-rate.example.test/v1/";
-        rate_limits {
-            page_key {
-                by [host, ep.offset];
-                100 / 1s;
-            }
-        }
         GET Items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
             host [ep.offset];
             path ["items", ep.offset];
@@ -459,7 +453,7 @@ api! {
                 "limit" = ep.limit;
             }
             headers { "X-Page-Offset" = ep.offset; }
-            rate_limit page_key;
+            rate_limit { 100 / 1s; }
             paginate concord_core::advanced::OffsetPagination {
                 offset: bind ep.offset,
                 page_size: bind ep.limit,
@@ -1076,7 +1070,7 @@ async fn explicit_endpoint_nested_scope_alias_and_repeated_helpers_have_parity()
 }
 
 #[tokio::test]
-async fn generated_pagination_preserves_resolved_rate_keys_and_actual_hosts() {
+async fn generated_pagination_reuses_lexical_global_rate_plan_and_actual_hosts() {
     use pagination_rate_api::prelude::*;
 
     const INITIAL: &str = "7319058410827319461";
@@ -1126,20 +1120,8 @@ async fn generated_pagination_preserves_resolved_rate_keys_and_actual_hosts() {
     assert_eq!(contexts[0].2.as_deref(), Some(first_host.as_str()));
     assert_eq!(contexts[1].2.as_deref(), Some(next_host.as_str()));
     assert_ne!(contexts[0].2, contexts[1].2);
-    assert_eq!(
-        contexts[0].3,
-        [
-            ("host".to_owned(), first_host),
-            ("ep.offset".to_owned(), INITIAL.to_owned()),
-        ]
-    );
-    assert_eq!(
-        contexts[1].3,
-        [
-            ("host".to_owned(), next_host),
-            ("ep.offset".to_owned(), NEXT.to_owned()),
-        ]
-    );
+    assert!(contexts[0].3.is_empty());
+    assert!(contexts[1].3.is_empty());
     for (_, safe_url, _, parts) in contexts.iter() {
         let rendered_safe = format!("{safe_url}\n{:?}", hooks.before.lock().expect("hooks"));
         assert!(safe_url.contains("x.pagination-rate.example.test"));

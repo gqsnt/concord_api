@@ -15,22 +15,18 @@ api! {
         path ["game"];
         headers { "X-Developer-Key" = "example-only"; }
         auth header "X-Game-Token" = developer_key challenge never;
-        rate_limits {
-            application { by [host]; 20 / 1s; 100 / 2m; }
-            method { by [host, endpoint]; 10 / 10s; }
-        }
-        rate_limit application;
+        rate_limit { 20 / 1s; 100 / 2m; }
 
         scope Accounts(region: String) {
             host [scope.region, "accounts"];
             path ["accounts"];
             GET ById(account_id: String) -> Json<Vec<String>> {
                 path ["by-id", ep.account_id];
-                rate_limit method;
+                rate_limit { 10 / 10s; }
             }
             GET ByName(game_name: String, tag_line: String) -> Json<Vec<String>> {
                 path ["by-name", ep.game_name, ep.tag_line];
-                rate_limit method;
+                rate_limit { 10 / 10s; }
             }
         }
 
@@ -39,12 +35,12 @@ api! {
             path ["matches"];
             GET ById(match_id: String) -> Json<Vec<String>> {
                 path [ep.match_id];
-                rate_limit method;
+                rate_limit { 10 / 10s; }
             }
             GET ByAccount(account_id: String, start: u64, count: std::num::NonZeroU32) -> Json<Vec<String>> {
                 path ["by-account", ep.account_id];
                 query { "start" = ep.start; "count" = ep.count; }
-                rate_limit method;
+                rate_limit { 10 / 10s; }
                 paginate concord_core::advanced::OffsetPagination {
                     offset: bind ep.start,
                     page_size: bind ep.count,
@@ -52,7 +48,7 @@ api! {
             }
             GET Timeline(match_id: String) -> Json<Vec<String>> {
                 path [ep.match_id, "timeline"];
-                rate_limit method;
+                rate_limit { 10 / 10s; }
             }
         }
 
@@ -62,17 +58,17 @@ api! {
             GET Challenger(queue: String) -> Json<Vec<String>> {
                 path ["challenger"];
                 query { "queue" = ep.queue; }
-                rate_limit method;
+                rate_limit { 10 / 10s; }
             }
             GET Grandmaster(queue: String) -> Json<Vec<String>> {
                 path ["grandmaster"];
                 query { "queue" = ep.queue; }
-                rate_limit method;
+                rate_limit { 10 / 10s; }
             }
             GET Master(queue: String) -> Json<Vec<String>> {
                 path ["master"];
                 query { "queue" = ep.queue; }
-                rate_limit method;
+                rate_limit { 10 / 10s; }
             }
         }
     }

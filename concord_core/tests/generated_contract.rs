@@ -5,7 +5,7 @@ use concord_core::advanced::ErrorCategory;
 
 #[test]
 fn generated_contract_version_matches_generic_specification_capability() {
-    assert_eq!(GENERATED_CONTRACT_VERSION, 13);
+    assert_eq!(GENERATED_CONTRACT_VERSION, 14);
 }
 
 #[test]

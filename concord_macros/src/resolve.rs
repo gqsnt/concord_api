@@ -8,15 +8,14 @@ use crate::ast::{
     AuthChallenge, AuthOperation, AuthPlacementKind, CredentialSource as SourceCredentialSource,
     CredentialsBlock, HeaderEntry, HeaderOperation, HostOperation, Layer, PaginationDecl,
     PaginationInitializer as SourcePaginationInitializer, PaginationValue as SourcePaginationValue,
-    PathOperation, PublicExpr, QueryEntry, QueryOperation, RateLimitDimension, RateLimitOperation,
-    RateLimitTemplate, RateLimitUse, SourceApi, SourceChild, SourceEndpoint, SourceScope,
-    TimeoutOperation, ValueDecl,
+    PathOperation, PublicExpr, QueryEntry, QueryOperation, RateLimitDecl, SourceApi, SourceChild,
+    SourceEndpoint, SourceScope, TimeoutOperation, ValueDecl,
 };
 use crate::model::{
     Api, Child, Client, Credential, CredentialSource, Endpoint, NormalizedAuth, NormalizedConfig,
     NormalizedHeader, NormalizedQuery, NormalizedRateLimitRule, NormalizedRateLimitWindow,
     Pagination, PaginationField, PaginationInitializer, PaginationValue, ResolvedExpr,
-    ResolvedRateLimitDimension, ResolvedValue, Scope, Secret, Value, ValueReference, ValueShape,
+    ResolvedValue, Scope, Secret, Value, ValueReference, ValueShape,
 };
 use crate::names::{
     RESERVED_GENERATED_METHODS, canonical_ident, prelude_alias, public_ident, request_ext_name,
@@ -33,7 +32,6 @@ struct Resolver<'a> {
     client_name: &'a Ident,
     client_values: &'a [Value],
     credentials: &'a [Credential],
-    rate_templates: &'a [RateLimitTemplate],
     next_scope_id: usize,
     next_endpoint_id: usize,
     prelude_aliases: &'a mut HashMap<String, Span>,
@@ -52,15 +50,9 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
     let mut clients = Vec::new();
 
     for source_client in source.clients {
-        let source_declares_limiter = source_client
-            .rate_limits
-            .as_ref()
-            .is_some_and(|block| !block.templates.is_empty())
-            || source_tree_declares_rate_limits(&source_client.layer, &source_client.children);
-        let (rate_templates, rate_observer) = source_client.rate_limits.map_or_else(
-            || (Vec::new(), None),
-            |block| (block.templates, block.observer),
-        );
+        let source_declares_limiter =
+            source_tree_declares_rate_limits(&source_client.layer, &source_client.children);
+        let rate_observer = source_client.rate_limit_observer;
         let values = convert_values(source_client.values)?;
         validate_setter_namespace(&values, "client builder", true, true)?;
         let (secrets, mut credentials) = convert_credentials(source_client.credentials)?;
@@ -82,7 +74,6 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
                 client_name: &client_name,
                 client_values: &values,
                 credentials: &credentials,
-                rate_templates: &rate_templates,
                 next_scope_id: 0,
                 next_endpoint_id: 0,
                 prelude_aliases: &mut prelude_aliases,
@@ -93,6 +84,7 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
                 &[],
                 None,
                 &client_canonical,
+                "client",
             )?;
             let children =
                 resolver.resolve_children(source_client.children, &config, &[], &[], "client")?;
@@ -173,8 +165,22 @@ impl Resolver<'_> {
         });
         let mut path = scope_path.to_vec();
         path.push(source.name.clone());
-        let origin = rate_limit_origin(self.client_name, &path);
-        let config = self.normalize_layer(&source.layer, parent, &frames, None, &origin)?;
+        let id_path = rate_limit_origin(self.client_name, &path);
+        let lexical_origin = format!(
+            "scope {}",
+            path.iter()
+                .map(canonical_ident)
+                .collect::<Vec<_>>()
+                .join("::")
+        );
+        let config = self.normalize_layer(
+            &source.layer,
+            parent,
+            &frames,
+            None,
+            &id_path,
+            &lexical_origin,
+        )?;
         let children = self.resolve_children(source.children, &config, &frames, &path, "scope")?;
         validate_child_methods(&children, &parameters, "scope facade", false)?;
 
@@ -235,13 +241,22 @@ impl Resolver<'_> {
             .cloned()
             .chain(std::iter::once(source.name.clone()))
             .collect::<Vec<_>>();
-        let origin = rate_limit_origin(self.client_name, &dsl_path);
+        let id_path = rate_limit_origin(self.client_name, &dsl_path);
+        let lexical_origin = format!(
+            "endpoint {}",
+            dsl_path
+                .iter()
+                .map(canonical_ident)
+                .collect::<Vec<_>>()
+                .join("::")
+        );
         let config = self.normalize_layer(
             &source.layer,
             parent,
             visible_scopes,
             Some(&parameters),
-            &origin,
+            &id_path,
+            &lexical_origin,
         )?;
         let pagination = self.resolve_pagination(source.pagination, visible_scopes, &parameters)?;
         Ok(Endpoint {
@@ -323,7 +338,8 @@ impl Resolver<'_> {
         parent: &NormalizedConfig,
         scopes: &[ScopeFrame],
         endpoint: Option<&[Value]>,
-        rate_origin: &str,
+        rate_id_path: &str,
+        rate_lexical_origin: &str,
     ) -> syn::Result<NormalizedConfig> {
         let mut normalized = parent.clone();
 
@@ -464,92 +480,23 @@ impl Resolver<'_> {
                 }
             };
         }
-        if let Some(operation) = &layer.rate_limit {
-            match operation {
-                RateLimitOperation::Off => normalized.rate_limits.clear(),
-                RateLimitOperation::Modify {
-                    replacement,
-                    additions,
-                } => {
-                    if let Some(name) = replacement {
-                        normalized.rate_limits.clear();
-                        normalized
-                            .rate_limits
-                            .push(self.resolve_named_rate_limit(name, scopes, endpoint)?);
-                    }
-                    for addition in additions {
-                        normalized.rate_limits.push(match addition {
-                            RateLimitUse::Named(name) => {
-                                self.resolve_named_rate_limit(name, scopes, endpoint)?
-                            }
-                            RateLimitUse::Direct(template) => {
-                                let id = format!(
-                                    "{rate_origin}::rate_limit::{}",
-                                    canonical_ident(&template.name)
-                                );
-                                self.resolve_rate_limit(template, id, scopes, endpoint)?
-                            }
-                        });
-                    }
-                }
-            }
+        if let Some(declaration) = &layer.rate_limit {
+            normalized.rate_limits.push(self.resolve_rate_limit(
+                declaration,
+                rate_id_path,
+                rate_lexical_origin,
+            ));
         }
         Ok(normalized)
     }
 
-    fn resolve_named_rate_limit(
-        &self,
-        name: &Ident,
-        scopes: &[ScopeFrame],
-        endpoint: Option<&[Value]>,
-    ) -> syn::Result<NormalizedRateLimitRule> {
-        let template = self
-            .rate_templates
-            .iter()
-            .find(|template| canonical_ident(&template.name) == canonical_ident(name))
-            .ok_or_else(|| {
-                name.span().error(format!(
-                    "unknown client rate-limit template `{}`",
-                    canonical_ident(name)
-                ))
-            })?;
-        let id = format!(
-            "{}::rate_limit::{}",
-            canonical_ident(self.client_name),
-            canonical_ident(&template.name)
-        );
-        self.resolve_rate_limit(template, id, scopes, endpoint)
-    }
-
     fn resolve_rate_limit(
         &self,
-        template: &RateLimitTemplate,
-        id: String,
-        scopes: &[ScopeFrame],
-        endpoint: Option<&[Value]>,
-    ) -> syn::Result<NormalizedRateLimitRule> {
-        let dimensions = template
-            .dimensions
-            .iter()
-            .map(|dimension| match dimension {
-                RateLimitDimension::Host(_) => Ok(ResolvedRateLimitDimension::Host),
-                RateLimitDimension::Endpoint(_) => Ok(ResolvedRateLimitDimension::Endpoint),
-                RateLimitDimension::Method(_) => Ok(ResolvedRateLimitDimension::Method),
-                RateLimitDimension::Value { namespace, name } => {
-                    let value = self.resolve_value_reference(namespace, name, scopes, endpoint)?;
-                    if !matches!(value.shape, ValueShape::Scalar) {
-                        return Err(name.span().error(
-                            "a dynamic rate-limit dimension must resolve to a required non-optional scalar value",
-                        ));
-                    }
-                    Ok(ResolvedRateLimitDimension::Value {
-                        name: format!("{}.{}", namespace, canonical_ident(name)),
-                        value,
-                    })
-                }
-            })
-            .collect::<syn::Result<Vec<_>>>()?;
-        let windows = template
+        declaration: &RateLimitDecl,
+        id_path: &str,
+        origin: &str,
+    ) -> NormalizedRateLimitRule {
+        let windows = declaration
             .windows
             .iter()
             .map(|window| {
@@ -560,13 +507,12 @@ impl Resolver<'_> {
                 }
             })
             .collect();
-        Ok(NormalizedRateLimitRule {
-            id,
-            declared_name: template.name.clone(),
-            dimensions,
-            cost: template.cost,
+        NormalizedRateLimitRule {
+            id: format!("{id_path}::rate_limit"),
+            origin: origin.to_owned(),
+            cost: declaration.cost,
             windows,
-        })
+        }
     }
 
     fn resolve_expressions(
@@ -689,35 +635,13 @@ impl Resolver<'_> {
 }
 
 fn source_tree_declares_rate_limits(layer: &Layer, children: &[SourceChild]) -> bool {
-    let local = matches!(
-        &layer.rate_limit,
-        Some(RateLimitOperation::Modify {
-            replacement: Some(_),
-            ..
-        })
-    ) || matches!(
-        &layer.rate_limit,
-        Some(RateLimitOperation::Modify { additions, .. }) if !additions.is_empty()
-    );
+    let local = layer.rate_limit.is_some();
     local
         || children.iter().any(|child| match child {
             SourceChild::Scope(scope) => {
                 source_tree_declares_rate_limits(&scope.layer, &scope.children)
             }
-            SourceChild::Endpoint(endpoint) => {
-                endpoint.layer.rate_limit.as_ref().is_some_and(|operation| {
-                    matches!(
-                        operation,
-                        RateLimitOperation::Modify {
-                            replacement: Some(_),
-                            ..
-                        }
-                    ) || matches!(
-                        operation,
-                        RateLimitOperation::Modify { additions, .. } if !additions.is_empty()
-                    )
-                })
-            }
+            SourceChild::Endpoint(endpoint) => endpoint.layer.rate_limit.is_some(),
         })
 }
 
@@ -1448,189 +1372,106 @@ mod tests {
         resolve(parse::parse(tokens).expect("AST")).expect("normalized IR")
     }
 
-    fn resolve_error(tokens: proc_macro2::TokenStream) -> syn::Error {
-        resolve(parse::parse(tokens).expect("source AST"))
-            .err()
-            .expect("semantic failure")
-    }
-
     #[test]
-    fn rate_limit_normalization_resolves_append_replace_off_direct_order_and_ids() {
+    fn rate_limit_normalization_inherits_lexical_order_and_static_values() {
         let api = resolve_ok(quote! {
             client RateApi {
                 base "https://example.test";
-                var tenant: String;
-                rate_limits {
-                    application {
-                        by [host];
-                        500 / 10s;
-                        30000 / 10m;
-                    }
-                    tenant {
-                        by [host, endpoint, method, vars.tenant];
-                        cost 2;
-                        100 / 1m;
-                    }
-                    observe crate::Observer;
+                rate_limit {
+                    500 / 10s;
+                    30000 / 10m;
                 }
-                rate_limit application;
+                rate_limit_observer crate::Observer;
                 scope regions(region: String) {
-                    rate_limit replace tenant;
-                    rate_limit regional {
-                        by [scope.region];
+                    rate_limit {
+                        cost 2;
                         20 / 1s;
                     }
                     GET Read(id: String) -> Bytes {
-                        rate_limit application;
-                        rate_limit endpoint_quota {
-                            by [ep.id];
+                        rate_limit {
                             5 / 1s;
                         }
                     }
-                    GET Public() -> Bytes { rate_limit off; }
+                    GET Public() -> Bytes;
                 }
             }
         });
         let client = &api.clients[0];
         assert!(client.requires_limiter);
         assert!(client.rate_observer.is_some());
-        assert_eq!(client.config.rate_limits.len(), 1);
-        assert_eq!(
-            client.config.rate_limits[0].id,
-            "RateApi::rate_limit::application"
-        );
+        let client_rule = &client.config.rate_limits;
+        assert_eq!(client_rule.len(), 1);
+        assert_eq!(client_rule[0].id, "RateApi::rate_limit");
+        assert_eq!(client_rule[0].origin, "client");
+        assert_eq!(client_rule[0].cost, 1);
+        assert_eq!(client_rule[0].windows.len(), 2);
         let Child::Scope(scope) = &client.children[0] else {
             panic!("scope")
         };
         assert_eq!(scope.config.rate_limits.len(), 2);
-        assert_eq!(
-            scope
-                .config
-                .rate_limits
-                .iter()
-                .map(|rule| canonical_ident(&rule.declared_name))
-                .collect::<Vec<_>>(),
-            ["tenant", "regional"]
-        );
+        assert_eq!(scope.config.rate_limits[0].id, "RateApi::rate_limit");
         assert_eq!(
             scope.config.rate_limits[1].id,
-            "RateApi::regions::rate_limit::regional"
+            "RateApi::regions::rate_limit"
         );
+        assert_eq!(scope.config.rate_limits[1].origin, "scope regions");
         let Child::Endpoint(read) = &scope.children[0] else {
             panic!("read")
         };
+        assert_eq!(read.config.rate_limits.len(), 3);
         assert_eq!(
-            read.config
-                .rate_limits
-                .iter()
-                .map(|rule| canonical_ident(&rule.declared_name))
-                .collect::<Vec<_>>(),
-            ["tenant", "regional", "application", "endpoint_quota"]
+            read.config.rate_limits[2].id,
+            "RateApi::regions::Read::rate_limit"
         );
-        assert_eq!(
-            read.config.rate_limits[3].id,
-            "RateApi::regions::Read::rate_limit::endpoint_quota"
-        );
-        assert_eq!(read.config.rate_limits[0].cost, 2);
-        assert_eq!(read.config.rate_limits[0].windows.len(), 1);
-        assert!(matches!(
-            read.config.rate_limits[0].dimensions[3],
-            ResolvedRateLimitDimension::Value {
-                value: ResolvedValue {
-                    reference: ValueReference::Client(0),
-                    ..
-                },
-                ..
-            }
-        ));
-        assert!(matches!(
-            read.config.rate_limits[1].dimensions[0],
-            ResolvedRateLimitDimension::Value {
-                value: ResolvedValue {
-                    reference: ValueReference::Scope { .. },
-                    ..
-                },
-                ..
-            }
-        ));
-        assert!(matches!(
-            read.config.rate_limits[3].dimensions[0],
-            ResolvedRateLimitDimension::Value {
-                value: ResolvedValue {
-                    reference: ValueReference::Endpoint(0),
-                    ..
-                },
-                ..
-            }
-        ));
+        assert_eq!(read.config.rate_limits[2].cost, 1);
+        assert_eq!(read.config.rate_limits[2].windows[0].capacity, 5);
         let Child::Endpoint(public) = &scope.children[1] else {
             panic!("public")
         };
-        assert!(public.config.rate_limits.is_empty());
+        assert_eq!(public.config.rate_limits.len(), 2);
     }
 
     #[test]
-    fn rate_limit_semantics_reject_undefined_out_of_scope_and_optional_dimensions() {
-        let undefined = resolve_error(quote! {
+    fn rate_limit_normalization_does_not_resolve_request_values() {
+        let api = resolve_ok(quote! {
+            client Api {
+                base "https://example.test";
+                scope Regions(region: String) {
+                    GET Read(item: String) -> Bytes {
+                        rate_limit { 1 / 1s; }
+                    }
+                }
+            }
+        });
+        let Child::Scope(scope) = &api.clients[0].children[0] else {
+            panic!("scope")
+        };
+        let Child::Endpoint(endpoint) = &scope.children[0] else {
+            panic!("endpoint")
+        };
+        assert_eq!(endpoint.config.rate_limits.len(), 1);
+        assert!(
+            endpoint.config.rate_limits[0]
+                .id
+                .ends_with("::Read::rate_limit")
+        );
+        assert_eq!(
+            endpoint.config.rate_limits[0].origin,
+            "endpoint Regions::Read"
+        );
+    }
+
+    #[test]
+    fn rate_limit_requires_direct_complete_declarations() {
+        let syntax = parse::parse(quote! {
             client Api {
                 base "https://example.test";
                 rate_limit missing;
             }
-        });
-        assert!(
-            undefined
-                .to_string()
-                .contains("unknown client rate-limit template")
-        );
-
-        let undefined_value = resolve_error(quote! {
-            client Api {
-                base "https://example.test";
-                rate_limits { quota { by [vars.missing]; 1 / 1s; } }
-                rate_limit quota;
-            }
-        });
-        assert!(undefined_value.to_string().contains("unknown client value"));
-
-        let optional = resolve_error(quote! {
-            client Api {
-                base "https://example.test";
-                var tenant: Option<String>;
-                rate_limits { quota { by [vars.tenant]; 1 / 1s; } }
-                rate_limit quota;
-            }
-        });
-        assert!(
-            optional
-                .to_string()
-                .contains("required non-optional scalar")
-        );
-
-        let missing_scope = resolve_error(quote! {
-            client Api {
-                base "https://example.test";
-                rate_limits { quota { by [scope.tenant]; 1 / 1s; } }
-                rate_limit quota;
-            }
-        });
-        assert!(
-            missing_scope
-                .to_string()
-                .contains("unknown visible scope value")
-        );
-
-        let endpoint_at_client = resolve_error(quote! {
-            client Api {
-                base "https://example.test";
-                rate_limits { quota { by [ep.id]; 1 / 1s; } }
-                rate_limit quota;
-            }
-        });
-        assert!(
-            endpoint_at_client
-                .to_string()
-                .contains("available only while shaping an endpoint")
-        );
+        })
+        .err()
+        .expect("named declaration is removed");
+        assert!(syntax.to_string().contains("direct `rate_limit { ... }`"));
     }
 
     #[test]
