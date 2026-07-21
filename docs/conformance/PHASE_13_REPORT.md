@@ -22,7 +22,7 @@ implemented, and no Phase 15 work was started.
 - Final immutable tested source: `15b61d57c668fead307eafc7a276019760ae46f7`
 - Superseded evidence/report/state: `7158894bf636803014999f38635a002bfe7e7728`; superseded anchor: `0602840f942cb62a0f9f29661c6d42edf03960f5`.
 - Evidence/report/state commit: `03e6356e3841c6895bdd7c097064f9c8489ef710`
-- Evidence anchor: `ANCHOR_COMMIT_PENDING`
+- Evidence anchor: `cb58af662199784628efe972f701bbf8f393740e`
 - Metadata descendant: recorded in the controller after the compatible two-file descendant
 - Additional executable correction commits after the superseded source: `369ce1b82c4012c298d55c3ef6df90bf1ff0b8fc`, `738ab67409d955519e7b449f81b3b028637a504c`, and `15b61d57c668fead307eafc7a276019760ae46f7`.
 - Branch: `master`; final tree is required to be clean
