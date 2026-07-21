@@ -624,12 +624,20 @@ source correction for the original Phase 12 closure was
 `d1aadcebcad0a65d92c4ed4a42d6b0a9c1f034b2`. Focused conformance review later found that the
 downstream custom request specification lacked runtime proof through an explicit generated endpoint
 value and that several Phase 12 rows used broad command-to-claim allocation. The executable
-correction commit and new immutable tested identity is
+correction commit was
 `8281c79d98406be7b88a20ea70d84af531e0b757`. It adds exact facade/explicit/prepared request-spec
-parity, hook-veto, contradiction, and macro-neutrality proof plus validation-audit enforcement; no
-product source, public contract, dependency, feature, or generated contract changed. The complete
-focused and maintained matrix, including `just release`, passed against that exact source identity
-on Rust 1.85.0.
+parity, hook-veto, contradiction, and macro-neutrality proof plus validation-audit enforcement.
+
+A later source-grounded audit identified remaining record opening/completion, post-return failure
+and synchronous-drop completion, automatic diagnostic, rendered-Rustdoc feature isolation, and
+public downstream credential/limiter/hook/controller runtime proof gaps. The non-amended executable
+correction and final immutable tested identity is
+`8307d0744363ea7ec8a98d5f5fe68c4429b71c31`. It adds deterministic records lifecycle and sentinel
+tests, separate public/generated records Rustdoc checks, isolated records documentation roles,
+public-only extension runtime, explicit security registry classes, and targeted release-registry
+assertions. The tests exposed no product defect. No public contract, production dependency, feature,
+generated contract, or approved runtime behavior changed. The complete focused and maintained
+matrix, including `just release`, passed against that exact source identity on Rust 1.85.0.
 
 The validated implementation has one public `RequestBodySpec`, one managed outgoing
 `RequestBody`, one public `ResponseBodySpec`, exactly sealed `Buffered`, `Streaming`, and `Discard`
@@ -653,8 +661,10 @@ Phase 0-11 catalog. Coverage contains 563 active and 11 superseded IDs. The hist
 release requirement, claim, and change-map registries remain historical; Phase 14 owns their whole-
 product regeneration. The corrected claim-atom audit maps every complete active Phase 12 paragraph
 to principal source/test/fixture paths and one or more exact passing commands, with each filtered
-Nextest run backed by a nonzero inventory. Exact commits, commands, source paths, features, lineage,
-security results, and the corrected anchor sequence are recorded in
+Nextest run backed by a nonzero inventory. The 179-row validation registry contains 71 preserved
+historical and 108 current Phase 12 rows. Exact commits, commands, source paths, features, lineage,
+record completion/drop behavior, diagnostic and Rustdoc results, downstream workflow mapping, and
+the corrected anchor sequence are recorded in
 `docs/conformance/PHASE_12_REPORT.md`.
 
 ## Release non-goals

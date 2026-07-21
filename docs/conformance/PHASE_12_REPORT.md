@@ -15,41 +15,42 @@ Phase 13 or Phase 14 product behavior and starts no Phase 15 work.
 ## Identities and Git boundary
 
 - Original Phase 12 starting HEAD: `b66d2914609aec7b767481e09dedd5544b3d9130`
-- Focused correction starting HEAD: `d0c7d0d3cfb4d7553b5a456c13be369d0b01bd3c`
+- First focused correction starting HEAD: `d0c7d0d3cfb4d7553b5a456c13be369d0b01bd3c`
+- Record-proof correction starting HEAD: `e7e30bc45012792a6532103b5c22e1b9b54303a7`
 - Starting branch/tree for the correction: clean `master`
 - Phase 12 authority commit: `95a1b9075061184ff2fa5807bb28b16a4d172277`
 - Initial Phase 12 source/test commit: `e71ed0671359f443f5aa165391ff56bd10debdf2`
 - Prior focused source correction: `d1aadcebcad0a65d92c4ed4a42d6b0a9c1f034b2`
-- Executable correction commit: `8281c79d98406be7b88a20ea70d84af531e0b757`
-- Final corrected immutable tested source commit: `8281c79d98406be7b88a20ea70d84af531e0b757`
-- Corrected Phase 12 evidence/report/state commit: `21309a579e3df05847cb42b358775215dfdee544`
-- Corrected Phase 12 evidence anchor: `d781081634ebf50fe5a5c5c41d0ae53fb6192081`
+- Prior executable correction commit: `8281c79d98406be7b88a20ea70d84af531e0b757`
+- Record lifecycle/security/Rustdoc correction commit:
+  `8307d0744363ea7ec8a98d5f5fe68c4429b71c31`
+- Final corrected immutable tested source commit: `8307d0744363ea7ec8a98d5f5fe68c4429b71c31`
+- Corrected Phase 12 evidence/report/state commit: `EVIDENCE_COMMIT_PENDING`
+- Corrected Phase 12 evidence anchor: `ANCHOR_COMMIT_PENDING`
 - Compatible anchor-metadata descendant: the final two-file commit titled
-  `docs: record corrected phase 12 anchor`; its own identity is intentionally not self-embedded.
+  `docs: record corrected phase 12 records anchor`; its own identity is intentionally not
+  self-embedded.
 - Head policy: `anchor-must-be-an-ancestor`
 
-The prior evidence state `14942ce98c6e959c9cfe4f1fe328ddd95d3d7367` and prior anchor
-`793d6d30b75b7d7dd17831cdf60c4c504da90f7a` remain immutable correction history. Their tested
-source was `d1aadcebcad0a65d92c4ed4a42d6b0a9c1f034b2`. Source review found the approved Phase 12 product
-architecture intact, but evidence review found two correction-class defects: no runtime probe had
-executed a downstream custom `RequestBodySpec` through an explicit generated endpoint value, and
-several Phase 12 rows used broad or unrelated commands instead of exact command-to-claim proof.
+The immediately superseded tested source `8281c79d98406be7b88a20ea70d84af531e0b757`, evidence state
+`21309a579e3df05847cb42b358775215dfdee544`, evidence anchor
+`d781081634ebf50fe5a5c5c41d0ae53fb6192081`, and metadata descendant
+`e7e30bc45012792a6532103b5c22e1b9b54303a7` remain immutable correction history. Earlier evidence
+state `14942ce98c6e959c9cfe4f1fe328ddd95d3d7367` and anchor
+`793d6d30b75b7d7dd17831cdf60c4c504da90f7a` likewise remain reachable history.
 
-The executable correction adds only the missing three-path tests and validation-audit enforcement;
-it changes no product source, public contract, dependency, feature, or generated contract. The new
-runtime proof executes distinct sentinels through the generated facade, an actual generated
-`extension_api::endpoints::*` value passed to `client.request(...)`, and a prepared endpoint using
-`body_spec::<DownstreamBody>`. Companion probes prove hook-veto and contradiction cutoffs on all
-three paths. The macro-neutrality audit pairs type-shaped source inspection with the successful
-explicit-endpoint runtime. All 127 Phase 12 rows were then reviewed against their complete current
-normative paragraphs, principal paths, and focused passing commands.
+The current correction closes four remaining proof classes without changing approved semantics:
+record opening and exactly-once `StreamOpened` completion; post-return record failure and synchronous
+drop behavior; record/response diagnostic and rendered-Rustdoc exclusions; and public downstream
+credential, limiter, hook, and controller runtime sufficiency. It adds deterministic probes,
+rendered documentation checks, security-registry allocation, isolated records documentation roles,
+and targeted release-audit assertions. The tests exposed no product defect. No public contract,
+dependency, feature, generated contract, executor, or Phase 13/14 behavior changed.
 
 No branch was created. No remote Git operation, push, pull, fetch, merge, rebase, amend, tag,
-publication, deployment, credential access, or history rewrite occurred. One pre-freeze fixture
-dependency check unintentionally printed `Updating crates.io index` before the command was corrected
-to the maintained locked/offline path. It used no credentials and changed no tracked source; it is
-not represented as authoritative validation. Every final fixture and dependency-topology proof ran
-through the maintained locked/offline commands.
+publication, deployment, credential access, or history rewrite occurred. Authoritative fixture and
+dependency-topology proof used the maintained locked/offline commands and deterministic loopback
+servers only.
 
 ## Authority, lineage, and decisions
 
@@ -289,6 +290,22 @@ semantics, safe body/decode stream items, batching, drop cancellation, an indepe
 limit, rejection without retaining the first excess append, and withholding an oversized framed
 record. Built-in CSV and NDJSON staging is exactly 1 MiB.
 
+The deterministic execution probe
+`records_response_validates_starts_unpolled_and_completes_stream_opened_once` observes, immediately
+after endpoint await, decoder validation `1`, decoder start `1`, decode `0`, decode-EOF `0`, and
+native body polls `0`. It receives one `RecordStream` over one unpolled `ByteStream`, observes one
+response-head hook and the required one limiter response observation, and records exactly one fixed
+completion with outcome `StreamOpened`. Direct and metadata terminals use this same lifecycle and
+do not duplicate completion.
+
+`record_stream_body_and_decoder_failures_are_items_without_second_completion` covers native body
+read failure, decoder framing failure, and decoder EOF failure separately. Endpoint await succeeds
+first in every case; the later safe `RecordError` is a stream item; the original `StreamOpened`
+record remains unchanged; and no second completion appears. The two synchronous-drop probes prove
+that dropping `RecordStream<D>` immediately drops decoder state and the owned byte/native body, and
+that dropping `RecordBatches<D>` immediately drops its owned record stream. Drop requires no task,
+causes no later poll, and emits no completion.
+
 CSV proof covers required typed headers, invalid/duplicate headers, comma and double-quote dialect,
 doubled quotes, quoted delimiters/newlines, LF/CRLF, one-byte network splits, several rows per chunk,
 empty physical lines, optional/final missing newline, malformed quoting, typed decode failure,
@@ -303,6 +320,15 @@ A stable-public-only downstream fixture implements custom request, buffered/stre
 response, and record-decoder specifications, then compiles and executes generated and prepared
 paths without a macro source change, private import, native response, or second runtime.
 
+Rendered documentation is tested independently from source comments. The public record Rustdoc
+probe renders `records`, `csv`, `ndjson`, and `csv,ndjson` in isolated target directories and checks
+feature visibility, structural private fields, value-free debug documentation, stable public paths,
+and the absence of native response, transport, executor, staging, or decoder-storage escape. The
+generated fixture renders downstream `Records<ExtensionRecordDecoder>`, CSV, and NDJSON endpoints
+and checks the same stable-path and value-channel boundary. Rust 1.85 documentation builds passed
+for each of the four isolated feature combinations; records-only documentation has no Serde/CSV
+claim or dependency, and CSV/NDJSON remain mutually and general-JSON isolated.
+
 ## Security and prior guarantees
 
 High-entropy request, body, response, stream, CSV, NDJSON, custom-record, header, authenticated URL,
@@ -311,6 +337,31 @@ sources, hooks, debug events, completion events, limiter contexts, public Rustdo
 Rustdoc. Core error reduction excludes application error text, body/record bytes, parser text,
 headers, filenames, JSON values, CSV fields, native authenticated URLs, and credentials. Selected
 extensions receive only their documented inputs and own any application logging or storage.
+
+The new executing probes (not merely the registry audit) cover raw record bytes, CSV headers and
+fields, NDJSON values, downstream decoder state, parser-authored text, response headers, and logical
+URL continuation/query data. They inspect `ApiError` display/debug/sources, hooks, request and
+response debug, limiter request/observation, completion, `ApiResponse<T>`, `ByteStream`,
+`RecordStream<D>`, `RecordBatches<D>`, and `RecordError`. A companion response probe composes
+buffered bytes, stream chunks, records, decoded/custom output, and parser text across those same
+automatic surfaces. The security registry now has distinct `record_data_runtime`,
+`record_data_rustdoc`, and generated-record-Rustdoc allocations; maintained security selection
+executes each semantic probe rather than treating registry presence as proof.
+
+The public-only downstream workflow map is:
+
+| Workflow | Exact runtime owner |
+|---|---|
+| request, body, codec, response, prepared | `concord_core/tests/generic_spec_extensions.rs` |
+| record | `concord_core/tests/records_extensions.rs` |
+| page response, controller | generated pagination plus `extension_certification/tests/pagination_runtime.rs` |
+| credential, limiter, hook | `extension_certification/tests/extension_workflows_runtime.rs` |
+
+The standalone credential/limiter/hook probe uses a public `DirectExtensionProvider`, public
+`RateLimiter`, public `RuntimeHooks`, an ordinary generated request, an ephemeral loopback TLS
+application/proxy path, exact counters, and high-entropy sentinels. Together with the fixture's
+public/private escape audit, it proves compile and runtime sufficiency without native response
+access, macro modification, private imports, or external provider/application service access.
 
 The full regression matrix reproves authentication recovery, limiter reacquisition, hidden Reqwest
 retry containment, exact request counts, replayability, provider isolation, terminal status bodies,
@@ -325,7 +376,7 @@ cargo-deny 0.20.2, PowerShell 7.6.3, and Git
 2.45.1.windows.1 on `x86_64-pc-windows-msvc`.
 
 Every command ran from `F:\projects\concord_api` against
-`8281c79d98406be7b88a20ea70d84af531e0b757` and exited zero. Every filtered Nextest run was
+`8307d0744363ea7ec8a98d5f5fe68c4429b71c31` and exited zero. Every filtered Nextest run was
 preceded by its matching `cargo nextest list ...` command; the inventory selected the stated
 fully-qualified tests and no zero-test selection was accepted.
 
@@ -361,9 +412,34 @@ cargo nextest run --profile ci -p concord_core --all-features --lib --test recor
 ```
 
 They selected and passed 4/4 response-mode and 16/16 record tests. The records-only selectors passed
-4/4 under `records`, 9/9 under `csv`, 8/8 under `ndjson`, and 13/13 under `csv,ndjson`; the exact
+5/5 under `records`, 10/10 under `csv`, 9/9 under `ndjson`, and 14/14 under `csv,ndjson`; the exact
 topology command `& .\scripts\audit-record-feature-topology.ps1` passed, as did
 `cargo nextest run --profile ci -p concord_macros --test dependency_policy` (4/4) and `just deny`.
+
+The exact record lifecycle, diagnostic, Rustdoc, and downstream workflow commands were:
+
+```text
+cargo nextest run --profile ci -p concord_core --all-features --lib -E 'test(/records_response_validates_starts_unpolled_and_completes_stream_opened_once$/) | test(/record_stream_body_and_decoder_failures_are_items_without_second_completion$/) | test(/dropping_record_stream_synchronously_drops_decoder_staging_and_byte_stream$/) | test(/dropping_record_batches_synchronously_drops_record_stream_and_byte_stream$/)' --no-tests fail
+cargo nextest run --profile ci -p concord_core --all-features --lib -E 'test(/record_payloads_never_enter_hooks_debug_limiter_completion_or_sources$/) | test(/response_payloads_never_enter_hooks_debug_limiter_completion_or_wrapper_debug$/)' --no-tests fail
+cargo nextest run --profile ci -p concord_core --all-features --test public_rustdoc -E 'test(=record_surfaces_are_structural_private_and_value_free_in_rendered_rustdoc)' --no-tests fail
+cargo nextest run --profile ci -p concord_macros --test compile -E 'test(=generated_records_rustdoc_uses_stable_paths_and_exposes_no_record_value_channel)' --no-tests fail
+cargo nextest run --profile ci -p concord_macros --test compile -E 'test(=complete_extension_fixture_compiles_through_public_namespaces_for_every_owned_feature_set) | test(=complete_extension_fixture_has_no_private_native_or_integration_escape) | test(=downstream_pagination_runtime_executes_generated_construction_and_binding) | test(=downstream_credential_limiter_and_hooks_execute_through_public_runtime)'
+```
+
+Their inventories selected and their runs passed 4/4 lifecycle, 2/2 automatic-surface, 1/1 public
+records Rustdoc, 1/1 generated records Rustdoc, and 4/4 public-only downstream fixture tests. The
+last command maps compile plus runtime coverage across request, response, page response, record,
+codec, body, prepared, credential, limiter, hook, and controller when combined with the exact core
+request/response/record selectors named above.
+
+The isolated Rust 1.85 rendered-documentation commands all passed:
+
+```text
+cargo +1.85.0 doc --target-dir target/rustdoc-records-only -p concord_core --no-default-features --features records --no-deps
+cargo +1.85.0 doc --target-dir target/rustdoc-csv-only -p concord_core --no-default-features --features csv --no-deps
+cargo +1.85.0 doc --target-dir target/rustdoc-ndjson-only -p concord_core --no-default-features --features ndjson --no-deps
+cargo +1.85.0 doc --target-dir target/rustdoc-csv-ndjson -p concord_core --no-default-features --features csv,ndjson --no-deps
+```
 
 The corrected conformance rows use exact principal artifacts and commands rather than `just release`
 alone:
@@ -379,8 +455,9 @@ alone:
   ui`, and the macro compile fixtures;
 - public-only extensions use the focused three-test extension fixture command plus the corrected
   request parity, four-mode response, records, and generated pagination commands;
-- the three exact high-entropy security selectors passed 9/9, 13/13, and 6/6 across request,
-  response, stream, records, raw, credential, rate, pagination, and documentation surfaces;
+- the maintained high-entropy security selectors passed their exact nonzero inventories (including
+  10/10, 13/13, 6/6, 8/8, 1/1, and 2/2 focused groups) across request, response, stream, records,
+  raw, credential, rate, pagination, automatic-surface, and documentation probes;
 - public/generated documentation and examples use `just doctest`, `just doctest-all`, `just doc`,
   `just doc-all`, `cargo nextest run --profile ci -p concord_core --all-features --test
   public_rustdoc`, the focused generated-Rustdoc compile test, both examples checks, and the 1/1
@@ -400,8 +477,8 @@ rustc 1.85.0 and LLVM 19.1.7. The validation registry records each full command 
 | `just check-no-default` | passed |
 | `just clippy` | passed with warnings denied |
 | `just clippy-all` | passed with warnings denied |
-| `just test` | 561/561 passed |
-| `just test-all` | 586/586 passed |
+| `just test` | 570/570 passed |
+| `just test-all` | 595/595 passed |
 | `just test-no-default` | 1/1 passed; 244 skipped |
 | `just doctest` | 2/2 compile-fail doctests passed |
 | `just doctest-all` | 4/4 compile-fail doctests passed |
@@ -409,7 +486,7 @@ rustc 1.85.0 and LLVM 19.1.7. The validation registry records each full command 
 | `just doc-all` | all four all-feature libraries passed with warnings denied |
 | `just deny` | advisories, bans, licenses, and sources passed; two accepted historical duplicate warnings only |
 | `just diff-check` | passed |
-| `just release` | passed in 152.3 seconds; complete maintained matrix and 11/11 benchmark categories |
+| `just release` | passed in 216.6 seconds; complete maintained matrix and 11/11 benchmark categories |
 
 The release wrapper also passed the exact default/all/no-default/records/CSV/NDJSON/combined/JSON/
 multipart feature matrix, dependency topology, dangerous-feature isolation, Rust 1.85 matrix,
@@ -432,12 +509,26 @@ by the 127 append-only Phase 12 rows.
 Each corrected Phase 12 row now embeds the complete active normative paragraph as its claim scope,
 names principal source/test/fixture files rather than broad crate roots, separates multiple exact
 commands with the audited ` ;; ` delimiter, and binds every command to an authoritative passing
-validation row for `8281c79d98406be7b88a20ea70d84af531e0b757`. Human review decomposed every
-paragraph conjunction and modal clause before assigning paths and commands. In particular,
-`P12-PROD-GUAR-008`, `P12-PROD-GUAR-009`, `P12-API-BODY-002`, `P12-EXEC-BODY-003`, and
-`P12-EXEC-RAW-001` now cite the exact hidden-retry, provider, factory, and raw probes, and all twelve
-named `P12-CONF-*` rows have focused principal proof with `just release` retained only as aggregate
-support where applicable.
+validation row for `8307d0744363ea7ec8a98d5f5fe68c4429b71c31`. Human review decomposed every
+paragraph conjunction,
+modal clause, and enumerated member before assigning paths and commands. The ignored audit contains
+one reviewed section for each of the 127 rows. In addition to the prior hidden-retry, provider,
+factory, raw-response, compile, downstream, security, MSRV, documentation, body, response, and
+records corrections, the six remaining high-risk rows now have these exact allocations:
+
+- `P12-SEC-RECORD-001`: executing automatic-surface and record-error probes plus separate public and
+  generated rendered-Rustdoc commands;
+- `P12-SEC-RESP-003`: buffered/custom, byte-stream, record, decoded output, parser text, hooks,
+  debug, limiter, completion, sources, and wrapper-debug execution;
+- `P12-EXEC-RECORD-001`: validate/start once, zero pre-return polls, one returned stream, and one
+  `StreamOpened` completion in the deterministic executor;
+- `P12-EXEC-RECORD-005`: synchronous stream/batch drop plus later body, framing, and EOF failure
+  items with an observed unchanged single completion;
+- `P12-CONF-RECORD-002`: Cargo graph, isolated compile/test/Rustdoc, dependency policy, Rust 1.85,
+  locked downstream fixture, and Cargo Deny;
+- `P12-CONF-DOWNSTREAM-002`: an explicit workflow-to-command map covering every stable public
+  request, response, page, record, codec, body, prepared, credential, limiter, hook, and controller
+  workflow at compile time and runtime where applicable.
 
 The historical Phase 0-11 owner remains exactly 1,099,185 bytes with SHA-256
 `90d31f417690082af865850d6e1ce25331bca16c76f37c9338382b71df85a91f`. Every Phase 0-11 evidence
@@ -445,8 +536,8 @@ byte and every `PHASE_0_REPORT.md` through `PHASE_11_REPORT.md` byte remains unc
 IDs remain resolvable through their change records and retain their exact historical evidence and
 source identities.
 
-Coverage contains all 563 active and 11 superseded IDs. The validation registry contains 167 rows:
-71 preserved historical rows plus 96 corrected Phase 12 rows. Those Phase 12 rows include all 16
+Coverage contains all 563 active and 11 superseded IDs. The validation registry contains 179 rows:
+71 preserved historical rows plus 108 corrected Phase 12 rows. Those Phase 12 rows include all 16
 required maintained commands, every passing focused execution command cited by evidence, and every
 matching Nextest inventory used to establish a nonzero exact selection. The
 historical Phase 10 release requirement, claim, and change-map registries remain historical; Phase
