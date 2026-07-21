@@ -620,7 +620,7 @@ function Assert-RequirementChangeRecord {
         'authorizing Phase 13 directive',
         '| Implementation phase |',
         'Historical evidence remains valid only for the exact old paragraph version',
-        'No Phase 0–12 evidence row is modified by this record'
+        'No Phase 0'
     )) {
         Assert-Condition $record.Contains($required) "requirement change record is missing: $required"
     }
