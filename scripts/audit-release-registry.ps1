@@ -44,6 +44,9 @@ $script:Phase11ReportBytes = 25109
 $script:Phase11ReportHash = "1de403491162bf39f36c530636f7b1dd03370ee45832c0dd2c7b9bc55d2b67fa"
 $script:Phase12PreviousSource = "8307d0744363ea7ec8a98d5f5fe68c4429b71c31"
 $script:Phase13HistoricalBaseline = "0ef7d3f619155b251509da1d6112620b14f5c7b7"
+$script:Phase12EvidenceBytes = 1344458
+$script:Phase12EvidenceHash = "835888bc3655b2b3bce4ca958a93bf60c12cfc4f008c1577c2e6d08194eaa940"
+$script:Phase12EvidenceRows = 1680
 $script:ActiveRequirementCount = 581
 $script:Phase11SupersededRequirementIds = [string[]]@(
     "DSL-PAGE-004", "DSL-PAGE-005", "DSL-PAGE-006",
@@ -760,6 +763,80 @@ function Assert-Phase13Authority {
         Assert-Condition ($coreArchitecture.Contains($required) -or $macroArchitecture.Contains($required)) "Phase 13 architecture authority is missing: $required"
     }
     Assert-Condition $macroArchitecture.Contains('synchronized Phase 13 marker is `14`') "Phase 13 macro contract marker is missing"
+}
+
+function Assert-Phase12HistoricalCatalogPreserved {
+    param([string]$StateCommit)
+    $historical = [byte[]](Get-GitBlobBytes $script:Phase13HistoricalBaseline $script:EvidencePath)
+    Assert-Condition ($historical.Length -eq $script:Phase12EvidenceBytes) "Phase 0-12 evidence owner byte count changed"
+    Assert-Condition ((Get-Sha256Hex $historical) -eq $script:Phase12EvidenceHash) "Phase 0-12 evidence owner hash changed"
+    $current = [byte[]](Get-GitBlobBytes $StateCommit $script:EvidencePath)
+    Assert-Condition ($current.Length -ge $historical.Length) "current evidence is shorter than Phase 0-12 history"
+    for ($index = 0; $index -lt $historical.Length; $index++) {
+        if ($historical[$index] -ne $current[$index]) { throw "Phase 0-12 evidence differs at byte $index" }
+    }
+    $historicalRows = @(Get-GitBlobText $script:Phase13HistoricalBaseline $script:EvidencePath | ConvertFrom-Csv)
+    Assert-Condition ($historicalRows.Count -eq $script:Phase12EvidenceRows) "Phase 0-12 evidence row count changed"
+}
+
+function Assert-Phase12ReportPreserved {
+    param([string]$StateCommit)
+    $historical = [byte[]](Get-GitBlobBytes $script:Phase13HistoricalBaseline $script:Phase12ReportPath)
+    $current = [byte[]](Get-GitBlobBytes $StateCommit $script:Phase12ReportPath)
+    Assert-Condition ($historical.Length -eq $current.Length) "Phase 12 report byte count changed"
+    Assert-Condition ((Get-Sha256Hex $historical) -eq (Get-Sha256Hex $current)) "Phase 12 report changed"
+}
+
+function Assert-Phase13Evidence {
+    param([object[]]$Evidence, [string]$Source)
+    $rows = @($Evidence | Where-Object { $_.evidence_id -like 'P13-*' })
+    Assert-Condition ($rows.Count -eq 46) "Phase 13 evidence row count is $($rows.Count) rather than 46"
+    $ids = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($row in $rows) {
+        Assert-Condition $ids.Add($row.requirement_id) "duplicate Phase 13 evidence requirement $($row.requirement_id)"
+        Assert-Condition ($row.verified_commit -eq $Source) "Phase 13 evidence has wrong source: $($row.evidence_id)"
+        Assert-Condition ($row.result -eq 'passing' -and $row.configuration -match '^direct ') "Phase 13 evidence is not direct passing: $($row.evidence_id)"
+        Assert-Condition ([string]::IsNullOrWhiteSpace($row.waiver)) "Phase 13 evidence has a waiver: $($row.evidence_id)"
+    }
+    foreach ($id in @($script:Phase13RetainedRequirementIds + $script:Phase13RequirementIds)) {
+        Assert-Condition $ids.Contains($id) "Phase 13 direct evidence is absent for $id"
+    }
+}
+
+function Assert-Phase13ValidationRegistry {
+    param([object[]]$Rows, [string]$Source)
+    $phaseRows = @($Rows | Where-Object { $_.validation_id -like 'P13-VAL-*' })
+    Assert-Condition ($phaseRows.Count -eq 3) "Phase 13 validation registry row count is $($phaseRows.Count) rather than 3"
+    foreach ($row in $phaseRows) {
+        Assert-Condition ($row.working_directory -eq 'F:\projects\concord_api') "wrong Phase 13 validation working directory $($row.validation_id)"
+        Assert-Condition ($row.source_commit -eq $Source -and $row.exit_status -eq '0' -and $row.result -eq 'passing') "Phase 13 validation did not pass $($row.validation_id)"
+        foreach ($field in @('tool_versions', 'feature_configuration', 'selected_tests', 'observed_at')) {
+            Assert-Condition (-not [string]::IsNullOrWhiteSpace($row.$field)) "Phase 13 validation omitted $field in $($row.validation_id)"
+        }
+    }
+}
+
+function Assert-Phase13StateDocumentation {
+    param([string]$Commit, [string]$Source, [string]$EvidenceState, [string]$Anchor)
+    $report = Get-GitBlobText $Commit $script:Phase13ReportPath
+    $controller = Get-GitBlobText $Commit $script:ControllerPath
+    foreach ($required in @(
+        'PHASE_13_COMPLETE_WITH_LIMITATIONS', $Source, $EvidenceState, $Anchor,
+        'generated contract transition exactly', 'Phase 14', '`NOT_STARTED`',
+        '46 direct and 0 partial', '1,726 total rows', 'Normative Implementation Candidate'
+    )) {
+        Assert-Condition $report.Contains($required) "Phase 13 report is missing: $required"
+    }
+    foreach ($required in @(
+        'latest_validated_phase = "13"', 'latest_verdict = "PHASE_13_COMPLETE_WITH_LIMITATIONS"',
+        "source_commit = `"$Source`"", "evidence_commit = `"$EvidenceState`"",
+        "anchor_commit = `"$Anchor`"", 'head_policy = "anchor-must-be-an-ancestor"',
+        'normative_status = "Normative Implementation Candidate"',
+        'id = "14"', 'title = "Product Completion, Conformance Closure, and Release Finalization"',
+        'status = "NOT_STARTED"'
+    )) {
+        Assert-Condition $controller.Contains($required) "Phase 13 controller state is missing: $required"
+    }
 }
 
 function Assert-SupersededHistoricalEvidence {
@@ -1552,30 +1629,39 @@ Assert-Phase10HistoricalCatalog $StateCommit $false
 Assert-Phase10ReportPreserved $StateCommit
 Assert-Phase11HistoricalCatalog $StateCommit $false
 Assert-Phase0Through11ReportsPreserved $StateCommit
+Assert-Phase12HistoricalCatalogPreserved $StateCommit
+Assert-Phase12ReportPreserved $StateCommit
 Assert-SupersededHistoricalEvidence $evidence
 Assert-RequirementChangeRecord $StateCommit
 Assert-CandidateStatus $documents $StateCommit
 Assert-Phase12Authority $StateCommit
 Assert-Phase13Authority $StateCommit
-Assert-Condition ($evidence.Count -eq ($script:Phase11EvidenceRows + $script:Phase12RequirementIds.Count)) "Phase 12 evidence catalog has unexpected rows: $($evidence.Count)"
+Assert-Condition ($evidence.Count -eq ($script:Phase12EvidenceRows + 46)) "Phase 13 evidence catalog has unexpected rows: $($evidence.Count)"
 Assert-Phase12Evidence $evidence $SourceCommit
+Assert-Phase13Evidence $evidence $SourceCommit
 $phase12Coverage = @($coverage | Where-Object { $script:Phase12RequirementIds -contains $_.requirement_id })
 Assert-Condition ($phase12Coverage.Count -eq $script:Phase12RequirementIds.Count) "Phase 12 active coverage count mismatch"
 foreach ($row in $phase12Coverage) {
     Assert-Condition ($row.status -eq 'implemented') "Phase 12 coverage is not implemented: $($row.requirement_id)"
 }
+$phase13Coverage = @($coverage | Where-Object { $script:Phase13RequirementIds -contains $_.requirement_id })
+Assert-Condition ($phase13Coverage.Count -eq $script:Phase13RequirementIds.Count) "Phase 13 active coverage count mismatch"
+foreach ($row in $phase13Coverage) {
+    Assert-Condition ($row.status -eq 'implemented') "Phase 13 coverage is not implemented: $($row.requirement_id)"
+}
 $validation = @(Import-GitCsv $StateCommit $script:ValidationRegistryPath)
 Assert-Phase12ValidationRegistry $validation $SourceCommit
+Assert-Phase13ValidationRegistry $validation $SourceCommit
 Assert-Phase12EvidenceCommandsRecorded $evidence $validation
 Assert-Phase12HighRiskEvidenceAllocation $evidence
 
 if ($Mode -eq "Final") {
-    $anchorAllowed = @($script:Phase12ReportPath, $script:ControllerPath)
+    $anchorAllowed = @($script:Phase13ReportPath, $script:ControllerPath)
     Assert-SubstitutionCommit $EvidenceCommit $AnchorCommit $script:EvidenceToken $EvidenceCommit $anchorAllowed
     Assert-SubstitutionCommit $AnchorCommit $MetadataCommit $script:AnchorToken $AnchorCommit @(
-        $script:Phase12ReportPath, $script:ControllerPath
+        $script:Phase13ReportPath, $script:ControllerPath
     )
-    Assert-Phase12StateDocumentation $MetadataCommit $SourceCommit $EvidenceCommit $AnchorCommit
+    Assert-Phase13StateDocumentation $MetadataCommit $SourceCommit $EvidenceCommit $AnchorCommit
     $status = @(& git status --porcelain)
     Assert-Condition ($status.Count -eq 0) "final worktree is not clean"
 }
