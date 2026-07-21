@@ -132,6 +132,12 @@ impl EndpointSpec for PaginatedProtectedEndpoint {
 
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("paginated-protected")?;
+        builder.push_rate_limit_rule(
+            "AuthenticationApi::rate_limit::pagination",
+            std::iter::empty::<RateLimitKeyPart>(),
+            1,
+            [(1, Duration::from_secs(1))],
+        )?;
         builder.push_auth(
             Auth::bearer(self.credential.clone()).challenge(ChallengePolicy::Unauthorized),
         )?;
@@ -790,6 +796,39 @@ struct AuthRateLimiter {
     gate: Option<Gate>,
     failure: bool,
     observed_selector: Option<ObservedSelector>,
+    plans: Option<Arc<Mutex<Vec<CapturedAuthPlan>>>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CapturedAuthPlan {
+    page_index: u32,
+    rules: Vec<(String, Vec<(String, String)>, u32, Vec<(u32, Duration)>)>,
+}
+
+fn capture_auth_plan(request: &RateLimitRequest<'_>) -> CapturedAuthPlan {
+    CapturedAuthPlan {
+        page_index: request.page_index,
+        rules: request
+            .plan
+            .rules()
+            .iter()
+            .map(|rule| {
+                (
+                    rule.id().as_str().to_owned(),
+                    rule.key()
+                        .parts()
+                        .iter()
+                        .map(|part| (part.name().to_owned(), part.value().to_owned()))
+                        .collect(),
+                    rule.cost().get(),
+                    rule.windows()
+                        .iter()
+                        .map(|window| (window.capacity().get(), window.duration()))
+                        .collect(),
+                )
+            })
+            .collect(),
+    }
 }
 
 impl AuthRateLimiter {
@@ -800,6 +839,22 @@ impl AuthRateLimiter {
             gate: None,
             failure: false,
             observed_selector: None,
+            plans: None,
+        }
+    }
+
+    fn capturing(
+        acquisitions: &Arc<AtomicUsize>,
+        observations: &Arc<AtomicUsize>,
+        plans: &Arc<Mutex<Vec<CapturedAuthPlan>>>,
+    ) -> Self {
+        Self {
+            acquisitions: Arc::clone(acquisitions),
+            observations: Arc::clone(observations),
+            gate: None,
+            failure: false,
+            observed_selector: None,
+            plans: Some(Arc::clone(plans)),
         }
     }
 
@@ -810,6 +865,7 @@ impl AuthRateLimiter {
             gate: Some(gate),
             failure: false,
             observed_selector: None,
+            plans: None,
         }
     }
 
@@ -820,6 +876,7 @@ impl AuthRateLimiter {
             gate: None,
             failure: true,
             observed_selector: None,
+            plans: None,
         }
     }
 }
@@ -827,9 +884,15 @@ impl AuthRateLimiter {
 impl RateLimiter for AuthRateLimiter {
     fn acquire<'a>(
         &'a self,
-        _request: RateLimitRequest<'a>,
+        request: RateLimitRequest<'a>,
     ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
         self.acquisitions.fetch_add(1, Ordering::SeqCst);
+        if let Some(plans) = &self.plans {
+            plans
+                .lock()
+                .expect("authentication plan capture")
+                .push(capture_auth_plan(&request));
+        }
         Box::pin(async move {
             if let Some(gate) = &self.gate {
                 gate.wait().await;
@@ -1173,9 +1236,11 @@ async fn paginated_tls_recovery_keeps_one_page_identity_index_and_completion() {
     );
     let limiter_acquires = Arc::new(AtomicUsize::new(0));
     let limiter_observations = Arc::new(AtomicUsize::new(0));
-    let limiter: Arc<dyn RateLimiter> = Arc::new(AuthRateLimiter::counting(
+    let plans = Arc::new(Mutex::new(Vec::new()));
+    let limiter: Arc<dyn RateLimiter> = Arc::new(AuthRateLimiter::capturing(
         &limiter_acquires,
         &limiter_observations,
+        &plans,
     ));
     let hooks = Arc::new(AuthHooks::default());
     let core = ClientCore::build(
@@ -1219,6 +1284,14 @@ async fn paginated_tls_recovery_keeps_one_page_identity_index_and_completion() {
     assert!(exact_current.load(Ordering::SeqCst));
     assert_eq!(limiter_acquires.load(Ordering::SeqCst), 2);
     assert_eq!(limiter_observations.load(Ordering::SeqCst), 2);
+    let captured_plans = plans.lock().expect("captured pagination recovery plans");
+    assert_eq!(captured_plans.len(), 2);
+    assert_eq!(captured_plans[0], captured_plans[1]);
+    assert_eq!(captured_plans[0].page_index, 0);
+    assert_eq!(captured_plans[0].rules.len(), 1);
+    assert!(captured_plans[0].rules[0].1.is_empty());
+    assert_eq!(captured_plans[0].rules[0].2, 1);
+    assert_eq!(captured_plans[0].rules[0].3, [(1, Duration::from_secs(1))]);
 
     let before = hooks.before.lock().expect("before records").clone();
     assert_eq!(before.len(), 2);

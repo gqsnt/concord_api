@@ -825,9 +825,19 @@ function Assert-Phase13ValidationRegistry {
         'just doc-all', 'just deny', 'just diff-check', 'just release',
         'cargo nextest run --profile ci -p concord_macros --test generated_rate_limiting --all-features -E "test(inherited_lexical_declarations_keep_one_identity_across_descendant_modules)"',
         'cargo nextest run --profile ci -p concord_macros --test generated_rate_limiting --all-features -E "test(declaration_identities_are_deterministic_and_collision_resistant)"',
+        'cargo nextest run --profile ci -p concord_macros --test generated_rate_limiting --all-features -E "test(punctuation_distinct_lexical_paths_have_distinct_private_symbols)"',
         'cargo nextest run --profile ci -p concord_macros --test generated_rate_limiting --all-features -E "test(client_rule_quota_is_shared_across_direct_and_scoped_endpoints) | test(scope_rule_quota_is_shared_across_immediate_and_nested_descendants) | test(sibling_and_endpoint_local_rules_do_not_share_unrelated_buckets)"',
         'cargo nextest run --profile ci -p concord_core --test pagination_rate_limit --all-features -E "test(pagination_reuses_identical_lexical_plan_across_multiple_pages)"',
         'cargo nextest run --profile ci -p concord_core --test pagination_rate_limit --all-features -E "test(pagination_pages_share_the_same_lexical_governor_bucket)"',
+        'cargo nextest run --profile ci -p concord_core --test pagination_rate_limit --all-features -E "test(pagination_cancellation_prevents_later_lexical_plan_acquisition)"',
+        'cargo nextest run --profile ci -p concord_core --all-features --lib -E "test(/execute::auth_tests::paginated_tls_recovery_keeps_one_page_identity_index_and_completion$/)"',
+        'cargo nextest run --profile ci -p concord_core --all-features --lib -E "test(/execute::tests::default_key_limit_accepts_1024_bytes_and_rejects_the_first_excess$/) | test(/execute::tests::configured_key_limit_revalidates_before_governor_state_insertion$/)"',
+        'cargo nextest run --profile ci -p concord_core --all-features --lib -E "test(/execute::auth_tests::configured_key_limit_failure_cuts_off_every_protected_side_effect_and_redacts_key$/) | test(/execute::tests::prepared_plans_use_the_selected_governor_and_its_configured_key_limit$/)"',
+        'cargo nextest run --profile ci -p concord_macros --test compile --all-features -E "test(generated_public_rustdoc_uses_stable_paths_without_private_integration_names)"',
+        'cargo nextest run --profile ci -p concord_core --test public_rustdoc --all-features',
+        'just _examples',
+        'just _msrv',
+        'cargo nextest run --profile ci -p concord_core --all-features --lib -E "test(/execute::tests::deadline_cancellation_of_governor_wait_consumes_no_quota$/) | test(/execute::auth_tests::real_tls_authentication_recovery_performs_two_visible_limiter_acquisitions$/) | test(/execute::auth_tests::paginated_tls_recovery_keeps_one_page_identity_index_and_completion$/) | test(/execute::tests::hidden_reqwest_retry_does_not_reenter_custom_limiter_or_lifecycle$/)"',
         'cargo nextest run --profile ci -p concord_core --test pagination_rate_limit --all-features -E "test(generated_pagination_uses_a_value_neutral_global_bucket)"'
     )) {
         Assert-Condition $commands.Contains($command) "required Phase 13 validation command was not recorded: $command"

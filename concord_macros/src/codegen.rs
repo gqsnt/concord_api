@@ -2860,18 +2860,20 @@ fn auth_statements(client: &Client, endpoint: &Endpoint, core_path: &TokenStream
 }
 
 fn rate_limit_statements(
-    _client: &Client,
+    client: &Client,
     _scopes: &[&Scope],
     endpoint: &Endpoint,
     _core_path: &TokenStream,
     identity_path: &TokenStream,
 ) -> TokenStream {
+    let rate_limit_ids = rate_limit_identity_ids(client);
     let statements = endpoint
         .config
         .rate_limits
         .iter()
         .map(|rule| {
-            let identity = rate_limit_identity_const(&rule.id);
+            let identity =
+                rate_limit_identity_const(&rate_limit_ids, &rule.id, &client.name.to_string());
             let cost = rule.cost;
             let windows = rule
                 .windows
@@ -2899,11 +2901,9 @@ fn rate_limit_statements(
 }
 
 fn rate_limit_identity_constants(client: &Client) -> TokenStream {
-    let mut ids = Vec::new();
-    collect_rate_limit_ids(&client.config, &mut ids);
-    collect_child_rate_limit_ids(&client.children, &mut ids);
-    let constants = ids.into_iter().map(|id| {
-        let identity = rate_limit_identity_const(&id);
+    let ids = rate_limit_identity_ids(client);
+    let constants = ids.into_iter().enumerate().map(|(ordinal, id)| {
+        let identity = rate_limit_identity_const_for_ordinal(ordinal, &client.name.to_string());
         let id = syn::LitStr::new(&id, Span::call_site());
         quote! {
             #[doc(hidden)]
@@ -2911,6 +2911,13 @@ fn rate_limit_identity_constants(client: &Client) -> TokenStream {
         }
     });
     quote!(#(#constants)*)
+}
+
+fn rate_limit_identity_ids(client: &Client) -> Vec<String> {
+    let mut ids = Vec::new();
+    collect_rate_limit_ids(&client.config, &mut ids);
+    collect_child_rate_limit_ids(&client.children, &mut ids);
+    ids
 }
 
 fn collect_child_rate_limit_ids(children: &[Child], ids: &mut Vec<String>) {
@@ -2933,18 +2940,19 @@ fn collect_rate_limit_ids(config: &NormalizedConfig, ids: &mut Vec<String>) {
     }
 }
 
-fn rate_limit_identity_const(id: &str) -> Ident {
-    let suffix = id
-        .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() || character == '_' {
-                character
-            } else {
-                '_'
-            }
-        })
-        .collect::<String>();
-    Ident::new(&format!("__CONCORD_RATE_ID_{suffix}"), Span::mixed_site())
+fn rate_limit_identity_const(ids: &[String], id: &str, client_name: &str) -> Ident {
+    let ordinal = ids
+        .iter()
+        .position(|candidate| candidate == id)
+        .expect("generated rate-limit identity must have a root constant");
+    rate_limit_identity_const_for_ordinal(ordinal, client_name)
+}
+
+fn rate_limit_identity_const_for_ordinal(ordinal: usize, client_name: &str) -> Ident {
+    Ident::new(
+        &format!("__CONCORD_RATE_ID_{client_name}_{ordinal}"),
+        Span::mixed_site(),
+    )
 }
 
 fn display_argument(

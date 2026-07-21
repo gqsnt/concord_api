@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::{fmt, fmt::Display};
@@ -131,6 +133,22 @@ api! {
             }
         }
         GET Outside() -> Bytes;
+    }
+}
+
+api! {
+    client CollisionRateApi {
+        base "http://collision-rate.example.test/";
+        scope A__B(value: String) {
+            rate_limit { 1 / 1h; }
+            GET First() -> Bytes;
+        }
+        scope A(value: String) {
+            scope B(value: String) {
+                rate_limit { 1 / 1h; }
+                GET Second() -> Bytes;
+            }
+        }
     }
 }
 
@@ -479,6 +497,49 @@ async fn declaration_identities_are_deterministic_and_collision_resistant() {
 }
 
 #[tokio::test]
+async fn punctuation_distinct_lexical_paths_have_distinct_private_symbols() {
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"first".to_vec()),
+        ResponseScript::ok(b"second".to_vec()),
+    ])
+    .expect("punctuation collision server");
+    let proxy = SafeProxy::parse(server.url("")).expect("punctuation collision proxy");
+    let limiter = Arc::new(CapturingLimiter::default());
+    let client = CollisionRateApi::builder()
+        .http(move |http| http.proxy(proxy))
+        .runtime({
+            let limiter = Arc::clone(&limiter);
+            move |runtime| runtime.rate_limiter(limiter)
+        })
+        .build()
+        .expect("collision-safe generated symbols");
+
+    client
+        .a__b("first-scope".to_owned())
+        .first()
+        .await
+        .expect("first punctuation path");
+    client
+        .a("outer-scope".to_owned())
+        .b("inner-scope".to_owned())
+        .second()
+        .await
+        .expect("second punctuation path");
+
+    let acquisitions = limiter.acquisitions.lock().expect("punctuation captures");
+    assert_eq!(acquisitions.len(), 2);
+    assert_eq!(acquisitions[0].len(), 1);
+    assert_eq!(acquisitions[1].len(), 1);
+    assert_ne!(acquisitions[0][0].id, acquisitions[1][0].id);
+    assert!(
+        acquisitions
+            .iter()
+            .flatten()
+            .all(|rule| rule.parts.is_empty())
+    );
+}
+
+#[tokio::test]
 async fn sibling_and_endpoint_local_rules_do_not_share_unrelated_buckets() {
     let server = ScriptedServer::start([
         ResponseScript::ok(b"sibling".to_vec()),
@@ -514,8 +575,13 @@ async fn sibling_and_endpoint_local_rules_do_not_share_unrelated_buckets() {
 
 #[tokio::test(start_paused = true)]
 async fn client_rule_quota_is_shared_across_direct_and_scoped_endpoints() {
-    let server = ScriptedServer::start([ResponseScript::ok(b"first".to_vec())])
-        .expect("client bucket server");
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"first".to_vec()),
+        ResponseScript::ok(b"unrelated".to_vec()),
+        ResponseScript::ok(b"after-cancellation".to_vec()),
+        ResponseScript::ok(b"unexpected-extra".to_vec()),
+    ])
+    .expect("client bucket server");
     let proxy = SafeProxy::parse(server.url("")).expect("client bucket proxy");
     let governor = Arc::new(GovernorRateLimiter::new());
     let client = ClientBucketRateApi::builder()
@@ -531,18 +597,54 @@ async fn client_rule_quota_is_shared_across_direct_and_scoped_endpoints() {
         .wait_for_requests(1, std::time::Duration::from_secs(1))
         .expect("first request reached server");
 
-    let pending =
-        tokio::spawn(async move { client.descendant("same-scope".to_owned()).nested().await });
+    let unrelated = EmptyRateApi::builder()
+        .http({
+            let proxy = SafeProxy::parse(server.url("")).expect("unrelated client proxy");
+            move |http| http.proxy(proxy)
+        })
+        .build()
+        .expect("unrelated client");
+    unrelated.read().await.expect("unrelated request");
+    server
+        .wait_for_requests(2, std::time::Duration::from_secs(1))
+        .expect("unrelated request reached server");
+
+    let pending_client = client.clone();
+    let pending = tokio::spawn(async move {
+        pending_client
+            .descendant("same-scope".to_owned())
+            .nested()
+            .await
+    });
     tokio::task::yield_now().await;
-    assert_eq!(server.request_count(), 1);
+    assert!(!pending.is_finished(), "shared client quota must wait");
+    assert_eq!(server.request_count(), 2);
+    tokio::time::advance(std::time::Duration::from_secs(3599)).await;
+    tokio::task::yield_now().await;
+    assert!(!pending.is_finished(), "shared quota remains unavailable");
     pending.abort();
     assert!(pending.await.is_err());
+    assert_eq!(server.request_count(), 2);
+
+    tokio::time::advance(std::time::Duration::from_secs(1)).await;
+    assert_eq!(server.request_count(), 2);
+    client
+        .direct()
+        .await
+        .expect("cancellation did not consume the refilled quota");
+    server
+        .wait_for_requests(3, std::time::Duration::from_secs(1))
+        .expect("post-cancellation request reached server");
 }
 
 #[tokio::test(start_paused = true)]
 async fn scope_rule_quota_is_shared_across_immediate_and_nested_descendants() {
-    let server = ScriptedServer::start([ResponseScript::ok(b"first".to_vec())])
-        .expect("scope bucket server");
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"first".to_vec()),
+        ResponseScript::ok(b"outside".to_vec()),
+        ResponseScript::ok(b"after-cancellation".to_vec()),
+    ])
+    .expect("scope bucket server");
     let proxy = SafeProxy::parse(server.url("")).expect("scope bucket proxy");
     let governor = Arc::new(GovernorRateLimiter::new());
     let client = ScopeBucketRateApi::builder()
@@ -562,17 +664,41 @@ async fn scope_rule_quota_is_shared_across_immediate_and_nested_descendants() {
         .wait_for_requests(1, std::time::Duration::from_secs(1))
         .expect("first scope request reached server");
 
+    client.outside().await.expect("outside-scope request");
+    server
+        .wait_for_requests(2, std::time::Duration::from_secs(1))
+        .expect("outside-scope request reached server");
+
+    let pending_client = client.clone();
     let pending = tokio::spawn(async move {
-        client
+        pending_client
             .branch("same-scope".to_owned())
             .nested("same-nested".to_owned())
             .descendant()
             .await
     });
     tokio::task::yield_now().await;
-    assert_eq!(server.request_count(), 1);
+    assert!(!pending.is_finished(), "shared scope quota must wait");
+    assert_eq!(server.request_count(), 2);
+    tokio::time::advance(std::time::Duration::from_secs(3599)).await;
+    tokio::task::yield_now().await;
+    assert!(
+        !pending.is_finished(),
+        "shared scope quota remains unavailable"
+    );
     pending.abort();
     assert!(pending.await.is_err());
+
+    tokio::time::advance(std::time::Duration::from_secs(1)).await;
+    client
+        .branch("same-scope".to_owned())
+        .nested("after-cancellation".to_owned())
+        .descendant()
+        .await
+        .expect("scope cancellation did not consume the refilled quota");
+    server
+        .wait_for_requests(3, std::time::Duration::from_secs(1))
+        .expect("post-cancellation scope request reached server");
 }
 
 fn rules_from_limiter(limiter: &CapturingLimiter) -> Vec<CapturedRule> {

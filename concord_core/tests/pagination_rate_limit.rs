@@ -39,6 +39,26 @@ pub struct MultiPageKeyController {
     pub key: String,
 }
 
+pub struct ThreePageKeyController {
+    pub key: String,
+}
+
+impl PaginationController<Vec<u32>> for ThreePageKeyController {
+    fn next(self, _page: &Vec<u32>) -> Result<Option<Self>, PaginationError> {
+        if self.key.ends_with("-page-2") {
+            Ok(None)
+        } else {
+            Ok(Some(Self {
+                key: format!(
+                    "{}-page-{}",
+                    self.key,
+                    if self.key.ends_with("-page-1") { 2 } else { 1 }
+                ),
+            }))
+        }
+    }
+}
+
 impl PaginationController<Vec<u32>> for MultiPageKeyController {
     fn next(self, _page: &Vec<u32>) -> Result<Option<Self>, PaginationError> {
         if self.key.ends_with("-page-1") {
@@ -59,6 +79,27 @@ api! {
             query { "cursor" = ep.key; }
             rate_limit { 1 / 1m; }
             paginate crate::MultiPageKeyController {
+                key: bind ep.key,
+            }
+        }
+    }
+}
+
+api! {
+    client EmptyPaginationRateApi {
+        base "http://empty-pagination-rate.example.test/v1/";
+        GET Read() -> Bytes;
+    }
+}
+
+api! {
+    client PaginationCancellationApi {
+        base "http://pagination-cancellation.example.test/v1/";
+        GET Items(key: String) -> crate::KeyPageCodec {
+            path ["items"];
+            query { "cursor" = ep.key; }
+            rate_limit { 1 / 1m; }
+            paginate crate::ThreePageKeyController {
                 key: bind ep.key,
             }
         }
@@ -87,6 +128,50 @@ struct PageCapture {
 #[derive(Default)]
 struct PaginationCapturingLimiter {
     acquisitions: Mutex<Vec<PageCapture>>,
+}
+
+struct LaterPageGateLimiter {
+    reached: Arc<tokio::sync::Notify>,
+    permits: Arc<tokio::sync::Semaphore>,
+    acquisitions: Arc<Mutex<Vec<PageCapture>>>,
+}
+
+impl RateLimiter for LaterPageGateLimiter {
+    fn acquire<'a>(
+        &'a self,
+        request: concord_core::advanced::RateLimitRequest<'a>,
+    ) -> BoxFuture<
+        'a,
+        Result<concord_core::advanced::RateLimitPermit, concord_core::advanced::RateLimitError>,
+    > {
+        let capture = PaginationCapturingLimiter::capture(&request);
+        let later_page = request.page_index > 0;
+        let reached = Arc::clone(&self.reached);
+        let permits = Arc::clone(&self.permits);
+        let acquisitions = Arc::clone(&self.acquisitions);
+        Box::pin(async move {
+            acquisitions
+                .lock()
+                .expect("gated pagination capture")
+                .push(capture);
+            if later_page {
+                reached.notify_one();
+                permits
+                    .acquire()
+                    .await
+                    .expect("pagination gate remains allocated")
+                    .forget();
+            }
+            Ok(concord_core::advanced::RateLimitPermit::granted())
+        })
+    }
+
+    fn observe<'a>(
+        &'a self,
+        _response: concord_core::advanced::RateLimitResponse<'a>,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(async {})
+    }
 }
 
 impl PaginationCapturingLimiter {
@@ -279,13 +364,17 @@ async fn pagination_reuses_identical_lexical_plan_across_multiple_pages() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn pagination_pages_share_the_same_lexical_governor_bucket() {
     use pagination_key_limit_api::prelude::*;
 
     const BOUNDARY: &str = "pagination-governor-sentinel-91c2";
-    let server = ScriptedServer::start([ResponseScript::ok(b"10".to_vec())])
-        .expect("pagination governor server");
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"unrelated".to_vec()),
+        ResponseScript::ok(b"10".to_vec()),
+        ResponseScript::ok(b"unexpected-page-two".to_vec()),
+    ])
+    .expect("pagination governor server");
     let proxy = SafeProxy::parse(server.url("")).expect("pagination governor proxy");
     let limiter: Arc<dyn RateLimiter> = Arc::new(
         GovernorRateLimiter::new()
@@ -300,16 +389,93 @@ async fn pagination_pages_share_the_same_lexical_governor_bucket() {
         })
         .build()
         .expect("pagination governor client");
+    let unrelated = EmptyPaginationRateApi::builder()
+        .http({
+            let proxy = SafeProxy::parse(server.url("")).expect("unrelated pagination proxy");
+            move |http| http.proxy(proxy)
+        })
+        .build()
+        .expect("unrelated pagination client");
+    unrelated.read().await.expect("unrelated page request");
+    server
+        .wait_for_requests(1, std::time::Duration::from_secs(1))
+        .expect("unrelated page reached server");
     let operation =
         tokio::spawn(async move { client.items(BOUNDARY.to_owned()).paginate(2_u32).await });
     for _ in 0..32 {
         tokio::task::yield_now().await;
     }
     server
-        .wait_for_requests(1, std::time::Duration::from_secs(1))
+        .wait_for_requests(2, std::time::Duration::from_secs(1))
         .expect("first page reached server");
     tokio::task::yield_now().await;
-    assert_eq!(server.request_count(), 1);
+    assert!(
+        !operation.is_finished(),
+        "second page must wait on the bucket"
+    );
+    assert_eq!(server.request_count(), 2);
+    tokio::time::advance(std::time::Duration::from_secs(59)).await;
+    tokio::task::yield_now().await;
+    assert!(!operation.is_finished(), "second page remains rate limited");
     operation.abort();
     assert!(operation.await.is_err());
+}
+
+#[tokio::test]
+async fn pagination_cancellation_prevents_later_lexical_plan_acquisition() {
+    use pagination_cancellation_api::prelude::*;
+
+    let server = ScriptedServer::start([ResponseScript::ok(b"10".to_vec())])
+        .expect("pagination cancellation server");
+    let proxy = SafeProxy::parse(server.url("")).expect("pagination cancellation proxy");
+    let reached = Arc::new(tokio::sync::Notify::new());
+    let permits = Arc::new(tokio::sync::Semaphore::new(0));
+    let acquisitions = Arc::new(Mutex::new(Vec::new()));
+    let limiter: Arc<dyn RateLimiter> = Arc::new(LaterPageGateLimiter {
+        reached: Arc::clone(&reached),
+        permits,
+        acquisitions: Arc::clone(&acquisitions),
+    });
+    let client = PaginationCancellationApi::builder()
+        .http(move |http| http.proxy(proxy))
+        .runtime({
+            let limiter = Arc::clone(&limiter);
+            move |runtime| runtime.rate_limiter(limiter)
+        })
+        .build()
+        .expect("pagination cancellation client");
+    let waiting = reached.notified();
+    let operation = tokio::spawn(async move {
+        client
+            .items("pagination-cancel-sentinel".to_owned())
+            .paginate(3_u32)
+            .await
+    });
+    waiting.await;
+    assert_eq!(server.request_count(), 1);
+    let captures = acquisitions.lock().expect("cancellation captures");
+    assert_eq!(
+        captures
+            .iter()
+            .map(|capture| capture.page_index)
+            .collect::<Vec<_>>(),
+        [0, 1]
+    );
+    assert_eq!(captures[0].rules, captures[1].rules);
+    assert!(
+        captures
+            .iter()
+            .all(|capture| { capture.rules.iter().all(|rule| rule.1.is_empty()) })
+    );
+    drop(captures);
+    operation.abort();
+    assert!(operation.await.is_err());
+    assert_eq!(server.request_count(), 1);
+    assert_eq!(
+        acquisitions
+            .lock()
+            .expect("final cancellation captures")
+            .len(),
+        2
+    );
 }
