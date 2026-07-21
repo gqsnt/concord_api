@@ -25,8 +25,8 @@ documents are `Internal Release Approved`. No later implementation phase is acti
 - Historical-evidence change-map correction and final immutable source/test commit:
   `8d6441aee39e3fc8051961fad284165dc1022f91`.
 - Release-final evidence/report/state commit: `e3abd4960d151432843a8767c2dd3067c92045cf`.
-- Evidence anchor: `ANCHOR_COMMIT_PENDING`.
-- Compatible metadata descendant: `METADATA_COMMIT_PENDING`.
+- Evidence anchor: `9251b9359802fd42a5a9e7e4f95b25decb1a40b6`.
+- Compatible metadata descendant: the documentation-only final HEAD that records this actual anchor.
 - Branch: `master`; head policy: `anchor-must-be-an-ancestor`.
 
 The authoritative executable range is exactly:
@@ -210,6 +210,11 @@ The regenerated release registries contain:
   the observed Evidence-mode audit.
 
 Evidence mode passed at `e3abd4960d151432843a8767c2dd3067c92045cf` on 2026-07-21T18:15:09Z with 581 active requirements, 979 claims, 2,128 evidence rows, 402 Phase 14 rows, 190 change rows, 270 pre-anchor validation rows, zero waivers, zero unresolved claims, and zero missing paths.
+
+Final mode passed at the clean evidence anchor `9251b9359802fd42a5a9e7e4f95b25decb1a40b6`
+on 2026-07-21T18:17:46Z with 581 active requirements, 979 claims, 2,128 evidence rows,
+402 Phase 14 rows, 190 change rows, 271 validation rows, zero waivers, zero unresolved claims,
+and zero missing paths.
 
 Every release evidence path exists at its recorded commit. Every command component selected by a
 release evidence owner has a passing commit-bound validation record. Normative ownership is unique,
