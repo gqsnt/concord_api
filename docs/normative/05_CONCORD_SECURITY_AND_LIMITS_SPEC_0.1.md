@@ -1,7 +1,7 @@
 # CONCORD_SECURITY_AND_LIMITS_SPEC_0.1
 
 **Version:** 0.1  
-**Status:** Normative Implementation Candidate
+**Status:** Normative Release Final
 **Authority:** Security, secrecy, redaction, fail-closed behavior, and exact resource bounds  
 **Requirement prefixes:** `SEC`, `BOUND`  
 **Depends on:** Specification Index, Product Contract, Public API Specification  

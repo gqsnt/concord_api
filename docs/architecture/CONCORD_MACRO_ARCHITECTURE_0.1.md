@@ -1,7 +1,7 @@
 # CONCORD_MACRO_ARCHITECTURE_0.1
 
 **Version:** 0.1  
-**Status:** Internal Implementation Candidate  
+**Status:** Internal Release Approved
 **Authority:** Intended DSL compiler architecture  
 **Depends on:** DSL Specification, Generated API Specification, Feature and Compatibility Specification  
 **Supersedes:** None
