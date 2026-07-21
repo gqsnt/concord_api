@@ -2099,8 +2099,8 @@ mod tests {
             client Api {
                 base "https://example.test";
                 GET Read() -> Bytes {
-                    timeout 1s;
                     rate_limit { 1 / 1s; }
+                    timeout 1s;
                 }
             }
         })
