@@ -6,6 +6,7 @@ param(
     [string]$EvidenceCommit = "",
     [string]$AnchorCommit = "",
     [string]$MetadataCommit = "",
+    [string]$CorrectionBaseline = "44799306fbf1bd039b73c5e57903aed30e5e7a0d",
     [string]$HistoricalBaseline = "e05008c1ebc88e04f4df1001ecce00ae888282a3"
 )
 
@@ -45,7 +46,23 @@ $script:Phase11ReportBytes = 25109
 $script:Phase11ReportHash = "1de403491162bf39f36c530636f7b1dd03370ee45832c0dd2c7b9bc55d2b67fa"
 $script:Phase12PreviousSource = "8307d0744363ea7ec8a98d5f5fe68c4429b71c31"
 $script:Phase13PreviousSource = "684789b097b0cf225e880142874ae7eb0136286c"
+$script:Phase13ProspectiveCorrectionBaseline = "44799306fbf1bd039b73c5e57903aed30e5e7a0d"
+$script:Phase13BlockedSource = "d0891ac8de5e44c5da7d8d1202c3a9e4cfa4b304"
+$script:Phase13SourceCorrectionPaths = [string[]]@(
+    "scripts/audit-release-registry.ps1"
+)
+$script:Phase13PostSourcePaths = [string[]]@(
+    "README.md",
+    "docs/README.md",
+    "docs/conformance/CONFORMANCE_EVIDENCE_0.1.csv",
+    "docs/conformance/REQUIREMENT_COVERAGE_PLAN_0.1.csv",
+    "docs/conformance/RELEASE_VALIDATION_REGISTRY_0.1.csv",
+    "docs/conformance/PHASE_13_REPORT.md",
+    "docs/planning/CONCORD_IMPLEMENTATION_PROGRAM_0.2.md",
+    "docs/controller/PROJECT_CONTROL.toml"
+)
 $script:Phase13InheritedEvidenceSources = [string[]]@(
+    "d0891ac8de5e44c5da7d8d1202c3a9e4cfa4b304",
     "47bee70ffea62e669c65f3ec8970730fab7b802d",
     "684789b097b0cf225e880142874ae7eb0136286c",
     "15b61d57c668fead307eafc7a276019760ae46f7",
@@ -181,6 +198,51 @@ function Assert-Ancestor {
     param([string]$Ancestor, [string]$Descendant, [string]$Description)
     & git merge-base --is-ancestor $Ancestor $Descendant 2>$null
     Assert-Condition ($LASTEXITCODE -eq 0) "$Description is not ancestral: $Ancestor -> $Descendant"
+}
+
+function Assert-Phase13CorrectionBaselineInput {
+    param(
+        [string]$Baseline,
+        [string]$Source,
+        [scriptblock]$AncestorCheck
+    )
+    Assert-Condition (-not [string]::IsNullOrWhiteSpace($Baseline)) "Phase 13 correction requires CorrectionBaseline"
+    Assert-Condition ($Baseline -eq $script:Phase13ProspectiveCorrectionBaseline) "unexpected Phase 13 correction baseline: $Baseline"
+    Assert-Condition ($Baseline -ne $Source) "Phase 13 correction baseline must precede SourceCommit"
+    Assert-Condition (& $AncestorCheck $Baseline $Source) "Phase 13 correction baseline is not ancestral to SourceCommit: $Baseline -> $Source"
+}
+
+function Assert-Phase13SourceRangePaths {
+    param([string[]]$Paths)
+    $actual = @($Paths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    Assert-Condition ($actual.Count -eq $script:Phase13SourceCorrectionPaths.Count) "prospective Phase 13 source range has an unexpected path count: $($actual.Count)"
+    foreach ($path in $actual) {
+        Assert-Condition ($script:Phase13SourceCorrectionPaths -contains $path) "prospective Phase 13 source range contains a non-executable or unapproved path: $path"
+    }
+    foreach ($path in $script:Phase13SourceCorrectionPaths) {
+        Assert-Condition ($actual -contains $path) "prospective Phase 13 source range omits the required audit correction: $path"
+    }
+}
+
+function Assert-Phase13PostSourcePaths {
+    param([string[]]$Paths)
+    foreach ($path in @($Paths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
+        Assert-Condition ($script:Phase13PostSourcePaths -contains $path) "post-source executable or unapproved state change: $path"
+    }
+}
+
+function Assert-Phase13ProspectiveSourceBoundary {
+    param([string]$Baseline, [string]$Source)
+    Assert-ExactCommit $Baseline "CorrectionBaseline"
+    $gitAncestor = {
+        param($left, $right)
+        & git merge-base --is-ancestor $left $right 2>$null
+        return $LASTEXITCODE -eq 0
+    }
+    Assert-Phase13CorrectionBaselineInput $Baseline $Source $gitAncestor
+    $sourcePaths = @(& git diff --name-only "$Baseline..$Source")
+    Assert-Condition ($LASTEXITCODE -eq 0) "prospective Phase 13 source-range audit failed"
+    Assert-Phase13SourceRangePaths $sourcePaths
 }
 
 function Get-GitBlobText {
@@ -851,7 +913,8 @@ function Assert-Phase13ValidationRegistry {
         'cargo nextest run --offline --locked --target-dir target/cargo-fixtures/phase13-no-governor-direct --manifest-path concord_macros/tests/fixtures/Cargo.toml -p concord-fixture-no-governor-rate-limits --test no_governor_rate_limits --no-tests fail --success-output final',
         'cargo tree --offline --locked --manifest-path concord_macros/tests/fixtures/Cargo.toml -e features -p concord-fixture-no-governor-rate-limits',
         'cargo nextest run --profile ci -p concord_macros --test compile --all-features -E "test(governor_disabled_generated_and_prepared_plans_fail_closed_or_require_deliberate_limiter)"',
-        'cargo nextest run --profile ci -p concord_macros --test generated_prepared_endpoints --all-features -E "test(prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_order)"'
+        'cargo nextest run --profile ci -p concord_macros --test generated_prepared_endpoints --all-features -E "test(prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_order)"',
+        "pwsh -NoProfile -File scripts/audit-release-registry.ps1 -Mode Source -CorrectionBaseline $script:Phase13ProspectiveCorrectionBaseline -SourceCommit $Source"
     )) {
         Assert-Condition $commands.Contains($command) "required Phase 13 validation command was not recorded: $command"
     }
@@ -1060,6 +1123,7 @@ function Assert-Phase13StateDocumentation {
     $controller = Get-GitBlobText $Commit $script:ControllerPath
     foreach ($required in @(
         'PHASE_13_COMPLETE_WITH_LIMITATIONS', $Source, $EvidenceState, $Anchor,
+        $script:Phase13ProspectiveCorrectionBaseline, $script:Phase13BlockedSource,
         'generated contract transition exactly', 'Phase 14', '`NOT_STARTED`',
         '46 direct and 0 partial', '1,726 total rows', 'Normative Implementation Candidate'
     )) {
@@ -1075,6 +1139,8 @@ function Assert-Phase13StateDocumentation {
     )) {
         Assert-Condition $controller.Contains($required) "Phase 13 controller state is missing: $required"
     }
+    Assert-Condition (-not $report.Contains('Implementation result: `PHASE_BLOCKED`')) "Phase 13 report retains a blocked implementation result"
+    Assert-Condition (-not $controller.Contains('latest_verdict = "PHASE_BLOCKED"')) "Phase 13 controller retains a blocked verdict"
 }
 
 function Assert-SupersededHistoricalEvidence {
@@ -1754,7 +1820,39 @@ function Invoke-SelfTests {
     Assert-Throws { $type = @(& git cat-file -t "$head`:missing-release-audit-path" 2>$null); Assert-Condition ($LASTEXITCODE -eq 0) "missing" } "missing path"
     Assert-Throws { Assert-DurablePath "git_diff/ignored.md" "SELFTEST" } "ignored git_diff path"
 
+    $prospectiveSource = "1111111111111111111111111111111111111111"
     $alwaysAncestor = { param($left, $right) return $true }
+    $neverAncestor = { param($left, $right) return $false }
+    Assert-Phase13CorrectionBaselineInput $script:Phase13ProspectiveCorrectionBaseline $prospectiveSource $alwaysAncestor
+    Assert-Throws {
+        Assert-Phase13CorrectionBaselineInput "" $prospectiveSource $alwaysAncestor
+    } "missing Phase 13 correction baseline"
+    Assert-Throws {
+        Assert-Phase13CorrectionBaselineInput $script:Phase13ProspectiveCorrectionBaseline $prospectiveSource $neverAncestor
+    } "non-ancestral Phase 13 correction baseline"
+    Assert-Phase13SourceRangePaths @("scripts/audit-release-registry.ps1")
+    foreach ($forbiddenSourcePath in @(
+        $script:EvidencePath,
+        $script:Phase13ReportPath,
+        $script:ControllerPath,
+        "README.md"
+    )) {
+        Assert-Throws {
+            Assert-Phase13SourceRangePaths @("scripts/audit-release-registry.ps1", $forbiddenSourcePath)
+        } "prospective source range containing $forbiddenSourcePath"
+    }
+    Assert-Phase13PostSourcePaths @(
+        $script:EvidencePath,
+        $script:ValidationRegistryPath,
+        $script:Phase13ReportPath,
+        $script:ControllerPath
+    )
+    Assert-Throws {
+        Assert-Phase13PostSourcePaths @($script:Phase13ReportPath, "scripts/audit-release-registry.ps1")
+    } "post-source executable change"
+    $inheritedPhase13Evidence = @(Import-GitCsv $head $script:EvidencePath)
+    Assert-InheritedPhase13SourceEvidence $inheritedPhase13Evidence $head
+
     Assert-CommitClass "a" "immutable_source" "a" "b" "h" $alwaysAncestor "SOURCE"
     Assert-CommitClass "b" "evidence_state" "a" "b" "h" $alwaysAncestor "EVIDENCE"
     Assert-Throws { Assert-CommitClass "b" "immutable_source" "a" "b" "h" $alwaysAncestor "WRONG-SOURCE" } "source identity class"
@@ -1765,7 +1863,6 @@ function Invoke-SelfTests {
     $changedAgainClass = if ($evidenceChangePaths.Contains("changed-again")) { "evidence_state" } elseif ($sourceChangePaths.Contains("changed-again")) { "immutable_source" }
     Assert-Condition ($sourceOnlyClass -eq "immutable_source") "source-only change classification failed"
     Assert-Condition ($changedAgainClass -eq "evidence_state") "post-source change did not take evidence-state precedence"
-    $neverAncestor = { param($left, $right) return $false }
     Assert-Throws { Assert-CommitClass "x" "historical" "a" "b" "h" $neverAncestor "NON-ANCESTOR" } "non-ancestral commit"
 
     $definition = [pscustomobject]@{ requirement_id = "TEST-REQ-001"; normative_document = "doc.md"; normative_title = "Expected"; normative_paragraph_digest = "digest" }
@@ -1809,7 +1906,7 @@ function Invoke-SelfTests {
     Assert-Throws {
         foreach ($id in $expectedRequirements) { Assert-Condition $resolvedRequirements.Contains($id) "unresolved release requirement $id" }
     } "unresolved release requirement"
-    Write-Output "release registry audit self-tests passed: 16 rejection/acceptance classes; parsed-claims=$($parsedClaims.Count)"
+    Write-Output "release registry audit self-tests passed: 26 rejection/acceptance classes; parsed-claims=$($parsedClaims.Count)"
 }
 
 if ($Mode -eq "SelfTest") {
@@ -1823,6 +1920,7 @@ if ([string]::IsNullOrWhiteSpace($SourceCommit)) {
 Assert-ExactCommit $HistoricalBaseline "HistoricalBaseline"
 Assert-ExactCommit $SourceCommit "SourceCommit"
 Assert-Ancestor $HistoricalBaseline $SourceCommit "historical baseline"
+Assert-Phase13ProspectiveSourceBoundary $CorrectionBaseline $SourceCommit
 
 if ($Mode -eq "Source") {
     $head = (& git rev-parse HEAD).Trim()
@@ -1847,7 +1945,7 @@ if ($Mode -eq "Source") {
     Assert-Phase12Authority $SourceCommit
     Assert-Phase13Authority $SourceCommit
     Assert-Phase13CorrectionExecutableInputs $SourceCommit
-    Write-Output "implementation-candidate source audit passed: active-requirements=$($definitions.Count) superseded-requirements=$($script:SupersededRequirementIds.Count) historical-Phase-0-11-rows=$script:Phase11EvidenceRows inherited-Phase-12-rows=$($script:Phase12RequirementIds.Count) Phase-13-evidence=not-assessed release-final=reserved-for-Phase-14"
+    Write-Output "implementation-candidate prospective source boundary passed: correction-baseline=$CorrectionBaseline active-requirements=$($definitions.Count) superseded-requirements=$($script:SupersededRequirementIds.Count) historical-Phase-0-11-rows=$script:Phase11EvidenceRows inherited-Phase-12-rows=$($script:Phase12RequirementIds.Count); final evidence completeness not assessed; release-final=reserved-for-Phase-14"
     exit 0
 }
 
@@ -1871,8 +1969,7 @@ if ($Mode -eq "Evidence") {
 
 $postSource = @(& git diff --name-only "$SourceCommit..$DescendantCommit")
 Assert-Condition ($LASTEXITCODE -eq 0) "post-source path audit failed"
-$invalidPostSource = @($postSource | Where-Object { $_ -ne "README.md" -and $_ -notlike "docs/*" })
-Assert-Condition ($invalidPostSource.Count -eq 0) "post-source executable changes: $($invalidPostSource -join ', ')"
+Assert-Phase13PostSourcePaths $postSource
 
 $documents = Get-NormativeDocuments $StateCommit
 $definitions = @(Get-NormativeDefinitions $documents)
