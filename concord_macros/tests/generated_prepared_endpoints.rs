@@ -118,7 +118,16 @@ struct CapturingLimiter {
 }
 
 type CapturedKey = Vec<(String, String)>;
-type CapturedPlan = Vec<(String, CapturedKey)>;
+
+#[derive(Debug, PartialEq, Eq)]
+struct CapturedRule {
+    id: String,
+    parts: CapturedKey,
+    cost: u32,
+    windows: Vec<(u32, Duration)>,
+}
+
+type CapturedPlan = Vec<CapturedRule>;
 
 impl RateLimiter for CapturingLimiter {
     fn acquire<'a>(
@@ -129,15 +138,20 @@ impl RateLimiter for CapturingLimiter {
             .plan
             .rules()
             .iter()
-            .map(|rule| {
-                (
-                    rule.id().as_str().to_owned(),
-                    rule.key()
-                        .parts()
-                        .iter()
-                        .map(|part| (part.name().to_owned(), part.value().to_owned()))
-                        .collect(),
-                )
+            .map(|rule| CapturedRule {
+                id: rule.id().as_str().to_owned(),
+                parts: rule
+                    .key()
+                    .parts()
+                    .iter()
+                    .map(|part| (part.name().to_owned(), part.value().to_owned()))
+                    .collect(),
+                cost: rule.cost().get(),
+                windows: rule
+                    .windows()
+                    .iter()
+                    .map(|window| (window.capacity().get(), window.duration()))
+                    .collect(),
             })
             .collect();
         Box::pin(async move {
@@ -186,16 +200,18 @@ fn alpha(server: &ScriptedServer) -> PreparedAlphaApi {
         .expect("prepared alpha client")
 }
 
-fn rule(id: &str, value: &str) -> RateLimitRule {
+fn rule(id: &str, key: RateLimitKey, cost: u32, windows: &[(u32, u64)]) -> RateLimitRule {
     RateLimitRule::new(
         RateLimitId::new(id).expect("rate ID"),
-        RateLimitKey::from_parts([RateLimitKeyPart::new("tenant", value)]).expect("rate key"),
-        NonZeroU32::new(1).expect("rate cost"),
-        [RateLimitWindow::new(
-            NonZeroU32::new(10).expect("rate capacity"),
-            Duration::from_secs(1),
-        )
-        .expect("rate window")],
+        key,
+        NonZeroU32::new(cost).expect("rate cost"),
+        windows.iter().map(|(capacity, seconds)| {
+            RateLimitWindow::new(
+                NonZeroU32::new(*capacity).expect("rate capacity"),
+                Duration::from_secs(*seconds),
+            )
+            .expect("rate window")
+        }),
     )
     .expect("rate rule")
 }
@@ -579,7 +595,7 @@ async fn prepared_bodies_and_responses_cannot_bypass_runtime_limits() {
 }
 
 #[tokio::test]
-async fn prepared_rate_plans_use_explicit_noop_or_the_selected_custom_limiter() {
+async fn prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_order() {
     let server = ScriptedServer::start([
         ResponseScript::ok(Vec::new()),
         ResponseScript::ok(Vec::new()),
@@ -587,8 +603,29 @@ async fn prepared_rate_plans_use_explicit_noop_or_the_selected_custom_limiter() 
     .expect("prepared limiter server");
     let endpoint = || {
         PreparedEndpoint::builder("Prepared::limited", Method::GET)
-            .rate_limit(rule("first", "west"))
-            .rate_limit(rule("second", "east"))
+            .rate_limit(rule(
+                "global",
+                RateLimitKey::global(),
+                1,
+                &[(10, 1), (100, 10)],
+            ))
+            .rate_limit(rule(
+                "one-part",
+                RateLimitKey::from_parts([RateLimitKeyPart::new("tenant", "west")])
+                    .expect("one-part rate key"),
+                2,
+                &[(20, 2)],
+            ))
+            .rate_limit(rule(
+                "several-parts",
+                RateLimitKey::from_parts([
+                    RateLimitKeyPart::new("tenant", "east"),
+                    RateLimitKeyPart::new("region", "eu"),
+                ])
+                .expect("several-parts rate key"),
+                3,
+                &[(30, 3), (300, 30)],
+            ))
             .build()
             .expect("prepared rate plan")
     };
@@ -623,14 +660,27 @@ async fn prepared_rate_plans_use_explicit_noop_or_the_selected_custom_limiter() 
     assert_eq!(
         limiter.plans.lock().expect("captured plans").as_slice(),
         [vec![
-            (
-                "first".to_owned(),
-                vec![("tenant".to_owned(), "west".to_owned())]
-            ),
-            (
-                "second".to_owned(),
-                vec![("tenant".to_owned(), "east".to_owned())]
-            ),
+            CapturedRule {
+                id: "global".to_owned(),
+                parts: vec![],
+                cost: 1,
+                windows: vec![(10, Duration::from_secs(1)), (100, Duration::from_secs(10))],
+            },
+            CapturedRule {
+                id: "one-part".to_owned(),
+                parts: vec![("tenant".to_owned(), "west".to_owned())],
+                cost: 2,
+                windows: vec![(20, Duration::from_secs(2))],
+            },
+            CapturedRule {
+                id: "several-parts".to_owned(),
+                parts: vec![
+                    ("tenant".to_owned(), "east".to_owned()),
+                    ("region".to_owned(), "eu".to_owned()),
+                ],
+                cost: 3,
+                windows: vec![(30, Duration::from_secs(3)), (300, Duration::from_secs(30))],
+            },
         ]]
     );
 }

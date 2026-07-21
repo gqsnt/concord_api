@@ -197,6 +197,91 @@ fn downstream_pagination_runtime_executes_generated_construction_and_binding() {
 }
 
 #[test]
+fn governor_disabled_generated_and_prepared_plans_fail_closed_or_require_deliberate_limiter() {
+    let root = workspace_root();
+    let manifest = fixture_root().join("no_governor_rate_limits/Cargo.toml");
+    let output = run_nextest(
+        &root,
+        "macros/no-governor-rate-limits-runtime",
+        [
+            "--manifest-path",
+            manifest.to_str().expect("no-governor fixture manifest"),
+            "-p",
+            "concord-fixture-no-governor-rate-limits",
+            "--test",
+            "no_governor_rate_limits",
+            "--no-tests",
+            "fail",
+            "--success-output",
+            "final",
+        ],
+    );
+    let diagnostic = diagnostics(&output);
+    assert!(
+        output.status.success(),
+        "governor-disabled fixture failed\n{diagnostic}"
+    );
+    assert!(
+        diagnostic.contains("1 test run: 1 passed"),
+        "governor-disabled fixture did not select exactly one passing test\n{diagnostic}"
+    );
+    assert!(
+        diagnostic.contains("CONCORD_NO_GOVERNOR_RATE_LIMITS_OK generated=4 prepared=4 fallback_sends=0 observer_defaults=0"),
+        "governor-disabled fixture omitted its post-assertion sentinel\n{diagnostic}"
+    );
+
+    for relative in [
+        "no_governor_rate_limits/src/lib.rs",
+        "no_governor_rate_limits/tests/no_governor_rate_limits.rs",
+    ] {
+        let source_path = fixture_root().join(relative);
+        let source = std::fs::read_to_string(&source_path)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", source_path.display()));
+        for forbidden in [
+            "__private",
+            "__development",
+            "reqwest",
+            "ClientCore",
+            "GovernorRateLimiter",
+            "rate-limit-governor",
+            "unsafe {",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "no-governor fixture {relative} exposed prohibited surface `{forbidden}`"
+            );
+        }
+    }
+
+    let feature_graph = run(
+        &root,
+        "macros/no-governor-rate-limits-features",
+        "tree",
+        [
+            "--manifest-path",
+            manifest.to_str().expect("no-governor fixture manifest"),
+            "-e",
+            "features",
+            "-p",
+            "concord-fixture-no-governor-rate-limits",
+        ],
+    );
+    let feature_diagnostic = diagnostics(&feature_graph);
+    assert!(
+        feature_graph.status.success(),
+        "governor-disabled feature graph failed\n{feature_diagnostic}"
+    );
+    assert!(
+        !feature_diagnostic.contains("rate-limit-governor"),
+        "governor-disabled feature graph activated the governor feature\n{feature_diagnostic}"
+    );
+    assert!(
+        feature_diagnostic.contains("concord_core"),
+        "governor-disabled feature graph omitted concord_core\n{feature_diagnostic}"
+    );
+}
+
+#[test]
 fn downstream_credential_limiter_and_hooks_execute_through_public_runtime() {
     let manifest = fixture_root().join("Cargo.toml");
     let output = run_nextest(

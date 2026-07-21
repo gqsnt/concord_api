@@ -842,7 +842,11 @@ function Assert-Phase13ValidationRegistry {
         'just _examples',
         'just _msrv',
         'cargo nextest run --profile ci -p concord_core --all-features --lib -E "test(/execute::tests::deadline_cancellation_of_governor_wait_consumes_no_quota$/) | test(/execute::auth_tests::real_tls_authentication_recovery_performs_two_visible_limiter_acquisitions$/) | test(/execute::auth_tests::paginated_tls_recovery_keeps_one_page_identity_index_and_completion$/) | test(/execute::tests::hidden_reqwest_retry_does_not_reenter_custom_limiter_or_lifecycle$/)"',
-        'cargo nextest run --profile ci -p concord_core --test pagination_rate_limit --all-features -E "test(generated_pagination_uses_a_value_neutral_global_bucket)"'
+        'cargo nextest run --profile ci -p concord_core --test pagination_rate_limit --all-features -E "test(generated_pagination_uses_a_value_neutral_global_bucket)",
+        'cargo nextest run --offline --locked --target-dir target/cargo-fixtures/phase13-no-governor-direct --manifest-path concord_macros/tests/fixtures/Cargo.toml -p concord-fixture-no-governor-rate-limits --test no_governor_rate_limits --no-tests fail --success-output final',
+        'cargo tree --offline --locked --manifest-path concord_macros/tests/fixtures/Cargo.toml -e features -p concord-fixture-no-governor-rate-limits',
+        'cargo nextest run --profile ci -p concord_macros --test compile --all-features -E "test(governor_disabled_generated_and_prepared_plans_fail_closed_or_require_deliberate_limiter)",
+        'cargo nextest run --profile ci -p concord_macros --test generated_prepared_endpoints --all-features -E "test(prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_order)",
     )) {
         Assert-Condition $commands.Contains($command) "required Phase 13 validation command was not recorded: $command"
     }
@@ -863,6 +867,50 @@ function Assert-Phase13EvidenceCommandsRecorded {
             Assert-Condition $commands.Contains($proof) "Phase 13 evidence command lacks a passing validation record: $($row.evidence_id): $proof"
         }
     }
+}
+
+function Assert-Phase13CorrectionEvidenceAllocation {
+    param([object[]]$Evidence)
+    $byRequirement = @{}
+    foreach ($row in $Evidence | Where-Object { $_.evidence_id -like 'P13-*' }) {
+        $byRequirement[$row.requirement_id] = $row.exact_test
+    }
+    function RequireProof {
+        param([string]$Requirement, [string[]]$Needles)
+        Assert-Condition $byRequirement.ContainsKey($Requirement) "Phase 13 correction evidence omitted $Requirement"
+        $proof = $byRequirement[$Requirement]
+        foreach ($needle in $Needles) {
+            Assert-Condition $proof.Contains($needle) "Phase 13 correction evidence omitted `$needle` for $Requirement"
+        }
+    }
+    $fixtureCommand = 'cargo nextest run --offline --locked --target-dir target/cargo-fixtures/phase13-no-governor-direct --manifest-path concord_macros/tests/fixtures/Cargo.toml -p concord-fixture-no-governor-rate-limits --test no_governor_rate_limits --no-tests fail --success-output final'
+    $featureCommand = 'cargo tree --offline --locked --manifest-path concord_macros/tests/fixtures/Cargo.toml -e features -p concord-fixture-no-governor-rate-limits'
+    $outerCommand = 'cargo nextest run --profile ci -p concord_macros --test compile --all-features -E "test(governor_disabled_generated_and_prepared_plans_fail_closed_or_require_deliberate_limiter)"'
+    $planCommand = 'cargo nextest run --profile ci -p concord_macros --test generated_prepared_endpoints --all-features -E "test(prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_order)"'
+    RequireProof 'FEAT-GOV-001' @($fixtureCommand, $outerCommand, $featureCommand, 'generated_default_limiter_selection_matches_the_resolved_feature_graph')
+    RequireProof 'FEAT-GOV-002' @($fixtureCommand, 'prepared_plans_fail_closed_without_governor_unless_limiter_is_deliberate')
+    RequireProof 'GEN-RATE-005' @($fixtureCommand, 'generated_clients_fail_closed_without_governor_unless_limiter_is_deliberate')
+    RequireProof 'API-RATE-004' @($planCommand, 'default_key_limit_accepts_1024_bytes_and_rejects_the_first_excess')
+    RequireProof 'CONF-RATE-002' @(
+        'inherited_lexical_declarations_keep_one_identity_across_descendant_modules',
+        'declaration_identities_are_deterministic_and_collision_resistant',
+        'punctuation_distinct_lexical_paths_have_distinct_private_symbols',
+        'client_rule_quota_is_shared_across_direct_and_scoped_endpoints',
+        'scope_rule_quota_is_shared_across_immediate_and_nested_descendants',
+        'pagination_reuses_identical_lexical_plan_across_multiple_pages',
+        'pagination_pages_share_the_same_lexical_governor_bucket',
+        'generated_pagination_uses_a_value_neutral_global_bucket'
+    )
+    RequireProof 'CONF-DOC-001' @(
+        'just _examples',
+        'generated_public_rustdoc_uses_stable_paths_without_private_integration_names',
+        'cargo nextest run --profile ci -p concord_core --test public_rustdoc --all-features'
+    )
+    RequireProof 'CONF-SEC-001' @(
+        'request_debug_is_emitted_before_native_boundary_and_never_contains_auth',
+        'generated_public_rustdoc_uses_stable_paths_without_private_integration_names',
+        'cargo nextest run --profile ci -p concord_core --test public_rustdoc --all-features'
+    )
 }
 
 function Assert-Phase13StateDocumentation {
@@ -1722,6 +1770,7 @@ Assert-Phase12ValidationRegistry $validation $script:Phase12PreviousSource
 Assert-Phase13ValidationRegistry $validation $SourceCommit
 Assert-Phase12EvidenceCommandsRecorded $evidence $validation
 Assert-Phase13EvidenceCommandsRecorded $evidence $validation
+Assert-Phase13CorrectionEvidenceAllocation $evidence
 Assert-Phase12HighRiskEvidenceAllocation $evidence
 
 if ($Mode -eq "Final") {

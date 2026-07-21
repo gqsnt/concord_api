@@ -7,6 +7,7 @@ members = [
     "json_disabled",
     "multipart_disabled",
     "missing_core",
+    "no_governor_rate_limits",
     "oauth_disabled",
     "renamed_core",
 ]
