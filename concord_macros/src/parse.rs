@@ -2030,6 +2030,35 @@ mod tests {
     }
 
     #[test]
+    fn rate_limit_cost_defaults_and_equal_capacity_is_valid() {
+        let api = parse_ok(quote! {
+            client Api {
+                base "https://example.test";
+                rate_limit {
+                    1 / 1s;
+                }
+                scope Narrow() {
+                    rate_limit {
+                        cost 2;
+                        2 / 1s;
+                        10 / 1m;
+                    }
+                    GET Read() -> Bytes;
+                }
+            }
+        });
+        assert_eq!(api.clients[0].layer.rate_limit.as_ref().unwrap().cost, 1);
+        let SourceChild::Scope(scope) = &api.clients[0].children[0] else {
+            panic!("scope")
+        };
+        let rule = scope.layer.rate_limit.as_ref().unwrap();
+        assert_eq!(rule.cost, 2);
+        assert_eq!(rule.windows.len(), 2);
+        assert_eq!(rule.windows[0].capacity, 2);
+        assert_eq!(rule.windows[1].capacity, 10);
+    }
+
+    #[test]
     fn rate_limit_syntax_rejects_invalid_structure_values_dimensions_and_order() {
         let duplicate_rule = parse(quote! {
             client Api {

@@ -927,6 +927,91 @@ function Assert-Phase13CorrectionExecutableInputs {
     Assert-Condition $compileHarness.Contains('governor_disabled_generated_and_prepared_plans_fail_closed_or_require_deliberate_limiter') 'governor-disabled outer harness selector is absent'
 }
 
+function Assert-Phase13RetainedAndConformanceEvidenceAllocation {
+    param([object[]]$Evidence)
+    $byRequirement = @{}
+    foreach ($row in $Evidence | Where-Object { $_.evidence_id -like 'P13-*' }) {
+        $byRequirement[$row.requirement_id] = $row
+    }
+    function RequireProof {
+        param([string]$Requirement, [string[]]$Needles)
+        Assert-Condition $byRequirement.ContainsKey($Requirement) "Phase 13 retained/conformance evidence omitted $Requirement"
+        $proof = $byRequirement[$Requirement].exact_test
+        foreach ($needle in $Needles) {
+            Assert-Condition $proof.Contains($needle) "Phase 13 evidence omitted `$needle` for $Requirement"
+        }
+    }
+    $fixture = 'no_governor_rate_limits --no-tests fail --success-output final'
+    RequireProof 'PROD-GUAR-010' @(
+        'authenticated_cleartext_fails_in_public_preparation_before_hook_body_or_provider',
+        'https_failure_never_falls_back_to_plain_http',
+        'metadata_contradictions_fail_after_hook_and_before_limiter_or_native_send',
+        'encoding_failure_and_request_limit_prevent_native_execution_safely',
+        'first_staging_excess_is_withheld_and_error_formatting_omits_bytes',
+        $fixture,
+        'immediate_two_state_and_long_cycles_stop_before_protected_page_work'
+    )
+    RequireProof 'PROD-STATE-001' @(
+        'selected_governor_and_preparation_limit_form_one_runtime_snapshot',
+        'request_creation_is_lazy_and_generated_client_clone_shares_runtime_configuration',
+        'generated_handles_share_clone_state_keep_independent_builds_and_replace_atomically'
+    )
+    RequireProof 'DSL-RATE-002' @(
+        'lexical_rate_limit_declarations_parse_in_order',
+        'rate_limit_cost_defaults_and_equal_capacity_is_valid',
+        'rate_limit_syntax_rejects_invalid_structure_values_dimensions_and_order',
+        'rate_limit_diagnostics_are_source_only_and_focused'
+    )
+    RequireProof 'GEN-BUILD-004' @(
+        'configured_observer_replaces_rather_than_composes_with_default',
+        'generated_default_limiter_selection_matches_the_resolved_feature_graph',
+        'governor_disabled_generated_and_prepared_plans_fail_closed_or_require_deliberate_limiter',
+        'generated_handles_share_clone_state_keep_independent_builds_and_replace_atomically'
+    )
+    RequireProof 'EXEC-RATE-002' @(
+        'multiple_rules_and_windows_wait_for_the_complete_maximum',
+        'unavailable_rule_causes_no_partial_reservation_or_lock_across_wait',
+        'cancellation_while_waiting_consumes_no_future_quota',
+        'successful_reservation_is_not_refunded_after_later_cancellation',
+        'boundary_helpers_are_checked'
+    )
+    RequireProof 'CONF-COMPILE-001' @(
+        'complete_extension_fixture_compiles_through_public_namespaces_for_every_owned_feature_set',
+        'downstream_pagination_runtime_executes_generated_construction_and_binding',
+        'generated_public_rustdoc_uses_stable_paths_without_private_integration_names',
+        'just _feature-matrix',
+        'just _examples'
+    )
+    RequireProof 'CONF-COMPILE-002' @(
+        'complete_extension_fixture_compiles_through_public_namespaces_for_every_owned_feature_set',
+        'complete_extension_fixture_has_no_private_native_or_integration_escape',
+        'just _feature-matrix'
+    )
+    RequireProof 'CONF-DOWNSTREAM-002' @(
+        'downstream_credential_limiter_and_hooks_execute_through_public_runtime',
+        'downstream_pagination_runtime_executes_generated_construction_and_binding',
+        'downstream_request_and_all_sealed_response_modes_work_without_macro_changes',
+        'downstream_decoder_streams_and_batches_through_generated_public_contracts',
+        'complete_extension_fixture_has_no_private_native_or_integration_escape'
+    )
+    RequireProof 'CONF-RATE-004' @(
+        'before_send_veto_prevents_native_execution_and_later_response_phases',
+        'limiter_failure_prevents_request_debug_and_native_execution',
+        'deadline_cancellation_of_governor_wait_consumes_no_quota',
+        'multiple_rules_and_windows_wait_for_the_complete_maximum',
+        'successful_reservation_is_not_refunded_after_later_cancellation',
+        'real_tls_authentication_recovery_performs_two_visible_limiter_acquisitions',
+        'hidden_reqwest_retry_does_not_reenter_custom_limiter_or_lifecycle',
+        'raw_response_reuses_limiter_hooks_observation_and_success_completion',
+        'configured_observer_replaces_rather_than_composes_with_default',
+        'poisoned_state_fails_future_acquisition_closed',
+        'explicit_noop_authorizes_nonempty_generated_plan_without_dsl_observer',
+        'governor_disabled_generated_and_prepared_plans_fail_closed_or_require_deliberate_limiter',
+        'pagination_reuses_identical_lexical_plan_across_multiple_pages',
+        'pagination_cancellation_prevents_later_lexical_plan_acquisition'
+    )
+}
+
 function Assert-Phase13StateDocumentation {
     param([string]$Commit, [string]$Source, [string]$EvidenceState, [string]$Anchor)
     $report = Get-GitBlobText $Commit $script:Phase13ReportPath
@@ -1786,6 +1871,7 @@ Assert-Phase13ValidationRegistry $validation $SourceCommit
 Assert-Phase12EvidenceCommandsRecorded $evidence $validation
 Assert-Phase13EvidenceCommandsRecorded $evidence $validation
 Assert-Phase13CorrectionEvidenceAllocation $evidence
+Assert-Phase13RetainedAndConformanceEvidenceAllocation $evidence
 Assert-Phase12HighRiskEvidenceAllocation $evidence
 
 if ($Mode -eq "Final") {
