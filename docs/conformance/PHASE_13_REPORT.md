@@ -23,7 +23,7 @@ implemented, and no Phase 15 work was started.
 - Final immutable tested source: `3ff65c60dc4f360663f13d0e122fa102f6d21999`
 - Superseded evidence/report/state: `7158894bf636803014999f38635a002bfe7e7728`; superseded anchor: `0602840f942cb62a0f9f29661c6d42edf03960f5`.
 - Evidence/report/state commit: `5feb3fabe6372a9b08c595caf8b6199c127d5181`
-- Evidence anchor: `ANCHOR_COMMIT_PENDING`
+- Evidence anchor: `bc3faae853083ef50ba445da70f90abc864dffb1`
 - Metadata descendant: compatible documentation-only descendant recorded after the corrected anchor
 - Additional executable correction commits after the superseded source: `369ce1b82c4012c298d55c3ef6df90bf1ff0b8fc`, `738ab67409d955519e7b449f81b3b028637a504c`, `15b61d57c668fead307eafc7a276019760ae46f7`, `ceb3d9be48d6e19fbab85a71c9f38804013226f9`, `93ec979353f24642ca11b9107c603b874a643556`, `dfc15d16aad6157c535f6e398bdf8317a79c71c7`, `97df1708b46fb4119c3683fb75148cc403de2be6`, `62809cf5e25ca12974ffa2a93c5c95cb54b8e864`, `8cd5a60d1c64595b9235e58f7b0664d587e8cf82`, `b739454a79df9ee0e521a235123aec4d209f1f15`, `1ecd41d9173cc24654742efbf1a6f27ec42783fb`, and `3ff65c60dc4f360663f13d0e122fa102f6d21999`.
 - Branch: `master`; final tree is required to be clean
