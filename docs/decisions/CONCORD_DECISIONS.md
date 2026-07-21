@@ -802,3 +802,58 @@ multipart responses; add SSE, WebSocket, reconnection, or terminal stream-consum
 `EXEC-BODY-006`, `EXEC-BODY-007`, `EXEC-RESP-*`, `EXEC-STREAM-004`, `EXEC-RECORD-*`,
 `FEAT-RECORDS-001`, `FEAT-CSV-001`, `FEAT-NDJSON-001`, `COMPAT-MACRO-005`,
 `CONF-BODY-001`, `CONF-RESP-001`, and `CONF-RECORD-*`.
+
+---
+
+## ADR-046 — Generated rate limits use lexical ownership and global keys
+
+**Status:** Accepted; Phase 13 authority
+
+**Context:** The prior normal generated DSL modeled reusable templates, remote attachments,
+dimensions, replacement, and opt-out. That model made generated rule identity and bucket scope
+depend on request values and required rate-limit-only `Display` bounds. The approved Phase 13
+directive instead makes quota ownership lexical and preserves the already-proven limiter lifecycle.
+
+**Decision:** A client, scope, or endpoint may own one complete direct `rate_limit { ... }`
+declaration. A client rule applies to every endpoint; a scope rule applies to its complete lexical
+subtree; an endpoint rule applies only to that endpoint. Effective plans compose automatically in
+client, outer-to-inner scope, endpoint order. Child declarations add rules and cannot replace,
+disable, or modify ancestors. The normal DSL has no templates, remote named attachments, `by`
+dimensions, `replace`, `off`, formatted key parts, hidden per-value partitioning, or discontiguous
+quota grouping. A quota without a coherent lexical owner belongs to a custom limiter or advanced
+prepared endpoint.
+
+Every generated declaration receives a deterministic collision-resistant identifier based only on
+the generated module path, canonical client name, complete lexical scope path, endpoint name when
+applicable, and declaration kind. Every normal generated rule uses `RateLimitKey::global()` and
+static cost/windows. Runtime request values never enter generated plans, IDs, keys, diagnostics,
+or normal generated Rustdoc. The observer is an optional unique client-only
+`rate_limit_observer PATH;` declaration and configures only the generated default governor.
+
+The advanced prepared/custom boundary remains explicit: applications may construct
+`RateLimitRule` with bounded `RateLimitKey::global()` or `RateLimitKey::from_parts(...)`, and may
+inspect those key parts through a selected custom limiter. Normal generated declarations cannot
+access that dimension mechanism. Generated contract 13 therefore becomes 14.
+
+**Preserved decisions:** ADR-014 (hook veto before provider and limiter work), ADR-017 (response
+observation cannot replace the response), ADR-018 (atomic multi-rule reservation), ADR-030
+(bounded best-effort process-local governor semantics), and ADR-035 (credential finalization after
+limiter waiting) remain accepted and unchanged.
+
+**Consequences:** Independently built generated clients receive independent default governor state;
+clones share their selected limiter; intentionally shared explicit limiter objects share their
+namespace while deterministic declaration IDs prevent collisions. Pagination reuses the same
+lexical plan and global keys for every page. No new public identity or hashing API, dependency,
+feature, executor, or runtime state machine is introduced.
+
+**Rejected alternatives:** Preserve templates through an adapter; encode lexical scope values as
+hidden key parts; keep endpoint-local opt-out; add arbitrary generated key expressions; group
+discontiguous branches in the normal DSL; rewrite the governor; expose a public generated identity
+type.
+
+**Affected requirements:** `PROD-MODEL-009`, `PROD-GUAR-010`, `PROD-GUAR-015`,
+`PROD-NONGOAL-003`, `DSL-RATE-001`, `DSL-RATE-002`, `DSL-RATE-008` through `DSL-RATE-012`,
+`API-RATE-004`, `API-RATE-005`, `GEN-BUILD-004`, `GEN-DOC-001`, `GEN-DOC-002`,
+`GEN-RATE-001` through `GEN-RATE-006`, `SEC-RATE-001` through `SEC-RATE-003`,
+`BOUND-RATE-005`, `EXEC-RATE-001` through `EXEC-RATE-005`, `FEAT-GOV-001`, `FEAT-GOV-002`,
+`COMPAT-MACRO-006`, and `CONF-RATE-001` through `CONF-RATE-004`.

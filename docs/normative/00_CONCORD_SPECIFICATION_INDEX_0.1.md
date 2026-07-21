@@ -44,6 +44,7 @@ These documents own exact behavior in their domain:
 | `08_CONCORD_CONFORMANCE_PLAN_0.1.md` | Required evidence proving normative requirements |
 | `09_CONCORD_REQUIREMENT_CHANGE_RECORD_0.2.md` | Phase 11 requirement lineage and superseded historical identifiers |
 | `10_CONCORD_REQUIREMENT_CHANGE_RECORD_0.3.md` | Active Phase 12 requirement lineage and superseded historical identifiers |
+| `11_CONCORD_REQUIREMENT_CHANGE_RECORD_0.4.md` | Active Phase 13 rate-limit requirement lineage and superseded historical identifiers |
 
 ### 3.3 Internal architecture
 

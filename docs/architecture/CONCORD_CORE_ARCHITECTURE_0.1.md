@@ -343,14 +343,19 @@ The head contains no body and no prepared credentials.
 
 ## 12. Head builder
 
-Generated code should call a compact generated-private `HeadBuilder` rather than construct internal fields directly.
+Generated code should call a compact generated-private `HeadBuilder` rather than construct internal
+fields directly. Normal generated code emits lexical declaration IDs, static costs/windows, and
+`RateLimitKey::global()`; it never formats request values into rate keys. Prepared/custom code may
+continue to supply an explicit `RateLimitPlan` containing bounded key parts.
 
 Responsibilities:
 
 - append or replace validated host/path/query/header facts already normalized by the macro;
-- convert typed values through `Display`;
+- convert request-shaping values through `Display` only where the ordinary route/query/header
+  contract requires it;
 - validate header ownership;
-- create canonical rate-limit keys;
+- accept static generated lexical rules with `RateLimitKey::global()`;
+- preserve explicit bounded `RateLimitKey` values supplied by prepared/custom users;
 - add typed credential handles as private erased requirements;
 - produce safe/logical URLs;
 - verify TLS capability.
@@ -584,6 +589,14 @@ Direct arbitrary provider streams are intentionally excluded in 0.1 to keep prov
 ## 20. Rate-limit integration
 
 The prepared head owns a canonical `RateLimitPlan`.
+
+Normal generated plans are produced by lexical traversal: optional client declaration, outer-to-inner
+scope declarations, then optional endpoint declaration. Each declaration has one deterministic ID
+derived from the generated module path and complete lexical declaration path. Every normal generated
+rule uses a global key, so scope and endpoint argument values, hosts, methods, and pagination
+continuations do not partition buckets. A direct rate-limit declaration has no ancestor opt-out or
+replacement operation. The advanced prepared/custom boundary remains the only source of explicit
+`RateLimitKeyPart` values.
 
 The executor invokes the selected `RateLimiter` after credential preflight and before credential finalization and native construction.
 

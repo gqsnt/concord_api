@@ -92,7 +92,8 @@ struct ClientAst {
     credentials: Option<CredentialsAst>,
     retry: Option<RetryAst>,
     config: LayerConfigAst,
-    rate_limits: Option<RateLimitsAst>,
+    rate_limit_observer: Option<syn::Path>,
+    layer: LayerAst,
     children: Vec<ClientChildAst>,
     span: Span,
 }
@@ -163,7 +164,11 @@ struct SecretId(u32);
 struct CredentialId(u32);
 struct ScopeId(u32);
 struct EndpointId(u32);
-struct RateLimitTemplateId(u32);
+struct LexicalRateLimitOrigin {
+    client: Ident,
+    scopes: Vec<Ident>,
+    endpoint: Option<Ident>,
+}
 ```
 
 Generated Rust naming is not used as semantic identity.
@@ -177,7 +182,8 @@ Maintain distinct tables for:
 - secrets per client;
 - credentials per client;
 - child scopes/endpoints per parent;
-- rate-limit templates per client.
+- one optional direct rate-limit declaration per lexical layer;
+- one optional client-only rate-limit observer.
 
 A scope tree stores parent links and visible values.
 
@@ -190,7 +196,7 @@ Resolve:
 - `ep.NAME` against endpoint parameters;
 - `secret.NAME` against earlier secret declarations;
 - auth credential names;
-- rate-limit template names;
+- lexical rate-limit declaration paths;
 - endpoint-backed endpoint paths.
 
 Ambiguous visible scope names are rejected rather than implicitly choosing the nearest or outer declaration.
@@ -250,7 +256,7 @@ struct LayerOps {
     headers: HeaderOp,
     auth: AuthOp,
     timeout: TimeoutOp,
-    rate_limits: RateLimitOp,
+    rate_limit: Option<RateLimitDecl>,
 }
 ```
 
@@ -266,7 +272,7 @@ For each layer:
 4. apply header operation;
 5. apply auth operation;
 6. apply timeout operation;
-7. apply rate-limit operation;
+7. append the direct lexical rate-limit declaration, when present;
 8. store the resulting normalized config for the scope/endpoint;
 9. recurse to children with that result.
 
@@ -287,7 +293,7 @@ struct EndpointIr {
     headers: Vec<ResolvedHeaderEntry>,
     auth: Vec<ResolvedAuthUse>,
     timeout: ResolvedTimeout,
-    rate_limits: Vec<ResolvedRateLimitUse>,
+    rate_limits: Vec<NormalizedRateLimitRule>,
     body: Option<syn::Type>,
     response: syn::Type,
     pagination: Option<PaginationIr>,
@@ -295,9 +301,13 @@ struct EndpointIr {
 }
 ```
 
-### 7.4 Exact duplicate rate rules
+### 7.4 Lexical rate-rule normalization
 
-The macro may preserve repeated normalized attachments and allow core request preparation to canonicalize resolved dynamic keys. It should remove only duplicates that are provably identical before runtime values.
+The resolver carries the immutable normalized parent configuration while traversing the client tree.
+It appends at most one direct declaration at each layer in client, outer-to-inner scope, endpoint
+order. The normalized endpoint IR contains no inheritance operation, template symbol, dynamic value
+reference, or key-part expression. Every rule contains only lexical origin, deterministic ID,
+static cost, static windows, and a global key marker for code generation.
 
 ## 8. Semantic validation
 
@@ -389,7 +399,7 @@ Code generation must not:
 - resolve references;
 - perform inheritance;
 - infer auth composition;
-- infer rate-limit composition;
+- inspect or resolve runtime rate-limit values;
 - reinterpret optionality;
 - invent feature behavior;
 - emit public runtime adapters absent from the Generated API Specification.

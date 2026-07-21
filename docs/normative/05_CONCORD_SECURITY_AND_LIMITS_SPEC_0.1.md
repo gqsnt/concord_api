@@ -362,6 +362,13 @@ A custom limiter is responsible for its own logs, metrics labels, errors, and st
 
 **SEC-RATE-001 — Built-in key redaction.** Concord-provided limiter diagnostics MUST not reveal resolved key values.
 
+**SEC-RATE-003 — Generated plans contain no request values.** Normal generated rate-limit plans,
+limiter contexts, errors, hooks, completion events, generated Rustdoc, and public Rustdoc MUST NOT
+contain client, scope, endpoint, host, method, pagination, body, credential, or other request values.
+They MAY contain deterministic declaration IDs, static costs/windows, and documented global-key
+status. Advanced explicit key parts remain available only to the intentionally selected custom
+limiter and remain absent from built-in diagnostics and automatic output.
+
 ## 13. Hook and debug safety
 
 Hooks and built-in debug output receive only:

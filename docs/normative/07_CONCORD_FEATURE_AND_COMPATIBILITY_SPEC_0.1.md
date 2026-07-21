@@ -219,6 +219,11 @@ Without it:
 
 **FEAT-GOV-002 — Advanced-plan fallback.** Without the governor or an explicitly installed limiter, a dynamically introduced non-empty prepared-endpoint plan MUST fail before native send while an empty plan remains executable.
 
+**COMPAT-MACRO-006 — Generated rate-limit value neutrality.** The macro/compiler MUST generate
+normal rate-limit plans without request-value formatting, generated key parts, or rate-limit-only
+`Display` bounds. Renamed core dependencies and repeated macro invocations MUST retain deterministic
+declaration identity semantics.
+
 ## 11. Dangerous raw response
 
 `dangerous-raw-response` enables:

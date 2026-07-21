@@ -700,3 +700,24 @@ exclusively to Phase 14.
 `PHASE_12_COMPLETE_WITH_LIMITATIONS`
 
 `NORMATIVE_IMPLEMENTATION_CANDIDATE`
+
+## Phase 13 approved implementation authority
+
+The user-approved Phase 13 mission authorizes the requirement amendment
+`docs/normative/11_CONCORD_REQUIREMENT_CHANGE_RECORD_0.4.md`, ADR-046, both architecture
+amendments, prospective coverage, implementation, tests, examples, generated contract `13 -> 14`,
+validation, evidence, and anchoring required for lexically owned direct generated rate-limit
+declarations.
+
+Normal generated rules are declared directly at client, scope, or endpoint owners and compose in
+client/outer-to-inner-scope/endpoint order. They use deterministic complete lexical declaration
+identities and `RateLimitKey::global()`; request values never partition generated buckets and do not
+create rate-limit-only `Display` bounds. Templates, attachments, `by`, replacement, off, and
+generated dynamic dimensions are removed from the normal DSL. The optional observer is a separate
+unique client-only `rate_limit_observer PATH;` declaration.
+
+The proven governor, limiter, hook, credential, cancellation, recovery, observation, cooldown,
+bounded-state, redaction, pagination, and advanced prepared explicit-key lifecycles remain owned by
+their existing core paths. Phase 13 adds no new dependency, feature, public identity API, executor,
+runtime state machine, or Phase 14 behavior. The package remains `Normative Implementation Candidate`;
+Phase 14 remains `NOT_STARTED` and alone owns release-final promotion.

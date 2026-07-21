@@ -277,6 +277,19 @@ Concord supports application-defined:
 
 **PROD-GUAR-010 — Fail closed.** Invalid auth placement, unavailable TLS, request metadata/produced-body contradiction, body or record-staging limit violation, unavailable required rate-limit enforcement, and pagination cycles MUST fail rather than silently weakening the declared behavior.
 
+**PROD-MODEL-009 — Lexical rate-limit ownership.** A generated client, scope, or endpoint MAY own
+one complete direct rate-limit declaration. The effective endpoint plan MUST compose the optional
+client rule, outer-to-inner scope rules, and optional endpoint rule in that order; a scope applies to
+its complete lexical subtree and an endpoint rule applies only to that endpoint.
+
+**PROD-GUAR-015 — Value-independent generated quotas.** Normal generated rate-limit rules MUST use
+deterministic declaration identities and global keys. Runtime client, scope, endpoint, host, method,
+and pagination values MUST NOT partition or otherwise alter a generated quota.
+
+**PROD-NONGOAL-003 — No discontiguous generated quota grouping.** The normal DSL MUST NOT represent a
+quota shared by discontiguous generated branches without a coherent lexical owner. Applications MAY
+use a custom limiter or advanced prepared explicit rules for that requirement.
+
 **PROD-GUAR-014 — Bounded record staging.** Incremental record decoding MUST use a decoder-selected positive finite staging bound independent of the cumulative byte-stream limit and MUST reject the first append or framed record that would exceed that bound without retaining or yielding the offending bytes.
 
 ## 7. State and clone model

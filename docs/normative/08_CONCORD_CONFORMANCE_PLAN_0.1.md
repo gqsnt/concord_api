@@ -315,7 +315,7 @@ Pass fixtures include:
 
 Each pass fixture must import only documented public namespaces.
 
-**CONF-COMPILE-001 — Canonical generated use.** Every type-shaped request/response generation, universal metadata, pagination capability, explicit endpoint, prepared endpoint, and records category defined by `GEN-*` MUST have a downstream public-only compile-pass fixture with generated contract `13`.
+**CONF-COMPILE-001 — Canonical generated use.** Every type-shaped request/response generation, universal metadata, pagination capability, explicit endpoint, prepared endpoint, records category, and lexical rate-limit declaration defined by `GEN-*` MUST have a downstream public-only compile-pass fixture with generated contract `14`.
 
 **CONF-COMPILE-002 — Advanced extension use.** Every stable advanced request, response, sealed-mode selection, page-response, record-decoder, codec, factory, provider, limiter, hook, and pagination extension contract MUST have a downstream implementation fixture using only supported public imports.
 
@@ -365,7 +365,7 @@ Checked-in expected diagnostics must be reviewed for:
 - absence of sensitive values;
 - absence of private generated internals.
 
-**CONF-COMPILE-003 — Diagnostic fixtures.** Every explicit structural DSL, trait-bound, sealed-mode, pagination-capability, generated-contract-13 mismatch, and feature-availability diagnostic MUST have a reviewed compile-fail fixture whose behavior is not selected by macro built-in-name recognition.
+**CONF-COMPILE-003 — Diagnostic fixtures.** Every explicit structural DSL, trait-bound, sealed-mode, pagination-capability, generated-contract-14 mismatch, rate-limit migration, and feature-availability diagnostic MUST have a reviewed compile-fail fixture whose behavior is not selected by macro built-in-name recognition.
 
 ## 8. Downstream generated API fixture
 
@@ -934,7 +934,26 @@ On Rust 1.85, CI must compile:
 
 Tests that require a newer auxiliary tool may be skipped in the MSRV job, but library compilation and public type checking may not.
 
-**CONF-MSRV-001 — Public MSRV.** Every stable request/response/record signature, each records feature combination, generated contract-13 workflow, prepared generic workflow, and public-only extension fixture MUST compile on Rust 1.85.
+**CONF-MSRV-001 — Public MSRV.** Every stable request/response/record signature, each records feature combination, generated contract-14 workflow, prepared generic workflow, lexical rate-limit workflow, and public-only extension fixture MUST compile on Rust 1.85.
+
+**CONF-RATE-001 — Lexical DSL and migration diagnostics.** Compile-pass and compile-fail fixtures
+MUST cover direct client/scope/endpoint declarations, nested composition, independent observers,
+all static validation boundaries, and every removed template, attachment, dimension, replace, off,
+and old observer form with focused migration diagnostics.
+
+**CONF-RATE-002 — Generated lexical bucket semantics.** Deterministic generated runtime tests MUST
+prove exact lexical plan order, global keys, value-independent buckets, collision-resistant IDs,
+static costs/windows, and pagination plan reuse.
+
+**CONF-RATE-003 — Advanced explicit-key preservation.** Public and downstream tests MUST prove
+prepared/custom explicit global and bounded key parts, plan inspection, finite validation,
+redaction, and no-governor failure remain available while normal generated DSL cannot construct key
+parts.
+
+**CONF-RATE-004 — Governor and limiter lifecycle preservation.** Existing and focused deterministic
+tests MUST reprove hook/credential/limiter ordering, one acquisition per Concord attempt, atomic
+reservation, cancellation, recovery, observation, cooldown, finite state, no-op, custom, and
+fail-closed fallback behavior after the generated plan transition.
 
 ## 23. Documentation tests
 

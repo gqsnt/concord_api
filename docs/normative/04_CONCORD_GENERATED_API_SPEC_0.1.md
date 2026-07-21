@@ -319,7 +319,31 @@ When the DSL declares a rate-limit observer and the generated default governor r
 
 **GEN-BUILD-003 — Configuration closure uniqueness.** `.http(...)` and `.runtime(...)` MUST reject duplicate calls rather than silently merge them.
 
-**GEN-BUILD-004 — Observer ownership.** A DSL rate-limit observer MUST configure only the generated default governor; an explicitly supplied limiter MUST remain solely responsible for its observation behavior.
+**GEN-BUILD-004 — Observer ownership.** A DSL `rate_limit_observer PATH;` MUST configure only the generated default governor; an explicitly supplied limiter MUST remain solely responsible for its observation behavior. The observer is independent of whether a client owns a direct quota.
+
+**GEN-RATE-001 — Lexical rate-limit plan generation.** Generated endpoint plans MUST contain the
+ordered effective direct declarations from client, outer-to-inner scopes, and endpoint, with static
+costs/windows and no unresolved inheritance operation.
+
+**GEN-RATE-002 — Deterministic generated rule identity.** Each generated declaration MUST have one
+finite, collision-resistant identity based only on the generated module path, canonical client,
+complete lexical declaration path, endpoint name when applicable, and declaration kind. No runtime
+value may enter the identity.
+
+**GEN-RATE-003 — Global generated rate-limit keys.** Every normal generated rule MUST use
+`RateLimitKey::global()`; generated code MUST NOT construct `RateLimitKeyPart` values.
+
+**GEN-RATE-004 — No generated rate-limit Display bounds.** Normal generated rate-limit declarations
+MUST NOT add `Display` bounds for client values, scope parameters, endpoint parameters, pagination
+fields, hosts, or methods. Independent route/query/header formatting bounds remain valid.
+
+**GEN-RATE-005 — Static limiter requirement.** A generated client statically known to contain a
+nonempty lexical plan MUST require a functional limiter or deliberate `NoopRateLimiter` when the
+governor feature is absent; an empty plan remains executable.
+
+**GEN-RATE-006 — Lexical rate-limit Rustdoc.** Generated endpoint Rustdoc MUST state whether the
+effective plan is empty, list each lexical origin, static cost, static windows, and exact composition
+order, and MUST not include request values, key parts, templates, attachments, `by`, replace, or off.
 
 **GEN-BUILD-005 — HTTP override precedence.** Explicit `.http(...)` retry selection MUST override the DSL retry selection, and an overridden dangerous custom retry factory MUST NOT be invoked.
 

@@ -698,133 +698,80 @@ The deadline applies to one endpoint or page operation and includes asynchronous
 
 ## 15. Rate-limit declarations
 
-### 15.1 Block
+### 15.1 Direct lexical declarations
 
-A client may contain at most one rate-limits block:
+The normal generated DSL has one optional complete declaration at each lexical owner:
 
 ```text
-rate_limits {
-    application {
-        by [host];
-        500 / 10s;
-        30000 / 10m;
-    }
-
-    tenant {
-        by [host, endpoint, vars.tenant];
-        cost 2;
-        100 / 1m;
-    }
-
-    observe crate::rate_limit::ProviderObserver;
+rate_limit {
+    cost 2;
+    100 / 1m;
 }
 ```
-
-### 15.2 Template
 
 Informative grammar:
 
 ```text
-rate_limit_template =
-    identifier "{" rate_limit_template_body "}" ;
+rate_limit_decl =
+    "rate_limit" "{"
+        cost_clause?
+        rate_window+
+    "}" ;
 
-rate_limit_template_body =
-    by_clause
-    cost_clause?
-    rate_window+ ;
-
-by_clause = "by" "[" rate_dimension_list? "]" ";" ;
+rate_limit_observer_decl = "rate_limit_observer" rust_path ";" ;
 cost_clause = "cost" positive_integer ";" ;
 rate_window = positive_integer "/" duration_literal ";" ;
 ```
 
-A template requires exactly one `by` clause and at least one window.
+Client, scope, and endpoint may each contain at most one direct declaration. Cost defaults to one;
+windows and cost are positive, and cost must not exceed any capacity. Declaration order is static
+and deterministic. A client rule applies to every endpoint, a scope rule applies to its complete
+lexical subtree, and an endpoint rule applies only to that endpoint.
 
-Default cost is one.
+**DSL-RATE-008 — Complete lexical rule declaration.** A direct declaration MUST contain an optional
+positive static cost and at least one positive window; cost MUST NOT exceed any window capacity.
 
-### 15.3 Dimensions
-
-Supported dimensions:
-
-```text
-host
-endpoint
-method
-vars.NAME
-scope.NAME
-ep.NAME
-```
-
-A dynamic value dimension must resolve to a required, non-secret, non-optional value supporting `Display`.
-
-Dimension order is significant.
-
-Duplicate dimensions in one key are rejected.
-
-`by []` defines one global key for that rule id.
-
-### 15.4 Observer
-
-At most one observer declaration is permitted:
-
-```text
-observe crate::rate_limit::ProviderObserver;
-```
-
-The selected type must implement `Default + RateLimitObserver`.
-
-### 15.5 Template names
-
-**DSL-RATE-007 — Unique rate-limit template names.** Template names MUST be unique within the block.
-
-**DSL-RATE-001 — Positive windows.** Window capacity and duration MUST be positive.
+**DSL-RATE-001 — Positive windows.** Window capacity and duration MUST be positive in every direct
+lexical declaration.
 
 **DSL-RATE-002 — Valid cost.** Cost MUST be positive and MUST NOT exceed any window capacity.
 
-**DSL-RATE-003 — Safe dimensions.** Secrets, credentials, optional values, arbitrary expressions, and string-literal dimensions MUST be rejected.
+### 15.2 Independent observer
 
-## 16. Rate-limit attachment
-
-Append:
+The optional observer is a separate, unique, client-only declaration:
 
 ```text
-rate_limit application;
-rate_limit tenant;
+rate_limit_observer crate::rate_limit::ProviderObserver;
 ```
 
-Replace inherited plan and add the named rule:
+The selected type must implement `Default + RateLimitObserver`. It configures only the generated
+default governor and is valid whether or not the client itself owns a direct quota.
 
-```text
-rate_limit replace special;
-rate_limit tenant;
-```
+**DSL-RATE-012 — Independent client rate-limit observer.** An observer declaration MUST be optional,
+unique, and client-only, and MUST be independent of quota declaration and explicit limiter selection.
 
-Clear:
+### 15.3 Lexical composition and removed syntax
 
-```text
-rate_limit off;
-```
+Effective generated rules compose automatically in this exact order: client, outer scope to inner
+scope, endpoint. Child rules add to ancestors and cannot replace, disable, or modify an ancestor.
+There is no normal generated support for discontiguous quota groups; a desired group without a
+coherent lexical owner belongs to a custom limiter or advanced prepared endpoint.
 
-Direct local rule:
+**DSL-RATE-009 — Lexical subtree composition.** The effective plan for every endpoint MUST be the
+ordered ancestor-to-descendant sequence of direct declarations.
 
-```text
-rate_limit endpoint_quota {
-    by [host, endpoint];
-    50 / 1m;
-}
-```
+**DSL-RATE-010 — Ancestor preservation and no local opt-out.** A child MUST NOT replace, disable, or
+modify an ancestor declaration.
 
-At most one `replace` is permitted per layer and it must precede other local additions.
+**DSL-RATE-011 — No templates or generated key dimensions.** The normal DSL MUST reject
+`rate_limits { ... }`, named templates, named attachments, `by [...]`, `rate_limit NAME`,
+`rate_limit replace NAME`, `rate_limit off`, `observe PATH;`, host/method/endpoint/`vars`/`scope`/
+`ep` dimensions, arbitrary expressions, formatted key parts, secrets, and credentials. Normal
+generated rules use declaration-scoped global buckets; request values do not partition them.
 
-`rate_limit off` is exclusive within the layer.
-
-Named attachments must resolve to client templates.
-
-**DSL-RATE-004 — Append semantics.** Ordinary attachments append to the effective inherited plan.
-
-**DSL-RATE-005 — Replace semantics.** `rate_limit replace NAME` clears inherited rules and begins the local plan with `NAME`.
-
-**DSL-RATE-006 — Off exclusivity.** `rate_limit off` MUST NOT appear with another rate-limit declaration in the same layer.
+The migration forms are `rate_limit { ... }` for a direct declaration and
+`rate_limit_observer PATH;` for an observer. The old forms are intentionally rejected with focused
+diagnostics rather than adapted.
 
 ## 17. Authentication placement
 

@@ -404,6 +404,14 @@ A successful reservation is not refunded if cancellation occurs later.
 
 **EXEC-RATE-003 — No quota while waiting.** Cancellation during built-in limiter waiting MUST consume no quota.
 
+**EXEC-RATE-004 — Static lexical generated plan.** A normal generated Concord attempt MUST acquire
+the static plan produced from lexical declarations; request values, hosts, methods, and pagination
+continuations MUST NOT alter its rules or keys.
+
+**EXEC-RATE-005 — Pagination reuses the lexical plan.** Every page and bounded authentication
+recovery attempt for one generated endpoint MUST reuse the same lexical rule IDs and global keys;
+`page_index` is request-context metadata only.
+
 ## 11. Credential finalization
 
 ### 11.1 Linearization point

@@ -2102,6 +2102,12 @@ A custom observer installed through `GovernorRateLimiter::observer` replaces thi
 
 **API-RATE-004 — Plan inspection.** Custom limiters and observers MUST be able to inspect rule identifiers, resolved key parts, costs, and windows without access to request bodies or credentials.
 
+**API-RATE-005 — Generated and advanced key boundary.** Normal generated declarations MUST expose
+only deterministic declaration identity, static costs/windows, and `RateLimitKey::global()` to the
+runtime. Advanced prepared/custom users MAY construct bounded `RateLimitKeyPart` values through
+`RateLimitKey::from_parts(...)`; those explicit keys remain inspectable only by the intentionally
+selected custom limiter and remain redacted from built-in diagnostics.
+
 ## 15. Hooks and debugging
 
 ### 15.1 Debug level
