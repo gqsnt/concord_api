@@ -23,8 +23,8 @@ implemented, and no Phase 15 work was started.
 - Final immutable tested source: `d0891ac8de5e44c5da7d8d1202c3a9e4cfa4b304`
 - Superseded evidence/report/state: `7158894bf636803014999f38635a002bfe7e7728`; superseded anchor: `0602840f942cb62a0f9f29661c6d42edf03960f5`.
 - Superseded evidence/report/state: `5feb3fabe6372a9b08c595caf8b6199c127d5181`; superseded anchor: `bc3faae853083ef50ba445da70f90abc864dffb1`.
-- Evidence/report/state commit: pending corrected evidence commit
-- Evidence anchor: pending corrected anchor commit
+- Evidence/report/state commit: `acef8008ce4ed7ca54bbd102229defb32ed81483`
+- Evidence anchor: `ANCHOR_COMMIT_PENDING`
 - Metadata descendant: compatible documentation-only descendant recorded after the corrected anchor
 - Additional executable correction commits after the superseded source include the retained-source validation chain through `3ff65c60dc4f360663f13d0e122fa102f6d21999`, followed by `1dabc1b`, `40cc4e7`, `14c0d18`, `23b1b32`, `6dd7791`, `47bee70`, `116c5dc`, and `d0891ac`.
 - Branch: `master`; final tree is required to be clean
