@@ -23,6 +23,30 @@ impl ManagedHttp {
         self.provider.capability(deadline)
     }
 
+    #[cfg(test)]
+    pub(crate) fn test_runtime_selection(
+        &self,
+    ) -> (
+        bool,
+        bool,
+        Option<std::num::NonZeroUsize>,
+        std::time::Duration,
+        std::num::NonZeroUsize,
+        std::num::NonZeroUsize,
+    ) {
+        let (https_only, tls_available, status_body_limit, retry_after_cap) =
+            self.application.test_runtime_selection();
+        let (provider_request_limit, provider_response_limit) = self.provider.test_runtime_limits();
+        (
+            https_only,
+            tls_available,
+            status_body_limit,
+            retry_after_cap,
+            provider_request_limit,
+            provider_response_limit,
+        )
+    }
+
     pub(crate) fn validate_fixed_base(
         http: &HttpConfig,
         base_url: &url::Url,

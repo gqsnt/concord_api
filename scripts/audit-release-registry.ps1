@@ -948,11 +948,15 @@ function Assert-Phase13RetainedAndConformanceEvidenceAllocation {
         'https_failure_never_falls_back_to_plain_http',
         'metadata_contradictions_fail_after_hook_and_before_limiter_or_native_send',
         'encoding_failure_and_request_limit_prevent_native_execution_safely',
+        'buffered_decoder_never_observes_known_or_first_excess_response_bytes',
+        'unknown_stream_is_lazy_and_first_cumulative_excess_chunk_is_withheld',
+        'cumulative_limit_drops_and_withholds_the_first_excess_chunk',
         'first_staging_excess_is_withheld_and_error_formatting_omits_bytes',
         $fixture,
         'immediate_two_state_and_long_cycles_stop_before_protected_page_work'
     )
     RequireProof 'PROD-STATE-001' @(
+        'client_core_freezes_complete_runtime_selection_at_construction',
         'selected_governor_and_preparation_limit_form_one_runtime_snapshot',
         'request_creation_is_lazy_and_generated_client_clone_shares_runtime_configuration',
         'generated_handles_share_clone_state_keep_independent_builds_and_replace_atomically'
@@ -1004,6 +1008,12 @@ function Assert-Phase13RetainedAndConformanceEvidenceAllocation {
         'real_tls_authentication_recovery_performs_two_visible_limiter_acquisitions',
         'hidden_reqwest_retry_does_not_reenter_custom_limiter_or_lifecycle',
         'raw_response_reuses_limiter_hooks_observation_and_success_completion',
+        'quota_state_is_bounded_idle_pruned_and_eviction_allows_fresh_burst',
+        'current_bucket_cooldown_is_exact_and_empty_plan_falls_back_to_host',
+        'host_and_client_cooldowns_affect_only_their_normative_scopes',
+        'cooldown_is_clamped_extended_never_shortened_and_zero_is_noop',
+        'cooldown_state_capacity_uses_deterministic_eviction',
+        'default_retry_after_cooldown_is_future_only_host_fallback_and_runtime_capped',
         'configured_observer_replaces_rather_than_composes_with_default',
         'poisoned_state_fails_future_acquisition_closed',
         'explicit_noop_authorizes_nonempty_generated_plan_without_dsl_observer',
@@ -1011,6 +1021,35 @@ function Assert-Phase13RetainedAndConformanceEvidenceAllocation {
         'pagination_reuses_identical_lexical_plan_across_multiple_pages',
         'pagination_cancellation_prevents_later_lexical_plan_acquisition'
     )
+}
+
+function Assert-Phase13ClaimAudit {
+    param([object[]]$Evidence, [object[]]$Validation, [string]$Source)
+    $auditPath = Join-Path $root 'git_diff/phase-13-evidence-claim-audit.md'
+    Assert-Condition (Test-Path -LiteralPath $auditPath) "Phase 13 claim audit is missing: $auditPath"
+    $audit = Get-Content -LiteralPath $auditPath -Raw
+    $sections = [regex]::Matches($audit, '(?m)^### P13-[^\r\n]+$')
+    Assert-Condition ($sections.Count -eq 46) "Phase 13 claim audit contains $($sections.Count) sections rather than 46"
+    Assert-Condition ([regex]::Matches($audit, [regex]::Escape($Source)).Count -ge 46) "Phase 13 claim audit is not source-matched to $Source"
+    foreach ($stale in $script:Phase13InheritedEvidenceSources) {
+        if ($stale -ne $Source) {
+            Assert-Condition (-not $audit.Contains($stale)) "Phase 13 claim audit retains stale source identity: $stale"
+        }
+    }
+    foreach ($row in $Evidence | Where-Object { $_.evidence_id -like 'P13-*' }) {
+        Assert-Condition $audit.Contains($row.evidence_id) "Phase 13 claim audit omitted $($row.evidence_id)"
+        Assert-Condition $audit.Contains($row.exact_test) "Phase 13 claim audit omitted the exact command allocation for $($row.evidence_id)"
+        Assert-Condition ($row.verified_commit -eq $Source) "Phase 13 evidence source is stale for $($row.evidence_id)"
+    }
+    foreach ($line in ($audit -split "`r?`n")) {
+        if ($line -match '^\s+-\s+`(cargo|just)\s+(.+)`\s*$') {
+            $command = "$($Matches[1]) $($Matches[2])"
+            Assert-Condition (@($Evidence | Where-Object { $_.evidence_id -like 'P13-*' -and $_.exact_test.Contains($command) }).Count -gt 0) "Phase 13 claim audit contains an unallocated command: $command"
+        }
+    }
+    foreach ($row in $Validation | Where-Object { $_.validation_id -like 'P13-VAL-*' }) {
+        Assert-Condition ($row.verified_commit -eq $Source) "Phase 13 validation source is stale for $($row.validation_id)"
+    }
 }
 
 function Assert-Phase13StateDocumentation {
@@ -1870,10 +1909,13 @@ $validation = @(Import-GitCsv $StateCommit $script:ValidationRegistryPath)
 Assert-Phase12ValidationRegistry $validation $script:Phase12PreviousSource
 Assert-Phase13ValidationRegistry $validation $SourceCommit
 Assert-Phase12EvidenceCommandsRecorded $evidence $validation
-Assert-Phase13EvidenceCommandsRecorded $evidence $validation
-Assert-Phase13CorrectionEvidenceAllocation $evidence
-Assert-Phase13RetainedAndConformanceEvidenceAllocation $evidence
-Assert-Phase12HighRiskEvidenceAllocation $evidence
+    Assert-Phase13EvidenceCommandsRecorded $evidence $validation
+    Assert-Phase13CorrectionEvidenceAllocation $evidence
+    Assert-Phase13RetainedAndConformanceEvidenceAllocation $evidence
+    if ($Mode -ne "Source") {
+        Assert-Phase13ClaimAudit $evidence $validation $SourceCommit
+    }
+    Assert-Phase12HighRiskEvidenceAllocation $evidence
 
 if ($Mode -eq "Final") {
     $anchorAllowed = @($script:Phase13ReportPath, $script:ControllerPath)

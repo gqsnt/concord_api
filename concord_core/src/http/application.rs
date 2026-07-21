@@ -231,6 +231,16 @@ impl ApplicationHttp {
         self.https_only
     }
 
+    #[cfg(test)]
+    pub(super) fn test_runtime_selection(&self) -> (bool, bool, Option<NonZeroUsize>, Duration) {
+        (
+            self.https_only,
+            matches!(self.tls, TlsCapability::Available),
+            self.status_body_limit,
+            self.retry_after_cap,
+        )
+    }
+
     pub(crate) fn validate_fixed_base(&self, url: &url::Url) -> Result<(), ClientBuildError> {
         if self.https_only && url.scheme() != "https" {
             return Err(ClientBuildError::new(

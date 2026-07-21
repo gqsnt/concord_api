@@ -211,6 +211,11 @@ impl ProviderHttpInner {
     }
 
     #[cfg(test)]
+    pub(super) const fn test_runtime_limits(&self) -> (NonZeroUsize, NonZeroUsize) {
+        (self.request_limit, self.response_limit)
+    }
+
+    #[cfg(test)]
     pub(super) fn prepare(
         &self,
         method: Method,

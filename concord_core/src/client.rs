@@ -245,6 +245,17 @@ fn parse_fixed_base(value: &str) -> Result<Url, ClientBuildError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::num::{NonZeroU32, NonZeroUsize};
+    use std::time::Duration;
+
+    use crate::advanced::NoopRateLimiter;
+    use crate::http::SafeProxy;
+
+    struct FirstHooks;
+    impl RuntimeHooks for FirstHooks {}
+
+    struct SecondHooks;
+    impl RuntimeHooks for SecondHooks {}
 
     #[test]
     fn fixed_base_validation_is_structural_and_safe() {
@@ -264,5 +275,141 @@ mod tests {
             assert!(!error.to_string().contains(invalid));
             assert!(!format!("{error:?}").contains(invalid));
         }
+    }
+
+    #[test]
+    fn client_core_freezes_complete_runtime_selection_at_construction() {
+        let first_executor = concord_test_support::executor::DeterministicExecutor::new();
+        let second_executor = concord_test_support::executor::DeterministicExecutor::new();
+        let first_hooks: Arc<dyn RuntimeHooks> = Arc::new(FirstHooks);
+        let second_hooks: Arc<dyn RuntimeHooks> = Arc::new(SecondHooks);
+        let first_limiter: Arc<dyn crate::rate_limit::RateLimiter> =
+            Arc::new(NoopRateLimiter::new());
+        let second_limiter: Arc<dyn crate::rate_limit::RateLimiter> =
+            Arc::new(NoopRateLimiter::new());
+        let one = NonZeroUsize::new(11).expect("positive test limit");
+        let two = NonZeroUsize::new(13).expect("positive test limit");
+        let three = NonZeroUsize::new(17).expect("positive test limit");
+        let four = NonZeroUsize::new(19).expect("positive test limit");
+        let five = NonZeroUsize::new(23).expect("positive test limit");
+        let six = NonZeroUsize::new(29).expect("positive test limit");
+        let seven = NonZeroUsize::new(31).expect("positive test limit");
+        let first = ClientCore::build_with_development(
+            "https://first.example",
+            HttpConfigBuilder::new()
+                .https_only(true)
+                .http1_only()
+                .proxy(SafeProxy::parse("https://first-proxy.example").expect("safe proxy")),
+            RuntimeConfigBuilder::new()
+                .request_body_limit(one)
+                .response_body_limit(two)
+                .stream_response_limit(three)
+                .status_body_limit(four)
+                .provider_request_limit(five)
+                .provider_response_limit(six)
+                .pagination_max_pages(NonZeroU32::new(37).expect("positive page limit"))
+                .pagination_max_items(seven)
+                .pagination_identity_limit(NonZeroUsize::new(41).expect("positive identity limit"))
+                .auth_failure_cooldown_cap(Duration::from_secs(43))
+                .rate_limit_cooldown_cap(Duration::from_secs(47))
+                .hooks(Arc::clone(&first_hooks))
+                .rate_limiter(Arc::clone(&first_limiter))
+                .debug(DebugLevel::Headers),
+            &first_executor,
+        )
+        .expect("first client builds");
+
+        assert_eq!(
+            first.inner.http.test_runtime_selection(),
+            (
+                true,
+                cfg!(feature = "default-tls"),
+                Some(four),
+                Duration::from_secs(47),
+                five,
+                six,
+            )
+        );
+        assert_eq!(first.inner.runtime.request_body_limit, one);
+        assert_eq!(first.inner.runtime.response_body_limit, two);
+        assert_eq!(first.inner.runtime.stream_response_limit, three);
+        assert_eq!(first.inner.runtime.status_body_limit, Some(four));
+        assert_eq!(first.inner.runtime.provider_request_limit, five);
+        assert_eq!(first.inner.runtime.provider_response_limit, six);
+        assert_eq!(first.inner.runtime.pagination_max_pages.get(), 37);
+        assert_eq!(first.inner.runtime.pagination_max_items, seven);
+        assert_eq!(first.inner.runtime.pagination_identity_limit.get(), 41);
+        assert_eq!(
+            first.inner.runtime.auth_failure_cooldown_cap,
+            Duration::from_secs(43)
+        );
+        assert_eq!(
+            first.inner.runtime.rate_limit_cooldown_cap,
+            Duration::from_secs(47)
+        );
+        assert!(Arc::ptr_eq(&first.inner.runtime.hooks, &first_hooks));
+        assert!(Arc::ptr_eq(
+            &first.inner.runtime.rate_limiter,
+            &first_limiter
+        ));
+        assert_eq!(first.inner.runtime.debug, DebugLevel::Headers);
+        assert!(
+            first
+                .preflight_url(
+                    "snapshot",
+                    &Method::GET,
+                    &Url::parse("http://first.example").expect("URL"),
+                )
+                .is_err()
+        );
+
+        let clone = first.clone();
+        assert!(first.shares_inner_with(&clone));
+        assert!(Arc::ptr_eq(&clone.inner.runtime.hooks, &first_hooks));
+        assert!(Arc::ptr_eq(
+            &clone.inner.runtime.rate_limiter,
+            &first_limiter
+        ));
+        assert_eq!(clone.inner.runtime.debug, DebugLevel::Headers);
+
+        let second = ClientCore::build_with_development(
+            "http://second.example",
+            HttpConfigBuilder::new(),
+            RuntimeConfigBuilder::new()
+                .request_body_limit(NonZeroUsize::new(53).expect("positive test limit"))
+                .hooks(Arc::clone(&second_hooks))
+                .rate_limiter(Arc::clone(&second_limiter))
+                .debug(DebugLevel::Basic),
+            &second_executor,
+        )
+        .expect("second client builds");
+        assert!(!second.shares_inner_with(&first));
+        assert!(!Arc::ptr_eq(&second.inner.runtime.hooks, &first_hooks));
+        assert!(!Arc::ptr_eq(
+            &second.inner.runtime.rate_limiter,
+            &first_limiter
+        ));
+        assert_eq!(second.inner.runtime.debug, DebugLevel::Basic);
+        assert!(
+            !second
+                .preflight_url(
+                    "snapshot",
+                    &Method::GET,
+                    &Url::parse("http://second.example").expect("URL"),
+                )
+                .is_err()
+        );
+
+        assert_eq!(first.inner.runtime.request_body_limit, one);
+        assert_eq!(first.inner.runtime.pagination_max_pages.get(), 37);
+        assert_eq!(
+            first.inner.runtime.rate_limit_cooldown_cap,
+            Duration::from_secs(47)
+        );
+        assert!(Arc::ptr_eq(&first.inner.runtime.hooks, &first_hooks));
+        assert!(Arc::ptr_eq(
+            &first.inner.runtime.rate_limiter,
+            &first_limiter
+        ));
     }
 }
