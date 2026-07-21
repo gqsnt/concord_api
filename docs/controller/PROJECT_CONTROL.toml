@@ -55,9 +55,9 @@ implementation_source_commits = [
   "d7f418b0792ec05e747fe9c3e7c533701617d47c",
   "684789b097b0cf225e880142874ae7eb0136286c",
 ]
-post_source_governance_commit = "f75938fa0b489ec3f2b5cc5ad6219ad050a8db34"
-evidence_commit = "f75938fa0b489ec3f2b5cc5ad6219ad050a8db34"
-anchor_commit = "9d62736e3f5fef6e707c6d4fad814af18b6f37e3"
+post_source_governance_commit = "EVIDENCE_COMMIT_PENDING"
+evidence_commit = "EVIDENCE_COMMIT_PENDING"
+anchor_commit = "ANCHOR_COMMIT_PENDING"
 phase_report = "docs/conformance/PHASE_13_REPORT.md"
 normative_status = "Normative Implementation Candidate"
 head_policy = "anchor-must-be-an-ancestor"
