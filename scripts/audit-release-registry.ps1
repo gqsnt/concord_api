@@ -915,6 +915,18 @@ function Assert-Phase13CorrectionEvidenceAllocation {
     )
 }
 
+function Assert-Phase13CorrectionExecutableInputs {
+    param([string]$Commit)
+    $fixtureManifest = Get-GitBlobText $Commit 'concord_macros/tests/fixtures/no_governor_rate_limits/Cargo.toml'
+    $fixtureTest = Get-GitBlobText $Commit 'concord_macros/tests/fixtures/no_governor_rate_limits/tests/no_governor_rate_limits.rs'
+    $compileHarness = Get-GitBlobText $Commit 'concord_macros/tests/compile.rs'
+    Assert-Condition $fixtureManifest.Contains('concord_core = { path = "../../../../concord_core", default-features = false }') 'governor-disabled fixture does not disable concord_core default features'
+    Assert-Condition (-not $fixtureManifest.Contains('rate-limit-governor')) 'governor-disabled fixture enables rate-limit-governor'
+    Assert-Condition $fixtureTest.Contains('CONCORD_NO_GOVERNOR_RATE_LIMITS_OK') 'governor-disabled fixture lacks execution sentinel'
+    Assert-Condition $fixtureTest.Contains('generated_clients_fail_closed_without_governor_unless_limiter_is_deliberate') 'governor-disabled generated proof is absent'
+    Assert-Condition $compileHarness.Contains('governor_disabled_generated_and_prepared_plans_fail_closed_or_require_deliberate_limiter') 'governor-disabled outer harness selector is absent'
+}
+
 function Assert-Phase13StateDocumentation {
     param([string]$Commit, [string]$Source, [string]$EvidenceState, [string]$Anchor)
     $report = Get-GitBlobText $Commit $script:Phase13ReportPath
@@ -1707,6 +1719,7 @@ if ($Mode -eq "Source") {
     Assert-CandidateStatus $documents $SourceCommit
     Assert-Phase12Authority $SourceCommit
     Assert-Phase13Authority $SourceCommit
+    Assert-Phase13CorrectionExecutableInputs $SourceCommit
     Write-Output "implementation-candidate source audit passed: active-requirements=$($definitions.Count) superseded-requirements=$($script:SupersededRequirementIds.Count) historical-Phase-0-11-rows=$script:Phase11EvidenceRows inherited-Phase-12-rows=$($script:Phase12RequirementIds.Count) Phase-13-evidence=not-assessed release-final=reserved-for-Phase-14"
     exit 0
 }
