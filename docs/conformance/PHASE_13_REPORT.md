@@ -13,15 +13,18 @@ implemented, and no Phase 15 work was started.
 
 ## Identities and Git boundary
 
-- Starting HEAD: `0ef7d3f619155b251509da1d6112620b14f5c7b7`
+- Starting HEAD: `4e5a8fd171da2d1ecb883ff7b0ffebb1b7ba213a`
 - Authority commits: `c819da2` (`docs: establish lexical rate-limit contract`) and `8df99c2`
   (`docs: align phase 13 contract marker prose`)
 - Source/test commits: `25016f44114b65aa922de109bce57278da269990`, `9f102aa4fcfa4c1ec3e881677b78426a8ccf3c74`, `1e8bfe1124638535ca6641b8a890d0139f698093`, `66423ac753bc5394f0f39b62779d590386a95ffe`, `24d427d6e3ccb2df0e7310dd0f59123195ddf050`
 - Source-correction commits: `6a43e3c24ddfaff5835e19bc0275d1ab62f664ae`, `3d9da62f4eb13a7e8e4af6de984f4cef9a8cdf10`, `f38ac7b0a47a9a855fa77e16464955d6a144eb95`, `adbca38ad1df407fc55e1fe0dbb08ee319070e30`, `dedf999e204cc7e580a8a0d71392291de9518848`, `74519a183f953b50d18d3f7094b4bbbf2066cb7f`, `ea370cfb07384f399cfd6709f669d5078c6474ab`, `f7ddcec1b898f385b1d00eaf0514ac9505939ed7`, `3e942f299426aa76fbeca6887c26db89d7509363`, `8a5bfee7c227aad4be4ee5d5d898da033a4fa10b`, `d7f418b0792ec05e747fe9c3e7c533701617d47c`, and `684789b097b0cf225e880142874ae7eb0136286c`.
-- Final immutable tested source: `684789b097b0cf225e880142874ae7eb0136286c`
-- Evidence/report/state commit: `7158894bf636803014999f38635a002bfe7e7728`
-- Evidence anchor: `0602840f942cb62a0f9f29661c6d42edf03960f5`
+- Superseded correction source: `684789b097b0cf225e880142874ae7eb0136286c` (endpoint-module-dependent inherited IDs and incomplete evidence sequencing).
+- Final immutable tested source: `15b61d57c668fead307eafc7a276019760ae46f7`
+- Superseded evidence/report/state: `7158894bf636803014999f38635a002bfe7e7728`; superseded anchor: `0602840f942cb62a0f9f29661c6d42edf03960f5`.
+- Evidence/report/state commit: `EVIDENCE_COMMIT_PENDING`
+- Evidence anchor: `ANCHOR_COMMIT_PENDING`
 - Metadata descendant: recorded in the controller after the compatible two-file descendant
+- Additional executable correction commits after the superseded source: `369ce1b82c4012c298d55c3ef6df90bf1ff0b8fc`, `738ab67409d955519e7b449f81b3b028637a504c`, and `15b61d57c668fead307eafc7a276019760ae46f7`.
 - Branch: `master`; final tree is required to be clean
 - Head policy: `anchor-must-be-an-ancestor`
 
@@ -128,11 +131,12 @@ Focused proof covered parser passes/fails and migration UI, lexical normalizatio
 bucket semantics, deterministic identity under shared limiters, no-`Display` compilation,
 advanced explicit keys, no-governor fail-closed behavior, observer ownership, governor lifecycle,
 pagination plan reuse, security sentinels, generated/public Rustdoc, examples, downstream
-extension, feature matrix, and MSRV. The maintained all-feature inventory selected 596 tests and
-all passed; default Nextest selected 571 tests and all passed.
+extension, feature matrix, and MSRV. The maintained all-feature inventory selected 603 tests and
+all passed; default Nextest selected 578 tests and all passed. The source-matched validation registry
+contains 204 rows, including 25 Phase 13 rows and every maintained matrix command at the final source.
 
 The Phase 13 evidence catalog contains 46 direct and 0 partial Phase 13 rows: 23 retained-version rows
-and 23 new-requirement rows, all verified against `684789b097b0cf225e880142874ae7eb0136286c`.
+and 23 new-requirement rows, all verified against `15b61d57c668fead307eafc7a276019760ae46f7`.
 There are no Phase 13-owned partial rows and no waivers. The catalog has 1,726 total rows after
 the Phase 13 additions; coverage has 581 active requirements and 16 superseded historical rows.
 
@@ -141,6 +145,37 @@ query, explicit advanced key parts, credentials, request body, and response body
 plans and diagnostics contain only declaration IDs and static quota metadata; advanced key values
 remain available only to the intentionally selected custom limiter and remain absent from
 automatic diagnostics, hooks, completion, `Display`, `Debug`, sources, and Rustdoc.
+
+## Correction proof
+
+The corrected generated implementation evaluates `module_path!()` only in private generated-root
+constants. Each client, scope, and endpoint declaration receives one root constant for its complete
+canonical declaration path; descendant endpoint modules reference that constant. The custom limiter
+tests prove one client ID across direct, sibling-scope, and nested endpoints, one outer-scope ID
+across immediate and nested descendants, distinct sibling and endpoint IDs, deterministic repeated
+build/clone IDs, and collision resistance across generated modules and clients. The governor tests
+prove a client quota is shared from a direct endpoint to a descendant, a scope quota is shared from
+an immediate endpoint to a nested descendant, and unrelated sibling/outside/endpoint-local rules do
+not share buckets.
+
+The corrected pagination fixture executes two pages with a changing continuation. Captures show page
+indices `[0, 1]`, identical ordered declaration IDs, global keys with zero parts, unchanged static
+costs/windows, and the continuation present only in the ordinary request. The real governor test
+allows page one and prevents page two from reaching the server before cancellation. Existing core
+authentication recovery and cancellation tests, plus the focused final-source lifecycle command,
+reprove reacquisition and cancellation behavior without changing the pagination controller contract.
+
+The old source was not executable-only because it already contained Phase 13 evidence/state, and its
+inherited IDs were assembled inside endpoint modules. The corrected source sequence is executable-only
+commits `369ce1b…`, `738ab67…`, and `15b61d5…`, followed only by evidence/state, one anchor, and one
+metadata descendant. Every Phase 13 evidence command is now bound verbatim to a passing validation row
+for the final source; no Phase 13 row uses only `just release`.
+
+The exact historical Phase 0–12 catalog blob was restored before appending the corrected rows:
+1,344,331 bytes, SHA-256
+`8300c71829e3ed5f4049d74832bea64a3ed3c46de7b731555de4567a05334b05`, 1,680 rows. A binary prefix
+comparison, rather than parsed-row equality, proves its preservation. The corrected catalog has 1,726
+rows, 581 active coverage requirements, 16 superseded requirements, and 204 validation records.
 
 ## Closure boundary
 

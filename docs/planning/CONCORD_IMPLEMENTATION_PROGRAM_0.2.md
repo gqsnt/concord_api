@@ -722,3 +722,13 @@ their existing core paths. Phase 13 adds no new dependency, feature, public iden
 runtime state machine, or Phase 14 behavior. The package remains `Normative Implementation Candidate`;
 Phase 13 is complete with only Phase 14 as a limitation; Phase 14 remains `NOT_STARTED` and alone
 owns release-final promotion.
+
+### Phase 13 correction closure
+
+The Phase 13 correction mission stabilized generated lexical declaration identities at the generated
+root, added descendant-module and real-governor bucket proofs, expanded pagination validation to
+multiple pages, and rebuilt evidence from the exact Phase 0–12 catalog blob. The final executable
+source is the immutable commit `15b61d57c668fead307eafc7a276019760ae46f7`; Phase 13 evidence and
+validation state records the focused commands and the complete maintained matrix against that source.
+The superseded source/evidence/anchor chain remains historical. Phase 14 remains `NOT_STARTED` and
+continues to own product-completion, conformance-closure, and release-final work.
