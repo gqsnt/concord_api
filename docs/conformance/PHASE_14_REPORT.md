@@ -65,6 +65,12 @@ range, and the release change-map derivation excludes historical Phase 10-13 rep
 state from the executable change surface. Each correction received a new non-amended source commit
 and a complete validation rerun. Only `8d6441a…` is used by final Phase 14 validation and evidence.
 
+The initial evidence-state commit `dc14225a301f2058ab56216e532a80457750157a` was rejected by
+Evidence mode because five Phase 13-superseded coverage notes preserved their historical proof but
+did not literally identify the requirement change record. A documentation-only correction added
+that exact lineage to all five rows. The rejected audit is not entered as passing validation, and
+the non-amended corrected descendant is the release-final evidence commit recorded by this report.
+
 No product architecture, public abstraction, dependency, feature, unsafe block, normative
 requirement, generated-contract version, waiver, or state machine was added. Generated contract
 version `14` and the complete Phase 0-13 architecture remain unchanged.
