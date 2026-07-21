@@ -20,13 +20,13 @@ implemented, and no Phase 15 work was started.
 - Source-correction commits: `6a43e3c24ddfaff5835e19bc0275d1ab62f664ae`, `3d9da62f4eb13a7e8e4af6de984f4cef9a8cdf10`, `f38ac7b0a47a9a855fa77e16464955d6a144eb95`, `adbca38ad1df407fc55e1fe0dbb08ee319070e30`, `dedf999e204cc7e580a8a0d71392291de9518848`, `74519a183f953b50d18d3f7094b4bbbf2066cb7f`, `ea370cfb07384f399cfd6709f669d5078c6474ab`, `f7ddcec1b898f385b1d00eaf0514ac9505939ed7`, `3e942f299426aa76fbeca6887c26db89d7509363`, `8a5bfee7c227aad4be4ee5d5d898da033a4fa10b`, `d7f418b0792ec05e747fe9c3e7c533701617d47c`, and `684789b097b0cf225e880142874ae7eb0136286c`.
 - Superseded correction source: `684789b097b0cf225e880142874ae7eb0136286c` (endpoint-module-dependent inherited IDs and incomplete evidence sequencing).
 - Superseded source/test state: `15b61d57c668fead307eafc7a276019760ae46f7`.
-- Final immutable tested source: `47bee70ffea62e669c65f3ec8970730fab7b802d`
+- Final immutable tested source: `d0891ac8de5e44c5da7d8d1202c3a9e4cfa4b304`
 - Superseded evidence/report/state: `7158894bf636803014999f38635a002bfe7e7728`; superseded anchor: `0602840f942cb62a0f9f29661c6d42edf03960f5`.
 - Superseded evidence/report/state: `5feb3fabe6372a9b08c595caf8b6199c127d5181`; superseded anchor: `bc3faae853083ef50ba445da70f90abc864dffb1`.
 - Evidence/report/state commit: pending corrected evidence commit
 - Evidence anchor: pending corrected anchor commit
 - Metadata descendant: compatible documentation-only descendant recorded after the corrected anchor
-- Additional executable correction commits after the superseded source include the retained-source validation chain through `3ff65c60dc4f360663f13d0e122fa102f6d21999`, followed by `1dabc1b`, `40cc4e7`, `14c0d18`, `23b1b32`, `6dd7791`, and `47bee70`.
+- Additional executable correction commits after the superseded source include the retained-source validation chain through `3ff65c60dc4f360663f13d0e122fa102f6d21999`, followed by `1dabc1b`, `40cc4e7`, `14c0d18`, `23b1b32`, `6dd7791`, `47bee70`, `116c5dc`, and `d0891ac`.
 - Branch: `master`; final tree is required to be clean
 - Head policy: `anchor-must-be-an-ancestor`
 
@@ -205,7 +205,7 @@ gate proving cancellation prevents later acquisition and send.
 
 The 46-row claim audit is complete in `git_diff/phase-13-evidence-claim-audit.md`; every row has
 independent atoms, principal paths, exact commands, and a passing source-matched validation row.
-All rows are direct, source-matched to `47bee70ffea62e669c65f3ec8970730fab7b802d`, and waiver-free.
+All rows are direct, source-matched to `d0891ac8de5e44c5da7d8d1202c3a9e4cfa4b304`, and waiver-free.
 
 ## Closure boundary
 
@@ -219,8 +219,10 @@ This correction supersedes the prior evidence state `77f9b2c4fae5c4a63a4898eb4fd
 anchor `826d240d96b74741a543320d377f949abb2fa6b6`. Source `40cc4e7ff8869440248fbfea00f4b6c4fc0e6968`
 was replaced because the runtime-snapshot test and retained response/cooldown allocations required
 new executable validation inputs. The final immutable executable source is
-`47bee70ffea62e669c65f3ec8970730fab7b802d`; its correction commits are `14c0d18`, `23b1b32`,
-`6dd7791`, and `47bee70`.
+`d0891ac8de5e44c5da7d8d1202c3a9e4cfa4b304`; its correction commits are `14c0d18`, `23b1b32`,
+`6dd7791`, `47bee70`, `116c5dc`, and `d0891ac`. The final two commits correct the tracked
+validation-schema field and inherited-source audit binding; the complete maintained matrix was
+rerun at `d0891ac`.
 
 The corrected allocations are explicit for `PROD-GUAR-010`, `PROD-STATE-001`, `DSL-RATE-002`,
 `GEN-BUILD-004`, `EXEC-RATE-002`, `CONF-COMPILE-001`, `CONF-COMPILE-002`,

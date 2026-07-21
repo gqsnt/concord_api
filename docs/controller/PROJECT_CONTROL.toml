@@ -35,7 +35,7 @@ release_validation_registry = "docs/conformance/RELEASE_VALIDATION_REGISTRY_0.1.
 expected_branch = "master"
 latest_validated_phase = "13"
 latest_verdict = "PHASE_13_COMPLETE_WITH_LIMITATIONS"
-source_commit = "40cc4e7ff8869440248fbfea00f4b6c4fc0e6968"
+source_commit = "d0891ac8de5e44c5da7d8d1202c3a9e4cfa4b304"
 implementation_source_commits = [
   "25016f4",
   "9f102aa4fcfa4c1ec3e881677b78426a8ccf3c74",
@@ -72,6 +72,8 @@ implementation_source_commits = [
   "23b1b32",
   "6dd7791",
   "47bee70ffea62e669c65f3ec8970730fab7b802d",
+  "116c5dc",
+  "d0891ac8de5e44c5da7d8d1202c3a9e4cfa4b304",
 ]
 post_source_governance_commit = "47bee70ffea62e669c65f3ec8970730fab7b802d"
 evidence_commit = "EVIDENCE_COMMIT_PENDING"
