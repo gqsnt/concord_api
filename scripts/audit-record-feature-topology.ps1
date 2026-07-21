@@ -46,6 +46,7 @@ $records = Cargo-Tree -Arguments ($normalBase + @("--no-default-features", "--fe
 $csv = Cargo-Tree -Arguments ($normalBase + @("--no-default-features", "--features", "csv"))
 $ndjson = Cargo-Tree -Arguments ($normalBase + @("--no-default-features", "--features", "ndjson"))
 $combined = Cargo-Tree -Arguments ($normalBase + @("--no-default-features", "--features", "csv,ndjson"))
+$macroGraph = Cargo-Tree -Arguments @("-p", "concord_macros", "-e", "normal", "--prefix", "none")
 
 foreach ($graph in @(
     @{ Label = "default graph"; Text = $default },
@@ -64,6 +65,8 @@ Require-Match "ndjson graph" $ndjson '(?m)^serde_json v1\.0\.150\r?$'
 Reject-Match "ndjson graph" $ndjson '(?m)^csv v'
 Require-Match "combined graph" $combined '(?m)^csv v1\.3\.1\r?$'
 Require-Match "combined graph" $combined '(?m)^serde_json v1\.0\.150\r?$'
+Reject-Match "macro graph" $macroGraph '(?m)^csv v'
+Reject-Match "macro graph" $macroGraph '(?m)^serde_json v'
 
 $csvFeatures = Cargo-Tree -Arguments @(
     "-p", "concord_core", "--no-default-features", "--features", "csv",
@@ -86,6 +89,7 @@ $workspaceManifest = Get-Content -LiteralPath "Cargo.toml" -Raw
 $coreManifest = Get-Content -LiteralPath "concord_core/Cargo.toml" -Raw
 $macroManifest = Get-Content -LiteralPath "concord_macros/Cargo.toml" -Raw
 $lockfile = Get-Content -LiteralPath "Cargo.lock" -Raw
+$justfile = Get-Content -LiteralPath "justfile" -Raw
 Require-Match "workspace manifest" $workspaceManifest 'csv = "=1\.3\.1"'
 Require-Match "core manifest" $coreManifest 'records = \[\]'
 Require-Match "core manifest" $coreManifest 'csv = \["records", "dep:csv", "dep:serde"\]'
@@ -96,4 +100,13 @@ foreach ($forbidden in @("csv", "serde_json", "records")) {
     Reject-Match "concord_macros manifest" $macroManifest "(?m)^$forbidden\\s*="
 }
 
-Write-Output "record feature topology audit passed: default isolated; records dependency-free; csv=1.3.1+serde; ndjson=serde+serde_json; macro graph isolated"
+foreach ($documentationRole in @(
+    'cargo \+1\.85\.0 doc --target-dir target/rustdoc-records-only -p concord_core --no-default-features --features records --no-deps',
+    'cargo \+1\.85\.0 doc --target-dir target/rustdoc-csv-only -p concord_core --no-default-features --features csv --no-deps',
+    'cargo \+1\.85\.0 doc --target-dir target/rustdoc-ndjson-only -p concord_core --no-default-features --features ndjson --no-deps',
+    'cargo \+1\.85\.0 doc --target-dir target/rustdoc-csv-ndjson -p concord_core --no-default-features --features csv,ndjson --no-deps'
+)) {
+    Require-Match "records Rustdoc role" $justfile $documentationRole
+}
+
+Write-Output "record feature topology audit passed: default isolated; records dependency-free; csv=1.3.1+serde; ndjson=serde+serde_json; macro graph isolated; Rustdoc roles=4"

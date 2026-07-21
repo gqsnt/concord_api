@@ -289,7 +289,19 @@ pub struct ScriptedResponse {
     body: Bytes,
     delivery_gate: Option<Gate>,
     body_polls: Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
+    body_drops: Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
+    body_read_failure: Option<&'static str>,
 }
+
+#[doc(hidden)]
+pub type ScriptedResponseParts = (
+    StatusCode,
+    HeaderMap,
+    Bytes,
+    Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
+    Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
+    Option<&'static str>,
+);
 
 impl ScriptedResponse {
     #[must_use]
@@ -305,6 +317,8 @@ impl ScriptedResponse {
             body: body.into(),
             delivery_gate: None,
             body_polls: None,
+            body_drops: None,
+            body_read_failure: None,
         }
     }
 
@@ -331,6 +345,26 @@ impl ScriptedResponse {
         self
     }
 
+    /// Observes synchronous native response-body drop without retaining body
+    /// bytes in deterministic captures or diagnostics.
+    #[must_use]
+    pub fn body_drop_counter(
+        mut self,
+        counter: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    ) -> Self {
+        self.body_drops = Some(counter);
+        self
+    }
+
+    /// Produces one deterministic native body-read failure when the response
+    /// body is first polled. The message is test input and is omitted from the
+    /// scripted response's structural formatting.
+    #[must_use]
+    pub fn body_read_failure(mut self, message: &'static str) -> Self {
+        self.body_read_failure = Some(message);
+        self
+    }
+
     pub(crate) fn gate(&self) -> Option<Gate> {
         self.delivery_gate.clone()
     }
@@ -338,7 +372,7 @@ impl ScriptedResponse {
     #[doc(hidden)]
     #[must_use]
     pub fn __into_http_response(self) -> http::Response<Bytes> {
-        let (status, headers, body, _) = self.__into_parts();
+        let (status, headers, body, _, _, _) = self.__into_parts();
         let mut response = http::Response::new(body);
         *response.status_mut() = status;
         *response.headers_mut() = headers;
@@ -347,15 +381,15 @@ impl ScriptedResponse {
 
     #[doc(hidden)]
     #[must_use]
-    pub fn __into_parts(
-        self,
-    ) -> (
-        StatusCode,
-        HeaderMap,
-        Bytes,
-        Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
-    ) {
-        (self.status, self.headers, self.body, self.body_polls)
+    pub fn __into_parts(self) -> ScriptedResponseParts {
+        (
+            self.status,
+            self.headers,
+            self.body,
+            self.body_polls,
+            self.body_drops,
+            self.body_read_failure,
+        )
     }
 }
 
@@ -368,6 +402,8 @@ impl fmt::Debug for ScriptedResponse {
             .field("body_len", &self.body.len())
             .field("delivery_gate", &self.delivery_gate.is_some())
             .field("body_poll_counter", &self.body_polls.is_some())
+            .field("body_drop_counter", &self.body_drops.is_some())
+            .field("body_read_failure", &self.body_read_failure.is_some())
             .finish()
     }
 }

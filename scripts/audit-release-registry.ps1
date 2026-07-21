@@ -41,7 +41,7 @@ $script:Phase11EvidenceHash = "90d31f417690082af865850d6e1ce25331bca16c76f37c933
 $script:Phase11EvidenceRows = 1553
 $script:Phase11ReportBytes = 25109
 $script:Phase11ReportHash = "1de403491162bf39f36c530636f7b1dd03370ee45832c0dd2c7b9bc55d2b67fa"
-$script:Phase12PreviousSource = "d1aadcebcad0a65d92c4ed4a42d6b0a9c1f034b2"
+$script:Phase12PreviousSource = "8281c79d98406be7b88a20ea70d84af531e0b757"
 $script:ActiveRequirementCount = 563
 $script:Phase11SupersededRequirementIds = [string[]]@(
     "DSL-PAGE-004", "DSL-PAGE-005", "DSL-PAGE-006",
@@ -877,6 +877,113 @@ function Assert-Phase12EvidenceCommandsRecorded {
     }
 }
 
+function Assert-Phase12HighRiskEvidenceAllocation {
+    param([Parameter(Mandatory = $true)][object[]]$Rows)
+
+    $required = @{
+        "P12-SEC-RECORD-001" = @{
+            Paths = @(
+                "concord_core/src/records/error.rs",
+                "concord_core/src/records/stream.rs",
+                "concord_core/src/execute/tests.rs",
+                "concord_core/tests/public_rustdoc.rs",
+                "concord_core/tests/release/security_sentinels.csv",
+                "concord_macros/tests/compile.rs"
+            )
+            Commands = @(
+                "record_payloads_never_enter_hooks_debug_limiter_completion_or_sources",
+                "record_surfaces_are_structural_private_and_value_free_in_rendered_rustdoc",
+                "generated_records_rustdoc_uses_stable_paths_and_exposes_no_record_value_channel"
+            )
+        }
+        "P12-SEC-RESP-003" = @{
+            Paths = @(
+                "concord_core/src/execute/tests.rs",
+                "concord_core/src/response/error.rs",
+                "concord_core/src/response/metadata.rs",
+                "concord_core/src/response/stream.rs"
+            )
+            Commands = @(
+                "response_payloads_never_enter_hooks_debug_limiter_completion_or_wrapper_debug",
+                "formatting_and_sources_exclude_application_text",
+                "debug_omits_application_value_url_and_every_header_value",
+                "debug_is_non_consuming_and_drop_cancels_the_owned_body"
+            )
+        }
+        "P12-EXEC-RECORD-001" = @{
+            Paths = @(
+                "concord_core/src/execute/tests.rs",
+                "concord_core/src/records/stream.rs",
+                "concord_core/src/response/handler.rs"
+            )
+            Commands = @(
+                "records_response_validates_starts_unpolled_and_completes_stream_opened_once"
+            )
+        }
+        "P12-EXEC-RECORD-005" = @{
+            Paths = @(
+                "concord_core/src/execute/tests.rs",
+                "concord_core/src/records/stream.rs"
+            )
+            Commands = @(
+                "record_stream_body_and_decoder_failures_are_items_without_second_completion",
+                "dropping_record_stream_synchronously_drops_decoder_staging_and_byte_stream",
+                "dropping_record_batches_synchronously_drops_record_stream_and_byte_stream"
+            )
+        }
+        "P12-CONF-RECORD-002" = @{
+            Paths = @(
+                "concord_core/Cargo.toml",
+                "concord_macros/Cargo.toml",
+                "concord_core/tests/public_rustdoc.rs",
+                "scripts/audit-record-feature-topology.ps1",
+                "justfile"
+            )
+            Commands = @(
+                "audit-record-feature-topology.ps1",
+                "--features records",
+                "--features csv",
+                "--features ndjson",
+                "rustdoc-records-only",
+                "rustdoc-csv-only",
+                "rustdoc-ndjson-only",
+                "rustdoc-csv-ndjson",
+                "cargo +1.85.0",
+                "just deny"
+            )
+        }
+        "P12-CONF-DOWNSTREAM-002" = @{
+            Paths = @(
+                "concord_macros/tests/fixtures/extension_certification/src/lib.rs",
+                "concord_macros/tests/fixtures/extension_certification/tests/extension_workflows_runtime.rs",
+                "concord_macros/tests/fixtures/extension_certification/tests/pagination_runtime.rs",
+                "concord_macros/tests/compile.rs",
+                "concord_core/tests/generic_spec_extensions.rs",
+                "concord_core/tests/records_extensions.rs"
+            )
+            Commands = @(
+                "downstream_credential_limiter_and_hooks_execute_through_public_runtime",
+                "downstream_pagination_runtime_executes_generated_construction_and_binding",
+                "downstream_request_and_all_sealed_response_modes_work_without_macro_changes",
+                "downstream_decoder_streams_and_batches_through_generated_public_contracts"
+            )
+        }
+    }
+
+    foreach ($evidenceId in $required.Keys) {
+        $matches = @($Rows | Where-Object { $_.evidence_id -eq $evidenceId })
+        Assert-Condition ($matches.Count -eq 1) "high-risk Phase 12 evidence row is absent or duplicated: $evidenceId"
+        $row = $matches[0]
+        $paths = @($row.exact_path -split ";")
+        foreach ($path in $required[$evidenceId].Paths) {
+            Assert-Condition ($paths -contains $path) "$evidenceId omits principal path $path"
+        }
+        foreach ($commandFamily in $required[$evidenceId].Commands) {
+            Assert-Condition ($row.exact_test.Contains($commandFamily)) "$evidenceId omits exact command family $commandFamily"
+        }
+    }
+}
+
 function Assert-Phase12StateDocumentation {
     param([string]$Commit, [string]$Source, [string]$EvidenceState, [string]$Anchor)
     $report = Get-GitBlobText $Commit $script:Phase12ReportPath
@@ -1408,6 +1515,7 @@ foreach ($row in $phase12Coverage) {
 $validation = @(Import-GitCsv $StateCommit $script:ValidationRegistryPath)
 Assert-Phase12ValidationRegistry $validation $SourceCommit
 Assert-Phase12EvidenceCommandsRecorded $evidence $validation
+Assert-Phase12HighRiskEvidenceAllocation $evidence
 
 if ($Mode -eq "Final") {
     $anchorAllowed = @($script:Phase12ReportPath, $script:ControllerPath)

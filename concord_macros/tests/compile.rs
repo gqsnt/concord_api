@@ -70,12 +70,28 @@ fn complete_extension_fixture_compiles_through_public_namespaces_for_every_owned
             vec!["--lib", "--no-default-features", "--features", "multipart"],
         ),
         (
+            "records",
+            vec!["--lib", "--no-default-features", "--features", "records"],
+        ),
+        (
+            "csv",
+            vec!["--lib", "--no-default-features", "--features", "csv"],
+        ),
+        (
+            "ndjson",
+            vec!["--lib", "--no-default-features", "--features", "ndjson"],
+        ),
+        (
+            "csv-ndjson",
+            vec!["--lib", "--no-default-features", "--features", "csv,ndjson"],
+        ),
+        (
             "all-extension-features",
             vec![
                 "--lib",
                 "--no-default-features",
                 "--features",
-                "json,multipart",
+                "json,multipart,csv,ndjson",
             ],
         ),
     ] {
@@ -92,6 +108,7 @@ fn complete_extension_fixture_compiles_through_public_namespaces_for_every_owned
 fn complete_extension_fixture_has_no_private_native_or_integration_escape() {
     for relative in [
         "extension_certification/src/lib.rs",
+        "extension_certification/tests/extension_workflows_runtime.rs",
         "extension_certification/tests/pagination_runtime.rs",
     ] {
         let path = fixture_root().join(relative);
@@ -140,8 +157,6 @@ fn downstream_pagination_runtime_executes_generated_construction_and_binding() {
             "concord-fixture-extension-certification",
             "--test",
             "pagination_runtime",
-            "-E",
-            "test(=downstream_generated_controller_constructs_binds_and_collects_two_pages)",
             "--no-tests",
             "fail",
             "--success-output",
@@ -179,6 +194,42 @@ fn downstream_pagination_runtime_executes_generated_construction_and_binding() {
             "downstream pagination runtime omitted required assertion `{assertion}`"
         );
     }
+}
+
+#[test]
+fn downstream_credential_limiter_and_hooks_execute_through_public_runtime() {
+    let manifest = fixture_root().join("Cargo.toml");
+    let output = run_nextest(
+        &workspace_root(),
+        "macros/extension-certification-workflows-runtime",
+        [
+            "--manifest-path",
+            manifest.to_str().expect("fixture manifest path"),
+            "-p",
+            "concord-fixture-extension-certification",
+            "--test",
+            "extension_workflows_runtime",
+            "--no-tests",
+            "fail",
+            "--success-output",
+            "final",
+        ],
+    );
+    let diagnostic = diagnostics(&output);
+    assert!(
+        output.status.success(),
+        "downstream credential/limiter/hook runtime failed\n{diagnostic}"
+    );
+    assert!(
+        diagnostic.contains("1 test run: 1 passed"),
+        "downstream workflow runtime did not select exactly one passing test\n{diagnostic}"
+    );
+    assert!(
+        diagnostic.contains(
+            "CONCORD_DOWNSTREAM_EXTENSION_RUNTIME_OK provider=1 limiter_acquire=1 limiter_observe=1 hook_before=1 hook_response=1 hook_complete=1"
+        ),
+        "downstream workflow runtime omitted its post-assertion proof sentinel\n{diagnostic}"
+    );
 }
 
 #[test]
@@ -527,4 +578,108 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
             "generated pagination Rustdoc exposed {forbidden}"
         );
     }
+}
+
+#[test]
+fn generated_records_rustdoc_uses_stable_paths_and_exposes_no_record_value_channel() {
+    let root = workspace_root();
+    let manifest = fixture_root().join("extension_certification/Cargo.toml");
+    let target_key = "macros/extension-records-rustdoc";
+    let output = run(
+        &root,
+        target_key,
+        "rustdoc",
+        [
+            "--manifest-path",
+            manifest.to_str().expect("fixture manifest path"),
+            "--no-default-features",
+            "--features",
+            "csv,ndjson",
+            "--lib",
+            "--",
+            "-Dwarnings",
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "generated records Rustdoc failed\n{}",
+        diagnostics(&output)
+    );
+
+    let documentation = root
+        .join("target/cargo-fixtures")
+        .join(target_key)
+        .join("doc/concord_fixture_extension_certification");
+    let endpoints = [
+        (
+            "record_extension_api/endpoints/struct.Custom.html",
+            "RecordExtensionApi::Custom",
+            "Records &lt; crate :: ExtensionRecordDecoder &gt;",
+        ),
+        (
+            "csv_extension_api/endpoints/struct.Rows.html",
+            "CsvExtensionApi::Rows",
+            "Records &lt; Csv &lt; Vec &lt; String &gt; &gt; &gt;",
+        ),
+        (
+            "nd_json_extension_api/endpoints/struct.Values.html",
+            "NdJsonExtensionApi::Values",
+            "Records &lt; NdJson &lt; u32 &gt; &gt;",
+        ),
+    ];
+    for (relative, identity, response) in endpoints {
+        let path = documentation.join(relative);
+        let page = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+        let normalized = page.split_whitespace().collect::<Vec<_>>().join(" ");
+        for expected in [
+            identity,
+            response,
+            "response specification",
+            "universal successful metadata",
+            "core-owned capability bounds",
+            "feature availability is owned by",
+        ] {
+            assert!(
+                normalized.contains(expected),
+                "generated records Rustdoc {relative} omitted {expected:?}"
+            );
+        }
+        for forbidden in [
+            "__private",
+            "__concord",
+            "ResponseInput",
+            "ApplicationResponse",
+            "ClientCore",
+            "EndpointSpec",
+            "ResponseHandler",
+            "reqwest",
+            "decoder_state",
+            "staging_bytes",
+            "record_value",
+            "record-rustdoc-value-sentinel-42ad91",
+        ] {
+            assert!(
+                !normalized.contains(forbidden),
+                "generated records Rustdoc {relative} exposed {forbidden}"
+            );
+        }
+    }
+
+    for relative in [
+        "struct.RecordExtensionApi.html",
+        "struct.CsvExtensionApi.html",
+        "struct.NdJsonExtensionApi.html",
+    ] {
+        assert!(
+            documentation.join(relative).is_file(),
+            "generated records Rustdoc omitted {relative}"
+        );
+    }
+    assert!(
+        !documentation
+            .join("__concord_record_extension_api_specifications/index.html")
+            .exists(),
+        "generated records Rustdoc exposed its hidden specification aliases"
+    );
 }

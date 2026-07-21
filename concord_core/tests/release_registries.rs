@@ -126,7 +126,7 @@ fn whole_product_security_sentinel_registry_covers_every_required_class() {
     let ids = validate_registry(
         SECURITY,
         "sentinel_class,automatic_surfaces,positive_recipient,deterministic_probe",
-        15,
+        18,
         3,
     );
     for required in [
@@ -145,6 +145,9 @@ fn whole_product_security_sentinel_registry_covers_every_required_class() {
         "continuation_path_and_query",
         "custom_controller_state",
         "collected_items",
+        "record_data_runtime",
+        "record_data_rustdoc",
+        "record_data_generated_rustdoc",
     ] {
         assert!(ids.contains(required), "missing sentinel class {required}");
     }

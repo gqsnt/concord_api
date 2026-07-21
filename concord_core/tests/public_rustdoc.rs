@@ -803,3 +803,184 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         );
     }
 }
+
+#[test]
+fn record_surfaces_are_structural_private_and_value_free_in_rendered_rustdoc() {
+    let root = workspace_root();
+    let configurations = [
+        (
+            "core/records-rustdoc-records-only",
+            "records",
+            true,
+            false,
+            false,
+        ),
+        ("core/records-rustdoc-csv-only", "csv", true, true, false),
+        (
+            "core/records-rustdoc-ndjson-only",
+            "ndjson",
+            true,
+            false,
+            true,
+        ),
+        (
+            "core/records-rustdoc-csv-ndjson",
+            "csv,ndjson",
+            true,
+            true,
+            true,
+        ),
+    ];
+
+    for (target_key, features, records, csv, ndjson) in configurations {
+        let output = run(
+            &root,
+            target_key,
+            "rustdoc",
+            [
+                "-p",
+                "concord_core",
+                "--no-default-features",
+                "--features",
+                features,
+                "--lib",
+                "--",
+                "-Dwarnings",
+            ],
+        );
+        assert!(
+            output.status.success(),
+            "isolated records Rustdoc `{features}` failed\n{}",
+            diagnostics(&output)
+        );
+
+        let documentation = root
+            .join("target/cargo-fixtures")
+            .join(target_key)
+            .join("doc/concord_core");
+        let records_index = documentation.join("records/index.html");
+        assert_eq!(records_index.is_file(), records);
+        let expected = [
+            "records/struct.Records.html",
+            "records/struct.RecordStream.html",
+            "records/struct.RecordBatches.html",
+            "records/trait.RecordDecoder.html",
+            "records/struct.RecordError.html",
+            "records/enum.RecordErrorKind.html",
+        ];
+        for relative in expected {
+            assert!(
+                documentation.join(relative).is_file(),
+                "isolated `{features}` Rustdoc omitted {relative}"
+            );
+        }
+        assert_eq!(
+            documentation.join("records/struct.Csv.html").is_file(),
+            csv,
+            "isolated `{features}` Rustdoc had incorrect CSV visibility"
+        );
+        assert_eq!(
+            documentation.join("records/struct.NdJson.html").is_file(),
+            ndjson,
+            "isolated `{features}` Rustdoc had incorrect NDJSON visibility"
+        );
+
+        let records_index = std::fs::read_to_string(&records_index)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", records_index.display()));
+        if features == "records" {
+            for forbidden in [
+                "serde::",
+                "serde_json",
+                "csv::Reader",
+                "struct.Csv",
+                "struct.NdJson",
+            ] {
+                assert!(
+                    !records_index.contains(forbidden),
+                    "records-only Rustdoc claimed parser dependency or type {forbidden}"
+                );
+            }
+        }
+
+        for relative in expected {
+            let path = documentation.join(relative);
+            let page = std::fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+            for forbidden in [
+                "__private",
+                "__concord",
+                "ApplicationResponse",
+                "ResponseInput",
+                "ClientCore",
+                "EndpointSpec",
+                "ResponseHandler",
+                "PreparedBody",
+                "reqwest::",
+                "reqwest::Response",
+                "decoder_state",
+                "staging_bytes",
+                "native_body",
+            ] {
+                assert!(
+                    !page.contains(forbidden),
+                    "isolated `{features}` Rustdoc {relative} exposed {forbidden}"
+                );
+            }
+        }
+
+        for relative in [
+            "records/struct.Records.html",
+            "records/struct.RecordStream.html",
+            "records/struct.RecordBatches.html",
+            "records/struct.RecordError.html",
+        ] {
+            let path = documentation.join(relative);
+            let page = std::fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+            assert!(
+                !page.contains("id=\"structfield."),
+                "isolated `{features}` Rustdoc {relative} exposed private fields"
+            );
+        }
+
+        let record_stream =
+            std::fs::read_to_string(documentation.join("records/struct.RecordStream.html"))
+                .expect("RecordStream Rustdoc");
+        let record_batches =
+            std::fs::read_to_string(documentation.join("records/struct.RecordBatches.html"))
+                .expect("RecordBatches Rustdoc");
+        assert!(
+            record_stream.contains("never formats")
+                && record_stream.contains("decoder state")
+                && record_stream.contains("staged bytes")
+                && record_batches.contains("never formats records"),
+            "isolated `{features}` Rustdoc omitted structural Debug guarantees"
+        );
+        for accessor in [
+            "id=\"method.body\"",
+            "id=\"method.decoder\"",
+            "id=\"method.staging\"",
+            "id=\"method.record_bytes\"",
+            "id=\"method.into_inner\"",
+        ] {
+            assert!(
+                !record_stream.contains(accessor) && !record_batches.contains(accessor),
+                "isolated `{features}` Rustdoc exposed record data accessor {accessor}"
+            );
+        }
+
+        if csv {
+            let csv_page = std::fs::read_to_string(documentation.join("records/struct.Csv.html"))
+                .expect("CSV Rustdoc");
+            assert!(csv_page.contains("<code>csv</code> feature"));
+            assert!(!csv_page.contains("NdJson") && !csv_page.contains("general endpoint JSON"));
+        }
+        if ndjson {
+            let ndjson_page =
+                std::fs::read_to_string(documentation.join("records/struct.NdJson.html"))
+                    .expect("NDJSON Rustdoc");
+            assert!(ndjson_page.contains("<code>ndjson</code> feature"));
+            assert!(!ndjson_page.contains("struct.Csv"));
+        }
+    }
+}

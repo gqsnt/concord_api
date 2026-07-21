@@ -69,7 +69,7 @@ $grammarRows = (Get-Content -LiteralPath "concord_macros/tests/release/grammar_r
 $reqwestRows = (Get-Content -LiteralPath "concord_core/tests/release/reqwest_assumptions.csv").Count - 1
 $securityRows = (Get-Content -LiteralPath "concord_core/tests/release/security_sentinels.csv").Count - 1
 $propertyRows = (Get-Content -LiteralPath "concord_core/tests/release/properties.csv").Count - 1
-if ($grammarRows -ne 68 -or $reqwestRows -ne 18 -or $securityRows -ne 15 -or $propertyRows -ne 5) {
+if ($grammarRows -ne 68 -or $reqwestRows -ne 18 -or $securityRows -ne 18 -or $propertyRows -ne 5) {
     throw "release registry counts differ: grammar=$grammarRows reqwest=$reqwestRows security=$securityRows properties=$propertyRows"
 }
 

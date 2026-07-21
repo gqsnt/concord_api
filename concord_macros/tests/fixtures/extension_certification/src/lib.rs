@@ -87,17 +87,22 @@ impl ResponseBodySpec for ExtensionDiscardSpec {
 }
 
 #[cfg(feature = "records")]
-pub struct ExtensionRecordDecoder;
+pub struct ExtensionRecordDecoder {
+    state: &'static str,
+}
 
 #[cfg(feature = "records")]
 impl RecordDecoder for ExtensionRecordDecoder {
     type Record = Bytes;
 
     fn start(_head: &ResponseHead<'_>) -> Result<Self, RecordError> {
-        Ok(Self)
+        Ok(Self {
+            state: "record-rustdoc-value-sentinel-42ad91",
+        })
     }
 
     fn decode(&mut self, buffer: &mut BytesMut) -> Result<Option<Bytes>, RecordError> {
+        assert_eq!(self.state, "record-rustdoc-value-sentinel-42ad91");
         let Some(end) = buffer.iter().position(|byte| *byte == b'|') else {
             return Ok(None);
         };
@@ -107,6 +112,7 @@ impl RecordDecoder for ExtensionRecordDecoder {
     }
 
     fn decode_eof(&mut self, buffer: &mut BytesMut) -> Result<Option<Bytes>, RecordError> {
+        assert_eq!(self.state, "record-rustdoc-value-sentinel-42ad91");
         Ok((!buffer.is_empty()).then(|| buffer.split_to(buffer.len()).freeze()))
     }
 
@@ -225,6 +231,58 @@ impl CredentialProvider for ExtensionProvider {
             Ok(ExtensionCredential(SecretString::new(value)))
         })
     }
+}
+
+pub struct DirectExtensionProvider {
+    material: SecretString,
+}
+
+impl DirectExtensionProvider {
+    #[must_use]
+    pub fn new(material: SecretString) -> Self {
+        Self { material }
+    }
+}
+
+static EXTENSION_PROVIDER_ACQUIRES: AtomicUsize = AtomicUsize::new(0);
+static EXTENSION_LIMITER_ACQUIRES: AtomicUsize = AtomicUsize::new(0);
+static EXTENSION_LIMITER_OBSERVATIONS: AtomicUsize = AtomicUsize::new(0);
+static EXTENSION_HOOK_BEFORE: AtomicUsize = AtomicUsize::new(0);
+static EXTENSION_HOOK_RESPONSE: AtomicUsize = AtomicUsize::new(0);
+static EXTENSION_HOOK_COMPLETION: AtomicUsize = AtomicUsize::new(0);
+
+impl CredentialProvider for DirectExtensionProvider {
+    type Material = ExtensionCredential;
+
+    fn acquire<'a>(
+        &'a self,
+        context: CredentialRequest<'a>,
+    ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
+        EXTENSION_PROVIDER_ACQUIRES.fetch_add(1, Ordering::SeqCst);
+        let _bounded_provider_capability = context.http;
+        Box::pin(async move { Ok(ExtensionCredential(self.material.clone())) })
+    }
+}
+
+pub fn reset_extension_runtime_probes() {
+    EXTENSION_PROVIDER_ACQUIRES.store(0, Ordering::SeqCst);
+    EXTENSION_LIMITER_ACQUIRES.store(0, Ordering::SeqCst);
+    EXTENSION_LIMITER_OBSERVATIONS.store(0, Ordering::SeqCst);
+    EXTENSION_HOOK_BEFORE.store(0, Ordering::SeqCst);
+    EXTENSION_HOOK_RESPONSE.store(0, Ordering::SeqCst);
+    EXTENSION_HOOK_COMPLETION.store(0, Ordering::SeqCst);
+}
+
+#[must_use]
+pub fn extension_runtime_probe_counts() -> (usize, usize, usize, usize, usize, usize) {
+    (
+        EXTENSION_PROVIDER_ACQUIRES.load(Ordering::SeqCst),
+        EXTENSION_LIMITER_ACQUIRES.load(Ordering::SeqCst),
+        EXTENSION_LIMITER_OBSERVATIONS.load(Ordering::SeqCst),
+        EXTENSION_HOOK_BEFORE.load(Ordering::SeqCst),
+        EXTENSION_HOOK_RESPONSE.load(Ordering::SeqCst),
+        EXTENSION_HOOK_COMPLETION.load(Ordering::SeqCst),
+    )
 }
 
 pub struct ExtensionPageCodec;
@@ -346,11 +404,13 @@ impl RateLimiter for ExtensionLimiter {
         &'a self,
         request: RateLimitRequest<'a>,
     ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
+        EXTENSION_LIMITER_ACQUIRES.fetch_add(1, Ordering::SeqCst);
         let _bounded_rule_count = request.plan.rules().len();
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 
     fn observe<'a>(&'a self, response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
+        EXTENSION_LIMITER_OBSERVATIONS.fetch_add(1, Ordering::SeqCst);
         let _status = response.status;
         Box::pin(async {})
     }
@@ -372,14 +432,17 @@ pub struct ExtensionHooks;
 
 impl RuntimeHooks for ExtensionHooks {
     fn before_send<'a>(&'a self, _context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
+        EXTENSION_HOOK_BEFORE.fetch_add(1, Ordering::SeqCst);
         Box::pin(async { Ok(()) })
     }
 
     fn on_response_head<'a>(&'a self, _context: ResponseHeadEvent<'a>) -> BoxFuture<'a, ()> {
+        EXTENSION_HOOK_RESPONSE.fetch_add(1, Ordering::SeqCst);
         Box::pin(async {})
     }
 
     fn on_complete<'a>(&'a self, _context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
+        EXTENSION_HOOK_COMPLETION.fetch_add(1, Ordering::SeqCst);
         Box::pin(async {})
     }
 
@@ -422,6 +485,27 @@ concord_macros::api! {
         POST GenericBody(body: crate::ExtensionRequestSpec) -> crate::ExtensionBufferedSpec;
         GET GenericStream() -> crate::ExtensionStreamingSpec;
         GET GenericDiscard() -> crate::ExtensionDiscardSpec;
+    }
+}
+
+concord_macros::api! {
+    client SecureExtensionApi {
+        base "https://localhost/";
+        credentials {
+            credential session = custom crate::ExtensionCredential;
+        }
+        rate_limits {
+            workload {
+                by [endpoint];
+                10 / 1s;
+            }
+            observe crate::ExtensionObserver;
+        }
+        rate_limit workload;
+
+        GET Protected() -> Bytes {
+            auth header "X-Session" = session challenge unauthorized;
+        }
     }
 }
 

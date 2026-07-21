@@ -17,7 +17,9 @@ const MAX_STAGED_RECORD_BYTES: usize = 1024 * 1024;
 /// escaping, and accepts LF or CRLF including quoted embedded newlines. Header
 /// names drive typed deserialization; empty physical lines are ignored. The
 /// final record may omit its newline. Undecoded staging is bounded to 1 MiB.
-/// Parser text, headers, fields, and record values are absent from errors.
+/// Parser text, headers, fields, and record values are absent from errors. This
+/// type is available through the independent `csv` feature, which does not
+/// enable NDJSON or the general endpoint `json` feature.
 pub struct Csv<T> {
     headers: Option<csv::StringRecord>,
     scan: CsvScan,

@@ -23,4 +23,5 @@ concord_core = { path = "../../../../concord_core", default-features = false }
 concord_macros = { path = "../../.." }
 
 [dev-dependencies]
+concord_test_support = { path = "../../../../concord_test_support" }
 tokio = { version = "=1.52.4", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }

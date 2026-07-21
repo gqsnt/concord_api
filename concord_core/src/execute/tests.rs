@@ -10,6 +10,8 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use bytes::Bytes;
+#[cfg(feature = "records")]
+use bytes::BytesMut;
 use concord_test_support::executor::DeterministicExecutor;
 use concord_test_support::gate::Gate;
 use concord_test_support::script::{
@@ -38,7 +40,15 @@ use crate::rate_limit::{
     RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitRequest,
     RateLimitResponse, RateLimitRule, RateLimitWindow, RateLimiter,
 };
+#[cfg(feature = "records")]
+use crate::records::{
+    RecordBatches, RecordDecoder, RecordError, RecordErrorKind, RecordStream, Records,
+};
 use crate::request::{HeadBuilder, PreparedEndpoint, PreparedHead, RequestMeta};
+#[cfg(feature = "records")]
+use crate::response::{
+    ApiResponse, Buffered, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec, ResponseHead,
+};
 use crate::response::{ByteStream, NoContent};
 use crate::runtime::RuntimeConfigBuilder;
 
@@ -47,6 +57,8 @@ const NO_CONTENT_ENDPOINT: &str = "ExecutionApi::health::ping";
 const CODEC_ENDPOINT: &str = "ExecutionApi::codec::round_trip";
 const BODY_ENDPOINT: &str = "ExecutionApi::body::upload";
 const STREAM_ENDPOINT: &str = "ExecutionApi::stream::download";
+#[cfg(feature = "records")]
+const RECORD_ENDPOINT: &str = "ExecutionApi::records::stream";
 
 struct StreamEndpoint<M> {
     marker: std::marker::PhantomData<fn() -> M>,
@@ -97,6 +109,412 @@ struct InvalidStreamMedia;
 
 impl MediaType for InvalidStreamMedia {
     const MEDIA_TYPE: &'static str = "not-a-media-type";
+}
+
+#[cfg(feature = "records")]
+struct SurfaceEndpoint<R> {
+    query: &'static str,
+    marker: std::marker::PhantomData<fn() -> R>,
+}
+
+#[cfg(feature = "records")]
+impl<R> SurfaceEndpoint<R> {
+    fn new(query: &'static str) -> Self {
+        Self {
+            query,
+            marker: std::marker::PhantomData,
+        }
+    }
+}
+
+#[cfg(feature = "records")]
+impl<R> EndpointSpec for SurfaceEndpoint<R>
+where
+    R: ResponseBodySpec,
+{
+    type Body = EmptyBody;
+    type Response = R;
+
+    fn request_meta(&self) -> RequestMeta {
+        RequestMeta::new(RECORD_ENDPOINT, Method::GET, Some(Duration::from_secs(30)))
+    }
+
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
+        builder.push_static("records")?;
+        builder.push_static("stream")?;
+        builder.push_pagination_query_value("continuation", &self.query);
+        builder.push_rate_limit_rule(
+            "ExecutionApi::rate_limit::records",
+            [RateLimitKeyPart::new(
+                "records.partition",
+                "record-surface-rate-key",
+            )],
+            1,
+            [(100, Duration::from_secs(1))],
+        )?;
+        Ok(builder.finish())
+    }
+
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        EmptyBody::metadata(&(), context)
+    }
+
+    fn into_body(self) {}
+}
+
+#[cfg(feature = "records")]
+fn surface_request<R>(core: ClientCore, query: &'static str) -> Request<SurfaceEndpoint<R>>
+where
+    R: ResponseBodySpec,
+{
+    Request::new(core, SurfaceEndpoint::new(query))
+}
+
+#[cfg(feature = "records")]
+fn record_headers(content_type: &'static str, secret: &'static str) -> http::HeaderMap {
+    let mut headers = http::HeaderMap::new();
+    headers.insert(
+        http::header::CONTENT_TYPE,
+        http::HeaderValue::from_static(content_type),
+    );
+    headers.insert("x-record-secret", http::HeaderValue::from_static(secret));
+    headers
+}
+
+#[cfg(feature = "records")]
+static OPENING_VALIDATE_CALLS: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "records")]
+static OPENING_START_CALLS: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "records")]
+static OPENING_DECODE_CALLS: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "records")]
+static OPENING_EOF_CALLS: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "records")]
+static OPENING_DECODER_DROPS: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(feature = "records")]
+struct OpeningRecordDecoder;
+
+#[cfg(feature = "records")]
+impl RecordDecoder for OpeningRecordDecoder {
+    type Record = Bytes;
+
+    fn accept() -> Option<&'static str> {
+        Some("application/x-concord-records")
+    }
+
+    fn validate(head: &ResponseHead<'_>) -> Result<(), RecordError> {
+        OPENING_VALIDATE_CALLS.fetch_add(1, Ordering::SeqCst);
+        assert!(head.url.as_str().contains("opening-query-sentinel-4e15b9"));
+        assert_eq!(
+            head.headers.get("x-record-secret"),
+            Some(&http::HeaderValue::from_static(
+                "opening-header-sentinel-762db1"
+            ))
+        );
+        Ok(())
+    }
+
+    fn start(head: &ResponseHead<'_>) -> Result<Self, RecordError> {
+        OPENING_START_CALLS.fetch_add(1, Ordering::SeqCst);
+        assert_eq!(head.endpoint, RECORD_ENDPOINT);
+        Ok(Self)
+    }
+
+    fn decode(&mut self, buffer: &mut BytesMut) -> Result<Option<Self::Record>, RecordError> {
+        OPENING_DECODE_CALLS.fetch_add(1, Ordering::SeqCst);
+        let Some(end) = buffer.iter().position(|byte| *byte == b'\n') else {
+            return Ok(None);
+        };
+        let mut record = buffer.split_to(end + 1);
+        record.truncate(end);
+        Ok(Some(record.freeze()))
+    }
+
+    fn decode_eof(&mut self, buffer: &mut BytesMut) -> Result<Option<Self::Record>, RecordError> {
+        OPENING_EOF_CALLS.fetch_add(1, Ordering::SeqCst);
+        Ok((!buffer.is_empty()).then(|| buffer.split_to(buffer.len()).freeze()))
+    }
+
+    fn max_buffered_bytes() -> NonZeroUsize {
+        NonZeroUsize::new(4 * 1024).expect("positive opening decoder staging bound")
+    }
+}
+
+#[cfg(feature = "records")]
+impl Drop for OpeningRecordDecoder {
+    fn drop(&mut self) {
+        OPENING_DECODER_DROPS.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+#[cfg(feature = "records")]
+static FAILURE_MODE: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "records")]
+static FAILURE_VALIDATE_CALLS: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "records")]
+static FAILURE_START_CALLS: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "records")]
+static FAILURE_DECODE_CALLS: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "records")]
+static FAILURE_EOF_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(feature = "records")]
+struct FailingRecordDecoder;
+
+#[cfg(feature = "records")]
+impl RecordDecoder for FailingRecordDecoder {
+    type Record = Bytes;
+
+    fn validate(_head: &ResponseHead<'_>) -> Result<(), RecordError> {
+        FAILURE_VALIDATE_CALLS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn start(_head: &ResponseHead<'_>) -> Result<Self, RecordError> {
+        FAILURE_START_CALLS.fetch_add(1, Ordering::SeqCst);
+        Ok(Self)
+    }
+
+    fn decode(&mut self, buffer: &mut BytesMut) -> Result<Option<Self::Record>, RecordError> {
+        FAILURE_DECODE_CALLS.fetch_add(1, Ordering::SeqCst);
+        if FAILURE_MODE.load(Ordering::SeqCst) == 1 && !buffer.is_empty() {
+            Err(RecordError::new(RecordErrorKind::InvalidFraming))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn decode_eof(&mut self, _buffer: &mut BytesMut) -> Result<Option<Self::Record>, RecordError> {
+        FAILURE_EOF_CALLS.fetch_add(1, Ordering::SeqCst);
+        if FAILURE_MODE.load(Ordering::SeqCst) == 2 {
+            Err(RecordError::new(RecordErrorKind::IncompleteRecord))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn max_buffered_bytes() -> NonZeroUsize {
+        NonZeroUsize::new(4 * 1024).expect("positive failure decoder staging bound")
+    }
+}
+
+#[cfg(feature = "records")]
+macro_rules! drop_decoder {
+    ($name:ident, $drops:ident) => {
+        static $drops: AtomicUsize = AtomicUsize::new(0);
+
+        struct $name;
+
+        impl RecordDecoder for $name {
+            type Record = Bytes;
+
+            fn start(_head: &ResponseHead<'_>) -> Result<Self, RecordError> {
+                Ok(Self)
+            }
+
+            fn decode(
+                &mut self,
+                _buffer: &mut BytesMut,
+            ) -> Result<Option<Self::Record>, RecordError> {
+                Ok(None)
+            }
+
+            fn decode_eof(
+                &mut self,
+                _buffer: &mut BytesMut,
+            ) -> Result<Option<Self::Record>, RecordError> {
+                Ok(None)
+            }
+
+            fn max_buffered_bytes() -> NonZeroUsize {
+                NonZeroUsize::new(4 * 1024).expect("positive drop decoder staging bound")
+            }
+        }
+
+        impl Drop for $name {
+            fn drop(&mut self) {
+                $drops.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+    };
+}
+
+#[cfg(feature = "records")]
+drop_decoder!(StreamDropDecoder, STREAM_DROP_DECODER_DROPS);
+#[cfg(feature = "records")]
+drop_decoder!(BatchDropDecoder, BATCH_DROP_DECODER_DROPS);
+
+#[cfg(feature = "records")]
+const RECORD_RAW_SENTINEL: &str = "record-raw-payload-sentinel-93d714";
+#[cfg(feature = "records")]
+const RECORD_CSV_HEADER_SENTINEL: &str = "record-csv-header-sentinel-b7a503";
+#[cfg(feature = "records")]
+const RECORD_CSV_FIELD_SENTINEL: &str = "record-csv-field-sentinel-4f872a";
+#[cfg(feature = "records")]
+const RECORD_NDJSON_SENTINEL: &str = "record-ndjson-value-sentinel-e329c1";
+#[cfg(feature = "records")]
+const RECORD_DECODER_STATE_SENTINEL: &str = "record-decoder-state-sentinel-6d80af";
+#[cfg(feature = "records")]
+const RECORD_PARSER_SENTINEL: &str = "record-parser-text-sentinel-1c5e92";
+#[cfg(feature = "records")]
+const RECORD_HEADER_SENTINEL: &str = "record-response-header-sentinel-a481d6";
+#[cfg(feature = "records")]
+const RECORD_QUERY_SENTINEL: &str = "record-continuation-query-sentinel-f2057b";
+
+#[cfg(feature = "records")]
+struct DiagnosticRecord(Bytes);
+
+#[cfg(feature = "records")]
+impl fmt::Debug for DiagnosticRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("DiagnosticRecord")
+            .field(&String::from_utf8_lossy(&self.0))
+            .finish()
+    }
+}
+
+#[cfg(feature = "records")]
+struct DiagnosticRecordDecoder {
+    state: &'static str,
+}
+
+#[cfg(feature = "records")]
+impl RecordDecoder for DiagnosticRecordDecoder {
+    type Record = DiagnosticRecord;
+
+    fn accept() -> Option<&'static str> {
+        Some("application/x-concord-records")
+    }
+
+    fn validate(head: &ResponseHead<'_>) -> Result<(), RecordError> {
+        if head
+            .headers
+            .get(http::header::CONTENT_TYPE)
+            .is_none_or(|value| value != "application/x-concord-records")
+        {
+            return Err(RecordError::new(RecordErrorKind::InvalidMediaType));
+        }
+        assert!(head.url.as_str().contains(RECORD_QUERY_SENTINEL));
+        assert_eq!(
+            head.headers.get("x-record-secret"),
+            Some(&http::HeaderValue::from_static(RECORD_HEADER_SENTINEL))
+        );
+        Ok(())
+    }
+
+    fn start(_head: &ResponseHead<'_>) -> Result<Self, RecordError> {
+        Ok(Self {
+            state: RECORD_DECODER_STATE_SENTINEL,
+        })
+    }
+
+    fn decode(&mut self, buffer: &mut BytesMut) -> Result<Option<Self::Record>, RecordError> {
+        assert_eq!(self.state, RECORD_DECODER_STATE_SENTINEL);
+        let Some(end) = buffer.iter().position(|byte| *byte == b'\n') else {
+            return Ok(None);
+        };
+        let mut record = buffer.split_to(end + 1);
+        record.truncate(end);
+        if record.starts_with(b"parser-trigger") {
+            let parser_text = RECORD_PARSER_SENTINEL;
+            assert!(!parser_text.is_empty());
+            return Err(RecordError::new(RecordErrorKind::InvalidFraming));
+        }
+        Ok(Some(DiagnosticRecord(record.freeze())))
+    }
+
+    fn decode_eof(&mut self, buffer: &mut BytesMut) -> Result<Option<Self::Record>, RecordError> {
+        if buffer.is_empty() {
+            Ok(None)
+        } else {
+            Err(RecordError::new(RecordErrorKind::IncompleteRecord))
+        }
+    }
+
+    fn max_buffered_bytes() -> NonZeroUsize {
+        NonZeroUsize::new(4 * 1024).expect("positive diagnostic decoder staging bound")
+    }
+}
+
+#[cfg(feature = "records")]
+struct SensitiveBufferedOutput(String);
+
+#[cfg(feature = "records")]
+impl fmt::Debug for SensitiveBufferedOutput {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("SensitiveBufferedOutput")
+            .field(&self.0)
+            .finish()
+    }
+}
+
+#[cfg(feature = "records")]
+struct SensitiveBufferedSpec;
+
+#[cfg(feature = "records")]
+impl ResponseBodySpec for SensitiveBufferedSpec {
+    type Output = SensitiveBufferedOutput;
+    type Mode = Buffered;
+
+    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
+        Ok(SensitiveBufferedOutput(
+            String::from_utf8_lossy(&body).into_owned(),
+        ))
+    }
+}
+
+#[cfg(feature = "records")]
+struct FailingBufferedSpec;
+
+#[cfg(feature = "records")]
+impl ResponseBodySpec for FailingBufferedSpec {
+    type Output = ();
+    type Mode = Buffered;
+
+    fn from_body(
+        _body: Bytes,
+        _head: &ResponseHead<'_>,
+    ) -> Result<Self::Output, ResponseBodyError> {
+        Err(ResponseBodyError::with_safe_message(
+            ResponseBodyErrorKind::Decode,
+            "response-parser-text-sentinel-11fa62",
+        ))
+    }
+}
+
+#[cfg(feature = "records")]
+struct ResponseSurfaceRecordDecoder;
+
+#[cfg(feature = "records")]
+impl RecordDecoder for ResponseSurfaceRecordDecoder {
+    type Record = DiagnosticRecord;
+
+    fn start(_head: &ResponseHead<'_>) -> Result<Self, RecordError> {
+        Ok(Self)
+    }
+
+    fn decode(&mut self, buffer: &mut BytesMut) -> Result<Option<Self::Record>, RecordError> {
+        let Some(end) = buffer.iter().position(|byte| *byte == b'\n') else {
+            return Ok(None);
+        };
+        let mut record = buffer.split_to(end + 1);
+        record.truncate(end);
+        Ok(Some(DiagnosticRecord(record.freeze())))
+    }
+
+    fn decode_eof(&mut self, buffer: &mut BytesMut) -> Result<Option<Self::Record>, RecordError> {
+        Ok((!buffer.is_empty()).then(|| DiagnosticRecord(buffer.split_to(buffer.len()).freeze())))
+    }
+
+    fn max_buffered_bytes() -> NonZeroUsize {
+        NonZeroUsize::new(4 * 1024).expect("positive response-surface staging bound")
+    }
 }
 
 struct BodyEndpoint {
@@ -715,6 +1133,118 @@ struct ProbeRateLimiter {
     fail: bool,
 }
 
+#[cfg(feature = "records")]
+#[derive(Default)]
+struct AutomaticSurfaceHooks {
+    entries: Mutex<Vec<String>>,
+    outcomes: Mutex<Vec<CompletionOutcome>>,
+}
+
+#[cfg(feature = "records")]
+impl AutomaticSurfaceHooks {
+    fn entries(&self) -> Vec<String> {
+        self.entries.lock().expect("automatic hook entries").clone()
+    }
+
+    fn outcomes(&self) -> Vec<CompletionOutcome> {
+        self.outcomes
+            .lock()
+            .expect("automatic completion outcomes")
+            .clone()
+    }
+}
+
+#[cfg(feature = "records")]
+impl RuntimeHooks for AutomaticSurfaceHooks {
+    fn before_send<'a>(&'a self, context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
+        self.entries
+            .lock()
+            .expect("automatic hook entries")
+            .push(format!("before-send {context:?}"));
+        Box::pin(async { Ok(()) })
+    }
+
+    fn on_response_head<'a>(&'a self, context: ResponseHeadEvent<'a>) -> BoxFuture<'a, ()> {
+        self.entries
+            .lock()
+            .expect("automatic hook entries")
+            .push(format!("response-head {context:?}"));
+        Box::pin(async {})
+    }
+
+    fn on_complete<'a>(&'a self, context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
+        self.entries
+            .lock()
+            .expect("automatic hook entries")
+            .push(format!("completion {context:?}"));
+        self.outcomes
+            .lock()
+            .expect("automatic completion outcomes")
+            .push(context.outcome);
+        Box::pin(async {})
+    }
+}
+
+#[cfg(feature = "records")]
+#[derive(Default)]
+struct AutomaticSurfaceLimiter {
+    acquisitions: AtomicUsize,
+    observations: AtomicUsize,
+    entries: Mutex<Vec<String>>,
+}
+
+#[cfg(feature = "records")]
+impl AutomaticSurfaceLimiter {
+    fn entries(&self) -> Vec<String> {
+        self.entries
+            .lock()
+            .expect("automatic limiter entries")
+            .clone()
+    }
+}
+
+#[cfg(feature = "records")]
+impl RateLimiter for AutomaticSurfaceLimiter {
+    fn acquire<'a>(
+        &'a self,
+        request: RateLimitRequest<'a>,
+    ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
+        self.acquisitions.fetch_add(1, Ordering::SeqCst);
+        let keys = request
+            .plan
+            .rules()
+            .iter()
+            .flat_map(|rule| rule.key().parts())
+            .map(|part| part.value().to_owned())
+            .collect::<Vec<_>>();
+        self.entries
+            .lock()
+            .expect("automatic limiter entries")
+            .push(format!(
+                "acquire endpoint={} method={} url={} page={} keys={keys:?}",
+                request.endpoint, request.method, request.safe_url, request.page_index
+            ));
+        Box::pin(async { Ok(RateLimitPermit::granted()) })
+    }
+
+    fn observe<'a>(&'a self, response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
+        self.observations.fetch_add(1, Ordering::SeqCst);
+        self.entries
+            .lock()
+            .expect("automatic limiter entries")
+            .push(format!(
+                "observe endpoint={} method={} url={} page={} status={} headers={:?}",
+                response.request.endpoint,
+                response.request.method,
+                response.request.safe_url,
+                response.request.page_index,
+                response.status,
+                response.headers,
+            ));
+        Box::pin(async {})
+    }
+}
+
 impl ProbeRateLimiter {
     fn new() -> Self {
         Self {
@@ -912,6 +1442,29 @@ fn development_core(
     .expect("development core")
 }
 
+#[cfg(feature = "records")]
+fn automatic_surface_core(
+    executor: &DeterministicExecutor,
+    hooks: Arc<AutomaticSurfaceHooks>,
+    limiter: Arc<AutomaticSurfaceLimiter>,
+    debug: Arc<Mutex<Vec<String>>>,
+) -> ClientCore {
+    #[cfg(not(feature = "default-tls"))]
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let configured: Arc<dyn RateLimiter> = limiter;
+    ClientCore::build_with_development(
+        "http://execution.example.test/v1/",
+        HttpConfigBuilder::new().http1_only(),
+        RuntimeConfigBuilder::new()
+            .hooks(hooks)
+            .rate_limiter(configured)
+            .debug(DebugLevel::Headers),
+        executor,
+    )
+    .expect("automatic-surface development core")
+    .with_debug_output(debug)
+}
+
 fn real_core(
     server: &ScriptedServer,
     hooks: Arc<ProbeHooks>,
@@ -976,6 +1529,54 @@ where
 
 async fn next_stream_chunk(response: &mut ByteStream) -> Option<Result<Bytes, ApiError>> {
     std::future::poll_fn(|context| Pin::new(&mut *response).poll_next(context)).await
+}
+
+#[cfg(feature = "records")]
+async fn next_record<D>(stream: &mut RecordStream<D>) -> Option<Result<D::Record, RecordError>>
+where
+    D: RecordDecoder,
+{
+    std::future::poll_fn(|context| Pin::new(&mut *stream).poll_next(context)).await
+}
+
+#[cfg(feature = "records")]
+async fn next_batch<D>(stream: &mut RecordBatches<D>) -> Option<Result<Vec<D::Record>, RecordError>>
+where
+    D: RecordDecoder,
+{
+    std::future::poll_fn(|context| Pin::new(&mut *stream).poll_next(context)).await
+}
+
+#[cfg(feature = "records")]
+fn recursive_error_surfaces(error: &(dyn std::error::Error + 'static)) -> String {
+    let mut rendered = String::new();
+    let mut current = Some(error);
+    while let Some(source) = current {
+        rendered.push_str(&source.to_string());
+        rendered.push('\n');
+        rendered.push_str(&format!("{source:?}"));
+        rendered.push('\n');
+        current = source.source();
+    }
+    rendered
+}
+
+#[cfg(feature = "records")]
+fn completion_count(records: &[LifecycleRecord]) -> usize {
+    records
+        .iter()
+        .filter(|record| matches!(record, LifecycleRecord::Complete { .. }))
+        .count()
+}
+
+#[cfg(feature = "records")]
+fn assert_omits(rendered: &str, sentinels: &[&str]) {
+    for sentinel in sentinels {
+        assert!(
+            !rendered.contains(sentinel),
+            "automatic surface exposed {sentinel}: {rendered}"
+        );
+    }
 }
 
 fn probe_input(value: &'static [u8], calls: &Arc<AtomicUsize>) -> EncoderInput {
@@ -2915,6 +3516,530 @@ async fn caller_stream_polling_is_outside_operation_deadline_and_drop_is_termina
                     ..
                 }
             ))
+    );
+}
+
+#[cfg(feature = "records")]
+#[tokio::test]
+async fn records_response_validates_starts_unpolled_and_completes_stream_opened_once() {
+    OPENING_VALIDATE_CALLS.store(0, Ordering::SeqCst);
+    OPENING_START_CALLS.store(0, Ordering::SeqCst);
+    OPENING_DECODE_CALLS.store(0, Ordering::SeqCst);
+    OPENING_EOF_CALLS.store(0, Ordering::SeqCst);
+    OPENING_DECODER_DROPS.store(0, Ordering::SeqCst);
+
+    let executor = DeterministicExecutor::new();
+    let body_polls = Arc::new(AtomicUsize::new(0));
+    let body_drops = Arc::new(AtomicUsize::new(0));
+    executor
+        .application()
+        .queue_response(
+            ScriptedResponse::success("opening-record-body-sentinel-0dd64a\n")
+                .headers(record_headers(
+                    "application/x-concord-records",
+                    "opening-header-sentinel-762db1",
+                ))
+                .body_poll_counter(Arc::clone(&body_polls))
+                .body_drop_counter(Arc::clone(&body_drops)),
+        )
+        .expect("record opening response");
+    let hooks = Arc::new(ProbeHooks::new());
+    let limiter = Arc::new(ProbeRateLimiter {
+        response_body_polls: Some(Arc::clone(&body_polls)),
+        ..ProbeRateLimiter::new()
+    });
+    let configured: Arc<dyn RateLimiter> = limiter.clone();
+    let debug = Arc::new(Mutex::new(Vec::new()));
+    let core = development_core(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new()
+            .rate_limiter(configured)
+            .debug(DebugLevel::Headers),
+    )
+    .with_debug_output(Arc::clone(&debug));
+
+    let records =
+        surface_request::<Records<OpeningRecordDecoder>>(core, "opening-query-sentinel-4e15b9")
+            .await
+            .expect("record stream opens");
+
+    assert_eq!(OPENING_VALIDATE_CALLS.load(Ordering::SeqCst), 1);
+    assert_eq!(OPENING_START_CALLS.load(Ordering::SeqCst), 1);
+    assert_eq!(OPENING_DECODE_CALLS.load(Ordering::SeqCst), 0);
+    assert_eq!(OPENING_EOF_CALLS.load(Ordering::SeqCst), 0);
+    assert_eq!(OPENING_DECODER_DROPS.load(Ordering::SeqCst), 0);
+    assert_eq!(body_polls.load(Ordering::SeqCst), 0);
+    assert_eq!(body_drops.load(Ordering::SeqCst), 0);
+    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 1);
+    assert_eq!(limiter.observations.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        executor
+            .application()
+            .request_count()
+            .expect("request count"),
+        1
+    );
+    let lifecycle = hooks.records();
+    assert!(matches!(
+        lifecycle.as_slice(),
+        [
+            LifecycleRecord::Before { .. },
+            LifecycleRecord::Response(_, StatusCode::OK),
+            LifecycleRecord::Complete {
+                outcome: CompletionOutcome::StreamOpened,
+                status: Some(StatusCode::OK),
+                ..
+            }
+        ]
+    ));
+    assert_eq!(completion_count(&lifecycle), 1);
+    assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 1);
+    let automatic = format!(
+        "{:?}\n{:?}\n{}\n{records:?}",
+        lifecycle,
+        limiter.request_records(),
+        debug.lock().expect("record opening debug").join("\n"),
+    );
+    assert_omits(
+        &automatic,
+        &[
+            "opening-record-body-sentinel-0dd64a",
+            "opening-header-sentinel-762db1",
+            "opening-query-sentinel-4e15b9",
+        ],
+    );
+
+    drop(records);
+    assert_eq!(OPENING_DECODER_DROPS.load(Ordering::SeqCst), 1);
+    assert_eq!(body_drops.load(Ordering::SeqCst), 1);
+    assert_eq!(body_polls.load(Ordering::SeqCst), 0);
+    assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 1);
+}
+
+#[cfg(feature = "records")]
+#[tokio::test]
+async fn record_stream_body_and_decoder_failures_are_items_without_second_completion() {
+    FAILURE_VALIDATE_CALLS.store(0, Ordering::SeqCst);
+    FAILURE_START_CALLS.store(0, Ordering::SeqCst);
+    FAILURE_DECODE_CALLS.store(0, Ordering::SeqCst);
+    FAILURE_EOF_CALLS.store(0, Ordering::SeqCst);
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_response(
+            ScriptedResponse::success(Bytes::new())
+                .headers(record_headers(
+                    "application/x-concord-records",
+                    "failure-header-secret-58ca11",
+                ))
+                .body_read_failure("body-read-source-sentinel-4a60de"),
+        )
+        .expect("body failure response");
+    executor
+        .application()
+        .queue_response(
+            ScriptedResponse::success("decoder-framing-body-sentinel-a14f2b").headers(
+                record_headers(
+                    "application/x-concord-records",
+                    "failure-header-secret-58ca11",
+                ),
+            ),
+        )
+        .expect("decoder failure response");
+    executor
+        .application()
+        .queue_response(
+            ScriptedResponse::success("decoder-eof-body-sentinel-72b59c").headers(record_headers(
+                "application/x-concord-records",
+                "failure-header-secret-58ca11",
+            )),
+        )
+        .expect("EOF failure response");
+    let hooks = Arc::new(ProbeHooks::new());
+    let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
+
+    FAILURE_MODE.store(0, Ordering::SeqCst);
+    let mut body_failure = surface_request::<Records<FailingRecordDecoder>>(
+        core.clone(),
+        "failure-query-secret-7a184e",
+    )
+    .await
+    .expect("body-failure stream opens");
+    assert_eq!(completion_count(&hooks.records()), 1);
+    assert_eq!(
+        completion(&hooks.records()).1,
+        CompletionOutcome::StreamOpened
+    );
+    let error = next_record(&mut body_failure)
+        .await
+        .expect("body failure item")
+        .expect_err("body read fails after opening");
+    assert_eq!(error.kind(), RecordErrorKind::Body);
+    assert_omits(
+        &recursive_error_surfaces(&error),
+        &[
+            "body-read-source-sentinel-4a60de",
+            "failure-header-secret-58ca11",
+            "failure-query-secret-7a184e",
+        ],
+    );
+    assert_eq!(completion_count(&hooks.records()), 1);
+
+    FAILURE_MODE.store(1, Ordering::SeqCst);
+    let mut decode_failure = surface_request::<Records<FailingRecordDecoder>>(
+        core.clone(),
+        "failure-query-secret-7a184e",
+    )
+    .await
+    .expect("decode-failure stream opens");
+    assert_eq!(completion_count(&hooks.records()), 2);
+    let error = next_record(&mut decode_failure)
+        .await
+        .expect("decode failure item")
+        .expect_err("decoder framing fails after opening");
+    assert_eq!(error.kind(), RecordErrorKind::InvalidFraming);
+    assert_omits(
+        &recursive_error_surfaces(&error),
+        &["decoder-framing-body-sentinel-a14f2b"],
+    );
+    assert_eq!(completion_count(&hooks.records()), 2);
+
+    FAILURE_MODE.store(2, Ordering::SeqCst);
+    let mut eof_failure =
+        surface_request::<Records<FailingRecordDecoder>>(core, "failure-query-secret-7a184e")
+            .await
+            .expect("EOF-failure stream opens");
+    assert_eq!(completion_count(&hooks.records()), 3);
+    let error = next_record(&mut eof_failure)
+        .await
+        .expect("EOF failure item")
+        .expect_err("decoder EOF fails after opening");
+    assert_eq!(error.kind(), RecordErrorKind::IncompleteRecord);
+    assert_omits(
+        &recursive_error_surfaces(&error),
+        &["decoder-eof-body-sentinel-72b59c"],
+    );
+    let lifecycle = hooks.records();
+    assert_eq!(completion_count(&lifecycle), 3);
+    assert!(
+        lifecycle
+            .iter()
+            .filter_map(|record| match record {
+                LifecycleRecord::Complete { outcome, .. } => Some(outcome),
+                _ => None,
+            })
+            .all(|outcome| *outcome == CompletionOutcome::StreamOpened)
+    );
+    assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 3);
+    assert_eq!(FAILURE_VALIDATE_CALLS.load(Ordering::SeqCst), 3);
+    assert_eq!(FAILURE_START_CALLS.load(Ordering::SeqCst), 3);
+    assert!(FAILURE_DECODE_CALLS.load(Ordering::SeqCst) >= 5);
+    assert_eq!(FAILURE_EOF_CALLS.load(Ordering::SeqCst), 1);
+}
+
+#[cfg(feature = "records")]
+#[tokio::test]
+async fn dropping_record_stream_synchronously_drops_decoder_staging_and_byte_stream() {
+    STREAM_DROP_DECODER_DROPS.store(0, Ordering::SeqCst);
+    let executor = DeterministicExecutor::new();
+    let body_polls = Arc::new(AtomicUsize::new(0));
+    let body_drops = Arc::new(AtomicUsize::new(0));
+    executor
+        .application()
+        .queue_response(
+            ScriptedResponse::success("stream-drop-record-sentinel-15f80a")
+                .body_poll_counter(Arc::clone(&body_polls))
+                .body_drop_counter(Arc::clone(&body_drops)),
+        )
+        .expect("record-stream drop response");
+    let hooks = Arc::new(ProbeHooks::new());
+    let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
+    let stream =
+        surface_request::<Records<StreamDropDecoder>>(core, "stream-drop-query-sentinel-f81d0a")
+            .await
+            .expect("record stream opens before drop");
+    assert_eq!(body_polls.load(Ordering::SeqCst), 0);
+    assert_eq!(body_drops.load(Ordering::SeqCst), 0);
+    assert_eq!(STREAM_DROP_DECODER_DROPS.load(Ordering::SeqCst), 0);
+    assert_eq!(completion_count(&hooks.records()), 1);
+
+    drop(stream);
+    assert_eq!(STREAM_DROP_DECODER_DROPS.load(Ordering::SeqCst), 1);
+    assert_eq!(body_drops.load(Ordering::SeqCst), 1);
+    assert_eq!(body_polls.load(Ordering::SeqCst), 0);
+    assert_eq!(completion_count(&hooks.records()), 1);
+    assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 1);
+}
+
+#[cfg(feature = "records")]
+#[tokio::test]
+async fn dropping_record_batches_synchronously_drops_record_stream_and_byte_stream() {
+    BATCH_DROP_DECODER_DROPS.store(0, Ordering::SeqCst);
+    let executor = DeterministicExecutor::new();
+    let body_polls = Arc::new(AtomicUsize::new(0));
+    let body_drops = Arc::new(AtomicUsize::new(0));
+    executor
+        .application()
+        .queue_response(
+            ScriptedResponse::success("batch-drop-record-sentinel-a7f302")
+                .body_poll_counter(Arc::clone(&body_polls))
+                .body_drop_counter(Arc::clone(&body_drops)),
+        )
+        .expect("record-batches drop response");
+    let hooks = Arc::new(ProbeHooks::new());
+    let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
+    let stream =
+        surface_request::<Records<BatchDropDecoder>>(core, "batch-drop-query-sentinel-46d31c")
+            .await
+            .expect("record stream opens before batching");
+    let batches = stream.batches(NonZeroUsize::new(2).expect("positive batch"));
+    assert_omits(
+        &format!("{batches:?}"),
+        &[
+            "batch-drop-record-sentinel-a7f302",
+            "batch-drop-query-sentinel-46d31c",
+        ],
+    );
+    assert_eq!(body_polls.load(Ordering::SeqCst), 0);
+    assert_eq!(body_drops.load(Ordering::SeqCst), 0);
+    assert_eq!(BATCH_DROP_DECODER_DROPS.load(Ordering::SeqCst), 0);
+
+    drop(batches);
+    assert_eq!(BATCH_DROP_DECODER_DROPS.load(Ordering::SeqCst), 1);
+    assert_eq!(body_drops.load(Ordering::SeqCst), 1);
+    assert_eq!(body_polls.load(Ordering::SeqCst), 0);
+    assert_eq!(completion_count(&hooks.records()), 1);
+    assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 1);
+}
+
+#[cfg(feature = "records")]
+#[tokio::test]
+async fn record_payloads_never_enter_hooks_debug_limiter_completion_or_sources() {
+    let executor = DeterministicExecutor::new();
+    let record_body = format!(
+        "{RECORD_RAW_SENTINEL},{RECORD_CSV_HEADER_SENTINEL},{RECORD_CSV_FIELD_SENTINEL},{{\"value\":\"{RECORD_NDJSON_SENTINEL}\"}}\nparser-trigger-{RECORD_PARSER_SENTINEL}\n"
+    );
+    executor
+        .application()
+        .queue_response(
+            ScriptedResponse::success(record_body.clone()).headers(record_headers(
+                "application/x-concord-records",
+                RECORD_HEADER_SENTINEL,
+            )),
+        )
+        .expect("diagnostic record response");
+    executor
+        .application()
+        .queue_response(
+            ScriptedResponse::success(format!("invalid-media-{RECORD_RAW_SENTINEL}"))
+                .headers(record_headers("text/plain", RECORD_HEADER_SENTINEL)),
+        )
+        .expect("diagnostic invalid-media response");
+    let hooks = Arc::new(AutomaticSurfaceHooks::default());
+    let limiter = Arc::new(AutomaticSurfaceLimiter::default());
+    let debug = Arc::new(Mutex::new(Vec::new()));
+    let core = automatic_surface_core(
+        &executor,
+        Arc::clone(&hooks),
+        Arc::clone(&limiter),
+        Arc::clone(&debug),
+    );
+
+    let response: ApiResponse<RecordStream<DiagnosticRecordDecoder>> =
+        surface_request::<Records<DiagnosticRecordDecoder>>(core.clone(), RECORD_QUERY_SENTINEL)
+            .response()
+            .await
+            .expect("diagnostic record stream opens");
+    let response_debug = format!("{response:?}");
+    let stream = response.into_value();
+    let stream_debug = format!("{stream:?}");
+    let mut batches = stream.batches(NonZeroUsize::new(1).expect("positive diagnostic batch"));
+    let batches_debug = format!("{batches:?}");
+    let selected = next_batch(&mut batches)
+        .await
+        .expect("selected record batch")
+        .expect("selected record succeeds");
+    assert_eq!(selected.len(), 1);
+    let selected_debug = format!("{:?}", selected[0]);
+    for expected in [
+        RECORD_RAW_SENTINEL,
+        RECORD_CSV_HEADER_SENTINEL,
+        RECORD_CSV_FIELD_SENTINEL,
+        RECORD_NDJSON_SENTINEL,
+    ] {
+        assert!(selected_debug.contains(expected));
+    }
+    let record_error = next_batch(&mut batches)
+        .await
+        .expect("record error batch item")
+        .expect_err("parser failure remains a record item");
+    assert_eq!(record_error.kind(), RecordErrorKind::InvalidFraming);
+    let record_error_surfaces = recursive_error_surfaces(&record_error);
+    assert_eq!(hooks.outcomes(), [CompletionOutcome::StreamOpened]);
+
+    let api_error =
+        surface_request::<Records<DiagnosticRecordDecoder>>(core, RECORD_QUERY_SENTINEL)
+            .await
+            .expect_err("invalid record media is an endpoint error");
+    assert_eq!(api_error.category(), ErrorCategory::ResponseContract);
+    let api_error_surfaces = recursive_error_surfaces(&api_error);
+    assert_eq!(
+        hooks.outcomes(),
+        [
+            CompletionOutcome::StreamOpened,
+            CompletionOutcome::ResponseContract,
+        ]
+    );
+    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 2);
+    assert_eq!(limiter.observations.load(Ordering::SeqCst), 2);
+    let captures = executor.application().captures().expect("record captures");
+    let automatic = format!(
+        "{}\n{:?}\n{:?}\n{response_debug}\n{stream_debug}\n{batches_debug}\n{record_error_surfaces}\n{api_error_surfaces}",
+        debug.lock().expect("record debug output").join("\n"),
+        hooks.entries(),
+        limiter.entries(),
+    ) + &format!("\n{captures:?}");
+    assert_omits(
+        &automatic,
+        &[
+            RECORD_RAW_SENTINEL,
+            RECORD_CSV_HEADER_SENTINEL,
+            RECORD_CSV_FIELD_SENTINEL,
+            RECORD_NDJSON_SENTINEL,
+            RECORD_DECODER_STATE_SENTINEL,
+            RECORD_PARSER_SENTINEL,
+            RECORD_HEADER_SENTINEL,
+            RECORD_QUERY_SENTINEL,
+        ],
+    );
+}
+
+#[cfg(feature = "records")]
+#[tokio::test]
+async fn response_payloads_never_enter_hooks_debug_limiter_completion_or_wrapper_debug() {
+    const BUFFERED_BODY: &str = "response-buffered-body-sentinel-c48a09";
+    const CUSTOM_OUTPUT: &str = "response-custom-output-sentinel-815fce";
+    const STREAM_BODY: &str = "response-byte-stream-sentinel-369d0b";
+    const RECORD_BODY: &str = "response-record-value-sentinel-5a903c";
+    const HEADER_VALUE: &str = "response-header-value-sentinel-1928de";
+    const QUERY_VALUE: &str = "response-query-value-sentinel-61f32a";
+    const PARSER_TEXT: &str = "response-parser-text-sentinel-11fa62";
+
+    let mut buffered_headers = http::HeaderMap::new();
+    buffered_headers.insert(
+        "x-response-secret",
+        http::HeaderValue::from_static(HEADER_VALUE),
+    );
+    let mut stream_headers = buffered_headers.clone();
+    stream_headers.insert(
+        http::header::CONTENT_TYPE,
+        http::HeaderValue::from_static("application/octet-stream"),
+    );
+    let executor = DeterministicExecutor::new();
+    for response in [
+        ScriptedResponse::success(BUFFERED_BODY).headers(buffered_headers.clone()),
+        ScriptedResponse::success(CUSTOM_OUTPUT).headers(buffered_headers.clone()),
+        ScriptedResponse::success(STREAM_BODY).headers(stream_headers),
+        ScriptedResponse::success(format!("{RECORD_BODY}\n")).headers(buffered_headers),
+    ] {
+        executor
+            .application()
+            .queue_response(response)
+            .expect("response diagnostic script");
+    }
+    let hooks = Arc::new(AutomaticSurfaceHooks::default());
+    let limiter = Arc::new(AutomaticSurfaceLimiter::default());
+    let debug = Arc::new(Mutex::new(Vec::new()));
+    let core = automatic_surface_core(
+        &executor,
+        Arc::clone(&hooks),
+        Arc::clone(&limiter),
+        Arc::clone(&debug),
+    );
+
+    let error = surface_request::<FailingBufferedSpec>(core.clone(), QUERY_VALUE)
+        .await
+        .expect_err("custom parser error is reduced");
+    assert_eq!(error.category(), ErrorCategory::ResponseDecoding);
+    let error_surfaces = recursive_error_surfaces(&error);
+
+    let buffered: ApiResponse<SensitiveBufferedOutput> =
+        surface_request::<SensitiveBufferedSpec>(core.clone(), QUERY_VALUE)
+            .response()
+            .await
+            .expect("custom buffered output");
+    assert_eq!(buffered.value().0, CUSTOM_OUTPUT);
+    let buffered_debug = format!("{buffered:?}");
+
+    let stream_response: ApiResponse<ByteStream> =
+        surface_request::<StreamSpec<OctetStream>>(core.clone(), QUERY_VALUE)
+            .response()
+            .await
+            .expect("byte stream output");
+    let stream_wrapper_debug = format!("{stream_response:?}");
+    let mut stream = stream_response.into_value();
+    let stream_debug = format!("{stream:?}");
+    assert_eq!(
+        next_stream_chunk(&mut stream)
+            .await
+            .expect("stream response chunk")
+            .expect("stream response bytes"),
+        Bytes::from_static(STREAM_BODY.as_bytes())
+    );
+    assert!(next_stream_chunk(&mut stream).await.is_none());
+
+    let record_response: ApiResponse<RecordStream<ResponseSurfaceRecordDecoder>> =
+        surface_request::<Records<ResponseSurfaceRecordDecoder>>(core, QUERY_VALUE)
+            .response()
+            .await
+            .expect("record response output");
+    let record_wrapper_debug = format!("{record_response:?}");
+    let record_stream = record_response.into_value();
+    let record_stream_debug = format!("{record_stream:?}");
+    let mut record_batches =
+        record_stream.batches(NonZeroUsize::new(1).expect("positive response batch"));
+    let record_batches_debug = format!("{record_batches:?}");
+    let selected = next_batch(&mut record_batches)
+        .await
+        .expect("response record batch")
+        .expect("response record output");
+    assert_eq!(selected.len(), 1);
+    assert!(format!("{:?}", selected[0]).contains(RECORD_BODY));
+
+    assert_eq!(
+        hooks.outcomes(),
+        [
+            CompletionOutcome::ResponseDecoding,
+            CompletionOutcome::Success,
+            CompletionOutcome::StreamOpened,
+            CompletionOutcome::StreamOpened,
+        ]
+    );
+    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 4);
+    assert_eq!(limiter.observations.load(Ordering::SeqCst), 4);
+    let captures = executor
+        .application()
+        .captures()
+        .expect("response captures");
+    let automatic = format!(
+        "{}\n{:?}\n{:?}\n{:?}\n{error_surfaces}\n{buffered_debug}\n{stream_wrapper_debug}\n{stream_debug}\n{record_wrapper_debug}\n{record_stream_debug}\n{record_batches_debug}",
+        debug.lock().expect("response debug output").join("\n"),
+        hooks.entries(),
+        limiter.entries(),
+        captures,
+    );
+    assert_omits(
+        &automatic,
+        &[
+            BUFFERED_BODY,
+            CUSTOM_OUTPUT,
+            STREAM_BODY,
+            RECORD_BODY,
+            HEADER_VALUE,
+            QUERY_VALUE,
+            PARSER_TEXT,
+        ],
     );
 }
 

@@ -71,13 +71,16 @@ pub(super) fn boundary_request_with_sensitive(
 }
 
 pub(super) fn scripted_response(response: ScriptedResponse) -> reqwest::Response {
-    let (status, headers, body, polls) = response.__into_parts();
-    let body = match polls {
-        Some(polls) => reqwest::Body::wrap_stream(ObservedBody {
+    let (status, headers, body, polls, drops, failure) = response.__into_parts();
+    let body = if polls.is_some() || drops.is_some() || failure.is_some() {
+        reqwest::Body::wrap_stream(ObservedBody {
             body: Some(body),
             polls,
-        }),
-        None => reqwest::Body::from(body),
+            drops,
+            failure,
+        })
+    } else {
+        reqwest::Body::from(body)
     };
     let mut response = http::Response::new(body);
     *response.status_mut() = status;
@@ -87,15 +90,31 @@ pub(super) fn scripted_response(response: ScriptedResponse) -> reqwest::Response
 
 struct ObservedBody {
     body: Option<Bytes>,
-    polls: Arc<AtomicUsize>,
+    polls: Option<Arc<AtomicUsize>>,
+    drops: Option<Arc<AtomicUsize>>,
+    failure: Option<&'static str>,
 }
 
 impl Stream for ObservedBody {
     type Item = Result<Bytes, std::io::Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.polls.fetch_add(1, Ordering::SeqCst);
+        if let Some(polls) = &self.polls {
+            polls.fetch_add(1, Ordering::SeqCst);
+        }
+        if let Some(message) = self.failure.take() {
+            self.body = None;
+            return Poll::Ready(Some(Err(std::io::Error::other(message))));
+        }
         Poll::Ready(self.body.take().map(Ok))
+    }
+}
+
+impl Drop for ObservedBody {
+    fn drop(&mut self) {
+        if let Some(drops) = &self.drops {
+            drops.fetch_add(1, Ordering::SeqCst);
+        }
     }
 }
 
