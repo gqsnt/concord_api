@@ -1969,6 +1969,8 @@ function Test-Phase14PostSourcePath {
     return (
         $Path -eq "README.md" -or
         $Path -eq "docs/README.md" -or
+        $Path -eq "docs/REVIEW_RESOLUTION_0.1.md" -or
+        $Path -eq "docs/decisions/CONCORD_DECISIONS.md" -or
         $Path -eq "docs/planning/CONCORD_IMPLEMENTATION_PROGRAM_0.2.md" -or
         $Path -eq $script:ControllerPath -or
         $Path -eq $script:Phase14ReportPath -or
@@ -2391,7 +2393,14 @@ function Invoke-Phase14SelfTests {
     }
     Assert-Phase14SourcePaths @("scripts/audit-release-registry.ps1", "concord_core/src/execute/auth_tests.rs")
     Assert-Throws { Assert-Phase14SourcePaths @("scripts/audit-release-registry.ps1", $script:EvidencePath) } "evidence in source range"
-    Assert-Phase14PostSourcePaths @($script:EvidencePath, $script:Phase14ReportPath, $script:IndexedNormativePaths[0], $script:ArchitecturePaths[0])
+    Assert-Phase14PostSourcePaths @(
+        $script:EvidencePath,
+        $script:Phase14ReportPath,
+        $script:IndexedNormativePaths[0],
+        $script:ArchitecturePaths[0],
+        "docs/REVIEW_RESOLUTION_0.1.md",
+        "docs/decisions/CONCORD_DECISIONS.md"
+    )
     Assert-Throws { Assert-Phase14PostSourcePaths @($script:Phase14ReportPath, "concord_core/src/lib.rs") } "executable post-source change"
     Assert-Throws { Assert-DurablePath "git_diff/ignored.md" "P14-SELFTEST" } "ignored evidence path"
     Assert-Throws { Assert-Condition $false "missing commit-scoped path" } "missing path"
