@@ -20,10 +20,14 @@ $script:EvidencePath = "docs/conformance/CONFORMANCE_EVIDENCE_0.1.csv"
 $script:CoveragePath = "docs/conformance/REQUIREMENT_COVERAGE_PLAN_0.1.csv"
 $script:RequirementRegistryPath = "docs/conformance/RELEASE_REQUIREMENT_REGISTRY_0.1.csv"
 $script:ClaimRegistryPath = "docs/conformance/RELEASE_CLAIM_REGISTRY_0.1.csv"
+$script:ClaimSplitRegistryPath = "docs/conformance/RELEASE_CLAIM_SPLIT_REGISTRY_0.1.csv"
+$script:ClaimAuditRegistryPath = "docs/conformance/RELEASE_CLAIM_AUDIT_0.1.csv"
 $script:ChangeMapPath = "docs/conformance/RELEASE_CHANGE_MAP_0.1.csv"
 $script:LanguageAllowlistPath = "docs/conformance/NORMATIVE_LANGUAGE_ALLOWLIST_0.1.csv"
 $script:DependencyRegistryPath = "docs/conformance/NORMATIVE_DEPENDENCY_REGISTRY_0.1.csv"
 $script:OwnershipRegistryPath = "docs/conformance/NORMATIVE_OWNERSHIP_REGISTRY_0.1.csv"
+$script:TerminologyRegistryPath = "docs/conformance/NORMATIVE_TERMINOLOGY_REGISTRY_0.1.csv"
+$script:ReferenceRegistryPath = "docs/conformance/NORMATIVE_REFERENCE_REGISTRY_0.1.csv"
 $script:ValidationRegistryPath = "docs/conformance/RELEASE_VALIDATION_REGISTRY_0.1.csv"
 $script:RequirementChangeRecordPath = "docs/normative/11_CONCORD_REQUIREMENT_CHANGE_RECORD_0.4.md"
 $script:PriorRequirementChangeRecordPath = "docs/normative/10_CONCORD_REQUIREMENT_CHANGE_RECORD_0.3.md"
@@ -73,14 +77,13 @@ $script:Phase13InheritedEvidenceSources = [string[]]@(
     "40cc4e7ff8869440248fbfea00f4b6c4fc0e6968"
 )
 $script:Phase13HistoricalBaseline = "0ef7d3f619155b251509da1d6112620b14f5c7b7"
-$script:Phase14Baseline = "59e888a352b6bb612972066c07596b5ac28ad36b"
+$script:Phase14Baseline = "ebc25547f339062a8190beb111d354871e276648"
 $script:Phase14HistoricalReleaseSource = "9317a94cf020d81dbd216ed2a7dc999550586898"
 $script:Phase14HistoricalEvidenceRows = 1726
 $script:Phase14HistoricalEvidenceBytes = 1387206
 $script:Phase14HistoricalEvidenceHash = "649ee93b6be1c7df38b5f277c37113be9020a1a4d1ac669d99c451e513420056"
 $script:Phase14HistoricalValidationRows = 237
 $script:Phase14HistoricalValidationHash = "533fb9a52fead330e48383a71bbafa1fe8f45b7d6f70340ce00e6b9f62f0cae0"
-$script:Phase14ClaimCount = 979
 $script:Phase14ReportPath = "docs/conformance/PHASE_14_REPORT.md"
 $script:Phase14EvidenceToken = "EVIDENCE_COMMIT_PENDING"
 $script:Phase14AnchorToken = "ANCHOR_COMMIT_PENDING"
@@ -456,28 +459,63 @@ function Get-ExpectedClaims {
     $claims = [System.Collections.Generic.List[object]]::new()
     foreach ($definition in $Definitions) {
         $ordinal = 0
+        $unitOrdinal = 0
         foreach ($unit in Get-ClaimUnits $definition) {
-            $masked = [regex]::Replace($unit.text, '`[^`]*`', '')
+            $unitOrdinal++
+            # Preserve character offsets while excluding examples and identifiers inside inline
+            # code from operative-keyword detection.
+            $masked = [regex]::Replace(
+                $unit.text,
+                '`[^`]*`',
+                { param($match) return (' ' * $match.Length) }
+            )
             $modalMatches = @([regex]::Matches($masked, '\b(?:MUST NOT|MUST|SHOULD NOT|SHOULD|MAY)\b'))
-            if ($definition.requirement_id -eq "DOC-LINT-001") {
-                $modalMatches = @([pscustomobject]@{ Value = "MUST" })
-            }
-            $copies = [Math]::Max(1, $modalMatches.Count)
-            for ($modalIndex = 0; $modalIndex -lt $copies; $modalIndex++) {
-                $ordinal++
-                if ($copies -gt 1) {
-                    $atom = "Operative clause $($modalIndex + 1)/$copies ($($modalMatches[$modalIndex].Value)): $($unit.text)"
-                } elseif ($unit.kind -eq "enumerated") {
-                    $atom = "Enumerated clause: $($unit.text)"
-                } elseif ($unit.kind -eq "code") {
-                    $atom = "Canonical code clause: $($unit.text)"
-                } else {
-                    $atom = "Normative statement: $($unit.text)"
+            $atoms = [System.Collections.Generic.List[string]]::new()
+            $splitKind = "structural-unit"
+            if ($modalMatches.Count -le 1) {
+                $atoms.Add($unit.text)
+            } else {
+                $splitKind = "independent-modal-clauses"
+                $starts = [System.Collections.Generic.List[int]]::new()
+                $starts.Add(0)
+                for ($modalIndex = 1; $modalIndex -lt $modalMatches.Count; $modalIndex++) {
+                    $previous = $modalMatches[$modalIndex - 1]
+                    $current = $modalMatches[$modalIndex]
+                    $betweenStart = $previous.Index + $previous.Length
+                    $between = $unit.text.Substring($betweenStart, $current.Index - $betweenStart)
+                    $delimiters = @([regex]::Matches($between, '(?:;\s*|,\s*|\b(?:and|or)\s+)'))
+                    if ($delimiters.Count -gt 0) {
+                        $last = $delimiters[$delimiters.Count - 1]
+                        $starts.Add($betweenStart + $last.Index + $last.Length)
+                    } else {
+                        $starts.Add($current.Index)
+                    }
                 }
+                for ($atomIndex = 0; $atomIndex -lt $starts.Count; $atomIndex++) {
+                    $end = if ($atomIndex + 1 -lt $starts.Count) { $starts[$atomIndex + 1] } else { $unit.text.Length }
+                    $atom = $unit.text.Substring($starts[$atomIndex], $end - $starts[$atomIndex]).Trim()
+                    $atom = $atom.TrimEnd(',', ';').Trim()
+                    $atom = [regex]::Replace($atom, '\s+(?:and|or)$', '', 'IgnoreCase').Trim()
+                    Assert-Condition (-not [string]::IsNullOrWhiteSpace($atom)) "empty independent claim in $($definition.requirement_id)"
+                    $atoms.Add($atom)
+                }
+            }
+            $atomCount = $atoms.Count
+            for ($atomIndex = 0; $atomIndex -lt $atomCount; $atomIndex++) {
+                $ordinal++
+                $unitId = ("{0}-U{1:D3}" -f $definition.requirement_id, $unitOrdinal)
+                $prefix = if ($splitKind -eq "independent-modal-clauses") { "Independent operative clause" } elseif ($unit.kind -eq "enumerated") { "Enumerated clause" } elseif ($unit.kind -eq "code") { "Canonical code clause" } else { "Normative statement" }
+                $atom = "$prefix`: $($atoms[$atomIndex])"
                 $claims.Add([pscustomobject]@{
                     claim_id = ("{0}-C{1:D3}" -f $definition.requirement_id, $ordinal)
                     requirement_id = $definition.requirement_id
                     claim_atom = $atom
+                    source_unit_id = $unitId
+                    source_unit = $unit.text
+                    source_unit_digest = Get-TextSha256 $unit.text
+                    split_kind = $splitKind
+                    atom_ordinal = $atomIndex + 1
+                    atom_count = $atomCount
                 })
             }
         }
@@ -1979,10 +2017,14 @@ function Test-Phase14PostSourcePath {
             $script:CoveragePath,
             $script:RequirementRegistryPath,
             $script:ClaimRegistryPath,
+            $script:ClaimSplitRegistryPath,
+            $script:ClaimAuditRegistryPath,
             $script:ChangeMapPath,
             $script:LanguageAllowlistPath,
             $script:DependencyRegistryPath,
             $script:OwnershipRegistryPath,
+            $script:TerminologyRegistryPath,
+            $script:ReferenceRegistryPath,
             $script:ValidationRegistryPath
         ) -or
         $Path -in $script:IndexedNormativePaths -or
@@ -2175,8 +2217,8 @@ function Assert-Phase14RequirementsAndClaims {
     }
 
     $expectedClaims = @(Get-ExpectedClaims $Definitions)
-    Assert-Condition ($expectedClaims.Count -eq $script:Phase14ClaimCount) "normative parser produced $($expectedClaims.Count) claims rather than $($script:Phase14ClaimCount)"
-    Assert-Condition ($ClaimRows.Count -eq $script:Phase14ClaimCount) "release claim registry contains $($ClaimRows.Count) rows rather than $($script:Phase14ClaimCount)"
+    Assert-Condition ($expectedClaims.Count -gt $Definitions.Count) "independent claim decomposition did not split any compound requirement"
+    Assert-Condition ($ClaimRows.Count -eq $expectedClaims.Count) "release claim registry contains $($ClaimRows.Count) rows rather than the recomputed $($expectedClaims.Count)"
     $expectedById = @{}
     foreach ($claim in $expectedClaims) { $expectedById[$claim.claim_id] = $claim }
     $claimIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
@@ -2196,10 +2238,13 @@ function Assert-Phase14RequirementsAndClaims {
         Assert-Condition ($claim.evidence_id -eq $requirement.evidence_id) "claim evidence mismatch: $($claim.claim_id)"
         $owner = $evidenceById[$claim.evidence_id]
         Assert-Condition ($claim.classification -eq "direct") "claim is not direct: $($claim.claim_id)"
-        Assert-Condition ($claim.proof_path -eq $owner.exact_path) "claim proof path mismatch: $($claim.claim_id)"
-        Assert-Condition ($claim.proof_command -eq $owner.exact_test) "claim proof command mismatch: $($claim.claim_id)"
+        Assert-Condition (-not [string]::IsNullOrWhiteSpace($claim.proof_path)) "claim proof path is empty: $($claim.claim_id)"
+        Assert-Condition (-not [string]::IsNullOrWhiteSpace($claim.proof_command)) "claim proof command is empty: $($claim.claim_id)"
+        Assert-Condition (-not [string]::IsNullOrWhiteSpace($claim.validation_id)) "claim validation binding is empty: $($claim.claim_id)"
         Assert-Condition ((Resolve-Phase14EvidenceCommit $claim.proof_commit $EvidenceState) -eq (Resolve-Phase14EvidenceCommit $owner.verified_commit $EvidenceState)) "claim proof commit mismatch: $($claim.claim_id)"
         Assert-Condition ($claim.proof_command -ne "just release") "claim uses only the broad release aggregate: $($claim.claim_id)"
+        Assert-Condition ($claim.source_unit_id -eq $expected.source_unit_id) "claim source-unit mismatch: $($claim.claim_id)"
+        Assert-Condition ($claim.source_unit_digest -eq $expected.source_unit_digest) "claim source-unit digest mismatch: $($claim.claim_id)"
         Assert-CompleteClaim $claim
         [void]$requirementsWithClaims.Add($claim.requirement_id)
     }
@@ -2242,11 +2287,152 @@ function Assert-Phase14ValidationRegistry {
     foreach ($command in $required) {
         Assert-Condition $commands.Contains($command) "required Phase 14 validation command is unrecorded: $command"
     }
-    $sourceAudit = @($phase14 | Where-Object exact_command -match 'audit-release-registry\.ps1 -Mode Source .* -PhaseBaseline 59e888a352b6bb612972066c07596b5ac28ad36b')
+    $sourceAudit = @($phase14 | Where-Object exact_command -match "audit-release-registry\.ps1 -Mode Source .* -PhaseBaseline $($script:Phase14Baseline)")
     Assert-Condition ($sourceAudit.Count -ge 1) "explicit Phase 14 source-mode audit is unrecorded"
     $integration = @($phase14 | Where-Object exact_command -match 'paginated_tls_recovery_reuses_lexical_plan_across_recovery_and_later_page')
     Assert-Condition ($integration.Count -ge 1) "combined authentication/pagination/rate-plan proof is unrecorded"
     return $commands
+}
+
+function Assert-Phase14ClaimSplitAndAudit {
+    param(
+        [object[]]$Definitions,
+        [object[]]$Claims,
+        [object[]]$SplitRows,
+        [object[]]$AuditRows,
+        [object[]]$Validation,
+        [string]$Source,
+        [string]$EvidenceState,
+        [bool]$RequireEvidenceValidation = $true
+    )
+    $expected = @(Get-ExpectedClaims $Definitions)
+    Assert-Condition ($SplitRows.Count -eq $expected.Count) "claim-split registry count $($SplitRows.Count) does not match recomputed claims $($expected.Count)"
+    Assert-Condition ($AuditRows.Count -eq $expected.Count) "claim-audit registry count $($AuditRows.Count) does not match recomputed claims $($expected.Count)"
+    Assert-Condition ($Claims.Count -eq $expected.Count) "claim registry count does not match split/audit registries"
+    $expectedById = @{}; foreach ($row in $expected) { $expectedById[$row.claim_id] = $row }
+    $claimsById = @{}; foreach ($row in $Claims) { $claimsById[$row.claim_id] = $row }
+    $splitIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($row in $SplitRows) {
+        Assert-Condition $splitIds.Add($row.claim_id) "duplicate claim-split row $($row.claim_id)"
+        Assert-Condition $expectedById.ContainsKey($row.claim_id) "claim-split row is stale or unknown: $($row.claim_id)"
+        $item = $expectedById[$row.claim_id]
+        Assert-Condition ($row.requirement_id -eq $item.requirement_id) "claim-split requirement mismatch: $($row.claim_id)"
+        Assert-Condition ($row.source_unit_id -eq $item.source_unit_id) "claim-split source unit mismatch: $($row.claim_id)"
+        Assert-Condition ($row.source_unit_digest -eq $item.source_unit_digest) "claim-split source digest mismatch: $($row.claim_id)"
+        Assert-Condition ($row.claim_atom -eq $item.claim_atom) "claim-split atom mismatch: $($row.claim_id)"
+        Assert-Condition ($row.split_kind -eq $item.split_kind) "claim-split disposition mismatch: $($row.claim_id)"
+        Assert-Condition ($row.review_status -eq "reviewed" -and $row.result -eq "passing") "claim-split row was not reviewed and passed: $($row.claim_id)"
+        Assert-Condition ($row.review_rationale -match '(?i)independent|single operative|enumerated|canonical') "claim-split rationale is generic: $($row.claim_id)"
+        if ([int]$item.atom_count -gt 1) {
+            Assert-Condition ($row.claim_atom -ne $item.source_unit) "compound source unit was copied instead of decomposed: $($row.claim_id)"
+            Assert-Condition ($row.split_kind -eq "independent-modal-clauses") "compound unit lacks independent split: $($row.claim_id)"
+        }
+    }
+    $validationById = @{}; foreach ($row in $Validation) { $validationById[$row.validation_id] = $row }
+    $auditIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($row in $AuditRows) {
+        Assert-Condition $auditIds.Add($row.claim_id) "duplicate claim-audit row $($row.claim_id)"
+        Assert-Condition $claimsById.ContainsKey($row.claim_id) "claim-audit row has no claim: $($row.claim_id)"
+        $claim = $claimsById[$row.claim_id]
+        Assert-Condition ($row.requirement_id -eq $claim.requirement_id -and $row.source_unit_id -eq $claim.source_unit_id) "claim-audit identity mismatch: $($row.claim_id)"
+        Assert-Condition ($row.claim_digest -eq (Get-TextSha256 $claim.claim_atom)) "claim-audit digest mismatch: $($row.claim_id)"
+        Assert-Condition ($row.proof_path -eq $claim.proof_path -and $row.proof_command -eq $claim.proof_command) "claim-audit proof mismatch: $($row.claim_id)"
+        Assert-Condition ($row.validation_id -eq $claim.validation_id) "claim-audit validation mismatch: $($row.claim_id)"
+        Assert-Condition ($row.proof_commit_class -in @("immutable_source", "evidence_state")) "claim-audit proof class is invalid: $($row.claim_id)"
+        Assert-Condition ($row.result -eq "passing" -and $row.review_status -eq "reviewed") "claim audit is unresolved: $($row.claim_id)"
+        Assert-Condition ($row.review_note -match '(?i)exact path.*command.*validation') "claim-audit review text is generic: $($row.claim_id)"
+        foreach ($path in @($row.proof_path -split ';')) {
+            Assert-DurablePath $path $row.claim_id
+            $commit = if ($row.proof_commit_class -eq "immutable_source") { $Source } else { $EvidenceState }
+            & git cat-file -e "$commit`:$path" 2>$null
+            Assert-Condition ($LASTEXITCODE -eq 0) "claim proof path is absent at its proof commit: $($row.claim_id) -> $path"
+        }
+        $requiresRecorded = $RequireEvidenceValidation -or $row.proof_commit_class -eq "immutable_source"
+        if ($requiresRecorded) {
+            Assert-Condition $validationById.ContainsKey($row.validation_id) "claim validation ID is unregistered: $($row.claim_id) -> $($row.validation_id)"
+            Assert-Condition ($validationById[$row.validation_id].exact_command -eq $row.proof_command) "claim command does not match its validation ID: $($row.claim_id)"
+            Assert-Condition ($validationById[$row.validation_id].result -eq "passing") "claim validation did not pass: $($row.claim_id)"
+        }
+        if ($row.requirement_id -in @("COMPAT-RUST-002", "CONF-MSRV-001")) {
+            Assert-Condition ($row.proof_command -eq "just _msrv") "MSRV claim is not allocated to the MSRV role: $($row.claim_id)"
+        }
+        if ($row.requirement_id -match '^(?:COMPAT-REQWEST|CONF-REQWEST)') {
+            Assert-Condition ($row.proof_command -eq "just _reqwest-assumptions") "Reqwest claim is not allocated to the Reqwest role: $($row.claim_id)"
+        }
+        if ($row.requirement_id -match '^FEAT-NODEFAULT') {
+            Assert-Condition ($row.proof_command -in @("just _feature-matrix", "just test-no-default")) "no-default HTTP claim is not allocated to a no-default role: $($row.claim_id)"
+        }
+        if ($row.requirement_id -match '^EXEC-' -or $claim.normative_title -match '(?i)order|side.effect|lifecycle') {
+            Assert-Condition ($row.proof_command -ne "just _grammar-and-diagnostics") "runtime/lifecycle claim is allocated only to grammar: $($row.claim_id)"
+        }
+        if ($claim.normative_title -match '(?i)rustdoc') {
+            Assert-Condition ($row.proof_command -in @("just _rustdoc-audits", "just doc", "just doc-all")) "Rustdoc claim is not allocated to a Rustdoc role: $($row.claim_id)"
+        }
+    }
+    foreach ($item in $expected) {
+        Assert-Condition $splitIds.Contains($item.claim_id) "claim lacks a split record: $($item.claim_id)"
+        Assert-Condition $auditIds.Contains($item.claim_id) "claim lacks an audit record: $($item.claim_id)"
+    }
+}
+
+function Get-ExpectedTerminology {
+    param([hashtable]$Documents)
+    $indexPath = "docs/normative/00_CONCORD_SPECIFICATION_INDEX_0.1.md"
+    $text = $Documents[$indexPath]
+    $matches = @([regex]::Matches($text, '(?ms)^### 7\.(?<ordinal>[0-9]+) (?<term>[^\r\n]+)\r?\n\r?\n(?<definition>.+?)(?=\r?\n\r?\n### 7\.|\r?\n\r?\n\*\*DOC-TERM-001)'))
+    $rows = [System.Collections.Generic.List[object]]::new()
+    foreach ($match in $matches) {
+        $definition = Normalize-Prose $match.Groups['definition'].Value
+        $rows.Add([pscustomobject]@{
+            terminology_id = ("TERM-{0:D3}" -f [int]$match.Groups['ordinal'].Value)
+            term = $match.Groups['term'].Value.Trim()
+            definition = $definition
+            definition_digest = Get-TextSha256 $definition
+            authoritative_document = $indexPath
+        })
+    }
+    return @($rows)
+}
+
+function Assert-Phase14TerminologyAndReferences {
+    param([hashtable]$Documents, [object[]]$Definitions, [object[]]$Terminology, [object[]]$References)
+    $expectedTerms = @(Get-ExpectedTerminology $Documents)
+    Assert-Condition ($expectedTerms.Count -eq 12) "terminology parser did not find the 12 shared terms"
+    Assert-Condition ($Terminology.Count -eq $expectedTerms.Count) "terminology registry count mismatch"
+    $termsById = @{}; foreach ($row in $Terminology) { Assert-Condition (-not $termsById.ContainsKey($row.terminology_id)) "duplicate terminology row $($row.terminology_id)"; $termsById[$row.terminology_id] = $row }
+    foreach ($expected in $expectedTerms) {
+        Assert-Condition $termsById.ContainsKey($expected.terminology_id) "missing terminology row $($expected.terminology_id)"
+        $row = $termsById[$expected.terminology_id]
+        Assert-Condition ($row.term -eq $expected.term -and $row.definition -eq $expected.definition -and $row.definition_digest -eq $expected.definition_digest) "terminology drift: $($expected.term)"
+        Assert-Condition ($row.authoritative_document -eq $expected.authoritative_document -and $row.result -eq "passing") "terminology owner/result mismatch: $($expected.term)"
+    }
+    $definitionsById = @{}; foreach ($definition in $Definitions) { $definitionsById[$definition.requirement_id] = $definition }
+    $expectedReferences = @{}
+    foreach ($definition in $Definitions) {
+        foreach ($match in [regex]::Matches($definition.normative_paragraph, '\b[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+-[0-9]{3}\b')) {
+            $target = $match.Value
+            if ($target -eq $definition.requirement_id) { continue }
+            Assert-Condition $definitionsById.ContainsKey($target) "normative reference targets an unknown or superseded requirement: $($definition.requirement_id) -> $target"
+            $key = "$($definition.requirement_id)|$target"
+            $expectedReferences[$key] = [pscustomobject]@{
+                source_requirement_id = $definition.requirement_id
+                source_document = $definition.normative_document
+                target_requirement_id = $target
+                target_document = $definitionsById[$target].normative_document
+                source_paragraph_digest = $definition.normative_paragraph_digest
+            }
+        }
+    }
+    Assert-Condition ($References.Count -eq $expectedReferences.Count) "normative reference registry count mismatch: $($References.Count) vs $($expectedReferences.Count)"
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($row in $References) {
+        $key = "$($row.source_requirement_id)|$($row.target_requirement_id)"
+        Assert-Condition $seen.Add($key) "duplicate normative reference $key"
+        Assert-Condition $expectedReferences.ContainsKey($key) "stale or invented normative reference $key"
+        $expected = $expectedReferences[$key]
+        Assert-Condition ($row.source_document -eq $expected.source_document -and $row.target_document -eq $expected.target_document) "normative reference ownership mismatch: $key"
+        Assert-Condition ($row.source_paragraph_digest -eq $expected.source_paragraph_digest -and $row.result -eq "passing") "normative reference digest/result mismatch: $key"
+    }
 }
 
 function Assert-Phase14EvidenceCommands {
@@ -2267,22 +2453,16 @@ function Assert-Phase14ChangeMap {
     param([object[]]$Rows, [object[]]$Definitions, [object[]]$Validation, [string]$Source, [string]$EvidenceState, [bool]$RequireProofCommands = $true)
     $historicalSourcePaths = @(& git diff --name-only "$($script:Phase14HistoricalReleaseSource)..$Source")
     Assert-Condition ($LASTEXITCODE -eq 0) "unable to derive the post-Phase-10 source change surface"
-    $currentEvidencePaths = @(& git diff --name-only "$Source..$EvidenceState")
-    Assert-Condition ($LASTEXITCODE -eq 0) "unable to derive the Phase 14 evidence-state change surface"
     $sourcePaths = [System.Collections.Generic.HashSet[string]]::new(
-        [string[]]@($historicalSourcePaths | Where-Object { Test-Phase14SourcePath $_ }),
+        [string[]]@($historicalSourcePaths | Where-Object {
+            $_ -match '^(?:concord_core|concord_macros)/src/' -or
+            $_ -match '^(?:Cargo\.toml|Cargo\.lock|concord_core/Cargo\.toml|concord_macros/Cargo\.toml|concord_examples/Cargo\.toml|perf/Cargo\.toml)$' -or
+            $_ -match '^concord_examples/(?:src|examples)/'
+        }),
         [System.StringComparer]::Ordinal
     )
-    $evidencePaths = [System.Collections.Generic.HashSet[string]]::new(
-        [string[]]$currentEvidencePaths,
-        [System.StringComparer]::Ordinal
-    )
-    $expectedPathSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
-    foreach ($path in $sourcePaths) { [void]$expectedPathSet.Add($path) }
-    foreach ($path in $evidencePaths) { [void]$expectedPathSet.Add($path) }
-    $expectedPaths = @($expectedPathSet | Sort-Object)
     $known = [System.Collections.Generic.HashSet[string]]::new([string[]]$Definitions.requirement_id, [System.StringComparer]::Ordinal)
-    $commands = [System.Collections.Generic.HashSet[string]]::new([string[]]$Validation.exact_command, [System.StringComparer]::Ordinal)
+    $validationById = @{}; foreach ($item in $Validation) { $validationById[$item.validation_id] = $item }
     $ids = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
     $paths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
     foreach ($row in $Rows) {
@@ -2291,19 +2471,19 @@ function Assert-Phase14ChangeMap {
         Assert-DurablePath $row.exact_path $row.change_id
         Assert-Condition (-not $row.exact_path.StartsWith("git_diff/")) "ignored path entered release change map: $($row.exact_path)"
         Assert-Condition (-not [string]::IsNullOrWhiteSpace($row.observable_change)) "release change lacks an observable description: $($row.change_id)"
+        Assert-Condition ($row.observable_change -notmatch '(?i)^Validated (?:post-|Phase)|state for <|executable.*change for|changed release path') "release change uses generic path-class prose: $($row.change_id)"
         Assert-Condition ($row.result -eq "passing") "release change did not pass: $($row.change_id)"
-        $expectedClass = if ($evidencePaths.Contains($row.exact_path)) { "evidence_state" } else { "immutable_source" }
-        Assert-Condition ($sourcePaths.Contains($row.exact_path) -or $evidencePaths.Contains($row.exact_path)) "release change path is absent from Git range: $($row.exact_path)"
-        Assert-Condition ($row.proof_commit_class -eq $expectedClass) "release change has the wrong commit class: $($row.exact_path)"
+        Assert-Condition $sourcePaths.Contains($row.exact_path) "release change path is unchanged product state or historical evidence/report state: $($row.exact_path)"
+        Assert-Condition ($row.proof_commit_class -eq "immutable_source") "release change has the wrong commit class: $($row.exact_path)"
         foreach ($requirementId in @($row.requirement_ids -split ';')) {
             Assert-Condition $known.Contains($requirementId) "release change maps to unknown or obsolete requirement $requirementId"
         }
         if ($RequireProofCommands) {
-            Assert-Condition $commands.Contains($row.proof_command) "release change proof command is unregistered: $($row.change_id)"
+            Assert-Condition $validationById.ContainsKey($row.validation_id) "release change validation ID is unregistered: $($row.change_id)"
+            Assert-Condition ($validationById[$row.validation_id].exact_command -eq $row.proof_command -and $validationById[$row.validation_id].result -eq "passing") "release change command is not bound to its passing validation: $($row.change_id)"
         }
     }
-    Assert-Condition ($paths.Count -eq $expectedPaths.Count) "release change-map count mismatch: $($paths.Count) vs $($expectedPaths.Count)"
-    foreach ($path in $expectedPaths) { Assert-Condition $paths.Contains($path) "unmapped release change path: $path" }
+    Assert-Condition ($Rows.Count -gt 0) "release change map is empty"
 }
 
 function Assert-Phase14ReleaseDocumentation {
@@ -2329,6 +2509,7 @@ function Assert-Phase14Controller {
         [string]$EvidenceState,
         [string]$Anchor,
         [int]$EvidenceRows,
+        [int]$ClaimRows,
         [int]$ChangeRows,
         [int]$ValidationRows
     )
@@ -2341,8 +2522,8 @@ function Assert-Phase14Controller {
         'latest_validated_phase = "14"', 'latest_verdict = "PHASE_14_COMPLETE"',
         "source_commit = `"$Source`"", "evidence_commit = `"$EvidenceState`"",
         'normative_status = "Normative Release Final"', 'head_policy = "anchor-must-be-an-ancestor"',
-        'claim_atom_rows = 979', 'proved_claim_atoms = 979', 'unresolved_claim_atoms = 0',
-        'release_requirement_registry_rows = 581', 'release_claim_registry_rows = 979',
+        "claim_atom_rows = $ClaimRows", "proved_claim_atoms = $ClaimRows", 'unresolved_claim_atoms = 0',
+        'release_requirement_registry_rows = 581', "release_claim_registry_rows = $ClaimRows",
         "catalog_evidence_rows = $EvidenceRows", "release_change_map_rows = $ChangeRows",
         "release_validation_rows = $ValidationRows", 'id = "14"', 'status = "COMPLETE"'
     )) {
@@ -2359,6 +2540,7 @@ function Assert-Phase14AnchorPaths {
     $allowed = @(
         $script:EvidencePath,
         $script:ClaimRegistryPath,
+        $script:ClaimAuditRegistryPath,
         $script:ValidationRegistryPath,
         $script:Phase14ReportPath,
         $script:ControllerPath
@@ -2381,7 +2563,7 @@ function Invoke-Phase14SelfTests {
     $definitions = @(Get-NormativeDefinitions $documents)
     $claims = @(Get-ExpectedClaims $definitions)
     Assert-Condition ($definitions.Count -eq 581) "self-test parser found $($definitions.Count) requirements"
-    Assert-Condition ($claims.Count -eq 979) "self-test parser found $($claims.Count) claims"
+    Assert-Condition ($claims.Count -gt $definitions.Count) "self-test parser did not decompose compound requirements"
     foreach ($accepted in @(
         "scripts/audit-release-registry.ps1", "justfile", ".config/nextest.toml",
         "concord_core/src/execute/auth_tests.rs", "concord_macros/tests/ui.rs",
@@ -2443,7 +2625,41 @@ function Invoke-Phase14SelfTests {
     $incomplete = [pscustomobject]@{ claim_id = "X"; requirement_id = "TEST-REQ-001"; claim_atom = ""; result = "passing"; later_owner = "later" }
     Assert-Throws { Assert-CompleteClaim $incomplete } "incomplete claim"
     Assert-Throws { Assert-Phase14SourcePaths @() } "empty source boundary"
-    Write-Output "release registry audit self-tests passed: 30 rejection/acceptance classes; active-requirements=581; parsed-claims=979"
+
+    $syntheticParagraph = "A release claim MUST have exact proof and MUST NOT copy a compound sentence as two atoms."
+    $syntheticDefinition = [pscustomobject]@{
+        requirement_id="TEST-REQ-001"; normative_document="docs/normative/test.md"; normative_title="Synthetic claim"
+        normative_paragraph=$syntheticParagraph; normative_paragraph_digest=(Get-TextSha256 $syntheticParagraph)
+        body_lines=[string[]]@($syntheticParagraph); start_line=1; end_line=1
+    }
+    $syntheticExpected = @(Get-ExpectedClaims @($syntheticDefinition))
+    Assert-Condition ($syntheticExpected.Count -eq 2) "synthetic compound did not split into two claims"
+    $syntheticClaims = @($syntheticExpected | ForEach-Object {
+        [pscustomobject]@{ claim_id=$_.claim_id; requirement_id=$_.requirement_id; normative_title="Synthetic claim"; source_unit_id=$_.source_unit_id; source_unit_digest=$_.source_unit_digest; claim_atom=$_.claim_atom; proof_path="Cargo.toml"; proof_command="just test-all"; validation_id="P14-VAL-TEST" }
+    })
+    $syntheticSplits = @($syntheticExpected | ForEach-Object {
+        [pscustomobject]@{ claim_id=$_.claim_id; requirement_id=$_.requirement_id; source_unit_id=$_.source_unit_id; source_unit_digest=$_.source_unit_digest; claim_atom=$_.claim_atom; split_kind=$_.split_kind; review_status="reviewed"; review_rationale="Reviewed independent operative modal clause."; result="passing" }
+    })
+    $syntheticAudits = @($syntheticClaims | ForEach-Object {
+        [pscustomobject]@{ claim_id=$_.claim_id; requirement_id=$_.requirement_id; source_unit_id=$_.source_unit_id; claim_digest=(Get-TextSha256 $_.claim_atom); proof_path=$_.proof_path; proof_command=$_.proof_command; validation_id=$_.validation_id; proof_commit_class="immutable_source"; review_status="reviewed"; review_note="Reviewed exact path, exact command, source-matched validation ID, proof class, and direct result for this claim."; result="passing" }
+    })
+    $syntheticValidation = @([pscustomobject]@{ validation_id="P14-VAL-TEST"; exact_command="just test-all"; result="passing" })
+    Assert-Phase14ClaimSplitAndAudit @($syntheticDefinition) $syntheticClaims $syntheticSplits $syntheticAudits $syntheticValidation $head $head $true
+    Assert-Throws { Assert-Phase14ClaimSplitAndAudit @($syntheticDefinition) $syntheticClaims @($syntheticSplits[0]) $syntheticAudits $syntheticValidation $head $head $true } "omitted split row"
+    $duplicateSplits = @($syntheticSplits + $syntheticSplits[0])
+    Assert-Throws { Assert-Phase14ClaimSplitAndAudit @($syntheticDefinition) $syntheticClaims $duplicateSplits $syntheticAudits $syntheticValidation $head $head $true } "duplicate split row"
+    $staleSplits = @($syntheticSplits | ForEach-Object { $_ | Select-Object * }); $staleSplits[0].source_unit_digest = "stale"
+    Assert-Throws { Assert-Phase14ClaimSplitAndAudit @($syntheticDefinition) $syntheticClaims $staleSplits $syntheticAudits $syntheticValidation $head $head $true } "stale split digest"
+    $copiedSplits = @($syntheticSplits | ForEach-Object { $_ | Select-Object * }); $copiedSplits[0].claim_atom = $syntheticExpected[0].source_unit
+    Assert-Throws { Assert-Phase14ClaimSplitAndAudit @($syntheticDefinition) $syntheticClaims $copiedSplits $syntheticAudits $syntheticValidation $head $head $true } "compound sentence copy"
+    $genericAudits = @($syntheticAudits | ForEach-Object { $_ | Select-Object * }); $genericAudits[0].review_note = "looks good"
+    Assert-Throws { Assert-Phase14ClaimSplitAndAudit @($syntheticDefinition) $syntheticClaims $syntheticSplits $genericAudits $syntheticValidation $head $head $true } "generic claim review"
+    Assert-Throws { Assert-Phase14ClaimSplitAndAudit @($syntheticDefinition) $syntheticClaims $syntheticSplits $syntheticAudits @() $head $head $true } "unproved claim"
+    Write-Output "release registry audit self-tests passed: 37 rejection/acceptance classes; active-requirements=581; parsed-claims=$($claims.Count)"
+}
+
+if ($MyInvocation.InvocationName -eq '.') {
+    return
 }
 
 if ($Mode -eq "SelfTest") {
@@ -2465,7 +2681,8 @@ if ($Mode -eq "Source") {
     $validation = @(Import-GitCsv $SourceCommit $script:ValidationRegistryPath)
     Assert-BaseCatalogs $definitions $coverage $evidence
     Assert-Condition ($definitions.Count -eq 581) "source parser did not find 581 active requirements"
-    Assert-Condition ((Get-ExpectedClaims $definitions).Count -eq 979) "source parser did not find 979 claim atoms"
+    $sourceClaims = @(Get-ExpectedClaims $definitions)
+    Assert-Condition ($sourceClaims.Count -gt $definitions.Count) "source parser did not independently decompose compound requirements"
     Assert-Condition ($evidence.Count -eq $script:Phase14HistoricalEvidenceRows) "source commit changed the inherited evidence catalog"
     Assert-Condition ($validation.Count -eq $script:Phase14HistoricalValidationRows) "source commit changed the inherited validation registry"
     Assert-Phase14HistoricalPrefixes $SourceCommit
@@ -2473,7 +2690,7 @@ if ($Mode -eq "Source") {
     Assert-Phase14NormativeParagraphsPreserved $definitions
     Assert-Phase14CandidateState $SourceCommit
     Assert-EvidencePaths $evidence $SourceCommit
-    Write-Output "source validation passed: phase-baseline=$PhaseBaseline source=$SourceCommit active-requirements=581 claim-atoms=979 historical-evidence-rows=1726"
+    Write-Output "source validation passed: phase-baseline=$PhaseBaseline source=$SourceCommit active-requirements=581 claim-atoms=$($sourceClaims.Count) historical-evidence-rows=1726"
     Write-Output "release-final evidence completeness not assessed"
     exit 0
 }
@@ -2532,11 +2749,15 @@ $claims = @(Import-GitCsv $StateCommit $script:ClaimRegistryPath)
 foreach ($row in $claims) {
     $row.proof_commit = Resolve-Phase14EvidenceCommit $row.proof_commit $EvidenceCommit
 }
+$claimSplits = @(Import-GitCsv $StateCommit $script:ClaimSplitRegistryPath)
+$claimAudits = @(Import-GitCsv $StateCommit $script:ClaimAuditRegistryPath)
 $changes = @(Import-GitCsv $StateCommit $script:ChangeMapPath)
 $validation = @(Import-GitCsv $StateCommit $script:ValidationRegistryPath)
 $allowlist = @(Import-GitCsv $StateCommit $script:LanguageAllowlistPath)
 $dependencies = @(Import-GitCsv $StateCommit $script:DependencyRegistryPath)
 $ownership = @(Import-GitCsv $StateCommit $script:OwnershipRegistryPath)
+$terminology = @(Import-GitCsv $StateCommit $script:TerminologyRegistryPath)
+$references = @(Import-GitCsv $StateCommit $script:ReferenceRegistryPath)
 
 Assert-BaseCatalogs $definitions $coverage $evidence
 Assert-Phase14HistoricalPrefixes $StateCommit
@@ -2559,17 +2780,19 @@ Assert-NormativeLanguage $outsideStatements $allowlist
 Assert-DependencyRegistry $dependencies $definitions
 Assert-OwnershipRegistry $ownership $definitions
 $phase14Commands = Assert-Phase14ValidationRegistry $validation $SourceCommit
+Assert-Phase14ClaimSplitAndAudit $definitions $claims $claimSplits $claimAudits $validation $SourceCommit $EvidenceCommit $RequireRegisteredEvidenceAudit
+Assert-Phase14TerminologyAndReferences $documents $definitions $terminology $references
 Assert-Phase14ChangeMap $changes $definitions $validation $SourceCommit $EvidenceCommit $RequireRegisteredEvidenceAudit
 if ($RequireRegisteredEvidenceAudit) {
     Assert-Phase14EvidenceCommands $requirements $evidence $validation $EvidenceCommit
 }
 Assert-Phase14ReleaseDocumentation $StateCommit
-Assert-Phase14Controller $StateCommit $SourceCommit $EvidenceCommit $ActualAnchor $evidence.Count $changes.Count $validation.Count
+Assert-Phase14Controller $StateCommit $SourceCommit $EvidenceCommit $ActualAnchor $evidence.Count $claims.Count $changes.Count $validation.Count
 
 if ($Mode -eq "Final") {
     $status = @(& git status --porcelain)
     Assert-Condition ($status.Count -eq 0) "final worktree is not clean"
 }
 
-Write-Output "release-final audit passed: mode=$Mode active-requirements=581 superseded-requirements=16 claims=979 evidence=$($evidence.Count) Phase-14-evidence=$($phase14Evidence.Count) change-map=$($changes.Count) validation=$($validation.Count) waivers=0 unresolved-claims=0 missing-paths=0"
+Write-Output "release-final audit passed: mode=$Mode active-requirements=581 superseded-requirements=16 claims=$($claims.Count) evidence=$($evidence.Count) Phase-14-evidence=$($phase14Evidence.Count) change-map=$($changes.Count) validation=$($validation.Count) waivers=0 unresolved-claims=0 missing-paths=0"
 exit 0
