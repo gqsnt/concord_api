@@ -1,13 +1,13 @@
 # Concord
 
-Concord 0.1 has a historically validated Phase 10 release-candidate baseline. The current normative
-specification set is **Normative Implementation Candidate** under the approved Phases 11-14
-roadmap. Generated and stable prepared endpoints share one typed request,
+Concord 0.1 is a locally validated **Concord 0.1 Conforming Release**. Its complete normative
+specification set is **Normative Release Final**, its generated contract remains version `14`, and
+Phase 14 is `PHASE_14_COMPLETE`. Generated and stable prepared endpoints share one typed request,
 body/authentication/limiter/deadline/hook/status/response lifecycle, private managed HTTP clients,
 and one completion path. Phase 12 adds arbitrary request and response specification types, exactly
 three sealed response acquisition modes, one universal `ApiResponse<T>`, one bounded `ByteStream`,
 type-neutral generated/prepared integration, and optional integrated records/CSV/NDJSON. The
-complete maintained graph passes on Rust 1.85.
+Phase 13 lexical rate-limit plan and the complete maintained graph pass on Rust 1.85.
 
 Prepared pagination remains outside the 0.1 product contract. The built-in limiter is bounded
 best-effort process-local pacing; strict or distributed enforcement remains an
@@ -21,9 +21,9 @@ Start with the [documentation overview](docs/README.md) and the
 [normative specification index](docs/normative/00_CONCORD_SPECIFICATION_INDEX_0.1.md). For current
 delivery state, see the
 [implementation program](docs/planning/CONCORD_IMPLEMENTATION_PROGRAM_0.2.md) and the
-[Phase 13 report](docs/conformance/PHASE_13_REPORT.md). Phase 13 is
-`PHASE_13_COMPLETE_WITH_LIMITATIONS`; Phase 14 owns whole-product conformance closure and is the only phase that may restore
-`Normative Release Final`.
+[Phase 14 report](docs/conformance/PHASE_14_REPORT.md). The report records the correction baseline,
+immutable source, release-final evidence, anchor, and compatible metadata descendant used for
+conformance closure.
 
 Current validation entry points are:
 
@@ -56,10 +56,10 @@ evidence. Standalone Cargo fixture packages are reserved
 for behavior that depends on package metadata or dependency topology; source-only macro and core
 public-surface cases use ordinary integration tests or Trybuild.
 
-The evidence catalog preserves every Phase 0-11 row byte-for-byte and appends one direct passing row
-for each of the 127 Phase 12-owned active paragraph versions. Superseded pagination, response, and
-stream IDs remain resolvable for their historical source commits. Current whole-product
-release-registry and claim closure is reserved for Phase 14. This repository state is not a
+The evidence catalog preserves the exact 1,726-row Phase 0-13 prefix and appends 581 direct,
+passing, waiver-free Phase 14 rows. All 581 active requirements and 984 independently decomposed
+claim atoms have current exact passing proof; the 16 superseded requirement IDs remain resolvable
+through their change records and historical commits. This conforming repository state is not a
 published release: no remote publication, tag, registry upload, or deployment was performed.
 
 Concord is pre-1.0. A breaking public-contract change requires a minor-version increment; patch

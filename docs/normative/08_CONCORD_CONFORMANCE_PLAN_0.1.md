@@ -1,7 +1,7 @@
 # CONCORD_CONFORMANCE_PLAN_0.1
 
 **Version:** 0.1  
-**Status:** Normative Implementation Candidate
+**Status:** Normative Release Final
 **Authority:** Required evidence for Concord 0.1 conformance  
 **Requirement prefix:** `CONF`  
 **Depends on:** Every preceding normative Concord 0.1 specification  

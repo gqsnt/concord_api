@@ -5,7 +5,7 @@
 schema_version = 1
 project = "Concord"
 assurance_profile = "strict"
-last_reviewed_date = "2026-07-21"
+last_reviewed_date = "2026-07-22"
 
 [workflow]
 controller_prompt = "docs/controller/CONCORD_CONTROLLER_PROMPT.md"
@@ -28,95 +28,77 @@ coverage_plan = "docs/conformance/REQUIREMENT_COVERAGE_PLAN_0.1.csv"
 evidence_catalog = "docs/conformance/CONFORMANCE_EVIDENCE_0.1.csv"
 release_requirement_registry = "docs/conformance/RELEASE_REQUIREMENT_REGISTRY_0.1.csv"
 release_claim_registry = "docs/conformance/RELEASE_CLAIM_REGISTRY_0.1.csv"
+release_claim_split_registry = "docs/conformance/RELEASE_CLAIM_SPLIT_REGISTRY_0.1.csv"
+release_claim_audit_registry = "docs/conformance/RELEASE_CLAIM_AUDIT_0.1.csv"
 release_change_map = "docs/conformance/RELEASE_CHANGE_MAP_0.1.csv"
 release_validation_registry = "docs/conformance/RELEASE_VALIDATION_REGISTRY_0.1.csv"
+normative_terminology_registry = "docs/conformance/NORMATIVE_TERMINOLOGY_REGISTRY_0.1.csv"
+normative_reference_registry = "docs/conformance/NORMATIVE_REFERENCE_REGISTRY_0.1.csv"
 
 [validated_state]
 expected_branch = "master"
-latest_validated_phase = "13"
-latest_verdict = "PHASE_13_COMPLETE_WITH_LIMITATIONS"
-source_commit = "91378c1a0ac748ab029d6c396871920b63366716"
+latest_validated_phase = "14"
+latest_verdict = "PHASE_14_COMPLETE"
+starting_head = "ab43bb510846b3632485ad5cfea41c152533bee5"
+phase14_correction_baseline = "ebc25547f339062a8190beb111d354871e276648"
+source_commit = "37eecb5a568426a07bd12699ecc888c84ea643a5"
 implementation_source_commits = [
-  "25016f4",
-  "9f102aa4fcfa4c1ec3e881677b78426a8ccf3c74",
-  "1e8bfe1124638535ca6641b8a890d0139f698093",
-  "66423ac753bc5394f0f39b62779d590386a95ffe",
-  "24d427d6e3ccb2df0e7310dd0f59123195ddf050",
-  "6a43e3c",
-  "3d9da62",
-  "f38ac7b0a47a9a855fa77e16464955d6a144eb95",
-  "adbca38ad1df407fc55e1fe0dbb08ee319070e30",
-  "dedf999e204cc7e580a8a0d71392291de9518848",
-  "74519a183f953b50d18d3f7094b4bbbf2066cb7f",
-  "ea370cfb07384f399cfd6709f669d5078c6474ab",
-  "f7ddcec1b898f385b1d00eaf0514ac9505939ed7",
-  "3e942f299426aa76fbeca6887c26db89d7509363",
-  "8a5bfee7c227aad4be4ee5d5d898da033a4fa10b",
-  "d7f418b0792ec05e747fe9c3e7c533701617d47c",
-  "684789b097b0cf225e880142874ae7eb0136286c",
-  "369ce1b82c4012c298d55c3ef6df90bf1ff0b8fc",
-  "738ab67409d955519e7b449f81b3b028637a504c",
-  "15b61d57c668fead307eafc7a276019760ae46f7",
-  "ceb3d9b",
-  "93ec979353f24642ca11b9107c603b874a643556",
-  "dfc15d16aad6157c535f6e398bdf8317a79c71c7",
-  "97df1708b46fb4119c3683fb75148cc403de2be6",
-  "62809cf5e25ca12974ffa2a93c5c95cb54b8e864",
-  "8cd5a60d1c64595b9235e58f7b0664d587e8cf82",
-  "b739454a79df9ee0e521a235123aec4d209f1f15",
-  "1ecd41d9173cc24654742efbf1a6f27ec42783fb",
-  "3ff65c60dc4f360663f13d0e122fa102f6d21999",
-  "1dabc1b",
-  "40cc4e7",
-  "14c0d18f60cc6376179cfebb452b8b54b8293671",
-  "23b1b32",
-  "6dd7791",
-  "47bee70ffea62e669c65f3ec8970730fab7b802d",
-  "116c5dc",
-  "d0891ac8de5e44c5da7d8d1202c3a9e4cfa4b304",
-  "985f6e56b6e2ec6a8980062cc1e57b52d31267c9",
-  "91378c1a0ac748ab029d6c396871920b63366716",
+  "709e8d5db48b76280ccdd6a5957308745d62fa4b",
+  "29c0cca17de1c6484e0a67a7019ad200111b5f89",
+  "ccef0f9641471f27cacfccae38972189e78f5e0c",
+  "0200d42da07f12d9583a47bc9592fab3e74a9e41",
+  "7f77e1d60776c21f2afd518d2f62f3f92ac574af",
+  "8447a1d9a9b15d863f72806ba1c1308a04c0438c",
+  "37eecb5a568426a07bd12699ecc888c84ea643a5",
 ]
-post_source_governance_commit = "91378c1a0ac748ab029d6c396871920b63366716"
-evidence_commit = "51941379ed153204c7d5f5da824c96b0d4078153"
-anchor_commit = "962bb0ad4ff173befcb6b21b806eac086859551f"
-phase_report = "docs/conformance/PHASE_13_REPORT.md"
-normative_status = "Normative Implementation Candidate"
+post_source_governance_commit = "37eecb5a568426a07bd12699ecc888c84ea643a5"
+evidence_commit = "EVIDENCE_COMMIT_PENDING"
+anchor_commit = "ANCHOR_COMMIT_PENDING"
+phase_report = "docs/conformance/PHASE_14_REPORT.md"
+normative_status = "Normative Release Final"
 head_policy = "anchor-must-be-an-ancestor"
-requirement_trace_rows = 46
-requirement_trace_direct_rows = 46
+requirement_trace_rows = 581
+requirement_trace_direct_rows = 581
 requirement_trace_partial_rows = 0
-immutable_source_evidence_rows = 46
-source_direct_rows = 46
+immutable_source_evidence_rows = 556
+source_direct_rows = 556
 source_partial_rows = 0
-phase_evidence_rows = 46
-phase_direct_rows = 46
+evidence_state_rows = 25
+phase_evidence_rows = 581
+phase_direct_rows = 581
 phase_partial_rows = 0
-phase_evidence_summary = "46 direct and 0 partial"
-historical_evidence_rows = 1680
+phase_evidence_summary = "581 direct and 0 partial"
+historical_evidence_rows = 1726
 superseded_requirement_rows = 16
-claim_atom_rows = 775
-proved_claim_atoms = 775
+claim_atom_rows = 984
+proved_claim_atoms = 984
 unresolved_claim_atoms = 0
-catalog_evidence_rows = 1726
+partial_claim_atoms = 0
+waiver_rows = 0
+catalog_evidence_rows = 2307
 coverage_requirement_rows = 597
-release_requirement_registry_rows = 504
-release_claim_registry_rows = 775
-release_change_map_rows = 152
+active_coverage_rows = 581
+release_requirement_registry_rows = 581
+release_claim_registry_rows = 984
+release_claim_split_registry_rows = 984
+release_claim_audit_registry_rows = 984
+release_change_map_rows = 42
+normative_terminology_registry_rows = 12
+normative_reference_registry_rows = 3
 normative_language_allowlist_rows = 4
 normative_dependency_rows = 29
 normative_ownership_rows = 6
-release_validation_rows = 237
+release_validation_rows = 270
 release_final_closure_owner = "Phase 14"
 
 [active_phase]
 id = "14"
 title = "Product Completion, Conformance Closure, and Release Finalization"
-status = "NOT_STARTED"
+status = "COMPLETE"
 definition_kind = "implementation-program-entry"
 definition_document = "docs/planning/CONCORD_IMPLEMENTATION_PROGRAM_0.2.md"
 definition_heading = "Approved Phases 11-14 roadmap"
-previous_limitations_owner = "docs/conformance/PHASE_12_REPORT.md"
+previous_limitations_owner = "docs/conformance/PHASE_13_REPORT.md"
 
 [implementation_agent]
 surface = "Codex external agent through Zed ACP"

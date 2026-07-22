@@ -1,7 +1,7 @@
 # CONCORD_REQUIREMENT_CHANGE_RECORD_0.3
 
 **Version:** 0.3
-**Status:** Normative Implementation Candidate
+**Status:** Normative Release Final
 **Authority:** Phase 12 requirement lineage for generic body/response specifications and integrated records
 **Depends on:** Specification Index, Product Contract, Requirement Change Record 0.2, owning normative documents
 **Supersedes:** None
