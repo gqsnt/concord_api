@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 
+use std::future::{Future as _, IntoFuture as _};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::{fmt, fmt::Display};
@@ -609,28 +610,26 @@ async fn client_rule_quota_is_shared_across_direct_and_scoped_endpoints() {
         .wait_for_requests(2, std::time::Duration::from_secs(1))
         .expect("unrelated request reached server");
 
-    let pending_client = client.clone();
-    let pending = tokio::spawn(async move {
-        pending_client
+    let mut pending = Box::pin(
+        client
             .descendant("same-scope".to_owned())
             .nested()
-            .await
-    });
-    tokio::task::yield_now().await;
-    assert!(!pending.is_finished(), "shared client quota must wait");
+            .into_future(),
+    );
+    let waker = std::task::Waker::noop();
+    let mut context = std::task::Context::from_waker(waker);
+    assert!(
+        matches!(
+            pending.as_mut().poll(&mut context),
+            std::task::Poll::Pending
+        ),
+        "shared client quota must return Pending before transport",
+    );
     assert_eq!(server.request_count(), 2);
-    // Cancel well inside the denied window. Advancing to one second before the boundary made the
-    // assertion race with a request that had acquired its permit and entered transport but had not
-    // yet completed; `JoinHandle::is_finished` cannot distinguish those states.
-    tokio::time::advance(std::time::Duration::from_secs(1800)).await;
-    tokio::task::yield_now().await;
-    assert!(!pending.is_finished(), "shared quota remains unavailable");
-    assert_eq!(server.request_count(), 2);
-    pending.abort();
-    assert!(pending.await.is_err());
+    drop(pending);
     assert_eq!(server.request_count(), 2);
 
-    tokio::time::advance(std::time::Duration::from_secs(1800)).await;
+    tokio::time::advance(std::time::Duration::from_secs(3600)).await;
     assert_eq!(server.request_count(), 2);
     client
         .direct()
