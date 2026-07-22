@@ -1,4 +1,6 @@
 # Local contributor commands. Recipes are deterministic and use only local resources.
+set shell := ["powershell.exe", "-c"]
+
 
 default:
     @just --list
