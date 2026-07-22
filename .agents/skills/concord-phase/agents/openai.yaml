@@ -1,7 +1,0 @@
-interface:
-  display_name: "Concord Phase"
-  short_description: "Execute an approved Concord phase or correction"
-  default_prompt: "Use $concord-phase to execute the supplied controller mission exactly."
-
-policy:
-  allow_implicit_invocation: false
