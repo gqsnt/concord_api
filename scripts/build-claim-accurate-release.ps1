@@ -5,7 +5,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$requestedSourceCommit = $SourceCommit
+$requestedEvidenceCommit = $EvidenceCommit
+$requestedValidationObservations = $ValidationObservations
 . "$PSScriptRoot/audit-release-registry.ps1"
+$SourceCommit = $requestedSourceCommit
+$EvidenceCommit = $requestedEvidenceCommit
+$ValidationObservations = $requestedValidationObservations
 
 Assert-ExactCommit $SourceCommit "SourceCommit"
 Assert-Ancestor $script:Phase14Baseline $SourceCommit "Phase 14 correction source"
