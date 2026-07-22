@@ -619,14 +619,18 @@ async fn client_rule_quota_is_shared_across_direct_and_scoped_endpoints() {
     tokio::task::yield_now().await;
     assert!(!pending.is_finished(), "shared client quota must wait");
     assert_eq!(server.request_count(), 2);
-    tokio::time::advance(std::time::Duration::from_secs(3599)).await;
+    // Cancel well inside the denied window. Advancing to one second before the boundary made the
+    // assertion race with a request that had acquired its permit and entered transport but had not
+    // yet completed; `JoinHandle::is_finished` cannot distinguish those states.
+    tokio::time::advance(std::time::Duration::from_secs(1800)).await;
     tokio::task::yield_now().await;
     assert!(!pending.is_finished(), "shared quota remains unavailable");
+    assert_eq!(server.request_count(), 2);
     pending.abort();
     assert!(pending.await.is_err());
     assert_eq!(server.request_count(), 2);
 
-    tokio::time::advance(std::time::Duration::from_secs(1)).await;
+    tokio::time::advance(std::time::Duration::from_secs(1800)).await;
     assert_eq!(server.request_count(), 2);
     client
         .direct()
