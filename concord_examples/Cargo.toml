@@ -10,18 +10,23 @@ default = ["default-tls", "http2", "rate-limit-governor", "json", "multipart"]
 default-tls = ["concord_core/default-tls"]
 http2 = ["concord_core/http2"]
 rate-limit-governor = ["concord_core/rate-limit-governor"]
-json = ["concord_core/json"]
+json = ["concord_core/json", "serde", "serde_json", "serde/derive"]
 multipart = ["concord_core/multipart"]
 records = ["concord_core/records"]
 csv = ["records", "concord_core/csv"]
 ndjson = ["records", "concord_core/ndjson"]
 dangerous-raw-response = ["concord_core/dangerous-raw-response"]
 dangerous-custom-retry = ["concord_core/dangerous-custom-retry", "dep:reqwest"]
+tokio=["dep:tokio"]
 
 [dependencies]
 concord_core = { version = "=0.1.0", path = "../concord_core", default-features = false }
 concord_macros = { version = "=0.1.0", path = "../concord_macros" }
 reqwest = { workspace = true, optional = true }
+serde = {workspace=true, optional=true}
+serde_json = {workspace=true, optional=true}
+tokio = {workspace=true, optional=true}
+
 
 [[example]]
 name = "dangerous_raw_response"
@@ -42,6 +47,11 @@ required-features = ["json"]
 [[example]]
 name = "regional_api"
 required-features = ["json"]
+
+
+[[example]]
+name = "riot"
+required-features = ["json", "tokio"]
 
 [[example]]
 name = "records"

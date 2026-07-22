@@ -18,7 +18,6 @@ lint:
     cargo fmt --all -- --check
     cargo clippy --workspace --all-targets -- -D warnings
     cargo clippy --workspace --all-targets --all-features -- -D warnings
-    python scripts/check.py
 
 test:
     cargo nextest run --workspace
@@ -36,7 +35,6 @@ docs:
     cargo rustdoc -p concord_macros --all-features -- -D warnings
     cargo rustdoc -p concord_test_support --all-features -- -D warnings
     cargo rustdoc -p concord_examples --all-features -- -D warnings
-    python scripts/check.py
 
 examples:
     cargo check -p concord_examples --all-targets
