@@ -22,7 +22,7 @@ fn fixture_target_dir(workspace_root: &Path, target_key: &str) -> std::path::Pat
 
 /// Runs one locked, offline Cargo command with an isolated target directory.
 ///
-/// This helper is intentionally confined to the unpublished test-support
+/// This helper is intentionally confined to the workspace-internal test-support
 /// crate. `target_key` must be a relative sequence of normal path components
 /// so a test cannot accidentally redirect build output outside the workspace.
 #[must_use]

@@ -1,66 +1,136 @@
 # Concord
 
-Concord 0.1 is a locally validated **Concord 0.1 Conforming Release**. Its complete normative
-specification set is **Normative Release Final**, its generated contract remains version `14`, and
-Phase 14 is `PHASE_14_COMPLETE`. Generated and stable prepared endpoints share one typed request,
-body/authentication/limiter/deadline/hook/status/response lifecycle, private managed HTTP clients,
-and one completion path. Phase 12 adds arbitrary request and response specification types, exactly
-three sealed response acquisition modes, one universal `ApiResponse<T>`, one bounded `ByteStream`,
-type-neutral generated/prepared integration, and optional integrated records/CSV/NDJSON. The
-Phase 13 lexical rate-limit plan and the complete maintained graph pass on Rust 1.85.
+Concord generates strongly typed asynchronous HTTP API clients from a compact Rust macro. Application code works with generated builders, endpoint methods, typed bodies, typed responses, pagination terminals, and explicit errors. `concord_core` owns the difficult cross-cutting work: finite request and response handling, hooks, authentication, rate limiting, managed HTTP, status classification, cancellation, completion, and redaction.
 
-Prepared pagination remains outside the 0.1 product contract. The built-in limiter is bounded
-best-effort process-local pacing; strict or distributed enforcement remains an
-application-supplied custom limiter. The optional `dangerous-raw-response` feature enables the
-binary-wide compiled-crate raw-success capability. Its `RawResponse` exposes complete bounded
-successful bytes and actual response headers to the caller, so it intentionally provides a reduced
-secrecy guarantee while retaining logical/native URL separation and private Reqwest ownership.
-Availability follows normal Cargo feature unification across the compiled binary.
+Use Concord when an API client should feel like ordinary Rust but needs stronger structure and lifecycle guarantees than ad-hoc request construction.
 
-Start with the [documentation overview](docs/README.md) and the
-[normative specification index](docs/normative/00_CONCORD_SPECIFICATION_INDEX_0.1.md). For current
-delivery state, see the
-[implementation program](docs/planning/CONCORD_IMPLEMENTATION_PROGRAM_0.2.md) and the
-[Phase 14 report](docs/conformance/PHASE_14_REPORT.md). The report records the correction baseline,
-immutable source, release-final evidence, anchor, and compatible metadata descendant used for
-conformance closure.
+## Quick start
 
-Current validation entry points are:
+Add the two product crates from this repository with matching revisions:
+
+```toml
+[dependencies]
+concord_core = {
+    path = "../concord/concord_core",
+    default-features = false,
+    features = ["default-tls", "http2", "json", "rate-limit-governor"]
+}
+concord_macros = { path = "../concord/concord_macros" }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+```
+
+Define a client and await a typed request:
+
+```rust
+use concord_core::prelude::*;
+use concord_macros::api;
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct User {
+    id: u64,
+    name: String,
+}
+
+api! {
+    client UsersApi {
+        base "https://api.example.com/";
+
+        GET User(name: String) -> Json<User> {
+            path ["users", ep.name];
+        }
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = UsersApi::builder().build()?;
+
+    let user = client.user("alice".to_owned()).await?;
+    println!("{}: {}", user.id, user.name);
+
+    let response = client.user("bob".to_owned()).response().await?;
+    println!("status={} endpoint={}", response.status(), response.metadata().endpoint());
+
+    Ok(())
+}
+```
+
+## What Concord provides
+
+- Generated clients, scopes, endpoint values, builders, and capability-specific methods.
+- Host, path, query, header, timeout, authentication, pagination, and lexical rate-limit composition.
+- Bytes, text, JSON, streaming bodies and responses, multipart requests, CSV, NDJSON, and custom record decoding.
+- API keys, bearer tokens, Basic credentials, OAuth2 client credentials, endpoint-backed credentials, and custom providers.
+- Offset, page-number, cursor, and application-defined pagination controllers.
+- Process-local rate limiting, custom limiters, observers, and prepared explicit keys.
+- Prepared runtime-defined endpoints that still use the same managed executor.
+- Bounded status bodies, safe error categories, deterministic completion, and redaction-aware hooks.
+- Advanced request/response specifications that extend the runtime without exposing native HTTP objects.
+
+## One managed lifecycle
+
+```mermaid
+flowchart LR
+    A[Generated method] --> D[Typed Request]
+    B[Explicit generated endpoint] --> D
+    C[Prepared endpoint] --> D
+    D --> E[Concord preparation]
+    E --> F[Hooks, body, credentials, limiter]
+    F --> G[Private managed HTTP]
+    G --> H[Status and bounded acquisition]
+    H --> I[Typed result and completion]
+```
+
+Generated, explicit, and prepared endpoints all converge on the same request family. Extensions receive semantic values through public traits; native Reqwest requests and responses remain private.
+
+## Documentation
+
+- [Documentation home](docs/README.md)
+- [Getting started](docs/getting-started.md)
+- [Basic usage](docs/basic/README.md)
+- [Advanced and extensible usage](docs/advanced/README.md)
+- [Practical guides](docs/guides/README.md)
+- [Concepts and design](docs/concepts/README.md)
+- [Reference](docs/reference/README.md)
+- [Developer documentation](docs/developer/README.md)
+
+The manual is deliberately compact: section directories contain several substantial Markdown pages rather than one directory per page.
+
+## Product boundaries
+
+Concord does not expose native Reqwest request or response values to ordinary extensions and does not provide a second transport or executor. It also does not provide prepared pagination, parallel page fetching, partial pagination results, unbounded body or stream modes, WebSockets, an SSE reconnection framework, multipart response parsing, or distributed strict quota enforcement.
+
+See [Features, limits, errors, and compatibility](docs/reference/features-limits-and-errors.md) and [security, bounds, and limitations](docs/concepts/security-bounds-and-limitations.md) for exact alternatives and constraints.
+
+## Workspace layout
+
+```text
+concord_core/          Runtime, public API, and integration tests
+concord_macros/        api! parser, resolver, code generation, and Cargo fixtures
+concord_examples/      Compile-checked runnable examples
+concord_test_support/  Shared deterministic test infrastructure
+perf/                  Local operation-exact benchmark probes
+docs/                  User, advanced, reference, concept, and contributor manual
+scripts/               Portable repository checks
+```
+
+`concord_test_support`, the standalone fixture workspace, `dangerous-dev-tools`, and `perf/` are retained because they execute shared deterministic, feature-isolation, compatibility, and benchmark checks. They are not ordinary application APIs.
+
+## Contributor commands
 
 ```text
 just fmt
-just fmt-check
 just check
-just check-all
-just check-no-default
-just clippy
-just clippy-all
 just test
 just test-all
-just test-no-default
-just doctest
-just doctest-all
-just doc
-just doc-all
-just deny
-just diff-check
-just release
+just lint
+just docs
+just examples
+just features
+just bench
+just verify
 ```
 
-Nextest is the canonical runner for Rust unit and integration tests. `cargo test` is retained only
-for doctests, which Nextest does not execute. The default, all-feature, and no-default recipes are
-intentional checks of different compiled surfaces. `just release` also compiles canonical examples
-and benchmark targets, exercises explicit MSRV configurations, and runs independent no-default
-configurations for every dangerous feature; all-feature testing is not treated as feature-isolation
-evidence. Standalone Cargo fixture packages are reserved
-for behavior that depends on package metadata or dependency topology; source-only macro and core
-public-surface cases use ordinary integration tests or Trybuild.
-
-The evidence catalog preserves the exact 1,726-row Phase 0-13 prefix and appends 581 direct,
-passing, waiver-free Phase 14 rows. All 581 active requirements and 984 independently decomposed
-claim atoms have current exact passing proof; the 16 superseded requirement IDs remain resolvable
-through their change records and historical commits. This conforming repository state is not a
-published release: no remote publication, tag, registry upload, or deployment was performed.
-
-Concord is pre-1.0. A breaking public-contract change requires a minor-version increment; patch
-releases preserve the documented public contract and may contain compatible corrections only.
+The workspace targets Rust 1.85 and forbids unsafe code through workspace lints.

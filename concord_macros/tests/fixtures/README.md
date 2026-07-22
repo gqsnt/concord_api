@@ -1,25 +1,18 @@
 # Manifest-dependent macro fixtures
 
-These are standalone Cargo projects only because their contract depends on
-package metadata or dependency topology:
+These packages remain standalone because their behavior depends on Cargo metadata, dependency naming, feature isolation, or a separate resolved feature graph. Ordinary compile-pass and compile-fail behavior belongs in integration tests and Trybuild instead.
 
-- `renamed_core` proves that generated code resolves a caller-visible alias
-  for the `concord_core` package.
-- `missing_core` proves the focused diagnostic when the caller manifest omits
-  the required runtime package.
-- `contract_mismatch` selects a deliberately incompatible fake
-  `concord_core` package and proves the generated contract marker fails during
-  compilation. Its nested package therefore also requires a manifest.
-- `json_disabled` omits the runtime `json` feature and proves that generated
-  JSON syntax produces the focused feature diagnostic rather than falling
-  back to another body or response mode.
-- `oauth_disabled` omits the runtime `json` feature and proves that an
-  OAuth2-only credential declaration produces the same focused diagnostic
-  rather than generating a fallback provider.
-- `multipart_disabled` omits the runtime `multipart` feature and proves that
-  generated multipart syntax produces the focused feature diagnostic rather
-  than falling back to another request-body mode.
+| Fixture | What it proves |
+|---|---|
+| `renamed_core` | Generated code resolves the caller-visible alias for `concord_core`. |
+| `missing_core` | Omitting the runtime crate produces the focused macro diagnostic. |
+| `contract_mismatch` | A deliberately incompatible core contract fails during compilation. |
+| `json_disabled` | JSON body/response types do not silently work without the core `json` feature. |
+| `oauth_disabled` | OAuth2 generation fails clearly when JSON support is unavailable. |
+| `multipart_disabled` | Multipart syntax requires the core `multipart` feature. |
+| `custom_retry_disabled` | Custom retry syntax requires `dangerous-custom-retry`. |
+| `custom_retry_enabled` | The same syntax compiles when its feature is deliberately enabled. |
+| `extension_certification` | Public-only extension implementations compile and execute across their owned feature combinations. |
+| `no_governor_rate_limits` | Generated and prepared rate limits fail closed without the governor unless a custom or deliberate no-op limiter is supplied. |
 
-Ordinary generated construction and execution, builder behavior, lazy request
-creation, and nested/repeated expansion live in `generated_surface.rs`.
-Source-only failures live under `tests/ui/fail` and run through Trybuild.
+A fixture should be deleted when its assertion no longer depends on a distinct Cargo graph. Empty placeholder fixtures are not accepted.

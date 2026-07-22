@@ -6,6 +6,11 @@ members = [
     "concord_examples",
     "perf",
 ]
+default-members = [
+    "concord_core",
+    "concord_macros",
+    "concord_examples",
+]
 resolver = "3"
 
 [workspace.package]

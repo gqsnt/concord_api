@@ -1,4 +1,0 @@
-"reference_id","source_requirement_id","source_document","target_requirement_id","target_document","source_paragraph_digest","result"
-"REF-001","PROD-GUAR-002","docs/normative/01_CONCORD_PRODUCT_CONTRACT_0.1.md","PROD-GUAR-011","docs/normative/01_CONCORD_PRODUCT_CONTRACT_0.1.md","a88ec10527415620e93414a5f0709d339ae6dd60ff14514b42f1428d717a0c12","passing"
-"REF-002","DSL-SCOPE-002","docs/normative/02_CONCORD_DSL_SPEC_0.1.md","BOUND-COMPILE-001","docs/normative/05_CONCORD_SECURITY_AND_LIMITS_SPEC_0.1.md","f833decdb0fdd80552cdcd3c17e05c6e6596cb133bd0c0d6d580e0f6b0e07799","passing"
-"REF-003","BOUND-PAGE-010","docs/normative/05_CONCORD_SECURITY_AND_LIMITS_SPEC_0.1.md","EXEC-PAGE-013","docs/normative/06_CONCORD_EXECUTION_SPEC_0.1.md","825208be8443b48e96a4264e6b0513f1fd16a1360e7e2eefa7e519471cfb69e9","passing"
