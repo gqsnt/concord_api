@@ -2471,7 +2471,7 @@ function Assert-Phase14ChangeMap {
         Assert-DurablePath $row.exact_path $row.change_id
         Assert-Condition (-not $row.exact_path.StartsWith("git_diff/")) "ignored path entered release change map: $($row.exact_path)"
         Assert-Condition (-not [string]::IsNullOrWhiteSpace($row.observable_change)) "release change lacks an observable description: $($row.change_id)"
-        Assert-Condition ($row.observable_change -notmatch '(?i)^Validated (?:post-|Phase)|state for <|executable.*change for|changed release path') "release change uses generic path-class prose: $($row.change_id)"
+        Assert-Condition ($row.observable_change -notmatch '(?i)^Validated (?:post-|Phase)|state for <|executable.*change for|changed release path|\b(?:style|lint|proof|audit|validation correction)\b') "release change uses generic or non-observable prose: $($row.change_id)"
         Assert-Condition ($row.result -eq "passing") "release change did not pass: $($row.change_id)"
         Assert-Condition $sourcePaths.Contains($row.exact_path) "release change path is unchanged product state or historical evidence/report state: $($row.exact_path)"
         Assert-Condition ($row.proof_commit_class -eq "immutable_source") "release change has the wrong commit class: $($row.exact_path)"

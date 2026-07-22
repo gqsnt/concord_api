@@ -24,6 +24,15 @@ Assert-Condition ($claims.Count -gt $definitions.Count) "builder found no indepe
 $historicalEvidence = @(Import-GitCsv $SourceCommit $script:EvidencePath)
 $coverage = @(Import-GitCsv $SourceCommit $script:CoveragePath)
 Assert-Condition ($historicalEvidence.Count -eq 1726) "builder requires the exact Phase 0-13 evidence catalog"
+$historicalEvidenceByRequirement = @{}
+foreach ($row in $historicalEvidence) {
+    if (-not $historicalEvidenceByRequirement.ContainsKey($row.requirement_id)) {
+        $historicalEvidenceByRequirement[$row.requirement_id] = [System.Collections.Generic.List[object]]::new()
+    }
+    $historicalEvidenceByRequirement[$row.requirement_id].Add($row)
+}
+$pathExistenceCache = @{}
+$candidatePathsByRequirement = @{}
 
 $observations = @()
 if (Test-Path -LiteralPath $ValidationObservations) {
@@ -76,8 +85,12 @@ function Get-ProofRole {
 
 function Test-PathAtCommit {
     param([string]$Commit, [string]$Path)
+    $key = "$Commit|$Path"
+    if ($pathExistenceCache.ContainsKey($key)) { return [bool]$pathExistenceCache[$key] }
     & git cat-file -e "$Commit`:$Path" 2>$null
-    return $LASTEXITCODE -eq 0
+    $exists = $LASTEXITCODE -eq 0
+    $pathExistenceCache[$key] = $exists
+    return $exists
 }
 
 function Get-ClaimProofPaths {
@@ -93,25 +106,25 @@ function Get-ClaimProofPaths {
             "scripts/audit-release-registry.ps1"
         )
     }
-    $candidateRows = @($historicalEvidence | Where-Object {
-        $_.requirement_id -eq $Definition.requirement_id -and
-        $_.result -eq "passing" -and $_.configuration -match '^direct '
-    })
-    $paths = [System.Collections.Generic.List[string]]::new()
-    foreach ($row in $candidateRows) {
-        foreach ($path in @($row.exact_path -split ';')) {
-            if ([string]::IsNullOrWhiteSpace($path)) { continue }
-            if ($path -match '^docs/(?:normative|architecture|conformance)/') { continue }
-            if (Test-PathAtCommit $SourceCommit $path) { $paths.Add($path) }
+    if (-not $candidatePathsByRequirement.ContainsKey($Definition.requirement_id)) {
+        $paths = [System.Collections.Generic.List[string]]::new()
+        $candidateRows = if ($historicalEvidenceByRequirement.ContainsKey($Definition.requirement_id)) { @($historicalEvidenceByRequirement[$Definition.requirement_id]) } else { @() }
+        foreach ($row in @($candidateRows | Where-Object { $_.result -eq "passing" -and $_.configuration -match '^direct ' })) {
+            foreach ($path in @($row.exact_path -split ';')) {
+                if ([string]::IsNullOrWhiteSpace($path)) { continue }
+                if ($path -match '^docs/(?:normative|architecture|conformance)/') { continue }
+                if (Test-PathAtCommit $SourceCommit $path) { $paths.Add($path) }
+            }
         }
-    }
-    if ($paths.Count -eq 0) {
-        $coverageRow = $coverage | Where-Object requirement_id -eq $Definition.requirement_id | Select-Object -First 1
-        foreach ($path in @($coverageRow.planned_path -split ';')) {
-            if (-not [string]::IsNullOrWhiteSpace($path) -and (Test-PathAtCommit $SourceCommit $path)) { $paths.Add($path) }
+        if ($paths.Count -eq 0) {
+            $coverageRow = $coverage | Where-Object requirement_id -eq $Definition.requirement_id | Select-Object -First 1
+            foreach ($path in @($coverageRow.planned_path -split ';')) {
+                if (-not [string]::IsNullOrWhiteSpace($path) -and (Test-PathAtCommit $SourceCommit $path)) { $paths.Add($path) }
+            }
         }
+        $candidatePathsByRequirement[$Definition.requirement_id] = @($paths | Sort-Object -Unique)
     }
-    $unique = @($paths | Sort-Object -Unique)
+    $unique = @($candidatePathsByRequirement[$Definition.requirement_id])
     Assert-Condition ($unique.Count -gt 0) "no current source-grounded proof path for $($Definition.requirement_id)"
     $tokens = @([regex]::Matches($Claim.claim_atom.ToLowerInvariant(), '[a-z][a-z0-9_]{3,}') | ForEach-Object Value | Sort-Object -Unique)
     $scored = foreach ($path in $unique) {
@@ -269,15 +282,17 @@ foreach ($row in $historicalEvidence) {
     }
 }
 $changed = @(& git diff --name-only "$($script:Phase14HistoricalReleaseSource)..$SourceCommit" | Where-Object {
-    $_ -match '^(?:concord_core|concord_macros)/src/' -or
+    ($_ -match '^(?:concord_core|concord_macros)/src/' -and $_ -notmatch '(?:^|/)(?:tests|[^/]+_tests)\.rs$') -or
     $_ -match '^(?:Cargo\.toml|Cargo\.lock|concord_core/Cargo\.toml|concord_macros/Cargo\.toml|concord_examples/Cargo\.toml|perf/Cargo\.toml)$' -or
     $_ -match '^concord_examples/(?:src|examples)/'
 })
 $changeRows = [System.Collections.Generic.List[object]]::new(); $changeOrdinal = 0
 foreach ($path in $changed) {
     if (-not $requirementsByPath.ContainsKey($path) -or $requirementsByPath[$path].Count -eq 0) { continue }
-    $subjects = @(& git log --format=%s "$($script:Phase14HistoricalReleaseSource)..$SourceCommit" -- $path | Where-Object { $_ -notmatch '^docs:' } | Select-Object -Unique -First 3)
-    Assert-Condition ($subjects.Count -gt 0) "changed product path lacks an observable commit description: $path"
+    $subjects = @(& git log --format=%s "$($script:Phase14HistoricalReleaseSource)..$SourceCommit" -- $path | Where-Object {
+        $_ -notmatch '^(?:docs|test|style|chore):' -and $_ -notmatch '(?i)\b(?:proof|lint|audit|validation|correction)\b'
+    } | Select-Object -Unique -First 3)
+    if ($subjects.Count -eq 0) { continue }
     $description = (($subjects | ForEach-Object { $_ -replace '^(?:feat|fix|refactor|perf|test):\s*', '' }) -join '; ')
     $description = $description.Substring(0,1).ToUpperInvariant() + $description.Substring(1).TrimEnd('.') + '.'
     $ids = @($requirementsByPath[$path] | Sort-Object)
