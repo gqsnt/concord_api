@@ -117,7 +117,7 @@ The public custom pagination controller no longer exposes an exact-capacity or s
 
 Accepted.
 
-The reviewed design package was `Normative Implementation Candidate`, not release-final evidence. Phase 14 later assigned `Normative Release Final` only after the conforming implementation and complete passing evidence existed; no waiver was used.
+The current package is `Normative Implementation Candidate`, not release-final evidence. `Normative Release Final` is assigned only after a conforming implementation and complete passing or explicitly waived evidence exist.
 
 ### 3.11 Phase 11 pagination authority addendum
 

@@ -1,7 +1,7 @@
 # CONCORD_EXECUTION_SPEC_0.1
 
 **Version:** 0.1  
-**Status:** Normative Release Final
+**Status:** Normative Implementation Candidate
 **Authority:** Runtime phases, side effects, attempts, recovery, precedence, and cancellation  
 **Requirement prefix:** `EXEC`  
 **Depends on:** Specification Index, Product Contract, Public API Specification, Security and Limits Specification  

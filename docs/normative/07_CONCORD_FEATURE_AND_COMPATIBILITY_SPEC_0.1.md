@@ -1,7 +1,7 @@
 # CONCORD_FEATURE_AND_COMPATIBILITY_SPEC_0.1
 
 **Version:** 0.1  
-**Status:** Normative Release Final
+**Status:** Normative Implementation Candidate
 **Authority:** Crate topology, Cargo features, MSRV, dependency baseline, stability, and build compatibility  
 **Requirement prefixes:** `FEAT`, `COMPAT`  
 **Depends on:** Specification Index, Product Contract, Public API Specification, Security and Limits Specification, Execution Specification  

@@ -1,7 +1,7 @@
 # CONCORD_SPECIFICATION_INDEX_0.1
 
 **Version:** 0.1  
-**Status:** Normative Release Final
+**Status:** Normative Implementation Candidate
 **Authority:** Documentation governance and precedence  
 **Requirement prefix:** `DOC`  
 **Depends on:** None  
@@ -210,7 +210,7 @@ The versioned document set uses these statuses:
 
 A Concord 0.1 conforming release requires every normative document to be `Normative Release Final` and every active normative requirement to have passing or approved waived actual evidence. Superseded identifiers remain resolvable only through the requirement change record and retain their historical evidence at the source commit recorded by that evidence.
 
-The current package is the `Normative Release Final` contract for the locally validated Concord 0.1 Conforming Release. Publication, tagging, registry upload, and deployment remain separate operations and were not performed by conformance closure.
+The current package is a `Normative Implementation Candidate` while Phases 11-14 are executed. Only Phase 14 may restore `Normative Release Final` after current whole-product conformance closure.
 
 **DOC-STATUS-001 — Candidate is not conformance.** `Normative Implementation Candidate` MUST identify a design baseline and MUST NOT be described as proof of a conforming release.
 

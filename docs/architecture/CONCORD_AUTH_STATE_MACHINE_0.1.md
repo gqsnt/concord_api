@@ -1,7 +1,7 @@
 # CONCORD_AUTH_STATE_MACHINE_0.1
 
 **Version:** 0.1  
-**Status:** Internal Release Approved
+**Status:** Internal Implementation Candidate  
 **Authority:** Intended credential slot and authentication-coordination state machine  
 **Depends on:** Product Contract, Public API Specification, Execution Specification, Security and Limits Specification  
 **Supersedes:** None

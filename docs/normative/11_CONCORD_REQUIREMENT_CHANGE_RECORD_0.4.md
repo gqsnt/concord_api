@@ -1,7 +1,7 @@
 # CONCORD_REQUIREMENT_CHANGE_RECORD_0.4
 
 **Version:** 0.4
-**Status:** Normative Release Final
+**Status:** Normative Implementation Candidate
 **Authority:** Phase 13 requirement lineage for lexically scoped rate limits
 **Depends on:** Specification Index, Product Contract, Requirement Change Records 0.2 and 0.3, owning normative documents
 **Supersedes:** None

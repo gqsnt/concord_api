@@ -548,9 +548,9 @@ Decision statuses:
 
 **Context:** A mechanically complete design package is not a conforming release, and planned coverage rows are not passing evidence.
 
-**Decision:** A package remains `Normative Implementation Candidate` until complete passing or approved waived actual evidence supports promotion to `Normative Release Final`. Coverage planning and actual conformance evidence use separate catalogs. Phase 14 applied that gate and promoted the evidence-complete Concord 0.1 contract.
+**Decision:** The current package is `Normative Implementation Candidate`. Coverage planning and actual conformance evidence use separate catalogs. `Normative Release Final` requires complete passing or approved waived actual evidence.
 
-**Consequences:** Manual normative-document, coverage-plan, evidence-catalog, and release-command review establish governance without claiming implementation conformance prematurely; release-final status follows only after those reviews pass.
+**Consequences:** Manual normative-document, coverage-plan, evidence-catalog, and release-command review establish governance without claiming implementation conformance prematurely.
 
 **Rejected alternatives:** Mark the pre-implementation package final; store planned and passing evidence in one ambiguous table.
 

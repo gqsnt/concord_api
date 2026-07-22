@@ -1,7 +1,7 @@
 # CONCORD_PRODUCT_CONTRACT_0.1
 
 **Version:** 0.1  
-**Status:** Normative Release Final
+**Status:** Normative Implementation Candidate
 **Authority:** Highest-level product contract  
 **Requirement prefix:** `PROD`  
 **Depends on:** `CONCORD_SPECIFICATION_INDEX_0.1`  

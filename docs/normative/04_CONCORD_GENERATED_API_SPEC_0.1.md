@@ -1,7 +1,7 @@
 # CONCORD_GENERATED_API_SPEC_0.1
 
 **Version:** 0.1  
-**Status:** Normative Release Final
+**Status:** Normative Implementation Candidate
 **Authority:** Exact generated Rust API specification  
 **Requirement prefix:** `GEN`  
 **Depends on:** Specification Index, Product Contract, DSL Specification, Public API Specification  

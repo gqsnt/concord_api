@@ -1,7 +1,7 @@
 # CONCORD_REQUIREMENT_CHANGE_RECORD_0.2
 
 **Version:** 0.2
-**Status:** Normative Release Final
+**Status:** Normative Implementation Candidate
 **Authority:** Requirement lineage for approved post-Phase-10 contract changes
 **Depends on:** `00_CONCORD_SPECIFICATION_INDEX_0.1.md` and the affected normative owners
 **Supersedes:** None

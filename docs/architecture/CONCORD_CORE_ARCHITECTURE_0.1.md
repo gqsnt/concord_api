@@ -1,7 +1,7 @@
 # CONCORD_CORE_ARCHITECTURE_0.1
 
 **Version:** 0.1  
-**Status:** Internal Release Approved
+**Status:** Internal Implementation Candidate  
 **Authority:** Intended runtime implementation architecture  
 **Depends on:** All normative Concord 0.1 specifications  
 **Supersedes:** None
