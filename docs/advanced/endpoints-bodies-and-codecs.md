@@ -214,7 +214,7 @@ impl DecodeBody for VendorCodec {
 
 DSL use:
 
-```text
+```rust
 POST Exchange(body: crate::VendorCodec) -> crate::VendorCodec;
 ```
 
@@ -303,7 +303,7 @@ Failure occurs after hook approval and preparation but before credentials, limit
 
 ### Generated and prepared use
 
-```text
+```rust
 POST Vendor(body: crate::VendorRequestSpec) -> Bytes;
 ```
 

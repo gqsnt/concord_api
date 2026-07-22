@@ -11,7 +11,7 @@ This page collects the runtime rules that affect every capability and the featur
 
 The DSL supports finite `ms`, `s`, `m`, and `h` durations:
 
-```text
+```rust
 timeout 5s;
 ```
 
@@ -23,7 +23,7 @@ The operation deadline covers result-determining work: hooks, body preparation, 
 
 Retry is client-only:
 
-```text
+```rust
 retry off;
 retry reqwest_default;
 retry custom crate::bounded_retry;
@@ -63,7 +63,7 @@ Features are defined by `concord_core`; `concord_macros` does not mirror the run
 
 ### Defaults
 
-```text
+```rust
 default-tls
 http2
 rate-limit-governor

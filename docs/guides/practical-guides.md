@@ -26,7 +26,7 @@ Model structural facts in the DSL. Do not model arbitrary application policy as 
 
 ### 2. Declare the smallest client
 
-```text
+```rust
 client InventoryApi {
     base "https://inventory.example.com/";
     var tenant: String;
@@ -97,7 +97,7 @@ State when the client does not support raw responses, prepared pagination, strea
 
 Use client values for stable deployment selection and scope parameters for endpoint families whose host or path varies by region.
 
-```text
+```rust
 client RegionalApi {
     base "https://example.test/";
     var platform: String;

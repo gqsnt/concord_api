@@ -52,7 +52,7 @@ The macro intentionally rejects arbitrary Rust expressions and semantic type-nam
 
 ## DSL: client declarations
 
-```text
+```rust
 client NAME {
     base "https://example.com/root/";
     var ...;
@@ -103,7 +103,7 @@ One `api!` invocation may declare several clients. Each produces its own client 
 
 ### Client variables
 
-```text
+```rust
 var tenant: String;
 var locale: Option<String>;
 var page_size: u32 = 25;
@@ -128,7 +128,7 @@ Variables are immutable client snapshots and are referenced as `vars.name` in pu
 
 ### Scope and endpoint parameters
 
-```text
+```rust
 scope Regions(region: String, locale: Option<String>) { ... }
 GET Item(id: u64, verbose: Option<bool>) -> Bytes;
 ```
@@ -139,7 +139,7 @@ The final endpoint parameter may be `body: BodySpec`.
 
 Secrets exist only inside `credentials`:
 
-```text
+```rust
 secret api_key: String;
 ```
 
@@ -155,7 +155,7 @@ Names must be unique within their relevant owner. References are resolved static
 
 ### Scope
 
-```text
+```rust
 scope NAME(parameter: Type, ...) {
     layer configuration
     nested scopes and endpoints
@@ -166,13 +166,13 @@ Scopes may nest to depth 64. Retry, client values, base, credentials, and rate-l
 
 ### Endpoint
 
-```text
+```rust
 METHOD NAME(parameters...) -> ResponseType;
 ```
 
 or:
 
-```text
+```rust
 METHOD NAME(parameters...) as alias -> ResponseType {
     layer configuration
     paginate ...
@@ -185,7 +185,7 @@ Every endpoint requires parentheses. The body parameter, when present, must be f
 
 Standard verbs are recognized directly. Extension method:
 
-```text
+```rust
 METHOD("PROPFIND") Resource() -> Bytes;
 ```
 
@@ -214,7 +214,7 @@ Public request-shaping expressions are deliberately restricted.
 
 ### References
 
-```text
+```rust
 vars.name
 scope.name
 ep.name
@@ -224,7 +224,7 @@ Only direct one-segment references are accepted. Calls, indexing, methods, macro
 
 ### Formatting
 
-```text
+```rust
 fmt["prefix-", ep.id, "-", scope.region]
 ```
 
@@ -246,7 +246,7 @@ A dynamic value used in host/path/query/header formatting must implement the req
 
 ### Host
 
-```text
+```rust
 host [expr, ...];
 host off;
 ```
@@ -255,7 +255,7 @@ Host replaces inherited generated labels. Static labels are macro-validated.
 
 ### Path
 
-```text
+```rust
 path [expr, ...];
 path replace [expr, ...];
 path off;
@@ -265,7 +265,7 @@ Normal path appends. Each expression becomes one encoded segment.
 
 ### Query
 
-```text
+```rust
 query {
     "name" = expr;
     remove "old";
@@ -278,7 +278,7 @@ Local keys are unique. Optional values append nothing; repeated values preserve 
 
 ### Headers
 
-```text
+```rust
 headers {
     "X-Name" = expr;
     remove "X-Old";
@@ -307,7 +307,7 @@ Auth query/header values are not part of public query/header shaping. They are m
 
 ### Body parameter
 
-```text
+```rust
 POST Create(body: Json<CreateInput>) -> Json<Item>;
 ```
 
@@ -315,7 +315,7 @@ The body parameter must be final and named `body`. Its Rust type must implement 
 
 Built-ins:
 
-```text
+```rust
 Json<T>
 Text
 Bytes
@@ -332,7 +332,7 @@ The type after `->` must implement `ResponseBodySpec`.
 
 Built-ins:
 
-```text
+```rust
 Json<T>
 Text
 Bytes
@@ -358,7 +358,7 @@ Feature-disabled types are unavailable and produce focused Rust/macro diagnostic
 
 ### Credentials block
 
-```text
+```rust
 credentials {
     secret key: String;
     credential api = api_key(secret.key);
@@ -381,7 +381,7 @@ Sources:
 
 ### Placement
 
-```text
+```rust
 auth bearer credential;
 auth basic credential;
 auth header "X-Key" = credential;
@@ -390,7 +390,7 @@ auth query "token" = credential;
 
 Optional challenge:
 
-```text
+```rust
 challenge unauthorized
 challenge unauthorized_or_forbidden
 challenge never
@@ -400,7 +400,7 @@ challenge never
 
 Several `auth` statements can appear contiguously in a layer.
 
-```text
+```rust
 auth replace bearer token;
 auth header "X-Key" = key;
 ```
@@ -417,7 +417,7 @@ Credential material type must match placement: Basic requires `BasicCredential`;
 
 Client-only:
 
-```text
+```rust
 retry off;
 retry reqwest_default;
 retry custom crate::retry_factory;
@@ -433,7 +433,7 @@ Native retry stays inside one Concord attempt and is separate from authenticatio
 
 Layer syntax:
 
-```text
+```rust
 timeout 250ms;
 timeout 5s;
 timeout 10m;
@@ -451,7 +451,7 @@ Retry cannot appear in a scope or endpoint. Timeout can be inherited and changed
 
 ## DSL: pagination
 
-```text
+```rust
 paginate ControllerType {
     field: bind ep.destination,
     field: bind scope.destination,
@@ -494,7 +494,7 @@ Pagination requires a bodyless endpoint and a page-capable buffered response. It
 
 ### Rule
 
-```text
+```rust
 rate_limit {
     cost 2;
     100 / 1m;
@@ -525,7 +525,7 @@ Rules add; descendants cannot replace, disable, or modify ancestors.
 
 Client-only and unique:
 
-```text
+```rust
 rate_limit_observer crate::Observer;
 ```
 

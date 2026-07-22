@@ -56,7 +56,7 @@ Public request-shaping expressions use three namespaces:
 
 Secrets and credential material are never public-expression values. They are referenced only inside the credentials and authentication DSL.
 
-```text
+```rust
 path ["tenants", vars.tenant, "items", ep.id];
 query { "locale" = scope.locale; }
 headers { "X-Region" = scope.region; }
@@ -64,7 +64,7 @@ headers { "X-Region" = scope.region; }
 
 `fmt[...]` concatenates displayable public values without introducing arbitrary Rust execution:
 
-```text
+```rust
 path [fmt["item-", ep.id]];
 ```
 
@@ -72,7 +72,7 @@ path [fmt["item-", ep.id]];
 
 Standard HTTP verbs are written directly. Extension methods use `METHOD("TOKEN")`:
 
-```text
+```rust
 METHOD("PROPFIND") Resource(id: String) as fetch -> Text;
 ```
 
@@ -82,7 +82,7 @@ The alias becomes the generated method name while the endpoint type keeps its de
 
 The final endpoint parameter may be named `body`:
 
-```text
+```rust
 POST Create(body: Json<CreateInput>) -> Json<Item>;
 PUT Upload(body: Stream<OctetStream>) -> NoContent;
 ```
@@ -180,7 +180,7 @@ A request can override timeout and debug level. It cannot replace the built HTTP
 
 Scopes group endpoints under shared parameters and configuration. They are compile-time generated facades, not runtime registries.
 
-```text
+```rust
 scope Regions(region: String, locale: Option<String>) {
     host [scope.region, "api"];
     path ["regions", scope.region];
@@ -243,7 +243,7 @@ Concord builds a logical URL and public headers from client, scope, endpoint, an
 
 ### Host
 
-```text
+```rust
 host [vars.platform, "api"];
 ```
 
@@ -251,7 +251,7 @@ A host declaration replaces inherited generated host labels while retaining the 
 
 ### Path
 
-```text
+```rust
 path ["v1", "items", ep.id];
 path replace ["health"];
 path off;
@@ -261,7 +261,7 @@ Normal `path [...]` appends owned encoded segments. `/`, `?`, `#`, `%`, and `..`
 
 ### Query
 
-```text
+```rust
 query {
     "search" = ep.search;
     "tag" = ep.tags;
@@ -279,7 +279,7 @@ Authentication query parameters are separate and exist only in the native URL.
 
 ### Headers
 
-```text
+```rust
 headers {
     "X-Tenant" = vars.tenant;
     "Accept-Language" = scope.locale;

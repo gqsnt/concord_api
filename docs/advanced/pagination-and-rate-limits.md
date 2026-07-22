@@ -19,7 +19,7 @@ pub trait PaginationController<Page>: Sized + Send + 'static {
 
 DSL construction and bindings:
 
-```text
+```rust
 paginate crate::VendorCursor {
     cursor: bind ep.cursor,
     region: scope.region,
@@ -123,7 +123,7 @@ pub trait RateLimitObserver: Send + Sync + 'static {
 
 Declare one on the client:
 
-```text
+```rust
 rate_limit_observer crate::ProviderObserver;
 ```
 

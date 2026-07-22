@@ -104,7 +104,7 @@ pub trait RecordDecoder: Sized + Send + 'static {
 
 Declare:
 
-```text
+```rust
 GET Events() -> Records<crate::VendorDecoder>;
 ```
 

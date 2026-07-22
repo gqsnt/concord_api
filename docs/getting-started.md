@@ -104,13 +104,13 @@ The declaration generates:
 
 ### Endpoint syntax
 
-```text
+```rust
 METHOD EndpointName(parameter: Type, ...) -> ResponseType;
 ```
 
 or:
 
-```text
+```rust
 METHOD EndpointName(parameter: Type, ...) -> ResponseType {
     host [...];
     path [...];
@@ -127,7 +127,7 @@ METHOD EndpointName(parameter: Type, ...) -> ResponseType {
 
 An endpoint may use `as alias` to select a generated method name:
 
-```text
+```rust
 METHOD("PROPFIND") Resource(id: String) as fetch -> Text;
 ```
 

@@ -352,7 +352,7 @@ Generic selection:
 
 Conveniences delegate to the same managed body path:
 
-```text
+```rust
 body(RequestBody)
 body_codec::<C>(input)
 ```

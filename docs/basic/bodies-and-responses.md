@@ -9,7 +9,7 @@ Use built-in body and response specifications for most APIs. Concord keeps body 
 
 The final endpoint parameter named `body` selects a `RequestBodySpec`.
 
-```text
+```rust
 POST Create(body: Json<CreateInput>) -> Json<Item>;
 POST Echo(body: Text) -> Text;
 PUT Blob(body: Bytes) -> NoContent;
@@ -103,7 +103,7 @@ Every endpoint response type implements `ResponseBodySpec` and selects one of th
 
 ### Built-in response types
 
-```text
+```rust
 GET User() -> Json<User>;
 GET Message() -> Text;
 GET Blob() -> Bytes;

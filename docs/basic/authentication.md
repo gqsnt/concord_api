@@ -9,7 +9,7 @@ Authentication is declared separately from request shaping. Credentials remain p
 
 Authentication is declared in a client `credentials` block and placed at client, scope, or endpoint layers. Secret values are constructor inputs but are not public request-shaping expressions.
 
-```text
+```rust
 credentials {
     secret api_key: String;
     secret bearer_token: String;
@@ -35,7 +35,7 @@ Concord supports six source categories:
 
 OAuth2 example:
 
-```text
+```rust
 credential oauth = oauth2_client {
     token_url: "https://identity.example.com/oauth/token",
     client_id: secret.client_id,
@@ -48,7 +48,7 @@ Endpoint-backed and custom-provider sources are covered in the advanced guide.
 
 ### Placements
 
-```text
+```rust
 auth bearer static_bearer;
 auth basic login;
 auth header "X-Api-Key" = application_key;
@@ -61,7 +61,7 @@ Several placements can compose. `auth replace ...` replaces inherited placements
 
 An authentication placement can specify:
 
-```text
+```rust
 challenge unauthorized
 challenge unauthorized_or_forbidden
 challenge never
@@ -97,7 +97,7 @@ For custom acquisition, see [Custom credential providers](../advanced/authentica
 
 Declare secrets and an OAuth2 source:
 
-```text
+```rust
 credentials {
     secret client_id: String;
     secret client_secret: String;

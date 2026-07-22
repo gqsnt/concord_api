@@ -13,7 +13,7 @@ Concord uses streaming in both directions while retaining finite limits and priv
 
 Declare:
 
-```text
+```rust
 PUT Upload(body: Stream<OctetStream>) -> NoContent;
 ```
 
@@ -32,7 +32,7 @@ client.upload(body).await?;
 
 Declare:
 
-```text
+```rust
 GET Download() -> Stream<OctetStream>;
 ```
 
@@ -73,7 +73,7 @@ The operation deadline controls opening the stream, not application consumption 
 
 Record responses decode semantic items incrementally over a bounded `ByteStream`.
 
-```text
+```rust
 GET CsvRows() -> Records<Csv<Row>>;
 GET Events() -> Records<NdJson<Event>>;
 ```
@@ -152,7 +152,7 @@ For custom framing, see [Custom record decoders](../advanced/responses-records-a
 
 For small known payloads:
 
-```text
+```rust
 PUT Blob(body: Bytes) -> NoContent;
 GET Blob() -> Bytes;
 ```
@@ -161,7 +161,7 @@ Bytes are reusable and bounded.
 
 ### Streaming upload
 
-```text
+```rust
 PUT Upload(body: Stream<OctetStream>) -> NoContent;
 ```
 
@@ -171,7 +171,7 @@ A direct stream is one-shot. Use `BodyFactory` or a request body specification r
 
 ### Streaming download
 
-```text
+```rust
 GET Download() -> Stream<OctetStream>;
 ```
 
@@ -181,7 +181,7 @@ Use `.response()` when status, headers, logical URL, or execution metadata is ne
 
 ### Multipart upload
 
-```text
+```rust
 POST Form(body: Multipart) -> Json<UploadResult>;
 ```
 
@@ -199,7 +199,7 @@ Multipart response parsing, resumable upload orchestration, checksummed chunk pr
 
 ### API declaration
 
-```text
+```rust
 GET Export() -> Records<Csv<Row>>;
 GET Events() -> Records<NdJson<Event>>;
 ```

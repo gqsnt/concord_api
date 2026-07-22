@@ -9,7 +9,7 @@ Pagination and rate limiting both compose with the ordinary request lifecycle. P
 
 A paginated endpoint is bodyless, returns a buffered page type whose output implements `IntoIterator`, and declares a typed controller with explicit live bindings.
 
-```text
+```rust
 GET Items(offset: u64, limit: NonZeroU32) -> Json<Vec<Item>> {
     query { "offset" = ep.offset; "limit" = ep.limit; }
     paginate concord_core::advanced::OffsetPagination {
@@ -85,7 +85,7 @@ See [`pagination.rs`](../../concord_examples/examples/pagination.rs) for offset,
 
 Normal generated rate limits are declared directly at the lexical layer they own.
 
-```text
+```rust
 client Api {
     rate_limit {
         500 / 10s;
@@ -132,7 +132,7 @@ This simplicity is intentional. Per-user, per-item, per-region-value, dynamic-ho
 
 A client may declare one observer:
 
-```text
+```rust
 rate_limit_observer crate::rate_limit::ProviderObserver;
 ```
 
