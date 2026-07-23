@@ -516,7 +516,7 @@ These types reduce ordinary safety guarantees and are never default features. Se
 
 ### Not public extension APIs
 
-Do not depend on `concord_core::__private`, `concord_core::__development`, generated seals, endpoint-spec bridges, native execution plans, or internal response inputs. They may change without public compatibility guarantees.
+Do not depend on `concord::__private`, implementation-crate private/development modules, generated seals, endpoint-spec bridges, native execution plans, or internal response inputs. They may change without public compatibility guarantees.
 
 ## Complete public export checklist
 

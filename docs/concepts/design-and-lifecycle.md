@@ -79,7 +79,7 @@ A runtime schema would require dynamic endpoint lookup, erased values, late erro
 
 ### Generated-private boundary
 
-The macro emits private integration understood by `concord_core`. A generated contract version prevents incompatible core/macro combinations. That bridge is not a supported application extension surface.
+The macro emits private integration through `concord::__private`, which delegates semantic execution to core and owns feature-dependent façade composition. A generated contract version prevents incompatible macro/façade/core combinations. That bridge is not a supported application extension surface.
 
 ## One managed lifecycle
 
@@ -248,4 +248,4 @@ The macro does not recognize `Json`, `Multipart`, `Records`, `Csv`, or `NdJson` 
 
 ### Compatibility
 
-The core and macro private bridge is protected by a generated contract version. Feature changes do not silently change that version unless the private generated integration changes.
+The façade and macro private bridge is protected by a generated contract version. Feature changes do not silently change that version unless the private generated integration changes.

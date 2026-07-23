@@ -189,7 +189,7 @@ Workspace version is `0.1.0`. The project is pre-1.0, so breaking public changes
 
 ### Generated contract
 
-The façade bridge and macro share private generated contract version `20`. It protects their internal integration. An incompatible pairing fails during compilation. This version is not an application API version and should not be referenced by normal client code.
+The façade bridge and macro share private generated contract version `22`. It protects their internal integration. An incompatible pairing fails during compilation. This version is not an application API version and should not be referenced by normal client code.
 
 ### Reqwest
 
@@ -197,7 +197,7 @@ The workspace pins Reqwest `0.13.4` with default features disabled. Core owns th
 
 ### Renamed dependencies
 
-The macro resolves `concord_core` through Cargo package metadata, so downstream code may rename the dependency. Generated public paths remain stable.
+The macro resolves the caller-visible `concord` façade through Cargo package metadata, so downstream code may rename the dependency. Generated integration paths continue through that façade's private bridge.
 
 ### Feature compatibility
 

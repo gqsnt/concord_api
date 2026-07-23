@@ -1,35 +1,34 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+
+mod auth;
+mod inheritance;
+pub(crate) mod model;
+mod pagination;
+mod rate_limits;
+pub(crate) mod surface;
+mod symbols;
 
 use proc_macro2::Span;
-use syn::spanned::Spanned;
-use syn::{GenericArgument, Ident, PathArguments, Type, TypePath};
+use syn::Ident;
 
-use crate::ast::{
-    AuthChallenge, AuthOperation, AuthPlacementKind, CredentialSource as SourceCredentialSource,
-    CredentialsBlock, HeaderEntry, HeaderOperation, HostOperation, Layer, PaginationDecl,
-    PaginationInitializer as SourcePaginationInitializer, PaginationValue as SourcePaginationValue,
-    PathOperation, PublicExpr, QueryEntry, QueryOperation, RateLimitDecl, RetrySelection,
-    SourceApi, SourceChild, SourceEndpoint, SourceScope, TimeoutOperation, ValueDecl,
-    syntactic_option_inner,
+use self::model::{
+    Api, Child, Client, ContractId, Credential, Endpoint, NormalizedConfig, RequestBody, Scope,
+    Value,
 };
-use crate::model::{
-    Api, Child, Client, CloneEligibility, ContractId, Credential, CredentialSource,
-    CredentialStorageTerminal, Endpoint, EndpointSetter, EndpointSurface, NormalizedAuth,
-    NormalizedConfig, NormalizedHeader, NormalizedQuery, NormalizedRateLimitRule,
-    NormalizedRateLimitWindow, Pagination, PaginationField, PaginationInitializer, PaginationValue,
-    RawResponseCapability, RequestBody, RequestTerminals, RequiredArgument, ResolvedExpr,
-    ResolvedValue, Scope, Secret, Value, ValueReference, ValueShape,
+use self::surface::{
+    canonical_ident, client_surface, endpoint_surface, finalize_endpoint_surfaces, scope_surface,
+    to_snake_case, validate_surface_modules,
 };
-use crate::names::{
-    RESERVED_GENERATED_METHODS, canonical_ident, helper_ident, pascal_ident, request_type_name,
-    snake_ident, storage_terminal_name, to_pascal_case, to_snake_case,
+use crate::syntax::ast::{RetrySelection, SourceApi, SourceChild, SourceEndpoint, SourceScope};
+use auth::{
+    convert_credentials, resolve_endpoint_credentials, validate_credential_cycles,
+    validate_credential_names,
 };
-
-#[derive(Clone)]
-struct ScopeFrame {
-    id: usize,
-    values: Vec<Value>,
-}
+use rate_limits::source_tree_declares_rate_limits;
+use symbols::{
+    ScopeFrame, convert_values, validate_child_methods, validate_endpoint_setters,
+    validate_setter_namespace,
+};
 
 struct Resolver<'a> {
     client_name: &'a Ident,
@@ -37,13 +36,6 @@ struct Resolver<'a> {
     credentials: &'a [Credential],
     next_scope_id: usize,
     next_endpoint_id: usize,
-}
-
-#[derive(Clone, Copy)]
-enum ExpressionUse {
-    Single,
-    Query,
-    Header,
 }
 
 pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
@@ -65,13 +57,7 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
     validate_credential_names(&values, &secrets, &credentials)?;
 
     let client_name = source_client.name;
-    let client_canonical = canonical_ident(&client_name);
-    let builder_name = Ident::new(&format!("{client_canonical}Builder"), client_name.span());
-    let support_name = snake_ident(&client_name);
-    let values_type_name = Ident::new(
-        &format!("__Concord{}Values", to_pascal_case(&client_canonical)),
-        Span::mixed_site(),
-    );
+    let surface = client_surface(&client_name);
 
     let (config, children) = {
         let mut resolver = Resolver {
@@ -103,9 +89,7 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
 
     let client = Client {
         name: client_name,
-        builder_name,
-        support_name,
-        values_type_name,
+        surface,
         base: source_client.base.value,
         values,
         secrets,
@@ -188,15 +172,11 @@ impl Resolver<'_> {
         let children = self.resolve_children(source.children, &config, &frames, &path)?;
         validate_child_methods(&children, &parameters, "scope facade", false)?;
 
-        let method_name = snake_ident(&source.name);
-        let module_name = method_name.clone();
-        let facade_name = pascal_ident(&source.name);
+        let surface = scope_surface(&source.name);
         Ok(Scope {
             id,
             name: source.name,
-            method_name,
-            module_name,
-            facade_name,
+            surface,
             parameters,
             config,
             children,
@@ -215,7 +195,6 @@ impl Resolver<'_> {
         let parameters = convert_values(source.parameters)?;
         validate_endpoint_setters(&parameters, visible_scopes)?;
 
-        let public_method_name = snake_ident(&source.name);
         let dsl_path = scope_path
             .iter()
             .cloned()
@@ -259,73 +238,18 @@ impl Resolver<'_> {
             name: body.name,
             ty: body.ty,
         });
-        let endpoint_type_name = pascal_ident(&source.name);
-        let request_type_name = request_type_name(&endpoint_type_name);
-        let mut required_arguments = parameters
-            .iter()
-            .enumerate()
-            .filter(|(_, value)| value.is_required())
-            .map(|(index, value)| (value.source_position, RequiredArgument::Parameter(index)))
-            .collect::<Vec<_>>();
-        if body.is_some() {
-            required_arguments.push((
-                body_position.expect("resolved body preserves its source position"),
-                RequiredArgument::Body,
-            ));
-        }
-        required_arguments.sort_by_key(|(position, _)| *position);
-        let required_arguments = required_arguments
-            .into_iter()
-            .map(|(_, argument)| argument)
-            .collect();
-        let setters = parameters
-            .iter()
-            .enumerate()
-            .filter(|(_, value)| !value.is_required())
-            .map(|(parameter, value)| EndpointSetter {
-                parameter,
-                method: value.name.clone(),
-                helper: if value.is_optional() {
-                    helper_ident("clear", &value.name)
-                } else {
-                    helper_ident("reset", &value.name)
-                },
-            })
-            .collect();
-        let module_path = scope_path.iter().map(|scope| snake_ident(scope)).collect();
-        let docs_identity = format!(
-            "{}::{}",
-            canonical_ident(self.client_name),
-            dsl_path
-                .iter()
-                .map(canonical_ident)
-                .collect::<Vec<_>>()
-                .join("::")
+        let surface = endpoint_surface(
+            self.client_name,
+            scope_path,
+            &source.name,
+            &parameters,
+            body_position,
+            pagination.is_some(),
         );
-        let surface = EndpointSurface {
-            endpoint_type_name,
-            request_type_name,
-            module_path,
-            required_arguments,
-            setters,
-            terminals: RequestTerminals {
-                response: true,
-                pagination: pagination.is_some(),
-                raw_response: RawResponseCapability::SealedResponseMode,
-                credential_storage: Vec::new(),
-            },
-            clone_eligibility: if body.is_some() {
-                CloneEligibility::BodyInputBound
-            } else {
-                CloneEligibility::Always
-            },
-            docs_identity,
-        };
         Ok(Endpoint {
             id,
             method: source.method,
             name: source.name,
-            public_method_name,
             surface,
             parameters,
             body,
@@ -336,377 +260,6 @@ impl Resolver<'_> {
             dsl_path,
         })
     }
-
-    fn resolve_pagination(
-        &self,
-        pagination: Option<PaginationDecl>,
-        scopes: &[ScopeFrame],
-        endpoint: &[Value],
-    ) -> syn::Result<Option<Pagination>> {
-        let Some(pagination) = pagination else {
-            return Ok(None);
-        };
-        let PaginationDecl { controller, fields } = pagination;
-        let mut bound_destinations = HashSet::new();
-        let fields = fields
-            .into_iter()
-            .map(|field| {
-                let initializer = match field.initializer {
-                    SourcePaginationInitializer::Bind {
-                        namespace,
-                        destination,
-                    } => {
-                        let value = self.resolve_value_reference(
-                            &namespace,
-                            &destination,
-                            scopes,
-                            Some(endpoint),
-                        )?;
-                        if !bound_destinations.insert(value.reference) {
-                            return Err(destination.span().error(
-                                "duplicate pagination binding destination after resolution",
-                            ));
-                        }
-                        PaginationInitializer::Bound(value)
-                    }
-                    SourcePaginationInitializer::Value(value) => {
-                        let value = match value {
-                            SourcePaginationValue::Reference { namespace, name } => {
-                                PaginationValue::Reference(self.resolve_value_reference(
-                                    &namespace,
-                                    &name,
-                                    scopes,
-                                    Some(endpoint),
-                                )?)
-                            }
-                            SourcePaginationValue::Stable(value) => PaginationValue::Stable(value),
-                        };
-                        PaginationInitializer::Value(value)
-                    }
-                };
-                Ok(PaginationField {
-                    name: field.name,
-                    initializer,
-                })
-            })
-            .collect::<syn::Result<Vec<_>>>()?;
-        Ok(Some(Pagination { controller, fields }))
-    }
-
-    fn normalize_layer(
-        &self,
-        layer: &Layer,
-        parent: &NormalizedConfig,
-        scopes: &[ScopeFrame],
-        endpoint: Option<&[Value]>,
-        rate_id_path: &str,
-        rate_lexical_origin: &str,
-    ) -> syn::Result<NormalizedConfig> {
-        let mut normalized = parent.clone();
-
-        if let Some(operation) = &layer.host {
-            let operation = &operation.value;
-            normalized.host = match operation {
-                HostOperation::Off => Vec::new(),
-                HostOperation::Replace(values) => {
-                    self.resolve_expressions(values, scopes, endpoint, ExpressionUse::Single)?
-                }
-            };
-        }
-        if let Some(operation) = &layer.path {
-            let operation = &operation.value;
-            match operation {
-                PathOperation::Off => normalized.path.clear(),
-                PathOperation::Replace(values) => {
-                    normalized.path =
-                        self.resolve_expressions(values, scopes, endpoint, ExpressionUse::Single)?;
-                }
-                PathOperation::Append(values) => {
-                    normalized.path.extend(self.resolve_expressions(
-                        values,
-                        scopes,
-                        endpoint,
-                        ExpressionUse::Single,
-                    )?);
-                }
-            }
-        }
-        if let Some(operation) = &layer.query {
-            let operation = &operation.value;
-            if matches!(operation, QueryOperation::Off | QueryOperation::Replace(_)) {
-                normalized.query.clear();
-            }
-            if let QueryOperation::Modify(entries) | QueryOperation::Replace(entries) = operation {
-                for entry in entries {
-                    let key = match entry {
-                        QueryEntry::Assign { key, .. } | QueryEntry::Remove(key) => key.value(),
-                    };
-                    normalized.query.retain(|entry| entry.key.value() != key);
-                    if let QueryEntry::Assign { key, value } = entry {
-                        normalized.query.push(NormalizedQuery {
-                            key: key.clone(),
-                            value: self.resolve_expr(
-                                value,
-                                scopes,
-                                endpoint,
-                                ExpressionUse::Query,
-                            )?,
-                        });
-                    }
-                }
-            }
-        }
-        if let Some(operation) = &layer.headers {
-            let operation = &operation.value;
-            if matches!(
-                operation,
-                HeaderOperation::Off | HeaderOperation::Replace(_)
-            ) {
-                normalized.headers.clear();
-            }
-            if let HeaderOperation::Modify(entries) | HeaderOperation::Replace(entries) = operation
-            {
-                for entry in entries {
-                    let name = match entry {
-                        HeaderEntry::Assign { name, .. } | HeaderEntry::Remove(name) => {
-                            name.value().to_ascii_lowercase()
-                        }
-                    };
-                    normalized
-                        .headers
-                        .retain(|entry| entry.canonical_name != name);
-                    if let HeaderEntry::Assign {
-                        name: literal,
-                        value,
-                    } = entry
-                    {
-                        normalized.headers.push(NormalizedHeader {
-                            name: literal.clone(),
-                            canonical_name: name,
-                            value: self.resolve_expr(
-                                value,
-                                scopes,
-                                endpoint,
-                                ExpressionUse::Header,
-                            )?,
-                        });
-                    }
-                }
-            }
-        }
-        if let Some(operation) = &layer.auth {
-            match operation {
-                AuthOperation::Off { .. } => normalized.auth.clear(),
-                AuthOperation::Modify {
-                    replace,
-                    placements,
-                    ..
-                } => {
-                    if *replace {
-                        normalized.auth.clear();
-                    }
-                    for placement in placements {
-                        let credential = find_credential(self.credentials, &placement.credential)?;
-                        let source = &self.credentials[credential].source;
-                        validate_auth_compatibility(
-                            &placement.kind,
-                            source,
-                            &placement.credential,
-                        )?;
-                        let challenge = match placement.challenge {
-                            Some(challenge) => challenge,
-                            None => match source {
-                                CredentialSource::Custom { .. } => {
-                                    return Err(placement.credential.span().error(
-                                        "an auth placement using a custom provider requires an explicit challenge suffix",
-                                    ));
-                                }
-                                _ => AuthChallenge::Never,
-                            },
-                        };
-                        normalized.auth.push(NormalizedAuth {
-                            kind: placement.kind.clone(),
-                            credential,
-                            challenge,
-                        });
-                    }
-                }
-            }
-        }
-        validate_effective_auth(&normalized)?;
-        if let Some(operation) = &layer.timeout {
-            let operation = &operation.value;
-            normalized.timeout = match operation {
-                TimeoutOperation::Off => None,
-                TimeoutOperation::Set(value) => {
-                    let _ = value.span;
-                    Some(value.value)
-                }
-            };
-        }
-        if let Some(declaration) = &layer.rate_limit {
-            normalized.rate_limits.push(self.resolve_rate_limit(
-                &declaration.value,
-                rate_id_path,
-                rate_lexical_origin,
-            ));
-        }
-        Ok(normalized)
-    }
-
-    fn resolve_rate_limit(
-        &self,
-        declaration: &RateLimitDecl,
-        id_path: &str,
-        origin: &str,
-    ) -> NormalizedRateLimitRule {
-        let windows = declaration
-            .windows
-            .iter()
-            .map(|window| {
-                let _ = window.duration.span;
-                NormalizedRateLimitWindow {
-                    capacity: window.capacity,
-                    duration: window.duration.value,
-                }
-            })
-            .collect();
-        NormalizedRateLimitRule {
-            id: format!("{id_path}.rate_limit"),
-            origin: origin.to_owned(),
-            cost: declaration.cost,
-            windows,
-        }
-    }
-
-    fn resolve_expressions(
-        &self,
-        values: &[PublicExpr],
-        scopes: &[ScopeFrame],
-        endpoint: Option<&[Value]>,
-        usage: ExpressionUse,
-    ) -> syn::Result<Vec<ResolvedExpr>> {
-        values
-            .iter()
-            .map(|value| self.resolve_expr(value, scopes, endpoint, usage))
-            .collect()
-    }
-
-    fn resolve_expr(
-        &self,
-        value: &PublicExpr,
-        scopes: &[ScopeFrame],
-        endpoint: Option<&[Value]>,
-        usage: ExpressionUse,
-    ) -> syn::Result<ResolvedExpr> {
-        match value {
-            PublicExpr::String(value) => Ok(ResolvedExpr::String(value.clone())),
-            PublicExpr::Integer(value) => Ok(ResolvedExpr::Integer(value.clone())),
-            PublicExpr::Format { span, values } => {
-                let _ = span;
-                Ok(ResolvedExpr::Format(self.resolve_expressions(
-                    values,
-                    scopes,
-                    endpoint,
-                    ExpressionUse::Single,
-                )?))
-            }
-            PublicExpr::Reference { namespace, name } => {
-                let reference = self.resolve_value_reference(namespace, name, scopes, endpoint)?;
-                match usage {
-                    ExpressionUse::Single if !matches!(&reference.shape, ValueShape::Scalar) => {
-                        return Err(name.span().error(
-                            "host, path, and formatted expressions require one scalar value",
-                        ));
-                    }
-                    ExpressionUse::Header
-                        if matches!(
-                            &reference.shape,
-                            ValueShape::Vec { .. } | ValueShape::OptionVec { .. }
-                        ) =>
-                    {
-                        return Err(name
-                            .span()
-                            .error("public header declarations do not accept vector values"));
-                    }
-                    ExpressionUse::Single | ExpressionUse::Query | ExpressionUse::Header => {}
-                }
-                Ok(ResolvedExpr::Value(reference))
-            }
-        }
-    }
-
-    fn resolve_value_reference(
-        &self,
-        namespace: &Ident,
-        name: &Ident,
-        scopes: &[ScopeFrame],
-        endpoint: Option<&[Value]>,
-    ) -> syn::Result<ResolvedValue> {
-        match namespace.to_string().as_str() {
-            "vars" => {
-                let index = find_unique_value(self.client_values, name, "client value")?;
-                Ok(ResolvedValue {
-                    reference: ValueReference::Client(index),
-                    shape: self.client_values[index].shape.clone(),
-                })
-            }
-            "scope" => {
-                let matches = scopes
-                    .iter()
-                    .filter_map(|scope| {
-                        find_value(&scope.values, name).map(|parameter| (scope, parameter))
-                    })
-                    .collect::<Vec<_>>();
-                if matches.is_empty() {
-                    return Err(name.span().error(format!(
-                        "unknown visible scope value `{}`",
-                        canonical_ident(name)
-                    )));
-                }
-                if matches.len() != 1 {
-                    return Err(name.span().error(format!(
-                                "ambiguous visible scope value `{}`; qualify the DSL model so the name is unique",
-                                canonical_ident(name)
-                            )));
-                }
-                let (scope, parameter) = matches[0];
-                Ok(ResolvedValue {
-                    reference: ValueReference::Scope {
-                        scope_id: scope.id,
-                        parameter,
-                    },
-                    shape: scope.values[parameter].shape.clone(),
-                })
-            }
-            "ep" => {
-                let Some(endpoint) = endpoint else {
-                    return Err(name
-                        .span()
-                        .error("`ep.NAME` is available only while shaping an endpoint"));
-                };
-                let index = find_unique_value(endpoint, name, "endpoint value")?;
-                Ok(ResolvedValue {
-                    reference: ValueReference::Endpoint(index),
-                    shape: endpoint[index].shape.clone(),
-                })
-            }
-            _ => Err(namespace
-                .span()
-                .error("value references use only `vars.NAME`, `scope.NAME`, or `ep.NAME`")),
-        }
-    }
-}
-
-fn source_tree_declares_rate_limits(layer: &Layer, children: &[SourceChild]) -> bool {
-    let local = layer.rate_limit.is_some();
-    local
-        || children.iter().any(|child| match child {
-            SourceChild::Scope(scope) => {
-                source_tree_declares_rate_limits(&scope.layer, &scope.children)
-            }
-            SourceChild::Endpoint(endpoint) => endpoint.layer.rate_limit.is_some(),
-        })
 }
 
 fn contract_path(client: &Ident, path: &[Ident]) -> String {
@@ -744,656 +297,6 @@ fn validate_contract_ids(children: &[Child]) -> syn::Result<()> {
     visit(children, &mut HashMap::new())
 }
 
-fn convert_credentials(
-    block: Option<CredentialsBlock>,
-) -> syn::Result<(Vec<Secret>, Vec<Credential>)> {
-    let Some(block) = block else {
-        return Ok((Vec::new(), Vec::new()));
-    };
-    let secrets = block
-        .secrets
-        .into_iter()
-        .map(|secret| Secret { name: secret.name })
-        .collect::<Vec<_>>();
-    let secret_index = secrets
-        .iter()
-        .enumerate()
-        .map(|(index, secret)| (canonical_ident(&secret.name), index))
-        .collect::<HashMap<_, _>>();
-    let mut credentials = Vec::new();
-    for credential in block.credentials {
-        let source = match credential.source {
-            SourceCredentialSource::ApiKey { secret } => CredentialSource::ApiKey {
-                secret: secret_index[&canonical_ident(&secret)],
-            },
-            SourceCredentialSource::Bearer { secret } => CredentialSource::Bearer {
-                secret: secret_index[&canonical_ident(&secret)],
-            },
-            SourceCredentialSource::Basic { username, password } => CredentialSource::Basic {
-                username: secret_index[&canonical_ident(&username)],
-                password: secret_index[&canonical_ident(&password)],
-            },
-            SourceCredentialSource::Endpoint { path } => CredentialSource::Endpoint {
-                path,
-                endpoint_id: None,
-            },
-            SourceCredentialSource::Custom { provider } => CredentialSource::Custom { provider },
-        };
-        credentials.push(Credential {
-            name: credential.name,
-            source,
-        });
-    }
-    Ok((secrets, credentials))
-}
-
-fn find_credential(credentials: &[Credential], name: &Ident) -> syn::Result<usize> {
-    credentials
-        .iter()
-        .position(|credential| canonical_ident(&credential.name) == canonical_ident(name))
-        .ok_or_else(|| {
-            name.span()
-                .error(format!("unknown credential `{}`", canonical_ident(name)))
-        })
-}
-
-fn validate_auth_compatibility(
-    placement: &AuthPlacementKind,
-    source: &CredentialSource,
-    span: &Ident,
-) -> syn::Result<()> {
-    let compatible = match source {
-        CredentialSource::ApiKey { .. } => {
-            matches!(
-                placement,
-                AuthPlacementKind::Header(_) | AuthPlacementKind::Query(_)
-            )
-        }
-        CredentialSource::Bearer { .. } => matches!(placement, AuthPlacementKind::Bearer),
-        CredentialSource::Basic { .. } => matches!(placement, AuthPlacementKind::Basic),
-        CredentialSource::Endpoint { .. } | CredentialSource::Custom { .. } => true,
-    };
-    if compatible {
-        Ok(())
-    } else {
-        Err(span
-            .span()
-            .error("credential source is incompatible with this authentication placement"))
-    }
-}
-
-fn validate_effective_auth(config: &NormalizedConfig) -> syn::Result<()> {
-    let challenge_count = config
-        .auth
-        .iter()
-        .filter(|placement| placement.challenge != AuthChallenge::Never)
-        .count();
-    if challenge_count > 1 {
-        let span = config
-            .auth
-            .iter()
-            .find(|placement| placement.challenge != AuthChallenge::Never)
-            .map(|placement| match &placement.kind {
-                AuthPlacementKind::Header(name) | AuthPlacementKind::Query(name) => name.span(),
-                AuthPlacementKind::Bearer | AuthPlacementKind::Basic => Span::call_site(),
-            })
-            .unwrap_or_else(Span::call_site);
-        return Err(span.error(
-            "one effective authentication plan may contain at most one challenge-enabled placement",
-        ));
-    }
-    for (index, placement) in config.auth.iter().enumerate() {
-        match &placement.kind {
-            AuthPlacementKind::Bearer | AuthPlacementKind::Basic => {
-                if config
-                    .auth
-                    .iter()
-                    .enumerate()
-                    .any(|(other, candidate)| {
-                        other != index
-                            && (matches!(
-                                &candidate.kind,
-                                AuthPlacementKind::Bearer | AuthPlacementKind::Basic
-                            ) || matches!(
-                                &candidate.kind,
-                                AuthPlacementKind::Header(name)
-                                    if name.value().eq_ignore_ascii_case("authorization")
-                            ))
-                    })
-                {
-                    return Err(Span::call_site().error(
-                        "effective authentication placements collide on `Authorization`",
-                    ));
-                }
-            }
-            AuthPlacementKind::Header(name) => {
-                let canonical = name.value().to_ascii_lowercase();
-                if canonical == "authorization"
-                    || config
-                        .headers
-                        .iter()
-                        .any(|header| {
-                            header.canonical_name == canonical
-                                && resolved_expr_is_guaranteed_present(&header.value)
-                        })
-                    || config.auth[..index].iter().any(|candidate| {
-                        matches!(&candidate.kind, AuthPlacementKind::Header(other) if other.value().eq_ignore_ascii_case(&name.value()))
-                    })
-                {
-                    return Err(name.span().error(
-                        "authentication header collides with an effective public or authentication header",
-                    ));
-                }
-            }
-            AuthPlacementKind::Query(name) => {
-                if config
-                    .query
-                    .iter()
-                    .any(|query| {
-                        query.key.value() == name.value()
-                            && resolved_expr_is_guaranteed_present(&query.value)
-                    })
-                    || config.auth[..index].iter().any(|candidate| {
-                        matches!(&candidate.kind, AuthPlacementKind::Query(other) if other.value() == name.value())
-                    })
-                {
-                    return Err(name.span().error(
-                        "authentication query key collides with an effective public or authentication query key",
-                    ));
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-fn resolved_expr_is_guaranteed_present(value: &ResolvedExpr) -> bool {
-    match value {
-        ResolvedExpr::Value(value) => matches!(value.shape, ValueShape::Scalar),
-        ResolvedExpr::String(_) | ResolvedExpr::Integer(_) | ResolvedExpr::Format(_) => true,
-    }
-}
-
-fn validate_credential_names(
-    values: &[Value],
-    secrets: &[Secret],
-    credentials: &[Credential],
-) -> syn::Result<()> {
-    let mut builder = RESERVED_GENERATED_METHODS
-        .iter()
-        .map(|name| ((*name).to_owned(), Span::call_site()))
-        .collect::<HashMap<_, _>>();
-    for value in values {
-        insert_name(
-            &mut builder,
-            canonical_ident(&value.name),
-            value.name.span(),
-            "generated client builder method",
-        )?;
-        if value.is_optional() {
-            insert_name(
-                &mut builder,
-                format!("clear_{}", canonical_ident(&value.name)),
-                value.name.span(),
-                "generated client builder method",
-            )?;
-        } else if value.default().is_some() {
-            insert_name(
-                &mut builder,
-                format!("reset_{}", canonical_ident(&value.name)),
-                value.name.span(),
-                "generated client builder method",
-            )?;
-        }
-    }
-    for secret in secrets {
-        insert_name(
-            &mut builder,
-            canonical_ident(&secret.name),
-            secret.name.span(),
-            "generated client builder method",
-        )?;
-    }
-    for credential in credentials {
-        if matches!(credential.source, CredentialSource::Custom { .. }) {
-            insert_name(
-                &mut builder,
-                format!(
-                    "{}_provider",
-                    to_snake_case(&canonical_ident(&credential.name))
-                ),
-                credential.name.span(),
-                "generated client builder method",
-            )?;
-        }
-    }
-    let mut accessors = HashMap::from([("__concord_new".to_owned(), Span::call_site())]);
-    for credential in credentials {
-        insert_name(
-            &mut accessors,
-            to_snake_case(&canonical_ident(&credential.name)),
-            credential.name.span(),
-            "generated credential accessor",
-        )?;
-    }
-    Ok(())
-}
-
-fn finalize_endpoint_surfaces(
-    children: &mut [Child],
-    credentials: &[Credential],
-) -> syn::Result<()> {
-    for child in children {
-        match child {
-            Child::Scope(scope) => {
-                finalize_endpoint_surfaces(&mut scope.children, credentials)?;
-            }
-            Child::Endpoint(endpoint) => {
-                endpoint.surface.terminals.credential_storage = credentials
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, credential)| {
-                        matches!(
-                            credential.source,
-                            CredentialSource::Endpoint {
-                                endpoint_id: Some(id),
-                                ..
-                            } if id == endpoint.id
-                        )
-                    })
-                    .map(|(credential, value)| CredentialStorageTerminal {
-                        credential,
-                        method: storage_terminal_name(&value.name),
-                    })
-                    .collect();
-                validate_request_surface(endpoint)?;
-            }
-        }
-    }
-    Ok(())
-}
-
-fn validate_request_surface(endpoint: &Endpoint) -> syn::Result<()> {
-    let mut names = RESERVED_GENERATED_METHODS
-        .iter()
-        .map(|name| ((*name).to_owned(), Span::call_site()))
-        .collect::<HashMap<_, _>>();
-    for setter in &endpoint.surface.setters {
-        insert_name(
-            &mut names,
-            canonical_ident(&setter.method),
-            setter.method.span(),
-            "named request wrapper methods",
-        )?;
-        insert_name(
-            &mut names,
-            canonical_ident(&setter.helper),
-            setter.helper.span(),
-            "named request wrapper methods",
-        )?;
-    }
-    for terminal in &endpoint.surface.terminals.credential_storage {
-        insert_name(
-            &mut names,
-            canonical_ident(&terminal.method),
-            terminal.method.span(),
-            "named request wrapper methods",
-        )?;
-    }
-    Ok(())
-}
-
-fn validate_surface_modules(
-    children: &[Child],
-    facade: Option<&Scope>,
-    owner: &str,
-) -> syn::Result<()> {
-    let mut items = HashMap::new();
-    if let Some(scope) = facade {
-        insert_name(
-            &mut items,
-            canonical_ident(&scope.facade_name),
-            scope.name.span(),
-            owner,
-        )?;
-    } else {
-        for reserved in [
-            "Endpoint",
-            "credentials",
-            "__concord_endpoint_seal",
-            "__concord_generated",
-        ] {
-            items.insert(reserved.to_owned(), Span::call_site());
-        }
-    }
-
-    for child in children {
-        match child {
-            Child::Scope(scope) => {
-                insert_name(
-                    &mut items,
-                    canonical_ident(&scope.module_name),
-                    scope.name.span(),
-                    owner,
-                )?;
-            }
-            Child::Endpoint(endpoint) => {
-                insert_name(
-                    &mut items,
-                    canonical_ident(&endpoint.surface.endpoint_type_name),
-                    endpoint.name.span(),
-                    owner,
-                )?;
-                insert_name(
-                    &mut items,
-                    canonical_ident(&endpoint.surface.request_type_name),
-                    endpoint.name.span(),
-                    owner,
-                )?;
-            }
-        }
-    }
-
-    for child in children {
-        if let Child::Scope(scope) = child {
-            let nested_owner = format!(
-                "generated `{}` scope module item",
-                canonical_ident(&scope.module_name)
-            );
-            validate_surface_modules(&scope.children, Some(scope), &nested_owner)?;
-        }
-    }
-    Ok(())
-}
-
-fn resolve_endpoint_credentials(
-    credentials: &mut [Credential],
-    children: &[Child],
-) -> syn::Result<()> {
-    let mut endpoints = Vec::new();
-    collect_endpoints(children, &mut endpoints);
-    let paths = endpoints
-        .iter()
-        .map(|endpoint| {
-            (
-                endpoint
-                    .dsl_path
-                    .iter()
-                    .map(canonical_ident)
-                    .collect::<Vec<_>>()
-                    .join("::"),
-                endpoint.id,
-            )
-        })
-        .collect::<HashMap<_, _>>();
-    for credential in credentials {
-        if let CredentialSource::Endpoint { path, endpoint_id } = &mut credential.source {
-            let canonical = path
-                .segments
-                .iter()
-                .map(|segment| canonical_ident(&segment.ident))
-                .collect::<Vec<_>>()
-                .join("::");
-            *endpoint_id = Some(*paths.get(&canonical).ok_or_else(|| {
-                path.span().error(format!(
-                    "unknown endpoint-backed credential target `{canonical}`"
-                ))
-            })?);
-        }
-    }
-    Ok(())
-}
-
-fn collect_endpoints<'a>(children: &'a [Child], output: &mut Vec<&'a Endpoint>) {
-    for child in children {
-        match child {
-            Child::Scope(scope) => collect_endpoints(&scope.children, output),
-            Child::Endpoint(endpoint) => output.push(endpoint),
-        }
-    }
-}
-
-fn validate_credential_cycles(credentials: &[Credential], children: &[Child]) -> syn::Result<()> {
-    let mut endpoints = Vec::new();
-    collect_endpoints(children, &mut endpoints);
-    let endpoint_count = endpoints
-        .iter()
-        .map(|endpoint| endpoint.id)
-        .max()
-        .map_or(0, |maximum| maximum + 1);
-    let credential_count = credentials.len();
-    let mut edges = vec![Vec::new(); credential_count + endpoint_count];
-    for (index, credential) in credentials.iter().enumerate() {
-        if let CredentialSource::Endpoint {
-            endpoint_id: Some(endpoint),
-            ..
-        } = credential.source
-        {
-            edges[index].push(credential_count + endpoint);
-        }
-    }
-    for endpoint in endpoints {
-        for auth in &endpoint.config.auth {
-            edges[credential_count + endpoint.id].push(auth.credential);
-        }
-    }
-    let mut state = vec![0_u8; edges.len()];
-    fn visit(node: usize, edges: &[Vec<usize>], state: &mut [u8]) -> bool {
-        if state[node] == 1 {
-            return true;
-        }
-        if state[node] == 2 {
-            return false;
-        }
-        state[node] = 1;
-        if edges[node]
-            .iter()
-            .copied()
-            .any(|next| visit(next, edges, state))
-        {
-            return true;
-        }
-        state[node] = 2;
-        false
-    }
-    for node in 0..edges.len() {
-        if visit(node, &edges, &mut state) {
-            return Err(Span::call_site()
-                .error("endpoint-backed credential dependency or authentication cycle detected"));
-        }
-    }
-    Ok(())
-}
-
-fn convert_values(values: Vec<ValueDecl>) -> syn::Result<Vec<Value>> {
-    values
-        .into_iter()
-        .map(|value| {
-            let shape = value_shape(&value.ty)?;
-            Ok(Value {
-                name: value.name,
-                ty: value.ty,
-                kind: value.kind,
-                shape,
-                source_position: value.position,
-            })
-        })
-        .collect()
-}
-
-fn value_shape(ty: &Type) -> syn::Result<ValueShape> {
-    if let Some(inner) = syntactic_option_inner(ty)? {
-        if let Some(element) = single_outer_argument(&inner, "Vec")? {
-            return Ok(ValueShape::OptionVec { inner, element });
-        }
-        return Ok(ValueShape::Option { inner });
-    }
-    if let Some(element) = single_outer_argument(ty, "Vec")? {
-        return Ok(ValueShape::Vec { element });
-    }
-    Ok(ValueShape::Scalar)
-}
-
-fn single_outer_argument(ty: &Type, expected: &str) -> syn::Result<Option<Type>> {
-    let Type::Path(TypePath { qself: None, path }) = ty else {
-        return Ok(None);
-    };
-    if path.leading_colon.is_some()
-        || path.segments.len() != 1
-        || path.segments[0].ident != expected
-    {
-        return Ok(None);
-    }
-    let PathArguments::AngleBracketed(arguments) = &path.segments[0].arguments else {
-        return Err(ty
-            .span()
-            .error(format!("`{expected}` requires exactly one type argument")));
-    };
-    let mut arguments = arguments.args.iter();
-    let Some(GenericArgument::Type(inner)) = arguments.next() else {
-        return Err(ty
-            .span()
-            .error(format!("`{expected}` requires exactly one type argument")));
-    };
-    if arguments.next().is_some() {
-        return Err(ty
-            .span()
-            .error(format!("`{expected}` requires exactly one type argument")));
-    }
-    Ok(Some(inner.clone()))
-}
-
-fn find_value(values: &[Value], name: &Ident) -> Option<usize> {
-    let name = canonical_ident(name);
-    values
-        .iter()
-        .position(|value| canonical_ident(&value.name) == name)
-}
-
-fn find_unique_value(values: &[Value], name: &Ident, owner: &str) -> syn::Result<usize> {
-    find_value(values, name).ok_or_else(|| {
-        name.span()
-            .error(format!("unknown {owner} `{}`", canonical_ident(name)))
-    })
-}
-
-fn validate_setter_namespace(
-    values: &[Value],
-    owner: &str,
-    include_required: bool,
-    reserve_builder_methods: bool,
-) -> syn::Result<()> {
-    let mut names = HashMap::new();
-    if reserve_builder_methods {
-        for name in RESERVED_GENERATED_METHODS {
-            names.insert((*name).to_owned(), Span::call_site());
-        }
-    }
-    for value in values {
-        if include_required || !value.is_required() {
-            insert_name(
-                &mut names,
-                canonical_ident(&value.name),
-                value.name.span(),
-                owner,
-            )?;
-        }
-        if value.is_optional() {
-            insert_name(
-                &mut names,
-                format!("clear_{}", canonical_ident(&value.name)),
-                value.name.span(),
-                owner,
-            )?;
-        } else if value.default().is_some() {
-            insert_name(
-                &mut names,
-                format!("reset_{}", canonical_ident(&value.name)),
-                value.name.span(),
-                owner,
-            )?;
-        }
-    }
-    Ok(())
-}
-
-fn validate_endpoint_setters(parameters: &[Value], scopes: &[ScopeFrame]) -> syn::Result<()> {
-    let mut values = scopes
-        .iter()
-        .flat_map(|scope| scope.values.iter())
-        .filter(|value| !value.is_required())
-        .cloned()
-        .collect::<Vec<_>>();
-    values.extend(
-        parameters
-            .iter()
-            .filter(|value| !value.is_required())
-            .cloned(),
-    );
-    validate_setter_namespace(&values, "explicit endpoint controls", false, true)?;
-    validate_setter_namespace(parameters, "endpoint request controls", false, true)
-}
-
-fn validate_child_methods(
-    children: &[Child],
-    local_values: &[Value],
-    owner: &str,
-    reserve_all: bool,
-) -> syn::Result<()> {
-    let mut names = HashMap::new();
-    if reserve_all {
-        for reserved in RESERVED_GENERATED_METHODS {
-            names.insert((*reserved).to_owned(), Span::call_site());
-        }
-    }
-    for value in local_values.iter().filter(|value| !value.is_required()) {
-        insert_name(
-            &mut names,
-            canonical_ident(&value.name),
-            value.name.span(),
-            owner,
-        )?;
-        let helper = if value.is_optional() {
-            format!("clear_{}", canonical_ident(&value.name))
-        } else {
-            format!("reset_{}", canonical_ident(&value.name))
-        };
-        insert_name(&mut names, helper, value.name.span(), owner)?;
-    }
-    for child in children {
-        let (name, span) = match child {
-            Child::Scope(scope) => (canonical_ident(&scope.method_name), scope.name.span()),
-            Child::Endpoint(endpoint) => (
-                canonical_ident(&endpoint.public_method_name),
-                endpoint.name.span(),
-            ),
-        };
-        if RESERVED_GENERATED_METHODS.contains(&name.as_str()) {
-            return Err(span.error(format!(
-                "generated {owner} method `{name}` collides with a reserved Concord method"
-            )));
-        }
-        insert_name(&mut names, name, span, owner)?;
-    }
-    Ok(())
-}
-
-fn insert_name(
-    names: &mut HashMap<String, Span>,
-    name: String,
-    span: Span,
-    owner: &str,
-) -> syn::Result<()> {
-    if let Some(previous) = names.insert(name.clone(), span) {
-        let mut error = span.error(format!(
-            "generated {owner} name `{name}` collides after deterministic normalization"
-        ));
-        error.combine(previous.error("the first generated name is here"));
-        return Err(error);
-    }
-    Ok(())
-}
-
 trait SpanError {
     fn error(self, message: impl std::fmt::Display) -> syn::Error;
 }
@@ -1405,11 +308,45 @@ impl SpanError for Span {
 }
 
 #[cfg(test)]
+mod test_support {
+    use super::*;
+
+    pub(super) fn resolve_tokens(tokens: proc_macro2::TokenStream) -> Api {
+        let source = crate::syntax::parse(tokens).expect("semantic test syntax");
+        resolve(source).expect("normalized semantic model")
+    }
+
+    fn find_endpoint<'a>(children: &'a [Child], name: &str) -> Option<&'a Endpoint> {
+        for child in children {
+            match child {
+                Child::Endpoint(endpoint) if endpoint.name == name => return Some(endpoint),
+                Child::Scope(scope) => {
+                    if let Some(endpoint) = find_endpoint(&scope.children, name) {
+                        return Some(endpoint);
+                    }
+                }
+                Child::Endpoint(_) => {}
+            }
+        }
+        None
+    }
+
+    pub(super) fn endpoint<'a>(children: &'a [Child], name: &str) -> &'a Endpoint {
+        find_endpoint(children, name).unwrap_or_else(|| panic!("endpoint `{name}`"))
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use quote::quote;
 
+    use super::model::{
+        CloneEligibility, PaginationInitializer, PaginationValue, RequiredArgument, ResolvedValue,
+        ValueReference, ValueShape,
+    };
     use super::*;
-    use crate::parse;
+    use crate::syntax as parse;
+    use crate::syntax::ast::AuthChallenge;
 
     fn resolve_ok(tokens: proc_macro2::TokenStream) -> Api {
         resolve(parse::parse(tokens).expect("AST")).expect("normalized IR")
@@ -2312,12 +1249,12 @@ mod tests {
         let Child::Scope(scope) = &api.client.children[0] else {
             panic!("scope")
         };
-        assert_eq!(scope.method_name, "http_status");
-        assert_eq!(scope.facade_name, "HttpStatus");
+        assert_eq!(scope.surface.method_name, "http_status");
+        assert_eq!(scope.surface.facade_name, "HttpStatus");
         let Child::Endpoint(endpoint) = &scope.children[0] else {
             panic!("endpoint")
         };
-        assert_eq!(endpoint.public_method_name, "get_http_status");
+        assert_eq!(endpoint.surface.method_name, "get_http_status");
         assert_eq!(endpoint.surface.endpoint_type_name, "GetHttpStatus");
         assert_eq!(
             endpoint.surface.required_arguments,
@@ -2338,7 +1275,7 @@ mod tests {
         let Child::Endpoint(raw) = &scope.children[1] else {
             panic!("raw endpoint")
         };
-        assert_eq!(raw.public_method_name.to_string(), "r#type");
+        assert_eq!(raw.surface.method_name.to_string(), "r#type");
         assert_eq!(raw.surface.endpoint_type_name, "Type");
     }
 

@@ -613,14 +613,14 @@ impl RuntimeHooks for PaginationHooks {
 #[test]
 fn production_macro_pipeline_has_no_controller_category_or_callback_branches() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    for relative in [
-        "src/ast.rs",
-        "src/model.rs",
-        "src/parse.rs",
-        "src/resolve.rs",
-        "src/codegen.rs",
-    ] {
-        let path = root.join(relative);
+    let mut sources = Vec::new();
+    collect_rust_sources(&root.join("src"), &mut sources);
+    for path in sources {
+        let relative = path
+            .strip_prefix(root)
+            .expect("macro source is below the package root")
+            .display()
+            .to_string();
         let source = std::fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
         let production = source
@@ -663,6 +663,22 @@ fn production_macro_pipeline_has_no_controller_category_or_callback_branches() {
             !execute.contains(forbidden),
             "core loop retains superseded pagination mechanism {forbidden}"
         );
+    }
+}
+
+fn collect_rust_sources(directory: &std::path::Path, output: &mut Vec<std::path::PathBuf>) {
+    let mut entries = std::fs::read_dir(directory)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", directory.display()))
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap_or_else(|error| panic!("failed to enumerate {}: {error}", directory.display()));
+    entries.sort_by_key(std::fs::DirEntry::file_name);
+    for entry in entries {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_rust_sources(&path, output);
+        } else if path.extension().is_some_and(|extension| extension == "rs") {
+            output.push(path);
+        }
     }
 }
 

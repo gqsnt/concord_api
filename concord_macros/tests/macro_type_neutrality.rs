@@ -18,17 +18,32 @@ fn identifiers(source: &str) -> BTreeSet<&str> {
         .collect()
 }
 
+fn rust_sources(directory: &Path) -> Vec<std::path::PathBuf> {
+    fn collect(directory: &Path, output: &mut Vec<std::path::PathBuf>) {
+        let mut entries = std::fs::read_dir(directory)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", directory.display()))
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap_or_else(|error| panic!("failed to enumerate {}: {error}", directory.display()));
+        entries.sort_by_key(std::fs::DirEntry::file_name);
+        for entry in entries {
+            let path = entry.path();
+            if path.is_dir() {
+                collect(&path, output);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                output.push(path);
+            }
+        }
+    }
+
+    let mut output = Vec::new();
+    collect(directory, &mut output);
+    output
+}
+
 #[test]
 fn production_macro_model_is_type_shaped_and_semantically_neutral() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let files = [
-        "src/ast.rs",
-        "src/model.rs",
-        "src/parse.rs",
-        "src/resolve.rs",
-        "src/codegen.rs",
-        "src/lib.rs",
-    ];
+    let files = rust_sources(&root.join("src"));
     let forbidden_categories = ["RequestBodyKind", "ResponseKind", "CodecKind", "MediaKind"];
     let forbidden_semantic_names = [
         "Json",
@@ -48,8 +63,12 @@ fn production_macro_model_is_type_shaped_and_semantically_neutral() {
         "CustomStreamingResponse",
     ];
 
-    for relative in files {
-        let source = production_source(&root.join(relative));
+    for path in files {
+        let relative = path
+            .strip_prefix(root)
+            .expect("macro source is below the package root")
+            .display();
+        let source = production_source(&path);
         let identifiers = identifiers(&source);
         for forbidden in forbidden_categories
             .iter()
@@ -63,7 +82,7 @@ fn production_macro_model_is_type_shaped_and_semantically_neutral() {
         }
     }
 
-    let ast = production_source(&root.join("src/ast.rs"));
+    let ast = production_source(&root.join("src/syntax/ast.rs"));
     assert!(
         ast.contains("pub(crate) body: Option<BodyDecl>")
             && ast.contains("pub(crate) struct BodyDecl")
@@ -71,7 +90,7 @@ fn production_macro_model_is_type_shaped_and_semantically_neutral() {
             && ast.contains("pub(crate) response: Type"),
         "AST must store explicit body roles and response specifications as syn::Type"
     );
-    let model = production_source(&root.join("src/model.rs"));
+    let model = production_source(&root.join("src/semantic/model.rs"));
     assert!(
         model.contains("pub(crate) body: Option<RequestBody>")
             && model.contains("pub(crate) struct RequestBody")
@@ -80,10 +99,14 @@ fn production_macro_model_is_type_shaped_and_semantically_neutral() {
         "normalized model must store explicit body roles and response specifications as syn::Type"
     );
 
-    let codegen = production_source(&root.join("src/codegen.rs"));
+    let emission = rust_sources(&root.join("src/emit"))
+        .into_iter()
+        .map(|path| production_source(&path))
+        .collect::<Vec<_>>()
+        .join("\n");
     for required in ["RequestBodySpec", "ResponseBodySpec", "PageResponseSpec"] {
         assert!(
-            codegen.contains(required),
+            emission.contains(required),
             "generic code generation omitted {required}"
         );
     }
@@ -100,7 +123,7 @@ fn production_macro_model_is_type_shaped_and_semantically_neutral() {
         "bounds.push(quote!(#body: #core_path::advanced::RequestBodySpec))",
     ] {
         assert!(
-            codegen.contains(structural_step),
+            emission.contains(structural_step),
             "facade and explicit endpoint generation no longer share the type-owned request-spec path: {structural_step}"
         );
     }
@@ -113,7 +136,7 @@ fn production_macro_model_is_type_shaped_and_semantically_neutral() {
         "last_type_segment",
     ] {
         assert!(
-            !identifiers(&codegen).contains(classifier),
+            !identifiers(&emission).contains(classifier),
             "production code generation introduced application request-spec recognition: {classifier}"
         );
     }

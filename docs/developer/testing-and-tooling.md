@@ -190,7 +190,7 @@ before merging documentation changes.
 
 ## Version and compatibility
 
-The workspace version, Rust version, edition, pinned dependencies, and generated contract are defined in Cargo manifests and source constants. A generated-contract bump is required only when the private core/macro bridge changes; it is separate from the package version.
+The workspace version, Rust version, edition, pinned dependencies, and generated contract are defined in Cargo manifests and source constants. A generated-contract bump is required only when the private façade/macro bridge changes; it is separate from the package version.
 
 Keep source archives reproducible: retain the workspace lockfile because standalone fixture projects use locked, offline Cargo checks, and keep `deny.toml` aligned with the actual dependency graph.
 

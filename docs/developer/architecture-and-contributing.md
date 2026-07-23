@@ -9,10 +9,12 @@ Contributor changes should preserve one production representation and one execut
 The workspace uses Cargo resolver 3, Rust edition 2024, and Rust 1.85 as its minimum supported compiler.
 
 ```text
-concord_core/          Public runtime, managed execution, extensions, and errors
-concord_macros/        `api!` parser, semantic resolution, and generated code
+concord/               Public façade, feature topology, and generated bridge
+concord_core/          Semantic runtime kernel and managed execution
+concord_extras/        First-party downstream semantic implementations
+concord_macros/        `api!` syntax, semantic resolution, surface, and emission
 concord_test_support/  Deterministic local servers, gates, TLS, and fixture helpers
-concord_examples/      Runnable public examples and construction checks
+concord_examples/      One-dependency public examples and construction checks
 perf/                  Operation-exact benchmark smoke suite
 docs/                  User, concepts, reference, and developer documentation
 scripts/               Small repository validation helpers
@@ -25,14 +27,14 @@ Important areas:
 ```text
 src/auth/          Credential material, providers, slots, placement, recovery
 src/body/          Managed request bodies, specifications, streams, multipart
-src/codec/         Buffered encode/decode contracts and built-ins
+src/codec/         Buffered encode/decode contracts and primitive wire types
 src/execute/       The single production execution pipeline
 src/hooks/         Before-send, response-head, completion, and debug contracts
 src/http/          Managed clients, configuration, proxy, provider HTTP
 src/pagination/    Typed controller loop, identities, limits, pending request
-src/rate_limit/    Plans, custom limiter contract, bounded default governor
-src/records/       Incremental record decoding, CSV, NDJSON, batching
-src/request/       Request family, preparation, endpoint and prepared contracts
+src/rate_limit/    Plans, limiter contracts, cooldown context, fail-closed fallback
+src/records/       Generic bounded record decoding, streaming, and batching
+src/request/       Request family, preparation, and runtime endpoint contracts
 src/response/      Body specifications, acquisition modes, metadata, ByteStream
 src/runtime/       Immutable resolved runtime configuration
 ```
@@ -45,19 +47,30 @@ Public exports are intentionally concentrated in:
 
 `src/__private.rs` is generated integration. `src/__development.rs` exists only under `dangerous-dev-tools` for internal benchmarks and probes.
 
+### `concord` and `concord_extras`
+
+`concord` is the only ordinary user entry point. It owns stable namespaces,
+feature forwarding and defaults, the `api!` reexport, and the doc-hidden bridge
+used by generated code.
+
+`concord_extras` is a normal downstream implementation crate that depends only
+on core. It owns JSON, CSV, NDJSON, built-in pagination controllers, the
+governor limiter and observer, and the OAuth2 client-credentials provider. It
+must use the same public semantic contracts available to third parties and
+never receive native Reqwest objects or a private executor.
+
 ### `concord_macros`
 
 ```text
-src/ast.rs         Parsed source representation
-src/parse.rs       Syntax parsing and source-focused diagnostics
-src/model.rs       Resolved, normalized semantic model
-src/resolve.rs     Names, references, inheritance, capabilities, validation
-src/codegen.rs     Generated clients, endpoints, bindings, docs, contract marker
-src/crate_path.rs  Caller-visible `concord_core` dependency resolution
-src/names.rs       Deterministic generated naming helpers
+src/syntax/        One source AST plus domain parsers and diagnostics
+src/semantic/      One normalized model, domain validation, and public surface
+src/emit/          Artifact-oriented token emitters and bridge assertion
+src/crate_path.rs  Caller-visible `concord` dependency resolution
 ```
 
 The macro owns syntax and structural generation. Semantic body and response behavior belongs to Rust trait selection in `concord_core`, not to name matching in the macro.
+See the focused [declaration compiler guide](macro-compiler.md) for validation
+ownership and the change protocols.
 
 ### Tests and fixtures
 
@@ -274,13 +287,14 @@ The `api!` entry point is intentionally small:
 ```text
 parse tokens
 → resolve and normalize
-→ resolve caller-visible concord_core path
+→ finalize generated names and capabilities
+→ resolve caller-visible concord path
 → generate Rust tokens
 ```
 
 ### Parse stage
 
-`parse.rs` reads the surface grammar into `ast.rs` structures and emits focused source diagnostics. This stage should reject malformed or unsupported syntax without making runtime decisions.
+`syntax/` reads the surface grammar into its single `ast.rs` representation and emits focused source diagnostics. This stage rejects malformed or unsupported syntax without making runtime decisions.
 
 Examples of structural facts owned here:
 
@@ -292,7 +306,7 @@ Examples of structural facts owned here:
 
 ### Resolve stage
 
-`resolve.rs` and `model.rs` perform semantic normalization that is still knowable at generation time:
+`semantic/` performs semantic normalization that is still knowable at generation time:
 
 - name uniqueness and generated-name collisions;
 - variable, scope, and endpoint references;
@@ -304,9 +318,12 @@ Examples of structural facts owned here:
 
 The resolved model should eliminate inheritance operations. Code generation should receive the final ordered plan rather than interpret replace/off/template operations at runtime.
 
-### Code generation
+`semantic/surface.rs` is the sole owner of generated names, module paths,
+documentation identity, setters, and terminal capability sets.
 
-`codegen.rs` emits:
+### Artifact emission
+
+`emit/` has local emitters for:
 
 - client builders and facades;
 - scope builders and snapshots;
@@ -319,10 +336,12 @@ The resolved model should eliminate inheritance operations. Code generation shou
 - the generated contract compatibility assertion.
 
 Generated body and response semantics are type-neutral. The model stores Rust types, and generated bounds select `RequestBodySpec`, `ResponseBodySpec`, and `PageResponseSpec`. The macro must not branch on names such as `Json`, `Bytes`, `Records`, or an application-defined specification.
+Emitters consume resolved semantic/surface data and do not perform new user
+validation.
 
 ### Dependency resolution
 
-`crate_path.rs` discovers the caller-visible alias for the `concord_core` package. Generated code must work when users rename the dependency in `Cargo.toml`.
+`crate_path.rs` discovers the caller-visible alias for the `concord` façade package. Generated code must work when users rename that dependency in `Cargo.toml`; emitted bridge paths go through the renamed façade's `__private` module.
 
 Standalone fixtures cover:
 
@@ -354,19 +373,19 @@ Prefer type-shaped syntax and stable trait selection over enumerating built-in c
 
 ## Generated contract
 
-The façade bridge and `concord_macros` currently share generated contract version **21**.
+The façade bridge and `concord_macros` currently share generated contract version **22**.
 
 The marker protects the private interface used by generated code. It is not the package version and is not a public capability number.
 
 ### Why it exists
 
-Generated code references doc-hidden integration traits, constructors, and bridge methods in `concord_core::__private`. A macro/core mismatch could otherwise compile far enough to fail with confusing downstream errors or, worse, call an incompatible private contract.
+Generated code references doc-hidden integration traits, constructors, and bridge methods through `concord::__private`, which delegates the semantic contract to core. A macro/façade/core mismatch could otherwise compile far enough to fail with confusing downstream errors or, worse, call an incompatible private contract.
 
 Both sides assert the same integer at compile time:
 
 ```text
 concord_core/src/generated_contract.rs
-concord_macros/src/codegen.rs
+concord_macros/src/emit/bridge.rs
 ```
 
 ### When to bump it
@@ -403,7 +422,9 @@ The `contract_mismatch` fixture supplies an intentionally incompatible fake core
 
 ### Public compatibility
 
-Users should version `concord_core` and `concord_macros` together. The private contract marker catches mismatches, but it is not a substitute for compatible package versioning.
+Ordinary users depend only on `concord`, which selects exact implementation
+siblings. The private contract marker catches mismatches, but it is not a
+substitute for compatible package versioning.
 
 ## Adding an extension
 

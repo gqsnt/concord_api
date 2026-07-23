@@ -3,7 +3,7 @@ use std::time::Duration;
 use proc_macro2::Span;
 use syn::{Ident, LitInt, LitStr, Path, Type};
 
-pub(crate) use crate::ast::{
+pub(crate) use crate::syntax::ast::{
     AuthChallenge, AuthPlacementKind, DefaultExpr, MethodKind, RetrySelection, ValueKind,
 };
 
@@ -15,9 +15,7 @@ pub(crate) struct Api {
 #[derive(Clone)]
 pub(crate) struct Client {
     pub(crate) name: Ident,
-    pub(crate) builder_name: Ident,
-    pub(crate) support_name: Ident,
-    pub(crate) values_type_name: Ident,
+    pub(crate) surface: ClientSurface,
     pub(crate) base: LitStr,
     pub(crate) values: Vec<Value>,
     pub(crate) secrets: Vec<Secret>,
@@ -27,6 +25,13 @@ pub(crate) struct Client {
     #[allow(dead_code, reason = "retained as the normalized client-layer IR root")]
     pub(crate) config: NormalizedConfig,
     pub(crate) children: Vec<Child>,
+}
+
+#[derive(Clone)]
+pub(crate) struct ClientSurface {
+    pub(crate) builder_name: Ident,
+    pub(crate) support_name: Ident,
+    pub(crate) values_type_name: Ident,
 }
 
 impl Client {
@@ -53,9 +58,7 @@ pub(crate) enum Child {
 pub(crate) struct Scope {
     pub(crate) id: usize,
     pub(crate) name: Ident,
-    pub(crate) method_name: Ident,
-    pub(crate) module_name: Ident,
-    pub(crate) facade_name: Ident,
+    pub(crate) surface: ScopeSurface,
     pub(crate) parameters: Vec<Value>,
     #[allow(
         dead_code,
@@ -63,6 +66,13 @@ pub(crate) struct Scope {
     )]
     pub(crate) config: NormalizedConfig,
     pub(crate) children: Vec<Child>,
+}
+
+#[derive(Clone)]
+pub(crate) struct ScopeSurface {
+    pub(crate) method_name: Ident,
+    pub(crate) module_name: Ident,
+    pub(crate) facade_name: Ident,
 }
 
 #[derive(Clone)]
@@ -74,7 +84,6 @@ pub(crate) struct Endpoint {
     pub(crate) id: usize,
     pub(crate) method: MethodKind,
     pub(crate) name: Ident,
-    pub(crate) public_method_name: Ident,
     pub(crate) surface: EndpointSurface,
     pub(crate) parameters: Vec<Value>,
     pub(crate) body: Option<RequestBody>,
@@ -100,6 +109,7 @@ pub(crate) struct ContractId {
 
 #[derive(Clone)]
 pub(crate) struct EndpointSurface {
+    pub(crate) method_name: Ident,
     pub(crate) endpoint_type_name: Ident,
     pub(crate) request_type_name: Ident,
     pub(crate) module_path: Vec<Ident>,
