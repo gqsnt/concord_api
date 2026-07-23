@@ -11,8 +11,8 @@ use concord_core::advanced::{
     MultipartBody, MultipartPart, ResponseHeadEvent, RuntimeHooks, SafeProxy,
 };
 use concord_core::prelude::{
-    ApiResponse, ByteStream, Bytes, ClientBuildError, DecodedResponse, OctetStream, Request,
-    RequestBody, ResponseRequest, StreamBody,
+    ApiResponse, ByteStream, Bytes, ClientBuildError, DecodedResponse, OctetStream, RequestBody,
+    ResponseRequest, StreamBody,
 };
 use concord_macros::api;
 use concord_test_support::server::{ResponseScript, ScriptedServer};
@@ -196,23 +196,23 @@ mod repeated_case {
     pub fn requests_are_isolated() {
         let alpha = AlphaApi::new().expect("alpha client");
         let beta = BetaApi::new().expect("beta client");
-        let _: concord_core::Request<_> = alpha.health().ping();
-        let _: concord_core::Request<_> = beta.health().ping();
-        let _: concord_core::Request<_> = alpha.health().echo("alpha".to_owned());
-        let _: concord_core::Request<_> = beta.health().echo("beta".to_owned());
-        let _: concord_core::Request<_> = alpha.health().download();
-        let _: concord_core::Request<_> = beta.health().download();
+        let _: alpha_api::health::PingRequest = alpha.health().ping();
+        let _: beta_api::health::PingRequest = beta.health().ping();
+        let _: alpha_api::health::EchoRequest = alpha.health().echo("alpha".to_owned());
+        let _: beta_api::health::EchoRequest = beta.health().echo("beta".to_owned());
+        let _: alpha_api::health::DownloadRequest = alpha.health().download();
+        let _: beta_api::health::DownloadRequest = beta.health().download();
 
-        fn accepts_alpha_endpoint<E: alpha_api::AlphaApiEndpoint>(_: &E) {}
-        fn accepts_beta_endpoint<E: beta_api::BetaApiEndpoint>(_: &E) {}
+        fn accepts_alpha_endpoint<E: alpha_api::Endpoint>(_: &E) {}
+        fn accepts_beta_endpoint<E: beta_api::Endpoint>(_: &E) {}
 
-        let alpha_endpoint = alpha_api::endpoints::health::Ping::new();
+        let alpha_endpoint = alpha_api::health::Ping::new();
         accepts_alpha_endpoint(&alpha_endpoint);
-        let _: concord_core::Request<_> = alpha.request(alpha_endpoint);
+        let _: alpha_api::health::PingRequest = alpha.request(alpha_endpoint);
 
-        let beta_endpoint = beta_api::endpoints::health::Ping::new();
+        let beta_endpoint = beta_api::health::Ping::new();
         accepts_beta_endpoint(&beta_endpoint);
-        let _: concord_core::Request<_> = beta.request(beta_endpoint);
+        let _: beta_api::health::PingRequest = beta.request(beta_endpoint);
     }
 }
 
@@ -300,8 +300,8 @@ async fn next_stream_chunk(
 
 fn exact_new_shape() -> Result<(), ClientBuildError> {
     let client = ExampleApi::new()?;
-    let _: Request<_> = client.health().bytes();
-    let _: Request<_> = client.health().ping();
+    let _: example_api::health::BytesRequest = client.health().bytes();
+    let _: example_api::health::PingRequest = client.health().ping();
     Ok(())
 }
 
@@ -317,10 +317,11 @@ fn new_builder_and_public_request_shapes_are_final() {
     exact_new_shape().expect("fallible no-input constructor");
     let from_builder = ExampleApi::builder().build().expect("client builder");
     let from_named_builder = ExampleApiBuilder::new().build().expect("named builder");
-    let _: Request<_> = from_builder.health().bytes();
-    let _: Request<_> = from_named_builder.health().ping();
+    let _: example_api::health::BytesRequest = from_builder.health().bytes();
+    let _: example_api::health::PingRequest = from_named_builder.health().ping();
     let _: ResponseRequest<_> = from_builder.health().bytes().response();
-    let _: Request<_> = from_builder.request(example_api::endpoints::health::Bytes::new());
+    let _: example_api::health::BytesRequest =
+        from_builder.request(example_api::health::Bytes::new());
 }
 
 #[test]
@@ -425,8 +426,7 @@ async fn generated_buffered_facade_and_explicit_endpoints_use_typed_codecs_end_t
         .expect("facade text");
     assert_eq!(text, "facade-text-response");
 
-    let endpoint =
-        buffered_api::endpoints::messages::TextEcho::new("explicit-text-request".to_owned());
+    let endpoint = buffered_api::messages::TextEcho::new("explicit-text-request".to_owned());
     let text: DecodedResponse<String> = client
         .request(endpoint)
         .response()
@@ -449,7 +449,7 @@ async fn generated_buffered_facade_and_explicit_endpoints_use_typed_codecs_end_t
         .expect("custom facade");
     assert_eq!(custom, "custom-facade-response");
     let custom_endpoint =
-        buffered_api::endpoints::messages::CustomEcho::new("custom-explicit-request".to_owned());
+        buffered_api::messages::CustomEcho::new("custom-explicit-request".to_owned());
     let custom = client
         .request(custom_endpoint)
         .response()
@@ -556,9 +556,9 @@ async fn generated_stream_and_multipart_facade_and_explicit_endpoints_use_one_ru
         .expect("generated stream upload");
     assert_eq!(upload, b"upload-ok"[..]);
 
-    let vendor_endpoint = streaming_api::endpoints::transfers::VendorUpload::new(
-        StreamBody::from_bytes(Bytes::from_static(b"generated-vendor-upload")),
-    );
+    let vendor_endpoint = streaming_api::transfers::VendorUpload::new(StreamBody::from_bytes(
+        Bytes::from_static(b"generated-vendor-upload"),
+    ));
     let vendor_upload: Bytes = client
         .request(vendor_endpoint)
         .await
@@ -579,7 +579,7 @@ async fn generated_stream_and_multipart_facade_and_explicit_endpoints_use_one_ru
     }
     assert_eq!(downloaded, b"facade-download");
 
-    let vendor_endpoint = streaming_api::endpoints::transfers::VendorDownload::new();
+    let vendor_endpoint = streaming_api::transfers::VendorDownload::new();
     let response: ApiResponse<ByteStream> = client
         .request(vendor_endpoint)
         .response()
@@ -675,7 +675,7 @@ async fn facade_and_explicit_endpoints_execute_with_identical_encoded_paths() {
         .debug(DebugLevel::None)
         .await
         .expect("facade request");
-    let explicit = example_api::endpoints::health::Item::new(dynamic);
+    let explicit = example_api::health::Item::new(dynamic);
     let explicit = client
         .request(explicit)
         .inherit_timeout()
@@ -751,13 +751,14 @@ async fn request_creation_is_lazy_and_generated_client_clone_shares_runtime_conf
 #[test]
 fn nested_and_repeated_invocations_keep_generated_paths_isolated() {
     let nested = nested_case::inner::NestedApi::new().expect("nested client");
-    let _: concord_core::Request<_> = nested.health().ping();
-    let _: concord_core::Request<_> = nested.health().echo("nested".to_owned());
-    let _: concord_core::Request<_> = nested
+    let _: nested_case::inner::nested_api::health::PingRequest = nested.health().ping();
+    let _: nested_case::inner::nested_api::health::EchoRequest =
+        nested.health().echo("nested".to_owned());
+    let _: nested_case::inner::nested_api::health::UploadRequest = nested
         .health()
         .upload(StreamBody::from_bytes(Bytes::from_static(b"nested-stream")));
-    let _: concord_core::Request<_> = nested.health().download();
-    let _: concord_core::Request<_> =
-        nested.request(nested_case::inner::nested_api::endpoints::health::Ping::new());
+    let _: nested_case::inner::nested_api::health::DownloadRequest = nested.health().download();
+    let _: nested_case::inner::nested_api::health::PingRequest =
+        nested.request(nested_case::inner::nested_api::health::Ping::new());
     repeated_case::requests_are_isolated();
 }

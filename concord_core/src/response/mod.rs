@@ -18,5 +18,6 @@ pub use stream::ByteStream;
 
 pub(crate) use handler::{ResponseInput, execute_response};
 #[cfg(feature = "dangerous-raw-response")]
-pub(crate) use spec::RawResponseMode;
+#[doc(hidden)]
+pub use spec::RawResponseMode;
 pub(crate) use spec::{completion_outcome, validate_accept};

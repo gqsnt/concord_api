@@ -4,7 +4,6 @@ use std::io;
 use std::time::Duration;
 
 use runtime::advanced::SafeProxy;
-use concord_fixture_extension_certification::extension_api::prelude::*;
 use concord_fixture_extension_certification::{
     ExtensionApi, ExtensionConstructionProbe, ExtensionProvider, extension_pagination_probe_counts,
     reset_extension_pagination_probes,

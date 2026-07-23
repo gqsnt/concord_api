@@ -1,5 +1,13 @@
-error[E0599]: no method named `paginate` found for struct `concord_core::Request<E>` in the current scope
+error[E0599]: no method named `paginate` found for struct `DownloadRequest` in the current scope
   --> tests/ui/fail/stream_pagination_absent.rs:16:43
    |
-16 |     let _ = client.transfers().download().paginate(1_u32);
-   |                                           ^^^^^^^^ method not found in `concord_core::Request<Download>`
+ 3 | / api! {
+ 4 | |     client StreamingApi {
+ 5 | |         base "http://streaming.example.test";
+...  |
+ 9 | |         path ["transfers"];
+10 | |         GET Download() -> Stream<OctetStream>;
+   | |____________________- method `paginate` not found for this struct
+...
+16 |       let _ = client.transfers().download().paginate(1_u32);
+   |                                             ^^^^^^^^ method not found in `DownloadRequest`

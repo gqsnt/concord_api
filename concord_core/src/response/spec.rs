@@ -105,7 +105,13 @@ impl private::Sealed for Discard {
 }
 
 #[cfg(feature = "dangerous-raw-response")]
-pub(crate) trait RawResponseMode: ResponseMode {}
+/// Sealed response-acquisition capability accepted by the dangerous bounded
+/// raw-success terminal.
+///
+/// Concord implements this trait only for [`Buffered`] and [`Discard`].
+/// Applications cannot implement new response modes because [`ResponseMode`]
+/// is itself sealed.
+pub trait RawResponseMode: ResponseMode {}
 
 #[cfg(feature = "dangerous-raw-response")]
 impl RawResponseMode for Buffered {}

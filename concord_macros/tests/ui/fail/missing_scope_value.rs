@@ -31,7 +31,7 @@ api! {
 }
 
 fn main() {
-    let _endpoint = missing_scope_api::endpoints::resources::ById::new(
+    let _endpoint = missing_scope_api::resources::ById::new(
         EndpointValue("endpoint-in-scope-position"),
         EndpointValue("endpoint-value"),
     );

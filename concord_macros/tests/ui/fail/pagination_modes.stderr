@@ -54,7 +54,7 @@ error[E0277]: `()` is not an iterator
    | |_^ `()` is not an iterator
    |
    = help: the trait `Iterator` is not implemented for `()`
-help: the trait `concord_core::__private::EndpointSpec` is implemented for `no_content_pagination::endpoints::Read`
+help: the trait `concord_core::__private::EndpointSpec` is implemented for `no_content_pagination::Read`
   --> tests/ui/fail/pagination_modes.rs:39:1
    |
 39 | / api! {
@@ -64,7 +64,7 @@ help: the trait `concord_core::__private::EndpointSpec` is implemented for `no_c
 47 | | }
    | |_^
    = note: required for `()` to implement `IntoIterator`
-note: required for `no_content_pagination::endpoints::Read` to implement `concord_core::__private::EndpointSpec`
+note: required for `no_content_pagination::Read` to implement `concord_core::__private::EndpointSpec`
   --> tests/ui/fail/pagination_modes.rs:39:1
    |
 39 | / api! {
@@ -122,7 +122,7 @@ error[E0277]: `()` is not an iterator
    |                  ^^^^^^^^^^^^^^^^^ `()` is not an iterator
    |
    = help: the trait `Iterator` is not implemented for `()`
-help: the trait `concord_core::__private::EndpointSpec` is implemented for `no_content_pagination::endpoints::Read`
+help: the trait `concord_core::__private::EndpointSpec` is implemented for `no_content_pagination::Read`
   --> tests/ui/fail/pagination_modes.rs:39:1
    |
 39 | / api! {
@@ -132,7 +132,7 @@ help: the trait `concord_core::__private::EndpointSpec` is implemented for `no_c
 47 | | }
    | |_^
    = note: required for `()` to implement `IntoIterator`
-note: required for `no_content_pagination::endpoints::Read` to implement `concord_core::__private::EndpointSpec`
+note: required for `no_content_pagination::Read` to implement `concord_core::__private::EndpointSpec`
   --> tests/ui/fail/pagination_modes.rs:39:1
    |
 39 | / api! {
@@ -157,7 +157,7 @@ error[E0277]: `()` is not an iterator
    | |_^ `()` is not an iterator
    |
    = help: the trait `Iterator` is not implemented for `()`
-help: the trait `concord_core::pagination::PaginatedEndpoint` is implemented for `no_content_pagination::endpoints::Read`
+help: the trait `concord_core::pagination::PaginatedEndpoint` is implemented for `no_content_pagination::Read`
   --> tests/ui/fail/pagination_modes.rs:39:1
    |
 39 | / api! {
@@ -167,7 +167,7 @@ help: the trait `concord_core::pagination::PaginatedEndpoint` is implemented for
 47 | | }
    | |_^
    = note: required for `()` to implement `IntoIterator`
-note: required for `no_content_pagination::endpoints::Read` to implement `concord_core::pagination::PaginatedEndpoint`
+note: required for `no_content_pagination::Read` to implement `concord_core::pagination::PaginatedEndpoint`
   --> tests/ui/fail/pagination_modes.rs:39:1
    |
 39 | / api! {
@@ -181,6 +181,64 @@ note: required for `no_content_pagination::endpoints::Read` to implement `concor
    | |_^
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
+error[E0277]: `no_content_pagination::ReadRequest` is not a future
+  --> tests/ui/fail/pagination_modes.rs:39:1
+   |
+39 | / api! {
+40 | |     client NoContentPagination {
+41 | |         base "https://example.test";
+...  |
+47 | | }
+   | |_^ `no_content_pagination::ReadRequest` is not a future
+   |
+help: the trait `IntoFuture` is not implemented for `no_content_pagination::ReadRequest`
+  --> tests/ui/fail/pagination_modes.rs:39:1
+   |
+39 | / api! {
+40 | |     client NoContentPagination {
+41 | |         base "https://example.test";
+...  |
+44 | |     GET Read() -> NoContent {
+   | |____________^
+   = note: no_content_pagination::ReadRequest must be a future or must implement `IntoFuture` to be awaited
+help: the trait `IntoFuture` is implemented for `no_content_pagination::ReadRequest`
+  --> tests/ui/fail/pagination_modes.rs:39:1
+   |
+39 | / api! {
+40 | |     client NoContentPagination {
+41 | |         base "https://example.test";
+...  |
+47 | | }
+   | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `no_content_pagination::ReadRequest` is not a future
+  --> tests/ui/fail/pagination_modes.rs:44:9
+   |
+44 |     GET Read() -> NoContent {
+   |         ^^^^ `no_content_pagination::ReadRequest` is not a future
+   |
+help: the trait `IntoFuture` is not implemented for `no_content_pagination::ReadRequest`
+  --> tests/ui/fail/pagination_modes.rs:39:1
+   |
+39 | / api! {
+40 | |     client NoContentPagination {
+41 | |         base "https://example.test";
+...  |
+44 | |     GET Read() -> NoContent {
+   | |____________^
+   = note: no_content_pagination::ReadRequest must be a future or must implement `IntoFuture` to be awaited
+help: the trait `IntoFuture` is implemented for `no_content_pagination::ReadRequest`
+  --> tests/ui/fail/pagination_modes.rs:39:1
+   |
+39 | / api! {
+40 | |     client NoContentPagination {
+41 | |         base "https://example.test";
+...  |
+47 | | }
+   | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
 error[E0277]: `ByteStream` is not an iterator
   --> tests/ui/fail/pagination_modes.rs:49:1
    |
@@ -206,7 +264,7 @@ error[E0277]: `ByteStream` is not an iterator
    | |_^ `ByteStream` is not an iterator
    |
    = help: the trait `Iterator` is not implemented for `ByteStream`
-help: the trait `concord_core::__private::EndpointSpec` is implemented for `stream_pagination::endpoints::Read`
+help: the trait `concord_core::__private::EndpointSpec` is implemented for `stream_pagination::Read`
   --> tests/ui/fail/pagination_modes.rs:49:1
    |
 49 | / api! {
@@ -216,7 +274,7 @@ help: the trait `concord_core::__private::EndpointSpec` is implemented for `stre
 57 | | }
    | |_^
    = note: required for `ByteStream` to implement `IntoIterator`
-note: required for `stream_pagination::endpoints::Read` to implement `concord_core::__private::EndpointSpec`
+note: required for `stream_pagination::Read` to implement `concord_core::__private::EndpointSpec`
   --> tests/ui/fail/pagination_modes.rs:49:1
    |
 49 | / api! {
@@ -274,7 +332,7 @@ error[E0277]: `ByteStream` is not an iterator
    |                  ^^^^^^^^^^^^^^^^^ `ByteStream` is not an iterator
    |
    = help: the trait `Iterator` is not implemented for `ByteStream`
-help: the trait `concord_core::__private::EndpointSpec` is implemented for `stream_pagination::endpoints::Read`
+help: the trait `concord_core::__private::EndpointSpec` is implemented for `stream_pagination::Read`
   --> tests/ui/fail/pagination_modes.rs:49:1
    |
 49 | / api! {
@@ -284,7 +342,7 @@ help: the trait `concord_core::__private::EndpointSpec` is implemented for `stre
 57 | | }
    | |_^
    = note: required for `ByteStream` to implement `IntoIterator`
-note: required for `stream_pagination::endpoints::Read` to implement `concord_core::__private::EndpointSpec`
+note: required for `stream_pagination::Read` to implement `concord_core::__private::EndpointSpec`
   --> tests/ui/fail/pagination_modes.rs:49:1
    |
 49 | / api! {
@@ -309,7 +367,7 @@ error[E0277]: `ByteStream` is not an iterator
    | |_^ `ByteStream` is not an iterator
    |
    = help: the trait `Iterator` is not implemented for `ByteStream`
-help: the trait `concord_core::pagination::PaginatedEndpoint` is implemented for `stream_pagination::endpoints::Read`
+help: the trait `concord_core::pagination::PaginatedEndpoint` is implemented for `stream_pagination::Read`
   --> tests/ui/fail/pagination_modes.rs:49:1
    |
 49 | / api! {
@@ -319,7 +377,7 @@ help: the trait `concord_core::pagination::PaginatedEndpoint` is implemented for
 57 | | }
    | |_^
    = note: required for `ByteStream` to implement `IntoIterator`
-note: required for `stream_pagination::endpoints::Read` to implement `concord_core::pagination::PaginatedEndpoint`
+note: required for `stream_pagination::Read` to implement `concord_core::pagination::PaginatedEndpoint`
   --> tests/ui/fail/pagination_modes.rs:49:1
    |
 49 | / api! {
@@ -331,4 +389,104 @@ note: required for `stream_pagination::endpoints::Read` to implement `concord_co
 ...  |
 57 | | }
    | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `stream_pagination::ReadRequest` is not a future
+  --> tests/ui/fail/pagination_modes.rs:49:1
+   |
+49 | / api! {
+50 | |     client StreamPagination {
+51 | |         base "https://example.test";
+...  |
+57 | | }
+   | |_^ `stream_pagination::ReadRequest` is not a future
+   |
+help: the trait `IntoFuture` is not implemented for `stream_pagination::ReadRequest`
+  --> tests/ui/fail/pagination_modes.rs:49:1
+   |
+49 | / api! {
+50 | |     client StreamPagination {
+51 | |         base "https://example.test";
+...  |
+54 | |     GET Read() -> Stream<OctetStream> {
+   | |____________^
+   = note: stream_pagination::ReadRequest must be a future or must implement `IntoFuture` to be awaited
+help: the trait `IntoFuture` is implemented for `stream_pagination::ReadRequest`
+  --> tests/ui/fail/pagination_modes.rs:49:1
+   |
+49 | / api! {
+50 | |     client StreamPagination {
+51 | |         base "https://example.test";
+...  |
+57 | | }
+   | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `stream_pagination::ReadRequest` is not a future
+  --> tests/ui/fail/pagination_modes.rs:54:9
+   |
+54 |     GET Read() -> Stream<OctetStream> {
+   |         ^^^^ `stream_pagination::ReadRequest` is not a future
+   |
+help: the trait `IntoFuture` is not implemented for `stream_pagination::ReadRequest`
+  --> tests/ui/fail/pagination_modes.rs:49:1
+   |
+49 | / api! {
+50 | |     client StreamPagination {
+51 | |         base "https://example.test";
+...  |
+54 | |     GET Read() -> Stream<OctetStream> {
+   | |____________^
+   = note: stream_pagination::ReadRequest must be a future or must implement `IntoFuture` to be awaited
+help: the trait `IntoFuture` is implemented for `stream_pagination::ReadRequest`
+  --> tests/ui/fail/pagination_modes.rs:49:1
+   |
+49 | / api! {
+50 | |     client StreamPagination {
+51 | |         base "https://example.test";
+...  |
+57 | | }
+   | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `concord_core::Request<no_content_pagination::Read>` is not a future
+  --> tests/ui/fail/pagination_modes.rs:39:1
+   |
+39 | / api! {
+40 | |     client NoContentPagination {
+41 | |         base "https://example.test";
+...  |
+47 | | }
+   | |_^ `concord_core::Request<no_content_pagination::Read>` is not a future
+   |
+   = help: the trait `IntoFuture` is not implemented for `concord_core::Request<no_content_pagination::Read>`
+   = note: concord_core::Request<no_content_pagination::Read> must be a future or must implement `IntoFuture` to be awaited
+help: the trait `IntoFuture` is implemented for `concord_core::Request<E>`
+  --> $WORKSPACE/concord_core/src/execute/mod.rs
+   |
+   | / impl<E> IntoFuture for Request<E>
+   | | where
+   | |     E: EndpointSpec,
+   | |____________________^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `concord_core::Request<stream_pagination::Read>` is not a future
+  --> tests/ui/fail/pagination_modes.rs:49:1
+   |
+49 | / api! {
+50 | |     client StreamPagination {
+51 | |         base "https://example.test";
+...  |
+57 | | }
+   | |_^ `concord_core::Request<stream_pagination::Read>` is not a future
+   |
+   = help: the trait `IntoFuture` is not implemented for `concord_core::Request<stream_pagination::Read>`
+   = note: concord_core::Request<stream_pagination::Read> must be a future or must implement `IntoFuture` to be awaited
+help: the trait `IntoFuture` is implemented for `concord_core::Request<E>`
+  --> $WORKSPACE/concord_core/src/execute/mod.rs
+   |
+   | / impl<E> IntoFuture for Request<E>
+   | | where
+   | |     E: EndpointSpec,
+   | |____________________^
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

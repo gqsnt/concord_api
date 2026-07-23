@@ -61,24 +61,6 @@ impl<E> Request<E> {
     }
 }
 
-// Rustdoc cannot display a method from an implementation constrained by the
-// generated-private endpoint capability without also rendering that private
-// bound. Keep the production implementation below capability-bound and give
-// documentation builds the same public terminal signature plus its semantic
-// availability rule.
-#[cfg(doc)]
-impl<E> Request<E> {
-    /// Selects successful response metadata.
-    ///
-    /// This terminal is available for every successful response specification,
-    /// including streaming and discard modes.
-    #[must_use]
-    pub fn response(self) -> ResponseRequest<E> {
-        ResponseRequest { request: self }
-    }
-}
-
-#[cfg(not(doc))]
 #[doc(hidden)]
 impl<E> Request<E>
 where
@@ -91,27 +73,7 @@ where
     }
 }
 
-// As with `response`, Rustdoc cannot render the generated-private capability
-// bound without exposing an integration name. Documentation builds retain the
-// public signature and state the exact generated availability rule.
-#[cfg(all(doc, feature = "dangerous-raw-response"))]
-impl<E> Request<E> {
-    /// Selects the complete bounded successful response without decoding it.
-    ///
-    /// Requires the Cargo feature `dangerous-raw-response`.
-    ///
-    /// Generated requests whose declared response mode is buffered or discard
-    /// expose this terminal. Streaming and record-stream declarations do not,
-    /// and public prepared endpoints retain their existing exclusion. Response
-    /// headers and body bytes may contain secrets; callers assume responsibility
-    /// for their storage and diagnostics.
-    #[must_use]
-    pub fn raw_response(self) -> RawResponseRequest<E> {
-        RawResponseRequest { request: self }
-    }
-}
-
-#[cfg(all(not(doc), feature = "dangerous-raw-response"))]
+#[cfg(feature = "dangerous-raw-response")]
 #[doc(hidden)]
 #[allow(private_bounds)]
 impl<E> Request<E>
@@ -140,6 +102,12 @@ pub struct ResponseRequest<E> {
     pub(crate) request: Request<E>,
 }
 
+impl<E> ResponseRequest<E> {
+    pub(crate) fn from_generated(request: Request<E>) -> Self {
+        Self { request }
+    }
+}
+
 /// An opaque pending request selecting a dangerous buffered raw success.
 ///
 /// Execution retains ordinary status classification, limits, authentication,
@@ -156,4 +124,11 @@ pub struct ResponseRequest<E> {
 #[cfg(feature = "dangerous-raw-response")]
 pub struct RawResponseRequest<E> {
     pub(crate) request: Request<E>,
+}
+
+#[cfg(feature = "dangerous-raw-response")]
+impl<E> RawResponseRequest<E> {
+    pub(crate) fn from_generated(request: Request<E>) -> Self {
+        Self { request }
+    }
 }

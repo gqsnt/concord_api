@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 
-use concord::Request;
 use concord::api;
 use concord::auth::OAuth2ClientCredentials;
 
@@ -31,8 +30,6 @@ api! {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    use authentication_api::prelude::*;
-
     let oauth = OAuth2ClientCredentials::builder("https://identity.example.test/oauth/token")
         .client_id("example-client")
         .client_secret("example-client-secret")
@@ -46,12 +43,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .oauth_provider(oauth)
         .custom_provider(concord_examples::ExampleProvider)
         .build()?;
-    let _: Request<_> = client.api_key();
-    let _: Request<_> = client.bearer();
-    let _: Request<_> = client.basic();
-    let _: Request<_> = client.o_auth();
-    let _: Request<_> = client.endpoint_backed();
-    let _: Request<_> = client.provider_backed();
-    let _acquisition = client.login().acquire_as_acquired();
+    let _: authentication_api::ApiKeyRequest = client.api_key();
+    let _: authentication_api::BearerRequest = client.bearer();
+    let _: authentication_api::BasicRequest = client.basic();
+    let _: authentication_api::OAuthRequest = client.o_auth();
+    let _: authentication_api::EndpointBackedRequest = client.endpoint_backed();
+    let _: authentication_api::ProviderBackedRequest = client.provider_backed();
+    let _acquisition = client.login().store_as_acquired();
     Ok(())
 }

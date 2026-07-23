@@ -545,10 +545,11 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
         .build()?;
 
     let credential = client.credentials().session().credential();
-    let _: Request<_> = client.protected();
-    let _: Request<_> = client.generic_body(Bytes::from_static(b"generic extension input"));
-    let _: Request<_> = client.generic_stream();
-    let _: Request<_> = client.generic_discard();
+    let _: extension_api::ProtectedRequest = client.protected();
+    let _: extension_api::GenericBodyRequest =
+        client.generic_body(Bytes::from_static(b"generic extension input"));
+    let _: extension_api::GenericStreamRequest = client.generic_stream();
+    let _: extension_api::GenericDiscardRequest = client.generic_discard();
     let _: Auth = Auth::header(
         HeaderName::from_static("x-prepared-session"),
         credential.clone(),
@@ -630,19 +631,19 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
     #[cfg(feature = "records")]
     {
         let records = RecordExtensionApi::new().expect("record extension client");
-        let _: Request<_> = records.custom();
+        let _: record_extension_api::CustomRequest = records.custom();
     }
 
     #[cfg(feature = "csv")]
     {
         let records = CsvExtensionApi::new().expect("CSV extension client");
-        let _: Request<_> = records.rows();
+        let _: csv_extension_api::RowsRequest = records.rows();
     }
 
     #[cfg(feature = "ndjson")]
     {
         let records = NdJsonExtensionApi::new().expect("NDJSON extension client");
-        let _: Request<_> = records.values();
+        let _: nd_json_extension_api::ValuesRequest = records.values();
     }
 
     Ok(())

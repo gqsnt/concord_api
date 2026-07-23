@@ -82,9 +82,11 @@ fn production_macro_model_is_type_shaped_and_semantically_neutral() {
     }
 
     for structural_step in [
-        "let endpoint = #endpoint_type_path::__concord_from_facade(",
+        "let endpoint = #endpoint_type::__concord_from_facade(",
         "(#client_expression).request(endpoint)",
         "pub fn request<E>(&self, endpoint: E)",
+        "pub struct #request_name",
+        "type Request = #request_name",
         "impl #generated_core::__private::EndpointSpec for #endpoint_name",
         "<Self::Body as #generated_core::__private::RequestBodySpec>::metadata(",
         ") -> <Self::Body as #generated_core::__private::RequestBodySpec>::Input",

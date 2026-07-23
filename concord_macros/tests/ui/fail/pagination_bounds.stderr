@@ -49,7 +49,7 @@ help: the trait `Iterator` is not implemented for `NotIterable`
    |
 11 | pub struct NotIterable;
    | ^^^^^^^^^^^^^^^^^^^^^^
-help: the trait `concord_core::__private::EndpointSpec` is implemented for `missing_into_iterator::endpoints::Read`
+help: the trait `concord_core::__private::EndpointSpec` is implemented for `missing_into_iterator::Read`
   --> tests/ui/fail/pagination_bounds.rs:46:1
    |
 46 | / api! {
@@ -59,7 +59,7 @@ help: the trait `concord_core::__private::EndpointSpec` is implemented for `miss
 54 | | }
    | |_^
    = note: required for `NotIterable` to implement `IntoIterator`
-note: required for `missing_into_iterator::endpoints::Read` to implement `concord_core::__private::EndpointSpec`
+note: required for `missing_into_iterator::Read` to implement `concord_core::__private::EndpointSpec`
   --> tests/ui/fail/pagination_bounds.rs:46:1
    |
 46 | / api! {
@@ -84,7 +84,7 @@ help: the trait `Iterator` is not implemented for `NotIterable`
    |
 11 | pub struct NotIterable;
    | ^^^^^^^^^^^^^^^^^^^^^^
-help: the trait `concord_core::__private::EndpointSpec` is implemented for `missing_into_iterator::endpoints::Read`
+help: the trait `concord_core::__private::EndpointSpec` is implemented for `missing_into_iterator::Read`
   --> tests/ui/fail/pagination_bounds.rs:46:1
    |
 46 | / api! {
@@ -94,7 +94,7 @@ help: the trait `concord_core::__private::EndpointSpec` is implemented for `miss
 54 | | }
    | |_^
    = note: required for `NotIterable` to implement `IntoIterator`
-note: required for `missing_into_iterator::endpoints::Read` to implement `concord_core::__private::EndpointSpec`
+note: required for `missing_into_iterator::Read` to implement `concord_core::__private::EndpointSpec`
   --> tests/ui/fail/pagination_bounds.rs:46:1
    |
 46 | / api! {
@@ -123,7 +123,7 @@ help: the trait `Iterator` is not implemented for `NotIterable`
    |
 11 | pub struct NotIterable;
    | ^^^^^^^^^^^^^^^^^^^^^^
-help: the trait `concord_core::pagination::PaginatedEndpoint` is implemented for `missing_into_iterator::endpoints::Read`
+help: the trait `concord_core::pagination::PaginatedEndpoint` is implemented for `missing_into_iterator::Read`
   --> tests/ui/fail/pagination_bounds.rs:46:1
    |
 46 | / api! {
@@ -133,7 +133,7 @@ help: the trait `concord_core::pagination::PaginatedEndpoint` is implemented for
 54 | | }
    | |_^
    = note: required for `NotIterable` to implement `IntoIterator`
-note: required for `missing_into_iterator::endpoints::Read` to implement `concord_core::pagination::PaginatedEndpoint`
+note: required for `missing_into_iterator::Read` to implement `concord_core::pagination::PaginatedEndpoint`
   --> tests/ui/fail/pagination_bounds.rs:46:1
    |
 46 | / api! {
@@ -142,6 +142,64 @@ note: required for `missing_into_iterator::endpoints::Read` to implement `concor
 ...  |
 51 | |     GET Read() -> crate::NotIterableCodec {
    | |         ^^^^
+...  |
+54 | | }
+   | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `missing_into_iterator::ReadRequest` is not a future
+  --> tests/ui/fail/pagination_bounds.rs:46:1
+   |
+46 | / api! {
+47 | |     client MissingIntoIterator {
+48 | |         base "https://example.test";
+...  |
+54 | | }
+   | |_^ `missing_into_iterator::ReadRequest` is not a future
+   |
+help: the trait `IntoFuture` is not implemented for `missing_into_iterator::ReadRequest`
+  --> tests/ui/fail/pagination_bounds.rs:46:1
+   |
+46 | / api! {
+47 | |     client MissingIntoIterator {
+48 | |         base "https://example.test";
+...  |
+51 | |     GET Read() -> crate::NotIterableCodec {
+   | |____________^
+   = note: missing_into_iterator::ReadRequest must be a future or must implement `IntoFuture` to be awaited
+help: the trait `IntoFuture` is implemented for `missing_into_iterator::ReadRequest`
+  --> tests/ui/fail/pagination_bounds.rs:46:1
+   |
+46 | / api! {
+47 | |     client MissingIntoIterator {
+48 | |         base "https://example.test";
+...  |
+54 | | }
+   | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `missing_into_iterator::ReadRequest` is not a future
+  --> tests/ui/fail/pagination_bounds.rs:51:9
+   |
+51 |     GET Read() -> crate::NotIterableCodec {
+   |         ^^^^ `missing_into_iterator::ReadRequest` is not a future
+   |
+help: the trait `IntoFuture` is not implemented for `missing_into_iterator::ReadRequest`
+  --> tests/ui/fail/pagination_bounds.rs:46:1
+   |
+46 | / api! {
+47 | |     client MissingIntoIterator {
+48 | |         base "https://example.test";
+...  |
+51 | |     GET Read() -> crate::NotIterableCodec {
+   | |____________^
+   = note: missing_into_iterator::ReadRequest must be a future or must implement `IntoFuture` to be awaited
+help: the trait `IntoFuture` is implemented for `missing_into_iterator::ReadRequest`
+  --> tests/ui/fail/pagination_bounds.rs:46:1
+   |
+46 | / api! {
+47 | |     client MissingIntoIterator {
+48 | |         base "https://example.test";
 ...  |
 54 | | }
    | |_^
@@ -196,4 +254,25 @@ error[E0277]: `Rc<()>` cannot be sent between threads safely
    | |_^ `Rc<()>` cannot be sent between threads safely
    |
    = help: the trait `Send` is not implemented for `Rc<()>`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `concord_core::Request<missing_into_iterator::Read>` is not a future
+  --> tests/ui/fail/pagination_bounds.rs:46:1
+   |
+46 | / api! {
+47 | |     client MissingIntoIterator {
+48 | |         base "https://example.test";
+...  |
+54 | | }
+   | |_^ `concord_core::Request<missing_into_iterator::Read>` is not a future
+   |
+   = help: the trait `IntoFuture` is not implemented for `concord_core::Request<missing_into_iterator::Read>`
+   = note: concord_core::Request<missing_into_iterator::Read> must be a future or must implement `IntoFuture` to be awaited
+help: the trait `IntoFuture` is implemented for `concord_core::Request<E>`
+  --> $WORKSPACE/concord_core/src/execute/mod.rs
+   |
+   | / impl<E> IntoFuture for Request<E>
+   | | where
+   | |     E: EndpointSpec,
+   | |____________________^
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

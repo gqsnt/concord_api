@@ -24,6 +24,6 @@ api! {
 
 fn main() {
     let beta = BetaApi::new().unwrap();
-    let alpha_endpoint = alpha_api::endpoints::health::Download::new();
+    let alpha_endpoint = alpha_api::health::Download::new();
     let _ = beta.request(alpha_endpoint);
 }

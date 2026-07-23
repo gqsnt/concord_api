@@ -12,14 +12,16 @@ use crate::ast::{
     SourceEndpoint, SourceScope, TimeoutOperation, ValueDecl,
 };
 use crate::model::{
-    Api, Child, Client, Credential, CredentialSource, Endpoint, NormalizedAuth, NormalizedConfig,
-    NormalizedHeader, NormalizedQuery, NormalizedRateLimitRule, NormalizedRateLimitWindow,
-    Pagination, PaginationField, PaginationInitializer, PaginationValue, ResolvedExpr,
-    ResolvedValue, Scope, Secret, Value, ValueReference, ValueShape,
+    Api, Child, Client, CloneEligibility, Credential, CredentialSource, CredentialStorageTerminal,
+    Endpoint, EndpointSetter, EndpointSurface, NormalizedAuth, NormalizedConfig, NormalizedHeader,
+    NormalizedQuery, NormalizedRateLimitRule, NormalizedRateLimitWindow, Pagination,
+    PaginationField, PaginationInitializer, PaginationValue, RawResponseCapability,
+    RequestTerminals, RequiredArgument, ResolvedExpr, ResolvedValue, Scope, Secret, Value,
+    ValueReference, ValueShape,
 };
 use crate::names::{
-    RESERVED_GENERATED_METHODS, canonical_ident, prelude_alias, public_ident, request_ext_name,
-    snake_ident, to_pascal_case, to_snake_case,
+    RESERVED_GENERATED_METHODS, canonical_ident, helper_ident, pascal_ident, public_ident,
+    request_type_name, snake_ident, storage_terminal_name, to_pascal_case, to_snake_case,
 };
 
 #[derive(Clone)]
@@ -34,7 +36,6 @@ struct Resolver<'a> {
     credentials: &'a [Credential],
     next_scope_id: usize,
     next_endpoint_id: usize,
-    prelude_aliases: &'a mut HashMap<String, Span>,
 }
 
 #[derive(Clone, Copy)]
@@ -49,7 +50,6 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
         client: source_client,
         children: source_children,
     } = source;
-    let mut prelude_aliases = HashMap::new();
     let source_declares_limiter =
         source_tree_declares_rate_limits(&source_client.layer, &source_children);
     let rate_observer = source_client.rate_limit_observer;
@@ -62,8 +62,6 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
     let client_canonical = canonical_ident(&client_name);
     let builder_name = Ident::new(&format!("{client_canonical}Builder"), client_name.span());
     let support_name = snake_ident(&client_name);
-    let endpoint_capability_name =
-        Ident::new(&format!("{client_canonical}Endpoint"), client_name.span());
     let values_type_name = Ident::new(
         &format!("__Concord{}Values", to_pascal_case(&client_canonical)),
         Span::mixed_site(),
@@ -76,7 +74,6 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
             credentials: &credentials,
             next_scope_id: 0,
             next_endpoint_id: 0,
-            prelude_aliases: &mut prelude_aliases,
         };
         let config = resolver.normalize_layer(
             &source_client.layer,
@@ -86,11 +83,13 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
             &client_canonical,
             "client",
         )?;
-        let children = resolver.resolve_children(source_children, &config, &[], &[], "client")?;
+        let children = resolver.resolve_children(source_children, &config, &[], &[])?;
         (config, children)
     };
     resolve_endpoint_credentials(&mut credentials, &children)?;
-    validate_credential_generated_names(&credentials, &children, "client")?;
+    let mut children = children;
+    finalize_endpoint_surfaces(&mut children, &credentials)?;
+    validate_surface_modules(&children, None, "generated client module")?;
     validate_credential_cycles(&credentials, &children)?;
     validate_child_methods(&children, &[], "generated client", true)?;
 
@@ -98,7 +97,6 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
         name: client_name,
         builder_name,
         support_name,
-        endpoint_capability_name,
         values_type_name,
         base: source_client.base,
         values,
@@ -121,7 +119,6 @@ impl Resolver<'_> {
         parent: &NormalizedConfig,
         visible_scopes: &[ScopeFrame],
         scope_path: &[Ident],
-        owner: &str,
     ) -> syn::Result<Vec<Child>> {
         let mut children = Vec::new();
         for child in source {
@@ -140,7 +137,6 @@ impl Resolver<'_> {
                 )?),
             });
         }
-        validate_module_items(&children, owner)?;
         Ok(children)
     }
 
@@ -179,15 +175,12 @@ impl Resolver<'_> {
             &id_path,
             &lexical_origin,
         )?;
-        let children = self.resolve_children(source.children, &config, &frames, &path, "scope")?;
+        let children = self.resolve_children(source.children, &config, &frames, &path)?;
         validate_child_methods(&children, &parameters, "scope facade", false)?;
 
         let method_name = snake_ident(&source.name);
         let module_name = method_name.clone();
-        let facade_name = Ident::new(
-            &format!("{}Facade", to_pascal_case(&canonical_ident(&source.name))),
-            source.name.span(),
-        );
+        let facade_name = pascal_ident(&source.name);
         Ok(Scope {
             id,
             name: source.name,
@@ -216,24 +209,6 @@ impl Resolver<'_> {
             || snake_ident(&source.name),
             |alias| public_ident(&canonical_ident(alias), alias.span()),
         );
-        let request_ext_name = request_ext_name(&source.name);
-        let alias = prelude_alias(
-            self.client_name,
-            scope_path,
-            source.alias.as_ref().unwrap_or(&public_method_name),
-        );
-        let alias_name = canonical_ident(&alias);
-        if let Some(previous) = self
-            .prelude_aliases
-            .insert(alias_name.clone(), alias.span())
-        {
-            let mut error = alias.span().error(format!(
-                "generated request-extension prelude alias `{alias_name}` collides deterministically"
-            ));
-            error.combine(previous.error("the first generated alias is here"));
-            return Err(error);
-        }
-
         let dsl_path = scope_path
             .iter()
             .cloned()
@@ -257,14 +232,67 @@ impl Resolver<'_> {
             &lexical_origin,
         )?;
         let pagination = self.resolve_pagination(source.pagination, visible_scopes, &parameters)?;
+        let endpoint_type_name = pascal_ident(&source.name);
+        let request_type_name = request_type_name(&endpoint_type_name);
+        let mut required_arguments = parameters
+            .iter()
+            .enumerate()
+            .filter(|(_, value)| value.is_required())
+            .map(|(index, _)| RequiredArgument::Parameter(index))
+            .collect::<Vec<_>>();
+        if source.body.is_some() {
+            required_arguments.push(RequiredArgument::Body);
+        }
+        let setters = parameters
+            .iter()
+            .enumerate()
+            .filter(|(_, value)| !value.is_required())
+            .map(|(parameter, value)| EndpointSetter {
+                parameter,
+                method: value.name.clone(),
+                helper: if value.is_optional() {
+                    helper_ident("clear", &value.name)
+                } else {
+                    helper_ident("reset", &value.name)
+                },
+            })
+            .collect();
+        let module_path = scope_path.iter().map(|scope| snake_ident(scope)).collect();
+        let docs_identity = format!(
+            "{}::{}",
+            canonical_ident(self.client_name),
+            dsl_path
+                .iter()
+                .map(canonical_ident)
+                .collect::<Vec<_>>()
+                .join("::")
+        );
+        let surface = EndpointSurface {
+            endpoint_type_name,
+            request_type_name,
+            module_path,
+            required_arguments,
+            setters,
+            terminals: RequestTerminals {
+                response: true,
+                pagination: pagination.is_some(),
+                raw_response: RawResponseCapability::SealedResponseMode,
+                credential_storage: Vec::new(),
+            },
+            clone_eligibility: if source.body.is_some() {
+                CloneEligibility::BodyInputBound
+            } else {
+                CloneEligibility::Always
+            },
+            docs_identity,
+        };
         Ok(Endpoint {
             id,
             method: source.method,
             name: source.name,
             alias: source.alias,
             public_method_name,
-            request_ext_name,
-            prelude_alias: alias,
+            surface,
             parameters,
             body: source.body,
             config,
@@ -882,12 +910,94 @@ fn validate_credential_names(
     Ok(())
 }
 
-fn validate_credential_generated_names(
+fn finalize_endpoint_surfaces(
+    children: &mut [Child],
     credentials: &[Credential],
+) -> syn::Result<()> {
+    for child in children {
+        match child {
+            Child::Scope(scope) => {
+                finalize_endpoint_surfaces(&mut scope.children, credentials)?;
+            }
+            Child::Endpoint(endpoint) => {
+                endpoint.surface.terminals.credential_storage = credentials
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, credential)| {
+                        matches!(
+                            credential.source,
+                            CredentialSource::Endpoint {
+                                endpoint_id: Some(id),
+                                ..
+                            } if id == endpoint.id
+                        )
+                    })
+                    .map(|(credential, value)| CredentialStorageTerminal {
+                        credential,
+                        method: storage_terminal_name(&value.name),
+                    })
+                    .collect();
+                validate_request_surface(endpoint)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_request_surface(endpoint: &Endpoint) -> syn::Result<()> {
+    let mut names = RESERVED_GENERATED_METHODS
+        .iter()
+        .map(|name| ((*name).to_owned(), Span::call_site()))
+        .collect::<HashMap<_, _>>();
+    for setter in &endpoint.surface.setters {
+        insert_name(
+            &mut names,
+            canonical_ident(&setter.method),
+            setter.method.span(),
+            "named request wrapper methods",
+        )?;
+        insert_name(
+            &mut names,
+            canonical_ident(&setter.helper),
+            setter.helper.span(),
+            "named request wrapper methods",
+        )?;
+    }
+    for terminal in &endpoint.surface.terminals.credential_storage {
+        insert_name(
+            &mut names,
+            canonical_ident(&terminal.method),
+            terminal.method.span(),
+            "named request wrapper methods",
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_surface_modules(
     children: &[Child],
+    facade: Option<&Scope>,
     owner: &str,
 ) -> syn::Result<()> {
     let mut items = HashMap::new();
+    if let Some(scope) = facade {
+        insert_name(
+            &mut items,
+            canonical_ident(&scope.facade_name),
+            scope.name.span(),
+            owner,
+        )?;
+    } else {
+        for reserved in [
+            "Endpoint",
+            "credentials",
+            "__concord_endpoint_seal",
+            "__concord_generated",
+        ] {
+            items.insert(reserved.to_owned(), Span::call_site());
+        }
+    }
+
     for child in children {
         match child {
             Child::Scope(scope) => {
@@ -895,94 +1005,34 @@ fn validate_credential_generated_names(
                     &mut items,
                     canonical_ident(&scope.module_name),
                     scope.name.span(),
-                    &format!("{owner} generated module"),
+                    owner,
                 )?;
-                validate_credential_generated_names(credentials, &scope.children, "scope")?;
             }
             Child::Endpoint(endpoint) => {
                 insert_name(
                     &mut items,
-                    canonical_ident(&endpoint.name),
+                    canonical_ident(&endpoint.surface.endpoint_type_name),
                     endpoint.name.span(),
-                    &format!("{owner} explicit endpoint module"),
+                    owner,
                 )?;
-                let acquisitions = endpoint_acquisitions(credentials, endpoint.id);
-                if endpoint.parameters.iter().any(|value| !value.is_required())
-                    || !acquisitions.is_empty()
-                    || endpoint.pagination.is_some()
-                {
-                    insert_name(
-                        &mut items,
-                        canonical_ident(&endpoint.request_ext_name),
-                        endpoint.name.span(),
-                        &format!("{owner} endpoint request extension"),
-                    )?;
-                }
-                if !acquisitions.is_empty() {
-                    validate_acquisition_methods(endpoint, &acquisitions)?;
-                }
+                insert_name(
+                    &mut items,
+                    canonical_ident(&endpoint.surface.request_type_name),
+                    endpoint.name.span(),
+                    owner,
+                )?;
             }
         }
     }
-    Ok(())
-}
 
-fn endpoint_acquisitions(credentials: &[Credential], endpoint_id: usize) -> Vec<&Credential> {
-    credentials
-        .iter()
-        .filter(|credential| {
-            matches!(
-                credential.source,
-                CredentialSource::Endpoint {
-                    endpoint_id: Some(id),
-                    ..
-                } if id == endpoint_id
-            )
-        })
-        .collect()
-}
-
-fn validate_acquisition_methods(
-    endpoint: &Endpoint,
-    acquisitions: &[&Credential],
-) -> syn::Result<()> {
-    let mut names = RESERVED_GENERATED_METHODS
-        .iter()
-        .map(|name| ((*name).to_owned(), Span::call_site()))
-        .collect::<HashMap<_, _>>();
-    for value in endpoint
-        .parameters
-        .iter()
-        .filter(|value| !value.is_required())
-    {
-        insert_name(
-            &mut names,
-            canonical_ident(&value.name),
-            value.name.span(),
-            "endpoint request controls and credential acquisition terminals",
-        )?;
-        let helper = if value.is_optional() {
-            format!("clear_{}", canonical_ident(&value.name))
-        } else {
-            format!("reset_{}", canonical_ident(&value.name))
-        };
-        insert_name(
-            &mut names,
-            helper,
-            value.name.span(),
-            "endpoint request controls and credential acquisition terminals",
-        )?;
-    }
-    for credential in acquisitions {
-        insert_name(
-            &mut names,
-            format!(
-                "acquire_as_{}",
-                to_snake_case(&canonical_ident(&credential.name))
-            ),
-            credential.name.span(),
-            "endpoint request controls and credential acquisition terminals",
-        )?;
+    for child in children {
+        if let Child::Scope(scope) = child {
+            let nested_owner = format!(
+                "generated `{}` scope module item",
+                canonical_ident(&scope.module_name)
+            );
+            validate_surface_modules(&scope.children, Some(scope), &nested_owner)?;
+        }
     }
     Ok(())
 }
@@ -1258,39 +1308,6 @@ fn validate_child_methods(
     Ok(())
 }
 
-fn validate_module_items(children: &[Child], owner: &str) -> syn::Result<()> {
-    let mut items = HashMap::new();
-    for child in children {
-        match child {
-            Child::Scope(scope) => {
-                insert_name(
-                    &mut items,
-                    canonical_ident(&scope.module_name),
-                    scope.name.span(),
-                    &format!("{owner} generated module"),
-                )?;
-            }
-            Child::Endpoint(endpoint) => {
-                insert_name(
-                    &mut items,
-                    canonical_ident(&endpoint.name),
-                    endpoint.name.span(),
-                    &format!("{owner} explicit endpoint module"),
-                )?;
-                if endpoint.parameters.iter().any(|value| !value.is_required()) {
-                    insert_name(
-                        &mut items,
-                        canonical_ident(&endpoint.request_ext_name),
-                        endpoint.name.span(),
-                        &format!("{owner} endpoint request extension"),
-                    )?;
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
 fn insert_name(
     names: &mut HashMap<String, Span>,
     name: String,
@@ -1491,7 +1508,7 @@ mod tests {
     }
 
     #[test]
-    fn prelude_aliases_include_client_scope_and_endpoint_identity() {
+    fn endpoint_surfaces_include_final_paths_names_and_capabilities() {
         let api = resolve_ok(quote! {
             client ExampleApi {
                 base "https://example.test";
@@ -1511,9 +1528,26 @@ mod tests {
         let Child::Endpoint(endpoint) = &users.children[0] else {
             panic!()
         };
+        assert_eq!(endpoint.surface.endpoint_type_name, "ById");
+        assert_eq!(endpoint.surface.request_type_name, "ByIdRequest");
         assert_eq!(
-            endpoint.prelude_alias,
-            "ExampleApiRegionsUsersFetchRequestExt"
+            endpoint
+                .surface
+                .module_path
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["regions", "users"]
+        );
+        assert_eq!(endpoint.surface.setters.len(), 1);
+        assert_eq!(endpoint.surface.setters[0].method, "verbose");
+        assert_eq!(endpoint.surface.setters[0].helper, "clear_verbose");
+        assert!(endpoint.surface.terminals.response);
+        assert!(!endpoint.surface.terminals.pagination);
+        assert_eq!(endpoint.surface.clone_eligibility, CloneEligibility::Always);
+        assert_eq!(
+            endpoint.surface.docs_identity,
+            "ExampleApi::regions::users::ById"
         );
     }
 
@@ -1905,7 +1939,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_name_collisions_cover_aliases_traits_and_generic_request_methods() {
+    fn generated_name_collisions_cover_aliases_request_types_and_inherent_methods() {
         let alias = resolve(
             parse::parse(quote! {
                 client Api {
@@ -1928,12 +1962,12 @@ mod tests {
                     base "https://example.test";
                 }
                 GET Read(value: Option<String>) -> Bytes;
-                GET ReadRequestExt() -> Bytes;
+                GET ReadRequest() -> Bytes;
             })
             .expect("AST"),
         )
         .err()
-        .expect("request extension trait collision");
+        .expect("request wrapper collision");
         assert!(trait_item.to_string().contains("collides"));
 
         let request_method = resolve(
@@ -1948,6 +1982,82 @@ mod tests {
         .err()
         .expect("generic request method collision");
         assert!(request_method.to_string().contains("timeout"));
+
+        let helper_method = resolve(
+            parse::parse(quote! {
+                client Api {
+                    base "https://example.test";
+                }
+                GET Read(
+                    value: Option<String>,
+                    clear_value: Option<String>,
+                ) -> Bytes;
+            })
+            .expect("AST"),
+        )
+        .err()
+        .expect("optional helper collision");
+        assert!(helper_method.to_string().contains("clear_value"));
+
+        let reset_method = resolve(
+            parse::parse(quote! {
+                client Api {
+                    base "https://example.test";
+                }
+                GET Read(
+                    limit: u32 = 25,
+                    reset_limit: Option<bool>,
+                ) -> Bytes;
+            })
+            .expect("AST"),
+        )
+        .err()
+        .expect("default helper collision");
+        assert!(reset_method.to_string().contains("reset_limit"));
+
+        let scope_type = resolve(
+            parse::parse(quote! {
+                client Api {
+                    base "https://example.test";
+                }
+                scope Resources() {
+                    GET Resources() -> Bytes;
+                }
+            })
+            .expect("AST"),
+        )
+        .err()
+        .expect("scope facade type collision");
+        assert!(scope_type.to_string().contains("Resources"));
+
+        let endpoint_trait = resolve(
+            parse::parse(quote! {
+                client Api {
+                    base "https://example.test";
+                }
+                GET Endpoint() -> Bytes;
+            })
+            .expect("AST"),
+        )
+        .err()
+        .expect("endpoint trait collision");
+        assert!(endpoint_trait.to_string().contains("Endpoint"));
+
+        let storage_terminal = resolve(
+            parse::parse(quote! {
+                client Api {
+                    base "https://example.test";
+                    credentials {
+                        credential session = endpoint Source;
+                    }
+                }
+                GET Source(store_as_session: Option<bool>) -> Bytes;
+            })
+            .expect("AST"),
+        )
+        .err()
+        .expect("credential storage terminal collision");
+        assert!(storage_terminal.to_string().contains("store_as_session"));
     }
 
     #[test]
@@ -2001,20 +2111,20 @@ mod tests {
                 base "https://example.test";
                 credentials { credential session = endpoint Login; }
             }
-            GET Login(acquire_as_session: Option<String>) -> Bytes;
+            GET Login(store_as_session: Option<String>) -> Bytes;
         });
-        assert!(acquisition_method.contains("acquire_as_session"));
+        assert!(acquisition_method.contains("store_as_session"));
         assert!(acquisition_method.contains("collides"));
 
-        let acquisition_trait = error(quote! {
+        let request_wrapper = error(quote! {
             client Api {
                 base "https://example.test";
                 credentials { credential session = endpoint Read; }
             }
             GET Read() -> Bytes;
-            GET ReadRequestExt() -> Bytes;
+            GET ReadRequest() -> Bytes;
         });
-        assert!(acquisition_trait.contains("collides"));
+        assert!(request_wrapper.contains("collides"));
     }
 
     #[test]

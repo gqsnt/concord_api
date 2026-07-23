@@ -20,8 +20,6 @@ api! {
 }
 
 fn main() {
-    use prepared_pagination_api::prelude::*;
-
     let client = PreparedPaginationApi::new().unwrap();
     let endpoint = PreparedEndpoint::builder("Prepared::pages", Method::GET)
         .response::<crate::support::Json<Vec<u8>>>()

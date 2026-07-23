@@ -668,8 +668,6 @@ fn production_macro_pipeline_has_no_controller_category_or_callback_branches() {
 
 #[tokio::test]
 async fn generated_offset_pagination_is_directly_awaitable_and_stops_on_short_page() {
-    use offset_api::prelude::*;
-
     let server = ScriptedServer::start([
         ResponseScript::ok(br#"[1,2]"#.to_vec()).with_header("content-type", "application/json"),
         ResponseScript::ok(br#"[3]"#.to_vec()).with_header("content-type", "application/json"),
@@ -696,8 +694,6 @@ async fn generated_offset_pagination_is_directly_awaitable_and_stops_on_short_pa
 
 #[tokio::test]
 async fn downstream_page_response_capability_requires_no_macro_semantics() {
-    use custom_response_page_api::prelude::*;
-
     let server = ScriptedServer::start([
         ResponseScript::ok(b"1,2".to_vec())
             .with_header("content-type", "application/x-concord-custom-page"),
@@ -729,8 +725,6 @@ async fn downstream_page_response_capability_requires_no_macro_semantics() {
 
 #[tokio::test]
 async fn application_controller_selects_the_same_count_termination_without_macro_privilege() {
-    use application_count_api::prelude::*;
-
     let server = ScriptedServer::start([
         ResponseScript::ok(br#"[1,2]"#.to_vec()).with_header("content-type", "application/json"),
         ResponseScript::ok(br#"[3]"#.to_vec()).with_header("content-type", "application/json"),
@@ -760,8 +754,6 @@ async fn application_controller_selects_the_same_count_termination_without_macro
 
 #[tokio::test]
 async fn generated_page_number_soft_and_hard_limits_are_deterministic() {
-    use page_api::prelude::*;
-
     let soft_server = ScriptedServer::start([
         ResponseScript::ok(br#"[1,2]"#.to_vec()).with_header("content-type", "application/json"),
         ResponseScript::ok(br#"[3,4]"#.to_vec()).with_header("content-type", "application/json"),
@@ -805,9 +797,6 @@ async fn generated_page_number_soft_and_hard_limits_are_deterministic() {
 
 #[tokio::test]
 async fn cursor_and_custom_empty_pages_follow_controller_authority_and_redact_continuations() {
-    use cursor_api::prelude::*;
-    use custom_api::prelude::*;
-
     let cursor_server = ScriptedServer::start([
         ResponseScript::ok(b"|next-cursor".to_vec())
             .with_header("content-type", "application/x-concord-page"),
@@ -883,8 +872,6 @@ async fn cursor_and_custom_empty_pages_follow_controller_authority_and_redact_co
 
 #[tokio::test]
 async fn take_zero_skips_controller_and_page_work_but_emits_one_aggregate_success() {
-    use zero_api::prelude::*;
-
     let hooks = Arc::new(PaginationHooks::default());
     let configured_hooks: Arc<dyn RuntimeHooks> = hooks.clone();
     let client = ZeroApi::builder()
@@ -906,9 +893,6 @@ async fn take_zero_skips_controller_and_page_work_but_emits_one_aggregate_succes
 
 #[tokio::test]
 async fn built_in_overflow_is_ignored_on_short_stop_and_hard_cap_can_end_naturally() {
-    use offset_api::prelude::*;
-    use page_api::prelude::*;
-
     let offset_server = ScriptedServer::start([
         ResponseScript::ok(br#"[5]"#.to_vec()).with_header("content-type", "application/json")
     ])
@@ -948,9 +932,6 @@ async fn built_in_overflow_is_ignored_on_short_stop_and_hard_cap_can_end_natural
 
 #[tokio::test]
 async fn empty_present_cursor_is_distinct_and_items_need_not_clone() {
-    use cursor_api::prelude::*;
-    use non_clone_api::prelude::*;
-
     fn assert_send<T: Send>() {}
     assert_send::<OneNonClonePage>();
 
@@ -997,11 +978,6 @@ async fn empty_present_cursor_is_distinct_and_items_need_not_clone() {
 
 #[tokio::test]
 async fn explicit_endpoint_nested_scope_alias_and_repeated_helpers_have_parity() {
-    use collision_pagination_api::prelude::*;
-    use nested_pagination_api::prelude::*;
-    use offset_api::prelude::*;
-    use repeated_nested_expansion::nested_macro_pagination_api::prelude::*;
-
     let explicit_server = ScriptedServer::start([
         ResponseScript::ok(br#"[9]"#.to_vec()).with_header("content-type", "application/json")
     ])
@@ -1011,7 +987,7 @@ async fn explicit_endpoint_nested_scope_alias_and_repeated_helpers_have_parity()
         .http(move |http| http.proxy(explicit_proxy))
         .build()
         .expect("explicit client");
-    let endpoint = offset_api::endpoints::Items::new(0, nz32(2));
+    let endpoint = offset_api::Items::new(0, nz32(2));
     let explicit_items = explicit_client
         .request(endpoint)
         .paginate(1_u32)
@@ -1089,8 +1065,6 @@ async fn explicit_endpoint_nested_scope_alias_and_repeated_helpers_have_parity()
 
 #[tokio::test]
 async fn generated_pagination_reuses_lexical_global_rate_plan_and_actual_hosts() {
-    use pagination_rate_api::prelude::*;
-
     const INITIAL: &str = "7319058410827319461";
     const NEXT: &str = "7319058410827319463";
     let server = ScriptedServer::start([

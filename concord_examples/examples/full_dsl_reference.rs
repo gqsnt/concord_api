@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 
-use concord::Request;
 use concord::api;
 
 api! {
@@ -63,21 +62,20 @@ api! {
 }
 
 fn main() -> Result<(), concord::prelude::ClientBuildError> {
-    use reference_api::prelude::*;
-
     let client = ReferenceApi::new("tenant-a".to_owned(), "example-api-key")?;
-    let _: Request<_> = client.status().verbose(true);
-    let _: Request<_> = client
+    let _: reference_api::StatusRequest = client.status().verbose(true);
+    let _: reference_api::regions::ResourceRequest = client
         .regions("eu-west".to_owned())
         .language("fr".to_owned())
         .fetch("42".to_owned(), vec!["stable".to_owned()]);
-    let endpoint = reference_api::endpoints::regions::Resource::new(
+    let endpoint = reference_api::regions::Resource::new(
         "eu-west".to_owned(),
         "42".to_owned(),
         vec!["stable".to_owned()],
     );
-    let _: Request<_> = client.request(endpoint.language("fr".to_owned()));
+    let _: reference_api::regions::ResourceRequest =
+        client.request(endpoint.language("fr".to_owned()));
     let retry_client = ReqwestRetryReference::builder().build()?;
-    let _: Request<_> = retry_client.health();
+    let _: reqwest_retry_reference::HealthRequest = retry_client.health();
     Ok(())
 }

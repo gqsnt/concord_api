@@ -35,21 +35,21 @@ fn downstream_types_cannot_implement_generated_endpoint_capabilities() {
 }
 
 #[test]
-fn endpoint_setters_require_the_generated_prelude_import() {
+fn endpoint_setters_are_inherent_without_generated_imports() {
     let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/fail/missing_request_prelude.rs");
+    cases.pass("tests/ui/pass/request_setters_inherent.rs");
 }
 
 #[test]
-fn generated_request_extension_traits_are_sealed() {
+fn named_request_wrapper_fields_are_private() {
     let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/fail/forged_request_extension.rs");
+    cases.compile_fail("tests/ui/fail/named_request_fields_private.rs");
 }
 
 #[test]
-fn generated_request_extension_traits_are_endpoint_specific() {
+fn generated_inherent_setters_are_endpoint_specific() {
     let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/fail/wrong_endpoint_request_extension.rs");
+    cases.compile_fail("tests/ui/fail/wrong_endpoint_setter_absent.rs");
 }
 
 #[test]
@@ -168,7 +168,7 @@ fn generated_request_specifications_require_request_capabilities() {
 }
 
 #[test]
-fn generated_stream_endpoints_have_no_raw_response_terminal() {
+fn generated_stream_endpoints_reject_the_raw_response_terminal() {
     let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/fail/dangerous_raw_stream_absent.rs");
+    cases.compile_fail("tests/ui/fail/dangerous_raw_stream_rejected.rs");
 }

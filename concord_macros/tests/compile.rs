@@ -335,7 +335,7 @@ fn missing_core_dependency_has_a_focused_macro_diagnostic() {
 fn incompatible_core_contract_fails_during_compilation() {
     assert_fixture_fails_with(
         "contract_mismatch",
-        "concord macro/core contract mismatch: core 999, generated 18",
+        "concord macro/core contract mismatch: core 999, generated 19",
     );
 }
 
@@ -418,28 +418,40 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
         .join("target/cargo-fixtures")
         .join(target_key)
         .join("doc/concord_fixture_renamed_facade");
-    for relative in [
+    let public_pages = [
         "struct.RenamedApi.html",
         "struct.RenamedApiBuilder.html",
         "struct.RenamedRateApi.html",
         "struct.RenamedRateApiBuilder.html",
-        "renamed_api/facades/resources/struct.ResourcesFacade.html",
+        "renamed_api/trait.Endpoint.html",
+        "renamed_rate_api/trait.Endpoint.html",
+        "renamed_api/resources/struct.Resources.html",
         "renamed_api/credentials/struct.RenamedApiCredentials.html",
         "renamed_api/credentials/struct.ApiKeyCredentialHandle.html",
-        "renamed_api/endpoints/resources/struct.ById.html",
-        "renamed_api/endpoints/resources/struct.Custom.html",
-        "renamed_api/endpoints/resources/struct.StreamUpload.html",
-        "renamed_api/endpoints/resources/struct.StreamDownload.html",
-        "renamed_api/endpoints/resources/struct.MultipartUpload.html",
-        "renamed_api/endpoints/resources/struct.Pages.html",
-        "renamed_rate_api/endpoints/struct.Read.html",
-    ] {
+        "renamed_api/resources/struct.ById.html",
+        "renamed_api/resources/struct.ByIdRequest.html",
+        "renamed_api/resources/struct.Custom.html",
+        "renamed_api/resources/struct.CustomRequest.html",
+        "renamed_api/resources/struct.StreamUpload.html",
+        "renamed_api/resources/struct.StreamUploadRequest.html",
+        "renamed_api/resources/struct.StreamDownload.html",
+        "renamed_api/resources/struct.StreamDownloadRequest.html",
+        "renamed_api/resources/struct.MultipartUpload.html",
+        "renamed_api/resources/struct.MultipartUploadRequest.html",
+        "renamed_api/resources/struct.Pages.html",
+        "renamed_api/resources/struct.PagesRequest.html",
+        "renamed_rate_api/struct.Read.html",
+        "renamed_rate_api/struct.ReadRequest.html",
+    ];
+    for relative in public_pages {
         let path = documentation.join(relative);
         let page = std::fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
         for forbidden in [
             "__private",
             "__concord_endpoint_seal",
+            "__concord_inner",
+            "__Concord",
             "ClientCore",
             "EndpointSpec",
             "RawResponseEndpoint",
@@ -455,8 +467,8 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
             "ManagedRequestStream",
             "Replayability",
             "reqwest",
-            "Sealed",
             "renamed-rate-key-sentinel",
+            "protected-api-key",
         ] {
             assert!(
                 !page.contains(forbidden),
@@ -464,98 +476,20 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
                 path.display()
             );
         }
-        if relative.contains("facades") {
+        if !relative.ends_with("trait.Endpoint.html") {
             assert!(
-                page.contains("Request"),
-                "generated facade Rustdoc omitted the stable Request wrapper"
+                !page.contains("Sealed"),
+                "ordinary generated Rustdoc {} exposed the sealing implementation",
+                path.display()
             );
-        }
-        if relative.contains("endpoints") {
-            let expected: &[&str] = match relative {
-                path if path.ends_with("struct.ById.html") => &[
-                    "RenamedApi::resources::ById",
-                    "POST",
-                    "Text",
-                    "scope_value",
-                    "endpoint_value",
-                    "body",
-                    "custom header",
-                    "Credential values are absent",
-                ],
-                path if path.ends_with("struct.Custom.html") => {
-                    &["RenamedApi::resources::Custom", "scope_value", "body"]
-                }
-                path if path.ends_with("struct.StreamUpload.html") => &[
-                    "RenamedApi::resources::StreamUpload",
-                    "POST",
-                    "Stream &lt; OctetStream &gt;",
-                    "structural metadata",
-                    "hook approval",
-                    "scope_value",
-                    "body",
-                ],
-                path if path.ends_with("struct.StreamDownload.html") => &[
-                    "RenamedApi::resources::StreamDownload",
-                    "GET",
-                    "Stream &lt; OctetStream &gt;",
-                    "universal successful metadata",
-                    "core-owned capability bounds",
-                    "scope_value",
-                ],
-                path if path.ends_with("struct.MultipartUpload.html") => &[
-                    "RenamedApi::resources::MultipartUpload",
-                    "POST",
-                    "Multipart",
-                    "request specification",
-                    "feature availability is owned by",
-                    "scope_value",
-                    "body",
-                ],
-                path if path.ends_with("struct.Pages.html") => {
-                    &["RenamedApi::resources::Pages", "GET", "PageCodec", "cursor"]
-                }
-                path if path.ends_with("renamed_rate_api/endpoints/struct.Read.html") => &[
-                    "RenamedRateApi::Read",
-                    "GET",
-                    "client",
-                    "global bucket",
-                    "key parts are absent",
-                ],
-                _ => panic!("unexpected generated endpoint Rustdoc path {relative}"),
-            };
-            for expected in expected.iter().copied() {
-                assert!(
-                    page.contains(expected),
-                    "generated endpoint Rustdoc omitted public identity or parameter {expected}"
-                );
-            }
-            let raw_expectations: &[&str] = &[
-                "concord_core/dangerous-raw-response",
-                "raw_response",
-                "core-owned capability",
-                "complete bounded successful bytes",
-                "reduced secrecy guarantees",
-            ];
-            for expected in raw_expectations {
-                assert!(
-                    page.contains(expected),
-                    "generated endpoint Rustdoc omitted raw-terminal fact {expected}"
-                );
-            }
-            for forbidden in ["__concord_scope_0", "__concord_endpoint_0"] {
-                assert!(
-                    !page.contains(forbidden),
-                    "generated endpoint Rustdoc exposed internal constructor parameter {forbidden}"
-                );
-            }
         }
     }
 
     let client_page = std::fs::read_to_string(documentation.join("struct.RenamedApi.html"))
         .expect("generated client Rustdoc should be readable");
     assert!(
-        client_page.contains("RenamedApiEndpoint"),
-        "generated client Rustdoc omitted its API-specific endpoint capability"
+        client_page.contains("renamed_api/trait.Endpoint.html#associatedtype.Request"),
+        "generated client Rustdoc omitted the sealed endpoint associated request"
     );
     for expected in [
         "tenant",
@@ -571,17 +505,26 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
             "generated client Rustdoc omitted value/retry behavior {expected}"
         );
     }
-    assert!(
-        !documentation
-            .join("renamed_api/trait.RenamedApiEndpoint.html")
-            .exists(),
-        "generated Rustdoc exposed the hidden endpoint sealing capability implementation"
-    );
+    let endpoint_trait_page =
+        std::fs::read_to_string(documentation.join("renamed_api/trait.Endpoint.html"))
+            .expect("generated endpoint trait Rustdoc should be readable");
+    for expected in [
+        "id=\"associatedtype.Request\"",
+        "id=\"associatedtype.Response\"",
+        "Named inert request",
+        "Response specification selected",
+        "Sealed",
+        "ByIdRequest",
+    ] {
+        assert!(
+            endpoint_trait_page.contains(expected),
+            "generated endpoint trait Rustdoc omitted {expected}"
+        );
+    }
 
-    let facade_page = std::fs::read_to_string(
-        documentation.join("renamed_api/facades/resources/struct.ResourcesFacade.html"),
-    )
-    .expect("generated facade Rustdoc should be readable");
+    let facade_page =
+        std::fs::read_to_string(documentation.join("renamed_api/resources/struct.Resources.html"))
+            .expect("generated facade Rustdoc should be readable");
     assert!(
         facade_page.contains("RenamedApi::resources::ById"),
         "facade and endpoint Rustdoc must use the same complete endpoint identity"
@@ -593,16 +536,24 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
         );
     }
 
-    let prelude_path = documentation.join("renamed_api/prelude/index.html");
-    let prelude_page = std::fs::read_to_string(&prelude_path)
-        .unwrap_or_else(|error| panic!("failed to read {}: {error}", prelude_path.display()));
     assert!(
-        prelude_page.contains("RenamedApiResourcesByIdRequestExt"),
-        "generated prelude Rustdoc omitted the deterministic request-extension alias"
+        facade_page.contains("id=\"method.by_id\"") && facade_page.contains("ByIdRequest"),
+        "generated scope facade Rustdoc omitted its named request return"
     );
     assert!(
-        prelude_page.contains("RenamedApiResourcesPagesRequestExt"),
-        "generated prelude Rustdoc omitted the paginated request-extension alias"
+        !documentation
+            .join("renamed_api/prelude/index.html")
+            .exists(),
+        "generated Rustdoc retained the removed per-client prelude"
+    );
+    assert!(
+        !documentation
+            .join("renamed_api/facades/index.html")
+            .exists()
+            && !documentation
+                .join("renamed_api/endpoints/index.html")
+                .exists(),
+        "generated Rustdoc retained split facade/endpoint module trees"
     );
 
     let credentials_page = std::fs::read_to_string(
@@ -622,57 +573,84 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
         );
     }
 
-    let request_ext_path =
-        documentation.join("renamed_api/endpoints/resources/trait.ByIdRequestExt.html");
-    let request_ext_page = std::fs::read_to_string(&request_ext_path)
-        .unwrap_or_else(|error| panic!("failed to read {}: {error}", request_ext_path.display()));
+    let by_id_endpoint_path = documentation.join("renamed_api/resources/struct.ById.html");
+    let by_id_endpoint_page =
+        std::fs::read_to_string(&by_id_endpoint_path).unwrap_or_else(|error| {
+            panic!("failed to read {}: {error}", by_id_endpoint_path.display())
+        });
     for expected in [
-        "Request&lt;ById&gt;",
-        "prelude",
-        "RenamedApiResourcesByIdRequestExt",
+        "RenamedApi::resources::ById",
+        "POST",
+        "Text",
+        "scope_value",
+        "endpoint_value",
+        "body",
+        "Credential values are absent",
         "verbose",
         "clear_verbose",
         "limit",
         "reset_limit",
-        "without re-evaluation",
     ] {
         assert!(
-            request_ext_page.contains(expected),
-            "generated request-extension Rustdoc omitted {expected}"
+            by_id_endpoint_page.contains(expected),
+            "generated endpoint Rustdoc omitted {expected}"
+        );
+    }
+    for forbidden in ["__concord_scope_0", "__concord_endpoint_0"] {
+        assert!(
+            !by_id_endpoint_page.contains(forbidden),
+            "generated endpoint Rustdoc exposed internal constructor parameter {forbidden}"
+        );
+    }
+
+    let request_path = documentation.join("renamed_api/resources/struct.ByIdRequest.html");
+    let request_page = std::fs::read_to_string(&request_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", request_path.display()));
+    for expected in [
+        "Inert named request",
+        "id=\"method.timeout\"",
+        "id=\"method.disable_timeout\"",
+        "id=\"method.inherit_timeout\"",
+        "id=\"method.debug\"",
+        "id=\"method.response\"",
+        "id=\"method.raw_response\"",
+        "id=\"method.verbose\"",
+        "id=\"method.clear_verbose\"",
+        "id=\"method.limit\"",
+        "id=\"method.reset_limit\"",
+        "without re-evaluation",
+        "Mode: RawResponseMode",
+        "Endpoint.html#associatedtype.Response",
+        "complete bounded successful response",
+    ] {
+        assert!(
+            request_page.contains(expected),
+            "generated named request Rustdoc omitted {expected}"
         );
     }
     for forbidden in [
         "__private",
         "__concord_",
+        "__Concord",
         "EndpointSpec",
+        "RawResponseEndpoint",
         "ClientCore",
         "reqwest",
         "Sealed",
+        "ResponseSpecification",
     ] {
         assert!(
-            !request_ext_page.contains(forbidden),
-            "generated request-extension Rustdoc exposed {forbidden}"
+            !request_page.contains(forbidden),
+            "generated named request Rustdoc exposed {forbidden}"
         );
     }
 
-    let pages_request_ext_path =
-        documentation.join("renamed_api/endpoints/resources/trait.PagesRequestExt.html");
-    let pages_request_ext_page =
-        std::fs::read_to_string(&pages_request_ext_path).unwrap_or_else(|error| {
-            panic!(
-                "failed to read {}: {error}",
-                pages_request_ext_path.display()
-            )
-        });
-    for expected in [
-        "Request&lt;Pages&gt;",
-        "RenamedApiResourcesPagesRequestExt",
-        "id=\"tymethod.paginate\"",
-        "PageLimit",
-        "PaginatedRequest",
-    ] {
+    let pages_request_path = documentation.join("renamed_api/resources/struct.PagesRequest.html");
+    let pages_request_page = std::fs::read_to_string(&pages_request_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", pages_request_path.display()));
+    for expected in ["id=\"method.paginate\"", "PageLimit", "PaginatedRequest"] {
         assert!(
-            pages_request_ext_page.contains(expected),
+            pages_request_page.contains(expected),
             "generated pagination Rustdoc omitted {expected}"
         );
     }
@@ -687,10 +665,26 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
         "cursor-rustdoc-sentinel-73a4d1",
     ] {
         assert!(
-            !pages_request_ext_page.contains(forbidden),
+            !pages_request_page.contains(forbidden),
             "generated pagination Rustdoc exposed {forbidden}"
         );
     }
+    let resource_files = std::fs::read_dir(documentation.join("renamed_api/resources"))
+        .expect("generated resource module should be readable")
+        .map(|entry| {
+            entry
+                .expect("generated Rustdoc directory entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        resource_files
+            .iter()
+            .all(|name| !name.contains("RequestExt")),
+        "generated Rustdoc retained request extension traits: {resource_files:?}"
+    );
 }
 
 #[test]
@@ -725,17 +719,17 @@ fn generated_records_rustdoc_uses_stable_paths_and_exposes_no_record_value_chann
         .join("doc/concord_fixture_extension_certification");
     let endpoints = [
         (
-            "record_extension_api/endpoints/struct.Custom.html",
+            "record_extension_api/struct.Custom.html",
             "RecordExtensionApi::Custom",
             "Records &lt; crate :: ExtensionRecordDecoder &gt;",
         ),
         (
-            "csv_extension_api/endpoints/struct.Rows.html",
+            "csv_extension_api/struct.Rows.html",
             "CsvExtensionApi::Rows",
             "Records &lt; Csv &lt; Vec &lt; String &gt; &gt; &gt;",
         ),
         (
-            "nd_json_extension_api/endpoints/struct.Values.html",
+            "nd_json_extension_api/struct.Values.html",
             "NdJsonExtensionApi::Values",
             "Records &lt; NdJson &lt; u32 &gt; &gt;",
         ),

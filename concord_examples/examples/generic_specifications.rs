@@ -85,9 +85,10 @@ api! {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = GenericSpecificationApi::builder().build()?;
-    let _: Request<_> = client.buffered(Bytes::from_static(b"generic request"));
-    let _: Request<_> = client.streaming();
-    let _: Request<_> = client.discard();
+    let _: generic_specification_api::BufferedRequest =
+        client.buffered(Bytes::from_static(b"generic request"));
+    let _: generic_specification_api::StreamingRequest = client.streaming();
+    let _: generic_specification_api::DiscardRequest = client.discard();
 
     let prepared = PreparedEndpoint::builder("GenericSpecificationApi::prepared", Method::POST)
         .body_spec::<ExampleRequestSpec>(Bytes::from_static(b"prepared generic request"))

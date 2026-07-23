@@ -10,5 +10,5 @@ api! {
 
 fn main() {
     let client = SetterApi::new().unwrap();
-    let _ = client.item().verbose(true);
+    let _: setter_api::ItemRequest = client.item().verbose(true).clear_verbose();
 }

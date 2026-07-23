@@ -23,13 +23,12 @@ api! {
 
 #[test]
 fn canonical_construction_is_deterministic_and_performs_no_transport() {
-    use deterministic_api::prelude::*;
-
     let client = DeterministicApi::builder()
         .build()
         .expect("deterministic example client");
-    let _: Request<_> = client.custom("payload".to_owned());
-    let _: Request<_> = client.upload(StreamBody::from_bytes(Bytes::from_static(b"stream")));
+    let _: deterministic_api::CustomRequest = client.custom("payload".to_owned());
+    let _: deterministic_api::UploadRequest =
+        client.upload(StreamBody::from_bytes(Bytes::from_static(b"stream")));
     let _: PaginatedRequest<_> = client
         .pages(
             0,

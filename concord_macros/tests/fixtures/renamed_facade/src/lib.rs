@@ -114,8 +114,6 @@ api! {
     GET Read() -> Bytes;
 }
 
-use renamed_api::prelude::*;
-
 pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
     let client = RenamedApi::new("tenant".to_owned(), "protected-api-key")?;
     let _ = client.credentials().application_key().credential();
@@ -128,13 +126,13 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
         .verbose(true)
         .limit(20)
         .reset_limit();
-    let _: runtime::Request<_> = request;
-    let endpoint = renamed_api::endpoints::resources::ById::new(
+    let _: renamed_api::resources::ByIdRequest = request;
+    let endpoint = renamed_api::resources::ById::new(
         "renamed-scope".to_owned(),
         "renamed-endpoint".to_owned(),
         "renamed-body".to_owned(),
     );
-    let _: runtime::Request<_> = client.request(
+    let _: renamed_api::resources::ByIdRequest = client.request(
         endpoint
             .region("eu".to_owned())
             .scope_limit(20)
@@ -153,16 +151,16 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
     .build()
     .expect("valid renamed prepared endpoint");
     let _: runtime::Request<_> = client.request(prepared);
-    let raw_request: runtime::Request<_> = client
+    let raw_request: renamed_api::resources::CustomRequest = client
         .resources("renamed-scope".to_owned())
         .custom("custom-body".to_owned());
     let _: runtime::dangerous::RawResponseRequest<_> = raw_request.raw_response();
-    let _: runtime::Request<_> = client.resources("renamed-scope".to_owned()).stream_upload(
-        runtime::prelude::StreamBody::from_bytes(runtime::prelude::Bytes::from_static(
-            b"renamed stream",
-        )),
-    );
-    let _: runtime::Request<_> = client
+    let _: renamed_api::resources::StreamUploadRequest = client
+        .resources("renamed-scope".to_owned())
+        .stream_upload(runtime::prelude::StreamBody::from_bytes(
+            runtime::prelude::Bytes::from_static(b"renamed stream"),
+        ));
+    let _: renamed_api::resources::StreamDownloadRequest = client
         .resources("renamed-scope".to_owned())
         .stream_download();
     let _: runtime::PaginatedRequest<_> = client
@@ -175,7 +173,7 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
             runtime::advanced::MultipartPart::text("renamed multipart"),
         )
         .expect("valid renamed multipart recipe");
-    let _: runtime::Request<_> = client
+    let _: renamed_api::resources::MultipartUploadRequest = client
         .resources("renamed-scope".to_owned())
         .multipart_upload(multipart);
     let rate_client = RenamedRateApi::builder()
@@ -186,6 +184,6 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
             ))
         })
         .build()?;
-    let _: runtime::Request<_> = rate_client.read();
+    let _: renamed_rate_api::ReadRequest = rate_client.read();
     Ok(())
 }

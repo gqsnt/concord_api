@@ -41,6 +41,54 @@ mod execute;
 #[doc(hidden)]
 pub mod __private;
 
+#[cfg(feature = "dangerous-raw-response")]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __concord_emit_generated_raw_response_method {
+    ($endpoint:ty, $endpoint_trait:path, $field:ident) => {
+        /// Selects the complete bounded successful response without decoding it.
+        ///
+        /// This method exists only when the `dangerous-raw-response` capability is
+        /// enabled and the declared sealed response mode supports bounded raw
+        /// acquisition.
+        #[must_use]
+        pub fn raw_response<Mode>(self) -> $crate::dangerous::RawResponseRequest<$endpoint>
+        where
+            <$endpoint as $endpoint_trait>::Response:
+                $crate::advanced::ResponseBodySpec<Mode = Mode>,
+            Mode: $crate::dangerous::RawResponseMode,
+        {
+            $crate::__private::raw_response_request(self.$field)
+        }
+    };
+}
+
+#[cfg(not(feature = "dangerous-raw-response"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __concord_emit_generated_raw_response_method {
+    ($endpoint:ty, $endpoint_trait:path, $field:ident) => {};
+}
+
+#[cfg(feature = "dangerous-dev-tools")]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __concord_emit_generated_development_method {
+    ($endpoint:ty, $field:ident) => {
+        #[doc(hidden)]
+        pub fn __concord_into_development_request(self) -> $crate::Request<$endpoint> {
+            self.$field
+        }
+    };
+}
+
+#[cfg(not(feature = "dangerous-dev-tools"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __concord_emit_generated_development_method {
+    ($endpoint:ty, $field:ident) => {};
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

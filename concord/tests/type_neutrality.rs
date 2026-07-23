@@ -1,5 +1,5 @@
 use concord::codec::{CodecError, DecodeBody, DecodeContext};
-use concord::{Bytes, Request, api};
+use concord::{Bytes, api};
 
 /// A downstream response specification deliberately named like an optional extra.
 pub struct Json;
@@ -25,7 +25,7 @@ api! {
 #[test]
 fn local_type_named_json_needs_no_json_feature_or_macro_branch() {
     let client = LocalNameApi::new().expect("local response-spec client");
-    let _: Request<_> = client.local_name();
+    let _: local_name_api::LocalNameRequest = client.local_name();
 }
 
 #[cfg(feature = "json")]
@@ -45,6 +45,6 @@ api! {
 #[test]
 fn aliased_and_fully_qualified_extras_json_are_ordinary_types() {
     let client = ExtrasJsonApi::new().expect("extras JSON client");
-    let _: Request<_> = client.aliased();
-    let _: Request<_> = client.qualified();
+    let _: extras_json_api::AliasedRequest = client.aliased();
+    let _: extras_json_api::QualifiedRequest = client.qualified();
 }

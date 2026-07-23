@@ -1,4 +1,4 @@
-error[E0277]: the trait bound `alpha_api::endpoints::health::Download: BetaApiEndpoint` is not satisfied
+error[E0277]: the trait bound `alpha_api::health::Download: beta_api::Endpoint` is not satisfied
   --> tests/ui/fail/cross_client_endpoint.rs:28:26
    |
 28 |     let _ = beta.request(alpha_endpoint);
@@ -6,7 +6,7 @@ error[E0277]: the trait bound `alpha_api::endpoints::health::Download: BetaApiEn
    |                  |
    |                  required by a bound introduced by this call
    |
-help: the trait `BetaApiEndpoint` is not implemented for `alpha_api::endpoints::health::Download`
+help: the trait `beta_api::Endpoint` is not implemented for `alpha_api::health::Download`
   --> tests/ui/fail/cross_client_endpoint.rs:3:1
    |
  3 | / api! {
@@ -16,7 +16,8 @@ help: the trait `BetaApiEndpoint` is not implemented for `alpha_api::endpoints::
  9 | |         path ["health"];
 10 | |         GET Download() -> Stream<OctetStream>;
    | |____________________^
-help: the following other types implement trait `BetaApiEndpoint`
+   = note: `alpha_api::health::Download` implements similarly named trait `alpha_api::Endpoint`, but not `beta_api::Endpoint`
+help: the following other types implement trait `beta_api::Endpoint`
   --> tests/ui/fail/cross_client_endpoint.rs:14:1
    |
 14 | // api! {
@@ -25,13 +26,17 @@ help: the following other types implement trait `BetaApiEndpoint`
 ...  ||
 20 | ||         path ["health"];
 21 | ||         GET Download() -> Stream<OctetStream>;
-   | ||____________________^ `beta_api::endpoints::health::Download`
+   | ||____________________^ `beta_api::health::Download`
 22 | |      }
 23 | |  }
    | |__^ `PreparedEndpoint<R>`
 note: required by a bound in `beta_api::<impl BetaApi>::request`
-  --> tests/ui/fail/cross_client_endpoint.rs:15:12
+  --> tests/ui/fail/cross_client_endpoint.rs:14:1
    |
-15 |     client BetaApi {
-   |            ^^^^^^^ required by this bound in `beta_api::<impl BetaApi>::request`
+14 | / api! {
+15 | |     client BetaApi {
+16 | |         base "https://beta.example.test";
+...  |
+23 | | }
+   | |_^ required by this bound in `beta_api::<impl BetaApi>::request`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

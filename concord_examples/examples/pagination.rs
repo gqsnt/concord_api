@@ -38,8 +38,6 @@ api! {
 }
 
 fn main() -> Result<(), concord::prelude::ClientBuildError> {
-    use pagination_api::prelude::*;
-
     let client = PaginationApi::builder().build()?;
     let _: PaginatedRequest<_> = client
         .offset(

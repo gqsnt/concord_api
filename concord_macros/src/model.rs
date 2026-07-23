@@ -16,7 +16,6 @@ pub(crate) struct Client {
     pub(crate) name: Ident,
     pub(crate) builder_name: Ident,
     pub(crate) support_name: Ident,
-    pub(crate) endpoint_capability_name: Ident,
     pub(crate) values_type_name: Ident,
     pub(crate) base: LitStr,
     pub(crate) values: Vec<Value>,
@@ -67,14 +66,63 @@ pub(crate) struct Endpoint {
     #[allow(dead_code, reason = "retained for deterministic public-name audit")]
     pub(crate) alias: Option<Ident>,
     pub(crate) public_method_name: Ident,
-    pub(crate) request_ext_name: Ident,
-    pub(crate) prelude_alias: Ident,
+    pub(crate) surface: EndpointSurface,
     pub(crate) parameters: Vec<Value>,
     pub(crate) body: Option<Type>,
     pub(crate) config: NormalizedConfig,
     pub(crate) response: Type,
     pub(crate) pagination: Option<Pagination>,
     pub(crate) dsl_path: Vec<Ident>,
+}
+
+#[derive(Clone)]
+pub(crate) struct EndpointSurface {
+    pub(crate) endpoint_type_name: Ident,
+    pub(crate) request_type_name: Ident,
+    pub(crate) module_path: Vec<Ident>,
+    pub(crate) required_arguments: Vec<RequiredArgument>,
+    pub(crate) setters: Vec<EndpointSetter>,
+    pub(crate) terminals: RequestTerminals,
+    pub(crate) clone_eligibility: CloneEligibility,
+    pub(crate) docs_identity: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RequiredArgument {
+    Parameter(usize),
+    Body,
+}
+
+#[derive(Clone)]
+pub(crate) struct EndpointSetter {
+    pub(crate) parameter: usize,
+    pub(crate) method: Ident,
+    pub(crate) helper: Ident,
+}
+
+#[derive(Clone)]
+pub(crate) struct RequestTerminals {
+    pub(crate) response: bool,
+    pub(crate) pagination: bool,
+    pub(crate) raw_response: RawResponseCapability,
+    pub(crate) credential_storage: Vec<CredentialStorageTerminal>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RawResponseCapability {
+    SealedResponseMode,
+}
+
+#[derive(Clone)]
+pub(crate) struct CredentialStorageTerminal {
+    pub(crate) credential: usize,
+    pub(crate) method: Ident,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CloneEligibility {
+    Always,
+    BodyInputBound,
 }
 
 #[derive(Clone)]

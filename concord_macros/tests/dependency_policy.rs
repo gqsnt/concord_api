@@ -429,8 +429,8 @@ fn transport_stack_exception_is_h2_dev_only() {
 }
 
 #[test]
-fn trybuild_is_confined_to_core_and_macro_development_dependencies() {
-    for package in ["concord-core", "concord-macros"] {
+fn trybuild_is_confined_to_public_contract_test_development_dependencies() {
+    for package in ["concord-core", "concord-macros", "concord"] {
         let normal = direct_tree(
             package,
             "normal,build",

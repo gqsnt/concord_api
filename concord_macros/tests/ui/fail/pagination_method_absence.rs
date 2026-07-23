@@ -20,8 +20,6 @@ api! {
 }
 
 fn main() {
-    use method_surface::prelude::*;
-
     let client = MethodSurface::new().unwrap();
     let _ = client.ordinary().paginate(1_u32);
     let _ = client

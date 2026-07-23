@@ -36,6 +36,10 @@ pub use http::{HeaderName, Method};
 pub use url::Url;
 
 #[doc(hidden)]
+pub use crate::__concord_emit_generated_development_method as emit_generated_development_method;
+#[doc(hidden)]
+pub use crate::__concord_emit_generated_raw_response_method as emit_generated_raw_response_method;
+#[doc(hidden)]
 pub use crate::auth::Auth;
 #[doc(hidden)]
 pub use crate::body::{EmptyBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec};
@@ -51,7 +55,6 @@ pub use crate::pagination::PaginatedEndpoint;
 pub use crate::rate_limit::{
     RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitRule, RateLimitWindow,
 };
-#[doc(hidden)]
 #[doc(hidden)]
 pub use crate::request::{
     EndpointSpec, HeadBuilder, PreparedHead, RawResponseEndpoint, RequestMeta, RequestOptions,
@@ -304,6 +307,23 @@ pub fn missing_input_error() -> ClientBuildError {
 #[must_use]
 pub fn request<E>(core: &ClientCore, endpoint: E) -> crate::Request<E> {
     crate::Request::new(core.clone(), endpoint)
+}
+
+/// Selects universal response metadata for one generated named request wrapper.
+#[doc(hidden)]
+#[must_use]
+pub fn response_request<E>(request: crate::Request<E>) -> crate::ResponseRequest<E> {
+    crate::ResponseRequest::from_generated(request)
+}
+
+/// Selects bounded raw acquisition for one generated named request wrapper.
+#[cfg(feature = "dangerous-raw-response")]
+#[doc(hidden)]
+#[must_use]
+pub fn raw_response_request<E>(
+    request: crate::Request<E>,
+) -> crate::dangerous::RawResponseRequest<E> {
+    crate::dangerous::RawResponseRequest::from_generated(request)
 }
 
 /// Creates one side-effect-free stable pagination wrapper.

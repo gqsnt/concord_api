@@ -1,0 +1,13 @@
+error[E0599]: no method named `verbose` found for struct `SecondRequest` in the current scope
+  --> tests/ui/fail/wrong_endpoint_setter_absent.rs:15:29
+   |
+ 4 | / api! {
+ 5 | |     client SetterApi {
+ 6 | |         base "http://setter.example.test";
+...  |
+ 9 | |     GET First(verbose: Option<bool>) -> Bytes;
+10 | |     GET Second() -> Bytes;
+   | |______________- method `verbose` not found for this struct
+...
+15 |       let _ = client.second().verbose(true);
+   |                               ^^^^^^^ method not found in `SecondRequest`

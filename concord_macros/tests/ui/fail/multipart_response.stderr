@@ -15,3 +15,21 @@ help: the trait `DecodeBody` is implemented for `concord_core::advanced::Text`
    | ^^^^^^^^^^^^^^^^^^^^^^^^
    = note: required for `concord_core::advanced::Multipart` to implement `ResponseBodySpec`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `concord_core::advanced::Multipart: ResponseBodySpec` is not satisfied
+  --> tests/ui/fail/multipart_response.rs:3:1
+   |
+ 3 | / api! {
+ 4 | |     client MultipartApi {
+ 5 | |         base "http://multipart.example.test";
+...  |
+12 | | }
+   | |_^ the trait `DecodeBody` is not implemented for `concord_core::advanced::Multipart`
+   |
+help: the trait `DecodeBody` is implemented for `concord_core::advanced::Text`
+  --> $WORKSPACE/concord_core/src/codec/mod.rs
+   |
+   | impl DecodeBody for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `concord_core::advanced::Multipart` to implement `ResponseBodySpec`
+   = note: this error originates in the macro `super::__concord_generated::__core::__private::emit_generated_raw_response_method` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

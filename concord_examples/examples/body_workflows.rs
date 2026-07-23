@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 
-use concord::Request;
 use concord::api;
 use concord::body::{MultipartBody, MultipartPart};
 use concord::prelude::{Bytes, StreamBody};
@@ -20,19 +19,19 @@ api! {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = BodyApi::builder().build()?;
-    let _: Request<_> = client.json_round_trip(vec![1, 2, 3]);
-    let _: Request<_> = client.text_round_trip("bounded text".to_owned());
-    let _: Request<_> = client.custom_round_trip("custom payload".to_owned());
-    let _: Request<_> = client.upload(StreamBody::from_bytes(Bytes::from_static(
+    let _: body_api::JsonRoundTripRequest = client.json_round_trip(vec![1, 2, 3]);
+    let _: body_api::TextRoundTripRequest = client.text_round_trip("bounded text".to_owned());
+    let _: body_api::CustomRoundTripRequest = client.custom_round_trip("custom payload".to_owned());
+    let _: body_api::UploadRequest = client.upload(StreamBody::from_bytes(Bytes::from_static(
         b"stream payload",
     )));
-    let _: Request<_> = client.download();
+    let _: body_api::DownloadRequest = client.download();
     let multipart = MultipartBody::new()
         .part("description", MultipartPart::text("deterministic example"))?
         .part(
             "payload",
             MultipartPart::bytes(Bytes::from_static(b"multipart bytes")),
         )?;
-    let _: Request<_> = client.multipart_upload(multipart);
+    let _: body_api::MultipartUploadRequest = client.multipart_upload(multipart);
     Ok(())
 }

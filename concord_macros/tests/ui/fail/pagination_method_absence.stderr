@@ -1,39 +1,33 @@
-error[E0599]: no method named `paginate` found for struct `concord_core::Request<E>` in the current scope
-  --> tests/ui/fail/pagination_method_absence.rs:26:31
-   |
-26 |     let _ = client.ordinary().paginate(1_u32);
-   |                               ^^^^^^^^ method not found in `concord_core::Request<Ordinary>`
-   |
-   = help: items from traits can only be used if the trait is implemented and in scope
-note: `PaginatedRequestExt` defines an item `paginate`, perhaps you need to implement it
-  --> tests/ui/fail/pagination_method_absence.rs:8:1
+error[E0599]: no method named `paginate` found for struct `OrdinaryRequest` in the current scope
+  --> tests/ui/fail/pagination_method_absence.rs:24:31
    |
  8 | / api! {
  9 | |     client MethodSurface {
 10 | |         base "https://example.test";
 ...  |
 13 | |     GET Ordinary() -> Json<Vec<u8>>;
-14 | |     GET Paginated(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
-   | |_________________^
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   | |________________- method `paginate` not found for this struct
+...
+24 |       let _ = client.ordinary().paginate(1_u32);
+   |                                 ^^^^^^^^ method not found in `OrdinaryRequest`
 
-error[E0599]: `PaginatedRequest<Paginated>` is not an iterator
-  --> tests/ui/fail/pagination_method_absence.rs:30:10
+error[E0599]: `concord_core::PaginatedRequest<Paginated>` is not an iterator
+  --> tests/ui/fail/pagination_method_absence.rs:28:10
    |
-27 |       let _ = client
+25 |       let _ = client
    |  _____________-
-28 | |         .paginated(0, std::num::NonZeroU32::MIN)
-29 | |         .paginate(1_u32)
-30 | |         .collect::<Vec<_>>();
-   | |         -^^^^^^^ `PaginatedRequest<Paginated>` is not an iterator
+26 | |         .paginated(0, std::num::NonZeroU32::MIN)
+27 | |         .paginate(1_u32)
+28 | |         .collect::<Vec<_>>();
+   | |         -^^^^^^^ `concord_core::PaginatedRequest<Paginated>` is not an iterator
    | |_________|
    |
    |
   ::: $WORKSPACE/concord_core/src/pagination/pending.rs
    |
    |   pub struct PaginatedRequest<E> {
-   |   ------------------------------ doesn't satisfy `PaginatedRequest<Paginated>: Iterator`
+   |   ------------------------------ doesn't satisfy `_: Iterator`
    |
    = note: the following trait bounds were not satisfied:
-           `PaginatedRequest<Paginated>: Iterator`
-           which is required by `&mut PaginatedRequest<Paginated>: Iterator`
+           `concord_core::PaginatedRequest<Paginated>: Iterator`
+           which is required by `&mut concord_core::PaginatedRequest<Paginated>: Iterator`

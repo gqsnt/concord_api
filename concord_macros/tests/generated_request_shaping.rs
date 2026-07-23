@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use concord_core::advanced::{ClientBuildErrorKind, MultipartBody, MultipartPart, SafeProxy};
 use concord_core::prelude::{
-    ByteStream, Bytes, DecodedResponse, ErrorCategory, OctetStream, Request, StreamBody,
+    ByteStream, Bytes, DecodedResponse, ErrorCategory, OctetStream, StreamBody,
 };
 use concord_macros::api;
 use concord_test_support::server::{BodyGate, ResponseScript, ScriptedServer};
@@ -233,9 +233,6 @@ api! {
     }
 }
 
-use other_api::prelude::*;
-use shape_api::prelude::*;
-
 fn proxy(server: &ScriptedServer) -> SafeProxy {
     SafeProxy::parse(server.url("")).expect("local proxy")
 }
@@ -330,7 +327,7 @@ async fn nested_facade_extension_setters_and_explicit_endpoint_have_head_parity(
         .expect("facade endpoint");
     assert_eq!(facade, b"facade"[..]);
 
-    let explicit = shape_api::endpoints::regions::users::ById::new(
+    let explicit = shape_api::regions::users::ById::new(
         "eu".to_owned(),
         "account-a".to_owned(),
         "42".to_owned(),
@@ -403,7 +400,7 @@ async fn scope_and_endpoint_resets_reuse_one_retained_default_without_clone_boun
     drop(source);
     assert_eq!(SCOPE_DEFAULT_DROPS.load(Ordering::SeqCst), scope_before);
 
-    let request: Request<_> = reset
+    let request: shape_api::regions::users::ByIdRequest = reset
         .users("account".to_owned())
         .fetch("id".to_owned())
         .endpoint_marker(DropProbe::new("temporary", explicit_drops))

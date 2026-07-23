@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use concord::__development::{
     BenchmarkOperation, benchmark_public_head, benchmark_ready_credentials,
 };
+use concord::PaginatedRequest;
 use concord::api;
 use concord::codec::{BytesMut, CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext};
 use concord::endpoint::PreparedEndpoint;
@@ -18,7 +19,6 @@ use concord::prelude::{Bytes, PageLimit, StreamBody};
 use concord::rate_limit::NoopRateLimiter;
 use concord::records::{RecordDecoder, RecordError};
 use concord::response::ResponseHead;
-use concord::{PaginatedRequest, Request};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 
 pub struct BenchCodec;
@@ -226,8 +226,8 @@ fn generated_client_facade_and_request_creation(iterations: usize, audit: &mut C
     let started = Instant::now();
     for index in 0..iterations {
         let facade = client.records("archive".to_owned());
-        let request: Request<_> = facade.show(index.to_string());
-        black_box(request);
+        let request: bench_api::records::ShowRequest = facade.show(index.to_string());
+        let _ = black_box(request);
     }
     report(
         audit,
@@ -244,7 +244,12 @@ fn public_head_preparation(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = configured_builder().build()?;
     let requests: Vec<_> = (0..iterations)
-        .map(|index| client.records("archive".to_owned()).show(index.to_string()))
+        .map(|index| {
+            client
+                .records("archive".to_owned())
+                .show(index.to_string())
+                .__concord_into_development_request()
+        })
         .collect();
     let started = Instant::now();
     for request in requests {
@@ -322,7 +327,13 @@ fn credential_ready_path_preparation(
     audit: &mut CategoryAudit,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = configured_credential_builder().build()?;
-    let requests: Vec<_> = (0..iterations).map(|_| client.credential_ready()).collect();
+    let requests: Vec<_> = (0..iterations)
+        .map(|_| {
+            client
+                .credential_ready()
+                .__concord_into_development_request()
+        })
+        .collect();
     let started = Instant::now();
     for request in requests {
         let observation = runtime.block_on(benchmark_ready_credentials(request))?;
@@ -366,8 +377,6 @@ fn pagination_loop_overhead(
     runtime: &tokio::runtime::Runtime,
     audit: &mut CategoryAudit,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use bench_api::prelude::*;
-
     let scripts = (0..iterations).flat_map(|_| {
         [
             ResponseScript::ok(b"a".to_vec()),

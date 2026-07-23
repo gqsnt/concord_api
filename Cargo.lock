@@ -139,6 +139,7 @@ dependencies = [
  "concord-macros",
  "concord-test-support",
  "tokio",
+ "trybuild",
 ]
 
 [[package]]

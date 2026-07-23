@@ -769,9 +769,9 @@ fn nested_and_repeated_macro_invocations_keep_rate_contracts_isolated() {
         .runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
         .build()
         .expect("second repeated rate client");
-    let _: concord_core::Request<_> = nested.read();
-    let _: concord_core::Request<_> = first.read();
-    let _: concord_core::Request<_> = second.read();
+    let _: nested_rate::nested_rate_api::ReadRequest = nested.read();
+    let _: repeated_rate::first_rate_api::ReadRequest = first.read();
+    let _: repeated_rate::second_rate_api::ReadRequest = second.read();
 }
 
 #[tokio::test]

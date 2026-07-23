@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 
-use concord::Request;
 use concord::api;
 
 api! {
@@ -78,13 +77,13 @@ api! {
 
 fn main() -> Result<(), concord::prelude::ClientBuildError> {
     let client = RegionalGameApi::new("euw1".to_owned(), "example-developer-key")?;
-    let _: Request<_> = client
+    let _: regional_game_api::accounts::ByIdRequest = client
         .accounts("europe".to_owned())
         .by_id("account-42".to_owned());
-    let _: Request<_> = client
+    let _: regional_game_api::matches::ByIdRequest = client
         .matches("europe".to_owned())
         .by_id("match-42".to_owned());
-    let _: Request<_> = client
+    let _: regional_game_api::league::ChallengerRequest = client
         .league("euw1".to_owned())
         .challenger("ranked-solo".to_owned());
     Ok(())

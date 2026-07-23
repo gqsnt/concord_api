@@ -1233,8 +1233,6 @@ api! {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    use riot_api::prelude::*;
-
     let api_key = std::env::var("RIOT_API_KEY")?;
     let game_name = std::env::var("RIOT_GAME_NAME")?;
     let tag_line = std::env::var("RIOT_TAG_LINE")?;

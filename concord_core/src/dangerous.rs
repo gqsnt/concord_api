@@ -15,4 +15,4 @@ pub use reqwest::retry::Builder as ReqwestRetryBuilder;
 #[cfg(feature = "dangerous-raw-response")]
 pub use crate::request::RawResponseRequest;
 #[cfg(feature = "dangerous-raw-response")]
-pub use crate::response::RawResponse;
+pub use crate::response::{RawResponse, RawResponseMode};

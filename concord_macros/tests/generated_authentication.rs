@@ -115,8 +115,6 @@ api! {
 
 #[test]
 fn generated_authentication_surface_has_ordered_inputs_and_source_specific_handles() {
-    use auth_api::prelude::*;
-
     let client = AuthApi::new(
         "tenant".to_owned(),
         "api-secret",
@@ -137,7 +135,7 @@ fn generated_authentication_surface_has_ordered_inputs_and_source_specific_handl
     assert!(!credentials.acquired().is_set());
     assert!(!credentials.session().is_set());
 
-    let _pending = client.login().acquire_as_acquired();
+    let _pending = client.login().store_as_acquired();
     let _ = client.nested().inherited();
     let _ = client.nested().replaced();
     let _ = client.nested().public();
@@ -218,8 +216,6 @@ async fn generated_handles_share_clone_state_keep_independent_builds_and_replace
 
 #[tokio::test]
 async fn endpoint_backed_acquisition_uses_normal_endpoint_execution_and_preserves_on_failure() {
-    use auth_api::prelude::*;
-
     let server = ScriptedServer::start([
         ResponseScript::ok(b"acquired-session".to_vec())
             .with_header("Content-Type", "application/session"),
@@ -234,7 +230,7 @@ async fn endpoint_backed_acquisition_uses_normal_endpoint_execution_and_preserve
 
     client
         .login()
-        .acquire_as_acquired()
+        .store_as_acquired()
         .await
         .expect("normal endpoint acquisition");
     assert!(client.credentials().acquired().is_set());
@@ -247,7 +243,7 @@ async fn endpoint_backed_acquisition_uses_normal_endpoint_execution_and_preserve
         .expect("existing endpoint material");
     let error = client
         .login()
-        .acquire_as_acquired()
+        .store_as_acquired()
         .await
         .expect_err("terminal endpoint failure");
     assert_eq!(error.category(), ErrorCategory::HttpStatus);

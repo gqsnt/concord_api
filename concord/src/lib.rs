@@ -23,6 +23,54 @@ pub use concord_core::{PageLimit, PaginatedRequest, Request, ResponseRequest};
 pub use concord_extras::codec::Json;
 pub use concord_extras::pagination::{CursorPagination, OffsetPagination, PagePagination};
 
+#[cfg(feature = "dangerous-raw-response")]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __concord_emit_generated_raw_response_method {
+    ($endpoint:ty, $endpoint_trait:path, $field:ident) => {
+        /// Selects the complete bounded successful response without decoding it.
+        ///
+        /// This method exists only when the `dangerous-raw-response` capability is
+        /// enabled and the declared sealed response mode supports bounded raw
+        /// acquisition.
+        #[must_use]
+        pub fn raw_response<Mode>(self) -> $crate::dangerous::RawResponseRequest<$endpoint>
+        where
+            <$endpoint as $endpoint_trait>::Response:
+                $crate::advanced::ResponseBodySpec<Mode = Mode>,
+            Mode: $crate::dangerous::RawResponseMode,
+        {
+            $crate::__private::raw_response_request(self.$field)
+        }
+    };
+}
+
+#[cfg(not(feature = "dangerous-raw-response"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __concord_emit_generated_raw_response_method {
+    ($endpoint:ty, $endpoint_trait:path, $field:ident) => {};
+}
+
+#[cfg(feature = "dangerous-dev-tools")]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __concord_emit_generated_development_method {
+    ($endpoint:ty, $field:ident) => {
+        #[doc(hidden)]
+        pub fn __concord_into_development_request(self) -> $crate::Request<$endpoint> {
+            self.$field
+        }
+    };
+}
+
+#[cfg(not(feature = "dangerous-dev-tools"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __concord_emit_generated_development_method {
+    ($endpoint:ty, $field:ident) => {};
+}
+
 /// Credential material, provider contracts, and enabled first-party providers.
 pub mod auth {
     pub use concord_core::advanced::{
@@ -215,12 +263,19 @@ pub mod dangerous {
     #[cfg(feature = "dangerous-custom-retry")]
     pub use concord_core::dangerous::ReqwestRetryBuilder;
     #[cfg(feature = "dangerous-raw-response")]
-    pub use concord_core::dangerous::{RawResponse, RawResponseRequest};
+    pub use concord_core::dangerous::{RawResponse, RawResponseMode, RawResponseRequest};
 }
 
 /// Generated-code bridge. This is not a user extension surface.
 #[doc(hidden)]
 pub mod __private {
+    #[doc(hidden)]
+    pub use crate::__concord_emit_generated_development_method as emit_generated_development_method;
+    #[doc(hidden)]
+    pub use crate::__concord_emit_generated_raw_response_method as emit_generated_raw_response_method;
+    #[cfg(feature = "dangerous-raw-response")]
+    #[doc(hidden)]
+    pub use concord_core::__private::raw_response_request;
     #[doc(hidden)]
     pub use concord_core::__private::{
         ApiError, ApiResponse, Auth, ClientBuildError, ClientCore, DebugLevel, EmptyBody,
@@ -232,6 +287,7 @@ pub mod __private {
         default_http_config, default_http_config_with_custom_retry,
         duplicate_http_configuration_error, duplicate_runtime_configuration_error,
         inspect_endpoint, map_endpoint, missing_input_error, paginate_request, request,
+        response_request,
     };
 
     /// Produces a focused const-evaluation diagnostic when multipart is unavailable.

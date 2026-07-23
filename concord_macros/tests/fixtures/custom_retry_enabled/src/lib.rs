@@ -17,6 +17,6 @@ pub fn proof() -> Result<(), concord_core::prelude::ClientBuildError> {
     let client = CustomRetryEnabledApi::builder()
         .http(|http| http.retry_off())
         .build()?;
-    let _: concord_core::Request<_> = client.ping();
+    let _: custom_retry_enabled_api::PingRequest = client.ping();
     Ok(())
 }

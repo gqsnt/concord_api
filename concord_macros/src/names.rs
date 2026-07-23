@@ -16,7 +16,10 @@ pub(crate) const RESERVED_GENERATED_METHODS: &[&str] = &[
     "disable_timeout",
     "inherit_timeout",
     "debug",
-    "__concord_request_extension_seal",
+    "description",
+    "into_future",
+    "__concord_bind",
+    "__concord_new",
 ];
 
 pub(crate) fn canonical_ident(name: &Ident) -> String {
@@ -72,25 +75,26 @@ pub(crate) fn snake_ident(name: &Ident) -> Ident {
     public_ident(&to_snake_case(&canonical_ident(name)), name.span())
 }
 
-pub(crate) fn request_ext_name(endpoint: &Ident) -> Ident {
+pub(crate) fn pascal_ident(name: &Ident) -> Ident {
+    Ident::new(&to_pascal_case(&canonical_ident(name)), name.span())
+}
+
+pub(crate) fn request_type_name(endpoint_type: &Ident) -> Ident {
     Ident::new(
-        &format!("{}RequestExt", to_pascal_case(&canonical_ident(endpoint))),
-        endpoint.span(),
+        &format!("{}Request", canonical_ident(endpoint_type)),
+        endpoint_type.span(),
     )
 }
 
-pub(crate) fn prelude_alias(
-    client: &Ident,
-    scope_path: &[Ident],
-    endpoint_public_name: &Ident,
-) -> Ident {
-    let mut value = to_pascal_case(&canonical_ident(client));
-    for scope in scope_path {
-        value.push_str(&to_pascal_case(&canonical_ident(scope)));
-    }
-    value.push_str(&to_pascal_case(&canonical_ident(endpoint_public_name)));
-    value.push_str("RequestExt");
-    Ident::new(&value, endpoint_public_name.span())
+pub(crate) fn storage_terminal_name(credential: &Ident) -> Ident {
+    public_ident(
+        &format!("store_as_{}", to_snake_case(&canonical_ident(credential))),
+        credential.span(),
+    )
+}
+
+pub(crate) fn helper_ident(prefix: &str, name: &Ident) -> Ident {
+    public_ident(&format!("{prefix}_{}", canonical_ident(name)), name.span())
 }
 
 fn is_rust_keyword(value: &str) -> bool {
@@ -156,17 +160,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn deterministic_names_cover_acronyms_keywords_and_traits() {
+    fn deterministic_names_cover_acronyms_keywords_and_request_types() {
         assert_eq!(to_snake_case("HTTPStatus"), "http_status");
         assert_eq!(to_pascal_case("user_resources"), "UserResources");
         assert_eq!(snake_ident(&parse_quote!(r#type)).to_string(), "r#type");
         assert_eq!(
-            prelude_alias(
-                &parse_quote!(ExampleApi),
-                &[parse_quote!(regions), parse_quote!(users)],
-                &parse_quote!(by_id),
-            ),
-            "ExampleApiRegionsUsersByIdRequestExt"
+            request_type_name(&pascal_ident(&parse_quote!(get_http_status))),
+            "GetHttpStatusRequest"
+        );
+        assert_eq!(
+            storage_terminal_name(&parse_quote!(session_token)),
+            "store_as_session_token"
         );
     }
 }
