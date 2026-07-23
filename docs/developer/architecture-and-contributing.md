@@ -326,7 +326,7 @@ Generated body and response semantics are type-neutral. The model stores Rust ty
 
 Standalone fixtures cover:
 
-- renamed core dependency;
+- renamed façade dependency;
 - missing core dependency;
 - generated contract mismatch;
 - feature-disabled JSON, OAuth2, multipart, and governor behavior.
@@ -399,7 +399,7 @@ A bump must update together:
 
 ### Testing
 
-The `contract_mismatch` fixture supplies an intentionally incompatible fake core and must fail with the focused generated-contract diagnostic. Normal and renamed-core fixtures must continue to compile.
+The `contract_mismatch` fixture supplies an intentionally incompatible fake core and must fail with the focused generated-contract diagnostic. Normal and renamed-façade fixtures must continue to compile.
 
 ### Public compatibility
 

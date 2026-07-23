@@ -59,6 +59,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord"
+version = "0.1.0"
+dependencies = [
+ "concord_core 0.1.0",
+ "concord_extras",
+ "concord_macros",
+]
+
+[[package]]
 name = "concord-fixture-contract-mismatch"
 version = "0.0.0"
 dependencies = [
@@ -150,11 +159,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "concord-fixture-renamed-core"
+name = "concord-fixture-renamed-facade"
 version = "0.0.0"
 dependencies = [
- "concord_core 0.1.0",
- "concord_macros",
+ "concord",
 ]
 
 [[package]]
@@ -180,6 +188,13 @@ dependencies = [
 [[package]]
 name = "concord_core"
 version = "99.0.0"
+dependencies = [
+ "concord_core 0.1.0",
+]
+
+[[package]]
+name = "concord_extras"
+version = "0.1.0"
 dependencies = [
  "concord_core 0.1.0",
 ]

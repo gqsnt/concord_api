@@ -54,7 +54,7 @@ features:
     cargo check -p concord_core --all-targets --no-default-features --features dangerous-raw-response
     cargo check -p concord_core --all-targets --no-default-features --features dangerous-custom-retry
     cargo check -p concord_core --all-targets --no-default-features --features dangerous-dev-tools
-    cargo check --target-dir target/fixture-contracts --manifest-path concord_macros/tests/fixtures/Cargo.toml -p concord-fixture-renamed-core --offline --locked
+    cargo check --target-dir target/fixture-contracts --manifest-path concord_macros/tests/fixtures/Cargo.toml -p concord-fixture-renamed-facade --offline --locked
     cargo check --target-dir target/fixture-contracts --manifest-path concord_macros/tests/fixtures/Cargo.toml -p concord-fixture-extension-certification --all-features --offline --locked
 
 deny:

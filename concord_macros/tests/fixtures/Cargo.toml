@@ -11,7 +11,7 @@ members = [
     "no_governor_rate_limits",
     "oauth_disabled",
     "raw_response_disabled",
-    "renamed_core",
+    "renamed_facade",
 ]
 exclude = ["contract_mismatch/incompatible_core"]
 resolver = "3"

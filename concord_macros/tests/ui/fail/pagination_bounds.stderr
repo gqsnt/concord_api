@@ -26,7 +26,11 @@ error[E0277]: `NotIterable` is not an iterator
 49 | | }
    | |_^ `NotIterable` is not an iterator
    |
-   = help: the trait `Iterator` is not implemented for `NotIterable`
+help: the trait `Iterator` is not implemented for `NotIterable`
+  --> tests/ui/fail/pagination_bounds.rs:6:1
+   |
+ 6 | pub struct NotIterable;
+   | ^^^^^^^^^^^^^^^^^^^^^^
    = note: required for `NotIterable` to implement `IntoIterator`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -40,10 +44,22 @@ error[E0277]: `NotIterable` is not an iterator
 49 | | }
    | |_^ `NotIterable` is not an iterator
    |
-   = help: the trait `Iterator` is not implemented for `NotIterable`
-   = help: the trait `EndpointSpec` is implemented for `missing_into_iterator::endpoints::Read`
+help: the trait `Iterator` is not implemented for `NotIterable`
+  --> tests/ui/fail/pagination_bounds.rs:6:1
+   |
+ 6 | pub struct NotIterable;
+   | ^^^^^^^^^^^^^^^^^^^^^^
+help: the trait `concord_core::__private::EndpointSpec` is implemented for `missing_into_iterator::endpoints::Read`
+  --> tests/ui/fail/pagination_bounds.rs:41:1
+   |
+41 | / api! {
+42 | |     client MissingIntoIterator {
+43 | |         base "https://example.test";
+...  |
+49 | | }
+   | |_^
    = note: required for `NotIterable` to implement `IntoIterator`
-note: required for `missing_into_iterator::endpoints::Read` to implement `EndpointSpec`
+note: required for `missing_into_iterator::endpoints::Read` to implement `concord_core::__private::EndpointSpec`
   --> tests/ui/fail/pagination_bounds.rs:41:1
    |
 41 | / api! {
@@ -63,10 +79,22 @@ error[E0277]: `NotIterable` is not an iterator
 47 |         paginate crate::Controller {}
    |                  ^^^^^^^^^^^^^^^^^ `NotIterable` is not an iterator
    |
-   = help: the trait `Iterator` is not implemented for `NotIterable`
-   = help: the trait `EndpointSpec` is implemented for `missing_into_iterator::endpoints::Read`
+help: the trait `Iterator` is not implemented for `NotIterable`
+  --> tests/ui/fail/pagination_bounds.rs:6:1
+   |
+ 6 | pub struct NotIterable;
+   | ^^^^^^^^^^^^^^^^^^^^^^
+help: the trait `concord_core::__private::EndpointSpec` is implemented for `missing_into_iterator::endpoints::Read`
+  --> tests/ui/fail/pagination_bounds.rs:41:1
+   |
+41 | / api! {
+42 | |     client MissingIntoIterator {
+43 | |         base "https://example.test";
+...  |
+49 | | }
+   | |_^
    = note: required for `NotIterable` to implement `IntoIterator`
-note: required for `missing_into_iterator::endpoints::Read` to implement `EndpointSpec`
+note: required for `missing_into_iterator::endpoints::Read` to implement `concord_core::__private::EndpointSpec`
   --> tests/ui/fail/pagination_bounds.rs:41:1
    |
 41 | / api! {
@@ -90,10 +118,22 @@ error[E0277]: `NotIterable` is not an iterator
 49 | | }
    | |_^ `NotIterable` is not an iterator
    |
-   = help: the trait `Iterator` is not implemented for `NotIterable`
-   = help: the trait `PaginatedEndpoint` is implemented for `missing_into_iterator::endpoints::Read`
+help: the trait `Iterator` is not implemented for `NotIterable`
+  --> tests/ui/fail/pagination_bounds.rs:6:1
+   |
+ 6 | pub struct NotIterable;
+   | ^^^^^^^^^^^^^^^^^^^^^^
+help: the trait `concord_core::__private::PaginatedEndpoint` is implemented for `missing_into_iterator::endpoints::Read`
+  --> tests/ui/fail/pagination_bounds.rs:41:1
+   |
+41 | / api! {
+42 | |     client MissingIntoIterator {
+43 | |         base "https://example.test";
+...  |
+49 | | }
+   | |_^
    = note: required for `NotIterable` to implement `IntoIterator`
-note: required for `missing_into_iterator::endpoints::Read` to implement `PaginatedEndpoint`
+note: required for `missing_into_iterator::endpoints::Read` to implement `concord_core::__private::PaginatedEndpoint`
   --> tests/ui/fail/pagination_bounds.rs:41:1
    |
 41 | / api! {
@@ -117,9 +157,15 @@ error[E0277]: the trait bound `Vec<u8>: HasNextCursor<String>` is not satisfied
 61 | | }
    | |_^ the trait `HasNextCursor<String>` is not implemented for `Vec<u8>`
    |
-   = help: the trait `PaginationController<Page>` is implemented for `CursorPagination<C>`
+help: the trait `PaginationController<Page>` is implemented for `CursorPagination<C>`
+  --> $WORKSPACE/concord_core/src/pagination/controller.rs
+   |
+   | / impl<Page, C> PaginationController<Page> for CursorPagination<C>
+   | | where
+   | |     Page: HasNextCursor<C>,
+   | |     C: Clone + Send + 'static,
+   | |______________________________^
    = note: required for `CursorPagination<String>` to implement `PaginationController<Vec<u8>>`
-   = help: see issue #48214
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `Rc<()>` cannot be shared between threads safely
@@ -133,7 +179,6 @@ error[E0277]: `Rc<()>` cannot be shared between threads safely
    | |_^ `Rc<()>` cannot be shared between threads safely
    |
    = help: the trait `Sync` is not implemented for `Rc<()>`
-   = help: see issue #48214
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `Rc<()>` cannot be sent between threads safely
@@ -147,5 +192,4 @@ error[E0277]: `Rc<()>` cannot be sent between threads safely
    | |_^ `Rc<()>` cannot be sent between threads safely
    |
    = help: the trait `Send` is not implemented for `Rc<()>`
-   = help: see issue #48214
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,13 +1,17 @@
 [workspace]
 members = [
+    "concord",
     "concord_core",
+    "concord_extras",
     "concord_macros",
     "concord_test_support",
     "concord_examples",
     "perf",
 ]
 default-members = [
+    "concord",
     "concord_core",
+    "concord_extras",
     "concord_macros",
     "concord_examples",
 ]

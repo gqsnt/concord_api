@@ -1,0 +1,31 @@
+[package]
+name = "concord"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[features]
+default = ["default-tls", "http2", "rate-limit-governor"]
+default-tls = ["concord_core/default-tls"]
+http2 = ["concord_core/http2"]
+rate-limit-governor = ["concord_core/rate-limit-governor"]
+json = ["concord_core/json"]
+records = ["concord_core/records"]
+csv = ["records", "concord_core/csv"]
+ndjson = ["records", "concord_core/ndjson"]
+multipart = ["concord_core/multipart"]
+gzip = ["concord_core/gzip"]
+brotli = ["concord_core/brotli"]
+deflate = ["concord_core/deflate"]
+dangerous-raw-response = ["concord_core/dangerous-raw-response"]
+dangerous-custom-retry = ["concord_core/dangerous-custom-retry"]
+dangerous-dev-tools = ["concord_core/dangerous-dev-tools"]
+
+[dependencies]
+concord_core = { version = "=0.1.0", path = "../concord_core", default-features = false }
+concord_extras = { version = "=0.1.0", path = "../concord_extras", default-features = false }
+concord_macros = { version = "=0.1.0", path = "../concord_macros", default-features = false }
+
+[lints]
+workspace = true

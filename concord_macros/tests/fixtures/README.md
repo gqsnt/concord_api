@@ -4,7 +4,7 @@ These packages remain standalone because their behavior depends on Cargo metadat
 
 | Fixture | What it proves |
 |---|---|
-| `renamed_core` | Generated code resolves the caller-visible alias for `concord_core`. |
+| `renamed_facade` | Generated code resolves the caller-visible alias for the one `concord` dependency. |
 | `missing_core` | Omitting the runtime crate produces the focused macro diagnostic. |
 | `contract_mismatch` | A deliberately incompatible core contract fails during compilation. |
 | `json_disabled` | JSON body/response types do not silently work without the core `json` feature. |

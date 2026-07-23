@@ -69,6 +69,22 @@ fn has_metadata_dependency(package: &Value, dependency: &str, kind: Option<&str>
         })
 }
 
+fn metadata_dependency<'a>(package: &'a Value, dependency: &str) -> &'a Value {
+    package["dependencies"]
+        .as_array()
+        .expect("package dependencies should be an array")
+        .iter()
+        .find(|candidate| {
+            candidate["name"].as_str() == Some(dependency) && candidate["kind"].is_null()
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "{} omitted normal dependency {dependency}",
+                package["name"].as_str().unwrap_or("<unknown package>")
+            )
+        })
+}
+
 fn core_feature_tree(features: Option<&str>, target_key: &str) -> String {
     let mut arguments = vec![
         "-p",
@@ -90,6 +106,74 @@ fn core_feature_tree(features: Option<&str>, target_key: &str) -> String {
         diagnostics(&output)
     );
     String::from_utf8(output.stdout).expect("Cargo tree output should be UTF-8")
+}
+
+#[test]
+fn facade_and_extras_edges_are_exact_and_directional() {
+    let metadata = workspace_metadata();
+    let facade = package_metadata(&metadata, "concord");
+    let core = package_metadata(&metadata, "concord_core");
+    let extras = package_metadata(&metadata, "concord_extras");
+    let macros = package_metadata(&metadata, "concord_macros");
+    let examples = package_metadata(&metadata, "concord_examples");
+
+    for dependency in ["concord_core", "concord_extras", "concord_macros"] {
+        let edge = metadata_dependency(facade, dependency);
+        assert_eq!(
+            edge["req"].as_str(),
+            Some("=0.1.0"),
+            "façade sibling edge {dependency} must be exact"
+        );
+        assert_eq!(
+            edge["uses_default_features"].as_bool(),
+            Some(false),
+            "façade sibling edge {dependency} must disable implementation defaults"
+        );
+    }
+
+    let facade_internal = facade["dependencies"]
+        .as_array()
+        .expect("façade dependencies")
+        .iter()
+        .filter_map(|dependency| dependency["name"].as_str())
+        .filter(|name| name.starts_with("concord"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        facade_internal,
+        ["concord_core", "concord_extras", "concord_macros"],
+        "the façade must own exactly the three implementation edges"
+    );
+
+    let extras_core = metadata_dependency(extras, "concord_core");
+    assert_eq!(extras_core["req"].as_str(), Some("=0.1.0"));
+    assert_eq!(extras_core["uses_default_features"].as_bool(), Some(false));
+    for forbidden in ["concord", "concord_macros"] {
+        assert!(
+            !has_metadata_dependency(extras, forbidden, None),
+            "extras must not depend on {forbidden}"
+        );
+    }
+    for forbidden in ["concord", "concord_extras", "concord_macros"] {
+        assert!(
+            !has_metadata_dependency(core, forbidden, None),
+            "core must not depend on {forbidden}"
+        );
+    }
+    assert!(
+        !has_metadata_dependency(macros, "concord_extras", None),
+        "macros must remain extras-agnostic"
+    );
+
+    // Transitional deletion entry: Phase 5 migrates examples to the façade and
+    // removes both direct implementation edges.
+    const EXAMPLE_IMPLEMENTATION_EDGE_REMOVAL_PHASE: u8 = 5;
+    assert_eq!(EXAMPLE_IMPLEMENTATION_EDGE_REMOVAL_PHASE, 5);
+    for dependency in ["concord_core", "concord_macros"] {
+        assert!(
+            has_metadata_dependency(examples, dependency, None),
+            "Phase 1 expects the recorded transitional example edge {dependency}"
+        );
+    }
 }
 
 #[test]

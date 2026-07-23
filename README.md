@@ -1,21 +1,20 @@
 # Concord
 
-Concord generates strongly typed asynchronous HTTP API clients from a compact Rust macro. Application code works with generated builders, endpoint methods, typed bodies, typed responses, pagination terminals, and explicit errors. `concord_core` owns the difficult cross-cutting work: finite request and response handling, hooks, authentication, rate limiting, managed HTTP, status classification, cancellation, completion, and redaction.
+Concord generates strongly typed asynchronous HTTP API clients from a compact Rust macro. Application code works with generated builders, endpoint methods, typed bodies, typed responses, pagination terminals, and explicit errors. The `concord` package is the user façade over the compiler and managed runtime; its core owns finite request and response handling, hooks, authentication, rate limiting, managed HTTP, status classification, cancellation, completion, and redaction.
 
 Use Concord when an API client should feel like ordinary Rust but needs stronger structure and lifecycle guarantees than ad-hoc request construction.
 
 ## Quick start
 
-Add the two product crates from this repository with matching revisions:
+Add the user-facing package:
 
 ```toml
 [dependencies]
-concord_core = {
-    path = "../concord/concord_core",
+concord = {
+    path = "../concord/concord",
     default-features = false,
     features = ["default-tls", "http2", "json", "rate-limit-governor"]
 }
-concord_macros = { path = "../concord/concord_macros" }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
@@ -23,8 +22,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 Define a client and await a typed request:
 
 ```rust
-use concord_core::prelude::*;
-use concord_macros::api;
+use concord::{Json, api};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -108,6 +106,8 @@ See [Features, limits, errors, and compatibility](docs/reference/features-limits
 
 ```text
 concord_core/          Runtime, public API, and integration tests
+concord/               User façade and generated public integration tests
+concord_extras/        Downstream implementations of public semantic contracts
 concord_macros/        api! parser, resolver, code generation, and Cargo fixtures
 concord_examples/      Compile-checked runnable examples
 concord_test_support/  Shared deterministic test infrastructure

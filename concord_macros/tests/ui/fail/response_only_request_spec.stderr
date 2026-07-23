@@ -7,12 +7,102 @@ error[E0277]: the trait bound `ResponseOnly: EncodeBody` is not satisfied
 ...  |
 20 | |     POST Invalid(body: crate::ResponseOnly) -> Bytes;
 21 | | }
-   | |_^ the trait `EncodeBody` is not implemented for `ResponseOnly`
+   | |_^ unsatisfied trait bound
    |
-   = help: the following other types implement trait `EncodeBody`:
-             Json<T>
-             concord_core::advanced::Text
+help: the trait `EncodeBody` is not implemented for `ResponseOnly`
+  --> tests/ui/fail/response_only_request_spec.rs:4:1
+   |
+ 4 | pub struct ResponseOnly;
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+help: the following other types implement trait `EncodeBody`
+  --> $WORKSPACE/concord_core/src/codec/mod.rs
+   |
+   |   impl EncodeBody for Text {
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::advanced::Text`
+...
+   | / impl<T> EncodeBody for Json<T>
+   | | where
+   | |     T: serde::Serialize + Send + Sync + 'static,
+   | |________________________________________________^ `Json<T>`
    = note: required for `ResponseOnly` to implement `RequestBodySpec`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `ResponseOnly: EncodeBody` is not satisfied
+  --> tests/ui/fail/response_only_request_spec.rs:20:10
+   |
+20 |     POST Invalid(body: crate::ResponseOnly) -> Bytes;
+   |          ^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `EncodeBody` is not implemented for `ResponseOnly`
+  --> tests/ui/fail/response_only_request_spec.rs:4:1
+   |
+ 4 | pub struct ResponseOnly;
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+help: the following other types implement trait `EncodeBody`
+  --> $WORKSPACE/concord_core/src/codec/mod.rs
+   |
+   |   impl EncodeBody for Text {
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::advanced::Text`
+...
+   | / impl<T> EncodeBody for Json<T>
+   | | where
+   | |     T: serde::Serialize + Send + Sync + 'static,
+   | |________________________________________________^ `Json<T>`
+   = note: required for `ResponseOnly` to implement `RequestBodySpec`
+note: required because it appears within the type `Invalid`
+  --> tests/ui/fail/response_only_request_spec.rs:20:10
+   |
+20 |     POST Invalid(body: crate::ResponseOnly) -> Bytes;
+   |          ^^^^^^^
+note: required by a bound in `Sealed`
+  --> tests/ui/fail/response_only_request_spec.rs:15:1
+   |
+15 | / api! {
+16 | |     client InvalidResponseOnlyRequestApi {
+17 | |         base "http://invalid-response-only.example.test/";
+...  |
+20 | |     POST Invalid(body: crate::ResponseOnly) -> Bytes;
+21 | | }
+   | |_^ required by this bound in `Sealed`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `ResponseOnly: EncodeBody` is not satisfied
+  --> tests/ui/fail/response_only_request_spec.rs:20:10
+   |
+20 |     POST Invalid(body: crate::ResponseOnly) -> Bytes;
+   |          ^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `EncodeBody` is not implemented for `ResponseOnly`
+  --> tests/ui/fail/response_only_request_spec.rs:4:1
+   |
+ 4 | pub struct ResponseOnly;
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+help: the following other types implement trait `EncodeBody`
+  --> $WORKSPACE/concord_core/src/codec/mod.rs
+   |
+   |   impl EncodeBody for Text {
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::advanced::Text`
+...
+   | / impl<T> EncodeBody for Json<T>
+   | | where
+   | |     T: serde::Serialize + Send + Sync + 'static,
+   | |________________________________________________^ `Json<T>`
+   = note: required for `ResponseOnly` to implement `RequestBodySpec`
+note: required because it appears within the type `Invalid`
+  --> tests/ui/fail/response_only_request_spec.rs:20:10
+   |
+20 |     POST Invalid(body: crate::ResponseOnly) -> Bytes;
+   |          ^^^^^^^
+note: required by a bound in `InvalidResponseOnlyRequestApiEndpoint`
+  --> tests/ui/fail/response_only_request_spec.rs:15:1
+   |
+15 | / api! {
+16 | |     client InvalidResponseOnlyRequestApi {
+17 | |         base "http://invalid-response-only.example.test/";
+...  |
+20 | |     POST Invalid(body: crate::ResponseOnly) -> Bytes;
+21 | | }
+   | |_^ required by this bound in `InvalidResponseOnlyRequestApiEndpoint`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `ResponseOnly: RequestBodySpec` is not satisfied
@@ -24,13 +114,24 @@ error[E0277]: the trait bound `ResponseOnly: RequestBodySpec` is not satisfied
 ...  |
 20 | |     POST Invalid(body: crate::ResponseOnly) -> Bytes;
 21 | | }
-   | |_^ the trait `EncodeBody` is not implemented for `ResponseOnly`
+   | |_^ unsatisfied trait bound
    |
-   = help: the following other types implement trait `EncodeBody`:
-             Json<T>
-             concord_core::advanced::Text
+help: the trait `EncodeBody` is not implemented for `ResponseOnly`
+  --> tests/ui/fail/response_only_request_spec.rs:4:1
+   |
+ 4 | pub struct ResponseOnly;
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+help: the following other types implement trait `EncodeBody`
+  --> $WORKSPACE/concord_core/src/codec/mod.rs
+   |
+   |   impl EncodeBody for Text {
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::advanced::Text`
+...
+   | / impl<T> EncodeBody for Json<T>
+   | | where
+   | |     T: serde::Serialize + Send + Sync + 'static,
+   | |________________________________________________^ `Json<T>`
    = note: required for `ResponseOnly` to implement `RequestBodySpec`
-   = help: see issue #48214
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `ResponseOnly: EncodeBody` is not satisfied
@@ -42,11 +143,58 @@ error[E0277]: the trait bound `ResponseOnly: EncodeBody` is not satisfied
 ...  |
 20 | |     POST Invalid(body: crate::ResponseOnly) -> Bytes;
 21 | | }
-   | |_^ the trait `EncodeBody` is not implemented for `ResponseOnly`
+   | |_^ unsatisfied trait bound
    |
-   = help: the following other types implement trait `EncodeBody`:
-             Json<T>
-             concord_core::advanced::Text
+help: the trait `EncodeBody` is not implemented for `ResponseOnly`
+  --> tests/ui/fail/response_only_request_spec.rs:4:1
+   |
+ 4 | pub struct ResponseOnly;
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+help: the following other types implement trait `EncodeBody`
+  --> $WORKSPACE/concord_core/src/codec/mod.rs
+   |
+   |   impl EncodeBody for Text {
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::advanced::Text`
+...
+   | / impl<T> EncodeBody for Json<T>
+   | | where
+   | |     T: serde::Serialize + Send + Sync + 'static,
+   | |________________________________________________^ `Json<T>`
+   = note: required for `ResponseOnly` to implement `RequestBodySpec`
+note: required because it appears within the type `Invalid`
+  --> tests/ui/fail/response_only_request_spec.rs:20:10
+   |
+20 |     POST Invalid(body: crate::ResponseOnly) -> Bytes;
+   |          ^^^^^^^
+   = note: the return type of a function must have a statically known size
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `ResponseOnly: EncodeBody` is not satisfied
+  --> tests/ui/fail/response_only_request_spec.rs:15:1
+   |
+15 | / api! {
+16 | |     client InvalidResponseOnlyRequestApi {
+17 | |         base "http://invalid-response-only.example.test/";
+...  |
+20 | |     POST Invalid(body: crate::ResponseOnly) -> Bytes;
+21 | | }
+   | |_^ unsatisfied trait bound
+   |
+help: the trait `EncodeBody` is not implemented for `ResponseOnly`
+  --> tests/ui/fail/response_only_request_spec.rs:4:1
+   |
+ 4 | pub struct ResponseOnly;
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+help: the following other types implement trait `EncodeBody`
+  --> $WORKSPACE/concord_core/src/codec/mod.rs
+   |
+   |   impl EncodeBody for Text {
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::advanced::Text`
+...
+   | / impl<T> EncodeBody for Json<T>
+   | | where
+   | |     T: serde::Serialize + Send + Sync + 'static,
+   | |________________________________________________^ `Json<T>`
    = note: required for `ResponseOnly` to implement `RequestBodySpec`
 note: required because it appears within the type `Invalid`
   --> tests/ui/fail/response_only_request_spec.rs:20:10

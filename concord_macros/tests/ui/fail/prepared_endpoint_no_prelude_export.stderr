@@ -3,8 +3,3 @@ error[E0432]: unresolved import `concord_core::prelude::PreparedEndpoint`
   |
 1 | use concord_core::prelude::PreparedEndpoint;
   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `PreparedEndpoint` in `prelude`
-  |
-help: consider importing this struct instead
-  |
-1 | use concord_core::advanced::PreparedEndpoint;
-  |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

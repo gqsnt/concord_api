@@ -52,8 +52,8 @@ fn check_extension_fixture(arguments: &[&str], key: &str) -> Output {
 }
 
 #[test]
-fn renamed_core_dependency_resolves_through_package_metadata() {
-    assert_fixture_passes("renamed_core");
+fn renamed_facade_dependency_resolves_through_package_metadata() {
+    assert_fixture_passes("renamed_facade");
 }
 
 #[test]
@@ -319,14 +319,14 @@ fn downstream_credential_limiter_and_hooks_execute_through_public_runtime() {
 
 #[test]
 fn missing_core_dependency_has_a_focused_macro_diagnostic() {
-    assert_fixture_fails_with("missing_core", "requires the `concord_core` package");
+    assert_fixture_fails_with("missing_core", "requires the `concord` package");
 }
 
 #[test]
 fn incompatible_core_contract_fails_during_compilation() {
     assert_fixture_fails_with(
         "contract_mismatch",
-        "concord macro/core contract mismatch: core 999, generated 14",
+        "concord macro/core contract mismatch: core 999, generated 15",
     );
 }
 
@@ -377,8 +377,8 @@ fn generated_raw_response_terminal_is_absent_without_the_core_feature() {
 #[test]
 fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names() {
     let root = workspace_root();
-    let manifest = fixture_root().join("renamed_core/Cargo.toml");
-    let target_key = "macros/renamed-core-rustdoc";
+    let manifest = fixture_root().join("renamed_facade/Cargo.toml");
+    let target_key = "macros/renamed-facade-rustdoc";
     let output = run(
         &root,
         target_key,
@@ -400,7 +400,7 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
     let documentation = root
         .join("target/cargo-fixtures")
         .join(target_key)
-        .join("doc/concord_fixture_renamed_core");
+        .join("doc/concord_fixture_renamed_facade");
     for relative in [
         "struct.RenamedApi.html",
         "struct.RenamedApiBuilder.html",

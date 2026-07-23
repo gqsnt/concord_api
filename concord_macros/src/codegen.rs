@@ -13,7 +13,7 @@ use crate::model::{
 };
 use crate::names::{canonical_ident, public_ident, to_snake_case};
 
-const GENERATED_CONTRACT_VERSION: u32 = 14;
+const GENERATED_CONTRACT_VERSION: u32 = 15;
 
 pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
     generate_client(&api.client, core_path)

@@ -131,6 +131,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc14f565cf027a105f7a44ccf9e5b424348421a1d8952a8fc9d499d313107789"
 
 [[package]]
+name = "concord"
+version = "0.1.0"
+dependencies = [
+ "concord_core",
+ "concord_extras",
+ "concord_macros",
+]
+
+[[package]]
 name = "concord_core"
 version = "0.1.0"
 dependencies = [
@@ -162,6 +171,13 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "concord_extras"
+version = "0.1.0"
+dependencies = [
+ "concord_core",
 ]
 
 [[package]]

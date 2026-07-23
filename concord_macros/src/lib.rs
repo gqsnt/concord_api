@@ -19,8 +19,8 @@ pub fn api(input: TokenStream) -> TokenStream {
     parse::parse(input.into())
         .and_then(resolve::resolve)
         .and_then(|model| {
-            let core_path = crate_path::resolve_core_path()?;
-            Ok(codegen::generate(&model, &core_path))
+            let runtime_path = crate_path::resolve_runtime_path()?;
+            Ok(codegen::generate(&model, &runtime_path))
         })
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
