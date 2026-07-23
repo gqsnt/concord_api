@@ -104,20 +104,27 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "struct.RateLimitResponseHead.html",
         "trait.RateLimiter.html",
         "trait.RateLimitObserver.html",
-        "struct.GovernorRateLimiter.html",
-        "struct.DefaultRateLimitObserver.html",
         "struct.NoopRateLimiter.html",
         "struct.Cooldown.html",
         "enum.CooldownScope.html",
     ]
     .into_iter()
     .map(|name| {
-        let path = documentation.join("advanced").join(name);
+        let path = documentation.join("rate_limit").join(name);
         std::fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
     })
     .collect::<Vec<_>>()
     .join("\n");
+    for moved in [
+        "struct.GovernorRateLimiter.html",
+        "struct.DefaultRateLimitObserver.html",
+    ] {
+        assert!(
+            !documentation.join("rate_limit").join(moved).exists(),
+            "extras-owned rate-limit implementation remains in core Rustdoc: {moved}"
+        );
+    }
     for removed in [
         "struct.PreparedBuffered.html",
         "struct.PreparedBytes.html",
@@ -357,7 +364,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             ][..],
         ),
         (
-            "trait.RateLimiter.html",
+            "rate_limit/trait.RateLimiter.html",
             &[
                 "Calls may overlap",
                 "potentially sensitive",
@@ -370,7 +377,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             ][..],
         ),
         (
-            "trait.RateLimitObserver.html",
+            "rate_limit/trait.RateLimitObserver.html",
             &[
                 "Calls for independent responses may overlap",
                 "resolved rate keys",
@@ -690,13 +697,13 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "id=\"method.granted\"",
         "id=\"method.from_parts\"",
         "id=\"method.total_bytes\"",
+        "id=\"method.empty\"",
+        "id=\"method.from_rules\"",
         "id=\"method.acquire\"",
         "id=\"method.observe\"",
-        "id=\"method.quota_capacity\"",
-        "id=\"method.cooldown_capacity\"",
-        "id=\"method.idle_ttl\"",
-        "id=\"method.key_limit\"",
-        "best-effort process-local pacing",
+        "id=\"method.preparation_key_limit\"",
+        "cooldown_cap",
+        "DEFAULT_RATE_LIMIT_KEY_BYTES",
         "operationally sensitive",
     ] {
         assert!(
@@ -712,7 +719,6 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "OBSERVATION_COOLDOWN_CAP",
         "fallback_limiter",
         "as_any",
-        "preparation_key_limit",
         "rate-key-rustdoc-sentinel-64c2e9",
     ] {
         assert!(

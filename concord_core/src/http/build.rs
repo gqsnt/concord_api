@@ -272,6 +272,8 @@ mod tests {
     }
 
     fn managed(builder: HttpConfigBuilder) -> ManagedHttp {
+        #[cfg(not(feature = "default-tls"))]
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let runtime = RuntimeConfigBuilder::new().resolve();
         ManagedHttp::build(builder.resolve(), &runtime).expect("managed clients should build")
     }

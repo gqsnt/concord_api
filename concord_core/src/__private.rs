@@ -296,6 +296,28 @@ pub fn default_runtime_config() -> crate::runtime::RuntimeConfigBuilder {
     crate::runtime::RuntimeConfigBuilder::new()
 }
 
+/// Installs a façade-composed generated default without overriding an explicit
+/// application limiter.
+#[doc(hidden)]
+#[must_use]
+pub fn install_generated_default_limiter(
+    runtime: crate::runtime::RuntimeConfigBuilder,
+    limiter: std::sync::Arc<dyn crate::rate_limit::RateLimiter>,
+) -> crate::runtime::RuntimeConfigBuilder {
+    runtime.install_generated_default_limiter(limiter)
+}
+
+/// Lazily composes a generated default only when no explicit application
+/// limiter was selected.
+#[doc(hidden)]
+#[must_use]
+pub fn install_generated_default_limiter_with(
+    runtime: crate::runtime::RuntimeConfigBuilder,
+    factory: impl FnOnce() -> std::sync::Arc<dyn crate::rate_limit::RateLimiter>,
+) -> crate::runtime::RuntimeConfigBuilder {
+    runtime.install_generated_default_limiter_with(factory)
+}
+
 /// Applies generated static rate-limit requirements without constructing a
 /// custom observer.
 #[doc(hidden)]
@@ -306,8 +328,12 @@ pub fn prepare_generated_rate_limits(
     runtime.prepare_generated_rate_limits(requires_limiter)
 }
 
-/// Applies generated static rate-limit requirements and lazily constructs the
-/// DSL observer only for the generated default governor.
+/// Transitional direct-core generated-code bridge.
+///
+/// The public façade owns observer/default-limiter composition. Direct
+/// `concord_core` macro consumers are retained only until Phase 14, so this
+/// compatibility path validates the generated plan without constructing the
+/// observer or selecting a concrete limiter.
 #[doc(hidden)]
 pub fn prepare_generated_rate_limits_with_observer<O>(
     runtime: crate::runtime::RuntimeConfigBuilder,
@@ -316,7 +342,8 @@ pub fn prepare_generated_rate_limits_with_observer<O>(
 where
     O: Default + crate::rate_limit::RateLimitObserver,
 {
-    runtime.prepare_generated_rate_limits_with_observer::<O>(requires_limiter)
+    let _ = std::marker::PhantomData::<O>;
+    runtime.prepare_generated_rate_limits(requires_limiter)
 }
 
 /// Builds one private shared core for generated client storage.

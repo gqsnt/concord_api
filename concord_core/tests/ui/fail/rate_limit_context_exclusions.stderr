@@ -44,7 +44,7 @@ error[E0609]: no field `body` on type `RateLimitResponse<'_>`
 12 |     let _ = response.body;
    |                      ^^^^ unknown field
    |
-   = note: available fields are: `request`, `status`, `headers`
+   = note: available fields are: `request`, `status`, `headers`, `cooldown_cap`
 
 error[E0609]: no field `credentials` on type `RateLimitResponse<'_>`
   --> tests/ui/fail/rate_limit_context_exclusions.rs:13:22
@@ -52,7 +52,7 @@ error[E0609]: no field `credentials` on type `RateLimitResponse<'_>`
 13 |     let _ = response.credentials;
    |                      ^^^^^^^^^^^ unknown field
    |
-   = note: available fields are: `request`, `status`, `headers`
+   = note: available fields are: `request`, `status`, `headers`, `cooldown_cap`
 
 error[E0609]: no field `native_response` on type `RateLimitResponse<'_>`
   --> tests/ui/fail/rate_limit_context_exclusions.rs:14:22
@@ -60,4 +60,4 @@ error[E0609]: no field `native_response` on type `RateLimitResponse<'_>`
 14 |     let _ = response.native_response;
    |                      ^^^^^^^^^^^^^^^ unknown field
    |
-   = note: available fields are: `request`, `status`, `headers`
+   = note: available fields are: `request`, `status`, `headers`, `cooldown_cap`

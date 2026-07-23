@@ -335,7 +335,7 @@ fn missing_core_dependency_has_a_focused_macro_diagnostic() {
 fn incompatible_core_contract_fails_during_compilation() {
     assert_fixture_fails_with(
         "contract_mismatch",
-        "concord macro/core contract mismatch: core 999, generated 16",
+        "concord macro/core contract mismatch: core 999, generated 17",
     );
 }
 

@@ -1,34 +1,16 @@
-use std::any::Any;
-#[cfg(not(feature = "rate-limit-governor"))]
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
-use http::header::RETRY_AFTER;
 use http::{Method, StatusCode};
 
-#[cfg(any(test, not(feature = "rate-limit-governor")))]
 use crate::error::RateLimitErrorKind;
 use crate::hooks::BoxFuture;
-use crate::redaction::{SanitizedHeaderValue, SanitizedHeaders};
+use crate::redaction::SanitizedHeaders;
 
 use super::{RateLimitError, RateLimitPermit, RateLimitPlan};
 
-pub(crate) const DEFAULT_KEY_LIMIT: usize = 1_024;
-
-mod private {
-    use super::Any;
-
-    #[doc(hidden)]
-    pub trait RateLimiterMetadata {
-        fn as_any(&self) -> &dyn Any;
-    }
-
-    impl<T: Any> RateLimiterMetadata for T {
-        fn as_any(&self) -> &dyn Any {
-            self
-        }
-    }
-}
+/// Default maximum aggregate byte length of one resolved rate-limit key.
+pub const DEFAULT_RATE_LIMIT_KEY_BYTES: usize = 1_024;
 
 /// Safe request metadata supplied to a selected rate limiter.
 pub struct RateLimitRequest<'a> {
@@ -54,6 +36,8 @@ pub struct RateLimitResponse<'a> {
     pub status: StatusCode,
     /// Sanitized response headers.
     pub headers: SanitizedHeaders<'a>,
+    /// Centrally configured maximum duration for server-directed cooldown state.
+    pub cooldown_cap: Duration,
 }
 
 /// Application-supplied or Concord-provided per-attempt limiter authority.
@@ -68,11 +52,18 @@ pub struct RateLimitResponse<'a> {
 /// Concord checks the deadline only after it returns. Futures are dropped on
 /// cancellation, but completed reservations and external effects are not rolled
 /// back. Concord does not automatically bound custom limiter state or work.
-#[allow(
-    private_bounds,
-    reason = "a blanket private metadata bound preserves external implementations while keeping runtime selection metadata out of the public contract"
-)]
-pub trait RateLimiter: private::RateLimiterMetadata + Send + Sync + 'static {
+pub trait RateLimiter: Send + Sync + 'static {
+    /// Returns the maximum aggregate byte length accepted while preparing one
+    /// resolved rate-limit key.
+    ///
+    /// The default is [`DEFAULT_RATE_LIMIT_KEY_BYTES`]. Returning zero permits
+    /// only global keys. Core snapshots this value with the selected limiter and
+    /// validates generated and runtime-defined plans before credentials,
+    /// limiter acquisition, body materialization, or transport work.
+    fn preparation_key_limit(&self) -> usize {
+        DEFAULT_RATE_LIMIT_KEY_BYTES
+    }
+
     /// Acquires authority for exactly one visible Concord attempt.
     fn acquire<'a>(
         &'a self,
@@ -83,18 +74,6 @@ pub trait RateLimiter: private::RateLimiterMetadata + Send + Sync + 'static {
     fn observe<'a>(&'a self, _response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
         Box::pin(async {})
     }
-}
-
-pub(crate) fn preparation_key_limit(_limiter: &dyn RateLimiter) -> usize {
-    #[cfg(feature = "rate-limit-governor")]
-    if let Some(governor) = _limiter
-        .as_any()
-        .downcast_ref::<super::GovernorRateLimiter>()
-    {
-        return governor.preparation_key_limit();
-    }
-
-    DEFAULT_KEY_LIMIT
 }
 
 /// The future-acquisition scope of an observed cooldown.
@@ -115,7 +94,7 @@ pub struct Cooldown {
     pub scope: CooldownScope,
 }
 
-/// Sanitized response-head context supplied to a governor observer.
+/// Sanitized response-head context supplied to a rate-limit observer.
 pub struct RateLimitResponseHead<'a> {
     /// Stable generated endpoint identity.
     pub endpoint: &'static str,
@@ -150,31 +129,6 @@ pub trait RateLimitObserver: Send + Sync + 'static {
     fn observe(&self, response: &RateLimitResponseHead<'_>) -> Option<Cooldown>;
 }
 
-/// The default final-429 `Retry-After` observer.
-///
-/// Decimal delta-seconds and HTTP dates are accepted after trimming. Malformed,
-/// past, and zero values are ignored. Positive values target current buckets,
-/// or the logical host when the effective plan is empty.
-pub struct DefaultRateLimitObserver;
-
-impl RateLimitObserver for DefaultRateLimitObserver {
-    fn observe(&self, response: &RateLimitResponseHead<'_>) -> Option<Cooldown> {
-        if response.status != StatusCode::TOO_MANY_REQUESTS {
-            return None;
-        }
-        let SanitizedHeaderValue::Text(value) = response.headers.get(&RETRY_AFTER)? else {
-            return None;
-        };
-        let duration = parse_positive_retry_after(value, SystemTime::now())?;
-        let scope = if response.plan.is_empty() {
-            CooldownScope::Host
-        } else {
-            CooldownScope::CurrentBuckets
-        };
-        Some(Cooldown { duration, scope })
-    }
-}
-
 /// An explicit limiter that authorizes every plan and ignores observation.
 pub struct NoopRateLimiter;
 
@@ -199,10 +153,8 @@ impl RateLimiter for NoopRateLimiter {
     }
 }
 
-#[cfg(any(test, not(feature = "rate-limit-governor")))]
 pub(crate) struct FallbackRateLimiter;
 
-#[cfg(any(test, not(feature = "rate-limit-governor")))]
 impl RateLimiter for FallbackRateLimiter {
     fn acquire<'a>(
         &'a self,
@@ -220,102 +172,20 @@ impl RateLimiter for FallbackRateLimiter {
     }
 }
 
-#[cfg(not(feature = "rate-limit-governor"))]
 pub(crate) fn fallback_limiter() -> Arc<dyn RateLimiter> {
     Arc::new(FallbackRateLimiter)
 }
 
-fn parse_positive_retry_after(value: &str, now: SystemTime) -> Option<Duration> {
-    let value = value.trim();
-    let duration = if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) {
-        let seconds = value.bytes().try_fold(0_u64, |seconds, byte| {
-            seconds.checked_mul(10)?.checked_add(u64::from(byte - b'0'))
-        })?;
-        Duration::from_secs(seconds)
-    } else {
-        let date = httpdate::parse_http_date(value).ok()?;
-        date.duration_since(now).unwrap_or(Duration::ZERO)
-    };
-    (!duration.is_zero()).then_some(duration)
-}
-
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU32;
-    use std::time::UNIX_EPOCH;
-
-    use http::{HeaderMap, HeaderValue};
-
     use super::*;
 
     #[test]
-    fn retry_after_parser_accepts_positive_delta_and_date_only() {
-        let now = UNIX_EPOCH + Duration::from_secs(1_000_000);
+    fn limiter_metadata_default_is_the_core_key_bound() {
         assert_eq!(
-            parse_positive_retry_after(" 12 ", now),
-            Some(Duration::from_secs(12))
+            NoopRateLimiter::new().preparation_key_limit(),
+            DEFAULT_RATE_LIMIT_KEY_BYTES
         );
-        assert_eq!(parse_positive_retry_after("0", now), None);
-        let future = httpdate::fmt_http_date(now + Duration::from_secs(30));
-        assert_eq!(
-            parse_positive_retry_after(&format!(" {future} "), now),
-            Some(Duration::from_secs(30))
-        );
-        let past = httpdate::fmt_http_date(now - Duration::from_secs(1));
-        assert_eq!(parse_positive_retry_after(&past, now), None);
-        for malformed in ["", "-1", "+1", "1.5", "tomorrow", "12 seconds"] {
-            assert_eq!(parse_positive_retry_after(malformed, now), None);
-        }
-    }
-
-    #[test]
-    fn default_observer_uses_only_final_429_and_sanitized_retry_after() {
-        let method = Method::GET;
-        let plan = RateLimitPlan::empty();
-        let mut headers = HeaderMap::new();
-        headers.insert(RETRY_AFTER, HeaderValue::from_static(" 7 "));
-        let response = RateLimitResponseHead {
-            endpoint: "RateApi::get",
-            method: &method,
-            safe_url: "https://example.test/get",
-            host: Some("example.test"),
-            page_index: 0,
-            plan: &plan,
-            status: StatusCode::TOO_MANY_REQUESTS,
-            headers: SanitizedHeaders::new(&headers),
-        };
-        let cooldown = DefaultRateLimitObserver
-            .observe(&response)
-            .expect("positive 429 cooldown");
-        assert_eq!(cooldown.duration, Duration::from_secs(7));
-        assert!(matches!(cooldown.scope, CooldownScope::Host));
-
-        let nonempty = RateLimitPlan::from_rules(vec![
-            super::super::RateLimitRule::new(
-                super::super::RateLimitId::new("application").expect("ID"),
-                super::super::RateLimitKey::global(),
-                NonZeroU32::MIN,
-                [
-                    super::super::RateLimitWindow::new(NonZeroU32::MIN, Duration::from_secs(1))
-                        .expect("window"),
-                ],
-            )
-            .expect("rule"),
-        ]);
-        let bucket_response = RateLimitResponseHead {
-            plan: &nonempty,
-            ..response
-        };
-        let cooldown = DefaultRateLimitObserver
-            .observe(&bucket_response)
-            .expect("nonempty-plan cooldown");
-        assert!(matches!(cooldown.scope, CooldownScope::CurrentBuckets));
-
-        let response = RateLimitResponseHead {
-            status: StatusCode::OK,
-            ..bucket_response
-        };
-        assert!(DefaultRateLimitObserver.observe(&response).is_none());
     }
 
     #[tokio::test]

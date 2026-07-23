@@ -6,12 +6,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use concord_core::advanced::{
+use runtime::advanced::{
     BoxFuture, ClientBuildErrorKind, ErrorCategory, Method, NoopRateLimiter, PreparedEndpoint,
     RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitRequest,
     RateLimitResponse, RateLimitRule, RateLimitWindow, RateLimiter, SafeProxy,
 };
-use concord_core::prelude::Bytes;
+use runtime::Bytes;
 use concord_fixture_no_governor_rate_limits::{
     EmptyGeneratedApi, LimitedGeneratedApi, DEFAULT_OBSERVER_CALLS,
 };
@@ -161,7 +161,7 @@ fn prepared_rule(id: &str, key: RateLimitKey, cost: u32, windows: &[(u32, u64)])
     .expect("prepared rule")
 }
 
-fn empty_prepared() -> concord_core::advanced::PreparedEndpoint<Bytes> {
+fn empty_prepared() -> runtime::advanced::PreparedEndpoint<Bytes> {
     PreparedEndpoint::builder("Prepared::empty", Method::GET)
         .path_segment("prepared-empty")
         .response_bytes()
@@ -169,7 +169,7 @@ fn empty_prepared() -> concord_core::advanced::PreparedEndpoint<Bytes> {
         .expect("empty prepared endpoint")
 }
 
-fn explicit_prepared() -> concord_core::advanced::PreparedEndpoint<Bytes> {
+fn explicit_prepared() -> runtime::advanced::PreparedEndpoint<Bytes> {
     PreparedEndpoint::builder("Prepared::explicit", Method::GET)
         .path_segment("prepared-explicit")
         .rate_limit(prepared_rule(
@@ -274,7 +274,10 @@ async fn generated_clients_fail_closed_without_governor_unless_limiter_is_delibe
     let nonempty_fallback = empty_prepared_client.request(explicit_prepared()).await;
     let error = nonempty_fallback.expect_err("prepared fallback must fail before send");
     assert_eq!(error.category(), ErrorCategory::RateLimit);
-    assert_eq!(error.rate_limit_kind(), Some(concord_core::advanced::RateLimitErrorKind::InvalidConfiguration));
+    assert_eq!(
+        error.rate_limit_kind(),
+        Some(runtime::advanced::RateLimitErrorKind::InvalidConfiguration)
+    );
     assert_eq!(server.request_count(), 4);
 
     let prepared_limiter = Arc::new(CapturingLimiter::default());

@@ -96,7 +96,11 @@ These enable managed response decompression. Stream/body limits are applied to a
 
 ### Rate limiting
 
-`rate-limit-governor` supplies the built-in process-local governor. Public custom/no-op limiter contracts remain available without it. Generated nonempty lexical plans fail closed without a functional explicit limiter or deliberate no-op.
+`rate-limit-governor` lets the façade install the extras-owned process-local
+governor as the generated default. Core itself retains only semantic
+contracts, the explicit no-op, and a fail-closed fallback. Generated nonempty
+lexical plans fail closed without a façade-installed or explicit functional
+limiter (or a deliberate explicit no-op).
 
 ### Dangerous features
 

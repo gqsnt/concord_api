@@ -5,14 +5,14 @@ use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::error::RateLimitErrorKind;
-use crate::hooks::BoxFuture;
-
-use super::{
-    Cooldown, CooldownScope, DefaultRateLimitObserver, RateLimitError, RateLimitObserver,
+use concord_core::advanced::{BoxFuture, RateLimitErrorKind};
+use concord_core::rate_limit::{
+    Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, RateLimitError, RateLimitObserver,
     RateLimitPermit, RateLimitPlan, RateLimitRequest, RateLimitResponse, RateLimitResponseHead,
-    RateLimiter, limiter::DEFAULT_KEY_LIMIT, observation_cooldown_cap,
+    RateLimitRule, RateLimitWindow, RateLimiter,
 };
+
+use super::DefaultRateLimitObserver;
 
 const DEFAULT_QUOTA_CAPACITY: usize = 4_096;
 const DEFAULT_COOLDOWN_CAPACITY: usize = 4_096;
@@ -28,6 +28,15 @@ const NANOS_PER_SECOND: u128 = 1_000_000_000;
 /// State eviction may forget local history and permit a fresh burst. Use an
 /// application-supplied custom limiter when strict or distributed enforcement
 /// is required.
+///
+/// Internal quota and cooldown state is not exposed:
+///
+/// ```compile_fail
+/// use concord_extras::rate_limit::GovernorRateLimiter;
+///
+/// let governor = GovernorRateLimiter::new();
+/// let _ = governor.state;
+/// ```
 pub struct GovernorRateLimiter {
     config: GovernorConfig,
     observer: Arc<dyn RateLimitObserver>,
@@ -57,7 +66,7 @@ impl GovernorRateLimiter {
                 quota_capacity: DEFAULT_QUOTA_CAPACITY,
                 cooldown_capacity: DEFAULT_COOLDOWN_CAPACITY,
                 idle_ttl: DEFAULT_IDLE_TTL,
-                key_limit: DEFAULT_KEY_LIMIT,
+                key_limit: DEFAULT_RATE_LIMIT_KEY_BYTES,
             },
             observer: Arc::new(DefaultRateLimitObserver),
             state: Mutex::new(GovernorState::new()),
@@ -107,10 +116,6 @@ impl GovernorRateLimiter {
     pub fn key_limit(mut self, bytes: usize) -> Result<Self, RateLimitError> {
         self.config.key_limit = bytes;
         Ok(self)
-    }
-
-    pub(crate) const fn preparation_key_limit(&self) -> usize {
-        self.config.key_limit
     }
 
     #[cfg(test)]
@@ -165,6 +170,7 @@ impl GovernorRateLimiter {
             request,
             status,
             headers,
+            cooldown_cap,
         } = response;
         let RateLimitRequest {
             endpoint,
@@ -187,7 +193,7 @@ impl GovernorRateLimiter {
         let Some(cooldown) = self.observer.observe(&response_head) else {
             return;
         };
-        self.apply_cooldown(host, plan, cooldown, observation_cooldown_cap());
+        self.apply_cooldown(host, plan, cooldown, cooldown_cap);
     }
 
     fn apply_cooldown(
@@ -248,6 +254,10 @@ impl GovernorRateLimiter {
 }
 
 impl RateLimiter for GovernorRateLimiter {
+    fn preparation_key_limit(&self) -> usize {
+        self.config.key_limit
+    }
+
     fn acquire<'a>(
         &'a self,
         request: RateLimitRequest<'a>,
@@ -266,7 +276,13 @@ struct Contributions(BTreeMap<BucketKey, u128>);
 
 impl Contributions {
     fn from_plan(plan: &RateLimitPlan, key_limit: usize) -> Result<Self, RateLimitError> {
-        plan.validate_key_limit(key_limit)?;
+        if plan
+            .rules()
+            .iter()
+            .any(|rule| rule.key().total_bytes() > key_limit)
+        {
+            return Err(RateLimitError::new(RateLimitErrorKind::InvalidKey));
+        }
         let mut contributions = BTreeMap::<BucketKey, u128>::new();
         for rule in plan.rules() {
             for window in rule.windows() {
@@ -303,7 +319,7 @@ struct RuleKey {
 }
 
 impl RuleKey {
-    fn new(rule: &super::RateLimitRule) -> Self {
+    fn new(rule: &RateLimitRule) -> Self {
         Self {
             id: rule.id().as_str().into(),
             parts: rule
@@ -325,7 +341,7 @@ struct BucketKey {
 }
 
 impl BucketKey {
-    fn new(rule: &super::RateLimitRule, window: &super::RateLimitWindow) -> Self {
+    fn new(rule: &RateLimitRule, window: &RateLimitWindow) -> Self {
         Self {
             rule: RuleKey::new(rule),
             capacity: window.capacity().get(),
@@ -631,7 +647,8 @@ mod tests {
     use http::{HeaderMap, Method, StatusCode};
 
     use super::*;
-    use crate::rate_limit::{
+    use concord_core::advanced::SanitizedHeaders;
+    use concord_core::rate_limit::{
         RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitRule, RateLimitWindow,
     };
 
@@ -739,9 +756,8 @@ mod tests {
     ) {
         let limiter_object: Arc<dyn RateLimiter> = limiter.clone();
         let headers = HeaderMap::new();
-        super::super::observe_with_cooldown_cap(
-            &limiter_object,
-            RateLimitResponse {
+        limiter_object
+            .observe(RateLimitResponse {
                 request: RateLimitRequest {
                     endpoint: "RateApi::get",
                     method: &Method::GET,
@@ -751,11 +767,10 @@ mod tests {
                     plan,
                 },
                 status,
-                headers: crate::redaction::SanitizedHeaders::new(&headers),
-            },
-            cap,
-        )
-        .await;
+                headers: SanitizedHeaders::new(&headers),
+                cooldown_cap: cap,
+            })
+            .await;
     }
 
     async fn observe_headers(
@@ -767,9 +782,8 @@ mod tests {
         cap: Duration,
     ) {
         let limiter_object: Arc<dyn RateLimiter> = limiter.clone();
-        super::super::observe_with_cooldown_cap(
-            &limiter_object,
-            RateLimitResponse {
+        limiter_object
+            .observe(RateLimitResponse {
                 request: RateLimitRequest {
                     endpoint: "RateApi::get",
                     method: &Method::GET,
@@ -779,11 +793,10 @@ mod tests {
                     plan,
                 },
                 status,
-                headers: crate::redaction::SanitizedHeaders::new(headers),
-            },
-            cap,
-        )
-        .await;
+                headers: SanitizedHeaders::new(headers),
+                cooldown_cap: cap,
+            })
+            .await;
     }
 
     #[test]

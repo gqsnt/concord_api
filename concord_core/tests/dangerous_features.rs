@@ -30,7 +30,6 @@ fn custom_retry_is_available_without_other_dangerous_or_optional_features() {
     assert!(!cfg!(feature = "dangerous-raw-response"));
     assert!(!cfg!(feature = "default-tls"));
     assert!(!cfg!(feature = "http2"));
-    assert!(!cfg!(feature = "rate-limit-governor"));
     assert!(!cfg!(feature = "oauth2-client"));
     assert!(!cfg!(feature = "multipart"));
     assert!(!cfg!(feature = "gzip"));
@@ -44,7 +43,6 @@ fn custom_retry_is_available_without_other_dangerous_or_optional_features() {
     not(feature = "dangerous-raw-response"),
     not(feature = "default-tls"),
     not(feature = "http2"),
-    not(feature = "rate-limit-governor"),
     not(feature = "oauth2-client"),
     not(feature = "multipart"),
     not(feature = "gzip"),
@@ -61,7 +59,6 @@ fn development_tools_are_available_without_other_dangerous_or_optional_features(
     assert!(!cfg!(feature = "dangerous-raw-response"));
     assert!(!cfg!(feature = "default-tls"));
     assert!(!cfg!(feature = "http2"));
-    assert!(!cfg!(feature = "rate-limit-governor"));
     assert!(!cfg!(feature = "oauth2-client"));
     assert!(!cfg!(feature = "multipart"));
     assert!(!cfg!(feature = "gzip"));
@@ -73,7 +70,6 @@ fn development_tools_are_available_without_other_dangerous_or_optional_features(
     feature = "dangerous-dev-tools",
     feature = "default-tls",
     feature = "http2",
-    feature = "rate-limit-governor",
     not(feature = "dangerous-custom-retry"),
     not(feature = "dangerous-raw-response")
 ))]
@@ -86,7 +82,6 @@ fn development_tools_coexist_with_default_runtime_features_when_workspace_unifie
     assert!(cfg!(feature = "dangerous-dev-tools"));
     assert!(cfg!(feature = "default-tls"));
     assert!(cfg!(feature = "http2"));
-    assert!(cfg!(feature = "rate-limit-governor"));
     assert!(!cfg!(feature = "dangerous-custom-retry"));
     assert!(!cfg!(feature = "dangerous-raw-response"));
 }
@@ -115,7 +110,6 @@ fn raw_response_api_is_available_without_other_dangerous_or_optional_features() 
     assert!(!cfg!(feature = "dangerous-dev-tools"));
     assert!(!cfg!(feature = "default-tls"));
     assert!(!cfg!(feature = "http2"));
-    assert!(!cfg!(feature = "rate-limit-governor"));
     assert!(!cfg!(feature = "oauth2-client"));
     assert!(!cfg!(feature = "multipart"));
     assert!(!cfg!(feature = "gzip"));

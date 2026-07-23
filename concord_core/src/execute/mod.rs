@@ -784,13 +784,9 @@ async fn observe_rate_limit_response(
         },
         status,
         headers: SanitizedHeaders::new(headers),
+        cooldown_cap: core.rate_limit_cooldown_cap(),
     };
-    crate::rate_limit::observe_with_cooldown_cap(
-        core.rate_limiter(),
-        response,
-        core.rate_limit_cooldown_cap(),
-    )
-    .await;
+    core.rate_limiter().observe(response).await;
 }
 
 fn check_deadline(

@@ -15,7 +15,7 @@ use http::{Method, StatusCode};
 
 use super::execute::paginate_with;
 use super::{PageLimit, PaginatedEndpoint, PaginationController, PaginationError};
-#[cfg(feature = "rate-limit-governor")]
+#[cfg(feature = "default-tls")]
 use crate::auth::{
     AccessToken, Auth, CredentialProvider, CredentialRef, CredentialRequest, SlotSelector,
 };
@@ -29,8 +29,6 @@ use crate::hooks::{
 };
 use crate::http::HttpConfigBuilder;
 use crate::operation::OperationId;
-#[cfg(feature = "rate-limit-governor")]
-use crate::rate_limit::GovernorRateLimiter;
 use crate::rate_limit::RateLimitKeyPart;
 use crate::rate_limit::{
     RateLimitError, RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimiter,
@@ -245,14 +243,14 @@ impl PaginatedEndpoint for HostRateEndpoint {
     }
 }
 
-#[cfg(feature = "rate-limit-governor")]
 #[derive(Clone)]
+#[cfg(feature = "default-tls")]
 struct RateKeyEndpoint {
     key: String,
     credential: CredentialRef<AccessToken>,
 }
 
-#[cfg(feature = "rate-limit-governor")]
+#[cfg(feature = "default-tls")]
 impl EndpointSpec for RateKeyEndpoint {
     type Body = EmptyBody;
     type Response = PageCodec;
@@ -290,7 +288,7 @@ impl EndpointSpec for RateKeyEndpoint {
     fn into_body(self) {}
 }
 
-#[cfg(feature = "rate-limit-governor")]
+#[cfg(feature = "default-tls")]
 impl PaginatedEndpoint for RateKeyEndpoint {
     type Item = String;
     type Controller = CursorController;
@@ -308,12 +306,12 @@ impl PaginatedEndpoint for RateKeyEndpoint {
     }
 }
 
-#[cfg(feature = "rate-limit-governor")]
+#[cfg(feature = "default-tls")]
 struct CountingRateKeyProvider {
     calls: Arc<AtomicUsize>,
 }
 
-#[cfg(feature = "rate-limit-governor")]
+#[cfg(feature = "default-tls")]
 impl CredentialProvider for CountingRateKeyProvider {
     type Material = AccessToken;
 
@@ -640,6 +638,27 @@ impl RateLimiter for RejectingLimiter {
     }
 }
 
+#[cfg(feature = "default-tls")]
+struct KeyBoundLimiter {
+    acquisitions: AtomicUsize,
+    key_limit: usize,
+}
+
+#[cfg(feature = "default-tls")]
+impl RateLimiter for KeyBoundLimiter {
+    fn preparation_key_limit(&self) -> usize {
+        self.key_limit
+    }
+
+    fn acquire<'a>(
+        &'a self,
+        _request: RateLimitRequest<'a>,
+    ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
+        self.acquisitions.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { Ok(RateLimitPermit::granted()) })
+    }
+}
+
 fn core(
     executor: &DeterministicExecutor,
     hooks: Arc<PaginationProbe>,
@@ -649,7 +668,7 @@ fn core(
     let hooks: Arc<dyn RuntimeHooks> = hooks;
     let limiter: Arc<dyn RateLimiter> = limiter;
     ClientCore::build_with_development(
-        "https://pagination-runtime.example.test/v1/",
+        "http://pagination-runtime.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
         configure(
             RuntimeConfigBuilder::new()
@@ -697,7 +716,7 @@ async fn selected_limiter_receives_actual_page_hosts_while_automatic_surfaces_st
             .queue_expected_response(
                 ExpectedRequest::new()
                     .native_url(format!(
-                        "https://{host}.pagination-runtime.example.test/v1/host-rate-items?stable=public&cursor={cursor}"
+                        "http://{host}.pagination-runtime.example.test/v1/host-rate-items?stable=public&cursor={cursor}"
                     ))
                     .header(
                         http::HeaderName::from_static("x-page-cursor"),
@@ -714,7 +733,7 @@ async fn selected_limiter_receives_actual_page_hosts_while_automatic_surfaces_st
     let configured_limiter: Arc<dyn RateLimiter> = limiter.clone();
     let debug = Arc::new(Mutex::new(Vec::new()));
     let core = ClientCore::build_with_development(
-        "https://pagination-runtime.example.test/v1/",
+        "http://pagination-runtime.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
         RuntimeConfigBuilder::new()
             .hooks(configured_hooks)
@@ -828,15 +847,15 @@ async fn selected_limiter_receives_actual_page_hosts_while_automatic_surfaces_st
     }
 }
 
-#[cfg(feature = "rate-limit-governor")]
+#[cfg(feature = "default-tls")]
 fn rate_key_core(
     executor: &DeterministicExecutor,
     hooks: Arc<PaginationProbe>,
-    governor: Arc<GovernorRateLimiter>,
+    limiter: Arc<KeyBoundLimiter>,
     debug: Arc<Mutex<Vec<String>>>,
 ) -> ClientCore {
     let hooks: Arc<dyn RuntimeHooks> = hooks;
-    let limiter: Arc<dyn RateLimiter> = governor;
+    let limiter: Arc<dyn RateLimiter> = limiter;
     ClientCore::build_with_development(
         "https://pagination-runtime.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
@@ -850,7 +869,7 @@ fn rate_key_core(
     .with_debug_output(debug)
 }
 
-#[cfg(feature = "rate-limit-governor")]
+#[cfg(feature = "default-tls")]
 fn collect_rate_key(
     core: ClientCore,
     key: String,
@@ -868,8 +887,8 @@ fn collect_rate_key(
     )
 }
 
-#[cfg(feature = "rate-limit-governor")]
 #[tokio::test]
+#[cfg(feature = "default-tls")]
 async fn pagination_rate_key_limit_uses_actual_value_and_cuts_off_protected_work() {
     const BOUNDARY: &str = "page-rate-key-boundary-sentinel-4a871f";
     const KEY_NAME: &str = "ep.cursor";
@@ -898,16 +917,15 @@ async fn pagination_rate_key_limit_uses_actual_value_and_cuts_off_protected_work
         Duration::ZERO,
     );
     let accepted_hooks = Arc::new(PaginationProbe::default());
-    let accepted_governor = Arc::new(
-        GovernorRateLimiter::new()
-            .key_limit(key_limit)
-            .expect("accepted key limit"),
-    );
+    let accepted_limiter = Arc::new(KeyBoundLimiter {
+        acquisitions: AtomicUsize::new(0),
+        key_limit,
+    });
     let accepted_debug = Arc::new(Mutex::new(Vec::new()));
     let accepted_core = rate_key_core(
         &accepted_executor,
         Arc::clone(&accepted_hooks),
-        Arc::clone(&accepted_governor),
+        Arc::clone(&accepted_limiter),
         Arc::clone(&accepted_debug),
     );
     let items = collect_rate_key(
@@ -919,8 +937,7 @@ async fn pagination_rate_key_limit_uses_actual_value_and_cuts_off_protected_work
     .expect("actual key at configured boundary");
     assert!(items.is_empty());
     assert_eq!(accepted_provider_calls.load(Ordering::SeqCst), 1);
-    assert_eq!(accepted_governor.test_acquisition_count(), 1);
-    assert_eq!(accepted_governor.test_quota_entry_count(), 1);
+    assert_eq!(accepted_limiter.acquisitions.load(Ordering::SeqCst), 1);
     assert_eq!(
         accepted_executor
             .application()
@@ -980,16 +997,15 @@ async fn pagination_rate_key_limit_uses_actual_value_and_cuts_off_protected_work
         Duration::ZERO,
     );
     let excess_hooks = Arc::new(PaginationProbe::default());
-    let excess_governor = Arc::new(
-        GovernorRateLimiter::new()
-            .key_limit(key_limit)
-            .expect("excess key limit"),
-    );
+    let excess_limiter = Arc::new(KeyBoundLimiter {
+        acquisitions: AtomicUsize::new(0),
+        key_limit,
+    });
     let excess_debug = Arc::new(Mutex::new(Vec::new()));
     let excess_core = rate_key_core(
         &excess_executor,
         Arc::clone(&excess_hooks),
-        Arc::clone(&excess_governor),
+        Arc::clone(&excess_limiter),
         Arc::clone(&excess_debug),
     );
     let error = collect_rate_key(
@@ -1005,8 +1021,7 @@ async fn pagination_rate_key_limit_uses_actual_value_and_cuts_off_protected_work
         Some(crate::error::ConfigurationErrorKind::InvalidRateLimit)
     );
     assert_eq!(excess_provider_calls.load(Ordering::SeqCst), 0);
-    assert_eq!(excess_governor.test_acquisition_count(), 0);
-    assert_eq!(excess_governor.test_quota_entry_count(), 0);
+    assert_eq!(excess_limiter.acquisitions.load(Ordering::SeqCst), 0);
     assert_eq!(
         excess_executor
             .application()
@@ -1057,7 +1072,7 @@ async fn page_lifecycle_is_sequential_correlated_and_limited_once_per_page() {
         .queue_expected_response(
             ExpectedRequest::new()
                 .native_url(format!(
-                    "https://pagination-runtime.example.test/v1/items?stable=public&cursor={FIRST_CURSOR}"
+                    "http://pagination-runtime.example.test/v1/items?stable=public&cursor={FIRST_CURSOR}"
                 ))
                 .header(
                     http::HeaderName::from_static("x-page-cursor"),
@@ -1074,7 +1089,7 @@ async fn page_lifecycle_is_sequential_correlated_and_limited_once_per_page() {
         .queue_expected_response(
             ExpectedRequest::new()
                 .native_url(format!(
-                    "https://pagination-runtime.example.test/v1/items?stable=public&cursor={SECOND_CURSOR}"
+                    "http://pagination-runtime.example.test/v1/items?stable=public&cursor={SECOND_CURSOR}"
                 ))
                 .header(
                     http::HeaderName::from_static("x-page-cursor"),
@@ -2048,7 +2063,7 @@ async fn later_page_errors_keep_ordinary_categories_and_aggregate_status() {
     let configured_hooks: Arc<dyn RuntimeHooks> = rate_hooks.clone();
     let configured_limiter: Arc<dyn RateLimiter> = rejecting_limiter.clone();
     let rate_core = ClientCore::build_with_development(
-        "https://pagination-runtime.example.test/v1/",
+        "http://pagination-runtime.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
         RuntimeConfigBuilder::new()
             .hooks(configured_hooks)

@@ -37,8 +37,6 @@ use crate::operation::OperationId;
 use crate::pagination::{
     PageLimit, PaginatedEndpoint, PaginatedRequest, PaginationController, PaginationError,
 };
-#[cfg(feature = "rate-limit-governor")]
-use crate::rate_limit::GovernorRateLimiter;
 use crate::rate_limit::{
     RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitRequest,
     RateLimitResponse, RateLimitRule, RateLimitWindow, RateLimiter,
@@ -806,6 +804,7 @@ struct AuthRateLimiter {
     failure: bool,
     observed_selector: Option<ObservedSelector>,
     plans: Option<Arc<Mutex<Vec<CapturedAuthPlan>>>>,
+    key_limit: usize,
 }
 
 type CapturedAuthRule = (String, Vec<(String, String)>, u32, Vec<(u32, Duration)>);
@@ -851,6 +850,7 @@ impl AuthRateLimiter {
             failure: false,
             observed_selector: None,
             plans: None,
+            key_limit: crate::rate_limit::DEFAULT_RATE_LIMIT_KEY_BYTES,
         }
     }
 
@@ -866,6 +866,7 @@ impl AuthRateLimiter {
             failure: false,
             observed_selector: None,
             plans: Some(Arc::clone(plans)),
+            key_limit: crate::rate_limit::DEFAULT_RATE_LIMIT_KEY_BYTES,
         }
     }
 
@@ -877,6 +878,7 @@ impl AuthRateLimiter {
             failure: false,
             observed_selector: None,
             plans: None,
+            key_limit: crate::rate_limit::DEFAULT_RATE_LIMIT_KEY_BYTES,
         }
     }
 
@@ -888,11 +890,16 @@ impl AuthRateLimiter {
             failure: true,
             observed_selector: None,
             plans: None,
+            key_limit: crate::rate_limit::DEFAULT_RATE_LIMIT_KEY_BYTES,
         }
     }
 }
 
 impl RateLimiter for AuthRateLimiter {
+    fn preparation_key_limit(&self) -> usize {
+        self.key_limit
+    }
+
     fn acquire<'a>(
         &'a self,
         request: RateLimitRequest<'a>,
@@ -928,6 +935,26 @@ impl RateLimiter for AuthRateLimiter {
                 .push(selector.is_set());
         }
         Box::pin(async {})
+    }
+}
+
+struct RetainedReservationLimiter {
+    acquisitions: AtomicUsize,
+    later_gate: Gate,
+}
+
+impl RateLimiter for RetainedReservationLimiter {
+    fn acquire<'a>(
+        &'a self,
+        _request: RateLimitRequest<'a>,
+    ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
+        let acquisition = self.acquisitions.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async move {
+            if acquisition > 0 {
+                self.later_gate.wait().await;
+            }
+            Ok(RateLimitPermit::granted())
+        })
     }
 }
 
@@ -2887,7 +2914,6 @@ async fn default_never_preserves_static_material_and_query_auth_exists_only_in_n
     assert!(!format!("{query_capture:?}").contains(INITIAL));
 }
 
-#[cfg(feature = "rate-limit-governor")]
 #[tokio::test]
 async fn configured_key_limit_failure_cuts_off_every_protected_side_effect_and_redacts_key() {
     const KEY_SENTINEL: &str = "configured-key-private-73cf9a0d";
@@ -2903,12 +2929,11 @@ async fn configured_key_limit_failure_cuts_off_every_protected_side_effect_and_r
     );
     let body_calls = Arc::new(AtomicUsize::new(0));
     let hooks = Arc::new(AuthHooks::default());
-    let governor = Arc::new(
-        GovernorRateLimiter::new()
-            .key_limit(KEY_LIMIT)
-            .expect("configured key limit"),
-    );
-    let limiter: Arc<dyn RateLimiter> = governor.clone();
+    let acquisitions = Arc::new(AtomicUsize::new(0));
+    let observations = Arc::new(AtomicUsize::new(0));
+    let mut selected_limiter = AuthRateLimiter::counting(&acquisitions, &observations);
+    selected_limiter.key_limit = KEY_LIMIT;
+    let limiter: Arc<dyn RateLimiter> = Arc::new(selected_limiter);
     let (core, debug) = core_with_runtime(
         &executor,
         Arc::clone(&hooks),
@@ -2942,8 +2967,7 @@ async fn configured_key_limit_failure_cuts_off_every_protected_side_effect_and_r
     );
     assert_eq!(body_calls.load(Ordering::SeqCst), 0);
     assert_eq!(provider_calls.load(Ordering::SeqCst), 0);
-    assert_eq!(governor.test_acquisition_count(), 0);
-    assert_eq!(governor.test_quota_entry_count(), 0);
+    assert_eq!(acquisitions.load(Ordering::SeqCst), 0);
     assert!(hooks.before.lock().expect("before records").is_empty());
     assert!(hooks.response.lock().expect("response records").is_empty());
     assert_eq!(
@@ -3298,8 +3322,7 @@ async fn finalization_expiration_prevents_native_construction_debug_and_send() {
     );
 }
 
-#[cfg(feature = "rate-limit-governor")]
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn reservation_is_retained_after_credential_finalization_failure() {
     let executor = DeterministicExecutor::new();
     executor
@@ -3312,7 +3335,17 @@ async fn reservation_is_retained_after_credential_finalization_failure() {
             ScriptedResponse::success(Bytes::from_static(b"after finalization failure")),
         )
         .expect("post-failure response");
-    let (core, _) = core(&executor, Arc::new(AuthHooks::default()));
+    let later_gate = Gate::closed();
+    let limiter = Arc::new(RetainedReservationLimiter {
+        acquisitions: AtomicUsize::new(0),
+        later_gate: later_gate.clone(),
+    });
+    let selected: Arc<dyn RateLimiter> = limiter.clone();
+    let (core, _) = core_with_runtime(
+        &executor,
+        Arc::new(AuthHooks::default()),
+        RuntimeConfigBuilder::new().rate_limiter(selected),
+    );
     let expiring = SlotSelector::static_value(
         FinalizationExpiryToken {
             value: SecretString::new(INITIAL),
@@ -3350,12 +3383,10 @@ async fn reservation_is_retained_after_credential_finalization_failure() {
         )
         .await
     });
-    tokio::task::yield_now().await;
+    later_gate.wait_until_reached().await;
     assert_eq!(executor.application().request_count().expect("count"), 0);
-    tokio::time::advance(Duration::from_secs(9)).await;
-    tokio::task::yield_now().await;
-    assert_eq!(executor.application().request_count().expect("count"), 0);
-    tokio::time::advance(Duration::from_secs(1)).await;
+    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 2);
+    later_gate.open();
     assert_eq!(
         later.await.expect("later task").expect("later send"),
         Bytes::from_static(b"after finalization failure")

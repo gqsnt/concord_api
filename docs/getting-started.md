@@ -26,7 +26,9 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 ### Choosing features
 
-Default core features are `default-tls`, `http2`, and `rate-limit-governor`. Add only what the client uses:
+Default façade features are `default-tls`, `http2`, and
+`rate-limit-governor`. The façade forwards transport features to core and
+installs the extras-owned governor; add only what the client uses:
 
 - `json` for the extras-owned `Json<T>` codec.
 - `oauth2-client` for the temporary legacy OAuth2 client-credential helper.

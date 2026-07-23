@@ -216,12 +216,16 @@ pub struct RateLimitPlan {
 }
 
 impl RateLimitPlan {
-    #[cfg(test)]
-    pub(crate) fn empty() -> Self {
+    /// Creates an empty plan that requires no limiter authority.
+    #[must_use]
+    pub fn empty() -> Self {
         Self::from_rules(Vec::new())
     }
 
-    pub(crate) fn from_rules(rules: Vec<RateLimitRule>) -> Self {
+    /// Creates a plan from already validated semantic rules in their effective
+    /// declaration order.
+    #[must_use]
+    pub fn from_rules(rules: Vec<RateLimitRule>) -> Self {
         Self {
             rules: rules.into_boxed_slice(),
         }

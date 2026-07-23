@@ -32,10 +32,8 @@ pub use crate::http::provider::{
 pub use crate::http::{HttpConfigBuilder, ProviderRetry, SafeProxy};
 pub use crate::operation::OperationId;
 pub use crate::pagination::{PaginationController, PaginationError};
-#[cfg(feature = "rate-limit-governor")]
-pub use crate::rate_limit::GovernorRateLimiter;
 pub use crate::rate_limit::{
-    Cooldown, CooldownScope, DefaultRateLimitObserver, NoopRateLimiter, RateLimitError,
+    Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, NoopRateLimiter, RateLimitError,
     RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitObserver, RateLimitPermit, RateLimitPlan,
     RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimitRule, RateLimitWindow,
     RateLimiter,

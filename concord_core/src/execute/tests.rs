@@ -34,8 +34,8 @@ use crate::codec::{
 use crate::error::{ErrorCategory, HookError, StatusBodyState};
 use crate::hooks::{BoxFuture, RuntimeHooks};
 use crate::http::HttpConfigBuilder;
-#[cfg(feature = "rate-limit-governor")]
-use crate::rate_limit::GovernorRateLimiter;
+#[cfg(feature = "records")]
+use crate::rate_limit::NoopRateLimiter;
 use crate::rate_limit::{
     RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitRequest,
     RateLimitResponse, RateLimitRule, RateLimitWindow, RateLimiter,
@@ -943,16 +943,6 @@ impl RateLimitedBytesEndpoint {
             window: Duration::from_secs(1),
         }
     }
-
-    #[cfg(feature = "rate-limit-governor")]
-    fn strict(inherited_timeout: Option<Duration>, key: impl Into<String>) -> Self {
-        Self {
-            inherited_timeout,
-            key: key.into(),
-            capacity: 1,
-            window: Duration::from_secs(10),
-        }
-    }
 }
 
 impl EndpointSpec for RateLimitedBytesEndpoint {
@@ -987,10 +977,8 @@ impl EndpointSpec for RateLimitedBytesEndpoint {
 
 impl crate::request::RawResponseEndpoint for RateLimitedBytesEndpoint {}
 
-#[cfg(feature = "rate-limit-governor")]
 struct GlobalRateLimitedBytesEndpoint;
 
-#[cfg(feature = "rate-limit-governor")]
 impl EndpointSpec for GlobalRateLimitedBytesEndpoint {
     type Body = EmptyBody;
     type Response = Bytes;
@@ -1019,15 +1007,6 @@ impl EndpointSpec for GlobalRateLimitedBytesEndpoint {
     }
 
     fn into_body(self) {}
-}
-
-#[cfg(feature = "rate-limit-governor")]
-fn strict_rate_limited_bytes_request(
-    core: ClientCore,
-    timeout: Option<Duration>,
-    key: impl Into<String>,
-) -> Request<RateLimitedBytesEndpoint> {
-    Request::new(core, RateLimitedBytesEndpoint::strict(timeout, key))
 }
 
 struct NoContentEndpoint;
@@ -1126,11 +1105,13 @@ struct ProbeRateLimiter {
     acquisitions: AtomicUsize,
     observations: AtomicUsize,
     requests: Mutex<Vec<LimiterRequestRecord>>,
+    response_cooldown_caps: Mutex<Vec<Duration>>,
     trace: Option<Arc<Mutex<Vec<String>>>>,
     acquire_gate: Option<Gate>,
     observe_gate: Option<Gate>,
     response_body_polls: Option<Arc<AtomicUsize>>,
     fail: bool,
+    key_limit: usize,
 }
 
 #[cfg(feature = "records")]
@@ -1251,11 +1232,13 @@ impl ProbeRateLimiter {
             acquisitions: AtomicUsize::new(0),
             observations: AtomicUsize::new(0),
             requests: Mutex::new(Vec::new()),
+            response_cooldown_caps: Mutex::new(Vec::new()),
             trace: None,
             acquire_gate: None,
             observe_gate: None,
             response_body_polls: None,
             fail: false,
+            key_limit: crate::rate_limit::DEFAULT_RATE_LIMIT_KEY_BYTES,
         }
     }
 
@@ -1265,6 +1248,10 @@ impl ProbeRateLimiter {
 }
 
 impl RateLimiter for ProbeRateLimiter {
+    fn preparation_key_limit(&self) -> usize {
+        self.key_limit
+    }
+
     fn acquire<'a>(
         &'a self,
         request: RateLimitRequest<'a>,
@@ -1313,8 +1300,12 @@ impl RateLimiter for ProbeRateLimiter {
         })
     }
 
-    fn observe<'a>(&'a self, _response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
+    fn observe<'a>(&'a self, response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
         self.observations.fetch_add(1, Ordering::SeqCst);
+        self.response_cooldown_caps
+            .lock()
+            .expect("response cooldown caps")
+            .push(response.cooldown_cap);
         if let Some(trace) = &self.trace {
             trace
                 .lock()
@@ -1492,7 +1483,6 @@ fn rate_limited_bytes_request(
     Request::new(core, RateLimitedBytesEndpoint::new(timeout, key))
 }
 
-#[cfg(feature = "rate-limit-governor")]
 fn key_value_with_len(length: usize, prefix: &str) -> String {
     assert!(prefix.len() <= length);
     let mut value = String::with_capacity(length);
@@ -1641,6 +1631,7 @@ async fn custom_limiter_context_and_response_observation_use_one_ordered_attempt
         Arc::clone(&hooks),
         RuntimeConfigBuilder::new()
             .rate_limiter(configured)
+            .rate_limit_cooldown_cap(Duration::from_secs(7))
             .debug(DebugLevel::Headers),
     )
     .with_debug_output(Arc::clone(&debug));
@@ -1667,6 +1658,14 @@ async fn custom_limiter_context_and_response_observation_use_one_ordered_attempt
     );
     assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 1);
     assert_eq!(limiter.observations.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        limiter
+            .response_cooldown_caps
+            .lock()
+            .expect("response cooldown caps")
+            .as_slice(),
+        [Duration::from_secs(7)]
+    );
     let records = limiter.request_records();
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].endpoint, ENDPOINT);
@@ -1829,30 +1828,29 @@ async fn original_deadline_cancels_limiter_wait_without_native_send() {
     assert_eq!(executor.application().request_count().expect("count"), 0);
 }
 
-#[cfg(feature = "rate-limit-governor")]
 #[tokio::test]
-async fn prepared_plans_use_the_selected_governor_and_its_configured_key_limit() {
+async fn prepared_plans_use_selected_limiter_metadata_and_configured_key_limit() {
     fn rule(id: &str, key: RateLimitKey) -> RateLimitRule {
         RateLimitRule::new(
-            RateLimitId::new(id).expect("prepared governor rule ID"),
+            RateLimitId::new(id).expect("prepared limiter rule ID"),
             key,
-            NonZeroU32::new(1).expect("prepared governor cost"),
+            NonZeroU32::new(1).expect("prepared limiter cost"),
             [RateLimitWindow::new(
-                NonZeroU32::new(10).expect("prepared governor capacity"),
+                NonZeroU32::new(10).expect("prepared limiter capacity"),
                 Duration::from_secs(1),
             )
-            .expect("prepared governor window")],
+            .expect("prepared limiter window")],
         )
-        .expect("prepared governor rule")
+        .expect("prepared limiter rule")
     }
 
     let executor = DeterministicExecutor::new();
     executor
         .application()
         .queue_response(ScriptedResponse::success(Bytes::from_static(b"governed")))
-        .expect("prepared governor response");
-    let governor = Arc::new(GovernorRateLimiter::new());
-    let configured: Arc<dyn RateLimiter> = governor.clone();
+        .expect("prepared limiter response");
+    let limiter = Arc::new(ProbeRateLimiter::new());
+    let configured: Arc<dyn RateLimiter> = limiter.clone();
     let core = development_core(
         &executor,
         Arc::new(ProbeHooks::new()),
@@ -1867,17 +1865,16 @@ async fn prepared_plans_use_the_selected_governor_and_its_configured_key_limit()
     assert_eq!(
         Request::new(core, endpoint)
             .await
-            .expect("prepared governor execution"),
+            .expect("prepared limiter execution"),
         Bytes::from_static(b"governed")
     );
-    assert_eq!(governor.test_acquisition_count(), 1);
+    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 1);
 
     let rejected_executor = DeterministicExecutor::new();
-    let restricted = Arc::new(
-        GovernorRateLimiter::new()
-            .key_limit(3)
-            .expect("configured prepared key limit"),
-    );
+    let restricted = Arc::new(ProbeRateLimiter {
+        key_limit: 3,
+        ..ProbeRateLimiter::new()
+    });
     let configured: Arc<dyn RateLimiter> = restricted.clone();
     let rejected_core = development_core(
         &rejected_executor,
@@ -1897,7 +1894,7 @@ async fn prepared_plans_use_the_selected_governor_and_its_configured_key_limit()
         .await
         .expect_err("prepared key limit must fail during preparation");
     assert_eq!(error.category(), ErrorCategory::Configuration);
-    assert_eq!(restricted.test_acquisition_count(), 0);
+    assert_eq!(restricted.acquisitions.load(Ordering::SeqCst), 0);
     assert_eq!(
         rejected_executor
             .application()
@@ -1905,70 +1902,6 @@ async fn prepared_plans_use_the_selected_governor_and_its_configured_key_limit()
             .expect("rejected count"),
         0
     );
-}
-
-#[cfg(feature = "rate-limit-governor")]
-#[tokio::test(start_paused = true)]
-async fn deadline_cancellation_of_governor_wait_consumes_no_quota() {
-    let executor = DeterministicExecutor::new();
-    executor
-        .application()
-        .queue_response(ScriptedResponse::success(Bytes::from_static(b"first")))
-        .expect("first response");
-    executor
-        .application()
-        .queue_response(ScriptedResponse::success(Bytes::from_static(
-            b"after timeout",
-        )))
-        .expect("post-timeout response");
-    let core = development_core(
-        &executor,
-        Arc::new(ProbeHooks::new()),
-        RuntimeConfigBuilder::new(),
-    );
-    assert_eq!(
-        strict_rate_limited_bytes_request(
-            core.clone(),
-            Some(Duration::from_secs(30)),
-            "deadline-key",
-        )
-        .await
-        .expect("first reservation"),
-        Bytes::from_static(b"first")
-    );
-
-    let timeout = tokio::spawn(
-        strict_rate_limited_bytes_request(
-            core.clone(),
-            Some(Duration::from_secs(5)),
-            "deadline-key",
-        )
-        .into_future(),
-    );
-    tokio::time::advance(Duration::from_secs(5)).await;
-    assert_eq!(
-        timeout
-            .await
-            .expect("timeout task")
-            .expect_err("governor wait deadline")
-            .category(),
-        ErrorCategory::Timeout
-    );
-    assert_eq!(executor.application().request_count().expect("count"), 1);
-
-    let later = tokio::spawn(
-        strict_rate_limited_bytes_request(core, Some(Duration::from_secs(30)), "deadline-key")
-            .into_future(),
-    );
-    tokio::time::advance(Duration::from_secs(4)).await;
-    tokio::task::yield_now().await;
-    assert_eq!(executor.application().request_count().expect("count"), 1);
-    tokio::time::advance(Duration::from_secs(1)).await;
-    assert_eq!(
-        later.await.expect("later task").expect("later reservation"),
-        Bytes::from_static(b"after timeout")
-    );
-    assert_eq!(executor.application().request_count().expect("count"), 2);
 }
 
 #[tokio::test]
@@ -2032,7 +1965,6 @@ async fn hook_body_and_key_preparation_failures_perform_no_limiter_work() {
     assert_eq!(executor.application().request_count().expect("count"), 0);
 }
 
-#[cfg(feature = "rate-limit-governor")]
 #[tokio::test]
 async fn default_key_limit_accepts_1024_bytes_and_rejects_the_first_excess() {
     const KEY_PART_NAME_BYTES: usize = "vars.tenant".len();
@@ -2042,7 +1974,12 @@ async fn default_key_limit_accepts_1024_bytes_and_rejects_the_first_excess() {
         .queue_response(ScriptedResponse::success(Bytes::from_static(b"boundary")))
         .expect("boundary response");
     let hooks = Arc::new(ProbeHooks::new());
-    let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
+    let limiter = Arc::new(ProbeRateLimiter::new());
+    let core = development_core(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new().rate_limiter(limiter.clone()),
+    );
 
     let fitting = key_value_with_len(1_024 - KEY_PART_NAME_BYTES, "default-fit-");
     assert_eq!(fitting.len() + KEY_PART_NAME_BYTES, 1_024);
@@ -2063,6 +2000,7 @@ async fn default_key_limit_accepts_1024_bytes_and_rejects_the_first_excess() {
         Some(crate::error::ConfigurationErrorKind::InvalidRateLimit)
     );
     assert_eq!(executor.application().request_count().expect("count"), 1);
+    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 1);
     assert_eq!(
         hooks
             .records()
@@ -2074,7 +2012,6 @@ async fn default_key_limit_accepts_1024_bytes_and_rejects_the_first_excess() {
     );
 }
 
-#[cfg(feature = "rate-limit-governor")]
 #[tokio::test]
 async fn configured_key_limit_enforces_lower_zero_and_increased_boundaries() {
     const KEY_PART_NAME_BYTES: usize = "vars.tenant".len();
@@ -2084,11 +2021,10 @@ async fn configured_key_limit_enforces_lower_zero_and_increased_boundaries() {
         .application()
         .queue_response(ScriptedResponse::success(Bytes::from_static(b"lower")))
         .expect("lower response");
-    let lower = Arc::new(
-        GovernorRateLimiter::new()
-            .key_limit(16)
-            .expect("lower key limit"),
-    );
+    let lower = Arc::new(ProbeRateLimiter {
+        key_limit: 16,
+        ..ProbeRateLimiter::new()
+    });
     let lower_object: Arc<dyn RateLimiter> = lower.clone();
     let lower_core = development_core(
         &lower_executor,
@@ -2110,8 +2046,7 @@ async fn configured_key_limit_enforces_lower_zero_and_increased_boundaries() {
     .await
     .expect_err("first excess over lower limit");
     assert_eq!(error.category(), ErrorCategory::Configuration);
-    assert_eq!(lower.test_acquisition_count(), 1);
-    assert_eq!(lower.test_quota_entry_count(), 1);
+    assert_eq!(lower.acquisitions.load(Ordering::SeqCst), 1);
     assert_eq!(
         lower_executor.application().request_count().expect("count"),
         1
@@ -2122,11 +2057,10 @@ async fn configured_key_limit_enforces_lower_zero_and_increased_boundaries() {
         .application()
         .queue_response(ScriptedResponse::success(Bytes::from_static(b"global")))
         .expect("global response");
-    let zero = Arc::new(
-        GovernorRateLimiter::new()
-            .key_limit(0)
-            .expect("zero key limit"),
-    );
+    let zero = Arc::new(ProbeRateLimiter {
+        key_limit: 0,
+        ..ProbeRateLimiter::new()
+    });
     let zero_object: Arc<dyn RateLimiter> = zero.clone();
     let zero_core = development_core(
         &zero_executor,
@@ -2143,8 +2077,7 @@ async fn configured_key_limit_enforces_lower_zero_and_increased_boundaries() {
         .await
         .expect_err("nonempty key structure exceeds zero even with an empty value");
     assert_eq!(error.category(), ErrorCategory::Configuration);
-    assert_eq!(zero.test_acquisition_count(), 1);
-    assert_eq!(zero.test_quota_entry_count(), 1);
+    assert_eq!(zero.acquisitions.load(Ordering::SeqCst), 1);
     assert_eq!(
         zero_executor.application().request_count().expect("count"),
         1
@@ -2155,11 +2088,10 @@ async fn configured_key_limit_enforces_lower_zero_and_increased_boundaries() {
         .application()
         .queue_response(ScriptedResponse::success(Bytes::from_static(b"increased")))
         .expect("increased response");
-    let increased = Arc::new(
-        GovernorRateLimiter::new()
-            .key_limit(2_048)
-            .expect("increased key limit"),
-    );
+    let increased = Arc::new(ProbeRateLimiter {
+        key_limit: 2_048,
+        ..ProbeRateLimiter::new()
+    });
     let increased_object: Arc<dyn RateLimiter> = increased.clone();
     let increased_core = development_core(
         &increased_executor,
@@ -2186,8 +2118,7 @@ async fn configured_key_limit_enforces_lower_zero_and_increased_boundaries() {
     .await
     .expect_err("first excess over increased limit");
     assert_eq!(error.category(), ErrorCategory::Configuration);
-    assert_eq!(increased.test_acquisition_count(), 1);
-    assert_eq!(increased.test_quota_entry_count(), 1);
+    assert_eq!(increased.acquisitions.load(Ordering::SeqCst), 1);
     assert_eq!(
         increased_executor
             .application()
@@ -2197,7 +2128,6 @@ async fn configured_key_limit_enforces_lower_zero_and_increased_boundaries() {
     );
 }
 
-#[cfg(feature = "rate-limit-governor")]
 #[tokio::test]
 async fn configured_key_limit_snapshot_is_shared_by_clones_and_retained_by_pending_requests() {
     const KEY_PART_NAME_BYTES: usize = "vars.tenant".len();
@@ -2213,11 +2143,10 @@ async fn configured_key_limit_snapshot_is_shared_by_clones_and_retained_by_pendi
         )))
         .expect("independent response");
 
-    let configured = Arc::new(
-        GovernorRateLimiter::new()
-            .key_limit(16)
-            .expect("configured key limit"),
-    );
+    let configured = Arc::new(ProbeRateLimiter {
+        key_limit: 16,
+        ..ProbeRateLimiter::new()
+    });
     let configured_object: Arc<dyn RateLimiter> = configured.clone();
     let configured_core = development_core(
         &executor,
@@ -2248,10 +2177,11 @@ async fn configured_key_limit_snapshot_is_shared_by_clones_and_retained_by_pendi
         Bytes::from_static(b"clone")
     );
 
+    let independent_limiter = Arc::new(ProbeRateLimiter::new());
     let independent = development_core(
         &executor,
         Arc::new(ProbeHooks::new()),
-        RuntimeConfigBuilder::new(),
+        RuntimeConfigBuilder::new().rate_limiter(independent_limiter),
     );
     assert_eq!(independent.rate_limit_key_limit(), 1_024);
     assert!(!Arc::ptr_eq(independent.rate_limiter(), &configured_object));
@@ -2270,62 +2200,10 @@ async fn configured_key_limit_snapshot_is_shared_by_clones_and_retained_by_pendi
         .await
         .expect_err("pending request retains originating configured limit");
     assert_eq!(error.category(), ErrorCategory::Configuration);
-    assert_eq!(configured.test_acquisition_count(), 1);
+    assert_eq!(configured.acquisitions.load(Ordering::SeqCst), 1);
     assert_eq!(executor.application().request_count().expect("count"), 2);
 }
 
-#[cfg(feature = "rate-limit-governor")]
-#[tokio::test(start_paused = true)]
-async fn final_429_is_unchanged_while_observation_delays_only_the_future_call() {
-    let executor = DeterministicExecutor::new();
-    let mut headers = http::HeaderMap::new();
-    headers.insert(
-        http::header::RETRY_AFTER,
-        http::HeaderValue::from_static("10"),
-    );
-    executor
-        .application()
-        .queue_response(
-            ScriptedResponse::status(
-                StatusCode::TOO_MANY_REQUESTS,
-                Bytes::from_static(b"current 429"),
-            )
-            .headers(headers),
-        )
-        .expect("429 response");
-    executor
-        .application()
-        .queue_response(ScriptedResponse::success(Bytes::from_static(
-            b"future success",
-        )))
-        .expect("future response");
-    let core = development_core(
-        &executor,
-        Arc::new(ProbeHooks::new()),
-        RuntimeConfigBuilder::new().rate_limit_cooldown_cap(Duration::from_secs(5)),
-    );
-
-    let error = bytes_request(core.clone()).await.expect_err("terminal 429");
-    assert_eq!(error.category(), ErrorCategory::HttpStatus);
-    assert_eq!(error.http_status(), Some(StatusCode::TOO_MANY_REQUESTS));
-    assert_eq!(error.retry_after(), Some(Duration::from_secs(5)));
-    assert_eq!(executor.application().request_count().expect("count"), 1);
-
-    let future = tokio::spawn(bytes_request(core).into_future());
-    tokio::task::yield_now().await;
-    assert_eq!(executor.application().request_count().expect("count"), 1);
-    tokio::time::advance(Duration::from_secs(4)).await;
-    tokio::task::yield_now().await;
-    assert_eq!(executor.application().request_count().expect("count"), 1);
-    tokio::time::advance(Duration::from_secs(1)).await;
-    assert_eq!(
-        future.await.expect("future task").expect("future call"),
-        Bytes::from_static(b"future success")
-    );
-    assert_eq!(executor.application().request_count().expect("count"), 2);
-}
-
-#[cfg(not(feature = "rate-limit-governor"))]
 #[tokio::test]
 async fn private_fallback_rejects_a_nonempty_runtime_plan_before_send() {
     let executor = DeterministicExecutor::new();
@@ -3657,7 +3535,12 @@ async fn record_stream_body_and_decoder_failures_are_items_without_second_comple
         )
         .expect("EOF failure response");
     let hooks = Arc::new(ProbeHooks::new());
-    let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
+    let limiter: Arc<dyn RateLimiter> = Arc::new(NoopRateLimiter::new());
+    let core = development_core(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new().rate_limiter(limiter),
+    );
 
     FAILURE_MODE.store(0, Ordering::SeqCst);
     let mut body_failure = surface_request::<Records<FailingRecordDecoder>>(
@@ -3754,7 +3637,12 @@ async fn dropping_record_stream_synchronously_drops_decoder_staging_and_byte_str
         )
         .expect("record-stream drop response");
     let hooks = Arc::new(ProbeHooks::new());
-    let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
+    let limiter: Arc<dyn RateLimiter> = Arc::new(NoopRateLimiter::new());
+    let core = development_core(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new().rate_limiter(limiter),
+    );
     let stream =
         surface_request::<Records<StreamDropDecoder>>(core, "stream-drop-query-sentinel-f81d0a")
             .await
@@ -3788,7 +3676,12 @@ async fn dropping_record_batches_synchronously_drops_record_stream_and_byte_stre
         )
         .expect("record-batches drop response");
     let hooks = Arc::new(ProbeHooks::new());
-    let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
+    let limiter: Arc<dyn RateLimiter> = Arc::new(NoopRateLimiter::new());
+    let core = development_core(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new().rate_limiter(limiter),
+    );
     let stream =
         surface_request::<Records<BatchDropDecoder>>(core, "batch-drop-query-sentinel-46d31c")
             .await

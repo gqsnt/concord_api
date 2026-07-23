@@ -17,7 +17,7 @@ syn.workspace = true
 url.workspace = true
 
 [dev-dependencies]
-concord_core = { version = "=0.1.0", path = "../concord_core", default-features = false, features = ["oauth2-client", "multipart", "rate-limit-governor", "dangerous-raw-response"] }
+concord_core = { version = "=0.1.0", path = "../concord_core", default-features = false, features = ["oauth2-client", "multipart", "dangerous-raw-response"] }
 concord_test_support = { version = "=0.1.0", path = "../concord_test_support", default-features = false, features = ["cargo-fixture"] }
 futures-core.workspace = true
 serde.workspace = true

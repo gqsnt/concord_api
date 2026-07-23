@@ -13,7 +13,7 @@ Use this page to select Cargo features, understand default finite limits, catego
 |---|:---:|---|
 | `default-tls` | yes | Rustls-backed HTTPS |
 | `http2` | yes | Reqwest HTTP/2 |
-| `rate-limit-governor` | yes | built-in process-local governor |
+| `rate-limit-governor` | yes | extras-owned process-local governor installed by the façade |
 | `json` | no | extras-owned Serde + Serde JSON `Json<T>` codec |
 | `records` | no | generic record contracts only |
 | `csv` | no | extras-owned typed CSV decoder plus core `records` |
@@ -64,7 +64,9 @@ features = ["default-tls", "records", "csv", "ndjson"]
 
 ## Limits and defaults
 
-Defaults come from `RuntimeConfigBuilder` and `GovernorRateLimiter`.
+Lifecycle limits come from core's `RuntimeConfigBuilder`. The optional
+process-local limiter defaults come from extras' `GovernorRateLimiter`, which
+the façade installs only for generated clients when its feature is enabled.
 
 ### Runtime defaults
 
@@ -81,7 +83,7 @@ Defaults come from `RuntimeConfigBuilder` and `GovernorRateLimiter`.
 | Pagination identity storage | 4 MiB | `pagination_identity_limit` |
 | Auth failure cooldown cap | 60 s | `auth_failure_cooldown_cap` |
 | Rate-limit cooldown cap | 60 s | `rate_limit_cooldown_cap` |
-| Advanced rate key | 1,024 aggregate bytes | limiter/governor configuration |
+| Advanced rate key | 1,024 aggregate bytes | `RateLimiter::preparation_key_limit` / governor configuration |
 
 Ordinary byte/page/item limits are positive nonzero types. Cooldown caps may be zero to disable retained cooldown duration.
 

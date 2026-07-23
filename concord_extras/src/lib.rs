@@ -8,5 +8,7 @@
 
 pub mod codec;
 pub mod pagination;
+#[cfg(feature = "rate-limit-governor")]
+pub mod rate_limit;
 #[cfg(any(feature = "csv", feature = "ndjson"))]
 pub mod records;

@@ -279,6 +279,8 @@ mod tests {
 
     #[test]
     fn client_core_freezes_complete_runtime_selection_at_construction() {
+        #[cfg(not(feature = "default-tls"))]
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let first_executor = concord_test_support::executor::DeterministicExecutor::new();
         let second_executor = concord_test_support::executor::DeterministicExecutor::new();
         let first_hooks: Arc<dyn RuntimeHooks> = Arc::new(FirstHooks);
@@ -294,12 +296,16 @@ mod tests {
         let five = NonZeroUsize::new(23).expect("positive test limit");
         let six = NonZeroUsize::new(29).expect("positive test limit");
         let seven = NonZeroUsize::new(31).expect("positive test limit");
+        let first_https_only = cfg!(feature = "default-tls");
+        let first_scheme = if first_https_only { "https" } else { "http" };
+        let first_base = format!("{first_scheme}://first.example");
+        let first_proxy = format!("{first_scheme}://first-proxy.example");
         let first = ClientCore::build_with_development(
-            "https://first.example",
+            &first_base,
             HttpConfigBuilder::new()
-                .https_only(true)
+                .https_only(first_https_only)
                 .http1_only()
-                .proxy(SafeProxy::parse("https://first-proxy.example").expect("safe proxy")),
+                .proxy(SafeProxy::parse(first_proxy).expect("safe proxy")),
             RuntimeConfigBuilder::new()
                 .request_body_limit(one)
                 .response_body_limit(two)
@@ -322,7 +328,7 @@ mod tests {
         assert_eq!(
             first.inner.http.test_runtime_selection(),
             (
-                true,
+                first_https_only,
                 cfg!(feature = "default-tls"),
                 Some(four),
                 Duration::from_secs(47),
@@ -353,14 +359,15 @@ mod tests {
             &first_limiter
         ));
         assert_eq!(first.inner.runtime.debug, DebugLevel::Headers);
-        assert!(
+        assert_eq!(
             first
                 .preflight_url(
                     "snapshot",
                     &Method::GET,
                     &Url::parse("http://first.example").expect("URL"),
                 )
-                .is_err()
+                .is_err(),
+            first_https_only,
         );
 
         let clone = first.clone();

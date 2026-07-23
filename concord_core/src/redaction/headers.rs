@@ -24,8 +24,11 @@ pub struct SanitizedHeaders<'a> {
 }
 
 impl<'a> SanitizedHeaders<'a> {
-    #[allow(dead_code, reason = "used by later production metadata surfaces")]
-    pub(crate) const fn new(headers: &'a HeaderMap) -> Self {
+    /// Creates a borrowed view using Concord's built-in sensitive-header policy.
+    ///
+    /// Runtime-owned views may additionally protect declaration-selected names.
+    #[must_use]
+    pub const fn new(headers: &'a HeaderMap) -> Self {
         Self {
             headers,
             sensitive: None,

@@ -43,6 +43,18 @@ pub mod pagination {
     };
 }
 
+/// Core rate-limit contracts and the enabled first-party implementation.
+pub mod rate_limit {
+    pub use concord_core::rate_limit::{
+        Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, NoopRateLimiter, RateLimitError,
+        RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitObserver, RateLimitPermit,
+        RateLimitPlan, RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimitRule,
+        RateLimitWindow, RateLimiter,
+    };
+    #[cfg(feature = "rate-limit-governor")]
+    pub use concord_extras::rate_limit::{DefaultRateLimitObserver, GovernorRateLimiter};
+}
+
 /// Common imports for declarations and ordinary generated-client use.
 pub mod prelude {
     pub use concord_macros::api;
@@ -67,30 +79,27 @@ pub mod prelude {
 
 /// Stable advanced semantic contracts and runtime configuration types.
 pub mod advanced {
-    #[cfg(feature = "rate-limit-governor")]
-    pub use concord_core::advanced::GovernorRateLimiter;
     pub use concord_core::advanced::{
         ApiError, ApiResponse, Auth, AuthError, AuthErrorKind, BeforeSend, BodyError,
         BodyErrorKind, BodyFactory, BodyKind, BoxFuture, Buffered, ByteStream, Bytes, BytesMut,
         ChallengePolicy, ClientBuildError, ClientBuildErrorKind, CodecError, CompletionEvent,
         CompletionOutcome, ConfigurationError, ConfigurationErrorKind, Cooldown, CooldownScope,
         CredentialHandle, CredentialMaterial, CredentialProvider, CredentialReason, CredentialRef,
-        CredentialRequest, DebugLevel, DecodeBody, DecodeContext, DecodedResponse,
-        DefaultRateLimitObserver, Discard, EncodeBody, EncodeContext, ErrorCategory, ExecutionMeta,
-        HeaderMap, HeaderName, HeaderValue, HookError, HttpConfigBuilder, HttpResponseFailure,
-        LengthHint, MediaType, Method, NoContent, NoopRateLimiter, OctetStream, OperationId,
-        PageResponseSpec, PaginationCompletionEvent, PaginationController, PaginationError,
-        PaginationErrorKind, PreparedEndpoint, PreparedEndpointBuilder, ProviderBody,
-        ProviderBodyFactory, ProviderHttp, ProviderRequest, ProviderResponse, ProviderRetry,
-        RateLimitError, RateLimitErrorKind, RateLimitId, RateLimitKey, RateLimitKeyPart,
-        RateLimitObserver, RateLimitPermit, RateLimitPlan, RateLimitRequest, RateLimitResponse,
-        RateLimitResponseHead, RateLimitRule, RateLimitWindow, RateLimiter, RecoveryMode,
-        RequestBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestContentType,
-        ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec, ResponseHead,
-        ResponseHeadEvent, ResponseMode, RuntimeConfigBuilder, RuntimeHooks, SafeProxy,
-        SanitizedHeaderMap, SanitizedHeaderValue, SanitizedHeaders, SecretCredential, StatusBody,
-        StatusBodyDecodeError, StatusBodyState, StatusCode, Stream, StreamBody, Streaming, Text,
-        Url, Version,
+        CredentialRequest, DebugLevel, DecodeBody, DecodeContext, DecodedResponse, Discard,
+        EncodeBody, EncodeContext, ErrorCategory, ExecutionMeta, HeaderMap, HeaderName,
+        HeaderValue, HookError, HttpConfigBuilder, HttpResponseFailure, LengthHint, MediaType,
+        Method, NoContent, NoopRateLimiter, OctetStream, OperationId, PageResponseSpec,
+        PaginationCompletionEvent, PaginationController, PaginationError, PaginationErrorKind,
+        PreparedEndpoint, PreparedEndpointBuilder, ProviderBody, ProviderBodyFactory, ProviderHttp,
+        ProviderRequest, ProviderResponse, ProviderRetry, RateLimitError, RateLimitErrorKind,
+        RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitObserver, RateLimitPermit,
+        RateLimitPlan, RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimitRule,
+        RateLimitWindow, RateLimiter, RecoveryMode, RequestBody, RequestBodyContext,
+        RequestBodyMetadata, RequestBodySpec, RequestContentType, ResponseBodyError,
+        ResponseBodyErrorKind, ResponseBodySpec, ResponseHead, ResponseHeadEvent, ResponseMode,
+        RuntimeConfigBuilder, RuntimeHooks, SafeProxy, SanitizedHeaderMap, SanitizedHeaderValue,
+        SanitizedHeaders, SecretCredential, StatusBody, StatusBodyDecodeError, StatusBodyState,
+        StatusCode, Stream, StreamBody, Streaming, Text, Url, Version,
     };
     #[cfg(feature = "multipart")]
     pub use concord_core::advanced::{Multipart, MultipartBody, MultipartFactory, MultipartPart};
@@ -103,6 +112,8 @@ pub mod advanced {
     pub use concord_extras::pagination::{
         CursorPagination, HasNextCursor, OffsetPagination, PagePagination,
     };
+    #[cfg(feature = "rate-limit-governor")]
+    pub use concord_extras::rate_limit::{DefaultRateLimitObserver, GovernorRateLimiter};
     #[cfg(feature = "csv")]
     pub use concord_extras::records::Csv;
     #[cfg(feature = "ndjson")]
@@ -172,7 +183,17 @@ pub mod __private {
     #[doc(hidden)]
     #[must_use]
     pub fn default_runtime_config() -> concord_core::advanced::RuntimeConfigBuilder {
-        concord_core::__private::default_runtime_config()
+        let runtime = concord_core::__private::default_runtime_config();
+        #[cfg(feature = "rate-limit-governor")]
+        {
+            let limiter: std::sync::Arc<dyn concord_core::rate_limit::RateLimiter> =
+                std::sync::Arc::new(concord_extras::rate_limit::GovernorRateLimiter::new());
+            return concord_core::__private::install_generated_default_limiter(runtime, limiter);
+        }
+        #[cfg(not(feature = "rate-limit-governor"))]
+        {
+            runtime
+        }
     }
 
     /// Applies generated rate-limit requirements to the selected runtime.
@@ -193,9 +214,18 @@ pub mod __private {
     where
         O: Default + concord_core::advanced::RateLimitObserver,
     {
-        concord_core::__private::prepare_generated_rate_limits_with_observer::<O>(
-            runtime,
-            requires_limiter,
-        )
+        #[cfg(feature = "rate-limit-governor")]
+        let runtime =
+            concord_core::__private::install_generated_default_limiter_with(runtime, || {
+                let limiter: std::sync::Arc<dyn concord_core::rate_limit::RateLimiter> =
+                    std::sync::Arc::new(
+                        concord_extras::rate_limit::GovernorRateLimiter::new()
+                            .observer(std::sync::Arc::new(O::default())),
+                    );
+                limiter
+            });
+        #[cfg(not(feature = "rate-limit-governor"))]
+        let _ = std::marker::PhantomData::<O>;
+        concord_core::__private::prepare_generated_rate_limits(runtime, requires_limiter)
     }
 }

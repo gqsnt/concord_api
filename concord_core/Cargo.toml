@@ -6,10 +6,9 @@ rust-version.workspace = true
 publish = false
 
 [features]
-default = ["default-tls", "http2", "rate-limit-governor"]
+default = ["default-tls", "http2"]
 default-tls = ["dep:rustls", "reqwest/rustls-no-provider"]
 http2 = ["reqwest/http2"]
-rate-limit-governor = []
 oauth2-client = ["dep:serde_json"]
 records = []
 multipart = ["reqwest/multipart"]

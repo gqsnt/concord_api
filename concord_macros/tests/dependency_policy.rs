@@ -143,6 +143,7 @@ fn facade_and_extras_edges_are_exact_and_directional() {
         .as_array()
         .expect("façade dependencies")
         .iter()
+        .filter(|dependency| dependency["kind"].is_null())
         .filter_map(|dependency| dependency["name"].as_str())
         .filter(|name| name.starts_with("concord"))
         .collect::<Vec<_>>();
@@ -380,6 +381,70 @@ fn moved_codec_and_record_dependencies_are_extras_owned_and_isolated() {
         assert!(
             !has_direct_package(&macros, package),
             "the macro crate unexpectedly depends on {package}\n{macros}"
+        );
+    }
+}
+
+#[test]
+fn governor_ecosystem_and_default_composition_are_extras_and_facade_owned() {
+    let metadata = workspace_metadata();
+    let core = package_metadata(&metadata, "concord_core");
+    let extras = package_metadata(&metadata, "concord_extras");
+    let facade = package_metadata(&metadata, "concord");
+
+    let core_features = core["features"].as_object().expect("core features");
+    assert!(
+        !core_features.contains_key("rate-limit-governor"),
+        "core retains the concrete governor feature"
+    );
+
+    let extras_feature = extras["features"]["rate-limit-governor"]
+        .as_array()
+        .expect("extras governor feature")
+        .iter()
+        .map(|member| member.as_str().expect("feature member"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        extras_feature,
+        ["dep:http", "dep:httpdate", "dep:tokio"],
+        "extras must own the complete concrete governor dependency set"
+    );
+    for dependency in ["http", "httpdate", "tokio"] {
+        let dependency = metadata_dependency(extras, dependency);
+        assert_eq!(
+            dependency["optional"].as_bool(),
+            Some(true),
+            "governor ecosystem dependency {dependency:?} must remain optional"
+        );
+    }
+
+    let facade_feature = facade["features"]["rate-limit-governor"]
+        .as_array()
+        .expect("façade governor feature")
+        .iter()
+        .map(|member| member.as_str().expect("feature member"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        facade_feature,
+        ["concord_extras/rate-limit-governor"],
+        "the user-facing feature must compose the extras implementation"
+    );
+
+    let disabled = extras_feature_tree(None, "dependency-policy/extras-governor-disabled");
+    for dependency in ["httpdate"] {
+        assert!(
+            !has_direct_package(&disabled, dependency),
+            "governor-disabled extras unexpectedly activates {dependency}\n{disabled}"
+        );
+    }
+    let enabled = extras_feature_tree(
+        Some("rate-limit-governor"),
+        "dependency-policy/extras-governor-enabled",
+    );
+    for dependency in ["http", "httpdate", "tokio"] {
+        assert!(
+            has_direct_package(&enabled, dependency),
+            "governor support omitted {dependency}\n{enabled}"
         );
     }
 }

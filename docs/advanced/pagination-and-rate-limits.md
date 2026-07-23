@@ -143,11 +143,16 @@ The runtime cap limits server-directed cooldown duration. Observation affects fu
 
 ### Default observer
 
-`DefaultRateLimitObserver` handles a final `429` with positive `Retry-After` delta seconds or HTTP date. It targets current buckets, or the host when the effective plan is empty. Malformed, past, or zero values are ignored.
+The extras-owned `DefaultRateLimitObserver` handles a final `429` with
+positive `Retry-After` delta seconds or HTTP date. It targets current buckets,
+or the host when the effective plan is empty. Malformed, past, or zero values
+are ignored.
 
 ### Ownership
 
-The DSL observer configures only a generated default `GovernorRateLimiter`. Installing an explicit limiter means that limiter owns observation; the DSL observer is not called.
+The façade's DSL bridge configures only its generated default, extras-owned
+`GovernorRateLimiter`. Installing an explicit limiter means that limiter owns
+observation; the DSL observer is not constructed or called.
 
 ### Responsibility
 

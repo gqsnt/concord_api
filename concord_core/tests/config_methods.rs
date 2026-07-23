@@ -43,7 +43,6 @@ fn feature_gated_configuration_methods_are_present_only_with_their_features() {
         "brotli",
         "deflate",
         "dangerous-custom-retry",
-        "rate-limit-governor",
     ] {
         let output = check_fixture("presence", Some(feature));
         assert!(
@@ -72,21 +71,4 @@ fn feature_gated_configuration_methods_are_present_only_with_their_features() {
             "absence fixture {bin} omitted {expected:?}\n{diagnostics}"
         );
     }
-
-    let governor = check_fixture("presence_governor", Some("rate-limit-governor"));
-    assert!(
-        governor.status.success(),
-        "governor presence fixture failed\n{}",
-        diagnostics(&governor)
-    );
-    let base_only = check_fixture("absence_governor", None);
-    let base_only_diagnostics = diagnostics(&base_only);
-    assert!(
-        !base_only.status.success(),
-        "the base feature set unexpectedly enabled the governor\n{base_only_diagnostics}"
-    );
-    assert!(
-        base_only_diagnostics.contains("GovernorRateLimiter"),
-        "base-only governor diagnostic omitted the gated type\n{base_only_diagnostics}"
-    );
 }

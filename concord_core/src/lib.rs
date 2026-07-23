@@ -26,7 +26,7 @@ mod hooks;
 mod http;
 mod operation;
 pub mod pagination;
-mod rate_limit;
+pub mod rate_limit;
 mod redaction;
 mod request;
 mod response;

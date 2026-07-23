@@ -147,13 +147,18 @@ pub(super) fn failure_category(kind: ExecutionFailureKind) -> ErrorCategory {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "default-tls")]
     use std::sync::Arc;
+    #[cfg(feature = "default-tls")]
     use std::time::Duration;
 
     use concord_test_support::executor::DeterministicExecutor;
+    #[cfg(feature = "default-tls")]
     use concord_test_support::gate::Gate;
+    #[cfg(feature = "default-tls")]
+    use concord_test_support::script::TransportFailure;
     use concord_test_support::script::{
-        BodyCategory, CapturedHeaderValue, ExpectedRequest, ScriptedResponse, TransportFailure,
+        BodyCategory, CapturedHeaderValue, ExpectedRequest, ScriptedResponse,
     };
     use http::{HeaderMap, HeaderValue, Method, StatusCode};
 
@@ -163,6 +168,7 @@ mod tests {
     use crate::http::build::ManagedHttp;
     use crate::runtime::RuntimeConfigBuilder;
 
+    #[cfg(feature = "default-tls")]
     const WAIT: Duration = Duration::from_secs(3);
 
     fn managed(executor: &DeterministicExecutor) -> ManagedHttp {
@@ -183,6 +189,7 @@ mod tests {
             .expect("synthetic application request should prepare")
     }
 
+    #[cfg(feature = "default-tls")]
     fn provider_request(managed: &ManagedHttp, method: Method) -> reqwest::RequestBuilder {
         managed
             .provider
@@ -190,6 +197,7 @@ mod tests {
             .expect("synthetic provider request should prepare")
     }
 
+    #[cfg(feature = "default-tls")]
     #[tokio::test]
     async fn final_call_seam_keeps_channels_independent_and_fifo() {
         let executor = DeterministicExecutor::new();
@@ -417,6 +425,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "default-tls")]
     #[tokio::test]
     async fn scoped_gates_and_cancellation_are_deterministic() {
         let executor = DeterministicExecutor::new();

@@ -53,7 +53,8 @@ features:
     cargo check -p concord --all-targets --no-default-features --features ndjson
     cargo check -p concord --all-targets --no-default-features --features csv,ndjson
     cargo check -p concord_core --all-targets --no-default-features --features multipart
-    cargo check -p concord_core --all-targets --no-default-features --features rate-limit-governor
+    cargo check -p concord_extras --all-targets --no-default-features --features rate-limit-governor
+    cargo check -p concord --all-targets --no-default-features --features rate-limit-governor
     cargo check -p concord_core --all-targets --no-default-features --features dangerous-raw-response
     cargo check -p concord_core --all-targets --no-default-features --features dangerous-custom-retry
     cargo check -p concord_core --all-targets --no-default-features --features dangerous-dev-tools

@@ -1,14 +1,12 @@
 #![allow(non_snake_case)]
 
-use std::future::{Future as _, IntoFuture as _};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::{fmt, fmt::Display};
 
 use concord_core::advanced::{
-    BoxFuture, ClientBuildErrorKind, GovernorRateLimiter, NoopRateLimiter, RateLimitError,
-    RateLimitObserver, RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimiter,
-    SafeProxy,
+    BoxFuture, ClientBuildErrorKind, NoopRateLimiter, RateLimitError, RateLimitObserver,
+    RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimiter, SafeProxy,
 };
 use concord_core::prelude::Bytes;
 use concord_macros::api;
@@ -682,144 +680,6 @@ async fn sibling_and_endpoint_local_rules_do_not_share_unrelated_buckets() {
     assert_eq!(acquisitions[1].len(), 1);
     assert_ne!(acquisitions[0][1].id, acquisitions[0][2].id);
     assert_ne!(acquisitions[0][2].id, acquisitions[1][0].id);
-}
-
-#[tokio::test(start_paused = true)]
-async fn client_rule_quota_is_shared_across_direct_and_scoped_endpoints() {
-    let server = ScriptedServer::start([
-        ResponseScript::ok(b"first".to_vec()),
-        ResponseScript::ok(b"unrelated".to_vec()),
-        ResponseScript::ok(b"after-cancellation".to_vec()),
-        ResponseScript::ok(b"unexpected-extra".to_vec()),
-    ])
-    .expect("client bucket server");
-    let proxy = SafeProxy::parse(server.url("")).expect("client bucket proxy");
-    let governor = Arc::new(GovernorRateLimiter::new());
-    let client = ClientBucketRateApi::builder()
-        .http(move |http| http.proxy(proxy))
-        .runtime({
-            let governor = Arc::clone(&governor);
-            move |runtime| runtime.rate_limiter(governor)
-        })
-        .build()
-        .expect("client bucket client");
-    client.direct().await.expect("first bucket reservation");
-    server
-        .wait_for_requests(1, std::time::Duration::from_secs(1))
-        .expect("first request reached server");
-
-    let unrelated = EmptyRateApi::builder()
-        .http({
-            let proxy = SafeProxy::parse(server.url("")).expect("unrelated client proxy");
-            move |http| http.proxy(proxy)
-        })
-        .build()
-        .expect("unrelated client");
-    unrelated.read().await.expect("unrelated request");
-    server
-        .wait_for_requests(2, std::time::Duration::from_secs(1))
-        .expect("unrelated request reached server");
-
-    let mut pending = Box::pin(
-        client
-            .descendant("same-scope".to_owned())
-            .nested()
-            .into_future(),
-    );
-    let waker = std::task::Waker::noop();
-    let mut context = std::task::Context::from_waker(waker);
-    assert!(
-        matches!(
-            pending.as_mut().poll(&mut context),
-            std::task::Poll::Pending
-        ),
-        "shared client quota must return Pending before transport",
-    );
-    assert_eq!(server.request_count(), 2);
-    drop(pending);
-    assert_eq!(server.request_count(), 2);
-
-    tokio::time::advance(std::time::Duration::from_secs(3600)).await;
-    assert_eq!(server.request_count(), 2);
-    client
-        .direct()
-        .await
-        .expect("cancellation did not consume the refilled quota");
-    server
-        .wait_for_requests(3, std::time::Duration::from_secs(1))
-        .expect("post-cancellation request reached server");
-}
-
-#[tokio::test(start_paused = true)]
-async fn scope_rule_quota_is_shared_across_immediate_and_nested_descendants() {
-    let server = ScriptedServer::start([
-        ResponseScript::ok(b"first".to_vec()),
-        ResponseScript::ok(b"outside".to_vec()),
-        ResponseScript::ok(b"after-cancellation".to_vec()),
-    ])
-    .expect("scope bucket server");
-    let proxy = SafeProxy::parse(server.url("")).expect("scope bucket proxy");
-    let governor = Arc::new(GovernorRateLimiter::new());
-    let client = ScopeBucketRateApi::builder()
-        .http(move |http| http.proxy(proxy))
-        .runtime({
-            let governor = Arc::clone(&governor);
-            move |runtime| runtime.rate_limiter(governor)
-        })
-        .build()
-        .expect("scope bucket client");
-    client
-        .branch("same-scope".to_owned())
-        .immediate()
-        .await
-        .expect("first scope reservation");
-    server
-        .wait_for_requests(1, std::time::Duration::from_secs(1))
-        .expect("first scope request reached server");
-
-    client.outside().await.expect("outside-scope request");
-    server
-        .wait_for_requests(2, std::time::Duration::from_secs(1))
-        .expect("outside-scope request reached server");
-
-    let mut pending = Box::pin(
-        client
-            .branch("same-scope".to_owned())
-            .nested("same-nested".to_owned())
-            .descendant()
-            .into_future(),
-    );
-    let waker = std::task::Waker::noop();
-    let mut context = std::task::Context::from_waker(waker);
-    assert!(
-        matches!(
-            pending.as_mut().poll(&mut context),
-            std::task::Poll::Pending
-        ),
-        "shared scope quota must wait",
-    );
-    assert_eq!(server.request_count(), 2);
-    tokio::time::advance(std::time::Duration::from_secs(3599)).await;
-    assert!(
-        matches!(
-            pending.as_mut().poll(&mut context),
-            std::task::Poll::Pending
-        ),
-        "shared scope quota remains unavailable",
-    );
-    assert_eq!(server.request_count(), 2);
-    drop(pending);
-
-    tokio::time::advance(std::time::Duration::from_secs(1)).await;
-    client
-        .branch("same-scope".to_owned())
-        .nested("after-cancellation".to_owned())
-        .descendant()
-        .await
-        .expect("scope cancellation did not consume the refilled quota");
-    server
-        .wait_for_requests(3, std::time::Duration::from_secs(1))
-        .expect("post-cancellation scope request reached server");
 }
 
 fn rules_from_limiter(limiter: &CapturingLimiter) -> Vec<CapturedRule> {

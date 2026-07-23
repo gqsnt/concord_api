@@ -2,9 +2,8 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use concord_core::advanced::{Cooldown, RateLimitObserver, RateLimitResponseHead};
-use concord_core::prelude::Bytes;
-use concord_macros::api;
+use runtime::advanced::{Cooldown, RateLimitObserver, RateLimitResponseHead};
+use runtime::{Bytes, api};
 
 pub static DEFAULT_OBSERVER_CALLS: AtomicUsize = AtomicUsize::new(0);
 

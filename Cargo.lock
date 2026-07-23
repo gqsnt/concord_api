@@ -137,6 +137,8 @@ dependencies = [
  "concord_core",
  "concord_extras",
  "concord_macros",
+ "concord_test_support",
+ "tokio",
 ]
 
 [[package]]
@@ -177,9 +179,12 @@ version = "0.1.0"
 dependencies = [
  "concord_core",
  "csv",
+ "http",
+ "httpdate",
  "mime",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]

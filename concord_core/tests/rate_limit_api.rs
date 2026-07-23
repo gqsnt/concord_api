@@ -4,10 +4,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use concord_core::advanced::{
-    BoxFuture, Cooldown, CooldownScope, DefaultRateLimitObserver, NoopRateLimiter, RateLimitError,
-    RateLimitErrorKind, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitObserver,
-    RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimitRule,
-    RateLimitWindow, RateLimiter, RuntimeConfigBuilder,
+    BoxFuture, Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, NoopRateLimiter,
+    RateLimitError, RateLimitErrorKind, RateLimitId, RateLimitKey, RateLimitKeyPart,
+    RateLimitObserver, RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimitResponseHead,
+    RateLimitRule, RateLimitWindow, RateLimiter, RuntimeConfigBuilder,
 };
 
 struct CustomLimiter;
@@ -56,6 +56,7 @@ impl RateLimiter for CustomLimiter {
             response.request.plan.rules(),
             response.status,
             response.headers,
+            response.cooldown_cap,
         );
         Box::pin(async {})
     }
@@ -140,7 +141,11 @@ fn extensions_construct_opaque_permits_and_typed_key_safe_errors() {
 
 #[test]
 fn custom_extensions_compile_with_body_free_plan_inspection() {
-    let _: Arc<dyn RateLimiter> = Arc::new(CustomLimiter);
+    let limiter: Arc<dyn RateLimiter> = Arc::new(CustomLimiter);
+    assert_eq!(
+        limiter.preparation_key_limit(),
+        DEFAULT_RATE_LIMIT_KEY_BYTES
+    );
     let _: Arc<dyn RateLimitObserver> = Arc::new(CustomObserver);
 }
 
@@ -191,22 +196,4 @@ fn exact_advanced_rate_limit_constructors_accessors_and_traits_compile() {
     let _: Arc<dyn RateLimiter> = Arc::new(CustomLimiter);
     let _: Arc<dyn RateLimiter> = Arc::new(NoopRateLimiter::new());
     let _: Arc<dyn RateLimitObserver> = Arc::new(CustomObserver);
-    let _: Arc<dyn RateLimitObserver> = Arc::new(DefaultRateLimitObserver);
-}
-
-#[cfg(feature = "rate-limit-governor")]
-#[test]
-fn governor_configuration_surface_is_exact_and_finite() {
-    use concord_core::advanced::GovernorRateLimiter;
-
-    let _governor = GovernorRateLimiter::new()
-        .observer(Arc::new(CustomObserver))
-        .quota_capacity(1)
-        .expect("quota capacity")
-        .cooldown_capacity(1)
-        .expect("cooldown capacity")
-        .idle_ttl(Duration::from_secs(1))
-        .expect("idle TTL")
-        .key_limit(0)
-        .expect("zero key limit");
 }

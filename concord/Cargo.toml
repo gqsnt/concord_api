@@ -9,7 +9,7 @@ publish = false
 default = ["default-tls", "http2", "rate-limit-governor"]
 default-tls = ["concord_core/default-tls"]
 http2 = ["concord_core/http2"]
-rate-limit-governor = ["concord_core/rate-limit-governor"]
+rate-limit-governor = ["concord_extras/rate-limit-governor"]
 json = ["concord_extras/json"]
 oauth2-client = ["concord_core/oauth2-client"]
 records = ["concord_core/records"]
@@ -27,6 +27,10 @@ dangerous-dev-tools = ["concord_core/dangerous-dev-tools"]
 concord_core = { version = "=0.1.0", path = "../concord_core", default-features = false }
 concord_extras = { version = "=0.1.0", path = "../concord_extras", default-features = false }
 concord_macros = { version = "=0.1.0", path = "../concord_macros", default-features = false }
+
+[dev-dependencies]
+concord_test_support = { version = "=0.1.0", path = "../concord_test_support" }
+tokio = { workspace = true }
 
 [lints]
 workspace = true

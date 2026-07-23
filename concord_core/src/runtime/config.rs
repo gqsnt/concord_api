@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::hooks::{DebugLevel, RuntimeHooks, default_hooks};
-use crate::rate_limit::{RateLimitObserver, RateLimiter, preparation_key_limit};
+use crate::rate_limit::RateLimiter;
 
 const MIB: usize = 1_048_576;
 const KIB: usize = 1_024;
@@ -31,14 +31,21 @@ pub(crate) struct RuntimeConfig {
 /// A consuming builder whose ordinary limits remain positive and finite.
 pub struct RuntimeConfigBuilder {
     config: RuntimeConfig,
-    rate_limiter_explicit: bool,
+    limiter_selection: LimiterSelection,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum LimiterSelection {
+    Fallback,
+    GeneratedDefault,
+    Explicit,
 }
 
 impl RuntimeConfigBuilder {
     #[allow(dead_code, reason = "initialized by later generated client builders")]
     pub(crate) fn new() -> Self {
-        let rate_limiter = default_rate_limiter();
-        let rate_limit_key_limit = preparation_key_limit(rate_limiter.as_ref());
+        let rate_limiter = crate::rate_limit::fallback_limiter();
+        let rate_limit_key_limit = rate_limiter.preparation_key_limit();
         Self {
             config: RuntimeConfig {
                 request_body_limit: nonzero_usize(16 * MIB),
@@ -58,7 +65,7 @@ impl RuntimeConfigBuilder {
                 hooks: default_hooks(),
                 debug: DebugLevel::None,
             },
-            rate_limiter_explicit: false,
+            limiter_selection: LimiterSelection::Fallback,
         }
     }
 
@@ -149,9 +156,9 @@ impl RuntimeConfigBuilder {
     /// Replaces the immutable limiter shared by the built client and its clones.
     #[must_use]
     pub fn rate_limiter(mut self, limiter: Arc<dyn RateLimiter>) -> Self {
-        self.config.rate_limit_key_limit = preparation_key_limit(limiter.as_ref());
+        self.config.rate_limit_key_limit = limiter.preparation_key_limit();
         self.config.rate_limiter = limiter;
-        self.rate_limiter_explicit = true;
+        self.limiter_selection = LimiterSelection::Explicit;
         self
     }
 
@@ -174,64 +181,41 @@ impl RuntimeConfigBuilder {
         self.config
     }
 
+    pub(crate) fn install_generated_default_limiter(
+        mut self,
+        limiter: Arc<dyn RateLimiter>,
+    ) -> Self {
+        if self.limiter_selection == LimiterSelection::Explicit {
+            return self;
+        }
+        self.config.rate_limit_key_limit = limiter.preparation_key_limit();
+        self.config.rate_limiter = limiter;
+        self.limiter_selection = LimiterSelection::GeneratedDefault;
+        self
+    }
+
+    pub(crate) fn install_generated_default_limiter_with(
+        self,
+        factory: impl FnOnce() -> Arc<dyn RateLimiter>,
+    ) -> Self {
+        if self.limiter_selection == LimiterSelection::Explicit {
+            self
+        } else {
+            self.install_generated_default_limiter(factory())
+        }
+    }
+
     pub(crate) fn prepare_generated_rate_limits(
         self,
         requires_limiter: bool,
     ) -> Result<Self, crate::error::ClientBuildError> {
-        #[cfg(feature = "rate-limit-governor")]
-        let _ = requires_limiter;
-        #[cfg(not(feature = "rate-limit-governor"))]
-        if requires_limiter && !self.rate_limiter_explicit {
+        if requires_limiter && self.limiter_selection == LimiterSelection::Fallback {
             return Err(crate::error::ClientBuildError::new(
                 crate::error::ClientBuildErrorKind::LimiterUnavailable,
             ));
         }
         Ok(self)
     }
-
-    pub(crate) fn prepare_generated_rate_limits_with_observer<O>(
-        self,
-        requires_limiter: bool,
-    ) -> Result<Self, crate::error::ClientBuildError>
-    where
-        O: Default + RateLimitObserver,
-    {
-        if self.rate_limiter_explicit {
-            return Ok(self);
-        }
-        #[cfg(feature = "rate-limit-governor")]
-        {
-            let _ = requires_limiter;
-            let mut builder = self;
-            let limiter: Arc<dyn RateLimiter> = Arc::new(
-                crate::rate_limit::GovernorRateLimiter::new().observer(Arc::new(O::default())),
-            );
-            builder.config.rate_limit_key_limit = preparation_key_limit(limiter.as_ref());
-            builder.config.rate_limiter = limiter;
-            Ok(builder)
-        }
-        #[cfg(not(feature = "rate-limit-governor"))]
-        {
-            let _ = std::marker::PhantomData::<O>;
-            if requires_limiter {
-                Err(crate::error::ClientBuildError::new(
-                    crate::error::ClientBuildErrorKind::LimiterUnavailable,
-                ))
-            } else {
-                Ok(self)
-            }
-        }
-    }
-}
-
-#[cfg(feature = "rate-limit-governor")]
-fn default_rate_limiter() -> Arc<dyn RateLimiter> {
-    Arc::new(crate::rate_limit::GovernorRateLimiter::new())
-}
-
-#[cfg(not(feature = "rate-limit-governor"))]
-fn default_rate_limiter() -> Arc<dyn RateLimiter> {
-    crate::rate_limit::fallback_limiter()
 }
 
 fn nonzero_usize(value: usize) -> NonZeroUsize {
@@ -269,31 +253,46 @@ mod tests {
         assert_eq!(config.debug, DebugLevel::None);
     }
 
-    #[cfg(feature = "rate-limit-governor")]
     #[test]
-    fn selected_governor_and_preparation_limit_form_one_runtime_snapshot() {
+    fn selected_limiter_metadata_and_precedence_form_one_runtime_snapshot() {
+        struct KeyBoundLimiter(usize);
+
+        impl RateLimiter for KeyBoundLimiter {
+            fn preparation_key_limit(&self) -> usize {
+                self.0
+            }
+
+            fn acquire<'a>(
+                &'a self,
+                _request: crate::rate_limit::RateLimitRequest<'a>,
+            ) -> crate::hooks::BoxFuture<
+                'a,
+                Result<crate::rate_limit::RateLimitPermit, crate::rate_limit::RateLimitError>,
+            > {
+                Box::pin(async { Ok(crate::rate_limit::RateLimitPermit::granted()) })
+            }
+        }
+
         for limit in [0, 16, KIB, 2 * KIB] {
-            let governor = Arc::new(
-                crate::rate_limit::GovernorRateLimiter::new()
-                    .key_limit(limit)
-                    .expect("configured key limit"),
-            );
-            let limiter: Arc<dyn RateLimiter> = governor.clone();
+            let limiter: Arc<dyn RateLimiter> = Arc::new(KeyBoundLimiter(limit));
             let config = RuntimeConfigBuilder::new()
                 .rate_limiter(Arc::clone(&limiter))
                 .resolve();
             assert_eq!(config.rate_limit_key_limit, limit);
             assert!(Arc::ptr_eq(&config.rate_limiter, &limiter));
-            assert_eq!(governor.test_acquisition_count(), 0);
-            assert_eq!(governor.test_quota_entry_count(), 0);
         }
 
-        let noop: Arc<dyn RateLimiter> = Arc::new(crate::rate_limit::NoopRateLimiter::new());
+        let generated: Arc<dyn RateLimiter> = Arc::new(KeyBoundLimiter(17));
+        let explicit: Arc<dyn RateLimiter> = Arc::new(KeyBoundLimiter(23));
         let config = RuntimeConfigBuilder::new()
-            .rate_limiter(Arc::clone(&noop))
+            .install_generated_default_limiter(Arc::clone(&generated))
+            .rate_limiter(Arc::clone(&explicit))
+            .install_generated_default_limiter_with(|| {
+                panic!("explicit limiter must suppress generated default construction")
+            })
             .resolve();
-        assert_eq!(config.rate_limit_key_limit, KIB);
-        assert!(Arc::ptr_eq(&config.rate_limiter, &noop));
+        assert_eq!(config.rate_limit_key_limit, 23);
+        assert!(Arc::ptr_eq(&config.rate_limiter, &explicit));
     }
 
     #[test]
