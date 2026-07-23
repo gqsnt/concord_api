@@ -6,5 +6,5 @@ rust-version = "1.85"
 publish = false
 
 [dependencies]
-concord_core = { path = "../../../../concord_core", default-features = false }
-concord_macros = { path = "../../.." }
+concord_core = { package = "concord-core", path = "../../../../concord_core", default-features = false }
+concord_macros = { package = "concord-macros", path = "../../.." }

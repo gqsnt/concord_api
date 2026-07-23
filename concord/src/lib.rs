@@ -26,8 +26,10 @@ pub use concord_extras::pagination::{CursorPagination, OffsetPagination, PagePag
 /// Credential material, provider contracts, and enabled first-party providers.
 pub mod auth {
     pub use concord_core::advanced::{
-        Auth, AuthError, ChallengePolicy, CredentialHandle, CredentialMaterial, CredentialProvider,
-        CredentialReason, CredentialRef, CredentialRequest, RecoveryMode, SecretCredential,
+        Auth, AuthError, AuthErrorKind, BoxFuture, ChallengePolicy, CredentialHandle,
+        CredentialMaterial, CredentialProvider, CredentialReason, CredentialRef, CredentialRequest,
+        ProviderBody, ProviderBodyFactory, ProviderHttp, ProviderRequest, ProviderResponse,
+        ProviderRetry, RecoveryMode, SecretCredential,
     };
     pub use concord_core::prelude::{AccessToken, ApiKey, BasicCredential, SecretString};
     #[cfg(feature = "oauth2-client")]
@@ -37,14 +39,60 @@ pub mod auth {
     };
 }
 
+/// Request-body specifications, factories, metadata, and bounded streaming primitives.
+pub mod body {
+    pub use concord_core::advanced::{
+        BodyError, BodyErrorKind, BodyFactory, BodyKind, LengthHint, RequestBody,
+        RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestContentType, Stream,
+        StreamBody,
+    };
+    #[cfg(feature = "multipart")]
+    pub use concord_core::advanced::{Multipart, MultipartBody, MultipartFactory, MultipartPart};
+}
+
 /// Buffered codec contracts, primitives, and enabled ecosystem codecs.
 pub mod codec {
+    pub use concord_core::advanced::{Bytes, BytesMut};
     pub use concord_core::codec::{
         CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType, OctetStream,
         Text,
     };
     #[cfg(feature = "json")]
     pub use concord_extras::codec::Json;
+}
+
+/// Explicit endpoint values and typed pending request contracts.
+pub mod endpoint {
+    pub use concord_core::advanced::{PreparedEndpoint, PreparedEndpointBuilder};
+    pub use concord_core::{PaginatedRequest, Request, ResponseRequest};
+}
+
+/// Safe runtime, configuration, lifecycle, and decoding errors.
+pub mod error {
+    pub use concord_core::advanced::{
+        ApiError, AuthError, AuthErrorKind, BodyError, BodyErrorKind, ClientBuildError,
+        ClientBuildErrorKind, CodecError, ConfigurationError, ConfigurationErrorKind,
+        ErrorCategory, HookError, HttpResponseFailure, PaginationError, PaginationErrorKind,
+        RateLimitError, RateLimitErrorKind, ResponseBodyError, ResponseBodyErrorKind, StatusBody,
+        StatusBodyDecodeError, StatusBodyState,
+    };
+}
+
+/// Sanitized lifecycle observation contracts and completion events.
+pub mod hooks {
+    pub use concord_core::advanced::{
+        BeforeSend, BodyKind, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel,
+        PaginationCompletionEvent, ResponseHeadEvent, RuntimeHooks, SanitizedHeaderMap,
+        SanitizedHeaderValue, SanitizedHeaders,
+    };
+}
+
+/// HTTP value types and safe managed-transport configuration.
+pub mod http {
+    pub use concord_core::advanced::{
+        HeaderMap, HeaderName, HeaderValue, HttpConfigBuilder, Method, SafeProxy, StatusCode, Url,
+        Version,
+    };
 }
 
 /// Generic pagination contracts and built-in controller policies.
@@ -59,6 +107,7 @@ pub mod pagination {
 
 /// Core rate-limit contracts and the enabled first-party implementation.
 pub mod rate_limit {
+    pub use concord_core::advanced::{BoxFuture, RateLimitErrorKind};
     pub use concord_core::rate_limit::{
         Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, NoopRateLimiter, RateLimitError,
         RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitObserver, RateLimitPermit,
@@ -144,6 +193,20 @@ pub mod records {
     pub use concord_extras::records::Csv;
     #[cfg(feature = "ndjson")]
     pub use concord_extras::records::NdJson;
+}
+
+/// Bounded response specifications, acquisition modes, and response metadata.
+pub mod response {
+    pub use concord_core::advanced::{
+        ApiResponse, Buffered, ByteStream, DecodedResponse, Discard, ExecutionMeta, NoContent,
+        PageResponseSpec, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec, ResponseHead,
+        ResponseMode, Streaming,
+    };
+}
+
+/// Immutable client-runtime configuration and safe operation identity.
+pub mod runtime {
+    pub use concord_core::advanced::{OperationId, RuntimeConfigBuilder};
 }
 
 /// Explicitly feature-gated capabilities with reduced ordinary safety guarantees.

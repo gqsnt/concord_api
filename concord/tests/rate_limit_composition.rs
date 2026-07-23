@@ -2,10 +2,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[cfg(not(feature = "rate-limit-governor"))]
-use concord::advanced::ClientBuildErrorKind;
-use concord::advanced::{
+use concord::error::ClientBuildErrorKind;
+use concord::http::SafeProxy;
+use concord::rate_limit::{
     BoxFuture, Cooldown, RateLimitError, RateLimitObserver, RateLimitPermit, RateLimitRequest,
-    RateLimitResponse, RateLimitResponseHead, RateLimiter, SafeProxy,
+    RateLimitResponse, RateLimitResponseHead, RateLimiter,
 };
 use concord::{Bytes, api};
 use concord_test_support::server::{ResponseScript, ScriptedServer};

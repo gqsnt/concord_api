@@ -11,21 +11,21 @@ api! {
 
     GET Offset(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
         query { "offset" = ep.offset; "limit" = ep.limit; }
-        paginate concord::advanced::OffsetPagination {
+        paginate concord::pagination::OffsetPagination {
             offset: bind ep.offset,
             page_size: bind ep.limit,
         }
     }
     GET Page(page: std::num::NonZeroU64, per_page: std::num::NonZeroU32) -> Json<Vec<u32>> {
         query { "page" = ep.page; "per_page" = ep.per_page; }
-        paginate concord::advanced::PagePagination {
+        paginate concord::pagination::PagePagination {
             page: bind ep.page,
             page_size: bind ep.per_page,
         }
     }
     GET Cursor(cursor: Option<String>) -> concord_examples::ExamplePageCodec {
         query { "cursor" = ep.cursor; }
-        paginate concord::advanced::CursorPagination<String> {
+        paginate concord::pagination::CursorPagination<String> {
             cursor: bind ep.cursor,
         }
     }

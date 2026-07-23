@@ -1,4 +1,8 @@
-//! Procedural macros for declaring Concord APIs.
+//! Declaration compiler for Concord APIs.
+//!
+//! Applications use the [`api`] reexport from the `concord` façade. This
+//! implementation package parses and validates declarations and emits against
+//! the façade's versioned generated-code bridge.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

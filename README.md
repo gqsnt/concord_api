@@ -10,11 +10,7 @@ Add the user-facing package:
 
 ```toml
 [dependencies]
-concord = {
-    path = "../concord/concord",
-    default-features = false,
-    features = ["default-tls", "http2", "json", "rate-limit-governor"]
-}
+concord = { version = "0.1.0", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
@@ -105,10 +101,10 @@ See [Features, limits, errors, and compatibility](docs/reference/features-limits
 ## Workspace layout
 
 ```text
-concord_core/          Runtime, public API, and integration tests
 concord/               User façade and generated public integration tests
+concord_core/          Semantic runtime kernel and lifecycle proofs
 concord_extras/        Downstream implementations of public semantic contracts
-concord_macros/        api! parser, resolver, code generation, and Cargo fixtures
+concord_macros/        Declaration compiler and Cargo fixtures
 concord_examples/      Compile-checked runnable examples
 concord_test_support/  Shared deterministic test infrastructure
 perf/                  Local operation-exact benchmark probes

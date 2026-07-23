@@ -1,5 +1,6 @@
 [package]
-name = "concord_examples"
+name = "concord-examples"
+description = "Compile-checked product examples for Concord"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

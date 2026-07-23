@@ -1,12 +1,13 @@
 [package]
-name = "concord_core"
+name = "concord-core"
+description = "Semantic runtime kernel and extension contracts for Concord"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = false
 
 [features]
-default = ["default-tls", "http2"]
+default = []
 default-tls = ["dep:rustls", "reqwest/rustls-no-provider"]
 http2 = ["reqwest/http2"]
 records = []
@@ -20,7 +21,7 @@ dangerous-dev-tools = ["dep:concord_test_support"]
 
 [dependencies]
 bytes.workspace = true
-concord_test_support = { version = "=0.1.0", path = "../concord_test_support", optional = true, default-features = false, features = ["deterministic"] }
+concord_test_support = { package = "concord-test-support", version = "=0.1.0", path = "../concord_test_support", optional = true, default-features = false, features = ["deterministic"] }
 futures-core.workspace = true
 http.workspace = true
 http-body.workspace = true
@@ -32,7 +33,7 @@ tokio = { workspace = true, features = ["fs", "io-util"] }
 url.workspace = true
 
 [dev-dependencies]
-concord_test_support = { version = "=0.1.0", path = "../concord_test_support" }
+concord_test_support = { package = "concord-test-support", version = "=0.1.0", path = "../concord_test_support", default-features = false, features = ["cargo-fixture", "deterministic", "loopback"] }
 h2.workspace = true
 http.workspace = true
 http-body.workspace = true
@@ -41,6 +42,9 @@ rustls.workspace = true
 serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["test-util"] }
 trybuild = "=1.0.118"
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lints]
 workspace = true

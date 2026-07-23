@@ -10,12 +10,14 @@ use std::time::{Duration, Instant};
 use concord::__development::{
     BenchmarkOperation, benchmark_public_head, benchmark_ready_credentials,
 };
-use concord::advanced::{
-    BytesMut, CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, Method,
-    NoopRateLimiter, PreparedEndpoint, RecordDecoder, RecordError, SafeProxy, StatusCode,
-};
 use concord::api;
+use concord::codec::{BytesMut, CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext};
+use concord::endpoint::PreparedEndpoint;
+use concord::http::{Method, SafeProxy, StatusCode};
 use concord::prelude::{Bytes, PageLimit, StreamBody};
+use concord::rate_limit::NoopRateLimiter;
+use concord::records::{RecordDecoder, RecordError};
+use concord::response::ResponseHead;
 use concord::{PaginatedRequest, Request};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 
@@ -58,7 +60,7 @@ pub struct BenchRecords;
 impl RecordDecoder for BenchRecords {
     type Record = Bytes;
 
-    fn start(_head: &concord::advanced::ResponseHead<'_>) -> Result<Self, RecordError> {
+    fn start(_head: &ResponseHead<'_>) -> Result<Self, RecordError> {
         Ok(Self)
     }
 
@@ -109,7 +111,7 @@ api! {
     GET Pages(offset: u64, limit: std::num::NonZeroU32) -> crate::PageCodec {
         query { "offset" = ep.offset; "limit" = ep.limit; }
         auth off;
-        paginate concord::advanced::OffsetPagination {
+        paginate concord::pagination::OffsetPagination {
             offset: bind ep.offset,
             page_size: bind ep.limit,
         }

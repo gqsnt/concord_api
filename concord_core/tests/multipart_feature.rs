@@ -17,7 +17,7 @@ fn multipart_feature_activates_only_the_reqwest_multipart_capability() {
         "tree",
         [
             "-p",
-            "concord_core",
+            "concord-core",
             "--no-default-features",
             "--features",
             "multipart",

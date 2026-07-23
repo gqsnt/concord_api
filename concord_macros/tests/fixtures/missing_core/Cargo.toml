@@ -6,4 +6,4 @@ rust-version = "1.85"
 publish = false
 
 [dependencies]
-concord_macros = { path = "../../.." }
+concord_macros = { package = "concord-macros", path = "../../.." }

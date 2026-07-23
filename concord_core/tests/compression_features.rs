@@ -17,7 +17,7 @@ fn reqwest_feature_tree(feature: &str) -> Output {
         "tree",
         [
             "-p",
-            "concord_core",
+            "concord-core",
             "--no-default-features",
             "--features",
             feature,

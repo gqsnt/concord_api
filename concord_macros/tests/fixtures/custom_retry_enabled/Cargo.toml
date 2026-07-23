@@ -6,6 +6,6 @@ rust-version = "1.85"
 publish = false
 
 [dependencies]
-concord_core = { path = "../../../../concord_core", default-features = false, features = ["dangerous-custom-retry"] }
-concord_macros = { path = "../../.." }
+concord_core = { package = "concord-core", path = "../../../../concord_core", default-features = false, features = ["dangerous-custom-retry"] }
+concord_macros = { package = "concord-macros", path = "../../.." }
 reqwest = { version = "=0.13.4", default-features = false }

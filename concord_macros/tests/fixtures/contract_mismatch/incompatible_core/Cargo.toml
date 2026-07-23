@@ -1,5 +1,5 @@
 [package]
-name = "concord_core"
+name = "concord-core"
 version = "99.0.0"
 edition = "2024"
 rust-version = "1.85"
@@ -9,4 +9,4 @@ publish = false
 path = "lib.rs"
 
 [dependencies]
-concord_core_actual = { package = "concord_core", path = "../../../../../concord_core" }
+concord_core_actual = { package = "concord-core", path = "../../../../../concord_core" }

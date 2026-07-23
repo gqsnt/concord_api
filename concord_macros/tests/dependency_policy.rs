@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use concord_test_support::cargo_fixture::{diagnostics, run};
@@ -86,11 +87,11 @@ fn metadata_dependency<'a>(package: &'a Value, dependency: &str) -> &'a Value {
 }
 
 fn core_feature_tree(features: Option<&str>, target_key: &str) -> String {
-    feature_tree("concord_core", features, target_key)
+    feature_tree("concord-core", features, target_key)
 }
 
 fn extras_feature_tree(features: Option<&str>, target_key: &str) -> String {
-    feature_tree("concord_extras", features, target_key)
+    feature_tree("concord-extras", features, target_key)
 }
 
 fn feature_tree(package: &str, features: Option<&str>, target_key: &str) -> String {
@@ -116,16 +117,39 @@ fn feature_tree(package: &str, features: Option<&str>, target_key: &str) -> Stri
     String::from_utf8(output.stdout).expect("Cargo tree output should be UTF-8")
 }
 
+fn collect_rust_sources(directory: &Path, sources: &mut Vec<PathBuf>) {
+    let mut entries = fs::read_dir(directory)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", directory.display()))
+        .map(|entry| entry.expect("source directory entry"))
+        .collect::<Vec<_>>();
+    entries.sort_by_key(|entry| entry.path());
+
+    for entry in entries {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_rust_sources(&path, sources);
+        } else if path.extension().and_then(|extension| extension.to_str()) == Some("rs") {
+            sources.push(path);
+        }
+    }
+}
+
 #[test]
 fn facade_and_extras_edges_are_exact_and_directional() {
     let metadata = workspace_metadata();
     let facade = package_metadata(&metadata, "concord");
-    let core = package_metadata(&metadata, "concord_core");
-    let extras = package_metadata(&metadata, "concord_extras");
-    let macros = package_metadata(&metadata, "concord_macros");
-    let examples = package_metadata(&metadata, "concord_examples");
+    let core = package_metadata(&metadata, "concord-core");
+    let extras = package_metadata(&metadata, "concord-extras");
+    let macros = package_metadata(&metadata, "concord-macros");
+    let examples = package_metadata(&metadata, "concord-examples");
+    let workspace_package_names = metadata["packages"]
+        .as_array()
+        .expect("workspace packages")
+        .iter()
+        .filter_map(|package| package["name"].as_str())
+        .collect::<Vec<_>>();
 
-    for dependency in ["concord_core", "concord_extras", "concord_macros"] {
+    for dependency in ["concord-core", "concord-extras", "concord-macros"] {
         let edge = metadata_dependency(facade, dependency);
         assert_eq!(
             edge["req"].as_str(),
@@ -149,20 +173,20 @@ fn facade_and_extras_edges_are_exact_and_directional() {
         .collect::<Vec<_>>();
     assert_eq!(
         facade_internal,
-        ["concord_core", "concord_extras", "concord_macros"],
+        ["concord-core", "concord-extras", "concord-macros"],
         "the façade must own exactly the three implementation edges"
     );
 
-    let extras_core = metadata_dependency(extras, "concord_core");
+    let extras_core = metadata_dependency(extras, "concord-core");
     assert_eq!(extras_core["req"].as_str(), Some("=0.1.0"));
     assert_eq!(extras_core["uses_default_features"].as_bool(), Some(false));
-    for forbidden in ["concord", "concord_macros"] {
+    for forbidden in ["concord", "concord-macros"] {
         assert!(
             !has_metadata_dependency(extras, forbidden, None),
             "extras must not depend on {forbidden}"
         );
     }
-    for forbidden in ["concord", "concord_extras", "concord_macros"] {
+    for forbidden in ["concord", "concord-extras", "concord-macros"] {
         assert!(
             !has_metadata_dependency(core, forbidden, None),
             "core must not depend on {forbidden}"
@@ -170,7 +194,7 @@ fn facade_and_extras_edges_are_exact_and_directional() {
     }
     for kind in [None, Some("dev"), Some("build")] {
         assert!(
-            !has_metadata_dependency(macros, "concord_extras", kind),
+            !has_metadata_dependency(macros, "concord-extras", kind),
             "macros must remain extras-agnostic through dependency kind {kind:?}"
         );
     }
@@ -179,10 +203,150 @@ fn facade_and_extras_edges_are_exact_and_directional() {
         has_metadata_dependency(examples, "concord", None),
         "canonical examples must consume the façade"
     );
-    for dependency in ["concord_core", "concord_extras", "concord_macros"] {
+    for dependency in ["concord-core", "concord-extras", "concord-macros"] {
         assert!(
             !has_metadata_dependency(examples, dependency, None),
             "canonical examples retain implementation dependency {dependency}"
+        );
+    }
+
+    for package in metadata["packages"].as_array().expect("workspace packages") {
+        for dependency in package["dependencies"]
+            .as_array()
+            .expect("package dependencies")
+        {
+            let Some(dependency_name) = dependency["name"].as_str() else {
+                continue;
+            };
+            if !workspace_package_names.contains(&dependency_name) {
+                continue;
+            }
+            assert_eq!(
+                dependency["req"].as_str(),
+                Some("=0.1.0"),
+                "{} -> {dependency_name} must use the exact sibling version",
+                package["name"]
+            );
+            assert_eq!(
+                dependency["uses_default_features"].as_bool(),
+                Some(false),
+                "{} -> {dependency_name} must disable sibling defaults",
+                package["name"]
+            );
+        }
+    }
+}
+
+#[test]
+fn canonical_consumers_never_import_implementation_crates() {
+    let root = workspace_root();
+    let mut sources = Vec::new();
+    for directory in [
+        root.join("concord_examples").join("src"),
+        root.join("concord_examples").join("examples"),
+        root.join("concord_examples").join("tests"),
+        root.join("perf").join("benches"),
+    ] {
+        collect_rust_sources(&directory, &mut sources);
+    }
+
+    assert!(
+        !sources.is_empty(),
+        "canonical source policy scanned no files"
+    );
+    for source in sources {
+        let contents = fs::read_to_string(&source)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", source.display()));
+        for implementation_crate in ["concord_core", "concord_macros", "concord_extras"] {
+            assert!(
+                !contents.contains(implementation_crate),
+                "{} names implementation crate {implementation_crate}",
+                source.display()
+            );
+        }
+    }
+}
+
+#[test]
+fn facade_owns_the_complete_user_feature_topology_and_implementation_defaults_are_empty() {
+    let metadata = workspace_metadata();
+    let facade = package_metadata(&metadata, "concord");
+    let core = package_metadata(&metadata, "concord-core");
+    let extras = package_metadata(&metadata, "concord-extras");
+    let macros = package_metadata(&metadata, "concord-macros");
+    let support = package_metadata(&metadata, "concord-test-support");
+
+    assert_eq!(
+        core["features"],
+        serde_json::json!({
+            "default": [],
+            "default-tls": ["dep:rustls", "reqwest/rustls-no-provider"],
+            "http2": ["reqwest/http2"],
+            "records": [],
+            "multipart": ["reqwest/multipart"],
+            "gzip": ["reqwest/gzip"],
+            "brotli": ["reqwest/brotli"],
+            "deflate": ["reqwest/deflate"],
+            "dangerous-raw-response": [],
+            "dangerous-custom-retry": [],
+            "dangerous-dev-tools": ["dep:concord_test_support"],
+        }),
+        "core feature topology drifted from the semantic runtime kernel"
+    );
+    assert_eq!(
+        extras["features"],
+        serde_json::json!({
+            "default": [],
+            "json": ["dep:mime", "dep:serde", "dep:serde_json"],
+            "csv": ["concord_core/records", "dep:csv", "dep:mime", "dep:serde"],
+            "ndjson": ["concord_core/records", "dep:mime", "dep:serde", "dep:serde_json"],
+            "rate-limit-governor": ["dep:http", "dep:httpdate", "dep:tokio"],
+            "oauth2-client": ["dep:bytes", "dep:http", "dep:serde_json", "dep:url"],
+        }),
+        "extras feature topology drifted from downstream implementations"
+    );
+    assert_eq!(
+        facade["features"],
+        serde_json::json!({
+            "default": ["default-tls", "http2", "rate-limit-governor"],
+            "default-tls": ["concord_core/default-tls"],
+            "http2": ["concord_core/http2"],
+            "rate-limit-governor": ["concord_extras/rate-limit-governor"],
+            "json": ["concord_extras/json"],
+            "oauth2-client": ["concord_extras/oauth2-client"],
+            "records": ["concord_core/records"],
+            "csv": ["records", "concord_extras/csv"],
+            "ndjson": ["records", "concord_extras/ndjson"],
+            "multipart": ["concord_core/multipart"],
+            "gzip": ["concord_core/gzip"],
+            "brotli": ["concord_core/brotli"],
+            "deflate": ["concord_core/deflate"],
+            "dangerous-raw-response": ["concord_core/dangerous-raw-response"],
+            "dangerous-custom-retry": ["concord_core/dangerous-custom-retry"],
+            "dangerous-dev-tools": ["concord_core/dangerous-dev-tools"],
+        }),
+        "the façade must be the single exact user-facing feature owner"
+    );
+
+    for package in [facade, core, extras, macros, support] {
+        assert!(
+            package["description"]
+                .as_str()
+                .is_some_and(|description| !description.trim().is_empty()),
+            "{} must have package documentation metadata",
+            package["name"]
+        );
+        assert_eq!(
+            package["metadata"]["docs"]["rs"]["all-features"].as_bool(),
+            Some(true),
+            "{} must document its complete public surface on docs.rs",
+            package["name"]
+        );
+        assert_eq!(
+            package["publish"],
+            serde_json::json!([]),
+            "{} must retain the reviewed pre-release publish=false posture",
+            package["name"]
         );
     }
 }
@@ -190,12 +354,12 @@ fn facade_and_extras_edges_are_exact_and_directional() {
 #[test]
 fn core_and_macro_dependencies_follow_the_runtime_direction() {
     let metadata = workspace_metadata();
-    let core = package_metadata(&metadata, "concord_core");
-    let macros = package_metadata(&metadata, "concord_macros");
+    let core = package_metadata(&metadata, "concord-core");
+    let macros = package_metadata(&metadata, "concord-macros");
 
     for kind in [None, Some("dev"), Some("build")] {
         assert!(
-            !has_metadata_dependency(core, "concord_macros", kind),
+            !has_metadata_dependency(core, "concord-macros", kind),
             "concord_core must not depend on concord_macros through dependency kind {kind:?}"
         );
     }
@@ -204,7 +368,7 @@ fn core_and_macro_dependencies_follow_the_runtime_direction() {
             .as_array()
             .expect("core dependencies should be an array")
             .iter()
-            .any(|dependency| dependency["name"].as_str() == Some("concord_macros")),
+            .any(|dependency| dependency["name"].as_str() == Some("concord-macros")),
         "concord_core must not have optional, renamed, or target-specific concord_macros dependencies"
     );
 
@@ -228,22 +392,22 @@ fn core_and_macro_dependencies_follow_the_runtime_direction() {
     );
 
     assert!(
-        !has_metadata_dependency(macros, "concord_core", None),
+        !has_metadata_dependency(macros, "concord-core", None),
         "concord_macros must remain runtime-neutral in normal dependencies"
     );
     assert!(
-        !has_metadata_dependency(macros, "concord_core", Some("build")),
+        !has_metadata_dependency(macros, "concord-core", Some("build")),
         "concord_macros must remain runtime-neutral in build dependencies"
     );
     assert!(
-        has_metadata_dependency(macros, "concord_core", Some("dev")),
+        has_metadata_dependency(macros, "concord-core", Some("dev")),
         "macro integration tests must compile generated code against concord_core"
     );
 }
 
 #[test]
 fn transport_stack_exception_is_h2_dev_only() {
-    for package in ["concord_core", "concord_macros"] {
+    for package in ["concord-core", "concord-macros"] {
         let normal = direct_tree(
             package,
             "normal,build",
@@ -257,7 +421,7 @@ fn transport_stack_exception_is_h2_dev_only() {
         }
     }
 
-    let core_dev = direct_tree("concord_core", "dev", "dependency-policy/core-development");
+    let core_dev = direct_tree("concord-core", "dev", "dependency-policy/core-development");
     assert!(
         has_direct_package(&core_dev, "h2"),
         "the isolated REFUSED_STREAM probes require the reviewed h2 dev dependency\n{core_dev}"
@@ -266,7 +430,7 @@ fn transport_stack_exception_is_h2_dev_only() {
 
 #[test]
 fn trybuild_is_confined_to_core_and_macro_development_dependencies() {
-    for package in ["concord_core", "concord_macros"] {
+    for package in ["concord-core", "concord-macros"] {
         let normal = direct_tree(
             package,
             "normal,build",
@@ -316,8 +480,8 @@ fn stream_media_is_common_and_oauth_json_is_extras_owned() {
     );
 
     let metadata = workspace_metadata();
-    let core = package_metadata(&metadata, "concord_core");
-    let extras = package_metadata(&metadata, "concord_extras");
+    let core = package_metadata(&metadata, "concord-core");
+    let extras = package_metadata(&metadata, "concord-extras");
     let facade = package_metadata(&metadata, "concord");
     assert!(
         !core["features"]
@@ -387,7 +551,7 @@ fn moved_codec_and_record_dependencies_are_extras_owned_and_isolated() {
     );
 
     let metadata = workspace_metadata();
-    let core = package_metadata(&metadata, "concord_core");
+    let core = package_metadata(&metadata, "concord-core");
     let core_features = core["features"].as_object().expect("core features");
     for moved in ["json", "csv", "ndjson", "oauth2-client"] {
         assert!(
@@ -397,7 +561,7 @@ fn moved_codec_and_record_dependencies_are_extras_owned_and_isolated() {
     }
 
     let macros = direct_tree(
-        "concord_macros",
+        "concord-macros",
         "normal,build",
         "dependency-policy/macro-record-isolation",
     );
@@ -412,8 +576,8 @@ fn moved_codec_and_record_dependencies_are_extras_owned_and_isolated() {
 #[test]
 fn governor_ecosystem_and_default_composition_are_extras_and_facade_owned() {
     let metadata = workspace_metadata();
-    let core = package_metadata(&metadata, "concord_core");
-    let extras = package_metadata(&metadata, "concord_extras");
+    let core = package_metadata(&metadata, "concord-core");
+    let extras = package_metadata(&metadata, "concord-extras");
     let facade = package_metadata(&metadata, "concord");
 
     let core_features = core["features"].as_object().expect("core features");

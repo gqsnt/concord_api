@@ -5,12 +5,13 @@ use std::error::Error;
 use std::fmt;
 use std::num::NonZeroU32;
 
-use concord::advanced::{
-    Cooldown, CooldownScope, DefaultRateLimitObserver, HeaderName, RateLimitObserver,
-    RateLimitResponseHead, SanitizedHeaderValue,
-};
 use concord::api;
+use concord::hooks::SanitizedHeaderValue;
+use concord::http::HeaderName;
 use concord::prelude::*;
+use concord::rate_limit::{
+    Cooldown, CooldownScope, DefaultRateLimitObserver, RateLimitObserver, RateLimitResponseHead,
+};
 use serde::{Deserialize, Serialize};
 
 use serde_json::Value;
@@ -1075,7 +1076,7 @@ api! {
                     "count" = ep.count;
                 }
                 rate_limit { 2000 / 10s; }
-                paginate concord::advanced::OffsetPagination {
+                paginate concord::pagination::OffsetPagination {
                     offset: bind ep.start,
                     page_size: bind ep.count,
                 }

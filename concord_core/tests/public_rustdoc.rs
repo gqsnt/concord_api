@@ -19,7 +19,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "rustdoc",
         [
             "-p",
-            "concord_core",
+            "concord-core",
             "--all-features",
             "--lib",
             "--",
@@ -792,7 +792,7 @@ fn record_surfaces_are_structural_private_and_value_free_in_rendered_rustdoc() {
             "rustdoc",
             [
                 "-p",
-                "concord_core",
+                "concord-core",
                 "--no-default-features",
                 "--features",
                 features,

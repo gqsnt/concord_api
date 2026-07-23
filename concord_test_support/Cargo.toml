@@ -1,5 +1,6 @@
 [package]
-name = "concord_test_support"
+name = "concord-test-support"
+description = "Deterministic internal test infrastructure for Concord"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -17,6 +18,9 @@ bytes = { workspace = true, optional = true }
 http = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lints]
 workspace = true

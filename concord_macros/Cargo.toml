@@ -1,5 +1,6 @@
 [package]
-name = "concord_macros"
+name = "concord-macros"
+description = "Declaration compiler procedural macros for Concord"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -17,13 +18,16 @@ syn.workspace = true
 url.workspace = true
 
 [dev-dependencies]
-concord_core = { version = "=0.1.0", path = "../concord_core", default-features = false, features = ["multipart", "dangerous-raw-response"] }
-concord_test_support = { version = "=0.1.0", path = "../concord_test_support", default-features = false, features = ["cargo-fixture"] }
+concord_core = { package = "concord-core", version = "=0.1.0", path = "../concord_core", default-features = false, features = ["multipart", "dangerous-raw-response"] }
+concord_test_support = { package = "concord-test-support", version = "=0.1.0", path = "../concord_test_support", default-features = false, features = ["cargo-fixture"] }
 futures-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 trybuild = "=1.0.118"
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lints]
 workspace = true

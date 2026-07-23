@@ -1,8 +1,9 @@
-//! Core support for Concord-generated API clients.
+//! Semantic runtime kernel and extension contracts for Concord.
 //!
-//! The crate contains safe error, redaction, managed HTTP, lifecycle, and
-//! successful-response metadata, typed pending requests, and generated-private
-//! integration for managed typed execution.
+//! This implementation package owns bounded managed HTTP, lifecycle ordering,
+//! redaction, transport isolation, and the semantic contracts used by
+//! extensions. Applications should depend on the `concord` façade rather than
+//! importing this crate directly.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

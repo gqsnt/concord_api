@@ -1,5 +1,6 @@
 [package]
 name = "concord"
+description = "Contract compiler and bounded managed HTTP runtime for typed Rust API clients"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -24,13 +25,16 @@ dangerous-custom-retry = ["concord_core/dangerous-custom-retry"]
 dangerous-dev-tools = ["concord_core/dangerous-dev-tools"]
 
 [dependencies]
-concord_core = { version = "=0.1.0", path = "../concord_core", default-features = false }
-concord_extras = { version = "=0.1.0", path = "../concord_extras", default-features = false }
-concord_macros = { version = "=0.1.0", path = "../concord_macros", default-features = false }
+concord_core = { package = "concord-core", version = "=0.1.0", path = "../concord_core", default-features = false }
+concord_extras = { package = "concord-extras", version = "=0.1.0", path = "../concord_extras", default-features = false }
+concord_macros = { package = "concord-macros", version = "=0.1.0", path = "../concord_macros", default-features = false }
 
 [dev-dependencies]
-concord_test_support = { version = "=0.1.0", path = "../concord_test_support" }
+concord_test_support = { package = "concord-test-support", version = "=0.1.0", path = "../concord_test_support", default-features = false, features = ["loopback"] }
 tokio = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lints]
 workspace = true

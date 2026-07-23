@@ -4,14 +4,17 @@
 use std::fmt;
 use std::time::Duration;
 
-use concord::advanced::{
-    AuthError, AuthErrorKind, BoxFuture, CodecError, CredentialMaterial, CredentialProvider,
-    CredentialRequest, DecodeBody, DecodeContext, DefaultRateLimitObserver, EncodeBody,
-    EncodeContext, HasNextCursor, HeaderName, HeaderValue, Method, PaginationController,
-    PaginationError, ProviderBody, ProviderRequest, RateLimitObserver, RateLimitResponseHead,
-    SecretCredential, Url,
+use concord::auth::{
+    AuthError, AuthErrorKind, BoxFuture, CredentialMaterial, CredentialProvider, CredentialRequest,
+    ProviderBody, ProviderRequest, SecretCredential,
 };
+use concord::codec::{CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext};
+use concord::http::{HeaderName, HeaderValue, Method, Url};
+use concord::pagination::{HasNextCursor, PaginationController, PaginationError};
 use concord::prelude::{Bytes, SecretString};
+use concord::rate_limit::{
+    Cooldown, DefaultRateLimitObserver, RateLimitObserver, RateLimitResponseHead,
+};
 
 /// A complete buffered custom media codec.
 pub struct ExampleCodec;
@@ -181,7 +184,7 @@ impl PaginationController<ExamplePage> for ExampleController {
 pub struct RetryAfterObserver;
 
 impl RateLimitObserver for RetryAfterObserver {
-    fn observe(&self, response: &RateLimitResponseHead<'_>) -> Option<concord::advanced::Cooldown> {
+    fn observe(&self, response: &RateLimitResponseHead<'_>) -> Option<Cooldown> {
         DefaultRateLimitObserver.observe(response)
     }
 }

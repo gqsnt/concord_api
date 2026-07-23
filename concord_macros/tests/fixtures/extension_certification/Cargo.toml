@@ -22,5 +22,5 @@ ndjson = ["records", "runtime/ndjson"]
 runtime = { package = "concord", path = "../../../../concord", default-features = false }
 
 [dev-dependencies]
-concord_test_support = { path = "../../../../concord_test_support" }
+concord_test_support = { package = "concord-test-support", path = "../../../../concord_test_support" }
 tokio = { version = "=1.52.4", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }

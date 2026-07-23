@@ -1,4 +1,4 @@
-use concord::advanced::{CodecError, DecodeBody, DecodeContext};
+use concord::codec::{CodecError, DecodeBody, DecodeContext};
 use concord::{Bytes, Request, api};
 
 /// A downstream response specification deliberately named like an optional extra.

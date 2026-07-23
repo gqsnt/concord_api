@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use concord::Request;
-use concord::advanced::NoopRateLimiter;
 use concord::api;
+use concord::rate_limit::NoopRateLimiter;
 
 api! {
     client RateLimitApi {

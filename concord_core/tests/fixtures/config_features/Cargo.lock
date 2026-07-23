@@ -131,11 +131,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc14f565cf027a105f7a44ccf9e5b424348421a1d8952a8fc9d499d313107789"
 
 [[package]]
-name = "concord_core"
+name = "concord-core"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "concord_test_support",
+ "concord-test-support",
  "futures-core",
  "http",
  "http-body",
@@ -148,7 +148,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "concord_test_support"
+name = "concord-test-support"
 version = "0.1.0"
 dependencies = [
  "bytes",
@@ -160,7 +160,7 @@ dependencies = [
 name = "config-features"
 version = "0.0.0"
 dependencies = [
- "concord_core",
+ "concord-core",
 ]
 
 [[package]]

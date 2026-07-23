@@ -44,7 +44,7 @@ api! {
             path ["by-account", ep.account_id];
             query { "start" = ep.start; "count" = ep.count; }
             rate_limit { 10 / 10s; }
-            paginate concord::advanced::OffsetPagination {
+            paginate concord::pagination::OffsetPagination {
                 offset: bind ep.start,
                 page_size: bind ep.count,
             }

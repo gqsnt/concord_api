@@ -1,5 +1,6 @@
 [package]
-name = "concord_perf"
+name = "concord-perf"
+description = "Internal operation-exact performance probes for Concord"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,7 +9,7 @@ autobenches = false
 
 [dependencies]
 concord = { version = "=0.1.0", path = "../concord", default-features = false, features = ["dangerous-dev-tools", "default-tls", "records"] }
-concord_test_support = { version = "=0.1.0", path = "../concord_test_support", default-features = false }
+concord_test_support = { package = "concord-test-support", version = "=0.1.0", path = "../concord_test_support", default-features = false }
 tokio.workspace = true
 
 [[bench]]

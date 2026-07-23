@@ -1,5 +1,6 @@
 [package]
-name = "concord_extras"
+name = "concord-extras"
+description = "First-party implementations of Concord semantic extension contracts"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -15,7 +16,7 @@ oauth2-client = ["dep:bytes", "dep:http", "dep:serde_json", "dep:url"]
 
 [dependencies]
 bytes = { workspace = true, optional = true }
-concord_core = { version = "=0.1.0", path = "../concord_core", default-features = false }
+concord_core = { package = "concord-core", version = "=0.1.0", path = "../concord_core", default-features = false }
 csv = { workspace = true, optional = true }
 http = { workspace = true, optional = true }
 httpdate = { workspace = true, optional = true }
@@ -28,6 +29,9 @@ url = { workspace = true, optional = true }
 [dev-dependencies]
 serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["test-util"] }
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lints]
 workspace = true

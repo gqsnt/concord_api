@@ -15,6 +15,6 @@ dangerous-custom-retry = ["concord_core/dangerous-custom-retry"]
 dangerous-dev-tools = ["concord_core/dangerous-dev-tools"]
 
 [dependencies]
-concord_core = { path = "../../..", default-features = false }
+concord_core = { package = "concord-core", path = "../../..", default-features = false }
 
 [workspace]

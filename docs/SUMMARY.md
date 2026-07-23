@@ -27,3 +27,4 @@
 - [Developer documentation](developer/README.md)
   - [Architecture and contributing](developer/architecture-and-contributing.md)
   - [Testing and tooling](developer/testing-and-tooling.md)
+  - [Packaging and publication posture](developer/packaging-and-publication.md)

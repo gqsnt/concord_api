@@ -62,33 +62,71 @@ dependencies = [
 name = "concord"
 version = "0.1.0"
 dependencies = [
- "concord_core 0.1.0",
- "concord_extras",
- "concord_macros",
+ "concord-core 0.1.0",
+ "concord-extras",
+ "concord-macros",
+]
+
+[[package]]
+name = "concord-core"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "concord-test-support",
+ "futures-core",
+ "http",
+ "http-body",
+ "httpdate",
+ "mime",
+ "reqwest",
+ "rustls",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "concord-core"
+version = "99.0.0"
+dependencies = [
+ "concord-core 0.1.0",
+]
+
+[[package]]
+name = "concord-extras"
+version = "0.1.0"
+dependencies = [
+ "concord-core 0.1.0",
+ "csv",
+ "http",
+ "httpdate",
+ "mime",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
 name = "concord-fixture-contract-mismatch"
 version = "0.0.0"
 dependencies = [
- "concord_core 99.0.0",
- "concord_macros",
+ "concord-core 99.0.0",
+ "concord-macros",
 ]
 
 [[package]]
 name = "concord-fixture-custom-retry-disabled"
 version = "0.0.0"
 dependencies = [
- "concord_core 0.1.0",
- "concord_macros",
+ "concord-core 0.1.0",
+ "concord-macros",
 ]
 
 [[package]]
 name = "concord-fixture-custom-retry-enabled"
 version = "0.0.0"
 dependencies = [
- "concord_core 0.1.0",
- "concord_macros",
+ "concord-core 0.1.0",
+ "concord-macros",
  "reqwest",
 ]
 
@@ -96,8 +134,8 @@ dependencies = [
 name = "concord-fixture-development-tools-enabled"
 version = "0.0.0"
 dependencies = [
- "concord_core 0.1.0",
- "concord_macros",
+ "concord-core 0.1.0",
+ "concord-macros",
 ]
 
 [[package]]
@@ -105,7 +143,7 @@ name = "concord-fixture-extension-certification"
 version = "0.0.0"
 dependencies = [
  "concord",
- "concord_test_support",
+ "concord-test-support",
  "tokio",
 ]
 
@@ -120,15 +158,15 @@ dependencies = [
 name = "concord-fixture-missing-core"
 version = "0.0.0"
 dependencies = [
- "concord_macros",
+ "concord-macros",
 ]
 
 [[package]]
 name = "concord-fixture-multipart-disabled"
 version = "0.0.0"
 dependencies = [
- "concord_core 0.1.0",
- "concord_macros",
+ "concord-core 0.1.0",
+ "concord-macros",
 ]
 
 [[package]]
@@ -150,8 +188,8 @@ dependencies = [
 name = "concord-fixture-raw-response-disabled"
 version = "0.0.0"
 dependencies = [
- "concord_core 0.1.0",
- "concord_macros",
+ "concord-core 0.1.0",
+ "concord-macros",
 ]
 
 [[package]]
@@ -162,45 +200,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "concord_core"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "concord_test_support",
- "futures-core",
- "http",
- "http-body",
- "httpdate",
- "mime",
- "reqwest",
- "rustls",
- "tokio",
- "url",
-]
-
-[[package]]
-name = "concord_core"
-version = "99.0.0"
-dependencies = [
- "concord_core 0.1.0",
-]
-
-[[package]]
-name = "concord_extras"
-version = "0.1.0"
-dependencies = [
- "concord_core 0.1.0",
- "csv",
- "http",
- "httpdate",
- "mime",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "concord_macros"
+name = "concord-macros"
 version = "0.1.0"
 dependencies = [
  "http",
@@ -212,7 +212,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "concord_test_support"
+name = "concord-test-support"
 version = "0.1.0"
 dependencies = [
  "base64",

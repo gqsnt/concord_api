@@ -14,7 +14,7 @@ pub(crate) fn resolve_runtime_path() -> syn::Result<TokenStream> {
 
     // Transitional Phase 1 compatibility for the existing internal macro
     // tests. Direct core expansion is removed in Phase 14.
-    match crate_name("concord_core") {
+    match crate_name("concord-core") {
         Ok(FoundCrate::Itself) => Ok(quote!(crate)),
         Ok(FoundCrate::Name(name)) => {
             let ident = Ident::new(&name, Span::call_site());

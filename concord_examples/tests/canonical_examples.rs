@@ -1,7 +1,8 @@
 #![forbid(unsafe_code)]
 
-use concord::advanced::{Method, PreparedEndpoint};
 use concord::api;
+use concord::endpoint::PreparedEndpoint;
+use concord::http::Method;
 use concord::prelude::{Bytes, PageLimit, StreamBody};
 use concord::{PaginatedRequest, Request};
 
@@ -13,7 +14,7 @@ api! {
     POST Custom(body: concord_examples::ExampleCodec) -> concord_examples::ExampleCodec;
     POST Upload(body: Stream<OctetStream>) -> Bytes;
     GET Pages(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
-        paginate concord::advanced::OffsetPagination {
+        paginate concord::pagination::OffsetPagination {
             offset: bind ep.offset,
             page_size: bind ep.limit,
         }

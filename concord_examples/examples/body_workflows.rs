@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 
 use concord::Request;
-use concord::advanced::{MultipartBody, MultipartPart};
 use concord::api;
+use concord::body::{MultipartBody, MultipartPart};
 use concord::prelude::{Bytes, StreamBody};
 
 api! {

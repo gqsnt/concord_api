@@ -6,12 +6,15 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use concord::advanced::{
-    AuthError, BoxFuture, CredentialProvider, CredentialRequest, ErrorCategory, RateLimitError,
-    RateLimitErrorKind, RateLimitPermit, RateLimitRequest, RateLimiter,
-};
 use concord::api;
-use concord::auth::{AccessToken, OAuth2ClientCredentials};
+use concord::auth::{
+    AccessToken, AuthError, BoxFuture, CredentialProvider, CredentialRequest,
+    OAuth2ClientCredentials,
+};
+use concord::error::ErrorCategory;
+use concord::rate_limit::{
+    RateLimitError, RateLimitErrorKind, RateLimitPermit, RateLimitRequest, RateLimiter,
+};
 use concord_test_support::tls::TlsServer;
 
 type OAuthAlias = OAuth2ClientCredentials;

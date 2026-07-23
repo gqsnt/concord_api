@@ -2,8 +2,10 @@
 
 use std::num::NonZeroUsize;
 
-use concord::advanced::{BytesMut, RecordDecoder, RecordError, ResponseHead};
 use concord::api;
+use concord::codec::BytesMut;
+use concord::records::{RecordDecoder, RecordError, RecordErrorKind};
+use concord::response::ResponseHead;
 
 pub struct PipeRecords;
 
@@ -28,7 +30,7 @@ impl RecordDecoder for PipeRecords {
             .map(Some)
             .map_err(|error| {
                 drop(error);
-                RecordError::new(concord::advanced::RecordErrorKind::Decode)
+                RecordError::new(RecordErrorKind::Decode)
             })
     }
 
@@ -41,7 +43,7 @@ impl RecordDecoder for PipeRecords {
                 .map(Some)
                 .map_err(|error| {
                     drop(error);
-                    RecordError::new(concord::advanced::RecordErrorKind::Decode)
+                    RecordError::new(RecordErrorKind::Decode)
                 })
         }
     }
