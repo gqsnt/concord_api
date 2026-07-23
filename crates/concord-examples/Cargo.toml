@@ -1,0 +1,52 @@
+[package]
+name = "concord-examples"
+description = "Compile-checked product examples for Concord"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[features]
+default = ["default-tls", "http2", "rate-limit-governor", "json", "oauth2-client", "multipart"]
+default-tls = ["concord/default-tls"]
+http2 = ["concord/http2"]
+rate-limit-governor = ["concord/rate-limit-governor"]
+json = ["concord/json", "serde", "serde_json", "serde/derive"]
+oauth2-client = ["concord/oauth2-client"]
+multipart = ["concord/multipart"]
+records = ["concord/records"]
+csv = ["records", "concord/csv"]
+ndjson = ["records", "concord/ndjson"]
+dangerous-raw-response = ["concord/dangerous-raw-response"]
+dangerous-custom-retry = ["concord/dangerous-custom-retry", "dep:reqwest"]
+tokio = ["dep:tokio"]
+riot-live = ["json", "rate-limit-governor", "default-tls", "http2", "tokio"]
+
+[dependencies]
+concord = { version = "=0.1.0", path = "../concord", default-features = false }
+reqwest = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+
+[dev-dependencies]
+concord-test-support = { package = "concord-test-support", version = "=0.1.0", path = "../concord-test-support", default-features = false, features = ["loopback"] }
+futures-core.workspace = true
+tokio.workspace = true
+
+[[bin]]
+name = "minimal"
+path = "src/bin/minimal.rs"
+
+[[bin]]
+name = "records"
+path = "src/bin/records.rs"
+required-features = ["csv", "ndjson"]
+
+[[bin]]
+name = "riot"
+path = "src/bin/riot.rs"
+required-features = ["riot-live"]
+
+[lints]
+workspace = true

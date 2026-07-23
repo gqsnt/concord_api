@@ -1,0 +1,33 @@
+error[E0599]: the method `clone` exists for struct `Upload<StreamBody>`, but its trait bounds were not satisfied
+  --> tests/ui/fail/capabilities/non_clone_body_endpoint.rs:13:22
+   |
+ 3 | / api! {
+ 4 | |     client UploadApi {
+ 5 | |         base "http://upload.example.test/";
+...  |
+ 8 | |     POST upload(#[body] body: Stream<OctetStream>) -> Bytes;
+ 9 | | }
+   | |_- method `clone` not found for this struct because it doesn't satisfy `Upload<StreamBody>: Clone`
+...
+13 |       let _ = endpoint.clone();
+   |                        ^^^^^ method cannot be called on `Upload<StreamBody>` due to unsatisfied trait bounds
+   |
+  ::: $WORKSPACE/crates/concord-core/src/body/stream.rs
+   |
+   |   pub struct StreamBody {
+   |   --------------------- doesn't satisfy `StreamBody: Clone`
+   |
+note: trait bound `StreamBody: Clone` was not satisfied
+  --> tests/ui/fail/capabilities/non_clone_body_endpoint.rs:3:1
+   |
+ 3 | / api! {
+ 4 | |     client UploadApi {
+ 5 | |         base "http://upload.example.test/";
+...  |
+ 8 | |     POST upload(#[body] body: Stream<OctetStream>) -> Bytes;
+ 9 | | }
+   | |_^
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following trait defines an item `clone`, perhaps you need to implement it:
+           candidate #1: `Clone`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

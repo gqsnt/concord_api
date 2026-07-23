@@ -9,4 +9,4 @@ publish = false
 path = "lib.rs"
 
 [dependencies]
-concord_actual = { package = "concord", path = "../../../../concord", default-features = false }
+concord_actual = { package = "concord", path = "../../../../crates/concord", default-features = false }

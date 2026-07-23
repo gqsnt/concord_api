@@ -1,0 +1,20 @@
+[package]
+name = "concord-perf"
+description = "Internal operation-exact performance probes for Concord"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+autobenches = false
+
+[dependencies]
+concord = { version = "=0.1.0", path = "../../crates/concord", default-features = false, features = ["dangerous-dev-tools", "default-tls", "records"] }
+concord_test_support = { package = "concord-test-support", version = "=0.1.0", path = "../../crates/concord-test-support", default-features = false }
+tokio.workspace = true
+
+[[bench]]
+name = "concord_overhead"
+harness = false
+
+[lints]
+workspace = true

@@ -1,0 +1,278 @@
+error[E0277]: `Rc<()>` cannot be sent between threads safely
+  --> tests/ui/fail/pagination/pagination_bounds.rs:40:40
+   |
+40 | impl PaginationController<Vec<u8>> for NonSendController {
+   |                                        ^^^^^^^^^^^^^^^^^ `Rc<()>` cannot be sent between threads safely
+   |
+   = help: within `NonSendController`, the trait `Send` is not implemented for `Rc<()>`
+note: required because it appears within the type `NonSendController`
+  --> tests/ui/fail/pagination/pagination_bounds.rs:36:12
+   |
+36 | pub struct NonSendController {
+   |            ^^^^^^^^^^^^^^^^^
+note: required by a bound in `PaginationController`
+  --> $WORKSPACE/crates/concord-core/src/pagination/controller.rs
+   |
+   | pub trait PaginationController<Page>: Sized + Send + 'static {
+   |                                               ^^^^ required by this bound in `PaginationController`
+
+error[E0277]: `NotIterable` is not an iterator
+  --> tests/ui/fail/pagination/pagination_bounds.rs:46:1
+   |
+46 | / api! {
+47 | |     client MissingIntoIterator {
+48 | |         base "https://example.test";
+...  |
+54 | | }
+   | |_^ `NotIterable` is not an iterator
+   |
+help: the trait `Iterator` is not implemented for `NotIterable`
+  --> tests/ui/fail/pagination/pagination_bounds.rs:11:1
+   |
+11 | pub struct NotIterable;
+   | ^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `NotIterable` to implement `IntoIterator`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `NotIterable` is not an iterator
+  --> tests/ui/fail/pagination/pagination_bounds.rs:46:1
+   |
+46 | / api! {
+47 | |     client MissingIntoIterator {
+48 | |         base "https://example.test";
+...  |
+54 | | }
+   | |_^ `NotIterable` is not an iterator
+   |
+help: the trait `Iterator` is not implemented for `NotIterable`
+  --> tests/ui/fail/pagination/pagination_bounds.rs:11:1
+   |
+11 | pub struct NotIterable;
+   | ^^^^^^^^^^^^^^^^^^^^^^
+help: the trait `concord::__private::EndpointSpec` is implemented for `missing_into_iterator::Read`
+  --> tests/ui/fail/pagination/pagination_bounds.rs:46:1
+   |
+46 | / api! {
+47 | |     client MissingIntoIterator {
+48 | |         base "https://example.test";
+...  |
+54 | | }
+   | |_^
+   = note: required for `NotIterable` to implement `IntoIterator`
+note: required for `missing_into_iterator::Read` to implement `concord::__private::EndpointSpec`
+  --> tests/ui/fail/pagination/pagination_bounds.rs:46:1
+   |
+46 | / api! {
+47 | |     client MissingIntoIterator {
+48 | |         base "https://example.test";
+...  |
+51 | |     GET read() -> crate::NotIterableCodec {
+   | |         ^^^^
+...  |
+54 | | }
+   | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `NotIterable` is not an iterator
+  --> tests/ui/fail/pagination/pagination_bounds.rs:52:18
+   |
+52 |         paginate crate::Controller {}
+   |                  ^^^^^^^^^^^^^^^^^ `NotIterable` is not an iterator
+   |
+help: the trait `Iterator` is not implemented for `NotIterable`
+  --> tests/ui/fail/pagination/pagination_bounds.rs:11:1
+   |
+11 | pub struct NotIterable;
+   | ^^^^^^^^^^^^^^^^^^^^^^
+help: the trait `concord::__private::EndpointSpec` is implemented for `missing_into_iterator::Read`
+  --> tests/ui/fail/pagination/pagination_bounds.rs:46:1
+   |
+46 | / api! {
+47 | |     client MissingIntoIterator {
+48 | |         base "https://example.test";
+...  |
+54 | | }
+   | |_^
+   = note: required for `NotIterable` to implement `IntoIterator`
+note: required for `missing_into_iterator::Read` to implement `concord::__private::EndpointSpec`
+  --> tests/ui/fail/pagination/pagination_bounds.rs:46:1
+   |
+46 | / api! {
+47 | |     client MissingIntoIterator {
+48 | |         base "https://example.test";
+...  |
+51 | |     GET read() -> crate::NotIterableCodec {
+   | |         ^^^^
+...  |
+54 | | }
+   | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `NotIterable` is not an iterator
+  --> tests/ui/fail/pagination/pagination_bounds.rs:46:1
+   |
+46 | / api! {
+47 | |     client MissingIntoIterator {
+48 | |         base "https://example.test";
+...  |
+54 | | }
+   | |_^ `NotIterable` is not an iterator
+   |
+help: the trait `Iterator` is not implemented for `NotIterable`
+  --> tests/ui/fail/pagination/pagination_bounds.rs:11:1
+   |
+11 | pub struct NotIterable;
+   | ^^^^^^^^^^^^^^^^^^^^^^
+help: the trait `concord::__private::PaginatedEndpoint` is implemented for `missing_into_iterator::Read`
+  --> tests/ui/fail/pagination/pagination_bounds.rs:46:1
+   |
+46 | / api! {
+47 | |     client MissingIntoIterator {
+48 | |         base "https://example.test";
+...  |
+54 | | }
+   | |_^
+   = note: required for `NotIterable` to implement `IntoIterator`
+note: required for `missing_into_iterator::Read` to implement `concord::__private::PaginatedEndpoint`
+  --> tests/ui/fail/pagination/pagination_bounds.rs:46:1
+   |
+46 | / api! {
+47 | |     client MissingIntoIterator {
+48 | |         base "https://example.test";
+...  |
+51 | |     GET read() -> crate::NotIterableCodec {
+   | |         ^^^^
+...  |
+54 | | }
+   | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `missing_into_iterator::ReadRequest` is not a future
+  --> tests/ui/fail/pagination/pagination_bounds.rs:46:1
+   |
+46 | / api! {
+47 | |     client MissingIntoIterator {
+48 | |         base "https://example.test";
+...  |
+54 | | }
+   | |_^ `missing_into_iterator::ReadRequest` is not a future
+   |
+help: the trait `IntoFuture` is not implemented for `missing_into_iterator::ReadRequest`
+  --> tests/ui/fail/pagination/pagination_bounds.rs:46:1
+   |
+46 | / api! {
+47 | |     client MissingIntoIterator {
+48 | |         base "https://example.test";
+...  |
+51 | |     GET read() -> crate::NotIterableCodec {
+   | |____________^
+   = note: missing_into_iterator::ReadRequest must be a future or must implement `IntoFuture` to be awaited
+help: the trait `IntoFuture` is implemented for `missing_into_iterator::ReadRequest`
+  --> tests/ui/fail/pagination/pagination_bounds.rs:46:1
+   |
+46 | / api! {
+47 | |     client MissingIntoIterator {
+48 | |         base "https://example.test";
+...  |
+54 | | }
+   | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `missing_into_iterator::ReadRequest` is not a future
+  --> tests/ui/fail/pagination/pagination_bounds.rs:51:9
+   |
+51 |     GET read() -> crate::NotIterableCodec {
+   |         ^^^^ `missing_into_iterator::ReadRequest` is not a future
+   |
+help: the trait `IntoFuture` is not implemented for `missing_into_iterator::ReadRequest`
+  --> tests/ui/fail/pagination/pagination_bounds.rs:46:1
+   |
+46 | / api! {
+47 | |     client MissingIntoIterator {
+48 | |         base "https://example.test";
+...  |
+51 | |     GET read() -> crate::NotIterableCodec {
+   | |____________^
+   = note: missing_into_iterator::ReadRequest must be a future or must implement `IntoFuture` to be awaited
+help: the trait `IntoFuture` is implemented for `missing_into_iterator::ReadRequest`
+  --> tests/ui/fail/pagination/pagination_bounds.rs:46:1
+   |
+46 | / api! {
+47 | |     client MissingIntoIterator {
+48 | |         base "https://example.test";
+...  |
+54 | | }
+   | |_^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `Vec<u8>: NextCursor<std::string::String>` is not satisfied
+  --> tests/ui/fail/pagination/pagination_bounds.rs:56:1
+   |
+56 | / api! {
+57 | |     client MissingCursorExtraction {
+58 | |         base "https://example.test";
+...  |
+66 | | }
+   | |_^ the trait `NextCursor<std::string::String>` is not implemented for `Vec<u8>`
+   |
+help: this trait has no implementations, consider adding one
+  --> tests/ui/fail/pagination/../../../support/mod.rs
+   |
+   | pub trait NextCursor<C> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+note: required for `CursorController<std::string::String>` to implement `PaginationController<Vec<u8>>`
+  --> tests/ui/fail/pagination/../../../support/mod.rs
+   |
+   | impl<Page, C> PaginationController<Page> for CursorController<C>
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^     ^^^^^^^^^^^^^^^^^^^
+   | where
+   |     Page: NextCursor<C>,
+   |           ------------- unsatisfied trait bound introduced here
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `Rc<()>` cannot be shared between threads safely
+  --> tests/ui/fail/pagination/pagination_bounds.rs:68:1
+   |
+68 | / api! {
+69 | |     client NonSendControllerApi {
+70 | |         base "https://example.test";
+...  |
+78 | | }
+   | |_^ `Rc<()>` cannot be shared between threads safely
+   |
+   = help: the trait `Sync` is not implemented for `Rc<()>`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `Rc<()>` cannot be sent between threads safely
+  --> tests/ui/fail/pagination/pagination_bounds.rs:68:1
+   |
+68 | / api! {
+69 | |     client NonSendControllerApi {
+70 | |         base "https://example.test";
+...  |
+78 | | }
+   | |_^ `Rc<()>` cannot be sent between threads safely
+   |
+   = help: the trait `Send` is not implemented for `Rc<()>`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `concord::Request<missing_into_iterator::Read>` is not a future
+  --> tests/ui/fail/pagination/pagination_bounds.rs:46:1
+   |
+46 | / api! {
+47 | |     client MissingIntoIterator {
+48 | |         base "https://example.test";
+...  |
+54 | | }
+   | |_^ `concord::Request<missing_into_iterator::Read>` is not a future
+   |
+   = help: the trait `IntoFuture` is not implemented for `concord::Request<missing_into_iterator::Read>`
+   = note: concord::Request<missing_into_iterator::Read> must be a future or must implement `IntoFuture` to be awaited
+help: the trait `IntoFuture` is implemented for `concord::Request<E>`
+  --> $WORKSPACE/crates/concord-core/src/execute/mod.rs
+   |
+   | / impl<E> IntoFuture for Request<E>
+   | | where
+   | |     E: EndpointSpec,
+   | |____________________^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

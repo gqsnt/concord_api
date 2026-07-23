@@ -25,10 +25,10 @@ dangerous-custom-retry = ["runtime/dangerous-custom-retry"]
 dangerous-dev-tools = ["runtime/dangerous-dev-tools"]
 
 [dependencies]
-runtime = { package = "concord", path = "../../concord", default-features = false }
+runtime = { package = "concord", path = "../../crates/concord", default-features = false }
 
 [dev-dependencies]
-concord-test-support = { package = "concord-test-support", path = "../../concord_test_support", default-features = false, features = ["loopback"] }
+concord-test-support = { package = "concord-test-support", path = "../../crates/concord-test-support", default-features = false, features = ["loopback"] }
 tokio = { version = "=1.52.4", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
 
 [[bin]]
