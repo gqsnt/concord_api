@@ -2,7 +2,6 @@
 
 use std::num::NonZeroUsize;
 
-use concord_core::Request;
 use concord_core::advanced::{BytesMut, RecordDecoder, RecordError, ResponseHead};
 use concord_macros::api;
 
@@ -62,6 +61,7 @@ api! {
     GET NdJsonValues() -> Records<NdJson<u32>>;
 }
 
+#[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = RecordsApi::builder().build()?;
     let b = client.custom().await?;

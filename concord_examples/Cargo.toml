@@ -55,7 +55,7 @@ required-features = ["json", "tokio"]
 
 [[example]]
 name = "records"
-required-features = ["csv", "ndjson"]
+required-features = ["csv", "ndjson" ,"tokio"]
 
 [lints]
 workspace = true
