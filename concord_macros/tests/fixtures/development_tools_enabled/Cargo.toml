@@ -1,0 +1,9 @@
+[package]
+name = "concord-fixture-development-tools-enabled"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+concord_core = { path = "../../../../concord_core", default-features = false, features = ["dangerous-dev-tools"] }
+concord_macros = { path = "../../.." }

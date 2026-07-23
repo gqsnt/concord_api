@@ -1,5 +1,3 @@
-#![cfg(feature = "dangerous-raw-response")]
-
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -12,10 +10,6 @@ use concord_test_support::server::{BodyGate, ResponseScript, ScriptedServer};
 
 static CONTENT_TYPE_VALIDATIONS: AtomicUsize = AtomicUsize::new(0);
 static DECODER_CALLS: AtomicUsize = AtomicUsize::new(0);
-
-fn install_crypto_provider() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-}
 
 pub struct ObservedCodec;
 
@@ -51,7 +45,6 @@ api! {
     GET StreamValue() -> Stream<OctetStream> { path ["stream"]; }
 }
 
-#[cfg(feature = "json")]
 api! {
     client RawJsonApi {
         base "http://raw-json.example.test/";
@@ -65,7 +58,6 @@ fn proxy(server: &ScriptedServer) -> SafeProxy {
 }
 
 fn client(server: &ScriptedServer, response_limit: usize) -> RawSuccessApi {
-    install_crypto_provider();
     RawSuccessApi::builder()
         .http({
             let proxy = proxy(server);
@@ -82,7 +74,6 @@ fn client(server: &ScriptedServer, response_limit: usize) -> RawSuccessApi {
 
 #[test]
 fn eligible_generated_modes_expose_the_exact_raw_terminal_type() {
-    install_crypto_provider();
     let client = RawSuccessApi::new().expect("side-effect-free client construction");
 
     let _: RawResponseRequest<_> = client.text_value().raw_response();
@@ -94,10 +85,8 @@ fn eligible_generated_modes_expose_the_exact_raw_terminal_type() {
     let _metadata_terminal_remains_selected = client.bytes_value().response();
 }
 
-#[cfg(feature = "json")]
 #[test]
 fn generated_json_mode_exposes_the_raw_terminal() {
-    install_crypto_provider();
     let client = RawJsonApi::new().expect("side-effect-free JSON client construction");
     let _: RawResponseRequest<_> = client.json_value().raw_response();
 }

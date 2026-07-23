@@ -1,17 +1,17 @@
-error[E0599]: no method named `paginate` found for struct `concord_core::Request<E>` in the current scope
+error[E0599]: no method named `paginate` found for struct `concord_core::Request` in the current scope
   --> tests/ui/fail/prepared_endpoint_pagination_absent.rs:25:38
    |
 25 |     let _ = client.request(endpoint).paginate(1_u32);
-   |                                      ^^^^^^^^ method not found in `concord_core::Request<PreparedEndpoint<concord_core::advanced::Json<Vec<u8>>>>`
+   |                                      ^^^^^^^^ method not found in `Request<PreparedEndpoint<Json<Vec<u8>>>>`
    |
    = help: items from traits can only be used if the trait is implemented and in scope
 note: `PagesRequestExt` defines an item `paginate`, perhaps you need to implement it
   --> tests/ui/fail/prepared_endpoint_pagination_absent.rs:4:1
    |
- 4 | / api! {
- 5 | |     client PreparedPaginationApi {
- 6 | |         base "https://example.test";
+4  | / api! {
+5  | |     client PreparedPaginationApi {
+6  | |         base "https://example.test";
 ...  |
- 9 | |     GET Pages(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
+9  | |     GET Pages(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
    | |_____________^
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

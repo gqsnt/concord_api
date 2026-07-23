@@ -1,0 +1,13 @@
+error[E0599]: the method `raw_response` exists for struct `Request<Download>`, but its trait bounds were not satisfied
+  --> tests/ui/fail/dangerous_raw_stream_absent.rs:13:31
+   |
+13 |     let _ = client.download().raw_response();
+   |                               ^^^^^^^^^^^^
+   |
+  ::: $WORKSPACE/concord_core/src/response/spec.rs
+   |
+   | pub struct Streaming;
+   | -------------------- doesn't satisfy `_: RawResponseMode`
+   |
+   = note: the following trait bounds were not satisfied:
+           `Streaming: concord_core::response::spec::RawResponseMode`

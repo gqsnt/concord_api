@@ -12,6 +12,8 @@ These packages remain standalone because their behavior depends on Cargo metadat
 | `multipart_disabled` | Multipart syntax requires the core `multipart` feature. |
 | `custom_retry_disabled` | Custom retry syntax requires `dangerous-custom-retry`. |
 | `custom_retry_enabled` | The same syntax compiles when its feature is deliberately enabled. |
+| `development_tools_enabled` | Generated clients remain compatible with a core build that exposes downstream development tools. |
+| `raw_response_disabled` | Generated endpoints omit the raw-response terminal when the core dangerous feature is disabled. |
 | `extension_certification` | Public-only extension implementations compile and execute across their owned feature combinations. |
 | `no_governor_rate_limits` | Generated and prepared rate limits fail closed without the governor unless a custom or deliberate no-op limiter is supplied. |
 

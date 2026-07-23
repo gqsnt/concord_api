@@ -17,9 +17,10 @@ syn.workspace = true
 url.workspace = true
 
 [dev-dependencies]
-concord_core = { version = "=0.1.0", path = "../concord_core", default-features = false, features = ["json", "multipart", "rate-limit-governor"] }
+concord_core = { version = "=0.1.0", path = "../concord_core", default-features = false, features = ["json", "multipart", "rate-limit-governor", "dangerous-raw-response"] }
 concord_test_support = { version = "=0.1.0", path = "../concord_test_support", default-features = false, features = ["cargo-fixture"] }
 futures-core.workspace = true
+serde_json.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 trybuild = "=1.0.118"
 

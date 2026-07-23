@@ -135,7 +135,6 @@ name = "concord_core"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "concord_macros",
  "concord_test_support",
  "csv",
  "futures-core",
@@ -176,6 +175,7 @@ dependencies = [
  "proc-macro-crate",
  "proc-macro2",
  "quote",
+ "serde_json",
  "syn",
  "tokio",
  "trybuild",

@@ -3,12 +3,14 @@ members = [
     "contract_mismatch",
     "custom_retry_disabled",
     "custom_retry_enabled",
+    "development_tools_enabled",
     "extension_certification",
     "json_disabled",
     "multipart_disabled",
     "missing_core",
     "no_governor_rate_limits",
     "oauth_disabled",
+    "raw_response_disabled",
     "renamed_core",
 ]
 exclude = ["contract_mismatch/incompatible_core"]

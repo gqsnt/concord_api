@@ -3,7 +3,6 @@ fn source_only_public_surface_failures_use_trybuild() {
     let cases = trybuild::TestCases::new();
     #[cfg(not(feature = "dangerous-dev-tools"))]
     cases.compile_fail("tests/ui/fail/development_namespace_escape.rs");
-    cases.compile_fail("tests/ui/fail/generated_executor_escape.rs");
     cases.compile_fail("tests/ui/fail/authentication_private_material.rs");
     cases.compile_fail("tests/ui/fail/managed_reqwest_escape.rs");
     cases.compile_fail("tests/ui/fail/proxy_raw_url_escape.rs");
@@ -14,10 +13,6 @@ fn source_only_public_surface_failures_use_trybuild() {
     cases.compile_fail("tests/ui/fail/rate_limit_key_debug_absent.rs");
     cases.compile_fail("tests/ui/fail/rate_limit_opaque_values.rs");
     cases.compile_fail("tests/ui/fail/pagination_private_state.rs");
-    #[cfg(not(feature = "json"))]
-    cases.compile_fail("tests/ui/fail/no_content_request_spec.rs");
-    #[cfg(not(feature = "json"))]
-    cases.compile_fail("tests/ui/fail/response_only_request_spec.rs");
     cases.compile_fail("tests/ui/fail/request_spec_non_send_input.rs");
     cases.compile_fail("tests/ui/fail/request_spec_metadata_signature.rs");
     #[cfg(not(feature = "records"))]

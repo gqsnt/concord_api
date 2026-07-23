@@ -365,6 +365,16 @@ fn custom_retry_dsl_with_runtime_feature_and_http_override_compiles() {
 }
 
 #[test]
+fn generated_clients_compile_with_core_development_tools_enabled() {
+    assert_fixture_passes("development_tools_enabled");
+}
+
+#[test]
+fn generated_raw_response_terminal_is_absent_without_the_core_feature() {
+    assert_fixture_fails_with("raw_response_disabled", "no method named `raw_response`");
+}
+
+#[test]
 fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names() {
     let root = workspace_root();
     let manifest = fixture_root().join("renamed_core/Cargo.toml");

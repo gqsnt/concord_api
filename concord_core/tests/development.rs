@@ -4,7 +4,7 @@ use std::process::Output;
 use concord_test_support::cargo_fixture::{check_manifest, diagnostics};
 
 fn fixture_manifest() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/development_features/Cargo.toml")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/config_features/Cargo.toml")
 }
 
 fn workspace_root() -> PathBuf {
@@ -29,14 +29,14 @@ fn check_fixture(bin: &str, features: Option<&str>) -> Output {
 
 #[test]
 fn development_module_is_downstream_accessible_only_with_its_feature() {
-    let present = check_fixture("presence", Some("dangerous-dev-tools"));
+    let present = check_fixture("presence_development", Some("dangerous-dev-tools"));
     assert!(
         present.status.success(),
         "development presence fixture failed\n{}",
         diagnostics(&present)
     );
 
-    let absent = check_fixture("absence", None);
+    let absent = check_fixture("absence_development", None);
     let absent_diagnostics = diagnostics(&absent);
     assert!(
         !absent.status.success(),
@@ -45,15 +45,5 @@ fn development_module_is_downstream_accessible_only_with_its_feature() {
     assert!(
         absent_diagnostics.contains("__development"),
         "absence diagnostic omitted the gated module\n{absent_diagnostics}"
-    );
-}
-
-#[test]
-fn generated_clients_still_compile_when_development_support_is_enabled() {
-    let normal = check_fixture("generated_presence", Some("dangerous-dev-tools"));
-    assert!(
-        normal.status.success(),
-        "normal generated client failed with development tools\n{}",
-        diagnostics(&normal)
     );
 }

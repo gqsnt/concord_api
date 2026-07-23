@@ -3,9 +3,13 @@ error: cannot construct `PreparedEndpointBuilder` with struct literal syntax due
   |
 6 |     let _ = PreparedEndpointBuilder::<NoContent> {};
   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: private fields that were not provided
 
 error: cannot construct `PreparedEndpoint` with struct literal syntax due to private fields
  --> tests/ui/fail/prepared_endpoint_fields_private.rs:7:13
   |
 7 |     let _ = PreparedEndpoint::<NoContent> {};
   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: private fields that were not provided

@@ -15,6 +15,7 @@ use concord_macros::api;
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 
 static OBSERVER_DEFAULTS: AtomicUsize = AtomicUsize::new(0);
+static OBSERVER_DEFAULTS_LOCK: Mutex<()> = Mutex::new(());
 
 pub struct CountingObserver;
 
@@ -340,6 +341,9 @@ fn builder() -> RateApiBuilder {
 
 #[test]
 fn generated_default_limiter_selection_matches_the_resolved_feature_graph() {
+    let _observer_defaults = OBSERVER_DEFAULTS_LOCK
+        .lock()
+        .expect("observer default test lock");
     OBSERVER_DEFAULTS.store(0, Ordering::SeqCst);
     match builder().build() {
         Ok(_client) => {
@@ -403,17 +407,24 @@ async fn sibling_route_families_resolve_distinct_hosts_and_lexical_rule_ids() {
 
 #[tokio::test]
 async fn custom_limiter_receives_canonical_ordered_plan_and_owns_observation() {
-    OBSERVER_DEFAULTS.store(0, Ordering::SeqCst);
     let server = ScriptedServer::start([ResponseScript::ok(b"granted".to_vec())])
         .expect("rate-limit server");
     let proxy = SafeProxy::parse(server.url("")).expect("local proxy");
     let limiter = Arc::new(CapturingLimiter::default());
     let configured = Arc::clone(&limiter);
-    let client = builder()
-        .http(move |http| http.proxy(proxy))
-        .runtime(move |runtime| runtime.rate_limiter(configured))
-        .build()
-        .expect("custom-limited generated client");
+    let client = {
+        let _observer_defaults = OBSERVER_DEFAULTS_LOCK
+            .lock()
+            .expect("observer default test lock");
+        OBSERVER_DEFAULTS.store(0, Ordering::SeqCst);
+        let client = builder()
+            .http(move |http| http.proxy(proxy))
+            .runtime(move |runtime| runtime.rate_limiter(configured))
+            .build()
+            .expect("custom-limited generated client");
+        assert_eq!(OBSERVER_DEFAULTS.load(Ordering::SeqCst), 0);
+        client
+    };
 
     let body = client
         .regions("eu".to_owned())
@@ -421,8 +432,6 @@ async fn custom_limiter_receives_canonical_ordered_plan_and_owns_observation() {
         .await
         .expect("granted application request");
     assert_eq!(body, Bytes::from_static(b"granted"));
-    assert_eq!(OBSERVER_DEFAULTS.load(Ordering::SeqCst), 0);
-
     let acquisitions = limiter.acquisitions.lock().expect("acquisition capture");
     assert_eq!(acquisitions.len(), 1);
     let rules = &acquisitions[0];
@@ -773,25 +782,33 @@ async fn scope_rule_quota_is_shared_across_immediate_and_nested_descendants() {
         .wait_for_requests(2, std::time::Duration::from_secs(1))
         .expect("outside-scope request reached server");
 
-    let pending_client = client.clone();
-    let pending = tokio::spawn(async move {
-        pending_client
+    let mut pending = Box::pin(
+        client
             .branch("same-scope".to_owned())
             .nested("same-nested".to_owned())
             .descendant()
-            .await
-    });
-    tokio::task::yield_now().await;
-    assert!(!pending.is_finished(), "shared scope quota must wait");
+            .into_future(),
+    );
+    let waker = std::task::Waker::noop();
+    let mut context = std::task::Context::from_waker(waker);
+    assert!(
+        matches!(
+            pending.as_mut().poll(&mut context),
+            std::task::Poll::Pending
+        ),
+        "shared scope quota must wait",
+    );
     assert_eq!(server.request_count(), 2);
     tokio::time::advance(std::time::Duration::from_secs(3599)).await;
-    tokio::task::yield_now().await;
     assert!(
-        !pending.is_finished(),
-        "shared scope quota remains unavailable"
+        matches!(
+            pending.as_mut().poll(&mut context),
+            std::task::Poll::Pending
+        ),
+        "shared scope quota remains unavailable",
     );
-    pending.abort();
-    assert!(pending.await.is_err());
+    assert_eq!(server.request_count(), 2);
+    drop(pending);
 
     tokio::time::advance(std::time::Duration::from_secs(1)).await;
     client
@@ -817,22 +834,28 @@ fn rules_from_limiter(limiter: &CapturingLimiter) -> Vec<CapturedRule> {
 
 #[tokio::test]
 async fn explicit_noop_authorizes_nonempty_generated_plan_without_dsl_observer() {
-    OBSERVER_DEFAULTS.store(0, Ordering::SeqCst);
     let server = ScriptedServer::start([ResponseScript::ok(b"noop".to_vec())])
         .expect("no-op rate-limit server");
     let proxy = SafeProxy::parse(server.url("")).expect("local proxy");
-    let client = builder()
-        .http(move |http| http.proxy(proxy))
-        .runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
-        .build()
-        .expect("explicit no-op is an intentional selection");
+    let client = {
+        let _observer_defaults = OBSERVER_DEFAULTS_LOCK
+            .lock()
+            .expect("observer default test lock");
+        OBSERVER_DEFAULTS.store(0, Ordering::SeqCst);
+        let client = builder()
+            .http(move |http| http.proxy(proxy))
+            .runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
+            .build()
+            .expect("explicit no-op is an intentional selection");
+        assert_eq!(OBSERVER_DEFAULTS.load(Ordering::SeqCst), 0);
+        client
+    };
     let body = client
         .regions("eu".to_owned())
         .read("item".to_owned())
         .await
         .expect("no-op authorized request");
     assert_eq!(body, Bytes::from_static(b"noop"));
-    assert_eq!(OBSERVER_DEFAULTS.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]

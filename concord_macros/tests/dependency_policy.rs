@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use concord_test_support::cargo_fixture::{diagnostics, run};
+use serde_json::Value;
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -34,6 +35,40 @@ fn has_direct_package(tree: &str, package: &str) -> bool {
     })
 }
 
+fn workspace_metadata() -> Value {
+    let output = run(
+        &workspace_root(),
+        "dependency-policy/workspace-metadata",
+        "metadata",
+        ["--format-version", "1", "--no-deps"],
+    );
+    assert!(
+        output.status.success(),
+        "workspace metadata failed\n{}",
+        diagnostics(&output)
+    );
+    serde_json::from_slice(&output.stdout).expect("Cargo metadata should be valid JSON")
+}
+
+fn package_metadata<'a>(metadata: &'a Value, name: &str) -> &'a Value {
+    metadata["packages"]
+        .as_array()
+        .expect("Cargo metadata packages should be an array")
+        .iter()
+        .find(|package| package["name"].as_str() == Some(name))
+        .unwrap_or_else(|| panic!("Cargo metadata omitted workspace package {name}"))
+}
+
+fn has_metadata_dependency(package: &Value, dependency: &str, kind: Option<&str>) -> bool {
+    package["dependencies"]
+        .as_array()
+        .expect("package dependencies should be an array")
+        .iter()
+        .any(|candidate| {
+            candidate["name"].as_str() == Some(dependency) && candidate["kind"].as_str() == kind
+        })
+}
+
 fn core_feature_tree(features: Option<&str>, target_key: &str) -> String {
     let mut arguments = vec![
         "-p",
@@ -55,6 +90,60 @@ fn core_feature_tree(features: Option<&str>, target_key: &str) -> String {
         diagnostics(&output)
     );
     String::from_utf8(output.stdout).expect("Cargo tree output should be UTF-8")
+}
+
+#[test]
+fn core_and_macro_dependencies_follow_the_runtime_direction() {
+    let metadata = workspace_metadata();
+    let core = package_metadata(&metadata, "concord_core");
+    let macros = package_metadata(&metadata, "concord_macros");
+
+    for kind in [None, Some("dev"), Some("build")] {
+        assert!(
+            !has_metadata_dependency(core, "concord_macros", kind),
+            "concord_core must not depend on concord_macros through dependency kind {kind:?}"
+        );
+    }
+    assert!(
+        !core["dependencies"]
+            .as_array()
+            .expect("core dependencies should be an array")
+            .iter()
+            .any(|dependency| dependency["name"].as_str() == Some("concord_macros")),
+        "concord_core must not have optional, renamed, or target-specific concord_macros dependencies"
+    );
+
+    let forwarded_macro_features = core["features"]
+        .as_object()
+        .expect("core features should be an object")
+        .iter()
+        .flat_map(|(feature, members)| {
+            members
+                .as_array()
+                .expect("feature members should be an array")
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|member| member.contains("concord_macros"))
+                .map(move |member| (feature.as_str(), member))
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        forwarded_macro_features.is_empty(),
+        "concord_core features must not forward to concord_macros: {forwarded_macro_features:?}"
+    );
+
+    assert!(
+        !has_metadata_dependency(macros, "concord_core", None),
+        "concord_macros must remain runtime-neutral in normal dependencies"
+    );
+    assert!(
+        !has_metadata_dependency(macros, "concord_core", Some("build")),
+        "concord_macros must remain runtime-neutral in build dependencies"
+    );
+    assert!(
+        has_metadata_dependency(macros, "concord_core", Some("dev")),
+        "macro integration tests must compile generated code against concord_core"
+    );
 }
 
 #[test]

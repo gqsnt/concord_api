@@ -145,4 +145,24 @@ fn prepared_endpoint_capabilities_are_exact_and_private() {
     cases.compile_fail("tests/ui/fail/prepared_endpoint_builder_methods_absent.rs");
     cases.compile_fail("tests/ui/fail/prepared_endpoint_fields_private.rs");
     cases.compile_fail("tests/ui/fail/prepared_endpoint_no_prelude_export.rs");
+    cases.compile_fail("tests/ui/fail/dangerous_raw_prepared_absent.rs");
+}
+
+#[test]
+fn generated_client_runtime_internals_cannot_be_supplied_downstream() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/fail/generated_executor_escape.rs");
+}
+
+#[test]
+fn generated_request_specifications_require_request_capabilities() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/fail/no_content_request_spec.rs");
+    cases.compile_fail("tests/ui/fail/response_only_request_spec.rs");
+}
+
+#[test]
+fn generated_stream_endpoints_have_no_raw_response_terminal() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/fail/dangerous_raw_stream_absent.rs");
 }

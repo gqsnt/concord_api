@@ -10,8 +10,8 @@ error[E0432]: unresolved imports `concord_core::advanced::MultipartBody`, `conco
 note: found an item that was configured out
  --> src/advanced.rs
   |
-  | pub use crate::body::{MultipartBody, MultipartFactory, MultipartPart};
-  |                       ^^^^^^^^^^^^^
+  | pub use crate::body::{Multipart, MultipartBody, MultipartFactory, MultipartPart};
+  |                                  ^^^^^^^^^^^^^
 note: the item is gated behind the `multipart` feature
  --> src/advanced.rs
   |
@@ -20,8 +20,8 @@ note: the item is gated behind the `multipart` feature
 note: found an item that was configured out
  --> src/advanced.rs
   |
-  | pub use crate::body::{MultipartBody, MultipartFactory, MultipartPart};
-  |                                      ^^^^^^^^^^^^^^^^
+  | pub use crate::body::{Multipart, MultipartBody, MultipartFactory, MultipartPart};
+  |                                                 ^^^^^^^^^^^^^^^^
 note: the item is gated behind the `multipart` feature
  --> src/advanced.rs
   |
@@ -30,8 +30,8 @@ note: the item is gated behind the `multipart` feature
 note: found an item that was configured out
  --> src/advanced.rs
   |
-  | pub use crate::body::{MultipartBody, MultipartFactory, MultipartPart};
-  |                                                        ^^^^^^^^^^^^^
+  | pub use crate::body::{Multipart, MultipartBody, MultipartFactory, MultipartPart};
+  |                                                                   ^^^^^^^^^^^^^
 note: the item is gated behind the `multipart` feature
  --> src/advanced.rs
   |

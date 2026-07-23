@@ -135,6 +135,7 @@ name = "concord_core"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "concord_test_support",
  "futures-core",
  "http",
  "http-body",
@@ -146,6 +147,15 @@ dependencies = [
  "serde_json",
  "tokio",
  "url",
+]
+
+[[package]]
+name = "concord_test_support"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "http",
+ "tokio",
 ]
 
 [[package]]

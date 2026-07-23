@@ -84,6 +84,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-fixture-development-tools-enabled"
+version = "0.0.0"
+dependencies = [
+ "concord_core 0.1.0",
+ "concord_macros",
+]
+
+[[package]]
 name = "concord-fixture-extension-certification"
 version = "0.0.0"
 dependencies = [
@@ -134,6 +142,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-fixture-raw-response-disabled"
+version = "0.0.0"
+dependencies = [
+ "concord_core 0.1.0",
+ "concord_macros",
+]
+
+[[package]]
 name = "concord-fixture-renamed-core"
 version = "0.0.0"
 dependencies = [
@@ -146,6 +162,7 @@ name = "concord_core"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "concord_test_support",
  "csv",
  "futures-core",
  "http",
@@ -875,7 +892,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1416,7 +1433,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
