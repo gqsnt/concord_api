@@ -17,9 +17,8 @@ use serde_json::Value;
 
 /// Riot's documented starting application limit for a production API key.
 ///
-/// Riot applies the application limit per routing region. This example builds
-/// one generated client per platform or regional route, so each default
-/// governor owns the correct route-local application bucket.
+/// Riot applies the application limit per routing host. The unified client
+/// declares separate lexical rules for its platform and regional route trees.
 const DEFAULT_MATCH_PAGE_SIZE: NonZeroU32 = match NonZeroU32::new(20) {
     Some(value) => value,
     None => unreachable!(),
@@ -84,6 +83,21 @@ pub enum RegionalRoute {
     Asia,
     Europe,
     Sea,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum DDragonLocale {
+    EnUs,
+    FrFr,
+}
+
+impl fmt::Display for DDragonLocale {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::EnUs => "en_US",
+            Self::FrFr => "fr_FR",
+        })
+    }
 }
 
 impl fmt::Display for RegionalRoute {
@@ -752,7 +766,7 @@ impl RateLimitObserver for RiotRateLimitHeaders {
             Some(SanitizedHeaderValue::Text(value))
                 if value.eq_ignore_ascii_case("application") =>
             {
-                CooldownScope::Client
+                CooldownScope::Host
             }
             Some(SanitizedHeaderValue::Text(value)) if value.eq_ignore_ascii_case("service") => {
                 CooldownScope::Host
@@ -771,25 +785,32 @@ impl RateLimitObserver for RiotRateLimitHeaders {
 }
 
 api! {
-    client RiotPlatformApi {
+    client RiotApi {
         base "https://riotgames.com/";
-        var platform: crate::PlatformRoute;
+
+        vars {
+            platform: crate::PlatformRoute = crate::PlatformRoute::Euw1;
+            regional: crate::RegionalRoute = crate::RegionalRoute::Europe;
+        }
 
         credentials {
             secret api_key: String;
             credential riot_api_key = api_key(secret.api_key);
         }
 
-        host [vars.platform, "api"];
-        path ["lol"];
         headers { "User-Agent" = "ConcordRiotExample/1.0"; }
         auth header "X-Riot-Token" = riot_api_key challenge never;
         timeout 20s;
+        rate_limit_observer crate::RiotRateLimitHeaders;
+    }
+
+    scope Platform() {
+        host [vars.platform, "api"];
+        path ["lol"];
         rate_limit {
             500 / 10s;
             30000 / 10m;
         }
-        rate_limit_observer crate::RiotRateLimitHeaders;
 
         scope champion_mastery_v4() {
             path ["champion-mastery", "v4"];
@@ -1003,24 +1024,12 @@ api! {
     }
 
 
-    client RiotRegionalApi {
-        base "https://riotgames.com/";
-        var region: crate::RegionalRoute;
-
-        credentials {
-            secret api_key: String;
-            credential riot_api_key = api_key(secret.api_key);
-        }
-
-        host [vars.region, "api"];
-        headers { "User-Agent" = "ConcordRiotExample/1.0"; }
-        auth header "X-Riot-Token" = riot_api_key challenge never;
-        timeout 20s;
+    scope Regional() {
+        host [vars.regional, "api"];
         rate_limit {
             500 / 10s;
             30000 / 10m;
         }
-        rate_limit_observer crate::RiotRateLimitHeaders;
 
         scope account_v1() {
             path ["riot", "account", "v1"];
@@ -1172,19 +1181,67 @@ api! {
     }
 }
 
+api! {
+    client DDragonApi {
+        base "https://ddragon.leagueoflegends.com/";
+
+        vars {
+            locale: crate::DDragonLocale = crate::DDragonLocale::EnUs;
+        }
+
+        headers { "User-Agent" = "ConcordRiotExample/1.0"; }
+        timeout 20s;
+    }
+
+    GET Versions() as versions -> Json<Vec<String>> {
+        path ["api", "versions.json"];
+    }
+
+    GET Realm(region: String) as realm -> Json<serde_json::Value> {
+        path ["realms", fmt[ep.region, ".json"]];
+    }
+
+    scope Version(version: String) {
+        path ["cdn", scope.version];
+
+        scope Data() {
+            path ["data", vars.locale];
+
+            GET Champions() as champions -> Json<serde_json::Value> {
+                path ["champion.json"];
+            }
+
+            GET Items() as items -> Json<serde_json::Value> {
+                path ["item.json"];
+            }
+        }
+
+        scope Assets() {
+            path ["img"];
+
+            GET Champion(filename: String) as champion_image -> Bytes {
+                path ["champion", ep.filename];
+            }
+
+            GET Item(filename: String) as item_image -> Bytes {
+                path ["item", ep.filename];
+            }
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    use riot_api::prelude::*;
+
     let api_key = std::env::var("RIOT_API_KEY")?;
     let game_name = std::env::var("RIOT_GAME_NAME")?;
     let tag_line = std::env::var("RIOT_TAG_LINE")?;
 
-    let platform_route = PlatformRoute::Euw1;
-    let regional_route = platform_route.regional();
+    let riot = RiotApi::new(api_key)?;
 
-    let platform = RiotPlatformApi::new(platform_route, api_key.clone())?;
-    let regional = RiotRegionalApi::new(regional_route, api_key)?;
-
-    let account = regional
+    let account = riot
+        .regional()
         .account_v1()
         .account_by_riot_id(game_name, tag_line)
         .await?;
@@ -1196,7 +1253,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         account.puuid
     );
 
-    let summoner = platform
+    let summoner = riot
+        .platform()
         .summoner_v4()
         .summoner_by_puuid(account.puuid.clone())
         .await?;
@@ -1206,7 +1264,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         summoner.summoner_level, summoner.profile_icon_id
     );
 
-    let league_entries = platform
+    let league_entries = riot
+        .platform()
         .league_v4()
         .league_entries_by_puuid(account.puuid.clone())
         .await?;
@@ -1218,34 +1277,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
         );
     }
 
-    let top_masteries = {
-        use riot_platform_api::prelude::*;
-
-        platform
-            .champion_mastery_v4()
-            .top_masteries_by_puuid(account.puuid.clone())
-            .count(5)
-            .await?
-    };
+    let top_masteries = riot
+        .platform()
+        .champion_mastery_v4()
+        .top_masteries_by_puuid(account.puuid.clone())
+        .count(5)
+        .await?;
 
     println!("Top champion masteries: {}", top_masteries.len());
 
-    let match_ids = {
-        use riot_regional_api::prelude::*;
-
-        regional
-            .match_v5()
-            .match_ids_by_puuid(account.puuid.clone())
-            .match_type(MatchType::Ranked)
-            .count(NonZeroU32::new(20).expect("20 is non-zero"))
-            .paginate(PageLimit::Take(2))
-            .await?
-    };
+    let match_ids = riot
+        .regional()
+        .match_v5()
+        .match_ids_by_puuid(account.puuid.clone())
+        .match_type(MatchType::Ranked)
+        .count(NonZeroU32::new(20).expect("20 is non-zero"))
+        .paginate(PageLimit::Take(2))
+        .await?;
 
     println!("Collected {} recent ranked match IDs", match_ids.len());
 
     if let Some(match_id) = match_ids.first() {
-        let response = regional
+        let response = riot
+            .regional()
             .match_v5()
             .match_by_id(match_id.clone())
             .response()
@@ -1260,12 +1314,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
             response.value().info.participants.len()
         );
 
-        let timeline = regional.match_v5().timeline_by_id(match_id.clone()).await?;
+        let timeline = riot
+            .regional()
+            .match_v5()
+            .timeline_by_id(match_id.clone())
+            .await?;
 
         println!("Timeline frames: {}", timeline.info.frames.len());
     }
 
-    match platform
+    match riot
+        .platform()
         .spectator_v5()
         .active_game_by_puuid(account.puuid.clone())
         .await
@@ -1279,7 +1338,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Err(error) => println!("No accessible live game: {error}"),
     }
 
-    let status = platform.status_v4().platform_data().response().await?;
+    let status = riot
+        .platform()
+        .status_v4()
+        .platform_data()
+        .response()
+        .await?;
     println!(
         "{} status: HTTP {}, incidents={}, maintenances={}",
         status.value().name,

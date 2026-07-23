@@ -25,14 +25,15 @@ api! {
             credential acquired = endpoint Login;
             credential custom = custom concord_examples::ExampleToken;
         }
-        GET Login() -> concord_examples::ExampleTokenCodec;
-        GET ApiKey() -> NoContent { auth header "X-Api-Key" = application_key; }
-        GET Bearer() -> NoContent { auth bearer static_bearer; }
-        GET Basic() -> NoContent { auth basic login; }
-        GET OAuth() -> NoContent { auth bearer oauth; }
-        GET EndpointBacked() -> NoContent { auth query "session" = acquired challenge never; }
-        GET ProviderBacked() -> NoContent { auth bearer custom challenge never; }
     }
+
+    GET Login() -> concord_examples::ExampleTokenCodec;
+    GET ApiKey() -> NoContent { auth header "X-Api-Key" = application_key; }
+    GET Bearer() -> NoContent { auth bearer static_bearer; }
+    GET Basic() -> NoContent { auth basic login; }
+    GET OAuth() -> NoContent { auth bearer oauth; }
+    GET EndpointBacked() -> NoContent { auth query "session" = acquired challenge never; }
+    GET ProviderBacked() -> NoContent { auth bearer custom challenge never; }
 }
 
 fn main() -> Result<(), concord_core::prelude::ClientBuildError> {

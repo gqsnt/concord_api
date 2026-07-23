@@ -78,7 +78,7 @@ Continue with [Your first API](getting-started.md#your-first-api).
 
 ## Your first API
 
-A Concord API is declared with `concord_macros::api!`. A macro invocation may contain one or more clients. Every client starts with one fixed absolute HTTP or HTTPS base URL.
+A Concord API is declared with `concord_macros::api!`. Each invocation declares exactly one client, and that client must be first. The client starts with one fixed absolute HTTP or HTTPS base URL; root scopes and endpoints follow its closing brace. Use separate `api!` invocations when a module needs multiple generated clients.
 
 ```rust
 use concord_macros::api;
@@ -86,10 +86,10 @@ use concord_macros::api;
 api! {
     client NotesApi {
         base "https://notes.example.com/";
+    }
 
-        GET Note(id: u64) -> Json<Note> {
-            path ["notes", ep.id];
-        }
+    GET Note(id: u64) -> Json<Note> {
+        path ["notes", ep.id];
     }
 }
 ```
@@ -134,6 +134,7 @@ METHOD("PROPFIND") Resource(id: String) as fetch -> Text;
 ### Structural rules
 
 - Every endpoint has parentheses, including endpoints with no parameters.
+- The client is first and contains configuration only; root scopes and endpoints follow it.
 - A request body, when present, is the final parameter and is named `body`.
 - A bodyless endpoint can be paginated; a body-bearing endpoint cannot.
 - Client and scope configuration is inherited in lexical order.

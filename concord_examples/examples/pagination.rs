@@ -7,31 +7,32 @@ use concord_macros::api;
 api! {
     client PaginationApi {
         base "https://pagination.example.test/";
-        GET Offset(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
-            query { "offset" = ep.offset; "limit" = ep.limit; }
-            paginate concord_core::advanced::OffsetPagination {
-                offset: bind ep.offset,
-                page_size: bind ep.limit,
-            }
+    }
+
+    GET Offset(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
+        query { "offset" = ep.offset; "limit" = ep.limit; }
+        paginate concord_core::advanced::OffsetPagination {
+            offset: bind ep.offset,
+            page_size: bind ep.limit,
         }
-        GET Page(page: std::num::NonZeroU64, per_page: std::num::NonZeroU32) -> Json<Vec<u32>> {
-            query { "page" = ep.page; "per_page" = ep.per_page; }
-            paginate concord_core::advanced::PagePagination {
-                page: bind ep.page,
-                page_size: bind ep.per_page,
-            }
+    }
+    GET Page(page: std::num::NonZeroU64, per_page: std::num::NonZeroU32) -> Json<Vec<u32>> {
+        query { "page" = ep.page; "per_page" = ep.per_page; }
+        paginate concord_core::advanced::PagePagination {
+            page: bind ep.page,
+            page_size: bind ep.per_page,
         }
-        GET Cursor(cursor: Option<String>) -> concord_examples::ExamplePageCodec {
-            query { "cursor" = ep.cursor; }
-            paginate concord_core::advanced::CursorPagination<String> {
-                cursor: bind ep.cursor,
-            }
+    }
+    GET Cursor(cursor: Option<String>) -> concord_examples::ExamplePageCodec {
+        query { "cursor" = ep.cursor; }
+        paginate concord_core::advanced::CursorPagination<String> {
+            cursor: bind ep.cursor,
         }
-        GET Custom(cursor: Option<String>) -> concord_examples::ExamplePageCodec {
-            query { "cursor" = ep.cursor; }
-            paginate concord_examples::ExampleController {
-                cursor: bind ep.cursor,
-            }
+    }
+    GET Custom(cursor: Option<String>) -> concord_examples::ExamplePageCodec {
+        query { "cursor" = ep.cursor; }
+        paginate concord_examples::ExampleController {
+            cursor: bind ep.cursor,
         }
     }
 }

@@ -21,13 +21,14 @@ use futures_core::Stream as FuturesStream;
 api! {
     client ExampleApi {
         base "http://generated.example.test/v1/";
-        scope health() {
-            path ["health"];
-            GET Bytes() -> Bytes;
-            GET Ping() -> NoContent;
-            GET Item(id: String) -> Bytes {
-                path ["items", ep.id];
-            }
+    }
+
+    scope health() {
+        path ["health"];
+        GET Bytes() -> Bytes;
+        GET Ping() -> NoContent;
+        GET Item(id: String) -> Bytes {
+            path ["items", ep.id];
         }
     }
 }
@@ -41,14 +42,15 @@ impl MediaType for VendorStreamMedia {
 api! {
     client StreamingApi {
         base "http://streaming.generated.example.test/v1/";
-        scope transfers() {
-            path ["transfers"];
-            POST Upload(body: Stream<OctetStream>) -> Bytes;
-            POST VendorUpload(body: Stream<crate::VendorStreamMedia>) -> Bytes;
-            GET Download() -> Stream<OctetStream>;
-            GET VendorDownload() -> Stream<crate::VendorStreamMedia>;
-            POST MultipartUpload(body: Multipart) -> Bytes;
-        }
+    }
+
+    scope transfers() {
+        path ["transfers"];
+        POST Upload(body: Stream<OctetStream>) -> Bytes;
+        POST VendorUpload(body: Stream<crate::VendorStreamMedia>) -> Bytes;
+        GET Download() -> Stream<OctetStream>;
+        GET VendorDownload() -> Stream<crate::VendorStreamMedia>;
+        POST MultipartUpload(body: Multipart) -> Bytes;
     }
 }
 
@@ -88,16 +90,17 @@ impl DecodeBody for WireCodec {
 api! {
     client BufferedApi {
         base "http://buffered.generated.example.test/v1/";
-        scope messages() {
-            path ["messages"];
-            POST TextEcho(body: Text) -> Text;
-            POST JsonEcho(body: Json<Vec<u32>>) -> Json<Vec<u32>>;
-            POST CustomEcho(body: crate::WireCodec) -> crate::WireCodec;
-            POST BytesEcho(body: Text) -> Bytes;
-            POST RawBytes(body: Bytes) -> Bytes;
-            POST ManagedBody(body: RequestBody) -> Bytes;
-            POST NoContentEcho(body: Text) -> NoContent;
-        }
+    }
+
+    scope messages() {
+        path ["messages"];
+        POST TextEcho(body: Text) -> Text;
+        POST JsonEcho(body: Json<Vec<u32>>) -> Json<Vec<u32>>;
+        POST CustomEcho(body: crate::WireCodec) -> crate::WireCodec;
+        POST BytesEcho(body: Text) -> Bytes;
+        POST RawBytes(body: Bytes) -> Bytes;
+        POST ManagedBody(body: RequestBody) -> Bytes;
+        POST NoContentEcho(body: Text) -> NoContent;
     }
 }
 
@@ -116,13 +119,14 @@ impl Display for CountingValue {
 api! {
     client LazyApi {
         base "http://lazy.generated.example.test/";
-        scope resources(scope_value: crate::CountingValue) {
-            path ["scopes", scope.scope_value, "resources"];
-            GET ById(endpoint_value: crate::CountingValue) -> Bytes {
-                path [ep.endpoint_value];
-            }
-            GET Ping() -> NoContent;
+    }
+
+    scope resources(scope_value: crate::CountingValue) {
+        path ["scopes", scope.scope_value, "resources"];
+        GET ById(endpoint_value: crate::CountingValue) -> Bytes {
+            path [ep.endpoint_value];
         }
+        GET Ping() -> NoContent;
     }
 }
 
@@ -133,13 +137,14 @@ mod nested_case {
         api! {
             client NestedApi {
                 base "http://nested.generated.example.test/";
-                scope health() {
-                    path ["health"];
-                    GET Ping() -> NoContent;
-                    POST Echo(body: Text) -> Text;
-                    POST Upload(body: Stream<OctetStream>) -> NoContent;
-                    GET Download() -> Stream<OctetStream>;
-                }
+            }
+
+            scope health() {
+                path ["health"];
+                GET Ping() -> NoContent;
+                POST Echo(body: Text) -> Text;
+                POST Upload(body: Stream<OctetStream>) -> NoContent;
+                GET Download() -> Stream<OctetStream>;
             }
         }
     }
@@ -162,24 +167,26 @@ mod repeated_case {
     api! {
         client AlphaApi {
             base "http://alpha.generated.example.test/";
-            scope health() {
-                path ["health"];
-                GET Ping() -> NoContent;
-                POST Echo(body: Text) -> Text;
-                GET Download() -> Stream<OctetStream>;
-            }
+        }
+
+        scope health() {
+            path ["health"];
+            GET Ping() -> NoContent;
+            POST Echo(body: Text) -> Text;
+            GET Download() -> Stream<OctetStream>;
         }
     }
 
     api! {
         client BetaApi {
             base "http://beta.generated.example.test/";
-            scope health() {
-                path ["health"];
-                GET Ping() -> NoContent;
-                POST Echo(body: Text) -> Text;
-                GET Download() -> Stream<OctetStream>;
-            }
+        }
+
+        scope health() {
+            path ["health"];
+            GET Ping() -> NoContent;
+            POST Echo(body: Text) -> Text;
+            GET Download() -> Stream<OctetStream>;
         }
     }
 

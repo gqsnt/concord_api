@@ -14,36 +14,40 @@ impl<Page> concord_core::advanced::PaginationController<Page> for Controller {
 api! {
     client RequestBodyPagination {
         base "https://example.test";
-        POST Read(body: Text) -> Json<Vec<u8>> {
-            paginate crate::Controller {}
-        }
+    }
+
+    POST Read(body: Text) -> Json<Vec<u8>> {
+        paginate crate::Controller {}
     }
 }
 
 api! {
     client BytesPagination {
         base "https://example.test";
-        GET Read() -> Bytes {
-            paginate crate::Controller {}
-        }
+    }
+
+    GET Read() -> Bytes {
+        paginate crate::Controller {}
     }
 }
 
 api! {
     client NoContentPagination {
         base "https://example.test";
-        GET Read() -> NoContent {
-            paginate crate::Controller {}
-        }
+    }
+
+    GET Read() -> NoContent {
+        paginate crate::Controller {}
     }
 }
 
 api! {
     client StreamPagination {
         base "https://example.test";
-        GET Read() -> Stream<OctetStream> {
-            paginate crate::Controller {}
-        }
+    }
+
+    GET Read() -> Stream<OctetStream> {
+        paginate crate::Controller {}
     }
 }
 

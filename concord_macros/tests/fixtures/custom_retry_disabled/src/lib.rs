@@ -6,6 +6,7 @@ api! {
     client CustomRetryDisabledApi {
         base "http://custom-retry-disabled.example.test";
         retry custom crate::custom_retry;
-        GET Ping() -> NoContent;
     }
+
+    GET Ping() -> NoContent;
 }

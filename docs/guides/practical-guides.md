@@ -27,12 +27,16 @@ Model structural facts in the DSL. Do not model arbitrary application policy as 
 ### 2. Declare the smallest client
 
 ```rust
-client InventoryApi {
-    base "https://inventory.example.com/";
-    var tenant: String;
+api! {
+    client InventoryApi {
+        base "https://inventory.example.com/";
+        vars {
+            tenant: String;
+        }
 
-    path ["v1"];
-    query { "tenant" = vars.tenant; }
+        path ["v1"];
+        query { "tenant" = vars.tenant; }
+    }
 
     GET Item(id: u64) -> Json<Item> {
         path ["items", ep.id];
@@ -98,10 +102,14 @@ State when the client does not support raw responses, prepared pagination, strea
 Use client values for stable deployment selection and scope parameters for endpoint families whose host or path varies by region.
 
 ```rust
-client RegionalApi {
-    base "https://example.test/";
-    var platform: String;
-    host [vars.platform, "api"];
+api! {
+    client RegionalApi {
+        base "https://example.test/";
+        vars {
+            platform: String;
+        }
+        host [vars.platform, "api"];
+    }
 
     scope Accounts(region: String) {
         host [scope.region, "accounts"];

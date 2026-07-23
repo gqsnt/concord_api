@@ -8,8 +8,9 @@ api! {
     client CustomRetryEnabledApi {
         base "http://custom-retry-enabled.example.test";
         retry custom crate::custom_retry;
-        GET Ping() -> NoContent;
     }
+
+    GET Ping() -> NoContent;
 }
 
 pub fn proof() -> Result<(), concord_core::prelude::ClientBuildError> {

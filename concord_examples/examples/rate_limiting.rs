@@ -9,17 +9,20 @@ use concord_macros::api;
 api! {
     client RateLimitApi {
         base "https://rate-limit.example.test/";
-        var tenant: String;
+        vars {
+            tenant: String;
+        }
         rate_limit { 500 / 10s; }
         rate_limit_observer concord_examples::RetryAfterObserver;
-        GET Item(item: String) -> Bytes {
-            rate_limit {
-                cost 2;
-                100 / 1m;
-            }
-        }
-        GET Public() -> Bytes;
     }
+
+    GET Item(item: String) -> Bytes {
+        rate_limit {
+            cost 2;
+            100 / 1m;
+        }
+    }
+    GET Public() -> Bytes;
 }
 
 fn main() -> Result<(), concord_core::prelude::ClientBuildError> {

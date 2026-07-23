@@ -13,16 +13,18 @@ Concord is DSL-first for ordinary use. This page describes the structural langua
 api! {
     client CatalogApi {
         base "https://catalog.example.com/";
-        var tenant: String;
-
-        GET Item(id: u64) -> Json<Item> {
-            path ["items", ep.id];
+        vars {
+            tenant: String;
         }
+    }
+
+    GET Item(id: u64) -> Json<Item> {
+        path ["items", ep.id];
     }
 }
 ```
 
-A macro invocation may define several clients. Client names must be unique. Generated child names are normalized to snake case, so names that normalize to the same Rust method are rejected.
+Each macro invocation defines exactly one client. The client must be first and contains configuration only; root scopes and endpoints follow its closing brace and inherit that configuration. Use separate `api!` invocations for additional clients. Generated child names are normalized to snake case, so names that normalize to the same Rust method are rejected.
 
 ### Client order
 
@@ -30,7 +32,7 @@ A client body follows this structural order:
 
 ```text
 base
-var declarations
+optional vars block
 credentials block
 retry selection
 host
@@ -41,10 +43,11 @@ auth
 timeout
 rate_limit
 rate_limit_observer
-scopes and endpoints
+end of client block
+root scopes and endpoints
 ```
 
-Most entries are optional, but `base` is required and comes first. Each layer—client, scope, endpoint—may contain at most one host/path/query/header/timeout/rate-limit declaration in the supported order. Authentication may contain several local placements in one contiguous group.
+Most configuration entries are optional, but `base` is required and comes first. A client has at most one `vars { ... }` block, immediately after `base`; declarations inside it omit the old `var` keyword. Each layer—client, scope, endpoint—may contain at most one host/path/query/header/timeout/rate-limit declaration in the supported order. Authentication may contain several local placements in one contiguous group.
 
 ### Values and namespaces
 
@@ -138,6 +141,8 @@ A generated client exposes:
 - `.build()` returning `Result<Client, ClientBuildError>`.
 
 `new(...)` orders required public client values first, then secrets, then custom providers. The builder is preferable when optional values or configuration closures are involved.
+
+A defaulted client value is omitted from `new(...)`, remains overridable through its builder setter, and has a generated `reset_NAME()` builder method that restores deferred evaluation of the DSL default.
 
 ### HTTP configuration
 

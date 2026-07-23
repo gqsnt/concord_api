@@ -1,5 +1,5 @@
 error: endpoint clauses must appear at most once and in `host`, `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, `paginate` order
- --> tests/ui/fail/rate_limit_clause_order.rs:8:13
-  |
-8 |             timeout 1s;
-  |             ^^^^^^^
+  --> tests/ui/fail/rate_limit_clause_order.rs:10:9
+   |
+10 |         timeout 1s;
+   |         ^^^^^^^

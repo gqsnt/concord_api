@@ -8,13 +8,14 @@ use concord_macros::api;
 api! {
     client DeterministicApi {
         base "https://deterministic.example.test/";
-        POST Custom(body: concord_examples::ExampleCodec) -> concord_examples::ExampleCodec;
-        POST Upload(body: Stream<OctetStream>) -> Bytes;
-        GET Pages(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
-            paginate concord_core::advanced::OffsetPagination {
-                offset: bind ep.offset,
-                page_size: bind ep.limit,
-            }
+    }
+
+    POST Custom(body: concord_examples::ExampleCodec) -> concord_examples::ExampleCodec;
+    POST Upload(body: Stream<OctetStream>) -> Bytes;
+    GET Pages(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
+        paginate concord_core::advanced::OffsetPagination {
+            offset: bind ep.offset,
+            page_size: bind ep.limit,
         }
     }
 }

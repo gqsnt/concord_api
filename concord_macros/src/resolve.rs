@@ -45,75 +45,73 @@ enum ExpressionUse {
 }
 
 pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
-    validate_client_names(&source)?;
+    let SourceApi {
+        client: source_client,
+        children: source_children,
+    } = source;
     let mut prelude_aliases = HashMap::new();
-    let mut clients = Vec::new();
+    let source_declares_limiter =
+        source_tree_declares_rate_limits(&source_client.layer, &source_children);
+    let rate_observer = source_client.rate_limit_observer;
+    let values = convert_values(source_client.values)?;
+    validate_setter_namespace(&values, "client builder", true, true)?;
+    let (secrets, mut credentials) = convert_credentials(source_client.credentials)?;
+    validate_credential_names(&values, &secrets, &credentials)?;
 
-    for source_client in source.clients {
-        let source_declares_limiter =
-            source_tree_declares_rate_limits(&source_client.layer, &source_client.children);
-        let rate_observer = source_client.rate_limit_observer;
-        let values = convert_values(source_client.values)?;
-        validate_setter_namespace(&values, "client builder", true, true)?;
-        let (secrets, mut credentials) = convert_credentials(source_client.credentials)?;
-        validate_credential_names(&values, &secrets, &credentials)?;
+    let client_name = source_client.name;
+    let client_canonical = canonical_ident(&client_name);
+    let builder_name = Ident::new(&format!("{client_canonical}Builder"), client_name.span());
+    let support_name = snake_ident(&client_name);
+    let endpoint_capability_name =
+        Ident::new(&format!("{client_canonical}Endpoint"), client_name.span());
+    let values_type_name = Ident::new(
+        &format!("__Concord{}Values", to_pascal_case(&client_canonical)),
+        Span::mixed_site(),
+    );
 
-        let client_name = source_client.name;
-        let client_canonical = canonical_ident(&client_name);
-        let builder_name = Ident::new(&format!("{client_canonical}Builder"), client_name.span());
-        let support_name = snake_ident(&client_name);
-        let endpoint_capability_name =
-            Ident::new(&format!("{client_canonical}Endpoint"), client_name.span());
-        let values_type_name = Ident::new(
-            &format!("__Concord{}Values", to_pascal_case(&client_canonical)),
-            Span::mixed_site(),
-        );
-
-        let (config, children) = {
-            let mut resolver = Resolver {
-                client_name: &client_name,
-                client_values: &values,
-                credentials: &credentials,
-                next_scope_id: 0,
-                next_endpoint_id: 0,
-                prelude_aliases: &mut prelude_aliases,
-            };
-            let config = resolver.normalize_layer(
-                &source_client.layer,
-                &NormalizedConfig::default(),
-                &[],
-                None,
-                &client_canonical,
-                "client",
-            )?;
-            let children =
-                resolver.resolve_children(source_client.children, &config, &[], &[], "client")?;
-            (config, children)
+    let (config, children) = {
+        let mut resolver = Resolver {
+            client_name: &client_name,
+            client_values: &values,
+            credentials: &credentials,
+            next_scope_id: 0,
+            next_endpoint_id: 0,
+            prelude_aliases: &mut prelude_aliases,
         };
-        resolve_endpoint_credentials(&mut credentials, &children)?;
-        validate_credential_generated_names(&credentials, &children, "client")?;
-        validate_credential_cycles(&credentials, &children)?;
-        validate_child_methods(&children, &[], "generated client", true)?;
+        let config = resolver.normalize_layer(
+            &source_client.layer,
+            &NormalizedConfig::default(),
+            &[],
+            None,
+            &client_canonical,
+            "client",
+        )?;
+        let children = resolver.resolve_children(source_children, &config, &[], &[], "client")?;
+        (config, children)
+    };
+    resolve_endpoint_credentials(&mut credentials, &children)?;
+    validate_credential_generated_names(&credentials, &children, "client")?;
+    validate_credential_cycles(&credentials, &children)?;
+    validate_child_methods(&children, &[], "generated client", true)?;
 
-        clients.push(Client {
-            name: client_name,
-            builder_name,
-            support_name,
-            endpoint_capability_name,
-            values_type_name,
-            base: source_client.base,
-            values,
-            secrets,
-            credentials,
-            retry: source_client.retry,
-            rate_observer,
-            requires_limiter: source_declares_limiter,
-            config,
-            children,
-        });
-    }
+    let client = Client {
+        name: client_name,
+        builder_name,
+        support_name,
+        endpoint_capability_name,
+        values_type_name,
+        base: source_client.base,
+        values,
+        secrets,
+        credentials,
+        retry: source_client.retry,
+        rate_observer,
+        requires_limiter: source_declares_limiter,
+        config,
+        children,
+    };
 
-    Ok(Api { clients })
+    Ok(Api { client })
 }
 
 impl Resolver<'_> {
@@ -1175,32 +1173,6 @@ fn find_unique_value(values: &[Value], name: &Ident, owner: &str) -> syn::Result
     })
 }
 
-fn validate_client_names(source: &SourceApi) -> syn::Result<()> {
-    let mut invocation_items = HashMap::new();
-    for client in &source.clients {
-        let client_name = canonical_ident(&client.name);
-        insert_name(
-            &mut invocation_items,
-            client_name.clone(),
-            client.name.span(),
-            "invocation-scope client, builder, or support-module",
-        )?;
-        insert_name(
-            &mut invocation_items,
-            format!("{client_name}Builder"),
-            client.name.span(),
-            "invocation-scope client, builder, or support-module",
-        )?;
-        insert_name(
-            &mut invocation_items,
-            to_snake_case(&client_name),
-            client.name.span(),
-            "invocation-scope client, builder, or support-module",
-        )?;
-    }
-    Ok(())
-}
-
 fn validate_setter_namespace(
     values: &[Value],
     owner: &str,
@@ -1382,21 +1354,21 @@ mod tests {
                     30000 / 10m;
                 }
                 rate_limit_observer crate::Observer;
-                scope regions(region: String) {
-                    rate_limit {
-                        cost 2;
-                        20 / 1s;
-                    }
-                    GET Read(id: String) -> Bytes {
-                        rate_limit {
-                            5 / 1s;
-                        }
-                    }
-                    GET Public() -> Bytes;
+            }
+            scope regions(region: String) {
+                rate_limit {
+                    cost 2;
+                    20 / 1s;
                 }
+                GET Read(id: String) -> Bytes {
+                    rate_limit {
+                        5 / 1s;
+                    }
+                }
+                GET Public() -> Bytes;
             }
         });
-        let client = &api.clients[0];
+        let client = &api.client;
         assert!(client.requires_limiter);
         assert!(client.rate_observer.is_some());
         let client_rule = &client.config.rate_limits;
@@ -1436,14 +1408,14 @@ mod tests {
         let api = resolve_ok(quote! {
             client Api {
                 base "https://example.test";
-                scope Regions(region: String) {
-                    GET Read(item: String) -> Bytes {
-                        rate_limit { 1 / 1s; }
-                    }
+            }
+            scope Regions(region: String) {
+                GET Read(item: String) -> Bytes {
+                    rate_limit { 1 / 1s; }
                 }
             }
         });
-        let Child::Scope(scope) = &api.clients[0].children[0] else {
+        let Child::Scope(scope) = &api.client.children[0] else {
             panic!("scope")
         };
         let Child::Endpoint(endpoint) = &scope.children[0] else {
@@ -1479,19 +1451,19 @@ mod tests {
         let api = resolve_ok(quote! {
             client ShapeApi {
                 base "https://example.test/root";
-                var tenant: String;
+                vars { tenant: String; }
                 path ["v1"];
                 query { "first" = "one"; "replace" = "old"; }
                 headers { "X-First" = "one"; }
-                scope users(region: String) {
-                    path replace ["users", scope.region];
-                    query { remove "replace"; "second" = vars.tenant; }
-                    headers replace { "X-Second" = scope.region; }
-                    GET ById(id: String) -> Bytes { path [ep.id]; timeout 2s; }
-                }
+            }
+            scope users(region: String) {
+                path replace ["users", scope.region];
+                query { remove "replace"; "second" = vars.tenant; }
+                headers replace { "X-Second" = scope.region; }
+                GET ById(id: String) -> Bytes { path [ep.id]; timeout 2s; }
             }
         });
-        let Child::Scope(scope) = &api.clients[0].children[0] else {
+        let Child::Scope(scope) = &api.client.children[0] else {
             panic!("scope")
         };
         let Child::Endpoint(endpoint) = &scope.children[0] else {
@@ -1520,10 +1492,10 @@ mod tests {
             parse::parse(quote! {
                 client Api {
                     base "https://example.test";
-                    scope outer(id: String) {
-                        scope inner(id: String) {
-                            GET Read() -> Bytes { path [scope.id]; }
-                        }
+                }
+                scope outer(id: String) {
+                    scope inner(id: String) {
+                        GET Read() -> Bytes { path [scope.id]; }
                     }
                 }
             })
@@ -1539,14 +1511,14 @@ mod tests {
         let api = resolve_ok(quote! {
             client ExampleApi {
                 base "https://example.test";
-                scope regions(region: String) {
-                    scope users(tenant: String) {
-                        GET ById(verbose: Option<bool>) as fetch -> Bytes;
-                    }
+            }
+            scope regions(region: String) {
+                scope users(tenant: String) {
+                    GET ById(verbose: Option<bool>) as fetch -> Bytes;
                 }
             }
         });
-        let Child::Scope(regions) = &api.clients[0].children[0] else {
+        let Child::Scope(regions) = &api.client.children[0] else {
             panic!()
         };
         let Child::Scope(users) = &regions.children[0] else {
@@ -1571,39 +1543,39 @@ mod tests {
                 query { "keep" = "client"; "change" = "client"; }
                 headers { "X-Keep" = "client"; "X-Change" = "client"; }
                 timeout 5s;
-                scope shaped() {
-                    host off;
-                    path replace ["scope"];
-                    query {
-                        "change" = "scope";
-                        "local" = "scope";
-                    }
-                    headers {
-                        "x-change" = "scope";
-                        "X-Local" = "scope";
-                    }
-                    timeout off;
-                    GET Modified(
-                        scalar: String,
-                        optional: Option<String>,
-                        vector: Vec<String>,
-                        optional_vector: Option<Vec<String>>,
-                    ) -> Bytes;
-                    GET Cleared() -> Bytes {
-                        host ["endpoint"];
-                        path off;
-                        query off;
-                        headers off;
-                        timeout 1ms;
-                    }
-                    GET Replaced() -> Bytes {
-                        query replace { "only" = "endpoint"; }
-                        headers replace { "X-Only" = "endpoint"; }
-                    }
+            }
+            scope shaped() {
+                host off;
+                path replace ["scope"];
+                query {
+                    "change" = "scope";
+                    "local" = "scope";
+                }
+                headers {
+                    "x-change" = "scope";
+                    "X-Local" = "scope";
+                }
+                timeout off;
+                GET Modified(
+                    scalar: String,
+                    optional: Option<String>,
+                    vector: Vec<String>,
+                    optional_vector: Option<Vec<String>>,
+                ) -> Bytes;
+                GET Cleared() -> Bytes {
+                    host ["endpoint"];
+                    path off;
+                    query off;
+                    headers off;
+                    timeout 1ms;
+                }
+                GET Replaced() -> Bytes {
+                    query replace { "only" = "endpoint"; }
+                    headers replace { "X-Only" = "endpoint"; }
                 }
             }
         });
-        let Child::Scope(scope) = &api.clients[0].children[0] else {
+        let Child::Scope(scope) = &api.client.children[0] else {
             panic!("scope")
         };
         let Child::Endpoint(modified) = &scope.children[0] else {
@@ -1671,8 +1643,8 @@ mod tests {
             parse::parse(quote! {
                 client Api {
                     base "https://example.test";
-                    GET Read() -> Bytes { path [ep.missing]; }
                 }
+                GET Read() -> Bytes { path [ep.missing]; }
             })
             .expect("AST"),
         )
@@ -1688,9 +1660,9 @@ mod tests {
             parse::parse(quote! {
                 client Api {
                     base "https://example.test";
-                    GET Read(values: Vec<String>) -> Bytes {
-                        headers { "X-Values" = ep.values; }
-                    }
+                }
+                GET Read(values: Vec<String>) -> Bytes {
+                    headers { "X-Values" = ep.values; }
                 }
             })
             .expect("AST"),
@@ -1706,8 +1678,8 @@ mod tests {
         let secret_namespace = parse::parse(quote! {
             client Api {
                 base "https://example.test";
-                GET Read() -> Bytes { query { "token" = credentials.token; } }
             }
+            GET Read() -> Bytes { query { "token" = credentials.token; } }
         })
         .err()
         .expect("credential expression namespace");
@@ -1739,21 +1711,21 @@ mod tests {
                     credential custom = custom crate::SessionToken;
                 }
                 auth header "X-Api-Key" = key;
-                GET Login() -> Bytes;
-                scope Secured() {
-                    auth bearer oauth;
-                    GET Inherited() -> Bytes;
-                    GET Replaced() -> Bytes {
-                        auth replace bearer bearer;
-                    }
-                    GET Custom() -> Bytes {
-                        auth replace header "X-Session" = custom challenge never;
-                    }
-                    GET Public() -> Bytes { auth off; }
+            }
+            GET Login() -> Bytes;
+            scope Secured() {
+                auth bearer oauth;
+                GET Inherited() -> Bytes;
+                GET Replaced() -> Bytes {
+                    auth replace bearer bearer;
                 }
+                GET Custom() -> Bytes {
+                    auth replace header "X-Session" = custom challenge never;
+                }
+                GET Public() -> Bytes { auth off; }
             }
         });
-        let client = &api.clients[0];
+        let client = &api.client;
         assert_eq!(client.config.auth.len(), 1);
         assert_eq!(client.config.auth[0].challenge, AuthChallenge::Never);
         let Child::Scope(scope) = &client.children[1] else {
@@ -1794,8 +1766,8 @@ mod tests {
         let unknown = error(quote! {
             client Api {
                 base "https://example.test";
-                GET Read() -> Bytes { auth bearer missing; }
             }
+            GET Read() -> Bytes { auth bearer missing; }
         });
         assert!(unknown.contains("unknown credential `missing`"));
 
@@ -1806,8 +1778,8 @@ mod tests {
                     secret key_value: String;
                     credential key = api_key(secret.key_value);
                 }
-                GET Read() -> Bytes { auth bearer key; }
             }
+            GET Read() -> Bytes { auth bearer key; }
         });
         assert!(incompatible.contains("incompatible"));
 
@@ -1815,8 +1787,8 @@ mod tests {
             client Api {
                 base "https://example.test";
                 credentials { credential session = custom crate::SessionToken; }
-                GET Read() -> Bytes { auth bearer session; }
             }
+            GET Read() -> Bytes { auth bearer session; }
         });
         assert!(custom.contains("requires an explicit challenge suffix"));
 
@@ -1829,10 +1801,10 @@ mod tests {
                     credential first = bearer(secret.first_value);
                     credential second = api_key(secret.second_value);
                 }
-                GET Read() -> Bytes {
-                    auth bearer first challenge unauthorized;
-                    auth query "key" = second challenge unauthorized_or_forbidden;
-                }
+            }
+            GET Read() -> Bytes {
+                auth bearer first challenge unauthorized;
+                auth query "key" = second challenge unauthorized_or_forbidden;
             }
         });
         assert!(challengers.contains("at most one challenge-enabled"));
@@ -1845,8 +1817,8 @@ mod tests {
                     credential bearer = bearer(secret.token);
                 }
                 headers { "Authorization" = "public"; }
-                GET Read() -> Bytes { auth bearer bearer; }
             }
+            GET Read() -> Bytes { auth bearer bearer; }
         });
         assert!(authorization.contains("reserved by transport, authentication"));
 
@@ -1858,8 +1830,8 @@ mod tests {
                     credential key = api_key(secret.key_value);
                 }
                 headers { "X-Key" = "public"; }
-                GET Read() -> Bytes { auth header "x-key" = key; }
             }
+            GET Read() -> Bytes { auth header "x-key" = key; }
         });
         assert!(header.contains("collides"));
 
@@ -1871,8 +1843,8 @@ mod tests {
                     credential key = api_key(secret.key_value);
                 }
                 query { "key" = "public"; }
-                GET Read() -> Bytes { auth query "key" = key; }
             }
+            GET Read() -> Bytes { auth query "key" = key; }
         });
         assert!(query.contains("collides"));
 
@@ -1885,10 +1857,10 @@ mod tests {
                     credential first = api_key(secret.first_value);
                     credential second = api_key(secret.second_value);
                 }
-                GET Read() -> Bytes {
-                    auth header "X-Key" = first;
-                    auth header "x-key" = second;
-                }
+            }
+            GET Read() -> Bytes {
+                auth header "X-Key" = first;
+                auth header "x-key" = second;
             }
         });
         assert!(duplicate_auth.contains("collides"));
@@ -1903,15 +1875,15 @@ mod tests {
                     secret key_value: String;
                     credential key = api_key(secret.key_value);
                 }
-                GET Optional(
-                    query_value: Option<String>,
-                    header_value: Option<String>,
-                ) -> Bytes {
-                    query { "key" = ep.query_value; }
-                    headers { "X-Key" = ep.header_value; }
-                    auth query "key" = key;
-                    auth header "X-Key" = key;
-                }
+            }
+            GET Optional(
+                query_value: Option<String>,
+                header_value: Option<String>,
+            ) -> Bytes {
+                query { "key" = ep.query_value; }
+                headers { "X-Key" = ep.header_value; }
+                auth query "key" = key;
+                auth header "X-Key" = key;
             }
         });
     }
@@ -1929,9 +1901,9 @@ mod tests {
             client Api {
                 base "https://example.test";
                 credentials { credential session = endpoint Login; }
-                GET Login() -> Bytes {
-                    auth bearer session challenge never;
-                }
+            }
+            GET Login() -> Bytes {
+                auth bearer session challenge never;
             }
         });
         assert!(direct.contains("dependency or authentication cycle"));
@@ -1943,12 +1915,12 @@ mod tests {
                     credential first = endpoint First;
                     credential second = endpoint Second;
                 }
-                GET First() -> Bytes {
-                    auth bearer second challenge never;
-                }
-                GET Second() -> Bytes {
-                    auth bearer first challenge never;
-                }
+            }
+            GET First() -> Bytes {
+                auth bearer second challenge never;
+            }
+            GET Second() -> Bytes {
+                auth bearer first challenge never;
             }
         });
         assert!(mutual.contains("dependency or authentication cycle"));
@@ -1956,24 +1928,13 @@ mod tests {
 
     #[test]
     fn generated_name_collisions_cover_aliases_traits_and_generic_request_methods() {
-        let support = resolve(
-            parse::parse(quote! {
-                client lower_api { base "https://example.test"; }
-            })
-            .expect("AST"),
-        )
-        .err()
-        .expect("client/support module collision");
-        assert!(support.to_string().contains("lower_api"));
-        assert!(support.to_string().contains("collides"));
-
         let alias = resolve(
             parse::parse(quote! {
                 client Api {
                     base "https://example.test";
-                    GET First() as same -> Bytes;
-                    GET Second() as same -> Bytes;
                 }
+                GET First() as same -> Bytes;
+                GET Second() as same -> Bytes;
             })
             .expect("AST"),
         )
@@ -1987,9 +1948,9 @@ mod tests {
             parse::parse(quote! {
                 client Api {
                     base "https://example.test";
-                    GET Read(value: Option<String>) -> Bytes;
-                    GET ReadRequestExt() -> Bytes;
                 }
+                GET Read(value: Option<String>) -> Bytes;
+                GET ReadRequestExt() -> Bytes;
             })
             .expect("AST"),
         )
@@ -2001,8 +1962,8 @@ mod tests {
             parse::parse(quote! {
                 client Api {
                     base "https://example.test";
-                    GET Read(timeout: Option<u64>) -> Bytes;
                 }
+                GET Read(timeout: Option<u64>) -> Bytes;
             })
             .expect("AST"),
         )
@@ -2035,7 +1996,7 @@ mod tests {
         let helper_secret = error(quote! {
             client Api {
                 base "https://example.test";
-                var token: Option<String>;
+                vars { token: Option<String>; }
                 credentials {
                     secret clear_token: String;
                     credential key = api_key(secret.clear_token);
@@ -2061,8 +2022,8 @@ mod tests {
             client Api {
                 base "https://example.test";
                 credentials { credential session = endpoint Login; }
-                GET Login(acquire_as_session: Option<String>) -> Bytes;
             }
+            GET Login(acquire_as_session: Option<String>) -> Bytes;
         });
         assert!(acquisition_method.contains("acquire_as_session"));
         assert!(acquisition_method.contains("collides"));
@@ -2071,9 +2032,9 @@ mod tests {
             client Api {
                 base "https://example.test";
                 credentials { credential session = endpoint Read; }
-                GET Read() -> Bytes;
-                GET ReadRequestExt() -> Bytes;
             }
+            GET Read() -> Bytes;
+            GET ReadRequestExt() -> Bytes;
         });
         assert!(acquisition_trait.contains("collides"));
     }
@@ -2083,23 +2044,23 @@ mod tests {
         let api = resolve_ok(quote! {
             client Api {
                 base "https://example.test";
-                var tenant: String;
-                GET Offset(offset: u64, limit: u32) -> Json<Vec<u32>> {
-                    paginate concord_core::advanced::OffsetPagination {
-                        offset: bind ep.offset,
-                        page_size: bind ep.limit,
-                    }
+                vars { tenant: String; }
+            }
+            GET Offset(offset: u64, limit: u32) -> Json<Vec<u32>> {
+                paginate concord_core::advanced::OffsetPagination {
+                    offset: bind ep.offset,
+                    page_size: bind ep.limit,
                 }
-                GET Vendor(cursor: Option<String>) -> Json<Vec<u32>> {
-                    paginate crate::Vendor<String> {
-                        cursor: bind ep.cursor,
-                        tenant: vars.tenant,
-                        attempts: 0,
-                    }
+            }
+            GET Vendor(cursor: Option<String>) -> Json<Vec<u32>> {
+                paginate crate::Vendor<String> {
+                    cursor: bind ep.cursor,
+                    tenant: vars.tenant,
+                    attempts: 0,
                 }
             }
         });
-        let endpoints = &api.clients[0].children;
+        let endpoints = &api.client.children;
         let Child::Endpoint(offset) = &endpoints[0] else {
             panic!("offset endpoint");
         };
@@ -2150,15 +2111,15 @@ mod tests {
         let api = resolve_ok(quote! {
             client Api {
                 base "https://example.test";
-                GET Read(offset: String, limit: bool) -> Json<Vec<u32>> {
-                    paginate crate::ArbitraryController {
-                        anything: bind ep.offset,
-                        another: bind ep.limit,
-                    }
+            }
+            GET Read(offset: String, limit: bool) -> Json<Vec<u32>> {
+                paginate crate::ArbitraryController {
+                    anything: bind ep.offset,
+                    another: bind ep.limit,
                 }
             }
         });
-        let Child::Endpoint(endpoint) = &api.clients[0].children[0] else {
+        let Child::Endpoint(endpoint) = &api.client.children[0] else {
             panic!("endpoint");
         };
         assert_eq!(
@@ -2175,10 +2136,10 @@ mod tests {
             parse::parse(quote! {
                 client Api {
                     base "https://example.test";
-                    GET Read(offset: u64) -> Json<Vec<u32>> {
-                        paginate crate::Controller {
-                            state: bind ep.missing,
-                        }
+                }
+                GET Read(offset: u64) -> Json<Vec<u32>> {
+                    paginate crate::Controller {
+                        state: bind ep.missing,
                     }
                 }
             })

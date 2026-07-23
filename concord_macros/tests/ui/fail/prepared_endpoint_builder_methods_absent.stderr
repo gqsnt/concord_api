@@ -1,10 +1,10 @@
-error[E0599]: no method named `path` found for struct `PreparedEndpointBuilder` in the current scope
+error[E0599]: no method named `path` found for struct `PreparedEndpointBuilder<R>` in the current scope
  --> tests/ui/fail/prepared_endpoint_builder_methods_absent.rs:5:21
   |
 5 |     let _ = builder.path("/raw/fragment");
   |                     ^^^^ method not found in `PreparedEndpointBuilder`
 
-error[E0599]: no method named `paginate` found for struct `PreparedEndpointBuilder` in the current scope
+error[E0599]: no method named `paginate` found for struct `PreparedEndpointBuilder<R>` in the current scope
  --> tests/ui/fail/prepared_endpoint_builder_methods_absent.rs:8:21
   |
 8 |     let _ = builder.paginate(1_u32);

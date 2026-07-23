@@ -1,10 +1,11 @@
 use concord_macros::api;
 
 api! {
-    client DuplicateApi {
+    client FirstApi {
         base "https://one.example.test";
     }
-    client DuplicateApi {
+
+    client SecondApi {
         base "https://two.example.test";
     }
 }

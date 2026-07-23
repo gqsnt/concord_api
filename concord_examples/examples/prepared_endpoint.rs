@@ -7,8 +7,9 @@ use concord_macros::api;
 api! {
     client PreparedApi {
         base "https://prepared.example.test/";
-        GET Generated() -> NoContent;
     }
+
+    GET Generated() -> NoContent;
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

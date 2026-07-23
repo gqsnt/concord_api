@@ -6,9 +6,11 @@ use concord_macros::api;
 api! {
     client ReferenceApi {
         base "https://reference.example.test/root/";
-        var tenant: String;
-        var locale: Option<String>;
-        var page_size: u32 = 25;
+        vars {
+            tenant: String;
+            locale: Option<String>;
+            page_size: u32 = 25;
+        }
         credentials {
             secret api_key: String;
             credential application_key = api_key(secret.api_key);
@@ -26,35 +28,38 @@ api! {
             100 / 1s;
             1000 / 1m;
         }
-
-        GET Status(verbose: Option<bool>) -> Bytes {
-            path ["status"];
-            query { "verbose" = ep.verbose; }
-            auth off;
-            timeout off;
-        }
-
-        scope Regions(region: String, language: Option<String>) {
-            host [scope.region, "api"];
-            path ["regions", scope.region];
-            query { "language" = scope.language; }
-            headers { "X-Region" = scope.region; }
-            auth header "X-Api-Key" = application_key challenge never;
-            timeout 5s;
-
-            METHOD("PROPFIND") Resource(id: String, tags: Vec<String>) as fetch -> Text {
-                path [fmt["resource-", ep.id]];
-                query { "tag" = ep.tags; }
-                headers { "Accept-Language" = scope.language; }
-            }
-        }
     }
 
+    GET Status(verbose: Option<bool>) -> Bytes {
+        path ["status"];
+        query { "verbose" = ep.verbose; }
+        auth off;
+        timeout off;
+    }
+
+    scope Regions(region: String, language: Option<String>) {
+        host [scope.region, "api"];
+        path ["regions", scope.region];
+        query { "language" = scope.language; }
+        headers { "X-Region" = scope.region; }
+        auth header "X-Api-Key" = application_key challenge never;
+        timeout 5s;
+
+        METHOD("PROPFIND") Resource(id: String, tags: Vec<String>) as fetch -> Text {
+            path [fmt["resource-", ep.id]];
+            query { "tag" = ep.tags; }
+            headers { "Accept-Language" = scope.language; }
+        }
+    }
+}
+
+api! {
     client ReqwestRetryReference {
         base "https://retry-reference.example.test/";
         retry reqwest_default;
-        GET Health() -> NoContent;
     }
+
+    GET Health() -> NoContent;
 }
 
 fn main() -> Result<(), concord_core::prelude::ClientBuildError> {

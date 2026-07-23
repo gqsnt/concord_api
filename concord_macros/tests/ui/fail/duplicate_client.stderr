@@ -1,5 +1,0 @@
-error: duplicate client `DuplicateApi`
- --> tests/ui/fail/duplicate_client.rs:7:12
-  |
-7 |     client DuplicateApi {
-  |            ^^^^^^^^^^^^

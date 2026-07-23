@@ -42,21 +42,22 @@ impl DecodeBody for ObservedCodec {
 api! {
     client RawSuccessApi {
         base "http://raw-success.example.test/root/";
-
-        GET TextValue() -> Text { path ["text"]; }
-        GET CustomValue() -> crate::ObservedCodec { path ["custom"]; }
-        GET BytesValue() -> Bytes { path ["bytes"]; }
-        GET EmptyValue() -> NoContent { path ["empty"]; }
-        GET StreamValue() -> Stream<OctetStream> { path ["stream"]; }
     }
+
+    GET TextValue() -> Text { path ["text"]; }
+    GET CustomValue() -> crate::ObservedCodec { path ["custom"]; }
+    GET BytesValue() -> Bytes { path ["bytes"]; }
+    GET EmptyValue() -> NoContent { path ["empty"]; }
+    GET StreamValue() -> Stream<OctetStream> { path ["stream"]; }
 }
 
 #[cfg(feature = "json")]
 api! {
     client RawJsonApi {
         base "http://raw-json.example.test/";
-        GET JsonValue() -> Json<Vec<u32>>;
     }
+
+    GET JsonValue() -> Json<Vec<u32>>;
 }
 
 fn proxy(server: &ScriptedServer) -> SafeProxy {

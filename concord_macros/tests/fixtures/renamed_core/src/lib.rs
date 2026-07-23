@@ -63,37 +63,40 @@ impl runtime::advanced::PaginationController<Vec<u8>> for RenamedController {
 api! {
     client RenamedApi {
         base "http://renamed.example.test";
-        var tenant: String;
-        var locale: Option<String>;
-        var page_size: u32 = 25;
+        vars {
+            tenant: String;
+            locale: Option<String>;
+            page_size: u32 = 25;
+        }
         credentials {
             secret api_key: String;
             credential application_key = api_key(secret.api_key);
         }
-        scope resources(
-            scope_value: String,
-            region: Option<String>,
-            scope_limit: u32 = 50,
-        ) {
-            path ["scopes", scope.scope_value, "resources"];
-            POST ById(
-                endpoint_value: String,
-                verbose: Option<bool>,
-                limit: u32 = 10,
-                body: Text,
-            ) -> Text {
-                path [ep.endpoint_value];
-                auth header "X-Api-Key" = application_key;
-            }
-            POST Custom(body: crate::WireCodec) -> crate::WireCodec;
-            POST StreamUpload(body: Stream<OctetStream>) -> Bytes;
-            GET StreamDownload() -> Stream<OctetStream>;
-            POST MultipartUpload(body: Multipart) -> NoContent;
-            GET Pages(cursor: Option<String>) -> crate::PageCodec {
-                query { "cursor" = ep.cursor; }
-                paginate crate::RenamedController {
-                    cursor: bind ep.cursor,
-                }
+    }
+
+    scope resources(
+        scope_value: String,
+        region: Option<String>,
+        scope_limit: u32 = 50,
+    ) {
+        path ["scopes", scope.scope_value, "resources"];
+        POST ById(
+            endpoint_value: String,
+            verbose: Option<bool>,
+            limit: u32 = 10,
+            body: Text,
+        ) -> Text {
+            path [ep.endpoint_value];
+            auth header "X-Api-Key" = application_key;
+        }
+        POST Custom(body: crate::WireCodec) -> crate::WireCodec;
+        POST StreamUpload(body: Stream<OctetStream>) -> Bytes;
+        GET StreamDownload() -> Stream<OctetStream>;
+        POST MultipartUpload(body: Multipart) -> NoContent;
+        GET Pages(cursor: Option<String>) -> crate::PageCodec {
+            query { "cursor" = ep.cursor; }
+            paginate crate::RenamedController {
+                cursor: bind ep.cursor,
             }
         }
     }
@@ -102,10 +105,13 @@ api! {
 api! {
     client RenamedRateApi {
         base "http://renamed-rate.example.test";
-        var tenant: String;
+        vars {
+            tenant: String;
+        }
         rate_limit { 10 / 1m; }
-        GET Read() -> Bytes;
     }
+
+    GET Read() -> Bytes;
 }
 
 use renamed_api::prelude::*;

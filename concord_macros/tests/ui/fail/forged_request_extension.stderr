@@ -1,7 +1,7 @@
 error[E0603]: module `__concord_item_request_ext_seal` is private
-  --> tests/ui/fail/forged_request_extension.rs:15:35
+  --> tests/ui/fail/forged_request_extension.rs:16:35
    |
-15 |         _: setter_api::endpoints::__concord_item_request_ext_seal::Token,
+16 |         _: setter_api::endpoints::__concord_item_request_ext_seal::Token,
    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ----- struct `Token` is not publicly re-exported
    |                                   |
    |                                   private module
@@ -9,6 +9,6 @@ error[E0603]: module `__concord_item_request_ext_seal` is private
 note: the module `__concord_item_request_ext_seal` is defined here
   --> tests/ui/fail/forged_request_extension.rs:3:1
    |
-3  | api! {
+ 3 | api! {
    | ^^^^
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

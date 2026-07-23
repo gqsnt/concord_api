@@ -26,9 +26,10 @@ impl RateLimitObserver for FixtureObserver {
 api! {
     client EmptyGeneratedApi {
         base "http://no-governor-empty.example.test/";
-        GET Read() -> Bytes {
-            path ["read"];
-        }
+    }
+
+    GET Read() -> Bytes {
+        path ["read"];
     }
 }
 
@@ -41,8 +42,9 @@ api! {
             30 / 10m;
         }
         rate_limit_observer crate::FixtureObserver;
-        GET Read() -> Bytes {
-            path ["read"];
-        }
+    }
+
+    GET Read() -> Bytes {
+        path ["read"];
     }
 }

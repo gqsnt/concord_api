@@ -55,10 +55,11 @@ impl RecordDecoder for PipeRecords {
 api! {
     client RecordsApi {
         base "https://records.example.test/";
-        GET Custom() -> Records<crate::PipeRecords>;
-        GET CsvRows() -> Records<Csv<(String, u32)>>;
-        GET NdJsonValues() -> Records<NdJson<u32>>;
     }
+
+    GET Custom() -> Records<crate::PipeRecords>;
+    GET CsvRows() -> Records<Csv<(String, u32)>>;
+    GET NdJsonValues() -> Records<NdJson<u32>>;
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

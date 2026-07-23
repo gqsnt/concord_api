@@ -1,5 +1,5 @@
 error: unsupported scope declaration
- --> tests/ui/fail/malformed.rs:8:13
-  |
-8 |             FETCH ById(endpoint_value: String) -> NoContent {
-  |             ^^^^^
+  --> tests/ui/fail/malformed.rs:10:9
+   |
+10 |         FETCH ById(endpoint_value: String) -> NoContent {
+   |         ^^^^^

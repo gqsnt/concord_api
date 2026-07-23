@@ -8,13 +8,14 @@ use concord_macros::api;
 api! {
     client BodyApi {
         base "https://body.example.test/";
-        POST JsonRoundTrip(body: Json<Vec<u32>>) -> Json<Vec<u32>>;
-        POST TextRoundTrip(body: Text) -> Text;
-        POST CustomRoundTrip(body: concord_examples::ExampleCodec) -> concord_examples::ExampleCodec;
-        POST Upload(body: Stream<OctetStream>) -> Bytes;
-        GET Download() -> Stream<OctetStream>;
-        POST MultipartUpload(body: Multipart) -> NoContent;
     }
+
+    POST JsonRoundTrip(body: Json<Vec<u32>>) -> Json<Vec<u32>>;
+    POST TextRoundTrip(body: Text) -> Text;
+    POST CustomRoundTrip(body: concord_examples::ExampleCodec) -> concord_examples::ExampleCodec;
+    POST Upload(body: Stream<OctetStream>) -> Bytes;
+    GET Download() -> Stream<OctetStream>;
+    POST MultipartUpload(body: Multipart) -> NoContent;
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

@@ -7,16 +7,19 @@ This is the consolidated reference for the `api!` declaration language. Rust typ
 
 ## DSL reference
 
-`concord_macros::api!` accepts one or more client declarations.
+`concord_macros::api!` accepts exactly one client declaration. The client is required, must be first, and contains configuration only. Root scopes and endpoints follow the client block.
 
 ### Top-level grammar
 
 ```text
-api = client+
-client = "client" IDENT "{" client_body "}"
+api      = client child*
+client   = "client" IDENT "{" client_config "}"
+child    = scope | endpoint
+vars     = "vars" "{" variable* "}"
+variable = IDENT ":" TYPE ("=" DEFAULT)? ";"
 ```
 
-Each client begins with a fixed `base` URL and follows the supported declaration order.
+The client begins with a fixed `base` URL and follows the supported configuration order. Use separate `api!` invocations when a module needs multiple generated clients.
 
 Reference pages:
 
@@ -46,26 +49,29 @@ timeout
 rate_limit
 ```
 
-Pagination follows endpoint layer clauses. Client retry and credentials occur before layer clauses. Client `rate_limit_observer` follows the client rate-limit declaration and precedes children.
+Pagination follows endpoint layer clauses. Client variables, credentials, and retry occur before layer clauses. Client `rate_limit_observer` follows the client rate-limit declaration and precedes the end of the client block. Root children are parsed only after that block closes.
 
 The macro intentionally rejects arbitrary Rust expressions and semantic type-name dispatch.
 
 ## DSL: client declarations
 
 ```rust
-client NAME {
-    base "https://example.com/root/";
-    var ...;
-    credentials { ... }
-    retry ...;
-    host ...;
-    path ...;
-    query ...
-    headers ...
-    auth ...;
-    timeout ...;
-    rate_limit { ... }
-    rate_limit_observer PATH;
+api! {
+    client NAME {
+        base "https://example.com/root/";
+        vars { ... }
+        credentials { ... }
+        retry ...;
+        host ...;
+        path ...;
+        query ...
+        headers ...
+        auth ...;
+        timeout ...;
+        rate_limit { ... }
+        rate_limit_observer PATH;
+    }
+
     scope ...
     ENDPOINT ...
 }
@@ -77,7 +83,7 @@ Required, first, and unique. It must be an absolute `http` or `https` URL with h
 
 ### Client values
 
-Zero or more `var` declarations follow the base. See [Variables and secrets](dsl.md#dsl-variables-and-secrets).
+At most one `vars { ... }` block follows the base. Entries inside it are direct declarations without a `var` keyword. See [Variables and secrets](dsl.md#dsl-variables-and-secrets).
 
 ### Credentials
 
@@ -93,20 +99,22 @@ Client request shaping, auth, timeout, and one lexical rate-limit rule follow in
 
 ### Children
 
-Scopes and endpoints follow configuration. Their generated snake-case names must be unique within the client.
+Root scopes and endpoints follow the closing client brace. Although they are syntactic siblings of `client`, they belong to that single generated client, inherit its configuration, and must have unique generated snake-case names within their owner.
 
 ### Multiple clients
 
-One `api!` invocation may declare several clients. Each produces its own client type and generated module. They can share application extension types but have distinct generated endpoint capabilities and rate-limit declaration identities.
+Declare each generated client in an independent `api!` invocation. Distinct invocations may coexist in the same module and produce distinct endpoint capabilities and rate-limit declaration identities.
 
 ## DSL: variables and secrets
 
 ### Client variables
 
 ```rust
-var tenant: String;
-var locale: Option<String>;
-var page_size: u32 = 25;
+vars {
+    tenant: String;
+    locale: Option<String>;
+    page_size: u32 = 25;
+}
 ```
 
 A variable can be:
@@ -125,6 +133,8 @@ Defaults accept only:
 Calls, methods, macros, blocks, and collection expressions are rejected.
 
 Variables are immutable client snapshots and are referenced as `vars.name` in public expressions and stable pagination initializers.
+
+Defaulted variables are omitted from the convenience constructor. They remain overridable with builder setters, and their generated reset methods restore deferred evaluation of the declared default.
 
 ### Scope and endpoint parameters
 
@@ -162,7 +172,7 @@ scope NAME(parameter: Type, ...) {
 }
 ```
 
-Scopes may nest to depth 64. Retry, client values, base, credentials, and rate-limit observers are client-only.
+Scopes may nest to depth 64. Retry, the `vars` block, base, credentials, and rate-limit observers are client-only.
 
 ### Endpoint
 
@@ -543,7 +553,7 @@ The macro aims to diagnose structural mistakes at the declaration and leave norm
 
 Examples:
 
-- missing or duplicate client/base declarations;
+- missing, misplaced, or second client declarations and duplicate bases;
 - invalid fixed URL;
 - duplicate normalized generated names;
 - wrong clause order;

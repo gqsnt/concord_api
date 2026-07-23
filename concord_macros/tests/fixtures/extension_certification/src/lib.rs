@@ -457,29 +457,31 @@ impl RuntimeHooks for ExtensionHooks {
 concord_macros::api! {
     client ExtensionApi {
         base "http://extension.example.test/v1/";
-        var construction: crate::ExtensionConstructionProbe;
+        vars {
+            construction: crate::ExtensionConstructionProbe;
+        }
         credentials {
             credential session = custom crate::ExtensionCredential;
         }
         rate_limit { 10 / 1s; }
         rate_limit_observer crate::ExtensionObserver;
-
-        GET Protected() -> Bytes {
-            auth header "X-Session" = session challenge unauthorized;
-        }
-
-        GET Pages(cursor: Option<String>) -> crate::ExtensionPageCodec {
-            query { "cursor" = ep.cursor; }
-            paginate crate::ExtensionController {
-                cursor: bind ep.cursor,
-                construction: vars.construction,
-            }
-        }
-
-        POST GenericBody(body: crate::ExtensionRequestSpec) -> crate::ExtensionBufferedSpec;
-        GET GenericStream() -> crate::ExtensionStreamingSpec;
-        GET GenericDiscard() -> crate::ExtensionDiscardSpec;
     }
+
+    GET Protected() -> Bytes {
+        auth header "X-Session" = session challenge unauthorized;
+    }
+
+    GET Pages(cursor: Option<String>) -> crate::ExtensionPageCodec {
+        query { "cursor" = ep.cursor; }
+        paginate crate::ExtensionController {
+            cursor: bind ep.cursor,
+            construction: vars.construction,
+        }
+    }
+
+    POST GenericBody(body: crate::ExtensionRequestSpec) -> crate::ExtensionBufferedSpec;
+    GET GenericStream() -> crate::ExtensionStreamingSpec;
+    GET GenericDiscard() -> crate::ExtensionDiscardSpec;
 }
 
 concord_macros::api! {
@@ -490,10 +492,10 @@ concord_macros::api! {
         }
         rate_limit { 10 / 1s; }
         rate_limit_observer crate::ExtensionObserver;
+    }
 
-        GET Protected() -> Bytes {
-            auth header "X-Session" = session challenge unauthorized;
-        }
+    GET Protected() -> Bytes {
+        auth header "X-Session" = session challenge unauthorized;
     }
 }
 
@@ -501,24 +503,27 @@ concord_macros::api! {
 concord_macros::api! {
     client RecordExtensionApi {
         base "http://record-extension.example.test/";
-        GET Custom() -> Records<crate::ExtensionRecordDecoder>;
     }
+
+    GET Custom() -> Records<crate::ExtensionRecordDecoder>;
 }
 
 #[cfg(feature = "csv")]
 concord_macros::api! {
     client CsvExtensionApi {
         base "http://csv-extension.example.test/";
-        GET Rows() -> Records<Csv<Vec<String>>>;
     }
+
+    GET Rows() -> Records<Csv<Vec<String>>>;
 }
 
 #[cfg(feature = "ndjson")]
 concord_macros::api! {
     client NdJsonExtensionApi {
         base "http://ndjson-extension.example.test/";
-        GET Values() -> Records<NdJson<u32>>;
     }
+
+    GET Values() -> Records<NdJson<u32>>;
 }
 
 /// Compiles every stable extension workflow without private or native integration imports.

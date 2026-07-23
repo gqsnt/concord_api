@@ -6,8 +6,9 @@ use concord_macros::api;
 api! {
     client MinimalApi {
         base "https://minimal.example.test/v1/";
-        GET Health() -> NoContent;
     }
+
+    GET Health() -> NoContent;
 }
 
 fn main() -> Result<(), concord_core::prelude::ClientBuildError> {

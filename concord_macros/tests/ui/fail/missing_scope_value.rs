@@ -20,11 +20,12 @@ impl Display for EndpointValue {
 api! {
     client MissingScopeApi {
         base "https://missing-scope.example.test";
-        scope resources(scope_value: crate::ScopeValue) {
-            path ["scopes", scope.scope_value, "resources"];
-            GET ById(endpoint_value: crate::EndpointValue) -> NoContent {
-                path [ep.endpoint_value];
-            }
+    }
+
+    scope resources(scope_value: crate::ScopeValue) {
+        path ["scopes", scope.scope_value, "resources"];
+        GET ById(endpoint_value: crate::EndpointValue) -> NoContent {
+            path [ep.endpoint_value];
         }
     }
 }

@@ -16,12 +16,7 @@ use crate::names::{canonical_ident, public_ident, to_snake_case};
 const GENERATED_CONTRACT_VERSION: u32 = 14;
 
 pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
-    let clients = api
-        .clients
-        .iter()
-        .map(|client| generate_client(client, core_path))
-        .collect::<Vec<_>>();
-    quote!(#(#clients)*)
+    generate_client(&api.client, core_path)
 }
 
 fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
@@ -3738,20 +3733,17 @@ mod tests {
     use crate::{parse, resolve};
 
     #[test]
-    fn complete_generation_consumes_normalized_multi_client_ir() {
+    fn complete_generation_consumes_normalized_singular_client_ir() {
         let source = parse::parse(quote! {
             client FirstApi {
                 base "https://example.test";
-                var tenant: String;
-                GET Root(id: String, verbose: Option<bool>) -> Bytes {
-                    path [vars.tenant, ep.id];
-                }
+                vars { tenant: String; }
             }
-            client SecondApi {
-                base "http://example.test";
-                scope resources(region: String) {
-                    GET List() -> NoContent;
-                }
+            GET Root(id: String, verbose: Option<bool>) -> Bytes {
+                path [vars.tenant, ep.id];
+            }
+            scope resources(region: String) {
+                GET List() -> NoContent;
             }
         })
         .expect("AST");
@@ -3759,7 +3751,7 @@ mod tests {
         let output = generate(&api, &quote!(::concord_core)).to_string();
         assert!(!output.contains("FirstApiRegions"));
         assert!(output.contains("FirstApiRootRequestExt"));
-        assert!(output.contains("SecondApi"));
+        assert!(output.contains("resources"));
         assert!(output.contains("map_endpoint"));
     }
 }

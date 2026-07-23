@@ -3,18 +3,22 @@ use concord_macros::api;
 api! {
     client AlphaApi {
         base "https://alpha.example.test";
-        scope health() {
-            path ["health"];
-            GET Download() -> Stream<OctetStream>;
-        }
     }
 
+    scope health() {
+        path ["health"];
+        GET Download() -> Stream<OctetStream>;
+    }
+}
+
+api! {
     client BetaApi {
         base "https://beta.example.test";
-        scope health() {
-            path ["health"];
-            GET Download() -> Stream<OctetStream>;
-        }
+    }
+
+    scope health() {
+        path ["health"];
+        GET Download() -> Stream<OctetStream>;
     }
 }
 

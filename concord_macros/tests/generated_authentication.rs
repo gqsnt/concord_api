@@ -58,7 +58,9 @@ impl CredentialProvider for SessionProvider {
 api! {
     client AuthApi {
         base "http://authentication.example.test/";
-        var tenant: String;
+        vars {
+            tenant: String;
+        }
         credentials {
             secret api_secret: String;
             secret bearer_secret: String;
@@ -78,28 +80,29 @@ api! {
             credential acquired = endpoint Login;
             credential session = custom crate::SessionToken;
         }
-        GET Login() -> crate::SessionCodec;
-        GET ApiKeyEndpoint() -> Bytes {
-            auth header "X-Api-Key" = application_key;
+    }
+
+    GET Login() -> crate::SessionCodec;
+    GET ApiKeyEndpoint() -> Bytes {
+        auth header "X-Api-Key" = application_key;
+    }
+    GET BearerEndpoint() -> Bytes {
+        auth bearer static_bearer;
+    }
+    GET BasicEndpoint() -> Bytes {
+        auth basic login;
+    }
+    GET OAuthEndpoint() -> Bytes {
+        auth bearer oauth;
+    }
+    scope Nested() {
+        auth header "X-Session" = session challenge never;
+        GET Inherited() -> Bytes;
+        GET Replaced() -> Bytes {
+            auth replace query "token" = acquired challenge never;
         }
-        GET BearerEndpoint() -> Bytes {
-            auth bearer static_bearer;
-        }
-        GET BasicEndpoint() -> Bytes {
-            auth basic login;
-        }
-        GET OAuthEndpoint() -> Bytes {
-            auth bearer oauth;
-        }
-        scope Nested() {
-            auth header "X-Session" = session challenge never;
-            GET Inherited() -> Bytes;
-            GET Replaced() -> Bytes {
-                auth replace query "token" = acquired challenge never;
-            }
-            GET Public() -> Bytes {
-                auth off;
-            }
+        GET Public() -> Bytes {
+            auth off;
         }
     }
 }

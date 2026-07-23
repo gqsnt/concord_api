@@ -4,8 +4,9 @@ api! {
     client Api {
         base "https://example.test";
         rate_limit missing;
-        GET Read() -> Bytes;
     }
+
+    GET Read() -> Bytes;
 }
 
 fn main() {}

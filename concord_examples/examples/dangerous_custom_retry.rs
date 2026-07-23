@@ -11,8 +11,9 @@ api! {
     client CustomRetryApi {
         base "https://custom-retry.example.test/";
         retry custom crate::bounded_custom_retry;
-        GET Health() -> NoContent;
     }
+
+    GET Health() -> NoContent;
 }
 
 fn main() -> Result<(), concord_core::prelude::ClientBuildError> {

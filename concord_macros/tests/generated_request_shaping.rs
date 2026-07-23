@@ -79,9 +79,11 @@ pub const ENDPOINT_DEFAULT: DropProbe = DropProbe::new("endpoint-default", endpo
 api! {
     client ShapeApi {
         base "http://request-shaping.example.test:4317/fixed/";
-        var tenant: String;
-        var locale: Option<String>;
-        var client_marker: crate::DropProbe = crate::CLIENT_DEFAULT;
+        vars {
+            tenant: String;
+            locale: Option<String>;
+            client_marker: crate::DropProbe = crate::CLIENT_DEFAULT;
+        }
         retry off;
         host ["api"];
         path ["v1"];
@@ -93,132 +95,140 @@ api! {
             "X-Client-Marker" = vars.client_marker;
         }
         timeout 5s;
+    }
 
-        GET Root(verbose: Option<bool>) -> Bytes {
-            path ["root"];
-            query { "verbose" = ep.verbose; }
-        }
+    GET Root(verbose: Option<bool>) -> Bytes {
+        path ["root"];
+        query { "verbose" = ep.verbose; }
+    }
 
-        GET Search(tags: Vec<String>, filters: Option<Vec<String>>) -> Bytes {
-            path ["search"];
-            query {
-                "tag" = ep.tags;
-                "filter" = ep.filters;
-            }
-        }
-
-        GET Accept(accept: String) -> Text {
-            path ["accept"];
-            headers { "Accept" = ep.accept; }
-        }
-
-        GET PublicContentType() -> Bytes {
-            path ["public-content-type"];
-            headers { "Content-Type" = "application/example"; }
-        }
-
-        POST TextConflict(body: Text) -> Bytes {
-            path ["text-conflict"];
-            headers { "Content-Type" = "application/example"; }
-        }
-
-        POST StreamConflict(body: Stream<OctetStream>) -> Bytes {
-            path ["stream-conflict"];
-            headers { "Content-Type" = "application/example"; }
-        }
-
-        POST MultipartConflict(body: Multipart) -> NoContent {
-            path ["multipart-conflict"];
-            headers { "Content-Type" = "application/example"; }
-        }
-
-        GET Streamed(verbose: Option<bool>) -> Stream<OctetStream> {
-            path ["streamed"];
-            query { "verbose" = ep.verbose; }
-        }
-
-        GET UnsafePath(segment: crate::ShapeProbe) -> Bytes {
-            path ["unsafe-path", ep.segment];
-        }
-
-        GET UnsafeHost(label: crate::ShapeProbe) -> Bytes {
-            host [ep.label];
-            path ["unsafe-host"];
-        }
-
-        GET UnsafeHeader(value: crate::ShapeProbe) -> Bytes {
-            path ["unsafe-header"];
-            headers { "X-Dynamic" = ep.value; }
-        }
-
-        scope regions(
-            region: String,
-            language: Option<String>,
-            scope_marker: crate::DropProbe = crate::SCOPE_DEFAULT,
-        ) {
-            host [scope.region, "api"];
-            path ["regions", scope.region];
-            query {
-                "language" = scope.language;
-                "scope_marker" = scope.scope_marker;
-            }
-            headers { "X-Region" = scope.region; }
-
-            scope users(account: String) {
-                path ["users", scope.account];
-                headers { "X-Account" = scope.account; }
-
-                METHOD("PROPFIND") ById(
-                    id: String,
-                    verbose: Option<bool>,
-                    endpoint_marker: crate::DropProbe = crate::ENDPOINT_DEFAULT,
-                ) as fetch -> Bytes {
-                    path [fmt["id-", ep.id]];
-                    query {
-                        "verbose" = ep.verbose;
-                        "endpoint_marker" = ep.endpoint_marker;
-                    }
-                    headers { "X-Endpoint-Marker" = ep.endpoint_marker; }
-                    timeout 2s;
-                }
-            }
+    GET Search(tags: Vec<String>, filters: Option<Vec<String>>) -> Bytes {
+        path ["search"];
+        query {
+            "tag" = ep.tags;
+            "filter" = ep.filters;
         }
     }
 
+    GET Accept(accept: String) -> Text {
+        path ["accept"];
+        headers { "Accept" = ep.accept; }
+    }
+
+    GET PublicContentType() -> Bytes {
+        path ["public-content-type"];
+        headers { "Content-Type" = "application/example"; }
+    }
+
+    POST TextConflict(body: Text) -> Bytes {
+        path ["text-conflict"];
+        headers { "Content-Type" = "application/example"; }
+    }
+
+    POST StreamConflict(body: Stream<OctetStream>) -> Bytes {
+        path ["stream-conflict"];
+        headers { "Content-Type" = "application/example"; }
+    }
+
+    POST MultipartConflict(body: Multipart) -> NoContent {
+        path ["multipart-conflict"];
+        headers { "Content-Type" = "application/example"; }
+    }
+
+    GET Streamed(verbose: Option<bool>) -> Stream<OctetStream> {
+        path ["streamed"];
+        query { "verbose" = ep.verbose; }
+    }
+
+    GET UnsafePath(segment: crate::ShapeProbe) -> Bytes {
+        path ["unsafe-path", ep.segment];
+    }
+
+    GET UnsafeHost(label: crate::ShapeProbe) -> Bytes {
+        host [ep.label];
+        path ["unsafe-host"];
+    }
+
+    GET UnsafeHeader(value: crate::ShapeProbe) -> Bytes {
+        path ["unsafe-header"];
+        headers { "X-Dynamic" = ep.value; }
+    }
+
+    scope regions(
+        region: String,
+        language: Option<String>,
+        scope_marker: crate::DropProbe = crate::SCOPE_DEFAULT,
+    ) {
+        host [scope.region, "api"];
+        path ["regions", scope.region];
+        query {
+            "language" = scope.language;
+            "scope_marker" = scope.scope_marker;
+        }
+        headers { "X-Region" = scope.region; }
+
+        scope users(account: String) {
+            path ["users", scope.account];
+            headers { "X-Account" = scope.account; }
+
+            METHOD("PROPFIND") ById(
+                id: String,
+                verbose: Option<bool>,
+                endpoint_marker: crate::DropProbe = crate::ENDPOINT_DEFAULT,
+            ) as fetch -> Bytes {
+                path [fmt["id-", ep.id]];
+                query {
+                    "verbose" = ep.verbose;
+                    "endpoint_marker" = ep.endpoint_marker;
+                }
+                headers { "X-Endpoint-Marker" = ep.endpoint_marker; }
+                timeout 2s;
+            }
+        }
+    }
+}
+
+api! {
     client OtherApi {
         base "http://other.request-shaping.example.test/";
-        var label: Option<String> = None;
-        GET Echo(verbose: Option<bool>) -> Bytes {
-            path ["echo"];
-            query {
-                "label" = vars.label;
-                "verbose" = ep.verbose;
-            }
+        vars {
+            label: Option<String> = None;
         }
-        PUT Put() -> NoContent { path ["put"]; }
-        PATCH Patch() -> NoContent { path ["patch"]; }
-        DELETE Delete() -> NoContent { path ["delete"]; }
-        HEAD Head() -> NoContent { path ["head"]; }
-        OPTIONS Options() -> NoContent { path ["options"]; }
-        TRACE Trace() -> NoContent { path ["trace"]; }
-        CONNECT Connect() -> NoContent { path ["connect"]; }
-        GET Keyword() as r#type -> NoContent { path ["keyword"]; }
     }
 
+    GET Echo(verbose: Option<bool>) -> Bytes {
+        path ["echo"];
+        query {
+            "label" = vars.label;
+            "verbose" = ep.verbose;
+        }
+    }
+    PUT Put() -> NoContent { path ["put"]; }
+    PATCH Patch() -> NoContent { path ["patch"]; }
+    DELETE Delete() -> NoContent { path ["delete"]; }
+    HEAD Head() -> NoContent { path ["head"]; }
+    OPTIONS Options() -> NoContent { path ["options"]; }
+    TRACE Trace() -> NoContent { path ["trace"]; }
+    CONNECT Connect() -> NoContent { path ["connect"]; }
+    GET Keyword() as r#type -> NoContent { path ["keyword"]; }
+}
+
+api! {
     client TimeoutApi {
         base "http://timeout.request-shaping.example.test/";
         timeout 20ms;
-        scope timed() {
-            timeout 10ms;
-            GET ScopeInherited() -> Bytes { path ["scope-inherited"]; }
-            GET EndpointOverride() -> Bytes {
-                path ["endpoint-override"];
-                timeout 200ms;
-            }
-            GET EndpointOff() -> Bytes {
-                path ["endpoint-off"];
-                timeout off;
-            }
+    }
+
+    scope timed() {
+        timeout 10ms;
+        GET ScopeInherited() -> Bytes { path ["scope-inherited"]; }
+        GET EndpointOverride() -> Bytes {
+            path ["endpoint-override"];
+            timeout 200ms;
+        }
+        GET EndpointOff() -> Bytes {
+            path ["endpoint-off"];
+            timeout off;
         }
     }
 }

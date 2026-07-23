@@ -24,16 +24,17 @@ fn nz64(value: u64) -> NonZeroU64 {
 api! {
     client OffsetApi {
         base "http://pagination-offset.example.test/v1/";
-        GET Items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
-            path ["items"];
-            query {
-                "offset" = ep.offset;
-                "limit" = ep.limit;
-            }
-            paginate concord_core::advanced::OffsetPagination {
-                offset: bind ep.offset,
-                page_size: bind ep.limit,
-            }
+    }
+
+    GET Items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
+        path ["items"];
+        query {
+            "offset" = ep.offset;
+            "limit" = ep.limit;
+        }
+        paginate concord_core::advanced::OffsetPagination {
+            offset: bind ep.offset,
+            page_size: bind ep.limit,
         }
     }
 }
@@ -41,16 +42,17 @@ api! {
 api! {
     client PageApi {
         base "http://pagination-page.example.test/v1/";
-        GET Items(page: std::num::NonZeroU64, per_page: std::num::NonZeroU32) -> Json<Vec<u32>> {
-            path ["items"];
-            query {
-                "page" = ep.page;
-                "per_page" = ep.per_page;
-            }
-            paginate concord_core::advanced::PagePagination {
-                page: bind ep.page,
-                page_size: bind ep.per_page,
-            }
+    }
+
+    GET Items(page: std::num::NonZeroU64, per_page: std::num::NonZeroU32) -> Json<Vec<u32>> {
+        path ["items"];
+        query {
+            "page" = ep.page;
+            "per_page" = ep.per_page;
+        }
+        paginate concord_core::advanced::PagePagination {
+            page: bind ep.page,
+            page_size: bind ep.per_page,
         }
     }
 }
@@ -124,21 +126,24 @@ use application_count_controller::ApplicationCountController;
 api! {
     client ApplicationCountApi {
         base "http://pagination-application-count.example.test/v1/";
-        var policy: crate::StablePolicy;
-        GET Items(offset: crate::CountedOffset, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
-            path ["items"];
-            query {
-                "offset" = ep.offset;
-                "limit" = ep.limit;
-            }
-            paginate ApplicationCountController {
-                offset: bind ep.offset,
-                page_size: bind ep.limit,
-                policy: vars.policy,
-                attempts: 0,
-                enabled: true,
-                label: "count",
-            }
+        vars {
+            policy: crate::StablePolicy;
+        }
+    }
+
+    GET Items(offset: crate::CountedOffset, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
+        path ["items"];
+        query {
+            "offset" = ep.offset;
+            "limit" = ep.limit;
+        }
+        paginate ApplicationCountController {
+            offset: bind ep.offset,
+            page_size: bind ep.limit,
+            policy: vars.policy,
+            attempts: 0,
+            enabled: true,
+            label: "count",
         }
     }
 }
@@ -190,16 +195,17 @@ impl PageResponseSpec for CustomPageSpec {}
 api! {
     client CustomResponsePageApi {
         base "http://pagination-custom-response.example.test/v1/";
-        GET Items(offset: u64, limit: std::num::NonZeroU32) -> crate::CustomPageSpec {
-            path ["items"];
-            query {
-                "offset" = ep.offset;
-                "limit" = ep.limit;
-            }
-            paginate concord_core::advanced::OffsetPagination {
-                offset: bind ep.offset,
-                page_size: bind ep.limit,
-            }
+    }
+
+    GET Items(offset: u64, limit: std::num::NonZeroU32) -> crate::CustomPageSpec {
+        path ["items"];
+        query {
+            "offset" = ep.offset;
+            "limit" = ep.limit;
+        }
+        paginate concord_core::advanced::OffsetPagination {
+            offset: bind ep.offset,
+            page_size: bind ep.limit,
         }
     }
 }
@@ -302,14 +308,15 @@ impl PaginationController<Vec<NonCloneItem>> for OneNonClonePage {
 api! {
     client CursorApi {
         base "http://pagination-cursor.example.test/v1/";
-        GET Items(cursor: Option<String>) -> crate::VendorPageCodec {
-            path ["items"];
-            query {
-                "cursor" = ep.cursor;
-            }
-            paginate concord_core::advanced::CursorPagination<String> {
-                cursor: bind ep.cursor,
-            }
+    }
+
+    GET Items(cursor: Option<String>) -> crate::VendorPageCodec {
+        path ["items"];
+        query {
+            "cursor" = ep.cursor;
+        }
+        paginate concord_core::advanced::CursorPagination<String> {
+            cursor: bind ep.cursor,
         }
     }
 }
@@ -356,14 +363,15 @@ impl PaginationController<VendorPage> for ScopeBindingController {
 api! {
     client CustomApi {
         base "http://pagination-custom.example.test/v1/";
-        GET Items(cursor: Option<String>, region: String) -> crate::VendorPageCodec {
-            path ["items"];
-            query { "cursor" = ep.cursor; }
-            headers { "x-region" = ep.region; }
-            paginate crate::VendorController {
-                cursor: bind ep.cursor,
-                region: ep.region,
-            }
+    }
+
+    GET Items(cursor: Option<String>, region: String) -> crate::VendorPageCodec {
+        path ["items"];
+        query { "cursor" = ep.cursor; }
+        headers { "x-region" = ep.region; }
+        paginate crate::VendorController {
+            cursor: bind ep.cursor,
+            region: ep.region,
         }
     }
 }
@@ -379,19 +387,21 @@ impl PaginationController<VendorPage> for ZeroController {
 api! {
     client ZeroApi {
         base "http://pagination-zero.example.test/v1/";
-        GET Items() -> crate::VendorPageCodec {
-            paginate crate::ZeroController {}
-        }
+    }
+
+    GET Items() -> crate::VendorPageCodec {
+        paginate crate::ZeroController {}
     }
 }
 
 api! {
     client NonCloneApi {
         base "http://pagination-non-clone.example.test/v1/";
-        GET Items() -> crate::NonClonePageCodec {
-            paginate crate::OneNonClonePage {
-                marker: crate::NOT_SYNC_MARKER,
-            }
+    }
+
+    GET Items() -> crate::NonClonePageCodec {
+        paginate crate::OneNonClonePage {
+            marker: crate::NOT_SYNC_MARKER,
         }
     }
 }
@@ -399,19 +409,20 @@ api! {
 api! {
     client NestedPaginationApi {
         base "http://pagination-nested.example.test/v1/";
-        scope Organizations(region: String) {
-            path ["organizations", scope.region];
-            scope Repositories(repository: String) {
-                path ["repositories", scope.repository];
-                GET Entries(cursor: Option<String>) as fetch -> crate::VendorPageCodec {
-                    path ["entries"];
-                    query { "cursor" = ep.cursor; }
-                    headers { "x-region" = scope.region; }
-                    paginate crate::ScopeBindingController {
-                        cursor: bind ep.cursor,
-                        region: bind scope.region,
-                        repository: scope.repository,
-                    }
+    }
+
+    scope Organizations(region: String) {
+        path ["organizations", scope.region];
+        scope Repositories(repository: String) {
+            path ["repositories", scope.repository];
+            GET Entries(cursor: Option<String>) as fetch -> crate::VendorPageCodec {
+                path ["entries"];
+                query { "cursor" = ep.cursor; }
+                headers { "x-region" = scope.region; }
+                paginate crate::ScopeBindingController {
+                    cursor: bind ep.cursor,
+                    region: bind scope.region,
+                    repository: scope.repository,
                 }
             }
         }
@@ -421,22 +432,23 @@ api! {
 api! {
     client CollisionPaginationApi {
         base "http://pagination-collision.example.test/v1/";
-        scope Left() {
-            path ["left"];
-            GET Items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
-                paginate concord_core::advanced::OffsetPagination {
-                    offset: bind ep.offset,
-                    page_size: bind ep.limit,
-                }
+    }
+
+    scope Left() {
+        path ["left"];
+        GET Items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
+            paginate concord_core::advanced::OffsetPagination {
+                offset: bind ep.offset,
+                page_size: bind ep.limit,
             }
         }
-        scope Right() {
-            path ["right"];
-            GET Items(page: std::num::NonZeroU64, per_page: std::num::NonZeroU32) -> Json<Vec<u8>> {
-                paginate concord_core::advanced::PagePagination {
-                    page: bind ep.page,
-                    page_size: bind ep.per_page,
-                }
+    }
+    scope Right() {
+        path ["right"];
+        GET Items(page: std::num::NonZeroU64, per_page: std::num::NonZeroU32) -> Json<Vec<u8>> {
+            paginate concord_core::advanced::PagePagination {
+                page: bind ep.page,
+                page_size: bind ep.per_page,
             }
         }
     }
@@ -445,19 +457,20 @@ api! {
 api! {
     client PaginationRateApi {
         base "http://pagination-rate.example.test/v1/";
-        GET Items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
-            host [ep.offset];
-            path ["items", ep.offset];
-            query {
-                "offset" = ep.offset;
-                "limit" = ep.limit;
-            }
-            headers { "X-Page-Offset" = ep.offset; }
-            rate_limit { 100 / 1s; }
-            paginate concord_core::advanced::OffsetPagination {
-                offset: bind ep.offset,
-                page_size: bind ep.limit,
-            }
+    }
+
+    GET Items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
+        host [ep.offset];
+        path ["items", ep.offset];
+        query {
+            "offset" = ep.offset;
+            "limit" = ep.limit;
+        }
+        headers { "X-Page-Offset" = ep.offset; }
+        rate_limit { 100 / 1s; }
+        paginate concord_core::advanced::OffsetPagination {
+            offset: bind ep.offset,
+            page_size: bind ep.limit,
         }
     }
 }
@@ -468,11 +481,12 @@ mod repeated_nested_expansion {
     api! {
         client NestedMacroPaginationApi {
             base "http://pagination-nested-macro.example.test/v1/";
-            GET Items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
-                paginate concord_core::advanced::OffsetPagination {
-                    offset: bind ep.offset,
-                    page_size: bind ep.limit,
-                }
+        }
+
+        GET Items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
+            paginate concord_core::advanced::OffsetPagination {
+                offset: bind ep.offset,
+                page_size: bind ep.limit,
             }
         }
     }

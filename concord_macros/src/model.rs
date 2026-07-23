@@ -8,7 +8,7 @@ pub(crate) use crate::ast::{
 
 #[derive(Clone)]
 pub(crate) struct Api {
-    pub(crate) clients: Vec<Client>,
+    pub(crate) client: Client,
 }
 
 #[derive(Clone)]

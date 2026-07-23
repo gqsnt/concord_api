@@ -86,10 +86,13 @@ See [`pagination.rs`](../../concord_examples/examples/pagination.rs) for offset,
 Normal generated rate limits are declared directly at the lexical layer they own.
 
 ```rust
-client Api {
-    rate_limit {
-        500 / 10s;
-        30000 / 10m;
+api! {
+    client Api {
+        base "https://example.test/";
+        rate_limit {
+            500 / 10s;
+            30000 / 10m;
+        }
     }
 
     scope Regions(region: String) {

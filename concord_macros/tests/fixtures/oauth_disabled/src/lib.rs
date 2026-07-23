@@ -12,8 +12,9 @@ api! {
                 client_secret: secret.client_secret,
             };
         }
-        GET Protected() -> Bytes {
-            auth bearer oauth;
-        }
+    }
+
+    GET Protected() -> Bytes {
+        auth bearer oauth;
     }
 }

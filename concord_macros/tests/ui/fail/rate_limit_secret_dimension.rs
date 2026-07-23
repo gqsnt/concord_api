@@ -8,8 +8,9 @@ api! {
             credential bearer = bearer(secret.token);
         }
         rate_limit { by [secret.token]; 1 / 1s; }
-        GET Read() -> Bytes;
     }
+
+    GET Read() -> Bytes;
 }
 
 fn main() {}

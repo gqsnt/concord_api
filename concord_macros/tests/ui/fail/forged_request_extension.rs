@@ -3,8 +3,9 @@ use concord_macros::api;
 api! {
     client SetterApi {
         base "http://setter.example.test";
-        GET Item(verbose: Option<bool>) -> Bytes;
     }
+
+    GET Item(verbose: Option<bool>) -> Bytes;
 }
 
 struct Forged;

@@ -3,10 +3,11 @@ use concord_macros::api;
 api! {
     client SealedApi {
         base "https://sealed.example.test";
-        scope health() {
-            path ["health"];
-            GET Ping() -> NoContent;
-        }
+    }
+
+    scope health() {
+        path ["health"];
+        GET Ping() -> NoContent;
     }
 }
 

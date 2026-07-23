@@ -65,9 +65,13 @@ fn request_only_multipart_fails_through_the_response_specification_bound() {
 }
 
 #[test]
-fn duplicate_clients_are_rejected_in_one_invocation() {
+fn breaking_dsl_migration_diagnostics_are_focused() {
     let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/fail/duplicate_client.rs");
+    cases.compile_fail("tests/ui/fail/second_client.rs");
+    cases.compile_fail("tests/ui/fail/legacy_var.rs");
+    cases.compile_fail("tests/ui/fail/child_inside_client.rs");
+    cases.compile_fail("tests/ui/fail/root_client_config.rs");
+    cases.compile_fail("tests/ui/fail/vars_after_credentials.rs");
 }
 
 #[test]

@@ -87,37 +87,38 @@ api! {
             secret api_secret: String;
             credential application_key = bearer(secret.api_secret);
         }
-        scope Records(collection: String) {
-            path ["records", scope.collection];
-            GET Show(id: String) -> Bytes {
-                path [ep.id];
-                auth off;
-            }
-        }
-        GET Bounded() -> Bytes {
+    }
+
+    scope Records(collection: String) {
+        path ["records", scope.collection];
+        GET Show(id: String) -> Bytes {
+            path [ep.id];
             auth off;
         }
-        GET Protected() -> Bytes {
-            auth bearer application_key;
+    }
+    GET Bounded() -> Bytes {
+        auth off;
+    }
+    GET Protected() -> Bytes {
+        auth bearer application_key;
+    }
+    GET Limited() -> Bytes {
+        auth off;
+        rate_limit { 1000000 / 1s; }
+    }
+    GET Pages(offset: u64, limit: std::num::NonZeroU32) -> crate::PageCodec {
+        query { "offset" = ep.offset; "limit" = ep.limit; }
+        auth off;
+        paginate concord_core::advanced::OffsetPagination {
+            offset: bind ep.offset,
+            page_size: bind ep.limit,
         }
-        GET Limited() -> Bytes {
-            auth off;
-            rate_limit { 1000000 / 1s; }
-        }
-        GET Pages(offset: u64, limit: std::num::NonZeroU32) -> crate::PageCodec {
-            query { "offset" = ep.offset; "limit" = ep.limit; }
-            auth off;
-            paginate concord_core::advanced::OffsetPagination {
-                offset: bind ep.offset,
-                page_size: bind ep.limit,
-            }
-        }
-        POST Codec(body: crate::BenchCodec) -> crate::BenchCodec {
-            auth off;
-        }
-        GET Streamed() -> Stream<OctetStream> {
-            auth off;
-        }
+    }
+    POST Codec(body: crate::BenchCodec) -> crate::BenchCodec {
+        auth off;
+    }
+    GET Streamed() -> Stream<OctetStream> {
+        auth off;
     }
 }
 
@@ -128,9 +129,10 @@ api! {
             secret api_secret: String;
             credential application_key = bearer(secret.api_secret);
         }
-        GET CredentialReady() -> Bytes {
-            auth bearer application_key;
-        }
+    }
+
+    GET CredentialReady() -> Bytes {
+        auth bearer application_key;
     }
 }
 

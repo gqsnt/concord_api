@@ -37,32 +37,36 @@ impl RateLimitObserver for CountingObserver {
 api! {
     client RateApi {
         base "http://rate-limit.example.test/";
-        var tenant: String;
+        vars {
+            tenant: String;
+        }
         rate_limit {
             500 / 10s;
             30000 / 10m;
         }
         rate_limit_observer crate::CountingObserver;
-        scope Regions(region: String) {
-            rate_limit {
-                20 / 1s;
-            }
-            GET Read(item: String) -> Bytes {
-                rate_limit {
-                    cost 2;
-                    100 / 1m;
-                }
-            }
-            GET Public() -> Bytes;
+    }
+
+    scope Regions(region: String) {
+        rate_limit {
+            20 / 1s;
         }
+        GET Read(item: String) -> Bytes {
+            rate_limit {
+                cost 2;
+                100 / 1m;
+            }
+        }
+        GET Public() -> Bytes;
     }
 }
 
 api! {
     client EmptyRateApi {
         base "http://empty-rate.example.test/";
-        GET Read() -> Bytes;
     }
+
+    GET Read() -> Bytes;
 }
 
 pub struct DisplayOnly {
@@ -80,9 +84,10 @@ impl Display for DisplayOnly {
 api! {
     client MinimalBoundsApi {
         base "http://minimal-rate.example.test/";
-        GET Read(item: crate::DisplayOnly) -> Bytes {
-            rate_limit { 1 / 1s; }
-        }
+    }
+
+    GET Read(item: crate::DisplayOnly) -> Bytes {
+        rate_limit { 1 / 1s; }
     }
 }
 
@@ -90,35 +95,37 @@ api! {
     client IdentityRateApi {
         base "http://identity-rate.example.test/";
         rate_limit { 100 / 1h; }
-        GET Direct() -> Bytes;
-        scope Outer(region: String) {
-            rate_limit { 20 / 1h; }
-            GET Immediate() -> Bytes;
-            scope Inner(kind: String) {
-                rate_limit { 10 / 1h; }
-                GET Nested() -> Bytes {
-                    rate_limit { cost 2; 30 / 1h; }
-                }
-            }
-        }
-        scope Sibling(region: String) {
-            rate_limit { 7 / 1h; }
-            GET SiblingEndpoint() -> Bytes {
-                rate_limit { 5 / 1h; }
-            }
-        }
-        GET Outside() -> Bytes;
     }
+
+    GET Direct() -> Bytes;
+    scope Outer(region: String) {
+        rate_limit { 20 / 1h; }
+        GET Immediate() -> Bytes;
+        scope Inner(kind: String) {
+            rate_limit { 10 / 1h; }
+            GET Nested() -> Bytes {
+                rate_limit { cost 2; 30 / 1h; }
+            }
+        }
+    }
+    scope Sibling(region: String) {
+        rate_limit { 7 / 1h; }
+        GET SiblingEndpoint() -> Bytes {
+            rate_limit { 5 / 1h; }
+        }
+    }
+    GET Outside() -> Bytes;
 }
 
 api! {
     client ClientBucketRateApi {
         base "http://client-bucket.example.test/";
         rate_limit { 1 / 1h; }
-        GET Direct() -> Bytes;
-        scope Descendant(value: String) {
-            GET Nested() -> Bytes;
-        }
+    }
+
+    GET Direct() -> Bytes;
+    scope Descendant(value: String) {
+        GET Nested() -> Bytes;
     }
 }
 
@@ -126,30 +133,69 @@ api! {
     client ScopeBucketRateApi {
         base "http://scope-bucket.example.test/";
         rate_limit { 100 / 1h; }
-        scope Branch(value: String) {
-            rate_limit { 1 / 1h; }
-            GET Immediate() -> Bytes;
-            scope Nested(value: String) {
-                GET Descendant() -> Bytes;
-            }
-        }
-        GET Outside() -> Bytes;
     }
+
+    scope Branch(value: String) {
+        rate_limit { 1 / 1h; }
+        GET Immediate() -> Bytes;
+        scope Nested(value: String) {
+            GET Descendant() -> Bytes;
+        }
+    }
+    GET Outside() -> Bytes;
 }
 
 api! {
     client CollisionRateApi {
         base "http://collision-rate.example.test/";
-        scope A__B(value: String) {
+    }
+
+    scope A__B(value: String) {
+        rate_limit { 1 / 1h; }
+        GET First() -> Bytes;
+    }
+    scope A(value: String) {
+        scope B(value: String) {
             rate_limit { 1 / 1h; }
-            GET First() -> Bytes;
+            GET Second() -> Bytes;
         }
-        scope A(value: String) {
-            scope B(value: String) {
-                rate_limit { 1 / 1h; }
-                GET Second() -> Bytes;
-            }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum RouteHost {
+    Platform,
+    Regional,
+}
+
+impl Display for RouteHost {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Platform => "platform",
+            Self::Regional => "regional",
+        })
+    }
+}
+
+api! {
+    client RouteFamilyApi {
+        base "http://route-family.example.test/";
+        vars {
+            platform: crate::RouteHost = crate::RouteHost::Platform;
+            regional: crate::RouteHost = crate::RouteHost::Regional;
         }
+    }
+
+    scope Platform() {
+        host [vars.platform, "api"];
+        rate_limit { 100 / 1h; }
+        GET Read() -> Bytes;
+    }
+
+    scope Regional() {
+        host [vars.regional, "api"];
+        rate_limit { 100 / 1h; }
+        GET Read() -> Bytes;
     }
 }
 
@@ -160,8 +206,9 @@ mod nested_rate {
         client NestedRateApi {
             base "http://nested-rate.example.test/";
             rate_limit { 1 / 1s; }
-            GET Read() -> Bytes;
         }
+
+        GET Read() -> Bytes;
     }
 }
 
@@ -172,16 +219,18 @@ mod repeated_rate {
         client FirstRateApi {
             base "http://first-rate.example.test/";
             rate_limit { 1 / 1s; }
-            GET Read() -> Bytes;
         }
+
+        GET Read() -> Bytes;
     }
 
     api! {
         client SecondRateApi {
             base "http://second-rate.example.test/";
             rate_limit { 1 / 1s; }
-            GET Read() -> Bytes;
         }
+
+        GET Read() -> Bytes;
     }
 }
 
@@ -197,6 +246,7 @@ struct CapturedRule {
 struct CapturingLimiter {
     acquisitions: Mutex<Vec<Vec<CapturedRule>>>,
     observations: Mutex<Vec<Vec<CapturedRule>>>,
+    hosts: Mutex<Vec<Option<String>>>,
 }
 
 struct GatedLimiter {
@@ -262,11 +312,13 @@ impl RateLimiter for CapturingLimiter {
         request: RateLimitRequest<'a>,
     ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
         let captured = Self::capture(request.plan);
+        let host = request.host.map(str::to_owned);
         Box::pin(async move {
             self.acquisitions
                 .lock()
                 .expect("acquisition capture lock")
                 .push(captured);
+            self.hosts.lock().expect("host capture lock").push(host);
             Ok(RateLimitPermit::granted())
         })
     }
@@ -298,6 +350,55 @@ fn generated_default_limiter_selection_matches_the_resolved_feature_graph() {
             assert_eq!(OBSERVER_DEFAULTS.load(Ordering::SeqCst), 0);
         }
     }
+}
+
+#[tokio::test]
+async fn sibling_route_families_resolve_distinct_hosts_and_lexical_rule_ids() {
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"platform".to_vec()),
+        ResponseScript::ok(b"regional".to_vec()),
+    ])
+    .expect("route-family server");
+    let proxy = SafeProxy::parse(server.url("")).expect("route-family proxy");
+    let limiter = Arc::new(CapturingLimiter::default());
+    let configured = Arc::clone(&limiter);
+    let client = RouteFamilyApi::builder()
+        .http(move |http| http.proxy(proxy))
+        .runtime(move |runtime| runtime.rate_limiter(configured))
+        .build()
+        .expect("route-family client");
+
+    client.platform().read().await.expect("platform request");
+    client.regional().read().await.expect("regional request");
+
+    let hosts = limiter.hosts.lock().expect("route-family hosts");
+    assert_eq!(
+        hosts.as_slice(),
+        [
+            Some("platform.api.route-family.example.test".to_owned()),
+            Some("regional.api.route-family.example.test".to_owned()),
+        ]
+    );
+    drop(hosts);
+
+    let acquisitions = limiter
+        .acquisitions
+        .lock()
+        .expect("route-family acquisitions");
+    assert_eq!(acquisitions.len(), 2);
+    assert_eq!(acquisitions[0].len(), 1);
+    assert_eq!(acquisitions[1].len(), 1);
+    assert!(
+        acquisitions[0][0]
+            .id
+            .ends_with("::RouteFamilyApi::Platform::rate_limit")
+    );
+    assert!(
+        acquisitions[1][0]
+            .id
+            .ends_with("::RouteFamilyApi::Regional::rate_limit")
+    );
+    assert_ne!(acquisitions[0][0].id, acquisitions[1][0].id);
 }
 
 #[tokio::test]

@@ -135,6 +135,7 @@ name = "concord_core"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "concord_macros",
  "concord_test_support",
  "csv",
  "futures-core",

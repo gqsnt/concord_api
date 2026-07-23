@@ -39,6 +39,7 @@ tokio = { workspace = true, features = ["fs", "io-util"] }
 url.workspace = true
 
 [dev-dependencies]
+concord_macros = { version = "=0.1.0", path = "../concord_macros" }
 concord_test_support = { version = "=0.1.0", path = "../concord_test_support" }
 h2.workspace = true
 http.workspace = true

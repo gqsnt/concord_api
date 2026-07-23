@@ -5,7 +5,8 @@ use syn::{Ident, LitBool, LitInt, LitStr, Path, Type};
 
 #[derive(Clone)]
 pub(crate) struct SourceApi {
-    pub(crate) clients: Vec<SourceClient>,
+    pub(crate) client: SourceClient,
+    pub(crate) children: Vec<SourceChild>,
 }
 
 #[derive(Clone)]
@@ -17,7 +18,6 @@ pub(crate) struct SourceClient {
     pub(crate) retry: RetrySelection,
     pub(crate) layer: Layer,
     pub(crate) rate_limit_observer: Option<Path>,
-    pub(crate) children: Vec<SourceChild>,
 }
 
 #[derive(Clone)]

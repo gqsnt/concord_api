@@ -41,19 +41,21 @@ impl PaginationController<Vec<u8>> for NonSendController {
 api! {
     client MissingIntoIterator {
         base "https://example.test";
-        GET Read() -> crate::NotIterableCodec {
-            paginate crate::Controller {}
-        }
+    }
+
+    GET Read() -> crate::NotIterableCodec {
+        paginate crate::Controller {}
     }
 }
 
 api! {
     client MissingCursorExtraction {
         base "https://example.test";
-        GET Read(cursor: Option<String>) -> Json<Vec<u8>> {
-            paginate concord_core::advanced::CursorPagination<String> {
-                cursor: bind ep.cursor,
-            }
+    }
+
+    GET Read(cursor: Option<String>) -> Json<Vec<u8>> {
+        paginate concord_core::advanced::CursorPagination<String> {
+            cursor: bind ep.cursor,
         }
     }
 }
@@ -61,10 +63,11 @@ api! {
 api! {
     client NonSendControllerApi {
         base "https://example.test";
-        GET Read(state: std::rc::Rc<()>) -> Json<Vec<u8>> {
-            paginate crate::NonSendController {
-                state: bind ep.state,
-            }
+    }
+
+    GET Read(state: std::rc::Rc<()>) -> Json<Vec<u8>> {
+        paginate crate::NonSendController {
+            state: bind ep.state,
         }
     }
 }

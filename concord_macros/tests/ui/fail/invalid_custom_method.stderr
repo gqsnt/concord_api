@@ -1,5 +1,5 @@
 error: custom endpoint method must be a valid HTTP method token
- --> tests/ui/fail/invalid_custom_method.rs:6:16
+ --> tests/ui/fail/invalid_custom_method.rs:8:12
   |
-6 |         METHOD("BAD METHOD") Item() -> Bytes;
-  |                ^^^^^^^^^^^^
+8 |     METHOD("BAD METHOD") Item() -> Bytes;
+  |            ^^^^^^^^^^^^

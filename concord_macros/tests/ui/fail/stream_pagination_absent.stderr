@@ -1,5 +1,5 @@
-error[E0599]: no method named `paginate` found for struct `concord_core::Request` in the current scope
-  --> tests/ui/fail/stream_pagination_absent.rs:15:43
+error[E0599]: no method named `paginate` found for struct `concord_core::Request<E>` in the current scope
+  --> tests/ui/fail/stream_pagination_absent.rs:16:43
    |
-15 |     let _ = client.transfers().download().paginate(1_u32);
-   |                                           ^^^^^^^^ method not found in `Request<Download>`
+16 |     let _ = client.transfers().download().paginate(1_u32);
+   |                                           ^^^^^^^^ method not found in `concord_core::Request<Download>`

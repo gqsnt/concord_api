@@ -21,13 +21,17 @@ use futures_core::Stream;
 api! {
     client PreparedAlphaApi {
         base "http://alpha.prepared.example.test/root/";
-        GET Explicit() -> Bytes { path ["explicit"]; }
     }
 
+    GET Explicit() -> Bytes { path ["explicit"]; }
+}
+
+api! {
     client PreparedBetaApi {
         base "http://beta.prepared.example.test/other/";
-        GET Explicit() -> Bytes { path ["explicit"]; }
     }
+
+    GET Explicit() -> Bytes { path ["explicit"]; }
 }
 
 api! {
@@ -37,8 +41,9 @@ api! {
             secret token: String;
             credential api_key = api_key(secret.token);
         }
-        GET Explicit() -> NoContent;
     }
+
+    GET Explicit() -> NoContent;
 }
 
 struct EchoCodec;

@@ -1,5 +1,5 @@
 error: generated child name `http_status` collides within this scope after deterministic Rust normalization
- --> tests/ui/fail/normalized_collision.rs:9:17
-  |
-9 |             GET HttpStatus() -> NoContent;
-  |                 ^^^^^^^^^^
+  --> tests/ui/fail/normalized_collision.rs:11:13
+   |
+11 |         GET HttpStatus() -> NoContent;
+   |             ^^^^^^^^^^

@@ -3,9 +3,10 @@ use concord_macros::api;
 api! {
     client MultipartDisabledApi {
         base "http://multipart-disabled.example.test";
-        scope uploads() {
-            path ["uploads"];
-            POST Create(body: Multipart) -> NoContent;
-        }
+    }
+
+    scope uploads() {
+        path ["uploads"];
+        POST Create(body: Multipart) -> NoContent;
     }
 }

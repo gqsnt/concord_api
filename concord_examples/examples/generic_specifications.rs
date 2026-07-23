@@ -72,10 +72,11 @@ impl ResponseBodySpec for ExampleDiscardSpec {
 api! {
     client GenericSpecificationApi {
         base "https://generic-specifications.example.test/";
-        POST Buffered(body: crate::ExampleRequestSpec) -> crate::ExampleBufferedSpec;
-        GET Streaming() -> crate::ExampleStreamingSpec;
-        GET Discard() -> crate::ExampleDiscardSpec;
     }
+
+    POST Buffered(body: crate::ExampleRequestSpec) -> crate::ExampleBufferedSpec;
+    GET Streaming() -> crate::ExampleStreamingSpec;
+    GET Discard() -> crate::ExampleDiscardSpec;
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

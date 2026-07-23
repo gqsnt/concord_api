@@ -67,6 +67,7 @@ mod keyword {
     syn::custom_keyword!(never);
     syn::custom_keyword!(unauthorized);
     syn::custom_keyword!(unauthorized_or_forbidden);
+    syn::custom_keyword!(vars);
 }
 
 pub(crate) fn parse(input: TokenStream) -> syn::Result<SourceApi> {
@@ -77,24 +78,41 @@ impl Parse for SourceApi {
     fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
         if input.is_empty() {
             return Err(
-                input.error("an `api!` invocation requires at least one `client` declaration")
+                input.error("an `api!` invocation requires exactly one `client` declaration")
             );
         }
 
-        let mut clients = Vec::new();
-        let mut names = HashSet::new();
-        while !input.is_empty() {
-            let client: SourceClient = input.parse()?;
-            let canonical = canonical_ident(&client.name);
-            if !names.insert(canonical.clone()) {
-                return Err(client
-                    .name
-                    .span()
-                    .error(format!("duplicate client `{canonical}`")));
+        if !input.peek(keyword::client) {
+            if input.peek(keyword::scope) || endpoint_starts(input) {
+                return Err(input
+                    .error("the `client` must be the first declaration in an `api!` invocation"));
             }
-            clients.push(client);
+            if is_client_configuration_start(input) {
+                return Err(
+                    input.error("client configuration must be declared inside the `client` block")
+                );
+            }
+            return Err(input
+                .error("an `api!` invocation must begin with exactly one `client` declaration"));
         }
-        Ok(Self { clients })
+
+        let client: SourceClient = input.parse()?;
+        let children = parse_children(input, 0, "client")?;
+        if !input.is_empty() {
+            if input.peek(keyword::client) {
+                return Err(input.error(
+                    "an `api!` invocation accepts exactly one `client`; declare additional clients in separate `api!` invocations",
+                ));
+            }
+            if is_client_configuration_start(input) {
+                return Err(
+                    input.error("client configuration must be declared inside the `client` block")
+                );
+            }
+            return Err(input
+                .error("unsupported `api!` root declaration; expected a scope or HTTP endpoint"));
+        }
+        Ok(Self { client, children })
     }
 }
 
@@ -106,6 +124,9 @@ impl Parse for SourceClient {
         braced!(body in input);
 
         if !body.peek(keyword::base) {
+            if body.peek(keyword::vars) {
+                return Err(body.error("`vars` must appear after `base` and before `credentials`"));
+            }
             return Err(
                 body.error("a client must begin with exactly one fixed `base \"https://...\";`")
             );
@@ -115,14 +136,13 @@ impl Parse for SourceClient {
         body.parse::<Token![;]>()?;
         validate_base(&base)?;
 
-        let mut values = Vec::new();
-        let mut value_names = HashSet::new();
-        while body.peek(keyword::var) {
-            body.parse::<keyword::var>()?;
-            let value = parse_value(&body)?;
-            body.parse::<Token![;]>()?;
-            insert_unique_value(&mut value_names, &value, "client value")?;
-            values.push(value);
+        let values = if body.peek(keyword::vars) {
+            parse_vars(&body)?
+        } else {
+            Vec::new()
+        };
+        if body.peek(keyword::var) {
+            return Err(body.error("client variables must be declared in a `vars { ... }` block"));
         }
 
         let credentials = body
@@ -149,8 +169,6 @@ impl Parse for SourceClient {
         } else {
             None
         };
-        let children = parse_children(&body, 0, "client")?;
-
         if !body.is_empty() {
             return Err(client_tail_error(&body));
         }
@@ -163,9 +181,26 @@ impl Parse for SourceClient {
             retry,
             layer,
             rate_limit_observer,
-            children,
         })
     }
+}
+
+fn parse_vars(input: ParseStream<'_>) -> syn::Result<Vec<ValueDecl>> {
+    input.parse::<keyword::vars>()?;
+    let body;
+    braced!(body in input);
+    let mut values = Vec::new();
+    let mut names = HashSet::new();
+    while !body.is_empty() {
+        if body.peek(keyword::var) {
+            return Err(body.error("client variables must be declared in a `vars { ... }` block without the `var` keyword"));
+        }
+        let value = parse_value(&body)?;
+        body.parse::<Token![;]>()?;
+        insert_unique_value(&mut names, &value, "client value")?;
+        values.push(value);
+    }
+    Ok(values)
 }
 
 fn parse_children(
@@ -223,11 +258,7 @@ fn parse_scope(input: ParseStream<'_>, depth: usize) -> syn::Result<SourceScope>
         if body.peek(keyword::rate_limit_observer) {
             return Err(body.error("rate-limit observers are client-only; use `rate_limit_observer PATH;` on the client"));
         }
-        if body.peek(keyword::var)
-            || body.peek(keyword::base)
-            || body.peek(keyword::credentials)
-            || body.peek(keyword::rate_limits)
-        {
+        if is_client_only_declaration_start(&body) {
             return Err(body.error("this declaration is client-only and cannot appear in a scope"));
         }
         if is_layer_start(&body) {
@@ -291,6 +322,10 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
         if !clauses.is_empty() {
             if clauses.peek(keyword::rate_limit_observer) {
                 return Err(clauses.error("rate-limit observers are client-only; use `rate_limit_observer PATH;` on the client"));
+            }
+            if is_client_only_declaration_start(&clauses) {
+                return Err(clauses
+                    .error("this declaration is client-only and cannot appear on an endpoint"));
             }
             if is_layer_start(&clauses) {
                 return Err(clauses.error(
@@ -1517,18 +1552,49 @@ fn is_layer_start(input: ParseStream<'_>) -> bool {
         || input.peek(keyword::paginate)
 }
 
+fn is_client_configuration_start(input: ParseStream<'_>) -> bool {
+    is_client_only_declaration_start(input)
+        || input.peek(keyword::host)
+        || input.peek(keyword::path)
+        || input.peek(keyword::query)
+        || input.peek(keyword::headers)
+        || input.peek(keyword::auth)
+        || input.peek(keyword::timeout)
+        || input.peek(keyword::rate_limit)
+}
+
+fn is_client_only_declaration_start(input: ParseStream<'_>) -> bool {
+    input.peek(keyword::base)
+        || input.peek(keyword::vars)
+        || input.peek(keyword::var)
+        || input.peek(keyword::credentials)
+        || input.peek(keyword::retry)
+        || input.peek(keyword::rate_limit_observer)
+        || input.peek(keyword::rate_limits)
+        || input.peek(keyword::observe)
+}
+
 fn client_tail_error(input: ParseStream<'_>) -> syn::Error {
+    if input.peek(keyword::scope) || endpoint_starts(input) {
+        return input.error("scopes and endpoints must be declared after the `client` block");
+    }
     if input.peek(keyword::base) {
         return input.error("a client requires exactly one `base` declaration");
+    }
+    if input.peek(keyword::vars) {
+        return input.error("`vars` must appear after `base` and before `credentials`");
+    }
+    if input.peek(keyword::var) {
+        return input.error("client variables must be declared in a `vars { ... }` block");
     }
     if input.peek(keyword::rate_limit) {
         return input.error(
             "a lexical layer may contain at most one direct `rate_limit { ... }` declaration",
         );
     }
-    if input.peek(keyword::var) || input.peek(keyword::retry) || is_layer_start(input) {
+    if input.peek(keyword::retry) || is_layer_start(input) {
         return input.error(
-            "client configuration must appear once, in normative order, before every child scope or endpoint",
+            "client configuration must appear at most once and in normative order inside the `client` block",
         );
     }
     if input.peek(keyword::credentials) {
@@ -1568,38 +1634,153 @@ mod tests {
     }
 
     #[test]
-    fn parses_multiple_clients_roots_nested_values_and_all_shaping_layers() {
+    fn parses_singular_client_root_children_values_and_all_shaping_layers() {
         let api = parse_ok(quote! {
             client FirstApi {
                 base "https://example.test:8443/fixed";
-                var tenant: String;
-                var locale: Option<String>;
-                var limit: u32 = 50;
+                vars {
+                    tenant: String;
+                    locale: Option<String>;
+                    limit: u32 = 50;
+                }
                 retry reqwest_default;
                 host ["api"];
                 path ["v1"];
                 query { "tenant" = vars.tenant; }
                 headers { "X-Locale" = vars.locale; }
                 timeout 5s;
-                GET Root(id: String, verbose: Option<bool>, page: u32 = 10) as root -> Bytes {
-                    path [ep.id];
-                }
-                scope regions(region: String, language: Option<String>) {
-                    host [scope.region, "api"];
-                    path ["regions", scope.region];
-                    scope users(account: String) {
-                        path ["users", scope.account];
-                        METHOD("PROPFIND") Inspect() -> Text;
-                    }
-                }
             }
-            client SecondApi {
-                base "http://example.test";
-                CONNECT Tunnel() -> NoContent;
+            GET Root(id: String, verbose: Option<bool>, page: u32 = 10) as root -> Bytes {
+                path [ep.id];
+            }
+            scope regions(region: String, language: Option<String>) {
+                host [scope.region, "api"];
+                path ["regions", scope.region];
+                scope users(account: String) {
+                    path ["users", scope.account];
+                    METHOD("PROPFIND") Inspect() -> Text;
+                }
             }
         });
-        assert_eq!(api.clients.len(), 2);
-        assert_eq!(api.clients[0].children.len(), 2);
+        assert_eq!(canonical_ident(&api.client.name), "FirstApi");
+        assert_eq!(api.client.values.len(), 3);
+        assert_eq!(api.children.len(), 2);
+    }
+
+    #[test]
+    fn singular_api_structure_and_vars_diagnostics_are_focused() {
+        let empty = parse(TokenStream::new()).err().expect("missing client");
+        assert!(empty.to_string().contains("exactly one `client`"));
+
+        let child_first = parse(quote! {
+            GET Status() -> Bytes;
+            client Api { base "https://example.test"; }
+        })
+        .err()
+        .expect("child before client");
+        assert!(child_first.to_string().contains("must be the first"));
+
+        let second_client = parse(quote! {
+            client FirstApi { base "https://one.example.test"; }
+            client SecondApi { base "https://two.example.test"; }
+        })
+        .err()
+        .expect("second client");
+        assert!(second_client.to_string().contains("exactly one `client`"));
+        assert!(
+            second_client
+                .to_string()
+                .contains("separate `api!` invocations")
+        );
+
+        let api = parse_ok(quote! {
+            client Api { base "https://example.test"; }
+            GET Root() -> Bytes;
+            scope First() { GET Nested() -> Bytes; }
+            scope Second() { }
+        });
+        assert_eq!(api.children.len(), 3);
+
+        let no_vars = parse_ok(quote! {
+            client Api { base "https://example.test"; }
+        });
+        assert!(no_vars.client.values.is_empty());
+
+        let empty_vars = parse_ok(quote! {
+            client Api { base "https://example.test"; vars { } }
+        });
+        assert!(empty_vars.client.values.is_empty());
+
+        let values = parse_ok(quote! {
+            client Api {
+                base "https://example.test";
+                vars {
+                    required: String;
+                    optional: Option<String>;
+                    defaulted: usize = crate::DEFAULT_SIZE;
+                }
+            }
+        });
+        assert!(matches!(values.client.values[0].kind, ValueKind::Required));
+        assert!(matches!(values.client.values[1].kind, ValueKind::Optional));
+        assert!(matches!(
+            values.client.values[2].kind,
+            ValueKind::Defaulted(DefaultExpr::Path(_))
+        ));
+
+        let duplicate_value = parse(quote! {
+            client Api {
+                base "https://example.test";
+                vars { value: String; value: String; }
+            }
+        })
+        .err()
+        .expect("duplicate value");
+        assert!(
+            duplicate_value
+                .to_string()
+                .contains("duplicate client value `value`")
+        );
+
+        let legacy_var = parse(quote! {
+            client Api { base "https://example.test"; var value: String; }
+        })
+        .err()
+        .expect("legacy var");
+        assert!(legacy_var.to_string().contains("`vars { ... }` block"));
+
+        for tokens in [
+            quote! { client Api { vars { value: String; } base "https://example.test"; } },
+            quote! { client Api { base "https://example.test"; vars { } vars { } } },
+            quote! { client Api { base "https://example.test"; credentials { } vars { } } },
+        ] {
+            let error = parse(tokens).err().expect("misplaced vars");
+            assert!(
+                error
+                    .to_string()
+                    .contains("after `base` and before `credentials`")
+            );
+        }
+
+        for tokens in [
+            quote! { client Api { base "https://example.test"; scope Nested() { } } },
+            quote! { client Api { base "https://example.test"; GET Nested() -> Bytes; } },
+        ] {
+            let error = parse(tokens).err().expect("client child");
+            assert!(error.to_string().contains("after the `client` block"));
+        }
+
+        let root_config = parse(quote! {
+            client Api { base "https://example.test"; }
+            timeout 1s;
+        })
+        .err()
+        .expect("root client configuration");
+        assert!(
+            root_config
+                .to_string()
+                .contains("inside the `client` block")
+        );
     }
 
     #[test]
@@ -1607,7 +1788,7 @@ mod tests {
         let default_error = parse(quote! {
             client Api {
                 base "https://example.test";
-                var value: String = make_value();
+                vars { value: String = make_value(); }
             }
         })
         .err()
@@ -1617,8 +1798,8 @@ mod tests {
         let expression_error = parse(quote! {
             client Api {
                 base "https://example.test";
-                GET Root(id: String) -> Bytes { path [ep.id.to_string()]; }
             }
+            GET Root(id: String) -> Bytes { path [ep.id.to_string()]; }
         })
         .err()
         .expect("method expression");
@@ -1649,7 +1830,8 @@ mod tests {
         assert!(non_decimal.to_string().contains("base-10"));
 
         let invalid = parse(quote! {
-            client Api { base "https://example.test"; METHOD("BAD METHOD") Root() -> Bytes; }
+            client Api { base "https://example.test"; }
+            METHOD("BAD METHOD") Root() -> Bytes;
         })
         .err()
         .expect("invalid method");
@@ -1672,7 +1854,7 @@ mod tests {
             let name = format_ident!("scope_{index}");
             child = quote!(scope #name() { #child });
         }
-        quote!(client Api { base "https://example.test"; #child })
+        quote!(client Api { base "https://example.test"; } #child)
     }
 
     fn nested_format(depth: usize) -> TokenStream {
@@ -1683,8 +1865,8 @@ mod tests {
         quote! {
             client Api {
                 base "https://example.test";
-                GET Leaf() -> Bytes { path [#expression]; }
             }
+            GET Leaf() -> Bytes { path [#expression]; }
         }
     }
 
@@ -1705,26 +1887,11 @@ mod tests {
 
     #[test]
     fn focused_structure_and_local_duplicate_diagnostics_are_stable() {
-        let empty = parse(TokenStream::new()).err().expect("zero clients");
-        assert!(empty.to_string().contains("at least one `client`"));
-
-        let duplicate_client = parse(quote! {
-            client Api { base "https://one.example.test"; }
-            client Api { base "https://two.example.test"; }
-        })
-        .err()
-        .expect("duplicate clients");
-        assert!(
-            duplicate_client
-                .to_string()
-                .contains("duplicate client `Api`")
-        );
-
         let body_order = parse(quote! {
             client Api {
                 base "https://example.test";
-                POST Create(body: Text, id: String) -> Bytes;
             }
+            POST Create(body: Text, id: String) -> Bytes;
         })
         .err()
         .expect("body must be last");
@@ -1760,13 +1927,15 @@ mod tests {
         parse(quote! {
             client Api {
                 base "https://example.test";
-                var text: &'static str = "value";
-                var negative: i64 = -7;
-                var enabled: bool = true;
-                var constant: usize = crate::DEFAULT_SIZE;
+                vars {
+                    text: &'static str = "value";
+                    negative: i64 = -7;
+                    enabled: bool = true;
+                    constant: usize = crate::DEFAULT_SIZE;
+                }
                 host ["a12345678901234567890123456789012345678901234567890123456789012"];
-                GET Read(id: u32) -> Bytes { path [fmt["id-", ep.id]]; }
             }
+            GET Read(id: u32) -> Bytes { path [fmt["id-", ep.id]]; }
         })
         .expect("restricted defaults and 63-byte host label");
 
@@ -1790,8 +1959,8 @@ mod tests {
         let commas = parse(quote! {
             client Api {
                 base "https://example.test";
-                GET Read(id: u32) -> Bytes { path [fmt["id-" ep.id]]; }
             }
+            GET Read(id: u32) -> Bytes { path [fmt["id-" ep.id]]; }
         })
         .err()
         .expect("missing format comma");
@@ -1839,13 +2008,10 @@ mod tests {
                     credential acquired = endpoint Login;
                     credential custom = custom crate::SessionToken;
                 }
-                GET Login() -> Bytes;
             }
+            GET Login() -> Bytes;
         });
-        let credentials = api.clients[0]
-            .credentials
-            .as_ref()
-            .expect("credentials block");
+        let credentials = api.client.credentials.as_ref().expect("credentials block");
         assert_eq!(credentials.secrets.len(), 6);
         assert_eq!(credentials.credentials.len(), 6);
 
@@ -1893,8 +2059,8 @@ mod tests {
                 }
                 auth replace bearer session challenge unauthorized_or_forbidden;
                 auth query "fallback" = session challenge never;
-                scope Public() { auth off; }
             }
+            scope Public() { auth off; }
         })
         .expect("bounded auth syntax");
 
@@ -1987,35 +2153,35 @@ mod tests {
         let api = parse_ok(quote! {
             client RateApi {
                 base "https://example.test";
-                var tenant: String;
+                vars { tenant: String; }
                 timeout 5s;
                 rate_limit {
                     500 / 10s;
                     30000 / 10m;
                 }
                 rate_limit_observer crate::ProviderObserver;
-                scope tenants(tenant: String) {
-                    rate_limit {
-                        100 / 1m;
-                    }
-                    GET Read(item: String) -> Bytes {
-                        timeout 2s;
-                        rate_limit {
-                            cost 2;
-                            10 / 1s;
-                        }
-                    }
-                    GET Public() -> Bytes;
+            }
+            scope tenants(tenant: String) {
+                rate_limit {
+                    100 / 1m;
                 }
+                GET Read(item: String) -> Bytes {
+                    timeout 2s;
+                    rate_limit {
+                        cost 2;
+                        10 / 1s;
+                    }
+                }
+                GET Public() -> Bytes;
             }
         });
-        let client = &api.clients[0];
+        let client = &api.client;
         assert_eq!(
             client.rate_limit_observer.as_ref().unwrap().segments.len(),
             2
         );
         assert_eq!(client.layer.rate_limit.as_ref().unwrap().windows.len(), 2);
-        let SourceChild::Scope(scope) = &client.children[0] else {
+        let SourceChild::Scope(scope) = &api.children[0] else {
             panic!("scope")
         };
         assert!(scope.layer.rate_limit.is_some());
@@ -2037,18 +2203,18 @@ mod tests {
                 rate_limit {
                     1 / 1s;
                 }
-                scope Narrow() {
-                    rate_limit {
-                        cost 2;
-                        2 / 1s;
-                        10 / 1m;
-                    }
-                    GET Read() -> Bytes;
+            }
+            scope Narrow() {
+                rate_limit {
+                    cost 2;
+                    2 / 1s;
+                    10 / 1m;
                 }
+                GET Read() -> Bytes;
             }
         });
-        assert_eq!(api.clients[0].layer.rate_limit.as_ref().unwrap().cost, 1);
-        let SourceChild::Scope(scope) = &api.clients[0].children[0] else {
+        assert_eq!(api.client.layer.rate_limit.as_ref().unwrap().cost, 1);
+        let SourceChild::Scope(scope) = &api.children[0] else {
             panic!("scope")
         };
         let rule = scope.layer.rate_limit.as_ref().unwrap();
@@ -2127,10 +2293,10 @@ mod tests {
         let endpoint_order = parse(quote! {
             client Api {
                 base "https://example.test";
-                GET Read() -> Bytes {
-                    rate_limit { 1 / 1s; }
-                    timeout 1s;
-                }
+            }
+            GET Read() -> Bytes {
+                rate_limit { 1 / 1s; }
+                timeout 1s;
             }
         })
         .err()
@@ -2143,37 +2309,37 @@ mod tests {
         let api = parse_ok(quote! {
             client Api {
                 base "https://example.test";
-                GET Offset(offset: u64, limit: u32) -> Json<Vec<u32>> {
-                    paginate concord_core::advanced::OffsetPagination {
-                        offset: bind ep.offset,
-                        page_size: bind ep.limit,
-                    }
+            }
+            GET Offset(offset: u64, limit: u32) -> Json<Vec<u32>> {
+                paginate concord_core::advanced::OffsetPagination {
+                    offset: bind ep.offset,
+                    page_size: bind ep.limit,
                 }
-                GET Page(page: u64, per_page: u32) -> Json<Vec<u32>> {
-                    paginate PagePagination {
-                        page: bind ep.page,
-                        page_size: bind ep.per_page,
-                    }
+            }
+            GET Page(page: u64, per_page: u32) -> Json<Vec<u32>> {
+                paginate PagePagination {
+                    page: bind ep.page,
+                    page_size: bind ep.per_page,
                 }
-                GET Cursor(cursor: Option<String>) -> Json<Vec<u32>> {
-                    paginate CursorPagination<String> { cursor: bind ep.cursor }
-                }
-                scope Regions(region: String) {
-                    GET Custom(cursor: Option<String>, maximum: u32) -> Json<Vec<u32>> {
-                        paginate crate::pagination::VendorCursor {
-                            cursor: bind ep.cursor,
-                            region: scope.region,
-                            empty_pages: 0,
-                            enabled: true,
-                            label: "vendor",
-                            maximum: vars.maximum,
-                            policy: crate::pagination::DEFAULT_POLICY,
-                        }
+            }
+            GET Cursor(cursor: Option<String>) -> Json<Vec<u32>> {
+                paginate CursorPagination<String> { cursor: bind ep.cursor }
+            }
+            scope Regions(region: String) {
+                GET Custom(cursor: Option<String>, maximum: u32) -> Json<Vec<u32>> {
+                    paginate crate::pagination::VendorCursor {
+                        cursor: bind ep.cursor,
+                        region: scope.region,
+                        empty_pages: 0,
+                        enabled: true,
+                        label: "vendor",
+                        maximum: vars.maximum,
+                        policy: crate::pagination::DEFAULT_POLICY,
                     }
                 }
             }
         });
-        assert_eq!(api.clients[0].children.len(), 4);
+        assert_eq!(api.children.len(), 4);
     }
 
     #[test]
@@ -2181,32 +2347,29 @@ mod tests {
         let cases = [
             (
                 quote! {
-                    client Api { base "https://example.test";
-                        GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
-                            paginate OffsetPagination
-                        }
+                    client Api { base "https://example.test"; }
+                    GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
+                        paginate OffsetPagination
                     }
                 },
                 "struct field block",
             ),
             (
                 quote! {
-                    client Api { base "https://example.test";
-                        GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
-                            paginate OffsetPagination { offset = ep.offset }
-                        }
+                    client Api { base "https://example.test"; }
+                    GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
+                        paginate OffsetPagination { offset = ep.offset }
                     }
                 },
                 "field: bind ep.field",
             ),
             (
                 quote! {
-                    client Api { base "https://example.test";
-                        GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
-                            paginate OffsetPagination {
-                                offset: bind ep.offset,
-                                offset: bind ep.limit,
-                            }
+                    client Api { base "https://example.test"; }
+                    GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
+                        paginate OffsetPagination {
+                            offset: bind ep.offset,
+                            offset: bind ep.limit,
                         }
                     }
                 },
@@ -2214,12 +2377,11 @@ mod tests {
             ),
             (
                 quote! {
-                    client Api { base "https://example.test";
-                        GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
-                            paginate OffsetPagination {
-                                offset: bind ep.offset,
-                                page_size: bind ep.offset,
-                            }
+                    client Api { base "https://example.test"; }
+                    GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
+                        paginate OffsetPagination {
+                            offset: bind ep.offset,
+                            page_size: bind ep.offset,
                         }
                     }
                 },
@@ -2227,60 +2389,54 @@ mod tests {
             ),
             (
                 quote! {
-                    client Api { base "https://example.test";
-                        GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
-                            paginate OffsetPagination { offset: bind vars.offset }
-                        }
+                    client Api { base "https://example.test"; }
+                    GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
+                        paginate OffsetPagination { offset: bind vars.offset }
                     }
                 },
                 "accepts only direct `ep.FIELD` or `scope.FIELD`",
             ),
             (
                 quote! {
-                    client Api { base "https://example.test";
-                        GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
-                            paginate OffsetPagination { offset: bind ep.state.offset }
-                        }
+                    client Api { base "https://example.test"; }
+                    GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
+                        paginate OffsetPagination { offset: bind ep.state.offset }
                     }
                 },
                 "must be direct",
             ),
             (
                 quote! {
-                    client Api { base "https://example.test";
-                        GET Read(offset: u64) -> Json<Vec<u32>> {
-                            paginate OffsetPagination { offset }
-                        }
+                    client Api { base "https://example.test"; }
+                    GET Read(offset: u64) -> Json<Vec<u32>> {
+                        paginate OffsetPagination { offset }
                     }
                 },
                 "field shorthand",
             ),
             (
                 quote! {
-                    client Api { base "https://example.test";
-                        GET Read(offset: u64) -> Json<Vec<u32>> {
-                            paginate OffsetPagination { .. }
-                        }
+                    client Api { base "https://example.test"; }
+                    GET Read(offset: u64) -> Json<Vec<u32>> {
+                        paginate OffsetPagination { .. }
                     }
                 },
                 "rest syntax",
             ),
             (
                 quote! {
-                    client Api { base "https://example.test";
-                        GET Read() -> Json<Vec<u32>> {
-                            paginate crate::Controller { value: crate::make() }
-                        }
+                    client Api { base "https://example.test"; }
+                    GET Read() -> Json<Vec<u32>> {
+                        paginate crate::Controller { value: crate::make() }
                     }
                 },
                 "calls, methods, macros",
             ),
             (
                 quote! {
-                    client Api { base "https://example.test";
-                        GET Read() -> Json<Vec<u32>> {
-                            paginate custom crate::factory();
-                        }
+                    client Api { base "https://example.test"; }
+                    GET Read() -> Json<Vec<u32>> {
+                        paginate custom crate::factory();
                     }
                 },
                 "old `paginate custom factory(...)` syntax",

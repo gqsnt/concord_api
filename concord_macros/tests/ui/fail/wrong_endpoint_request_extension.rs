@@ -3,9 +3,10 @@ use concord_macros::api;
 api! {
     client SetterApi {
         base "http://setter.example.test";
-        GET First(verbose: Option<bool>) -> Bytes;
-        GET Second() -> Bytes;
     }
+
+    GET First(verbose: Option<bool>) -> Bytes;
+    GET Second() -> Bytes;
 }
 
 fn main() {

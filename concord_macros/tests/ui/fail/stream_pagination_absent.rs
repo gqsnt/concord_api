@@ -3,10 +3,11 @@ use concord_macros::api;
 api! {
     client StreamingApi {
         base "http://streaming.example.test";
-        scope transfers() {
-            path ["transfers"];
-            GET Download() -> Stream<OctetStream>;
-        }
+    }
+
+    scope transfers() {
+        path ["transfers"];
+        GET Download() -> Stream<OctetStream>;
     }
 }
 

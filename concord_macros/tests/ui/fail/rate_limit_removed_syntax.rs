@@ -6,8 +6,9 @@ api! {
         rate_limits {
             quota { 1 / 1s; }
         }
-        GET Read() -> Bytes;
     }
+
+    GET Read() -> Bytes;
 }
 
 fn main() {}

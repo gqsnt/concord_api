@@ -36,10 +36,10 @@ struct User {
 api! {
     client UsersApi {
         base "https://api.example.com/";
+    }
 
-        GET User(name: String) -> Json<User> {
-            path ["users", ep.name];
-        }
+    GET User(name: String) -> Json<User> {
+        path ["users", ep.name];
     }
 }
 
