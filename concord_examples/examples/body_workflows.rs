@@ -1,9 +1,9 @@
 #![forbid(unsafe_code)]
 
-use concord_core::Request;
-use concord_core::advanced::{MultipartBody, MultipartPart};
-use concord_core::prelude::{Bytes, StreamBody};
-use concord_macros::api;
+use concord::Request;
+use concord::advanced::{MultipartBody, MultipartPart};
+use concord::api;
+use concord::prelude::{Bytes, StreamBody};
 
 api! {
     client BodyApi {

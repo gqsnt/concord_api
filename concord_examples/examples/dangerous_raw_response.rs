@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
-use concord_core::dangerous::RawResponseRequest;
-use concord_macros::api;
+use concord::api;
+use concord::dangerous::RawResponseRequest;
 
 api! {
     client RawResponseApi {
@@ -11,7 +11,7 @@ api! {
     GET Record() -> Json<Vec<u32>>;
 }
 
-fn main() -> Result<(), concord_core::prelude::ClientBuildError> {
+fn main() -> Result<(), concord::prelude::ClientBuildError> {
     let client = RawResponseApi::builder().build()?;
     let _: RawResponseRequest<_> = client.record().raw_response();
     Ok(())

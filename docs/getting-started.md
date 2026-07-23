@@ -11,16 +11,15 @@ This page takes a new project from dependency setup to its first generated reque
 
 Concord uses Rust 2024 and declares Rust 1.85 as its minimum supported version. Generated requests are asynchronous and run on Tokio.
 
-Use matching local path dependencies for `concord_core` and `concord_macros` so the generated compatibility contract stays synchronized.
+Use the `concord` façade so its runtime, macro compiler, and selected extras stay synchronized.
 
 ```toml
 [dependencies]
-concord_core = {
-    path = "../concord/concord_core",
+concord = {
+    path = "../concord/concord",
     default-features = false,
     features = ["default-tls", "http2", "json", "rate-limit-governor"]
 }
-concord_macros = { path = "../concord/concord_macros" }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
@@ -29,7 +28,8 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 Default core features are `default-tls`, `http2`, and `rate-limit-governor`. Add only what the client uses:
 
-- `json` for `Json<T>` and OAuth2 client-credential decoding.
+- `json` for the extras-owned `Json<T>` codec.
+- `oauth2-client` for the temporary legacy OAuth2 client-credential helper.
 - `multipart` for multipart request bodies.
 - `records` for the generic record-stream API.
 - `csv` for typed CSV records; it enables `records`.
@@ -78,10 +78,10 @@ Continue with [Your first API](getting-started.md#your-first-api).
 
 ## Your first API
 
-A Concord API is declared with `concord_macros::api!`. Each invocation declares exactly one client, and that client must be first. The client starts with one fixed absolute HTTP or HTTPS base URL; root scopes and endpoints follow its closing brace. Use separate `api!` invocations when a module needs multiple generated clients.
+A Concord API is declared with `concord::api!`. Each invocation declares exactly one client, and that client must be first. The client starts with one fixed absolute HTTP or HTTPS base URL; root scopes and endpoints follow its closing brace. Use separate `api!` invocations when a module needs multiple generated clients.
 
 ```rust
-use concord_macros::api;
+use concord::api;
 
 api! {
     client NotesApi {

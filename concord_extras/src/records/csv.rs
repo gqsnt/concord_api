@@ -1,13 +1,9 @@
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 
-use bytes::BytesMut;
-use http::header::CONTENT_TYPE;
+use concord_core::advanced::{BytesMut, ResponseHead};
+use concord_core::records::{RecordDecoder, RecordError, RecordErrorKind};
 use serde::de::DeserializeOwned;
-
-use crate::response::ResponseHead;
-
-use super::{RecordDecoder, RecordError, RecordErrorKind};
 
 const MAX_STAGED_RECORD_BYTES: usize = 1024 * 1024;
 
@@ -225,10 +221,9 @@ where
     fn validate(head: &ResponseHead<'_>) -> Result<(), RecordError> {
         let valid = head
             .headers
-            .get(CONTENT_TYPE)
+            .get("content-type")
             .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse::<mime::Mime>().ok())
-            .is_some_and(|media| media.type_() == mime::TEXT && media.subtype() == mime::CSV);
+            .is_some_and(is_csv_media_type);
         if valid {
             Ok(())
         } else {
@@ -258,38 +253,19 @@ where
     }
 }
 
+fn is_csv_media_type(value: &str) -> bool {
+    value
+        .parse::<mime::Mime>()
+        .is_ok_and(|media| media.type_() == mime::TEXT && media.subtype() == mime::CSV)
+}
+
 #[cfg(test)]
 mod tests {
-    use std::collections::VecDeque;
     use std::error::Error as _;
-    use std::future::poll_fn;
-    use std::pin::Pin;
-    use std::task::{Context, Poll};
 
-    use bytes::{Bytes, BytesMut};
-    use futures_core::Stream;
-    use http::{HeaderMap, HeaderValue, Method, StatusCode, Version};
     use serde::Deserialize;
-    use url::Url;
 
     use super::*;
-    use crate::error::ApiError;
-    use crate::http::application::{ApplicationByteStream, bounded_byte_stream};
-    use crate::records::RecordStream;
-    use crate::response::{ByteStream, ExecutionMeta};
-
-    struct Chunks(VecDeque<Bytes>);
-
-    impl Stream for Chunks {
-        type Item = Result<Bytes, ApiError>;
-
-        fn poll_next(
-            mut self: Pin<&mut Self>,
-            _context: &mut Context<'_>,
-        ) -> Poll<Option<Self::Item>> {
-            Poll::Ready(self.0.pop_front().map(Ok))
-        }
-    }
 
     #[derive(Debug, Deserialize, Eq, PartialEq)]
     struct Row {
@@ -298,29 +274,12 @@ mod tests {
         count: u32,
     }
 
-    fn with_head<T>(content_type: &'static str, inspect: impl FnOnce(&ResponseHead<'_>) -> T) -> T {
-        let method = Method::GET;
-        let url = Url::parse("https://records.example.test/csv").expect("record URL");
-        let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static(content_type));
-        let metadata = ExecutionMeta::new("RecordsApi::csv", method.clone(), 0, false);
-        inspect(&ResponseHead {
-            endpoint: "RecordsApi::csv",
-            method: &method,
-            url: &url,
-            status: StatusCode::OK,
-            version: Version::HTTP_11,
-            headers: &headers,
-            content_length: None,
-            metadata: &metadata,
-        })
-    }
-
     fn decoder() -> Csv<Row> {
-        with_head("text/csv; charset=utf-8", |head| {
-            Csv::<Row>::validate(head).expect("CSV media");
-            Csv::<Row>::start(head).expect("CSV decoder")
-        })
+        Csv {
+            headers: None,
+            scan: CsvScan::new(),
+            marker: PhantomData,
+        }
     }
 
     fn feed(chunks: impl IntoIterator<Item = Vec<u8>>) -> Result<Vec<Row>, RecordError> {
@@ -407,42 +366,11 @@ mod tests {
 
     #[test]
     fn csv_media_requires_text_csv_but_accepts_parameters() {
-        with_head("application/json", |head| {
-            let error = Csv::<Row>::validate(head).expect_err("wrong CSV media");
-            assert_eq!(error.kind(), RecordErrorKind::InvalidMediaType);
-        });
+        assert!(is_csv_media_type("text/csv"));
+        assert!(is_csv_media_type("text/csv; charset=utf-8"));
+        assert!(!is_csv_media_type("application/json"));
+        assert!(!is_csv_media_type("text/csv; broken=\"unterminated"));
         assert_eq!(Csv::<Row>::accept(), Some("text/csv"));
         assert_eq!(Csv::<Row>::max_buffered_bytes().get(), 1024 * 1024);
-    }
-
-    #[tokio::test]
-    async fn csv_first_framing_byte_above_staging_bound_is_withheld() {
-        let chunks = Chunks(
-            [
-                Bytes::from_static(b"name,note,count\n"),
-                Bytes::from(vec![b'x'; MAX_STAGED_RECORD_BYTES]),
-                Bytes::from_static(b"\n"),
-            ]
-            .into_iter()
-            .collect(),
-        );
-        let raw: ApplicationByteStream = Box::pin(chunks);
-        let body = ByteStream::new(bounded_byte_stream(
-            raw,
-            "RecordsApi::csv_staging",
-            Method::GET,
-            u64::try_from(4 * MAX_STAGED_RECORD_BYTES).expect("test stream limit fits u64"),
-        ));
-        let mut records = RecordStream::new(
-            body,
-            decoder(),
-            NonZeroUsize::new(MAX_STAGED_RECORD_BYTES).expect("positive CSV staging bound"),
-        );
-        let error = poll_fn(|context| Pin::new(&mut records).poll_next(context))
-            .await
-            .expect("CSV staging error item")
-            .expect_err("oversized framed CSV record");
-        assert_eq!(error.kind(), RecordErrorKind::LimitExceeded);
-        assert!(!format!("{error} {error:?}").contains(&"x".repeat(64)));
     }
 }

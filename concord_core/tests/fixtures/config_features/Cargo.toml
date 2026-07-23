@@ -13,7 +13,6 @@ brotli = ["concord_core/brotli"]
 deflate = ["concord_core/deflate"]
 dangerous-custom-retry = ["concord_core/dangerous-custom-retry"]
 dangerous-dev-tools = ["concord_core/dangerous-dev-tools"]
-json = ["concord_core/json"]
 rate-limit-governor = ["concord_core/rate-limit-governor"]
 
 [dependencies]

@@ -1,5 +1,5 @@
 use std::error::Error;
-use std::num::{NonZeroU32, NonZeroU64, NonZeroUsize};
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -49,75 +49,6 @@ fn page_limits_and_safe_errors_have_exact_stable_structure() {
     );
     assert!(format!("{error:?}").contains("Controller"));
     assert!(error.source().is_none());
-}
-
-#[derive(Clone)]
-struct CursorPage {
-    next: Option<String>,
-}
-
-impl HasNextCursor<String> for CursorPage {
-    fn next_cursor(&self) -> Option<&String> {
-        self.next.as_ref()
-    }
-}
-
-#[test]
-fn built_in_controllers_progress_checked_and_preserve_absent_vs_empty_cursor() {
-    let offset = OffsetPagination::new(7, NonZeroU32::new(4).expect("nonzero"));
-    assert_eq!(
-        <OffsetPagination as PaginationController<()>>::short_page_size(&offset),
-        NonZeroUsize::new(4)
-    );
-    let next = <OffsetPagination as PaginationController<()>>::next(offset, &())
-        .expect("offset next")
-        .expect("offset continues");
-    assert_eq!(next.offset(), 11);
-    assert_eq!(next.page_size().get(), 4);
-    let overflow = OffsetPagination::new(u64::MAX, NonZeroU32::MIN);
-    let Err(error) = <OffsetPagination as PaginationController<()>>::next(overflow, &()) else {
-        panic!("offset overflow must fail");
-    };
-    assert_eq!(error.kind(), PaginationErrorKind::Overflow);
-
-    let page = PagePagination::new(
-        NonZeroU64::new(9).expect("nonzero"),
-        NonZeroU32::new(2).expect("nonzero"),
-    );
-    assert_eq!(
-        <PagePagination as PaginationController<()>>::short_page_size(&page),
-        NonZeroUsize::new(2)
-    );
-    let next = <PagePagination as PaginationController<()>>::next(page, &())
-        .expect("page next")
-        .expect("page continues");
-    assert_eq!(next.page().get(), 10);
-    assert_eq!(next.page_size().get(), 2);
-    let overflow =
-        PagePagination::new(NonZeroU64::new(u64::MAX).expect("nonzero"), NonZeroU32::MIN);
-    let Err(error) = <PagePagination as PaginationController<()>>::next(overflow, &()) else {
-        panic!("page overflow must fail");
-    };
-    assert_eq!(error.kind(), PaginationErrorKind::Overflow);
-
-    let cursor = CursorPagination::new(None::<String>);
-    assert_eq!(
-        <CursorPagination<String> as PaginationController<CursorPage>>::short_page_size(&cursor),
-        None
-    );
-    let empty = cursor
-        .next(&CursorPage {
-            next: Some(String::new()),
-        })
-        .expect("cursor next")
-        .expect("present empty cursor continues");
-    assert_eq!(empty.cursor().map(String::as_str), Some(""));
-    assert!(
-        empty
-            .next(&CursorPage { next: None })
-            .expect("absent cursor")
-            .is_none()
-    );
 }
 
 #[test]

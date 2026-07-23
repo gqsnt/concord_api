@@ -8,15 +8,10 @@ error[E0277]: the trait bound `concord_core::advanced::Multipart: ResponseBodySp
 12 | | }
    | |_^ the trait `DecodeBody` is not implemented for `concord_core::advanced::Multipart`
    |
-help: the following other types implement trait `DecodeBody`
+help: the trait `DecodeBody` is implemented for `concord_core::advanced::Text`
   --> $WORKSPACE/concord_core/src/codec/mod.rs
    |
-   |   impl DecodeBody for Text {
-   |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::advanced::Text`
-...
-   | / impl<T> DecodeBody for Json<T>
-   | | where
-   | |     T: serde::de::DeserializeOwned + Send + Sync + 'static,
-   | |___________________________________________________________^ `Json<T>`
+   | impl DecodeBody for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
    = note: required for `concord_core::advanced::Multipart` to implement `ResponseBodySpec`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

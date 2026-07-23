@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use concord_core::Request;
-use concord_core::advanced::NoopRateLimiter;
-use concord_macros::api;
+use concord::Request;
+use concord::advanced::NoopRateLimiter;
+use concord::api;
 
 api! {
     client RateLimitApi {
@@ -25,7 +25,7 @@ api! {
     GET Public() -> Bytes;
 }
 
-fn main() -> Result<(), concord_core::prelude::ClientBuildError> {
+fn main() -> Result<(), concord::prelude::ClientBuildError> {
     let client = RateLimitApi::builder()
         .tenant("example-tenant".to_owned())
         .runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))

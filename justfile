@@ -31,7 +31,9 @@ test-no-default:
 docs:
     cargo test --workspace --doc
     cargo test --workspace --doc --all-features
+    cargo rustdoc -p concord --all-features -- -D warnings
     cargo rustdoc -p concord_core --all-features -- -D warnings
+    cargo rustdoc -p concord_extras --all-features -- -D warnings
     cargo rustdoc -p concord_macros --all-features -- -D warnings
     cargo rustdoc -p concord_test_support --all-features -- -D warnings
     cargo rustdoc -p concord_examples --all-features -- -D warnings
@@ -45,10 +47,11 @@ features:
     cargo check -p concord_core --all-targets --no-default-features
     cargo check -p concord_core --all-targets --all-features
     cargo check -p concord_core --all-targets --no-default-features --features records
-    cargo check -p concord_core --all-targets --no-default-features --features csv
-    cargo check -p concord_core --all-targets --no-default-features --features ndjson
-    cargo check -p concord_core --all-targets --no-default-features --features csv,ndjson
-    cargo check -p concord_core --all-targets --no-default-features --features json
+    cargo check -p concord_extras --all-targets --all-features
+    cargo check -p concord --all-targets --no-default-features --features json
+    cargo check -p concord --all-targets --no-default-features --features csv
+    cargo check -p concord --all-targets --no-default-features --features ndjson
+    cargo check -p concord --all-targets --no-default-features --features csv,ndjson
     cargo check -p concord_core --all-targets --no-default-features --features multipart
     cargo check -p concord_core --all-targets --no-default-features --features rate-limit-governor
     cargo check -p concord_core --all-targets --no-default-features --features dangerous-raw-response

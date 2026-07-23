@@ -5,12 +5,12 @@ use std::error::Error;
 use std::fmt;
 use std::num::NonZeroU32;
 
-use concord_core::advanced::{
+use concord::advanced::{
     Cooldown, CooldownScope, DefaultRateLimitObserver, HeaderName, RateLimitObserver,
     RateLimitResponseHead, SanitizedHeaderValue,
 };
-use concord_core::prelude::*;
-use concord_macros::api;
+use concord::api;
+use concord::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use serde_json::Value;
@@ -1075,7 +1075,7 @@ api! {
                     "count" = ep.count;
                 }
                 rate_limit { 2000 / 10s; }
-                paginate concord_core::advanced::OffsetPagination {
+                paginate concord::advanced::OffsetPagination {
                     offset: bind ep.start,
                     page_size: bind ep.count,
                 }

@@ -1,4 +1,4 @@
-use concord_macros::api;
+use runtime::api;
 
 api! {
     client OAuthDisabledApi {

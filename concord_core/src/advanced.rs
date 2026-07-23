@@ -14,8 +14,6 @@ pub use crate::body::{
 };
 #[cfg(feature = "multipart")]
 pub use crate::body::{Multipart, MultipartBody, MultipartFactory, MultipartPart};
-#[cfg(feature = "json")]
-pub use crate::codec::Json;
 pub use crate::codec::{
     CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType, OctetStream, Text,
 };
@@ -33,10 +31,7 @@ pub use crate::http::provider::{
 };
 pub use crate::http::{HttpConfigBuilder, ProviderRetry, SafeProxy};
 pub use crate::operation::OperationId;
-pub use crate::pagination::{
-    CursorPagination, HasNextCursor, OffsetPagination, PagePagination, PaginationController,
-    PaginationError,
-};
+pub use crate::pagination::{PaginationController, PaginationError};
 #[cfg(feature = "rate-limit-governor")]
 pub use crate::rate_limit::GovernorRateLimiter;
 pub use crate::rate_limit::{
@@ -45,10 +40,6 @@ pub use crate::rate_limit::{
     RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimitRule, RateLimitWindow,
     RateLimiter,
 };
-#[cfg(feature = "csv")]
-pub use crate::records::Csv;
-#[cfg(feature = "ndjson")]
-pub use crate::records::NdJson;
 #[cfg(feature = "records")]
 pub use crate::records::{
     RecordBatches, RecordDecoder, RecordError, RecordErrorKind, RecordStream, Records,

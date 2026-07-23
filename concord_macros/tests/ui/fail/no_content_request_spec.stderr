@@ -9,16 +9,11 @@ error[E0277]: the trait bound `concord_core::advanced::NoContent: EncodeBody` is
 9 | | }
   | |_^ the trait `EncodeBody` is not implemented for `concord_core::advanced::NoContent`
   |
-help: the following other types implement trait `EncodeBody`
+help: the trait `EncodeBody` is implemented for `concord_core::advanced::Text`
  --> $WORKSPACE/concord_core/src/codec/mod.rs
   |
-  |   impl EncodeBody for Text {
-  |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::advanced::Text`
-...
-  | / impl<T> EncodeBody for Json<T>
-  | | where
-  | |     T: serde::Serialize + Send + Sync + 'static,
-  | |________________________________________________^ `Json<T>`
+  | impl EncodeBody for Text {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^
   = note: required for `concord_core::advanced::NoContent` to implement `RequestBodySpec`
   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -28,16 +23,11 @@ error[E0277]: the trait bound `concord_core::advanced::NoContent: EncodeBody` is
 8 |     POST Invalid(body: NoContent) -> Bytes;
   |          ^^^^^^^ the trait `EncodeBody` is not implemented for `concord_core::advanced::NoContent`
   |
-help: the following other types implement trait `EncodeBody`
+help: the trait `EncodeBody` is implemented for `concord_core::advanced::Text`
  --> $WORKSPACE/concord_core/src/codec/mod.rs
   |
-  |   impl EncodeBody for Text {
-  |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::advanced::Text`
-...
-  | / impl<T> EncodeBody for Json<T>
-  | | where
-  | |     T: serde::Serialize + Send + Sync + 'static,
-  | |________________________________________________^ `Json<T>`
+  | impl EncodeBody for Text {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^
   = note: required for `concord_core::advanced::NoContent` to implement `RequestBodySpec`
 note: required because it appears within the type `Invalid`
  --> tests/ui/fail/no_content_request_spec.rs:8:10
@@ -62,16 +52,11 @@ error[E0277]: the trait bound `concord_core::advanced::NoContent: EncodeBody` is
 8 |     POST Invalid(body: NoContent) -> Bytes;
   |          ^^^^^^^ the trait `EncodeBody` is not implemented for `concord_core::advanced::NoContent`
   |
-help: the following other types implement trait `EncodeBody`
+help: the trait `EncodeBody` is implemented for `concord_core::advanced::Text`
  --> $WORKSPACE/concord_core/src/codec/mod.rs
   |
-  |   impl EncodeBody for Text {
-  |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::advanced::Text`
-...
-  | / impl<T> EncodeBody for Json<T>
-  | | where
-  | |     T: serde::Serialize + Send + Sync + 'static,
-  | |________________________________________________^ `Json<T>`
+  | impl EncodeBody for Text {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^
   = note: required for `concord_core::advanced::NoContent` to implement `RequestBodySpec`
 note: required because it appears within the type `Invalid`
  --> tests/ui/fail/no_content_request_spec.rs:8:10
@@ -101,16 +86,11 @@ error[E0277]: the trait bound `concord_core::advanced::NoContent: RequestBodySpe
 9 | | }
   | |_^ the trait `EncodeBody` is not implemented for `concord_core::advanced::NoContent`
   |
-help: the following other types implement trait `EncodeBody`
+help: the trait `EncodeBody` is implemented for `concord_core::advanced::Text`
  --> $WORKSPACE/concord_core/src/codec/mod.rs
   |
-  |   impl EncodeBody for Text {
-  |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::advanced::Text`
-...
-  | / impl<T> EncodeBody for Json<T>
-  | | where
-  | |     T: serde::Serialize + Send + Sync + 'static,
-  | |________________________________________________^ `Json<T>`
+  | impl EncodeBody for Text {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^
   = note: required for `concord_core::advanced::NoContent` to implement `RequestBodySpec`
   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -125,16 +105,11 @@ error[E0277]: the trait bound `concord_core::advanced::NoContent: EncodeBody` is
 9 | | }
   | |_^ the trait `EncodeBody` is not implemented for `concord_core::advanced::NoContent`
   |
-help: the following other types implement trait `EncodeBody`
+help: the trait `EncodeBody` is implemented for `concord_core::advanced::Text`
  --> $WORKSPACE/concord_core/src/codec/mod.rs
   |
-  |   impl EncodeBody for Text {
-  |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::advanced::Text`
-...
-  | / impl<T> EncodeBody for Json<T>
-  | | where
-  | |     T: serde::Serialize + Send + Sync + 'static,
-  | |________________________________________________^ `Json<T>`
+  | impl EncodeBody for Text {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^
   = note: required for `concord_core::advanced::NoContent` to implement `RequestBodySpec`
 note: required because it appears within the type `Invalid`
  --> tests/ui/fail/no_content_request_spec.rs:8:10
@@ -155,16 +130,11 @@ error[E0277]: the trait bound `concord_core::advanced::NoContent: EncodeBody` is
 9 | | }
   | |_^ the trait `EncodeBody` is not implemented for `concord_core::advanced::NoContent`
   |
-help: the following other types implement trait `EncodeBody`
+help: the trait `EncodeBody` is implemented for `concord_core::advanced::Text`
  --> $WORKSPACE/concord_core/src/codec/mod.rs
   |
-  |   impl EncodeBody for Text {
-  |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::advanced::Text`
-...
-  | / impl<T> EncodeBody for Json<T>
-  | | where
-  | |     T: serde::Serialize + Send + Sync + 'static,
-  | |________________________________________________^ `Json<T>`
+  | impl EncodeBody for Text {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^
   = note: required for `concord_core::advanced::NoContent` to implement `RequestBodySpec`
 note: required because it appears within the type `Invalid`
  --> tests/ui/fail/no_content_request_spec.rs:8:10

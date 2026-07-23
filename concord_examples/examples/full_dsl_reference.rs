@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
-use concord_core::Request;
-use concord_macros::api;
+use concord::Request;
+use concord::api;
 
 api! {
     client ReferenceApi {
@@ -62,7 +62,7 @@ api! {
     GET Health() -> NoContent;
 }
 
-fn main() -> Result<(), concord_core::prelude::ClientBuildError> {
+fn main() -> Result<(), concord::prelude::ClientBuildError> {
     use reference_api::prelude::*;
 
     let client = ReferenceApi::new("tenant-a".to_owned(), "example-api-key")?;

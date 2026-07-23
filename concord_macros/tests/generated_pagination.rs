@@ -4,14 +4,17 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use concord_core::advanced::{
-    BoxFuture, Buffered, CodecError, DecodeBody, DecodeContext, HasNextCursor, HookError,
-    PageResponseSpec, PaginationController, PaginationError, RateLimitError, RateLimitPermit,
-    RateLimitRequest, RateLimitResponse, RateLimiter, ResponseBodyError, ResponseBodyErrorKind,
-    ResponseBodySpec, ResponseHead, RuntimeHooks, SafeProxy,
+    BoxFuture, Buffered, CodecError, DecodeBody, DecodeContext, HookError, PageResponseSpec,
+    PaginationController, PaginationError, RateLimitError, RateLimitPermit, RateLimitRequest,
+    RateLimitResponse, RateLimiter, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec,
+    ResponseHead, RuntimeHooks, SafeProxy,
 };
 use concord_core::prelude::Bytes;
 use concord_macros::api;
 use concord_test_support::server::{ResponseScript, ScriptedServer};
+
+mod support;
+use support::{Json, NextCursor};
 
 fn nz32(value: u32) -> NonZeroU32 {
     NonZeroU32::new(value).expect("positive u32")
@@ -32,7 +35,7 @@ api! {
             "offset" = ep.offset;
             "limit" = ep.limit;
         }
-        paginate concord_core::advanced::OffsetPagination {
+        paginate crate::support::OffsetController {
             offset: bind ep.offset,
             page_size: bind ep.limit,
         }
@@ -50,7 +53,7 @@ api! {
             "page" = ep.page;
             "per_page" = ep.per_page;
         }
-        paginate concord_core::advanced::PagePagination {
+        paginate crate::support::PageController {
             page: bind ep.page,
             page_size: bind ep.per_page,
         }
@@ -203,7 +206,7 @@ api! {
             "offset" = ep.offset;
             "limit" = ep.limit;
         }
-        paginate concord_core::advanced::OffsetPagination {
+        paginate crate::support::OffsetController {
             offset: bind ep.offset,
             page_size: bind ep.limit,
         }
@@ -224,7 +227,7 @@ impl IntoIterator for VendorPage {
     }
 }
 
-impl HasNextCursor<String> for VendorPage {
+impl NextCursor<String> for VendorPage {
     fn next_cursor(&self) -> Option<&String> {
         self.next.as_ref()
     }
@@ -315,7 +318,7 @@ api! {
         query {
             "cursor" = ep.cursor;
         }
-        paginate concord_core::advanced::CursorPagination<String> {
+        paginate crate::support::CursorController<String> {
             cursor: bind ep.cursor,
         }
     }
@@ -437,7 +440,7 @@ api! {
     scope Left() {
         path ["left"];
         GET Items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
-            paginate concord_core::advanced::OffsetPagination {
+            paginate crate::support::OffsetController {
                 offset: bind ep.offset,
                 page_size: bind ep.limit,
             }
@@ -446,7 +449,7 @@ api! {
     scope Right() {
         path ["right"];
         GET Items(page: std::num::NonZeroU64, per_page: std::num::NonZeroU32) -> Json<Vec<u8>> {
-            paginate concord_core::advanced::PagePagination {
+            paginate crate::support::PageController {
                 page: bind ep.page,
                 page_size: bind ep.per_page,
             }
@@ -468,7 +471,7 @@ api! {
         }
         headers { "X-Page-Offset" = ep.offset; }
         rate_limit { 100 / 1s; }
-        paginate concord_core::advanced::OffsetPagination {
+        paginate crate::support::OffsetController {
             offset: bind ep.offset,
             page_size: bind ep.limit,
         }
@@ -476,6 +479,7 @@ api! {
 }
 
 mod repeated_nested_expansion {
+    use crate::support::Json;
     use concord_macros::api;
 
     api! {
@@ -484,7 +488,7 @@ mod repeated_nested_expansion {
         }
 
         GET Items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
-            paginate concord_core::advanced::OffsetPagination {
+            paginate crate::support::OffsetController {
                 offset: bind ep.offset,
                 page_size: bind ep.limit,
             }

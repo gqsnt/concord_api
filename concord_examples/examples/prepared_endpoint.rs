@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 
-use concord_core::Request;
-use concord_core::advanced::{HeaderName, Method, PreparedEndpoint};
-use concord_macros::api;
+use concord::Request;
+use concord::advanced::{HeaderName, Method, PreparedEndpoint};
+use concord::api;
 
 api! {
     client PreparedApi {

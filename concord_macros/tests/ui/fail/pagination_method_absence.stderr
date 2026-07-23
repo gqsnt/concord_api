@@ -1,30 +1,30 @@
 error[E0599]: no method named `paginate` found for struct `concord_core::Request<E>` in the current scope
-  --> tests/ui/fail/pagination_method_absence.rs:21:31
+  --> tests/ui/fail/pagination_method_absence.rs:26:31
    |
-21 |     let _ = client.ordinary().paginate(1_u32);
+26 |     let _ = client.ordinary().paginate(1_u32);
    |                               ^^^^^^^^ method not found in `concord_core::Request<Ordinary>`
    |
    = help: items from traits can only be used if the trait is implemented and in scope
 note: `PaginatedRequestExt` defines an item `paginate`, perhaps you need to implement it
-  --> tests/ui/fail/pagination_method_absence.rs:3:1
+  --> tests/ui/fail/pagination_method_absence.rs:8:1
    |
- 3 | / api! {
- 4 | |     client MethodSurface {
- 5 | |         base "https://example.test";
+ 8 | / api! {
+ 9 | |     client MethodSurface {
+10 | |         base "https://example.test";
 ...  |
- 8 | |     GET Ordinary() -> Json<Vec<u8>>;
- 9 | |     GET Paginated(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
+13 | |     GET Ordinary() -> Json<Vec<u8>>;
+14 | |     GET Paginated(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
    | |_________________^
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0599]: `PaginatedRequest<Paginated>` is not an iterator
-  --> tests/ui/fail/pagination_method_absence.rs:25:10
+  --> tests/ui/fail/pagination_method_absence.rs:30:10
    |
-22 |       let _ = client
+27 |       let _ = client
    |  _____________-
-23 | |         .paginated(0, std::num::NonZeroU32::MIN)
-24 | |         .paginate(1_u32)
-25 | |         .collect::<Vec<_>>();
+28 | |         .paginated(0, std::num::NonZeroU32::MIN)
+29 | |         .paginate(1_u32)
+30 | |         .collect::<Vec<_>>();
    | |         -^^^^^^^ `PaginatedRequest<Paginated>` is not an iterator
    | |_________|
    |

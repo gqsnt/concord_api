@@ -160,7 +160,7 @@ Generated docs describe constructors, endpoint parameters, body/response types, 
 
 ### Compatibility
 
-Generated code and core currently share private contract version 14. Users should keep `concord_core` and `concord_macros` versions aligned.
+Generated code and the façade bridge currently share private contract version 16. Depending on `concord` keeps the implementation packages aligned.
 
 ## Request API reference
 

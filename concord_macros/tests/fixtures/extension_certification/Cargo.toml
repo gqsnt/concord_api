@@ -8,19 +8,18 @@ publish = false
 [features]
 default = ["runtime-default"]
 runtime-default = [
-    "concord_core/default-tls",
-    "concord_core/http2",
-    "concord_core/rate-limit-governor",
+    "runtime/default-tls",
+    "runtime/http2",
+    "runtime/rate-limit-governor",
 ]
-json = ["concord_core/json"]
-multipart = ["concord_core/multipart"]
-records = ["concord_core/records"]
-csv = ["records", "concord_core/csv"]
-ndjson = ["records", "concord_core/ndjson"]
+json = ["runtime/json"]
+multipart = ["runtime/multipart"]
+records = ["runtime/records"]
+csv = ["records", "runtime/csv"]
+ndjson = ["records", "runtime/ndjson"]
 
 [dependencies]
-concord_core = { path = "../../../../concord_core", default-features = false }
-concord_macros = { path = "../../.." }
+runtime = { package = "concord", path = "../../../../concord", default-features = false }
 
 [dev-dependencies]
 concord_test_support = { path = "../../../../concord_test_support" }

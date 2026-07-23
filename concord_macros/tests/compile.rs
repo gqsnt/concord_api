@@ -15,8 +15,17 @@ fn workspace_root() -> PathBuf {
 }
 
 fn check_fixture(name: &str) -> Output {
+    check_fixture_with(name, &[])
+}
+
+fn check_fixture_with(name: &str, arguments: &[&str]) -> Output {
     let manifest = fixture_root().join(name).join("Cargo.toml");
-    check_manifest(&workspace_root(), &format!("macros/{name}"), &manifest, &[])
+    check_manifest(
+        &workspace_root(),
+        &format!("macros/{name}"),
+        &manifest,
+        arguments,
+    )
 }
 
 fn assert_fixture_passes(name: &str) {
@@ -326,20 +335,31 @@ fn missing_core_dependency_has_a_focused_macro_diagnostic() {
 fn incompatible_core_contract_fails_during_compilation() {
     assert_fixture_fails_with(
         "contract_mismatch",
-        "concord macro/core contract mismatch: core 999, generated 15",
+        "concord macro/core contract mismatch: core 999, generated 16",
     );
 }
 
 #[test]
 fn json_body_and_response_without_runtime_feature_fail_through_core_type_availability() {
-    assert_fixture_fails_with("json_disabled", "cannot find type `Json` in this scope");
+    for arguments in [&[][..], &["--features", "ndjson"][..]] {
+        let output = check_fixture_with("json_disabled", arguments);
+        let diagnostic = diagnostics(&output);
+        assert!(
+            !output.status.success(),
+            "JSON-disabled fixture unexpectedly compiled with {arguments:?}\n{diagnostic}"
+        );
+        assert!(
+            diagnostic.contains("cannot find type `Json` in this scope"),
+            "JSON-disabled fixture omitted the type-availability diagnostic with {arguments:?}\n{diagnostic}"
+        );
+    }
 }
 
 #[test]
-fn oauth_without_runtime_json_support_has_a_focused_provider_diagnostic() {
+fn oauth_without_temporary_provider_feature_has_a_focused_diagnostic() {
     assert_fixture_fails_with(
         "oauth_disabled",
-        "Concord JSON DSL requires the `concord_core/json` feature",
+        "Concord `oauth2_client` requires the `concord/oauth2-client` feature",
     );
 }
 

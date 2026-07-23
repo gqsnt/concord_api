@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 
-use concord_core::PaginatedRequest;
-use concord_core::prelude::PageLimit;
-use concord_macros::api;
+use concord::PaginatedRequest;
+use concord::api;
+use concord::prelude::PageLimit;
 
 api! {
     client PaginationApi {
@@ -11,21 +11,21 @@ api! {
 
     GET Offset(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
         query { "offset" = ep.offset; "limit" = ep.limit; }
-        paginate concord_core::advanced::OffsetPagination {
+        paginate concord::advanced::OffsetPagination {
             offset: bind ep.offset,
             page_size: bind ep.limit,
         }
     }
     GET Page(page: std::num::NonZeroU64, per_page: std::num::NonZeroU32) -> Json<Vec<u32>> {
         query { "page" = ep.page; "per_page" = ep.per_page; }
-        paginate concord_core::advanced::PagePagination {
+        paginate concord::advanced::PagePagination {
             page: bind ep.page,
             page_size: bind ep.per_page,
         }
     }
     GET Cursor(cursor: Option<String>) -> concord_examples::ExamplePageCodec {
         query { "cursor" = ep.cursor; }
-        paginate concord_core::advanced::CursorPagination<String> {
+        paginate concord::advanced::CursorPagination<String> {
             cursor: bind ep.cursor,
         }
     }
@@ -37,7 +37,7 @@ api! {
     }
 }
 
-fn main() -> Result<(), concord_core::prelude::ClientBuildError> {
+fn main() -> Result<(), concord::prelude::ClientBuildError> {
     use pagination_api::prelude::*;
 
     let client = PaginationApi::builder().build()?;

@@ -6,16 +6,10 @@ pub use crate::auth::{AccessToken, ApiKey, BasicCredential, SecretString};
 #[cfg(feature = "multipart")]
 pub use crate::body::Multipart;
 pub use crate::body::{RequestBody, Stream, StreamBody};
-#[cfg(feature = "json")]
-pub use crate::codec::Json;
 pub use crate::codec::{OctetStream, Text};
 pub use crate::error::{ApiError, ClientBuildError, ConfigurationError, ErrorCategory};
 pub use crate::hooks::DebugLevel;
 pub use crate::pagination::PageLimit;
-#[cfg(feature = "csv")]
-pub use crate::records::Csv;
-#[cfg(feature = "ndjson")]
-pub use crate::records::NdJson;
 #[cfg(feature = "records")]
 pub use crate::records::{RecordBatches, RecordError, RecordStream, Records};
 pub use crate::response::{ApiResponse, ByteStream, DecodedResponse, NoContent};

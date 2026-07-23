@@ -1,5 +1,10 @@
 use concord_macros::api;
 
+#[path = "../../support/mod.rs"]
+mod support;
+#[allow(unused_imports)]
+use support::Json;
+
 pub struct Controller {}
 
 impl<Page> concord_core::advanced::PaginationController<Page> for Controller {

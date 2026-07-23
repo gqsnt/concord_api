@@ -2310,23 +2310,23 @@ mod tests {
             client Api {
                 base "https://example.test";
             }
-            GET Offset(offset: u64, limit: u32) -> Json<Vec<u32>> {
-                paginate concord_core::advanced::OffsetPagination {
+            GET Offset(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
+                paginate concord_core::advanced::OffsetController {
                     offset: bind ep.offset,
                     page_size: bind ep.limit,
                 }
             }
-            GET Page(page: u64, per_page: u32) -> Json<Vec<u32>> {
-                paginate PagePagination {
+            GET Page(page: u64, per_page: u32) -> PageSpec<Vec<u32>> {
+                paginate PageController {
                     page: bind ep.page,
                     page_size: bind ep.per_page,
                 }
             }
-            GET Cursor(cursor: Option<String>) -> Json<Vec<u32>> {
-                paginate CursorPagination<String> { cursor: bind ep.cursor }
+            GET Cursor(cursor: Option<String>) -> PageSpec<Vec<u32>> {
+                paginate CursorController<String> { cursor: bind ep.cursor }
             }
             scope Regions(region: String) {
-                GET Custom(cursor: Option<String>, maximum: u32) -> Json<Vec<u32>> {
+                GET Custom(cursor: Option<String>, maximum: u32) -> PageSpec<Vec<u32>> {
                     paginate crate::pagination::VendorCursor {
                         cursor: bind ep.cursor,
                         region: scope.region,
@@ -2348,8 +2348,8 @@ mod tests {
             (
                 quote! {
                     client Api { base "https://example.test"; }
-                    GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
-                        paginate OffsetPagination
+                    GET Read(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
+                        paginate OffsetController
                     }
                 },
                 "struct field block",
@@ -2357,8 +2357,8 @@ mod tests {
             (
                 quote! {
                     client Api { base "https://example.test"; }
-                    GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
-                        paginate OffsetPagination { offset = ep.offset }
+                    GET Read(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
+                        paginate OffsetController { offset = ep.offset }
                     }
                 },
                 "field: bind ep.field",
@@ -2366,8 +2366,8 @@ mod tests {
             (
                 quote! {
                     client Api { base "https://example.test"; }
-                    GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
-                        paginate OffsetPagination {
+                    GET Read(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
+                        paginate OffsetController {
                             offset: bind ep.offset,
                             offset: bind ep.limit,
                         }
@@ -2378,8 +2378,8 @@ mod tests {
             (
                 quote! {
                     client Api { base "https://example.test"; }
-                    GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
-                        paginate OffsetPagination {
+                    GET Read(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
+                        paginate OffsetController {
                             offset: bind ep.offset,
                             page_size: bind ep.offset,
                         }
@@ -2390,8 +2390,8 @@ mod tests {
             (
                 quote! {
                     client Api { base "https://example.test"; }
-                    GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
-                        paginate OffsetPagination { offset: bind vars.offset }
+                    GET Read(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
+                        paginate OffsetController { offset: bind vars.offset }
                     }
                 },
                 "accepts only direct `ep.FIELD` or `scope.FIELD`",
@@ -2399,8 +2399,8 @@ mod tests {
             (
                 quote! {
                     client Api { base "https://example.test"; }
-                    GET Read(offset: u64, limit: u32) -> Json<Vec<u32>> {
-                        paginate OffsetPagination { offset: bind ep.state.offset }
+                    GET Read(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
+                        paginate OffsetController { offset: bind ep.state.offset }
                     }
                 },
                 "must be direct",
@@ -2408,8 +2408,8 @@ mod tests {
             (
                 quote! {
                     client Api { base "https://example.test"; }
-                    GET Read(offset: u64) -> Json<Vec<u32>> {
-                        paginate OffsetPagination { offset }
+                    GET Read(offset: u64) -> PageSpec<Vec<u32>> {
+                        paginate OffsetController { offset }
                     }
                 },
                 "field shorthand",
@@ -2417,8 +2417,8 @@ mod tests {
             (
                 quote! {
                     client Api { base "https://example.test"; }
-                    GET Read(offset: u64) -> Json<Vec<u32>> {
-                        paginate OffsetPagination { .. }
+                    GET Read(offset: u64) -> PageSpec<Vec<u32>> {
+                        paginate OffsetController { .. }
                     }
                 },
                 "rest syntax",
@@ -2426,7 +2426,7 @@ mod tests {
             (
                 quote! {
                     client Api { base "https://example.test"; }
-                    GET Read() -> Json<Vec<u32>> {
+                    GET Read() -> PageSpec<Vec<u32>> {
                         paginate crate::Controller { value: crate::make() }
                     }
                 },
@@ -2435,7 +2435,7 @@ mod tests {
             (
                 quote! {
                     client Api { base "https://example.test"; }
-                    GET Read() -> Json<Vec<u32>> {
+                    GET Read() -> PageSpec<Vec<u32>> {
                         paginate custom crate::factory();
                     }
                 },

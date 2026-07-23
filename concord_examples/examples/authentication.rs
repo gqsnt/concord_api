@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
-use concord_core::Request;
-use concord_macros::api;
+use concord::Request;
+use concord::api;
 
 api! {
     client AuthenticationApi {
@@ -36,7 +36,7 @@ api! {
     GET ProviderBacked() -> NoContent { auth bearer custom challenge never; }
 }
 
-fn main() -> Result<(), concord_core::prelude::ClientBuildError> {
+fn main() -> Result<(), concord::prelude::ClientBuildError> {
     use authentication_api::prelude::*;
 
     let client = AuthenticationApi::new(

@@ -10,10 +10,8 @@ default = ["default-tls", "http2", "rate-limit-governor"]
 default-tls = ["dep:rustls", "reqwest/rustls-no-provider"]
 http2 = ["reqwest/http2"]
 rate-limit-governor = []
-json = ["dep:serde", "dep:serde_json"]
+oauth2-client = ["dep:serde_json"]
 records = []
-csv = ["records", "dep:csv", "dep:serde"]
-ndjson = ["records", "dep:serde", "dep:serde_json"]
 multipart = ["reqwest/multipart"]
 gzip = ["reqwest/gzip"]
 brotli = ["reqwest/brotli"]
@@ -25,7 +23,6 @@ dangerous-dev-tools = ["dep:concord_test_support"]
 [dependencies]
 bytes.workspace = true
 concord_test_support = { version = "=0.1.0", path = "../concord_test_support", optional = true, default-features = false, features = ["deterministic"] }
-csv = { workspace = true, optional = true }
 futures-core.workspace = true
 http.workspace = true
 http-body.workspace = true
@@ -33,7 +30,6 @@ httpdate.workspace = true
 mime.workspace = true
 reqwest = { workspace = true, features = ["stream"] }
 rustls = { workspace = true, optional = true }
-serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["fs", "io-util"] }
 url.workspace = true

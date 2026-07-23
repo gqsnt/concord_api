@@ -104,8 +104,7 @@ dependencies = [
 name = "concord-fixture-extension-certification"
 version = "0.0.0"
 dependencies = [
- "concord_core 0.1.0",
- "concord_macros",
+ "concord",
  "concord_test_support",
  "tokio",
 ]
@@ -114,8 +113,7 @@ dependencies = [
 name = "concord-fixture-json-disabled"
 version = "0.0.0"
 dependencies = [
- "concord_core 0.1.0",
- "concord_macros",
+ "concord",
 ]
 
 [[package]]
@@ -146,8 +144,7 @@ dependencies = [
 name = "concord-fixture-oauth-disabled"
 version = "0.0.0"
 dependencies = [
- "concord_core 0.1.0",
- "concord_macros",
+ "concord",
 ]
 
 [[package]]
@@ -171,7 +168,6 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "concord_test_support",
- "csv",
  "futures-core",
  "http",
  "http-body",
@@ -179,8 +175,6 @@ dependencies = [
  "mime",
  "reqwest",
  "rustls",
- "serde",
- "serde_json",
  "tokio",
  "url",
 ]
@@ -197,6 +191,10 @@ name = "concord_extras"
 version = "0.1.0"
 dependencies = [
  "concord_core 0.1.0",
+ "csv",
+ "mime",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

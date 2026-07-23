@@ -48,6 +48,4 @@ fn main() {
         HttpConfigBuilder,
         concord_core::dangerous::ReqwestRetryBuilder,
     ) -> HttpConfigBuilder = dangerous;
-    #[cfg(feature = "json")]
-    let _: std::marker::PhantomData<concord_core::prelude::Json<String>> = std::marker::PhantomData;
 }

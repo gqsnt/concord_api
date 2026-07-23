@@ -14,16 +14,11 @@ help: the trait `EncodeBody` is not implemented for `ResponseOnly`
    |
  4 | pub struct ResponseOnly;
    | ^^^^^^^^^^^^^^^^^^^^^^^
-help: the following other types implement trait `EncodeBody`
+help: the trait `EncodeBody` is implemented for `concord_core::advanced::Text`
   --> $WORKSPACE/concord_core/src/codec/mod.rs
    |
-   |   impl EncodeBody for Text {
-   |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::advanced::Text`
-...
-   | / impl<T> EncodeBody for Json<T>
-   | | where
-   | |     T: serde::Serialize + Send + Sync + 'static,
-   | |________________________________________________^ `Json<T>`
+   | impl EncodeBody for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
    = note: required for `ResponseOnly` to implement `RequestBodySpec`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -38,16 +33,11 @@ help: the trait `EncodeBody` is not implemented for `ResponseOnly`
    |
  4 | pub struct ResponseOnly;
    | ^^^^^^^^^^^^^^^^^^^^^^^
-help: the following other types implement trait `EncodeBody`
+help: the trait `EncodeBody` is implemented for `concord_core::advanced::Text`
   --> $WORKSPACE/concord_core/src/codec/mod.rs
    |
-   |   impl EncodeBody for Text {
-   |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::advanced::Text`
-...
-   | / impl<T> EncodeBody for Json<T>
-   | | where
-   | |     T: serde::Serialize + Send + Sync + 'static,
-   | |________________________________________________^ `Json<T>`
+   | impl EncodeBody for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
    = note: required for `ResponseOnly` to implement `RequestBodySpec`
 note: required because it appears within the type `Invalid`
   --> tests/ui/fail/response_only_request_spec.rs:20:10
@@ -77,16 +67,11 @@ help: the trait `EncodeBody` is not implemented for `ResponseOnly`
    |
  4 | pub struct ResponseOnly;
    | ^^^^^^^^^^^^^^^^^^^^^^^
-help: the following other types implement trait `EncodeBody`
+help: the trait `EncodeBody` is implemented for `concord_core::advanced::Text`
   --> $WORKSPACE/concord_core/src/codec/mod.rs
    |
-   |   impl EncodeBody for Text {
-   |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::advanced::Text`
-...
-   | / impl<T> EncodeBody for Json<T>
-   | | where
-   | |     T: serde::Serialize + Send + Sync + 'static,
-   | |________________________________________________^ `Json<T>`
+   | impl EncodeBody for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
    = note: required for `ResponseOnly` to implement `RequestBodySpec`
 note: required because it appears within the type `Invalid`
   --> tests/ui/fail/response_only_request_spec.rs:20:10
@@ -121,16 +106,11 @@ help: the trait `EncodeBody` is not implemented for `ResponseOnly`
    |
  4 | pub struct ResponseOnly;
    | ^^^^^^^^^^^^^^^^^^^^^^^
-help: the following other types implement trait `EncodeBody`
+help: the trait `EncodeBody` is implemented for `concord_core::advanced::Text`
   --> $WORKSPACE/concord_core/src/codec/mod.rs
    |
-   |   impl EncodeBody for Text {
-   |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::advanced::Text`
-...
-   | / impl<T> EncodeBody for Json<T>
-   | | where
-   | |     T: serde::Serialize + Send + Sync + 'static,
-   | |________________________________________________^ `Json<T>`
+   | impl EncodeBody for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
    = note: required for `ResponseOnly` to implement `RequestBodySpec`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -150,16 +130,11 @@ help: the trait `EncodeBody` is not implemented for `ResponseOnly`
    |
  4 | pub struct ResponseOnly;
    | ^^^^^^^^^^^^^^^^^^^^^^^
-help: the following other types implement trait `EncodeBody`
+help: the trait `EncodeBody` is implemented for `concord_core::advanced::Text`
   --> $WORKSPACE/concord_core/src/codec/mod.rs
    |
-   |   impl EncodeBody for Text {
-   |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::advanced::Text`
-...
-   | / impl<T> EncodeBody for Json<T>
-   | | where
-   | |     T: serde::Serialize + Send + Sync + 'static,
-   | |________________________________________________^ `Json<T>`
+   | impl EncodeBody for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
    = note: required for `ResponseOnly` to implement `RequestBodySpec`
 note: required because it appears within the type `Invalid`
   --> tests/ui/fail/response_only_request_spec.rs:20:10
@@ -185,16 +160,11 @@ help: the trait `EncodeBody` is not implemented for `ResponseOnly`
    |
  4 | pub struct ResponseOnly;
    | ^^^^^^^^^^^^^^^^^^^^^^^
-help: the following other types implement trait `EncodeBody`
+help: the trait `EncodeBody` is implemented for `concord_core::advanced::Text`
   --> $WORKSPACE/concord_core/src/codec/mod.rs
    |
-   |   impl EncodeBody for Text {
-   |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::advanced::Text`
-...
-   | / impl<T> EncodeBody for Json<T>
-   | | where
-   | |     T: serde::Serialize + Send + Sync + 'static,
-   | |________________________________________________^ `Json<T>`
+   | impl EncodeBody for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
    = note: required for `ResponseOnly` to implement `RequestBodySpec`
 note: required because it appears within the type `Invalid`
   --> tests/ui/fail/response_only_request_spec.rs:20:10

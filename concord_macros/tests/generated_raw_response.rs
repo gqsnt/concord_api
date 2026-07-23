@@ -8,6 +8,9 @@ use concord_core::prelude::{Bytes, DecodedResponse};
 use concord_macros::api;
 use concord_test_support::server::{BodyGate, ResponseScript, ScriptedServer};
 
+mod support;
+use support::Json;
+
 static CONTENT_TYPE_VALIDATIONS: AtomicUsize = AtomicUsize::new(0);
 static DECODER_CALLS: AtomicUsize = AtomicUsize::new(0);
 

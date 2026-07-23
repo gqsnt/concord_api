@@ -86,9 +86,17 @@ fn metadata_dependency<'a>(package: &'a Value, dependency: &str) -> &'a Value {
 }
 
 fn core_feature_tree(features: Option<&str>, target_key: &str) -> String {
+    feature_tree("concord_core", features, target_key)
+}
+
+fn extras_feature_tree(features: Option<&str>, target_key: &str) -> String {
+    feature_tree("concord_extras", features, target_key)
+}
+
+fn feature_tree(package: &str, features: Option<&str>, target_key: &str) -> String {
     let mut arguments = vec![
         "-p",
-        "concord_core",
+        package,
         "-e",
         "normal,build",
         "--depth",
@@ -102,7 +110,7 @@ fn core_feature_tree(features: Option<&str>, target_key: &str) -> String {
     let output = run(&workspace_root(), target_key, "tree", arguments);
     assert!(
         output.status.success(),
-        "core feature dependency tree failed\n{}",
+        "{package} feature dependency tree failed\n{}",
         diagnostics(&output)
     );
     String::from_utf8(output.stdout).expect("Cargo tree output should be UTF-8")
@@ -159,19 +167,21 @@ fn facade_and_extras_edges_are_exact_and_directional() {
             "core must not depend on {forbidden}"
         );
     }
-    assert!(
-        !has_metadata_dependency(macros, "concord_extras", None),
-        "macros must remain extras-agnostic"
-    );
-
-    // Transitional deletion entry: Phase 5 migrates examples to the façade and
-    // removes both direct implementation edges.
-    const EXAMPLE_IMPLEMENTATION_EDGE_REMOVAL_PHASE: u8 = 5;
-    assert_eq!(EXAMPLE_IMPLEMENTATION_EDGE_REMOVAL_PHASE, 5);
-    for dependency in ["concord_core", "concord_macros"] {
+    for kind in [None, Some("dev"), Some("build")] {
         assert!(
-            has_metadata_dependency(examples, dependency, None),
-            "Phase 1 expects the recorded transitional example edge {dependency}"
+            !has_metadata_dependency(macros, "concord_extras", kind),
+            "macros must remain extras-agnostic through dependency kind {kind:?}"
+        );
+    }
+
+    assert!(
+        has_metadata_dependency(examples, "concord", None),
+        "canonical examples must consume the façade"
+    );
+    for dependency in ["concord_core", "concord_extras", "concord_macros"] {
+        assert!(
+            !has_metadata_dependency(examples, dependency, None),
+            "canonical examples retain implementation dependency {dependency}"
         );
     }
 }
@@ -276,8 +286,8 @@ fn trybuild_is_confined_to_core_and_macro_development_dependencies() {
 }
 
 #[test]
-fn stream_media_is_common_and_json_data_dependencies_remain_feature_owned() {
-    let disabled = core_feature_tree(None, "dependency-policy/core-json-disabled");
+fn stream_media_is_common_and_oauth_json_remains_feature_owned() {
+    let disabled = core_feature_tree(None, "dependency-policy/core-oauth-disabled");
     assert!(
         has_direct_package(&disabled, "mime"),
         "stream media validation requires common mime support\n{disabled}"
@@ -285,31 +295,34 @@ fn stream_media_is_common_and_json_data_dependencies_remain_feature_owned() {
     for package in ["serde", "serde_json"] {
         assert!(
             !has_direct_package(&disabled, package),
-            "JSON-disabled core unexpectedly activates {package}\n{disabled}"
+            "OAuth-disabled core unexpectedly activates {package}\n{disabled}"
         );
     }
 
-    let enabled = core_feature_tree(Some("json"), "dependency-policy/core-json-enabled");
-    for package in ["mime", "serde", "serde_json"] {
-        assert!(
-            has_direct_package(&enabled, package),
-            "JSON-enabled core omitted {package}\n{enabled}"
-        );
-    }
+    let enabled = core_feature_tree(
+        Some("oauth2-client"),
+        "dependency-policy/core-oauth-enabled",
+    );
+    assert!(has_direct_package(&enabled, "mime"), "{enabled}");
+    assert!(has_direct_package(&enabled, "serde_json"), "{enabled}");
+    assert!(
+        !has_direct_package(&enabled, "csv"),
+        "OAuth support unexpectedly activates CSV\n{enabled}"
+    );
 }
 
 #[test]
-fn record_dependencies_are_optional_and_directionally_isolated() {
+fn moved_codec_and_record_dependencies_are_extras_owned_and_isolated() {
     let records = core_feature_tree(Some("records"), "dependency-policy/core-records");
     for package in ["csv", "serde", "serde_json"] {
         assert!(
             !has_direct_package(&records, package),
-            "the records base unexpectedly activates {package}\n{records}"
+            "the core records engine unexpectedly activates {package}\n{records}"
         );
     }
 
-    let csv = core_feature_tree(Some("csv"), "dependency-policy/core-csv");
-    for package in ["csv", "serde"] {
+    let csv = extras_feature_tree(Some("csv"), "dependency-policy/extras-csv");
+    for package in ["csv", "mime", "serde"] {
         assert!(
             has_direct_package(&csv, package),
             "CSV support omitted {package}\n{csv}"
@@ -324,8 +337,8 @@ fn record_dependencies_are_optional_and_directionally_isolated() {
         "CSV support must use the reviewed exact parser version\n{csv}"
     );
 
-    let ndjson = core_feature_tree(Some("ndjson"), "dependency-policy/core-ndjson");
-    for package in ["serde", "serde_json"] {
+    let ndjson = extras_feature_tree(Some("ndjson"), "dependency-policy/extras-ndjson");
+    for package in ["mime", "serde", "serde_json"] {
         assert!(
             has_direct_package(&ndjson, package),
             "NDJSON support omitted {package}\n{ndjson}"
@@ -333,8 +346,30 @@ fn record_dependencies_are_optional_and_directionally_isolated() {
     }
     assert!(
         !has_direct_package(&ndjson, "csv"),
-        "NDJSON support unexpectedly activates csv\n{ndjson}"
+        "NDJSON support unexpectedly activates CSV\n{ndjson}"
     );
+
+    let json = extras_feature_tree(Some("json"), "dependency-policy/extras-json");
+    for package in ["mime", "serde", "serde_json"] {
+        assert!(
+            has_direct_package(&json, package),
+            "buffered JSON support omitted {package}\n{json}"
+        );
+    }
+    assert!(
+        !has_direct_package(&json, "csv"),
+        "buffered JSON support unexpectedly activates CSV\n{json}"
+    );
+
+    let metadata = workspace_metadata();
+    let core = package_metadata(&metadata, "concord_core");
+    let core_features = core["features"].as_object().expect("core features");
+    for moved in ["json", "csv", "ndjson"] {
+        assert!(
+            !core_features.contains_key(moved),
+            "core retains moved feature {moved}"
+        );
+    }
 
     let macros = direct_tree(
         "concord_macros",

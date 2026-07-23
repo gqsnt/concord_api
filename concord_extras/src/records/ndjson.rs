@@ -1,13 +1,9 @@
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 
-use bytes::BytesMut;
-use http::header::CONTENT_TYPE;
+use concord_core::advanced::{BytesMut, ResponseHead};
+use concord_core::records::{RecordDecoder, RecordError, RecordErrorKind};
 use serde::de::DeserializeOwned;
-
-use crate::response::ResponseHead;
-
-use super::{RecordDecoder, RecordError, RecordErrorKind};
 
 const MAX_STAGED_RECORD_BYTES: usize = 1024 * 1024;
 
@@ -93,14 +89,9 @@ where
     fn validate(head: &ResponseHead<'_>) -> Result<(), RecordError> {
         let valid = head
             .headers
-            .get(CONTENT_TYPE)
+            .get("content-type")
             .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse::<mime::Mime>().ok())
-            .is_some_and(|media| {
-                media.type_() == mime::APPLICATION
-                    && (media.subtype().as_str() == "x-ndjson"
-                        || media.subtype().as_str() == "ndjson")
-            });
+            .is_some_and(is_ndjson_media_type);
         if valid {
             Ok(())
         } else {
@@ -129,38 +120,20 @@ where
     }
 }
 
+fn is_ndjson_media_type(value: &str) -> bool {
+    value.parse::<mime::Mime>().is_ok_and(|media| {
+        media.type_() == mime::APPLICATION
+            && (media.subtype().as_str() == "x-ndjson" || media.subtype().as_str() == "ndjson")
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use std::collections::VecDeque;
     use std::error::Error as _;
-    use std::future::poll_fn;
-    use std::pin::Pin;
-    use std::task::{Context, Poll};
 
-    use bytes::{Bytes, BytesMut};
-    use futures_core::Stream;
-    use http::{HeaderMap, HeaderValue, Method, StatusCode, Version};
     use serde::Deserialize;
-    use url::Url;
 
     use super::*;
-    use crate::error::ApiError;
-    use crate::http::application::{ApplicationByteStream, bounded_byte_stream};
-    use crate::records::RecordStream;
-    use crate::response::{ByteStream, ExecutionMeta};
-
-    struct Chunks(VecDeque<Bytes>);
-
-    impl Stream for Chunks {
-        type Item = Result<Bytes, ApiError>;
-
-        fn poll_next(
-            mut self: Pin<&mut Self>,
-            _context: &mut Context<'_>,
-        ) -> Poll<Option<Self::Item>> {
-            Poll::Ready(self.0.pop_front().map(Ok))
-        }
-    }
 
     #[derive(Debug, Deserialize, Eq, PartialEq)]
     struct Value {
@@ -168,29 +141,11 @@ mod tests {
         text: String,
     }
 
-    fn with_head<T>(content_type: &'static str, inspect: impl FnOnce(&ResponseHead<'_>) -> T) -> T {
-        let method = Method::GET;
-        let url = Url::parse("https://records.example.test/ndjson").expect("record URL");
-        let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static(content_type));
-        let metadata = ExecutionMeta::new("RecordsApi::ndjson", method.clone(), 0, false);
-        inspect(&ResponseHead {
-            endpoint: "RecordsApi::ndjson",
-            method: &method,
-            url: &url,
-            status: StatusCode::OK,
-            version: Version::HTTP_11,
-            headers: &headers,
-            content_length: None,
-            metadata: &metadata,
-        })
-    }
-
     fn decoder() -> NdJson<Value> {
-        with_head("application/ndjson; charset=utf-8", |head| {
-            NdJson::<Value>::validate(head).expect("NDJSON media");
-            NdJson::<Value>::start(head).expect("NDJSON decoder")
-        })
+        NdJson {
+            scan_index: 0,
+            marker: PhantomData,
+        }
     }
 
     fn feed(chunks: impl IntoIterator<Item = Vec<u8>>) -> Result<Vec<Value>, RecordError> {
@@ -252,45 +207,13 @@ mod tests {
     #[test]
     fn ndjson_accepts_both_registered_media_names_with_parameters() {
         for media in ["application/x-ndjson", "application/ndjson; charset=utf-8"] {
-            with_head(media, |head| {
-                NdJson::<Value>::validate(head).expect("accepted NDJSON media");
-            });
+            assert!(is_ndjson_media_type(media));
         }
-        with_head("application/json", |head| {
-            let error = NdJson::<Value>::validate(head).expect_err("wrong NDJSON media");
-            assert_eq!(error.kind(), RecordErrorKind::InvalidMediaType);
-        });
+        assert!(!is_ndjson_media_type("application/json"));
+        assert!(!is_ndjson_media_type(
+            "application/ndjson; broken=\"unterminated"
+        ));
         assert_eq!(NdJson::<Value>::accept(), Some("application/x-ndjson"));
         assert_eq!(NdJson::<Value>::max_buffered_bytes().get(), 1024 * 1024);
-    }
-
-    #[tokio::test]
-    async fn ndjson_first_framing_byte_above_staging_bound_is_withheld() {
-        let chunks = Chunks(
-            [
-                Bytes::from(vec![b'x'; MAX_STAGED_RECORD_BYTES]),
-                Bytes::from_static(b"\n"),
-            ]
-            .into_iter()
-            .collect(),
-        );
-        let raw: ApplicationByteStream = Box::pin(chunks);
-        let body = ByteStream::new(bounded_byte_stream(
-            raw,
-            "RecordsApi::ndjson_staging",
-            Method::GET,
-            u64::try_from(4 * MAX_STAGED_RECORD_BYTES).expect("test stream limit fits u64"),
-        ));
-        let mut records = RecordStream::new(
-            body,
-            decoder(),
-            NonZeroUsize::new(MAX_STAGED_RECORD_BYTES).expect("positive NDJSON staging bound"),
-        );
-        let error = poll_fn(|context| Pin::new(&mut records).poll_next(context))
-            .await
-            .expect("NDJSON staging error item")
-            .expect_err("oversized framed NDJSON value");
-        assert_eq!(error.kind(), RecordErrorKind::LimitExceeded);
-        assert!(!format!("{error} {error:?}").contains(&"x".repeat(64)));
     }
 }

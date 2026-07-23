@@ -5,6 +5,9 @@ edition = "2024"
 rust-version = "1.85"
 publish = false
 
+[features]
+default = []
+ndjson = ["runtime/ndjson"]
+
 [dependencies]
-concord_core = { path = "../../../../concord_core", default-features = false }
-concord_macros = { path = "../../.." }
+runtime = { package = "concord", path = "../../../../concord", default-features = false }

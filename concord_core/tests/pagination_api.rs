@@ -1,11 +1,8 @@
 use std::cell::Cell;
 use std::error::Error;
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::NonZeroU32;
 
-use concord_core::advanced::{
-    CursorPagination, HasNextCursor, OffsetPagination, PagePagination, PaginationController,
-    PaginationError, PaginationErrorKind,
-};
+use concord_core::advanced::{PaginationController, PaginationError, PaginationErrorKind};
 use concord_core::prelude::PageLimit;
 
 struct CustomPage<T> {
@@ -19,12 +16,6 @@ impl<T> IntoIterator for CustomPage<T> {
 
     fn into_iter(self) -> Self::IntoIter {
         self.items.into_iter()
-    }
-}
-
-impl<T> HasNextCursor<String> for CustomPage<T> {
-    fn next_cursor(&self) -> Option<&String> {
-        self.cursor.as_ref()
     }
 }
 
@@ -43,7 +34,6 @@ impl PaginationController<CustomPage<u64>> for PrivateController {
     }
 }
 
-fn assert_send_sync_static<T: Send + Sync + 'static>() {}
 fn assert_send_static<T: Send + 'static>() {}
 
 #[test]
@@ -54,21 +44,6 @@ fn stable_pagination_contracts_compile_without_private_imports_or_item_traits() 
         PageLimit::HardCap(NonZeroU32::new(4).expect("nonzero"))
     );
 
-    let offset = OffsetPagination::new(9, NonZeroU32::new(3).expect("nonzero"));
-    assert_eq!(offset.offset(), 9);
-    assert_eq!(offset.page_size().get(), 3);
-    let page = PagePagination::new(
-        NonZeroU64::new(2).expect("nonzero"),
-        NonZeroU32::new(25).expect("nonzero"),
-    );
-    assert_eq!(page.page().get(), 2);
-    assert_eq!(page.page_size().get(), 25);
-    let cursor = CursorPagination::new(Some("opaque".to_owned()));
-    assert_eq!(cursor.cursor().map(String::as_str), Some("opaque"));
-
-    assert_send_sync_static::<OffsetPagination>();
-    assert_send_sync_static::<PagePagination>();
-    assert_send_sync_static::<CursorPagination<String>>();
     assert_send_static::<PrivateController>();
 
     let ordinary_vec_page = vec![1_u64, 2, 3];

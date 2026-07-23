@@ -8,8 +8,9 @@
 
 pub use concord_macros::api;
 
-#[cfg(feature = "json")]
-pub use concord_core::prelude::Json;
+#[cfg(feature = "dangerous-dev-tools")]
+#[doc(hidden)]
+pub use concord_core::__development;
 #[cfg(feature = "multipart")]
 pub use concord_core::prelude::Multipart;
 pub use concord_core::prelude::{
@@ -18,19 +19,36 @@ pub use concord_core::prelude::{
     OctetStream, RequestBody, SecretString, Stream, StreamBody, Text,
 };
 pub use concord_core::{PageLimit, PaginatedRequest, Request, ResponseRequest};
+#[cfg(feature = "json")]
+pub use concord_extras::codec::Json;
+pub use concord_extras::pagination::{CursorPagination, OffsetPagination, PagePagination};
+
+/// Buffered codec contracts, primitives, and enabled ecosystem codecs.
+pub mod codec {
+    pub use concord_core::codec::{
+        CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType, OctetStream,
+        Text,
+    };
+    #[cfg(feature = "json")]
+    pub use concord_extras::codec::Json;
+}
+
+/// Generic pagination contracts and built-in controller policies.
+pub mod pagination {
+    pub use concord_core::pagination::{
+        PageLimit, PaginatedRequest, PaginationController, PaginationError, PaginationErrorKind,
+    };
+    pub use concord_extras::pagination::{
+        CursorPagination, HasNextCursor, OffsetPagination, PagePagination,
+    };
+}
 
 /// Common imports for declarations and ordinary generated-client use.
 pub mod prelude {
     pub use concord_macros::api;
 
-    #[cfg(feature = "csv")]
-    pub use concord_core::prelude::Csv;
-    #[cfg(feature = "json")]
-    pub use concord_core::prelude::Json;
     #[cfg(feature = "multipart")]
     pub use concord_core::prelude::Multipart;
-    #[cfg(feature = "ndjson")]
-    pub use concord_core::prelude::NdJson;
     pub use concord_core::prelude::{
         AccessToken, ApiError, ApiKey, ApiResponse, BasicCredential, ByteStream, Bytes,
         ClientBuildError, ConfigurationError, DebugLevel, DecodedResponse, ErrorCategory,
@@ -39,29 +57,28 @@ pub mod prelude {
     };
     #[cfg(feature = "records")]
     pub use concord_core::prelude::{RecordBatches, RecordError, RecordStream, Records};
+    #[cfg(feature = "json")]
+    pub use concord_extras::codec::Json;
+    #[cfg(feature = "csv")]
+    pub use concord_extras::records::Csv;
+    #[cfg(feature = "ndjson")]
+    pub use concord_extras::records::NdJson;
 }
 
 /// Stable advanced semantic contracts and runtime configuration types.
 pub mod advanced {
-    #[cfg(feature = "csv")]
-    pub use concord_core::advanced::Csv;
     #[cfg(feature = "rate-limit-governor")]
     pub use concord_core::advanced::GovernorRateLimiter;
-    #[cfg(feature = "json")]
-    pub use concord_core::advanced::Json;
-    #[cfg(feature = "ndjson")]
-    pub use concord_core::advanced::NdJson;
     pub use concord_core::advanced::{
         ApiError, ApiResponse, Auth, AuthError, AuthErrorKind, BeforeSend, BodyError,
         BodyErrorKind, BodyFactory, BodyKind, BoxFuture, Buffered, ByteStream, Bytes, BytesMut,
         ChallengePolicy, ClientBuildError, ClientBuildErrorKind, CodecError, CompletionEvent,
         CompletionOutcome, ConfigurationError, ConfigurationErrorKind, Cooldown, CooldownScope,
         CredentialHandle, CredentialMaterial, CredentialProvider, CredentialReason, CredentialRef,
-        CredentialRequest, CursorPagination, DebugLevel, DecodeBody, DecodeContext,
-        DecodedResponse, DefaultRateLimitObserver, Discard, EncodeBody, EncodeContext,
-        ErrorCategory, ExecutionMeta, HasNextCursor, HeaderMap, HeaderName, HeaderValue, HookError,
-        HttpConfigBuilder, HttpResponseFailure, LengthHint, MediaType, Method, NoContent,
-        NoopRateLimiter, OctetStream, OffsetPagination, OperationId, PagePagination,
+        CredentialRequest, DebugLevel, DecodeBody, DecodeContext, DecodedResponse,
+        DefaultRateLimitObserver, Discard, EncodeBody, EncodeContext, ErrorCategory, ExecutionMeta,
+        HeaderMap, HeaderName, HeaderValue, HookError, HttpConfigBuilder, HttpResponseFailure,
+        LengthHint, MediaType, Method, NoContent, NoopRateLimiter, OctetStream, OperationId,
         PageResponseSpec, PaginationCompletionEvent, PaginationController, PaginationError,
         PaginationErrorKind, PreparedEndpoint, PreparedEndpointBuilder, ProviderBody,
         ProviderBodyFactory, ProviderHttp, ProviderRequest, ProviderResponse, ProviderRetry,
@@ -81,18 +98,27 @@ pub mod advanced {
     pub use concord_core::advanced::{
         RecordBatches, RecordDecoder, RecordError, RecordErrorKind, RecordStream, Records,
     };
+    #[cfg(feature = "json")]
+    pub use concord_extras::codec::Json;
+    pub use concord_extras::pagination::{
+        CursorPagination, HasNextCursor, OffsetPagination, PagePagination,
+    };
+    #[cfg(feature = "csv")]
+    pub use concord_extras::records::Csv;
+    #[cfg(feature = "ndjson")]
+    pub use concord_extras::records::NdJson;
 }
 
 /// Generic bounded record-stream contracts and enabled concrete decoders.
 #[cfg(feature = "records")]
 pub mod records {
-    #[cfg(feature = "csv")]
-    pub use concord_core::records::Csv;
-    #[cfg(feature = "ndjson")]
-    pub use concord_core::records::NdJson;
     pub use concord_core::records::{
         RecordBatches, RecordDecoder, RecordError, RecordErrorKind, RecordStream, Records,
     };
+    #[cfg(feature = "csv")]
+    pub use concord_extras::records::Csv;
+    #[cfg(feature = "ndjson")]
+    pub use concord_extras::records::NdJson;
 }
 
 /// Explicitly feature-gated capabilities with reduced ordinary safety guarantees.
@@ -121,11 +147,11 @@ pub mod __private {
         oauth2_client_credentials_for_replace, paginate_request, request,
     };
 
-    /// Produces a focused const-evaluation diagnostic when JSON is unavailable.
+    /// Produces a focused diagnostic for the transitional built-in OAuth2 syntax.
     #[doc(hidden)]
-    pub const fn assert_json_feature() {
-        #[cfg(not(feature = "json"))]
-        panic!("Concord JSON DSL requires the `concord/json` feature");
+    pub const fn assert_oauth2_client_feature() {
+        #[cfg(not(feature = "oauth2-client"))]
+        panic!("Concord `oauth2_client` requires the `concord/oauth2-client` feature");
     }
 
     /// Produces a focused const-evaluation diagnostic when multipart is unavailable.

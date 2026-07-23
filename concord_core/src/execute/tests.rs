@@ -4675,32 +4675,6 @@ async fn real_reqwest_transmits_and_decodes_text_and_custom_buffered_codecs() {
     );
 }
 
-#[cfg(feature = "json")]
-#[tokio::test]
-async fn real_reqwest_json_round_trip_is_feature_owned() {
-    use crate::codec::Json;
-
-    let server = ScriptedServer::start([ResponseScript::ok(b"[3,5,8]".to_vec())
-        .with_header("Content-Type", "application/problem+json; version=1")])
-    .expect("JSON server");
-    let core = real_core(
-        &server,
-        Arc::new(ProbeHooks::new()),
-        RuntimeConfigBuilder::new(),
-    );
-    let output = codec_request::<Json<Vec<u32>>, Json<Vec<u32>>>(core, vec![1, 2])
-        .await
-        .expect("JSON response");
-    assert_eq!(output, vec![3, 5, 8]);
-    server
-        .wait_for_requests(1, Duration::from_secs(1))
-        .expect("JSON request recording");
-    let requests = server.requests();
-    assert_eq!(requests[0].body(), b"[1,2]");
-    assert_eq!(requests[0].header("content-type"), Some("application/json"));
-    assert_eq!(requests[0].header("accept"), Some("application/json"));
-}
-
 #[tokio::test]
 async fn buffered_decoder_never_observes_known_or_first_excess_response_bytes() {
     OVERFLOW_DECODER_CALLS.store(0, Ordering::SeqCst);

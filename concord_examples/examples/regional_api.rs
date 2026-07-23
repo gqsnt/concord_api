@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
-use concord_core::Request;
-use concord_macros::api;
+use concord::Request;
+use concord::api;
 
 api! {
     client RegionalGameApi {
@@ -44,7 +44,7 @@ api! {
             path ["by-account", ep.account_id];
             query { "start" = ep.start; "count" = ep.count; }
             rate_limit { 10 / 10s; }
-            paginate concord_core::advanced::OffsetPagination {
+            paginate concord::advanced::OffsetPagination {
                 offset: bind ep.start,
                 page_size: bind ep.count,
             }
@@ -76,7 +76,7 @@ api! {
     }
 }
 
-fn main() -> Result<(), concord_core::prelude::ClientBuildError> {
+fn main() -> Result<(), concord::prelude::ClientBuildError> {
     let client = RegionalGameApi::new("euw1".to_owned(), "example-developer-key")?;
     let _: Request<_> = client
         .accounts("europe".to_owned())

@@ -18,6 +18,9 @@ use concord_macros::api;
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 use futures_core::Stream as FuturesStream;
 
+mod support;
+use support::Json;
+
 api! {
     client ExampleApi {
         base "http://generated.example.test/v1/";
@@ -402,7 +405,7 @@ async fn generated_buffered_facade_and_explicit_endpoints_use_typed_codecs_end_t
         ResponseScript::ok("facade-text-response".as_bytes().to_vec()),
         ResponseScript::ok("explicit-text-response".as_bytes().to_vec()),
         ResponseScript::ok(b"[8,13,21]".to_vec())
-            .with_header("Content-Type", "application/vnd.example+json; version=1"),
+            .with_header("Content-Type", "application/json; charset=utf-8"),
         ResponseScript::ok(b"custom-facade-response".to_vec())
             .with_header("Content-Type", "application/x-concord-wire"),
         ResponseScript::ok(b"custom-explicit-response".to_vec())

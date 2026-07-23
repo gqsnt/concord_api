@@ -2,8 +2,6 @@
 
 use std::error::Error;
 use std::fmt;
-#[cfg(feature = "json")]
-use std::marker::PhantomData;
 
 use bytes::Bytes;
 use http::{Method, StatusCode};
@@ -159,63 +157,6 @@ impl DecodeBody for Text {
     }
 }
 
-/// Feature-gated built-in JSON request and response codec.
-#[cfg(feature = "json")]
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Json<T>(PhantomData<T>);
-
-#[cfg(feature = "json")]
-impl<T> EncodeBody for Json<T>
-where
-    T: serde::Serialize + Send + Sync + 'static,
-{
-    type Input = T;
-
-    const CONTENT_TYPE: Option<&'static str> = Some("application/json");
-
-    fn encode(input: Self::Input, _context: EncodeContext<'_>) -> Result<Bytes, CodecError> {
-        serde_json::to_vec(&input)
-            .map(Bytes::from)
-            .map_err(|error| {
-                drop(error);
-                CodecError::new("JSON request encoding failed")
-            })
-    }
-}
-
-#[cfg(feature = "json")]
-impl<T> DecodeBody for Json<T>
-where
-    T: serde::de::DeserializeOwned + Send + Sync + 'static,
-{
-    type Output = T;
-
-    const ACCEPT: Option<&'static str> = Some("application/json");
-
-    fn validate_content_type(content_type: Option<&str>) -> Result<(), CodecError> {
-        if content_type.is_some_and(is_json_media_type) {
-            Ok(())
-        } else {
-            Err(CodecError::new("response media type was not JSON"))
-        }
-    }
-
-    fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
-        serde_json::from_slice(&body).map_err(|error| {
-            drop(error);
-            CodecError::new("JSON response decoding failed")
-        })
-    }
-}
-
-#[cfg(feature = "json")]
-fn is_json_media_type(value: &str) -> bool {
-    value.parse::<mime::Mime>().is_ok_and(|media_type| {
-        media_type.type_() == mime::APPLICATION
-            && (media_type.subtype() == mime::JSON || media_type.suffix() == Some(mime::JSON))
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,48 +199,5 @@ mod tests {
         assert_eq!(OctetStream::MEDIA_TYPE, "application/octet-stream");
         assert_eq!(Text::CONTENT_TYPE, Some("text/plain; charset=utf-8"));
         assert_eq!(Text::ACCEPT, Some("text/plain"));
-    }
-
-    #[cfg(feature = "json")]
-    #[test]
-    fn json_accepts_standard_and_structured_suffix_media_types() {
-        for accepted in [
-            "application/json",
-            "APPLICATION/JSON; CHARSET=UTF-8",
-            "application/problem+json",
-            "application/vnd.example+json; version=2",
-        ] {
-            Json::<String>::validate_content_type(Some(accepted)).expect(accepted);
-        }
-        for rejected in [
-            None,
-            Some("text/json"),
-            Some("application/json-seq"),
-            Some("application/json; invalid"),
-            Some("application/problem+json; broken=\"unterminated"),
-        ] {
-            assert!(Json::<String>::validate_content_type(rejected).is_err());
-        }
-    }
-
-    #[cfg(feature = "json")]
-    #[test]
-    fn json_round_trips_without_exposing_serde_failures() {
-        let encoded = Json::<Vec<u32>>::encode(vec![1, 2, 3], encode_context()).expect("encode");
-        let decoded = Json::<Vec<u32>>::decode(
-            encoded,
-            decode_context(Some("application/json; charset=utf-8")),
-        )
-        .expect("decode");
-        assert_eq!(decoded, vec![1, 2, 3]);
-
-        let error = Json::<Vec<u32>>::decode(
-            Bytes::from_static(b"not-json-sentinel"),
-            decode_context(Some("application/json")),
-        )
-        .expect_err("invalid JSON");
-        for formatted in [error.to_string(), format!("{error:?}")] {
-            assert!(!formatted.contains("not-json-sentinel"));
-        }
     }
 }

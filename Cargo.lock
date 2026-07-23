@@ -145,7 +145,6 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "concord_test_support",
- "csv",
  "futures-core",
  "h2",
  "http",
@@ -165,8 +164,7 @@ dependencies = [
 name = "concord_examples"
 version = "0.1.0"
 dependencies = [
- "concord_core",
- "concord_macros",
+ "concord",
  "reqwest",
  "serde",
  "serde_json",
@@ -178,6 +176,10 @@ name = "concord_extras"
 version = "0.1.0"
 dependencies = [
  "concord_core",
+ "csv",
+ "mime",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -191,6 +193,7 @@ dependencies = [
  "proc-macro-crate",
  "proc-macro2",
  "quote",
+ "serde",
  "serde_json",
  "syn",
  "tokio",
@@ -202,8 +205,7 @@ dependencies = [
 name = "concord_perf"
 version = "0.1.0"
 dependencies = [
- "concord_core",
- "concord_macros",
+ "concord",
  "concord_test_support",
  "tokio",
 ]

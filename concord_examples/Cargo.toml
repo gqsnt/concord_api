@@ -6,22 +6,22 @@ rust-version.workspace = true
 publish = false
 
 [features]
-default = ["default-tls", "http2", "rate-limit-governor", "json", "multipart"]
-default-tls = ["concord_core/default-tls"]
-http2 = ["concord_core/http2"]
-rate-limit-governor = ["concord_core/rate-limit-governor"]
-json = ["concord_core/json", "serde", "serde_json", "serde/derive"]
-multipart = ["concord_core/multipart"]
-records = ["concord_core/records"]
-csv = ["records", "concord_core/csv"]
-ndjson = ["records", "concord_core/ndjson"]
-dangerous-raw-response = ["concord_core/dangerous-raw-response"]
-dangerous-custom-retry = ["concord_core/dangerous-custom-retry", "dep:reqwest"]
+default = ["default-tls", "http2", "rate-limit-governor", "json", "oauth2-client", "multipart"]
+default-tls = ["concord/default-tls"]
+http2 = ["concord/http2"]
+rate-limit-governor = ["concord/rate-limit-governor"]
+json = ["concord/json", "serde", "serde_json", "serde/derive"]
+oauth2-client = ["concord/oauth2-client"]
+multipart = ["concord/multipart"]
+records = ["concord/records"]
+csv = ["records", "concord/csv"]
+ndjson = ["records", "concord/ndjson"]
+dangerous-raw-response = ["concord/dangerous-raw-response"]
+dangerous-custom-retry = ["concord/dangerous-custom-retry", "dep:reqwest"]
 tokio=["dep:tokio"]
 
 [dependencies]
-concord_core = { version = "=0.1.0", path = "../concord_core", default-features = false }
-concord_macros = { version = "=0.1.0", path = "../concord_macros" }
+concord = { version = "=0.1.0", path = "../concord", default-features = false }
 reqwest = { workspace = true, optional = true }
 serde = {workspace=true, optional=true}
 serde_json = {workspace=true, optional=true}

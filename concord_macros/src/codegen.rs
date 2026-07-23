@@ -13,7 +13,7 @@ use crate::model::{
 };
 use crate::names::{canonical_ident, public_ident, to_snake_case};
 
-const GENERATED_CONTRACT_VERSION: u32 = 15;
+const GENERATED_CONTRACT_VERSION: u32 = 16;
 
 pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
     generate_client(&api.client, core_path)
@@ -226,9 +226,9 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
             const _: () = __core::__private::assert_custom_retry_feature();
         )
     });
-    let json_assertion = client_uses_json(client).then(|| {
+    let oauth2_client_assertion = client_uses_oauth2_client(client).then(|| {
         quote!(
-            const _: () = __core::__private::assert_json_feature();
+            const _: () = __core::__private::assert_oauth2_client_feature();
         )
     });
     let requires_limiter = client.requires_limiter;
@@ -305,7 +305,7 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
                 pub(super) use #core_path as __core;
 
                 const _: () = __core::__private::assert_generated_contract(#contract_version);
-                #json_assertion
+                #oauth2_client_assertion
                 #custom_retry_assertion
             }
 
@@ -3458,17 +3458,17 @@ fn endpoint_configuration_summary(client: &Client, endpoint: &Endpoint) -> Strin
 }
 
 fn endpoint_feature_summary(client: &Client, endpoint: &Endpoint) -> String {
-    let uses_json = client
+    let uses_oauth2_client = client
         .credentials
         .iter()
         .any(|credential| matches!(credential.source, CredentialSource::OAuth2Client { .. }));
     let mut requirements = Vec::new();
-    if uses_json {
-        requirements.push("`concord_core/json`");
+    if uses_oauth2_client {
+        requirements.push("`concord/oauth2-client`");
     }
     if requirements.is_empty() {
         let _ = endpoint;
-        "Request and response specification feature availability is owned by `concord_core` type and trait exports.".to_owned()
+        "Request and response specification feature availability is owned by `concord` type and trait exports.".to_owned()
     } else {
         format!("Required Cargo feature(s): {}.", requirements.join(", "))
     }
@@ -3555,7 +3555,7 @@ fn response_name(response: &Type) -> String {
     response.to_token_stream().to_string()
 }
 
-fn client_uses_json(client: &Client) -> bool {
+fn client_uses_oauth2_client(client: &Client) -> bool {
     client
         .credentials
         .iter()

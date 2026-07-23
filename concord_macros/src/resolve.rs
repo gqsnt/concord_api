@@ -2046,13 +2046,13 @@ mod tests {
                 base "https://example.test";
                 vars { tenant: String; }
             }
-            GET Offset(offset: u64, limit: u32) -> Json<Vec<u32>> {
-                paginate concord_core::advanced::OffsetPagination {
+            GET Offset(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
+                paginate concord_core::advanced::OffsetController {
                     offset: bind ep.offset,
                     page_size: bind ep.limit,
                 }
             }
-            GET Vendor(cursor: Option<String>) -> Json<Vec<u32>> {
+            GET Vendor(cursor: Option<String>) -> PageSpec<Vec<u32>> {
                 paginate crate::Vendor<String> {
                     cursor: bind ep.cursor,
                     tenant: vars.tenant,
@@ -2112,7 +2112,7 @@ mod tests {
             client Api {
                 base "https://example.test";
             }
-            GET Read(offset: String, limit: bool) -> Json<Vec<u32>> {
+            GET Read(offset: String, limit: bool) -> PageSpec<Vec<u32>> {
                 paginate crate::ArbitraryController {
                     anything: bind ep.offset,
                     another: bind ep.limit,
@@ -2137,7 +2137,7 @@ mod tests {
                 client Api {
                     base "https://example.test";
                 }
-                GET Read(offset: u64) -> Json<Vec<u32>> {
+                GET Read(offset: u64) -> PageSpec<Vec<u32>> {
                     paginate crate::Controller {
                         state: bind ep.missing,
                     }

@@ -7,17 +7,18 @@ Use this page to select Cargo features, understand default finite limits, catego
 
 ## Feature reference
 
-### `concord_core` features
+### `concord` façade features
 
 | Feature | Default | Dependencies/capability |
 |---|:---:|---|
 | `default-tls` | yes | Rustls-backed HTTPS |
 | `http2` | yes | Reqwest HTTP/2 |
 | `rate-limit-governor` | yes | built-in process-local governor |
-| `json` | no | Serde + Serde JSON; `Json<T>` and OAuth2 parsing |
+| `json` | no | extras-owned Serde + Serde JSON `Json<T>` codec |
 | `records` | no | generic record contracts only |
-| `csv` | no | `records`, Serde, exact CSV parser |
-| `ndjson` | no | `records`, Serde, Serde JSON; not general `json` |
+| `csv` | no | extras-owned typed CSV decoder plus core `records` |
+| `ndjson` | no | extras-owned typed NDJSON decoder plus core `records`; not general `json` |
+| `oauth2-client` | no | temporary legacy OAuth2 client-credentials helper; independent of `json` |
 | `multipart` | no | Reqwest multipart request support |
 | `gzip` | no | gzip decompression |
 | `brotli` | no | Brotli decompression |
@@ -31,14 +32,14 @@ Use this page to select Cargo features, understand default finite limits, catego
 Minimal plain HTTP:
 
 ```toml
-concord_core = { path = "../concord_core", default-features = false }
+concord = { path = "../concord", default-features = false }
 ```
 
 Common JSON HTTPS client:
 
 ```toml
-concord_core = {
-    path = "../concord_core",
+concord = {
+    path = "../concord",
     default-features = false,
     features = ["default-tls", "http2", "json", "rate-limit-governor"]
 }
@@ -54,12 +55,12 @@ features = ["default-tls", "records", "csv", "ndjson"]
 
 - Without TLS, protected HTTPS operations fail at build/preflight rather than silently downgrading.
 - Without governor, nonempty generated plans require explicit limiter/no-op.
-- Without JSON/multipart/records features, corresponding public types are unavailable.
+- Without JSON/multipart/record features, the corresponding façade types are unavailable.
 - Dangerous features are binary-wide through Cargo unification.
 
 ### Macro graph
 
-`concord_macros` depends on parsing/code-generation crates and URL/HTTP syntax support. It does not depend on Reqwest, Tokio, CSV, Serde JSON, or governor implementations.
+`concord_macros` depends on parsing/code-generation crates and URL/HTTP syntax support. It has no edge to `concord_extras` and does not recognize codec or pagination-controller type names.
 
 ## Limits and defaults
 
@@ -185,7 +186,7 @@ Workspace version is `0.1.0`. The project is pre-1.0, so breaking public changes
 
 ### Generated contract
 
-Core and macros share private generated contract version `14`. It protects their internal bridge. An incompatible macro/core pairing fails during compilation. This version is not an application API version and should not be referenced by normal client code.
+The façade bridge and macro share private generated contract version `16`. It protects their internal integration. An incompatible pairing fails during compilation. This version is not an application API version and should not be referenced by normal client code.
 
 ### Reqwest
 

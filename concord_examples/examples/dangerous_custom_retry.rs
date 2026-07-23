@@ -1,9 +1,9 @@
 #![forbid(unsafe_code)]
 
-use concord_core::Request;
-use concord_macros::api;
+use concord::Request;
+use concord::api;
 
-pub fn bounded_custom_retry() -> concord_core::dangerous::ReqwestRetryBuilder {
+pub fn bounded_custom_retry() -> concord::dangerous::ReqwestRetryBuilder {
     reqwest::retry::never()
 }
 
@@ -16,7 +16,7 @@ api! {
     GET Health() -> NoContent;
 }
 
-fn main() -> Result<(), concord_core::prelude::ClientBuildError> {
+fn main() -> Result<(), concord::prelude::ClientBuildError> {
     let client = CustomRetryApi::builder().build()?;
     let _: Request<_> = client.health();
     Ok(())

@@ -2,8 +2,8 @@
 
 use std::num::NonZeroUsize;
 
-use concord_core::advanced::{BytesMut, RecordDecoder, RecordError, ResponseHead};
-use concord_macros::api;
+use concord::advanced::{BytesMut, RecordDecoder, RecordError, ResponseHead};
+use concord::api;
 
 pub struct PipeRecords;
 
@@ -28,7 +28,7 @@ impl RecordDecoder for PipeRecords {
             .map(Some)
             .map_err(|error| {
                 drop(error);
-                RecordError::new(concord_core::advanced::RecordErrorKind::Decode)
+                RecordError::new(concord::advanced::RecordErrorKind::Decode)
             })
     }
 
@@ -41,7 +41,7 @@ impl RecordDecoder for PipeRecords {
                 .map(Some)
                 .map_err(|error| {
                     drop(error);
-                    RecordError::new(concord_core::advanced::RecordErrorKind::Decode)
+                    RecordError::new(concord::advanced::RecordErrorKind::Decode)
                 })
         }
     }
@@ -64,8 +64,8 @@ api! {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = RecordsApi::builder().build()?;
-    let b = client.custom().await?;
-    let r = client.csv_rows().await?;
-    let c = client.nd_json_values().await?;
+    let _custom = client.custom().await?;
+    let _csv_rows = client.csv_rows().await?;
+    let _ndjson_values = client.nd_json_values().await?;
     Ok(())
 }

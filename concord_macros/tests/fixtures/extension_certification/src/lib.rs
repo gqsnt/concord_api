@@ -7,8 +7,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 #[cfg(feature = "json")]
-use concord_core::advanced::Json;
-use concord_core::advanced::{
+use runtime::advanced::Json;
+use runtime::advanced::{
     Auth, AuthError, AuthErrorKind, BeforeSend, BodyError, BodyFactory, BodyKind, BoxFuture,
     Buffered, ByteStream, CodecError, CompletionEvent, Cooldown, CooldownScope, CredentialMaterial,
     CredentialProvider, CredentialRequest, DecodeBody, DecodeContext, Discard, EncodeBody,
@@ -21,10 +21,10 @@ use concord_core::advanced::{
     SecretCredential, StatusCode, Streaming, Url,
 };
 #[cfg(feature = "records")]
-use concord_core::advanced::{BytesMut, RecordDecoder, RecordError};
+use runtime::advanced::{BytesMut, RecordDecoder, RecordError};
 #[cfg(feature = "multipart")]
-use concord_core::advanced::{MultipartBody, MultipartFactory, MultipartPart};
-use concord_core::prelude::{Bytes, ClientBuildError, Request, SecretString, StreamBody};
+use runtime::advanced::{MultipartBody, MultipartFactory, MultipartPart};
+use runtime::prelude::{Bytes, ClientBuildError, Request, SecretString, StreamBody};
 
 pub struct ExtensionRequestSpec;
 
@@ -454,7 +454,7 @@ impl RuntimeHooks for ExtensionHooks {
     }
 }
 
-concord_macros::api! {
+runtime::api! {
     client ExtensionApi {
         base "http://extension.example.test/v1/";
         vars {
@@ -484,7 +484,7 @@ concord_macros::api! {
     GET GenericDiscard() -> crate::ExtensionDiscardSpec;
 }
 
-concord_macros::api! {
+runtime::api! {
     client SecureExtensionApi {
         base "https://localhost/";
         credentials {
@@ -500,7 +500,7 @@ concord_macros::api! {
 }
 
 #[cfg(feature = "records")]
-concord_macros::api! {
+runtime::api! {
     client RecordExtensionApi {
         base "http://record-extension.example.test/";
     }
@@ -509,7 +509,7 @@ concord_macros::api! {
 }
 
 #[cfg(feature = "csv")]
-concord_macros::api! {
+runtime::api! {
     client CsvExtensionApi {
         base "http://csv-extension.example.test/";
     }
@@ -518,7 +518,7 @@ concord_macros::api! {
 }
 
 #[cfg(feature = "ndjson")]
-concord_macros::api! {
+runtime::api! {
     client NdJsonExtensionApi {
         base "http://ndjson-extension.example.test/";
     }

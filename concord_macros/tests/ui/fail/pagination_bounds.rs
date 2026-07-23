@@ -3,6 +3,11 @@ use concord_core::advanced::{
 };
 use concord_macros::api;
 
+#[path = "../../support/mod.rs"]
+mod support;
+#[allow(unused_imports)]
+use support::Json;
+
 pub struct NotIterable;
 pub struct NotIterableCodec;
 
@@ -54,7 +59,7 @@ api! {
     }
 
     GET Read(cursor: Option<String>) -> Json<Vec<u8>> {
-        paginate concord_core::advanced::CursorPagination<String> {
+        paginate crate::support::CursorController<String> {
             cursor: bind ep.cursor,
         }
     }

@@ -61,8 +61,8 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         });
     let byte_stream = std::fs::read_to_string(&byte_stream_path)
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", byte_stream_path.display()));
-    let page_limit_path = documentation.join("enum.PageLimit.html");
-    let paginated_request_path = documentation.join("struct.PaginatedRequest.html");
+    let page_limit_path = documentation.join("pagination/enum.PageLimit.html");
+    let paginated_request_path = documentation.join("pagination/struct.PaginatedRequest.html");
     let page_limit = std::fs::read_to_string(&page_limit_path)
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", page_limit_path.display()));
     let paginated_request =
@@ -74,15 +74,11 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         });
     let pagination_pages = [
         "struct.PaginationError.html",
-        "struct.OffsetPagination.html",
-        "struct.PagePagination.html",
-        "struct.CursorPagination.html",
         "trait.PaginationController.html",
-        "trait.HasNextCursor.html",
     ]
     .into_iter()
     .map(|name| {
-        let path = documentation.join("advanced").join(name);
+        let path = documentation.join("pagination").join(name);
         std::fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
     })
@@ -236,30 +232,10 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
                 "never formats records",
             ][..],
         ),
-        (
-            "records/struct.Csv.html",
-            &[
-                "required header row",
-                "quoted embedded newlines",
-                "final record may omit its newline",
-                "bounded to 1 MiB",
-                "absent from errors",
-            ][..],
-        ),
-        (
-            "records/struct.NdJson.html",
-            &[
-                "whitespace-only lines are ignored",
-                "bounded to 1 MiB",
-                "absent from errors",
-                "independent",
-                "general endpoint",
-            ][..],
-        ),
     ];
     let extension_contracts = [
         (
-            "trait.MediaType.html",
+            "codec/trait.MediaType.html",
             &[
                 "concurrent operations",
                 "no runtime callback",
@@ -268,7 +244,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             ][..],
         ),
         (
-            "trait.EncodeBody.html",
+            "codec/trait.EncodeBody.html",
             &[
                 "synchronous work",
                 "operations may occur concurrently",
@@ -280,7 +256,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             ][..],
         ),
         (
-            "trait.DecodeBody.html",
+            "codec/trait.DecodeBody.html",
             &[
                 "synchronous callbacks",
                 "operations may occur concurrently",
@@ -368,7 +344,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             ][..],
         ),
         (
-            "trait.PaginationController.html",
+            "pagination/trait.PaginationController.html",
             &[
                 "concurrent pagination operations",
                 "sensitive",
@@ -378,18 +354,6 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
                 "outside the per-page operation deadline",
                 "Cancellation",
                 "does not automatically bound",
-            ][..],
-        ),
-        (
-            "trait.HasNextCursor.html",
-            &[
-                "sensitive",
-                "logging and storage",
-                "metric cardinality",
-                "no external I/O",
-                "concurrent operations",
-                "outside the per-page operation deadline",
-                "cancellation",
             ][..],
         ),
         (
@@ -628,24 +592,26 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "id=\"method.new\"",
         "id=\"method.with_safe_message\"",
         "id=\"method.kind\"",
-        "id=\"method.offset\"",
-        "id=\"method.page_size\"",
-        "id=\"method.page\"",
-        "id=\"method.cursor\"",
         "id=\"method.validate\"",
         "id=\"tymethod.next\"",
         "id=\"method.short_page_size\"",
-        "id=\"tymethod.next_cursor\"",
-        "id=\"structfield.offset\"",
-        "id=\"structfield.page_size\"",
-        "id=\"structfield.page\"",
-        "id=\"structfield.cursor\"",
         "moves from",
-        "absent cursor from a present",
     ] {
         assert!(
             pagination_pages.contains(expected),
             "pagination Rustdoc omitted {expected:?}"
+        );
+    }
+    for moved in [
+        "struct.OffsetPagination.html",
+        "struct.PagePagination.html",
+        "struct.CursorPagination.html",
+        "trait.HasNextCursor.html",
+    ] {
+        assert!(
+            !documentation.join("pagination").join(moved).exists()
+                && !documentation.join("advanced").join(moved).exists(),
+            "extras-owned pagination item remains in core Rustdoc: {moved}"
         );
     }
     for forbidden in [
@@ -705,7 +671,11 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         );
     }
     for (name, expected) in extension_contracts {
-        let path = documentation.join("advanced").join(name);
+        let path = if name.contains('/') {
+            documentation.join(name)
+        } else {
+            documentation.join("advanced").join(name)
+        };
         let page = std::fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
         let page = page.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -807,32 +777,9 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
 #[test]
 fn record_surfaces_are_structural_private_and_value_free_in_rendered_rustdoc() {
     let root = workspace_root();
-    let configurations = [
-        (
-            "core/records-rustdoc-records-only",
-            "records",
-            true,
-            false,
-            false,
-        ),
-        ("core/records-rustdoc-csv-only", "csv", true, true, false),
-        (
-            "core/records-rustdoc-ndjson-only",
-            "ndjson",
-            true,
-            false,
-            true,
-        ),
-        (
-            "core/records-rustdoc-csv-ndjson",
-            "csv,ndjson",
-            true,
-            true,
-            true,
-        ),
-    ];
+    let configurations = [("core/records-rustdoc-records-only", "records")];
 
-    for (target_key, features, records, csv, ndjson) in configurations {
+    for (target_key, features) in configurations {
         let output = run(
             &root,
             target_key,
@@ -859,7 +806,7 @@ fn record_surfaces_are_structural_private_and_value_free_in_rendered_rustdoc() {
             .join(target_key)
             .join("doc/concord_core");
         let records_index = documentation.join("records/index.html");
-        assert_eq!(records_index.is_file(), records);
+        assert!(records_index.is_file());
         let expected = [
             "records/struct.Records.html",
             "records/struct.RecordStream.html",
@@ -874,32 +821,25 @@ fn record_surfaces_are_structural_private_and_value_free_in_rendered_rustdoc() {
                 "isolated `{features}` Rustdoc omitted {relative}"
             );
         }
-        assert_eq!(
-            documentation.join("records/struct.Csv.html").is_file(),
-            csv,
-            "isolated `{features}` Rustdoc had incorrect CSV visibility"
-        );
-        assert_eq!(
-            documentation.join("records/struct.NdJson.html").is_file(),
-            ndjson,
-            "isolated `{features}` Rustdoc had incorrect NDJSON visibility"
+        assert!(
+            !documentation.join("records/struct.Csv.html").is_file()
+                && !documentation.join("records/struct.NdJson.html").is_file(),
+            "extras-owned record decoders remain in core Rustdoc"
         );
 
         let records_index = std::fs::read_to_string(&records_index)
             .unwrap_or_else(|error| panic!("failed to read {}: {error}", records_index.display()));
-        if features == "records" {
-            for forbidden in [
-                "serde::",
-                "serde_json",
-                "csv::Reader",
-                "struct.Csv",
-                "struct.NdJson",
-            ] {
-                assert!(
-                    !records_index.contains(forbidden),
-                    "records-only Rustdoc claimed parser dependency or type {forbidden}"
-                );
-            }
+        for forbidden in [
+            "serde::",
+            "serde_json",
+            "csv::Reader",
+            "struct.Csv",
+            "struct.NdJson",
+        ] {
+            assert!(
+                !records_index.contains(forbidden),
+                "records-only Rustdoc claimed parser dependency or type {forbidden}"
+            );
         }
 
         for relative in expected {
@@ -967,20 +907,6 @@ fn record_surfaces_are_structural_private_and_value_free_in_rendered_rustdoc() {
                 !record_stream.contains(accessor) && !record_batches.contains(accessor),
                 "isolated `{features}` Rustdoc exposed record data accessor {accessor}"
             );
-        }
-
-        if csv {
-            let csv_page = std::fs::read_to_string(documentation.join("records/struct.Csv.html"))
-                .expect("CSV Rustdoc");
-            assert!(csv_page.contains("<code>csv</code> feature"));
-            assert!(!csv_page.contains("NdJson") && !csv_page.contains("general endpoint JSON"));
-        }
-        if ndjson {
-            let ndjson_page =
-                std::fs::read_to_string(documentation.join("records/struct.NdJson.html"))
-                    .expect("NDJSON Rustdoc");
-            assert!(ndjson_page.contains("<code>ndjson</code> feature"));
-            assert!(!ndjson_page.contains("struct.Csv"));
         }
     }
 }

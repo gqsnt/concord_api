@@ -1,13 +1,13 @@
 #![forbid(unsafe_code)]
 
-use concord_core::Request;
-use concord_core::advanced::{
+use concord::Request;
+use concord::advanced::{
     BodyError, BodyKind, Buffered, ByteStream, Discard, LengthHint, Method, PreparedEndpoint,
     RequestBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestContentType,
     ResponseBodyError, ResponseBodySpec, ResponseHead, Streaming,
 };
-use concord_core::prelude::Bytes;
-use concord_macros::api;
+use concord::api;
+use concord::prelude::Bytes;
 
 pub struct ExampleRequestSpec;
 

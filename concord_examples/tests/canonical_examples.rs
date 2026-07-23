@@ -1,9 +1,9 @@
 #![forbid(unsafe_code)]
 
-use concord_core::advanced::{Method, PreparedEndpoint};
-use concord_core::prelude::{Bytes, PageLimit, StreamBody};
-use concord_core::{PaginatedRequest, Request};
-use concord_macros::api;
+use concord::advanced::{Method, PreparedEndpoint};
+use concord::api;
+use concord::prelude::{Bytes, PageLimit, StreamBody};
+use concord::{PaginatedRequest, Request};
 
 api! {
     client DeterministicApi {
@@ -13,7 +13,7 @@ api! {
     POST Custom(body: concord_examples::ExampleCodec) -> concord_examples::ExampleCodec;
     POST Upload(body: Stream<OctetStream>) -> Bytes;
     GET Pages(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
-        paginate concord_core::advanced::OffsetPagination {
+        paginate concord::advanced::OffsetPagination {
             offset: bind ep.offset,
             page_size: bind ep.limit,
         }

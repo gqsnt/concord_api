@@ -1,60 +1,64 @@
 error: unknown endpoint value `missing`
-  --> tests/ui/fail/pagination_types.rs:29:29
+  --> tests/ui/fail/pagination_types.rs:34:29
    |
-29 |             offset: bind ep.missing,
+34 |             offset: bind ep.missing,
    |                             ^^^^^^^
 
-error[E0277]: the trait bound `Vec<u8>: HasNextCursor<String>` is not satisfied
-  --> tests/ui/fail/pagination_types.rs:48:1
+error[E0277]: the trait bound `Vec<u8>: NextCursor<std::string::String>` is not satisfied
+  --> tests/ui/fail/pagination_types.rs:53:1
    |
-48 | / api! {
-49 | |     client WrongCursorType {
-50 | |         base "https://example.test";
+53 | / api! {
+54 | |     client WrongCursorType {
+55 | |         base "https://example.test";
 ...  |
-58 | | }
-   | |_^ the trait `HasNextCursor<String>` is not implemented for `Vec<u8>`
+63 | | }
+   | |_^ the trait `NextCursor<std::string::String>` is not implemented for `Vec<u8>`
    |
-help: the trait `PaginationController<Page>` is implemented for `CursorPagination<C>`
-  --> $WORKSPACE/concord_core/src/pagination/controller.rs
+help: this trait has no implementations, consider adding one
+  --> tests/ui/fail/../../support/mod.rs
    |
-   | / impl<Page, C> PaginationController<Page> for CursorPagination<C>
-   | | where
-   | |     Page: HasNextCursor<C>,
-   | |     C: Clone + Send + 'static,
-   | |______________________________^
-   = note: required for `CursorPagination<String>` to implement `PaginationController<Vec<u8>>`
+   | pub trait NextCursor<C> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+note: required for `CursorController<std::string::String>` to implement `PaginationController<Vec<u8>>`
+  --> tests/ui/fail/../../support/mod.rs
+   |
+   | impl<Page, C> PaginationController<Page> for CursorController<C>
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^     ^^^^^^^^^^^^^^^^^^^
+   | where
+   |     Page: NextCursor<C>,
+   |           ------------- unsatisfied trait bound introduced here
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `NotController: PaginationController<Vec<u8>>` is not satisfied
-  --> tests/ui/fail/pagination_types.rs:86:1
-   |
-86 | / api! {
-87 | |     client NonControllerType {
-88 | |         base "https://example.test";
-...  |
-96 | | }
-   | |_^ unsatisfied trait bound
-   |
+   --> tests/ui/fail/pagination_types.rs:91:1
+    |
+ 91 | / api! {
+ 92 | |     client NonControllerType {
+ 93 | |         base "https://example.test";
+...   |
+101 | | }
+    | |_^ unsatisfied trait bound
+    |
 help: the trait `PaginationController<Vec<u8>>` is not implemented for `NotController`
-  --> tests/ui/fail/pagination_types.rs:3:1
-   |
- 3 | pub struct NotController {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^
+   --> tests/ui/fail/pagination_types.rs:8:1
+    |
+  8 | pub struct NotController {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^
 help: the trait `PaginationController<Vec<u8>>` is implemented for `private_controller::Controller`
-  --> tests/ui/fail/pagination_types.rs:12:5
-   |
-12 |     impl concord_core::advanced::PaginationController<Vec<u8>> for Controller {
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   --> tests/ui/fail/pagination_types.rs:17:5
+    |
+ 17 |     impl concord_core::advanced::PaginationController<Vec<u8>> for Controller {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0308]: mismatched types
-  --> tests/ui/fail/pagination_types.rs:35:1
+  --> tests/ui/fail/pagination_types.rs:40:1
    |
-35 | / api! {
-36 | |     client WrongOffsetType {
-37 | |         base "https://example.test";
+40 | / api! {
+41 | |     client WrongOffsetType {
+42 | |         base "https://example.test";
 ...  |
-46 | | }
+51 | | }
    | | ^
    | | |
    | | expected `&u64`, found `&String`
@@ -62,7 +66,7 @@ error[E0308]: mismatched types
    |   this return type influences the call expression's return type
    |
    = note: expected reference `&u64`
-              found reference `&String`
+              found reference `&std::string::String`
 note: method defined here
   --> $RUST/core/src/clone.rs
    |
@@ -71,20 +75,20 @@ note: method defined here
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0308]: mismatched types
-  --> tests/ui/fail/pagination_types.rs:35:1
+  --> tests/ui/fail/pagination_types.rs:40:1
    |
-35 | / api! {
-36 | |     client WrongOffsetType {
-37 | |         base "https://example.test";
+40 | / api! {
+41 | |     client WrongOffsetType {
+42 | |         base "https://example.test";
 ...  |
-46 | | }
+51 | | }
    | | ^
    | | |
    | | expected `&String`, found `&u64`
    | |_arguments to this function are incorrect
    |   this return type influences the call expression's return type
    |
-   = note: expected reference `&String`
+   = note: expected reference `&std::string::String`
               found reference `&u64`
 note: method defined here
   --> $RUST/core/src/clone.rs
@@ -94,21 +98,21 @@ note: method defined here
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0308]: mismatched types
-  --> tests/ui/fail/pagination_types.rs:48:1
+  --> tests/ui/fail/pagination_types.rs:53:1
    |
-48 | / api! {
-49 | |     client WrongCursorType {
-50 | |         base "https://example.test";
+53 | / api! {
+54 | |     client WrongCursorType {
+55 | |         base "https://example.test";
 ...  |
-58 | | }
+63 | | }
    | | ^
    | | |
    | | expected `&Option<String>`, found `&String`
    | |_arguments to this function are incorrect
    |   this return type influences the call expression's return type
    |
-   = note: expected reference `&Option<String>`
-              found reference `&String`
+   = note: expected reference `&std::option::Option<std::string::String>`
+              found reference `&std::string::String`
 note: method defined here
   --> $RUST/core/src/clone.rs
    |
@@ -117,21 +121,21 @@ note: method defined here
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0308]: mismatched types
-  --> tests/ui/fail/pagination_types.rs:48:1
+  --> tests/ui/fail/pagination_types.rs:53:1
    |
-48 | / api! {
-49 | |     client WrongCursorType {
-50 | |         base "https://example.test";
+53 | / api! {
+54 | |     client WrongCursorType {
+55 | |         base "https://example.test";
 ...  |
-58 | | }
+63 | | }
    | | ^
    | | |
    | | expected `&String`, found `&Option<String>`
    | |_arguments to this function are incorrect
    |   this return type influences the call expression's return type
    |
-   = note: expected reference `&String`
-              found reference `&Option<String>`
+   = note: expected reference `&std::string::String`
+              found reference `&std::option::Option<std::string::String>`
 note: method defined here
   --> $RUST/core/src/clone.rs
    |
@@ -139,22 +143,22 @@ note: method defined here
    |        ^^^^^
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0063]: missing field `page_size` in initializer of `OffsetPagination`
-  --> tests/ui/fail/pagination_types.rs:66:18
+error[E0063]: missing field `page_size` in initializer of `OffsetController`
+  --> tests/ui/fail/pagination_types.rs:71:18
    |
-66 |         paginate concord_core::advanced::OffsetPagination {
-   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `page_size`
+71 |         paginate crate::support::OffsetController {
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `page_size`
 
-error[E0560]: struct `OffsetPagination` has no field named `unknown`
-  --> tests/ui/fail/pagination_types.rs:81:13
+error[E0560]: struct `OffsetController` has no field named `unknown`
+  --> tests/ui/fail/pagination_types.rs:86:13
    |
-81 |             unknown: 0,
-   |             ^^^^^^^ `OffsetPagination` does not have this field
+86 |             unknown: 0,
+   |             ^^^^^^^ `OffsetController` does not have this field
    |
    = note: all struct fields are already assigned
 
 error[E0616]: field `state` of struct `private_controller::Controller` is private
-   --> tests/ui/fail/pagination_types.rs:105:13
+   --> tests/ui/fail/pagination_types.rs:110:13
     |
-105 |             state: bind ep.state,
+110 |             state: bind ep.state,
     |             ^^^^^ private field

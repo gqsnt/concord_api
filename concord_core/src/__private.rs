@@ -12,12 +12,11 @@ pub const fn assert_generated_contract(expected: u32) {
     );
 }
 
-/// Produces a focused const-evaluation diagnostic for generated JSON syntax
-/// when the runtime dependency omitted its `json` feature.
+/// Produces a focused diagnostic for the transitional built-in OAuth2 syntax.
 #[doc(hidden)]
-pub const fn assert_json_feature() {
-    #[cfg(not(feature = "json"))]
-    panic!("Concord JSON DSL requires the `concord_core/json` feature");
+pub const fn assert_oauth2_client_feature() {
+    #[cfg(not(feature = "oauth2-client"))]
+    panic!("Concord `oauth2_client` requires the `concord/oauth2-client` feature");
 }
 
 /// Produces a focused const-evaluation diagnostic for generated multipart
@@ -174,7 +173,7 @@ where
     }
 }
 
-#[cfg(feature = "json")]
+#[cfg(feature = "oauth2-client")]
 #[doc(hidden)]
 pub fn oauth2_client_credentials(
     token_url: &str,
@@ -188,7 +187,7 @@ pub fn oauth2_client_credentials(
     crate::auth::OAuth2ClientCredentials::new(token_url, client_id, client_secret, scope)
 }
 
-#[cfg(feature = "json")]
+#[cfg(feature = "oauth2-client")]
 #[doc(hidden)]
 pub fn oauth2_client_credentials_for_replace(
     token_url: &str,
@@ -203,12 +202,12 @@ pub fn oauth2_client_credentials_for_replace(
         .map_err(|_| crate::auth::AuthError::new(crate::error::AuthErrorKind::InvalidConfiguration))
 }
 
-#[cfg(not(feature = "json"))]
+#[cfg(not(feature = "oauth2-client"))]
 #[doc(hidden)]
-pub struct MissingJsonOAuthProvider;
+pub struct MissingOAuth2ClientProvider;
 
-#[cfg(not(feature = "json"))]
-impl crate::auth::CredentialProvider for MissingJsonOAuthProvider {
+#[cfg(not(feature = "oauth2-client"))]
+impl crate::auth::CredentialProvider for MissingOAuth2ClientProvider {
     type Material = crate::auth::AccessToken;
 
     fn acquire<'a>(
@@ -223,26 +222,26 @@ impl crate::auth::CredentialProvider for MissingJsonOAuthProvider {
     }
 }
 
-#[cfg(not(feature = "json"))]
+#[cfg(not(feature = "oauth2-client"))]
 #[doc(hidden)]
 pub fn oauth2_client_credentials(
     _token_url: &str,
     _client_id: crate::auth::SecretString,
     _client_secret: crate::auth::SecretString,
     _scope: Option<&str>,
-) -> Result<MissingJsonOAuthProvider, ClientBuildError> {
-    Ok(MissingJsonOAuthProvider)
+) -> Result<MissingOAuth2ClientProvider, ClientBuildError> {
+    Ok(MissingOAuth2ClientProvider)
 }
 
-#[cfg(not(feature = "json"))]
+#[cfg(not(feature = "oauth2-client"))]
 #[doc(hidden)]
 pub fn oauth2_client_credentials_for_replace(
     _token_url: &str,
     _client_id: crate::auth::SecretString,
     _client_secret: crate::auth::SecretString,
     _scope: Option<&str>,
-) -> Result<MissingJsonOAuthProvider, crate::auth::AuthError> {
-    Ok(MissingJsonOAuthProvider)
+) -> Result<MissingOAuth2ClientProvider, crate::auth::AuthError> {
+    Ok(MissingOAuth2ClientProvider)
 }
 
 /// Borrows a generated endpoint through the opaque request wrapper without

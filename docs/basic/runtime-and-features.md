@@ -59,7 +59,7 @@ Concord cannot cancel synchronous application code already running inside a trai
 
 ## Cargo features
 
-Features are defined by `concord_core`; `concord_macros` does not mirror the runtime feature graph or depend on parser/runtime implementation crates.
+User-facing features are defined by the `concord` façade. It forwards semantic runtime features to core and concrete implementation features to extras; `concord_macros` does not mirror that graph or inspect selected implementation types.
 
 ### Defaults
 
@@ -73,10 +73,11 @@ rate-limit-governor
 
 | Feature | Adds |
 |---|---|
-| `json` | `Json<T>`, Serde JSON, OAuth2 client-credential response handling |
+| `json` | extras-owned `Json<T>` and Serde JSON |
 | `records` | `RecordDecoder`, `Records`, `RecordStream`, batching |
-| `csv` | `records`, Serde, typed CSV decoder |
-| `ndjson` | `records`, Serde JSON, typed NDJSON decoder; does not enable general `json` |
+| `csv` | extras-owned typed CSV decoder plus core `records` |
+| `ndjson` | extras-owned typed NDJSON decoder plus core `records`; does not enable general `json` |
+| `oauth2-client` | temporary legacy OAuth2 client-credential helper; independent of `json` |
 | `multipart` | Multipart request bodies through Reqwest |
 
 ### Compression
@@ -109,7 +110,7 @@ Dangerous Cargo features are unified across the compiled binary and are not enab
 - `records` alone has no Serde or CSV parser dependency.
 - `csv` does not enable `ndjson` or general `json`.
 - `ndjson` does not enable `csv` or general `json`.
-- `concord_macros` has no Reqwest, Tokio, governor, CSV, or Serde JSON runtime dependency.
+- `concord_macros` has no edge to extras and no knowledge of JSON, CSV, NDJSON, or built-in pagination-controller names.
 
 See the [Feature reference](../reference/features-limits-and-errors.md#feature-reference) for exact dependency implications and configuration examples.
 

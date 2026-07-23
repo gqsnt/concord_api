@@ -1,5 +1,10 @@
 use concord_macros::api;
 
+#[path = "../../support/mod.rs"]
+mod support;
+#[allow(unused_imports)]
+use support::Json;
+
 pub struct NotController {
     pub value: u64,
 }
@@ -25,7 +30,7 @@ api! {
     }
 
     GET Read(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
-        paginate concord_core::advanced::OffsetPagination {
+        paginate crate::support::OffsetController {
             offset: bind ep.missing,
             page_size: bind ep.limit,
         }
@@ -38,7 +43,7 @@ api! {
     }
 
     GET Read(offset: String, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
-        paginate concord_core::advanced::OffsetPagination {
+        paginate crate::support::OffsetController {
             offset: bind ep.offset,
             page_size: bind ep.limit,
         }
@@ -51,7 +56,7 @@ api! {
     }
 
     GET Read(cursor: String) -> Json<Vec<u8>> {
-        paginate concord_core::advanced::CursorPagination<String> {
+        paginate crate::support::CursorController<String> {
             cursor: bind ep.cursor,
         }
     }
@@ -63,7 +68,7 @@ api! {
     }
 
     GET Read(offset: u64) -> Json<Vec<u8>> {
-        paginate concord_core::advanced::OffsetPagination {
+        paginate crate::support::OffsetController {
             offset: bind ep.offset,
         }
     }
@@ -75,7 +80,7 @@ api! {
     }
 
     GET Read(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
-        paginate concord_core::advanced::OffsetPagination {
+        paginate crate::support::OffsetController {
             offset: bind ep.offset,
             page_size: bind ep.limit,
             unknown: 0,

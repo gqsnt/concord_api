@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
-use concord_core::Request;
-use concord_macros::api;
+use concord::Request;
+use concord::api;
 
 api! {
     client MinimalApi {
@@ -11,7 +11,7 @@ api! {
     GET Health() -> NoContent;
 }
 
-fn main() -> Result<(), concord_core::prelude::ClientBuildError> {
+fn main() -> Result<(), concord::prelude::ClientBuildError> {
     let client = MinimalApi::builder().build()?;
     let _: Request<_> = client.health();
     Ok(())

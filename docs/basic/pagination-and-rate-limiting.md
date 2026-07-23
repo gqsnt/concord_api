@@ -12,7 +12,7 @@ A paginated endpoint is bodyless, returns a buffered page type whose output impl
 ```rust
 GET Items(offset: u64, limit: NonZeroU32) -> Json<Vec<Item>> {
     query { "offset" = ep.offset; "limit" = ep.limit; }
-    paginate concord_core::advanced::OffsetPagination {
+    paginate concord::pagination::OffsetPagination {
         offset: bind ep.offset,
         page_size: bind ep.limit,
     }
@@ -22,7 +22,7 @@ GET Items(offset: u64, limit: NonZeroU32) -> Json<Vec<Item>> {
 Application use:
 
 ```rust
-use concord_core::prelude::PageLimit;
+use concord::PageLimit;
 
 let items = client
     .items(0, NonZeroU32::new(50).unwrap())
@@ -36,19 +36,19 @@ let items = client
 - `PageLimit::HardCap(n)` allows natural completion through page `n` and returns `HardCapExceeded` when another continuation still exists at the cap.
 - `u32` converts to `PageLimit::Take`.
 
-### Built-in controllers
+### Built-in extras controllers
 
 #### Offset
 
-`OffsetPagination` adds the requested page size using checked arithmetic. A decoded page shorter than the page size terminates naturally.
+`concord::pagination::OffsetPagination` adds the requested page size using checked arithmetic. A decoded page shorter than the page size terminates naturally.
 
 #### Page number
 
-`PagePagination` increments a one-based page number with checked arithmetic. Short-page behavior matches offset pagination.
+`concord::pagination::PagePagination` increments a one-based page number with checked arithmetic. Short-page behavior matches offset pagination.
 
 #### Cursor
 
-`CursorPagination<C>` asks the decoded page for `HasNextCursor<C>`. It does not stop merely because an item page is empty; metadata can still contain a next cursor.
+`concord::pagination::CursorPagination<C>` asks the decoded page for `concord::pagination::HasNextCursor<C>`. It does not stop merely because an item page is empty; metadata can still contain a next cursor.
 
 ### Bindings
 

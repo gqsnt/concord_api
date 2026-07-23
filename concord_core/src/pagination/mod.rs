@@ -7,9 +7,8 @@ mod identity;
 mod limits;
 mod pending;
 
-pub use controller::{
-    CursorPagination, HasNextCursor, OffsetPagination, PagePagination, PaginationController,
-};
+pub use crate::error::PaginationErrorKind;
+pub use controller::PaginationController;
 pub use error::PaginationError;
 pub use pending::{PageLimit, PaginatedEndpoint, PaginatedRequest};
 

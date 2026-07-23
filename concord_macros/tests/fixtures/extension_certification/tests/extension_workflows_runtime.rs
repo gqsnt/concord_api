@@ -4,8 +4,8 @@ use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 
-use concord_core::advanced::SafeProxy;
-use concord_core::prelude::{Bytes, SecretString};
+use runtime::advanced::SafeProxy;
+use runtime::prelude::{Bytes, SecretString};
 use concord_test_support::tls::TlsServer;
 use concord_fixture_extension_certification::{
     DirectExtensionProvider, ExtensionHooks, ExtensionLimiter, SecureExtensionApi,
