@@ -235,7 +235,7 @@ fn exact_builder_contracts() {
 }
 
 #[test]
-fn exact_prepared_types_are_available_from_advanced() {
+fn exact_runtime_endpoint_types_are_available_from_advanced() {
     exact_builder_contracts();
 }
 

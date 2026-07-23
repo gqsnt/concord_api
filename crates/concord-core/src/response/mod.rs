@@ -9,7 +9,7 @@ mod stream;
 pub use error::{ResponseBodyError, ResponseBodyErrorKind};
 #[cfg(feature = "dangerous-raw-response")]
 pub use metadata::RawResponse;
-pub use metadata::{ApiResponse, DecodedResponse, ExecutionMeta};
+pub use metadata::{ApiResponse, ExecutionMeta};
 pub use spec::{
     Buffered, Discard, NoContent, PageResponseSpec, ResponseBodySpec, ResponseHead, ResponseMode,
     Streaming,

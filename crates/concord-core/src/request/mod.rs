@@ -8,10 +8,7 @@ mod prepared;
 #[cfg(feature = "dangerous-raw-response")]
 pub use pending::RawResponseRequest;
 pub use pending::{Request, ResponseRequest};
-#[allow(deprecated, reason = "Phase 14 compatibility aliases")]
-pub use prepared::{
-    PreparedEndpoint, PreparedEndpointBuilder, RuntimeEndpoint, RuntimeEndpointBuilder,
-};
+pub use prepared::{RuntimeEndpoint, RuntimeEndpointBuilder};
 
 pub(crate) use prepare::{
     OperationPreparation, PreparationFailure, PreparedOperation, PreparedPaginationPage,

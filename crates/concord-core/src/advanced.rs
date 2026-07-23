@@ -47,13 +47,10 @@ pub use crate::records::{
     RecordBatches, RecordDecoder, RecordError, RecordErrorKind, RecordStream, Records,
 };
 pub use crate::redaction::{SanitizedHeaderMap, SanitizedHeaderValue, SanitizedHeaders};
-#[allow(deprecated, reason = "Phase 14 compatibility aliases")]
-pub use crate::request::{
-    PreparedEndpoint, PreparedEndpointBuilder, RuntimeEndpoint, RuntimeEndpointBuilder,
-};
+pub use crate::request::{RuntimeEndpoint, RuntimeEndpointBuilder};
 pub use crate::response::{
-    ApiResponse, Buffered, ByteStream, DecodedResponse, Discard, ExecutionMeta, NoContent,
-    PageResponseSpec, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec, ResponseHead,
-    ResponseMode, Streaming,
+    ApiResponse, Buffered, ByteStream, Discard, ExecutionMeta, NoContent, PageResponseSpec,
+    ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec, ResponseHead, ResponseMode,
+    Streaming,
 };
 pub use crate::runtime::RuntimeConfigBuilder;

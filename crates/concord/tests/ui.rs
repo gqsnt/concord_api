@@ -77,12 +77,6 @@ fn dangerous_generated_terminals_preserve_exact_mode_boundaries() {
     cases.compile_fail("tests/ui/fail/features/*.rs");
 }
 
-#[test]
-fn temporary_compatibility_is_explicitly_tracked() {
-    let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/fail/compatibility/*.rs");
-}
-
 #[cfg(all(feature = "brotli", feature = "default-tls"))]
 #[test]
 fn configured_client_has_no_positional_constructor() {

@@ -19,6 +19,7 @@ api! {
         POST submit(
             first: String,
             #[body] payload: Text,
+            body: String,
             optional: std::option::Option<u32>,
             alias_is_required: crate::MaybeString,
             last: bool,
@@ -27,6 +28,7 @@ api! {
             id "v2.http_status.submit";
             headers { "X-Last" = ep.last; }
             path ["submit", ep.first];
+            query { "body" = ep.body; }
         }
     }
 }
@@ -39,12 +41,14 @@ fn main() {
     let _: v2_api::http_status::SubmitRequest = client.http_status().submit(
         "first".to_owned(),
         "body".to_owned(),
+        "ordinary-parameter".to_owned(),
         None,
         true,
     );
     let endpoint = v2_api::http_status::Submit::new(
         "first".to_owned(),
         "body".to_owned(),
+        "ordinary-parameter".to_owned(),
         None,
         true,
     )

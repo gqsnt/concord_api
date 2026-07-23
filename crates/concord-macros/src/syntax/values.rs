@@ -16,11 +16,6 @@ pub(super) fn parse_vars(input: ParseStream<'_>) -> syn::Result<Vec<ValueDecl>> 
     let mut values = Vec::new();
     let mut names = HashSet::new();
     while !body.is_empty() {
-        if body.peek(keyword::var) {
-            return Err(body.error(
-                "client variables must be declared in a `vars { ... }` block without the `var` keyword",
-            ));
-        }
         let value = parse_value(&body, values.len())?;
         body.parse::<Token![;]>()?;
         insert_unique_value(&mut names, &value, "client value")?;
@@ -74,12 +69,6 @@ pub(super) fn parse_parameters(
             }
             true
         };
-
-        if body_is_special && canonical == "body" && !is_body {
-            return Err(name.span().error(
-                "request body inference by parameter name was removed; mark the parameter explicitly as `#[body] body: Type`",
-            ));
-        }
 
         if is_body {
             if input.peek(Token![=]) {

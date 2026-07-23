@@ -138,13 +138,17 @@ api! {
     }
 }
 
-const EXPECTED_CATEGORIES: [&str; 12] = [
+const EXPECTED_CATEGORIES: [&str; 16] = [
     "core client construction",
-    "generated client, facade, and request creation",
+    "generated endpoint construction",
+    "request binding",
     "safe public planning",
     "public head preparation",
     "codec encoding and decoding",
     "body-limit polling",
+    "direct execution overhead",
+    "explicit generated endpoint execution overhead",
+    "runtime endpoint execution overhead",
     "credential ready-path preparation and finalization",
     "limiter ready-path acquisition",
     "pagination loop overhead",
@@ -182,7 +186,7 @@ impl CategoryAudit {
                 "benchmark category did not execute: {expected}"
             );
         }
-        println!("benchmark operation audit: 12/12 named categories executed");
+        println!("benchmark operation audit: 16/16 named categories executed");
     }
 }
 
@@ -222,20 +226,31 @@ fn core_client_construction(iterations: usize, audit: &mut CategoryAudit) {
     report(audit, "core client construction", iterations, started);
 }
 
-fn generated_client_facade_and_request_creation(iterations: usize, audit: &mut CategoryAudit) {
-    let client = configured_builder().build().expect("benchmark client");
+fn generated_endpoint_construction(iterations: usize, audit: &mut CategoryAudit) {
     let started = Instant::now();
     for index in 0..iterations {
-        let facade = client.records("archive".to_owned());
-        let request: bench_api::records::ShowRequest = facade.show(index.to_string());
-        let _ = black_box(request);
+        let endpoint = bench_api::records::Show::new("archive".to_owned(), index.to_string());
+        black_box(endpoint);
     }
     report(
         audit,
-        "generated client, facade, and request creation",
+        "generated endpoint construction",
         iterations,
         started,
     );
+}
+
+fn request_binding(iterations: usize, audit: &mut CategoryAudit) {
+    let client = configured_builder().build().expect("benchmark client");
+    let endpoints = (0..iterations)
+        .map(|index| bench_api::records::Show::new("archive".to_owned(), index.to_string()))
+        .collect::<Vec<_>>();
+    let started = Instant::now();
+    for endpoint in endpoints {
+        let request: bench_api::records::ShowRequest = client.request(endpoint);
+        let _ = black_box(request);
+    }
+    report(audit, "request binding", iterations, started);
 }
 
 fn safe_public_planning(
@@ -335,6 +350,87 @@ fn body_limit_polling(
         black_box(runtime.block_on(client.bounded().into_future())?);
     }
     report(audit, "body-limit polling", iterations, started);
+    Ok(())
+}
+
+fn direct_execution_overhead(
+    iterations: usize,
+    runtime: &tokio::runtime::Runtime,
+    audit: &mut CategoryAudit,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let server =
+        ScriptedServer::start((0..iterations).map(|_| ResponseScript::ok(b"direct".to_vec())))?;
+    let proxy = SafeProxy::parse(server.url(""))?;
+    let client = configured_builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .build()?;
+    let started = Instant::now();
+    for _ in 0..iterations {
+        black_box(runtime.block_on(client.bounded().into_future())?);
+    }
+    report(audit, "direct execution overhead", iterations, started);
+    Ok(())
+}
+
+fn explicit_generated_endpoint_execution_overhead(
+    iterations: usize,
+    runtime: &tokio::runtime::Runtime,
+    audit: &mut CategoryAudit,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let server =
+        ScriptedServer::start((0..iterations).map(|_| ResponseScript::ok(b"explicit".to_vec())))?;
+    let proxy = SafeProxy::parse(server.url(""))?;
+    let client = configured_builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .build()?;
+    let endpoints = (0..iterations)
+        .map(|_| bench_api::Bounded::new())
+        .collect::<Vec<_>>();
+    let started = Instant::now();
+    for endpoint in endpoints {
+        black_box(runtime.block_on(client.request(endpoint).into_future())?);
+    }
+    report(
+        audit,
+        "explicit generated endpoint execution overhead",
+        iterations,
+        started,
+    );
+    Ok(())
+}
+
+fn runtime_endpoint_execution_overhead(
+    iterations: usize,
+    runtime: &tokio::runtime::Runtime,
+    audit: &mut CategoryAudit,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let server =
+        ScriptedServer::start((0..iterations).map(|_| ResponseScript::ok(b"runtime".to_vec())))?;
+    let proxy = SafeProxy::parse(server.url(""))?;
+    let client = configured_builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .build()?;
+    let endpoints = (0..iterations)
+        .map(|index| {
+            RuntimeEndpoint::builder(
+                EndpointId::new(format!("bench_api.runtime_{index}"))?,
+                Method::GET,
+            )
+            .path_segment("runtime")
+            .response_bytes()
+            .build()
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let started = Instant::now();
+    for endpoint in endpoints {
+        black_box(runtime.block_on(client.request(endpoint).into_future())?);
+    }
+    report(
+        audit,
+        "runtime endpoint execution overhead",
+        iterations,
+        started,
+    );
     Ok(())
 }
 
@@ -477,11 +573,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut audit = CategoryAudit::default();
 
     core_client_construction(iterations, &mut audit);
-    generated_client_facade_and_request_creation(iterations, &mut audit);
+    generated_endpoint_construction(iterations, &mut audit);
+    request_binding(iterations, &mut audit);
     safe_public_planning(iterations, &mut audit)?;
     public_head_preparation(iterations, &runtime, &mut audit)?;
     codec_encoding_and_decoding(iterations, &mut audit);
     body_limit_polling(iterations, &runtime, &mut audit)?;
+    direct_execution_overhead(iterations, &runtime, &mut audit)?;
+    explicit_generated_endpoint_execution_overhead(iterations, &runtime, &mut audit)?;
+    runtime_endpoint_execution_overhead(iterations, &runtime, &mut audit)?;
     credential_ready_path_preparation(iterations, &runtime, &mut audit)?;
     limiter_ready_path_acquisition(iterations, &runtime, &mut audit)?;
     pagination_loop_overhead(iterations, &runtime, &mut audit)?;

@@ -25,6 +25,7 @@ const REQUIRED_RECIPES: &[&str] = &[
     "docs",
     "security",
     "perf-smoke",
+    "perf-scale",
     "verify",
 ];
 

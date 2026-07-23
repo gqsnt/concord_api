@@ -1,0 +1,195 @@
+# Migrating to the Concord façade architecture
+
+This guide maps the pre-refactor `0.1.0` workspace surface to the final
+contract-compiler and managed-runtime surface. The reviewed repository has no
+verified published-release commitment, so the refactor intentionally removes
+the temporary dual APIs instead of carrying permanent aliases.
+
+## Use one dependency
+
+Replace direct application dependencies on `concord_core` and
+`concord_macros`:
+
+```toml
+[dependencies]
+concord_core = { version = "0.1.0", features = ["json"] }
+concord_macros = "0.1.0"
+```
+
+with the user façade:
+
+```toml
+[dependencies]
+concord = { version = "0.1.0", features = ["json"] }
+```
+
+Move ordinary imports to `concord`:
+
+```rust
+use concord::{Json, api};
+use concord::prelude::{ApiResponse, Bytes, NoContent};
+```
+
+Generated code resolves the caller-visible `concord` package, including a
+renamed Cargo dependency. A `concord-core` plus `concord-macros` application
+setup is no longer accepted.
+
+Feature names are selected on `concord`. The façade forwards transport and
+bounded-lifecycle features and composes enabled extras. Its defaults are
+`default-tls`, `http2`, and `rate-limit-governor`; JSON remains opt-in.
+
+## Update declarations
+
+Endpoint and scope identifiers now directly define Rust method and module
+names and must be `snake_case`:
+
+```rust
+scope account_status() {
+    GET by_id(id: u64) -> Json<Account> {
+        path ["accounts", ep.id];
+    }
+}
+```
+
+Generated type names are deterministic PascalCase transformations:
+`account_status` becomes `AccountStatus`; `by_id` becomes `ById` and
+`ByIdRequest`.
+
+Named clauses are order-independent. Ordering remains significant inside path,
+query, header, authentication-placement, and rate-window lists.
+
+Client values use one `vars` block:
+
+```rust
+vars {
+    tenant: String;
+    locale: Option<String>;
+    page_size: u32 = 100;
+}
+```
+
+Request bodies require the explicit role attribute and may appear at their
+declared argument position:
+
+```rust
+POST replace(id: u64, #[body] payload: Json<Update>) -> Json<Item>;
+```
+
+A parameter named `body` without `#[body]` is an ordinary parameter. Optional
+parameters are recognized only as syntactic `Option<T>` or
+`std::option::Option<T>`; aliases are not resolved by the macro.
+
+Remove contract-level custom retry and observer selection. Configure
+deployment policy through the generated client builder:
+
+```rust
+let client = Api::builder()
+    .configure_http(|http| configure_http(http))
+    .configure_runtime(|runtime| configure_runtime(runtime))
+    .build()?;
+```
+
+The safe DSL retry choices remain `retry off;` and
+`retry reqwest_default;`. Dangerous custom native retry is available only
+through the feature-gated HTTP builder.
+
+## Construct configured clients by name
+
+Configured positional constructors are gone. Supply required values, secrets,
+and providers through named setters:
+
+```rust
+let client = PrivateApi::builder()
+    .tenant("west".to_owned())
+    .api_token(concord::SecretString::new(token))
+    .session_provider(provider)
+    .build()?;
+```
+
+`Client::new()` exists only for clients with no required values, secrets, or
+providers. Missing builder inputs produce a redaction-safe `ClientBuildError`.
+
+OAuth2 client credentials are an ordinary provider rather than macro syntax:
+
+```rust
+use concord::auth::OAuth2ClientCredentials;
+
+let oauth = OAuth2ClientCredentials::builder("https://identity.example/token")
+    .client_id("client-id")
+    .client_secret("client-secret")
+    .scope("items.read")
+    .build()?;
+
+let client = PrivateApi::builder()
+    .oauth_provider(oauth)
+    .build()?;
+```
+
+Declare its slot generically with
+`credential oauth = custom OAuth2ClientCredentials;`. The `api!` compiler does
+not recognize OAuth2, JSON, governor, or built-in pagination type names.
+
+## Use the scope-oriented generated API
+
+There are no generated `facades` and `endpoints` trees, generated preludes, or
+request extension traits. Ordinary capabilities are inherent:
+
+```rust
+let request: catalog_api::items::ByIdRequest =
+    client.items("books".to_owned()).by_id(42);
+
+let endpoint = catalog_api::items::ById::new("books".to_owned(), 42);
+let request: catalog_api::items::ByIdRequest = client.request(endpoint);
+```
+
+Both forms bind the same endpoint model and execute through the same managed
+lifecycle. Unsupported methods are absent from the named request type.
+
+## Rename response and runtime-endpoint types
+
+Use `ApiResponse<T>` for typed response metadata:
+
+```rust
+let response: concord::response::ApiResponse<Item> =
+    client.item(42).response().await?;
+```
+
+The old `DecodedResponse<T>` alias is removed.
+
+Use `RuntimeEndpoint` and `RuntimeEndpointBuilder` for runtime-defined
+endpoints:
+
+```rust
+use concord::endpoint::{EndpointId, RuntimeEndpoint};
+use concord::http::Method;
+
+let endpoint = RuntimeEndpoint::builder(
+    EndpointId::new("inventory.dynamic")?,
+    Method::GET,
+)
+.path_segment("inventory")
+.response_bytes()
+.build()?;
+
+let bytes = client.request(endpoint).await?;
+```
+
+The old prepared-endpoint names are removed. Timeout selection is a real
+inherit/explicit/disabled tri-state. Runtime and generated endpoints expose
+the same safe description and planning model and use the same executor.
+
+## Recheck capabilities and safety assumptions
+
+- Planning is sanitized and performs no hooks, credentials, limiter work, body
+  encoding/factory work, stream polling, transport, or completion.
+- Raw successful responses require `dangerous-raw-response` and remain
+  complete and bounded.
+- Runtime-defined pagination is intentionally unsupported.
+- Authentication recovery remains bounded to one additional attempt.
+- Pagination remains sequential, finite, cycle-detecting, and all-or-error.
+- Native requests, responses, and authentication material do not cross the
+  core boundary.
+
+See the [generated API reference](docs/reference/generated-api.md),
+[feature reference](docs/reference/features.md), and
+[unsupported forms](docs/reference/unsupported.md) for the final contract.

@@ -187,6 +187,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-fixture-direct-core-rejected"
+version = "0.0.0"
+dependencies = [
+ "concord-core",
+ "concord-macros",
+]
+
+[[package]]
 name = "concord-fixture-features"
 version = "0.0.0"
 dependencies = [

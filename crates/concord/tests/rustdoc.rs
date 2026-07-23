@@ -484,7 +484,6 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
     );
     for forbidden in [
         "RawResponseEndpoint",
-        "DecodedResponse",
         "BytesResponse",
         "ClientCore",
         "execute_request_as",
@@ -558,13 +557,10 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         );
     }
     assert!(
-        documentation
+        !documentation
             .join("advanced/type.DecodedResponse.html")
-            .is_file()
-            && !documentation
-                .join("advanced/struct.DecodedResponse.html")
-                .exists(),
-        "DecodedResponse must remain only an ApiResponse compatibility alias"
+            .exists(),
+        "removed DecodedResponse compatibility alias unexpectedly remains in public Rustdoc"
     );
     assert!(
         !documentation
@@ -727,10 +723,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "ordinary prelude pagination exports were not exact"
     );
     assert!(
-        !prelude.contains("RuntimeEndpoint")
-            && !prelude.contains("RuntimeEndpointBuilder")
-            && !prelude.contains("PreparedEndpoint")
-            && !prelude.contains("PreparedEndpointBuilder"),
+        !prelude.contains("RuntimeEndpoint") && !prelude.contains("RuntimeEndpointBuilder"),
         "ordinary prelude unexpectedly exported runtime endpoint contracts"
     );
 

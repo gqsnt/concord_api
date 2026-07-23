@@ -7,7 +7,7 @@ use std::time::Duration;
 use concord::advanced::{CodecError, DecodeBody, DecodeContext, ErrorCategory, SafeProxy};
 use concord::api;
 use concord::dangerous::{RawResponse, RawResponseRequest};
-use concord::prelude::{Bytes, DecodedResponse};
+use concord::prelude::{ApiResponse, Bytes};
 use concord_test_support::server::{BodyGate, ResponseScript, ScriptedServer};
 
 mod support;
@@ -159,7 +159,7 @@ async fn raw_success_skips_decoder_media_validation_and_preserves_exact_metadata
             .expect("ordinary direct decode remains unchanged"),
         "ordinary-direct"
     );
-    let metadata: DecodedResponse<String> = client
+    let metadata: ApiResponse<String> = client
         .custom_value()
         .response()
         .await

@@ -433,10 +433,9 @@ let client = ExampleApi::builder()
     .build()?;
 ```
 
-`rate_limit_observer` is not DSL v2 syntax. With the façade governor feature,
-the façade composes the generated default limiter. An explicitly configured
-limiter takes precedence. Without either, non-empty generated plans fail
-closed.
+With the façade governor feature, the façade composes the generated default
+limiter. An explicitly configured limiter takes precedence. Without either,
+non-empty generated plans fail closed.
 
 ## Diagnostics
 
@@ -450,10 +449,9 @@ Structural diagnostics include:
 - non-snake scope or endpoint identifiers and duplicate child names;
 - duplicate clauses with both spans;
 - invalid or duplicate contract IDs;
-- inferred, attributed, defaulted, or multiple body roles;
+- invalid, defaulted, or multiple body roles;
 - invalid public expression namespaces and shaping literals;
 - duplicate query, header, authentication, pagination, and rate-limit entries;
-- removed aliases, OAuth-specific sources, custom retry DSL, and observer DSL.
 
 Rust diagnostics cover:
 

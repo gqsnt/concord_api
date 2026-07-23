@@ -1,5 +1,0 @@
-error: request body inference by parameter name was removed; mark the parameter explicitly as `#[body] body: Type`
-  --> tests/ui/fail/syntax/inferred_body.rs:10:17
-   |
-10 |     POST submit(body: Text) -> Bytes;
-   |                 ^^^^

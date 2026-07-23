@@ -122,7 +122,7 @@ mod tests {
         })
         .expect("AST");
         let api = resolve::resolve(source).expect("IR");
-        let output = generate(&api, &quote!(::concord_core)).to_string();
+        let output = generate(&api, &quote!(::concord)).to_string();
         assert!(!output.contains("FirstApiRegions"));
         assert!(output.contains("RootRequest"));
         assert!(output.contains("resources"));

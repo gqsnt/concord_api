@@ -1,4 +1,5 @@
 # Portable contributor commands. `just` selects the native shell on each host.
+set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 
 default:
     @just --list
@@ -18,7 +19,7 @@ check-all:
 
 lint:
     cargo fmt --all -- --check
-    cargo clippy --workspace --all-targets --all-features -- -D warnings
+    cargo +stable clippy --workspace --all-targets --all-features -- -D warnings
 
 test:
     cargo test --workspace
@@ -78,6 +79,9 @@ deny:
 perf-smoke:
     cargo bench -p concord-perf --bench concord_overhead --no-run
     cargo bench -p concord-perf --bench concord_overhead -- --smoke
+
+perf-scale:
+    cargo run -p concord-perf --bin expansion_scale
 
 # Correctness gate. Performance is observational and remains a separate lane.
 verify: fmt-check check check-all lint test test-all test-msrv ui fixtures examples docs security features deny

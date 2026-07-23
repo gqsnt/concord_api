@@ -23,6 +23,8 @@ endpoints in the remaining [guides](SUMMARY.md).
   features, limits, errors, compatibility, and dangerous capabilities.
 - [Contributor documentation](contributor/architecture.md) owns internal crate,
   compiler, test, documentation, and release architecture.
+- The root [migration guide](../MIGRATION.md) and
+  [changelog](../CHANGELOG.md) describe the `0.1.0` architecture reset.
 
 Exact facts have one owner. Guides link to reference pages instead of copying
 feature tables, limits, or complete grammar. Internal bridge details appear

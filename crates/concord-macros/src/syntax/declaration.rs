@@ -116,24 +116,6 @@ impl Parse for SourceClient {
             if parse_layer_clause(&body, &mut layer, true, &owner)? {
                 continue;
             }
-            if body.peek(keyword::rate_limit_observer) {
-                return Err(body.error(
-                    "`rate_limit_observer` is runtime policy; configure it with `Client::builder().configure_runtime(...)`",
-                ));
-            }
-            if body.peek(keyword::rate_limits) {
-                return Err(body.error(
-                    "`rate_limits { ... }` was removed; declare `rate_limit { ... }` at each lexical owner",
-                ));
-            }
-            if body.peek(keyword::observe) {
-                return Err(body.error(
-                    "`observe PATH;` was removed; configure response-head observation on the runtime builder",
-                ));
-            }
-            if body.peek(keyword::var) {
-                return Err(body.error("client values must be declared in a `vars { ... }` block"));
-            }
             if body.peek(keyword::scope) || endpoint_starts(&body) {
                 return Err(
                     body.error("scopes and endpoints are declared after the `client` block")
@@ -229,11 +211,6 @@ fn parse_scope(input: ParseStream<'_>, depth: usize) -> syn::Result<SourceScope>
         if body.peek(keyword::retry) {
             return Err(body.error("`retry` is client-only and cannot be declared in a scope"));
         }
-        if body.peek(keyword::rate_limit_observer) {
-            return Err(body.error(
-                "`rate_limit_observer` is runtime policy; configure it on the client builder",
-            ));
-        }
         if is_client_only_declaration_start(&body) {
             return Err(body.error("this declaration is client-only and cannot appear in a scope"));
         }
@@ -267,11 +244,6 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
     parenthesized!(parameters_content in input);
     let (parameters, body) = parse_parameters(&parameters_content, "endpoint", true)?;
 
-    if input.peek(Token![as]) {
-        return Err(input.error(
-            "endpoint aliases were removed; use the desired snake_case method name as the endpoint identifier",
-        ));
-    }
     input.parse::<Token![->]>()?;
     let response = input.parse()?;
 
@@ -324,11 +296,6 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
                 return Err(
                     clauses.error("`retry` is client-only and cannot be declared on an endpoint")
                 );
-            }
-            if clauses.peek(keyword::rate_limit_observer) {
-                return Err(clauses.error(
-                    "`rate_limit_observer` is runtime policy; configure it on the client builder",
-                ));
             }
             if is_client_only_declaration_start(&clauses) {
                 return Err(clauses
@@ -414,10 +381,6 @@ fn parse_retry(input: ParseStream<'_>) -> syn::Result<RetrySelection> {
     } else if input.peek(keyword::reqwest_default) {
         input.parse::<keyword::reqwest_default>()?;
         RetrySelection::ReqwestDefault
-    } else if input.peek(keyword::custom) {
-        return Err(input.error(
-            "`retry custom PATH` is runtime policy; use `Client::builder().configure_http(...)` with the dangerous custom-retry feature",
-        ));
     } else {
         return Err(input.error("retry must be `off` or `reqwest_default`"));
     };
@@ -506,12 +469,8 @@ fn is_client_configuration_start(input: ParseStream<'_>) -> bool {
 fn is_client_only_declaration_start(input: ParseStream<'_>) -> bool {
     input.peek(keyword::base)
         || input.peek(keyword::vars)
-        || input.peek(keyword::var)
         || input.peek(keyword::credentials)
         || input.peek(keyword::retry)
-        || input.peek(keyword::rate_limit_observer)
-        || input.peek(keyword::rate_limits)
-        || input.peek(keyword::observe)
 }
 
 #[cfg(test)]
@@ -634,13 +593,6 @@ mod tests {
                 .to_string()
                 .contains("duplicate client value `value`")
         );
-
-        let legacy_var = parse(quote! {
-            client Api { base "https://example.test"; var value: String; }
-        })
-        .err()
-        .expect("legacy var");
-        assert!(legacy_var.to_string().contains("`vars { ... }` block"));
 
         parse(quote! {
             client Api {
@@ -879,15 +831,6 @@ mod tests {
             }
         })
         .expect("an empty credentials block is structurally valid");
-
-        parse(quote! {
-            client Api {
-                base "https://example.test";
-                rate_limits { }
-            }
-        })
-        .err()
-        .expect("removed rate-limit template block");
     }
 
     #[test]
@@ -1149,26 +1092,6 @@ mod tests {
                 "expected `{expected}`, got `{error}`"
             );
         }
-
-        let old_syntax = parse(quote! {
-            client Api {
-                base "https://example.test";
-                rate_limits { quota { 1 / 1s; } }
-            }
-        })
-        .err()
-        .expect("removed template syntax");
-        assert!(old_syntax.to_string().contains("was removed"));
-
-        let old_observer = parse(quote! {
-            client Api {
-                base "https://example.test";
-                observe crate::Observer;
-            }
-        })
-        .err()
-        .expect("removed observer syntax");
-        assert!(old_observer.to_string().contains("runtime builder"));
 
         parse(quote! {
             client Api {
@@ -1453,6 +1376,7 @@ mod tests {
                 GET get_http_status(
                     first: Option<String>,
                     #[body] payload: Text,
+                    body: String,
                     second: std::option::Option<u32>,
                     alias_value: crate::MaybeString,
                 ) -> Bytes {
@@ -1469,8 +1393,9 @@ mod tests {
         };
         assert!(matches!(endpoint.parameters[0].kind, ValueKind::Optional));
         assert_eq!(endpoint.body.as_ref().unwrap().position, 1);
-        assert!(matches!(endpoint.parameters[1].kind, ValueKind::Optional));
-        assert!(matches!(endpoint.parameters[2].kind, ValueKind::Required));
+        assert!(matches!(endpoint.parameters[1].kind, ValueKind::Required));
+        assert!(matches!(endpoint.parameters[2].kind, ValueKind::Optional));
+        assert!(matches!(endpoint.parameters[3].kind, ValueKind::Required));
         assert_eq!(
             endpoint.contract_id.as_ref().unwrap().value.value(),
             "http.status_v2.get"
@@ -1494,13 +1419,6 @@ mod tests {
             (
                 quote! {
                     client Api { base "https://example.test"; }
-                    POST inferred(body: Text) -> Bytes;
-                },
-                "inference by parameter name was removed",
-            ),
-            (
-                quote! {
-                    client Api { base "https://example.test"; }
                     POST duplicate(#[body] first: Text, #[body] second: Bytes) -> Bytes;
                 },
                 "two request body parameters",
@@ -1519,13 +1437,6 @@ mod tests {
                 },
                 "cannot have a default",
             ),
-            (
-                quote! {
-                    client Api { base "https://example.test"; }
-                    GET old_name() as renamed -> Bytes;
-                },
-                "aliases were removed",
-            ),
         ] {
             let error = parse(tokens).err().expect("invalid v2 syntax");
             assert!(
@@ -1536,7 +1447,7 @@ mod tests {
     }
 
     #[test]
-    fn stable_id_format_and_removed_policy_or_extras_syntax_are_focused() {
+    fn stable_id_format_is_focused() {
         for invalid in [
             "",
             ".leading",
@@ -1556,37 +1467,5 @@ mod tests {
             .expect("invalid stable ID");
             assert!(error.to_string().contains("endpoint ID"));
         }
-
-        let retry = parse(quote! {
-            client Api {
-                base "https://example.test";
-                retry custom crate::retry;
-            }
-        })
-        .err()
-        .expect("removed custom retry DSL");
-        assert!(retry.to_string().contains("runtime policy"));
-
-        let observer = parse(quote! {
-            client Api {
-                base "https://example.test";
-                rate_limit_observer crate::Observer;
-            }
-        })
-        .err()
-        .expect("removed observer DSL");
-        assert!(observer.to_string().contains("runtime policy"));
-
-        let oauth = parse(quote! {
-            client Api {
-                base "https://example.test";
-                credentials {
-                    credential token = oauth2_client(crate::Config);
-                }
-            }
-        })
-        .err()
-        .expect("removed OAuth-specific syntax");
-        assert!(oauth.to_string().contains("credential source"));
     }
 }

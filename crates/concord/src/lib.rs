@@ -15,8 +15,8 @@ pub use concord_core::__development;
 pub use concord_core::prelude::Multipart;
 pub use concord_core::prelude::{
     AccessToken, ApiError, ApiKey, ApiResponse, BasicCredential, ByteStream, Bytes,
-    ClientBuildError, ClientInputKind, ConfigurationError, DebugLevel, DecodedResponse,
-    ErrorCategory, NoContent, OctetStream, RequestBody, SecretString, Stream, StreamBody, Text,
+    ClientBuildError, ClientInputKind, ConfigurationError, DebugLevel, ErrorCategory, NoContent,
+    OctetStream, RequestBody, SecretString, Stream, StreamBody, Text,
 };
 pub use concord_core::{PageLimit, PaginatedRequest, Request, ResponseRequest};
 #[cfg(feature = "json")]
@@ -111,11 +111,10 @@ pub mod codec {
 
 /// Explicit endpoint values and typed pending request contracts.
 pub mod endpoint {
-    #[allow(deprecated, reason = "Phase 14 compatibility aliases")]
     pub use concord_core::advanced::{
         EndpointCapabilities, EndpointDescription, EndpointId, MAX_ENDPOINT_ID_BYTES,
-        PreparedEndpoint, PreparedEndpointBuilder, RequestBodyCategory, ResponseAcquisition,
-        RuntimeEndpoint, RuntimeEndpointBuilder, SafeRequestPlan, TimeoutSelection,
+        RequestBodyCategory, ResponseAcquisition, RuntimeEndpoint, RuntimeEndpointBuilder,
+        SafeRequestPlan, TimeoutSelection,
     };
     pub use concord_core::{PaginatedRequest, Request, ResponseRequest};
 }
@@ -179,9 +178,9 @@ pub mod prelude {
     pub use concord_core::prelude::Multipart;
     pub use concord_core::prelude::{
         AccessToken, ApiError, ApiKey, ApiResponse, BasicCredential, ByteStream, Bytes,
-        ClientBuildError, ClientInputKind, ConfigurationError, DebugLevel, DecodedResponse,
-        ErrorCategory, NoContent, OctetStream, PageLimit, PaginatedRequest, Request, RequestBody,
-        ResponseRequest, SecretString, Stream, StreamBody, Text,
+        ClientBuildError, ClientInputKind, ConfigurationError, DebugLevel, ErrorCategory,
+        NoContent, OctetStream, PageLimit, PaginatedRequest, Request, RequestBody, ResponseRequest,
+        SecretString, Stream, StreamBody, Text,
     };
     #[cfg(feature = "records")]
     pub use concord_core::prelude::{RecordBatches, RecordError, RecordStream, Records};
@@ -195,31 +194,29 @@ pub mod prelude {
 
 /// Stable advanced semantic contracts and runtime configuration types.
 pub mod advanced {
-    #[allow(deprecated, reason = "Phase 14 compatibility aliases")]
     pub use concord_core::advanced::{
         ApiError, ApiResponse, Auth, AuthError, AuthErrorKind, BeforeSend, BodyError,
         BodyErrorKind, BodyFactory, BodyKind, BoxFuture, Buffered, ByteStream, Bytes, BytesMut,
         ChallengePolicy, ClientBuildError, ClientBuildErrorKind, ClientInputKind, CodecError,
         CompletionEvent, CompletionOutcome, ConfigurationError, ConfigurationErrorKind, Cooldown,
         CooldownScope, CredentialHandle, CredentialMaterial, CredentialProvider, CredentialReason,
-        CredentialRef, CredentialRequest, DebugLevel, DecodeBody, DecodeContext, DecodedResponse,
-        Discard, EncodeBody, EncodeContext, EndpointCapabilities, EndpointDescription, EndpointId,
+        CredentialRef, CredentialRequest, DebugLevel, DecodeBody, DecodeContext, Discard,
+        EncodeBody, EncodeContext, EndpointCapabilities, EndpointDescription, EndpointId,
         ErrorCategory, ExecutionMeta, HeaderMap, HeaderName, HeaderValue, HookError,
         HttpConfigBuilder, HttpResponseFailure, LengthHint, MAX_ENDPOINT_ID_BYTES, MediaType,
         Method, NoContent, NoopRateLimiter, OctetStream, OperationId, PageResponseSpec,
         PaginationCompletionEvent, PaginationController, PaginationError, PaginationErrorKind,
-        PreparedEndpoint, PreparedEndpointBuilder, ProviderBody, ProviderBodyFactory, ProviderHttp,
-        ProviderRequest, ProviderResponse, ProviderRetry, RateLimitError, RateLimitErrorKind,
-        RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitObserver, RateLimitPermit,
-        RateLimitPlan, RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimitRule,
-        RateLimitWindow, RateLimiter, RecoveryMode, RequestBody, RequestBodyCategory,
-        RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestContentType,
-        ResponseAcquisition, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec,
-        ResponseHead, ResponseHeadEvent, ResponseMode, RuntimeConfigBuilder, RuntimeEndpoint,
-        RuntimeEndpointBuilder, RuntimeHooks, SafeProxy, SafeRequestPlan, SanitizedHeaderMap,
-        SanitizedHeaderValue, SanitizedHeaders, SecretCredential, StatusBody,
-        StatusBodyDecodeError, StatusBodyState, StatusCode, Stream, StreamBody, Streaming, Text,
-        TimeoutSelection, Url, Version,
+        ProviderBody, ProviderBodyFactory, ProviderHttp, ProviderRequest, ProviderResponse,
+        ProviderRetry, RateLimitError, RateLimitErrorKind, RateLimitId, RateLimitKey,
+        RateLimitKeyPart, RateLimitObserver, RateLimitPermit, RateLimitPlan, RateLimitRequest,
+        RateLimitResponse, RateLimitResponseHead, RateLimitRule, RateLimitWindow, RateLimiter,
+        RecoveryMode, RequestBody, RequestBodyCategory, RequestBodyContext, RequestBodyMetadata,
+        RequestBodySpec, RequestContentType, ResponseAcquisition, ResponseBodyError,
+        ResponseBodyErrorKind, ResponseBodySpec, ResponseHead, ResponseHeadEvent, ResponseMode,
+        RuntimeConfigBuilder, RuntimeEndpoint, RuntimeEndpointBuilder, RuntimeHooks, SafeProxy,
+        SafeRequestPlan, SanitizedHeaderMap, SanitizedHeaderValue, SanitizedHeaders,
+        SecretCredential, StatusBody, StatusBodyDecodeError, StatusBodyState, StatusCode, Stream,
+        StreamBody, Streaming, Text, TimeoutSelection, Url, Version,
     };
     #[cfg(feature = "multipart")]
     pub use concord_core::advanced::{Multipart, MultipartBody, MultipartFactory, MultipartPart};
@@ -255,9 +252,9 @@ pub mod records {
 /// Bounded response specifications, acquisition modes, and response metadata.
 pub mod response {
     pub use concord_core::advanced::{
-        ApiResponse, Buffered, ByteStream, DecodedResponse, Discard, ExecutionMeta, NoContent,
-        PageResponseSpec, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec, ResponseHead,
-        ResponseMode, Streaming,
+        ApiResponse, Buffered, ByteStream, Discard, ExecutionMeta, NoContent, PageResponseSpec,
+        ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec, ResponseHead, ResponseMode,
+        Streaming,
     };
 }
 

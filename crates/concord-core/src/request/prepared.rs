@@ -401,20 +401,6 @@ where
     }
 }
 
-/// Deprecated compatibility name for [`RuntimeEndpointBuilder`].
-#[deprecated(
-    since = "0.1.0",
-    note = "renamed to `RuntimeEndpointBuilder`; the alias is removed in Phase 14"
-)]
-pub type PreparedEndpointBuilder<R = NoContent> = RuntimeEndpointBuilder<R>;
-
-/// Deprecated compatibility name for [`RuntimeEndpoint`].
-#[deprecated(
-    since = "0.1.0",
-    note = "renamed to `RuntimeEndpoint`; the alias is removed in Phase 14"
-)]
-pub type PreparedEndpoint<R = NoContent> = RuntimeEndpoint<R>;
-
 fn validate_public_shape(
     path_segments: &[String],
     query: &[(String, String)],

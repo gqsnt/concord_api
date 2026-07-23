@@ -166,11 +166,6 @@ impl<T> fmt::Debug for ApiResponse<T> {
     }
 }
 
-/// Compatibility alias for the universal successful response wrapper.
-///
-/// This alias has no second implementation or storage representation.
-pub type DecodedResponse<T> = ApiResponse<T>;
-
 /// A complete bounded successful response whose declared decoder was skipped.
 ///
 /// This value is available only with `dangerous-raw-response`. Its logical URL

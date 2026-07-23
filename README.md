@@ -67,6 +67,8 @@ Start with:
 Then use the [manual index](docs/README.md), [DSL reference](docs/reference/dsl.md),
 [generated API reference](docs/reference/generated-api.md), and
 [feature table](docs/reference/features.md).
+Existing workspace users should also read the [migration guide](MIGRATION.md)
+and [changelog](CHANGELOG.md).
 
 ## Workspace
 

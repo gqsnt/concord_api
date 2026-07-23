@@ -58,12 +58,22 @@ fn renamed_facade_dependency_is_the_only_dependency_needed_by_generated_code() {
 }
 
 #[test]
+fn direct_core_and_macro_dependencies_do_not_form_a_supported_user_setup() {
+    assert_fails_with(
+        "concord-fixture-direct-core-rejected",
+        "dependency/direct-core-rejected",
+        &[],
+        "Concord `api!` requires the `concord` package",
+    );
+}
+
+#[test]
 fn incompatible_facade_bridge_fails_the_generated_contract_handshake() {
     assert_fails_with(
         "concord-fixture-contract-mismatch",
         "dependency/contract-mismatch",
         &[],
-        "concord macro/facade contract mismatch: facade 999, generated 22",
+        "concord macro/facade contract mismatch: facade 999, generated 23",
     );
 }
 

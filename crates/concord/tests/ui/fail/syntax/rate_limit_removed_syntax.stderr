@@ -1,5 +1,0 @@
-error: `rate_limits { ... }` was removed; declare `rate_limit { ... }` at each lexical owner
- --> tests/ui/fail/syntax/rate_limit_removed_syntax.rs:6:9
-  |
-6 |         rate_limits {
-  |         ^^^^^^^^^^^

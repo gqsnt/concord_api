@@ -3,7 +3,7 @@
 Concord is currently version `0.1.0` and the repository has no verified
 published release commitment. The architectural refactor therefore uses a
 clean public break while preserving invariants and offering an explicit
-migration guide at release hardening.
+migration guide.
 
 The stable direction is:
 
@@ -27,5 +27,5 @@ caller-visible façade package, including Cargo dependency renaming.
 MSRV is Rust 1.85.0. Workspace dependencies are locked and internal sibling
 versions are exact while packages remain unpublished.
 
-See the root release migration guide produced in Phase 14 for concrete
-before/after forms.
+See the root [migration guide](../../MIGRATION.md) for concrete before/after
+forms and the [changelog](../../CHANGELOG.md) for release notes.

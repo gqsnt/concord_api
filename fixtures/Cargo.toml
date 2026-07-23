@@ -2,6 +2,7 @@
 members = [
     "features",
     "dependency/contract_mismatch",
+    "dependency/direct_core_rejected",
     "dependency/renamed_facade",
 ]
 exclude = ["dependency/contract_mismatch/incompatible_facade"]

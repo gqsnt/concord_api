@@ -14,5 +14,5 @@ pub use crate::hooks::DebugLevel;
 pub use crate::pagination::PageLimit;
 #[cfg(feature = "records")]
 pub use crate::records::{RecordBatches, RecordError, RecordStream, Records};
-pub use crate::response::{ApiResponse, ByteStream, DecodedResponse, NoContent};
+pub use crate::response::{ApiResponse, ByteStream, NoContent};
 pub use crate::{PaginatedRequest, Request, ResponseRequest};

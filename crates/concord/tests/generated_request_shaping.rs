@@ -11,9 +11,7 @@ use concord::advanced::{
     SafeProxy,
 };
 use concord::api;
-use concord::prelude::{
-    ByteStream, Bytes, DecodedResponse, ErrorCategory, OctetStream, StreamBody,
-};
+use concord::prelude::{ApiResponse, ByteStream, Bytes, ErrorCategory, OctetStream, StreamBody};
 use concord_test_support::server::{BodyGate, ResponseScript, ScriptedServer};
 use futures_core::Stream as FuturesStream;
 use tokio::sync::{Mutex, MutexGuard};
@@ -350,7 +348,7 @@ async fn nested_facade_extension_setters_and_explicit_endpoint_have_head_parity(
     let explicit = client.request(explicit).await.expect("explicit endpoint");
     assert_eq!(explicit, b"explicit"[..]);
 
-    let metadata: DecodedResponse<Bytes> = client
+    let metadata: ApiResponse<Bytes> = client
         .root()
         .timeout(Duration::from_secs(1))
         .verbose(true)
