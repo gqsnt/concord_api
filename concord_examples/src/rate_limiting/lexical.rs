@@ -1,4 +1,8 @@
-#![forbid(unsafe_code)]
+//! Lexical rate windows compose from client and endpoint declarations.
+//!
+//! Required feature: `rate-limit-governor`. Mode: deterministic local
+//! execution. Documentation owner: `docs/guide/rate-limiting.md`.
+//! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use std::sync::Arc;
 
@@ -7,7 +11,7 @@ use concord::rate_limit::GovernorRateLimiter;
 
 api! {
     client RateLimitApi {
-        base "https://rate-limit.example.test/";
+        base "http://rate-limit.example.test/";
         vars {
             tenant: String;
         }
@@ -23,9 +27,10 @@ api! {
     GET public() -> Bytes;
 }
 
-fn main() -> Result<(), concord::prelude::ClientBuildError> {
+/// Installs the first-party limiter explicitly and constructs both plan shapes.
+pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
     let limiter =
-        GovernorRateLimiter::new().observer(Arc::new(concord_examples::RetryAfterObserver));
+        GovernorRateLimiter::new().observer(Arc::new(super::observer::RetryAfterObserver));
     let client = RateLimitApi::builder()
         .tenant("example-tenant".to_owned())
         .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(limiter)))

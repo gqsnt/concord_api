@@ -1,4 +1,9 @@
-#![forbid(unsafe_code)]
+//! Multi-host scopes with inherited authentication and lexical limits.
+//!
+//! Required features: `json` and, for execution, a rate limiter.
+//! Mode: deterministic construction and safe planning.
+//! Documentation owner: `docs/recipes/regional-apis.md`.
+//! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use concord::api;
 
@@ -75,7 +80,8 @@ api! {
     }
 }
 
-fn main() -> Result<(), concord::prelude::ClientBuildError> {
+/// Constructs representative requests from each regional scope.
+pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
     let client = RegionalGameApi::builder()
         .platform("euw1".to_owned())
         .api_key(concord::SecretString::new("example-developer-key"))

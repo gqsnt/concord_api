@@ -1,190 +1,32 @@
 #![forbid(unsafe_code)]
-//! Public extension types shared by the compile-checked Concord examples.
+//! Importable, compile-checked examples for Concord's public product surface.
+//!
+//! Each capability module owns its declaration, semantic extension examples,
+//! construction or local-runtime usage, documentation pointer, and acceptance
+//! test pointer. The binaries under `src/bin` only call these modules.
+//!
+//! Transport compression features are intentionally not separate examples:
+//! gzip, Brotli, and deflate do not alter a declaration or generated request
+//! surface, so their canonical proofs remain transport-owned. The
+//! `dangerous-dev-tools` façade feature is test infrastructure rather than an
+//! application capability and is likewise omitted from the product narrative.
 
-use std::fmt;
-use std::time::Duration;
+pub mod contracts;
+pub mod getting_started;
+pub mod request_response;
+pub mod runtime_endpoints;
 
-use concord::auth::{
-    AuthError, AuthErrorKind, BoxFuture, CredentialMaterial, CredentialProvider, CredentialRequest,
-    ProviderBody, ProviderRequest, SecretCredential,
-};
-use concord::codec::{CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext};
-use concord::http::{HeaderName, HeaderValue, Method, Url};
-use concord::pagination::{HasNextCursor, PaginationController, PaginationError};
-use concord::prelude::{Bytes, SecretString};
-use concord::rate_limit::{
-    Cooldown, DefaultRateLimitObserver, RateLimitObserver, RateLimitResponseHead,
-};
+#[cfg(feature = "oauth2-client")]
+pub mod authentication;
 
-/// A complete buffered custom media codec.
-pub struct ExampleCodec;
+#[cfg(any(feature = "dangerous-custom-retry", feature = "dangerous-raw-response"))]
+pub mod dangerous;
 
-impl EncodeBody for ExampleCodec {
-    type Input = String;
+#[cfg(feature = "json")]
+pub mod pagination;
 
-    const CONTENT_TYPE: Option<&'static str> = Some("application/vnd.concord.example");
+#[cfg(feature = "rate-limit-governor")]
+pub mod rate_limiting;
 
-    fn encode(input: Self::Input, _context: EncodeContext<'_>) -> Result<Bytes, CodecError> {
-        Ok(Bytes::from(input))
-    }
-}
-
-impl DecodeBody for ExampleCodec {
-    type Output = String;
-
-    const ACCEPT: Option<&'static str> = Some("application/vnd.concord.example");
-
-    fn validate_content_type(content_type: Option<&str>) -> Result<(), CodecError> {
-        if content_type == Self::ACCEPT {
-            Ok(())
-        } else {
-            Err(CodecError::new("example media mismatch"))
-        }
-    }
-
-    fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
-        String::from_utf8(body.to_vec()).map_err(|_| CodecError::new("example UTF-8 decode"))
-    }
-}
-
-/// Redacted credential material returned by the custom provider example.
-#[derive(Clone)]
-pub struct ExampleToken(SecretString);
-
-impl CredentialMaterial for ExampleToken {}
-
-impl SecretCredential for ExampleToken {
-    fn expose_secret(&self) -> &str {
-        self.0.expose_secret()
-    }
-}
-
-impl fmt::Debug for ExampleToken {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("ExampleToken(<redacted>)")
-    }
-}
-
-/// Decoder used by the endpoint-backed credential example.
-pub struct ExampleTokenCodec;
-
-impl DecodeBody for ExampleTokenCodec {
-    type Output = ExampleToken;
-
-    const ACCEPT: Option<&'static str> = Some("application/vnd.concord.token");
-
-    fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
-        let token = String::from_utf8(body.to_vec())
-            .map_err(|_| CodecError::new("example token UTF-8 decode"))?;
-        Ok(ExampleToken(SecretString::new(token)))
-    }
-}
-
-/// A custom provider that demonstrates Concord's isolated provider HTTP capability.
-pub struct ExampleProvider;
-
-impl CredentialProvider for ExampleProvider {
-    type Material = ExampleToken;
-
-    fn acquire<'a>(
-        &'a self,
-        context: CredentialRequest<'a>,
-    ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
-        Box::pin(async move {
-            let request = ProviderRequest::new(
-                Method::POST,
-                Url::parse("https://identity.example.test/token")
-                    .expect("fixed provider URL is valid"),
-            )
-            .header(
-                HeaderName::from_static("content-type"),
-                HeaderValue::from_static("application/x-www-form-urlencoded"),
-            )
-            .body(ProviderBody::Bytes(Bytes::from_static(
-                b"grant_type=client_credentials",
-            )))
-            .timeout(Duration::from_secs(2));
-            let response = context.http.send(request).await?;
-            if !response.status().is_success() {
-                return Err(AuthError::new(AuthErrorKind::Acquisition));
-            }
-            let token = String::from_utf8(response.into_body().to_vec())
-                .map_err(|_| AuthError::new(AuthErrorKind::Acquisition))?;
-            Ok(ExampleToken(SecretString::new(token)))
-        })
-    }
-}
-
-/// One cursor-bearing page for custom and built-in pagination examples.
-pub struct ExamplePage {
-    items: Vec<u32>,
-    next: Option<String>,
-}
-
-impl IntoIterator for ExamplePage {
-    type Item = u32;
-    type IntoIter = std::vec::IntoIter<u32>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.items.into_iter()
-    }
-}
-
-impl HasNextCursor<String> for ExamplePage {
-    fn next_cursor(&self) -> Option<&String> {
-        self.next.as_ref()
-    }
-}
-
-/// Decoder for the compact `item,item|next` example page format.
-pub struct ExamplePageCodec;
-
-impl DecodeBody for ExamplePageCodec {
-    type Output = ExamplePage;
-
-    const ACCEPT: Option<&'static str> = Some("application/vnd.concord.page");
-
-    fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
-        let text = std::str::from_utf8(&body).map_err(|_| CodecError::new("page UTF-8"))?;
-        let (items, next) = text
-            .split_once('|')
-            .ok_or_else(|| CodecError::new("page shape"))?;
-        let items = items
-            .split(',')
-            .filter(|value| !value.is_empty())
-            .map(|value| {
-                value
-                    .parse::<u32>()
-                    .map_err(|_| CodecError::new("page item"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(ExamplePage {
-            items,
-            next: (next != "-").then(|| next.to_owned()),
-        })
-    }
-}
-
-/// Custom cursor controller used by the canonical custom pagination example.
-pub struct ExampleController {
-    /// Current optional cursor bound to the generated endpoint snapshot.
-    pub cursor: Option<String>,
-}
-
-impl PaginationController<ExamplePage> for ExampleController {
-    fn next(self, page: &ExamplePage) -> Result<Option<Self>, PaginationError> {
-        Ok(page.next.as_ref().map(|cursor| Self {
-            cursor: Some(cursor.clone()),
-        }))
-    }
-}
-
-/// Observer that applies Concord's bounded `Retry-After` behavior.
-#[derive(Default)]
-pub struct RetryAfterObserver;
-
-impl RateLimitObserver for RetryAfterObserver {
-    fn observe(&self, response: &RateLimitResponseHead<'_>) -> Option<Cooldown> {
-        DefaultRateLimitObserver.observe(response)
-    }
-}
+#[cfg(all(feature = "json", feature = "rate-limit-governor"))]
+pub mod riot;

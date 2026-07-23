@@ -1,4 +1,8 @@
-#![forbid(unsafe_code)]
+//! The complete DSL topology in one compile-checked, importable declaration.
+//!
+//! Required features: none. Mode: construction-only and safe planning.
+//! Documentation owner: `docs/reference/dsl.md`.
+//! Proving test: `tests/construction.rs`.
 
 use concord::api;
 
@@ -61,7 +65,8 @@ api! {
     GET health() -> NoContent;
 }
 
-fn main() -> Result<(), concord::prelude::ClientBuildError> {
+/// Constructs representative direct and explicit endpoint requests.
+pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
     let client = ReferenceApi::builder()
         .tenant("tenant-a".to_owned())
         .api_key(concord::SecretString::new("example-api-key"))

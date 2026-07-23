@@ -1,4 +1,8 @@
-#![forbid(unsafe_code)]
+//! Public semantic request/response extensions and runtime endpoint parity.
+//!
+//! Required features: none. Mode: construction and deterministic local
+//! execution. Documentation owner: `docs/guide/extensions.md`.
+//! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use concord::Request;
 use concord::api;
@@ -12,6 +16,39 @@ use concord::prelude::Bytes;
 use concord::response::{
     Buffered, ByteStream, Discard, ResponseBodyError, ResponseBodySpec, ResponseHead, Streaming,
 };
+
+use concord::codec::{CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext};
+
+/// A complete buffered custom media codec.
+pub struct ExampleCodec;
+
+impl EncodeBody for ExampleCodec {
+    type Input = String;
+
+    const CONTENT_TYPE: Option<&'static str> = Some("application/vnd.concord.example");
+
+    fn encode(input: Self::Input, _context: EncodeContext<'_>) -> Result<Bytes, CodecError> {
+        Ok(Bytes::from(input))
+    }
+}
+
+impl DecodeBody for ExampleCodec {
+    type Output = String;
+
+    const ACCEPT: Option<&'static str> = Some("application/vnd.concord.example");
+
+    fn validate_content_type(content_type: Option<&str>) -> Result<(), CodecError> {
+        if content_type == Self::ACCEPT {
+            Ok(())
+        } else {
+            Err(CodecError::new("example media mismatch"))
+        }
+    }
+
+    fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
+        String::from_utf8(body.to_vec()).map_err(|_| CodecError::new("example UTF-8 decode"))
+    }
+}
 
 pub struct ExampleRequestSpec;
 
@@ -75,15 +112,18 @@ impl ResponseBodySpec for ExampleDiscardSpec {
 
 api! {
     client GenericSpecificationApi {
-        base "https://generic-specifications.example.test/";
+        base "http://generic-specifications.example.test/";
     }
 
-    POST buffered(#[body] body: crate::ExampleRequestSpec) -> crate::ExampleBufferedSpec;
-    GET streaming() -> crate::ExampleStreamingSpec;
-    GET discard() -> crate::ExampleDiscardSpec;
+    POST buffered(
+        #[body] body: crate::request_response::specifications::ExampleRequestSpec
+    ) -> crate::request_response::specifications::ExampleBufferedSpec;
+    GET streaming() -> crate::request_response::specifications::ExampleStreamingSpec;
+    GET discard() -> crate::request_response::specifications::ExampleDiscardSpec;
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// Constructs generated and runtime-defined requests over the same extensions.
+pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
     let client = GenericSpecificationApi::builder().build()?;
     let _: generic_specification_api::BufferedRequest =
         client.buffered(Bytes::from_static(b"generic request"));

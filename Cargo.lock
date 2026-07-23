@@ -167,6 +167,8 @@ name = "concord-examples"
 version = "0.1.0"
 dependencies = [
  "concord",
+ "concord-test-support",
+ "futures-core",
  "reqwest",
  "serde",
  "serde_json",

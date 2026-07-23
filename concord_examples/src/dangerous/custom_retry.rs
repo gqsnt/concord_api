@@ -1,4 +1,8 @@
-#![forbid(unsafe_code)]
+//! Explicit managed-transport retry customization.
+//!
+//! Required feature: `dangerous-custom-retry`. Mode: construction-only.
+//! Documentation owner: `docs/reference/dangerous.md`.
+//! Proving test: `tests/construction.rs`.
 
 use concord::api;
 
@@ -14,7 +18,8 @@ api! {
     GET health() -> NoContent;
 }
 
-fn main() -> Result<(), concord::prelude::ClientBuildError> {
+/// Configures the dangerous retry hook explicitly on the runtime builder.
+pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
     let client = CustomRetryApi::builder()
         .configure_http(|http| http.dangerous_custom_retry(bounded_custom_retry()))
         .build()?;

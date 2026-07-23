@@ -1,4 +1,9 @@
-#![forbid(unsafe_code)]
+//! Buffered, streamed, custom-codec, and multipart request/response shapes.
+//!
+//! Required features: `json` and `multipart`. Mode: construction and
+//! deterministic local execution. Documentation owner:
+//! `docs/guide/bodies-and-responses.md`. Proving tests:
+//! `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use concord::api;
 use concord::body::{MultipartBody, MultipartPart};
@@ -6,18 +11,21 @@ use concord::prelude::{Bytes, StreamBody};
 
 api! {
     client BodyApi {
-        base "https://body.example.test/";
+        base "http://body.example.test/";
     }
 
     POST json_round_trip(#[body] body: Json<Vec<u32>>) -> Json<Vec<u32>>;
     POST text_round_trip(#[body] body: Text) -> Text;
-    POST custom_round_trip(#[body] body: concord_examples::ExampleCodec) -> concord_examples::ExampleCodec;
+    POST custom_round_trip(
+        #[body] body: crate::request_response::specifications::ExampleCodec
+    ) -> crate::request_response::specifications::ExampleCodec;
     POST upload(#[body] body: Stream<OctetStream>) -> Bytes;
     GET download() -> Stream<OctetStream>;
     POST multipart_upload(#[body] body: Multipart) -> NoContent;
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// Constructs every request-body shape without executing transport work.
+pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
     let client = BodyApi::builder().build()?;
     let _: body_api::JsonRoundTripRequest = client.json_round_trip(vec![1, 2, 3]);
     let _: body_api::TextRoundTripRequest = client.text_round_trip("bounded text".to_owned());

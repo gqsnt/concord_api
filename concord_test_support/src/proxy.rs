@@ -1,10 +1,180 @@
-use std::io;
-use std::time::Duration;
+use std::io::{self, Read, Write};
+use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 use crate::server::{RecordedRequest, ResponseScript, ScriptedServer};
 
 pub struct ProxyTrap {
     server: ScriptedServer,
+}
+
+/// A loopback HTTP CONNECT proxy that tunnels every accepted destination to
+/// one explicitly supplied loopback origin.
+///
+/// This is test infrastructure for fixed-HTTPS contract declarations. It
+/// never resolves or connects to the requested public host.
+pub struct ConnectProxy {
+    address: SocketAddr,
+    stop: Arc<AtomicBool>,
+    worker: Option<JoinHandle<()>>,
+}
+
+impl ConnectProxy {
+    /// Starts a proxy forwarding CONNECT payloads to `upstream`.
+    pub fn start(upstream: SocketAddr) -> io::Result<Self> {
+        let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))?;
+        listener.set_nonblocking(true)?;
+        let address = listener.local_addr()?;
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker_stop = Arc::clone(&stop);
+        let worker = thread::Builder::new()
+            .name("concord-connect-proxy".into())
+            .spawn(move || connect_accept_loop(listener, upstream, worker_stop))?;
+        Ok(Self {
+            address,
+            stop,
+            worker: Some(worker),
+        })
+    }
+
+    /// Returns the safe HTTP proxy origin.
+    #[must_use]
+    pub fn url(&self) -> String {
+        format!("http://{}", self.address)
+    }
+}
+
+impl Drop for ConnectProxy {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        let _ = TcpStream::connect(self.address);
+        if let Some(worker) = self.worker.take() {
+            worker.join().expect("CONNECT proxy worker panicked");
+        }
+    }
+}
+
+fn connect_accept_loop(listener: TcpListener, upstream: SocketAddr, stop: Arc<AtomicBool>) {
+    while !stop.load(Ordering::Acquire) {
+        match listener.accept() {
+            Ok((client, _)) => {
+                if let Err(error) = tunnel_connect(client, upstream) {
+                    if !stop.load(Ordering::Acquire) {
+                        panic!("CONNECT proxy tunnel failed: {error}");
+                    }
+                }
+            }
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(2));
+            }
+            Err(error) => panic!("CONNECT proxy accept failed: {error}"),
+        }
+    }
+}
+
+fn tunnel_connect(mut client: TcpStream, upstream: SocketAddr) -> io::Result<()> {
+    const MAX_CONNECT_HEAD: usize = 16 * 1024;
+
+    client.set_nonblocking(false)?;
+    client.set_read_timeout(Some(Duration::from_secs(3)))?;
+    let mut head = Vec::new();
+    let mut byte = [0_u8; 1];
+    while !head.ends_with(b"\r\n\r\n") {
+        if head.len() == MAX_CONNECT_HEAD {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "CONNECT request head exceeded test bound",
+            ));
+        }
+        client.read_exact(&mut byte)?;
+        head.push(byte[0]);
+    }
+    let first_line = head
+        .split(|byte| *byte == b'\n')
+        .next()
+        .and_then(|line| std::str::from_utf8(line).ok())
+        .unwrap_or_default();
+    if !first_line.starts_with("CONNECT ") {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "test proxy accepts CONNECT only",
+        ));
+    }
+
+    let mut origin = TcpStream::connect_timeout(&upstream, Duration::from_secs(3))?;
+    client.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")?;
+    client.flush()?;
+    let poll = Duration::from_millis(25);
+    client.set_read_timeout(Some(poll))?;
+    origin.set_read_timeout(Some(poll))?;
+    client.set_write_timeout(Some(Duration::from_secs(3)))?;
+    origin.set_write_timeout(Some(Duration::from_secs(3)))?;
+
+    let mut client_open = true;
+    let mut origin_open = true;
+    let mut last_progress = Instant::now();
+    let mut buffer = [0_u8; 16 * 1024];
+    while client_open || origin_open {
+        let mut progressed = false;
+        if client_open {
+            match client.read(&mut buffer) {
+                Ok(0) => {
+                    client_open = false;
+                    let _ = origin.shutdown(Shutdown::Write);
+                }
+                Ok(count) => {
+                    origin.write_all(&buffer[..count])?;
+                    progressed = true;
+                }
+                Err(error) if transient_read(&error) => {}
+                Err(error) if closed_read(&error) => client_open = false,
+                Err(error) => return Err(error),
+            }
+        }
+        if origin_open {
+            match origin.read(&mut buffer) {
+                Ok(0) => {
+                    origin_open = false;
+                    let _ = client.shutdown(Shutdown::Write);
+                }
+                Ok(count) => {
+                    client.write_all(&buffer[..count])?;
+                    progressed = true;
+                }
+                Err(error) if transient_read(&error) => {}
+                Err(error) if closed_read(&error) => origin_open = false,
+                Err(error) => return Err(error),
+            }
+        }
+        if progressed {
+            last_progress = Instant::now();
+        } else if last_progress.elapsed() >= Duration::from_secs(5) {
+            let _ = client.shutdown(Shutdown::Both);
+            let _ = origin.shutdown(Shutdown::Both);
+            return Ok(());
+        }
+    }
+    Ok(())
+}
+
+fn transient_read(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut | io::ErrorKind::Interrupted
+    )
+}
+
+fn closed_read(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::ConnectionAborted
+            | io::ErrorKind::ConnectionReset
+            | io::ErrorKind::BrokenPipe
+            | io::ErrorKind::UnexpectedEof
+    )
 }
 
 impl ProxyTrap {

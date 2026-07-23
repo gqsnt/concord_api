@@ -19,44 +19,34 @@ csv = ["records", "concord/csv"]
 ndjson = ["records", "concord/ndjson"]
 dangerous-raw-response = ["concord/dangerous-raw-response"]
 dangerous-custom-retry = ["concord/dangerous-custom-retry", "dep:reqwest"]
-tokio=["dep:tokio"]
+tokio = ["dep:tokio"]
+riot-live = ["json", "rate-limit-governor", "default-tls", "http2", "tokio"]
 
 [dependencies]
 concord = { version = "=0.1.0", path = "../concord", default-features = false }
 reqwest = { workspace = true, optional = true }
-serde = {workspace=true, optional=true}
-serde_json = {workspace=true, optional=true}
-tokio = {workspace=true, optional=true}
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
 
+[dev-dependencies]
+concord-test-support = { package = "concord-test-support", version = "=0.1.0", path = "../concord_test_support", default-features = false, features = ["loopback"] }
+futures-core.workspace = true
+tokio.workspace = true
 
-[[example]]
-name = "dangerous_raw_response"
-required-features = ["dangerous-raw-response", "json"]
+[[bin]]
+name = "minimal"
+path = "src/bin/minimal.rs"
 
-[[example]]
-name = "dangerous_custom_retry"
-required-features = ["dangerous-custom-retry"]
-
-[[example]]
-name = "body_workflows"
-required-features = ["json", "multipart"]
-
-[[example]]
-name = "pagination"
-required-features = ["json"]
-
-[[example]]
-name = "regional_api"
-required-features = ["json"]
-
-
-[[example]]
-name = "riot"
-required-features = ["json", "tokio"]
-
-[[example]]
+[[bin]]
 name = "records"
-required-features = ["csv", "ndjson" ,"tokio"]
+path = "src/bin/records.rs"
+required-features = ["csv", "ndjson"]
+
+[[bin]]
+name = "riot"
+path = "src/bin/riot.rs"
+required-features = ["riot-live"]
 
 [lints]
 workspace = true

@@ -1,4 +1,8 @@
-#![forbid(unsafe_code)]
+//! Generic bounded record streaming with custom, CSV, and NDJSON decoders.
+//!
+//! Required features: `records`, `csv`, and `ndjson`. Mode: locally runnable
+//! through scripted loopback responses only. Documentation owner:
+//! `docs/guide/records.md`. Proving test: `tests/local_runtime.rs`.
 
 use std::num::NonZeroUsize;
 
@@ -55,19 +59,19 @@ impl RecordDecoder for PipeRecords {
 
 api! {
     client RecordsApi {
-        base "https://records.example.test/";
+        base "http://records.example.test/";
     }
 
-    GET custom() -> Records<crate::PipeRecords>;
+    GET custom() -> Records<crate::request_response::records::PipeRecords>;
     GET csv_rows() -> Records<Csv<(String, u32)>>;
     GET nd_json_values() -> Records<NdJson<u32>>;
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// Constructs all record-stream requests without opening a connection.
+pub fn construct() -> Result<(), concord::ClientBuildError> {
     let client = RecordsApi::builder().build()?;
-    let _custom = client.custom().await?;
-    let _csv_rows = client.csv_rows().await?;
-    let _ndjson_values = client.nd_json_values().await?;
+    let _: records_api::CustomRequest = client.custom();
+    let _: records_api::CsvRowsRequest = client.csv_rows();
+    let _: records_api::NdJsonValuesRequest = client.nd_json_values();
     Ok(())
 }
