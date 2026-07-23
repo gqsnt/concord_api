@@ -1,0 +1,5 @@
+error: ambiguous visible scope value `id`; qualify the DSL model so the name is unique
+  --> tests/ui/fail/names/ambiguous_scope_reference.rs:11:29
+   |
+11 |                 path [scope.id];
+   |                             ^^

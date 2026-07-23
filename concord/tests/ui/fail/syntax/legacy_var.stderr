@@ -1,0 +1,5 @@
+error: client values must be declared in a `vars { ... }` block
+ --> tests/ui/fail/syntax/legacy_var.rs:6:9
+  |
+6 |         var tenant: String;
+  |         ^^^

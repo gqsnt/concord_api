@@ -28,6 +28,7 @@ url = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 
 [package.metadata.docs.rs]

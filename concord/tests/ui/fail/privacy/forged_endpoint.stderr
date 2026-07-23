@@ -1,0 +1,77 @@
+error[E0277]: the trait bound `ForgedEndpoint: Sealed` is not satisfied
+  --> tests/ui/fail/privacy/forged_endpoint.rs:24:5
+   |
+24 |     fn __concord_bind(self, _client: &SealedApi) -> Self::Request {}
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `Sealed` is not implemented for `ForgedEndpoint`
+  --> tests/ui/fail/privacy/forged_endpoint.rs:14:1
+   |
+14 | struct ForgedEndpoint;
+   | ^^^^^^^^^^^^^^^^^^^^^
+help: the following other types implement trait `Sealed`
+  --> tests/ui/fail/privacy/forged_endpoint.rs:3:1
+   |
+ 3 | // api! {
+ 4 | ||     client SealedApi {
+ 5 | ||         base "https://sealed.example.test";
+...  ||
+ 9 | ||         path ["health"];
+10 | ||         GET ping() -> NoContent;
+   | ||________________^ `Ping`
+11 | |      }
+12 | |  }
+   | |__^ `RuntimeEndpoint<R>`
+note: required by a bound in `Endpoint`
+  --> tests/ui/fail/privacy/forged_endpoint.rs:3:1
+   |
+ 3 | / api! {
+ 4 | |     client SealedApi {
+ 5 | |         base "https://sealed.example.test";
+...  |
+12 | | }
+   | |_^ required by this bound in `Endpoint`
+   = note: `Endpoint` is a "sealed trait", because to implement it you also need to implement `sealed_api::__concord_endpoint_seal::Sealed`, which is not accessible; this is usually done to force you to use one of the provided types that already implement it
+   = help: the following types implement the trait:
+             concord::endpoint::RuntimeEndpoint<R>
+             sealed_api::health::Ping
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `ForgedEndpoint: Sealed` is not satisfied
+  --> tests/ui/fail/privacy/forged_endpoint.rs:16:31
+   |
+16 | impl sealed_api::Endpoint for ForgedEndpoint {
+   |                               ^^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `Sealed` is not implemented for `ForgedEndpoint`
+  --> tests/ui/fail/privacy/forged_endpoint.rs:14:1
+   |
+14 | struct ForgedEndpoint;
+   | ^^^^^^^^^^^^^^^^^^^^^
+help: the following other types implement trait `Sealed`
+  --> tests/ui/fail/privacy/forged_endpoint.rs:3:1
+   |
+ 3 | // api! {
+ 4 | ||     client SealedApi {
+ 5 | ||         base "https://sealed.example.test";
+...  ||
+ 9 | ||         path ["health"];
+10 | ||         GET ping() -> NoContent;
+   | ||________________^ `Ping`
+11 | |      }
+12 | |  }
+   | |__^ `RuntimeEndpoint<R>`
+note: required by a bound in `Endpoint`
+  --> tests/ui/fail/privacy/forged_endpoint.rs:3:1
+   |
+ 3 | / api! {
+ 4 | |     client SealedApi {
+ 5 | |         base "https://sealed.example.test";
+...  |
+12 | | }
+   | |_^ required by this bound in `Endpoint`
+   = note: `Endpoint` is a "sealed trait", because to implement it you also need to implement `sealed_api::__concord_endpoint_seal::Sealed`, which is not accessible; this is usually done to force you to use one of the provided types that already implement it
+   = help: the following types implement the trait:
+             concord::endpoint::RuntimeEndpoint<R>
+             sealed_api::health::Ping
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

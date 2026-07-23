@@ -1,0 +1,5 @@
+error: `retry custom PATH` is runtime policy; use `Client::builder().configure_http(...)` with the dangerous custom-retry feature
+ --> tests/ui/fail/syntax/custom_retry_dsl_removed.rs:8:15
+  |
+8 |         retry custom crate::retry_factory;
+  |               ^^^^^^

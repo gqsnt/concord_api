@@ -1,0 +1,110 @@
+[package]
+name = "concord-fixture-features"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+[features]
+default = []
+fixture-absence = []
+default-tls = ["runtime/default-tls"]
+http2 = ["runtime/http2"]
+json = ["runtime/json"]
+records = ["runtime/records"]
+csv = ["runtime/csv"]
+ndjson = ["runtime/ndjson"]
+multipart = ["runtime/multipart"]
+rate-limit-governor = ["runtime/rate-limit-governor"]
+oauth2-client = ["runtime/oauth2-client"]
+gzip = ["runtime/gzip"]
+brotli = ["runtime/brotli"]
+deflate = ["runtime/deflate"]
+dangerous-raw-response = ["runtime/dangerous-raw-response"]
+dangerous-custom-retry = ["runtime/dangerous-custom-retry"]
+dangerous-dev-tools = ["runtime/dangerous-dev-tools"]
+
+[dependencies]
+runtime = { package = "concord", path = "../../concord", default-features = false }
+
+[dev-dependencies]
+concord-test-support = { package = "concord-test-support", path = "../../concord_test_support", default-features = false, features = ["loopback"] }
+tokio = { version = "=1.52.4", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
+
+[[bin]]
+name = "brotli_absent"
+path = "src/bin/brotli_absent.rs"
+required-features = ["fixture-absence"]
+test = false
+
+[[bin]]
+name = "csv_absent"
+path = "src/bin/csv_absent.rs"
+required-features = ["fixture-absence"]
+test = false
+
+[[bin]]
+name = "custom_retry_absent"
+path = "src/bin/custom_retry_absent.rs"
+required-features = ["fixture-absence"]
+test = false
+
+[[bin]]
+name = "default_tls_absent"
+path = "src/bin/default_tls_absent.rs"
+required-features = ["fixture-absence"]
+test = false
+
+[[bin]]
+name = "deflate_absent"
+path = "src/bin/deflate_absent.rs"
+required-features = ["fixture-absence"]
+test = false
+
+[[bin]]
+name = "development_absent"
+path = "src/bin/development_absent.rs"
+required-features = ["fixture-absence"]
+test = false
+
+[[bin]]
+name = "gzip_absent"
+path = "src/bin/gzip_absent.rs"
+required-features = ["fixture-absence"]
+test = false
+
+[[bin]]
+name = "http2_absent"
+path = "src/bin/http2_absent.rs"
+required-features = ["fixture-absence"]
+test = false
+
+[[bin]]
+name = "json_absent"
+path = "src/bin/json_absent.rs"
+required-features = ["fixture-absence"]
+test = false
+
+[[bin]]
+name = "multipart_absent"
+path = "src/bin/multipart_absent.rs"
+required-features = ["fixture-absence"]
+test = false
+
+[[bin]]
+name = "ndjson_absent"
+path = "src/bin/ndjson_absent.rs"
+required-features = ["fixture-absence"]
+test = false
+
+[[bin]]
+name = "oauth2_absent"
+path = "src/bin/oauth2_absent.rs"
+required-features = ["fixture-absence"]
+test = false
+
+[[bin]]
+name = "raw_response_absent"
+path = "src/bin/raw_response_absent.rs"
+required-features = ["fixture-absence"]
+test = false

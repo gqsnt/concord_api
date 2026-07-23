@@ -1,0 +1,5 @@
+error: unsupported scope entry; expected a child scope, HTTP endpoint, or `host`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit` clause
+  --> tests/ui/fail/syntax/malformed.rs:10:9
+   |
+10 |         FETCH ById(endpoint_value: String) -> NoContent {
+   |         ^^^^^

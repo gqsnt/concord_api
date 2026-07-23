@@ -1,0 +1,37 @@
+use concord::advanced::{
+    AuthError, BoxFuture, CredentialMaterial, CredentialProvider, CredentialRequest,
+};
+use concord::api;
+
+#[derive(Clone)]
+struct NonSecretMaterial;
+
+impl CredentialMaterial for NonSecretMaterial {}
+
+struct NonSecretProvider;
+
+impl CredentialProvider for NonSecretProvider {
+    type Material = NonSecretMaterial;
+
+    fn acquire<'a>(
+        &'a self,
+        _context: CredentialRequest<'a>,
+    ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
+        Box::pin(async { Ok(NonSecretMaterial) })
+    }
+}
+
+api! {
+    client Api {
+        base "https://example.test";
+        credentials {
+            credential session = custom crate::NonSecretProvider;
+        }
+    }
+
+    GET protected() -> Bytes {
+        auth bearer session challenge never;
+    }
+}
+
+fn main() {}

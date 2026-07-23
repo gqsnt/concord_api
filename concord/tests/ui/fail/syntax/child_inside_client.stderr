@@ -1,0 +1,5 @@
+error: scopes and endpoints are declared after the `client` block
+ --> tests/ui/fail/syntax/child_inside_client.rs:7:9
+  |
+7 |         scope users() {
+  |         ^^^^^

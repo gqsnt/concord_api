@@ -7,18 +7,7 @@ error[E0432]: unresolved import `concord_core::prelude::Multipart`
 note: found an item that was configured out
  --> src/prelude.rs
   |
+  | #[cfg(feature = "multipart")]
+  |       --------------------- the item is gated behind the `multipart` feature
   | pub use crate::body::Multipart;
   |                      ^^^^^^^^^
-note: the item is gated behind the `multipart` feature
- --> src/prelude.rs
-  |
-  | #[cfg(feature = "multipart")]
-  |       ^^^^^^^^^^^^^^^^^^^^^
-help: consider importing one of these variants instead
-  |
-1 | use concord_core::advanced::BodyErrorKind::Multipart;
-  |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-1 | use concord_core::advanced::BodyKind::Multipart;
-  |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-1 | use concord_test_support::script::BodyCategory::Multipart;
-  |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -10,30 +10,21 @@ error[E0432]: unresolved imports `concord_core::advanced::MultipartBody`, `conco
 note: found an item that was configured out
  --> src/advanced.rs
   |
+  | #[cfg(feature = "multipart")]
+  |       --------------------- the item is gated behind the `multipart` feature
   | pub use crate::body::{Multipart, MultipartBody, MultipartFactory, MultipartPart};
   |                                  ^^^^^^^^^^^^^
-note: the item is gated behind the `multipart` feature
- --> src/advanced.rs
-  |
-  | #[cfg(feature = "multipart")]
-  |       ^^^^^^^^^^^^^^^^^^^^^
 note: found an item that was configured out
  --> src/advanced.rs
   |
+  | #[cfg(feature = "multipart")]
+  |       --------------------- the item is gated behind the `multipart` feature
   | pub use crate::body::{Multipart, MultipartBody, MultipartFactory, MultipartPart};
   |                                                 ^^^^^^^^^^^^^^^^
-note: the item is gated behind the `multipart` feature
- --> src/advanced.rs
-  |
-  | #[cfg(feature = "multipart")]
-  |       ^^^^^^^^^^^^^^^^^^^^^
 note: found an item that was configured out
  --> src/advanced.rs
   |
+  | #[cfg(feature = "multipart")]
+  |       --------------------- the item is gated behind the `multipart` feature
   | pub use crate::body::{Multipart, MultipartBody, MultipartFactory, MultipartPart};
   |                                                                   ^^^^^^^^^^^^^
-note: the item is gated behind the `multipart` feature
- --> src/advanced.rs
-  |
-  | #[cfg(feature = "multipart")]
-  |       ^^^^^^^^^^^^^^^^^^^^^

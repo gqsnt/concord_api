@@ -1,5 +1,0 @@
-error: rate-limit rules are now direct `rate_limit { ... }` declarations; named attachments, `replace`, and `off` were removed
- --> tests/ui/fail/rate_limit_off_exclusive.rs:6:20
-  |
-6 |         rate_limit off;
-  |                    ^^^

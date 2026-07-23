@@ -1,0 +1,5 @@
+error[E0616]: field `__concord_inner` of struct `ItemRequest` is private
+  --> tests/ui/fail/privacy/named_request_fields_private.rs:14:21
+   |
+14 |     let _ = request.__concord_inner;
+   |                     ^^^^^^^^^^^^^^^ private field

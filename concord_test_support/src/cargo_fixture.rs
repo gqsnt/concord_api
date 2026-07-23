@@ -15,9 +15,7 @@ fn fixture_target_dir(workspace_root: &Path, target_key: &str) -> std::path::Pat
             .all(|component| matches!(component, Component::Normal(_))),
         "Cargo fixture target key must contain only normal relative components"
     );
-    workspace_root
-        .join("target/cargo-fixtures")
-        .join(target_key)
+    workspace_root.join("target/fixtures").join(target_key)
 }
 
 /// Runs one locked, offline Cargo command with an isolated target directory.

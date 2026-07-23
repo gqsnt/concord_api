@@ -30,7 +30,10 @@ concord_extras = { package = "concord-extras", version = "=0.1.0", path = "../co
 concord_macros = { package = "concord-macros", version = "=0.1.0", path = "../concord_macros", default-features = false }
 
 [dev-dependencies]
-concord_test_support = { package = "concord-test-support", version = "=0.1.0", path = "../concord_test_support", default-features = false, features = ["loopback"] }
+concord_test_support = { package = "concord-test-support", version = "=0.1.0", path = "../concord_test_support", default-features = false, features = ["cargo-fixture", "loopback"] }
+futures-core.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 tokio = { workspace = true }
 trybuild = "=1.0.118"
 

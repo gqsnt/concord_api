@@ -1,0 +1,74 @@
+error[E0277]: the trait bound `concord::Multipart: ResponseBodySpec` is not satisfied
+  --> tests/ui/fail/capabilities/multipart_response.rs:3:1
+   |
+ 3 | / api! {
+ 4 | |     client MultipartApi {
+ 5 | |         base "http://multipart.example.test";
+...  |
+12 | | }
+   | |_^ the trait `DecodeBody` is not implemented for `concord::Multipart`
+   |
+help: the following other types implement trait `DecodeBody`
+  --> $WORKSPACE/concord_core/src/codec/mod.rs
+   |
+   |   impl DecodeBody for Text {
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Text`
+   |
+  ::: $WORKSPACE/concord_extras/src/codec/json.rs
+   |
+   | / impl<T> DecodeBody for Json<T>
+   | | where
+   | |     T: serde::de::DeserializeOwned + Send + Sync + 'static,
+   | |___________________________________________________________^ `Json<T>`
+   = note: required for `concord::Multipart` to implement `ResponseBodySpec`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `concord::Multipart: ResponseBodySpec` is not satisfied
+  --> tests/ui/fail/capabilities/multipart_response.rs:3:1
+   |
+ 3 | / api! {
+ 4 | |     client MultipartApi {
+ 5 | |         base "http://multipart.example.test";
+...  |
+12 | | }
+   | |_^ the trait `DecodeBody` is not implemented for `concord::Multipart`
+   |
+help: the following other types implement trait `DecodeBody`
+  --> $WORKSPACE/concord_core/src/codec/mod.rs
+   |
+   |   impl DecodeBody for Text {
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Text`
+   |
+  ::: $WORKSPACE/concord_extras/src/codec/json.rs
+   |
+   | / impl<T> DecodeBody for Json<T>
+   | | where
+   | |     T: serde::de::DeserializeOwned + Send + Sync + 'static,
+   | |___________________________________________________________^ `Json<T>`
+   = note: required for `concord::Multipart` to implement `ResponseBodySpec`
+   = note: this error originates in the macro `super::__concord_generated::__core::__private::emit_generated_raw_response_method` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `concord::Multipart: DecodeBody` is not satisfied
+  --> tests/ui/fail/capabilities/multipart_response.rs:3:1
+   |
+ 3 | / api! {
+ 4 | |     client MultipartApi {
+ 5 | |         base "http://multipart.example.test";
+...  |
+12 | | }
+   | |_^ the trait `DecodeBody` is not implemented for `concord::Multipart`
+   |
+help: the following other types implement trait `DecodeBody`
+  --> $WORKSPACE/concord_core/src/codec/mod.rs
+   |
+   |   impl DecodeBody for Text {
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Text`
+   |
+  ::: $WORKSPACE/concord_extras/src/codec/json.rs
+   |
+   | / impl<T> DecodeBody for Json<T>
+   | | where
+   | |     T: serde::de::DeserializeOwned + Send + Sync + 'static,
+   | |___________________________________________________________^ `Json<T>`
+   = note: required for `concord::Multipart` to implement `ResponseBodySpec`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

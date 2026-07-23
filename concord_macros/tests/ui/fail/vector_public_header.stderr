@@ -1,5 +1,0 @@
-error: public header declarations do not accept vector values
- --> tests/ui/fail/vector_public_header.rs:9:35
-  |
-9 |         headers { "X-Values" = ep.values; }
-  |                                   ^^^^^^

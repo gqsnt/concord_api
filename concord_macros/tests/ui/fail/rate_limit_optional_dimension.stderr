@@ -1,5 +1,0 @@
-error: `by [...]` dimensions were removed; normal generated rules use declaration-scoped global buckets
- --> tests/ui/fail/rate_limit_optional_dimension.rs:9:22
-  |
-9 |         rate_limit { by [vars.tenant]; 1 / 1s; }
-  |                      ^^

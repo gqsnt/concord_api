@@ -1,0 +1,101 @@
+error: pagination requires a struct field block; use `paginate TYPE { field: bind ep.field, ... }`
+  --> tests/ui/fail/pagination/pagination_syntax.rs:14:18
+   |
+14 |         paginate crate::Controller
+   |                  ^^^^^
+
+error: old `field = ep.field` pagination syntax is no longer supported; use `field: bind ep.field`
+  --> tests/ui/fail/pagination/pagination_syntax.rs:24:44
+   |
+24 |         paginate crate::Controller { state = ep.offset }
+   |                                            ^
+
+error: old `paginate custom factory(...)` syntax is no longer supported; use `paginate TYPE { field: bind ep.field, ... }`
+  --> tests/ui/fail/pagination/pagination_syntax.rs:34:18
+   |
+34 |         paginate custom crate::factory();
+   |                  ^^^^^^
+
+error: duplicate pagination controller field `state`
+  --> tests/ui/fail/pagination/pagination_syntax.rs:46:13
+   |
+46 |             state: bind ep.other,
+   |             ^^^^^
+
+error: duplicate pagination binding destination `ep.offset`
+  --> tests/ui/fail/pagination/pagination_syntax.rs:59:28
+   |
+59 |             other: bind ep.offset,
+   |                            ^^^^^^
+
+error: `bind` accepts only direct `ep.FIELD` or `scope.FIELD` destinations
+  --> tests/ui/fail/pagination/pagination_syntax.rs:73:50
+   |
+73 |         paginate crate::Controller { state: bind vars.offset }
+   |                                                  ^^^^
+
+error: `bind` accepts only direct `ep.FIELD` or `scope.FIELD` destinations
+  --> tests/ui/fail/pagination/pagination_syntax.rs:83:50
+   |
+83 |         paginate crate::Controller { state: bind secret.offset }
+   |                                                  ^^^^^^
+
+error: `bind` accepts only direct `ep.FIELD` or `scope.FIELD` destinations
+  --> tests/ui/fail/pagination/pagination_syntax.rs:93:50
+   |
+93 |         paginate crate::Controller { state: bind credential.offset }
+   |                                                  ^^^^^^^^^^
+
+error: pagination bindings must be direct `ep.FIELD` or `scope.FIELD` destinations
+   --> tests/ui/fail/pagination/pagination_syntax.rs:103:59
+    |
+103 |         paginate crate::Controller { state: bind ep.offset.value }
+    |                                                           ^
+
+error: pagination field shorthand is not supported; provide `field: initializer`
+   --> tests/ui/fail/pagination/pagination_syntax.rs:113:38
+    |
+113 |         paginate crate::Controller { state }
+    |                                      ^^^^^
+
+error: pagination controller construction does not accept struct rest syntax
+   --> tests/ui/fail/pagination/pagination_syntax.rs:123:38
+    |
+123 |         paginate crate::Controller { .. }
+    |                                      ^
+
+error: pagination initializers accept only direct public value references, string/integer/boolean literals, or Rust const paths; calls, methods, macros, closures, async blocks, blocks, and formatting expressions are not supported
+   --> tests/ui/fail/pagination/pagination_syntax.rs:133:56
+    |
+133 |         paginate crate::Controller { state: crate::make() }
+    |                                                        ^
+
+error: pagination value references must be direct `vars.FIELD`, `scope.FIELD`, or `ep.FIELD`
+   --> tests/ui/fail/pagination/pagination_syntax.rs:143:53
+    |
+143 |         paginate crate::Controller { state: ep.value.clone() }
+    |                                                     ^
+
+error: pagination initializers accept only direct public value references, string/integer/boolean literals, or Rust const paths; calls, methods, macros, closures, async blocks, blocks, and formatting expressions are not supported
+   --> tests/ui/fail/pagination/pagination_syntax.rs:153:45
+    |
+153 |         paginate crate::Controller { state: || 1 }
+    |                                             ^
+
+error: pagination initializers accept only direct public value references, string/integer/boolean literals, or Rust const paths; calls, methods, macros, closures, async blocks, blocks, and formatting expressions are not supported
+   --> tests/ui/fail/pagination/pagination_syntax.rs:163:45
+    |
+163 |         paginate crate::Controller { state: async { 1 } }
+    |                                             ^^^^^
+
+error: pagination initializers accept only direct public value references, string/integer/boolean literals, or Rust const paths; calls, methods, macros, closures, async blocks, blocks, and formatting expressions are not supported
+   --> tests/ui/fail/pagination/pagination_syntax.rs:173:45
+    |
+173 |         paginate crate::Controller { state: { 1 } }
+    |                                             ^
+
+error: pagination initializers accept only direct public value references, string/integer/boolean literals, or Rust const paths; calls, methods, macros, closures, async blocks, blocks, and formatting expressions are not supported
+   --> tests/ui/fail/pagination/pagination_syntax.rs:183:56
+    |
+183 |         paginate crate::Controller { state: format_args!("value") }
+    |                                                        ^

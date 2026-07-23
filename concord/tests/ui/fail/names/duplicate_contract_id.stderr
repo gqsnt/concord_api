@@ -1,0 +1,11 @@
+error: endpoint contract ID `identity.same` is not unique within this client
+  --> tests/ui/fail/names/duplicate_contract_id.rs:14:12
+   |
+14 |         id "identity.same";
+   |            ^^^^^^^^^^^^^^^
+
+error: the first endpoint using this contract ID is here
+  --> tests/ui/fail/names/duplicate_contract_id.rs:11:12
+   |
+11 |         id "identity.same";
+   |            ^^^^^^^^^^^^^^^

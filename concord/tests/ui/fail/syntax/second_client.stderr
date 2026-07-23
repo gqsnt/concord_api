@@ -1,0 +1,5 @@
+error: an `api!` invocation accepts exactly one `client`; declare additional clients in separate `api!` invocations
+ --> tests/ui/fail/syntax/second_client.rs:8:5
+  |
+8 |     client SecondApi {
+  |     ^^^^^^

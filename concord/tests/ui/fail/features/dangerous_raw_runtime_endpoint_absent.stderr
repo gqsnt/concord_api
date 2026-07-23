@@ -1,0 +1,13 @@
+error[E0599]: the method `raw_response` exists for struct `concord::Request<RuntimeEndpoint<concord::Bytes>>`, but its trait bounds were not satisfied
+  --> tests/ui/fail/features/dangerous_raw_runtime_endpoint_absent.rs:18:38
+   |
+18 |     let _ = client.request(endpoint).raw_response();
+   |                                      ^^^^^^^^^^^^
+   |
+  ::: $WORKSPACE/concord_core/src/request/prepared.rs
+   |
+   | pub struct RuntimeEndpoint<R = NoContent> {
+   | ----------------------------------------- doesn't satisfy `_: RawResponseEndpoint`
+   |
+   = note: the following trait bounds were not satisfied:
+           `RuntimeEndpoint<concord::Bytes>: concord::__private::RawResponseEndpoint`

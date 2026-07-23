@@ -1,5 +1,0 @@
-error: endpoint parameters accept only the bare `#[body]` role attribute
-  --> tests/ui/fail/invalid_body_attribute.rs:10:17
-   |
-10 |     POST submit(#[body(replay)] payload: Text) -> Bytes;
-   |                 ^

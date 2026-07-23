@@ -1,5 +1,0 @@
-error[E0599]: no method named `paginate` found for struct `concord_core::Request<E>` in the current scope
-  --> tests/ui/fail/prepared_endpoint_pagination_absent.rs:28:38
-   |
-28 |     let _ = client.request(endpoint).paginate(1_u32);
-   |                                      ^^^^^^^^ method not found in `concord_core::Request<RuntimeEndpoint<support::Json<Vec<u8>>>>`

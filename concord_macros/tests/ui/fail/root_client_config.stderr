@@ -1,5 +1,0 @@
-error: client configuration must be declared inside the `client` block
- --> tests/ui/fail/root_client_config.rs:8:5
-  |
-8 |     timeout 5s;
-  |     ^^^^^^^

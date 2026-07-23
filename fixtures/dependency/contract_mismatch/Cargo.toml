@@ -1,0 +1,9 @@
+[package]
+name = "concord-fixture-contract-mismatch"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+[dependencies]
+runtime = { package = "concord", path = "incompatible_facade" }

@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "features",
+    "dependency/contract_mismatch",
+    "dependency/renamed_facade",
+]
+exclude = ["dependency/contract_mismatch/incompatible_facade"]
+resolver = "3"

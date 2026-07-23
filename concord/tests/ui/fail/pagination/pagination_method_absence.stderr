@@ -1,0 +1,33 @@
+error[E0599]: no method named `paginate` found for struct `OrdinaryRequest` in the current scope
+  --> tests/ui/fail/pagination/pagination_method_absence.rs:27:31
+   |
+ 8 | / api! {
+ 9 | |     client MethodSurface {
+10 | |         base "https://example.test";
+...  |
+13 | |     GET ordinary() -> crate::support::Json<Vec<u8>>;
+   | |________________- method `paginate` not found for this struct
+...
+27 |       let _ = client.ordinary().paginate(1_u32);
+   |                                 ^^^^^^^^ method not found in `OrdinaryRequest`
+
+error[E0599]: `concord::PaginatedRequest<Paginated>` is not an iterator
+  --> tests/ui/fail/pagination/pagination_method_absence.rs:31:10
+   |
+28 |       let _ = client
+   |  _____________-
+29 | |         .paginated(0, std::num::NonZeroU32::MIN)
+30 | |         .paginate(1_u32)
+31 | |         .collect::<Vec<_>>();
+   | |         -^^^^^^^ `concord::PaginatedRequest<Paginated>` is not an iterator
+   | |_________|
+   |
+   |
+  ::: $WORKSPACE/concord_core/src/pagination/pending.rs
+   |
+   |   pub struct PaginatedRequest<E> {
+   |   ------------------------------ doesn't satisfy `concord::PaginatedRequest<Paginated>: Iterator`
+   |
+   = note: the following trait bounds were not satisfied:
+           `concord::PaginatedRequest<Paginated>: Iterator`
+           which is required by `&mut concord::PaginatedRequest<Paginated>: Iterator`

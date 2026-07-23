@@ -8,10 +8,13 @@ error[E0432]: unresolved import `concord_core::advanced::ProviderHttpInner`
  --> tests/ui/fail/managed_reqwest_escape.rs:3:5
   |
 3 | use concord_core::advanced::ProviderHttpInner;
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^-----------------
-  |     |                       |
-  |     |                       help: a similar name exists in the module: `ProviderHttp`
-  |     no `ProviderHttpInner` in `advanced`
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `ProviderHttpInner` in `advanced`
+  |
+help: a similar name exists in the module
+  |
+3 - use concord_core::advanced::ProviderHttpInner;
+3 + use concord_core::advanced::ProviderHttp;
+  |
 
 error[E0599]: no method named `client` found for struct `HttpConfigBuilder` in the current scope
  --> tests/ui/fail/managed_reqwest_escape.rs:6:21

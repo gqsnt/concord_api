@@ -23,4 +23,3 @@ error[E0277]: `PaginatedRequest<()>` doesn't implement `Debug`
   |                      ^^^^^^^^^^^ `PaginatedRequest<()>` cannot be formatted using `{:?}` because it doesn't implement `Debug`
   |
   = help: the trait `Debug` is not implemented for `PaginatedRequest<()>`
-  = note: this error originates in the macro `$crate::__export::format_args` which comes from the expansion of the macro `format` (in Nightly builds, run with -Z macro-backtrace for more info)

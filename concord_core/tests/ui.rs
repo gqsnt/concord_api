@@ -21,3 +21,72 @@ fn source_only_public_surface_failures_use_trybuild() {
     #[cfg(feature = "records")]
     cases.compile_fail("tests/ui/fail/records_pagination_absent.rs");
 }
+
+#[cfg(not(any(
+    feature = "dangerous-custom-retry",
+    feature = "dangerous-dev-tools",
+    feature = "dangerous-raw-response"
+)))]
+#[test]
+fn default_surface_exposes_no_dangerous_capability() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/fail/dangerous_custom_retry_absent.rs");
+    cases.compile_fail("tests/ui/fail/dangerous_development_absent.rs");
+    cases.compile_fail("tests/ui/fail/dangerous_raw_response_absent.rs");
+}
+
+#[cfg(all(
+    feature = "dangerous-custom-retry",
+    not(feature = "dangerous-dev-tools"),
+    not(feature = "dangerous-raw-response")
+))]
+#[test]
+fn custom_retry_excludes_development_and_raw_response_surfaces() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/fail/dangerous_development_absent.rs");
+    cases.compile_fail("tests/ui/fail/dangerous_raw_response_absent_with_custom_retry.rs");
+}
+
+#[cfg(all(
+    feature = "dangerous-dev-tools",
+    not(feature = "dangerous-custom-retry"),
+    not(feature = "dangerous-raw-response")
+))]
+#[test]
+fn development_tools_exclude_stable_custom_retry_and_raw_response_surfaces() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/fail/dangerous_custom_retry_absent.rs");
+    cases.compile_fail("tests/ui/fail/dangerous_raw_response_absent.rs");
+    cases.compile_fail("tests/ui/fail/dangerous_dev_stable_namespace_escape.rs");
+    cases.compile_fail("tests/ui/fail/dangerous_dev_dangerous_namespace_escape.rs");
+}
+
+#[cfg(all(
+    feature = "dangerous-raw-response",
+    not(feature = "dangerous-custom-retry"),
+    not(feature = "dangerous-dev-tools")
+))]
+#[test]
+fn raw_response_flag_excludes_custom_retry_and_development_surfaces() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/fail/dangerous_custom_retry_absent_with_raw_response.rs");
+    cases.compile_fail("tests/ui/fail/dangerous_development_absent.rs");
+    cases.compile_fail("tests/ui/fail/dangerous_raw_response_fields_private.rs");
+}
+
+#[cfg(all(
+    feature = "dangerous-custom-retry",
+    not(feature = "dangerous-dev-tools")
+))]
+#[test]
+fn dangerous_namespace_excludes_development_execution_support() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/fail/dangerous_namespace_escape.rs");
+}
+
+#[cfg(not(feature = "multipart"))]
+#[test]
+fn multipart_public_surface_is_absent_without_its_feature() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/fail/multipart_feature_absent.rs");
+}

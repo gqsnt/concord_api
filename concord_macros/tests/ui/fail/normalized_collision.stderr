@@ -1,5 +1,0 @@
-error: child name `http_status` is declared more than once within this scope
-  --> tests/ui/fail/normalized_collision.rs:11:13
-   |
-11 |         GET http_status() -> NoContent;
-   |             ^^^^^^^^^^^

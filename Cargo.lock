@@ -138,6 +138,9 @@ dependencies = [
  "concord-extras",
  "concord-macros",
  "concord-test-support",
+ "futures-core",
+ "serde",
+ "serde_json",
  "tokio",
  "trybuild",
 ]
@@ -195,18 +198,11 @@ dependencies = [
 name = "concord-macros"
 version = "0.1.0"
 dependencies = [
- "concord-core",
- "concord-test-support",
- "futures-core",
  "http",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
- "serde",
- "serde_json",
  "syn",
- "tokio",
- "trybuild",
  "url",
 ]
 
