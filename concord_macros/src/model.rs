@@ -31,6 +31,9 @@ pub(crate) struct Client {
 }
 
 #[derive(Clone)]
+// Resolved syntax is short-lived; keeping the endpoint inline avoids allocation
+// throughout code generation.
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum Child {
     Scope(Box<Scope>),
     Endpoint(Endpoint),
@@ -93,6 +96,9 @@ pub(crate) enum PaginationInitializer {
 }
 
 #[derive(Clone)]
+// These values are short-lived, and keeping Syn nodes inline avoids incidental
+// allocation throughout code generation.
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum PaginationValue {
     Reference(ResolvedValue),
     Stable(DefaultExpr),
@@ -173,6 +179,9 @@ impl Value {
 }
 
 #[derive(Clone)]
+// These values are short-lived, and keeping Syn nodes inline avoids incidental
+// allocation throughout code generation.
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum ValueShape {
     Scalar,
     Option { inner: Type },
@@ -226,6 +235,9 @@ pub(crate) struct NormalizedHeader {
 }
 
 #[derive(Clone)]
+// These values are short-lived, and keeping Syn nodes inline avoids incidental
+// allocation throughout code generation.
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum ResolvedExpr {
     String(LitStr),
     Integer(LitInt),

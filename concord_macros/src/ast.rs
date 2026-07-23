@@ -21,6 +21,9 @@ pub(crate) struct SourceClient {
 }
 
 #[derive(Clone)]
+// Parsed syntax is short-lived; keeping the endpoint inline avoids allocation
+// throughout resolution.
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum SourceChild {
     Scope(Box<SourceScope>),
     Endpoint(SourceEndpoint),

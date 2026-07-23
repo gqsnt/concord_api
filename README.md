@@ -132,5 +132,3 @@ just features
 just bench
 just verify
 ```
-
-The workspace targets Rust 1.85 and forbids unsafe code through workspace lints.

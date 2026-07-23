@@ -317,7 +317,7 @@ impl Slot {
         expires_at: LogicalTime,
     ) -> Self {
         let mut slot = Self::empty(identity, source, source_kind);
-        slot.next_version = version.0.checked_add(1).unwrap_or(u64::MAX);
+        slot.next_version = version.0.saturating_add(1);
         slot.state = SlotState::Ready(ReadyValue {
             slot: identity,
             source,
@@ -392,7 +392,7 @@ impl AttemptCache {
 impl PublicSlotRef {
     pub(super) fn new(current: Slot) -> Self {
         Self {
-            next_slot_identity: current.identity.0.checked_add(1).unwrap_or(u64::MAX),
+            next_slot_identity: current.identity.0.saturating_add(1),
             current,
         }
     }

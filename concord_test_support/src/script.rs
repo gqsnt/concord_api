@@ -466,6 +466,9 @@ impl fmt::Debug for ExecutionFailure {
 
 impl Error for ExecutionFailure {}
 
+// Scripts are bounded, test-only values. Keeping exchanges inline avoids
+// allocation and pointer indirection throughout the deterministic executor.
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum Script {
     Exchange {
         expectation: Option<ExpectedRequest>,

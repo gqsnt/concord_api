@@ -62,10 +62,10 @@ api! {
     GET NdJsonValues() -> Records<NdJson<u32>>;
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = RecordsApi::builder().build()?;
-    let _: Request<_> = client.custom();
-    let _: Request<_> = client.csv_rows();
-    let _: Request<_> = client.nd_json_values();
+    let b = client.custom().await?;
+    let r = client.csv_rows().await?;
+    let c = client.nd_json_values().await?;
     Ok(())
 }

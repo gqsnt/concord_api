@@ -34,6 +34,9 @@ pub(crate) struct PreparationFailure {
     pub(crate) error: ApiError,
 }
 
+// Every request creates this value. Keeping both bounded outcomes inline avoids
+// an allocation on the successful preparation path.
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum OperationPreparation<E> {
     Ready(PreparedOperation<E>),
     Failed(PreparationFailure),
