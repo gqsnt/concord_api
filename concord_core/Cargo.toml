@@ -9,7 +9,6 @@ publish = false
 default = ["default-tls", "http2"]
 default-tls = ["dep:rustls", "reqwest/rustls-no-provider"]
 http2 = ["reqwest/http2"]
-oauth2-client = ["dep:serde_json"]
 records = []
 multipart = ["reqwest/multipart"]
 gzip = ["reqwest/gzip"]
@@ -29,7 +28,6 @@ httpdate.workspace = true
 mime.workspace = true
 reqwest = { workspace = true, features = ["stream"] }
 rustls = { workspace = true, optional = true }
-serde_json = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["fs", "io-util"] }
 url.workspace = true
 

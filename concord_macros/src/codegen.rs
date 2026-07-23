@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use proc_macro2::{Ident, Span, TokenStream};
-use quote::{ToTokens, quote};
+use quote::{ToTokens, quote, quote_spanned};
+use syn::spanned::Spanned;
 use syn::{PathArguments, Type};
 
 use crate::ast::{
@@ -13,7 +14,7 @@ use crate::model::{
 };
 use crate::names::{canonical_ident, public_ident, to_snake_case};
 
-const GENERATED_CONTRACT_VERSION: u32 = 17;
+const GENERATED_CONTRACT_VERSION: u32 = 18;
 
 pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
     generate_client(&api.client, core_path)
@@ -92,11 +93,13 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
         .iter()
         .enumerate()
         .filter_map(|(index, credential)| match &credential.source {
-            CredentialSource::Custom { material } => {
+            CredentialSource::Custom { provider } => {
                 let field = provider_builder_field(index, &credential.name);
                 Some(quote!(
                     #field: ::std::option::Option<::std::sync::Arc<
-                        dyn #core_path::advanced::CredentialProvider<Material = #material>
+                        dyn #core_path::advanced::CredentialProvider<
+                            Material = <#provider as #core_path::advanced::CredentialProvider>::Material
+                        >
                     >>,
                 ))
             }
@@ -158,12 +161,14 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
         quote!(#name: impl ::std::convert::Into<#core_path::prelude::SecretString>,)
     }));
     constructor_parameters.extend(client.credentials.iter().filter_map(|credential| {
-        let CredentialSource::Custom { material } = &credential.source else {
+        let CredentialSource::Custom { provider } = &credential.source else {
             return None;
         };
         let name = provider_argument_name(&credential.name);
         Some(quote!(
-            #name: impl #core_path::advanced::CredentialProvider<Material = #material>,
+            #name: impl #core_path::advanced::CredentialProvider<
+                Material = <#provider as #core_path::advanced::CredentialProvider>::Material
+            >,
         ))
     }));
     let mut constructor_setters = required_client_values
@@ -224,11 +229,6 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
     let custom_retry_assertion = matches!(&client.retry, RetrySelection::Custom(_)).then(|| {
         quote!(
             const _: () = __core::__private::assert_custom_retry_feature();
-        )
-    });
-    let oauth2_client_assertion = client_uses_oauth2_client(client).then(|| {
-        quote!(
-            const _: () = __core::__private::assert_oauth2_client_feature();
         )
     });
     let requires_limiter = client.requires_limiter;
@@ -301,11 +301,13 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
 
         #[doc = #support_doc]
         pub mod #support_name {
+            #[allow(unused_imports)]
+            use super::*;
+
             mod __concord_generated {
                 pub(super) use #core_path as __core;
 
                 const _: () = __core::__private::assert_generated_contract(#contract_version);
-                #oauth2_client_assertion
                 #custom_retry_assertion
             }
 
@@ -353,6 +355,9 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
 
             /// Generated explicit endpoint values and sealed request extension traits.
             pub mod endpoints {
+                #[allow(unused_imports)]
+                use super::super::*;
+
                 #endpoint_modules
             }
 
@@ -537,7 +542,7 @@ fn generate_provider_builder_methods(client: &Client, core_path: &TokenStream) -
         .iter()
         .enumerate()
         .filter_map(|(index, credential)| {
-            let CredentialSource::Custom { material } = &credential.source else {
+            let CredentialSource::Custom { provider } = &credential.source else {
                 return None;
             };
             let method = provider_argument_name(&credential.name);
@@ -547,7 +552,9 @@ fn generate_provider_builder_methods(client: &Client, core_path: &TokenStream) -
                 #[doc = "Sets one required custom credential provider; a later call replaces it."]
                 pub fn #method<P>(mut self, provider: P) -> Self
                 where
-                    P: #core_path::advanced::CredentialProvider<Material = #material>,
+                    P: #core_path::advanced::CredentialProvider<
+                        Material = <#provider as #core_path::advanced::CredentialProvider>::Material
+                    >,
                 {
                     self.#field = ::std::option::Option::Some(::std::sync::Arc::new(provider));
                     self
@@ -652,29 +659,6 @@ fn generate_credential_store_initializers(client: &Client, core_path: &TokenStre
                         ),
                     ))
                 }
-                CredentialSource::OAuth2Client {
-                    token_url,
-                    client_id,
-                    client_secret,
-                    scope,
-                } => {
-                    let client_id = resolved_secret(*client_id, &client.secrets[*client_id].name);
-                    let client_secret =
-                        resolved_secret(*client_secret, &client.secrets[*client_secret].name);
-                    let scope = scope.as_ref().map_or_else(
-                        || quote!(::std::option::Option::None),
-                        |scope| quote!(::std::option::Option::Some(#scope)),
-                    );
-                    quote!(#core_path::__private::GeneratedCredential::provider(
-                        &core,
-                        #core_path::__private::oauth2_client_credentials(
-                            #token_url,
-                            #client_id.clone(),
-                            #client_secret.clone(),
-                            #scope,
-                        )?,
-                    ))
-                }
                 CredentialSource::Endpoint { .. } => {
                     quote!(#core_path::__private::GeneratedCredential::endpoint(&core))
                 }
@@ -725,25 +709,12 @@ fn generate_credentials_module(client: &Client, core_path: &TokenStream) -> Toke
             let material = credential_material_type(client, credential, core_path);
             let handle = credential_handle_type(credential, &material);
             let handle_constructor = credential_handle_constructor(credential);
-            let extra = match &credential.source {
-                CredentialSource::OAuth2Client {
-                    token_url, scope, ..
-                } => {
-                    let scope = scope.as_ref().map_or_else(
-                        || quote!(::std::option::Option::None),
-                        |scope| quote!(::std::option::Option::Some(#scope)),
-                    );
-                    quote!(token_url: #token_url, scope: #scope,)
-                }
-                _ => quote!(),
-            };
             quote! {
                 /// Returns a typed source-specific credential handle.
                 #[must_use]
                 pub fn #method(&self) -> #handle {
                     #handle_constructor {
                         inner: self.client.__concord_credentials.#field.clone(),
-                        #extra
                     }
                 }
             }
@@ -753,6 +724,9 @@ fn generate_credentials_module(client: &Client, core_path: &TokenStream) -> Toke
     quote! {
         /// Generated typed credential access and source-specific mutation capabilities.
         pub mod credentials {
+            #[allow(unused_imports)]
+            use super::super::*;
+
             /// Borrowed credential facade for the generated client.
             pub struct #facade<'a> {
                 client: &'a super::super::#client_name,
@@ -841,37 +815,6 @@ fn generate_credential_handle_types(client: &Client, core_path: &TokenStream) ->
                 }
             }
         });
-    let oauth = client
-        .credentials
-        .iter()
-        .any(|credential| matches!(credential.source, CredentialSource::OAuth2Client { .. }))
-        .then(|| quote! {
-            /// Handle for one built-in OAuth2 client-credentials source.
-            pub struct OAuthClientCredentialsHandle {
-                pub(super) inner: #core_path::__private::GeneratedCredential<#core_path::prelude::AccessToken>,
-                pub(super) token_url: &'static str,
-                pub(super) scope: ::std::option::Option<&'static str>,
-            }
-            impl OAuthClientCredentialsHandle {
-                #[must_use]
-                pub fn credential(&self) -> #core_path::advanced::CredentialRef<#core_path::prelude::AccessToken> {
-                    self.inner.credential()
-                }
-                pub async fn replace_client_credentials(
-                    &self,
-                    client_id: impl ::std::convert::Into<#core_path::prelude::SecretString>,
-                    client_secret: impl ::std::convert::Into<#core_path::prelude::SecretString>,
-                ) -> ::std::result::Result<(), #core_path::advanced::AuthError> {
-                    let provider = #core_path::__private::oauth2_client_credentials_for_replace(
-                        self.token_url,
-                        client_id.into(),
-                        client_secret.into(),
-                        self.scope,
-                    )?;
-                    self.inner.replace_provider(provider).await
-                }
-            }
-        });
     let endpoint = client
         .credentials
         .iter()
@@ -927,13 +870,22 @@ fn generate_credential_handle_types(client: &Client, core_path: &TokenStream) ->
                 pub async fn clear(&self) -> ::std::result::Result<(), #core_path::advanced::AuthError> {
                     self.inner.clear().await
                 }
+                pub async fn replace_provider<P>(
+                    &self,
+                    provider: P,
+                ) -> ::std::result::Result<(), #core_path::advanced::AuthError>
+                where
+                    P: #core_path::advanced::CredentialProvider<Material = M>,
+                {
+                    self.inner.replace_provider(provider).await
+                }
                 #[must_use]
                 pub fn is_set(&self) -> bool {
                     self.inner.is_set()
                 }
             }
         });
-    quote!(#api_key #bearer #basic #oauth #endpoint #custom)
+    quote!(#api_key #bearer #basic #endpoint #custom)
 }
 
 fn credential_handle_type(credential: &Credential, material: &TokenStream) -> TokenStream {
@@ -941,7 +893,6 @@ fn credential_handle_type(credential: &Credential, material: &TokenStream) -> To
         CredentialSource::ApiKey { .. } => quote!(ApiKeyCredentialHandle),
         CredentialSource::Bearer { .. } => quote!(BearerCredentialHandle),
         CredentialSource::Basic { .. } => quote!(BasicCredentialHandle),
-        CredentialSource::OAuth2Client { .. } => quote!(OAuthClientCredentialsHandle),
         CredentialSource::Endpoint { .. } => quote!(EndpointCredentialHandle<#material>),
         CredentialSource::Custom { .. } => quote!(CustomProviderCredentialHandle<#material>),
     }
@@ -952,7 +903,6 @@ fn credential_handle_constructor(credential: &Credential) -> TokenStream {
         CredentialSource::ApiKey { .. } => quote!(ApiKeyCredentialHandle),
         CredentialSource::Bearer { .. } => quote!(BearerCredentialHandle),
         CredentialSource::Basic { .. } => quote!(BasicCredentialHandle),
-        CredentialSource::OAuth2Client { .. } => quote!(OAuthClientCredentialsHandle),
         CredentialSource::Endpoint { .. } => quote!(EndpointCredentialHandle),
         CredentialSource::Custom { .. } => quote!(CustomProviderCredentialHandle),
     }
@@ -965,11 +915,11 @@ fn credential_material_type(
 ) -> TokenStream {
     match &credential.source {
         CredentialSource::ApiKey { .. } => quote!(#core_path::prelude::ApiKey),
-        CredentialSource::Bearer { .. } | CredentialSource::OAuth2Client { .. } => {
-            quote!(#core_path::prelude::AccessToken)
-        }
+        CredentialSource::Bearer { .. } => quote!(#core_path::prelude::AccessToken),
         CredentialSource::Basic { .. } => quote!(#core_path::prelude::BasicCredential),
-        CredentialSource::Custom { material } => quote!(#material),
+        CredentialSource::Custom { provider } => {
+            quote!(<#provider as #core_path::advanced::CredentialProvider>::Material)
+        }
         CredentialSource::Endpoint {
             endpoint_id: Some(endpoint_id),
             ..
@@ -1588,6 +1538,9 @@ fn generate_endpoint_children(
                     generate_endpoint_children(client, &scope.children, &visible, core_path);
                 quote! {
                     pub mod #module {
+                        #[allow(unused_imports)]
+                        use super::*;
+
                         #children
                     }
                 }
@@ -2812,23 +2765,36 @@ fn auth_statements(client: &Client, endpoint: &Endpoint, core_path: &TokenStream
             let credential = &client.credentials[placement.credential];
             let field = credential_store_field(placement.credential, &credential.name);
             let reference = quote!(__concord_credentials.#field.credential());
+            let material = credential_material_type(client, credential, core_path);
+            let source_span = match &credential.source {
+                CredentialSource::Custom { provider } => provider.span(),
+                _ => credential.name.span(),
+            };
             let constructor = match &placement.kind {
                 AuthPlacementKind::Bearer => {
-                    quote!(#core_path::__private::Auth::bearer(#reference))
+                    quote_spanned!(source_span=>
+                        #core_path::__private::Auth::bearer::<#material>(#reference)
+                    )
                 }
                 AuthPlacementKind::Basic => {
-                    quote!(#core_path::__private::Auth::basic(#reference))
+                    quote_spanned!(source_span=>
+                        #core_path::__private::Auth::basic(#reference)
+                    )
                 }
                 AuthPlacementKind::Header(name) => {
                     let canonical =
                         syn::LitStr::new(&name.value().to_ascii_lowercase(), name.span());
-                    quote!(#core_path::__private::Auth::header(
-                        #core_path::__private::HeaderName::from_static(#canonical),
-                        #reference,
-                    ))
+                    quote_spanned!(source_span=>
+                        #core_path::__private::Auth::header::<#material>(
+                            #core_path::__private::HeaderName::from_static(#canonical),
+                            #reference,
+                        )
+                    )
                 }
                 AuthPlacementKind::Query(name) => {
-                    quote!(#core_path::__private::Auth::query(#name, #reference))
+                    quote_spanned!(source_span=>
+                        #core_path::__private::Auth::query::<#material>(#name, #reference)
+                    )
                 }
             };
             let policy = match placement.challenge {
@@ -3457,21 +3423,8 @@ fn endpoint_configuration_summary(client: &Client, endpoint: &Endpoint) -> Strin
     )
 }
 
-fn endpoint_feature_summary(client: &Client, endpoint: &Endpoint) -> String {
-    let uses_oauth2_client = client
-        .credentials
-        .iter()
-        .any(|credential| matches!(credential.source, CredentialSource::OAuth2Client { .. }));
-    let mut requirements = Vec::new();
-    if uses_oauth2_client {
-        requirements.push("`concord/oauth2-client`");
-    }
-    if requirements.is_empty() {
-        let _ = endpoint;
-        "Request and response specification feature availability is owned by `concord` type and trait exports.".to_owned()
-    } else {
-        format!("Required Cargo feature(s): {}.", requirements.join(", "))
-    }
+fn endpoint_feature_summary(_client: &Client, _endpoint: &Endpoint) -> String {
+    "Request, response, and provider feature availability is owned by `concord` type and trait exports.".to_owned()
 }
 
 fn credential_summary(client: &Client) -> String {
@@ -3485,11 +3438,8 @@ fn credential_summary(client: &Client) -> String {
             CredentialSource::ApiKey { .. } => "static API key (replace)",
             CredentialSource::Bearer { .. } => "static bearer (replace)",
             CredentialSource::Basic { .. } => "atomic Basic pair (replace)",
-            CredentialSource::OAuth2Client { .. } => {
-                "OAuth2 client credentials (atomic client replacement)"
-            }
             CredentialSource::Endpoint { .. } => "endpoint-backed (set/clear)",
-            CredentialSource::Custom { .. } => "custom provider (clear)",
+            CredentialSource::Custom { .. } => "custom provider (clear/replace provider)",
         })
         .collect::<Vec<_>>()
         .join(", ");
@@ -3553,13 +3503,6 @@ fn response_doc(_response: &Type) -> &'static str {
 
 fn response_name(response: &Type) -> String {
     response.to_token_stream().to_string()
-}
-
-fn client_uses_oauth2_client(client: &Client) -> bool {
-    client
-        .credentials
-        .iter()
-        .any(|credential| matches!(credential.source, CredentialSource::OAuth2Client { .. }))
 }
 
 fn generate_specification_aliases(children: &[Child]) -> TokenStream {

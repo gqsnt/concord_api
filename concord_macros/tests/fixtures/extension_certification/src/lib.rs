@@ -461,7 +461,7 @@ runtime::api! {
             construction: crate::ExtensionConstructionProbe;
         }
         credentials {
-            credential session = custom crate::ExtensionCredential;
+            credential session = custom crate::ExtensionProvider;
         }
         rate_limit { 10 / 1s; }
         rate_limit_observer crate::ExtensionObserver;
@@ -488,7 +488,7 @@ runtime::api! {
     client SecureExtensionApi {
         base "https://localhost/";
         credentials {
-            credential session = custom crate::ExtensionCredential;
+            credential session = custom crate::ExtensionProvider;
         }
         rate_limit { 10 / 1s; }
         rate_limit_observer crate::ExtensionObserver;

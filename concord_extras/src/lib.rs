@@ -6,6 +6,8 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+#[cfg(feature = "oauth2-client")]
+pub mod auth;
 pub mod codec;
 pub mod pagination;
 #[cfg(feature = "rate-limit-governor")]

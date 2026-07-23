@@ -156,7 +156,6 @@ dependencies = [
  "reqwest",
  "rustls",
  "serde",
- "serde_json",
  "tokio",
  "trybuild",
  "url",
@@ -177,6 +176,7 @@ dependencies = [
 name = "concord_extras"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "concord_core",
  "csv",
  "http",
@@ -185,6 +185,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "url",
 ]
 
 [[package]]

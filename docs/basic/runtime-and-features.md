@@ -77,7 +77,7 @@ rate-limit-governor
 | `records` | `RecordDecoder`, `Records`, `RecordStream`, batching |
 | `csv` | extras-owned typed CSV decoder plus core `records` |
 | `ndjson` | extras-owned typed NDJSON decoder plus core `records`; does not enable general `json` |
-| `oauth2-client` | temporary legacy OAuth2 client-credential helper; independent of `json` |
+| `oauth2-client` | extras-owned OAuth2 client-credentials provider; independent of the general `json` codec |
 | `multipart` | Multipart request bodies through Reqwest |
 
 ### Compression

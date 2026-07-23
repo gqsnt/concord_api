@@ -147,28 +147,11 @@ pub(crate) struct CredentialDecl {
 
 #[derive(Clone)]
 pub(crate) enum CredentialSource {
-    ApiKey {
-        secret: Ident,
-    },
-    Bearer {
-        secret: Ident,
-    },
-    Basic {
-        username: Ident,
-        password: Ident,
-    },
-    OAuth2Client {
-        token_url: LitStr,
-        client_id: Ident,
-        client_secret: Ident,
-        scope: Option<LitStr>,
-    },
-    Endpoint {
-        path: Path,
-    },
-    Custom {
-        material: Type,
-    },
+    ApiKey { secret: Ident },
+    Bearer { secret: Ident },
+    Basic { username: Ident, password: Ident },
+    Endpoint { path: Path },
+    Custom { provider: Type },
 }
 
 #[derive(Clone)]

@@ -18,7 +18,7 @@ Use this page to select Cargo features, understand default finite limits, catego
 | `records` | no | generic record contracts only |
 | `csv` | no | extras-owned typed CSV decoder plus core `records` |
 | `ndjson` | no | extras-owned typed NDJSON decoder plus core `records`; not general `json` |
-| `oauth2-client` | no | temporary legacy OAuth2 client-credentials helper; independent of `json` |
+| `oauth2-client` | no | extras-owned OAuth2 client-credentials provider; independent of the general `json` codec |
 | `multipart` | no | Reqwest multipart request support |
 | `gzip` | no | gzip decompression |
 | `brotli` | no | Brotli decompression |

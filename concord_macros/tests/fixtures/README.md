@@ -8,7 +8,7 @@ These packages remain standalone because their behavior depends on Cargo metadat
 | `missing_core` | Omitting the runtime crate produces the focused macro diagnostic. |
 | `contract_mismatch` | A deliberately incompatible core contract fails during compilation. |
 | `json_disabled` | JSON body/response types do not silently work without the façade `json` feature. |
-| `oauth_disabled` | Legacy OAuth2 generation fails clearly without the temporary façade `oauth2-client` feature. |
+| `oauth_disabled` | The extras-owned `concord::auth::OAuth2ClientCredentials` type is absent when the façade feature is disabled. |
 | `multipart_disabled` | Multipart syntax requires the core `multipart` feature. |
 | `custom_retry_disabled` | Custom retry syntax requires `dangerous-custom-retry`. |
 | `custom_retry_enabled` | The same syntax compiles when its feature is deliberately enabled. |

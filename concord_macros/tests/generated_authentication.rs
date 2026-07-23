@@ -4,7 +4,7 @@ use concord_core::advanced::{
     AuthError, CredentialMaterial, CredentialProvider, CredentialRequest, DecodeBody,
     DecodeContext, ErrorCategory, SafeProxy, SecretCredential,
 };
-use concord_core::prelude::{Bytes, SecretString};
+use concord_core::prelude::{AccessToken, Bytes, SecretString};
 use concord_macros::api;
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 
@@ -55,6 +55,19 @@ impl CredentialProvider for SessionProvider {
     }
 }
 
+pub struct BearerProvider;
+
+impl CredentialProvider for BearerProvider {
+    type Material = AccessToken;
+
+    fn acquire<'a>(
+        &'a self,
+        _context: CredentialRequest<'a>,
+    ) -> concord_core::advanced::BoxFuture<'a, Result<Self::Material, AuthError>> {
+        Box::pin(async { Ok(AccessToken::new("provider-bearer-token")) })
+    }
+}
+
 api! {
     client AuthApi {
         base "http://authentication.example.test/";
@@ -66,19 +79,12 @@ api! {
             secret bearer_secret: String;
             secret username: String;
             secret password: String;
-            secret client_id: String;
-            secret client_secret: String;
             credential application_key = api_key(secret.api_secret);
             credential static_bearer = bearer(secret.bearer_secret);
             credential login = basic(secret.username, secret.password);
-            credential oauth = oauth2_client {
-                token_url: "https://provider.example.test/oauth/token",
-                client_id: secret.client_id,
-                client_secret: secret.client_secret,
-                scope: "users.read",
-            };
+            credential rotating_bearer = custom crate::BearerProvider;
             credential acquired = endpoint Login;
-            credential session = custom crate::SessionToken;
+            credential session = custom crate::SessionProvider;
         }
     }
 
@@ -92,8 +98,8 @@ api! {
     GET BasicEndpoint() -> Bytes {
         auth basic login;
     }
-    GET OAuthEndpoint() -> Bytes {
-        auth bearer oauth;
+    GET ProviderBearerEndpoint() -> Bytes {
+        auth bearer rotating_bearer challenge unauthorized;
     }
     scope Nested() {
         auth header "X-Session" = session challenge never;
@@ -117,8 +123,7 @@ fn generated_authentication_surface_has_ordered_inputs_and_source_specific_handl
         "bearer-secret",
         "user",
         "password",
-        "client-id",
-        "client-secret",
+        BearerProvider,
         SessionProvider,
     )
     .expect("generated auth client");
@@ -126,7 +131,7 @@ fn generated_authentication_surface_has_ordered_inputs_and_source_specific_handl
     let _ = credentials.application_key().credential();
     let _ = credentials.static_bearer().credential();
     let _ = credentials.login().credential();
-    let _ = credentials.oauth().credential();
+    let _ = credentials.rotating_bearer().credential();
     let _ = credentials.acquired().credential();
     let _ = credentials.session().credential();
     assert!(!credentials.acquired().is_set());
@@ -145,8 +150,7 @@ fn auth_builder() -> AuthApiBuilder {
         .bearer_secret("bearer-secret")
         .username("user")
         .password("password")
-        .client_id("client-id")
-        .client_secret("client-secret")
+        .rotating_bearer_provider(BearerProvider)
         .session_provider(SessionProvider)
 }
 
@@ -199,10 +203,10 @@ async fn generated_handles_share_clone_state_keep_independent_builds_and_replace
         .expect("atomic Basic replacement");
     client
         .credentials()
-        .oauth()
-        .replace_client_credentials("replacement-client", "replacement-secret")
+        .rotating_bearer()
+        .replace_provider(BearerProvider)
         .await
-        .expect("atomic OAuth client-credential replacement");
+        .expect("generic bearer provider replacement");
     client
         .credentials()
         .session()

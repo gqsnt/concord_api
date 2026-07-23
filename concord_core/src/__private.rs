@@ -12,13 +12,6 @@ pub const fn assert_generated_contract(expected: u32) {
     );
 }
 
-/// Produces a focused diagnostic for the transitional built-in OAuth2 syntax.
-#[doc(hidden)]
-pub const fn assert_oauth2_client_feature() {
-    #[cfg(not(feature = "oauth2-client"))]
-    panic!("Concord `oauth2_client` requires the `concord/oauth2-client` feature");
-}
-
 /// Produces a focused const-evaluation diagnostic for generated multipart
 /// syntax when the runtime dependency omitted its `multipart` feature.
 #[doc(hidden)]
@@ -171,77 +164,6 @@ where
     pub fn is_set(&self) -> bool {
         self.selector.is_set()
     }
-}
-
-#[cfg(feature = "oauth2-client")]
-#[doc(hidden)]
-pub fn oauth2_client_credentials(
-    token_url: &str,
-    client_id: crate::auth::SecretString,
-    client_secret: crate::auth::SecretString,
-    scope: Option<&str>,
-) -> Result<
-    impl crate::auth::CredentialProvider<Material = crate::auth::AccessToken>,
-    ClientBuildError,
-> {
-    crate::auth::OAuth2ClientCredentials::new(token_url, client_id, client_secret, scope)
-}
-
-#[cfg(feature = "oauth2-client")]
-#[doc(hidden)]
-pub fn oauth2_client_credentials_for_replace(
-    token_url: &str,
-    client_id: crate::auth::SecretString,
-    client_secret: crate::auth::SecretString,
-    scope: Option<&str>,
-) -> Result<
-    impl crate::auth::CredentialProvider<Material = crate::auth::AccessToken>,
-    crate::auth::AuthError,
-> {
-    crate::auth::OAuth2ClientCredentials::new(token_url, client_id, client_secret, scope)
-        .map_err(|_| crate::auth::AuthError::new(crate::error::AuthErrorKind::InvalidConfiguration))
-}
-
-#[cfg(not(feature = "oauth2-client"))]
-#[doc(hidden)]
-pub struct MissingOAuth2ClientProvider;
-
-#[cfg(not(feature = "oauth2-client"))]
-impl crate::auth::CredentialProvider for MissingOAuth2ClientProvider {
-    type Material = crate::auth::AccessToken;
-
-    fn acquire<'a>(
-        &'a self,
-        _context: crate::auth::CredentialRequest<'a>,
-    ) -> crate::hooks::BoxFuture<'a, Result<Self::Material, crate::auth::AuthError>> {
-        Box::pin(async {
-            Err(crate::auth::AuthError::new(
-                crate::error::AuthErrorKind::InvalidConfiguration,
-            ))
-        })
-    }
-}
-
-#[cfg(not(feature = "oauth2-client"))]
-#[doc(hidden)]
-pub fn oauth2_client_credentials(
-    _token_url: &str,
-    _client_id: crate::auth::SecretString,
-    _client_secret: crate::auth::SecretString,
-    _scope: Option<&str>,
-) -> Result<MissingOAuth2ClientProvider, ClientBuildError> {
-    Ok(MissingOAuth2ClientProvider)
-}
-
-#[cfg(not(feature = "oauth2-client"))]
-#[doc(hidden)]
-pub fn oauth2_client_credentials_for_replace(
-    _token_url: &str,
-    _client_id: crate::auth::SecretString,
-    _client_secret: crate::auth::SecretString,
-    _scope: Option<&str>,
-) -> Result<MissingOAuth2ClientProvider, crate::auth::AuthError> {
-    Ok(MissingOAuth2ClientProvider)
 }
 
 /// Borrows a generated endpoint through the opaque request wrapper without

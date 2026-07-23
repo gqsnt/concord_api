@@ -25,7 +25,7 @@ api! {
     client Api {
         base "http://example.test";
         credentials {
-            credential session = custom crate::SessionToken;
+            credential session = custom crate::SessionProvider;
         }
     }
 }

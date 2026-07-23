@@ -287,28 +287,52 @@ fn trybuild_is_confined_to_core_and_macro_development_dependencies() {
 }
 
 #[test]
-fn stream_media_is_common_and_oauth_json_remains_feature_owned() {
-    let disabled = core_feature_tree(None, "dependency-policy/core-oauth-disabled");
+fn stream_media_is_common_and_oauth_json_is_extras_owned() {
+    let core = core_feature_tree(None, "dependency-policy/core-oauth-removed");
     assert!(
-        has_direct_package(&disabled, "mime"),
-        "stream media validation requires common mime support\n{disabled}"
+        has_direct_package(&core, "mime"),
+        "stream media validation requires common mime support\n{core}"
     );
     for package in ["serde", "serde_json"] {
         assert!(
-            !has_direct_package(&disabled, package),
-            "OAuth-disabled core unexpectedly activates {package}\n{disabled}"
+            !has_direct_package(&core, package),
+            "core unexpectedly retains OAuth parser dependency {package}\n{core}"
         );
     }
 
-    let enabled = core_feature_tree(
+    let oauth = extras_feature_tree(
         Some("oauth2-client"),
-        "dependency-policy/core-oauth-enabled",
+        "dependency-policy/extras-oauth-enabled",
     );
-    assert!(has_direct_package(&enabled, "mime"), "{enabled}");
-    assert!(has_direct_package(&enabled, "serde_json"), "{enabled}");
+    for package in ["bytes", "http", "serde_json", "url"] {
+        assert!(
+            has_direct_package(&oauth, package),
+            "OAuth extra omitted {package}\n{oauth}"
+        );
+    }
     assert!(
-        !has_direct_package(&enabled, "csv"),
-        "OAuth support unexpectedly activates CSV\n{enabled}"
+        !has_direct_package(&oauth, "csv") && !has_direct_package(&oauth, "mime"),
+        "OAuth support unexpectedly activates CSV or MIME\n{oauth}"
+    );
+
+    let metadata = workspace_metadata();
+    let core = package_metadata(&metadata, "concord_core");
+    let extras = package_metadata(&metadata, "concord_extras");
+    let facade = package_metadata(&metadata, "concord");
+    assert!(
+        !core["features"]
+            .as_object()
+            .expect("core features")
+            .contains_key("oauth2-client"),
+        "core retains concrete OAuth feature ownership"
+    );
+    assert_eq!(
+        extras["features"]["oauth2-client"],
+        serde_json::json!(["dep:bytes", "dep:http", "dep:serde_json", "dep:url"])
+    );
+    assert_eq!(
+        facade["features"]["oauth2-client"],
+        serde_json::json!(["concord_extras/oauth2-client"])
     );
 }
 
@@ -365,7 +389,7 @@ fn moved_codec_and_record_dependencies_are_extras_owned_and_isolated() {
     let metadata = workspace_metadata();
     let core = package_metadata(&metadata, "concord_core");
     let core_features = core["features"].as_object().expect("core features");
-    for moved in ["json", "csv", "ndjson"] {
+    for moved in ["json", "csv", "ndjson", "oauth2-client"] {
         assert!(
             !core_features.contains_key(moved),
             "core retains moved feature {moved}"

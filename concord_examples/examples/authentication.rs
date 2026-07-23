@@ -2,6 +2,7 @@
 
 use concord::Request;
 use concord::api;
+use concord::auth::OAuth2ClientCredentials;
 
 api! {
     client AuthenticationApi {
@@ -11,19 +12,12 @@ api! {
             secret bearer_token: String;
             secret username: String;
             secret password: String;
-            secret client_id: String;
-            secret client_secret: String;
             credential application_key = api_key(secret.api_key);
             credential static_bearer = bearer(secret.bearer_token);
             credential login = basic(secret.username, secret.password);
-            credential oauth = oauth2_client {
-                token_url: "https://identity.example.test/oauth/token",
-                client_id: secret.client_id,
-                client_secret: secret.client_secret,
-                scope: "records.read",
-            };
+            credential oauth = custom OAuth2ClientCredentials;
             credential acquired = endpoint Login;
-            credential custom = custom concord_examples::ExampleToken;
+            credential custom = custom concord_examples::ExampleProvider;
         }
     }
 
@@ -31,23 +25,27 @@ api! {
     GET ApiKey() -> NoContent { auth header "X-Api-Key" = application_key; }
     GET Bearer() -> NoContent { auth bearer static_bearer; }
     GET Basic() -> NoContent { auth basic login; }
-    GET OAuth() -> NoContent { auth bearer oauth; }
+    GET OAuth() -> NoContent { auth bearer oauth challenge unauthorized; }
     GET EndpointBacked() -> NoContent { auth query "session" = acquired challenge never; }
     GET ProviderBacked() -> NoContent { auth bearer custom challenge never; }
 }
 
-fn main() -> Result<(), concord::prelude::ClientBuildError> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     use authentication_api::prelude::*;
 
-    let client = AuthenticationApi::new(
-        "example-api-key",
-        "example-bearer",
-        "example-user",
-        "example-password",
-        "example-client",
-        "example-client-secret",
-        concord_examples::ExampleProvider,
-    )?;
+    let oauth = OAuth2ClientCredentials::builder("https://identity.example.test/oauth/token")
+        .client_id("example-client")
+        .client_secret("example-client-secret")
+        .scope("records.read")
+        .build()?;
+    let client = AuthenticationApi::builder()
+        .api_key("example-api-key")
+        .bearer_token("example-bearer")
+        .username("example-user")
+        .password("example-password")
+        .oauth_provider(oauth)
+        .custom_provider(concord_examples::ExampleProvider)
+        .build()?;
     let _: Request<_> = client.api_key();
     let _: Request<_> = client.bearer();
     let _: Request<_> = client.basic();

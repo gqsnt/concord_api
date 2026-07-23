@@ -14,7 +14,7 @@ This page maps the public namespaces, generated capabilities, request and respon
 | Request bodies | JSON, text, bytes, stream, multipart | codecs, `RequestBodySpec`, factories | one managed `RequestBody` |
 | Responses | JSON, text, bytes, no-content, stream, records | `ResponseBodySpec` | buffered/streaming/discard only |
 | Metadata | `.response()` / `ApiResponse<T>` | arbitrary semantic `T` | no native response |
-| Authentication | API key, bearer, Basic, OAuth2, endpoint-backed | custom provider, provider HTTP | private native materialization |
+| Authentication | API key, bearer, Basic, endpoint-backed | OAuth2/client-defined provider, provider HTTP | private native materialization |
 | Pagination | offset, page, cursor | custom controller | sequential all-or-error vector |
 | Rate limiting | lexical rules, default observer | custom limiter/observer, prepared explicit keys | generated keys are global |
 | Records | CSV, NDJSON | custom `RecordDecoder` | bounded staging over `ByteStream` |
@@ -416,15 +416,15 @@ This page maps the stable public namespaces to the manual. Rustdoc remains the s
 | Successful responses | `ApiResponse`, `DecodedResponse`, `ByteStream`, `NoContent` | [Response API](api.md#response-api-reference) |
 | Body specifications | `RequestBody`, `Stream`, `StreamBody`, optional `Multipart` | [Request bodies](../basic/bodies-and-responses.md#request-bodies) |
 | Buffered specifications | `Json`, `Text`, `Bytes`, `OctetStream` | [Bodies and responses](dsl.md#dsl-bodies-and-responses) |
-| Protected materials | `SecretString`, `AccessToken`, `ApiKey`, `BasicCredential` | [Authentication](../basic/authentication.md#authentication) |
+| Authentication | `concord::auth` materials/provider contracts and optional `OAuth2ClientCredentials` | [Authentication](../basic/authentication.md#authentication) |
 | Records | `Records`, `RecordStream`, `RecordBatches`, optional `Csv`, `NdJson` | [Records](../basic/streaming-records-and-multipart.md#records-csv-and-ndjson) |
 | Errors and debug | `ApiError`, build/configuration errors, `ErrorCategory`, `DebugLevel` | [Error reference](features-limits-and-errors.md#error-reference) |
 
-### `concord_core::advanced`
+### `concord::advanced`
 
 #### Authentication
 
-`Auth`, `ChallengePolicy`, `CredentialHandle`, `CredentialMaterial`, `CredentialProvider`, `CredentialReason`, `CredentialRef`, `CredentialRequest`, `RecoveryMode`, and `SecretCredential` support custom provider and mutation workflows.
+`Auth`, `ChallengePolicy`, `CredentialHandle`, `CredentialMaterial`, `CredentialProvider`, `CredentialReason`, `CredentialRef`, `CredentialRequest`, `RecoveryMode`, and `SecretCredential` support custom provider and mutation workflows. The ordinary material/provider namespace is `concord::auth`; with `oauth2-client`, it also exports `OAuth2ClientCredentials` and its named builder/error types.
 
 See [Custom credential providers](../advanced/authentication-hooks-and-debug.md#custom-credential-providers).
 

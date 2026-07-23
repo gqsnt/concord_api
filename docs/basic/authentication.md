@@ -7,7 +7,7 @@ Authentication is declared separately from request shaping. Credentials remain p
 
 ## Authentication
 
-Authentication is declared in a client `credentials` block and placed at client, scope, or endpoint layers. Secret values are constructor inputs but are not public request-shaping expressions.
+Authentication is declared in a client `credentials` block and placed at client, scope, or endpoint layers. Static secret values and custom providers are named client-builder inputs; neither is a public request-shaping expression.
 
 ```rust
 credentials {
@@ -24,27 +24,26 @@ credentials {
 
 ### Credential sources
 
-Concord supports six source categories:
+Concord supports five source forms:
 
 1. static API key;
 2. static bearer token;
 3. Basic username/password;
-4. OAuth2 client credentials;
-5. endpoint-backed acquisition;
-6. application-defined `CredentialProvider`.
+4. endpoint-backed acquisition;
+5. a Rust type implementing `CredentialProvider`.
 
-OAuth2 example:
+OAuth2 client credentials use the ordinary custom-provider form:
 
 ```rust
-credential oauth = oauth2_client {
-    token_url: "https://identity.example.com/oauth/token",
-    client_id: secret.client_id,
-    client_secret: secret.client_secret,
-    scope: "records.read",
-};
+use concord::auth::OAuth2ClientCredentials;
+
+// In the declaration:
+credential oauth = custom OAuth2ClientCredentials;
 ```
 
-Endpoint-backed and custom-provider sources are covered in the advanced guide.
+The macro treats the provider path as an opaque Rust type and derives credential
+placement compatibility from its associated material. Endpoint-backed and
+application-defined providers are covered in the advanced guide.
 
 ### Placements
 
@@ -85,7 +84,7 @@ Authentication material is added only to the native request after safe request d
 
 ### Credential handles
 
-Generated clients expose a credentials facade for source-appropriate operations. Clones share credential slots. Depending on source, handles can expose read-only references, presence checks, set/replace, or clear operations. Generic mutation is intentionally not available for every source.
+Generated clients expose a credentials facade for source-appropriate operations. Clones share credential slots. Depending on source, handles can expose read-only references, presence checks, set/replace, clear, or same-material provider replacement. Generic mutation is intentionally not available for every source.
 
 ### HTTPS
 
@@ -95,19 +94,14 @@ For custom acquisition, see [Custom credential providers](../advanced/authentica
 
 ## OAuth2 client credentials
 
-Declare secrets and an OAuth2 source:
+Enable `oauth2-client`, import the extras-owned provider through the façade, and
+declare it as an ordinary provider type:
 
 ```rust
-credentials {
-    secret client_id: String;
-    secret client_secret: String;
+use concord::auth::OAuth2ClientCredentials;
 
-    credential oauth = oauth2_client {
-        token_url: "https://identity.example.com/oauth/token",
-        client_id: secret.client_id,
-        client_secret: secret.client_secret,
-        scope: "inventory.read",
-    };
+credentials {
+    credential oauth = custom OAuth2ClientCredentials;
 }
 
 auth bearer oauth challenge unauthorized;
@@ -126,7 +120,27 @@ auth bearer oauth challenge unauthorized;
 
 ### Construction
 
-The generated builder requires the secret strings. They become protected material; they are not public client values and cannot be referenced by host/path/query/header expressions.
+Construct the provider with named, secret-safe inputs, then pass it to the
+generated client builder:
+
+```rust
+let oauth = OAuth2ClientCredentials::builder(
+    "https://identity.example.com/oauth/token",
+)
+.client_id(client_id)
+.client_secret(client_secret)
+.scope("inventory.read")
+.build()?;
+
+let client = InventoryApi::builder()
+    .oauth_provider(oauth)
+    .build()?;
+```
+
+The provider builder validates an absolute HTTPS URL with a host and rejects
+userinfo, passwords, and fragments. Its `Debug`, build errors, and provider
+`Debug` output never include the URL, client identifier, client secret, or
+scope. The generated client never accepts these OAuth secrets positionally.
 
 ### Recovery
 
@@ -138,7 +152,7 @@ Provider request and response limits default to 1 MiB. The token request runs un
 
 ### When to use a custom provider
 
-Use `CredentialProvider` when the token protocol is not OAuth2 client credentials, material comes from a signer or secure service, or custom refresh/recovery policy is required. Keep provider traffic isolated through `ProviderHttp` when HTTP is needed.
+Use another `CredentialProvider` when the token protocol is not OAuth2 client credentials, material comes from a signer or secure service, or custom refresh/recovery policy is required. A generated custom-provider handle accepts replacement by any provider with the same associated material type. Keep provider traffic isolated through `ProviderHttp` when HTTP is needed.
 
 ### Logging
 

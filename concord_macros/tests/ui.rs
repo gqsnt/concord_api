@@ -105,6 +105,12 @@ fn generated_custom_provider_handles_do_not_expose_direct_set() {
 }
 
 #[test]
+fn custom_provider_material_must_match_its_authentication_placement() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/fail/authentication_custom_material_incompatible.rs");
+}
+
+#[test]
 fn credential_references_do_not_expose_mutation() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/fail/authentication_credential_ref_mutation_absent.rs");

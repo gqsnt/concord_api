@@ -31,7 +31,7 @@ Default façade features are `default-tls`, `http2`, and
 installs the extras-owned governor; add only what the client uses:
 
 - `json` for the extras-owned `Json<T>` codec.
-- `oauth2-client` for the temporary legacy OAuth2 client-credential helper.
+- `oauth2-client` for the extras-owned OAuth2 client-credentials provider.
 - `multipart` for multipart request bodies.
 - `records` for the generic record-stream API.
 - `csv` for typed CSV records; it enables `records`.

@@ -30,6 +30,20 @@ pub trait CredentialProvider: Send + Sync + 'static {
 
 Only `acquire` is required; the default `refresh` delegates to it and the default recovery mode is `Refresh`.
 
+Declare the provider type, not its material type:
+
+```rust
+credentials {
+    credential session = custom crate::SessionProvider;
+}
+```
+
+The generated `.session_provider(provider)` builder setter accepts any provider
+whose material equals
+`<SessionProvider as CredentialProvider>::Material`. The corresponding
+credential handle exposes `replace_provider` with the same bound, allowing safe
+rotation without giving the macro any provider-specific knowledge.
+
 ### Material
 
 `CredentialMaterial` is cloneable, sendable, shared, and may expose an expiration instant. `SecretCredential` additionally exposes the secret string only to private authentication materialization.

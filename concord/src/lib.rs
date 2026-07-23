@@ -23,6 +23,20 @@ pub use concord_core::{PageLimit, PaginatedRequest, Request, ResponseRequest};
 pub use concord_extras::codec::Json;
 pub use concord_extras::pagination::{CursorPagination, OffsetPagination, PagePagination};
 
+/// Credential material, provider contracts, and enabled first-party providers.
+pub mod auth {
+    pub use concord_core::advanced::{
+        Auth, AuthError, ChallengePolicy, CredentialHandle, CredentialMaterial, CredentialProvider,
+        CredentialReason, CredentialRef, CredentialRequest, RecoveryMode, SecretCredential,
+    };
+    pub use concord_core::prelude::{AccessToken, ApiKey, BasicCredential, SecretString};
+    #[cfg(feature = "oauth2-client")]
+    pub use concord_extras::auth::{
+        OAuth2ClientCredentials, OAuth2ClientCredentialsBuildError,
+        OAuth2ClientCredentialsBuildErrorKind, OAuth2ClientCredentialsBuilder,
+    };
+}
+
 /// Buffered codec contracts, primitives, and enabled ecosystem codecs.
 pub mod codec {
     pub use concord_core::codec::{
@@ -154,16 +168,8 @@ pub mod __private {
         TimeoutOverride, Url, assert_generated_contract, build_client_core, credential_store_error,
         default_http_config, default_http_config_with_custom_retry,
         duplicate_http_configuration_error, duplicate_runtime_configuration_error,
-        inspect_endpoint, map_endpoint, missing_input_error, oauth2_client_credentials,
-        oauth2_client_credentials_for_replace, paginate_request, request,
+        inspect_endpoint, map_endpoint, missing_input_error, paginate_request, request,
     };
-
-    /// Produces a focused diagnostic for the transitional built-in OAuth2 syntax.
-    #[doc(hidden)]
-    pub const fn assert_oauth2_client_feature() {
-        #[cfg(not(feature = "oauth2-client"))]
-        panic!("Concord `oauth2_client` requires the `concord/oauth2-client` feature");
-    }
 
     /// Produces a focused const-evaluation diagnostic when multipart is unavailable.
     #[doc(hidden)]

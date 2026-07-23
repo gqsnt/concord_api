@@ -335,7 +335,7 @@ fn missing_core_dependency_has_a_focused_macro_diagnostic() {
 fn incompatible_core_contract_fails_during_compilation() {
     assert_fixture_fails_with(
         "contract_mismatch",
-        "concord macro/core contract mismatch: core 999, generated 17",
+        "concord macro/core contract mismatch: core 999, generated 18",
     );
 }
 
@@ -356,11 +356,8 @@ fn json_body_and_response_without_runtime_feature_fail_through_core_type_availab
 }
 
 #[test]
-fn oauth_without_temporary_provider_feature_has_a_focused_diagnostic() {
-    assert_fixture_fails_with(
-        "oauth_disabled",
-        "Concord `oauth2_client` requires the `concord/oauth2-client` feature",
-    );
+fn oauth_provider_is_absent_without_its_facade_feature() {
+    assert_fixture_fails_with("oauth_disabled", "no `OAuth2ClientCredentials` in `auth`");
 }
 
 #[test]

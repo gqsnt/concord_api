@@ -4,8 +4,6 @@
 
 mod error;
 mod material;
-#[cfg(feature = "oauth2-client")]
-mod oauth2;
 mod placement;
 mod provider;
 mod slot;
@@ -17,8 +15,6 @@ pub use error::AuthError;
 pub use material::{
     AccessToken, ApiKey, BasicCredential, CredentialMaterial, SecretCredential, SecretString,
 };
-#[cfg(feature = "oauth2-client")]
-pub(crate) use oauth2::OAuth2ClientCredentials;
 pub use placement::{Auth, ChallengePolicy};
 pub use provider::{CredentialProvider, CredentialReason, CredentialRequest, RecoveryMode};
 pub use slot::{CredentialHandle, CredentialRef};

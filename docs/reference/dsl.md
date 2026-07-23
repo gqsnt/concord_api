@@ -374,9 +374,8 @@ credentials {
     credential api = api_key(secret.key);
     credential bearer_token = bearer(secret.token);
     credential basic_login = basic(secret.user, secret.password);
-    credential oauth = oauth2_client { ... };
     credential acquired = endpoint Login;
-    credential custom = custom crate::Provider;
+    credential provider = custom crate::Provider;
 }
 ```
 
@@ -385,9 +384,12 @@ Sources:
 - `api_key(secret.NAME)`
 - `bearer(secret.NAME)`
 - `basic(secret.USER, secret.PASSWORD)`
-- OAuth2 client block with `token_url`, `client_id`, `client_secret`, optional `scope`
 - `endpoint EndpointName`
-- `custom RustPath`
+- `custom RustTypePath`, where the type implements `CredentialProvider`
+
+The custom type names the provider, not its material. Generated storage and
+authentication placement use `<Provider as CredentialProvider>::Material`.
+The macro does not recognize OAuth2 or any provider implementation name.
 
 ### Placement
 

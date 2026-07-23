@@ -127,18 +127,12 @@ pub(crate) enum CredentialSource {
         username: usize,
         password: usize,
     },
-    OAuth2Client {
-        token_url: LitStr,
-        client_id: usize,
-        client_secret: usize,
-        scope: Option<LitStr>,
-    },
     Endpoint {
         path: Path,
         endpoint_id: Option<usize>,
     },
     Custom {
-        material: Type,
+        provider: Type,
     },
 }
 

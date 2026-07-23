@@ -33,8 +33,6 @@ mod keyword {
     syn::custom_keyword!(by);
     syn::custom_keyword!(challenge);
     syn::custom_keyword!(client);
-    syn::custom_keyword!(client_id);
-    syn::custom_keyword!(client_secret);
     syn::custom_keyword!(credential);
     syn::custom_keyword!(credentials);
     syn::custom_keyword!(cost);
@@ -47,7 +45,6 @@ mod keyword {
     syn::custom_keyword!(METHOD);
     syn::custom_keyword!(method);
     syn::custom_keyword!(off);
-    syn::custom_keyword!(oauth2_client);
     syn::custom_keyword!(observe);
     syn::custom_keyword!(paginate);
     syn::custom_keyword!(path);
@@ -61,7 +58,6 @@ mod keyword {
     syn::custom_keyword!(retry);
     syn::custom_keyword!(scope);
     syn::custom_keyword!(secret);
-    syn::custom_keyword!(token_url);
     syn::custom_keyword!(timeout);
     syn::custom_keyword!(var);
     syn::custom_keyword!(never);
@@ -912,10 +908,6 @@ fn parse_credential_source(
         }
         return Ok(CredentialSource::Basic { username, password });
     }
-    if input.peek(keyword::oauth2_client) {
-        input.parse::<keyword::oauth2_client>()?;
-        return parse_oauth2_source(input, declared_secrets);
-    }
     if input.peek(keyword::endpoint) {
         input.parse::<keyword::endpoint>()?;
         return Ok(CredentialSource::Endpoint {
@@ -924,17 +916,16 @@ fn parse_credential_source(
     }
     if input.peek(keyword::custom) {
         input.parse::<keyword::custom>()?;
-        let material: Type = input.parse()?;
-        if !matches!(material, Type::Path(_)) {
-            return Err(material
+        let provider: Type = input.parse()?;
+        if !matches!(provider, Type::Path(_)) {
+            return Err(provider
                 .span()
-                .error("a custom credential material must be a Rust type path"));
+                .error("a custom credential provider must be a Rust type path"));
         }
-        return Ok(CredentialSource::Custom { material });
+        return Ok(CredentialSource::Custom { provider });
     }
-    Err(input.error(
-        "credential source must be `api_key`, `bearer`, `basic`, `oauth2_client`, `endpoint`, or `custom`",
-    ))
+    Err(input
+        .error("credential source must be `api_key`, `bearer`, `basic`, `endpoint`, or `custom`"))
 }
 
 fn parse_secret_reference(
@@ -951,74 +942,6 @@ fn parse_secret_reference(
         )));
     }
     Ok(name)
-}
-
-fn parse_oauth2_source(
-    input: ParseStream<'_>,
-    declared_secrets: &HashSet<String>,
-) -> syn::Result<CredentialSource> {
-    let body;
-    braced!(body in input);
-    let mut token_url = None;
-    let mut client_id = None;
-    let mut client_secret = None;
-    let mut scope = None;
-    let mut fields = HashSet::new();
-    while !body.is_empty() {
-        let field: Ident = body.parse()?;
-        let field_name = canonical_ident(&field);
-        if !fields.insert(field_name.clone()) {
-            return Err(field
-                .span()
-                .error(format!("duplicate OAuth2 field `{field_name}`")));
-        }
-        body.parse::<Token![:]>()?;
-        match field_name.as_str() {
-            "token_url" => {
-                let literal: LitStr = body.parse()?;
-                let parsed = Url::parse(&literal.value()).map_err(|_| {
-                    literal
-                        .span()
-                        .error("OAuth2 token_url must be an absolute HTTPS URL")
-                })?;
-                if parsed.scheme() != "https"
-                    || parsed.host().is_none()
-                    || !parsed.username().is_empty()
-                    || parsed.password().is_some()
-                    || parsed.fragment().is_some()
-                {
-                    return Err(literal.span().error(
-                        "OAuth2 token_url must use HTTPS with a host and no user information or fragment",
-                    ));
-                }
-                token_url = Some(literal);
-            }
-            "client_id" => {
-                client_id = Some(parse_secret_reference(&body, declared_secrets)?);
-            }
-            "client_secret" => {
-                client_secret = Some(parse_secret_reference(&body, declared_secrets)?);
-            }
-            "scope" => scope = Some(body.parse()?),
-            _ => {
-                return Err(field
-                    .span()
-                    .error(format!("unknown OAuth2 field `{field_name}`")));
-            }
-        }
-        if body.peek(Token![,]) {
-            body.parse::<Token![,]>()?;
-        } else if !body.is_empty() {
-            return Err(body.error("OAuth2 fields must be separated by commas"));
-        }
-    }
-    Ok(CredentialSource::OAuth2Client {
-        token_url: token_url.ok_or_else(|| input.error("OAuth2 requires `token_url`"))?,
-        client_id: client_id.ok_or_else(|| input.error("OAuth2 requires `client_id`"))?,
-        client_secret: client_secret
-            .ok_or_else(|| input.error("OAuth2 requires `client_secret`"))?,
-        scope,
-    })
 }
 
 fn parse_auth(input: ParseStream<'_>) -> syn::Result<AuthOperation> {
@@ -1994,26 +1917,18 @@ mod tests {
                     secret bearer: String;
                     secret username: String;
                     secret password: String;
-                    secret client_id: String;
-                    secret client_secret: String;
                     credential key = api_key(secret.api_key);
                     credential token = bearer(secret.bearer);
                     credential login = basic(secret.username, secret.password);
-                    credential oauth = oauth2_client {
-                        token_url: "https://auth.example.test/token",
-                        client_id: secret.client_id,
-                        client_secret: secret.client_secret,
-                        scope: "users.read",
-                    };
                     credential acquired = endpoint Login;
-                    credential custom = custom crate::SessionToken;
+                    credential custom = custom crate::SessionProvider;
                 }
             }
             GET Login() -> Bytes;
         });
         let credentials = api.client.credentials.as_ref().expect("credentials block");
-        assert_eq!(credentials.secrets.len(), 6);
-        assert_eq!(credentials.credentials.len(), 6);
+        assert_eq!(credentials.secrets.len(), 4);
+        assert_eq!(credentials.credentials.len(), 5);
 
         let error = parse(quote! {
             client AuthApi {
@@ -2099,7 +2014,7 @@ mod tests {
     }
 
     #[test]
-    fn oauth_fields_and_secret_shapes_have_focused_diagnostics() {
+    fn secret_shapes_and_custom_provider_paths_have_focused_diagnostics() {
         let optional = parse(quote! {
             client AuthApi {
                 base "https://example.test";
@@ -2110,42 +2025,21 @@ mod tests {
         .expect("optional secret");
         assert!(optional.to_string().contains("required `String`"));
 
-        let unsafe_url = parse(quote! {
+        let non_path_provider = parse(quote! {
             client AuthApi {
                 base "https://example.test";
                 credentials {
-                    secret id: String;
-                    secret secret: String;
-                    credential oauth = oauth2_client {
-                        token_url: "http://auth.example.test/token",
-                        client_id: secret.id,
-                        client_secret: secret.secret,
-                    };
+                    credential session = custom (crate::Provider,);
                 }
             }
         })
         .err()
-        .expect("cleartext OAuth URL");
-        assert!(unsafe_url.to_string().contains("must use HTTPS"));
-
-        let duplicate = parse(quote! {
-            client AuthApi {
-                base "https://example.test";
-                credentials {
-                    secret id: String;
-                    secret secret: String;
-                    credential oauth = oauth2_client {
-                        token_url: "https://auth.example.test/token",
-                        token_url: "https://auth.example.test/other",
-                        client_id: secret.id,
-                        client_secret: secret.secret,
-                    };
-                }
-            }
-        })
-        .err()
-        .expect("duplicate OAuth field");
-        assert!(duplicate.to_string().contains("duplicate OAuth2 field"));
+        .expect("non-path provider type");
+        assert!(
+            non_path_provider
+                .to_string()
+                .contains("provider must be a Rust type path")
+        );
     }
 
     #[test]

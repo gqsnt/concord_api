@@ -113,14 +113,21 @@ const CLIENT_PRIVATE_KEY_DER_BASE64: &str = concat!(
 #[derive(Clone)]
 pub struct TlsRequest {
     connection_id: u64,
+    method: String,
     target: String,
     headers: Vec<(String, String)>,
+    body: Vec<u8>,
 }
 
 impl TlsRequest {
     #[must_use]
     pub fn connection_id(&self) -> u64 {
         self.connection_id
+    }
+
+    #[must_use]
+    pub fn method(&self) -> &str {
+        &self.method
     }
 
     #[must_use]
@@ -135,11 +142,21 @@ impl TlsRequest {
             .find(|(candidate, _)| candidate.eq_ignore_ascii_case(name))
             .map(|(_, value)| value.as_str())
     }
+
+    #[must_use]
+    pub fn body(&self) -> &[u8] {
+        &self.body
+    }
+}
+
+struct TlsResponse {
+    status: u16,
+    body: Vec<u8>,
 }
 
 struct Shared {
     requests: Mutex<Vec<TlsRequest>>,
-    statuses: Mutex<VecDeque<u16>>,
+    responses: Mutex<VecDeque<TlsResponse>>,
     changed: Condvar,
     stop: AtomicBool,
     next_connection: AtomicU64,
@@ -189,7 +206,7 @@ impl TlsServer {
         let address = listener.local_addr()?;
         let shared = Arc::new(Shared {
             requests: Mutex::new(Vec::new()),
-            statuses: Mutex::new(VecDeque::new()),
+            responses: Mutex::new(VecDeque::new()),
             changed: Condvar::new(),
             stop: AtomicBool::new(false),
             next_connection: AtomicU64::new(1),
@@ -213,6 +230,11 @@ impl TlsServer {
 
     /// Queues one response status for the next request; an empty queue defaults to `200`.
     pub fn queue_status(&self, status: u16) -> io::Result<()> {
+        self.queue_response(status, b"ok".to_vec())
+    }
+
+    /// Queues one status and complete response body for the next request.
+    pub fn queue_response(&self, status: u16, body: impl Into<Vec<u8>>) -> io::Result<()> {
         if !(200..=599).contains(&status) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -220,10 +242,13 @@ impl TlsServer {
             ));
         }
         self.shared
-            .statuses
+            .responses
             .lock()
             .map_err(|_| io::Error::other("TLS response queue mutex poisoned"))?
-            .push_back(status);
+            .push_back(TlsResponse {
+                status,
+                body: body.into(),
+            });
         Ok(())
     }
 
@@ -352,16 +377,21 @@ fn handle_tls(tcp: TcpStream, connection_id: u64, config: Arc<ServerConfig>, sha
             requests.push(request);
             shared.changed.notify_all();
         }
-        let status = shared
-            .statuses
+        let response = shared
+            .responses
             .lock()
             .expect("TLS response queue mutex poisoned")
             .pop_front()
-            .unwrap_or(200);
-        let response = format!(
-            "HTTP/1.1 {status} Scripted\r\nContent-Length: 2\r\nConnection: keep-alive\r\n\r\nok"
+            .unwrap_or_else(|| TlsResponse {
+                status: 200,
+                body: b"ok".to_vec(),
+            });
+        let head = format!(
+            "HTTP/1.1 {} Scripted\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n",
+            response.status,
+            response.body.len()
         );
-        if stream.write_all(response.as_bytes()).is_err() {
+        if stream.write_all(head.as_bytes()).is_err() || stream.write_all(&response.body).is_err() {
             return;
         }
         if stream.flush().is_err() {
@@ -371,11 +401,14 @@ fn handle_tls(tcp: TcpStream, connection_id: u64, config: Arc<ServerConfig>, sha
 }
 
 fn read_request(stream: &mut impl Read, connection_id: u64) -> Option<TlsRequest> {
+    const MAX_HEAD_BYTES: usize = 16 * 1024;
+    const MAX_BODY_BYTES: usize = 1024 * 1024;
+
     let mut bytes = Vec::new();
     let mut block = [0_u8; 1024];
     while bytes.windows(4).all(|window| window != b"\r\n\r\n") {
         let count = stream.read(&mut block).ok()?;
-        if count == 0 || bytes.len() + count > 16 * 1024 {
+        if count == 0 || bytes.len() + count > MAX_HEAD_BYTES {
             return None;
         }
         bytes.extend_from_slice(&block[..count]);
@@ -383,14 +416,34 @@ fn read_request(stream: &mut impl Read, connection_id: u64) -> Option<TlsRequest
     let end = bytes.windows(4).position(|window| window == b"\r\n\r\n")?;
     let text = std::str::from_utf8(&bytes[..end]).ok()?;
     let mut lines = text.split("\r\n");
-    let target = lines.next()?.split_whitespace().nth(1)?.to_owned();
+    let mut request_line = lines.next()?.split_whitespace();
+    let method = request_line.next()?.to_owned();
+    let target = request_line.next()?.to_owned();
     let headers = lines
         .filter_map(|line| line.split_once(':'))
         .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_owned()))
-        .collect();
+        .collect::<Vec<_>>();
+    let body_length = headers
+        .iter()
+        .find(|(name, _)| name == "content-length")
+        .map_or(Some(0), |(_, value)| value.parse::<usize>().ok())?;
+    if body_length > MAX_BODY_BYTES {
+        return None;
+    }
+    let body_start = end + 4;
+    let total = body_start.checked_add(body_length)?;
+    while bytes.len() < total {
+        let count = stream.read(&mut block).ok()?;
+        if count == 0 || bytes.len() + count > total {
+            return None;
+        }
+        bytes.extend_from_slice(&block[..count]);
+    }
     Some(TlsRequest {
         connection_id,
+        method,
         target,
         headers,
+        body: bytes[body_start..total].to_vec(),
     })
 }

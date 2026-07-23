@@ -30,7 +30,6 @@ fn custom_retry_is_available_without_other_dangerous_or_optional_features() {
     assert!(!cfg!(feature = "dangerous-raw-response"));
     assert!(!cfg!(feature = "default-tls"));
     assert!(!cfg!(feature = "http2"));
-    assert!(!cfg!(feature = "oauth2-client"));
     assert!(!cfg!(feature = "multipart"));
     assert!(!cfg!(feature = "gzip"));
     assert!(!cfg!(feature = "brotli"));
@@ -43,7 +42,6 @@ fn custom_retry_is_available_without_other_dangerous_or_optional_features() {
     not(feature = "dangerous-raw-response"),
     not(feature = "default-tls"),
     not(feature = "http2"),
-    not(feature = "oauth2-client"),
     not(feature = "multipart"),
     not(feature = "gzip"),
     not(feature = "brotli"),
@@ -59,7 +57,6 @@ fn development_tools_are_available_without_other_dangerous_or_optional_features(
     assert!(!cfg!(feature = "dangerous-raw-response"));
     assert!(!cfg!(feature = "default-tls"));
     assert!(!cfg!(feature = "http2"));
-    assert!(!cfg!(feature = "oauth2-client"));
     assert!(!cfg!(feature = "multipart"));
     assert!(!cfg!(feature = "gzip"));
     assert!(!cfg!(feature = "brotli"));
@@ -110,7 +107,6 @@ fn raw_response_api_is_available_without_other_dangerous_or_optional_features() 
     assert!(!cfg!(feature = "dangerous-dev-tools"));
     assert!(!cfg!(feature = "default-tls"));
     assert!(!cfg!(feature = "http2"));
-    assert!(!cfg!(feature = "oauth2-client"));
     assert!(!cfg!(feature = "multipart"));
     assert!(!cfg!(feature = "gzip"));
     assert!(!cfg!(feature = "brotli"));

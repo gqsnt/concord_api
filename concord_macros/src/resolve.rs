@@ -448,9 +448,6 @@ impl Resolver<'_> {
                         let challenge = match placement.challenge {
                             Some(challenge) => challenge,
                             None => match source {
-                                CredentialSource::OAuth2Client { .. } => {
-                                    AuthChallenge::Unauthorized
-                                }
                                 CredentialSource::Custom { .. } => {
                                     return Err(placement.credential.span().error(
                                         "an auth placement using a custom provider requires an explicit challenge suffix",
@@ -679,22 +676,11 @@ fn convert_credentials(
                 username: secret_index[&canonical_ident(&username)],
                 password: secret_index[&canonical_ident(&password)],
             },
-            SourceCredentialSource::OAuth2Client {
-                token_url,
-                client_id,
-                client_secret,
-                scope,
-            } => CredentialSource::OAuth2Client {
-                token_url,
-                client_id: secret_index[&canonical_ident(&client_id)],
-                client_secret: secret_index[&canonical_ident(&client_secret)],
-                scope,
-            },
             SourceCredentialSource::Endpoint { path } => CredentialSource::Endpoint {
                 path,
                 endpoint_id: None,
             },
-            SourceCredentialSource::Custom { material } => CredentialSource::Custom { material },
+            SourceCredentialSource::Custom { provider } => CredentialSource::Custom { provider },
         };
         credentials.push(Credential {
             name: credential.name,
@@ -726,9 +712,7 @@ fn validate_auth_compatibility(
                 AuthPlacementKind::Header(_) | AuthPlacementKind::Query(_)
             )
         }
-        CredentialSource::Bearer { .. } | CredentialSource::OAuth2Client { .. } => {
-            matches!(placement, AuthPlacementKind::Bearer)
-        }
+        CredentialSource::Bearer { .. } => matches!(placement, AuthPlacementKind::Bearer),
         CredentialSource::Basic { .. } => matches!(placement, AuthPlacementKind::Basic),
         CredentialSource::Endpoint { .. } | CredentialSource::Custom { .. } => true,
     };
@@ -1698,23 +1682,17 @@ mod tests {
                 credentials {
                     secret key_value: String;
                     secret bearer_value: String;
-                    secret client_id: String;
-                    secret client_secret: String;
                     credential key = api_key(secret.key_value);
                     credential bearer = bearer(secret.bearer_value);
-                    credential oauth = oauth2_client {
-                        token_url: "https://auth.example.test/token",
-                        client_id: secret.client_id,
-                        client_secret: secret.client_secret,
-                    };
+                    credential rotating = custom crate::RotatingProvider;
                     credential acquired = endpoint Login;
-                    credential custom = custom crate::SessionToken;
+                    credential custom = custom crate::SessionProvider;
                 }
                 auth header "X-Api-Key" = key;
             }
             GET Login() -> Bytes;
             scope Secured() {
-                auth bearer oauth;
+                auth bearer rotating challenge unauthorized;
                 GET Inherited() -> Bytes;
                 GET Replaced() -> Bytes {
                     auth replace bearer bearer;
@@ -1786,7 +1764,7 @@ mod tests {
         let custom = error(quote! {
             client Api {
                 base "https://example.test";
-                credentials { credential session = custom crate::SessionToken; }
+                credentials { credential session = custom crate::SessionProvider; }
             }
             GET Read() -> Bytes { auth bearer session; }
         });
