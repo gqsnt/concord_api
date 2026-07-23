@@ -8,9 +8,9 @@ use std::time::Duration;
 use concord_core::advanced::{
     Auth, BodyError, BodyFactory, BoxFuture, ChallengePolicy, CodecError, DecodeBody,
     DecodeContext, EncodeBody, EncodeContext, ErrorCategory, HeaderName, HookError, MediaType,
-    Method, MultipartBody, MultipartFactory, MultipartPart, NoopRateLimiter, PreparedEndpoint,
-    PreparedEndpointBuilder, RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart,
-    RateLimitPermit, RateLimitRequest, RateLimitRule, RateLimitWindow, RateLimiter, RequestBody,
+    Method, MultipartBody, MultipartFactory, MultipartPart, NoopRateLimiter, RateLimitError,
+    RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitRequest, RateLimitRule,
+    RateLimitWindow, RateLimiter, RequestBody, RuntimeEndpoint, RuntimeEndpointBuilder,
     RuntimeHooks, SafeProxy, Stream as StreamSpec, StreamBody,
 };
 use concord_core::prelude::{ByteStream, Bytes, NoContent};
@@ -222,14 +222,14 @@ fn rule(id: &str, key: RateLimitKey, cost: u32, windows: &[(u32, u64)]) -> RateL
 }
 
 fn exact_builder_contracts() {
-    let default: PreparedEndpointBuilder<NoContent> =
-        PreparedEndpoint::builder("Prepared::default", Method::GET);
-    let buffered: PreparedEndpointBuilder<EchoCodec> = default.response::<EchoCodec>();
-    let bytes: PreparedEndpointBuilder<Bytes> = buffered.response_bytes();
-    let stream: PreparedEndpointBuilder<StreamSpec<VendorMedia>> =
+    let default: RuntimeEndpointBuilder<NoContent> =
+        RuntimeEndpoint::builder("runtime.default".into(), Method::GET);
+    let buffered: RuntimeEndpointBuilder<EchoCodec> = default.response::<EchoCodec>();
+    let bytes: RuntimeEndpointBuilder<Bytes> = buffered.response_bytes();
+    let stream: RuntimeEndpointBuilder<StreamSpec<VendorMedia>> =
         bytes.response_stream::<VendorMedia>();
-    let no_content: PreparedEndpointBuilder<NoContent> = stream.response_no_content();
-    let _: PreparedEndpoint<NoContent> = no_content.build().expect("exact endpoint");
+    let no_content: RuntimeEndpointBuilder<NoContent> = stream.response_no_content();
+    let _: RuntimeEndpoint<NoContent> = no_content.build().expect("exact endpoint");
 }
 
 #[test]
@@ -250,7 +250,7 @@ async fn prepared_modes_use_the_ordinary_generated_client_runtime() {
     .expect("prepared mode server");
     let client = alpha(&server);
 
-    let buffered = PreparedEndpoint::builder("Prepared::buffered", Method::POST)
+    let buffered = RuntimeEndpoint::builder("runtime.buffered".into(), Method::POST)
         .path_segment("items")
         .path_segment("slash/value")
         .path_segment("..")
@@ -262,36 +262,36 @@ async fn prepared_modes_use_the_ordinary_generated_client_runtime() {
         .body_codec::<EchoCodec>("encoded".to_owned())
         .response::<EchoCodec>()
         .build()
-        .expect("buffered prepared endpoint");
+        .expect("buffered runtime endpoint");
     assert_eq!(
         client.request(buffered).await.expect("buffered response"),
         "decoded"
     );
 
-    let bytes = PreparedEndpoint::builder("Prepared::bytes", Method::GET)
+    let bytes = RuntimeEndpoint::builder("runtime.bytes".into(), Method::GET)
         .path_segment("bytes")
         .response_bytes()
         .build()
-        .expect("bytes prepared endpoint");
+        .expect("bytes runtime endpoint");
     assert_eq!(
         client.request(bytes).await.expect("bytes response"),
         b"bytes"[..]
     );
 
-    let no_content = PreparedEndpoint::builder("Prepared::none", Method::DELETE)
+    let no_content = RuntimeEndpoint::builder("runtime.none".into(), Method::DELETE)
         .path_segment("none")
         .build()
-        .expect("no-content prepared endpoint");
+        .expect("no-content runtime endpoint");
     client
         .request(no_content)
         .await
         .expect("no-content response");
 
-    let stream = PreparedEndpoint::builder("Prepared::stream", Method::GET)
+    let stream = RuntimeEndpoint::builder("runtime.stream".into(), Method::GET)
         .path_segment("stream")
         .response_stream::<VendorMedia>()
         .build()
-        .expect("stream prepared endpoint");
+        .expect("stream runtime endpoint");
     let mut response: ByteStream = client.request(stream).await.expect("stream response");
     let first = poll_fn(|context| Pin::new(&mut response).poll_next(context))
         .await
@@ -359,7 +359,7 @@ async fn the_same_prepared_definition_uses_each_selected_client_base_and_core() 
         .build()
         .expect("runtime-distinct beta client");
     let definition = || {
-        PreparedEndpoint::builder("Prepared::portable", Method::GET)
+        RuntimeEndpoint::builder("runtime.portable".into(), Method::GET)
             .path_segment("portable")
             .response_bytes()
             .build()
@@ -397,31 +397,31 @@ async fn all_prepared_body_forms_use_the_existing_lazy_body_architecture() {
     let multipart_factory_calls = Arc::new(AtomicUsize::new(0));
 
     let bodies = [
-        PreparedEndpoint::builder("Prepared::empty", Method::POST)
+        RuntimeEndpoint::builder("runtime.empty".into(), Method::POST)
             .body(RequestBody::empty())
             .build()
             .expect("empty"),
-        PreparedEndpoint::builder("Prepared::bytes", Method::POST)
+        RuntimeEndpoint::builder("runtime.bytes".into(), Method::POST)
             .body(RequestBody::bytes(Bytes::from_static(b"bytes-body")))
             .build()
             .expect("bytes"),
-        PreparedEndpoint::builder("Prepared::stream", Method::POST)
+        RuntimeEndpoint::builder("runtime.stream".into(), Method::POST)
             .body(RequestBody::stream(StreamBody::from_bytes(
                 Bytes::from_static(b"stream-body"),
             )))
             .build()
             .expect("stream"),
-        PreparedEndpoint::builder("Prepared::factory", Method::POST)
+        RuntimeEndpoint::builder("runtime.factory".into(), Method::POST)
             .body(RequestBody::factory(FreshFactory {
                 calls: Arc::clone(&factory_calls),
             }))
             .build()
             .expect("factory"),
-        PreparedEndpoint::builder("Prepared::codec", Method::POST)
+        RuntimeEndpoint::builder("runtime.codec".into(), Method::POST)
             .body_codec::<EchoCodec>("codec-body".to_owned())
             .build()
             .expect("codec"),
-        PreparedEndpoint::builder("Prepared::multipart", Method::POST)
+        RuntimeEndpoint::builder("runtime.multipart".into(), Method::POST)
             .body(RequestBody::multipart(
                 MultipartBody::new()
                     .part("field", MultipartPart::text("multipart-body"))
@@ -429,7 +429,7 @@ async fn all_prepared_body_forms_use_the_existing_lazy_body_architecture() {
             ))
             .build()
             .expect("multipart"),
-        PreparedEndpoint::builder("Prepared::multipart_factory", Method::POST)
+        RuntimeEndpoint::builder("runtime.multipart_factory".into(), Method::POST)
             .body(RequestBody::multipart_factory(FreshMultipartFactory {
                 calls: Arc::clone(&multipart_factory_calls),
             }))
@@ -476,7 +476,7 @@ async fn hook_rejection_prevents_prepared_factory_and_native_work() {
         .configure_runtime(|runtime| runtime.hooks(Arc::new(RejectingHooks)))
         .build()
         .expect("hooked client");
-    let endpoint = PreparedEndpoint::builder("Prepared::veto", Method::POST)
+    let endpoint = RuntimeEndpoint::builder("runtime.veto".into(), Method::POST)
         .body(RequestBody::factory(FreshFactory {
             calls: Arc::clone(&calls),
         }))
@@ -491,7 +491,7 @@ async fn hook_rejection_prevents_prepared_factory_and_native_work() {
     assert_eq!(calls.load(Ordering::SeqCst), 0);
 
     let encode_calls = Arc::new(AtomicUsize::new(0));
-    let endpoint = PreparedEndpoint::builder("Prepared::codec_veto", Method::POST)
+    let endpoint = RuntimeEndpoint::builder("runtime.codec_veto".into(), Method::POST)
         .body_codec::<CountingEncodeCodec>(Arc::clone(&encode_calls))
         .build()
         .expect("lazy codec endpoint");
@@ -525,7 +525,7 @@ async fn prepared_protected_http_fails_before_hooks_or_body_materialization() {
         .build()
         .expect("prepared authentication client");
     let factory_calls = Arc::new(AtomicUsize::new(0));
-    let endpoint = PreparedEndpoint::builder("Prepared::protected_http", Method::POST)
+    let endpoint = RuntimeEndpoint::builder("runtime.protected_http".into(), Method::POST)
         .body(RequestBody::factory(FreshFactory {
             calls: Arc::clone(&factory_calls),
         }))
@@ -560,11 +560,11 @@ async fn prepared_bodies_and_responses_cannot_bypass_runtime_limits() {
         .build()
         .expect("request-limited client");
     for endpoint in [
-        PreparedEndpoint::builder("Prepared::limited_bytes", Method::POST)
+        RuntimeEndpoint::builder("runtime.limited_bytes".into(), Method::POST)
             .body(RequestBody::bytes(Bytes::from_static(b"four")))
             .build()
             .expect("limited bytes endpoint"),
-        PreparedEndpoint::builder("Prepared::limited_codec", Method::POST)
+        RuntimeEndpoint::builder("runtime.limited_codec".into(), Method::POST)
             .body_codec::<EchoCodec>("four".to_owned())
             .build()
             .expect("limited codec endpoint"),
@@ -589,7 +589,7 @@ async fn prepared_bodies_and_responses_cannot_bypass_runtime_limits() {
         })
         .build()
         .expect("response-limited client");
-    let endpoint = PreparedEndpoint::builder("Prepared::limited_response", Method::GET)
+    let endpoint = RuntimeEndpoint::builder("runtime.limited_response".into(), Method::GET)
         .response_bytes()
         .build()
         .expect("limited response endpoint");
@@ -609,7 +609,7 @@ async fn prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_ord
     ])
     .expect("prepared limiter server");
     let endpoint = || {
-        PreparedEndpoint::builder("Prepared::limited", Method::GET)
+        RuntimeEndpoint::builder("runtime.limited".into(), Method::GET)
             .rate_limit(rule(
                 "global",
                 RateLimitKey::global(),
@@ -702,7 +702,7 @@ fn prepared_authentication_uses_canonical_collision_and_challenge_validation() {
         .expect("auth client");
     let credential = client.credentials().api_key().credential();
 
-    let header_collision = PreparedEndpoint::builder("Prepared::auth", Method::GET)
+    let header_collision = RuntimeEndpoint::builder("runtime.auth".into(), Method::GET)
         .header(HeaderName::from_static("x-api-key"), "public")
         .auth(Auth::header(
             HeaderName::from_static("x-api-key"),
@@ -716,7 +716,7 @@ fn prepared_authentication_uses_canonical_collision_and_challenge_validation() {
         concord_core::advanced::ConfigurationErrorKind::InvalidAuthentication
     );
 
-    let query_collision = PreparedEndpoint::builder("Prepared::auth", Method::GET)
+    let query_collision = RuntimeEndpoint::builder("runtime.auth".into(), Method::GET)
         .query("token", "public")
         .auth(Auth::query("token", credential.clone()))
         .build()
@@ -727,7 +727,7 @@ fn prepared_authentication_uses_canonical_collision_and_challenge_validation() {
         concord_core::advanced::ConfigurationErrorKind::InvalidAuthentication
     );
 
-    let two_challenges = PreparedEndpoint::builder("Prepared::auth", Method::GET)
+    let two_challenges = RuntimeEndpoint::builder("runtime.auth".into(), Method::GET)
         .auth(
             Auth::header(HeaderName::from_static("x-first"), credential.clone())
                 .challenge(ChallengePolicy::Unauthorized),
@@ -744,7 +744,7 @@ fn prepared_authentication_uses_canonical_collision_and_challenge_validation() {
         concord_core::advanced::ConfigurationErrorKind::InvalidAuthentication
     );
 
-    PreparedEndpoint::builder("Prepared::auth", Method::GET)
+    RuntimeEndpoint::builder("runtime.auth".into(), Method::GET)
         .auth(Auth::header(
             HeaderName::from_static("x-first"),
             credential.clone(),

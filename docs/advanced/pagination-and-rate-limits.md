@@ -89,7 +89,7 @@ A plan contains ordered `RateLimitRule` values. Each rule has:
 - positive cost;
 - one or more positive `RateLimitWindow` values.
 
-Normal generated rules use global keys. Prepared endpoints can append explicit keys constructed from bounded `RateLimitKeyPart` values.
+Normal generated rules use global keys. Runtime endpoints can append explicit keys constructed from bounded `RateLimitKeyPart` values.
 
 ### Permit semantics
 

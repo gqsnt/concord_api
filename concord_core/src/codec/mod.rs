@@ -28,7 +28,7 @@ impl MediaType for OctetStream {
 /// Safe request metadata supplied to a request encoder.
 pub struct EncodeContext<'a> {
     /// Stable generated endpoint identity.
-    pub endpoint: &'static str,
+    pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
     /// Positive finite request-body limit, when one applies.
@@ -93,7 +93,7 @@ impl Error for CodecError {}
 /// Safe response metadata supplied to a response decoder.
 pub struct DecodeContext<'a> {
     /// Stable generated endpoint identity.
-    pub endpoint: &'static str,
+    pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
     /// Final application response status.

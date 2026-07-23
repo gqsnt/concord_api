@@ -21,6 +21,7 @@ mod auth;
 mod body;
 mod client;
 pub mod codec;
+mod endpoint;
 mod error;
 mod generated_contract;
 mod hooks;

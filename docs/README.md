@@ -14,7 +14,7 @@ Concord is a strongly typed HTTP API client generator with one managed, bounded 
 
 ## Capability map
 
-Concord supports generated and explicit endpoint values, prepared endpoints, bounded request and response bodies, JSON, text, bytes, streaming, multipart requests, typed CSV and NDJSON records, authentication, pagination, lexical rate limits, custom providers, custom limiters, hooks, and opt-in dangerous response/retry surfaces.
+Concord supports generated and explicit endpoint values, runtime-defined endpoints, bounded request and response bodies, JSON, text, bytes, streaming, multipart requests, typed CSV and NDJSON records, authentication, pagination, lexical rate limits, custom providers, custom limiters, hooks, and opt-in dangerous response/retry surfaces.
 
 Every capability is documented with its lifecycle, feature requirements, finite limits, extension responsibilities, and unsupported forms. The consolidated [API reference](reference/api.md) maps public namespaces and generated capabilities; the [DSL reference](reference/dsl.md) owns exact macro syntax.
 

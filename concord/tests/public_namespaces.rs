@@ -16,7 +16,7 @@ fn semantic_domains_are_available_without_implementation_crate_imports() {
         public_type::<auth::Auth>(),
         public_type::<body::RequestBody>(),
         public_type::<codec::Text>(),
-        public_type::<endpoint::PreparedEndpoint>(),
+        public_type::<endpoint::RuntimeEndpoint>(),
         public_type::<error::ApiError>(),
         public_type::<error::ClientInputKind>(),
         public_type::<hooks::DebugLevel>(),

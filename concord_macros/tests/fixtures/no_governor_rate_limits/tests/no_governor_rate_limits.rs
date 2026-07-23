@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use runtime::advanced::{
-    BoxFuture, ClientBuildErrorKind, ErrorCategory, Method, NoopRateLimiter, PreparedEndpoint,
+    BoxFuture, ClientBuildErrorKind, ErrorCategory, Method, NoopRateLimiter, RuntimeEndpoint,
     RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitRequest,
     RateLimitResponse, RateLimitRule, RateLimitWindow, RateLimiter, SafeProxy,
 };
@@ -161,16 +161,16 @@ fn prepared_rule(id: &str, key: RateLimitKey, cost: u32, windows: &[(u32, u64)])
     .expect("prepared rule")
 }
 
-fn empty_prepared() -> runtime::advanced::PreparedEndpoint<Bytes> {
-    PreparedEndpoint::builder("Prepared::empty", Method::GET)
+fn empty_prepared() -> runtime::advanced::RuntimeEndpoint<Bytes> {
+    RuntimeEndpoint::builder("runtime.empty".into(), Method::GET)
         .path_segment("prepared-empty")
         .response_bytes()
         .build()
-        .expect("empty prepared endpoint")
+        .expect("empty runtime endpoint")
 }
 
-fn explicit_prepared() -> runtime::advanced::PreparedEndpoint<Bytes> {
-    PreparedEndpoint::builder("Prepared::explicit", Method::GET)
+fn explicit_prepared() -> runtime::advanced::RuntimeEndpoint<Bytes> {
+    RuntimeEndpoint::builder("runtime.explicit".into(), Method::GET)
         .path_segment("prepared-explicit")
         .rate_limit(prepared_rule(
             "Prepared::global",
@@ -190,7 +190,7 @@ fn explicit_prepared() -> runtime::advanced::PreparedEndpoint<Bytes> {
         ))
         .response_bytes()
         .build()
-        .expect("explicit prepared endpoint")
+        .expect("explicit runtime endpoint")
 }
 
 #[tokio::test]

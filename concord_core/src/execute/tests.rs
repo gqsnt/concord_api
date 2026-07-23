@@ -31,6 +31,7 @@ use crate::body::{MultipartBody, MultipartFactory, MultipartPart};
 use crate::codec::{
     CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType, OctetStream, Text,
 };
+use crate::endpoint::EndpointId;
 use crate::error::{ErrorCategory, HookError, StatusBodyState};
 use crate::hooks::{BoxFuture, RuntimeHooks};
 use crate::http::HttpConfigBuilder;
@@ -44,7 +45,7 @@ use crate::rate_limit::{
 use crate::records::{
     RecordBatches, RecordDecoder, RecordError, RecordErrorKind, RecordStream, Records,
 };
-use crate::request::{HeadBuilder, PreparedEndpoint, PreparedHead, RequestMeta};
+use crate::request::{HeadBuilder, PreparedHead, RequestMeta, RuntimeEndpoint};
 #[cfg(feature = "records")]
 use crate::response::{
     ApiResponse, Buffered, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec, ResponseHead,
@@ -52,13 +53,13 @@ use crate::response::{
 use crate::response::{ByteStream, NoContent};
 use crate::runtime::RuntimeConfigBuilder;
 
-const ENDPOINT: &str = "ExecutionApi::health::bytes";
-const NO_CONTENT_ENDPOINT: &str = "ExecutionApi::health::ping";
-const CODEC_ENDPOINT: &str = "ExecutionApi::codec::round_trip";
-const BODY_ENDPOINT: &str = "ExecutionApi::body::upload";
-const STREAM_ENDPOINT: &str = "ExecutionApi::stream::download";
+const ENDPOINT: &str = "execution_api.health.bytes";
+const NO_CONTENT_ENDPOINT: &str = "execution_api.health.ping";
+const CODEC_ENDPOINT: &str = "execution_api.codec.round_trip";
+const BODY_ENDPOINT: &str = "execution_api.body.upload";
+const STREAM_ENDPOINT: &str = "execution_api.stream.download";
 #[cfg(feature = "records")]
-const RECORD_ENDPOINT: &str = "ExecutionApi::records::stream";
+const RECORD_ENDPOINT: &str = "execution_api.records.stream";
 
 struct StreamEndpoint<M> {
     marker: std::marker::PhantomData<fn() -> M>,
@@ -1092,7 +1093,7 @@ struct ProbeHooks {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct LimiterRequestRecord {
-    endpoint: &'static str,
+    endpoint: String,
     method: Method,
     safe_url: String,
     host: Option<String>,
@@ -1267,7 +1268,7 @@ impl RateLimiter for ProbeRateLimiter {
             .lock()
             .expect("limiter requests")
             .push(LimiterRequestRecord {
-                endpoint: request.endpoint,
+                endpoint: request.endpoint.to_owned(),
                 method: request.method.clone(),
                 safe_url: request.safe_url.to_owned(),
                 host: request.host.map(str::to_owned),
@@ -1856,12 +1857,13 @@ async fn prepared_plans_use_selected_limiter_metadata_and_configured_key_limit()
         Arc::new(ProbeHooks::new()),
         RuntimeConfigBuilder::new().rate_limiter(configured),
     );
-    let endpoint = PreparedEndpoint::builder("Prepared::governed", Method::GET)
-        .path_segment("governed")
-        .rate_limit(rule("Prepared::governed", RateLimitKey::global()))
-        .response_bytes()
-        .build()
-        .expect("prepared governed endpoint");
+    let endpoint =
+        RuntimeEndpoint::builder(EndpointId::from_static("runtime.governed"), Method::GET)
+            .path_segment("governed")
+            .rate_limit(rule("Prepared::governed", RateLimitKey::global()))
+            .response_bytes()
+            .build()
+            .expect("prepared governed endpoint");
     assert_eq!(
         Request::new(core, endpoint)
             .await
@@ -1881,15 +1883,16 @@ async fn prepared_plans_use_selected_limiter_metadata_and_configured_key_limit()
         Arc::new(ProbeHooks::new()),
         RuntimeConfigBuilder::new().rate_limiter(configured),
     );
-    let rejected = PreparedEndpoint::builder("Prepared::key_limit", Method::GET)
-        .rate_limit(rule(
-            "Prepared::key_limit",
-            RateLimitKey::from_parts([RateLimitKeyPart::new("tenant", "sensitive-key")])
-                .expect("prepared oversized key"),
-        ))
-        .response_bytes()
-        .build()
-        .expect("prepared oversized-plan endpoint");
+    let rejected =
+        RuntimeEndpoint::builder(EndpointId::from_static("runtime.key_limit"), Method::GET)
+            .rate_limit(rule(
+                "Prepared::key_limit",
+                RateLimitKey::from_parts([RateLimitKeyPart::new("tenant", "sensitive-key")])
+                    .expect("prepared oversized key"),
+            ))
+            .response_bytes()
+            .build()
+            .expect("prepared oversized-plan endpoint");
     let error = Request::new(rejected_core, rejected)
         .await
         .expect_err("prepared key limit must fail during preparation");
@@ -2233,11 +2236,12 @@ async fn private_fallback_rejects_a_nonempty_runtime_plan_before_send() {
         .expect("prepared fallback window")],
     )
     .expect("prepared fallback rule");
-    let endpoint = PreparedEndpoint::builder("Prepared::fallback", Method::GET)
-        .rate_limit(rule)
-        .response_bytes()
-        .build()
-        .expect("prepared fallback endpoint");
+    let endpoint =
+        RuntimeEndpoint::builder(EndpointId::from_static("runtime.fallback"), Method::GET)
+            .rate_limit(rule)
+            .response_bytes()
+            .build()
+            .expect("prepared fallback endpoint");
     let error = Request::new(core, endpoint)
         .await
         .expect_err("fallback must reject a prepared nonempty plan");
@@ -2306,10 +2310,11 @@ async fn hidden_reqwest_retry_does_not_reenter_custom_limiter_or_lifecycle() {
             .rate_limiter(configured),
     )
     .expect("prepared real HTTP/2 core");
-    let endpoint = PreparedEndpoint::builder("Prepared::hidden_retry", Method::GET)
-        .response_bytes()
-        .build()
-        .expect("prepared hidden-retry endpoint");
+    let endpoint =
+        RuntimeEndpoint::builder(EndpointId::from_static("runtime.hidden_retry"), Method::GET)
+            .response_bytes()
+            .build()
+            .expect("prepared hidden-retry endpoint");
     assert_eq!(
         Request::new(prepared_core, endpoint)
             .await
@@ -4175,12 +4180,13 @@ async fn prepared_builder_deadline_is_fixed_and_completion_remains_outside_it() 
         ..ProbeHooks::new()
     });
     let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
-    let endpoint = PreparedEndpoint::builder("Prepared::deadline", Method::GET)
-        .path_segment("prepared-deadline")
-        .timeout(Duration::from_secs(5))
-        .response_bytes()
-        .build()
-        .expect("prepared deadline endpoint");
+    let endpoint =
+        RuntimeEndpoint::builder(EndpointId::from_static("runtime.deadline"), Method::GET)
+            .path_segment("prepared-deadline")
+            .timeout(Duration::from_secs(5))
+            .response_bytes()
+            .build()
+            .expect("prepared deadline endpoint");
     let task = tokio::spawn(async move { Request::new(core, endpoint).await });
 
     before_gate.wait_until_reached().await;
@@ -4890,18 +4896,21 @@ async fn cancellation_drops_direct_and_factory_created_request_streams_without_c
         Arc::clone(&prepared_hooks),
         RuntimeConfigBuilder::new(),
     );
-    let prepared_endpoint = PreparedEndpoint::builder("Prepared::cancellation", Method::POST)
-        .path_segment("prepared-cancellation")
-        .body(RequestBody::stream(StreamBody::from_stream(
-            PendingBodyStream {
-                polls: Arc::clone(&prepared_polls),
-                dropped: Arc::clone(&prepared_dropped),
-                reached: Arc::clone(&prepared_reached),
-            },
-        )))
-        .response_bytes()
-        .build()
-        .expect("prepared cancellation endpoint");
+    let prepared_endpoint = RuntimeEndpoint::builder(
+        EndpointId::from_static("runtime.cancellation"),
+        Method::POST,
+    )
+    .path_segment("prepared-cancellation")
+    .body(RequestBody::stream(StreamBody::from_stream(
+        PendingBodyStream {
+            polls: Arc::clone(&prepared_polls),
+            dropped: Arc::clone(&prepared_dropped),
+            reached: Arc::clone(&prepared_reached),
+        },
+    )))
+    .response_bytes()
+    .build()
+    .expect("prepared cancellation endpoint");
     let prepared_task =
         tokio::spawn(async move { Request::new(prepared_core, prepared_endpoint).await });
     prepared_reached.notified().await;

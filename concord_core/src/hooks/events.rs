@@ -13,8 +13,8 @@ pub struct BeforeSend<'a> {
     pub operation_id: OperationId,
     /// Aggregate pagination identity for a page operation.
     pub parent_operation_id: Option<OperationId>,
-    /// Stable generated or prepared endpoint identity.
-    pub endpoint: &'static str,
+    /// Stable generated or runtime endpoint identity.
+    pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
     /// Sanitized logical URL with no native-only authentication.
@@ -38,8 +38,8 @@ pub struct ResponseHeadEvent<'a> {
     pub operation_id: OperationId,
     /// Aggregate pagination identity for a page operation.
     pub parent_operation_id: Option<OperationId>,
-    /// Stable generated or prepared endpoint identity.
-    pub endpoint: &'static str,
+    /// Stable generated or runtime endpoint identity.
+    pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
     /// Sanitized logical URL with no native-only authentication.
@@ -61,8 +61,8 @@ pub struct CompletionEvent<'a> {
     pub operation_id: OperationId,
     /// Aggregate pagination identity for a page operation.
     pub parent_operation_id: Option<OperationId>,
-    /// Stable generated or prepared endpoint identity.
-    pub endpoint: &'static str,
+    /// Stable generated or runtime endpoint identity.
+    pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
     /// Sanitized logical URL with no native-only authentication.
@@ -85,7 +85,7 @@ pub struct PaginationCompletionEvent<'a> {
     /// Identity of the aggregate pagination operation.
     pub operation_id: OperationId,
     /// Stable generated endpoint identity.
-    pub endpoint: &'static str,
+    pub endpoint: &'a str,
     /// Application HTTP method used for every page.
     pub method: &'a Method,
     /// Number of pages whose direct completion finished.

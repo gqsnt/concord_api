@@ -359,7 +359,7 @@ mod tests {
         });
         let body = ByteStream::new(bounded_byte_stream(
             body,
-            "RecordsApi::custom",
+            "records.custom".into(),
             http::Method::GET,
             1024,
         ));
@@ -423,7 +423,7 @@ mod tests {
         let polls = Arc::new(AtomicUsize::new(0));
         let dropped = Arc::new(AtomicBool::new(false));
         let body_error = ApiError::classified(
-            "RecordsApi::custom",
+            "records_api.custom",
             http::Method::GET,
             ErrorCategory::ResponseBody,
         );

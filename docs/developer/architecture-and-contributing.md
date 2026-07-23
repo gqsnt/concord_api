@@ -77,7 +77,7 @@ The user-friendly tree intentionally excludes retired internal governance materi
 Concord has two major halves:
 
 1. `concord_macros` turns an API declaration into typed Rust client and endpoint structures.
-2. `concord_core` executes all generated, explicit, and prepared requests through one managed lifecycle.
+2. `concord_core` executes all generated, explicit, and runtime-defined requests through one managed lifecycle.
 
 ```mermaid
 flowchart LR
@@ -86,7 +86,7 @@ flowchart LR
     C --> D[Generate Rust types]
     D --> E[Generated client and endpoints]
     E --> F[Request<E>]
-    G[PreparedEndpoint<R>] --> F
+    G[RuntimeEndpoint<R>] --> F
     F --> H[Single concord_core executor]
     H --> I[Private managed Reqwest]
 ```
@@ -118,7 +118,7 @@ The runtime owns semantic behavior:
 
 ### One request family
 
-Generated endpoint methods, explicit generated endpoint values, and prepared endpoints all become the same public `Request<E>` family. Capability wrappers such as `ResponseRequest<E>`, pagination, and dangerous raw response are typed terminals over that family rather than separate transports.
+Generated endpoint methods, explicit generated endpoint values, and runtime endpoints all become the same public `Request<E>` family. Capability wrappers such as `ResponseRequest<E>`, pagination, and dangerous raw response are typed terminals over that family rather than separate transports.
 
 ### One response acquisition model
 
@@ -424,7 +424,7 @@ Concord supports application extensions through stable semantic traits. Adding a
 | Application-defined quota system | `RateLimiter` |
 | Default-governor response observation | `RateLimitObserver` |
 | Lifecycle observation | `RuntimeHooks` |
-| Runtime-defined endpoint | `PreparedEndpoint` |
+| Runtime-defined endpoint | `RuntimeEndpoint` |
 
 ### Design process
 

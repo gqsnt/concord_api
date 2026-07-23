@@ -13,7 +13,7 @@ use runtime::advanced::{
     Buffered, ByteStream, CodecError, CompletionEvent, Cooldown, CooldownScope, CredentialMaterial,
     CredentialProvider, CredentialRequest, DecodeBody, DecodeContext, Discard, EncodeBody,
     EncodeContext, HasNextCursor, HeaderName, HeaderValue, HookError, LengthHint, MediaType,
-    Method, PaginationCompletionEvent, PaginationController, PaginationError, PreparedEndpoint,
+    Method, PaginationCompletionEvent, PaginationController, PaginationError, RuntimeEndpoint,
     ProviderBody, ProviderBodyFactory, ProviderRequest, RateLimitError, RateLimitObserver,
     RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimiter,
     RequestBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestContentType,
@@ -553,7 +553,7 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
         credential.clone(),
     );
 
-    let buffered = PreparedEndpoint::builder("ExtensionApi::prepared_buffered", Method::POST)
+    let buffered = RuntimeEndpoint::builder("extension_api.runtime_buffered".into(), Method::POST)
         .path_segment("buffered")
         .body_codec::<ExtensionCodec>("bounded-input".to_owned())
         .auth(Auth::header(
@@ -562,36 +562,37 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
         ))
         .response::<ExtensionCodec>()
         .build()
-        .expect("valid buffered prepared endpoint");
+        .expect("valid buffered runtime endpoint");
     let _: Request<_> = client.request(buffered);
 
-    let bytes = PreparedEndpoint::builder("ExtensionApi::prepared_bytes", Method::POST)
+    let bytes = RuntimeEndpoint::builder("extension_api.runtime_bytes".into(), Method::POST)
         .path_segment("bytes")
         .body(RequestBody::factory(ExtensionBodyFactory))
         .response_bytes()
         .build()
-        .expect("valid bytes prepared endpoint");
+        .expect("valid bytes runtime endpoint");
     let _: Request<_> = client.request(bytes);
 
-    let no_content = PreparedEndpoint::builder("ExtensionApi::prepared_none", Method::DELETE)
+    let no_content =
+        RuntimeEndpoint::builder("extension_api.runtime_none".into(), Method::DELETE)
         .path_segment("none")
         .build()
-        .expect("valid no-content prepared endpoint");
+        .expect("valid no-content runtime endpoint");
     let _: Request<_> = client.request(no_content);
 
-    let stream = PreparedEndpoint::builder("ExtensionApi::prepared_stream", Method::GET)
+    let stream = RuntimeEndpoint::builder("extension_api.runtime_stream".into(), Method::GET)
         .path_segment("stream")
         .response_stream::<ExtensionMedia>()
         .build()
-        .expect("valid streaming prepared endpoint");
+        .expect("valid streaming runtime endpoint");
     let _: Request<_> = client.request(stream);
 
-    let generic = PreparedEndpoint::builder("ExtensionApi::prepared_generic", Method::POST)
+    let generic = RuntimeEndpoint::builder("extension_api.runtime_generic".into(), Method::POST)
         .path_segment("generic")
         .body_spec::<ExtensionRequestSpec>(Bytes::from_static(b"prepared generic input"))
         .response::<ExtensionBufferedSpec>()
         .build()
-        .expect("valid generic prepared endpoint");
+        .expect("valid generic runtime endpoint");
     let _: Request<_> = client.request(generic);
 
     let page = ExtensionPage {
@@ -609,20 +610,21 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
 
     #[cfg(feature = "json")]
     {
-        let json = PreparedEndpoint::builder("ExtensionApi::prepared_json", Method::POST)
+        let json = RuntimeEndpoint::builder("extension_api.runtime_json".into(), Method::POST)
             .body_codec::<Json<Vec<u32>>>(vec![1, 2, 3])
             .response::<Json<Vec<u32>>>()
             .build()
-            .expect("valid JSON prepared endpoint");
+            .expect("valid JSON runtime endpoint");
         let _: Request<_> = client.request(json);
     }
 
     #[cfg(feature = "multipart")]
     {
-        let multipart = PreparedEndpoint::builder("ExtensionApi::prepared_multipart", Method::POST)
+        let multipart =
+            RuntimeEndpoint::builder("extension_api.runtime_multipart".into(), Method::POST)
             .body(RequestBody::multipart_factory(ExtensionMultipartFactory))
             .build()
-            .expect("valid multipart prepared endpoint");
+            .expect("valid multipart runtime endpoint");
         let _: Request<_> = client.request(multipart);
     }
 

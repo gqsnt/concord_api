@@ -336,7 +336,7 @@ fn missing_core_dependency_has_a_focused_macro_diagnostic() {
 fn incompatible_core_contract_fails_during_compilation() {
     assert_fixture_fails_with(
         "contract_mismatch",
-        "concord macro/core contract mismatch: core 999, generated 21",
+        "concord macro/core contract mismatch: core 999, generated 22",
     );
 }
 
@@ -499,7 +499,7 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
         "protected secret input",
         "static API key (replace)",
         "Application native retry is disabled",
-        "stable advanced prepared endpoint",
+        "stable advanced runtime endpoint",
     ] {
         assert!(
             client_page.contains(expected),

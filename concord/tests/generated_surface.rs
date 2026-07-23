@@ -55,7 +55,21 @@ fn one_facade_dependency_exposes_predictable_named_inherent_surface() {
     let endpoint = facade_api::resources::Fetch::new("tenant".to_owned(), "resource".to_owned())
         .verbose(true)
         .page_size(100);
-    let _: facade_api::resources::Fetch = endpoint.clone();
+    let cloned = endpoint.clone();
+    let stored = vec![endpoint.clone(), cloned];
+    assert_eq!(stored.len(), 2);
+    let description = endpoint.description();
+    assert_eq!(description.id(), "facade_api.resources.fetch");
+    assert_eq!(description.source_path(), "FacadeApi::resources::fetch");
+    assert_eq!(
+        description.route_shape(),
+        "/<fixed base>/resources/{scope.VALUE}/{ep.VALUE}"
+    );
+    assert_eq!(description.method(), concord::http::Method::GET);
+    assert_eq!(
+        description.response_acquisition(),
+        concord::endpoint::ResponseAcquisition::Buffered
+    );
     let _: facade_api::resources::FetchRequest = client.request(endpoint);
 
     let body_endpoint = facade_api::resources::Update::new(
@@ -80,9 +94,15 @@ fn one_facade_dependency_exposes_predictable_named_inherent_surface() {
     {
     }
 
+    fn describe<E>(endpoint: &E) -> &concord::endpoint::EndpointDescription
+    where
+        E: facade_api::Endpoint,
+    {
+        E::description(endpoint)
+    }
+
     assert_bytes_response::<facade_api::resources::Fetch>();
-    let _: facade_api::resources::FetchRequest = bind(
-        &client,
-        facade_api::resources::Fetch::new("tenant".to_owned(), "resource".to_owned()),
-    );
+    let reusable = facade_api::resources::Fetch::new("tenant".to_owned(), "resource".to_owned());
+    assert_eq!(describe(&reusable).id(), "facade_api.resources.fetch");
+    let _: facade_api::resources::FetchRequest = bind(&client, reusable);
 }

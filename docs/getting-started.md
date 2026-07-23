@@ -239,7 +239,7 @@ flowchart TD
 
 1. **The DSL describes structure.** It declares clients, values, credentials, scopes, endpoints, request shaping, pagination bindings, and lexical rate-limit ownership.
 2. **Generated Rust provides the application API.** You call normal methods, build explicit endpoint structs, and receive typed requests.
-3. **Core owns execution.** All generated, explicit, and prepared endpoints use the same body, authentication, limiting, HTTP, response, and completion path.
+3. **Core owns execution.** All generated, explicit, and runtime-defined endpoints use the same body, authentication, limiting, HTTP, response, and completion path.
 
 ### Configuration is fixed at client build
 

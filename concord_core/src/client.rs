@@ -3,6 +3,7 @@ use std::sync::Arc;
 use http::Method;
 use url::Url;
 
+use crate::endpoint::EndpointId;
 use crate::error::{ApiError, ClientBuildError, ClientBuildErrorKind};
 use crate::hooks::DebugDispatcher;
 use crate::hooks::{DebugLevel, RuntimeHooks};
@@ -165,12 +166,12 @@ impl ClientCore {
 
     pub(crate) fn allocate_operation_id(
         &self,
-        endpoint: &'static str,
+        endpoint: &EndpointId,
         method: &Method,
     ) -> Result<OperationId, ApiError> {
         let operation_id = OperationId::allocate().map_err(|OperationIdExhausted| {
             ApiError::classified(
-                endpoint,
+                endpoint.clone(),
                 method.clone(),
                 crate::error::ErrorCategory::Internal,
             )
@@ -184,7 +185,7 @@ impl ClientCore {
 
     pub(crate) fn preflight_url(
         &self,
-        endpoint: &'static str,
+        endpoint: &EndpointId,
         method: &Method,
         url: &Url,
     ) -> Result<(), ApiError> {
@@ -196,7 +197,7 @@ impl ClientCore {
 
     pub(crate) fn preflight_protected_url(
         &self,
-        endpoint: &'static str,
+        endpoint: &EndpointId,
         method: &Method,
         url: &Url,
     ) -> Result<(), ApiError> {
@@ -371,7 +372,7 @@ mod tests {
         assert_eq!(
             first
                 .preflight_url(
-                    "snapshot",
+                    &EndpointId::from_static("snapshot"),
                     &Method::GET,
                     &Url::parse("http://first.example").expect("URL"),
                 )
@@ -413,7 +414,7 @@ mod tests {
         assert!(
             second
                 .preflight_url(
-                    "snapshot",
+                    &EndpointId::from_static("snapshot"),
                     &Method::GET,
                     &Url::parse("http://second.example").expect("URL"),
                 )

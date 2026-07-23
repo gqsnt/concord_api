@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::fmt;
+use std::sync::Arc;
 
 use bytes::Bytes;
 use http::{HeaderMap, HeaderName, Method, StatusCode};
@@ -63,7 +64,7 @@ impl CapturedHeader {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CapturedRequest {
     channel: Channel,
-    endpoint: &'static str,
+    endpoint: Arc<str>,
     method: Method,
     safe_url: Option<String>,
     headers: Vec<CapturedHeader>,
@@ -78,8 +79,8 @@ impl CapturedRequest {
     }
 
     #[must_use]
-    pub const fn endpoint(&self) -> &'static str {
-        self.endpoint
+    pub fn endpoint(&self) -> &str {
+        &self.endpoint
     }
 
     #[must_use]
@@ -111,7 +112,7 @@ impl CapturedRequest {
 /// Internal input at the final managed execution call.
 #[doc(hidden)]
 pub struct BoundaryRequest {
-    endpoint: &'static str,
+    endpoint: Arc<str>,
     method: Method,
     safe_url: Option<String>,
     headers: Vec<CapturedHeader>,
@@ -126,7 +127,7 @@ impl BoundaryRequest {
     #[doc(hidden)]
     #[must_use]
     pub fn __new(
-        endpoint: &'static str,
+        endpoint: impl Into<Arc<str>>,
         method: Method,
         safe_url: Option<String>,
         headers: Vec<CapturedHeader>,
@@ -135,7 +136,7 @@ impl BoundaryRequest {
         expectation_body: Option<Bytes>,
     ) -> Self {
         Self {
-            endpoint,
+            endpoint: endpoint.into(),
             method,
             safe_url,
             headers,

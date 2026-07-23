@@ -1,4 +1,4 @@
-use concord_core::advanced::{Method, PreparedEndpoint};
+use concord_core::advanced::{Method, RuntimeEndpoint};
 use concord_macros::api;
 
 #[path = "../../support/mod.rs"]
@@ -21,7 +21,7 @@ api! {
 
 fn main() {
     let client = PreparedPaginationApi::new().unwrap();
-    let endpoint = PreparedEndpoint::builder("Prepared::pages", Method::GET)
+    let endpoint = RuntimeEndpoint::builder("runtime.pages".into(), Method::GET)
         .response::<crate::support::Json<Vec<u8>>>()
         .build()
         .unwrap();

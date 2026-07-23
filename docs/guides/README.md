@@ -17,7 +17,7 @@ Runnable source lives in [`concord_examples/examples/full_dsl_reference.rs`](../
 | [`body_workflows.rs`](../../concord_examples/examples/body_workflows.rs) | Bytes, codecs, streams, and multipart |
 | [`generic_specifications.rs`](../../concord_examples/examples/generic_specifications.rs) | Custom request and response specifications |
 | [`pagination.rs`](../../concord_examples/examples/pagination.rs) | Built-in and custom pagination |
-| [`prepared_endpoint.rs`](../../concord_examples/examples/prepared_endpoint.rs) | Runtime-defined prepared endpoints |
+| [`prepared_endpoint.rs`](../../concord_examples/examples/prepared_endpoint.rs) | Runtime-defined endpoints |
 | [`rate_limiting.rs`](../../concord_examples/examples/rate_limiting.rs) | Lexical rules, observers, and explicit keys |
 | [`records.rs`](../../concord_examples/examples/records.rs) | CSV, NDJSON, and custom record decoding |
 | [`regional_api.rs`](../../concord_examples/examples/regional_api.rs) | Dynamic hosts and regional scopes |

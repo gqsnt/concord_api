@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use http::{Method, StatusCode};
 
+use crate::endpoint::EndpointId;
 use crate::redaction::SanitizedHeaderMap;
 
 use super::{
@@ -13,7 +14,7 @@ use super::{
 
 /// A structured safe failure from an endpoint operation.
 pub struct ApiError {
-    endpoint: &'static str,
+    endpoint: EndpointId,
     method: Method,
     category: ErrorCategory,
     configuration_kind: Option<ConfigurationErrorKind>,
@@ -44,7 +45,7 @@ impl ApiError {
         auth_kind: Option<AuthErrorKind>,
         response: HttpResponseFailure,
     ) -> Self {
-        let endpoint = response.endpoint();
+        let endpoint = response.endpoint_id().clone();
         let method = response.method().clone();
         Self {
             endpoint,
@@ -62,7 +63,7 @@ impl ApiError {
     }
 
     pub(crate) fn from_reqwest(
-        endpoint: &'static str,
+        endpoint: impl Into<EndpointId>,
         method: Method,
         error: reqwest::Error,
         managed_body_failed: bool,
@@ -72,12 +73,12 @@ impl ApiError {
     }
 
     pub(crate) fn classified(
-        endpoint: &'static str,
+        endpoint: impl Into<EndpointId>,
         method: Method,
         category: ErrorCategory,
     ) -> Self {
         Self {
-            endpoint,
+            endpoint: endpoint.into(),
             method,
             category,
             configuration_kind: None,
@@ -92,7 +93,7 @@ impl ApiError {
     }
 
     pub(crate) fn configuration(
-        endpoint: &'static str,
+        endpoint: impl Into<EndpointId>,
         method: Method,
         kind: ConfigurationErrorKind,
     ) -> Self {
@@ -102,7 +103,7 @@ impl ApiError {
     }
 
     pub(crate) fn authentication(
-        endpoint: &'static str,
+        endpoint: impl Into<EndpointId>,
         method: Method,
         error: crate::auth::AuthError,
     ) -> Self {
@@ -119,7 +120,7 @@ impl ApiError {
     }
 
     pub(crate) fn rate_limit(
-        endpoint: &'static str,
+        endpoint: impl Into<EndpointId>,
         method: Method,
         error: crate::rate_limit::RateLimitError,
     ) -> Self {
@@ -131,7 +132,7 @@ impl ApiError {
     }
 
     pub(crate) fn pagination(
-        endpoint: &'static str,
+        endpoint: impl Into<EndpointId>,
         method: Method,
         error: crate::pagination::PaginationError,
     ) -> Self {
@@ -143,7 +144,11 @@ impl ApiError {
     }
 
     #[cfg(test)]
-    fn with_auth_kind(endpoint: &'static str, method: Method, kind: AuthErrorKind) -> Self {
+    fn with_auth_kind(
+        endpoint: impl Into<EndpointId>,
+        method: Method,
+        kind: AuthErrorKind,
+    ) -> Self {
         let category = match kind {
             AuthErrorKind::Unavailable => ErrorCategory::AuthenticationUnavailable,
             AuthErrorKind::Rejected => ErrorCategory::AuthenticationRejected,
@@ -156,7 +161,7 @@ impl ApiError {
 
     #[cfg(test)]
     fn with_rate_limit_kind(
-        endpoint: &'static str,
+        endpoint: impl Into<EndpointId>,
         method: Method,
         kind: RateLimitErrorKind,
     ) -> Self {
@@ -167,7 +172,7 @@ impl ApiError {
 
     #[cfg(test)]
     fn with_pagination_kind(
-        endpoint: &'static str,
+        endpoint: impl Into<EndpointId>,
         method: Method,
         kind: PaginationErrorKind,
     ) -> Self {
@@ -190,8 +195,14 @@ impl ApiError {
 
     /// Returns the stable generated endpoint identity.
     #[must_use]
-    pub const fn endpoint(&self) -> &'static str {
-        self.endpoint
+    pub fn endpoint(&self) -> &str {
+        self.endpoint.as_str()
+    }
+
+    /// Returns the typed stable endpoint identity.
+    #[must_use]
+    pub const fn endpoint_id(&self) -> &EndpointId {
+        &self.endpoint
     }
 
     /// Returns the application HTTP method.

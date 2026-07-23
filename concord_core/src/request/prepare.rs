@@ -55,7 +55,7 @@ where
     } = request;
     let started = tokio::time::Instant::now();
     let meta = endpoint.request_meta();
-    let operation_id = core.allocate_operation_id(meta.endpoint(), meta.method())?;
+    let operation_id = core.allocate_operation_id(meta.endpoint_id(), meta.method())?;
     let safe_base_url = core.safe_base_url();
     let debug = options.resolve_debug(core.default_debug());
     let timeout =
@@ -64,7 +64,7 @@ where
         Ok(deadline) => deadline,
         Err(_) => {
             let error = ApiError::configuration(
-                meta.endpoint(),
+                meta.endpoint_id().clone(),
                 meta.method().clone(),
                 ConfigurationErrorKind::InvalidValue,
             );
@@ -80,7 +80,7 @@ where
         }
     };
     if deadline.check().is_err() {
-        let error = timeout_error(meta.endpoint(), meta.method());
+        let error = timeout_error(meta.endpoint_id(), meta.method());
         return Ok(OperationPreparation::Failed(failure(
             core,
             operation_id,
@@ -132,7 +132,7 @@ where
                 Arc::from(head.safe_url()),
                 debug,
                 started,
-                ApiError::classified(meta.endpoint(), meta.method().clone(), category),
+                ApiError::classified(meta.endpoint_id().clone(), meta.method().clone(), category),
             )));
         }
     };
@@ -148,7 +148,7 @@ where
         )));
     }
     if deadline.check().is_err() {
-        let error = timeout_error(meta.endpoint(), meta.method());
+        let error = timeout_error(meta.endpoint_id(), meta.method());
         return Ok(OperationPreparation::Failed(failure(
             core,
             operation_id,
@@ -201,7 +201,7 @@ where
             } else {
                 ErrorCategory::RequestBody
             };
-            ApiError::classified(meta.endpoint(), meta.method().clone(), category)
+            ApiError::classified(meta.endpoint_id().clone(), meta.method().clone(), category)
         })?;
     validate_prepared_head::<E>(&core, &meta, &mut head, &body_metadata)?;
     Ok(PreparedPaginationPage {
@@ -224,7 +224,7 @@ where
     if let Err(error) = body_metadata.validate_limit(core.request_body_limit()) {
         drop(error);
         return Err(ApiError::classified(
-            meta.endpoint(),
+            meta.endpoint_id().clone(),
             meta.method().clone(),
             ErrorCategory::RequestBody,
         ));
@@ -240,7 +240,7 @@ where
         crate::response::validate_accept(value).map_err(|error| {
             drop(error);
             ApiError::classified(
-                meta.endpoint(),
+                meta.endpoint_id().clone(),
                 meta.method().clone(),
                 ErrorCategory::ResponseContract,
             )
@@ -250,9 +250,9 @@ where
     head.validate_auth()?;
     ensure_matching_meta(meta, head)?;
     if head.auth().is_empty() {
-        core.preflight_url(meta.endpoint(), meta.method(), head.logical_url())?;
+        core.preflight_url(meta.endpoint_id(), meta.method(), head.logical_url())?;
     } else {
-        core.preflight_protected_url(meta.endpoint(), meta.method(), head.logical_url())?;
+        core.preflight_protected_url(meta.endpoint_id(), meta.method(), head.logical_url())?;
     }
     Ok(())
 }
@@ -280,7 +280,7 @@ fn failure(
 fn ensure_matching_meta(expected: &RequestMeta, head: &PreparedHead) -> Result<(), ApiError> {
     if expected.endpoint() != head.endpoint() || expected.method() != head.method() {
         return Err(ApiError::classified(
-            expected.endpoint(),
+            expected.endpoint_id().clone(),
             expected.method().clone(),
             ErrorCategory::Internal,
         ));
@@ -288,6 +288,6 @@ fn ensure_matching_meta(expected: &RequestMeta, head: &PreparedHead) -> Result<(
     Ok(())
 }
 
-fn timeout_error(endpoint: &'static str, method: &http::Method) -> ApiError {
-    ApiError::classified(endpoint, method.clone(), ErrorCategory::Timeout)
+fn timeout_error(endpoint: &crate::endpoint::EndpointId, method: &http::Method) -> ApiError {
+    ApiError::classified(endpoint.clone(), method.clone(), ErrorCategory::Timeout)
 }

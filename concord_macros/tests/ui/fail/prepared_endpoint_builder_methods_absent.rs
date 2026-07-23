@@ -1,9 +1,9 @@
-use concord_core::advanced::{Method, PreparedEndpoint};
+use concord_core::advanced::{Method, RuntimeEndpoint};
 
 fn main() {
-    let builder = PreparedEndpoint::builder("Prepared::route", Method::GET);
+    let builder = RuntimeEndpoint::builder("runtime.route".into(), Method::GET);
     let _ = builder.path("/raw/fragment");
 
-    let builder = PreparedEndpoint::builder("Prepared::page", Method::GET);
+    let builder = RuntimeEndpoint::builder("runtime.page".into(), Method::GET);
     let _ = builder.paginate(1_u32);
 }

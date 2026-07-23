@@ -1,9 +1,9 @@
 use concord_core::advanced::{
-    Method, NoContent, PreparedEndpoint, PreparedEndpointBuilder,
+    Method, NoContent, RuntimeEndpoint, RuntimeEndpointBuilder,
 };
 
 fn main() {
-    let _ = PreparedEndpointBuilder::<NoContent> {};
-    let _ = PreparedEndpoint::<NoContent> {};
-    let _ = PreparedEndpoint::builder("Prepared::private", Method::GET);
+    let _ = RuntimeEndpointBuilder::<NoContent> {};
+    let _ = RuntimeEndpoint::<NoContent> {};
+    let _ = RuntimeEndpoint::builder("runtime.private".into(), Method::GET);
 }

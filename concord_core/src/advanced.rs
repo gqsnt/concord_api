@@ -17,6 +17,10 @@ pub use crate::body::{Multipart, MultipartBody, MultipartFactory, MultipartPart}
 pub use crate::codec::{
     CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType, OctetStream, Text,
 };
+pub use crate::endpoint::{
+    EndpointCapabilities, EndpointDescription, EndpointId, MAX_ENDPOINT_ID_BYTES,
+    RequestBodyCategory, ResponseAcquisition, SafeRequestPlan, TimeoutSelection,
+};
 pub use crate::error::{
     ApiError, AuthErrorKind, ClientBuildError, ClientBuildErrorKind, ClientInputKind,
     ConfigurationError, ConfigurationErrorKind, ErrorCategory, HookError, HttpResponseFailure,
@@ -43,7 +47,10 @@ pub use crate::records::{
     RecordBatches, RecordDecoder, RecordError, RecordErrorKind, RecordStream, Records,
 };
 pub use crate::redaction::{SanitizedHeaderMap, SanitizedHeaderValue, SanitizedHeaders};
-pub use crate::request::{PreparedEndpoint, PreparedEndpointBuilder};
+#[allow(deprecated, reason = "Phase 14 compatibility aliases")]
+pub use crate::request::{
+    PreparedEndpoint, PreparedEndpointBuilder, RuntimeEndpoint, RuntimeEndpointBuilder,
+};
 pub use crate::response::{
     ApiResponse, Buffered, ByteStream, DecodedResponse, Discard, ExecutionMeta, NoContent,
     PageResponseSpec, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec, ResponseHead,

@@ -29,7 +29,8 @@ where
         } = request;
         let meta = endpoint.request_meta();
         let aggregate_started = tokio::time::Instant::now();
-        let aggregate_operation_id = core.allocate_operation_id(meta.endpoint(), meta.method())?;
+        let aggregate_operation_id =
+            core.allocate_operation_id(meta.endpoint_id(), meta.method())?;
         let max_pages = core.pagination_max_pages().get();
         let max_items = core.pagination_max_items().get();
         let identity_limit = core.pagination_identity_limit().get();
@@ -234,7 +235,7 @@ where
 }
 
 fn pagination_api_error(meta: &crate::request::RequestMeta, error: PaginationError) -> ApiError {
-    ApiError::pagination(meta.endpoint(), meta.method().clone(), error)
+    ApiError::pagination(meta.endpoint_id().clone(), meta.method().clone(), error)
 }
 
 fn pagination_kind_error(

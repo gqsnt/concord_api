@@ -33,7 +33,7 @@ pub trait EndpointSpec: Send + 'static {
 ///
 /// Every generated endpoint implements this structural capability. Core then
 /// combines it with the selected response specification's private acquisition-
-/// mode capability. Public prepared endpoints intentionally do not implement
+/// mode capability. Public runtime endpoints intentionally do not implement
 /// it.
 #[doc(hidden)]
 pub trait RawResponseEndpoint: EndpointSpec {}

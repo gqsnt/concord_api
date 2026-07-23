@@ -15,7 +15,7 @@ use crate::model::{
 };
 use crate::names::{canonical_ident, public_ident, to_snake_case};
 
-const GENERATED_CONTRACT_VERSION: u32 = 21;
+const GENERATED_CONTRACT_VERSION: u32 = 22;
 
 pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
     generate_client(&api.client, core_path)
@@ -262,29 +262,68 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
                 /// Response specification selected by this endpoint declaration.
                 type Response;
 
+                /// Returns the safe static or bounded runtime endpoint description.
+                fn description(
+                    &self,
+                ) -> &#core_path::advanced::EndpointDescription;
+
                 #[doc(hidden)]
                 fn __concord_bind(self, client: &super::#client_name) -> Self::Request;
+
+                #[doc(hidden)]
+                fn __concord_plan(
+                    &self,
+                    client: &super::#client_name,
+                ) -> ::std::result::Result<
+                    #core_path::advanced::SafeRequestPlan,
+                    #core_path::advanced::ApiError,
+                >;
             }
 
             #[doc(hidden)]
             impl<R> __concord_endpoint_seal::Sealed
-                for #core_path::advanced::PreparedEndpoint<R>
+                for #core_path::advanced::RuntimeEndpoint<R>
             where
                 R: #core_path::advanced::ResponseBodySpec,
             {}
 
             #[doc(hidden)]
-            impl<R> Endpoint for #core_path::advanced::PreparedEndpoint<R>
+            impl<R> Endpoint for #core_path::advanced::RuntimeEndpoint<R>
             where
                 R: #core_path::advanced::ResponseBodySpec,
             {
                 type Request = #core_path::Request<Self>;
                 type Response = R;
 
+                fn description(
+                    &self,
+                ) -> &#core_path::advanced::EndpointDescription {
+                    self.description()
+                }
+
                 fn __concord_bind(self, client: &super::#client_name) -> Self::Request {
                     __concord_generated::__core::__private::request(
                         &client.__concord_core,
                         self,
+                    )
+                }
+
+                fn __concord_plan(
+                    &self,
+                    client: &super::#client_name,
+                ) -> ::std::result::Result<
+                    #core_path::advanced::SafeRequestPlan,
+                    #core_path::advanced::ApiError,
+                > {
+                    __concord_generated::__core::__private::safe_request_plan(
+                        &client.__concord_core,
+                        self.description(),
+                        |builder| {
+                            <Self as __concord_generated::__core::__private::EndpointSpec>::prepare_head(
+                                self,
+                                builder,
+                            )
+                        },
                     )
                 }
             }
@@ -307,12 +346,26 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
 
                 #[must_use]
                 /// Creates a side-effect-free pending request from an explicit endpoint generated
-                /// for this client or a stable advanced prepared endpoint.
+                /// for this client or a stable advanced runtime endpoint.
                 pub fn request<E>(&self, endpoint: E) -> E::Request
                 where
                     E: Endpoint,
                 {
                     <E as Endpoint>::__concord_bind(endpoint, self)
+                }
+
+                /// Builds one sanitized no-effect plan by borrowing an endpoint value.
+                pub fn plan<E>(
+                    &self,
+                    endpoint: &E,
+                ) -> ::std::result::Result<
+                    #core_path::advanced::SafeRequestPlan,
+                    #core_path::advanced::ApiError,
+                >
+                where
+                    E: Endpoint,
+                {
+                    <E as Endpoint>::__concord_plan(endpoint, self)
                 }
             }
 
@@ -1439,6 +1492,11 @@ fn generate_endpoint(
     let response = quote!(#invocation_path::#specification_module::#response_specification);
     let endpoint_identity = endpoint_identity(client, scopes, endpoint);
     let endpoint_contract_id = &endpoint.contract_id.value;
+    let description_static = private_ident("endpoint_description", endpoint.id, &endpoint.name);
+    let description_source_path =
+        syn::LitStr::new(&endpoint.surface.docs_identity, endpoint.name.span());
+    let description_route_shape =
+        syn::LitStr::new(&route_shape(&endpoint.config.path), endpoint.name.span());
     let endpoint_doc = endpoint_type_doc(client, scopes, endpoint);
     let constructor_doc = format!(
         "Creates an explicit `{endpoint_identity}` snapshot. Required enclosing scope values are outer-to-inner; optional/defaulted controls are inherent methods."
@@ -1524,6 +1582,12 @@ fn generate_endpoint(
             }
         },
     };
+    let prepare_head_impl = match endpoint.surface.clone_eligibility {
+        CloneEligibility::Always => quote!(impl #endpoint_name),
+        CloneEligibility::BodyInputBound => {
+            quote!(impl<#body_storage> #endpoint_name<#body_storage>)
+        }
+    };
 
     let default_impl = (scopes
         .iter()
@@ -1542,14 +1606,33 @@ fn generate_endpoint(
     });
 
     let method = method_token(&endpoint.method, core_path);
-    let timeout = endpoint.config.timeout.map_or_else(
-        || quote!(::std::option::Option::None),
+    let timeout_selection = endpoint.config.timeout.map_or_else(
+        || quote!(#core_path::advanced::TimeoutSelection::Disabled),
         |duration| {
             let seconds = duration.as_secs();
             let nanos = duration.subsec_nanos();
-            quote!(::std::option::Option::Some(::std::time::Duration::new(#seconds, #nanos)))
+            quote!(
+                #core_path::advanced::TimeoutSelection::Explicit(
+                    ::std::time::Duration::new(#seconds, #nanos)
+                )
+            )
         },
     );
+    let body_category = endpoint.body.as_ref().map_or_else(
+        || quote!(#core_path::advanced::RequestBodyCategory::Empty),
+        |_| quote!(#core_path::advanced::RequestBodyCategory::Specification),
+    );
+    let body_specification = endpoint.body.as_ref().map_or_else(
+        || quote!(::std::option::Option::None),
+        |body| {
+            let identity = syn::LitStr::new(&body.ty.to_token_stream().to_string(), body.ty.span());
+            quote!(::std::option::Option::Some(#identity))
+        },
+    );
+    let pagination_capability = endpoint.pagination.is_some();
+    let credential_storage_capability = !endpoint.surface.terminals.credential_storage.is_empty();
+    let authentication_capability = !endpoint.config.auth.is_empty();
+    let rate_limit_capability = !endpoint.config.rate_limits.is_empty();
     let host_statements = host_statements(client, scopes, endpoint);
     let path_statements = path_statements(client, scopes, endpoint);
     let query_statements = query_statements(client, scopes, endpoint);
@@ -1557,7 +1640,10 @@ fn generate_endpoint(
     let auth_statements = auth_statements(client, endpoint, core_path);
     let rate_limit_statements =
         rate_limit_statements(client, scopes, endpoint, core_path, &invocation_path);
-    let where_clause = endpoint_where_clause(client, scopes, endpoint, core_path, &invocation_path);
+    let surface_where_clause =
+        endpoint_where_clause(client, scopes, endpoint, core_path, &invocation_path, false);
+    let where_clause =
+        endpoint_where_clause(client, scopes, endpoint, core_path, &invocation_path, true);
     let request_wrapper = generate_request_wrapper(
         client,
         scopes,
@@ -1578,6 +1664,31 @@ fn generate_endpoint(
         &where_clause,
     );
     quote! {
+        static #description_static:
+            ::std::sync::LazyLock<#core_path::advanced::EndpointDescription> =
+            ::std::sync::LazyLock::new(|| {
+                let __concord_response_acquisition =
+                    <<#response as #core_path::advanced::ResponseBodySpec>::Mode
+                    as #core_path::advanced::ResponseMode>::ACQUISITION;
+                #core_path::advanced::EndpointDescription::generated(
+                    #core_path::advanced::EndpointId::from_static(#endpoint_contract_id),
+                    #method,
+                    #description_source_path,
+                    #description_route_shape,
+                    #body_category,
+                    #body_specification,
+                    __concord_response_acquisition,
+                    #core_path::advanced::EndpointCapabilities::generated(
+                        #pagination_capability,
+                        #credential_storage_capability,
+                        __concord_response_acquisition.raw_response_eligible(),
+                        #authentication_capability,
+                        #rate_limit_capability,
+                    ),
+                    #timeout_selection,
+                )
+            });
+
         #[doc = #endpoint_doc]
         #clone_attribute
         pub struct #endpoint_name #struct_generics {
@@ -1597,6 +1708,14 @@ fn generate_endpoint(
                 #explicit_initialization
             }
 
+            /// Returns this endpoint's safe static contract description.
+            #[must_use]
+            pub fn description(
+                &self,
+            ) -> &'static #core_path::advanced::EndpointDescription {
+                ::std::sync::LazyLock::force(&#description_static)
+            }
+
             #[doc(hidden)]
             pub(in #support_path) fn __concord_from_facade(#facade_parameters) -> Self {
                 #facade_initialization
@@ -1609,10 +1728,43 @@ fn generate_endpoint(
         #[doc(hidden)]
         impl #support_path::__concord_endpoint_seal::Sealed for #endpoint_name {}
 
-        impl #support_path::Endpoint for #endpoint_name {
+        #[doc(hidden)]
+        #prepare_head_impl
+        #surface_where_clause
+        {
+            fn __concord_prepare_head(
+                &self,
+                __concord_client_values:
+                    &::std::sync::Arc<#invocation_path::#values_type>,
+                __concord_credentials:
+                    &::std::sync::Arc<#invocation_path::#credentials_store>,
+                mut __concord_builder: #generated_core::__private::HeadBuilder,
+            ) -> ::std::result::Result<
+                #generated_core::__private::PreparedHead,
+                #generated_core::__private::ApiError,
+            > {
+                #host_statements
+                #path_statements
+                #query_statements
+                #header_statements
+                #auth_statements
+                #rate_limit_statements
+                ::std::result::Result::Ok(__concord_builder.finish())
+            }
+        }
+
+        impl #support_path::Endpoint for #endpoint_name
+        #surface_where_clause
+        {
             type Request = #request_name;
             #[doc(hidden)]
             type Response = #response;
+
+            fn description(
+                &self,
+            ) -> &#core_path::advanced::EndpointDescription {
+                ::std::sync::LazyLock::force(&#description_static)
+            }
 
             #[doc(hidden)]
             fn __concord_bind(
@@ -1630,6 +1782,25 @@ fn generate_endpoint(
                         #generated_core::__private::request(&client.__concord_core, self),
                 }
             }
+
+            #[doc(hidden)]
+            fn __concord_plan(
+                &self,
+                client: &#invocation_path::#client_name,
+            ) -> ::std::result::Result<
+                #core_path::advanced::SafeRequestPlan,
+                #core_path::advanced::ApiError,
+            > {
+                #generated_core::__private::safe_request_plan(
+                    &client.__concord_core,
+                    ::std::sync::LazyLock::force(&#description_static),
+                    |builder| self.__concord_prepare_head(
+                        &client.__concord_values,
+                        &client.__concord_credentials,
+                        builder,
+                    ),
+                )
+            }
         }
 
         #[doc(hidden)]
@@ -1640,16 +1811,14 @@ fn generate_endpoint(
             type Response = #response;
 
             fn request_meta(&self) -> #generated_core::__private::RequestMeta {
-                #generated_core::__private::RequestMeta::new(
-                    #endpoint_contract_id,
-                    #method,
-                    #timeout,
+                #generated_core::__private::RequestMeta::from_description(
+                    ::std::sync::LazyLock::force(&#description_static),
                 )
             }
 
             fn prepare_head(
                 &self,
-                mut __concord_builder: #generated_core::__private::HeadBuilder,
+                __concord_builder: #generated_core::__private::HeadBuilder,
             ) -> ::std::result::Result<
                 #generated_core::__private::PreparedHead,
                 #generated_core::__private::ApiError,
@@ -1658,13 +1827,15 @@ fn generate_endpoint(
                     .__concord_client_values
                     .as_ref()
                     .expect("generated endpoint is bound by the sealed client request path");
-                #host_statements
-                #path_statements
-                #query_statements
-                #header_statements
-                #auth_statements
-                #rate_limit_statements
-                ::std::result::Result::Ok(__concord_builder.finish())
+                let __concord_credentials = self
+                    .__concord_credentials
+                    .as_ref()
+                    .expect("generated endpoint is bound by the sealed client request path");
+                self.__concord_prepare_head(
+                    __concord_client_values,
+                    __concord_credentials,
+                    __concord_builder,
+                )
             }
 
             fn body_metadata(
@@ -2756,13 +2927,7 @@ fn auth_statements(client: &Client, endpoint: &Endpoint, core_path: &TokenStream
             }
         })
         .collect::<Vec<_>>();
-    quote! {
-        let __concord_credentials = self
-            .__concord_credentials
-            .as_ref()
-            .expect("generated endpoint is bound by the sealed client request path");
-        #(#statements)*
-    }
+    quote!(#(#statements)*)
 }
 
 fn rate_limit_statements(
@@ -2971,16 +3136,19 @@ fn endpoint_where_clause(
     endpoint: &Endpoint,
     core_path: &TokenStream,
     invocation_path: &TokenStream,
+    include_execution: bool,
 ) -> TokenStream {
     let mut bounds = Vec::new();
-    for value in client
-        .values
-        .iter()
-        .chain(scopes.iter().flat_map(|scope| scope.parameters.iter()))
-        .chain(endpoint.parameters.iter())
-    {
-        let ty = &value.ty;
-        bounds.push(quote!(#ty: ::std::marker::Send + ::std::marker::Sync + 'static));
+    if include_execution {
+        for value in client
+            .values
+            .iter()
+            .chain(scopes.iter().flat_map(|scope| scope.parameters.iter()))
+            .chain(endpoint.parameters.iter())
+        {
+            let ty = &value.ty;
+            bounds.push(quote!(#ty: ::std::marker::Send + ::std::marker::Sync + 'static));
+        }
     }
     let mut display_types = Vec::new();
     collect_config_display_types(
@@ -3001,22 +3169,27 @@ fn endpoint_where_clause(
             quote!(#invocation_path::#specification_module::#body_specification)
         },
     );
-    bounds.push(quote!(#body: #core_path::advanced::RequestBodySpec));
+    if include_execution {
+        bounds.push(quote!(#body: #core_path::advanced::RequestBodySpec));
+    }
     let response_specification = response_specification_name(endpoint);
     let response = quote!(#invocation_path::#specification_module::#response_specification);
-    bounds.push(quote!(#response: #core_path::advanced::ResponseBodySpec));
-    if let Some(pagination) = &endpoint.pagination {
-        let page = quote!(<#response as #core_path::advanced::ResponseBodySpec>::Output);
-        let controller = pagination_controller_type(&pagination.controller, invocation_path, false);
-        bounds.push(quote!(#response: #core_path::advanced::PageResponseSpec));
-        bounds.push(quote!(#page: ::std::iter::IntoIterator));
-        bounds.push(quote!(
-            <#page as ::std::iter::IntoIterator>::Item:
-                ::std::marker::Send + 'static
-        ));
-        bounds.push(quote!(
-            #controller: #core_path::advanced::PaginationController<#page>
-        ));
+    if include_execution {
+        bounds.push(quote!(#response: #core_path::advanced::ResponseBodySpec));
+        if let Some(pagination) = &endpoint.pagination {
+            let page = quote!(<#response as #core_path::advanced::ResponseBodySpec>::Output);
+            let controller =
+                pagination_controller_type(&pagination.controller, invocation_path, false);
+            bounds.push(quote!(#response: #core_path::advanced::PageResponseSpec));
+            bounds.push(quote!(#page: ::std::iter::IntoIterator));
+            bounds.push(quote!(
+                <#page as ::std::iter::IntoIterator>::Item:
+                    ::std::marker::Send + 'static
+            ));
+            bounds.push(quote!(
+                #controller: #core_path::advanced::PaginationController<#page>
+            ));
+        }
     }
     let mut seen = HashSet::new();
     bounds.retain(|bound| seen.insert(bound.to_string()));
@@ -3381,7 +3554,7 @@ fn endpoint_configuration_summary(client: &Client, endpoint: &Endpoint) -> Strin
             .collect::<Vec<_>>()
             .join(", ");
         format!(
-            "The effective rate-limit plan has {} rule(s), in exact client-to-scope-to-endpoint composition order: {rules}. Each normal generated rule uses a declaration-scoped global bucket; request values and key parts are absent from generated documentation. Advanced explicit keys are a separate prepared/custom boundary.",
+            "The effective rate-limit plan has {} rule(s), in exact client-to-scope-to-endpoint composition order: {rules}. Each normal generated rule uses a declaration-scoped global bucket; request values and key parts are absent from generated documentation. Advanced explicit keys are a separate runtime/custom boundary.",
             endpoint.config.rate_limits.len()
         )
     };

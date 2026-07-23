@@ -5,7 +5,7 @@ use concord_core::advanced::ErrorCategory;
 
 #[test]
 fn generated_contract_version_matches_generic_specification_capability() {
-    assert_eq!(GENERATED_CONTRACT_VERSION, 21);
+    assert_eq!(GENERATED_CONTRACT_VERSION, 22);
 }
 
 #[test]
@@ -13,7 +13,7 @@ fn structured_head_builder_encodes_values_only_when_prepared() {
     let base = Url::parse("https://example.test/api/").expect("base URL");
     let mut builder = HeadBuilder::new(
         &base,
-        RequestMeta::new("ProofApi::resources::ById", Method::GET, None),
+        RequestMeta::new("proof_api.resources.by_id", Method::GET, None),
         &RequestOptions::new(),
         DebugLevel::None,
         None,
@@ -21,7 +21,7 @@ fn structured_head_builder_encodes_values_only_when_prepared() {
     builder.push_static("resources").expect("static segment");
     builder.push_value("item%2Ftail").expect("dynamic segment");
     let head = builder.finish();
-    assert_eq!(head.endpoint(), "ProofApi::resources::ById");
+    assert_eq!(head.endpoint(), "proof_api.resources.by_id");
     assert_eq!(head.method(), &Method::GET);
     assert_eq!(
         head.logical_url().as_str(),
@@ -36,7 +36,7 @@ fn structured_head_builder_enforces_one_non_dot_segment_per_atom() {
         let base = Url::parse("https://example.test/api/").expect("base URL");
         let mut builder = HeadBuilder::new(
             &base,
-            RequestMeta::new("ProofApi::resources::ById", Method::GET, None),
+            RequestMeta::new("proof_api.resources.by_id", Method::GET, None),
             &RequestOptions::new(),
             DebugLevel::None,
             None,
@@ -64,7 +64,7 @@ fn structured_head_builder_enforces_one_non_dot_segment_per_atom() {
     for invalid in ["two/segments", r"two\segments"] {
         let mut builder = HeadBuilder::new(
             &base,
-            RequestMeta::new("ProofApi::resources::ById", Method::GET, None),
+            RequestMeta::new("proof_api.resources.by_id", Method::GET, None),
             &RequestOptions::new(),
             DebugLevel::None,
             None,

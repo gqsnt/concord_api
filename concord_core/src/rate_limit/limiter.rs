@@ -15,7 +15,7 @@ pub const DEFAULT_RATE_LIMIT_KEY_BYTES: usize = 1_024;
 /// Safe request metadata supplied to a selected rate limiter.
 pub struct RateLimitRequest<'a> {
     /// Stable generated endpoint identity.
-    pub endpoint: &'static str,
+    pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
     /// Sanitized logical URL.
@@ -97,7 +97,7 @@ pub struct Cooldown {
 /// Sanitized response-head context supplied to a rate-limit observer.
 pub struct RateLimitResponseHead<'a> {
     /// Stable generated endpoint identity.
-    pub endpoint: &'static str,
+    pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
     /// Sanitized logical URL.

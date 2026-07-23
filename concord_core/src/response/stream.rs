@@ -109,7 +109,7 @@ mod tests {
         });
         ByteStream::new(crate::http::application::bounded_byte_stream(
             body,
-            "StreamApi::download",
+            "stream.download".into(),
             http::Method::GET,
             limit,
         ))

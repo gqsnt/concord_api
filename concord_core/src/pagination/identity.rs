@@ -114,7 +114,7 @@ impl CanonicalIdentity {
     }
 
     pub(crate) fn from_request_head(
-        endpoint: &'static str,
+        endpoint: &str,
         method: &http::Method,
         logical_url: &url::Url,
         public_headers: &HeaderMap,

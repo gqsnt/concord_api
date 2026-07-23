@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use concord::api;
-use concord::endpoint::PreparedEndpoint;
+use concord::endpoint::{EndpointId, RuntimeEndpoint};
 use concord::http::Method;
 use concord::prelude::{Bytes, PageLimit, StreamBody};
 use concord::{PaginatedRequest, Request};
@@ -35,10 +35,13 @@ fn canonical_construction_is_deterministic_and_performs_no_transport() {
             std::num::NonZeroU32::new(25).expect("positive page size"),
         )
         .paginate(PageLimit::Take(2));
-    let prepared = PreparedEndpoint::builder("DeterministicApi::prepared", Method::GET)
-        .path_segment("record")
-        .response_bytes()
-        .build()
-        .expect("deterministic prepared endpoint");
-    let _: Request<_> = client.request(prepared);
+    let runtime = RuntimeEndpoint::builder(
+        EndpointId::new("deterministic_api.runtime").expect("bounded runtime endpoint ID"),
+        Method::GET,
+    )
+    .path_segment("record")
+    .response_bytes()
+    .build()
+    .expect("deterministic runtime endpoint");
+    let _: Request<_> = client.request(runtime);
 }

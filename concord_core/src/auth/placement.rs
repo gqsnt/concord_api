@@ -6,6 +6,7 @@ use http::header::AUTHORIZATION;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use url::Url;
 
+use crate::endpoint::EndpointId;
 use crate::error::{ApiError, AuthErrorKind, ConfigurationErrorKind};
 use crate::hooks::BoxFuture;
 use crate::http::application::ApplicationRequest;
@@ -539,14 +540,16 @@ impl FinalizedAuthPlan {
     pub(crate) fn materialize(
         self,
         request: &mut ApplicationRequest,
-        endpoint: &'static str,
+        endpoint: &EndpointId,
         method: &Method,
     ) -> Result<(), ApiError> {
         for placement in self.placements {
             let material = placement
                 .credential
                 .materialize(&placement.prepared)
-                .map_err(|error| ApiError::authentication(endpoint, method.clone(), error))?;
+                .map_err(|error| {
+                    ApiError::authentication(endpoint.clone(), method.clone(), error)
+                })?;
             match (placement.kind, material) {
                 (PlacementKind::Bearer, NativeMaterial::Secret(secret)) => {
                     let value =
@@ -581,9 +584,9 @@ impl FinalizedAuthPlan {
     }
 }
 
-fn invalid_auth(endpoint: &'static str, method: &Method) -> ApiError {
+fn invalid_auth(endpoint: &EndpointId, method: &Method) -> ApiError {
     ApiError::configuration(
-        endpoint,
+        endpoint.clone(),
         method.clone(),
         ConfigurationErrorKind::InvalidAuthentication,
     )

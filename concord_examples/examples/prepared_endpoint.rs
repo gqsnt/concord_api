@@ -2,7 +2,7 @@
 
 use concord::Request;
 use concord::api;
-use concord::endpoint::PreparedEndpoint;
+use concord::endpoint::{EndpointId, RuntimeEndpoint};
 use concord::http::{HeaderName, Method};
 
 api! {
@@ -15,7 +15,7 @@ api! {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = PreparedApi::builder().build()?;
-    let endpoint = PreparedEndpoint::builder("PreparedApi::lookup", Method::POST)
+    let endpoint = RuntimeEndpoint::builder(EndpointId::new("prepared_api.lookup")?, Method::POST)
         .path_segment("records")
         .path_segment("42")
         .query("view", "summary")

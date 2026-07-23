@@ -10,6 +10,7 @@ use url::{Host, Url};
 
 use super::RequestOptions;
 use crate::auth::{Auth, AuthPlan};
+use crate::endpoint::{EndpointDescription, EndpointId, TimeoutSelection};
 use crate::error::{ApiError, ConfigurationErrorKind};
 use crate::hooks::DebugLevel;
 use crate::rate_limit::{
@@ -22,10 +23,9 @@ use crate::redaction::render_safe_url;
 #[doc(hidden)]
 #[derive(Clone, Debug)]
 pub struct RequestMeta {
-    endpoint: &'static str,
+    endpoint: EndpointId,
     method: Method,
-    inherited_timeout: Option<Duration>,
-    inherit_client_timeout: bool,
+    timeout: TimeoutSelection,
 }
 
 impl RequestMeta {
@@ -37,10 +37,12 @@ impl RequestMeta {
         inherited_timeout: Option<Duration>,
     ) -> Self {
         Self {
-            endpoint,
+            endpoint: EndpointId::from_static(endpoint),
             method,
-            inherited_timeout,
-            inherit_client_timeout: false,
+            timeout: match inherited_timeout {
+                Some(duration) => TimeoutSelection::Explicit(duration),
+                None => TimeoutSelection::Disabled,
+            },
         }
     }
 
@@ -50,16 +52,30 @@ impl RequestMeta {
     #[must_use]
     pub const fn inheriting_client_timeout(endpoint: &'static str, method: Method) -> Self {
         Self {
-            endpoint,
+            endpoint: EndpointId::from_static(endpoint),
             method,
-            inherited_timeout: None,
-            inherit_client_timeout: true,
+            timeout: TimeoutSelection::InheritClient,
         }
     }
 
     #[doc(hidden)]
-    pub const fn endpoint(&self) -> &'static str {
-        self.endpoint
+    #[must_use]
+    pub fn from_description(description: &EndpointDescription) -> Self {
+        Self {
+            endpoint: description.endpoint_id().clone(),
+            method: description.method().clone(),
+            timeout: description.timeout(),
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn endpoint(&self) -> &str {
+        self.endpoint.as_str()
+    }
+
+    #[doc(hidden)]
+    pub const fn endpoint_id(&self) -> &EndpointId {
+        &self.endpoint
     }
 
     #[doc(hidden)]
@@ -68,19 +84,15 @@ impl RequestMeta {
     }
 
     #[doc(hidden)]
-    pub const fn inherited_timeout(&self) -> Option<Duration> {
-        self.inherited_timeout
+    pub const fn timeout_selection(&self) -> TimeoutSelection {
+        self.timeout
     }
 
     pub(crate) const fn resolve_inherited_timeout(
         &self,
         client_timeout: Option<Duration>,
     ) -> Option<Duration> {
-        if self.inherit_client_timeout {
-            client_timeout
-        } else {
-            self.inherited_timeout
-        }
+        self.timeout.resolve(client_timeout)
     }
 }
 
@@ -144,7 +156,7 @@ impl HeadBuilder {
             .map_err(|error| {
                 drop(error);
                 ApiError::configuration(
-                    self.meta.endpoint(),
+                    self.meta.endpoint_id().clone(),
                     self.meta.method().clone(),
                     ConfigurationErrorKind::InvalidAuthentication,
                 )
@@ -184,7 +196,7 @@ impl HeadBuilder {
         .map_err(|error| {
             drop(error);
             ApiError::configuration(
-                self.meta.endpoint(),
+                self.meta.endpoint_id().clone(),
                 self.meta.method().clone(),
                 ConfigurationErrorKind::InvalidRateLimit,
             )
@@ -223,7 +235,7 @@ impl HeadBuilder {
         .map_err(|error| {
             drop(error);
             ApiError::configuration(
-                self.meta.endpoint(),
+                self.meta.endpoint_id().clone(),
                 self.meta.method().clone(),
                 ConfigurationErrorKind::InvalidRateLimit,
             )
@@ -280,10 +292,10 @@ impl HeadBuilder {
 
     fn push_host_label_with_safe(&mut self, label: &str, safe_label: &str) -> Result<(), ApiError> {
         if !valid_dns_label(label) {
-            return Err(invalid_route(self.meta.endpoint(), self.meta.method()));
+            return Err(invalid_route(self.meta.endpoint_id(), self.meta.method()));
         }
         if !matches!(self.logical_url.host(), Some(Host::Domain(_))) {
-            return Err(invalid_route(self.meta.endpoint(), self.meta.method()));
+            return Err(invalid_route(self.meta.endpoint_id(), self.meta.method()));
         }
 
         self.host_labels.push(label.to_owned());
@@ -292,7 +304,7 @@ impl HeadBuilder {
         host.push_str(&self.base_host);
         if host.len() > 253 || self.logical_url.set_host(Some(&host)).is_err() {
             self.host_labels.pop();
-            return Err(invalid_route(self.meta.endpoint(), self.meta.method()));
+            return Err(invalid_route(self.meta.endpoint_id(), self.meta.method()));
         }
         self.safe_host_labels.push(safe_label.to_owned());
         let mut safe_host = self.safe_host_labels.join(".");
@@ -308,7 +320,7 @@ impl HeadBuilder {
     #[doc(hidden)]
     pub fn push_static(&mut self, segment: &str) -> Result<(), ApiError> {
         if segment.contains('/') || segment.contains('\\') {
-            return Err(invalid_route(self.meta.endpoint(), self.meta.method()));
+            return Err(invalid_route(self.meta.endpoint_id(), self.meta.method()));
         }
         self.push_segment(segment)
     }
@@ -347,12 +359,12 @@ impl HeadBuilder {
             || segment.contains('/')
             || segment.contains('\\')
         {
-            return Err(invalid_route(self.meta.endpoint(), self.meta.method()));
+            return Err(invalid_route(self.meta.endpoint_id(), self.meta.method()));
         }
         let mut path = self
             .logical_url
             .path_segments_mut()
-            .map_err(|()| invalid_route(self.meta.endpoint(), self.meta.method()))?;
+            .map_err(|()| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
         if !self.appended_segment {
             path.pop_if_empty();
         }
@@ -361,7 +373,7 @@ impl HeadBuilder {
         let mut safe_path = self
             .safe_logical_url
             .path_segments_mut()
-            .map_err(|()| invalid_route(self.meta.endpoint(), self.meta.method()))?;
+            .map_err(|()| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
         if !self.appended_segment {
             safe_path.pop_if_empty();
         }
@@ -383,7 +395,7 @@ impl HeadBuilder {
         let mut path = self
             .logical_url
             .path_segments_mut()
-            .map_err(|()| invalid_route(self.meta.endpoint(), self.meta.method()))?;
+            .map_err(|()| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
         if !self.appended_segment {
             path.pop_if_empty();
         }
@@ -392,7 +404,7 @@ impl HeadBuilder {
         let mut safe_path = self
             .safe_logical_url
             .path_segments_mut()
-            .map_err(|()| invalid_route(self.meta.endpoint(), self.meta.method()))?;
+            .map_err(|()| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
         if !self.appended_segment {
             safe_path.pop_if_empty();
         }
@@ -435,9 +447,9 @@ impl HeadBuilder {
         T: Display + ?Sized,
     {
         let name = HeaderName::from_bytes(name.as_bytes())
-            .map_err(|_| invalid_header(self.meta.endpoint(), self.meta.method()))?;
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
         let value = validate_public_header(&name, &value.to_string())
-            .map_err(|_| invalid_header(self.meta.endpoint(), self.meta.method()))?;
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
         self.public_headers.insert(name, value);
         Ok(())
     }
@@ -457,12 +469,12 @@ impl HeadBuilder {
         T: Display + ?Sized,
     {
         let name = HeaderName::from_bytes(name.as_bytes())
-            .map_err(|_| invalid_header(self.meta.endpoint(), self.meta.method()))?;
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
         if reserved_public_header(&name) {
-            return Err(invalid_header(self.meta.endpoint(), self.meta.method()));
+            return Err(invalid_header(self.meta.endpoint_id(), self.meta.method()));
         }
         let value = HeaderValue::from_str(&value.to_string())
-            .map_err(|_| invalid_header(self.meta.endpoint(), self.meta.method()))?;
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
         self.pagination_sensitive_headers.insert(name.clone());
         self.public_headers.insert(name, value);
         Ok(())
@@ -510,7 +522,7 @@ impl PreparedHead {
             .map_err(|error| {
                 drop(error);
                 ApiError::configuration(
-                    self.endpoint(),
+                    self.meta.endpoint_id().clone(),
                     self.method().clone(),
                     ConfigurationErrorKind::InvalidAuthentication,
                 )
@@ -527,7 +539,7 @@ impl PreparedHead {
             if !self.public_headers.contains_key(ACCEPT) {
                 let value = HeaderValue::from_str(accept).map_err(|_| {
                     ApiError::configuration(
-                        self.endpoint(),
+                        self.meta.endpoint_id().clone(),
                         self.method().clone(),
                         ConfigurationErrorKind::InvalidHeader,
                     )
@@ -537,7 +549,7 @@ impl PreparedHead {
         }
         if body_owns_content_type && self.public_headers.contains_key(CONTENT_TYPE) {
             return Err(ApiError::configuration(
-                self.endpoint(),
+                self.meta.endpoint_id().clone(),
                 self.method().clone(),
                 ConfigurationErrorKind::InvalidHeader,
             ));
@@ -560,8 +572,13 @@ impl PreparedHead {
     }
 
     #[doc(hidden)]
-    pub const fn endpoint(&self) -> &'static str {
+    pub fn endpoint(&self) -> &str {
         self.meta.endpoint()
+    }
+
+    #[doc(hidden)]
+    pub const fn endpoint_id(&self) -> &EndpointId {
+        self.meta.endpoint_id()
     }
 
     #[doc(hidden)]
@@ -618,7 +635,7 @@ impl PreparedHead {
             .map_err(|error| {
                 drop(error);
                 ApiError::configuration(
-                    self.endpoint(),
+                    self.meta.endpoint_id().clone(),
                     self.method().clone(),
                     ConfigurationErrorKind::InvalidRateLimit,
                 )
@@ -626,17 +643,17 @@ impl PreparedHead {
     }
 }
 
-fn invalid_route(endpoint: &'static str, method: &Method) -> ApiError {
+fn invalid_route(endpoint: &EndpointId, method: &Method) -> ApiError {
     ApiError::configuration(
-        endpoint,
+        endpoint.clone(),
         method.clone(),
         ConfigurationErrorKind::InvalidRoute,
     )
 }
 
-fn invalid_header(endpoint: &'static str, method: &Method) -> ApiError {
+fn invalid_header(endpoint: &EndpointId, method: &Method) -> ApiError {
     ApiError::configuration(
-        endpoint,
+        endpoint.clone(),
         method.clone(),
         ConfigurationErrorKind::InvalidHeader,
     )
@@ -689,7 +706,7 @@ mod tests {
     fn prepared() -> PreparedHead {
         HeadBuilder::new(
             &Url::parse("https://headers.example.test/").expect("base URL"),
-            RequestMeta::new("HeaderApi::records::create", Method::POST, None),
+            RequestMeta::new("header_api.records.create", Method::POST, None),
             &RequestOptions::new(),
             DebugLevel::None,
             None,
@@ -700,7 +717,7 @@ mod tests {
     fn builder(base: &str) -> HeadBuilder {
         HeadBuilder::new(
             &Url::parse(base).expect("base URL"),
-            RequestMeta::new("HeadApi::shape", Method::GET, None),
+            RequestMeta::new("head_api.shape", Method::GET, None),
             &RequestOptions::new(),
             DebugLevel::None,
             None,

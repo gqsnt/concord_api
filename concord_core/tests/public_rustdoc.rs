@@ -136,9 +136,9 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             "removed prepared response marker remains in Rustdoc: {removed}"
         );
     }
-    let prepared_pages = [
-        "struct.PreparedEndpointBuilder.html",
-        "struct.PreparedEndpoint.html",
+    let runtime_endpoint_pages = [
+        "struct.RuntimeEndpointBuilder.html",
+        "struct.RuntimeEndpoint.html",
     ]
     .into_iter()
     .map(|name| {
@@ -478,8 +478,8 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "dangerous namespace Rustdoc omitted feature-unification or owned capabilities"
     );
     assert!(
-        !prelude.contains("RawResponse") && !prepared_pages.contains("RawResponse"),
-        "raw response escaped its dangerous namespace or entered prepared docs"
+        !prelude.contains("RawResponse") && !runtime_endpoint_pages.contains("RawResponse"),
+        "raw response escaped its dangerous namespace or entered runtime-endpoint docs"
     );
     for forbidden in [
         "RawResponseEndpoint",
@@ -638,18 +638,20 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "id=\"method.auth\"",
         "id=\"method.timeout\"",
         "id=\"method.disable_timeout\"",
+        "id=\"method.inherit_timeout\"",
         "id=\"method.rate_limit\"",
         "id=\"method.response\"",
         "id=\"method.response_bytes\"",
         "id=\"method.response_no_content\"",
         "id=\"method.response_stream\"",
         "id=\"method.build\"",
+        "id=\"method.description\"",
         "exactly one URL-encoded path segment",
         "Fields are intentionally private",
     ] {
         assert!(
-            prepared_pages.contains(expected),
-            "prepared Rustdoc omitted {expected:?}"
+            runtime_endpoint_pages.contains(expected),
+            "runtime endpoint Rustdoc omitted {expected:?}"
         );
     }
     for forbidden in [
@@ -660,8 +662,8 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "PreparedPagination",
     ] {
         assert!(
-            !prepared_pages.contains(forbidden),
-            "prepared Rustdoc exposed prohibited capability {forbidden:?}"
+            !runtime_endpoint_pages.contains(forbidden),
+            "runtime endpoint Rustdoc exposed prohibited capability {forbidden:?}"
         );
     }
     for (name, expected) in extension_contracts {
@@ -724,8 +726,11 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "ordinary prelude pagination exports were not exact"
     );
     assert!(
-        !prelude.contains("PreparedEndpoint") && !prelude.contains("PreparedEndpointBuilder"),
-        "ordinary prelude unexpectedly exported prepared endpoint contracts"
+        !prelude.contains("RuntimeEndpoint")
+            && !prelude.contains("RuntimeEndpointBuilder")
+            && !prelude.contains("PreparedEndpoint")
+            && !prelude.contains("PreparedEndpointBuilder"),
+        "ordinary prelude unexpectedly exported runtime endpoint contracts"
     );
 
     for forbidden in [
@@ -756,7 +761,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
                 &paginated_request,
                 &pagination_pages,
                 &rate_pages,
-                &prepared_pages,
+                &runtime_endpoint_pages,
                 &raw_response,
                 &raw_request,
             ]

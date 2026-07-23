@@ -36,7 +36,7 @@ use crate::rate_limit::{
 use crate::request::{EndpointSpec, HeadBuilder, PreparedHead, Request, RequestMeta};
 use crate::runtime::RuntimeConfigBuilder;
 
-const ENDPOINT: &str = "PaginationRuntimeApi::items::list";
+const ENDPOINT: &str = "pagination_runtime_api.items.list";
 
 struct PageCodec;
 
@@ -192,7 +192,7 @@ impl EndpointSpec for HostRateEndpoint {
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(
-            "PaginationRuntimeApi::items::host_rate_key",
+            "pagination_runtime_api.items.host_rate_key",
             Method::GET,
             Some(Duration::from_secs(30)),
         )
@@ -257,7 +257,7 @@ impl EndpointSpec for RateKeyEndpoint {
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(
-            "PaginationRuntimeApi::items::rate_key",
+            "pagination_runtime_api.items.rate_key",
             Method::GET,
             Some(Duration::from_secs(30)),
         )

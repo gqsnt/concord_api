@@ -5,6 +5,7 @@ use url::Url;
 
 use crate::body::Stream;
 use crate::codec::{DecodeBody, DecodeContext, MediaType};
+use crate::endpoint::ResponseAcquisition;
 use crate::hooks::{BoxFuture, CompletionOutcome};
 
 use super::handler::ResponseInput;
@@ -48,18 +49,25 @@ pub struct Discard;
 pub trait ResponseMode: private::Sealed + Send + Sync + 'static {
     /// Body value delivered after core-owned acquisition.
     type Body: Send + 'static;
+
+    /// Safe structural acquisition category used by endpoint descriptions and
+    /// planning without invoking a response specification.
+    const ACQUISITION: ResponseAcquisition;
 }
 
 impl ResponseMode for Buffered {
     type Body = Bytes;
+    const ACQUISITION: ResponseAcquisition = ResponseAcquisition::Buffered;
 }
 
 impl ResponseMode for Streaming {
     type Body = ByteStream;
+    const ACQUISITION: ResponseAcquisition = ResponseAcquisition::Streaming;
 }
 
 impl ResponseMode for Discard {
     type Body = ();
+    const ACQUISITION: ResponseAcquisition = ResponseAcquisition::Discard;
 }
 
 impl private::Sealed for Buffered {
@@ -127,8 +135,8 @@ impl RawResponseMode for Discard {}
 /// inputs and owns their logging and storage behavior. No native response or
 /// transport handle is exposed.
 pub struct ResponseHead<'a> {
-    /// Stable generated or prepared endpoint identity.
-    pub endpoint: &'static str,
+    /// Stable generated or runtime endpoint identity.
+    pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
     /// Logical application URL without native-only authentication.

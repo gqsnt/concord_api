@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use concord_core::advanced::{
     ApiError, AuthErrorKind, Bytes, ClientBuildError, ClientBuildErrorKind, ClientInputKind,
-    CodecError, ConfigurationError, ConfigurationErrorKind, DecodeBody, DecodeContext,
+    CodecError, ConfigurationError, ConfigurationErrorKind, DecodeBody, DecodeContext, EndpointId,
     ErrorCategory, HeaderName, HttpResponseFailure, Method, PaginationErrorKind,
     RateLimitErrorKind, SanitizedHeaderMap, StatusBody, StatusBodyDecodeError, StatusBodyState,
 };
@@ -11,7 +11,8 @@ use concord_core::advanced::{
 fn api_error_accessors(error: &ApiError) {
     let _: ErrorCategory = error.category();
     let _: Option<ConfigurationErrorKind> = error.configuration_kind();
-    let _: &'static str = error.endpoint();
+    let _: &str = error.endpoint();
+    let _: &EndpointId = error.endpoint_id();
     let _: &Method = error.method();
     let _: Option<concord_core::advanced::StatusCode> = error.http_status();
     let _: Option<&SanitizedHeaderMap> = error.http_headers();
@@ -23,7 +24,8 @@ fn api_error_accessors(error: &ApiError) {
 }
 
 fn response_accessors(response: &HttpResponseFailure) {
-    let _: &'static str = response.endpoint();
+    let _: &str = response.endpoint();
+    let _: &EndpointId = response.endpoint_id();
     let _: &Method = response.method();
     let _: concord_core::advanced::StatusCode = response.status();
     let _: &SanitizedHeaderMap = response.headers();
@@ -57,7 +59,7 @@ impl DecodeBody for DownstreamDecoder {
     const ACCEPT: Option<&'static str> = Some("application/downstream");
 
     fn decode(body: Bytes, context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
-        let _: &'static str = context.endpoint;
+        let _: &str = context.endpoint;
         let _: &Method = context.method;
         let _ = context.status;
         let _: Option<&str> = context.content_type;

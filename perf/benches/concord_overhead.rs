@@ -13,7 +13,7 @@ use concord::__development::{
 use concord::PaginatedRequest;
 use concord::api;
 use concord::codec::{BytesMut, CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext};
-use concord::endpoint::PreparedEndpoint;
+use concord::endpoint::{EndpointId, RuntimeEndpoint};
 use concord::http::{Method, SafeProxy, StatusCode};
 use concord::prelude::{Bytes, PageLimit, SecretString, StreamBody};
 use concord::rate_limit::NoopRateLimiter;
@@ -138,9 +138,10 @@ api! {
     }
 }
 
-const EXPECTED_CATEGORIES: [&str; 11] = [
+const EXPECTED_CATEGORIES: [&str; 12] = [
     "core client construction",
     "generated client, facade, and request creation",
+    "safe public planning",
     "public head preparation",
     "codec encoding and decoding",
     "body-limit polling",
@@ -181,7 +182,7 @@ impl CategoryAudit {
                 "benchmark category did not execute: {expected}"
             );
         }
-        println!("benchmark operation audit: 11/11 named categories executed");
+        println!("benchmark operation audit: 12/12 named categories executed");
     }
 }
 
@@ -235,6 +236,22 @@ fn generated_client_facade_and_request_creation(iterations: usize, audit: &mut C
         iterations,
         started,
     );
+}
+
+fn safe_public_planning(
+    iterations: usize,
+    audit: &mut CategoryAudit,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let client = configured_builder().build()?;
+    let endpoints = (0..iterations)
+        .map(|index| bench_api::records::Show::new("archive".to_owned(), index.to_string()))
+        .collect::<Vec<_>>();
+    let started = Instant::now();
+    for endpoint in &endpoints {
+        black_box(client.plan(endpoint)?);
+    }
+    report(audit, "safe public planning", iterations, started);
+    Ok(())
 }
 
 fn public_head_preparation(
@@ -412,11 +429,12 @@ fn stream_wrapping(iterations: usize, audit: &mut CategoryAudit) {
 fn generic_specification_selection(iterations: usize, audit: &mut CategoryAudit) {
     let started = Instant::now();
     for _ in 0..iterations {
-        let endpoint = PreparedEndpoint::builder("BenchApi::generic", Method::POST)
-            .body_spec::<BenchCodec>("benchmark generic body".to_owned())
-            .response::<BenchCodec>()
-            .build()
-            .expect("generic benchmark endpoint");
+        let endpoint =
+            RuntimeEndpoint::builder(EndpointId::from_static("bench_api.runtime"), Method::POST)
+                .body_spec::<BenchCodec>("benchmark generic body".to_owned())
+                .response::<BenchCodec>()
+                .build()
+                .expect("generic benchmark endpoint");
         black_box(endpoint);
     }
     report(
@@ -460,6 +478,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     core_client_construction(iterations, &mut audit);
     generated_client_facade_and_request_creation(iterations, &mut audit);
+    safe_public_planning(iterations, &mut audit)?;
     public_head_preparation(iterations, &runtime, &mut audit)?;
     codec_encoding_and_decoding(iterations, &mut audit);
     body_limit_polling(iterations, &runtime, &mut audit)?;

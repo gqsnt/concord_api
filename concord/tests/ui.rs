@@ -4,6 +4,7 @@ fn named_generated_surface_compiles_without_generated_import_conventions() {
     cases.pass("tests/ui/pass/named_surface.rs");
     cases.pass("tests/ui/pass/configured_client_builder.rs");
     cases.pass("tests/ui/pass/dsl_v2.rs");
+    cases.pass("tests/ui/pass/runtime_endpoint.rs");
 }
 
 #[test]
@@ -20,6 +21,7 @@ fn invalid_generated_capabilities_are_absent_or_focused() {
     cases.compile_fail("tests/ui/fail/pascal_source_name.rs");
     cases.compile_fail("tests/ui/fail/duplicate_contract_id.rs");
     cases.compile_fail("tests/ui/fail/custom_retry_dsl_removed.rs");
+    cases.compile_fail("tests/ui/fail/prepared_endpoint_alias_deprecated.rs");
     #[cfg(feature = "dangerous-raw-response")]
     cases.compile_fail("tests/ui/fail/raw_stream_mode_rejected.rs");
 }

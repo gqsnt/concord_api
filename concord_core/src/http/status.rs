@@ -4,6 +4,7 @@ use std::time::Duration;
 use bytes::BytesMut;
 use http::Method;
 
+use crate::endpoint::EndpointId;
 use crate::error::{HttpResponseFailure, StatusBody};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -18,7 +19,7 @@ pub(super) enum StatusCapture {
 }
 
 pub(super) async fn collect_terminal_status(
-    endpoint: &'static str,
+    endpoint: EndpointId,
     method: Method,
     mut response: reqwest::Response,
     disposition: StatusDisposition,
@@ -132,7 +133,7 @@ mod tests {
         match managed
             .application
             .terminal_status(
-                "managed.status",
+                "managed.status".into(),
                 Method::GET,
                 response,
                 StatusDisposition::Terminal,
@@ -310,7 +311,7 @@ mod tests {
         let capture = tokio::time::timeout(
             Duration::from_millis(300),
             managed.application.terminal_status(
-                "managed.challenge",
+                "managed.challenge".into(),
                 Method::GET,
                 response(&managed, &recoverable, "/recoverable").await,
                 StatusDisposition::RecoverableChallenge,

@@ -5,9 +5,11 @@ use bytes::Bytes;
 use http::{HeaderMap, Method, StatusCode, Version};
 use url::Url;
 
+use crate::endpoint::EndpointId;
+
 /// Safe metadata describing the successful execution that produced a value.
 pub struct ExecutionMeta {
-    endpoint: &'static str,
+    endpoint: EndpointId,
     method: Method,
     page_index: u32,
     recovered_authentication: bool,
@@ -16,13 +18,13 @@ pub struct ExecutionMeta {
 impl ExecutionMeta {
     #[allow(dead_code, reason = "constructed by the production executor")]
     pub(crate) fn new(
-        endpoint: &'static str,
+        endpoint: impl Into<EndpointId>,
         method: Method,
         page_index: u32,
         recovered_authentication: bool,
     ) -> Self {
         Self {
-            endpoint,
+            endpoint: endpoint.into(),
             method,
             page_index,
             recovered_authentication,
@@ -30,9 +32,15 @@ impl ExecutionMeta {
     }
 
     #[must_use]
-    /// Returns the stable generated or prepared endpoint identity.
-    pub const fn endpoint(&self) -> &'static str {
-        self.endpoint
+    /// Returns the stable generated or runtime endpoint identity.
+    pub fn endpoint(&self) -> &str {
+        self.endpoint.as_str()
+    }
+
+    #[must_use]
+    /// Returns the typed stable endpoint identity.
+    pub const fn endpoint_id(&self) -> &EndpointId {
+        &self.endpoint
     }
 
     #[must_use]
@@ -294,7 +302,7 @@ mod tests {
             StatusCode::OK,
             Version::HTTP_11,
             headers,
-            ExecutionMeta::new("MetadataApi::value", Method::GET, 0, false),
+            ExecutionMeta::new("metadata_api.value", Method::GET, 0, false),
             VALUE_SECRET.to_owned(),
         );
 

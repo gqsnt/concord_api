@@ -1,8 +1,8 @@
-error[E0277]: the trait bound `Streaming: RawResponseMode` is not satisfied
+error[E0277]: the trait bound `concord_core::advanced::Streaming: RawResponseMode` is not satisfied
   --> tests/ui/fail/dangerous_raw_stream_rejected.rs:13:31
    |
 13 |     let _ = client.download().raw_response();
-   |                               ^^^^^^^^^^^^ the trait `RawResponseMode` is not implemented for `Streaming`
+   |                               ^^^^^^^^^^^^ the trait `RawResponseMode` is not implemented for `concord_core::advanced::Streaming`
    |
 help: the following other types implement trait `RawResponseMode`
   --> $WORKSPACE/concord_core/src/response/spec.rs
@@ -11,7 +11,7 @@ help: the following other types implement trait `RawResponseMode`
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::advanced::Buffered`
 ...
    | impl RawResponseMode for Discard {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Discard`
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::advanced::Discard`
 note: required by a bound in `DownloadRequest::raw_response`
   --> tests/ui/fail/dangerous_raw_stream_rejected.rs:3:1
    |

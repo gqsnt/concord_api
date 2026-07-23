@@ -120,7 +120,7 @@ fn authentication_plan_state_is_absent_from_canonical_logical_identity() {
         let selector = SlotSelector::static_value(AccessToken::new(token), Duration::ZERO);
         let mut builder = HeadBuilder::new(
             &Url::parse("https://pagination.example.test/v1/").expect("base"),
-            RequestMeta::new("PaginationApi::protected", Method::GET, None),
+            RequestMeta::new("pagination_api.protected", Method::GET, None),
             &RequestOptions::new(),
             DebugLevel::None,
             None,

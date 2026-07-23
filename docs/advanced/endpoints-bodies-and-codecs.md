@@ -65,7 +65,7 @@ They cannot add a fourth response acquisition mode, receive a native response, m
 - Custom request representation: implement `RequestBodySpec`.
 - Custom successful response representation: implement `ResponseBodySpec`.
 - Framed records: implement `RecordDecoder`.
-- Runtime endpoint construction: use `PreparedEndpoint`.
+- Runtime endpoint construction: use `RuntimeEndpoint`.
 - Dynamic auth material: implement `CredentialProvider`.
 - Application-specific quotas: implement `RateLimiter`.
 - Observation only: implement `RuntimeHooks` or `RateLimitObserver`.
@@ -82,9 +82,18 @@ let endpoint = reference_api::endpoints::regions::Resource::new(
 )
 .language("fr".to_owned());
 
+let description = endpoint.description();
+let plan = client.plan(&endpoint)?;
 let request = client.request(endpoint);
 let value = request.await?;
 ```
+
+Generated endpoint values expose safe static contract metadata and can be
+planned without being consumed. The plan uses the actual public-head builder, but contains only a sanitized URL,
+sanitized public headers, static body/response categories, timeout information,
+and structural auth/rate capability summaries. It performs no hooks,
+credential/limiter acquisition, body callbacks or factories, stream polling,
+native construction, transport, response acquisition, or completion.
 
 ### When to use explicit endpoints
 
@@ -113,18 +122,22 @@ The explicit endpoint has the same capabilities as its facade request:
 - `.raw_response()` is generated only for eligible endpoints under the dangerous feature;
 - stream, prepared, or incompatible responses do not gain unsupported terminals.
 
-### Difference from prepared endpoints
+### Difference from runtime endpoints
 
-Explicit endpoints are statically generated from the DSL and retain their exact generated type. Prepared endpoints are runtime-composed routes and response specifications accepted through the generated client's prepared capability.
+Explicit endpoints are statically generated from the DSL and retain their exact generated type. Runtime endpoints are dynamically composed routes and response specifications accepted through the same generated-client endpoint capability.
 
-## Prepared endpoints
+## Runtime endpoints
 
-`PreparedEndpoint` builds a runtime-defined endpoint while reusing the same client and execution lifecycle as generated endpoints.
+`RuntimeEndpoint` builds a runtime-defined endpoint while reusing the same client and execution lifecycle as generated endpoints.
 
 ```rust
-use concord_core::advanced::{HeaderName, Method, PreparedEndpoint};
+use concord::endpoint::{EndpointId, RuntimeEndpoint};
+use concord::http::{HeaderName, Method};
 
-let endpoint = PreparedEndpoint::builder("InventoryApi::lookup", Method::POST)
+let endpoint = RuntimeEndpoint::builder(
+    EndpointId::new("inventory.lookup")?,
+    Method::POST,
+)
     .path_segment("records")
     .path_segment("42")
     .query("view", "summary")
@@ -145,8 +158,8 @@ let output = client.request(endpoint).await?;
 - `body(RequestBody)` selects an already managed body.
 - `body_spec::<B>(B::Input)` selects any `RequestBodySpec`.
 - `body_codec::<C>(C::Input)` uses a complete buffered codec.
-- `auth(Auth)` appends one prepared authentication placement.
-- `timeout` and `disable_timeout` select endpoint timeout behavior.
+- `auth(Auth)` appends one runtime authentication placement.
+- `timeout`, `disable_timeout`, and `inherit_timeout` select the timeout tri-state.
 - `rate_limit(RateLimitRule)` appends an explicit rule.
 - `response::<S>()` selects any `ResponseBodySpec`.
 - convenience response methods select bytes, no-content, or stream.
@@ -154,11 +167,11 @@ let output = client.request(endpoint).await?;
 
 ### Response typing
 
-The builder type parameter is the response specification. The default is `NoContent`. Calling `.response::<S>()` changes the resulting `PreparedEndpoint<S>` type and therefore the request output.
+The builder type parameter is the response specification. The default is `NoContent`. Calling `.response::<S>()` changes the resulting `RuntimeEndpoint<S>` type and therefore the request output.
 
 ### Same lifecycle
 
-Prepared endpoints use the same:
+Runtime endpoints use the same:
 
 - public request preparation;
 - body metadata/hook/prepare ordering;
@@ -177,7 +190,7 @@ Path segments are encoded as one segment; route delimiters cannot be injected. R
 
 ### Limitations
 
-Prepared endpoints do not paginate. They cannot expose a native response, select an application-defined acquisition mode, disable ordinary body limits, or replace the executor.
+Runtime endpoints do not paginate. They cannot expose a native response, select an application-defined acquisition mode, disable ordinary body limits, or replace the executor.
 
 ## Custom codecs
 
@@ -301,14 +314,14 @@ Failure occurs after hook approval and preparation but before credentials, limit
 
 `RequestBodyContext` exposes endpoint identity, method, and the finite body limit. It does not expose URL, headers, credentials, limiter state, native request, or transport.
 
-### Generated and prepared use
+### Generated and runtime use
 
 ```rust
 POST vendor(#[body] body: crate::VendorRequestSpec) -> Bytes;
 ```
 
 ```rust
-PreparedEndpoint::builder("Api::vendor", Method::POST)
+RuntimeEndpoint::builder(EndpointId::new("api.vendor")?, Method::POST)
     .body_spec::<VendorRequestSpec>(input)
     .response_bytes()
     .build()?;

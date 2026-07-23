@@ -77,7 +77,7 @@ flowchart LR
     H --> I[Typed result and completion]
 ```
 
-Generated, explicit, and prepared endpoints all converge on the same request family. Extensions receive semantic values through public traits; native Reqwest requests and responses remain private.
+Generated, explicit, and runtime-defined endpoints all converge on the same request family. Extensions receive semantic values through public traits; native Reqwest requests and responses remain private.
 
 ## Documentation
 

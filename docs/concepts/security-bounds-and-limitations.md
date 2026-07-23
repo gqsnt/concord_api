@@ -83,7 +83,7 @@ Own authority for a semantic plan. They receive no body, credential, authenticat
 
 Observe sanitized lifecycle events. They cannot mutate the native request or change the fixed result.
 
-### Prepared endpoints
+### Runtime endpoints
 
 Provide runtime route composition but still enter the same generated-client capability and core runtime.
 
@@ -93,7 +93,7 @@ A proposed extension is suspicious when it needs:
 
 - `reqwest::Response`;
 - an application-defined executor;
-- a public execution plan;
+- an exact/native execution plan rather than the sanitized `SafeRequestPlan`;
 - `Any` downcasting;
 - unbounded bytes;
 - a second completion path;
@@ -172,7 +172,7 @@ Ordinary body and stream acquisition is finite. Applications needing very large 
 
 ### Not a page-stream API
 
-Pagination returns an all-or-error vector. It does not prefetch, parallelize, stream items, expose partial success, or paginate prepared endpoints.
+Pagination returns an all-or-error vector. It does not prefetch, parallelize, stream items, expose partial success, or paginate runtime endpoints.
 
 ### Not a secret-management system
 

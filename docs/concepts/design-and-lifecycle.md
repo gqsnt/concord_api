@@ -83,13 +83,13 @@ The macro emits private integration understood by `concord_core`. A generated co
 
 ## One managed lifecycle
 
-Generated facade methods, explicit generated endpoints, and prepared endpoints all converge on the same runtime.
+Generated facade methods, explicit generated endpoints, and runtime endpoints all converge on the same runtime.
 
 ```mermaid
 flowchart TD
     A[Generated facade] --> D[Request E]
     B[Explicit generated endpoint] --> D
-    C[Prepared endpoint] --> D
+    C[Runtime endpoint] --> D
     D --> E[Public preparation]
     E --> F[Body metadata and known checks]
     F --> G[Before-send hook]
@@ -213,7 +213,7 @@ Different runtime values of a scope parameter share the same scope declaration b
 
 ### Advanced escape
 
-Prepared endpoints can append explicit `RateLimitRule` values with bounded `RateLimitKey` parts. A custom limiter can implement application-specific or distributed authority. This advanced boundary is deliberate and not re-exported into normal DSL syntax.
+Runtime endpoints can append explicit `RateLimitRule` values with bounded `RateLimitKey` parts. A custom limiter can implement application-specific or distributed authority. This advanced boundary is deliberate and not re-exported into normal DSL syntax.
 
 ### Governor scope
 

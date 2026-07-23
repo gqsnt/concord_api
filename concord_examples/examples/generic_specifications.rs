@@ -6,7 +6,7 @@ use concord::body::{
     BodyError, BodyKind, LengthHint, RequestBody, RequestBodyContext, RequestBodyMetadata,
     RequestBodySpec, RequestContentType,
 };
-use concord::endpoint::PreparedEndpoint;
+use concord::endpoint::{EndpointId, RuntimeEndpoint};
 use concord::http::Method;
 use concord::prelude::Bytes;
 use concord::response::{
@@ -90,10 +90,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _: generic_specification_api::StreamingRequest = client.streaming();
     let _: generic_specification_api::DiscardRequest = client.discard();
 
-    let prepared = PreparedEndpoint::builder("GenericSpecificationApi::prepared", Method::POST)
-        .body_spec::<ExampleRequestSpec>(Bytes::from_static(b"prepared generic request"))
-        .response::<ExampleBufferedSpec>()
-        .build()?;
-    let _: Request<_> = client.request(prepared);
+    let runtime = RuntimeEndpoint::builder(
+        EndpointId::new("generic_specification_api.runtime")?,
+        Method::POST,
+    )
+    .body_spec::<ExampleRequestSpec>(Bytes::from_static(b"runtime generic request"))
+    .response::<ExampleBufferedSpec>()
+    .build()?;
+    let _: Request<_> = client.request(runtime);
     Ok(())
 }

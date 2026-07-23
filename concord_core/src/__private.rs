@@ -36,6 +36,11 @@ pub use crate::body::{EmptyBody, RequestBodyContext, RequestBodyMetadata, Reques
 #[doc(hidden)]
 pub use crate::client::ClientCore;
 #[doc(hidden)]
+pub use crate::endpoint::{
+    EndpointCapabilities, EndpointDescription, EndpointId, RequestBodyCategory,
+    ResponseAcquisition, SafeRequestPlan, TimeoutSelection,
+};
+#[doc(hidden)]
 pub use crate::error::{ApiError, ClientBuildError, ClientInputKind};
 #[doc(hidden)]
 pub use crate::hooks::DebugLevel;
@@ -235,6 +240,50 @@ pub const fn missing_input_error(
 #[must_use]
 pub fn request<E>(core: &ClientCore, endpoint: E) -> crate::Request<E> {
     crate::Request::new(core.clone(), endpoint)
+}
+
+/// Creates one no-effect sanitized plan through real public-head preparation.
+#[doc(hidden)]
+pub fn safe_request_plan(
+    core: &ClientCore,
+    description: &EndpointDescription,
+    prepare_head: impl FnOnce(HeadBuilder) -> Result<PreparedHead, ApiError>,
+) -> Result<SafeRequestPlan, ApiError> {
+    let meta = RequestMeta::from_description(description);
+    let builder = HeadBuilder::new(
+        core.base_url(),
+        meta,
+        &RequestOptions::new(),
+        core.default_debug(),
+        core.default_operation_timeout(),
+    );
+    let head = prepare_head(builder)?;
+    if head.endpoint_id() != description.endpoint_id() || head.method() != description.method() {
+        return Err(ApiError::classified(
+            description.endpoint_id().clone(),
+            description.method().clone(),
+            crate::error::ErrorCategory::Internal,
+        ));
+    }
+    head.validate_rate_limit_key_limit(core.rate_limit_key_limit())?;
+    head.validate_auth()?;
+    if head.auth().is_empty() {
+        core.preflight_url(head.endpoint_id(), head.method(), head.logical_url())?;
+    } else {
+        core.preflight_protected_url(head.endpoint_id(), head.method(), head.logical_url())?;
+    }
+    let public_headers = crate::redaction::SanitizedHeaderMap::from_headers_with_sensitive(
+        head.public_headers(),
+        Some(head.pagination_sensitive_headers()),
+    );
+    Ok(SafeRequestPlan::new(
+        description.clone(),
+        std::sync::Arc::from(head.safe_url()),
+        public_headers,
+        head.timeout(),
+        0,
+        head.rate_limit_plan().rules().len(),
+    ))
 }
 
 /// Selects universal response metadata for one generated named request wrapper.

@@ -18,7 +18,7 @@ help: the following other types implement trait `Endpoint`
    | ||________________^ `Ping`
 11 | |      }
 12 | |  }
-   | |__^ `PreparedEndpoint<R>`
+   | |__^ `RuntimeEndpoint<R>`
 note: required by a bound in `typed_api::<impl TypedApi>::request`
   --> tests/ui/fail/arbitrary_endpoint.rs:3:1
    |

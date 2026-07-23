@@ -26,6 +26,7 @@ use crate::body::{
 use crate::body::{MultipartBody, MultipartPart};
 use crate::client::ClientCore;
 use crate::codec::{CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, OctetStream};
+use crate::endpoint::EndpointId;
 use crate::error::{ApiError, AuthErrorKind, ErrorCategory};
 use crate::hooks::{
     BeforeSend, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel,
@@ -42,11 +43,11 @@ use crate::rate_limit::{
     RateLimitResponse, RateLimitRule, RateLimitWindow, RateLimiter,
 };
 use crate::request::{
-    EndpointSpec, HeadBuilder, PreparedEndpoint, PreparedHead, Request, RequestMeta,
+    EndpointSpec, HeadBuilder, PreparedHead, Request, RequestMeta, RuntimeEndpoint,
 };
 use crate::runtime::RuntimeConfigBuilder;
 
-const ENDPOINT: &str = "AuthenticationApi::protected";
+const ENDPOINT: &str = "authentication_api.protected";
 const INITIAL: &str = "initial-auth-token-1148c7";
 const REFRESHED: &str = "refreshed-auth-token-709fe2";
 const NEWER: &str = "newer-auth-token-265f0a";
@@ -1917,24 +1918,25 @@ async fn prepared_codec_recovery_reuses_encoding_and_reenters_the_ordinary_limit
         RuntimeConfigBuilder::new().rate_limiter(limiter),
     );
     let encode_calls = Arc::new(AtomicUsize::new(0));
-    let endpoint = PreparedEndpoint::builder("Prepared::protected", Method::POST)
-        .path_segment("prepared")
-        .query("session_token", PUBLIC_QUERY)
-        .header(
-            http::HeaderName::from_static("x-sensitive-token"),
-            PUBLIC_HEADER,
-        )
-        .body_codec::<PreparedRecoveryCodec>(PreparedRecoveryInput {
-            calls: Arc::clone(&encode_calls),
-        })
-        .auth(
-            Auth::bearer(CredentialRef::new(Arc::clone(&selector)))
-                .challenge(ChallengePolicy::Unauthorized),
-        )
-        .rate_limit(prepared_rate_rule())
-        .response_bytes()
-        .build()
-        .expect("prepared protected endpoint");
+    let endpoint =
+        RuntimeEndpoint::builder(EndpointId::from_static("runtime.protected"), Method::POST)
+            .path_segment("prepared")
+            .query("session_token", PUBLIC_QUERY)
+            .header(
+                http::HeaderName::from_static("x-sensitive-token"),
+                PUBLIC_HEADER,
+            )
+            .body_codec::<PreparedRecoveryCodec>(PreparedRecoveryInput {
+                calls: Arc::clone(&encode_calls),
+            })
+            .auth(
+                Auth::bearer(CredentialRef::new(Arc::clone(&selector)))
+                    .challenge(ChallengePolicy::Unauthorized),
+            )
+            .rate_limit(prepared_rate_rule())
+            .response_bytes()
+            .build()
+            .expect("prepared protected endpoint");
 
     let response = Request::new(core.clone(), endpoint)
         .response()
@@ -2005,14 +2007,17 @@ async fn prepared_one_shot_body_does_not_perform_an_unsafe_recovery_resend() {
         Duration::ZERO,
     );
     let (core, _) = core(&executor, Arc::new(AuthHooks::default()));
-    let endpoint = PreparedEndpoint::builder("Prepared::one_shot", Method::POST)
-        .body(RequestBody::stream(StreamBody::from_bytes(
-            Bytes::from_static(b"prepared-one-shot"),
-        )))
-        .auth(Auth::bearer(CredentialRef::new(selector)).challenge(ChallengePolicy::Unauthorized))
-        .response_bytes()
-        .build()
-        .expect("prepared one-shot endpoint");
+    let endpoint =
+        RuntimeEndpoint::builder(EndpointId::from_static("runtime.one_shot"), Method::POST)
+            .body(RequestBody::stream(StreamBody::from_bytes(
+                Bytes::from_static(b"prepared-one-shot"),
+            )))
+            .auth(
+                Auth::bearer(CredentialRef::new(selector)).challenge(ChallengePolicy::Unauthorized),
+            )
+            .response_bytes()
+            .build()
+            .expect("prepared one-shot endpoint");
 
     let error = api_error(Request::new(core, endpoint).await);
     assert_eq!(error.category(), ErrorCategory::AuthenticationRejected);
@@ -2049,12 +2054,15 @@ async fn prepared_one_shot_multipart_does_not_perform_an_unsafe_recovery_resend(
             ))),
         )
         .expect("prepared one-shot multipart");
-    let endpoint = PreparedEndpoint::builder("Prepared::multipart_one_shot", Method::POST)
-        .body(RequestBody::multipart(multipart))
-        .auth(Auth::bearer(CredentialRef::new(selector)).challenge(ChallengePolicy::Unauthorized))
-        .response_bytes()
-        .build()
-        .expect("prepared one-shot multipart endpoint");
+    let endpoint = RuntimeEndpoint::builder(
+        EndpointId::from_static("runtime.multipart_one_shot"),
+        Method::POST,
+    )
+    .body(RequestBody::multipart(multipart))
+    .auth(Auth::bearer(CredentialRef::new(selector)).challenge(ChallengePolicy::Unauthorized))
+    .response_bytes()
+    .build()
+    .expect("prepared one-shot multipart endpoint");
 
     let error = api_error(Request::new(core, endpoint).await);
     assert_eq!(error.category(), ErrorCategory::AuthenticationRejected);
@@ -2260,12 +2268,13 @@ async fn prepared_bearer_basic_header_and_query_auth_use_only_the_native_boundar
         ),
     ];
     for (segment, auth, expected) in cases {
-        let endpoint = PreparedEndpoint::builder("Prepared::auth", Method::GET)
-            .path_segment(segment)
-            .auth(auth)
-            .response_bytes()
-            .build()
-            .expect("prepared authentication endpoint");
+        let endpoint =
+            RuntimeEndpoint::builder(EndpointId::from_static("runtime.auth"), Method::GET)
+                .path_segment(segment)
+                .auth(auth)
+                .response_bytes()
+                .build()
+                .expect("prepared authentication endpoint");
         let actual = Request::new(core.clone(), endpoint)
             .await
             .expect("prepared authenticated request");
@@ -2321,18 +2330,19 @@ async fn prepared_authentication_attachments_materialize_in_builder_order() {
         },
         Duration::ZERO,
     );
-    let endpoint = PreparedEndpoint::builder("Prepared::ordered_auth", Method::GET)
-        .auth(Auth::header(
-            http::HeaderName::from_static("x-first-auth"),
-            CredentialRef::new(first),
-        ))
-        .auth(Auth::header(
-            http::HeaderName::from_static("x-second-auth"),
-            CredentialRef::new(second),
-        ))
-        .response_bytes()
-        .build()
-        .expect("ordered prepared authentication endpoint");
+    let endpoint =
+        RuntimeEndpoint::builder(EndpointId::from_static("runtime.ordered_auth"), Method::GET)
+            .auth(Auth::header(
+                http::HeaderName::from_static("x-first-auth"),
+                CredentialRef::new(first),
+            ))
+            .auth(Auth::header(
+                http::HeaderName::from_static("x-second-auth"),
+                CredentialRef::new(second),
+            ))
+            .response_bytes()
+            .build()
+            .expect("ordered prepared authentication endpoint");
 
     Request::new(core, endpoint)
         .await

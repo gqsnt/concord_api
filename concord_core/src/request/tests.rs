@@ -10,6 +10,7 @@ use http::Method;
 use super::*;
 use crate::body::{EmptyBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec};
 use crate::client::ClientCore;
+use crate::endpoint::EndpointId;
 use crate::error::{ClientBuildErrorKind, ErrorCategory};
 use crate::hooks::{BoxFuture, DebugLevel, RuntimeHooks};
 use crate::http::HttpConfigBuilder;
@@ -60,7 +61,7 @@ impl EndpointSpec for BytesEndpoint {
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(
-            "PreparationApi::accounts::bytes",
+            "preparation_api.accounts.bytes",
             Method::GET,
             Some(Duration::from_secs(20)),
         )
@@ -94,7 +95,7 @@ impl EndpointSpec for NoContentEndpoint {
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(
-            "PreparationApi::health::ping",
+            "preparation_api.health.ping",
             Method::GET,
             Some(Duration::from_secs(5)),
         )
@@ -266,9 +267,10 @@ async fn runtime_endpoints_inherit_the_snapshot_timeout_with_exact_tri_state_ove
     )
     .expect("runtime timeout core");
 
-    let inherited = PreparedEndpoint::builder("Runtime::inherited", Method::GET)
-        .build()
-        .expect("inherited runtime endpoint");
+    let inherited =
+        RuntimeEndpoint::builder(EndpointId::from_static("runtime.inherited"), Method::GET)
+            .build()
+            .expect("inherited runtime endpoint");
     let inherited = ready(
         prepare_operation(Request::new(core.clone(), inherited))
             .await
@@ -276,10 +278,11 @@ async fn runtime_endpoints_inherit_the_snapshot_timeout_with_exact_tri_state_ove
     );
     assert_eq!(inherited.head.timeout(), Some(Duration::from_secs(13)));
 
-    let explicit = PreparedEndpoint::builder("Runtime::explicit", Method::GET)
-        .timeout(Duration::from_secs(7))
-        .build()
-        .expect("explicit runtime endpoint");
+    let explicit =
+        RuntimeEndpoint::builder(EndpointId::from_static("runtime.explicit"), Method::GET)
+            .timeout(Duration::from_secs(7))
+            .build()
+            .expect("explicit runtime endpoint");
     let explicit = ready(
         prepare_operation(Request::new(core.clone(), explicit))
             .await
@@ -287,10 +290,11 @@ async fn runtime_endpoints_inherit_the_snapshot_timeout_with_exact_tri_state_ove
     );
     assert_eq!(explicit.head.timeout(), Some(Duration::from_secs(7)));
 
-    let disabled = PreparedEndpoint::builder("Runtime::disabled", Method::GET)
-        .disable_timeout()
-        .build()
-        .expect("disabled runtime endpoint");
+    let disabled =
+        RuntimeEndpoint::builder(EndpointId::from_static("runtime.disabled"), Method::GET)
+            .disable_timeout()
+            .build()
+            .expect("disabled runtime endpoint");
     let disabled = ready(
         prepare_operation(Request::new(core.clone(), disabled))
             .await
@@ -298,9 +302,10 @@ async fn runtime_endpoints_inherit_the_snapshot_timeout_with_exact_tri_state_ove
     );
     assert_eq!(disabled.head.timeout(), None);
 
-    let request_override = PreparedEndpoint::builder("Runtime::request", Method::GET)
-        .build()
-        .expect("request override endpoint");
+    let request_override =
+        RuntimeEndpoint::builder(EndpointId::from_static("runtime.request"), Method::GET)
+            .build()
+            .expect("request override endpoint");
     let request_override = ready(
         prepare_operation(Request::new(core, request_override).timeout(Duration::from_secs(3)))
             .await

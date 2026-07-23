@@ -150,7 +150,7 @@ fn pagination_diagnostics_are_source_only_and_focused() {
 }
 
 #[test]
-fn prepared_endpoint_capabilities_are_exact_and_private() {
+fn runtime_endpoint_capabilities_are_exact_and_private() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/fail/prepared_endpoint_pagination_absent.rs");
     cases.compile_fail("tests/ui/fail/prepared_endpoint_builder_methods_absent.rs");

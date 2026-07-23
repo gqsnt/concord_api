@@ -163,7 +163,7 @@ Without `rate-limit-governor`:
 
 ### Advanced keys
 
-Prepared endpoints and custom integrations can construct explicit bounded `RateLimitKey` values. Normal generated DSL cannot. See [Custom rate limiters](../advanced/pagination-and-rate-limits.md#custom-rate-limiters).
+Runtime endpoints and custom integrations can construct explicit bounded `RateLimitKey` values. Normal generated DSL cannot. See [Custom rate limiters](../advanced/pagination-and-rate-limits.md#custom-rate-limiters).
 
 ### Complete example
 

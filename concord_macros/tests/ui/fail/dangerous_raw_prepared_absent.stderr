@@ -1,4 +1,4 @@
-error[E0599]: the method `raw_response` exists for struct `concord_core::Request<PreparedEndpoint<concord_core::advanced::Bytes>>`, but its trait bounds were not satisfied
+error[E0599]: the method `raw_response` exists for struct `concord_core::Request<RuntimeEndpoint<concord_core::advanced::Bytes>>`, but its trait bounds were not satisfied
   --> tests/ui/fail/dangerous_raw_prepared_absent.rs:18:38
    |
 18 |     let _ = client.request(endpoint).raw_response();
@@ -6,8 +6,8 @@ error[E0599]: the method `raw_response` exists for struct `concord_core::Request
    |
   ::: $WORKSPACE/concord_core/src/request/prepared.rs
    |
-   | pub struct PreparedEndpoint<R = NoContent> {
-   | ------------------------------------------ doesn't satisfy `_: RawResponseEndpoint`
+   | pub struct RuntimeEndpoint<R = NoContent> {
+   | ----------------------------------------- doesn't satisfy `_: RawResponseEndpoint`
    |
    = note: the following trait bounds were not satisfied:
-           `PreparedEndpoint<concord_core::advanced::Bytes>: concord_core::__private::RawResponseEndpoint`
+           `RuntimeEndpoint<concord_core::advanced::Bytes>: concord_core::__private::RawResponseEndpoint`

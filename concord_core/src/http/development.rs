@@ -14,7 +14,7 @@ use crate::error::ErrorCategory;
 use crate::redaction::{SanitizedHeaderValue, SanitizedHeaders};
 
 pub(super) fn boundary_request(
-    endpoint: &'static str,
+    endpoint: &str,
     method: Method,
     safe_url: Option<String>,
     headers: &HeaderMap,
@@ -39,7 +39,7 @@ pub(super) fn boundary_request(
     reason = "the deterministic boundary receives the exact safe request facts"
 )]
 pub(super) fn boundary_request_with_sensitive(
-    endpoint: &'static str,
+    endpoint: &str,
     method: Method,
     safe_url: Option<String>,
     headers: &HeaderMap,
@@ -119,7 +119,7 @@ impl Drop for ObservedBody {
 }
 
 #[cfg(test)]
-pub(super) fn minimal_boundary_request(endpoint: &'static str, method: Method) -> BoundaryRequest {
+pub(super) fn minimal_boundary_request(endpoint: &str, method: Method) -> BoundaryRequest {
     boundary_request(
         endpoint,
         method,

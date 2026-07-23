@@ -111,10 +111,17 @@ pub struct SanitizedHeaderMap {
 impl SanitizedHeaderMap {
     #[allow(dead_code, reason = "used by later retained status errors")]
     pub(crate) fn from_headers(headers: &HeaderMap) -> Self {
+        Self::from_headers_with_sensitive(headers, None)
+    }
+
+    pub(crate) fn from_headers_with_sensitive(
+        headers: &HeaderMap,
+        sensitive: Option<&HashSet<HeaderName>>,
+    ) -> Self {
         let entries = headers
             .iter()
             .map(|(name, value)| {
-                let value = match sanitize_value(name, value, None) {
+                let value = match sanitize_value(name, value, sensitive) {
                     SanitizedHeaderValue::Text(text) => {
                         OwnedSanitizedHeaderValue::Text(text.to_owned())
                     }

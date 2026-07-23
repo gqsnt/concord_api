@@ -9,6 +9,7 @@ use crate::body::{
     Replayability, RequestBodyContext, RequestBodyMetadata, RequestBodySpec, validate_produced_body,
 };
 use crate::client::ClientCore;
+use crate::endpoint::EndpointId;
 use crate::error::{ApiError, ErrorCategory};
 use crate::hooks::{
     BeforeSend, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel, ResponseHeadEvent,
@@ -142,13 +143,13 @@ where
         body_metadata,
     } = page;
     let started = tokio::time::Instant::now();
-    let operation_id = core.allocate_operation_id(head.endpoint(), head.method())?;
+    let operation_id = core.allocate_operation_id(head.endpoint_id(), head.method())?;
     let context = ExecutionContext::page(parent_operation_id, page_index);
     let deadline = match OperationDeadline::new(started, head.timeout()) {
         Ok(deadline) => deadline,
         Err(_) => {
             let error = ApiError::configuration(
-                head.endpoint(),
+                head.endpoint_id().clone(),
                 head.method().clone(),
                 crate::error::ConfigurationErrorKind::InvalidValue,
             );
@@ -219,7 +220,7 @@ where
         )
         .await?;
 
-        check_deadline(deadline, head.endpoint(), head.method())?;
+        check_deadline(deadline, head.endpoint_id(), head.method())?;
         let input = endpoint.into_body();
         let body = <E::Body as RequestBodySpec>::prepare(
             input,
@@ -229,15 +230,15 @@ where
                 body_limit: core.request_body_limit(),
             },
         );
-        check_deadline(deadline, head.endpoint(), head.method())?;
+        check_deadline(deadline, head.endpoint_id(), head.method())?;
         let body = body.map_err(|error| request_body_error(&head, error))?;
         validate_produced_body(&body_metadata, &body)
             .map_err(|error| request_body_error(&head, error))?;
-        check_deadline(deadline, head.endpoint(), head.method())?;
+        check_deadline(deadline, head.endpoint_id(), head.method())?;
         let mut prepared_body = body
             .into_prepared(core.request_body_limit())
             .map_err(|error| request_body_error(&head, error))?;
-        check_deadline(deadline, head.endpoint(), head.method())?;
+        check_deadline(deadline, head.endpoint_id(), head.method())?;
         debug_assert_eq!(prepared_body.kind(), body_metadata.kind);
         let known_body_length = prepared_body.known_length();
         let materialized_metadata = body_metadata.clone().with_known_length(known_body_length);
@@ -288,7 +289,7 @@ where
                 let failure = core
                     .application_http()
                     .terminal_status_managed(
-                        head.endpoint(),
+                        head.endpoint_id().clone(),
                         head.method().clone(),
                         attempt.response,
                         deadline.expires_at(),
@@ -320,7 +321,7 @@ where
             {
                 drop(error);
                 let primary = ApiError::classified(
-                    head.endpoint(),
+                    head.endpoint_id().clone(),
                     head.method().clone(),
                     ErrorCategory::RequestBody,
                 );
@@ -362,7 +363,7 @@ where
             let failure = core
                 .application_http()
                 .terminal_status_managed(
-                    head.endpoint(),
+                    head.endpoint_id().clone(),
                     head.method().clone(),
                     response,
                     deadline.expires_at(),
@@ -375,7 +376,7 @@ where
         let headers = response.headers().clone();
         let content_length = response.content_length();
         let metadata = ExecutionMeta::new(
-            head.endpoint(),
+            head.endpoint_id().clone(),
             head.method().clone(),
             context.page_index,
             recovered_authentication,
@@ -396,7 +397,7 @@ where
                 limit: core.response_body_limit(),
                 stream_limit: core.stream_response_limit(),
                 deadline,
-                endpoint: head.endpoint(),
+                endpoint: head.endpoint_id().clone(),
                 method: head.method().clone(),
             },
             &response_head,
@@ -475,7 +476,7 @@ async fn run_before_send(
     body_metadata: &RequestBodyMetadata,
     recovery_index: u8,
 ) -> Result<(), ApiError> {
-    check_deadline(deadline, head.endpoint(), head.method())?;
+    check_deadline(deadline, head.endpoint_id(), head.method())?;
     let future = core.hooks().before_send(before_send_event(
         operation_id,
         context,
@@ -483,14 +484,14 @@ async fn run_before_send(
         body_metadata,
         recovery_index,
     ));
-    check_deadline(deadline, head.endpoint(), head.method())?;
+    check_deadline(deadline, head.endpoint_id(), head.method())?;
     match deadline.run(future).await {
-        Err(_) => Err(timeout_error(head.endpoint(), head.method())),
+        Err(_) => Err(timeout_error(head.endpoint_id(), head.method())),
         Ok(Ok(())) => Ok(()),
         Ok(Err(error)) => {
             drop(error);
             Err(ApiError::classified(
-                head.endpoint(),
+                head.endpoint_id().clone(),
                 head.method().clone(),
                 ErrorCategory::Hook,
             ))
@@ -501,17 +502,18 @@ async fn run_before_send(
 async fn run_response_head_hook(
     core: &ClientCore,
     deadline: OperationDeadline,
+    endpoint_id: &EndpointId,
     event: ResponseHeadEvent<'_>,
 ) -> Result<(), ApiError> {
-    check_deadline(deadline, event.endpoint, event.method)?;
-    let endpoint = event.endpoint;
+    check_deadline(deadline, endpoint_id, event.method)?;
+    let endpoint_id = endpoint_id.clone();
     let method = event.method;
     let future = core.hooks().on_response_head(event);
-    check_deadline(deadline, endpoint, method)?;
+    check_deadline(deadline, &endpoint_id, method)?;
     deadline
         .run(future)
         .await
-        .map_err(|_| timeout_error(endpoint, method))
+        .map_err(|_| timeout_error(&endpoint_id, method))
 }
 
 fn before_send_event<'a>(
@@ -543,7 +545,7 @@ async fn deliver_completion<T>(
     core: &ClientCore,
     operation_id: OperationId,
     context: ExecutionContext,
-    endpoint: &'static str,
+    endpoint: &str,
     method: &Method,
     safe_url: &str,
     debug: DebugLevel,
@@ -609,13 +611,13 @@ async fn send_attempt(
         .map_err(|error| {
             drop(error);
             ApiError::classified(
-                head.endpoint(),
+                head.endpoint_id().clone(),
                 head.method().clone(),
                 ErrorCategory::RequestBody,
             )
         })?;
     let mut request = core.application_http().build_request(
-        head.endpoint(),
+        head.endpoint_id(),
         head.method(),
         head.logical_url(),
         head.public_headers(),
@@ -625,12 +627,12 @@ async fn send_attempt(
         before_send_event(operation_id, context, head, body_metadata, recovery_index);
     core.debug_dispatcher(head.debug())
         .request_ready(&request_event);
-    check_deadline(deadline, head.endpoint(), head.method())?;
-    finalized_auth.materialize(&mut request, head.endpoint(), head.method())?;
+    check_deadline(deadline, head.endpoint_id(), head.method())?;
+    finalized_auth.materialize(&mut request, head.endpoint_id(), head.method())?;
 
     let response = deadline
         .run(core.application_http().execute(
-            head.endpoint(),
+            head.endpoint_id(),
             head.method(),
             request,
             head.safe_url(),
@@ -640,7 +642,7 @@ async fn send_attempt(
             body_metadata.known_length(),
         ))
         .await
-        .map_err(|_| timeout_error(head.endpoint(), head.method()))??;
+        .map_err(|_| timeout_error(head.endpoint_id(), head.method()))??;
 
     let status = response.status();
     *final_status = Some(status);
@@ -657,7 +659,7 @@ async fn send_attempt(
     };
     core.debug_dispatcher(head.debug())
         .response_head(&response_event);
-    run_response_head_hook(core, deadline, response_event).await?;
+    run_response_head_hook(core, deadline, head.endpoint_id(), response_event).await?;
     observe_rate_limit_response(core, context, head, status, response.headers()).await;
     Ok(AttemptResponse {
         response,
@@ -674,7 +676,7 @@ async fn run_auth<T>(
     deadline
         .run(future)
         .await
-        .map_err(|_| timeout_error(head.endpoint(), head.method()))?
+        .map_err(|_| timeout_error(head.endpoint_id(), head.method()))?
         .map_err(|error| auth_api_error(head, error))
 }
 
@@ -725,7 +727,7 @@ where
 }
 
 fn auth_api_error(head: &crate::request::PreparedHead, error: crate::auth::AuthError) -> ApiError {
-    ApiError::authentication(head.endpoint(), head.method().clone(), error)
+    ApiError::authentication(head.endpoint_id().clone(), head.method().clone(), error)
 }
 
 fn request_body_error(
@@ -738,7 +740,7 @@ fn request_body_error(
         ErrorCategory::RequestBody
     };
     drop(error);
-    ApiError::classified(head.endpoint(), head.method().clone(), category)
+    ApiError::classified(head.endpoint_id().clone(), head.method().clone(), category)
 }
 
 async fn acquire_rate_limit_authority(
@@ -747,7 +749,7 @@ async fn acquire_rate_limit_authority(
     deadline: OperationDeadline,
     head: &crate::request::PreparedHead,
 ) -> Result<(), ApiError> {
-    check_deadline(deadline, head.endpoint(), head.method())?;
+    check_deadline(deadline, head.endpoint_id(), head.method())?;
     let request = RateLimitRequest {
         endpoint: head.endpoint(),
         method: head.method(),
@@ -757,13 +759,15 @@ async fn acquire_rate_limit_authority(
         plan: head.rate_limit_plan(),
     };
     let future = core.rate_limiter().acquire(request);
-    check_deadline(deadline, head.endpoint(), head.method())?;
+    check_deadline(deadline, head.endpoint_id(), head.method())?;
     deadline
         .run(future)
         .await
-        .map_err(|_| timeout_error(head.endpoint(), head.method()))?
+        .map_err(|_| timeout_error(head.endpoint_id(), head.method()))?
         .map(|_permit| ())
-        .map_err(|error| ApiError::rate_limit(head.endpoint(), head.method().clone(), error))
+        .map_err(|error| {
+            ApiError::rate_limit(head.endpoint_id().clone(), head.method().clone(), error)
+        })
 }
 
 async fn observe_rate_limit_response(
@@ -791,7 +795,7 @@ async fn observe_rate_limit_response(
 
 fn check_deadline(
     deadline: OperationDeadline,
-    endpoint: &'static str,
+    endpoint: &EndpointId,
     method: &Method,
 ) -> Result<(), ApiError> {
     deadline
@@ -799,8 +803,8 @@ fn check_deadline(
         .map_err(|_| timeout_error(endpoint, method))
 }
 
-fn timeout_error(endpoint: &'static str, method: &Method) -> ApiError {
-    ApiError::classified(endpoint, method.clone(), ErrorCategory::Timeout)
+fn timeout_error(endpoint: &EndpointId, method: &Method) -> ApiError {
+    ApiError::classified(endpoint.clone(), method.clone(), ErrorCategory::Timeout)
 }
 
 #[cfg(test)]

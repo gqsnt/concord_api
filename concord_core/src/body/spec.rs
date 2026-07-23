@@ -16,8 +16,8 @@ use super::{BodyError, BodyErrorKind, BodyKind, RequestBody, StreamBody};
 /// It intentionally excludes the URL, headers, credentials, authentication,
 /// limiter state, native request, Reqwest types, and transport state.
 pub struct RequestBodyContext<'a> {
-    /// Stable generated or prepared endpoint identity.
-    pub endpoint: &'static str,
+    /// Stable generated or runtime endpoint identity.
+    pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
     /// Positive finite aggregate request-body limit.
@@ -329,7 +329,7 @@ where
     }
 }
 
-/// Core-private owned request-specification selection for prepared endpoints.
+/// Core-private owned request-specification selection for runtime endpoints.
 #[doc(hidden)]
 pub struct PreparedRequestBody {
     body: Box<dyn ErasedRequestBody>,
@@ -349,7 +349,7 @@ impl PreparedRequestBody {
     }
 }
 
-/// Core-private request specification used by prepared endpoints.
+/// Core-private request specification used by runtime endpoints.
 #[doc(hidden)]
 pub struct PreparedBodySpec;
 

@@ -3,14 +3,14 @@
 > Audience: Users and extension authors  
 > Exact signatures: generated Rustdoc
 
-This page maps the public namespaces, generated capabilities, request and response terminals, prepared endpoint API, and advanced extension types. Rustdoc remains authoritative for exact signatures and trait bounds.
+This page maps the public namespaces, generated capabilities, request and response terminals, runtime endpoint API, and advanced extension types. Rustdoc remains authoritative for exact signatures and trait bounds.
 
 ## Capability matrix
 
 | Capability | Basic DSL/built-in | Advanced extension | Principal boundary |
 |---|---|---|---|
 | Generated clients | `api!`, facade methods | explicit generated endpoints | compile-time API; no runtime schema |
-| Runtime endpoints | — | `PreparedEndpoint` | no prepared pagination |
+| Runtime endpoints | — | `RuntimeEndpoint` | no runtime pagination |
 | Request bodies | JSON, text, bytes, stream, multipart | codecs, `RequestBodySpec`, factories | one managed `RequestBody` |
 | Responses | JSON, text, bytes, no-content, stream, records | `ResponseBodySpec` | buffered/streaming/discard only |
 | Metadata | `.response()` / `ApiResponse<T>` | arbitrary semantic `T` | no native response |
@@ -32,7 +32,7 @@ This page maps the public namespaces, generated capabilities, request and respon
 | `NoContent` | `()` | `ApiResponse<()>` | no | no |
 | `Stream<M>` | `ByteStream` | `ApiResponse<ByteStream>` | no | no |
 | `Records<D>` | `RecordStream<D>` | `ApiResponse<RecordStream<D>>` | no | no |
-| Prepared response | selected output | `ApiResponse<T>` | no | no |
+| Runtime response | selected output | `ApiResponse<T>` | no | no |
 
 ### Feature ownership
 
@@ -68,7 +68,7 @@ Use advanced for implementation contracts and runtime configuration:
 - pagination controllers;
 - limiter/governor/observer contracts;
 - hooks and events;
-- prepared endpoints;
+- runtime endpoints;
 - response modes and heads;
 - runtime and HTTP config builders;
 - redaction wrappers.
@@ -162,11 +162,11 @@ Generated docs describe constructors, endpoint parameters, body/response types, 
 
 ### Compatibility
 
-Generated code and the façade bridge currently share private contract version 20. Depending on `concord` keeps the implementation packages aligned.
+Generated code and the façade bridge currently share private contract version 22. Depending on `concord` keeps the implementation packages aligned.
 
 ## Request API reference
 
-All generated, explicit generated, and prepared endpoints enter the public `Request<E>` family.
+All generated, explicit generated, and runtime endpoints enter the public `Request<E>` family.
 
 ### `Request<E>`
 
@@ -185,6 +185,20 @@ let value: T = request.await?;
 
 Construction is lazy. Creating or cloning endpoint values does not perform network I/O.
 
+### Endpoint descriptions and safe planning
+
+Every generated endpoint value and `RuntimeEndpoint` exposes one
+`EndpointDescription`. It contains only public contract facts: the bounded
+endpoint ID, method, source path, route shape, body/response categories,
+capabilities, and timeout selection.
+
+`client.plan(&endpoint)` returns a `SafeRequestPlan` by running the same public
+head shaping and validation used by execution. It includes the sanitized URL
+and public headers, resolved timeout, page index, and lexical rate-rule count.
+Planning does not allocate an operation ID or invoke hooks, body specifications
+or factories, providers, limiters, streams, transport, response work, or
+completion. Dynamic body metadata is therefore explicitly unavailable.
+
 ### `.response()`
 
 `request.response()` returns `ResponseRequest<E>`. Awaiting it returns `ApiResponse<T>` with logical URL, status, protocol version, public response headers, execution metadata, and the semantic value.
@@ -201,7 +215,7 @@ Pagination is unavailable for:
 - no-content responses;
 - byte streams;
 - record streams;
-- prepared endpoints;
+- runtime endpoints;
 - endpoints without a pagination declaration.
 
 ### Raw successful response
@@ -308,19 +322,22 @@ It does not receive the native Reqwest response.
 
 A response specification cannot bypass status handling, raise the configured body limit, define another native acquisition mode, replace completion, extend the operation deadline, or expose native response ownership.
 
-## Prepared endpoint API reference
+## Runtime endpoint API reference
 
-Prepared endpoints define an endpoint at runtime while preserving Concord’s normal execution lifecycle.
+Runtime endpoints define an endpoint at runtime while preserving Concord’s normal execution lifecycle.
 
 ### Construction
 
 Start with:
 
 ```rust
-use concord_core::advanced::PreparedEndpoint;
-use http::Method;
+use concord::endpoint::{EndpointId, RuntimeEndpoint};
+use concord::http::Method;
 
-let endpoint = PreparedEndpoint::builder("health-check", Method::GET)
+let endpoint = RuntimeEndpoint::builder(
+    EndpointId::new("health.check")?,
+    Method::GET,
+)
     .path_segment("health")
     .response_no_content()
     .build()?;
@@ -330,7 +347,7 @@ The builder defaults to a no-content response specification.
 
 ### Request shaping methods
 
-Prepared builders support typed methods equivalent to:
+Runtime builders support typed methods equivalent to:
 
 ```text
 path_segment
@@ -383,7 +400,7 @@ Rate-limit rules compose in call order. Advanced keys may be global or contain b
 
 ### Execution
 
-A generated client accepts a compatible prepared endpoint through its normal request method. The request then uses the same:
+A generated client accepts a compatible runtime endpoint through its normal request method. The request then uses the same:
 
 - body lifecycle;
 - authentication and recovery;
@@ -396,7 +413,7 @@ A generated client accepts a compatible prepared endpoint through its normal req
 
 ### Reuse
 
-Prepared endpoint values are immutable recipes. Reuse depends on the selected body source:
+Runtime endpoint values are immutable recipes. Reuse depends on the selected body source:
 
 - bytes and reconstructible factories can be reused;
 - direct one-shot streams remain one-shot;
@@ -404,7 +421,7 @@ Prepared endpoint values are immutable recipes. Reuse depends on the selected bo
 
 ### Unsupported behavior
 
-Prepared endpoints do not support pagination, raw path fragments, native request/response access, custom transports, limit bypass, or arbitrary generated-facade mutation.
+Runtime endpoints do not support pagination, raw path fragments, native request/response access, custom transports, limit bypass, or arbitrary generated-facade mutation.
 
 ## Public API index
 
@@ -478,11 +495,11 @@ See [Custom rate limiters](../advanced/pagination-and-rate-limits.md#custom-rate
 
 See [Runtime hooks](../advanced/authentication-hooks-and-debug.md#runtime-hooks) and [Debug and redaction](../advanced/authentication-hooks-and-debug.md#debug-and-redaction).
 
-#### Prepared endpoints
+#### Runtime endpoints
 
-`PreparedEndpoint` and `PreparedEndpointBuilder` create runtime-defined endpoints that still use the managed runtime.
+`RuntimeEndpoint` and `RuntimeEndpointBuilder` create runtime-defined endpoints that still use the managed runtime. The deprecated `PreparedEndpoint` compatibility aliases are removed in Phase 14.
 
-See [Prepared API](api.md#prepared-endpoint-api-reference).
+See [Runtime endpoint API](api.md#runtime-endpoint-api-reference).
 
 #### Records
 
@@ -511,7 +528,7 @@ This compact list prevents extension families from disappearing from the manual.
 
 ### `concord_core::advanced`
 
-`ApiError`, `ApiResponse`, `Auth`, `AuthError`, `AuthErrorKind`, `BeforeSend`, `BodyError`, `BodyErrorKind`, `BodyFactory`, `BodyKind`, `BoxFuture`, `Buffered`, `ByteStream`, `Bytes`, `BytesMut`, `ChallengePolicy`, `ClientBuildError`, `ClientBuildErrorKind`, `ClientInputKind`, `CodecError`, `CompletionEvent`, `CompletionOutcome`, `ConfigurationError`, `ConfigurationErrorKind`, `Cooldown`, `CooldownScope`, `CredentialHandle`, `CredentialMaterial`, `CredentialProvider`, `CredentialReason`, `CredentialRef`, `CredentialRequest`, `Csv`, `CursorPagination`, `DebugLevel`, `DecodeBody`, `DecodeContext`, `DecodedResponse`, `Discard`, `EncodeBody`, `EncodeContext`, `ErrorCategory`, `ExecutionMeta`, `HasNextCursor`, `HeaderMap`, `HeaderName`, `HeaderValue`, `HookError`, `HttpConfigBuilder`, `HttpResponseFailure`, `Json`, `LengthHint`, `MediaType`, `Method`, `Multipart`, `MultipartBody`, `MultipartFactory`, `MultipartPart`, `NdJson`, `NoContent`, `NoopRateLimiter`, `OctetStream`, `OffsetPagination`, `OperationId`, `PagePagination`, `PageResponseSpec`, `PaginationCompletionEvent`, `PaginationController`, `PaginationError`, `PaginationErrorKind`, `PreparedEndpoint`, `PreparedEndpointBuilder`, `ProviderBody`, `ProviderBodyFactory`, `ProviderHttp`, `ProviderRequest`, `ProviderResponse`, `ProviderRetry`, `RateLimitError`, `RateLimitErrorKind`, `RateLimitId`, `RateLimitKey`, `RateLimitKeyPart`, `RateLimitObserver`, `RateLimitPermit`, `RateLimitPlan`, `RateLimitRequest`, `RateLimitResponse`, `RateLimitResponseHead`, `RateLimitRule`, `RateLimitWindow`, `RateLimiter`, `RecordBatches`, `RecordDecoder`, `RecordError`, `RecordErrorKind`, `RecordStream`, `Records`, `RecoveryMode`, `RequestBody`, `RequestBodyContext`, `RequestBodyMetadata`, `RequestBodySpec`, `RequestContentType`, `ResponseBodyError`, `ResponseBodyErrorKind`, `ResponseBodySpec`, `ResponseHead`, `ResponseHeadEvent`, `ResponseMode`, `RuntimeConfigBuilder`, `RuntimeHooks`, `SafeProxy`, `SanitizedHeaderMap`, `SanitizedHeaderValue`, `SanitizedHeaders`, `SecretCredential`, `StatusBody`, `StatusBodyDecodeError`, `StatusBodyState`, `StatusCode`, `Stream`, `StreamBody`, `Streaming`, `Text`, `Url`, `Version`.
+`ApiError`, `ApiResponse`, `Auth`, `AuthError`, `AuthErrorKind`, `BeforeSend`, `BodyError`, `BodyErrorKind`, `BodyFactory`, `BodyKind`, `BoxFuture`, `Buffered`, `ByteStream`, `Bytes`, `BytesMut`, `ChallengePolicy`, `ClientBuildError`, `ClientBuildErrorKind`, `ClientInputKind`, `CodecError`, `CompletionEvent`, `CompletionOutcome`, `ConfigurationError`, `ConfigurationErrorKind`, `Cooldown`, `CooldownScope`, `CredentialHandle`, `CredentialMaterial`, `CredentialProvider`, `CredentialReason`, `CredentialRef`, `CredentialRequest`, `Csv`, `CursorPagination`, `DebugLevel`, `DecodeBody`, `DecodeContext`, `DecodedResponse`, `Discard`, `EncodeBody`, `EncodeContext`, `EndpointCapabilities`, `EndpointDescription`, `EndpointId`, `ErrorCategory`, `ExecutionMeta`, `HasNextCursor`, `HeaderMap`, `HeaderName`, `HeaderValue`, `HookError`, `HttpConfigBuilder`, `HttpResponseFailure`, `Json`, `LengthHint`, `MediaType`, `Method`, `Multipart`, `MultipartBody`, `MultipartFactory`, `MultipartPart`, `NdJson`, `NoContent`, `NoopRateLimiter`, `OctetStream`, `OffsetPagination`, `OperationId`, `PagePagination`, `PageResponseSpec`, `PaginationCompletionEvent`, `PaginationController`, `PaginationError`, `PaginationErrorKind`, `ProviderBody`, `ProviderBodyFactory`, `ProviderHttp`, `ProviderRequest`, `ProviderResponse`, `ProviderRetry`, `RateLimitError`, `RateLimitErrorKind`, `RateLimitId`, `RateLimitKey`, `RateLimitKeyPart`, `RateLimitObserver`, `RateLimitPermit`, `RateLimitPlan`, `RateLimitRequest`, `RateLimitResponse`, `RateLimitResponseHead`, `RateLimitRule`, `RateLimitWindow`, `RateLimiter`, `RecordBatches`, `RecordDecoder`, `RecordError`, `RecordErrorKind`, `RecordStream`, `Records`, `RecoveryMode`, `RequestBody`, `RequestBodyCategory`, `RequestBodyContext`, `RequestBodyMetadata`, `RequestBodySpec`, `RequestContentType`, `ResponseAcquisition`, `ResponseBodyError`, `ResponseBodyErrorKind`, `ResponseBodySpec`, `ResponseHead`, `ResponseHeadEvent`, `ResponseMode`, `RuntimeConfigBuilder`, `RuntimeEndpoint`, `RuntimeEndpointBuilder`, `RuntimeHooks`, `SafeProxy`, `SafeRequestPlan`, `SanitizedHeaderMap`, `SanitizedHeaderValue`, `SanitizedHeaders`, `SecretCredential`, `StatusBody`, `StatusBodyDecodeError`, `StatusBodyState`, `StatusCode`, `Stream`, `StreamBody`, `Streaming`, `Text`, `TimeoutSelection`, `Url`, `Version`.
 
 ### `concord_core::dangerous`
 
@@ -598,8 +615,8 @@ The following names are exported through `concord_core::prelude`, `concord_core:
 - `PaginationController`
 - `PaginationError`
 - `PaginationErrorKind`
-- `PreparedEndpoint`
-- `PreparedEndpointBuilder`
+- `RuntimeEndpoint`
+- `RuntimeEndpointBuilder`
 - `ProviderBody`
 - `ProviderBodyFactory`
 - `ProviderHttp`

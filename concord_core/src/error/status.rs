@@ -7,6 +7,7 @@ use http::header::{CONTENT_TYPE, RETRY_AFTER};
 use http::{HeaderMap, Method, StatusCode};
 
 use crate::codec::{DecodeBody, DecodeContext};
+use crate::endpoint::EndpointId;
 use crate::redaction::SanitizedHeaderMap;
 
 /// The structural result of finite terminal status-body capture.
@@ -211,7 +212,7 @@ impl Error for StatusBodyDecodeError {}
 
 /// Safe metadata and an opaque complete-only body for a terminal HTTP status.
 pub struct HttpResponseFailure {
-    endpoint: &'static str,
+    endpoint: EndpointId,
     method: Method,
     status: StatusCode,
     headers: SanitizedHeaderMap,
@@ -223,7 +224,7 @@ pub struct HttpResponseFailure {
 impl HttpResponseFailure {
     #[allow(dead_code, reason = "constructed by the managed response collector")]
     pub(crate) fn new(
-        endpoint: &'static str,
+        endpoint: impl Into<EndpointId>,
         method: Method,
         status: StatusCode,
         headers: HeaderMap,
@@ -231,7 +232,7 @@ impl HttpResponseFailure {
         retry_after_cap: Duration,
     ) -> Self {
         Self::new_at(
-            endpoint,
+            endpoint.into(),
             method,
             status,
             headers,
@@ -243,7 +244,7 @@ impl HttpResponseFailure {
 
     #[allow(dead_code, reason = "supports deterministic Retry-After tests")]
     fn new_at(
-        endpoint: &'static str,
+        endpoint: EndpointId,
         method: Method,
         status: StatusCode,
         headers: HeaderMap,
@@ -270,8 +271,14 @@ impl HttpResponseFailure {
 
     /// Returns the stable generated endpoint identity.
     #[must_use]
-    pub const fn endpoint(&self) -> &'static str {
-        self.endpoint
+    pub fn endpoint(&self) -> &str {
+        self.endpoint.as_str()
+    }
+
+    /// Returns the typed stable endpoint identity.
+    #[must_use]
+    pub const fn endpoint_id(&self) -> &EndpointId {
+        &self.endpoint
     }
 
     /// Returns the application HTTP method.
@@ -325,7 +332,7 @@ impl HttpResponseFailure {
         C::decode(
             body.clone(),
             DecodeContext {
-                endpoint: self.endpoint,
+                endpoint: self.endpoint.as_str(),
                 method: &self.method,
                 status: self.status,
                 content_type: self.content_type.as_deref(),
@@ -389,7 +396,7 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/test"));
         HttpResponseFailure::new_at(
-            "widgets.fetch",
+            "widgets.fetch".into(),
             Method::GET,
             StatusCode::BAD_GATEWAY,
             headers,

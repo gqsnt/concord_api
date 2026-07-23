@@ -16,6 +16,7 @@ use concord_test_support::executor::ApplicationChannel;
 use concord_test_support::script::BoundaryRequest;
 
 use crate::body::{BodyFailureState, NativeBody};
+use crate::endpoint::EndpointId;
 use crate::error::{
     ApiError, ClientBuildError, ClientBuildErrorKind, ConfigurationErrorKind, HttpResponseFailure,
 };
@@ -44,7 +45,7 @@ impl ApplicationRequest {
 
 pub(crate) struct ApplicationResponse {
     native: reqwest::Response,
-    endpoint: &'static str,
+    endpoint: EndpointId,
     method: Method,
 }
 
@@ -69,7 +70,7 @@ impl ApplicationResponse {
         self.native.chunk().await.map_err(|error| {
             drop(error);
             ApiError::classified(
-                self.endpoint,
+                self.endpoint.clone(),
                 self.method.clone(),
                 crate::error::ErrorCategory::ResponseBody,
             )
@@ -77,11 +78,11 @@ impl ApplicationResponse {
     }
 
     pub(crate) fn into_byte_stream(self, limit: u64) -> ApplicationByteStream {
-        let endpoint = self.endpoint;
+        let endpoint = self.endpoint.clone();
         let method = self.method.clone();
         let source: ApplicationByteStream = Box::pin(ReducedResponseStream {
             inner: Box::pin(self.native.bytes_stream()),
-            endpoint,
+            endpoint: endpoint.clone(),
             method: self.method,
         });
         bounded_byte_stream(source, endpoint, method, limit)
@@ -97,7 +98,7 @@ pub(crate) type ApplicationByteStream =
 
 pub(crate) fn bounded_byte_stream(
     source: ApplicationByteStream,
-    endpoint: &'static str,
+    endpoint: EndpointId,
     method: Method,
     limit: u64,
 ) -> ApplicationByteStream {
@@ -113,7 +114,7 @@ pub(crate) fn bounded_byte_stream(
 
 struct BoundedResponseStream {
     source: ApplicationByteStream,
-    endpoint: &'static str,
+    endpoint: EndpointId,
     method: Method,
     limit: u64,
     observed: u64,
@@ -145,7 +146,7 @@ impl Stream for BoundedResponseStream {
                 else {
                     this.finished = true;
                     return Poll::Ready(Some(Err(ApiError::classified(
-                        this.endpoint,
+                        this.endpoint.clone(),
                         this.method.clone(),
                         crate::error::ErrorCategory::ResponseBody,
                     ))));
@@ -153,7 +154,7 @@ impl Stream for BoundedResponseStream {
                 if next > this.limit {
                     this.finished = true;
                     return Poll::Ready(Some(Err(ApiError::classified(
-                        this.endpoint,
+                        this.endpoint.clone(),
                         this.method.clone(),
                         crate::error::ErrorCategory::ResponseBody,
                     ))));
@@ -167,7 +168,7 @@ impl Stream for BoundedResponseStream {
 
 struct ReducedResponseStream<S> {
     inner: Pin<Box<S>>,
-    endpoint: &'static str,
+    endpoint: EndpointId,
     method: Method,
 }
 
@@ -184,7 +185,7 @@ where
             Poll::Ready(Some(Err(error))) => {
                 drop(error);
                 Poll::Ready(Some(Err(ApiError::classified(
-                    this.endpoint,
+                    this.endpoint.clone(),
                     this.method.clone(),
                     crate::error::ErrorCategory::ResponseBody,
                 ))))
@@ -255,20 +256,20 @@ impl ApplicationHttp {
 
     pub(crate) fn preflight_url(
         &self,
-        endpoint: &'static str,
+        endpoint: &EndpointId,
         method: &Method,
         url: &url::Url,
     ) -> Result<(), ApiError> {
         if self.https_only && url.scheme() != "https" {
             return Err(ApiError::configuration(
-                endpoint,
+                endpoint.clone(),
                 method.clone(),
                 ConfigurationErrorKind::InvalidRoute,
             ));
         }
         if url.scheme() == "https" && self.tls == TlsCapability::Unavailable {
             return Err(ApiError::classified(
-                endpoint,
+                endpoint.clone(),
                 method.clone(),
                 crate::error::ErrorCategory::Configuration,
             ));
@@ -278,14 +279,14 @@ impl ApplicationHttp {
 
     pub(crate) fn preflight_protected_url(
         &self,
-        endpoint: &'static str,
+        endpoint: &EndpointId,
         method: &Method,
         url: &url::Url,
     ) -> Result<(), ApiError> {
         self.preflight_url(endpoint, method, url)?;
         if url.scheme() != "https" || self.tls == TlsCapability::Unavailable {
             return Err(ApiError::configuration(
-                endpoint,
+                endpoint.clone(),
                 method.clone(),
                 ConfigurationErrorKind::InvalidAuthentication,
             ));
@@ -295,7 +296,7 @@ impl ApplicationHttp {
 
     pub(crate) fn build_request(
         &self,
-        endpoint: &'static str,
+        endpoint: &EndpointId,
         method: &Method,
         url: &url::Url,
         public_headers: &HeaderMap,
@@ -330,7 +331,7 @@ impl ApplicationHttp {
         let native = builder.build().map_err(|error| {
             drop(error);
             ApiError::classified(
-                endpoint,
+                endpoint.clone(),
                 method.clone(),
                 crate::error::ErrorCategory::RequestEncoding,
             )
@@ -347,14 +348,14 @@ impl ApplicationHttp {
                 let limit_u64 = u64::try_from(limit.get()).unwrap_or(u64::MAX);
                 if exact_length.is_some_and(|length| length > limit_u64) {
                     return Err(ApiError::classified(
-                        endpoint,
+                        endpoint.clone(),
                         method.clone(),
                         crate::error::ErrorCategory::RequestBody,
                     ));
                 }
                 let serialized = native.body_mut().take().ok_or_else(|| {
                     ApiError::classified(
-                        endpoint,
+                        endpoint.clone(),
                         method.clone(),
                         crate::error::ErrorCategory::RequestBody,
                     )
@@ -383,7 +384,7 @@ impl ApplicationHttp {
     )]
     pub(crate) async fn execute(
         &self,
-        endpoint: &'static str,
+        endpoint: &EndpointId,
         method: &Method,
         request: ApplicationRequest,
         safe_url: &str,
@@ -404,7 +405,7 @@ impl ApplicationHttp {
                 let boundary_body = match native.body_mut().take() {
                     Some(body) => collect_request_body(body).await.map_err(|()| {
                         ApiError::classified(
-                            endpoint,
+                            endpoint.clone(),
                             method.clone(),
                             crate::error::ErrorCategory::RequestBody,
                         )
@@ -412,7 +413,7 @@ impl ApplicationHttp {
                     None => Bytes::new(),
                 };
                 let boundary = super::development::boundary_request_with_sensitive(
-                    endpoint,
+                    endpoint.as_str(),
                     method.clone(),
                     Some(safe_url.to_owned()),
                     native.headers(),
@@ -430,7 +431,7 @@ impl ApplicationHttp {
                     .map(super::development::scripted_response)
                     .map_err(|failure| {
                         ApiError::classified(
-                            endpoint,
+                            endpoint.clone(),
                             method.clone(),
                             super::development::failure_category(failure.kind()),
                         )
@@ -440,7 +441,7 @@ impl ApplicationHttp {
                 let body_failure = request.body_failure.clone();
                 self.client.execute(request.native).await.map_err(|error| {
                     ApiError::from_reqwest(
-                        endpoint,
+                        endpoint.clone(),
                         method.clone(),
                         error,
                         body_failure.as_ref().is_some_and(BodyFailureState::failed),
@@ -461,7 +462,7 @@ impl ApplicationHttp {
             let body_failure = request.body_failure.clone();
             self.client.execute(request.native).await.map_err(|error| {
                 ApiError::from_reqwest(
-                    endpoint,
+                    endpoint.clone(),
                     method.clone(),
                     error,
                     body_failure.as_ref().is_some_and(BodyFailureState::failed),
@@ -471,7 +472,7 @@ impl ApplicationHttp {
 
         Ok(ApplicationResponse {
             native,
-            endpoint,
+            endpoint: endpoint.clone(),
             method: method.clone(),
         })
     }
@@ -490,6 +491,8 @@ impl ApplicationHttp {
         url: &str,
         protected: bool,
     ) -> Result<reqwest::RequestBuilder, ApiError> {
+        let endpoint_id = EndpointId::new(endpoint)
+            .expect("deterministic test endpoint IDs use the public runtime grammar");
         let url = url::Url::parse(url).map_err(|_| {
             ApiError::classified(
                 endpoint,
@@ -497,10 +500,10 @@ impl ApplicationHttp {
                 crate::error::ErrorCategory::Configuration,
             )
         })?;
-        self.preflight_url(endpoint, &method, &url)?;
+        self.preflight_url(&endpoint_id, &method, &url)?;
         if protected && url.scheme() != "https" {
             return Err(ApiError::configuration(
-                endpoint,
+                endpoint_id,
                 method,
                 ConfigurationErrorKind::InvalidAuthentication,
             ));
@@ -567,7 +570,7 @@ impl ApplicationHttp {
 
     pub(super) async fn terminal_status(
         &self,
-        endpoint: &'static str,
+        endpoint: EndpointId,
         method: Method,
         response: reqwest::Response,
         disposition: StatusDisposition,
@@ -587,7 +590,7 @@ impl ApplicationHttp {
 
     pub(crate) async fn terminal_status_managed(
         &self,
-        endpoint: &'static str,
+        endpoint: EndpointId,
         method: Method,
         response: ApplicationResponse,
         deadline: Option<tokio::time::Instant>,

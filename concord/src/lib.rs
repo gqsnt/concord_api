@@ -111,7 +111,12 @@ pub mod codec {
 
 /// Explicit endpoint values and typed pending request contracts.
 pub mod endpoint {
-    pub use concord_core::advanced::{PreparedEndpoint, PreparedEndpointBuilder};
+    #[allow(deprecated, reason = "Phase 14 compatibility aliases")]
+    pub use concord_core::advanced::{
+        EndpointCapabilities, EndpointDescription, EndpointId, MAX_ENDPOINT_ID_BYTES,
+        PreparedEndpoint, PreparedEndpointBuilder, RequestBodyCategory, ResponseAcquisition,
+        RuntimeEndpoint, RuntimeEndpointBuilder, SafeRequestPlan, TimeoutSelection,
+    };
     pub use concord_core::{PaginatedRequest, Request, ResponseRequest};
 }
 
@@ -190,6 +195,7 @@ pub mod prelude {
 
 /// Stable advanced semantic contracts and runtime configuration types.
 pub mod advanced {
+    #[allow(deprecated, reason = "Phase 14 compatibility aliases")]
     pub use concord_core::advanced::{
         ApiError, ApiResponse, Auth, AuthError, AuthErrorKind, BeforeSend, BodyError,
         BodyErrorKind, BodyFactory, BodyKind, BoxFuture, Buffered, ByteStream, Bytes, BytesMut,
@@ -197,20 +203,23 @@ pub mod advanced {
         CompletionEvent, CompletionOutcome, ConfigurationError, ConfigurationErrorKind, Cooldown,
         CooldownScope, CredentialHandle, CredentialMaterial, CredentialProvider, CredentialReason,
         CredentialRef, CredentialRequest, DebugLevel, DecodeBody, DecodeContext, DecodedResponse,
-        Discard, EncodeBody, EncodeContext, ErrorCategory, ExecutionMeta, HeaderMap, HeaderName,
-        HeaderValue, HookError, HttpConfigBuilder, HttpResponseFailure, LengthHint, MediaType,
+        Discard, EncodeBody, EncodeContext, EndpointCapabilities, EndpointDescription, EndpointId,
+        ErrorCategory, ExecutionMeta, HeaderMap, HeaderName, HeaderValue, HookError,
+        HttpConfigBuilder, HttpResponseFailure, LengthHint, MAX_ENDPOINT_ID_BYTES, MediaType,
         Method, NoContent, NoopRateLimiter, OctetStream, OperationId, PageResponseSpec,
         PaginationCompletionEvent, PaginationController, PaginationError, PaginationErrorKind,
         PreparedEndpoint, PreparedEndpointBuilder, ProviderBody, ProviderBodyFactory, ProviderHttp,
         ProviderRequest, ProviderResponse, ProviderRetry, RateLimitError, RateLimitErrorKind,
         RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitObserver, RateLimitPermit,
         RateLimitPlan, RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimitRule,
-        RateLimitWindow, RateLimiter, RecoveryMode, RequestBody, RequestBodyContext,
-        RequestBodyMetadata, RequestBodySpec, RequestContentType, ResponseBodyError,
-        ResponseBodyErrorKind, ResponseBodySpec, ResponseHead, ResponseHeadEvent, ResponseMode,
-        RuntimeConfigBuilder, RuntimeHooks, SafeProxy, SanitizedHeaderMap, SanitizedHeaderValue,
-        SanitizedHeaders, SecretCredential, StatusBody, StatusBodyDecodeError, StatusBodyState,
-        StatusCode, Stream, StreamBody, Streaming, Text, Url, Version,
+        RateLimitWindow, RateLimiter, RecoveryMode, RequestBody, RequestBodyCategory,
+        RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestContentType,
+        ResponseAcquisition, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec,
+        ResponseHead, ResponseHeadEvent, ResponseMode, RuntimeConfigBuilder, RuntimeEndpoint,
+        RuntimeEndpointBuilder, RuntimeHooks, SafeProxy, SafeRequestPlan, SanitizedHeaderMap,
+        SanitizedHeaderValue, SanitizedHeaders, SecretCredential, StatusBody,
+        StatusBodyDecodeError, StatusBodyState, StatusCode, Stream, StreamBody, Streaming, Text,
+        TimeoutSelection, Url, Version,
     };
     #[cfg(feature = "multipart")]
     pub use concord_core::advanced::{Multipart, MultipartBody, MultipartFactory, MultipartPart};
@@ -279,13 +288,15 @@ pub mod __private {
     #[doc(hidden)]
     pub use concord_core::__private::{
         ApiError, ApiResponse, Auth, ClientBuildError, ClientCore, ClientInputKind, DebugLevel,
-        EmptyBody, EndpointSpec, GENERATED_CONTRACT_VERSION, GeneratedCredential, HeadBuilder,
-        HeaderName, Method, PageResponseSpec, PaginatedEndpoint, PreparedHead, RateLimitId,
-        RateLimitKey, RateLimitKeyPart, RateLimitRule, RateLimitWindow, RawResponseEndpoint,
+        EmptyBody, EndpointCapabilities, EndpointDescription, EndpointId, EndpointSpec,
+        GENERATED_CONTRACT_VERSION, GeneratedCredential, HeadBuilder, HeaderName, Method,
+        PageResponseSpec, PaginatedEndpoint, PreparedHead, RateLimitId, RateLimitKey,
+        RateLimitKeyPart, RateLimitRule, RateLimitWindow, RawResponseEndpoint, RequestBodyCategory,
         RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestMeta, RequestOptions,
-        ResponseBodySpec, TimeoutOverride, Url, assert_generated_contract, build_client_core,
-        credential_store_error, default_http_config, inspect_endpoint, map_endpoint,
-        missing_input_error, paginate_request, request, response_request,
+        ResponseAcquisition, ResponseBodySpec, SafeRequestPlan, TimeoutOverride, TimeoutSelection,
+        Url, assert_generated_contract, build_client_core, credential_store_error,
+        default_http_config, inspect_endpoint, map_endpoint, missing_input_error, paginate_request,
+        request, response_request, safe_request_plan,
     };
 
     /// Produces a focused const-evaluation diagnostic when multipart is unavailable.

@@ -8,4 +8,4 @@ Advanced APIs let applications supply semantic behavior while Concord retains th
 - [Custom pagination, limiters, observers, and explicit keys](pagination-and-rate-limits.md)
 - [Dangerous raw-response and retry features](dangerous-features.md)
 
-Start with the smallest extension point that solves the problem. An `EncodeBody` or `DecodeBody` implementation is simpler than a full body specification; a prepared endpoint is preferable to constructing a parallel request runtime.
+Start with the smallest extension point that solves the problem. An `EncodeBody` or `DecodeBody` implementation is simpler than a full body specification; a runtime endpoint is preferable to constructing a parallel request runtime.

@@ -53,7 +53,7 @@ struct LifecycleCounts {
     before: AtomicUsize,
     response: AtomicUsize,
     complete: AtomicUsize,
-    endpoints: Mutex<Vec<&'static str>>,
+    endpoints: Mutex<Vec<String>>,
 }
 
 impl RuntimeHooks for LifecycleCounts {
@@ -62,7 +62,7 @@ impl RuntimeHooks for LifecycleCounts {
         self.endpoints
             .lock()
             .expect("endpoint capture")
-            .push(context.endpoint);
+            .push(context.endpoint.to_owned());
         Box::pin(async { Ok(()) })
     }
 
