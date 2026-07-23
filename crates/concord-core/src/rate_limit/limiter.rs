@@ -10,7 +10,7 @@ use crate::redaction::SanitizedHeaders;
 use super::{RateLimitError, RateLimitPermit, RateLimitPlan};
 
 /// Default maximum aggregate byte length of one resolved rate-limit key.
-pub const DEFAULT_RATE_LIMIT_KEY_BYTES: usize = 1_024;
+pub use crate::runtime::defaults::DEFAULT_RATE_LIMIT_KEY_BYTES;
 
 /// Safe request metadata supplied to a selected rate limiter.
 pub struct RateLimitRequest<'a> {

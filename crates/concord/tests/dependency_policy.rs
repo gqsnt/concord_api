@@ -697,12 +697,11 @@ fn governor_ecosystem_and_default_composition_are_extras_and_facade_owned() {
     );
 
     let disabled = extras_feature_tree(None, "dependency-policy/extras-governor-disabled");
-    for dependency in ["httpdate"] {
-        assert!(
-            !has_direct_package(&disabled, dependency),
-            "governor-disabled extras unexpectedly activates {dependency}\n{disabled}"
-        );
-    }
+    let dependency = "httpdate";
+    assert!(
+        !has_direct_package(&disabled, dependency),
+        "governor-disabled extras unexpectedly activates {dependency}\n{disabled}"
+    );
     let enabled = extras_feature_tree(
         Some("rate-limit-governor"),
         "dependency-policy/extras-governor-enabled",

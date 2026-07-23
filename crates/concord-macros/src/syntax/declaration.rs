@@ -277,7 +277,7 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
 
     if input.peek(Token![;]) {
         input.parse::<Token![;]>()?;
-        return Ok(SourceEndpoint {
+        Ok(SourceEndpoint {
             method,
             name,
             parameters,
@@ -286,7 +286,7 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
             response,
             pagination: None,
             contract_id: None,
-        });
+        })
     } else {
         let clauses;
         braced!(clauses in input);
@@ -343,7 +343,7 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
                 .span()
                 .error("pagination requires a bodyless endpoint"));
         }
-        return Ok(SourceEndpoint {
+        Ok(SourceEndpoint {
             method,
             name,
             parameters,
@@ -352,7 +352,7 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
             response,
             pagination,
             contract_id,
-        });
+        })
     }
 }
 

@@ -1,7 +1,7 @@
 //! Declares the smallest useful client and constructs its named request.
 //!
 //! Required features: none. Mode: construction-only. Documentation owner:
-//! `docs/guide/getting-started.md`. Proving test: `tests/construction.rs`.
+//! `docs/guide/01-represent-an-api.md`. Proving test: `tests/construction.rs`.
 
 use concord::api;
 

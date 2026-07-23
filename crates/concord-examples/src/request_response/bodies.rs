@@ -2,7 +2,7 @@
 //!
 //! Required features: `json` and `multipart`. Mode: construction and
 //! deterministic local execution. Documentation owner:
-//! `docs/guide/bodies-and-responses.md`. Proving tests:
+//! `docs/guide/05-bodies-responses-and-streams.md`. Proving tests:
 //! `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use concord::api;

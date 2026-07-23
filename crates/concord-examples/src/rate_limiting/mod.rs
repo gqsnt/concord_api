@@ -2,7 +2,7 @@
 //!
 //! Required feature: `rate-limit-governor`. Mode: construction and
 //! deterministic local execution. Documentation owner:
-//! `docs/guide/rate-limiting.md`. Proving tests:
+//! `docs/guide/06-pagination-and-rate-limits.md`. Proving tests:
 //! `tests/construction.rs` and `tests/local_runtime.rs`.
 
 pub mod custom_limiter;

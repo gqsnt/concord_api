@@ -7,7 +7,6 @@ pub(super) fn generate_request_wrapper(
     support_path: &TokenStream,
     generated_core: &TokenStream,
     core_path: &TokenStream,
-    _invocation_path: &TokenStream,
     where_clause: &TokenStream,
 ) -> TokenStream {
     let endpoint_name = &endpoint.surface.endpoint_type_name;
@@ -256,7 +255,6 @@ mod tests {
             &quote!(super),
             &core,
             &core,
-            &quote!(super),
             &quote!(),
         )
         .to_string();

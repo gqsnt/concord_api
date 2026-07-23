@@ -1,7 +1,8 @@
 //! Built-in and custom sequential, bounded pagination controllers.
 //!
 //! Required feature: `json`. Mode: construction and deterministic local
-//! multi-page execution. Documentation owner: `docs/guide/pagination.md`.
+//! multi-page execution. Documentation owner:
+//! `docs/guide/06-pagination-and-rate-limits.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use concord::api;

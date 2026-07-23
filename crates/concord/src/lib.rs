@@ -315,7 +315,7 @@ pub mod __private {
         {
             let limiter: std::sync::Arc<dyn concord_core::rate_limit::RateLimiter> =
                 std::sync::Arc::new(concord_extras::rate_limit::GovernorRateLimiter::new());
-            return concord_core::__private::install_generated_default_limiter(runtime, limiter);
+            concord_core::__private::install_generated_default_limiter(runtime, limiter)
         }
         #[cfg(not(feature = "rate-limit-governor"))]
         {

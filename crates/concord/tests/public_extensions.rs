@@ -658,6 +658,10 @@ fn every_public_extension_family_compiles_through_the_facade_only() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+#[allow(
+    clippy::await_holding_lock,
+    reason = "the process-global extension probes require whole-test serialization"
+)]
 async fn downstream_generated_controller_constructs_binds_and_collects_two_pages() {
     use concord_test_support::server::{ResponseScript, ScriptedServer};
 
@@ -700,6 +704,10 @@ async fn downstream_generated_controller_constructs_binds_and_collects_two_pages
 
 #[cfg(feature = "default-tls")]
 #[tokio::test(flavor = "current_thread")]
+#[allow(
+    clippy::await_holding_lock,
+    reason = "the process-global extension probes require whole-test serialization"
+)]
 async fn downstream_credential_limiter_and_hooks_execute_through_generated_runtime() {
     use concord_test_support::proxy::ConnectProxy;
     use concord_test_support::tls::TlsServer;

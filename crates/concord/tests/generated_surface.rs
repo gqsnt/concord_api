@@ -56,7 +56,7 @@ fn one_facade_dependency_exposes_predictable_named_inherent_surface() {
         .verbose(true)
         .page_size(100);
     let cloned = endpoint.clone();
-    let stored = vec![endpoint.clone(), cloned];
+    let stored = [endpoint.clone(), cloned];
     assert_eq!(stored.len(), 2);
     let description = endpoint.description();
     assert_eq!(description.id(), "facade_api.resources.fetch");

@@ -6,6 +6,7 @@ members = [
     "crates/concord-macros",
     "crates/concord-test-support",
     "crates/concord-examples",
+    "tools/xtask",
     "tools/perf",
 ]
 default-members = [

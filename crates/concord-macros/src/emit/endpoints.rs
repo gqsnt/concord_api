@@ -227,7 +227,6 @@ pub(super) fn generate_endpoint(
         &support_path,
         &generated_core,
         core_path,
-        &invocation_path,
         &where_clause,
     );
     let pagination_impl = generate_pagination_impl(

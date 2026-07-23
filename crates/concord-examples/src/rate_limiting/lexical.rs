@@ -1,7 +1,8 @@
 //! Lexical rate windows compose from client and endpoint declarations.
 //!
 //! Required feature: `rate-limit-governor`. Mode: deterministic local
-//! execution. Documentation owner: `docs/guide/rate-limiting.md`.
+//! execution. Documentation owner:
+//! `docs/guide/06-pagination-and-rate-limits.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use std::sync::Arc;

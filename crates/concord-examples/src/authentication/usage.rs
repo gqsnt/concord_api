@@ -1,7 +1,7 @@
 //! Named secret/provider construction with no positional credential inputs.
 //!
 //! Required features: `oauth2-client` and `default-tls`. Mode:
-//! construction-only. Documentation owner: `docs/guide/authentication.md`.
+//! construction-only. Documentation owner: `docs/guide/04-authentication.md`.
 //! Proving test: `tests/construction.rs`.
 
 use concord::SecretString;

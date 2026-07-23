@@ -1,7 +1,7 @@
 //! Public semantic request/response extensions and runtime endpoint parity.
 //!
 //! Required features: none. Mode: construction and deterministic local
-//! execution. Documentation owner: `docs/guide/extensions.md`.
+//! execution. Documentation owner: `docs/guide/05-bodies-responses-and-streams.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use concord::Request;

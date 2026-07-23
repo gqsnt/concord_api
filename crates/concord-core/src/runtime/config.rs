@@ -4,9 +4,13 @@ use std::time::Duration;
 
 use crate::hooks::{DebugLevel, RuntimeHooks, default_hooks};
 use crate::rate_limit::RateLimiter;
-
-const MIB: usize = 1_048_576;
-const KIB: usize = 1_024;
+use crate::runtime::defaults::{
+    DEFAULT_AUTH_FAILURE_COOLDOWN_SECONDS, DEFAULT_PAGINATION_IDENTITY_BYTES,
+    DEFAULT_PAGINATION_MAX_ITEMS, DEFAULT_PAGINATION_MAX_PAGES, DEFAULT_PROVIDER_REQUEST_BYTES,
+    DEFAULT_PROVIDER_RESPONSE_BYTES, DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS,
+    DEFAULT_REQUEST_BODY_BYTES, DEFAULT_RESPONSE_BODY_BYTES, DEFAULT_STATUS_BODY_BYTES,
+    DEFAULT_STREAM_RESPONSE_BYTES,
+};
 
 /// Private immutable finite runtime configuration.
 #[allow(dead_code, reason = "assembled into the private production ClientCore")]
@@ -50,18 +54,20 @@ impl RuntimeConfigBuilder {
         Self {
             config: RuntimeConfig {
                 operation_timeout: None,
-                request_body_limit: nonzero_usize(16 * MIB),
-                response_body_limit: nonzero_usize(16 * MIB),
-                stream_response_limit: nonzero_usize(16 * MIB),
-                status_body_limit: Some(nonzero_usize(64 * KIB)),
-                provider_request_limit: nonzero_usize(MIB),
-                provider_response_limit: nonzero_usize(MIB),
-                pagination_max_pages: NonZeroU32::new(1_000)
+                request_body_limit: nonzero_usize(DEFAULT_REQUEST_BODY_BYTES),
+                response_body_limit: nonzero_usize(DEFAULT_RESPONSE_BODY_BYTES),
+                stream_response_limit: nonzero_usize(DEFAULT_STREAM_RESPONSE_BYTES),
+                status_body_limit: Some(nonzero_usize(DEFAULT_STATUS_BODY_BYTES)),
+                provider_request_limit: nonzero_usize(DEFAULT_PROVIDER_REQUEST_BYTES),
+                provider_response_limit: nonzero_usize(DEFAULT_PROVIDER_RESPONSE_BYTES),
+                pagination_max_pages: NonZeroU32::new(DEFAULT_PAGINATION_MAX_PAGES)
                     .expect("the pagination page default is nonzero"),
-                pagination_max_items: nonzero_usize(100_000),
-                pagination_identity_limit: nonzero_usize(4 * MIB),
-                auth_failure_cooldown_cap: Duration::from_secs(60),
-                rate_limit_cooldown_cap: Duration::from_secs(60),
+                pagination_max_items: nonzero_usize(DEFAULT_PAGINATION_MAX_ITEMS),
+                pagination_identity_limit: nonzero_usize(DEFAULT_PAGINATION_IDENTITY_BYTES),
+                auth_failure_cooldown_cap: Duration::from_secs(
+                    DEFAULT_AUTH_FAILURE_COOLDOWN_SECONDS,
+                ),
+                rate_limit_cooldown_cap: Duration::from_secs(DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS),
                 rate_limit_key_limit,
                 rate_limiter,
                 hooks: default_hooks(),
@@ -244,21 +250,51 @@ mod tests {
     fn defaults_are_exact_positive_finite_values() {
         let config = RuntimeConfigBuilder::new().resolve();
         assert_eq!(config.operation_timeout, None);
-        assert_eq!(config.request_body_limit.get(), 16 * MIB);
-        assert_eq!(config.response_body_limit.get(), 16 * MIB);
-        assert_eq!(config.stream_response_limit.get(), 16 * MIB);
+        assert_eq!(config.request_body_limit.get(), DEFAULT_REQUEST_BODY_BYTES);
+        assert_eq!(
+            config.response_body_limit.get(),
+            DEFAULT_RESPONSE_BODY_BYTES
+        );
+        assert_eq!(
+            config.stream_response_limit.get(),
+            DEFAULT_STREAM_RESPONSE_BYTES
+        );
         assert_eq!(
             config.status_body_limit.map(NonZeroUsize::get),
-            Some(64 * KIB)
+            Some(DEFAULT_STATUS_BODY_BYTES)
         );
-        assert_eq!(config.provider_request_limit.get(), MIB);
-        assert_eq!(config.provider_response_limit.get(), MIB);
-        assert_eq!(config.pagination_max_pages.get(), 1_000);
-        assert_eq!(config.pagination_max_items.get(), 100_000);
-        assert_eq!(config.pagination_identity_limit.get(), 4 * MIB);
-        assert_eq!(config.auth_failure_cooldown_cap, Duration::from_secs(60));
-        assert_eq!(config.rate_limit_cooldown_cap, Duration::from_secs(60));
-        assert_eq!(config.rate_limit_key_limit, KIB);
+        assert_eq!(
+            config.provider_request_limit.get(),
+            DEFAULT_PROVIDER_REQUEST_BYTES
+        );
+        assert_eq!(
+            config.provider_response_limit.get(),
+            DEFAULT_PROVIDER_RESPONSE_BYTES
+        );
+        assert_eq!(
+            config.pagination_max_pages.get(),
+            DEFAULT_PAGINATION_MAX_PAGES
+        );
+        assert_eq!(
+            config.pagination_max_items.get(),
+            DEFAULT_PAGINATION_MAX_ITEMS
+        );
+        assert_eq!(
+            config.pagination_identity_limit.get(),
+            DEFAULT_PAGINATION_IDENTITY_BYTES
+        );
+        assert_eq!(
+            config.auth_failure_cooldown_cap,
+            Duration::from_secs(DEFAULT_AUTH_FAILURE_COOLDOWN_SECONDS)
+        );
+        assert_eq!(
+            config.rate_limit_cooldown_cap,
+            Duration::from_secs(DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS)
+        );
+        assert_eq!(
+            config.rate_limit_key_limit,
+            crate::rate_limit::DEFAULT_RATE_LIMIT_KEY_BYTES
+        );
         assert_eq!(config.debug, DebugLevel::None);
     }
 
@@ -282,7 +318,12 @@ mod tests {
             }
         }
 
-        for limit in [0, 16, KIB, 2 * KIB] {
+        for limit in [
+            0,
+            16,
+            crate::rate_limit::DEFAULT_RATE_LIMIT_KEY_BYTES,
+            2 * crate::rate_limit::DEFAULT_RATE_LIMIT_KEY_BYTES,
+        ] {
             let limiter: Arc<dyn RateLimiter> = Arc::new(KeyBoundLimiter(limit));
             let config = RuntimeConfigBuilder::new()
                 .rate_limiter(Arc::clone(&limiter))

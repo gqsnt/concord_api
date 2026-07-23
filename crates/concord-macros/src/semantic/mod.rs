@@ -264,7 +264,7 @@ impl Resolver<'_> {
 
 fn contract_path(client: &Ident, path: &[Ident]) -> String {
     std::iter::once(to_snake_case(&canonical_ident(client)))
-        .chain(path.iter().map(|name| canonical_ident(name)))
+        .chain(path.iter().map(canonical_ident))
         .collect::<Vec<_>>()
         .join(".")
 }

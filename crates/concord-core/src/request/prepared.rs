@@ -659,7 +659,7 @@ mod tests {
         assert!(!error.to_string().contains(SENTINEL));
         assert!(!format!("{error:?}").contains(SENTINEL));
 
-        let empty = EndpointId::new("").err().expect("empty identity must fail");
+        let empty = EndpointId::new("").expect_err("empty identity must fail");
         assert_eq!(empty.kind(), ConfigurationErrorKind::InvalidValue);
     }
 

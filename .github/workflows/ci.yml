@@ -1,0 +1,204 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  stable:
+    name: Stable workspace
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --all-targets --locked
+      - run: cargo test --workspace --locked
+
+  all-features:
+    name: All features
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --all-targets --all-features --locked
+      - run: cargo test --workspace --all-features --locked
+
+  no-default:
+    name: No default features
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --all-targets --no-default-features --locked
+      - run: cargo test -p concord --test ui --no-default-features --locked
+
+  msrv:
+    name: MSRV 1.85.0
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.85.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --all-targets --no-default-features --locked
+      - run: cargo test -p concord-core --lib --no-default-features --locked
+      - run: cargo test -p concord-extras --all-features --locked
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+  generated-ui:
+    name: Generated API and UI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p concord --test ui --no-default-features --locked
+      - run: cargo test -p concord --test ui --all-features --locked
+      - run: cargo test -p concord-core --test ui --no-default-features --locked
+      - run: cargo test -p concord --test generated_surface --all-features --locked
+      - run: cargo test -p concord --test rustdoc --all-features --locked
+
+  security:
+    name: Lifecycle, bounds, and redaction
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p concord-core --test security --all-features --locked
+      - run: cargo test -p concord-core --test bounds --all-features --locked
+      - run: cargo test -p concord-core --test lifecycle --all-features --locked
+      - run: cargo test -p concord --test endpoint_planning --all-features --locked
+      - run: cargo test -p concord --test generated_authentication --all-features --locked
+      - run: cargo test -p concord --test generated_lifecycle --all-features --locked
+      - run: cargo test -p concord --test runtime_endpoint_lifecycle --all-features --locked
+
+  extras:
+    name: Downstream extras contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p concord-extras --all-features --locked
+      - run: cargo test -p concord --test public_extensions --all-features --locked
+
+  fixtures:
+    name: Locked Cargo fixtures
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo run --locked -p concord-xtask -- fixtures
+
+  examples:
+    name: Canonical examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check -p concord-examples --all-targets --no-default-features --locked
+      - run: cargo test -p concord-examples --all-features --locked
+
+  docs:
+    name: Documentation and links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo run --locked -p concord-xtask -- docs
+      - run: cargo test --workspace --doc --locked
+      - run: cargo test --workspace --doc --all-features --locked
+      - run: cargo rustdoc -p concord --all-features --locked -- -D warnings
+      - run: cargo rustdoc -p concord-core --all-features --locked -- -D warnings
+      - run: cargo rustdoc -p concord-extras --all-features --locked -- -D warnings
+
+  platforms:
+    name: Platform ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --all-targets --locked
+
+  deny:
+    name: Dependency policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+
+  performance:
+    name: Performance smoke (observational)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo bench -p concord-perf --bench concord_overhead --no-run --locked
+      - run: cargo bench -p concord-perf --bench concord_overhead --locked -- --smoke

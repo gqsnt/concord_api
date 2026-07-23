@@ -1,0 +1,56 @@
+# 6. Pagination and rate limits
+
+Pagination is a capability of a bodyless, buffered page response:
+
+```rust
+GET list(offset: u64) -> Json<Page<Item>> {
+    paginate OffsetPagination {
+        offset: bind ep.offset,
+    }
+}
+```
+
+The controller type is ordinary Rust. Built-in offset, page-number, cursor,
+and next-cursor controllers are reexported by the façade, but the declaration
+compiler does not recognize their names. The generated named request gains
+`.paginate(PageLimit)`.
+
+Pagination is sequential, finitely bounded, identity-cycle detecting, and
+all-or-error. Every page is a fresh request through the same hooks,
+authentication, limiter, status, acquisition, and completion protocol. No
+partial result is returned under the existing terminal.
+
+Rate-limit declarations form an ordered lexical plan:
+
+```rust
+rate_limit {
+    cost 2;
+    100 / 1m;
+    1_000 / 1h;
+}
+```
+
+Client, outer-scope, inner-scope, and endpoint rules are additive. With the
+default façade features, Concord installs the downstream governor
+implementation. Without a configured/default limiter, a non-empty plan fails
+closed before credentials, body work, or transport. A user-supplied limiter
+always wins.
+
+Limiters and observers receive safe semantic plans, keys, and response-head
+context—not native requests, responses, or credentials. Key preparation and
+server-directed cooldowns are bounded. Exact syntax is in the
+[DSL reference](../reference/dsl.md#rate-limits); defaults are in
+[Limits](../reference/limits.md).
+
+## Running proof
+
+The importable
+[pagination modules](../../crates/concord-examples/src/pagination/mod.rs) and
+[rate-limit modules](../../crates/concord-examples/src/rate_limiting/mod.rs)
+cover built-in and custom contracts. The
+[local runtime test](../../crates/concord-examples/tests/local_runtime.rs)
+executes deterministic pages and limits; the
+[construction test](../../crates/concord-examples/tests/construction.rs)
+checks the generated capability surface.
+
+Next: [Explicit and runtime endpoints](07-explicit-and-runtime-endpoints.md).

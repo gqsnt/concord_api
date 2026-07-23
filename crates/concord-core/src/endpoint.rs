@@ -643,9 +643,7 @@ mod tests {
             "space value",
             "é",
         ] {
-            let error = EndpointId::new(invalid)
-                .err()
-                .expect("invalid endpoint identity");
+            let error = EndpointId::new(invalid).expect_err("invalid endpoint identity");
             assert_eq!(error.kind(), ConfigurationErrorKind::InvalidValue);
             if !invalid.is_empty() {
                 assert!(!error.to_string().contains(invalid));

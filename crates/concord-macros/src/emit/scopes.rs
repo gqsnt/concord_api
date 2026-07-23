@@ -147,11 +147,7 @@ pub(super) fn generate_scope_entry(
     } else {
         quote!(self.__concord_client.clone(),)
     };
-    let return_path = if on_client {
-        quote!(#module::#facade)
-    } else {
-        quote!(#module::#facade)
-    };
+    let return_path = quote!(#module::#facade);
     let constructor_path = return_path.clone();
     let doc = format!(
         "Creates an immutable `{}` facade snapshot. {} Selected scope defaults are evaluated once here.",

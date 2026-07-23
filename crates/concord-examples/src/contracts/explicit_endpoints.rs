@@ -1,7 +1,7 @@
 //! Shows that a generated endpoint value binds to the same named request type.
 //!
 //! Required features: none. Mode: construction-only.
-//! Documentation owner: `docs/guide/generated-api.md`.
+//! Documentation owner: `docs/guide/02-understand-generated-rust.md`.
 //! Proving test: `tests/construction.rs`.
 
 use super::full_dsl::{ReferenceApi, reference_api};

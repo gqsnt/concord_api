@@ -1,7 +1,8 @@
 //! Generated and runtime-defined endpoint values share one request/executor.
 //!
 //! Required features: none. Mode: construction, safe planning, and local
-//! execution. Documentation owner: `docs/guide/endpoints.md`.
+//! execution. Documentation owner:
+//! `docs/guide/07-explicit-and-runtime-endpoints.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use concord::Request;
