@@ -10,7 +10,7 @@ Pagination and rate limiting both compose with the ordinary request lifecycle. P
 A paginated endpoint is bodyless, returns a buffered page type whose output implements `IntoIterator`, and declares a typed controller with explicit live bindings.
 
 ```rust
-GET Items(offset: u64, limit: NonZeroU32) -> Json<Vec<Item>> {
+GET items(offset: u64, limit: NonZeroU32) -> Json<Vec<Item>> {
     query { "offset" = ep.offset; "limit" = ep.limit; }
     paginate concord::pagination::OffsetPagination {
         offset: bind ep.offset,
@@ -95,10 +95,10 @@ api! {
         }
     }
 
-    scope Regions(region: String) {
+    scope regions(region: String) {
         rate_limit { 20 / 1s; }
 
-        GET Read(id: String) -> Json<Item> {
+        GET read(id: String) -> Json<Item> {
             rate_limit {
                 cost 2;
                 100 / 1m;
@@ -143,9 +143,9 @@ let client = Api::builder()
     .build()?;
 ```
 
-The old `rate_limit_observer PATH` declaration is legacy pending DSL v2
-removal. An explicitly supplied custom limiter owns its observation policy and
-always wins over the generated default.
+Limiter and observer selection are runtime policy and have no DSL clauses. An
+explicitly supplied custom limiter owns its observation policy and always wins
+over the generated default.
 
 The default observer interprets bounded future-only `Retry-After` information. Observation cannot replace, retry, suppress, or otherwise alter the current response.
 

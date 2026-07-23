@@ -6,8 +6,8 @@ api! {
         base "http://setter.example.test";
     }
 
-    GET First(verbose: Option<bool>) -> Bytes;
-    GET Second() -> Bytes;
+    GET first(verbose: Option<bool>) -> Bytes;
+    GET second() -> Bytes;
 }
 
 fn main() {

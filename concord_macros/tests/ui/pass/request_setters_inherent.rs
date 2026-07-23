@@ -5,7 +5,7 @@ api! {
         base "http://setter.example.test";
     }
 
-    GET Item(verbose: Option<bool>) -> Bytes;
+    GET item(verbose: Option<bool>) -> Bytes;
 }
 
 fn main() {

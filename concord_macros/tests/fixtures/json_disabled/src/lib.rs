@@ -7,6 +7,6 @@ api! {
 
     scope records() {
         path ["records"];
-        POST Create(body: Json<Vec<u32>>) -> Json<Vec<u32>>;
+        POST create(#[body] body: Json<Vec<u32>>) -> Json<Vec<u32>>;
     }
 }

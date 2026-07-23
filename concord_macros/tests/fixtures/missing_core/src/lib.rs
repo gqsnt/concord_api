@@ -7,7 +7,7 @@ api! {
 
     scope resources(scope_value: String) {
         path ["scopes", scope.scope_value, "resources"];
-        GET ById(endpoint_value: String) -> NoContent {
+        GET by_id(endpoint_value: String) -> NoContent {
             path [ep.endpoint_value];
         }
     }

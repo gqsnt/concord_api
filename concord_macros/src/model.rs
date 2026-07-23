@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use proc_macro2::Span;
 use syn::{Ident, LitInt, LitStr, Path, Type};
 
 pub(crate) use crate::ast::{
@@ -22,7 +23,6 @@ pub(crate) struct Client {
     pub(crate) secrets: Vec<Secret>,
     pub(crate) credentials: Vec<Credential>,
     pub(crate) retry: RetrySelection,
-    pub(crate) rate_observer: Option<Path>,
     pub(crate) requires_limiter: bool,
     #[allow(dead_code, reason = "retained as the normalized client-layer IR root")]
     pub(crate) config: NormalizedConfig,
@@ -74,16 +74,28 @@ pub(crate) struct Endpoint {
     pub(crate) id: usize,
     pub(crate) method: MethodKind,
     pub(crate) name: Ident,
-    #[allow(dead_code, reason = "retained for deterministic public-name audit")]
-    pub(crate) alias: Option<Ident>,
     pub(crate) public_method_name: Ident,
     pub(crate) surface: EndpointSurface,
     pub(crate) parameters: Vec<Value>,
-    pub(crate) body: Option<Type>,
+    pub(crate) body: Option<RequestBody>,
+    pub(crate) contract_id: ContractId,
     pub(crate) config: NormalizedConfig,
     pub(crate) response: Type,
     pub(crate) pagination: Option<Pagination>,
     pub(crate) dsl_path: Vec<Ident>,
+}
+
+#[derive(Clone)]
+pub(crate) struct RequestBody {
+    pub(crate) name: Ident,
+    pub(crate) ty: Type,
+}
+
+#[derive(Clone)]
+pub(crate) struct ContractId {
+    pub(crate) value: String,
+    pub(crate) explicit: bool,
+    pub(crate) span: Span,
 }
 
 #[derive(Clone)]
@@ -201,6 +213,7 @@ pub(crate) struct Value {
     pub(crate) ty: Type,
     pub(crate) kind: ValueKind,
     pub(crate) shape: ValueShape,
+    pub(crate) source_position: usize,
 }
 
 impl Value {

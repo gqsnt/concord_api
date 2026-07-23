@@ -10,7 +10,7 @@ api! {
         rate_limit { by [secret.token]; 1 / 1s; }
     }
 
-    GET Read() -> Bytes;
+    GET read() -> Bytes;
 }
 
 fn main() {}

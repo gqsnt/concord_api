@@ -7,7 +7,7 @@ api! {
         base "https://minimal.example.test/v1/";
     }
 
-    GET Health() -> NoContent;
+    GET health() -> NoContent;
 }
 
 fn main() -> Result<(), concord::prelude::ClientBuildError> {

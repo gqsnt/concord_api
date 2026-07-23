@@ -213,17 +213,6 @@ impl RuntimeConfigBuilder {
         self
     }
 
-    pub(crate) fn install_generated_default_limiter_with(
-        self,
-        factory: impl FnOnce() -> Arc<dyn RateLimiter>,
-    ) -> Self {
-        if self.limiter_selection == LimiterSelection::Explicit {
-            self
-        } else {
-            self.install_generated_default_limiter(factory())
-        }
-    }
-
     pub(crate) fn prepare_generated_rate_limits(
         self,
         requires_limiter: bool,
@@ -307,9 +296,7 @@ mod tests {
         let config = RuntimeConfigBuilder::new()
             .install_generated_default_limiter(Arc::clone(&generated))
             .rate_limiter(Arc::clone(&explicit))
-            .install_generated_default_limiter_with(|| {
-                panic!("explicit limiter must suppress generated default construction")
-            })
+            .install_generated_default_limiter(Arc::clone(&generated))
             .resolve();
         assert_eq!(config.rate_limit_key_limit, 23);
         assert!(Arc::ptr_eq(&config.rate_limiter, &explicit));

@@ -6,20 +6,21 @@ use proc_macro2::TokenStream;
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::{
-    GenericArgument, Ident, LitBool, LitInt, LitStr, PathArguments, Token, Type, TypePath, braced,
-    bracketed, parenthesized,
+    Attribute, Ident, LitBool, LitInt, LitStr, Meta, Token, Type, TypePath, braced, bracketed,
+    parenthesized,
 };
 use url::Url;
 
 use crate::ast::{
-    AuthChallenge, AuthOperation, AuthPlacement, AuthPlacementKind, CredentialDecl,
-    CredentialSource, CredentialsBlock, DefaultExpr, DurationLiteral, HeaderEntry, HeaderOperation,
-    HostOperation, Layer, MethodKind, PaginationDecl, PaginationField, PaginationInitializer,
-    PaginationValue, PathOperation, PublicExpr, QueryEntry, QueryOperation, RateLimitDecl,
-    RateLimitWindowLiteral, RetrySelection, SecretDecl, SourceApi, SourceChild, SourceClient,
-    SourceEndpoint, SourceScope, TimeoutOperation, ValueDecl, ValueKind,
+    AuthChallenge, AuthOperation, AuthPlacement, AuthPlacementKind, BodyDecl, Clause,
+    CredentialDecl, CredentialSource, CredentialsBlock, DefaultExpr, DurationLiteral, HeaderEntry,
+    HeaderOperation, HostOperation, Layer, MethodKind, PaginationDecl, PaginationField,
+    PaginationInitializer, PaginationValue, PathOperation, PublicExpr, QueryEntry, QueryOperation,
+    RateLimitDecl, RateLimitWindowLiteral, RetrySelection, SecretDecl, SourceApi, SourceChild,
+    SourceClient, SourceEndpoint, SourceScope, TimeoutOperation, ValueDecl, ValueKind,
+    syntactic_option_inner,
 };
-use crate::names::canonical_ident;
+use crate::names::{canonical_ident, to_snake_case};
 
 const MAX_FORMAT_DEPTH: usize = 64;
 
@@ -42,6 +43,7 @@ mod keyword {
     syn::custom_keyword!(headers);
     syn::custom_keyword!(header);
     syn::custom_keyword!(host);
+    syn::custom_keyword!(id);
     syn::custom_keyword!(METHOD);
     syn::custom_keyword!(method);
     syn::custom_keyword!(off);
@@ -118,56 +120,80 @@ impl Parse for SourceClient {
         let name: Ident = input.parse()?;
         let body;
         braced!(body in input);
+        let owner = format!("client `{}`", canonical_ident(&name));
+        let mut base = None;
+        let mut values = None;
+        let mut credentials = None;
+        let mut retry = None;
+        let mut layer = Layer::default();
 
-        if !body.peek(keyword::base) {
-            if body.peek(keyword::vars) {
-                return Err(body.error("`vars` must appear after `base` and before `credentials`"));
+        while !body.is_empty() {
+            if body.peek(keyword::base) {
+                let key_span = body.span();
+                body.parse::<keyword::base>()?;
+                let value: LitStr = body.parse()?;
+                body.parse::<Token![;]>()?;
+                validate_base(&value)?;
+                insert_clause(&mut base, Clause { key_span, value }, "base", &owner)?;
+                continue;
             }
-            return Err(
-                body.error("a client must begin with exactly one fixed `base \"https://...\";`")
-            );
-        }
-        body.parse::<keyword::base>()?;
-        let base: LitStr = body.parse()?;
-        body.parse::<Token![;]>()?;
-        validate_base(&base)?;
-
-        let values = if body.peek(keyword::vars) {
-            parse_vars(&body)?
-        } else {
-            Vec::new()
-        };
-        if body.peek(keyword::var) {
-            return Err(body.error("client variables must be declared in a `vars { ... }` block"));
-        }
-
-        let credentials = body
-            .peek(keyword::credentials)
-            .then(|| parse_credentials(&body))
-            .transpose()?;
-
-        let retry = if body.peek(keyword::retry) {
-            parse_retry(&body)?
-        } else {
-            RetrySelection::Disabled
-        };
-        let layer = parse_ordered_layer(&body, true)?;
-        let rate_limit_observer = if body.peek(keyword::rate_limit_observer) {
-            body.parse::<keyword::rate_limit_observer>()?;
-            let path = body.parse()?;
-            body.parse::<Token![;]>()?;
+            if body.peek(keyword::vars) {
+                let key_span = body.span();
+                let value = parse_vars(&body)?;
+                insert_clause(&mut values, Clause { key_span, value }, "vars", &owner)?;
+                continue;
+            }
+            if body.peek(keyword::credentials) {
+                let key_span = body.span();
+                let value = parse_credentials(&body)?;
+                insert_clause(
+                    &mut credentials,
+                    Clause { key_span, value },
+                    "credentials",
+                    &owner,
+                )?;
+                continue;
+            }
+            if body.peek(keyword::retry) {
+                let key_span = body.span();
+                let value = parse_retry(&body)?;
+                insert_clause(&mut retry, Clause { key_span, value }, "retry", &owner)?;
+                continue;
+            }
+            if parse_layer_clause(&body, &mut layer, true, &owner)? {
+                continue;
+            }
             if body.peek(keyword::rate_limit_observer) {
                 return Err(body.error(
-                    "a client may contain at most one `rate_limit_observer PATH;` declaration",
+                    "`rate_limit_observer` is runtime policy; configure it with `Client::builder().configure_runtime(...)`",
                 ));
             }
-            Some(path)
-        } else {
-            None
-        };
-        if !body.is_empty() {
-            return Err(client_tail_error(&body));
+            if body.peek(keyword::rate_limits) {
+                return Err(body.error(
+                    "`rate_limits { ... }` was removed; declare `rate_limit { ... }` at each lexical owner",
+                ));
+            }
+            if body.peek(keyword::observe) {
+                return Err(body.error(
+                    "`observe PATH;` was removed; configure response-head observation on the runtime builder",
+                ));
+            }
+            if body.peek(keyword::var) {
+                return Err(body.error("client values must be declared in a `vars { ... }` block"));
+            }
+            if body.peek(keyword::scope) || endpoint_starts(&body) {
+                return Err(
+                    body.error("scopes and endpoints are declared after the `client` block")
+                );
+            }
+            return Err(body.error(
+                "unsupported client clause; expected `base`, `vars`, `credentials`, `retry`, `host`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit`",
+            ));
         }
+        let base = base.ok_or_else(|| {
+            name.span()
+                .error("a client requires exactly one fixed `base \"https://...\";` clause")
+        })?;
 
         Ok(Self {
             name,
@@ -176,7 +202,6 @@ impl Parse for SourceClient {
             credentials,
             retry,
             layer,
-            rate_limit_observer,
         })
     }
 }
@@ -191,7 +216,7 @@ fn parse_vars(input: ParseStream<'_>) -> syn::Result<Vec<ValueDecl>> {
         if body.peek(keyword::var) {
             return Err(body.error("client variables must be declared in a `vars { ... }` block without the `var` keyword"));
         }
-        let value = parse_value(&body)?;
+        let value = parse_value(&body, values.len())?;
         body.parse::<Token![;]>()?;
         insert_unique_value(&mut names, &value, "client value")?;
         values.push(value);
@@ -215,20 +240,25 @@ fn parse_children(
         }
     }
 
+    validate_child_names(&children, owner)?;
+    Ok(children)
+}
+
+fn validate_child_names(children: &[SourceChild], owner: &str) -> syn::Result<()> {
     let mut names = HashSet::new();
-    for child in &children {
+    for child in children {
         let name = match child {
             SourceChild::Scope(scope) => &scope.name,
             SourceChild::Endpoint(endpoint) => &endpoint.name,
         };
-        let normalized = crate::names::to_snake_case(&canonical_ident(name));
-        if !names.insert(normalized.clone()) {
+        let canonical = canonical_ident(name);
+        if !names.insert(canonical.clone()) {
             return Err(name.span().error(format!(
-                "generated child name `{normalized}` collides within this {owner} after deterministic Rust normalization"
+                "child name `{canonical}` is declared more than once within this {owner}"
             )));
         }
     }
-    Ok(children)
+    Ok(())
 }
 
 fn parse_scope(input: ParseStream<'_>, depth: usize) -> syn::Result<SourceScope> {
@@ -239,31 +269,47 @@ fn parse_scope(input: ParseStream<'_>, depth: usize) -> syn::Result<SourceScope>
     }
     input.parse::<keyword::scope>()?;
     let name: Ident = input.parse()?;
+    validate_snake_source_identifier(&name, "scope")?;
     let parameters_content;
     parenthesized!(parameters_content in input);
     let parameters = parse_parameters(&parameters_content, "scope", false)?.0;
 
     let body;
     braced!(body in input);
-    let layer = parse_ordered_layer(&body, true)?;
-    let children = parse_children(&body, depth, "scope")?;
-    if !body.is_empty() {
+    let owner = format!("scope `{}`", canonical_ident(&name));
+    let mut layer = Layer::default();
+    let mut children = Vec::new();
+    while !body.is_empty() {
+        if body.peek(keyword::scope) {
+            children.push(SourceChild::Scope(Box::new(parse_scope(&body, depth + 1)?)));
+            continue;
+        }
+        if endpoint_starts(&body) {
+            children.push(SourceChild::Endpoint(parse_endpoint(&body)?));
+            continue;
+        }
+        if parse_layer_clause(&body, &mut layer, true, &owner)? {
+            continue;
+        }
         if body.peek(keyword::retry) {
             return Err(body.error("`retry` is client-only and cannot be declared in a scope"));
         }
         if body.peek(keyword::rate_limit_observer) {
-            return Err(body.error("rate-limit observers are client-only; use `rate_limit_observer PATH;` on the client"));
+            return Err(body.error(
+                "`rate_limit_observer` is runtime policy; configure it on the client builder",
+            ));
         }
         if is_client_only_declaration_start(&body) {
             return Err(body.error("this declaration is client-only and cannot appear in a scope"));
         }
-        if is_layer_start(&body) {
-            return Err(body.error(
-                "scope configuration must appear once, in normative order, before child scopes and endpoints",
-            ));
+        if body.peek(keyword::paginate) || body.peek(keyword::id) {
+            return Err(body.error("`paginate` and `id` are endpoint-only clauses"));
         }
-        return Err(body.error("unsupported scope declaration"));
+        return Err(body.error(
+            "unsupported scope entry; expected a child scope, HTTP endpoint, or `host`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit` clause",
+        ));
     }
+    validate_child_names(&children, "scope")?;
 
     Ok(SourceScope {
         name,
@@ -278,6 +324,7 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
     let name: Ident = input.parse().map_err(|_| {
         input.error("an endpoint method must be followed by an endpoint identifier")
     })?;
+    validate_snake_source_identifier(&name, "endpoint")?;
     if !input.peek(syn::token::Paren) {
         return Err(input.error("every endpoint declaration requires parentheses, including `()`"));
     }
@@ -285,73 +332,93 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
     parenthesized!(parameters_content in input);
     let (parameters, body) = parse_parameters(&parameters_content, "endpoint", true)?;
 
-    let alias = if input.peek(Token![as]) {
-        input.parse::<Token![as]>()?;
-        Some(input.parse()?)
-    } else {
-        None
-    };
+    if input.peek(Token![as]) {
+        return Err(input.error(
+            "endpoint aliases were removed; use the desired snake_case method name as the endpoint identifier",
+        ));
+    }
     input.parse::<Token![->]>()?;
     let response = input.parse()?;
 
-    let layer = if input.peek(Token![;]) {
+    if input.peek(Token![;]) {
         input.parse::<Token![;]>()?;
-        Layer::default()
+        return Ok(SourceEndpoint {
+            method,
+            name,
+            parameters,
+            body,
+            layer: Layer::default(),
+            response,
+            pagination: None,
+            contract_id: None,
+        });
     } else {
         let clauses;
         braced!(clauses in input);
-        let layer = parse_ordered_layer(&clauses, true)?;
-        let pagination = clauses
-            .peek(keyword::paginate)
-            .then(|| parse_pagination(&clauses))
-            .transpose()?;
-        if pagination.is_some() && body.is_some() {
-            return Err(clauses
-                .span()
-                .error("pagination requires a bodyless endpoint"));
-        }
-        if clauses.peek(keyword::retry) {
-            return Err(
-                clauses.error("`retry` is client-only and cannot be declared on an endpoint")
-            );
-        }
-        if !clauses.is_empty() {
+        let owner = format!("endpoint `{}`", canonical_ident(&name));
+        let mut layer = Layer::default();
+        let mut pagination = None;
+        let mut contract_id = None;
+        while !clauses.is_empty() {
+            if clauses.peek(keyword::paginate) {
+                let key_span = clauses.span();
+                let value = parse_pagination(&clauses)?;
+                insert_clause(
+                    &mut pagination,
+                    Clause { key_span, value },
+                    "paginate",
+                    &owner,
+                )?;
+                continue;
+            }
+            if clauses.peek(keyword::id) {
+                let key_span = clauses.span();
+                clauses.parse::<keyword::id>()?;
+                let value: LitStr = clauses
+                    .parse()
+                    .map_err(|_| clauses.error("an endpoint `id` requires one string literal"))?;
+                clauses.parse::<Token![;]>()?;
+                validate_contract_id(&value)?;
+                insert_clause(&mut contract_id, Clause { key_span, value }, "id", &owner)?;
+                continue;
+            }
+            if parse_layer_clause(&clauses, &mut layer, true, &owner)? {
+                continue;
+            }
+            if clauses.peek(keyword::retry) {
+                return Err(
+                    clauses.error("`retry` is client-only and cannot be declared on an endpoint")
+                );
+            }
             if clauses.peek(keyword::rate_limit_observer) {
-                return Err(clauses.error("rate-limit observers are client-only; use `rate_limit_observer PATH;` on the client"));
+                return Err(clauses.error(
+                    "`rate_limit_observer` is runtime policy; configure it on the client builder",
+                ));
             }
             if is_client_only_declaration_start(&clauses) {
                 return Err(clauses
                     .error("this declaration is client-only and cannot appear on an endpoint"));
             }
-            if is_layer_start(&clauses) {
-                return Err(clauses.error(
-                    "endpoint clauses must appear at most once and in `host`, `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, `paginate` order",
-                ));
-            }
-            return Err(clauses.error("unsupported endpoint clause"));
+            return Err(clauses.error(
+                "unsupported endpoint clause; expected `id`, `host`, `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, or `paginate`",
+            ));
+        }
+        if pagination.is_some() && body.is_some() {
+            return Err(clauses
+                .span()
+                .error("pagination requires a bodyless endpoint"));
         }
         return Ok(SourceEndpoint {
             method,
             name,
-            alias,
             parameters,
             body,
             layer,
             response,
             pagination,
+            contract_id,
         });
-    };
-
-    Ok(SourceEndpoint {
-        method,
-        name,
-        alias,
-        parameters,
-        body,
-        layer,
-        response,
-        pagination: None,
-    })
+    }
 }
 
 fn parse_pagination(input: ParseStream<'_>) -> syn::Result<PaginationDecl> {
@@ -538,53 +605,102 @@ fn parse_parameters(
     input: ParseStream<'_>,
     owner: &str,
     body_is_special: bool,
-) -> syn::Result<(Vec<ValueDecl>, Option<Type>)> {
+) -> syn::Result<(Vec<ValueDecl>, Option<BodyDecl>)> {
     let mut parameters = Vec::new();
     let mut body = None;
-    let mut names = HashSet::new();
+    let mut names = std::collections::HashMap::new();
+    let mut position = 0;
 
     while !input.is_empty() {
+        let attributes = input.call(Attribute::parse_outer)?;
         let name: Ident = input.parse()?;
         input.parse::<Token![:]>()?;
         let ty: Type = input.parse()?;
         let canonical = canonical_ident(&name);
-        if !names.insert(canonical.clone()) {
-            return Err(name
+        if let Some(first_span) = names.insert(canonical.clone(), name.span()) {
+            let mut error = name
                 .span()
-                .error(format!("duplicate {owner} parameter `{canonical}`")));
+                .error(format!("duplicate {owner} parameter `{canonical}`"));
+            error.combine(first_span.error("the first parameter is here"));
+            return Err(error);
         }
 
-        if body_is_special && canonical == "body" {
+        let is_body = if attributes.is_empty() {
+            false
+        } else if !body_is_special {
+            return Err(attributes[0]
+                .span()
+                .error("scope parameters do not accept attributes; `#[body]` is endpoint-only"));
+        } else {
+            for attribute in &attributes {
+                if !attribute.path().is_ident("body") || !matches!(&attribute.meta, Meta::Path(_)) {
+                    return Err(attribute.span().error(
+                        "endpoint parameters accept only the bare `#[body]` role attribute",
+                    ));
+                }
+            }
+            if attributes.len() != 1 {
+                return Err(attributes[1]
+                    .span()
+                    .error("a request body parameter accepts exactly one `#[body]` attribute"));
+            }
+            true
+        };
+
+        if body_is_special && canonical == "body" && !is_body {
+            return Err(name.span().error(
+                "request body inference by parameter name was removed; mark the parameter explicitly as `#[body] body: Type`",
+            ));
+        }
+
+        if is_body {
             if input.peek(Token![=]) {
                 return Err(input.error("a request body parameter cannot have a default"));
             }
-            body = Some(ty);
+            if let Some(first) = &body {
+                let first: &BodyDecl = first;
+                let mut error = name.span().error(format!(
+                    "endpoint declares two request body parameters: `{}` and `{canonical}`",
+                    canonical_ident(&first.name)
+                ));
+                error.combine(first.name.span().error("the first request body is here"));
+                return Err(error);
+            }
+            body = Some(BodyDecl { name, ty, position });
         } else {
             let kind = parse_value_kind(input, &ty)?;
-            parameters.push(ValueDecl { name, ty, kind });
+            parameters.push(ValueDecl {
+                name,
+                ty,
+                kind,
+                position,
+            });
         }
+        position += 1;
 
         if input.is_empty() {
             break;
         }
         input.parse::<Token![,]>()?;
-        if body.is_some() && !input.is_empty() {
-            return Err(input.error("the request body must be the final endpoint parameter"));
-        }
     }
     Ok((parameters, body))
 }
 
-fn parse_value(input: ParseStream<'_>) -> syn::Result<ValueDecl> {
+fn parse_value(input: ParseStream<'_>, position: usize) -> syn::Result<ValueDecl> {
     let name: Ident = input.parse()?;
     input.parse::<Token![:]>()?;
     let ty: Type = input.parse()?;
     let kind = parse_value_kind(input, &ty)?;
-    Ok(ValueDecl { name, ty, kind })
+    Ok(ValueDecl {
+        name,
+        ty,
+        kind,
+        position,
+    })
 }
 
 fn parse_value_kind(input: ParseStream<'_>, ty: &Type) -> syn::Result<ValueKind> {
-    let optional = outer_type_argument(ty, "Option")?;
+    let optional = syntactic_option_inner(ty)?;
     if input.peek(Token![=]) {
         input.parse::<Token![=]>()?;
         return Ok(ValueKind::Defaulted(parse_default(input)?));
@@ -650,60 +766,154 @@ fn parse_retry(input: ParseStream<'_>) -> syn::Result<RetrySelection> {
         input.parse::<keyword::reqwest_default>()?;
         RetrySelection::ReqwestDefault
     } else if input.peek(keyword::custom) {
-        input.parse::<keyword::custom>()?;
-        RetrySelection::Custom(input.parse()?)
+        return Err(input.error(
+            "`retry custom PATH` is runtime policy; use `Client::builder().configure_http(...)` with the dangerous custom-retry feature",
+        ));
     } else {
-        return Err(input.error("retry must be `off`, `reqwest_default`, or `custom PATH`"));
+        return Err(input.error("retry must be `off` or `reqwest_default`"));
     };
     input.parse::<Token![;]>()?;
     Ok(selection)
 }
 
-fn parse_ordered_layer(input: ParseStream<'_>, include_rate_limit: bool) -> syn::Result<Layer> {
-    let host = input
-        .peek(keyword::host)
-        .then(|| parse_host(input))
-        .transpose()?;
-    let path = input
-        .peek(keyword::path)
-        .then(|| parse_path(input))
-        .transpose()?;
-    let query = input
-        .peek(keyword::query)
-        .then(|| parse_query(input))
-        .transpose()?;
-    let headers = input
-        .peek(keyword::headers)
-        .then(|| parse_headers(input))
-        .transpose()?;
-    let auth = input
-        .peek(keyword::auth)
-        .then(|| parse_auth(input))
-        .transpose()?;
-    let timeout = input
-        .peek(keyword::timeout)
-        .then(|| parse_timeout(input))
-        .transpose()?;
-    let rate_limit = if include_rate_limit && input.peek(keyword::rate_limit) {
-        let declaration = parse_rate_limit(input)?;
-        if input.peek(keyword::rate_limit) {
-            return Err(input.error(
-                "a lexical layer may contain at most one direct `rate_limit { ... }` declaration",
-            ));
+fn parse_layer_clause(
+    input: ParseStream<'_>,
+    layer: &mut Layer,
+    include_rate_limit: bool,
+    owner: &str,
+) -> syn::Result<bool> {
+    if input.peek(keyword::host) {
+        let key_span = input.span();
+        let value = parse_host(input)?;
+        insert_clause(&mut layer.host, Clause { key_span, value }, "host", owner)?;
+        return Ok(true);
+    }
+    if input.peek(keyword::path) {
+        let key_span = input.span();
+        let value = parse_path(input)?;
+        insert_clause(&mut layer.path, Clause { key_span, value }, "path", owner)?;
+        return Ok(true);
+    }
+    if input.peek(keyword::query) {
+        let key_span = input.span();
+        let value = parse_query(input)?;
+        insert_clause(&mut layer.query, Clause { key_span, value }, "query", owner)?;
+        return Ok(true);
+    }
+    if input.peek(keyword::headers) {
+        let key_span = input.span();
+        let value = parse_headers(input)?;
+        insert_clause(
+            &mut layer.headers,
+            Clause { key_span, value },
+            "headers",
+            owner,
+        )?;
+        return Ok(true);
+    }
+    if input.peek(keyword::auth) {
+        merge_auth(&mut layer.auth, parse_auth(input)?, owner)?;
+        return Ok(true);
+    }
+    if input.peek(keyword::timeout) {
+        let key_span = input.span();
+        let value = parse_timeout(input)?;
+        insert_clause(
+            &mut layer.timeout,
+            Clause { key_span, value },
+            "timeout",
+            owner,
+        )?;
+        return Ok(true);
+    }
+    if input.peek(keyword::rate_limit) {
+        if !include_rate_limit {
+            return Err(input.error("`rate_limit` is not valid in this contract location"));
         }
-        Some(declaration)
-    } else {
-        None
+        let key_span = input.span();
+        let value = parse_rate_limit(input)?;
+        insert_clause(
+            &mut layer.rate_limit,
+            Clause { key_span, value },
+            "rate_limit",
+            owner,
+        )?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+fn insert_clause<T>(
+    slot: &mut Option<Clause<T>>,
+    clause: Clause<T>,
+    name: &str,
+    owner: &str,
+) -> syn::Result<()> {
+    if let Some(first) = slot {
+        let mut error = clause
+            .key_span
+            .error(format!("duplicate `{name}` clause for {owner}"));
+        error.combine(
+            first
+                .key_span
+                .error(format!("the first `{name}` clause is here")),
+        );
+        return Err(error);
+    }
+    *slot = Some(clause);
+    Ok(())
+}
+
+fn merge_auth(
+    slot: &mut Option<AuthOperation>,
+    operation: AuthOperation,
+    owner: &str,
+) -> syn::Result<()> {
+    let Some(existing) = slot else {
+        *slot = Some(operation);
+        return Ok(());
     };
-    Ok(Layer {
-        host,
-        path,
-        query,
-        headers,
-        auth,
-        timeout,
-        rate_limit,
-    })
+    match (existing, operation) {
+        (
+            AuthOperation::Modify {
+                replace,
+                placements,
+                clause_spans,
+            },
+            AuthOperation::Modify {
+                replace: incoming_replace,
+                placements: mut incoming,
+                clause_spans: incoming_spans,
+            },
+        ) => {
+            if incoming_replace {
+                let duplicate_span = incoming_spans[0];
+                let mut error = duplicate_span.error(format!(
+                    "`auth replace` must be the first authentication entry for {owner}"
+                ));
+                error.combine(clause_spans[0].error("the first authentication entry is here"));
+                return Err(error);
+            }
+            *replace |= incoming_replace;
+            placements.append(&mut incoming);
+            clause_spans.extend(incoming_spans);
+            Ok(())
+        }
+        (AuthOperation::Off { key_span }, incoming) => {
+            let incoming_span = match incoming {
+                AuthOperation::Modify { clause_spans, .. } => clause_spans[0],
+                AuthOperation::Off { key_span } => key_span,
+            };
+            let mut error = incoming_span.error(format!("`auth off` is exclusive within {owner}"));
+            error.combine((*key_span).error("the exclusive `auth off` clause is here"));
+            Err(error)
+        }
+        (AuthOperation::Modify { clause_spans, .. }, AuthOperation::Off { key_span }) => {
+            let mut error = key_span.error(format!("`auth off` is exclusive within {owner}"));
+            error.combine(clause_spans[0].error("the first authentication entry is here"));
+            Err(error)
+        }
+    }
 }
 
 fn parse_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitDecl> {
@@ -945,83 +1155,72 @@ fn parse_secret_reference(
 }
 
 fn parse_auth(input: ParseStream<'_>) -> syn::Result<AuthOperation> {
-    let mut replace = false;
-    let mut placements = Vec::new();
-    while input.peek(keyword::auth) {
-        input.parse::<keyword::auth>()?;
-        if input.peek(keyword::off) {
-            input.parse::<keyword::off>()?;
-            input.parse::<Token![;]>()?;
-            if replace || !placements.is_empty() || input.peek(keyword::auth) {
-                return Err(input.error("`auth off` is exclusive within its layer"));
-            }
-            return Ok(AuthOperation::Off);
-        }
-        let local_replace = input.peek(keyword::replace);
-        if local_replace {
-            let marker: keyword::replace = input.parse()?;
-            if replace || !placements.is_empty() {
-                return Err(marker.span().error(
-                    "at most one `auth replace` is allowed and it must precede local auth declarations",
-                ));
-            }
-            replace = true;
-        }
-        let (kind, credential) = if input.peek(keyword::bearer) {
-            input.parse::<keyword::bearer>()?;
-            (AuthPlacementKind::Bearer, input.parse()?)
-        } else if input.peek(keyword::basic) {
-            input.parse::<keyword::basic>()?;
-            (AuthPlacementKind::Basic, input.parse()?)
-        } else if input.peek(keyword::header) {
-            input.parse::<keyword::header>()?;
-            let name: LitStr = input.parse()?;
-            validate_public_header_name(&name)?;
-            input.parse::<Token![=]>()?;
-            (AuthPlacementKind::Header(name), input.parse()?)
-        } else if input.peek(keyword::query) {
-            input.parse::<keyword::query>()?;
-            let name: LitStr = input.parse()?;
-            if name.value().is_empty() {
-                return Err(name
-                    .span()
-                    .error("an authentication query name cannot be empty"));
-            }
-            input.parse::<Token![=]>()?;
-            (AuthPlacementKind::Query(name), input.parse()?)
-        } else {
-            return Err(input
-                .error("auth placement must be `bearer`, `basic`, `header`, `query`, or `off`"));
-        };
-        let challenge = if input.peek(keyword::challenge) {
-            input.parse::<keyword::challenge>()?;
-            Some(if input.peek(keyword::unauthorized) {
-                input.parse::<keyword::unauthorized>()?;
-                AuthChallenge::Unauthorized
-            } else if input.peek(keyword::unauthorized_or_forbidden) {
-                input.parse::<keyword::unauthorized_or_forbidden>()?;
-                AuthChallenge::UnauthorizedOrForbidden
-            } else if input.peek(keyword::never) {
-                input.parse::<keyword::never>()?;
-                AuthChallenge::Never
-            } else {
-                return Err(input.error(
-                    "challenge must be `unauthorized`, `unauthorized_or_forbidden`, or `never`",
-                ));
-            })
-        } else {
-            None
-        };
+    let key_span = input.span();
+    input.parse::<keyword::auth>()?;
+    if input.peek(keyword::off) {
+        input.parse::<keyword::off>()?;
         input.parse::<Token![;]>()?;
-        placements.push(AuthPlacement {
+        return Ok(AuthOperation::Off { key_span });
+    }
+    let replace = input.peek(keyword::replace);
+    if replace {
+        input.parse::<keyword::replace>()?;
+    }
+    let (kind, credential) = if input.peek(keyword::bearer) {
+        input.parse::<keyword::bearer>()?;
+        (AuthPlacementKind::Bearer, input.parse()?)
+    } else if input.peek(keyword::basic) {
+        input.parse::<keyword::basic>()?;
+        (AuthPlacementKind::Basic, input.parse()?)
+    } else if input.peek(keyword::header) {
+        input.parse::<keyword::header>()?;
+        let name: LitStr = input.parse()?;
+        validate_public_header_name(&name)?;
+        input.parse::<Token![=]>()?;
+        (AuthPlacementKind::Header(name), input.parse()?)
+    } else if input.peek(keyword::query) {
+        input.parse::<keyword::query>()?;
+        let name: LitStr = input.parse()?;
+        if name.value().is_empty() {
+            return Err(name
+                .span()
+                .error("an authentication query name cannot be empty"));
+        }
+        input.parse::<Token![=]>()?;
+        (AuthPlacementKind::Query(name), input.parse()?)
+    } else {
+        return Err(
+            input.error("auth placement must be `bearer`, `basic`, `header`, `query`, or `off`")
+        );
+    };
+    let challenge = if input.peek(keyword::challenge) {
+        input.parse::<keyword::challenge>()?;
+        Some(if input.peek(keyword::unauthorized) {
+            input.parse::<keyword::unauthorized>()?;
+            AuthChallenge::Unauthorized
+        } else if input.peek(keyword::unauthorized_or_forbidden) {
+            input.parse::<keyword::unauthorized_or_forbidden>()?;
+            AuthChallenge::UnauthorizedOrForbidden
+        } else if input.peek(keyword::never) {
+            input.parse::<keyword::never>()?;
+            AuthChallenge::Never
+        } else {
+            return Err(input.error(
+                "challenge must be `unauthorized`, `unauthorized_or_forbidden`, or `never`",
+            ));
+        })
+    } else {
+        None
+    };
+    input.parse::<Token![;]>()?;
+    Ok(AuthOperation::Modify {
+        replace,
+        placements: vec![AuthPlacement {
             kind,
             credential,
             challenge,
-        });
-    }
-    Ok(AuthOperation::Modify {
-        replace,
-        placements,
+        }],
+        clause_spans: vec![key_span],
     })
 }
 
@@ -1267,37 +1466,6 @@ fn parse_public_expr(input: ParseStream<'_>, depth: usize) -> syn::Result<Public
     Ok(PublicExpr::Reference { namespace, name })
 }
 
-fn single_type_argument(path: &TypePath, marker: &str) -> syn::Result<Type> {
-    let segment = &path.path.segments[0];
-    let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
-        return Err(segment
-            .span()
-            .error(format!("`{marker}` requires exactly one type argument")));
-    };
-    let mut values = arguments.args.iter();
-    let Some(GenericArgument::Type(ty)) = values.next() else {
-        return Err(arguments
-            .span()
-            .error(format!("`{marker}` requires exactly one type argument")));
-    };
-    if values.next().is_some() {
-        return Err(arguments
-            .span()
-            .error(format!("`{marker}` requires exactly one type argument")));
-    }
-    Ok(ty.clone())
-}
-
-fn outer_type_argument(ty: &Type, marker: &str) -> syn::Result<Option<Type>> {
-    let Type::Path(path) = ty else {
-        return Ok(None);
-    };
-    if !is_unqualified(path, marker) {
-        return Ok(None);
-    }
-    single_type_argument(path, marker).map(Some)
-}
-
 fn is_named_marker(ty: &Type, expected: &str) -> bool {
     matches!(ty, Type::Path(path) if is_unqualified(path, expected))
 }
@@ -1389,6 +1557,40 @@ fn validate_base(base: &LitStr) -> syn::Result<()> {
     Ok(())
 }
 
+fn validate_snake_source_identifier(name: &Ident, owner: &str) -> syn::Result<()> {
+    let canonical = canonical_ident(name);
+    let expected = to_snake_case(&canonical);
+    if canonical != expected {
+        return Err(name.span().error(format!(
+            "{owner} source identifier `{canonical}` must be snake_case; use `{expected}`"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_contract_id(id: &LitStr) -> syn::Result<()> {
+    let value = id.value();
+    let valid = (1..=128).contains(&value.len())
+        && value.is_ascii()
+        && value.split('.').all(|segment| {
+            let bytes = segment.as_bytes();
+            (1..=63).contains(&bytes.len())
+                && bytes.iter().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || matches!(byte, b'_' | b'-')
+                })
+                && bytes.first().is_some_and(u8::is_ascii_alphanumeric)
+                && bytes.last().is_some_and(u8::is_ascii_alphanumeric)
+        });
+    if !valid {
+        return Err(id.span().error(
+            "an endpoint ID must be 1-128 ASCII bytes in dot-separated 1-63 byte segments; each segment begins and ends with a lowercase letter or digit and may also contain `_` or `-`",
+        ));
+    }
+    Ok(())
+}
+
 fn validate_static_host_label(label: &LitStr) -> syn::Result<()> {
     let value = label.value();
     let bytes = value.as_bytes();
@@ -1464,17 +1666,6 @@ fn insert_unique_value(
     Ok(())
 }
 
-fn is_layer_start(input: ParseStream<'_>) -> bool {
-    input.peek(keyword::host)
-        || input.peek(keyword::path)
-        || input.peek(keyword::query)
-        || input.peek(keyword::headers)
-        || input.peek(keyword::auth)
-        || input.peek(keyword::timeout)
-        || input.peek(keyword::rate_limit)
-        || input.peek(keyword::paginate)
-}
-
 fn is_client_configuration_start(input: ParseStream<'_>) -> bool {
     is_client_only_declaration_start(input)
         || input.peek(keyword::host)
@@ -1495,45 +1686,6 @@ fn is_client_only_declaration_start(input: ParseStream<'_>) -> bool {
         || input.peek(keyword::rate_limit_observer)
         || input.peek(keyword::rate_limits)
         || input.peek(keyword::observe)
-}
-
-fn client_tail_error(input: ParseStream<'_>) -> syn::Error {
-    if input.peek(keyword::scope) || endpoint_starts(input) {
-        return input.error("scopes and endpoints must be declared after the `client` block");
-    }
-    if input.peek(keyword::base) {
-        return input.error("a client requires exactly one `base` declaration");
-    }
-    if input.peek(keyword::vars) {
-        return input.error("`vars` must appear after `base` and before `credentials`");
-    }
-    if input.peek(keyword::var) {
-        return input.error("client variables must be declared in a `vars { ... }` block");
-    }
-    if input.peek(keyword::rate_limit) {
-        return input.error(
-            "a lexical layer may contain at most one direct `rate_limit { ... }` declaration",
-        );
-    }
-    if input.peek(keyword::retry) || is_layer_start(input) {
-        return input.error(
-            "client configuration must appear at most once and in normative order inside the `client` block",
-        );
-    }
-    if input.peek(keyword::credentials) {
-        return input.error("a client may contain at most one `credentials` block, before retry and request configuration");
-    }
-    if input.peek(keyword::rate_limits) {
-        return input.error(
-            "`rate_limits { ... }` was removed; declare `rate_limit { ... }` at each lexical owner",
-        );
-    }
-    if input.peek(keyword::observe) {
-        return input.error(
-            "`observe PATH;` was removed; declare `rate_limit_observer PATH;` on the client",
-        );
-    }
-    input.error("unsupported client declaration")
 }
 
 trait SpanError {
@@ -1573,7 +1725,7 @@ mod tests {
                 headers { "X-Locale" = vars.locale; }
                 timeout 5s;
             }
-            GET Root(id: String, verbose: Option<bool>, page: u32 = 10) as root -> Bytes {
+            GET root(id: String, verbose: Option<bool>, page: u32 = 10) -> Bytes {
                 path [ep.id];
             }
             scope regions(region: String, language: Option<String>) {
@@ -1581,12 +1733,12 @@ mod tests {
                 path ["regions", scope.region];
                 scope users(account: String) {
                     path ["users", scope.account];
-                    METHOD("PROPFIND") Inspect() -> Text;
+                    METHOD("PROPFIND") inspect() -> Text;
                 }
             }
         });
         assert_eq!(canonical_ident(&api.client.name), "FirstApi");
-        assert_eq!(api.client.values.len(), 3);
+        assert_eq!(api.client.values.as_ref().unwrap().value.len(), 3);
         assert_eq!(api.children.len(), 2);
     }
 
@@ -1596,7 +1748,7 @@ mod tests {
         assert!(empty.to_string().contains("exactly one `client`"));
 
         let child_first = parse(quote! {
-            GET Status() -> Bytes;
+            GET status() -> Bytes;
             client Api { base "https://example.test"; }
         })
         .err()
@@ -1618,21 +1770,21 @@ mod tests {
 
         let api = parse_ok(quote! {
             client Api { base "https://example.test"; }
-            GET Root() -> Bytes;
-            scope First() { GET Nested() -> Bytes; }
-            scope Second() { }
+            GET root() -> Bytes;
+            scope first() { GET nested() -> Bytes; }
+            scope second() { }
         });
         assert_eq!(api.children.len(), 3);
 
         let no_vars = parse_ok(quote! {
             client Api { base "https://example.test"; }
         });
-        assert!(no_vars.client.values.is_empty());
+        assert!(no_vars.client.values.is_none());
 
         let empty_vars = parse_ok(quote! {
             client Api { base "https://example.test"; vars { } }
         });
-        assert!(empty_vars.client.values.is_empty());
+        assert!(empty_vars.client.values.as_ref().unwrap().value.is_empty());
 
         let values = parse_ok(quote! {
             client Api {
@@ -1644,10 +1796,11 @@ mod tests {
                 }
             }
         });
-        assert!(matches!(values.client.values[0].kind, ValueKind::Required));
-        assert!(matches!(values.client.values[1].kind, ValueKind::Optional));
+        let values = &values.client.values.as_ref().unwrap().value;
+        assert!(matches!(values[0].kind, ValueKind::Required));
+        assert!(matches!(values[1].kind, ValueKind::Optional));
         assert!(matches!(
-            values.client.values[2].kind,
+            values[2].kind,
             ValueKind::Defaulted(DefaultExpr::Path(_))
         ));
 
@@ -1672,22 +1825,33 @@ mod tests {
         .expect("legacy var");
         assert!(legacy_var.to_string().contains("`vars { ... }` block"));
 
-        for tokens in [
-            quote! { client Api { vars { value: String; } base "https://example.test"; } },
-            quote! { client Api { base "https://example.test"; vars { } vars { } } },
-            quote! { client Api { base "https://example.test"; credentials { } vars { } } },
-        ] {
-            let error = parse(tokens).err().expect("misplaced vars");
-            assert!(
-                error
-                    .to_string()
-                    .contains("after `base` and before `credentials`")
-            );
-        }
+        parse(quote! {
+            client Api {
+                credentials { }
+                vars { value: String; }
+                base "https://example.test";
+            }
+        })
+        .expect("client clauses are order-independent");
+
+        let duplicate_vars = parse(quote! {
+            client Api {
+                base "https://example.test";
+                vars { }
+                vars { }
+            }
+        })
+        .err()
+        .expect("duplicate vars");
+        assert!(
+            duplicate_vars
+                .to_string()
+                .contains("duplicate `vars` clause")
+        );
 
         for tokens in [
-            quote! { client Api { base "https://example.test"; scope Nested() { } } },
-            quote! { client Api { base "https://example.test"; GET Nested() -> Bytes; } },
+            quote! { client Api { base "https://example.test"; scope nested() { } } },
+            quote! { client Api { base "https://example.test"; GET nested() -> Bytes; } },
         ] {
             let error = parse(tokens).err().expect("client child");
             assert!(error.to_string().contains("after the `client` block"));
@@ -1722,7 +1886,7 @@ mod tests {
             client Api {
                 base "https://example.test";
             }
-            GET Root(id: String) -> Bytes { path [ep.id.to_string()]; }
+            GET root(id: String) -> Bytes { path [ep.id.to_string()]; }
         })
         .err()
         .expect("method expression");
@@ -1754,7 +1918,7 @@ mod tests {
 
         let invalid = parse(quote! {
             client Api { base "https://example.test"; }
-            METHOD("BAD METHOD") Root() -> Bytes;
+            METHOD("BAD METHOD") root() -> Bytes;
         })
         .err()
         .expect("invalid method");
@@ -1772,7 +1936,7 @@ mod tests {
     }
 
     fn nested_scopes(depth: usize) -> TokenStream {
-        let mut child = quote!(GET Leaf() -> Bytes;);
+        let mut child = quote!(GET leaf() -> Bytes;);
         for index in 0..depth {
             let name = format_ident!("scope_{index}");
             child = quote!(scope #name() { #child });
@@ -1789,7 +1953,7 @@ mod tests {
             client Api {
                 base "https://example.test";
             }
-            GET Leaf() -> Bytes { path [#expression]; }
+            GET leaf() -> Bytes { path [#expression]; }
         }
     }
 
@@ -1810,15 +1974,17 @@ mod tests {
 
     #[test]
     fn focused_structure_and_local_duplicate_diagnostics_are_stable() {
-        let body_order = parse(quote! {
+        let body_order = parse_ok(quote! {
             client Api {
                 base "https://example.test";
             }
-            POST Create(body: Text, id: String) -> Bytes;
-        })
-        .err()
-        .expect("body must be last");
-        assert!(body_order.to_string().contains("final endpoint parameter"));
+            POST create(#[body] body: Text, id: String) -> Bytes;
+        });
+        let SourceChild::Endpoint(endpoint) = &body_order.children[0] else {
+            panic!("endpoint")
+        };
+        assert_eq!(endpoint.body.as_ref().unwrap().position, 0);
+        assert_eq!(endpoint.parameters[0].position, 1);
 
         let duplicate_query = parse(quote! {
             client Api {
@@ -1858,7 +2024,7 @@ mod tests {
                 }
                 host ["a12345678901234567890123456789012345678901234567890123456789012"];
             }
-            GET Read(id: u32) -> Bytes { path [fmt["id-", ep.id]]; }
+            GET read(id: u32) -> Bytes { path [fmt["id-", ep.id]]; }
         })
         .expect("restricted defaults and 63-byte host label");
 
@@ -1883,7 +2049,7 @@ mod tests {
             client Api {
                 base "https://example.test";
             }
-            GET Read(id: u32) -> Bytes { path [fmt["id-" ep.id]]; }
+            GET read(id: u32) -> Bytes { path [fmt["id-" ep.id]]; }
         })
         .err()
         .expect("missing format comma");
@@ -1920,15 +2086,15 @@ mod tests {
                     credential key = api_key(secret.api_key);
                     credential token = bearer(secret.bearer);
                     credential login = basic(secret.username, secret.password);
-                    credential acquired = endpoint Login;
+                    credential acquired = endpoint login;
                     credential custom = custom crate::SessionProvider;
                 }
             }
-            GET Login() -> Bytes;
+            GET login() -> Bytes;
         });
         let credentials = api.client.credentials.as_ref().expect("credentials block");
-        assert_eq!(credentials.secrets.len(), 4);
-        assert_eq!(credentials.credentials.len(), 5);
+        assert_eq!(credentials.value.secrets.len(), 4);
+        assert_eq!(credentials.value.credentials.len(), 5);
 
         let error = parse(quote! {
             client AuthApi {
@@ -1956,11 +2122,7 @@ mod tests {
         })
         .err()
         .expect("second credentials block");
-        assert!(
-            error
-                .to_string()
-                .contains("at most one `credentials` block")
-        );
+        assert!(error.to_string().contains("duplicate `credentials` clause"));
     }
 
     #[test]
@@ -1975,7 +2137,7 @@ mod tests {
                 auth replace bearer session challenge unauthorized_or_forbidden;
                 auth query "fallback" = session challenge never;
             }
-            scope Public() { auth off; }
+            scope public() { auth off; }
         })
         .expect("bounded auth syntax");
 
@@ -1999,18 +2161,16 @@ mod tests {
         })
         .err()
         .expect("late replacement");
-        assert!(late_replace.to_string().contains("must precede"));
+        assert!(late_replace.to_string().contains("must be the first"));
 
-        let ordered = parse(quote! {
+        parse(quote! {
             client AuthApi {
                 base "https://example.test";
                 timeout 1s;
                 auth bearer session;
             }
         })
-        .err()
-        .expect("auth after timeout");
-        assert!(ordered.to_string().contains("normative order"));
+        .expect("authentication entries may follow timeout");
     }
 
     #[test]
@@ -2053,28 +2213,33 @@ mod tests {
                     500 / 10s;
                     30000 / 10m;
                 }
-                rate_limit_observer crate::ProviderObserver;
             }
             scope tenants(tenant: String) {
                 rate_limit {
                     100 / 1m;
                 }
-                GET Read(item: String) -> Bytes {
+                GET read(item: String) -> Bytes {
                     timeout 2s;
                     rate_limit {
                         cost 2;
                         10 / 1s;
                     }
                 }
-                GET Public() -> Bytes;
+                GET public() -> Bytes;
             }
         });
         let client = &api.client;
         assert_eq!(
-            client.rate_limit_observer.as_ref().unwrap().segments.len(),
+            client
+                .layer
+                .rate_limit
+                .as_ref()
+                .unwrap()
+                .value
+                .windows
+                .len(),
             2
         );
-        assert_eq!(client.layer.rate_limit.as_ref().unwrap().windows.len(), 2);
         let SourceChild::Scope(scope) = &api.children[0] else {
             panic!("scope")
         };
@@ -2082,7 +2247,7 @@ mod tests {
         let SourceChild::Endpoint(read) = &scope.children[0] else {
             panic!("read endpoint")
         };
-        assert_eq!(read.layer.rate_limit.as_ref().unwrap().cost, 2);
+        assert_eq!(read.layer.rate_limit.as_ref().unwrap().value.cost, 2);
         let SourceChild::Endpoint(public) = &scope.children[1] else {
             panic!("public endpoint")
         };
@@ -2098,20 +2263,20 @@ mod tests {
                     1 / 1s;
                 }
             }
-            scope Narrow() {
+            scope narrow() {
                 rate_limit {
                     cost 2;
                     2 / 1s;
                     10 / 1m;
                 }
-                GET Read() -> Bytes;
+                GET read() -> Bytes;
             }
         });
-        assert_eq!(api.client.layer.rate_limit.as_ref().unwrap().cost, 1);
+        assert_eq!(api.client.layer.rate_limit.as_ref().unwrap().value.cost, 1);
         let SourceChild::Scope(scope) = &api.children[0] else {
             panic!("scope")
         };
-        let rule = scope.layer.rate_limit.as_ref().unwrap();
+        let rule = &scope.layer.rate_limit.as_ref().unwrap().value;
         assert_eq!(rule.cost, 2);
         assert_eq!(rule.windows.len(), 2);
         assert_eq!(rule.windows[0].capacity, 2);
@@ -2129,7 +2294,11 @@ mod tests {
         })
         .err()
         .expect("duplicate direct rule");
-        assert!(duplicate_rule.to_string().contains("at most one direct"));
+        assert!(
+            duplicate_rule
+                .to_string()
+                .contains("duplicate `rate_limit` clause")
+        );
 
         for (tokens, expected) in [
             (
@@ -2182,20 +2351,18 @@ mod tests {
         })
         .err()
         .expect("removed observer syntax");
-        assert!(old_observer.to_string().contains("rate_limit_observer"));
+        assert!(old_observer.to_string().contains("runtime builder"));
 
-        let endpoint_order = parse(quote! {
+        parse(quote! {
             client Api {
                 base "https://example.test";
             }
-            GET Read() -> Bytes {
+            GET read() -> Bytes {
                 rate_limit { 1 / 1s; }
                 timeout 1s;
             }
         })
-        .err()
-        .expect("rate limit before timeout");
-        assert!(endpoint_order.to_string().contains("endpoint clauses"));
+        .expect("endpoint clauses are order-independent");
     }
 
     #[test]
@@ -2204,23 +2371,23 @@ mod tests {
             client Api {
                 base "https://example.test";
             }
-            GET Offset(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
+            GET offset(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
                 paginate concord_core::advanced::OffsetController {
                     offset: bind ep.offset,
                     page_size: bind ep.limit,
                 }
             }
-            GET Page(page: u64, per_page: u32) -> PageSpec<Vec<u32>> {
+            GET page(page: u64, per_page: u32) -> PageSpec<Vec<u32>> {
                 paginate PageController {
                     page: bind ep.page,
                     page_size: bind ep.per_page,
                 }
             }
-            GET Cursor(cursor: Option<String>) -> PageSpec<Vec<u32>> {
+            GET cursor(cursor: Option<String>) -> PageSpec<Vec<u32>> {
                 paginate CursorController<String> { cursor: bind ep.cursor }
             }
-            scope Regions(region: String) {
-                GET Custom(cursor: Option<String>, maximum: u32) -> PageSpec<Vec<u32>> {
+            scope regions(region: String) {
+                GET custom(cursor: Option<String>, maximum: u32) -> PageSpec<Vec<u32>> {
                     paginate crate::pagination::VendorCursor {
                         cursor: bind ep.cursor,
                         region: scope.region,
@@ -2242,7 +2409,7 @@ mod tests {
             (
                 quote! {
                     client Api { base "https://example.test"; }
-                    GET Read(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
+                    GET read(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
                         paginate OffsetController
                     }
                 },
@@ -2251,7 +2418,7 @@ mod tests {
             (
                 quote! {
                     client Api { base "https://example.test"; }
-                    GET Read(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
+                    GET read(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
                         paginate OffsetController { offset = ep.offset }
                     }
                 },
@@ -2260,7 +2427,7 @@ mod tests {
             (
                 quote! {
                     client Api { base "https://example.test"; }
-                    GET Read(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
+                    GET read(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
                         paginate OffsetController {
                             offset: bind ep.offset,
                             offset: bind ep.limit,
@@ -2272,7 +2439,7 @@ mod tests {
             (
                 quote! {
                     client Api { base "https://example.test"; }
-                    GET Read(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
+                    GET read(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
                         paginate OffsetController {
                             offset: bind ep.offset,
                             page_size: bind ep.offset,
@@ -2284,7 +2451,7 @@ mod tests {
             (
                 quote! {
                     client Api { base "https://example.test"; }
-                    GET Read(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
+                    GET read(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
                         paginate OffsetController { offset: bind vars.offset }
                     }
                 },
@@ -2293,7 +2460,7 @@ mod tests {
             (
                 quote! {
                     client Api { base "https://example.test"; }
-                    GET Read(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
+                    GET read(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
                         paginate OffsetController { offset: bind ep.state.offset }
                     }
                 },
@@ -2302,7 +2469,7 @@ mod tests {
             (
                 quote! {
                     client Api { base "https://example.test"; }
-                    GET Read(offset: u64) -> PageSpec<Vec<u32>> {
+                    GET read(offset: u64) -> PageSpec<Vec<u32>> {
                         paginate OffsetController { offset }
                     }
                 },
@@ -2311,7 +2478,7 @@ mod tests {
             (
                 quote! {
                     client Api { base "https://example.test"; }
-                    GET Read(offset: u64) -> PageSpec<Vec<u32>> {
+                    GET read(offset: u64) -> PageSpec<Vec<u32>> {
                         paginate OffsetController { .. }
                     }
                 },
@@ -2320,7 +2487,7 @@ mod tests {
             (
                 quote! {
                     client Api { base "https://example.test"; }
-                    GET Read() -> PageSpec<Vec<u32>> {
+                    GET read() -> PageSpec<Vec<u32>> {
                         paginate crate::Controller { value: crate::make() }
                     }
                 },
@@ -2329,7 +2496,7 @@ mod tests {
             (
                 quote! {
                     client Api { base "https://example.test"; }
-                    GET Read() -> PageSpec<Vec<u32>> {
+                    GET read() -> PageSpec<Vec<u32>> {
                         paginate custom crate::factory();
                     }
                 },
@@ -2343,5 +2510,266 @@ mod tests {
                 "expected `{expected}`, got `{error}`"
             );
         }
+    }
+
+    fn clause_permutations(clauses: &[TokenStream]) -> Vec<TokenStream> {
+        fn visit(
+            clauses: &[TokenStream],
+            used: &mut [bool],
+            current: &mut Vec<TokenStream>,
+            output: &mut Vec<TokenStream>,
+        ) {
+            if current.len() == clauses.len() {
+                output.push(quote!(#(#current)*));
+                return;
+            }
+            for index in 0..clauses.len() {
+                if used[index] {
+                    continue;
+                }
+                used[index] = true;
+                current.push(clauses[index].clone());
+                visit(clauses, used, current, output);
+                current.pop();
+                used[index] = false;
+            }
+        }
+
+        let mut output = Vec::new();
+        visit(
+            clauses,
+            &mut vec![false; clauses.len()],
+            &mut Vec::new(),
+            &mut output,
+        );
+        output
+    }
+
+    #[test]
+    fn named_client_scope_and_endpoint_entries_are_order_independent() {
+        let client_clauses = [
+            quote!(base "https://example.test";),
+            quote!(vars { tenant: String; }),
+            quote!(retry reqwest_default;),
+            quote!(timeout 3s;),
+            quote!(headers { "X-Static" = "one"; }),
+        ];
+        for clauses in clause_permutations(&client_clauses) {
+            parse(quote! {
+                client Api { #clauses }
+                GET read() -> Bytes;
+            })
+            .expect("client clause permutation");
+        }
+
+        let endpoint_clauses = [
+            quote!(id "api.items.read";),
+            quote!(path ["items"];),
+            quote!(query { "kind" = "all"; }),
+            quote!(headers { "X-Static" = "one"; }),
+            quote!(timeout 2s;),
+        ];
+        for clauses in clause_permutations(&endpoint_clauses) {
+            parse(quote! {
+                client Api { base "https://example.test"; }
+                GET read() -> Bytes { #clauses }
+            })
+            .expect("endpoint clause permutation");
+        }
+
+        let scope_entries = [
+            quote!(path ["items"];),
+            quote!(timeout 2s;),
+            quote!(GET first() -> Bytes;),
+            quote!(scope nested() { GET second() -> Bytes; }),
+        ];
+        for entries in clause_permutations(&scope_entries) {
+            parse(quote! {
+                client Api { base "https://example.test"; }
+                scope items() { #entries }
+            })
+            .expect("scope clause/child permutation");
+        }
+
+        let auth = parse_ok(quote! {
+            client Api { base "https://example.test"; }
+            GET read() -> Bytes {
+                auth bearer first;
+                timeout 2s;
+                auth query "fallback" = second;
+                path ["items"];
+            }
+        });
+        let SourceChild::Endpoint(endpoint) = &auth.children[0] else {
+            panic!("endpoint")
+        };
+        let Some(AuthOperation::Modify { placements, .. }) = &endpoint.layer.auth else {
+            panic!("auth placements")
+        };
+        assert_eq!(canonical_ident(&placements[0].credential), "first");
+        assert_eq!(canonical_ident(&placements[1].credential), "second");
+    }
+
+    #[test]
+    fn duplicate_named_clauses_report_duplicate_and_first_spans() {
+        let error = parse(quote! {
+            client Api { base "https://example.test"; }
+            GET read() -> Bytes {
+                timeout 1s;
+                path ["items"];
+                timeout 2s;
+            }
+        })
+        .err()
+        .expect("duplicate timeout");
+        assert!(error.to_string().contains("duplicate `timeout` clause"));
+        let diagnostic_tokens = error.into_compile_error().to_string();
+        assert_eq!(diagnostic_tokens.matches("compile_error").count(), 2);
+        assert!(diagnostic_tokens.contains("first `timeout` clause"));
+    }
+
+    #[test]
+    fn source_names_body_roles_optionality_and_stable_ids_follow_v2_syntax() {
+        let api = parse_ok(quote! {
+            client HTTPApi { base "https://example.test"; }
+            scope http_status() {
+                GET get_http_status(
+                    first: Option<String>,
+                    #[body] payload: Text,
+                    second: std::option::Option<u32>,
+                    alias_value: crate::MaybeString,
+                ) -> Bytes {
+                    id "http.status_v2.get";
+                }
+                GET r#type() -> Bytes;
+            }
+        });
+        let SourceChild::Scope(scope) = &api.children[0] else {
+            panic!("scope")
+        };
+        let SourceChild::Endpoint(endpoint) = &scope.children[0] else {
+            panic!("endpoint")
+        };
+        assert!(matches!(endpoint.parameters[0].kind, ValueKind::Optional));
+        assert_eq!(endpoint.body.as_ref().unwrap().position, 1);
+        assert!(matches!(endpoint.parameters[1].kind, ValueKind::Optional));
+        assert!(matches!(endpoint.parameters[2].kind, ValueKind::Required));
+        assert_eq!(
+            endpoint.contract_id.as_ref().unwrap().value.value(),
+            "http.status_v2.get"
+        );
+
+        for (tokens, expected) in [
+            (
+                quote! {
+                    client Api { base "https://example.test"; }
+                    GET PascalCase() -> Bytes;
+                },
+                "must be snake_case",
+            ),
+            (
+                quote! {
+                    client Api { base "https://example.test"; }
+                    scope PascalCase() { }
+                },
+                "must be snake_case",
+            ),
+            (
+                quote! {
+                    client Api { base "https://example.test"; }
+                    POST inferred(body: Text) -> Bytes;
+                },
+                "inference by parameter name was removed",
+            ),
+            (
+                quote! {
+                    client Api { base "https://example.test"; }
+                    POST duplicate(#[body] first: Text, #[body] second: Bytes) -> Bytes;
+                },
+                "two request body parameters",
+            ),
+            (
+                quote! {
+                    client Api { base "https://example.test"; }
+                    POST malformed(#[body(value)] payload: Text) -> Bytes;
+                },
+                "bare `#[body]`",
+            ),
+            (
+                quote! {
+                    client Api { base "https://example.test"; }
+                    POST defaulted(#[body] payload: Text = crate::DEFAULT) -> Bytes;
+                },
+                "cannot have a default",
+            ),
+            (
+                quote! {
+                    client Api { base "https://example.test"; }
+                    GET old_name() as renamed -> Bytes;
+                },
+                "aliases were removed",
+            ),
+        ] {
+            let error = parse(tokens).err().expect("invalid v2 syntax");
+            assert!(
+                error.to_string().contains(expected),
+                "expected `{expected}`, got `{error}`"
+            );
+        }
+    }
+
+    #[test]
+    fn stable_id_format_and_removed_policy_or_extras_syntax_are_focused() {
+        for invalid in [
+            "",
+            ".leading",
+            "trailing.",
+            "two..dots",
+            "Upper.case",
+            "-leading",
+            "trailing-",
+            "contains/slash",
+        ] {
+            let invalid = LitStr::new(invalid, proc_macro2::Span::call_site());
+            let error = parse(quote! {
+                client Api { base "https://example.test"; }
+                GET read() -> Bytes { id #invalid; }
+            })
+            .err()
+            .expect("invalid stable ID");
+            assert!(error.to_string().contains("endpoint ID"));
+        }
+
+        let retry = parse(quote! {
+            client Api {
+                base "https://example.test";
+                retry custom crate::retry;
+            }
+        })
+        .err()
+        .expect("removed custom retry DSL");
+        assert!(retry.to_string().contains("runtime policy"));
+
+        let observer = parse(quote! {
+            client Api {
+                base "https://example.test";
+                rate_limit_observer crate::Observer;
+            }
+        })
+        .err()
+        .expect("removed observer DSL");
+        assert!(observer.to_string().contains("runtime policy"));
+
+        let oauth = parse(quote! {
+            client Api {
+                base "https://example.test";
+                credentials {
+                    credential token = oauth2_client(crate::Config);
+                }
+            }
+        })
+        .err()
+        .expect("removed OAuth-specific syntax");
+        assert!(oauth.to_string().contains("credential source"));
     }
 }

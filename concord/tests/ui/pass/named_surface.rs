@@ -7,10 +7,10 @@ api! {
 
     scope resources(scope_value: String, region: Option<String>) {
         path ["resources", scope.scope_value];
-        GET Fetch(id: String, verbose: Option<bool>, limit: u32 = 25) -> Bytes {
+        GET fetch(id: String, verbose: Option<bool>, limit: u32 = 25) -> Bytes {
             path [ep.id];
         }
-        POST Update(id: String, body: Text) -> Bytes {
+        POST update(id: String, #[body] body: Text) -> Bytes {
             path [ep.id];
         }
     }

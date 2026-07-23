@@ -235,7 +235,8 @@ fn governor_disabled_generated_and_prepared_plans_fail_closed_or_require_deliber
         "governor-disabled fixture did not select exactly one passing test\n{diagnostic}"
     );
     assert!(
-        diagnostic.contains("CONCORD_NO_GOVERNOR_RATE_LIMITS_OK generated=4 prepared=4 fallback_sends=0 observer_defaults=0"),
+        diagnostic
+            .contains("CONCORD_NO_GOVERNOR_RATE_LIMITS_OK generated=4 prepared=4 fallback_sends=0"),
         "governor-disabled fixture omitted its post-assertion sentinel\n{diagnostic}"
     );
 
@@ -335,7 +336,7 @@ fn missing_core_dependency_has_a_focused_macro_diagnostic() {
 fn incompatible_core_contract_fails_during_compilation() {
     assert_fixture_fails_with(
         "contract_mismatch",
-        "concord macro/core contract mismatch: core 999, generated 20",
+        "concord macro/core contract mismatch: core 999, generated 21",
     );
 }
 
@@ -369,15 +370,15 @@ fn multipart_dsl_without_runtime_feature_fails_through_core_type_availability() 
 }
 
 #[test]
-fn custom_retry_dsl_without_runtime_feature_has_a_focused_diagnostic() {
+fn dangerous_custom_retry_api_is_absent_without_runtime_feature() {
     assert_fixture_fails_with(
         "custom_retry_disabled",
-        "Concord `retry custom PATH` requires the `concord_core/dangerous-custom-retry` feature",
+        "no method named `dangerous_custom_retry`",
     );
 }
 
 #[test]
-fn custom_retry_dsl_with_runtime_feature_and_http_override_compiles() {
+fn dangerous_custom_retry_runtime_api_compiles_with_feature() {
     assert_fixture_passes("custom_retry_enabled");
 }
 
@@ -526,7 +527,7 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
         std::fs::read_to_string(documentation.join("renamed_api/resources/struct.Resources.html"))
             .expect("generated facade Rustdoc should be readable");
     assert!(
-        facade_page.contains("RenamedApi::resources::ById"),
+        facade_page.contains("RenamedApi::resources::by_id"),
         "facade and endpoint Rustdoc must use the same complete endpoint identity"
     );
     for expected in ["scope_value", "region", "scope_limit", "reset_scope_limit"] {
@@ -579,7 +580,7 @@ fn generated_public_rustdoc_uses_stable_paths_without_private_integration_names(
             panic!("failed to read {}: {error}", by_id_endpoint_path.display())
         });
     for expected in [
-        "RenamedApi::resources::ById",
+        "RenamedApi::resources::by_id",
         "POST",
         "Text",
         "scope_value",
@@ -720,17 +721,17 @@ fn generated_records_rustdoc_uses_stable_paths_and_exposes_no_record_value_chann
     let endpoints = [
         (
             "record_extension_api/struct.Custom.html",
-            "RecordExtensionApi::Custom",
+            "RecordExtensionApi::custom",
             "Records &lt; crate :: ExtensionRecordDecoder &gt;",
         ),
         (
             "csv_extension_api/struct.Rows.html",
-            "CsvExtensionApi::Rows",
+            "CsvExtensionApi::rows",
             "Records &lt; Csv &lt; Vec &lt; String &gt; &gt; &gt;",
         ),
         (
             "nd_json_extension_api/struct.Values.html",
-            "NdJsonExtensionApi::Values",
+            "NdJsonExtensionApi::values",
             "Records &lt; NdJson &lt; u32 &gt; &gt;",
         ),
     ];

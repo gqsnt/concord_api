@@ -7,7 +7,7 @@ api! {
 
     scope uploads() {
         path ["uploads"];
-        GET Invalid() -> Multipart;
+        GET invalid() -> Multipart;
     }
 }
 

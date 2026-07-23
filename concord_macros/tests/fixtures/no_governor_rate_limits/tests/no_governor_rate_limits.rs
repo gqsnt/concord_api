@@ -13,7 +13,7 @@ use runtime::advanced::{
 };
 use runtime::Bytes;
 use concord_fixture_no_governor_rate_limits::{
-    EmptyGeneratedApi, LimitedGeneratedApi, DEFAULT_OBSERVER_CALLS,
+    EmptyGeneratedApi, LimitedGeneratedApi,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -195,7 +195,6 @@ fn explicit_prepared() -> runtime::advanced::PreparedEndpoint<Bytes> {
 
 #[tokio::test]
 async fn generated_clients_fail_closed_without_governor_unless_limiter_is_deliberate() {
-    DEFAULT_OBSERVER_CALLS.store(0, Ordering::SeqCst);
     let server = LoopbackServer::start(6).await;
 
     let empty = EmptyGeneratedApi::builder()
@@ -220,7 +219,6 @@ async fn generated_clients_fail_closed_without_governor_unless_limiter_is_delibe
     };
     assert_eq!(fallback.kind(), ClientBuildErrorKind::LimiterUnavailable);
     assert_eq!(server.request_count(), 1);
-    assert_eq!(DEFAULT_OBSERVER_CALLS.load(Ordering::SeqCst), 0);
 
     let limiter = Arc::new(CapturingLimiter::default());
     let custom = LimitedGeneratedApi::builder()
@@ -240,7 +238,11 @@ async fn generated_clients_fail_closed_without_governor_unless_limiter_is_delibe
     let generated_plan = limiter.plans.lock().expect("generated plan capture");
     assert_eq!(generated_plan.len(), 1);
     assert_eq!(generated_plan[0].len(), 1);
-    assert!(generated_plan[0][0].id.ends_with("::LimitedGeneratedApi::rate_limit"));
+    assert!(
+        generated_plan[0][0]
+            .id
+            .ends_with("limited_generated_api.rate_limit")
+    );
     assert!(generated_plan[0][0].parts.is_empty());
     assert_eq!(generated_plan[0][0].cost, 2);
     assert_eq!(generated_plan[0][0].windows, [(3, Duration::from_secs(60)), (30, Duration::from_secs(600))]);
@@ -256,7 +258,6 @@ async fn generated_clients_fail_closed_without_governor_unless_limiter_is_delibe
         .expect("explicit generated no-op");
     noop.read().await.expect("no-op generated request");
     assert_eq!(server.request_count(), 3);
-    assert_eq!(DEFAULT_OBSERVER_CALLS.load(Ordering::SeqCst), 0);
 
     let empty_prepared_client = EmptyGeneratedApi::builder()
         .configure_http({
@@ -316,5 +317,5 @@ async fn generated_clients_fail_closed_without_governor_unless_limiter_is_delibe
         .expect("no-op prepared request");
     assert_eq!(server.request_count(), 6);
     server.finish().await;
-    eprintln!("CONCORD_NO_GOVERNOR_RATE_LIMITS_OK generated=4 prepared=4 fallback_sends=0 observer_defaults=0");
+    eprintln!("CONCORD_NO_GOVERNOR_RATE_LIMITS_OK generated=4 prepared=4 fallback_sends=0");
 }

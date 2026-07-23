@@ -14,7 +14,7 @@ Concord uses streaming in both directions while retaining finite limits and priv
 Declare:
 
 ```rust
-PUT Upload(body: Stream<OctetStream>) -> NoContent;
+PUT upload(#[body] body: Stream<OctetStream>) -> NoContent;
 ```
 
 Create a `StreamBody`:
@@ -33,7 +33,7 @@ client.upload(body).await?;
 Declare:
 
 ```rust
-GET Download() -> Stream<OctetStream>;
+GET download() -> Stream<OctetStream>;
 ```
 
 Awaiting returns `ByteStream`:
@@ -74,8 +74,8 @@ The operation deadline controls opening the stream, not application consumption 
 Record responses decode semantic items incrementally over a bounded `ByteStream`.
 
 ```rust
-GET CsvRows() -> Records<Csv<Row>>;
-GET Events() -> Records<NdJson<Event>>;
+GET csv_rows() -> Records<Csv<Row>>;
+GET events() -> Records<NdJson<Event>>;
 ```
 
 Awaiting returns `RecordStream<D>`:
@@ -153,8 +153,8 @@ For custom framing, see [Custom record decoders](../advanced/responses-records-a
 For small known payloads:
 
 ```rust
-PUT Blob(body: Bytes) -> NoContent;
-GET Blob() -> Bytes;
+PUT blob(#[body] body: Bytes) -> NoContent;
+GET blob() -> Bytes;
 ```
 
 Bytes are reusable and bounded.
@@ -162,7 +162,7 @@ Bytes are reusable and bounded.
 ### Streaming upload
 
 ```rust
-PUT Upload(body: Stream<OctetStream>) -> NoContent;
+PUT upload(#[body] body: Stream<OctetStream>) -> NoContent;
 ```
 
 Create `StreamBody` from bytes, a stream, or an async reader. Use `.exact_length` only when the producer will generate exactly that many bytes.
@@ -172,7 +172,7 @@ A direct stream is one-shot. Use `BodyFactory` or a request body specification r
 ### Streaming download
 
 ```rust
-GET Download() -> Stream<OctetStream>;
+GET download() -> Stream<OctetStream>;
 ```
 
 Awaiting returns `ByteStream`. Media validation occurs before the first body poll. The cumulative limit is applied after decompression, and the first excess chunk is withheld.
@@ -182,7 +182,7 @@ Use `.response()` when status, headers, logical URL, or execution metadata is ne
 ### Multipart upload
 
 ```rust
-POST Form(body: Multipart) -> Json<UploadResult>;
+POST form(#[body] body: Multipart) -> Json<UploadResult>;
 ```
 
 Build an owned `MultipartBody`. Reqwest generates the boundary; Concord accounts for aggregate framing and applies the request limit.
@@ -200,8 +200,8 @@ Multipart response parsing, resumable upload orchestration, checksummed chunk pr
 ### API declaration
 
 ```rust
-GET Export() -> Records<Csv<Row>>;
-GET Events() -> Records<NdJson<Event>>;
+GET export() -> Records<Csv<Row>>;
+GET events() -> Records<NdJson<Event>>;
 ```
 
 The result is a lazy `RecordStream`. Network chunks do not need to align with rows or JSON values.

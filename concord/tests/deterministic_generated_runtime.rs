@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use concord::advanced::{CodecError, EncodeBody, EncodeContext};
@@ -34,12 +34,13 @@ api! {
 
     scope resources(scope_value: String) {
         path ["resources", scope.scope_value];
-        POST Submit(
+        POST submit(
             id: String,
             verbose: Option<bool>,
             limit: u32 = 25,
-            body: crate::CountingBody,
+            #[body] body: crate::CountingBody,
         ) -> Bytes {
+            id "runtime.resources.submit";
             path [ep.id];
             query { "verbose" = ep.verbose; }
             headers { "X-Limit" = ep.limit; }
@@ -52,11 +53,16 @@ struct LifecycleCounts {
     before: AtomicUsize,
     response: AtomicUsize,
     complete: AtomicUsize,
+    endpoints: Mutex<Vec<&'static str>>,
 }
 
 impl RuntimeHooks for LifecycleCounts {
-    fn before_send<'a>(&'a self, _context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
+    fn before_send<'a>(&'a self, context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
         self.before.fetch_add(1, Ordering::SeqCst);
+        self.endpoints
+            .lock()
+            .expect("endpoint capture")
+            .push(context.endpoint);
         Box::pin(async { Ok(()) })
     }
 
@@ -140,6 +146,10 @@ async fn direct_and_explicit_named_wrappers_preserve_inertness_and_lifecycle_equ
     assert_eq!(hooks.before.load(Ordering::SeqCst), 2);
     assert_eq!(hooks.response.load(Ordering::SeqCst), 2);
     assert_eq!(hooks.complete.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        hooks.endpoints.lock().expect("endpoint capture").as_slice(),
+        ["runtime.resources.submit", "runtime.resources.submit"]
+    );
 
     let requests = server.requests();
     assert_eq!(requests.len(), 2);

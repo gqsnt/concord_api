@@ -106,31 +106,31 @@ api! {
             credential static_bearer = bearer(secret.bearer_secret);
             credential login = basic(secret.username, secret.password);
             credential rotating_bearer = custom crate::BearerProvider;
-            credential acquired = endpoint Login;
+            credential acquired = endpoint login;
             credential session = custom crate::SessionProvider;
         }
     }
 
-    GET Login() -> crate::SessionCodec;
-    GET ApiKeyEndpoint() -> Bytes {
+    GET login() -> crate::SessionCodec;
+    GET api_key_endpoint() -> Bytes {
         auth header "X-Api-Key" = application_key;
     }
-    GET BearerEndpoint() -> Bytes {
+    GET bearer_endpoint() -> Bytes {
         auth bearer static_bearer;
     }
-    GET BasicEndpoint() -> Bytes {
+    GET basic_endpoint() -> Bytes {
         auth basic login;
     }
-    GET ProviderBearerEndpoint() -> Bytes {
+    GET provider_bearer_endpoint() -> Bytes {
         auth bearer rotating_bearer challenge unauthorized;
     }
-    scope Nested() {
+    scope nested() {
         auth header "X-Session" = session challenge never;
-        GET Inherited() -> Bytes;
-        GET Replaced() -> Bytes {
+        GET inherited() -> Bytes;
+        GET replaced() -> Bytes {
             auth replace query "token" = acquired challenge never;
         }
-        GET Public() -> Bytes {
+        GET public() -> Bytes {
             auth off;
         }
     }

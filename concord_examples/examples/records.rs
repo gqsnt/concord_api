@@ -58,9 +58,9 @@ api! {
         base "https://records.example.test/";
     }
 
-    GET Custom() -> Records<crate::PipeRecords>;
-    GET CsvRows() -> Records<Csv<(String, u32)>>;
-    GET NdJsonValues() -> Records<NdJson<u32>>;
+    GET custom() -> Records<crate::PipeRecords>;
+    GET csv_rows() -> Records<Csv<(String, u32)>>;
+    GET nd_json_values() -> Records<NdJson<u32>>;
 }
 
 #[tokio::main]

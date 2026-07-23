@@ -5,7 +5,7 @@ api! {
         base "http://upload.example.test/";
     }
 
-    POST Upload(body: Stream<OctetStream>) -> Bytes;
+    POST upload(#[body] body: Stream<OctetStream>) -> Bytes;
 }
 
 fn main() {

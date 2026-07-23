@@ -48,7 +48,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read() -> crate::NotIterableCodec {
+    GET read() -> crate::NotIterableCodec {
         paginate crate::Controller {}
     }
 }
@@ -58,7 +58,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read(cursor: Option<String>) -> Json<Vec<u8>> {
+    GET read(cursor: Option<String>) -> Json<Vec<u8>> {
         paginate crate::support::CursorController<String> {
             cursor: bind ep.cursor,
         }
@@ -70,7 +70,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read(state: std::rc::Rc<()>) -> Json<Vec<u8>> {
+    GET read(state: std::rc::Rc<()>) -> Json<Vec<u8>> {
         paginate crate::NonSendController {
             state: bind ep.state,
         }

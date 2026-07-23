@@ -66,7 +66,7 @@ note: required for `missing_into_iterator::Read` to implement `concord_core::__p
 47 | |     client MissingIntoIterator {
 48 | |         base "https://example.test";
 ...  |
-51 | |     GET Read() -> crate::NotIterableCodec {
+51 | |     GET read() -> crate::NotIterableCodec {
    | |         ^^^^
 ...  |
 54 | | }
@@ -101,7 +101,7 @@ note: required for `missing_into_iterator::Read` to implement `concord_core::__p
 47 | |     client MissingIntoIterator {
 48 | |         base "https://example.test";
 ...  |
-51 | |     GET Read() -> crate::NotIterableCodec {
+51 | |     GET read() -> crate::NotIterableCodec {
    | |         ^^^^
 ...  |
 54 | | }
@@ -140,7 +140,7 @@ note: required for `missing_into_iterator::Read` to implement `concord_core::pag
 47 | |     client MissingIntoIterator {
 48 | |         base "https://example.test";
 ...  |
-51 | |     GET Read() -> crate::NotIterableCodec {
+51 | |     GET read() -> crate::NotIterableCodec {
    | |         ^^^^
 ...  |
 54 | | }
@@ -164,7 +164,7 @@ help: the trait `IntoFuture` is not implemented for `missing_into_iterator::Read
 47 | |     client MissingIntoIterator {
 48 | |         base "https://example.test";
 ...  |
-51 | |     GET Read() -> crate::NotIterableCodec {
+51 | |     GET read() -> crate::NotIterableCodec {
    | |____________^
    = note: missing_into_iterator::ReadRequest must be a future or must implement `IntoFuture` to be awaited
 help: the trait `IntoFuture` is implemented for `missing_into_iterator::ReadRequest`
@@ -181,7 +181,7 @@ help: the trait `IntoFuture` is implemented for `missing_into_iterator::ReadRequ
 error[E0277]: `missing_into_iterator::ReadRequest` is not a future
   --> tests/ui/fail/pagination_bounds.rs:51:9
    |
-51 |     GET Read() -> crate::NotIterableCodec {
+51 |     GET read() -> crate::NotIterableCodec {
    |         ^^^^ `missing_into_iterator::ReadRequest` is not a future
    |
 help: the trait `IntoFuture` is not implemented for `missing_into_iterator::ReadRequest`
@@ -191,7 +191,7 @@ help: the trait `IntoFuture` is not implemented for `missing_into_iterator::Read
 47 | |     client MissingIntoIterator {
 48 | |         base "https://example.test";
 ...  |
-51 | |     GET Read() -> crate::NotIterableCodec {
+51 | |     GET read() -> crate::NotIterableCodec {
    | |____________^
    = note: missing_into_iterator::ReadRequest must be a future or must implement `IntoFuture` to be awaited
 help: the trait `IntoFuture` is implemented for `missing_into_iterator::ReadRequest`

@@ -1,0 +1,11 @@
+error: endpoint declares two request body parameters: `first` and `second`
+  --> tests/ui/fail/multiple_bodies.rs:10:46
+   |
+10 |     POST submit(#[body] first: Text, #[body] second: Bytes) -> Bytes;
+   |                                              ^^^^^^
+
+error: the first request body is here
+  --> tests/ui/fail/multiple_bodies.rs:10:25
+   |
+10 |     POST submit(#[body] first: Text, #[body] second: Bytes) -> Bytes;
+   |                         ^^^^^

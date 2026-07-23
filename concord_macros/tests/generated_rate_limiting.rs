@@ -5,33 +5,12 @@ use std::sync::{Arc, Mutex};
 use std::{fmt, fmt::Display};
 
 use concord_core::advanced::{
-    BoxFuture, ClientBuildErrorKind, NoopRateLimiter, RateLimitError, RateLimitObserver,
-    RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimiter, SafeProxy,
+    BoxFuture, ClientBuildErrorKind, NoopRateLimiter, RateLimitError, RateLimitPermit,
+    RateLimitRequest, RateLimitResponse, RateLimiter, SafeProxy,
 };
 use concord_core::prelude::Bytes;
 use concord_macros::api;
 use concord_test_support::server::{ResponseScript, ScriptedServer};
-
-static OBSERVER_DEFAULTS: AtomicUsize = AtomicUsize::new(0);
-static OBSERVER_DEFAULTS_LOCK: Mutex<()> = Mutex::new(());
-
-pub struct CountingObserver;
-
-impl Default for CountingObserver {
-    fn default() -> Self {
-        OBSERVER_DEFAULTS.fetch_add(1, Ordering::SeqCst);
-        Self
-    }
-}
-
-impl RateLimitObserver for CountingObserver {
-    fn observe(
-        &self,
-        _response: &concord_core::advanced::RateLimitResponseHead<'_>,
-    ) -> Option<concord_core::advanced::Cooldown> {
-        None
-    }
-}
 
 api! {
     client RateApi {
@@ -43,20 +22,19 @@ api! {
             500 / 10s;
             30000 / 10m;
         }
-        rate_limit_observer crate::CountingObserver;
     }
 
-    scope Regions(region: String) {
+    scope regions(region: String) {
         rate_limit {
             20 / 1s;
         }
-        GET Read(item: String) -> Bytes {
+        GET read(item: String) -> Bytes {
             rate_limit {
                 cost 2;
                 100 / 1m;
             }
         }
-        GET Public() -> Bytes;
+        GET public() -> Bytes;
     }
 }
 
@@ -65,7 +43,7 @@ api! {
         base "http://empty-rate.example.test/";
     }
 
-    GET Read() -> Bytes;
+    GET read() -> Bytes;
 }
 
 pub struct DisplayOnly {
@@ -85,7 +63,7 @@ api! {
         base "http://minimal-rate.example.test/";
     }
 
-    GET Read(item: crate::DisplayOnly) -> Bytes {
+    GET read(item: crate::DisplayOnly) -> Bytes {
         rate_limit { 1 / 1s; }
     }
 }
@@ -96,24 +74,25 @@ api! {
         rate_limit { 100 / 1h; }
     }
 
-    GET Direct() -> Bytes;
-    scope Outer(region: String) {
+    GET direct() -> Bytes;
+    scope outer(region: String) {
         rate_limit { 20 / 1h; }
-        GET Immediate() -> Bytes;
-        scope Inner(kind: String) {
+        GET immediate() -> Bytes;
+        scope inner(kind: String) {
             rate_limit { 10 / 1h; }
-            GET Nested() -> Bytes {
+            GET nested() -> Bytes {
                 rate_limit { cost 2; 30 / 1h; }
             }
         }
     }
-    scope Sibling(region: String) {
+    scope sibling(region: String) {
         rate_limit { 7 / 1h; }
-        GET SiblingEndpoint() -> Bytes {
+        GET sibling_endpoint() -> Bytes {
+            id "stable.identity.sibling";
             rate_limit { 5 / 1h; }
         }
     }
-    GET Outside() -> Bytes;
+    GET outside() -> Bytes;
 }
 
 api! {
@@ -122,9 +101,9 @@ api! {
         rate_limit { 1 / 1h; }
     }
 
-    GET Direct() -> Bytes;
-    scope Descendant(value: String) {
-        GET Nested() -> Bytes;
+    GET direct() -> Bytes;
+    scope descendant(value: String) {
+        GET nested() -> Bytes;
     }
 }
 
@@ -134,14 +113,14 @@ api! {
         rate_limit { 100 / 1h; }
     }
 
-    scope Branch(value: String) {
+    scope branch(value: String) {
         rate_limit { 1 / 1h; }
-        GET Immediate() -> Bytes;
-        scope Nested(value: String) {
-            GET Descendant() -> Bytes;
+        GET immediate() -> Bytes;
+        scope nested(value: String) {
+            GET descendant() -> Bytes;
         }
     }
-    GET Outside() -> Bytes;
+    GET outside() -> Bytes;
 }
 
 api! {
@@ -149,14 +128,14 @@ api! {
         base "http://collision-rate.example.test/";
     }
 
-    scope A__B(value: String) {
+    scope a__b(value: String) {
         rate_limit { 1 / 1h; }
-        GET First() -> Bytes;
+        GET first() -> Bytes;
     }
-    scope A(value: String) {
-        scope B(value: String) {
+    scope a(value: String) {
+        scope b(value: String) {
             rate_limit { 1 / 1h; }
-            GET Second() -> Bytes;
+            GET second() -> Bytes;
         }
     }
 }
@@ -185,16 +164,16 @@ api! {
         }
     }
 
-    scope Platform() {
+    scope platform() {
         host [vars.platform, "api"];
         rate_limit { 100 / 1h; }
-        GET Read() -> Bytes;
+        GET read() -> Bytes;
     }
 
-    scope Regional() {
+    scope regional() {
         host [vars.regional, "api"];
         rate_limit { 100 / 1h; }
-        GET Read() -> Bytes;
+        GET read() -> Bytes;
     }
 }
 
@@ -207,7 +186,7 @@ mod nested_rate {
             rate_limit { 1 / 1s; }
         }
 
-        GET Read() -> Bytes;
+        GET read() -> Bytes;
     }
 }
 
@@ -220,7 +199,7 @@ mod repeated_rate {
             rate_limit { 1 / 1s; }
         }
 
-        GET Read() -> Bytes;
+        GET read() -> Bytes;
     }
 
     api! {
@@ -229,7 +208,7 @@ mod repeated_rate {
             rate_limit { 1 / 1s; }
         }
 
-        GET Read() -> Bytes;
+        GET read() -> Bytes;
     }
 }
 
@@ -339,17 +318,10 @@ fn builder() -> RateApiBuilder {
 
 #[test]
 fn generated_default_limiter_selection_matches_the_resolved_feature_graph() {
-    let _observer_defaults = OBSERVER_DEFAULTS_LOCK
-        .lock()
-        .expect("observer default test lock");
-    OBSERVER_DEFAULTS.store(0, Ordering::SeqCst);
     match builder().build() {
-        Ok(_client) => {
-            assert_eq!(OBSERVER_DEFAULTS.load(Ordering::SeqCst), 1);
-        }
+        Ok(_client) => {}
         Err(error) => {
             assert_eq!(error.kind(), ClientBuildErrorKind::LimiterUnavailable);
-            assert_eq!(OBSERVER_DEFAULTS.load(Ordering::SeqCst), 0);
         }
     }
 }
@@ -393,12 +365,12 @@ async fn sibling_route_families_resolve_distinct_hosts_and_lexical_rule_ids() {
     assert!(
         acquisitions[0][0]
             .id
-            .ends_with("::RouteFamilyApi::Platform::rate_limit")
+            .ends_with("route_family_api.platform.rate_limit")
     );
     assert!(
         acquisitions[1][0]
             .id
-            .ends_with("::RouteFamilyApi::Regional::rate_limit")
+            .ends_with("route_family_api.regional.rate_limit")
     );
     assert_ne!(acquisitions[0][0].id, acquisitions[1][0].id);
 }
@@ -410,19 +382,11 @@ async fn custom_limiter_receives_canonical_ordered_plan_and_owns_observation() {
     let proxy = SafeProxy::parse(server.url("")).expect("local proxy");
     let limiter = Arc::new(CapturingLimiter::default());
     let configured = Arc::clone(&limiter);
-    let client = {
-        let _observer_defaults = OBSERVER_DEFAULTS_LOCK
-            .lock()
-            .expect("observer default test lock");
-        OBSERVER_DEFAULTS.store(0, Ordering::SeqCst);
-        let client = builder()
-            .configure_http(move |http| http.proxy(proxy))
-            .configure_runtime(move |runtime| runtime.rate_limiter(configured))
-            .build()
-            .expect("custom-limited generated client");
-        assert_eq!(OBSERVER_DEFAULTS.load(Ordering::SeqCst), 0);
-        client
-    };
+    let client = builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(move |runtime| runtime.rate_limiter(configured))
+        .build()
+        .expect("custom-limited generated client");
 
     let body = client
         .regions("eu".to_owned())
@@ -434,13 +398,9 @@ async fn custom_limiter_receives_canonical_ordered_plan_and_owns_observation() {
     assert_eq!(acquisitions.len(), 1);
     let rules = &acquisitions[0];
     assert_eq!(rules.len(), 3);
-    assert!(rules[0].id.ends_with("::RateApi::rate_limit"));
-    assert!(rules[1].id.ends_with("::RateApi::Regions::rate_limit"));
-    assert!(
-        rules[2]
-            .id
-            .ends_with("::RateApi::Regions::Read::rate_limit")
-    );
+    assert!(rules[0].id.ends_with("rate_api.rate_limit"));
+    assert!(rules[1].id.ends_with("rate_api.regions.rate_limit"));
+    assert!(rules[2].id.ends_with("rate_api.regions.read.rate_limit"));
     assert!(rules.windows(2).all(|pair| pair[0].id != pair[1].id));
     assert!(rules.iter().all(|rule| rule.parts.is_empty()));
     assert_eq!(rules[0].cost, 1);
@@ -678,6 +638,7 @@ async fn sibling_and_endpoint_local_rules_do_not_share_unrelated_buckets() {
     assert_eq!(acquisitions.len(), 2);
     assert_eq!(acquisitions[0].len(), 3);
     assert_eq!(acquisitions[1].len(), 1);
+    assert_eq!(acquisitions[0][2].id, "stable.identity.sibling.rate_limit");
     assert_ne!(acquisitions[0][1].id, acquisitions[0][2].id);
     assert_ne!(acquisitions[0][2].id, acquisitions[1][0].id);
 }
@@ -693,23 +654,15 @@ fn rules_from_limiter(limiter: &CapturingLimiter) -> Vec<CapturedRule> {
 }
 
 #[tokio::test]
-async fn explicit_noop_authorizes_nonempty_generated_plan_without_dsl_observer() {
+async fn explicit_noop_authorizes_nonempty_generated_plan() {
     let server = ScriptedServer::start([ResponseScript::ok(b"noop".to_vec())])
         .expect("no-op rate-limit server");
     let proxy = SafeProxy::parse(server.url("")).expect("local proxy");
-    let client = {
-        let _observer_defaults = OBSERVER_DEFAULTS_LOCK
-            .lock()
-            .expect("observer default test lock");
-        OBSERVER_DEFAULTS.store(0, Ordering::SeqCst);
-        let client = builder()
-            .configure_http(move |http| http.proxy(proxy))
-            .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
-            .build()
-            .expect("explicit no-op is an intentional selection");
-        assert_eq!(OBSERVER_DEFAULTS.load(Ordering::SeqCst), 0);
-        client
-    };
+    let client = builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
+        .build()
+        .expect("explicit no-op is an intentional selection");
     let body = client
         .regions("eu".to_owned())
         .read("item".to_owned())

@@ -22,12 +22,12 @@ api! {
     client StorageApi {
         base "http://storage.example.test/";
         credentials {
-            credential session = endpoint Source;
+            credential session = endpoint source;
         }
     }
 
-    GET Source() -> crate::SessionCodec;
-    GET Other() -> Text;
+    GET source() -> crate::SessionCodec;
+    GET other() -> Text;
 }
 
 fn main() {

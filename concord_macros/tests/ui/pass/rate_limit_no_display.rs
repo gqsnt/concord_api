@@ -12,9 +12,9 @@ api! {
         rate_limit { 10 / 1s; }
     }
 
-    scope Regions(region: crate::Displayless) {
+    scope regions(region: crate::Displayless) {
         rate_limit { 5 / 1s; }
-        GET Read(item: crate::Displayless) -> Bytes {
+        GET read(item: crate::Displayless) -> Bytes {
             rate_limit { 1 / 1s; }
         }
     }

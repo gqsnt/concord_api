@@ -41,11 +41,11 @@ api! {
         base "http://raw-success.example.test/root/";
     }
 
-    GET TextValue() -> Text { path ["text"]; }
-    GET CustomValue() -> crate::ObservedCodec { path ["custom"]; }
-    GET BytesValue() -> Bytes { path ["bytes"]; }
-    GET EmptyValue() -> NoContent { path ["empty"]; }
-    GET StreamValue() -> Stream<OctetStream> { path ["stream"]; }
+    GET text_value() -> Text { path ["text"]; }
+    GET custom_value() -> crate::ObservedCodec { path ["custom"]; }
+    GET bytes_value() -> Bytes { path ["bytes"]; }
+    GET empty_value() -> NoContent { path ["empty"]; }
+    GET stream_value() -> Stream<OctetStream> { path ["stream"]; }
 }
 
 api! {
@@ -53,7 +53,7 @@ api! {
         base "http://raw-json.example.test/";
     }
 
-    GET JsonValue() -> Json<Vec<u32>>;
+    GET json_value() -> Json<Vec<u32>>;
 }
 
 fn proxy(server: &ScriptedServer) -> SafeProxy {
@@ -125,7 +125,7 @@ async fn raw_success_skips_decoder_media_validation_and_preserves_exact_metadata
     assert_eq!(raw.status(), 200);
     assert_eq!(raw.version(), http::Version::HTTP_11);
     assert_eq!(raw.headers()["x-raw-secret"], "raw-header-secret-9e672c");
-    assert_eq!(raw.metadata().endpoint(), "RawSuccessApi::CustomValue");
+    assert_eq!(raw.metadata().endpoint(), "raw_success_api.custom_value");
     assert_eq!(raw.metadata().method(), http::Method::GET);
     assert_eq!(raw.metadata().page_index(), 0);
     assert!(!raw.metadata().recovered_authentication());

@@ -7,8 +7,8 @@ api! {
 
     scope health() {
         path ["health"];
-        GET HTTPStatus() -> NoContent;
-        GET HttpStatus() -> NoContent;
+        GET http_status() -> NoContent;
+        GET http_status() -> NoContent;
     }
 }
 

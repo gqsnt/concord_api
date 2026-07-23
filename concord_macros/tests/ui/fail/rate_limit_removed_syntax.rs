@@ -8,7 +8,7 @@ api! {
         }
     }
 
-    GET Read() -> Bytes;
+    GET read() -> Bytes;
 }
 
 fn main() {}

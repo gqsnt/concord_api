@@ -7,7 +7,7 @@ api! {
 
     scope health() {
         path ["health"];
-        GET Ping() -> NoContent;
+        GET ping() -> NoContent;
     }
 }
 

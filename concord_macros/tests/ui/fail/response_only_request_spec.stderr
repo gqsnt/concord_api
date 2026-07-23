@@ -5,7 +5,7 @@ error[E0277]: the trait bound `ResponseOnly: EncodeBody` is not satisfied
 16 | |     client InvalidResponseOnlyRequestApi {
 17 | |         base "http://invalid-response-only.example.test/";
 ...  |
-20 | |     POST Invalid(body: crate::ResponseOnly) -> Bytes;
+20 | |     POST invalid(#[body] body: crate::ResponseOnly) -> Bytes;
 21 | | }
    | |_^ unsatisfied trait bound
    |
@@ -25,7 +25,7 @@ help: the trait `EncodeBody` is implemented for `concord_core::advanced::Text`
 error[E0277]: the trait bound `ResponseOnly: EncodeBody` is not satisfied
   --> tests/ui/fail/response_only_request_spec.rs:20:10
    |
-20 |     POST Invalid(body: crate::ResponseOnly) -> Bytes;
+20 |     POST invalid(#[body] body: crate::ResponseOnly) -> Bytes;
    |          ^^^^^^^ unsatisfied trait bound
    |
 help: the trait `EncodeBody` is not implemented for `ResponseOnly`
@@ -47,7 +47,7 @@ error[E0277]: the trait bound `ResponseOnly: RequestBodySpec` is not satisfied
 16 | |     client InvalidResponseOnlyRequestApi {
 17 | |         base "http://invalid-response-only.example.test/";
 ...  |
-20 | |     POST Invalid(body: crate::ResponseOnly) -> Bytes;
+20 | |     POST invalid(#[body] body: crate::ResponseOnly) -> Bytes;
 21 | | }
    | |_^ unsatisfied trait bound
    |
@@ -71,7 +71,7 @@ error[E0277]: the trait bound `ResponseOnly: EncodeBody` is not satisfied
 16 | |     client InvalidResponseOnlyRequestApi {
 17 | |         base "http://invalid-response-only.example.test/";
 ...  |
-20 | |     POST Invalid(body: crate::ResponseOnly) -> Bytes;
+20 | |     POST invalid(#[body] body: crate::ResponseOnly) -> Bytes;
 21 | | }
    | |_^ unsatisfied trait bound
    |
@@ -95,7 +95,7 @@ error[E0277]: the trait bound `ResponseOnly: EncodeBody` is not satisfied
 16 | |     client InvalidResponseOnlyRequestApi {
 17 | |         base "http://invalid-response-only.example.test/";
 ...  |
-20 | |     POST Invalid(body: crate::ResponseOnly) -> Bytes;
+20 | |     POST invalid(#[body] body: crate::ResponseOnly) -> Bytes;
 21 | | }
    | |_^ unsatisfied trait bound
    |
@@ -123,7 +123,7 @@ error[E0599]: the associated function or constant `__concord_from_facade` exists
 16 | |     client InvalidResponseOnlyRequestApi {
 17 | |         base "http://invalid-response-only.example.test/";
 ...  |
-20 | |     POST Invalid(body: crate::ResponseOnly) -> Bytes;
+20 | |     POST invalid(#[body] body: crate::ResponseOnly) -> Bytes;
 21 | | }
    | | ^
    | | |

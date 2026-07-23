@@ -1,230 +1,217 @@
 # DSL reference
 
-> Audience: All DSL users  
-> Purpose: exact structural syntax and diagnostics
+> Audience: all declaration authors
+> Purpose: exact structural syntax, naming, identity, and diagnostics
 
-This is the consolidated reference for the `api!` declaration language. Rust types retain their normal meaning; the macro owns structure, inheritance, and focused structural diagnostics.
+`concord::api!` compiles one remote HTTP contract into ordinary Rust client,
+scope, endpoint, and request types. Rust types remain opaque to the macro.
+Trait implementations determine body, response, provider, pagination, and
+runtime behavior.
 
-## DSL reference
-
-`concord_macros::api!` accepts exactly one client declaration. The client is required, must be first, and contains configuration only. Root scopes and endpoints follow the client block.
-
-### Top-level grammar
-
-```text
-api      = client child*
-client   = "client" IDENT "{" client_config "}"
-child    = scope | endpoint
-vars     = "vars" "{" variable* "}"
-variable = IDENT ":" TYPE ("=" DEFAULT)? ";"
-```
-
-The client begins with a fixed `base` URL and follows the supported configuration order. Use separate `api!` invocations when a module needs multiple generated clients.
-
-Reference pages:
-
-- [Client declarations](dsl.md#dsl-client-declarations)
-- [Variables and secrets](dsl.md#dsl-variables-and-secrets)
-- [Scopes and endpoints](dsl.md#dsl-scopes-and-endpoints)
-- [Expressions](dsl.md#dsl-expressions)
-- [Request shaping](dsl.md#dsl-request-shaping)
-- [Bodies and responses](dsl.md#dsl-bodies-and-responses)
-- [Authentication](dsl.md#dsl-authentication)
-- [Retry and timeout](dsl.md#dsl-retry-and-timeout)
-- [Pagination](dsl.md#dsl-pagination)
-- [Rate limits](dsl.md#dsl-rate-limits)
-- [Diagnostics](dsl.md#dsl-diagnostics)
-
-### Layer clause order
-
-For client, scope, and endpoint layers:
-
-```text
-host
-path
-query
-headers
-auth
-timeout
-rate_limit
-```
-
-Pagination follows endpoint layer clauses. Client variables, credentials, and retry occur before layer clauses. The legacy client `rate_limit_observer` follows the client rate-limit declaration and precedes the end of the client block. Root children are parsed only after that block closes.
-
-The macro intentionally rejects arbitrary Rust expressions and semantic type-name dispatch.
-
-## DSL: client declarations
+## Top-level structure
 
 ```rust
+use concord::api;
+
 api! {
-    client NAME {
-        base "https://example.com/root/";
-        vars { ... }
-        credentials { ... }
-        retry ...;
-        host ...;
-        path ...;
-        query ...
-        headers ...
-        auth ...;
-        timeout ...;
-        rate_limit { ... }
-        rate_limit_observer PATH;
+    client ExampleApi {
+        base "https://api.example.test/v1/";
+        // client clauses in any order
     }
 
-    scope ...
-    ENDPOINT ...
+    scope users(tenant: String) {
+        // scope clauses and children in any order
+
+        GET get_user(id: String) -> Bytes {
+            // endpoint clauses in any order
+        }
+    }
 }
 ```
 
-### `base`
+An invocation contains exactly one `client`, and that declaration must be
+first. Root scopes and endpoints follow the client block. Declare a second
+client in a separate `api!` invocation.
 
-Required, first, and unique. It must be an absolute `http` or `https` URL with host and without username, password, query, or fragment. A base path is allowed.
+The structural grammar is:
 
-### Client values
+```text
+api        = client child*
+client     = "client" IDENT "{" client_entry* "}"
+child      = scope | endpoint
+scope      = "scope" SNAKE_IDENT "(" parameters? ")" "{" scope_entry* "}"
+endpoint   = METHOD SNAKE_IDENT "(" parameters? ")" "->" TYPE
+             (";" | "{" endpoint_clause* "}")
+parameters = parameter ("," parameter)* ","?
+parameter  = ("#[body]")? IDENT ":" TYPE ("=" DEFAULT)?
+```
 
-At most one `vars { ... }` block follows the base. Entries inside it are direct declarations without a `var` keyword. See [Variables and secrets](dsl.md#dsl-variables-and-secrets).
+The client name defines the generated client type. Scope and endpoint source
+identifiers must be `snake_case` Rust identifiers. They directly define public
+method and module names. Concord deterministically converts them to PascalCase
+for generated types:
 
-### Credentials
+```text
+scope match_v5  -> method/module match_v5, type MatchV5
+GET match_by_id -> method match_by_id, endpoint type MatchById,
+                   request type MatchByIdRequest
+GET r#type      -> method r#type, endpoint type Type
+```
 
-At most one credentials block follows client values.
+Endpoint aliases are not supported. Write the desired public method name as the
+endpoint identifier.
 
-### Retry
+## Named clauses and ordering
 
-Client-only. Defaults to off when omitted.
+Named clauses are order-independent within their owner. These client
+declarations are equivalent:
 
-### Layer and observer
+```rust
+client First {
+    base "https://example.test";
+    vars { tenant: String; }
+    timeout 5s;
+}
 
-Client request shaping, auth, timeout, and one lexical rate-limit rule follow in fixed
-order. `rate_limit_observer` is a legacy client-only clause; canonical code configures
-the observer on an explicit runtime limiter.
+client Second {
+    timeout 5s;
+    vars { tenant: String; }
+    base "https://example.test";
+}
+```
 
-### Children
+Each scalar clause may occur at most once. A duplicate reports both the
+duplicate and original spans. The supported clauses are:
 
-Root scopes and endpoints follow the closing client brace. Although they are syntactic siblings of `client`, they belong to that single generated client, inherit its configuration, and must have unique generated snake-case names within their owner.
+| Owner | Clauses |
+|---|---|
+| client | `base`, `vars`, `credentials`, `retry`, `host`, `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit` |
+| scope | `host`, `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, plus child scopes/endpoints |
+| endpoint | `id`, `host`, `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, `paginate` |
 
-### Multiple clients
+Order inside path atoms, query entries, header entries, authentication
+placements, pagination fields, and rate-limit windows remains meaningful.
+Several `auth` clauses form one ordered placement list even when other named
+clauses occur between them. `auth replace` must be the first authentication
+entry, and `auth off` is exclusive.
 
-Declare each generated client in an independent `api!` invocation. Distinct invocations may coexist in the same module and produce distinct endpoint capabilities and rate-limit declaration identities.
+`base` is required but need not be textually first. It must be an absolute
+`http` or `https` URL with a host and no username, password, query, or
+fragment. A base path is allowed.
 
-## DSL: variables and secrets
+## Values, optionality, and defaults
 
-### Client variables
+Client values are declared in one `vars` block:
 
 ```rust
 vars {
     tenant: String;
     locale: Option<String>;
+    qualified: std::option::Option<String>;
     page_size: u32 = 25;
 }
 ```
 
-A variable can be:
+Scope and endpoint values use the same rules:
 
-- required;
-- optional (`Option<T>`);
-- defaulted.
+```rust
+scope regions(region: String, locale: Option<String>) {
+    GET item(id: u64, verbose: std::option::Option<bool>) -> Bytes;
+}
+```
 
-Defaults accept only:
+Concord recognizes optionality syntactically, not semantically. Only
+`Option<T>` and `std::option::Option<T>` (optionally with a leading `::`) are
+optional declarations. The generated setter accepts `T`, and an absent value
+is omitted where the shaping operation permits it.
 
-- string literal;
-- signed integer literal;
-- boolean literal;
-- Rust const path.
+A type alias remains required because a proc macro cannot resolve aliases:
+
+```rust
+type MaybeLocale = Option<String>;
+
+// `locale` is a required argument, not an optional setter.
+GET item(locale: MaybeLocale) -> Bytes;
+```
+
+Defaults use `name: Type = expression`. Accepted expressions are:
+
+- a string literal;
+- a signed base-10 integer literal;
+- a boolean literal;
+- a Rust const path.
 
 Calls, methods, macros, blocks, and collection expressions are rejected.
+Default setters remain overridable; generated reset methods restore deferred
+evaluation of the declaration default.
 
-Variables are immutable client snapshots and are referenced as `vars.name` in public expressions and stable pagination initializers.
+Required scope and endpoint arguments preserve declaration order. Optional and
+defaulted values become inherent setters on the named request wrapper.
 
-Defaulted variables are omitted from the convenience constructor. They remain overridable with builder setters, and their generated reset methods restore deferred evaluation of the declared default.
+## Explicit request bodies
 
-### Scope and endpoint parameters
+The request body role is always explicit:
 
 ```rust
-scope Regions(region: String, locale: Option<String>) { ... }
-GET Item(id: u64, verbose: Option<bool>) -> Bytes;
+POST update(
+    id: String,
+    #[body] payload: Json<UpdateInput>,
+    revision: u64,
+) -> Json<Item>;
 ```
 
-The final endpoint parameter may be `body: BodySpec`.
+`#[body]` is endpoint-only, accepts no arguments, and may appear at any
+parameter position. The body name is not special. Exactly one body is allowed,
+and it cannot have a default. A parameter literally named `body` is still an
+ordinary value unless annotated; unannotated `body` is rejected to prevent
+legacy name-based inference.
 
-### Secrets
+The body type must implement `RequestBodySpec`; the generated call accepts that
+specification's input type. The response type after `->` must implement
+`ResponseBodySpec`. Concord does not recognize `Json`, `Csv`, `NdJson`,
+`Multipart`, `Stream`, or application type names in the compiler. Feature and
+compatibility failures are ordinary trait-bound diagnostics at the declared
+type.
 
-Secrets exist only inside `credentials`:
+`NoContent` is a response specification, not a request body specification.
+Pagination requires a bodyless endpoint.
 
-```rust
-secret api_key: String;
-```
+## Endpoint identity
 
-Concord 0.1 secrets are required `String` values without defaults. They are referenced only as `secret.name` inside credential source declarations.
-
-Secrets cannot be used in host, path, query, headers, pagination stable fields, or rate-limit declarations.
-
-### Naming
-
-Names must be unique within their relevant owner. References are resolved statically. Optional values are omitted from request shaping when absent.
-
-## DSL: scopes and endpoints
-
-### Scope
+An endpoint may declare a stable contract ID:
 
 ```rust
-scope NAME(parameter: Type, ...) {
-    layer configuration
-    nested scopes and endpoints
+GET match_by_id(match_id: String) -> Json<Match> {
+    id "riot.match_v5.match_by_id";
 }
 ```
 
-Scopes may nest to depth 64. Retry, the `vars` block, base, credentials, and rate-limit observers are client-only.
+The ID is unique across all endpoints in one client and is validated as:
 
-### Endpoint
+- 1–128 ASCII bytes total;
+- dot-separated segments of 1–63 bytes;
+- each segment begins and ends with a lowercase ASCII letter or digit;
+- internal characters are lowercase ASCII letters, digits, `_`, or `-`.
 
-```rust
-METHOD NAME(parameters...) -> ResponseType;
+An explicit ID remains stable when Rust client, scope, or endpoint names
+change. If omitted, Concord derives:
+
+```text
+snake_case_client_name.scope_name.endpoint_name
 ```
 
-or:
+Renaming any source component changes that default. Endpoint-local generated
+rate-limit identity derives from the contract ID by appending `.rate_limit`.
+Client and scope rate-limit identities derive from their deterministic source
+paths. Use an explicit ID whenever telemetry or rate state must survive source
+renames.
 
-```rust
-METHOD NAME(parameters...) as alias -> ResponseType {
-    layer configuration
-    paginate ...
-}
-```
-
-Every endpoint requires parentheses. The body parameter, when present, must be final and named `body`.
-
-### Methods
-
-Standard verbs are recognized directly. Extension method:
-
-```rust
-METHOD("PROPFIND") Resource() -> Bytes;
-```
-
-Method token must be valid HTTP syntax.
-
-### Aliases
-
-`as alias` selects the public generated method name.
-
-### Generated collision rules
-
-Within one owner, scope and endpoint child names must remain unique after deterministic snake-case normalization. Reserved generated methods are rejected.
-
-### Endpoint capabilities
-
-Rust trait selection determines body/response compatibility, metadata terminal, pagination, and dangerous raw terminal. The macro does not infer custom type behavior from names.
-
-## DSL: expressions
+## Public expressions and request shaping
 
 Public request-shaping expressions are deliberately restricted.
 
-### Literals
-
-- string literal;
-- unsuffixed base-10 integer literal.
-
-### References
+Accepted atoms are string literals, unsuffixed base-10 integer literals, and
+direct references:
 
 ```rust
 vars.name
@@ -232,29 +219,16 @@ scope.name
 ep.name
 ```
 
-Only direct one-segment references are accepted. Calls, indexing, methods, macros, and chained fields are rejected.
-
-### Formatting
+Formatting concatenates one or more public atoms:
 
 ```rust
 fmt["prefix-", ep.id, "-", scope.region]
 ```
 
-`fmt[...]` concatenates one or more supported public expressions. Nesting is bounded to 64. Trailing comma is not accepted inside `fmt`.
-
-### Optional and repeated values
-
-Optional values are supported in query/header/value positions according to generated type behavior. Repeated query values accept iterable endpoint values and preserve order.
-
-### Security
-
-Secrets and credentials have no public-expression namespace. This prevents them from accidentally entering logical URLs, public headers, pagination identity, hooks, or generated rate-limit plans.
-
-### Display bounds
-
-A dynamic value used in host/path/query/header formatting must implement the required formatting trait. Merely participating in lexical rate limiting does not add a `Display` bound.
-
-## DSL: request shaping
+Calls, indexing, methods, macros, chained fields, secrets, and credentials are
+not public expressions. This prevents authentication material from entering
+safe URLs, public headers, descriptions, hooks, pagination identity, or
+generated rate-limit keys.
 
 ### Host
 
@@ -263,7 +237,8 @@ host [expr, ...];
 host off;
 ```
 
-Host replaces inherited generated labels. Static labels are macro-validated.
+Host replaces inherited generated labels. Static labels are validated as DNS
+labels.
 
 ### Path
 
@@ -273,7 +248,7 @@ path replace [expr, ...];
 path off;
 ```
 
-Normal path appends. Each expression becomes one encoded segment.
+Normal path clauses append. Each expression becomes one encoded URL segment.
 
 ### Query
 
@@ -286,7 +261,8 @@ query replace { ... }
 query off;
 ```
 
-Local keys are unique. Optional values append nothing; repeated values preserve order.
+Local keys are unique. Optional values append nothing; repeated values preserve
+their iteration order.
 
 ### Headers
 
@@ -299,156 +275,91 @@ headers replace { ... }
 headers off;
 ```
 
-Names are case-insensitive and validated. Reserved headers are rejected.
+Names are validated case-insensitively. Transport-owned and authentication
+headers are rejected.
 
 ### Inheritance
 
-- Host: replace/off.
-- Path: append/replace/off.
-- Query: modify/replace/off with remove.
-- Headers: modify/replace/off with remove.
-- Auth: modify/replace/off.
-- Timeout: set/off/inherit by omission.
-- Rate limit: additive lexical declaration only.
+- host: replace or off;
+- path: append, replace, or off;
+- query and headers: modify, replace, or off, with removals;
+- auth: modify, replace, or off;
+- timeout: set, off, or inherit by omission;
+- rate limits: additive lexical declarations.
 
-### Authentication separation
+Authentication query/header values are not public shaping. Core applies them
+only at the private native boundary after safe observation and limiter
+acquisition.
 
-Auth query/header values are not part of public query/header shaping. They are materialized only at the native boundary.
+## Authentication
 
-## DSL: bodies and responses
-
-### Body parameter
-
-```rust
-POST Create(body: Json<CreateInput>) -> Json<Item>;
-```
-
-The body parameter must be final and named `body`. Its Rust type must implement `RequestBodySpec`; the generated method argument type is `B::Input`.
-
-Built-ins:
-
-```rust
-Json<T>
-Text
-Bytes
-Stream<M>
-Multipart
-application-defined RequestBodySpec
-```
-
-`NoContent` is not a request body specification.
-
-### Response type
-
-The type after `->` must implement `ResponseBodySpec`.
-
-Built-ins:
-
-```rust
-Json<T>
-Text
-Bytes
-NoContent
-Stream<M>
-Records<D>
-application-defined ResponseBodySpec
-```
-
-### Type neutrality
-
-The macro stores the body as `Option<syn::Type>` and response as `syn::Type`. It does not recognize built-in or application type names semantically. Feature availability and compatibility are checked by Rust traits.
-
-### Pagination
-
-A page-capable response must implement `PageResponseSpec`, use buffered acquisition, and produce an `IntoIterator` output. Bytes, discard, streams, and records are not paginated automatically.
-
-### Features
-
-Feature-disabled types are unavailable and produce focused Rust/macro diagnostics. The macro does not silently substitute a different mode.
-
-## DSL: authentication
-
-### Credentials block
+Credentials and secrets are client configuration:
 
 ```rust
 credentials {
-    secret key: String;
-    credential api = api_key(secret.key);
+    secret api_key: String;
+    secret token: String;
+    secret user: String;
+    secret password: String;
+
+    credential keyed = api_key(secret.api_key);
     credential bearer_token = bearer(secret.token);
-    credential basic_login = basic(secret.user, secret.password);
-    credential acquired = endpoint Login;
+    credential login = basic(secret.user, secret.password);
+    credential acquired = endpoint auth.login;
     credential provider = custom crate::Provider;
 }
 ```
 
-Sources:
+The supported source forms are:
 
-- `api_key(secret.NAME)`
-- `bearer(secret.NAME)`
-- `basic(secret.USER, secret.PASSWORD)`
-- `endpoint EndpointName`
-- `custom RustTypePath`, where the type implements `CredentialProvider`
+- `api_key(secret.NAME)`;
+- `bearer(secret.NAME)`;
+- `basic(secret.USER, secret.PASSWORD)`;
+- `endpoint ENDPOINT_PATH`;
+- `custom RUST_TYPE`, where the type implements `CredentialProvider`.
 
-The custom type names the provider, not its material. Generated storage and
-authentication placement use `<Provider as CredentialProvider>::Material`.
-The macro does not recognize OAuth2 or any provider implementation name.
+The macro treats provider types as opaque and has no OAuth2-specific syntax.
+Construct helpers such as `OAuth2ClientCredentials` in Rust and supply them
+through the generated named client builder.
 
-### Placement
-
-```rust
-auth bearer credential;
-auth basic credential;
-auth header "X-Key" = credential;
-auth query "token" = credential;
-```
-
-Optional challenge:
+Place credentials lexically:
 
 ```rust
-challenge unauthorized
-challenge unauthorized_or_forbidden
-challenge never
+auth bearer bearer_token challenge unauthorized;
+auth basic login challenge unauthorized_or_forbidden;
+auth header "X-Key" = keyed challenge never;
+auth query "token" = keyed;
 ```
 
-### Composition
+Material types must match their placement. Public/authentication target
+collisions fail during request preparation. Native credential values are never
+available to the macro or semantic extensions.
 
-Several `auth` statements can appear contiguously in a layer.
+## Retry and timeout
 
-```rust
-auth replace bearer token;
-auth header "X-Key" = key;
-```
-
-At most one `replace`, and it precedes local placements. `auth off;` is exclusive.
-
-### Validation
-
-Credential material type must match placement: Basic requires `BasicCredential`; bearer/header/query require secret credential material where appropriate. Public header/query collisions and duplicate auth targets fail before send.
-
-## DSL: retry and timeout
-
-### Retry
-
-Client-only:
+Client declarations support:
 
 ```rust
 retry off;
 retry reqwest_default;
-retry custom crate::retry_factory;
 ```
 
-Default when omitted: off.
+Omission defaults to off. Custom transport retry is runtime policy and is not
+valid DSL:
 
-`retry custom` requires `dangerous-custom-retry` and a path returning the native retry
-builder. This declaration form is legacy and is removed by DSL v2; canonical code selects
-the policy with
-`.configure_http(|http| http.dangerous_custom_retry(retry_factory()))`.
+```rust
+let client = ExampleApi::builder()
+    .configure_http(|http| {
+        http.dangerous_custom_retry(retry_policy())
+    })
+    .build()?;
+```
 
-Native retry stays inside one Concord attempt and is separate from authentication recovery.
+That builder method requires the explicit `dangerous-custom-retry` feature.
+Native transport retry remains inside one Concord attempt and is distinct from
+the one-additional-attempt authentication recovery limit.
 
-### Timeout
-
-Layer syntax:
+Timeouts are available at client, scope, and endpoint layers:
 
 ```rust
 timeout 250ms;
@@ -458,15 +369,11 @@ timeout 1h;
 timeout off;
 ```
 
-Durations are positive base-10 integer literals with `ms`, `s`, `m`, or `h`. Overflow is rejected.
+Durations are positive base-10 integer literals with `ms`, `s`, `m`, or `h`.
+Omission inherits the parent selection. Request-local APIs can override,
+disable, or restore the generated selection.
 
-A request-local override can set, disable, or inherit the generated timeout.
-
-### Scope
-
-Retry cannot appear in a scope or endpoint. Timeout can be inherited and changed at client, scope, and endpoint layers.
-
-## DSL: pagination
+## Pagination
 
 ```rust
 paginate ControllerType {
@@ -476,40 +383,29 @@ paginate ControllerType {
 }
 ```
 
-### Controller type
+Any Rust controller type is accepted. The macro does not recognize built-in
+controller names.
 
-Any Rust type is accepted. The macro does not recognize offset, page, cursor, or custom semantics.
+Live bindings accept only direct `ep.FIELD` or `scope.FIELD` destinations.
+Fields and destinations are unique. They initialize from request state and are
+copied into each fresh sequential page request.
 
-### Live bindings
+Stable initializers accept:
 
-`bind` is accepted only for direct `ep.FIELD` or `scope.FIELD` destinations. Fields and destinations must be unique.
+- string, integer, or boolean literals;
+- direct `vars`, `scope`, or `ep` references;
+- approved simple Rust paths/constants.
 
-Bound fields:
+Shorthand, struct rest, calls, methods, closures, async blocks, arbitrary
+blocks, secrets, credentials, and indirect bindings are rejected. Rust checks
+field visibility, field types, controller trait bounds, and `Send`/`Sync`
+requirements.
 
-- initialize from request-local state once;
-- are copied into every fresh page endpoint clone.
+Pagination is available only to bodyless, buffered, page-capable response
+specifications. It produces the bounded, sequential, cycle-detecting,
+all-or-error `.paginate(limit)` terminal.
 
-### Stable initializers
-
-Accepted forms:
-
-- string/integer/boolean literal;
-- direct `vars`, `scope`, or `ep` value;
-- approved simple Rust path/const.
-
-No shorthand, rest syntax, call, method, closure, async block, arbitrary block, secret, credential, or indirect binding.
-
-### Rust checks
-
-Ordinary Rust reports missing/unknown/inaccessible fields, type mismatches, non-controller types, and non-`Send` controllers.
-
-### Endpoint restriction
-
-Pagination requires a bodyless endpoint and a page-capable buffered response. It generates a directly awaitable `.paginate(limit)` terminal.
-
-## DSL: rate limits
-
-### Rule
+## Rate limits
 
 ```rust
 rate_limit {
@@ -519,80 +415,55 @@ rate_limit {
 }
 ```
 
-`cost` is optional and defaults to 1. It must be positive and cannot exceed any window capacity. At least one positive window is required.
+`cost` is optional and defaults to 1. It is positive and cannot exceed any
+window capacity. A rule has at least one positive window. Window order is
+preserved.
 
-Durations use `ms`, `s`, `m`, or `h`.
+At most one rule exists at each client, scope, or endpoint layer. Effective
+plan order is client, outer scopes, inner scopes, then endpoint. Rules are
+additive; descendants cannot replace or disable ancestors.
 
-### Placement
-
-At most one rule per client, scope, or endpoint layer.
-
-Effective plan order:
-
-```text
-client
-outer scopes
-inner scopes
-endpoint
-```
-
-Rules add; descendants cannot replace, disable, or modify ancestors.
-
-### Observer
-
-Legacy, client-only, and unique:
+Observer and concrete limiter selection are runtime policy:
 
 ```rust
-rate_limit_observer crate::Observer;
+let client = ExampleApi::builder()
+    .configure_runtime(|runtime| {
+        runtime.rate_limiter(my_limiter)
+    })
+    .build()?;
 ```
 
-Canonical code installs the observer on a limiter instance through
-`ClientBuilder::configure_runtime`. DSL v2 removes this clause while retaining
-lexical quota declarations.
+`rate_limit_observer` is not DSL v2 syntax. With the façade governor feature,
+the façade composes the generated default limiter. An explicitly configured
+limiter takes precedence. Without either, non-empty generated plans fail
+closed.
 
-### Generated semantics
+## Diagnostics
 
-Each declaration uses a deterministic identity and global key. Runtime values, host, method, endpoint arguments, and pagination continuation do not enter generated keys.
+The macro diagnoses structural contract mistakes and leaves semantic Rust type
+mistakes to the compiler.
 
-Use prepared explicit `RateLimitRule` or a custom limiter for advanced keyed policy.
+Structural diagnostics include:
 
-## DSL: diagnostics
+- missing or repeated client declarations;
+- missing/duplicate/invalid base URLs;
+- non-snake scope or endpoint identifiers and duplicate child names;
+- duplicate clauses with both spans;
+- invalid or duplicate contract IDs;
+- inferred, attributed, defaulted, or multiple body roles;
+- invalid public expression namespaces and shaping literals;
+- duplicate query, header, authentication, pagination, and rate-limit entries;
+- removed aliases, OAuth-specific sources, custom retry DSL, and observer DSL.
 
-The macro aims to diagnose structural mistakes at the declaration and leave normal type mistakes to Rust.
+Rust diagnostics cover:
 
-### Structural diagnostics
+- missing body, response, provider, controller, or generated endpoint traits;
+- wrong input/output/material types;
+- feature-disabled types;
+- inaccessible or incorrectly typed controller fields;
+- unsupported endpoint capability methods;
+- generated bridge version mismatch.
 
-Examples:
-
-- missing, misplaced, or second client declarations and duplicate bases;
-- invalid fixed URL;
-- duplicate normalized generated names;
-- wrong clause order;
-- client-only declaration in scope/endpoint;
-- unsupported expression namespace;
-- invalid static host/path/header;
-- duplicate query/header/auth targets;
-- invalid credentials source shape;
-- invalid pagination field/binding grammar;
-- invalid lexical rate-limit cost/window;
-- unsupported structural syntax with a focused diagnostic.
-
-### Rust diagnostics
-
-Rust reports:
-
-- missing body/response trait;
-- wrong input/output type;
-- feature-disabled type;
-- inaccessible/missing controller field;
-- non-`Send` controller/input/output;
-- unsupported endpoint capability method;
-- core/macro generated contract mismatch.
-
-### Value safety
-
-Diagnostics should identify declarations, types, and categories, not runtime values. Secret and credential references are structural names only.
-
-### Trybuild
-
-The repository uses Trybuild for source-only compile-fail boundaries. Standalone Cargo fixtures are reserved for dependency graph, feature absence, renamed dependency, and package metadata cases.
+Diagnostics identify declarations, types, and safe structural categories. They
+must not contain runtime values, secrets, credential material, protected URLs,
+or native requests.

@@ -19,7 +19,7 @@ api! {
         base "http://local-name.example.test/";
     }
 
-    GET LocalName() -> crate::Json;
+    GET local_name() -> crate::Json;
 }
 
 #[test]
@@ -37,8 +37,8 @@ api! {
         base "http://extras-json.example.test/";
     }
 
-    GET Aliased() -> crate::RenamedJson<Vec<u32>>;
-    GET Qualified() -> concord::codec::Json<Vec<u32>>;
+    GET aliased() -> crate::RenamedJson<Vec<u32>>;
+    GET qualified() -> concord::codec::Json<Vec<u32>>;
 }
 
 #[cfg(feature = "json")]

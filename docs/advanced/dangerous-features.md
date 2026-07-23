@@ -70,7 +70,7 @@ let client = Api::builder()
     .build()?;
 ```
 
-The legacy `retry custom PATH` DSL form remains accepted only until DSL v2.
+Custom transport retry is runtime policy and has no DSL form.
 
 ### Why it is dangerous
 

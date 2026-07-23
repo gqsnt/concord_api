@@ -10,12 +10,12 @@ use crate::ast::{
 };
 use crate::model::{
     Api, Child, Client, CloneEligibility, Credential, CredentialSource, Endpoint, NormalizedConfig,
-    PaginationInitializer, PaginationValue, RawResponseCapability, RequiredArgument, ResolvedExpr,
-    Scope, Value, ValueReference, ValueShape,
+    PaginationInitializer, PaginationValue, RawResponseCapability, RequestBody, RequiredArgument,
+    ResolvedExpr, Scope, Value, ValueReference, ValueShape,
 };
 use crate::names::{canonical_ident, public_ident, to_snake_case};
 
-const GENERATED_CONTRACT_VERSION: u32 = 20;
+const GENERATED_CONTRACT_VERSION: u32 = 21;
 
 pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
     generate_client(&api.client, core_path)
@@ -37,10 +37,8 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
     let credential_summary = credential_summary(client);
     let rate_summary = if client.requires_limiter {
         "This client statically declares or attaches rate-limit rules and therefore requires functional or explicit no-op limiter selection."
-    } else if client.rate_observer.is_some() {
-        "This client declares a response-head rate-limit observer but no static rule."
     } else {
-        "This client declares no rate-limit rule or observer."
+        "This client declares no rate-limit rule."
     };
     let client_doc = format!(
         "Generated Concord client `{client_name}` with one fixed immutable public-value snapshot. {value_summary} {credential_summary} {retry_summary} {rate_summary}"
@@ -179,9 +177,6 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
         RetrySelection::ReqwestDefault => quote!(
             __concord_generated::__core::__private::default_http_config().retry_reqwest_default()
         ),
-        RetrySelection::Custom(path) => quote!(
-            __concord_generated::__core::__private::default_http_config_with_custom_retry(#path)
-        ),
     };
     let runtime_baseline = client.config.timeout.map_or_else(
         || quote!(__concord_generated::__core::__private::default_runtime_config()),
@@ -194,29 +189,12 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
             )
         },
     );
-    let custom_retry_assertion = matches!(&client.retry, RetrySelection::Custom(_)).then(|| {
-        quote!(
-            const _: () = __core::__private::assert_custom_retry_feature();
-        )
-    });
     let requires_limiter = client.requires_limiter;
-    let prepare_runtime = client.rate_observer.as_ref().map_or_else(
-        || {
-            quote!(
-                __concord_generated::__core::__private::prepare_generated_rate_limits(
-                    runtime,
-                    #requires_limiter,
-                )?
-            )
-        },
-        |observer| {
-            quote!(
-                __concord_generated::__core::__private::prepare_generated_rate_limits_with_observer::<#observer>(
-                    runtime,
-                    #requires_limiter,
-                )?
-            )
-        },
+    let prepare_runtime = quote!(
+        __concord_generated::__core::__private::prepare_generated_rate_limits(
+            runtime,
+            #requires_limiter,
+        )?
     );
 
     let scope_tree = generate_scope_tree(client, &client.children, &[], core_path);
@@ -270,7 +248,6 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
                 pub(super) use #core_path as __core;
 
                 const _: () = __core::__private::assert_generated_contract(#contract_version);
-                #custom_retry_assertion
             }
 
             mod __concord_endpoint_seal {
@@ -1378,48 +1355,48 @@ fn generate_endpoint_method(
         super_chain(scopes.len() + 1)
     };
     let specification_module = specification_module_name(client);
-    let required = endpoint
+    let body_type = endpoint.body.as_ref().map(|_| {
+        let body_specification = body_specification_name(endpoint);
+        quote!(
+            <#invocation_path::#specification_module::#body_specification
+                as #core_path::advanced::RequestBodySpec>::Input
+        )
+    });
+    let parameters = endpoint
         .surface
         .required_arguments
         .iter()
-        .filter_map(|argument| match argument {
-            RequiredArgument::Parameter(index) => Some(&endpoint.parameters[*index]),
-            RequiredArgument::Body => None,
+        .map(|argument| match argument {
+            RequiredArgument::Parameter(index) => {
+                let value = &endpoint.parameters[*index];
+                let name = &value.name;
+                let ty = &value.ty;
+                quote!(#name: #ty,)
+            }
+            RequiredArgument::Body => {
+                let name = &endpoint.body.as_ref().expect("body argument").name;
+                let ty = body_type.as_ref().expect("body input type");
+                quote!(#name: #ty,)
+            }
         })
         .collect::<Vec<_>>();
-    let parameters = required
-        .iter()
-        .map(|value| {
-            let name = &value.name;
-            let ty = &value.ty;
-            quote!(#name: #ty,)
-        })
-        .collect::<Vec<_>>();
-    let body_type = endpoint
-        .surface
-        .required_arguments
-        .contains(&RequiredArgument::Body)
-        .then(|| {
-            let body_specification = body_specification_name(endpoint);
-            quote!(
-                <#invocation_path::#specification_module::#body_specification
-                    as #core_path::advanced::RequestBodySpec>::Input
-            )
-        });
-    let body_parameter = body_type.as_ref().map(|ty| quote!(body: #ty,));
     let scope_arguments = if on_client {
         quote!()
     } else {
         facade_scope_argument_clones(scopes)
     };
-    let endpoint_arguments = required
+    let endpoint_arguments = endpoint
+        .surface
+        .required_arguments
         .iter()
-        .map(|value| {
-            let name = &value.name;
+        .map(|argument| {
+            let name = match argument {
+                RequiredArgument::Parameter(index) => &endpoint.parameters[*index].name,
+                RequiredArgument::Body => &endpoint.body.as_ref().expect("body argument").name,
+            };
             quote!(#name,)
         })
         .collect::<Vec<_>>();
-    let body_argument = body_type.as_ref().map(|_| quote!(body,));
     let client_expression = if on_client {
         quote!(self)
     } else {
@@ -1432,12 +1409,10 @@ fn generate_endpoint_method(
         pub fn #method(
             &self,
             #(#parameters)*
-            #body_parameter
         ) -> #request_type {
             let endpoint = #endpoint_type::__concord_from_facade(
                 #scope_arguments
                 #(#endpoint_arguments)*
-                #body_argument
             );
             (#client_expression).request(endpoint)
         }
@@ -1463,6 +1438,7 @@ fn generate_endpoint(
     let response_specification = response_specification_name(endpoint);
     let response = quote!(#invocation_path::#specification_module::#response_specification);
     let endpoint_identity = endpoint_identity(client, scopes, endpoint);
+    let endpoint_contract_id = &endpoint.contract_id.value;
     let endpoint_doc = endpoint_type_doc(client, scopes, endpoint);
     let constructor_doc = format!(
         "Creates an explicit `{endpoint_identity}` snapshot. Required enclosing scope values are outer-to-inner; optional/defaulted controls are inherent methods."
@@ -1665,7 +1641,7 @@ fn generate_endpoint(
 
             fn request_meta(&self) -> #generated_core::__private::RequestMeta {
                 #generated_core::__private::RequestMeta::new(
-                    #endpoint_identity,
+                    #endpoint_contract_id,
                     #method,
                     #timeout,
                 )
@@ -1932,22 +1908,31 @@ fn explicit_constructor_parameters(
         })
         .collect::<Vec<_>>();
     let endpoint_parameters = endpoint
-        .parameters
+        .surface
+        .required_arguments
         .iter()
-        .filter(|value| value.is_required())
-        .enumerate()
-        .map(|(index, value)| {
-            let binding = &endpoint_bindings[index];
-            let ty = &value.ty;
-            quote!(#binding: #ty,)
+        .map(|argument| match argument {
+            RequiredArgument::Parameter(index) => {
+                let value = &endpoint.parameters[*index];
+                let binding_index = endpoint
+                    .parameters
+                    .iter()
+                    .take(*index + 1)
+                    .filter(|value| value.is_required())
+                    .count()
+                    - 1;
+                let binding = &endpoint_bindings[binding_index];
+                let ty = &value.ty;
+                quote!(#binding: #ty,)
+            }
+            RequiredArgument::Body => {
+                let binding = body_binding.expect("body binding");
+                let ty = request_body_input_type(body_specification, core_path);
+                quote!(#binding: #ty,)
+            }
         })
         .collect::<Vec<_>>();
-    let body = endpoint.body.as_ref().map(|_| {
-        let binding = body_binding.expect("body binding");
-        let ty = request_body_input_type(body_specification, core_path);
-        quote!(#binding: #ty,)
-    });
-    quote!(#(#scope_parameters)* #(#endpoint_parameters)* #body)
+    quote!(#(#scope_parameters)* #(#endpoint_parameters)*)
 }
 
 fn initialize_explicit_endpoint(
@@ -2017,7 +2002,7 @@ fn initialize_explicit_endpoint(
         .collect::<Vec<_>>();
     let fields = endpoint_all_snapshot_field_initializers(scopes, endpoint);
     let body = body_constructor(
-        endpoint.body.as_ref(),
+        endpoint.body.as_ref().map(|body| &body.ty),
         body_binding,
         generated_core,
         core_path,
@@ -2042,21 +2027,23 @@ fn endpoint_facade_constructor_parameters(
 ) -> TokenStream {
     let scope_parameters = facade_scope_fields_as_parameters(scopes);
     let endpoint_parameters = endpoint
-        .parameters
+        .surface
+        .required_arguments
         .iter()
-        .enumerate()
-        .filter(|(_, value)| value.is_required())
-        .map(|(index, value)| {
-            let binding = endpoint_constructor_binding(index, value);
-            let ty = &value.ty;
-            quote!(#binding: #ty,)
+        .map(|argument| match argument {
+            RequiredArgument::Parameter(index) => {
+                let value = &endpoint.parameters[*index];
+                let binding = endpoint_constructor_binding(*index, value);
+                let ty = &value.ty;
+                quote!(#binding: #ty,)
+            }
+            RequiredArgument::Body => {
+                let ty = request_body_input_type(body_specification, core_path);
+                quote!(__concord_body_input: #ty,)
+            }
         })
         .collect::<Vec<_>>();
-    let body = endpoint.body.as_ref().map(|_| {
-        let ty = request_body_input_type(body_specification, core_path);
-        quote!(__concord_body_input: #ty,)
-    });
-    quote!(#scope_parameters #(#endpoint_parameters)* #body)
+    quote!(#scope_parameters #(#endpoint_parameters)*)
 }
 
 fn initialize_facade_endpoint(
@@ -2124,7 +2111,7 @@ fn initialize_facade_endpoint(
         .as_ref()
         .map(|_| Ident::new("__concord_body_input", Span::call_site()));
     let body = body_constructor(
-        endpoint.body.as_ref(),
+        endpoint.body.as_ref().map(|body| &body.ty),
         body_binding.as_ref(),
         generated_core,
         core_path,
@@ -2826,7 +2813,7 @@ fn rate_limit_identity_constants(client: &Client) -> TokenStream {
         let id = syn::LitStr::new(&id, Span::call_site());
         quote! {
             #[doc(hidden)]
-            const #identity: &str = ::std::concat!(::std::module_path!(), "::", #id);
+            const #identity: &str = #id;
         }
     });
     quote!(#(#constants)*)
@@ -3128,7 +3115,10 @@ fn explicit_parameter_bindings(
         .iter()
         .filter(|value| value.is_required())
         .collect::<Vec<_>>();
-    let body_name = endpoint.body.as_ref().map(|_| "body".to_owned());
+    let body_name = endpoint
+        .body
+        .as_ref()
+        .map(|body| canonical_ident(&body.name));
     let original = scope_values
         .iter()
         .chain(endpoint_values.iter())
@@ -3165,7 +3155,10 @@ fn explicit_parameter_bindings(
         .iter()
         .map(|value| allocate("endpoint", &value.name))
         .collect();
-    let body = body_name.map(|_| allocate("request", &Ident::new("body", Span::call_site())));
+    let body = endpoint
+        .body
+        .as_ref()
+        .map(|body| allocate("request", &body.name));
     (scope, endpoint_bindings, body)
 }
 
@@ -3207,8 +3200,9 @@ fn endpoint_method_doc(client: &Client, scopes: &[&Scope], endpoint: &Endpoint) 
     let values = value_category_summary(&endpoint.parameters, "endpoint");
     let configuration = endpoint_configuration_summary(client, endpoint);
     let features = endpoint_feature_summary(client, endpoint);
+    let contract_id = contract_identity_doc(endpoint);
     format!(
-        "Creates a side-effect-free pending `{method}` request for `{identity}` at `{route}`. {values} {control_doc} {configuration} {} Direct await uses the `{}` response specification. {} {features}",
+        "Creates a side-effect-free pending `{method}` request for `{identity}` at `{route}`. {contract_id} {values} {control_doc} {configuration} {} Direct await uses the `{}` response specification. {} {features}",
         request_body_doc(endpoint.body.as_ref()),
         response_name(&endpoint.response),
         response_doc(&endpoint.response),
@@ -3238,8 +3232,9 @@ fn endpoint_type_doc(client: &Client, scopes: &[&Scope], endpoint: &Endpoint) ->
     };
     let configuration = endpoint_configuration_summary(client, endpoint);
     let features = endpoint_feature_summary(client, endpoint);
+    let contract_id = contract_identity_doc(endpoint);
     format!(
-        "Explicit `{method}` endpoint snapshot for `{identity}` at route `{route}`. Its predictable public path is `{public_path}` and it executes through the same client request path as its facade method. {scope_values} {endpoint_values} {configuration} {} Direct await uses the `{}` response specification. {} {features}",
+        "Explicit `{method}` endpoint snapshot for `{identity}` at route `{route}`. Its predictable public path is `{public_path}` and it executes through the same client request path as its facade method. {contract_id} {scope_values} {endpoint_values} {configuration} {} Direct await uses the `{}` response specification. {} {features}",
         request_body_doc(endpoint.body.as_ref()),
         response_name(&endpoint.response),
         response_doc(&endpoint.response),
@@ -3249,6 +3244,20 @@ fn endpoint_type_doc(client: &Client, scopes: &[&Scope], endpoint: &Endpoint) ->
 fn endpoint_identity(client: &Client, scopes: &[&Scope], endpoint: &Endpoint) -> String {
     let _ = (client, scopes);
     endpoint.surface.docs_identity.clone()
+}
+
+fn contract_identity_doc(endpoint: &Endpoint) -> String {
+    if endpoint.contract_id.explicit {
+        format!(
+            "Its explicit stable contract ID is `{}`.",
+            endpoint.contract_id.value
+        )
+    } else {
+        format!(
+            "Its deterministic source-path contract ID is `{}`; renaming the client, scope, or endpoint changes this default.",
+            endpoint.contract_id.value
+        )
+    }
 }
 
 fn route_shape(path: &[ResolvedExpr]) -> String {
@@ -3308,9 +3317,6 @@ fn retry_summary(retry: &RetrySelection) -> &'static str {
         RetrySelection::Disabled => "Application native retry is disabled.",
         RetrySelection::ReqwestDefault => {
             "Reqwest default native retry is explicitly selected; an HTTP builder retry method may replace it."
-        }
-        RetrySelection::Custom(_) => {
-            "A dangerous custom native retry factory is selected and requires `dangerous-custom-retry`; an HTTP builder retry method may replace it before factory evaluation."
         }
     }
 }
@@ -3449,12 +3455,13 @@ fn request_body_input_type(body: &TokenStream, core_path: &TokenStream) -> Token
     quote!(<#body as #core_path::advanced::RequestBodySpec>::Input)
 }
 
-fn request_body_doc(body: Option<&Type>) -> String {
+fn request_body_doc(body: Option<&RequestBody>) -> String {
     match body {
         None => "The request is bodyless.".to_owned(),
         Some(body) => format!(
-            "The final `body` argument is the input of request specification `{}`. Concord obtains structural metadata before the hook and prepares the managed body only after hook approval.",
-            body.to_token_stream()
+            "The declared `{}` `#[body]` argument is the input of request specification `{}`. Concord obtains structural metadata before the hook and prepares the managed body only after hook approval.",
+            canonical_ident(&body.name),
+            body.ty.to_token_stream()
         ),
     }
 }
@@ -3476,6 +3483,7 @@ fn generate_specification_aliases(children: &[Child]) -> TokenStream {
                 let response = &endpoint.response;
                 let body = endpoint.body.as_ref().map(|body| {
                     let body_name = body_specification_name(endpoint);
+                    let body = &body.ty;
                     quote!(#[doc(hidden)] pub type #body_name = #body;)
                 });
                 quote! {
@@ -3652,11 +3660,11 @@ mod tests {
                 base "https://example.test";
                 vars { tenant: String; }
             }
-            GET Root(id: String, verbose: Option<bool>) -> Bytes {
+            GET root(id: String, verbose: Option<bool>) -> Bytes {
                 path [vars.tenant, ep.id];
             }
             scope resources(region: String) {
-                GET List() -> NoContent;
+                GET list() -> NoContent;
             }
         })
         .expect("AST");

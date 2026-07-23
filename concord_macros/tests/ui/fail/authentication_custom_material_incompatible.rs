@@ -29,7 +29,7 @@ api! {
         }
     }
 
-    GET Protected() -> Bytes {
+    GET protected() -> Bytes {
         auth bearer session challenge never;
     }
 }

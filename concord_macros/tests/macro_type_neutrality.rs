@@ -64,14 +64,21 @@ fn production_macro_model_is_type_shaped_and_semantically_neutral() {
     }
 
     let ast = production_source(&root.join("src/ast.rs"));
+    assert!(
+        ast.contains("pub(crate) body: Option<BodyDecl>")
+            && ast.contains("pub(crate) struct BodyDecl")
+            && ast.contains("pub(crate) ty: Type")
+            && ast.contains("pub(crate) response: Type"),
+        "AST must store explicit body roles and response specifications as syn::Type"
+    );
     let model = production_source(&root.join("src/model.rs"));
-    for (owner, source) in [("AST", ast), ("normalized model", model)] {
-        assert!(
-            source.contains("pub(crate) body: Option<Type>")
-                && source.contains("pub(crate) response: Type"),
-            "{owner} must store request and response specifications as syn::Type"
-        );
-    }
+    assert!(
+        model.contains("pub(crate) body: Option<RequestBody>")
+            && model.contains("pub(crate) struct RequestBody")
+            && model.contains("pub(crate) ty: Type")
+            && model.contains("pub(crate) response: Type"),
+        "normalized model must store explicit body roles and response specifications as syn::Type"
+    );
 
     let codegen = production_source(&root.join("src/codegen.rs"));
     for required in ["RequestBodySpec", "ResponseBodySpec", "PageResponseSpec"] {

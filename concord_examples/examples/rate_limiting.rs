@@ -14,13 +14,13 @@ api! {
         rate_limit { 500 / 10s; }
     }
 
-    GET Item(item: String) -> Bytes {
+    GET item(item: String) -> Bytes {
         rate_limit {
             cost 2;
             100 / 1m;
         }
     }
-    GET Public() -> Bytes;
+    GET public() -> Bytes;
 }
 
 fn main() -> Result<(), concord::prelude::ClientBuildError> {

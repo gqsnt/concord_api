@@ -29,14 +29,14 @@ api! {
         }
     }
 
-    GET Status(verbose: Option<bool>) -> Bytes {
+    GET status(verbose: Option<bool>) -> Bytes {
         path ["status"];
         query { "verbose" = ep.verbose; }
         auth off;
         timeout off;
     }
 
-    scope Regions(region: String, language: Option<String>) {
+    scope regions(region: String, language: Option<String>) {
         host [scope.region, "api"];
         path ["regions", scope.region];
         query { "language" = scope.language; }
@@ -44,7 +44,7 @@ api! {
         auth header "X-Api-Key" = application_key challenge never;
         timeout 5s;
 
-        METHOD("PROPFIND") Resource(id: String, tags: Vec<String>) as fetch -> Text {
+        METHOD("PROPFIND") fetch(id: String, tags: Vec<String>) -> Text {
             path [fmt["resource-", ep.id]];
             query { "tag" = ep.tags; }
             headers { "Accept-Language" = scope.language; }
@@ -58,7 +58,7 @@ api! {
         retry reqwest_default;
     }
 
-    GET Health() -> NoContent;
+    GET health() -> NoContent;
 }
 
 fn main() -> Result<(), concord::prelude::ClientBuildError> {
@@ -67,16 +67,16 @@ fn main() -> Result<(), concord::prelude::ClientBuildError> {
         .api_key(concord::SecretString::new("example-api-key"))
         .build()?;
     let _: reference_api::StatusRequest = client.status().verbose(true);
-    let _: reference_api::regions::ResourceRequest = client
+    let _: reference_api::regions::FetchRequest = client
         .regions("eu-west".to_owned())
         .language("fr".to_owned())
         .fetch("42".to_owned(), vec!["stable".to_owned()]);
-    let endpoint = reference_api::regions::Resource::new(
+    let endpoint = reference_api::regions::Fetch::new(
         "eu-west".to_owned(),
         "42".to_owned(),
         vec!["stable".to_owned()],
     );
-    let _: reference_api::regions::ResourceRequest =
+    let _: reference_api::regions::FetchRequest =
         client.request(endpoint.language("fr".to_owned()));
     let retry_client = ReqwestRetryReference::builder().build()?;
     let _: reqwest_retry_reference::HealthRequest = retry_client.health();

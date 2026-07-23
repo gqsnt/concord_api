@@ -10,7 +10,7 @@ api! {
         base "https://prepared.example.test/";
     }
 
-    GET Generated() -> NoContent;
+    GET generated() -> NoContent;
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

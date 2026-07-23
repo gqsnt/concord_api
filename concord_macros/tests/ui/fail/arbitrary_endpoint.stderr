@@ -14,7 +14,7 @@ help: the following other types implement trait `Endpoint`
  5 | ||         base "https://typed.example.test";
 ...  ||
  9 | ||         path ["health"];
-10 | ||         GET Ping() -> NoContent;
+10 | ||         GET ping() -> NoContent;
    | ||________________^ `Ping`
 11 | |      }
 12 | |  }

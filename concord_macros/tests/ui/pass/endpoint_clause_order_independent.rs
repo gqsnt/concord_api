@@ -5,7 +5,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read() -> Bytes {
+    GET read() -> Bytes {
         rate_limit { 1 / 1s; }
         timeout 1s;
     }

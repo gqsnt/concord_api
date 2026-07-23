@@ -29,7 +29,7 @@ api! {
         base "http://pagination-offset.example.test/v1/";
     }
 
-    GET Items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
+    GET items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
         path ["items"];
         query {
             "offset" = ep.offset;
@@ -47,7 +47,7 @@ api! {
         base "http://pagination-page.example.test/v1/";
     }
 
-    GET Items(page: std::num::NonZeroU64, per_page: std::num::NonZeroU32) -> Json<Vec<u32>> {
+    GET items(page: std::num::NonZeroU64, per_page: std::num::NonZeroU32) -> Json<Vec<u32>> {
         path ["items"];
         query {
             "page" = ep.page;
@@ -134,7 +134,7 @@ api! {
         }
     }
 
-    GET Items(offset: crate::CountedOffset, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
+    GET items(offset: crate::CountedOffset, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
         path ["items"];
         query {
             "offset" = ep.offset;
@@ -200,7 +200,7 @@ api! {
         base "http://pagination-custom-response.example.test/v1/";
     }
 
-    GET Items(offset: u64, limit: std::num::NonZeroU32) -> crate::CustomPageSpec {
+    GET items(offset: u64, limit: std::num::NonZeroU32) -> crate::CustomPageSpec {
         path ["items"];
         query {
             "offset" = ep.offset;
@@ -313,7 +313,7 @@ api! {
         base "http://pagination-cursor.example.test/v1/";
     }
 
-    GET Items(cursor: Option<String>) -> crate::VendorPageCodec {
+    GET items(cursor: Option<String>) -> crate::VendorPageCodec {
         path ["items"];
         query {
             "cursor" = ep.cursor;
@@ -368,7 +368,7 @@ api! {
         base "http://pagination-custom.example.test/v1/";
     }
 
-    GET Items(cursor: Option<String>, region: String) -> crate::VendorPageCodec {
+    GET items(cursor: Option<String>, region: String) -> crate::VendorPageCodec {
         path ["items"];
         query { "cursor" = ep.cursor; }
         headers { "x-region" = ep.region; }
@@ -392,7 +392,7 @@ api! {
         base "http://pagination-zero.example.test/v1/";
     }
 
-    GET Items() -> crate::VendorPageCodec {
+    GET items() -> crate::VendorPageCodec {
         paginate crate::ZeroController {}
     }
 }
@@ -402,7 +402,7 @@ api! {
         base "http://pagination-non-clone.example.test/v1/";
     }
 
-    GET Items() -> crate::NonClonePageCodec {
+    GET items() -> crate::NonClonePageCodec {
         paginate crate::OneNonClonePage {
             marker: crate::NOT_SYNC_MARKER,
         }
@@ -414,11 +414,11 @@ api! {
         base "http://pagination-nested.example.test/v1/";
     }
 
-    scope Organizations(region: String) {
+    scope organizations(region: String) {
         path ["organizations", scope.region];
-        scope Repositories(repository: String) {
+        scope repositories(repository: String) {
             path ["repositories", scope.repository];
-            GET Entries(cursor: Option<String>) as fetch -> crate::VendorPageCodec {
+            GET fetch(cursor: Option<String>) -> crate::VendorPageCodec {
                 path ["entries"];
                 query { "cursor" = ep.cursor; }
                 headers { "x-region" = scope.region; }
@@ -437,18 +437,18 @@ api! {
         base "http://pagination-collision.example.test/v1/";
     }
 
-    scope Left() {
+    scope left() {
         path ["left"];
-        GET Items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
+        GET items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
             paginate crate::support::OffsetController {
                 offset: bind ep.offset,
                 page_size: bind ep.limit,
             }
         }
     }
-    scope Right() {
+    scope right() {
         path ["right"];
-        GET Items(page: std::num::NonZeroU64, per_page: std::num::NonZeroU32) -> Json<Vec<u8>> {
+        GET items(page: std::num::NonZeroU64, per_page: std::num::NonZeroU32) -> Json<Vec<u8>> {
             paginate crate::support::PageController {
                 page: bind ep.page,
                 page_size: bind ep.per_page,
@@ -462,7 +462,7 @@ api! {
         base "http://pagination-rate.example.test/v1/";
     }
 
-    GET Items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
+    GET items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
         host [ep.offset];
         path ["items", ep.offset];
         query {
@@ -487,7 +487,7 @@ mod repeated_nested_expansion {
             base "http://pagination-nested-macro.example.test/v1/";
         }
 
-        GET Items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
+        GET items(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
             paginate crate::support::OffsetController {
                 offset: bind ep.offset,
                 page_size: bind ep.limit,

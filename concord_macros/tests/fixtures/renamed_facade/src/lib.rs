@@ -80,20 +80,20 @@ api! {
         scope_limit: u32 = 50,
     ) {
         path ["scopes", scope.scope_value, "resources"];
-        POST ById(
+        POST by_id(
             endpoint_value: String,
             verbose: Option<bool>,
             limit: u32 = 10,
-            body: Text,
+            #[body] body: Text,
         ) -> Text {
             path [ep.endpoint_value];
             auth header "X-Api-Key" = application_key;
         }
-        POST Custom(body: crate::WireCodec) -> crate::WireCodec;
-        POST StreamUpload(body: Stream<OctetStream>) -> Bytes;
-        GET StreamDownload() -> Stream<OctetStream>;
-        POST MultipartUpload(body: Multipart) -> NoContent;
-        GET Pages(cursor: Option<String>) -> crate::PageCodec {
+        POST custom(#[body] body: crate::WireCodec) -> crate::WireCodec;
+        POST stream_upload(#[body] body: Stream<OctetStream>) -> Bytes;
+        GET stream_download() -> Stream<OctetStream>;
+        POST multipart_upload(#[body] body: Multipart) -> NoContent;
+        GET pages(cursor: Option<String>) -> crate::PageCodec {
             query { "cursor" = ep.cursor; }
             paginate crate::RenamedController {
                 cursor: bind ep.cursor,
@@ -111,7 +111,7 @@ api! {
         rate_limit { 10 / 1m; }
     }
 
-    GET Read() -> Bytes;
+    GET read() -> Bytes;
 }
 
 pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {

@@ -28,9 +28,9 @@ api! {
 
     scope health() {
         path ["health"];
-        GET Bytes() -> Bytes;
-        GET Ping() -> NoContent;
-        GET Item(id: String) -> Bytes {
+        GET bytes() -> Bytes;
+        GET ping() -> NoContent;
+        GET item(id: String) -> Bytes {
             path ["items", ep.id];
         }
     }
@@ -49,11 +49,11 @@ api! {
 
     scope transfers() {
         path ["transfers"];
-        POST Upload(body: Stream<OctetStream>) -> Bytes;
-        POST VendorUpload(body: Stream<crate::VendorStreamMedia>) -> Bytes;
-        GET Download() -> Stream<OctetStream>;
-        GET VendorDownload() -> Stream<crate::VendorStreamMedia>;
-        POST MultipartUpload(body: Multipart) -> Bytes;
+        POST upload(#[body] body: Stream<OctetStream>) -> Bytes;
+        POST vendor_upload(#[body] body: Stream<crate::VendorStreamMedia>) -> Bytes;
+        GET download() -> Stream<OctetStream>;
+        GET vendor_download() -> Stream<crate::VendorStreamMedia>;
+        POST multipart_upload(#[body] body: Multipart) -> Bytes;
     }
 }
 
@@ -97,13 +97,13 @@ api! {
 
     scope messages() {
         path ["messages"];
-        POST TextEcho(body: Text) -> Text;
-        POST JsonEcho(body: Json<Vec<u32>>) -> Json<Vec<u32>>;
-        POST CustomEcho(body: crate::WireCodec) -> crate::WireCodec;
-        POST BytesEcho(body: Text) -> Bytes;
-        POST RawBytes(body: Bytes) -> Bytes;
-        POST ManagedBody(body: RequestBody) -> Bytes;
-        POST NoContentEcho(body: Text) -> NoContent;
+        POST text_echo(#[body] body: Text) -> Text;
+        POST json_echo(#[body] body: Json<Vec<u32>>) -> Json<Vec<u32>>;
+        POST custom_echo(#[body] body: crate::WireCodec) -> crate::WireCodec;
+        POST bytes_echo(#[body] body: Text) -> Bytes;
+        POST raw_bytes(#[body] body: Bytes) -> Bytes;
+        POST managed_body(#[body] body: RequestBody) -> Bytes;
+        POST no_content_echo(#[body] body: Text) -> NoContent;
     }
 }
 
@@ -126,10 +126,10 @@ api! {
 
     scope resources(scope_value: crate::CountingValue) {
         path ["scopes", scope.scope_value, "resources"];
-        GET ById(endpoint_value: crate::CountingValue) -> Bytes {
+        GET by_id(endpoint_value: crate::CountingValue) -> Bytes {
             path [ep.endpoint_value];
         }
-        GET Ping() -> NoContent;
+        GET ping() -> NoContent;
     }
 }
 
@@ -144,10 +144,10 @@ mod nested_case {
 
             scope health() {
                 path ["health"];
-                GET Ping() -> NoContent;
-                POST Echo(body: Text) -> Text;
-                POST Upload(body: Stream<OctetStream>) -> NoContent;
-                GET Download() -> Stream<OctetStream>;
+                GET ping() -> NoContent;
+                POST echo(#[body] body: Text) -> Text;
+                POST upload(#[body] body: Stream<OctetStream>) -> NoContent;
+                GET download() -> Stream<OctetStream>;
             }
         }
     }
@@ -174,9 +174,9 @@ mod repeated_case {
 
         scope health() {
             path ["health"];
-            GET Ping() -> NoContent;
-            POST Echo(body: Text) -> Text;
-            GET Download() -> Stream<OctetStream>;
+            GET ping() -> NoContent;
+            POST echo(#[body] body: Text) -> Text;
+            GET download() -> Stream<OctetStream>;
         }
     }
 
@@ -187,9 +187,9 @@ mod repeated_case {
 
         scope health() {
             path ["health"];
-            GET Ping() -> NoContent;
-            POST Echo(body: Text) -> Text;
-            GET Download() -> Stream<OctetStream>;
+            GET ping() -> NoContent;
+            POST echo(#[body] body: Text) -> Text;
+            GET download() -> Stream<OctetStream>;
         }
     }
 

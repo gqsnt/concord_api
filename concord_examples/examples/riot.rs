@@ -806,7 +806,7 @@ api! {
         timeout 20s;
     }
 
-    scope Platform() {
+    scope platform() {
         host [vars.platform, "api"];
         path ["lol"];
         rate_limit {
@@ -821,20 +821,20 @@ api! {
                 1200000 / 10m;
             }
 
-            GET MasteriesByPuuid(puuid: String) as masteries_by_puuid -> Json<Vec<ChampionMasteryDto>> {
+            GET masteries_by_puuid(puuid: String) -> Json<Vec<ChampionMasteryDto>> {
                 path ["champion-masteries", "by-puuid", ep.puuid];
             }
 
-            GET MasteryByChampion(puuid: String, champion_id: i64) as mastery_by_champion -> Json<ChampionMasteryDto> {
+            GET mastery_by_champion(puuid: String, champion_id: i64) -> Json<ChampionMasteryDto> {
                 path ["champion-masteries", "by-puuid", ep.puuid, "by-champion", ep.champion_id];
             }
 
-            GET TopMasteriesByPuuid(puuid: String, count: Option<u32>) as top_masteries_by_puuid -> Json<Vec<ChampionMasteryDto>> {
+            GET top_masteries_by_puuid(puuid: String, count: Option<u32>) -> Json<Vec<ChampionMasteryDto>> {
                 path ["champion-masteries", "by-puuid", ep.puuid, "top"];
                 query { "count" = ep.count; }
             }
 
-            GET MasteryScoreByPuuid(puuid: String) as mastery_score_by_puuid -> Json<i32> {
+            GET mastery_score_by_puuid(puuid: String) -> Json<i32> {
                 path ["scores", "by-puuid", ep.puuid];
             }
         }
@@ -842,7 +842,7 @@ api! {
         scope champion_v3() {
             path ["platform", "v3"];
 
-            GET ChampionRotations() as champion_rotations -> Json<ChampionRotationsDto> {
+            GET champion_rotations() -> Json<ChampionRotationsDto> {
                 path ["champion-rotations"];
                 rate_limit {
                     20000 / 10s;
@@ -854,7 +854,7 @@ api! {
         scope clash_v1() {
             path ["clash", "v1"];
 
-            GET PlayersByPuuid(puuid: String) as clash_players_by_puuid -> Json<Vec<ClashPlayerDto>> {
+            GET clash_players_by_puuid(puuid: String) -> Json<Vec<ClashPlayerDto>> {
                 path ["players", "by-puuid", ep.puuid];
                 rate_limit {
                     20000 / 10s;
@@ -862,22 +862,22 @@ api! {
                 }
             }
 
-            GET Team(team_id: String) as clash_team -> Json<ClashTeamDto> {
+            GET clash_team(team_id: String) -> Json<ClashTeamDto> {
                 path ["teams", ep.team_id];
                 rate_limit { 200 / 1m; }
             }
 
-            GET TournamentByTeam(team_id: String) as clash_tournament_by_team -> Json<ClashTournamentDto> {
+            GET clash_tournament_by_team(team_id: String) -> Json<ClashTournamentDto> {
                 path ["tournaments", "by-team", ep.team_id];
                 rate_limit { 200 / 1m; }
             }
 
-            GET Tournament(tournament_id: i64) as clash_tournament -> Json<ClashTournamentDto> {
+            GET clash_tournament(tournament_id: i64) -> Json<ClashTournamentDto> {
                 path ["tournaments", ep.tournament_id];
                 rate_limit { 10 / 1m; }
             }
 
-            GET Tournaments() as clash_tournaments -> Json<Vec<ClashTournamentDto>> {
+            GET clash_tournaments() -> Json<Vec<ClashTournamentDto>> {
                 path ["tournaments"];
                 rate_limit { 10 / 1m; }
             }
@@ -886,7 +886,7 @@ api! {
         scope league_v4() {
             path ["league", "v4"];
 
-            GET ChallengerByQueue(queue: crate::LeagueQueue) as challenger_by_queue -> Json<LeagueListDto> {
+            GET challenger_by_queue(queue: crate::LeagueQueue) -> Json<LeagueListDto> {
                 path ["challengerleagues", "by-queue", ep.queue];
                 rate_limit {
                     30 / 10s;
@@ -894,7 +894,7 @@ api! {
                 }
             }
 
-            GET GrandmasterByQueue(queue: crate::LeagueQueue) as grandmaster_by_queue -> Json<LeagueListDto> {
+            GET grandmaster_by_queue(queue: crate::LeagueQueue) -> Json<LeagueListDto> {
                 path ["grandmasterleagues", "by-queue", ep.queue];
                 rate_limit {
                     30 / 10s;
@@ -902,7 +902,7 @@ api! {
                 }
             }
 
-            GET MasterByQueue(queue: crate::LeagueQueue) as master_by_queue -> Json<LeagueListDto> {
+            GET master_by_queue(queue: crate::LeagueQueue) -> Json<LeagueListDto> {
                 path ["masterleagues", "by-queue", ep.queue];
                 rate_limit {
                     30 / 10s;
@@ -910,18 +910,18 @@ api! {
                 }
             }
 
-            GET Entries(
+            GET league_entries(
                 queue: crate::LeagueQueue,
                 tier: crate::LeagueTier,
                 division: crate::LeagueDivision,
                 page: u32 = 1
-            ) as league_entries -> Json<Vec<LeagueEntryDto>> {
+            ) -> Json<Vec<LeagueEntryDto>> {
                 path ["entries", ep.queue, ep.tier, ep.division];
                 query { "page" = ep.page; }
                 rate_limit { 50 / 10s; }
             }
 
-            GET EntriesByPuuid(puuid: String) as league_entries_by_puuid -> Json<Vec<LeagueEntryDto>> {
+            GET league_entries_by_puuid(puuid: String) -> Json<Vec<LeagueEntryDto>> {
                 path ["entries", "by-puuid", ep.puuid];
                 rate_limit {
                     20000 / 10s;
@@ -929,7 +929,7 @@ api! {
                 }
             }
 
-            GET LeagueById(league_id: String) as league_by_id -> Json<LeagueListDto> {
+            GET league_by_id(league_id: String) -> Json<LeagueListDto> {
                 path ["leagues", ep.league_id];
             }
         }
@@ -937,12 +937,12 @@ api! {
         scope league_exp_v4() {
             path ["league-exp", "v4"];
 
-            GET Entries(
+            GET league_exp_entries(
                 queue: crate::LeagueQueue,
                 tier: crate::LeagueTier,
                 division: crate::LeagueDivision,
                 page: u32 = 1
-            ) as league_exp_entries -> Json<Vec<LeagueEntryDto>> {
+            ) -> Json<Vec<LeagueEntryDto>> {
                 path ["entries", ep.queue, ep.tier, ep.division];
                 query { "page" = ep.page; }
                 rate_limit { 50 / 10s; }
@@ -956,32 +956,32 @@ api! {
                 1200000 / 10m;
             }
 
-            GET Configs() as challenge_configs -> Json<Vec<ChallengeConfigInfoDto>> {
+            GET challenge_configs() -> Json<Vec<ChallengeConfigInfoDto>> {
                 path ["challenges", "config"];
             }
 
-            GET Percentiles() as challenge_percentiles -> Json<HashMap<String, HashMap<String, f64>>> {
+            GET challenge_percentiles() -> Json<HashMap<String, HashMap<String, f64>>> {
                 path ["challenges", "percentiles"];
             }
 
-            GET Config(challenge_id: i64) as challenge_config -> Json<ChallengeConfigInfoDto> {
+            GET challenge_config(challenge_id: i64) -> Json<ChallengeConfigInfoDto> {
                 path ["challenges", ep.challenge_id, "config"];
             }
 
-            GET Leaderboard(
+            GET challenge_leaderboard(
                 challenge_id: i64,
                 level: crate::ChallengeLevel,
                 limit: Option<u32>
-            ) as challenge_leaderboard -> Json<Vec<ApexPlayerInfoDto>> {
+            ) -> Json<Vec<ApexPlayerInfoDto>> {
                 path ["challenges", ep.challenge_id, "leaderboards", "by-level", ep.level];
                 query { "limit" = ep.limit; }
             }
 
-            GET ChallengePercentiles(challenge_id: i64) as challenge_percentiles_by_id -> Json<HashMap<String, f64>> {
+            GET challenge_percentiles_by_id(challenge_id: i64) -> Json<HashMap<String, f64>> {
                 path ["challenges", ep.challenge_id, "percentiles"];
             }
 
-            GET PlayerData(puuid: String) as challenge_player_data -> Json<PlayerInfoDto> {
+            GET challenge_player_data(puuid: String) -> Json<PlayerInfoDto> {
                 path ["player-data", ep.puuid];
             }
         }
@@ -989,7 +989,7 @@ api! {
         scope status_v4() {
             path ["status", "v4"];
 
-            GET PlatformData() as platform_data -> Json<PlatformDataDto> {
+            GET platform_data() -> Json<PlatformDataDto> {
                 path ["platform-data"];
                 rate_limit {
                     20000 / 10s;
@@ -1001,7 +1001,7 @@ api! {
         scope spectator_v5() {
             path ["spectator", "v5"];
 
-            GET ActiveGameByPuuid(puuid: String) as active_game_by_puuid -> Json<CurrentGameInfo> {
+            GET active_game_by_puuid(puuid: String) -> Json<CurrentGameInfo> {
                 path ["active-games", "by-summoner", ep.puuid];
                 rate_limit {
                     3000 / 10s;
@@ -1013,12 +1013,12 @@ api! {
         scope summoner_v4() {
             path ["summoner", "v4", "summoners"];
 
-            GET SummonerByPuuid(puuid: String) as summoner_by_puuid -> Json<SummonerDto> {
+            GET summoner_by_puuid(puuid: String) -> Json<SummonerDto> {
                 path ["by-puuid", ep.puuid];
                 rate_limit { 1600 / 1m; }
             }
 
-            GET SummonerById(summoner_id: String) as summoner_by_id -> Json<SummonerDto> {
+            GET summoner_by_id(summoner_id: String) -> Json<SummonerDto> {
                 path [ep.summoner_id];
                 rate_limit { 1600 / 1m; }
             }
@@ -1026,7 +1026,7 @@ api! {
     }
 
 
-    scope Regional() {
+    scope regional() {
         host [vars.regional, "api"];
         rate_limit {
             500 / 10s;
@@ -1036,17 +1036,17 @@ api! {
         scope account_v1() {
             path ["riot", "account", "v1"];
 
-            GET AccountByRiotId(game_name: String, tag_line: String) as account_by_riot_id -> Json<AccountDto> {
+            GET account_by_riot_id(game_name: String, tag_line: String) -> Json<AccountDto> {
                 path ["accounts", "by-riot-id", ep.game_name, ep.tag_line];
                 rate_limit { 1000 / 1m; }
             }
 
-            GET AccountByPuuid(puuid: String) as account_by_puuid -> Json<AccountDto> {
+            GET account_by_puuid(puuid: String) -> Json<AccountDto> {
                 path ["accounts", "by-puuid", ep.puuid];
                 rate_limit { 1000 / 1m; }
             }
 
-            GET ActiveRegion(game: crate::RiotGame, puuid: String) as active_region -> Json<AccountRegionDto> {
+            GET active_region(game: crate::RiotGame, puuid: String) -> Json<AccountRegionDto> {
                 path ["region", "by-game", ep.game, "by-puuid", ep.puuid];
                 rate_limit {
                     20000 / 10s;
@@ -1058,7 +1058,7 @@ api! {
         scope match_v5() {
             path ["lol", "match", "v5", "matches"];
 
-            GET MatchIdsByPuuid(
+            GET match_ids_by_puuid(
                 puuid: String,
                 start_time: Option<i64>,
                 end_time: Option<i64>,
@@ -1066,7 +1066,7 @@ api! {
                 match_type: Option<crate::MatchType>,
                 start: u64 = 0,
                 count: std::num::NonZeroU32 = crate::DEFAULT_MATCH_PAGE_SIZE
-            ) as match_ids_by_puuid -> Json<Vec<String>> {
+            ) -> Json<Vec<String>> {
                 path ["by-puuid", ep.puuid, "ids"];
                 query {
                     "startTime" = ep.start_time;
@@ -1083,7 +1083,7 @@ api! {
                 }
             }
 
-            GET ReplaysByPuuid(puuid: String) as replays_by_puuid -> Json<ReplayDto> {
+            GET replays_by_puuid(puuid: String) -> Json<ReplayDto> {
                 path ["by-puuid", ep.puuid, "replays"];
                 rate_limit {
                     20000 / 10s;
@@ -1091,12 +1091,12 @@ api! {
                 }
             }
 
-            GET MatchById(match_id: String) as match_by_id -> Json<MatchDto> {
+            GET match_by_id(match_id: String) -> Json<MatchDto> {
                 path [ep.match_id];
                 rate_limit { 2000 / 10s; }
             }
 
-            GET TimelineById(match_id: String) as timeline_by_id -> Json<TimelineDto> {
+            GET timeline_by_id(match_id: String) -> Json<TimelineDto> {
                 path [ep.match_id, "timeline"];
                 rate_limit { 2000 / 10s; }
             }
@@ -1109,11 +1109,11 @@ api! {
                 1200000 / 10m;
             }
 
-            POST CreateCodes(
+            POST create_stub_codes(
                 tournament_id: i64,
                 count: Option<u32>,
-                body: Json<TournamentCodeParameters>
-            ) as create_stub_codes -> Json<Vec<String>> {
+                #[body] body: Json<TournamentCodeParameters>
+            ) -> Json<Vec<String>> {
                 path ["codes"];
                 query {
                     "tournamentId" = ep.tournament_id;
@@ -1121,19 +1121,19 @@ api! {
                 }
             }
 
-            GET Code(tournament_code: String) as stub_code -> Json<TournamentCodeDto> {
+            GET stub_code(tournament_code: String) -> Json<TournamentCodeDto> {
                 path ["codes", ep.tournament_code];
             }
 
-            GET LobbyEvents(tournament_code: String) as stub_lobby_events -> Json<LobbyEventListDto> {
+            GET stub_lobby_events(tournament_code: String) -> Json<LobbyEventListDto> {
                 path ["lobby-events", "by-code", ep.tournament_code];
             }
 
-            POST RegisterProvider(body: Json<ProviderRegistrationParameters>) as register_stub_provider -> Json<i32> {
+            POST register_stub_provider(#[body] body: Json<ProviderRegistrationParameters>) -> Json<i32> {
                 path ["providers"];
             }
 
-            POST RegisterTournament(body: Json<TournamentRegistrationParameters>) as register_stub_tournament -> Json<i32> {
+            POST register_stub_tournament(#[body] body: Json<TournamentRegistrationParameters>) -> Json<i32> {
                 path ["tournaments"];
             }
         }
@@ -1141,11 +1141,11 @@ api! {
         scope tournament_v5() {
             path ["lol", "tournament", "v5"];
 
-            POST CreateCodes(
+            POST create_tournament_codes(
                 tournament_id: i64,
                 count: Option<u32>,
-                body: Json<TournamentCodeParameters>
-            ) as create_tournament_codes -> Json<Vec<String>> {
+                #[body] body: Json<TournamentCodeParameters>
+            ) -> Json<Vec<String>> {
                 path ["codes"];
                 query {
                     "tournamentId" = ep.tournament_id;
@@ -1153,30 +1153,30 @@ api! {
                 }
             }
 
-            GET Code(tournament_code: String) as tournament_code -> Json<TournamentCodeDto> {
+            GET tournament_code(tournament_code: String) -> Json<TournamentCodeDto> {
                 path ["codes", ep.tournament_code];
             }
 
-            PUT UpdateCode(
+            PUT update_tournament_code(
                 tournament_code: String,
-                body: Json<TournamentCodeUpdateParameters>
-            ) as update_tournament_code -> NoContent {
+                #[body] body: Json<TournamentCodeUpdateParameters>
+            ) -> NoContent {
                 path ["codes", ep.tournament_code];
             }
 
-            GET GameByCode(tournament_code: String) as tournament_game_by_code -> Json<TournamentGameDto> {
+            GET tournament_game_by_code(tournament_code: String) -> Json<TournamentGameDto> {
                 path ["games", "by-code", ep.tournament_code];
             }
 
-            GET LobbyEvents(tournament_code: String) as tournament_lobby_events -> Json<LobbyEventListDto> {
+            GET tournament_lobby_events(tournament_code: String) -> Json<LobbyEventListDto> {
                 path ["lobby-events", "by-code", ep.tournament_code];
             }
 
-            POST RegisterProvider(body: Json<ProviderRegistrationParameters>) as register_tournament_provider -> Json<i32> {
+            POST register_tournament_provider(#[body] body: Json<ProviderRegistrationParameters>) -> Json<i32> {
                 path ["providers"];
             }
 
-            POST RegisterTournament(body: Json<TournamentRegistrationParameters>) as register_tournament -> Json<i32> {
+            POST register_tournament(#[body] body: Json<TournamentRegistrationParameters>) -> Json<i32> {
                 path ["tournaments"];
             }
         }
@@ -1195,37 +1195,37 @@ api! {
         timeout 20s;
     }
 
-    GET Versions() as versions -> Json<Vec<String>> {
+    GET versions() -> Json<Vec<String>> {
         path ["api", "versions.json"];
     }
 
-    GET Realm(region: String) as realm -> Json<serde_json::Value> {
+    GET realm(region: String) -> Json<serde_json::Value> {
         path ["realms", fmt[ep.region, ".json"]];
     }
 
-    scope Version(version: String) {
+    scope version(version: String) {
         path ["cdn", scope.version];
 
-        scope Data() {
+        scope data() {
             path ["data", vars.locale];
 
-            GET Champions() as champions -> Json<serde_json::Value> {
+            GET champions() -> Json<serde_json::Value> {
                 path ["champion.json"];
             }
 
-            GET Items() as items -> Json<serde_json::Value> {
+            GET items() -> Json<serde_json::Value> {
                 path ["item.json"];
             }
         }
 
-        scope Assets() {
+        scope assets() {
             path ["img"];
 
-            GET Champion(filename: String) as champion_image -> Bytes {
+            GET champion_image(filename: String) -> Bytes {
                 path ["champion", ep.filename];
             }
 
-            GET Item(filename: String) as item_image -> Bytes {
+            GET item_image(filename: String) -> Bytes {
                 path ["item", ep.filename];
             }
         }

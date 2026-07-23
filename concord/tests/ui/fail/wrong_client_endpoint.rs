@@ -5,7 +5,7 @@ api! {
         base "http://first.example.test/";
     }
 
-    GET Read() -> Bytes;
+    GET read() -> Bytes;
 }
 
 api! {
@@ -13,7 +13,7 @@ api! {
         base "http://second.example.test/";
     }
 
-    GET Read() -> Bytes;
+    GET read() -> Bytes;
 }
 
 fn main() {

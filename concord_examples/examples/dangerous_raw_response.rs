@@ -8,7 +8,7 @@ api! {
         base "https://raw-response.example.test/";
     }
 
-    GET Record() -> Json<Vec<u32>>;
+    GET record() -> Json<Vec<u32>>;
 }
 
 fn main() -> Result<(), concord::prelude::ClientBuildError> {

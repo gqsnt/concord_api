@@ -7,14 +7,15 @@ Use built-in body and response specifications for most APIs. Concord keeps body 
 
 ## Request bodies
 
-The final endpoint parameter named `body` selects a `RequestBodySpec`.
+Bare `#[body]` selects the endpoint's `RequestBodySpec`. The annotated
+parameter may use any name and may appear anywhere in declaration order.
 
 ```rust
-POST Create(body: Json<CreateInput>) -> Json<Item>;
-POST Echo(body: Text) -> Text;
-PUT Blob(body: Bytes) -> NoContent;
-PUT Upload(body: Stream<OctetStream>) -> NoContent;
-POST Form(body: Multipart) -> Json<UploadResult>;
+POST create(tenant: String, #[body] input: Json<CreateInput>) -> Json<Item>;
+POST echo(#[body] input: Text) -> Text;
+PUT blob(#[body] bytes: Bytes) -> NoContent;
+PUT upload(#[body] stream: Stream<OctetStream>) -> NoContent;
+POST form(#[body] form: Multipart) -> Json<UploadResult>;
 ```
 
 ### Built-in body specifications
@@ -104,12 +105,12 @@ Every endpoint response type implements `ResponseBodySpec` and selects one of th
 ### Built-in response types
 
 ```rust
-GET User() -> Json<User>;
-GET Message() -> Text;
-GET Blob() -> Bytes;
-GET Download() -> Stream<OctetStream>;
-DELETE Item() -> NoContent;
-GET Rows() -> Records<Csv<Row>>;
+GET user() -> Json<User>;
+GET message() -> Text;
+GET blob() -> Bytes;
+GET download() -> Stream<OctetStream>;
+DELETE item() -> NoContent;
+GET rows() -> Records<Csv<Row>>;
 ```
 
 ### Direct output

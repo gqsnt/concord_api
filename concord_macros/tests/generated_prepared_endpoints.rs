@@ -23,7 +23,7 @@ api! {
         base "http://alpha.prepared.example.test/root/";
     }
 
-    GET Explicit() -> Bytes { path ["explicit"]; }
+    GET explicit() -> Bytes { path ["explicit"]; }
 }
 
 api! {
@@ -31,7 +31,7 @@ api! {
         base "http://beta.prepared.example.test/other/";
     }
 
-    GET Explicit() -> Bytes { path ["explicit"]; }
+    GET explicit() -> Bytes { path ["explicit"]; }
 }
 
 api! {
@@ -43,7 +43,7 @@ api! {
         }
     }
 
-    GET Explicit() -> NoContent;
+    GET explicit() -> NoContent;
 }
 
 struct EchoCodec;

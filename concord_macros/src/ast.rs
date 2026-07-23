@@ -1,7 +1,14 @@
 use std::time::Duration;
 
 use proc_macro2::Span;
-use syn::{Ident, LitBool, LitInt, LitStr, Path, Type};
+use syn::spanned::Spanned;
+use syn::{GenericArgument, Ident, LitBool, LitInt, LitStr, Path, PathArguments, Type, TypePath};
+
+#[derive(Clone)]
+pub(crate) struct Clause<T> {
+    pub(crate) key_span: Span,
+    pub(crate) value: T,
+}
 
 #[derive(Clone)]
 pub(crate) struct SourceApi {
@@ -12,12 +19,11 @@ pub(crate) struct SourceApi {
 #[derive(Clone)]
 pub(crate) struct SourceClient {
     pub(crate) name: Ident,
-    pub(crate) base: LitStr,
-    pub(crate) values: Vec<ValueDecl>,
-    pub(crate) credentials: Option<CredentialsBlock>,
-    pub(crate) retry: RetrySelection,
+    pub(crate) base: Clause<LitStr>,
+    pub(crate) values: Option<Clause<Vec<ValueDecl>>>,
+    pub(crate) credentials: Option<Clause<CredentialsBlock>>,
+    pub(crate) retry: Option<Clause<RetrySelection>>,
     pub(crate) layer: Layer,
-    pub(crate) rate_limit_observer: Option<Path>,
 }
 
 #[derive(Clone)]
@@ -41,12 +47,19 @@ pub(crate) struct SourceScope {
 pub(crate) struct SourceEndpoint {
     pub(crate) method: MethodKind,
     pub(crate) name: Ident,
-    pub(crate) alias: Option<Ident>,
     pub(crate) parameters: Vec<ValueDecl>,
-    pub(crate) body: Option<Type>,
+    pub(crate) body: Option<BodyDecl>,
     pub(crate) layer: Layer,
     pub(crate) response: Type,
-    pub(crate) pagination: Option<PaginationDecl>,
+    pub(crate) pagination: Option<Clause<PaginationDecl>>,
+    pub(crate) contract_id: Option<Clause<LitStr>>,
+}
+
+#[derive(Clone)]
+pub(crate) struct BodyDecl {
+    pub(crate) name: Ident,
+    pub(crate) ty: Type,
+    pub(crate) position: usize,
 }
 
 #[derive(Clone)]
@@ -81,6 +94,7 @@ pub(crate) struct ValueDecl {
     pub(crate) name: Ident,
     pub(crate) ty: Type,
     pub(crate) kind: ValueKind,
+    pub(crate) position: usize,
 }
 
 #[derive(Clone)]
@@ -102,18 +116,17 @@ pub(crate) enum DefaultExpr {
 pub(crate) enum RetrySelection {
     Disabled,
     ReqwestDefault,
-    Custom(Path),
 }
 
 #[derive(Clone, Default)]
 pub(crate) struct Layer {
-    pub(crate) host: Option<HostOperation>,
-    pub(crate) path: Option<PathOperation>,
-    pub(crate) query: Option<QueryOperation>,
-    pub(crate) headers: Option<HeaderOperation>,
+    pub(crate) host: Option<Clause<HostOperation>>,
+    pub(crate) path: Option<Clause<PathOperation>>,
+    pub(crate) query: Option<Clause<QueryOperation>>,
+    pub(crate) headers: Option<Clause<HeaderOperation>>,
     pub(crate) auth: Option<AuthOperation>,
-    pub(crate) timeout: Option<TimeoutOperation>,
-    pub(crate) rate_limit: Option<RateLimitDecl>,
+    pub(crate) timeout: Option<Clause<TimeoutOperation>>,
+    pub(crate) rate_limit: Option<Clause<RateLimitDecl>>,
 }
 
 #[derive(Clone)]
@@ -159,8 +172,11 @@ pub(crate) enum AuthOperation {
     Modify {
         replace: bool,
         placements: Vec<AuthPlacement>,
+        clause_spans: Vec<Span>,
     },
-    Off,
+    Off {
+        key_span: Span,
+    },
 }
 
 #[derive(Clone)]
@@ -256,4 +272,52 @@ pub(crate) enum MethodKind {
     Trace,
     Connect,
     Custom(LitStr),
+}
+
+pub(crate) fn syntactic_option_inner(ty: &Type) -> syn::Result<Option<Type>> {
+    let Type::Path(TypePath { qself: None, path }) = ty else {
+        return Ok(None);
+    };
+    let segments = path.segments.iter().collect::<Vec<_>>();
+    let option = match segments.as_slice() {
+        [option] if path.leading_colon.is_none() && option.ident == "Option" => *option,
+        [std, option_module, option]
+            if std.ident == "std"
+                && option_module.ident == "option"
+                && option.ident == "Option"
+                && matches!(std.arguments, PathArguments::None)
+                && matches!(option_module.arguments, PathArguments::None) =>
+        {
+            *option
+        }
+        _ => return Ok(None),
+    };
+    let PathArguments::AngleBracketed(arguments) = &option.arguments else {
+        return Err(option
+            .ident
+            .span()
+            .error("`Option` requires exactly one type argument"));
+    };
+    let mut values = arguments.args.iter();
+    let Some(GenericArgument::Type(inner)) = values.next() else {
+        return Err(arguments
+            .span()
+            .error("`Option` requires exactly one type argument"));
+    };
+    if values.next().is_some() {
+        return Err(arguments
+            .span()
+            .error("`Option` requires exactly one type argument"));
+    }
+    Ok(Some(inner.clone()))
+}
+
+trait SpanError {
+    fn error(self, message: impl std::fmt::Display) -> syn::Error;
+}
+
+impl SpanError for Span {
+    fn error(self, message: impl std::fmt::Display) -> syn::Error {
+        syn::Error::new(self, message)
+    }
 }

@@ -3,6 +3,7 @@ fn named_generated_surface_compiles_without_generated_import_conventions() {
     let cases = trybuild::TestCases::new();
     cases.pass("tests/ui/pass/named_surface.rs");
     cases.pass("tests/ui/pass/configured_client_builder.rs");
+    cases.pass("tests/ui/pass/dsl_v2.rs");
 }
 
 #[test]
@@ -12,6 +13,13 @@ fn invalid_generated_capabilities_are_absent_or_focused() {
     cases.compile_fail("tests/ui/fail/wrong_client_endpoint.rs");
     cases.compile_fail("tests/ui/fail/storage_terminal_source_only.rs");
     cases.compile_fail("tests/ui/fail/non_clone_body_endpoint.rs");
+    cases.compile_fail("tests/ui/fail/duplicate_clause.rs");
+    cases.compile_fail("tests/ui/fail/inferred_body.rs");
+    cases.compile_fail("tests/ui/fail/multiple_bodies.rs");
+    cases.compile_fail("tests/ui/fail/invalid_body_attribute.rs");
+    cases.compile_fail("tests/ui/fail/pascal_source_name.rs");
+    cases.compile_fail("tests/ui/fail/duplicate_contract_id.rs");
+    cases.compile_fail("tests/ui/fail/custom_retry_dsl_removed.rs");
     #[cfg(feature = "dangerous-raw-response")]
     cases.compile_fail("tests/ui/fail/raw_stream_mode_rejected.rs");
 }

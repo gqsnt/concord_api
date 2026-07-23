@@ -90,7 +90,7 @@ api! {
         base "https://notes.example.com/";
     }
 
-    GET Note(id: u64) -> Json<Note> {
+    GET note(id: u64) -> Json<Note> {
         path ["notes", ep.id];
     }
 }
@@ -130,17 +130,20 @@ METHOD EndpointName(parameter: Type, ...) -> ResponseType {
 An endpoint may use `as alias` to select a generated method name:
 
 ```rust
-METHOD("PROPFIND") Resource(id: String) as fetch -> Text;
+METHOD("PROPFIND") fetch(id: String) -> Text;
 ```
 
 ### Structural rules
 
 - Every endpoint has parentheses, including endpoints with no parameters.
 - The client is first and contains configuration only; root scopes and endpoints follow it.
-- A request body, when present, is the final parameter and is named `body`.
+- A request body is marked explicitly with bare `#[body]`, may use any name,
+  and stays at its declared argument position.
 - A bodyless endpoint can be paginated; a body-bearing endpoint cannot.
 - Client and scope configuration is inherited in lexical order.
-- Configuration clauses appear in the fixed order documented in the DSL reference.
+- Named configuration clauses are order-independent; ordering inside path,
+  query, header, authentication, pagination, and rate-window lists remains
+  meaningful.
 
 ### Types are Rust types
 

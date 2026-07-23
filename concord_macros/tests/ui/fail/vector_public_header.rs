@@ -5,7 +5,7 @@ api! {
         base "https://header.example.test";
     }
 
-    GET Item(values: Vec<String>) -> Bytes {
+    GET item(values: Vec<String>) -> Bytes {
         headers { "X-Values" = ep.values; }
     }
 }

@@ -20,16 +20,6 @@ pub const fn assert_multipart_feature() {
     panic!("Concord multipart DSL requires the `concord_core/multipart` feature");
 }
 
-/// Produces a focused const-evaluation diagnostic for generated dangerous
-/// custom retry syntax when the runtime dependency omitted its feature.
-#[doc(hidden)]
-pub const fn assert_custom_retry_feature() {
-    #[cfg(not(feature = "dangerous-custom-retry"))]
-    panic!(
-        "Concord `retry custom PATH` requires the `concord_core/dangerous-custom-retry` feature"
-    );
-}
-
 #[doc(hidden)]
 pub use http::{HeaderName, Method};
 #[doc(hidden)]
@@ -193,27 +183,6 @@ pub fn default_http_config() -> crate::http::HttpConfigBuilder {
     crate::http::HttpConfigBuilder::new()
 }
 
-/// Creates a generated-client HTTP baseline with a lazily selected dangerous
-/// custom retry factory. The factory is invoked only if no later builder
-/// operation replaces the selection.
-#[cfg(feature = "dangerous-custom-retry")]
-#[doc(hidden)]
-#[must_use]
-pub fn default_http_config_with_custom_retry(
-    factory: fn() -> crate::dangerous::ReqwestRetryBuilder,
-) -> crate::http::HttpConfigBuilder {
-    crate::http::HttpConfigBuilder::new().generated_custom_retry_factory(factory)
-}
-
-/// Keeps missing-feature generated code structurally type-checkable so the
-/// adjacent const feature assertion is the single focused diagnostic.
-#[cfg(not(feature = "dangerous-custom-retry"))]
-#[doc(hidden)]
-#[must_use]
-pub fn default_http_config_with_custom_retry<F>(_factory: F) -> crate::http::HttpConfigBuilder {
-    crate::http::HttpConfigBuilder::new()
-}
-
 /// Creates the ordinary generated-client runtime configuration baseline.
 #[doc(hidden)]
 #[must_use]
@@ -232,17 +201,6 @@ pub fn install_generated_default_limiter(
     runtime.install_generated_default_limiter(limiter)
 }
 
-/// Lazily composes a generated default only when no explicit application
-/// limiter was selected.
-#[doc(hidden)]
-#[must_use]
-pub fn install_generated_default_limiter_with(
-    runtime: crate::runtime::RuntimeConfigBuilder,
-    factory: impl FnOnce() -> std::sync::Arc<dyn crate::rate_limit::RateLimiter>,
-) -> crate::runtime::RuntimeConfigBuilder {
-    runtime.install_generated_default_limiter_with(factory)
-}
-
 /// Applies generated static rate-limit requirements without constructing a
 /// custom observer.
 #[doc(hidden)]
@@ -250,24 +208,6 @@ pub fn prepare_generated_rate_limits(
     runtime: crate::runtime::RuntimeConfigBuilder,
     requires_limiter: bool,
 ) -> Result<crate::runtime::RuntimeConfigBuilder, ClientBuildError> {
-    runtime.prepare_generated_rate_limits(requires_limiter)
-}
-
-/// Transitional direct-core generated-code bridge.
-///
-/// The public façade owns observer/default-limiter composition. Direct
-/// `concord_core` macro consumers are retained only until Phase 14, so this
-/// compatibility path validates the generated plan without constructing the
-/// observer or selecting a concrete limiter.
-#[doc(hidden)]
-pub fn prepare_generated_rate_limits_with_observer<O>(
-    runtime: crate::runtime::RuntimeConfigBuilder,
-    requires_limiter: bool,
-) -> Result<crate::runtime::RuntimeConfigBuilder, ClientBuildError>
-where
-    O: Default + crate::rate_limit::RateLimitObserver,
-{
-    let _ = std::marker::PhantomData::<O>;
     runtime.prepare_generated_rate_limits(requires_limiter)
 }
 

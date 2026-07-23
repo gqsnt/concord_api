@@ -14,7 +14,7 @@ help: the trait `beta_api::Endpoint` is not implemented for `alpha_api::health::
  5 | |         base "https://alpha.example.test";
 ...  |
  9 | |         path ["health"];
-10 | |         GET Download() -> Stream<OctetStream>;
+10 | |         GET download() -> Stream<OctetStream>;
    | |____________________^
    = note: `alpha_api::health::Download` implements similarly named trait `alpha_api::Endpoint`, but not `beta_api::Endpoint`
 help: the following other types implement trait `beta_api::Endpoint`
@@ -25,7 +25,7 @@ help: the following other types implement trait `beta_api::Endpoint`
 16 | ||         base "https://beta.example.test";
 ...  ||
 20 | ||         path ["health"];
-21 | ||         GET Download() -> Stream<OctetStream>;
+21 | ||         GET download() -> Stream<OctetStream>;
    | ||____________________^ `beta_api::health::Download`
 22 | |      }
 23 | |  }

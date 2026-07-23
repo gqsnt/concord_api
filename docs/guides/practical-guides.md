@@ -38,7 +38,7 @@ api! {
         query { "tenant" = vars.tenant; }
     }
 
-    GET Item(id: u64) -> Json<Item> {
+    GET item(id: u64) -> Json<Item> {
         path ["items", ep.id];
     }
 }
@@ -111,11 +111,11 @@ api! {
         host [vars.platform, "api"];
     }
 
-    scope Accounts(region: String) {
+    scope accounts(region: String) {
         host [scope.region, "accounts"];
         path ["accounts"];
 
-        GET ById(id: String) -> Json<Account> {
+        GET by_id(id: String) -> Json<Account> {
             path ["by-id", ep.id];
         }
     }

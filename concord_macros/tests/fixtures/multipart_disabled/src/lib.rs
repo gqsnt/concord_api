@@ -7,6 +7,6 @@ api! {
 
     scope uploads() {
         path ["uploads"];
-        POST Create(body: Multipart) -> NoContent;
+        POST create(#[body] body: Multipart) -> NoContent;
     }
 }

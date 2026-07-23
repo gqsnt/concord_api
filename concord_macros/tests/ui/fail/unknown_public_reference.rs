@@ -5,7 +5,7 @@ api! {
         base "https://reference.example.test";
     }
 
-    GET Item() -> Bytes {
+    GET item() -> Bytes {
         path [ep.missing];
     }
 }

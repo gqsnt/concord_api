@@ -24,7 +24,7 @@ api! {
 
     scope resources(scope_value: crate::ScopeValue) {
         path ["scopes", scope.scope_value, "resources"];
-        GET ById(endpoint_value: crate::EndpointValue) -> NoContent {
+        GET by_id(endpoint_value: crate::EndpointValue) -> NoContent {
             path [ep.endpoint_value];
         }
     }

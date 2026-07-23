@@ -9,12 +9,12 @@ api! {
         base "https://body.example.test/";
     }
 
-    POST JsonRoundTrip(body: Json<Vec<u32>>) -> Json<Vec<u32>>;
-    POST TextRoundTrip(body: Text) -> Text;
-    POST CustomRoundTrip(body: concord_examples::ExampleCodec) -> concord_examples::ExampleCodec;
-    POST Upload(body: Stream<OctetStream>) -> Bytes;
-    GET Download() -> Stream<OctetStream>;
-    POST MultipartUpload(body: Multipart) -> NoContent;
+    POST json_round_trip(#[body] body: Json<Vec<u32>>) -> Json<Vec<u32>>;
+    POST text_round_trip(#[body] body: Text) -> Text;
+    POST custom_round_trip(#[body] body: concord_examples::ExampleCodec) -> concord_examples::ExampleCodec;
+    POST upload(#[body] body: Stream<OctetStream>) -> Bytes;
+    GET download() -> Stream<OctetStream>;
+    POST multipart_upload(#[body] body: Multipart) -> NoContent;
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

@@ -18,8 +18,6 @@ pub(crate) enum ApplicationRetry {
     ReqwestDefault,
     #[cfg(feature = "dangerous-custom-retry")]
     Dangerous(crate::dangerous::ReqwestRetryBuilder),
-    #[cfg(feature = "dangerous-custom-retry")]
-    DangerousFactory(fn() -> crate::dangerous::ReqwestRetryBuilder),
 }
 
 #[allow(dead_code, reason = "consumed by managed Reqwest construction")]
@@ -238,15 +236,6 @@ impl HttpConfigBuilder {
         self
     }
 
-    #[cfg(feature = "dangerous-custom-retry")]
-    pub(crate) fn generated_custom_retry_factory(
-        mut self,
-        factory: fn() -> crate::dangerous::ReqwestRetryBuilder,
-    ) -> Self {
-        self.config.application_retry = ApplicationRetry::DangerousFactory(factory);
-        self
-    }
-
     #[allow(dead_code, reason = "consumed by managed Reqwest construction")]
     pub(crate) fn resolve(self) -> HttpConfig {
         self.config
@@ -255,19 +244,7 @@ impl HttpConfigBuilder {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "dangerous-custom-retry")]
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
     use super::*;
-
-    #[cfg(feature = "dangerous-custom-retry")]
-    static OVERRIDDEN_FACTORY_CALLS: AtomicUsize = AtomicUsize::new(0);
-
-    #[cfg(feature = "dangerous-custom-retry")]
-    fn overridden_factory() -> crate::dangerous::ReqwestRetryBuilder {
-        OVERRIDDEN_FACTORY_CALLS.fetch_add(1, Ordering::SeqCst);
-        reqwest::retry::never()
-    }
 
     #[test]
     fn defaults_are_plain_and_application_retry_is_disabled() {
@@ -382,20 +359,5 @@ mod tests {
             config.application_retry,
             ApplicationRetry::Dangerous(_)
         ));
-    }
-
-    #[cfg(feature = "dangerous-custom-retry")]
-    #[test]
-    fn overriding_a_generated_custom_retry_selection_never_invokes_its_factory() {
-        OVERRIDDEN_FACTORY_CALLS.store(0, Ordering::SeqCst);
-        let config = HttpConfigBuilder::new()
-            .generated_custom_retry_factory(overridden_factory)
-            .retry_off()
-            .resolve();
-        assert!(matches!(
-            config.application_retry,
-            ApplicationRetry::Disabled
-        ));
-        assert_eq!(OVERRIDDEN_FACTORY_CALLS.load(Ordering::SeqCst), 0);
     }
 }

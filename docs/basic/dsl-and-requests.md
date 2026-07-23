@@ -18,23 +18,24 @@ api! {
         }
     }
 
-    GET Item(id: u64) -> Json<Item> {
+    GET item(id: u64) -> Json<Item> {
         path ["items", ep.id];
     }
 }
 ```
 
-Each macro invocation defines exactly one client. The client must be first and contains configuration only; root scopes and endpoints follow its closing brace and inherit that configuration. Use separate `api!` invocations for additional clients. Generated child names are normalized to snake case, so names that normalize to the same Rust method are rejected.
+Each macro invocation defines exactly one client. The client must be first and contains configuration only; root scopes and endpoints follow its closing brace and inherit that configuration. Use separate `api!` invocations for additional clients. Scope and endpoint identifiers are already snake_case: they directly define public methods and modules, while generated types use deterministic PascalCase.
 
-### Client order
+### Named clauses
 
-A client body follows this structural order:
+Named clauses are order-independent within a client, scope, or endpoint. A
+client supports:
 
 ```text
 base
-optional vars block
-credentials block
-retry selection
+vars
+credentials
+retry
 host
 path
 query
@@ -42,12 +43,13 @@ headers
 auth
 timeout
 rate_limit
-rate_limit_observer (legacy; runtime builder in canonical code)
-end of client block
-root scopes and endpoints
 ```
 
-Most configuration entries are optional, but `base` is required and comes first. A client has at most one `vars { ... }` block, immediately after `base`; declarations inside it omit the old `var` keyword. Each layer—client, scope, endpoint—may contain at most one host/path/query/header/timeout/rate-limit declaration in the supported order. Authentication may contain several local placements in one contiguous group.
+`base` is required; the other clauses are optional. Each scalar clause may
+appear at most once, and duplicates report both source spans. Authentication
+may contain several placements, interleaved with other named clauses; their
+relative order remains meaningful. List order inside path, query, header,
+authentication, pagination, and rate-window declarations is also preserved.
 
 ### Values and namespaces
 
@@ -71,26 +73,31 @@ headers { "X-Region" = scope.region; }
 path [fmt["item-", ep.id]];
 ```
 
-### Methods and aliases
+### Methods and names
 
 Standard HTTP verbs are written directly. Extension methods use `METHOD("TOKEN")`:
 
 ```rust
-METHOD("PROPFIND") Resource(id: String) as fetch -> Text;
+METHOD("PROPFIND") fetch(id: String) -> Text;
 ```
 
-The alias becomes the generated method name while the endpoint type keeps its declaration identity.
+The snake_case endpoint identifier is the generated method name. Endpoint
+aliases are not supported.
 
 ### Bodies and responses
 
-The final endpoint parameter may be named `body`:
+Annotate the body explicitly. It may appear anywhere in declaration order and
+may use any parameter name:
 
 ```rust
-POST Create(body: Json<CreateInput>) -> Json<Item>;
-PUT Upload(body: Stream<OctetStream>) -> NoContent;
+POST create(tenant: String, #[body] input: Json<CreateInput>) -> Json<Item>;
+PUT upload(#[body] bytes: Stream<OctetStream>, checksum: String) -> NoContent;
 ```
 
-The body type must implement `RequestBodySpec`; the response type must implement `ResponseBodySpec`. The macro stores Rust types rather than a closed category enum.
+Required generated arguments preserve declaration order. The body type must
+implement `RequestBodySpec`; the response type must implement
+`ResponseBodySpec`. The macro stores opaque Rust types rather than a closed
+category enum.
 
 ### Inheritance
 
@@ -98,7 +105,12 @@ Client configuration flows into scopes and endpoints. Layer-specific operations 
 
 ### Compile-time errors
 
-The macro reports structural errors: unsupported order, duplicate names, invalid references, malformed routes, forbidden auth/header collisions, invalid pagination bindings, and invalid rate-limit grammar. Ordinary Rust type checking reports missing trait implementations, wrong body inputs, inaccessible pagination fields, and incompatible types.
+The macro reports structural errors: duplicate clauses and names, non-snake
+source identifiers, invalid references and stable IDs, malformed routes,
+invalid body roles, forbidden auth/header collisions, invalid pagination
+bindings, and invalid rate-limit grammar. Ordinary Rust type checking reports
+missing trait implementations, wrong body inputs, inaccessible pagination
+fields, and incompatible types.
 
 For exact syntax, use the [DSL reference](../reference/dsl.md#dsl-reference).
 
@@ -200,12 +212,12 @@ A request can override timeout and debug level. It cannot replace the built HTTP
 Scopes group endpoints under shared parameters and configuration. They are compile-time generated facades, not runtime registries.
 
 ```rust
-scope Regions(region: String, locale: Option<String>) {
+scope regions(region: String, locale: Option<String>) {
     host [scope.region, "api"];
     path ["regions", scope.region];
     query { "locale" = scope.locale; }
 
-    GET Item(id: u64) -> Json<Item> {
+    GET item(id: u64) -> Json<Item> {
         path ["items", ep.id];
     }
 }
@@ -233,10 +245,11 @@ Endpoint parameters become constructor arguments and builder methods. An optiona
 
 ### Explicit endpoint values
 
-Every endpoint also has a public endpoint struct under a generated module:
+Every endpoint also has a public endpoint struct in the same scope-oriented
+module tree as its named request wrapper:
 
 ```rust
-let endpoint = catalog_api::endpoints::regions::Item::new(
+let endpoint = catalog_api::regions::Item::new(
     "eu-west".to_owned(),
     42,
 );
@@ -247,13 +260,17 @@ Explicit endpoints are useful for storing request descriptions, generic applicat
 
 ### Scope and endpoint names
 
-Generated public method names use deterministic snake-case conversion. Acronyms are normalized predictably. Reserved names such as `builder`, `build`, `request`, `response`, `paginate`, and `debug` cannot be used for generated endpoint methods.
+Source identifiers directly define snake_case public method and module names.
+Generated endpoint/request types use deterministic PascalCase conversion.
+Reserved names such as `builder`, `build`, `request`, `response`, `paginate`,
+and `debug` cannot be used where they would collide with generated methods.
 
 ### What scopes do not provide
 
 - They are not mutable server-side sessions.
 - Scope parameter values do not create separate generated rate-limit buckets; lexical declarations own buckets.
-- A scope cannot declare retry policy or a rate-limit observer; those are client-only.
+- A scope cannot declare retry policy. Concrete limiter and observer selection
+  is runtime builder policy, not DSL.
 - A scope does not grant access to secrets, credentials, native requests, or shared client mutation.
 
 ## Request shaping

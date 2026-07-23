@@ -19,7 +19,7 @@ note: required by a bound in `DownloadRequest::raw_response`
  4 | |     client StreamApi {
  5 | |         base "http://stream.example.test/";
 ...  |
- 8 | |     GET Download() -> Stream<OctetStream>;
+ 8 | |     GET download() -> Stream<OctetStream>;
  9 | | }
    | | ^
    | | |

@@ -11,9 +11,9 @@ api! {
         base "https://deterministic.example.test/";
     }
 
-    POST Custom(body: concord_examples::ExampleCodec) -> concord_examples::ExampleCodec;
-    POST Upload(body: Stream<OctetStream>) -> Bytes;
-    GET Pages(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
+    POST custom(#[body] body: concord_examples::ExampleCodec) -> concord_examples::ExampleCodec;
+    POST upload(#[body] body: Stream<OctetStream>) -> Bytes;
+    GET pages(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
         paginate concord::pagination::OffsetPagination {
             offset: bind ep.offset,
             page_size: bind ep.limit,

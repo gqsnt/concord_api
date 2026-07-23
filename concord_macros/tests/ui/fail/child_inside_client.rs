@@ -4,8 +4,8 @@ api! {
     client NestedChildApi {
         base "https://example.test";
 
-        scope Users() {
-            GET List() -> Bytes;
+        scope users() {
+            GET list() -> Bytes;
         }
     }
 }

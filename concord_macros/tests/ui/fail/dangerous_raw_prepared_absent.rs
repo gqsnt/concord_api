@@ -6,7 +6,7 @@ api! {
         base "http://raw-prepared.example.test/";
     }
 
-    GET Ordinary() -> Bytes;
+    GET ordinary() -> Bytes;
 }
 
 fn main() {

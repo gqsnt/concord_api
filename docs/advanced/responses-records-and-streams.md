@@ -105,7 +105,7 @@ pub trait RecordDecoder: Sized + Send + 'static {
 Declare:
 
 ```rust
-GET Events() -> Records<crate::VendorDecoder>;
+GET events() -> Records<crate::VendorDecoder>;
 ```
 
 ### Decoder protocol

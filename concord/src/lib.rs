@@ -284,9 +284,8 @@ pub mod __private {
         RateLimitKey, RateLimitKeyPart, RateLimitRule, RateLimitWindow, RawResponseEndpoint,
         RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestMeta, RequestOptions,
         ResponseBodySpec, TimeoutOverride, Url, assert_generated_contract, build_client_core,
-        credential_store_error, default_http_config, default_http_config_with_custom_retry,
-        inspect_endpoint, map_endpoint, missing_input_error, paginate_request, request,
-        response_request,
+        credential_store_error, default_http_config, inspect_endpoint, map_endpoint,
+        missing_input_error, paginate_request, request, response_request,
     };
 
     /// Produces a focused const-evaluation diagnostic when multipart is unavailable.
@@ -294,13 +293,6 @@ pub mod __private {
     pub const fn assert_multipart_feature() {
         #[cfg(not(feature = "multipart"))]
         panic!("Concord multipart DSL requires the `concord/multipart` feature");
-    }
-
-    /// Produces a focused diagnostic when the legacy custom-retry DSL is unavailable.
-    #[doc(hidden)]
-    pub const fn assert_custom_retry_feature() {
-        #[cfg(not(feature = "dangerous-custom-retry"))]
-        panic!("Concord `retry custom PATH` requires the `concord/dangerous-custom-retry` feature");
     }
 
     /// Creates the façade-owned generated-client runtime baseline.
@@ -326,30 +318,6 @@ pub mod __private {
         runtime: concord_core::advanced::RuntimeConfigBuilder,
         requires_limiter: bool,
     ) -> Result<concord_core::advanced::RuntimeConfigBuilder, ClientBuildError> {
-        concord_core::__private::prepare_generated_rate_limits(runtime, requires_limiter)
-    }
-
-    /// Applies generated rate limits with a declaration-selected observer.
-    #[doc(hidden)]
-    pub fn prepare_generated_rate_limits_with_observer<O>(
-        runtime: concord_core::advanced::RuntimeConfigBuilder,
-        requires_limiter: bool,
-    ) -> Result<concord_core::advanced::RuntimeConfigBuilder, ClientBuildError>
-    where
-        O: Default + concord_core::advanced::RateLimitObserver,
-    {
-        #[cfg(feature = "rate-limit-governor")]
-        let runtime =
-            concord_core::__private::install_generated_default_limiter_with(runtime, || {
-                let limiter: std::sync::Arc<dyn concord_core::rate_limit::RateLimiter> =
-                    std::sync::Arc::new(
-                        concord_extras::rate_limit::GovernorRateLimiter::new()
-                            .observer(std::sync::Arc::new(O::default())),
-                    );
-                limiter
-            });
-        #[cfg(not(feature = "rate-limit-governor"))]
-        let _ = std::marker::PhantomData::<O>;
         concord_core::__private::prepare_generated_rate_limits(runtime, requires_limiter)
     }
 }

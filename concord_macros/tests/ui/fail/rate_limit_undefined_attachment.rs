@@ -6,7 +6,7 @@ api! {
         rate_limit missing;
     }
 
-    GET Read() -> Bytes;
+    GET read() -> Bytes;
 }
 
 fn main() {}

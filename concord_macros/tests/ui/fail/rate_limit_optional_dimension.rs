@@ -9,7 +9,7 @@ api! {
         rate_limit { by [vars.tenant]; 1 / 1s; }
     }
 
-    GET Read() -> Bytes;
+    GET read() -> Bytes;
 }
 
 fn main() {}

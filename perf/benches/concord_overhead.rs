@@ -91,24 +91,24 @@ api! {
         }
     }
 
-    scope Records(collection: String) {
+    scope records(collection: String) {
         path ["records", scope.collection];
-        GET Show(id: String) -> Bytes {
+        GET show(id: String) -> Bytes {
             path [ep.id];
             auth off;
         }
     }
-    GET Bounded() -> Bytes {
+    GET bounded() -> Bytes {
         auth off;
     }
-    GET Protected() -> Bytes {
+    GET protected() -> Bytes {
         auth bearer application_key;
     }
-    GET Limited() -> Bytes {
+    GET limited() -> Bytes {
         auth off;
         rate_limit { 1000000 / 1s; }
     }
-    GET Pages(offset: u64, limit: std::num::NonZeroU32) -> crate::PageCodec {
+    GET pages(offset: u64, limit: std::num::NonZeroU32) -> crate::PageCodec {
         query { "offset" = ep.offset; "limit" = ep.limit; }
         auth off;
         paginate concord::pagination::OffsetPagination {
@@ -116,10 +116,10 @@ api! {
             page_size: bind ep.limit,
         }
     }
-    POST Codec(body: crate::BenchCodec) -> crate::BenchCodec {
+    POST codec(#[body] body: crate::BenchCodec) -> crate::BenchCodec {
         auth off;
     }
-    GET Streamed() -> Stream<OctetStream> {
+    GET streamed() -> Stream<OctetStream> {
         auth off;
     }
 }
@@ -133,7 +133,7 @@ api! {
         }
     }
 
-    GET CredentialReady() -> Bytes {
+    GET credential_ready() -> Bytes {
         auth bearer application_key;
     }
 }

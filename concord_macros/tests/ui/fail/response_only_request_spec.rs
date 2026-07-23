@@ -17,7 +17,7 @@ api! {
         base "http://invalid-response-only.example.test/";
     }
 
-    POST Invalid(body: crate::ResponseOnly) -> Bytes;
+    POST invalid(#[body] body: crate::ResponseOnly) -> Bytes;
 }
 
 fn main() {}

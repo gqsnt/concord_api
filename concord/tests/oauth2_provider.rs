@@ -27,7 +27,7 @@ api! {
         }
     }
 
-    GET Protected() -> Bytes {
+    GET protected() -> Bytes {
         auth bearer oauth challenge unauthorized;
         rate_limit { 1 / 1s; }
     }

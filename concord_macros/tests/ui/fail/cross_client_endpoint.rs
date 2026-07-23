@@ -7,7 +7,7 @@ api! {
 
     scope health() {
         path ["health"];
-        GET Download() -> Stream<OctetStream>;
+        GET download() -> Stream<OctetStream>;
     }
 }
 
@@ -18,7 +18,7 @@ api! {
 
     scope health() {
         path ["health"];
-        GET Download() -> Stream<OctetStream>;
+        GET download() -> Stream<OctetStream>;
     }
 }
 

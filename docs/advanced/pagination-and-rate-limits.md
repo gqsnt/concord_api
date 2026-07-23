@@ -134,8 +134,8 @@ let client = Api::builder()
     .build()?;
 ```
 
-The old `rate_limit_observer PATH` declaration is legacy pending DSL v2
-removal. An explicitly supplied limiter always wins over generated defaults.
+Limiter and observer selection are runtime policy and have no DSL clauses. An
+explicitly supplied limiter always wins over generated defaults.
 
 ### Response input
 

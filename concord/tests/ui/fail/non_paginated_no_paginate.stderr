@@ -5,7 +5,7 @@ error[E0599]: no method named `paginate` found for struct `ReadRequest` in the c
  4 | |     client PlainApi {
  5 | |         base "http://plain.example.test/";
 ...  |
- 8 | |     GET Read() -> Bytes;
+ 8 | |     GET read() -> Bytes;
    | |____________- method `paginate` not found for this struct
 ...
 13 |       let _ = client.read().paginate(1_u32);

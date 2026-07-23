@@ -11,7 +11,7 @@ api! {
         base "https://custom-retry.example.test/";
     }
 
-    GET Health() -> NoContent;
+    GET health() -> NoContent;
 }
 
 fn main() -> Result<(), concord::prelude::ClientBuildError> {

@@ -100,12 +100,12 @@ api! {
         timeout 5s;
     }
 
-    GET Root(verbose: Option<bool>) -> Bytes {
+    GET root(verbose: Option<bool>) -> Bytes {
         path ["root"];
         query { "verbose" = ep.verbose; }
     }
 
-    GET Search(tags: Vec<String>, filters: Option<Vec<String>>) -> Bytes {
+    GET search(tags: Vec<String>, filters: Option<Vec<String>>) -> Bytes {
         path ["search"];
         query {
             "tag" = ep.tags;
@@ -113,46 +113,46 @@ api! {
         }
     }
 
-    GET Accept(accept: String) -> Text {
+    GET accept(accept: String) -> Text {
         path ["accept"];
         headers { "Accept" = ep.accept; }
     }
 
-    GET PublicContentType() -> Bytes {
+    GET public_content_type() -> Bytes {
         path ["public-content-type"];
         headers { "Content-Type" = "application/example"; }
     }
 
-    POST TextConflict(body: Text) -> Bytes {
+    POST text_conflict(#[body] body: Text) -> Bytes {
         path ["text-conflict"];
         headers { "Content-Type" = "application/example"; }
     }
 
-    POST StreamConflict(body: Stream<OctetStream>) -> Bytes {
+    POST stream_conflict(#[body] body: Stream<OctetStream>) -> Bytes {
         path ["stream-conflict"];
         headers { "Content-Type" = "application/example"; }
     }
 
-    POST MultipartConflict(body: Multipart) -> NoContent {
+    POST multipart_conflict(#[body] body: Multipart) -> NoContent {
         path ["multipart-conflict"];
         headers { "Content-Type" = "application/example"; }
     }
 
-    GET Streamed(verbose: Option<bool>) -> Stream<OctetStream> {
+    GET streamed(verbose: Option<bool>) -> Stream<OctetStream> {
         path ["streamed"];
         query { "verbose" = ep.verbose; }
     }
 
-    GET UnsafePath(segment: crate::ShapeProbe) -> Bytes {
+    GET unsafe_path(segment: crate::ShapeProbe) -> Bytes {
         path ["unsafe-path", ep.segment];
     }
 
-    GET UnsafeHost(label: crate::ShapeProbe) -> Bytes {
+    GET unsafe_host(label: crate::ShapeProbe) -> Bytes {
         host [ep.label];
         path ["unsafe-host"];
     }
 
-    GET UnsafeHeader(value: crate::ShapeProbe) -> Bytes {
+    GET unsafe_header(value: crate::ShapeProbe) -> Bytes {
         path ["unsafe-header"];
         headers { "X-Dynamic" = ep.value; }
     }
@@ -174,11 +174,11 @@ api! {
             path ["users", scope.account];
             headers { "X-Account" = scope.account; }
 
-            METHOD("PROPFIND") ById(
+            METHOD("PROPFIND") fetch(
                 id: String,
                 verbose: Option<bool>,
                 endpoint_marker: crate::DropProbe = crate::ENDPOINT_DEFAULT,
-            ) as fetch -> Bytes {
+            ) -> Bytes {
                 path [fmt["id-", ep.id]];
                 query {
                     "verbose" = ep.verbose;
@@ -199,21 +199,21 @@ api! {
         }
     }
 
-    GET Echo(verbose: Option<bool>) -> Bytes {
+    GET echo(verbose: Option<bool>) -> Bytes {
         path ["echo"];
         query {
             "label" = vars.label;
             "verbose" = ep.verbose;
         }
     }
-    PUT Put() -> NoContent { path ["put"]; }
-    PATCH Patch() -> NoContent { path ["patch"]; }
-    DELETE Delete() -> NoContent { path ["delete"]; }
-    HEAD Head() -> NoContent { path ["head"]; }
-    OPTIONS Options() -> NoContent { path ["options"]; }
-    TRACE Trace() -> NoContent { path ["trace"]; }
-    CONNECT Connect() -> NoContent { path ["connect"]; }
-    GET Keyword() as r#type -> NoContent { path ["keyword"]; }
+    PUT put() -> NoContent { path ["put"]; }
+    PATCH patch() -> NoContent { path ["patch"]; }
+    DELETE delete() -> NoContent { path ["delete"]; }
+    HEAD head() -> NoContent { path ["head"]; }
+    OPTIONS options() -> NoContent { path ["options"]; }
+    TRACE trace() -> NoContent { path ["trace"]; }
+    CONNECT connect() -> NoContent { path ["connect"]; }
+    GET r#type() -> NoContent { path ["keyword"]; }
 }
 
 api! {
@@ -224,12 +224,12 @@ api! {
 
     scope timed() {
         timeout 10ms;
-        GET ScopeInherited() -> Bytes { path ["scope-inherited"]; }
-        GET EndpointOverride() -> Bytes {
+        GET scope_inherited() -> Bytes { path ["scope-inherited"]; }
+        GET endpoint_override() -> Bytes {
             path ["endpoint-override"];
             timeout 200ms;
         }
-        GET EndpointOff() -> Bytes {
+        GET endpoint_off() -> Bytes {
             path ["endpoint-off"];
             timeout off;
         }
@@ -338,7 +338,7 @@ async fn nested_facade_extension_setters_and_explicit_endpoint_have_head_parity(
         .expect("facade endpoint");
     assert_eq!(facade, b"facade"[..]);
 
-    let explicit = shape_api::regions::users::ById::new(
+    let explicit = shape_api::regions::users::Fetch::new(
         "eu".to_owned(),
         "account-a".to_owned(),
         "42".to_owned(),
@@ -411,7 +411,7 @@ async fn scope_and_endpoint_resets_reuse_one_retained_default_without_clone_boun
     drop(source);
     assert_eq!(SCOPE_DEFAULT_DROPS.load(Ordering::SeqCst), scope_before);
 
-    let request: shape_api::regions::users::ByIdRequest = reset
+    let request: shape_api::regions::users::FetchRequest = reset
         .users("account".to_owned())
         .fetch("id".to_owned())
         .endpoint_marker(DropProbe::new("temporary", explicit_drops))

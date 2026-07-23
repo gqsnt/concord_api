@@ -29,7 +29,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
+    GET read(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
         paginate crate::support::OffsetController {
             offset: bind ep.missing,
             page_size: bind ep.limit,
@@ -42,7 +42,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read(offset: String, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
+    GET read(offset: String, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
         paginate crate::support::OffsetController {
             offset: bind ep.offset,
             page_size: bind ep.limit,
@@ -55,7 +55,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read(cursor: String) -> Json<Vec<u8>> {
+    GET read(cursor: String) -> Json<Vec<u8>> {
         paginate crate::support::CursorController<String> {
             cursor: bind ep.cursor,
         }
@@ -67,7 +67,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read(offset: u64) -> Json<Vec<u8>> {
+    GET read(offset: u64) -> Json<Vec<u8>> {
         paginate crate::support::OffsetController {
             offset: bind ep.offset,
         }
@@ -79,7 +79,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
+    GET read(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
         paginate crate::support::OffsetController {
             offset: bind ep.offset,
             page_size: bind ep.limit,
@@ -93,7 +93,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read(value: u64) -> Json<Vec<u8>> {
+    GET read(value: u64) -> Json<Vec<u8>> {
         paginate crate::NotController {
             value: bind ep.value,
         }
@@ -105,7 +105,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read(state: u64) -> Json<Vec<u8>> {
+    GET read(state: u64) -> Json<Vec<u8>> {
         paginate crate::private_controller::Controller {
             state: bind ep.state,
         }

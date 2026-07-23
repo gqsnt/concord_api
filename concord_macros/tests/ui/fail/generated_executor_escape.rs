@@ -7,7 +7,7 @@ api! {
 
     scope resources(id: String) {
         path ["resources", scope.id];
-        GET Fetch(value: String) -> NoContent {
+        GET fetch(value: String) -> NoContent {
             path [ep.value];
         }
     }

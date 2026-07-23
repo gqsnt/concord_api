@@ -5,7 +5,7 @@ error[E0599]: the method `clone` exists for struct `Upload<StreamBody>`, but its
  4 | |     client UploadApi {
  5 | |         base "http://upload.example.test/";
 ...  |
- 8 | |     POST Upload(body: Stream<OctetStream>) -> Bytes;
+ 8 | |     POST upload(#[body] body: Stream<OctetStream>) -> Bytes;
  9 | | }
    | |_- method `clone` not found for this struct because it doesn't satisfy `Upload<StreamBody>: Clone`
 ...
@@ -24,7 +24,7 @@ note: trait bound `StreamBody: Clone` was not satisfied
  4 | |     client UploadApi {
  5 | |         base "http://upload.example.test/";
 ...  |
- 8 | |     POST Upload(body: Stream<OctetStream>) -> Bytes;
+ 8 | |     POST upload(#[body] body: Stream<OctetStream>) -> Bytes;
  9 | | }
    | |_^
    = help: items from traits can only be used if the trait is implemented and in scope

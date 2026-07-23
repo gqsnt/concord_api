@@ -12,7 +12,7 @@ api! {
         }
     }
 
-    GET Read() -> NoContent;
+    GET read() -> NoContent;
 }
 
 fn main() {

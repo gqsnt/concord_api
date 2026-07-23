@@ -32,7 +32,7 @@ api! {
         base "https://api.example.com/";
     }
 
-    GET User(name: String) -> Json<User> {
+    GET user(name: String) -> Json<User> {
         path ["users", ep.name];
     }
 }

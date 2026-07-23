@@ -125,7 +125,8 @@ Streaming, record, no-content, prepared, and non-paginated endpoints do not gain
 
 ### Body and response typing
 
-For `body: B`, generated code requires `B: RequestBodySpec` and exposes `B::Input` as the final body parameter.
+For `#[body] input: B`, generated code requires `B: RequestBodySpec` and
+exposes `B::Input` at the parameter's declared position.
 
 For response `R`, generated code requires `R: ResponseBodySpec` and direct await returns `R::Output`.
 

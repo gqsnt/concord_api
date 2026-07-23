@@ -11,17 +11,18 @@ api! {
         scope_limit: u32 = 50,
     ) {
         path ["resources", scope.scope_value];
-        GET Fetch(
+        GET fetch(
             id: String,
             verbose: Option<bool>,
             page_size: u32 = 25,
         ) -> Bytes {
             path [ep.id];
         }
-        POST Update(id: String, body: Text) -> Bytes {
+        POST update(id: String, #[body] payload: Text, revision: u32) -> Bytes {
             path [ep.id];
+            headers { "X-Revision" = ep.revision; }
         }
-        GET Delete(id: String) -> NoContent {
+        GET delete(id: String) -> NoContent {
             path [ep.id];
         }
     }
@@ -46,9 +47,10 @@ fn one_facade_dependency_exposes_predictable_named_inherent_surface() {
     let _: facade_api::resources::DeleteRequest = client
         .resources("tenant".to_owned())
         .delete("resource".to_owned());
-    let _: facade_api::resources::UpdateRequest = client
-        .resources("tenant".to_owned())
-        .update("resource".to_owned(), "body".to_owned());
+    let _: facade_api::resources::UpdateRequest =
+        client
+            .resources("tenant".to_owned())
+            .update("resource".to_owned(), "body".to_owned(), 7);
 
     let endpoint = facade_api::resources::Fetch::new("tenant".to_owned(), "resource".to_owned())
         .verbose(true)
@@ -60,6 +62,7 @@ fn one_facade_dependency_exposes_predictable_named_inherent_surface() {
         "tenant".to_owned(),
         "resource".to_owned(),
         "body".to_owned(),
+        7,
     );
     let _: facade_api::resources::Update = body_endpoint.clone();
     let _: facade_api::resources::UpdateRequest = client.request(body_endpoint);

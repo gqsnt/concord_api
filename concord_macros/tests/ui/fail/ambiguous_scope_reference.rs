@@ -7,7 +7,7 @@ api! {
 
     scope outer(id: String) {
         scope inner(id: String) {
-            GET Item() -> Bytes {
+            GET item() -> Bytes {
                 path [scope.id];
             }
         }

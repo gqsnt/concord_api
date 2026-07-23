@@ -11,7 +11,7 @@ fn explicit_endpoint_constructor_requires_outer_scope_values() {
 }
 
 #[test]
-fn normalized_generated_method_collisions_have_a_focused_diagnostic() {
+fn duplicate_child_names_have_a_focused_diagnostic() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/fail/normalized_collision.rs");
 }
@@ -71,7 +71,13 @@ fn breaking_dsl_migration_diagnostics_are_focused() {
     cases.compile_fail("tests/ui/fail/legacy_var.rs");
     cases.compile_fail("tests/ui/fail/child_inside_client.rs");
     cases.compile_fail("tests/ui/fail/root_client_config.rs");
-    cases.compile_fail("tests/ui/fail/vars_after_credentials.rs");
+}
+
+#[test]
+fn named_clause_order_is_not_semantic() {
+    let cases = trybuild::TestCases::new();
+    cases.pass("tests/ui/pass/client_clause_order_independent.rs");
+    cases.pass("tests/ui/pass/endpoint_clause_order_independent.rs");
 }
 
 #[test]
@@ -122,7 +128,6 @@ fn rate_limit_diagnostics_are_source_only_and_focused() {
     cases.compile_fail("tests/ui/fail/rate_limit_optional_dimension.rs");
     cases.compile_fail("tests/ui/fail/rate_limit_invalid_cost.rs");
     cases.compile_fail("tests/ui/fail/rate_limit_off_exclusive.rs");
-    cases.compile_fail("tests/ui/fail/rate_limit_clause_order.rs");
     cases.compile_fail("tests/ui/fail/rate_limit_undefined_attachment.rs");
     cases.compile_fail("tests/ui/fail/rate_limit_secret_dimension.rs");
     cases.compile_fail("tests/ui/fail/rate_limit_removed_syntax.rs");

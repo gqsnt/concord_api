@@ -10,7 +10,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read(offset: u64) -> Json<Vec<u8>> {
+    GET read(offset: u64) -> Json<Vec<u8>> {
         paginate crate::Controller
     }
 }
@@ -20,7 +20,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read(offset: u64) -> Json<Vec<u8>> {
+    GET read(offset: u64) -> Json<Vec<u8>> {
         paginate crate::Controller { state = ep.offset }
     }
 }
@@ -30,7 +30,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read() -> Json<Vec<u8>> {
+    GET read() -> Json<Vec<u8>> {
         paginate custom crate::factory();
     }
 }
@@ -40,7 +40,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read(offset: u64, other: u64) -> Json<Vec<u8>> {
+    GET read(offset: u64, other: u64) -> Json<Vec<u8>> {
         paginate crate::Controller {
             state: bind ep.offset,
             state: bind ep.other,
@@ -53,7 +53,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read(offset: u64) -> Json<Vec<u8>> {
+    GET read(offset: u64) -> Json<Vec<u8>> {
         paginate crate::Controller {
             state: bind ep.offset,
             other: bind ep.offset,
@@ -69,7 +69,7 @@ api! {
         }
     }
 
-    GET Read(offset: u64) -> Json<Vec<u8>> {
+    GET read(offset: u64) -> Json<Vec<u8>> {
         paginate crate::Controller { state: bind vars.offset }
     }
 }
@@ -79,7 +79,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read(offset: u64) -> Json<Vec<u8>> {
+    GET read(offset: u64) -> Json<Vec<u8>> {
         paginate crate::Controller { state: bind secret.offset }
     }
 }
@@ -89,7 +89,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read(offset: u64) -> Json<Vec<u8>> {
+    GET read(offset: u64) -> Json<Vec<u8>> {
         paginate crate::Controller { state: bind credential.offset }
     }
 }
@@ -99,7 +99,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read(offset: u64) -> Json<Vec<u8>> {
+    GET read(offset: u64) -> Json<Vec<u8>> {
         paginate crate::Controller { state: bind ep.offset.value }
     }
 }
@@ -109,7 +109,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read() -> Json<Vec<u8>> {
+    GET read() -> Json<Vec<u8>> {
         paginate crate::Controller { state }
     }
 }
@@ -119,7 +119,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read() -> Json<Vec<u8>> {
+    GET read() -> Json<Vec<u8>> {
         paginate crate::Controller { .. }
     }
 }
@@ -129,7 +129,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read() -> Json<Vec<u8>> {
+    GET read() -> Json<Vec<u8>> {
         paginate crate::Controller { state: crate::make() }
     }
 }
@@ -139,7 +139,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read(value: String) -> Json<Vec<u8>> {
+    GET read(value: String) -> Json<Vec<u8>> {
         paginate crate::Controller { state: ep.value.clone() }
     }
 }
@@ -149,7 +149,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read() -> Json<Vec<u8>> {
+    GET read() -> Json<Vec<u8>> {
         paginate crate::Controller { state: || 1 }
     }
 }
@@ -159,7 +159,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read() -> Json<Vec<u8>> {
+    GET read() -> Json<Vec<u8>> {
         paginate crate::Controller { state: async { 1 } }
     }
 }
@@ -169,7 +169,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read() -> Json<Vec<u8>> {
+    GET read() -> Json<Vec<u8>> {
         paginate crate::Controller { state: { 1 } }
     }
 }
@@ -179,19 +179,8 @@ api! {
         base "https://example.test";
     }
 
-    GET Read() -> Json<Vec<u8>> {
+    GET read() -> Json<Vec<u8>> {
         paginate crate::Controller { state: format_args!("value") }
-    }
-}
-
-api! {
-    client PaginationClauseOrder {
-        base "https://example.test";
-    }
-
-    GET Read() -> Json<Vec<u8>> {
-        paginate crate::Controller {}
-        timeout 1s;
     }
 }
 

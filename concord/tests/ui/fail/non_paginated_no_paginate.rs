@@ -5,7 +5,7 @@ api! {
         base "http://plain.example.test/";
     }
 
-    GET Read() -> Bytes;
+    GET read() -> Bytes;
 }
 
 fn main() {

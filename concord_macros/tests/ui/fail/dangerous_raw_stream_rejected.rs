@@ -5,7 +5,7 @@ api! {
         base "http://raw-stream.example.test/";
     }
 
-    GET Download() -> Stream<OctetStream>;
+    GET download() -> Stream<OctetStream>;
 }
 
 fn main() {

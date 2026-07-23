@@ -5,7 +5,7 @@ api! {
         base "http://raw-response-disabled.example.test/";
     }
 
-    GET Read() -> Bytes;
+    GET read() -> Bytes;
 }
 
 fn main() {

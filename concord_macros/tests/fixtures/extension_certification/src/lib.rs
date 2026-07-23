@@ -464,14 +464,13 @@ runtime::api! {
             credential session = custom crate::ExtensionProvider;
         }
         rate_limit { 10 / 1s; }
-        rate_limit_observer crate::ExtensionObserver;
     }
 
-    GET Protected() -> Bytes {
+    GET protected() -> Bytes {
         auth header "X-Session" = session challenge unauthorized;
     }
 
-    GET Pages(cursor: Option<String>) -> crate::ExtensionPageCodec {
+    GET pages(cursor: Option<String>) -> crate::ExtensionPageCodec {
         query { "cursor" = ep.cursor; }
         paginate crate::ExtensionController {
             cursor: bind ep.cursor,
@@ -479,9 +478,9 @@ runtime::api! {
         }
     }
 
-    POST GenericBody(body: crate::ExtensionRequestSpec) -> crate::ExtensionBufferedSpec;
-    GET GenericStream() -> crate::ExtensionStreamingSpec;
-    GET GenericDiscard() -> crate::ExtensionDiscardSpec;
+    POST generic_body(#[body] body: crate::ExtensionRequestSpec) -> crate::ExtensionBufferedSpec;
+    GET generic_stream() -> crate::ExtensionStreamingSpec;
+    GET generic_discard() -> crate::ExtensionDiscardSpec;
 }
 
 runtime::api! {
@@ -491,10 +490,9 @@ runtime::api! {
             credential session = custom crate::ExtensionProvider;
         }
         rate_limit { 10 / 1s; }
-        rate_limit_observer crate::ExtensionObserver;
     }
 
-    GET Protected() -> Bytes {
+    GET protected() -> Bytes {
         auth header "X-Session" = session challenge unauthorized;
     }
 }
@@ -505,7 +503,7 @@ runtime::api! {
         base "http://record-extension.example.test/";
     }
 
-    GET Custom() -> Records<crate::ExtensionRecordDecoder>;
+    GET custom() -> Records<crate::ExtensionRecordDecoder>;
 }
 
 #[cfg(feature = "csv")]
@@ -514,7 +512,7 @@ runtime::api! {
         base "http://csv-extension.example.test/";
     }
 
-    GET Rows() -> Records<Csv<Vec<String>>>;
+    GET rows() -> Records<Csv<Vec<String>>>;
 }
 
 #[cfg(feature = "ndjson")]
@@ -523,7 +521,7 @@ runtime::api! {
         base "http://ndjson-extension.example.test/";
     }
 
-    GET Values() -> Records<NdJson<u32>>;
+    GET values() -> Records<NdJson<u32>>;
 }
 
 /// Compiles every stable extension workflow without private or native integration imports.

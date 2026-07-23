@@ -215,7 +215,7 @@ impl DecodeBody for VendorCodec {
 DSL use:
 
 ```rust
-POST Exchange(body: crate::VendorCodec) -> crate::VendorCodec;
+POST exchange(#[body] body: crate::VendorCodec) -> crate::VendorCodec;
 ```
 
 ### Managed adapters
@@ -304,7 +304,7 @@ Failure occurs after hook approval and preparation but before credentials, limit
 ### Generated and prepared use
 
 ```rust
-POST Vendor(body: crate::VendorRequestSpec) -> Bytes;
+POST vendor(#[body] body: crate::VendorRequestSpec) -> Bytes;
 ```
 
 ```rust

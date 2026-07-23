@@ -21,7 +21,7 @@ api! {
         base "https://example.test";
     }
 
-    POST Read(body: Text) -> Json<Vec<u8>> {
+    POST read(#[body] body: Text) -> Json<Vec<u8>> {
         paginate crate::Controller {}
     }
 }
@@ -31,7 +31,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read() -> Bytes {
+    GET read() -> Bytes {
         paginate crate::Controller {}
     }
 }
@@ -41,7 +41,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read() -> NoContent {
+    GET read() -> NoContent {
         paginate crate::Controller {}
     }
 }
@@ -51,7 +51,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Read() -> Stream<OctetStream> {
+    GET read() -> Stream<OctetStream> {
         paginate crate::Controller {}
     }
 }

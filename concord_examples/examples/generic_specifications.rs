@@ -78,9 +78,9 @@ api! {
         base "https://generic-specifications.example.test/";
     }
 
-    POST Buffered(body: crate::ExampleRequestSpec) -> crate::ExampleBufferedSpec;
-    GET Streaming() -> crate::ExampleStreamingSpec;
-    GET Discard() -> crate::ExampleDiscardSpec;
+    POST buffered(#[body] body: crate::ExampleRequestSpec) -> crate::ExampleBufferedSpec;
+    GET streaming() -> crate::ExampleStreamingSpec;
+    GET discard() -> crate::ExampleDiscardSpec;
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

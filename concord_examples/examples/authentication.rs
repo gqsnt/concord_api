@@ -15,18 +15,18 @@ api! {
             credential static_bearer = bearer(secret.bearer_token);
             credential login = basic(secret.username, secret.password);
             credential oauth = custom OAuth2ClientCredentials;
-            credential acquired = endpoint Login;
+            credential acquired = endpoint login;
             credential custom = custom concord_examples::ExampleProvider;
         }
     }
 
-    GET Login() -> concord_examples::ExampleTokenCodec;
-    GET ApiKey() -> NoContent { auth header "X-Api-Key" = application_key; }
-    GET Bearer() -> NoContent { auth bearer static_bearer; }
-    GET Basic() -> NoContent { auth basic login; }
-    GET OAuth() -> NoContent { auth bearer oauth challenge unauthorized; }
-    GET EndpointBacked() -> NoContent { auth query "session" = acquired challenge never; }
-    GET ProviderBacked() -> NoContent { auth bearer custom challenge never; }
+    GET login() -> concord_examples::ExampleTokenCodec;
+    GET api_key() -> NoContent { auth header "X-Api-Key" = application_key; }
+    GET bearer() -> NoContent { auth bearer static_bearer; }
+    GET basic() -> NoContent { auth basic login; }
+    GET o_auth() -> NoContent { auth bearer oauth challenge unauthorized; }
+    GET endpoint_backed() -> NoContent { auth query "session" = acquired challenge never; }
+    GET provider_backed() -> NoContent { auth bearer custom challenge never; }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

@@ -5,7 +5,7 @@ api! {
         base "https://method.example.test";
     }
 
-    METHOD("BAD METHOD") Item() -> Bytes;
+    METHOD("BAD METHOD") item() -> Bytes;
 }
 
 fn main() {}

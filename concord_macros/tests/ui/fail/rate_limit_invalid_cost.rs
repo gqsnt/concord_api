@@ -6,7 +6,7 @@ api! {
         rate_limit { cost 2; 1 / 1s; }
     }
 
-    GET Read() -> Bytes;
+    GET read() -> Bytes;
 }
 
 fn main() {}

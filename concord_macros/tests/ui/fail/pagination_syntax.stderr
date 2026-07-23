@@ -99,9 +99,3 @@ error: pagination initializers accept only direct public value references, strin
     |
 183 |         paginate crate::Controller { state: format_args!("value") }
     |                                                        ^
-
-error: endpoint clauses must appear at most once and in `host`, `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, `paginate` order
-   --> tests/ui/fail/pagination_syntax.rs:194:9
-    |
-194 |         timeout 1s;
-    |         ^^^^^^^

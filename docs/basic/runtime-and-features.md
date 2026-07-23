@@ -36,8 +36,8 @@ let client = Api::builder()
     .build()?;
 ```
 
-`dangerous_custom_retry` requires `dangerous-custom-retry`. The old
-`retry custom PATH` declaration is legacy pending DSL v2 removal.
+`dangerous_custom_retry` requires `dangerous-custom-retry`. Custom transport
+retry is runtime policy and is not accepted in the contract DSL.
 
 Application traffic defaults to retry off. Reqwest-native retry, when enabled, remains inside one Concord attempt: it does not re-run hooks, body preparation, credential finalization, limiter acquisition, or completion.
 

@@ -11,7 +11,7 @@ api! {
         base "https://example.test";
     }
 
-    GET Pages(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
+    GET pages(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u8>> {
         paginate crate::support::OffsetController {
             offset: bind ep.offset,
             page_size: bind ep.limit,

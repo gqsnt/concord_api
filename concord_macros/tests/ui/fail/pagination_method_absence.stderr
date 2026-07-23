@@ -5,7 +5,7 @@ error[E0599]: no method named `paginate` found for struct `OrdinaryRequest` in t
  9 | |     client MethodSurface {
 10 | |         base "https://example.test";
 ...  |
-13 | |     GET Ordinary() -> Json<Vec<u8>>;
+13 | |     GET ordinary() -> Json<Vec<u8>>;
    | |________________- method `paginate` not found for this struct
 ...
 24 |       let _ = client.ordinary().paginate(1_u32);

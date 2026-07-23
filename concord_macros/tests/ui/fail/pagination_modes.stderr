@@ -71,7 +71,7 @@ note: required for `no_content_pagination::Read` to implement `concord_core::__p
 40 | |     client NoContentPagination {
 41 | |         base "https://example.test";
 ...  |
-44 | |     GET Read() -> NoContent {
+44 | |     GET read() -> NoContent {
    | |         ^^^^
 ...  |
 47 | | }
@@ -139,7 +139,7 @@ note: required for `no_content_pagination::Read` to implement `concord_core::__p
 40 | |     client NoContentPagination {
 41 | |         base "https://example.test";
 ...  |
-44 | |     GET Read() -> NoContent {
+44 | |     GET read() -> NoContent {
    | |         ^^^^
 ...  |
 47 | | }
@@ -174,7 +174,7 @@ note: required for `no_content_pagination::Read` to implement `concord_core::pag
 40 | |     client NoContentPagination {
 41 | |         base "https://example.test";
 ...  |
-44 | |     GET Read() -> NoContent {
+44 | |     GET read() -> NoContent {
    | |         ^^^^
 ...  |
 47 | | }
@@ -198,7 +198,7 @@ help: the trait `IntoFuture` is not implemented for `no_content_pagination::Read
 40 | |     client NoContentPagination {
 41 | |         base "https://example.test";
 ...  |
-44 | |     GET Read() -> NoContent {
+44 | |     GET read() -> NoContent {
    | |____________^
    = note: no_content_pagination::ReadRequest must be a future or must implement `IntoFuture` to be awaited
 help: the trait `IntoFuture` is implemented for `no_content_pagination::ReadRequest`
@@ -215,7 +215,7 @@ help: the trait `IntoFuture` is implemented for `no_content_pagination::ReadRequ
 error[E0277]: `no_content_pagination::ReadRequest` is not a future
   --> tests/ui/fail/pagination_modes.rs:44:9
    |
-44 |     GET Read() -> NoContent {
+44 |     GET read() -> NoContent {
    |         ^^^^ `no_content_pagination::ReadRequest` is not a future
    |
 help: the trait `IntoFuture` is not implemented for `no_content_pagination::ReadRequest`
@@ -225,7 +225,7 @@ help: the trait `IntoFuture` is not implemented for `no_content_pagination::Read
 40 | |     client NoContentPagination {
 41 | |         base "https://example.test";
 ...  |
-44 | |     GET Read() -> NoContent {
+44 | |     GET read() -> NoContent {
    | |____________^
    = note: no_content_pagination::ReadRequest must be a future or must implement `IntoFuture` to be awaited
 help: the trait `IntoFuture` is implemented for `no_content_pagination::ReadRequest`
@@ -281,7 +281,7 @@ note: required for `stream_pagination::Read` to implement `concord_core::__priva
 50 | |     client StreamPagination {
 51 | |         base "https://example.test";
 ...  |
-54 | |     GET Read() -> Stream<OctetStream> {
+54 | |     GET read() -> Stream<OctetStream> {
    | |         ^^^^
 ...  |
 57 | | }
@@ -349,7 +349,7 @@ note: required for `stream_pagination::Read` to implement `concord_core::__priva
 50 | |     client StreamPagination {
 51 | |         base "https://example.test";
 ...  |
-54 | |     GET Read() -> Stream<OctetStream> {
+54 | |     GET read() -> Stream<OctetStream> {
    | |         ^^^^
 ...  |
 57 | | }
@@ -384,7 +384,7 @@ note: required for `stream_pagination::Read` to implement `concord_core::paginat
 50 | |     client StreamPagination {
 51 | |         base "https://example.test";
 ...  |
-54 | |     GET Read() -> Stream<OctetStream> {
+54 | |     GET read() -> Stream<OctetStream> {
    | |         ^^^^
 ...  |
 57 | | }
@@ -408,7 +408,7 @@ help: the trait `IntoFuture` is not implemented for `stream_pagination::ReadRequ
 50 | |     client StreamPagination {
 51 | |         base "https://example.test";
 ...  |
-54 | |     GET Read() -> Stream<OctetStream> {
+54 | |     GET read() -> Stream<OctetStream> {
    | |____________^
    = note: stream_pagination::ReadRequest must be a future or must implement `IntoFuture` to be awaited
 help: the trait `IntoFuture` is implemented for `stream_pagination::ReadRequest`
@@ -425,7 +425,7 @@ help: the trait `IntoFuture` is implemented for `stream_pagination::ReadRequest`
 error[E0277]: `stream_pagination::ReadRequest` is not a future
   --> tests/ui/fail/pagination_modes.rs:54:9
    |
-54 |     GET Read() -> Stream<OctetStream> {
+54 |     GET read() -> Stream<OctetStream> {
    |         ^^^^ `stream_pagination::ReadRequest` is not a future
    |
 help: the trait `IntoFuture` is not implemented for `stream_pagination::ReadRequest`
@@ -435,7 +435,7 @@ help: the trait `IntoFuture` is not implemented for `stream_pagination::ReadRequ
 50 | |     client StreamPagination {
 51 | |         base "https://example.test";
 ...  |
-54 | |     GET Read() -> Stream<OctetStream> {
+54 | |     GET read() -> Stream<OctetStream> {
    | |____________^
    = note: stream_pagination::ReadRequest must be a future or must implement `IntoFuture` to be awaited
 help: the trait `IntoFuture` is implemented for `stream_pagination::ReadRequest`
