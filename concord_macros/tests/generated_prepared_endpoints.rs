@@ -197,7 +197,7 @@ fn proxy(server: &ScriptedServer) -> SafeProxy {
 
 fn alpha(server: &ScriptedServer) -> PreparedAlphaApi {
     PreparedAlphaApi::builder()
-        .http({
+        .configure_http({
             let proxy = proxy(server);
             move |http| http.proxy(proxy)
         })
@@ -335,11 +335,11 @@ async fn the_same_prepared_definition_uses_each_selected_client_base_and_core() 
     let alpha_selected = Arc::clone(&alpha_calls);
     let beta_selected = Arc::clone(&beta_calls);
     let alpha = PreparedAlphaApi::builder()
-        .http({
+        .configure_http({
             let proxy = proxy(&server);
             move |http| http.proxy(proxy)
         })
-        .runtime(move |runtime| {
+        .configure_runtime(move |runtime| {
             runtime.hooks(Arc::new(CountingHooks {
                 calls: alpha_selected,
             }))
@@ -347,11 +347,11 @@ async fn the_same_prepared_definition_uses_each_selected_client_base_and_core() 
         .build()
         .expect("runtime-distinct alpha client");
     let beta = PreparedBetaApi::builder()
-        .http({
+        .configure_http({
             let proxy = proxy(&server);
             move |http| http.proxy(proxy)
         })
-        .runtime(move |runtime| {
+        .configure_runtime(move |runtime| {
             runtime.hooks(Arc::new(CountingHooks {
                 calls: beta_selected,
             }))
@@ -469,11 +469,11 @@ async fn hook_rejection_prevents_prepared_factory_and_native_work() {
     let server = ScriptedServer::start([]).expect("hook veto server");
     let calls = Arc::new(AtomicUsize::new(0));
     let client = PreparedAlphaApi::builder()
-        .http({
+        .configure_http({
             let proxy = proxy(&server);
             move |http| http.proxy(proxy)
         })
-        .runtime(|runtime| runtime.hooks(Arc::new(RejectingHooks)))
+        .configure_runtime(|runtime| runtime.hooks(Arc::new(RejectingHooks)))
         .build()
         .expect("hooked client");
     let endpoint = PreparedEndpoint::builder("Prepared::veto", Method::POST)
@@ -510,12 +510,14 @@ async fn prepared_protected_http_fails_before_hooks_or_body_materialization() {
     let hook_calls = Arc::new(AtomicUsize::new(0));
     let selected_hooks = Arc::clone(&hook_calls);
     let client = PreparedAuthApi::builder()
-        .token("prepared-credential-15e8d20c")
-        .http({
+        .token(concord_core::prelude::SecretString::new(
+            "prepared-credential-15e8d20c",
+        ))
+        .configure_http({
             let proxy = proxy(&server);
             move |http| http.proxy(proxy)
         })
-        .runtime(move |runtime| {
+        .configure_runtime(move |runtime| {
             runtime.hooks(Arc::new(CountingHooks {
                 calls: selected_hooks,
             }))
@@ -548,11 +550,11 @@ async fn prepared_protected_http_fails_before_hooks_or_body_materialization() {
 async fn prepared_bodies_and_responses_cannot_bypass_runtime_limits() {
     let request_server = ScriptedServer::start([]).expect("prepared request-limit server");
     let request_client = PreparedAlphaApi::builder()
-        .http({
+        .configure_http({
             let proxy = proxy(&request_server);
             move |http| http.proxy(proxy)
         })
-        .runtime(|runtime| {
+        .configure_runtime(|runtime| {
             runtime.request_body_limit(NonZeroUsize::new(3).expect("positive request limit"))
         })
         .build()
@@ -578,11 +580,11 @@ async fn prepared_bodies_and_responses_cannot_bypass_runtime_limits() {
     let response_server = ScriptedServer::start([ResponseScript::ok(b"four".to_vec())])
         .expect("prepared response-limit server");
     let response_client = PreparedAlphaApi::builder()
-        .http({
+        .configure_http({
             let proxy = proxy(&response_server);
             move |http| http.proxy(proxy)
         })
-        .runtime(|runtime| {
+        .configure_runtime(|runtime| {
             runtime.response_body_limit(NonZeroUsize::new(3).expect("positive response limit"))
         })
         .build()
@@ -636,11 +638,11 @@ async fn prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_ord
     };
 
     let explicit_noop = PreparedAlphaApi::builder()
-        .http({
+        .configure_http({
             let proxy = proxy(&server);
             move |http| http.proxy(proxy)
         })
-        .runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter)))
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter)))
         .build()
         .expect("explicit no-op client");
     explicit_noop
@@ -651,11 +653,11 @@ async fn prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_ord
     let limiter = Arc::new(CapturingLimiter::default());
     let selected = Arc::clone(&limiter);
     let custom = PreparedAlphaApi::builder()
-        .http({
+        .configure_http({
             let proxy = proxy(&server);
             move |http| http.proxy(proxy)
         })
-        .runtime(move |runtime| runtime.rate_limiter(selected))
+        .configure_runtime(move |runtime| runtime.rate_limiter(selected))
         .build()
         .expect("custom limiter client");
     custom
@@ -692,7 +694,12 @@ async fn prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_ord
 
 #[test]
 fn prepared_authentication_uses_canonical_collision_and_challenge_validation() {
-    let client = PreparedAuthApi::new("credential-sentinel").expect("auth client");
+    let client = PreparedAuthApi::builder()
+        .token(concord_core::prelude::SecretString::new(
+            "credential-sentinel",
+        ))
+        .build()
+        .expect("auth client");
     let credential = client.credentials().api_key().credential();
 
     let header_collision = PreparedEndpoint::builder("Prepared::auth", Method::GET)

@@ -425,27 +425,14 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
     let raw_request = std::fs::read_to_string(&raw_request_path)
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", raw_request_path.display()));
 
-    for expected in [
-        "id=\"method.response\"",
-        "Selects successful response metadata",
-        "ResponseRequest",
-        "every successful response specification",
-    ] {
+    // Phase 6 moved ordinary terminal discovery to generated named request
+    // wrappers. The generic core carrier retains capability-bound integration
+    // methods for runtime/generated delegation, but their private endpoint
+    // bounds must not leak into its public Rustdoc.
+    for hidden_terminal in ["id=\"method.response\"", "id=\"method.raw_response\""] {
         assert!(
-            request.contains(expected),
-            "Request Rustdoc omitted the public response terminal fact {expected:?}"
-        );
-    }
-    for expected in [
-        "id=\"method.raw_response\"",
-        "dangerous-raw-response",
-        "complete bounded successful response",
-        "Streaming and record-stream declarations do not",
-        "callers assume responsibility",
-    ] {
-        assert!(
-            request.contains(expected),
-            "Request Rustdoc omitted the gated raw terminal fact {expected:?}"
+            !request.contains(hidden_terminal),
+            "generic Request Rustdoc exposed generated capability terminal {hidden_terminal:?}"
         );
     }
     for expected in [

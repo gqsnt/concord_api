@@ -15,7 +15,7 @@ use concord::api;
 use concord::codec::{BytesMut, CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext};
 use concord::endpoint::PreparedEndpoint;
 use concord::http::{Method, SafeProxy, StatusCode};
-use concord::prelude::{Bytes, PageLimit, StreamBody};
+use concord::prelude::{Bytes, PageLimit, SecretString, StreamBody};
 use concord::rate_limit::NoopRateLimiter;
 use concord::records::{RecordDecoder, RecordError};
 use concord::response::ResponseHead;
@@ -204,12 +204,12 @@ fn report(audit: &mut CategoryAudit, name: &'static str, iterations: usize, star
 
 fn configured_builder() -> BenchApiBuilder {
     BenchApi::builder()
-        .api_secret("benchmark-only-key")
-        .runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
+        .api_secret(SecretString::new("benchmark-only-key"))
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
 }
 
 fn configured_credential_builder() -> CredentialBenchApiBuilder {
-    CredentialBenchApi::builder().api_secret("benchmark-only-ready-credential")
+    CredentialBenchApi::builder().api_secret(SecretString::new("benchmark-only-ready-credential"))
 }
 
 fn core_client_construction(iterations: usize, audit: &mut CategoryAudit) {
@@ -305,9 +305,9 @@ fn body_limit_polling(
     }))?;
     let proxy = SafeProxy::parse(server.url(""))?;
     let client = BenchApi::builder()
-        .api_secret("benchmark-only-key")
-        .http(move |http| http.proxy(proxy))
-        .runtime(|runtime| {
+        .api_secret(SecretString::new("benchmark-only-key"))
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(|runtime| {
             runtime
                 .rate_limiter(Arc::new(NoopRateLimiter::new()))
                 .response_body_limit(NonZeroUsize::new(64).expect("positive body limit"))
@@ -362,7 +362,7 @@ fn limiter_ready_path_acquisition(
         ScriptedServer::start((0..iterations).map(|_| ResponseScript::ok(b"limited".to_vec())))?;
     let proxy = SafeProxy::parse(server.url(""))?;
     let client = configured_builder()
-        .http(move |http| http.proxy(proxy))
+        .configure_http(move |http| http.proxy(proxy))
         .build()?;
     let started = Instant::now();
     for _ in 0..iterations {
@@ -386,7 +386,7 @@ fn pagination_loop_overhead(
     let server = ScriptedServer::start(scripts)?;
     let proxy = SafeProxy::parse(server.url(""))?;
     let client = configured_builder()
-        .http(move |http| http.proxy(proxy))
+        .configure_http(move |http| http.proxy(proxy))
         .build()?;
     let started = Instant::now();
     for _ in 0..iterations {

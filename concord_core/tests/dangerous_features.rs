@@ -21,7 +21,7 @@ fn custom_retry_is_available_without_other_dangerous_or_optional_features() {
     use concord_core::dangerous::ReqwestRetryBuilder;
 
     fn configure(builder: HttpConfigBuilder, retry: ReqwestRetryBuilder) -> HttpConfigBuilder {
-        builder.dangerous_retry(retry)
+        builder.dangerous_custom_retry(retry)
     }
 
     let _: fn(HttpConfigBuilder, ReqwestRetryBuilder) -> HttpConfigBuilder = configure;

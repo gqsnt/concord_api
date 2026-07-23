@@ -29,6 +29,17 @@ pub(crate) struct Client {
     pub(crate) children: Vec<Child>,
 }
 
+impl Client {
+    pub(crate) fn has_required_construction_inputs(&self) -> bool {
+        self.values.iter().any(Value::is_required)
+            || !self.secrets.is_empty()
+            || self
+                .credentials
+                .iter()
+                .any(|credential| matches!(&credential.source, CredentialSource::Custom { .. }))
+    }
+}
+
 #[derive(Clone)]
 // Resolved syntax is short-lived; keeping the endpoint inline avoids allocation
 // throughout code generation.

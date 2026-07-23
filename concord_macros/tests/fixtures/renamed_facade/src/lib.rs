@@ -115,7 +115,10 @@ api! {
 }
 
 pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
-    let client = RenamedApi::new("tenant".to_owned(), "protected-api-key")?;
+    let client = RenamedApi::builder()
+        .tenant("tenant".to_owned())
+        .api_key(runtime::SecretString::new("protected-api-key"))
+        .build()?;
     let _ = client.credentials().application_key().credential();
     let request = client
         .resources("renamed-scope".to_owned())
@@ -178,7 +181,7 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
         .multipart_upload(multipart);
     let rate_client = RenamedRateApi::builder()
         .tenant("renamed-rate-key-sentinel".to_owned())
-        .runtime(|runtime| {
+        .configure_runtime(|runtime| {
             runtime.rate_limiter(std::sync::Arc::new(
                 runtime::advanced::NoopRateLimiter::new(),
             ))

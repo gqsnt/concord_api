@@ -31,6 +31,9 @@ api! {
 }
 
 fn main() {
-    let client = Api::new(SessionProvider).unwrap();
+    let client = Api::builder()
+        .session_provider(SessionProvider)
+        .build()
+        .unwrap();
     let _ = client.credentials().session().set(SessionToken);
 }

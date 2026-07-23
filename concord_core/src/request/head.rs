@@ -25,6 +25,7 @@ pub struct RequestMeta {
     endpoint: &'static str,
     method: Method,
     inherited_timeout: Option<Duration>,
+    inherit_client_timeout: bool,
 }
 
 impl RequestMeta {
@@ -39,6 +40,20 @@ impl RequestMeta {
             endpoint,
             method,
             inherited_timeout,
+            inherit_client_timeout: false,
+        }
+    }
+
+    /// Creates metadata for a runtime endpoint that inherits the built client's
+    /// operation timeout.
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn inheriting_client_timeout(endpoint: &'static str, method: Method) -> Self {
+        Self {
+            endpoint,
+            method,
+            inherited_timeout: None,
+            inherit_client_timeout: true,
         }
     }
 
@@ -55,6 +70,17 @@ impl RequestMeta {
     #[doc(hidden)]
     pub const fn inherited_timeout(&self) -> Option<Duration> {
         self.inherited_timeout
+    }
+
+    pub(crate) const fn resolve_inherited_timeout(
+        &self,
+        client_timeout: Option<Duration>,
+    ) -> Option<Duration> {
+        if self.inherit_client_timeout {
+            client_timeout
+        } else {
+            self.inherited_timeout
+        }
     }
 }
 
@@ -85,13 +111,14 @@ impl HeadBuilder {
         meta: RequestMeta,
         options: &RequestOptions,
         inherited_debug: DebugLevel,
+        client_timeout: Option<Duration>,
     ) -> Self {
         let base_host = base
             .host_str()
             .expect("generated clients validate that fixed bases have a host")
             .to_owned();
         Self {
-            timeout: options.resolve_timeout(meta.inherited_timeout()),
+            timeout: options.resolve_timeout(meta.resolve_inherited_timeout(client_timeout)),
             debug: options.resolve_debug(inherited_debug),
             meta,
             logical_url: base.clone(),
@@ -665,6 +692,7 @@ mod tests {
             RequestMeta::new("HeaderApi::records::create", Method::POST, None),
             &RequestOptions::new(),
             DebugLevel::None,
+            None,
         )
         .finish()
     }
@@ -675,6 +703,7 @@ mod tests {
             RequestMeta::new("HeadApi::shape", Method::GET, None),
             &RequestOptions::new(),
             DebugLevel::None,
+            None,
         )
     }
 

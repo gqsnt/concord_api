@@ -116,6 +116,18 @@ pub enum ClientBuildErrorKind {
     Internal,
 }
 
+/// Safe category for one missing generated client-builder input.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ClientInputKind {
+    /// A required public client value.
+    Value,
+    /// A required protected client secret.
+    Secret,
+    /// A required custom credential provider.
+    CredentialProvider,
+}
+
 /// Stable reusable configuration failure classification.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

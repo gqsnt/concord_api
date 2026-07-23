@@ -53,8 +53,8 @@ Choose request, buffered-response, stream, status-body, provider, pagination, an
 ```rust
 let client = InventoryApi::builder()
     .tenant(tenant)
-    .http(|http| http.https_only(true).retry_off())
-    .runtime(|runtime| {
+    .configure_http(|http| http.https_only(true).retry_off())
+    .configure_runtime(|runtime| {
         runtime
             .request_body_limit(nonzero(4 * MIB))
             .response_body_limit(nonzero(8 * MIB))

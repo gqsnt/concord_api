@@ -15,7 +15,7 @@ use crate::model::{
 };
 use crate::names::{canonical_ident, public_ident, to_snake_case};
 
-const GENERATED_CONTRACT_VERSION: u32 = 19;
+const GENERATED_CONTRACT_VERSION: u32 = 20;
 
 pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
     generate_client(&api.client, core_path)
@@ -52,7 +52,7 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
         "Predictable generated scopes, endpoints, and named request types for [`{client_name}`]."
     );
     let constructor_doc = format!(
-        "Builds `{client_name}` through the canonical builder. Constructor arguments are required client values, then protected secrets, then custom credential providers, each in normative declaration order. {value_summary} {credential_summary}"
+        "Builds zero-input client `{client_name}` through its canonical fallible builder. {value_summary} {credential_summary}"
     );
     let capability_doc = format!(
         "Sealed endpoint contract for [`{client_name}`]. Its associated [`Request`](Endpoint::Request) is the named bound request type returned by this client's direct and explicit binding paths. Downstream types cannot implement this trait."
@@ -141,56 +141,14 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
         .collect::<Vec<_>>();
     let secret_builder_methods = generate_secret_builder_methods(client, core_path);
     let provider_builder_methods = generate_provider_builder_methods(client, core_path);
-    let required_client_values = client
-        .values
-        .iter()
-        .enumerate()
-        .filter(|(_, value)| value.is_required())
-        .collect::<Vec<_>>();
-    let mut constructor_parameters = required_client_values
-        .iter()
-        .map(|(_, value)| {
-            let name = &value.name;
-            let ty = &value.ty;
-            quote!(#name: #ty,)
-        })
-        .collect::<Vec<_>>();
-    constructor_parameters.extend(client.secrets.iter().map(|secret| {
-        let name = &secret.name;
-        quote!(#name: impl ::std::convert::Into<#core_path::prelude::SecretString>,)
-    }));
-    constructor_parameters.extend(client.credentials.iter().filter_map(|credential| {
-        let CredentialSource::Custom { provider } = &credential.source else {
-            return None;
-        };
-        let name = provider_argument_name(&credential.name);
-        Some(quote!(
-            #name: impl #core_path::advanced::CredentialProvider<
-                Material = <#provider as #core_path::advanced::CredentialProvider>::Material
-            >,
-        ))
-    }));
-    let mut constructor_setters = required_client_values
-        .iter()
-        .map(|(_, value)| {
-            let name = &value.name;
-            quote!(.#name(#name))
-        })
-        .collect::<Vec<_>>();
-    constructor_setters.extend(client.secrets.iter().map(|secret| {
-        let name = &secret.name;
-        quote!(.#name(#name))
-    }));
-    constructor_setters.extend(
-        client
-            .credentials
-            .iter()
-            .filter(|credential| matches!(&credential.source, CredentialSource::Custom { .. }))
-            .map(|credential| {
-                let method = provider_argument_name(&credential.name);
-                quote!(.#method(#method))
-            }),
-    );
+    let client_constructor = (!client.has_required_construction_inputs()).then(|| {
+        quote! {
+            #[doc = #constructor_doc]
+            pub fn new() -> ::std::result::Result<Self, #core_path::prelude::ClientBuildError> {
+                Self::builder().build()
+            }
+        }
+    });
     let build_value_statements = client
         .values
         .iter()
@@ -225,6 +183,17 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
             __concord_generated::__core::__private::default_http_config_with_custom_retry(#path)
         ),
     };
+    let runtime_baseline = client.config.timeout.map_or_else(
+        || quote!(__concord_generated::__core::__private::default_runtime_config()),
+        |duration| {
+            let seconds = duration.as_secs();
+            let nanos = duration.subsec_nanos();
+            quote!(
+                __concord_generated::__core::__private::default_runtime_config()
+                    .operation_timeout(::std::time::Duration::new(#seconds, #nanos))
+            )
+        },
+    );
     let custom_retry_assertion = matches!(&client.retry, RetrySelection::Custom(_)).then(|| {
         quote!(
             const _: () = __core::__private::assert_custom_retry_feature();
@@ -290,10 +259,6 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
             #(#provider_builder_fields)*
             __concord_http: ::std::option::Option<#core_path::advanced::HttpConfigBuilder>,
             __concord_runtime: ::std::option::Option<#core_path::advanced::RuntimeConfigBuilder>,
-            __concord_http_configured: bool,
-            __concord_runtime_configured: bool,
-            __concord_duplicate_http: bool,
-            __concord_duplicate_runtime: bool,
         }
 
         #[doc = #support_doc]
@@ -352,16 +317,7 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
             #scope_tree
 
             impl super::#client_name {
-                #[doc = #constructor_doc]
-                #[allow(
-                    clippy::too_many_arguments,
-                    reason = "the normative constructor lists required values, secrets, and providers in declaration order"
-                )]
-                pub fn new(
-                    #(#constructor_parameters)*
-                ) -> ::std::result::Result<Self, #core_path::prelude::ClientBuildError> {
-                    Self::builder()#(#constructor_setters)*.build()
-                }
+                #client_constructor
 
                 #[must_use]
                 /// Creates the canonical generated client builder.
@@ -392,13 +348,7 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
                         #(#secret_builder_initializers)*
                         #(#provider_builder_initializers)*
                         __concord_http: ::std::option::Option::Some(#retry_baseline),
-                        __concord_runtime: ::std::option::Option::Some(
-                            __concord_generated::__core::__private::default_runtime_config(),
-                        ),
-                        __concord_http_configured: false,
-                        __concord_runtime_configured: false,
-                        __concord_duplicate_http: false,
-                        __concord_duplicate_runtime: false,
+                        __concord_runtime: ::std::option::Option::Some(#runtime_baseline),
                     }
                 }
 
@@ -407,18 +357,15 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
                 #provider_builder_methods
 
                 #[must_use]
-                /// Applies the HTTP configuration closure immediately. A later retry selection replaces the DSL selection.
-                pub fn http<F>(mut self, configure: F) -> Self
+                /// Applies an HTTP configuration transformation immediately and in call order.
+                ///
+                /// A later selection replaces an earlier selection for the same setting.
+                pub fn configure_http<F>(mut self, configure: F) -> Self
                 where
                     F: ::std::ops::FnOnce(
                         #core_path::advanced::HttpConfigBuilder,
                     ) -> #core_path::advanced::HttpConfigBuilder,
                 {
-                    if self.__concord_http_configured {
-                        self.__concord_duplicate_http = true;
-                        return self;
-                    }
-                    self.__concord_http_configured = true;
                     let Some(http) = self.__concord_http.take() else {
                         unreachable!("generated HTTP builder state is internally consistent");
                     };
@@ -427,18 +374,15 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
                 }
 
                 #[must_use]
-                /// Applies the runtime configuration closure immediately.
-                pub fn runtime<F>(mut self, configure: F) -> Self
+                /// Applies a runtime configuration transformation immediately and in call order.
+                ///
+                /// A later selection replaces an earlier selection for the same setting.
+                pub fn configure_runtime<F>(mut self, configure: F) -> Self
                 where
                     F: ::std::ops::FnOnce(
                         #core_path::advanced::RuntimeConfigBuilder,
                     ) -> #core_path::advanced::RuntimeConfigBuilder,
                 {
-                    if self.__concord_runtime_configured {
-                        self.__concord_duplicate_runtime = true;
-                        return self;
-                    }
-                    self.__concord_runtime_configured = true;
                     let Some(runtime) = self.__concord_runtime.take() else {
                         unreachable!("generated runtime builder state is internally consistent");
                     };
@@ -450,16 +394,6 @@ fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
                 pub fn build(
                     self,
                 ) -> ::std::result::Result<super::#client_name, #core_path::prelude::ClientBuildError> {
-                    if self.__concord_duplicate_http {
-                        return ::std::result::Result::Err(
-                            __concord_generated::__core::__private::duplicate_http_configuration_error(),
-                        );
-                    }
-                    if self.__concord_duplicate_runtime {
-                        return ::std::result::Result::Err(
-                            __concord_generated::__core::__private::duplicate_runtime_configuration_error(),
-                        );
-                    }
                     #(#build_value_statements)*
                     #build_secret_statements
                     #build_provider_statements
@@ -511,9 +445,9 @@ fn generate_secret_builder_methods(client: &Client, core_path: &TokenStream) -> 
                 #[doc = "Sets one required protected client secret; a later call replaces it."]
                 pub fn #method(
                     mut self,
-                    value: impl ::std::convert::Into<#core_path::prelude::SecretString>,
+                    value: #core_path::prelude::SecretString,
                 ) -> Self {
-                    self.#field = ::std::option::Option::Some(value.into());
+                    self.#field = ::std::option::Option::Some(value);
                     self
                 }
             }
@@ -559,12 +493,16 @@ fn generate_secret_resolution(client: &Client, _core_path: &TokenStream) -> Toke
         .map(|(index, secret)| {
             let field = secret_builder_field(index, &secret.name);
             let resolved = resolved_secret(index, &secret.name);
+            let method = &secret.name;
             quote! {
                 let #resolved = match self.#field {
                     ::std::option::Option::Some(value) => value,
                     ::std::option::Option::None => {
                         return ::std::result::Result::Err(
-                            __concord_generated::__core::__private::missing_input_error(),
+                            __concord_generated::__core::__private::missing_input_error(
+                                ::std::stringify!(#method),
+                                __concord_generated::__core::__private::ClientInputKind::Secret,
+                            ),
                         );
                     }
                 };
@@ -583,12 +521,16 @@ fn generate_provider_resolution(client: &Client, _core_path: &TokenStream) -> To
         .map(|(index, credential)| {
             let field = provider_builder_field(index, &credential.name);
             let resolved = resolved_provider(index, &credential.name);
+            let method = provider_argument_name(&credential.name);
             quote! {
                 let #resolved = match self.#field {
                     ::std::option::Option::Some(provider) => provider,
                     ::std::option::Option::None => {
                         return ::std::result::Result::Err(
-                            __concord_generated::__core::__private::missing_input_error(),
+                            __concord_generated::__core::__private::missing_input_error(
+                                ::std::stringify!(#method),
+                                __concord_generated::__core::__private::ClientInputKind::CredentialProvider,
+                            ),
                         );
                         }
                 };
@@ -1006,6 +948,7 @@ fn generate_builder_value_methods(index: usize, value: &Value) -> TokenStream {
 fn generate_client_value_resolution(index: usize, value: &Value) -> TokenStream {
     let builder_field = builder_value_field(index, value);
     let resolved = resolved_client_value(index, value);
+    let method = &value.name;
     let ty = &value.ty;
     match &value.kind {
         ValueKind::Required => quote! {
@@ -1013,7 +956,10 @@ fn generate_client_value_resolution(index: usize, value: &Value) -> TokenStream 
                 ::std::option::Option::Some(value) => value,
                 ::std::option::Option::None => {
                     return ::std::result::Result::Err(
-                        __concord_generated::__core::__private::missing_input_error(),
+                        __concord_generated::__core::__private::missing_input_error(
+                            ::std::stringify!(#method),
+                            __concord_generated::__core::__private::ClientInputKind::Value,
+                        ),
                     );
                 }
             };

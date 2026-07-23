@@ -62,11 +62,11 @@ fn proxy(server: &ScriptedServer) -> SafeProxy {
 
 fn client(server: &ScriptedServer, response_limit: usize) -> RawSuccessApi {
     RawSuccessApi::builder()
-        .http({
+        .configure_http({
             let proxy = proxy(server);
             move |http| http.proxy(proxy)
         })
-        .runtime(move |runtime| {
+        .configure_runtime(move |runtime| {
             runtime.response_body_limit(
                 NonZeroUsize::new(response_limit).expect("nonzero response limit"),
             )

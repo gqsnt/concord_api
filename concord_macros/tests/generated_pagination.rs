@@ -675,7 +675,7 @@ async fn generated_offset_pagination_is_directly_awaitable_and_stops_on_short_pa
     .expect("pagination server");
     let proxy = SafeProxy::parse(server.url("")).expect("local proxy");
     let client = OffsetApi::builder()
-        .http(move |http| http.proxy(proxy))
+        .configure_http(move |http| http.proxy(proxy))
         .build()
         .expect("generated pagination client");
 
@@ -703,7 +703,7 @@ async fn downstream_page_response_capability_requires_no_macro_semantics() {
     .expect("custom page response server");
     let proxy = SafeProxy::parse(server.url("")).expect("custom page response proxy");
     let client = CustomResponsePageApi::builder()
-        .http(move |http| http.proxy(proxy))
+        .configure_http(move |http| http.proxy(proxy))
         .build()
         .expect("custom page response client");
 
@@ -733,7 +733,7 @@ async fn application_controller_selects_the_same_count_termination_without_macro
     let proxy = SafeProxy::parse(server.url("")).expect("local proxy");
     let client = ApplicationCountApi::builder()
         .policy(StablePolicy("stable-policy"))
-        .http(move |http| http.proxy(proxy))
+        .configure_http(move |http| http.proxy(proxy))
         .build()
         .expect("application count client");
 
@@ -761,7 +761,7 @@ async fn generated_page_number_soft_and_hard_limits_are_deterministic() {
     .expect("soft server");
     let soft_proxy = SafeProxy::parse(soft_server.url("")).expect("proxy");
     let soft_client = PageApi::builder()
-        .http(move |http| http.proxy(soft_proxy))
+        .configure_http(move |http| http.proxy(soft_proxy))
         .build()
         .expect("page client");
     let items = soft_client
@@ -778,7 +778,7 @@ async fn generated_page_number_soft_and_hard_limits_are_deterministic() {
         .expect("hard server");
     let hard_proxy = SafeProxy::parse(hard_server.url("")).expect("proxy");
     let hard_client = PageApi::builder()
-        .http(move |http| http.proxy(hard_proxy))
+        .configure_http(move |http| http.proxy(hard_proxy))
         .build()
         .expect("page client");
     let error = hard_client
@@ -806,7 +806,7 @@ async fn cursor_and_custom_empty_pages_follow_controller_authority_and_redact_co
     .expect("cursor server");
     let cursor_proxy = SafeProxy::parse(cursor_server.url("")).expect("proxy");
     let cursor_client = CursorApi::builder()
-        .http(move |http| http.proxy(cursor_proxy))
+        .configure_http(move |http| http.proxy(cursor_proxy))
         .build()
         .expect("cursor client");
     let cursor_items = cursor_client
@@ -833,8 +833,8 @@ async fn cursor_and_custom_empty_pages_follow_controller_authority_and_redact_co
     .expect("custom server");
     let custom_proxy = SafeProxy::parse(custom_server.url("")).expect("proxy");
     let custom_client = CustomApi::builder()
-        .http(move |http| http.proxy(custom_proxy))
-        .runtime(move |runtime| runtime.hooks(configured_hooks))
+        .configure_http(move |http| http.proxy(custom_proxy))
+        .configure_runtime(move |runtime| runtime.hooks(configured_hooks))
         .build()
         .expect("custom client");
     let custom_items = custom_client
@@ -875,7 +875,7 @@ async fn take_zero_skips_controller_and_page_work_but_emits_one_aggregate_succes
     let hooks = Arc::new(PaginationHooks::default());
     let configured_hooks: Arc<dyn RuntimeHooks> = hooks.clone();
     let client = ZeroApi::builder()
-        .runtime(move |runtime| runtime.hooks(configured_hooks))
+        .configure_runtime(move |runtime| runtime.hooks(configured_hooks))
         .build()
         .expect("zero client");
     let items = client.items().paginate(0_u32).await.expect("zero pages");
@@ -899,7 +899,7 @@ async fn built_in_overflow_is_ignored_on_short_stop_and_hard_cap_can_end_natural
     .expect("offset overflow server");
     let offset_proxy = SafeProxy::parse(offset_server.url("")).expect("offset proxy");
     let offset_client = OffsetApi::builder()
-        .http(move |http| http.proxy(offset_proxy))
+        .configure_http(move |http| http.proxy(offset_proxy))
         .build()
         .expect("offset overflow client");
     let items = offset_client
@@ -916,7 +916,7 @@ async fn built_in_overflow_is_ignored_on_short_stop_and_hard_cap_can_end_natural
     .expect("page hard-cap server");
     let page_proxy = SafeProxy::parse(page_server.url("")).expect("page proxy");
     let page_client = PageApi::builder()
-        .http(move |http| http.proxy(page_proxy))
+        .configure_http(move |http| http.proxy(page_proxy))
         .build()
         .expect("page hard-cap client");
     let items = page_client
@@ -944,7 +944,7 @@ async fn empty_present_cursor_is_distinct_and_items_need_not_clone() {
     .expect("empty cursor server");
     let cursor_proxy = SafeProxy::parse(cursor_server.url("")).expect("cursor proxy");
     let cursor_client = CursorApi::builder()
-        .http(move |http| http.proxy(cursor_proxy))
+        .configure_http(move |http| http.proxy(cursor_proxy))
         .build()
         .expect("empty cursor client");
     let items = cursor_client
@@ -962,7 +962,7 @@ async fn empty_present_cursor_is_distinct_and_items_need_not_clone() {
         .expect("non-clone item server");
     let item_proxy = SafeProxy::parse(item_server.url("")).expect("item proxy");
     let item_client = NonCloneApi::builder()
-        .http(move |http| http.proxy(item_proxy))
+        .configure_http(move |http| http.proxy(item_proxy))
         .build()
         .expect("non-clone item client");
     let items = item_client
@@ -984,7 +984,7 @@ async fn explicit_endpoint_nested_scope_alias_and_repeated_helpers_have_parity()
     .expect("explicit server");
     let explicit_proxy = SafeProxy::parse(explicit_server.url("")).expect("explicit proxy");
     let explicit_client = OffsetApi::builder()
-        .http(move |http| http.proxy(explicit_proxy))
+        .configure_http(move |http| http.proxy(explicit_proxy))
         .build()
         .expect("explicit client");
     let endpoint = offset_api::Items::new(0, nz32(2));
@@ -1008,8 +1008,8 @@ async fn explicit_endpoint_nested_scope_alias_and_repeated_helpers_have_parity()
     let nested_hooks = Arc::new(PaginationHooks::default());
     let configured_nested_hooks: Arc<dyn RuntimeHooks> = nested_hooks.clone();
     let nested_client = NestedPaginationApi::builder()
-        .http(move |http| http.proxy(nested_proxy))
-        .runtime(move |runtime| runtime.hooks(configured_nested_hooks))
+        .configure_http(move |http| http.proxy(nested_proxy))
+        .configure_runtime(move |runtime| runtime.hooks(configured_nested_hooks))
         .build()
         .expect("nested client");
     let repositories = nested_client
@@ -1078,8 +1078,8 @@ async fn generated_pagination_reuses_lexical_global_rate_plan_and_actual_hosts()
     let hooks = Arc::new(PaginationHooks::default());
     let configured_hooks: Arc<dyn RuntimeHooks> = hooks.clone();
     let client = PaginationRateApi::builder()
-        .http(move |http| http.proxy(proxy))
-        .runtime(move |runtime| {
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(move |runtime| {
             runtime
                 .hooks(configured_hooks)
                 .rate_limiter(configured_limiter)

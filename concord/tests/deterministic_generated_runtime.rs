@@ -86,8 +86,8 @@ async fn direct_and_explicit_named_wrappers_preserve_inertness_and_lifecycle_equ
     let hooks = Arc::new(LifecycleCounts::default());
     let hook_object: Arc<dyn RuntimeHooks> = hooks.clone();
     let client = RuntimeApi::builder()
-        .http(move |http| http.proxy(proxy))
-        .runtime(move |runtime| runtime.hooks(hook_object))
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(move |runtime| runtime.hooks(hook_object))
         .build()
         .expect("runtime client");
     let encodes = Arc::new(AtomicUsize::new(0));

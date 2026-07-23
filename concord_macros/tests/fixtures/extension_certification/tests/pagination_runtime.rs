@@ -87,7 +87,7 @@ async fn downstream_generated_controller_constructs_binds_and_collects_two_pages
     let client = ExtensionApi::builder()
         .construction(ExtensionConstructionProbe::new())
         .session_provider(ExtensionProvider)
-        .http(move |http| http.proxy(proxy))
+        .configure_http(move |http| http.proxy(proxy))
         .build()
         .expect("downstream generated client");
     let pagination = client.pages().cursor("initial".to_owned()).paginate(10_u32);

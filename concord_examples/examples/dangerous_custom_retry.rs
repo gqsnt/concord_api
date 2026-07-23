@@ -9,14 +9,15 @@ pub fn bounded_custom_retry() -> concord::dangerous::ReqwestRetryBuilder {
 api! {
     client CustomRetryApi {
         base "https://custom-retry.example.test/";
-        retry custom crate::bounded_custom_retry;
     }
 
     GET Health() -> NoContent;
 }
 
 fn main() -> Result<(), concord::prelude::ClientBuildError> {
-    let client = CustomRetryApi::builder().build()?;
+    let client = CustomRetryApi::builder()
+        .configure_http(|http| http.dangerous_custom_retry(bounded_custom_retry()))
+        .build()?;
     let _: custom_retry_api::HealthRequest = client.health();
     Ok(())
 }

@@ -1,5 +1,5 @@
 error[E0599]: no method named `set` found for struct `CustomProviderCredentialHandle<M>` in the current scope
-  --> tests/ui/fail/authentication_custom_set_absent.rs:35:44
+  --> tests/ui/fail/authentication_custom_set_absent.rs:38:44
    |
 24 | / api! {
 25 | |     client Api {
@@ -9,7 +9,7 @@ error[E0599]: no method named `set` found for struct `CustomProviderCredentialHa
 31 | | }
    | |_- method `set` not found for this struct
 ...
-35 |       let _ = client.credentials().session().set(SessionToken);
+38 |       let _ = client.credentials().session().set(SessionToken);
    |                                              ^^^
    |
    = help: items from traits can only be used if the trait is implemented and in scope

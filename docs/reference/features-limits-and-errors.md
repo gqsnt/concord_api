@@ -72,6 +72,7 @@ the façade installs only for generated clients when its feature is enabled.
 
 | Limit | Default | Configuration |
 |---|---:|---|
+| Runtime-endpoint operation timeout | disabled | `operation_timeout` / `disable_operation_timeout` |
 | Request body | 16 MiB | `request_body_limit` |
 | Buffered successful response | 16 MiB | `response_body_limit` |
 | Streaming successful response | 16 MiB cumulative | `stream_response_limit` |
@@ -188,7 +189,7 @@ Workspace version is `0.1.0`. The project is pre-1.0, so breaking public changes
 
 ### Generated contract
 
-The façade bridge and macro share private generated contract version `16`. It protects their internal integration. An incompatible pairing fails during compilation. This version is not an application API version and should not be referenced by normal client code.
+The façade bridge and macro share private generated contract version `20`. It protects their internal integration. An incompatible pairing fails during compilation. This version is not an application API version and should not be referenced by normal client code.
 
 ### Reqwest
 

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use concord::api;
-use concord::rate_limit::NoopRateLimiter;
+use concord::rate_limit::GovernorRateLimiter;
 
 api! {
     client RateLimitApi {
@@ -12,7 +12,6 @@ api! {
             tenant: String;
         }
         rate_limit { 500 / 10s; }
-        rate_limit_observer concord_examples::RetryAfterObserver;
     }
 
     GET Item(item: String) -> Bytes {
@@ -25,9 +24,11 @@ api! {
 }
 
 fn main() -> Result<(), concord::prelude::ClientBuildError> {
+    let limiter =
+        GovernorRateLimiter::new().observer(Arc::new(concord_examples::RetryAfterObserver));
     let client = RateLimitApi::builder()
         .tenant("example-tenant".to_owned())
-        .runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(limiter)))
         .build()?;
     let _: rate_limit_api::ItemRequest = client.item("record-42".to_owned());
     let _: rate_limit_api::PublicRequest = client.public();

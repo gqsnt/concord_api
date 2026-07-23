@@ -365,8 +365,8 @@ async fn sibling_route_families_resolve_distinct_hosts_and_lexical_rule_ids() {
     let limiter = Arc::new(CapturingLimiter::default());
     let configured = Arc::clone(&limiter);
     let client = RouteFamilyApi::builder()
-        .http(move |http| http.proxy(proxy))
-        .runtime(move |runtime| runtime.rate_limiter(configured))
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(move |runtime| runtime.rate_limiter(configured))
         .build()
         .expect("route-family client");
 
@@ -416,8 +416,8 @@ async fn custom_limiter_receives_canonical_ordered_plan_and_owns_observation() {
             .expect("observer default test lock");
         OBSERVER_DEFAULTS.store(0, Ordering::SeqCst);
         let client = builder()
-            .http(move |http| http.proxy(proxy))
-            .runtime(move |runtime| runtime.rate_limiter(configured))
+            .configure_http(move |http| http.proxy(proxy))
+            .configure_runtime(move |runtime| runtime.rate_limiter(configured))
             .build()
             .expect("custom-limited generated client");
         assert_eq!(OBSERVER_DEFAULTS.load(Ordering::SeqCst), 0);
@@ -467,8 +467,8 @@ async fn inherited_lexical_declarations_keep_one_identity_across_descendant_modu
     let limiter = Arc::new(CapturingLimiter::default());
     let configured = Arc::clone(&limiter);
     let client = IdentityRateApi::builder()
-        .http(move |http| http.proxy(proxy))
-        .runtime(move |runtime| runtime.rate_limiter(configured))
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(move |runtime| runtime.rate_limiter(configured))
         .build()
         .expect("identity client");
 
@@ -530,11 +530,11 @@ async fn declaration_identities_are_deterministic_and_collision_resistant() {
         .expect("identity collision server");
     let limiter = Arc::new(CapturingLimiter::default());
     let first = IdentityRateApi::builder()
-        .http({
+        .configure_http({
             let proxy = SafeProxy::parse(server.url("")).expect("first identity proxy");
             move |http| http.proxy(proxy)
         })
-        .runtime({
+        .configure_runtime({
             let limiter = Arc::clone(&limiter);
             move |runtime| runtime.rate_limiter(limiter)
         })
@@ -543,11 +543,11 @@ async fn declaration_identities_are_deterministic_and_collision_resistant() {
     let clone = first.clone();
     clone.direct().await.expect("clone request");
     let second = IdentityRateApi::builder()
-        .http({
+        .configure_http({
             let proxy = SafeProxy::parse(server.url("")).expect("second identity proxy");
             move |http| http.proxy(proxy)
         })
-        .runtime({
+        .configure_runtime({
             let limiter = Arc::clone(&limiter);
             move |runtime| runtime.rate_limiter(limiter)
         })
@@ -556,11 +556,11 @@ async fn declaration_identities_are_deterministic_and_collision_resistant() {
     second.direct().await.expect("independent request");
 
     let nested = nested_rate::NestedRateApi::builder()
-        .http({
+        .configure_http({
             let proxy = SafeProxy::parse(server.url("")).expect("nested identity proxy");
             move |http| http.proxy(proxy)
         })
-        .runtime({
+        .configure_runtime({
             let limiter = Arc::clone(&limiter);
             move |runtime| runtime.rate_limiter(limiter)
         })
@@ -569,11 +569,11 @@ async fn declaration_identities_are_deterministic_and_collision_resistant() {
     nested.read().await.expect("nested-module request");
 
     let first_repeated = repeated_rate::FirstRateApi::builder()
-        .http({
+        .configure_http({
             let proxy = SafeProxy::parse(server.url("")).expect("first repeated proxy");
             move |http| http.proxy(proxy)
         })
-        .runtime({
+        .configure_runtime({
             let limiter = Arc::clone(&limiter);
             move |runtime| runtime.rate_limiter(limiter)
         })
@@ -582,11 +582,11 @@ async fn declaration_identities_are_deterministic_and_collision_resistant() {
     first_repeated.read().await.expect("first repeated request");
 
     let second_repeated = repeated_rate::SecondRateApi::builder()
-        .http({
+        .configure_http({
             let proxy = SafeProxy::parse(server.url("")).expect("second repeated proxy");
             move |http| http.proxy(proxy)
         })
-        .runtime({
+        .configure_runtime({
             let limiter = Arc::clone(&limiter);
             move |runtime| runtime.rate_limiter(limiter)
         })
@@ -615,8 +615,8 @@ async fn punctuation_distinct_lexical_paths_have_distinct_private_symbols() {
     let proxy = SafeProxy::parse(server.url("")).expect("punctuation collision proxy");
     let limiter = Arc::new(CapturingLimiter::default());
     let client = CollisionRateApi::builder()
-        .http(move |http| http.proxy(proxy))
-        .runtime({
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime({
             let limiter = Arc::clone(&limiter);
             move |runtime| runtime.rate_limiter(limiter)
         })
@@ -657,11 +657,11 @@ async fn sibling_and_endpoint_local_rules_do_not_share_unrelated_buckets() {
     .expect("unrelated bucket server");
     let limiter = Arc::new(CapturingLimiter::default());
     let client = IdentityRateApi::builder()
-        .http({
+        .configure_http({
             let proxy = SafeProxy::parse(server.url("")).expect("unrelated bucket proxy");
             move |http| http.proxy(proxy)
         })
-        .runtime({
+        .configure_runtime({
             let limiter = Arc::clone(&limiter);
             move |runtime| runtime.rate_limiter(limiter)
         })
@@ -703,8 +703,8 @@ async fn explicit_noop_authorizes_nonempty_generated_plan_without_dsl_observer()
             .expect("observer default test lock");
         OBSERVER_DEFAULTS.store(0, Ordering::SeqCst);
         let client = builder()
-            .http(move |http| http.proxy(proxy))
-            .runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
+            .configure_http(move |http| http.proxy(proxy))
+            .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
             .build()
             .expect("explicit no-op is an intentional selection");
         assert_eq!(OBSERVER_DEFAULTS.load(Ordering::SeqCst), 0);
@@ -724,7 +724,7 @@ async fn no_governor_private_fallback_executes_an_empty_generated_plan() {
         ScriptedServer::start([ResponseScript::ok(b"empty".to_vec())]).expect("empty-plan server");
     let proxy = SafeProxy::parse(server.url("")).expect("local proxy");
     let client = EmptyRateApi::builder()
-        .http(move |http| http.proxy(proxy))
+        .configure_http(move |http| http.proxy(proxy))
         .build()
         .expect("an empty plan needs no explicit limiter");
     assert_eq!(
@@ -739,8 +739,8 @@ async fn generated_rate_limits_add_no_display_bound_or_runtime_formatting() {
         .expect("display-bound server");
     let proxy = SafeProxy::parse(server.url("")).expect("local proxy");
     let client = MinimalBoundsApi::builder()
-        .http(move |http| http.proxy(proxy))
-        .runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
         .build()
         .expect("minimal-bound client");
     let calls = Arc::new(AtomicUsize::new(0));
@@ -758,15 +758,15 @@ async fn generated_rate_limits_add_no_display_bound_or_runtime_formatting() {
 #[test]
 fn nested_and_repeated_macro_invocations_keep_rate_contracts_isolated() {
     let nested = nested_rate::NestedRateApi::builder()
-        .runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
         .build()
         .expect("nested rate client");
     let first = repeated_rate::FirstRateApi::builder()
-        .runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
         .build()
         .expect("first repeated rate client");
     let second = repeated_rate::SecondRateApi::builder()
-        .runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
         .build()
         .expect("second repeated rate client");
     let _: nested_rate::nested_rate_api::ReadRequest = nested.read();
@@ -782,8 +782,8 @@ async fn real_application_send_cannot_start_before_custom_limiter_grant() {
     let limiter = Arc::new(GatedLimiter::new());
     let configured: Arc<dyn RateLimiter> = limiter.clone();
     let client = builder()
-        .http(move |http| http.proxy(proxy))
-        .runtime(move |runtime| runtime.rate_limiter(configured))
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(move |runtime| runtime.rate_limiter(configured))
         .build()
         .expect("gated generated client");
     let request = tokio::spawn(async move {

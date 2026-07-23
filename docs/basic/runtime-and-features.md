@@ -26,10 +26,18 @@ Retry is client-only:
 ```rust
 retry off;
 retry reqwest_default;
-retry custom crate::bounded_retry;
 ```
 
-`retry custom` requires `dangerous-custom-retry`.
+Dangerous custom retry is selected explicitly on the generated client builder:
+
+```rust
+let client = Api::builder()
+    .configure_http(|http| http.dangerous_custom_retry(bounded_retry()))
+    .build()?;
+```
+
+`dangerous_custom_retry` requires `dangerous-custom-retry`. The old
+`retry custom PATH` declaration is legacy pending DSL v2 removal.
 
 Application traffic defaults to retry off. Reqwest-native retry, when enabled, remains inside one Concord attempt: it does not re-run hooks, body preparation, credential finalization, limiter acquisition, or completion.
 

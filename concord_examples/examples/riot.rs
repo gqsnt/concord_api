@@ -4,13 +4,15 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::num::NonZeroU32;
+use std::sync::Arc;
 
 use concord::api;
 use concord::hooks::SanitizedHeaderValue;
 use concord::http::HeaderName;
 use concord::prelude::*;
 use concord::rate_limit::{
-    Cooldown, CooldownScope, DefaultRateLimitObserver, RateLimitObserver, RateLimitResponseHead,
+    Cooldown, CooldownScope, DefaultRateLimitObserver, GovernorRateLimiter, RateLimitObserver,
+    RateLimitResponseHead,
 };
 use serde::{Deserialize, Serialize};
 
@@ -802,7 +804,6 @@ api! {
         headers { "User-Agent" = "ConcordRiotExample/1.0"; }
         auth header "X-Riot-Token" = riot_api_key challenge never;
         timeout 20s;
-        rate_limit_observer crate::RiotRateLimitHeaders;
     }
 
     scope Platform() {
@@ -1237,7 +1238,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let game_name = std::env::var("RIOT_GAME_NAME")?;
     let tag_line = std::env::var("RIOT_TAG_LINE")?;
 
-    let riot = RiotApi::new(api_key)?;
+    let limiter = GovernorRateLimiter::new().observer(Arc::new(RiotRateLimitHeaders));
+    let riot = RiotApi::builder()
+        .api_key(concord::SecretString::new(api_key))
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(limiter)))
+        .build()?;
 
     let account = riot
         .regional()

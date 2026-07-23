@@ -7,7 +7,7 @@ mod status;
 mod transport;
 
 pub use category::{
-    AuthErrorKind, ClientBuildErrorKind, ConfigurationErrorKind, ErrorCategory,
+    AuthErrorKind, ClientBuildErrorKind, ClientInputKind, ConfigurationErrorKind, ErrorCategory,
     PaginationErrorKind, RateLimitErrorKind,
 };
 pub use context::{ClientBuildError, ConfigurationError};

@@ -18,12 +18,14 @@ fn semantic_domains_are_available_without_implementation_crate_imports() {
         public_type::<codec::Text>(),
         public_type::<endpoint::PreparedEndpoint>(),
         public_type::<error::ApiError>(),
+        public_type::<error::ClientInputKind>(),
         public_type::<hooks::DebugLevel>(),
         public_type::<http::Method>(),
         public_type::<pagination::OffsetPagination>(),
         public_type::<rate_limit::NoopRateLimiter>(),
         public_type::<response::NoContent>(),
         public_type::<runtime::OperationId>(),
+        public_type::<runtime::RuntimeConfigBuilder>(),
     ];
 
     assert!(names.iter().all(|name| !name.is_empty()));

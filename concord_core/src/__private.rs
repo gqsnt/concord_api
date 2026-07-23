@@ -46,7 +46,7 @@ pub use crate::body::{EmptyBody, RequestBodyContext, RequestBodyMetadata, Reques
 #[doc(hidden)]
 pub use crate::client::ClientCore;
 #[doc(hidden)]
-pub use crate::error::{ApiError, ClientBuildError};
+pub use crate::error::{ApiError, ClientBuildError, ClientInputKind};
 #[doc(hidden)]
 pub use crate::hooks::DebugLevel;
 #[doc(hidden)]
@@ -281,25 +281,13 @@ pub fn build_client_core(
     ClientCore::build(fixed_base, http, runtime)
 }
 
-/// Produces the structured generated-builder error for a repeated HTTP
-/// configuration closure without invoking that duplicate closure.
+/// Produces a safe generated-builder error for one missing required input.
 #[doc(hidden)]
-pub fn duplicate_http_configuration_error() -> ClientBuildError {
-    ClientBuildError::new(crate::error::ClientBuildErrorKind::HttpConfiguration)
-}
-
-/// Produces the structured generated-builder error for a repeated runtime
-/// configuration closure without invoking that duplicate closure.
-#[doc(hidden)]
-pub fn duplicate_runtime_configuration_error() -> ClientBuildError {
-    ClientBuildError::new(crate::error::ClientBuildErrorKind::RuntimeConfiguration)
-}
-
-/// Produces the safe generated-builder classification for a missing required
-/// value without retaining or formatting that value's DSL name.
-#[doc(hidden)]
-pub fn missing_input_error() -> ClientBuildError {
-    ClientBuildError::new(crate::error::ClientBuildErrorKind::MissingInput)
+pub const fn missing_input_error(
+    field: &'static str,
+    input_kind: ClientInputKind,
+) -> ClientBuildError {
+    ClientBuildError::missing_input(field, input_kind)
 }
 
 /// Creates one side-effect-free stable pending request wrapper.

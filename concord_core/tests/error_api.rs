@@ -2,10 +2,10 @@ use std::error::Error;
 use std::time::Duration;
 
 use concord_core::advanced::{
-    ApiError, AuthErrorKind, Bytes, ClientBuildError, ClientBuildErrorKind, CodecError,
-    ConfigurationError, ConfigurationErrorKind, DecodeBody, DecodeContext, ErrorCategory,
-    HeaderName, HttpResponseFailure, Method, PaginationErrorKind, RateLimitErrorKind,
-    SanitizedHeaderMap, StatusBody, StatusBodyDecodeError, StatusBodyState,
+    ApiError, AuthErrorKind, Bytes, ClientBuildError, ClientBuildErrorKind, ClientInputKind,
+    CodecError, ConfigurationError, ConfigurationErrorKind, DecodeBody, DecodeContext,
+    ErrorCategory, HeaderName, HttpResponseFailure, Method, PaginationErrorKind,
+    RateLimitErrorKind, SanitizedHeaderMap, StatusBody, StatusBodyDecodeError, StatusBodyState,
 };
 
 fn api_error_accessors(error: &ApiError) {
@@ -29,6 +29,12 @@ fn response_accessors(response: &HttpResponseFailure) {
     let _: &SanitizedHeaderMap = response.headers();
     let _: &StatusBody = response.body();
     let _: Option<Duration> = response.retry_after();
+}
+
+fn client_build_accessors(error: &ClientBuildError) {
+    let _: ClientBuildErrorKind = error.kind();
+    let _: Option<&'static str> = error.missing_field();
+    let _: Option<ClientInputKind> = error.missing_input_kind();
 }
 
 fn owning_accessors(error: ApiError, response: HttpResponseFailure, body: StatusBody) {
@@ -71,6 +77,7 @@ fn assert_value_traits<T: Clone + Copy + std::fmt::Debug + Eq + PartialEq>() {}
 fn downstream_surface_has_exact_structured_accessors_and_traits() {
     let _: fn(&ApiError) = api_error_accessors;
     let _: fn(&HttpResponseFailure) = response_accessors;
+    let _: fn(&ClientBuildError) = client_build_accessors;
     let _: fn(ApiError, HttpResponseFailure, StatusBody) = owning_accessors;
     let _: fn(&StatusBody) = status_body_accessors;
     let _: fn(&HttpResponseFailure) = decode_accessor;
@@ -88,12 +95,14 @@ fn downstream_surface_has_exact_structured_accessors_and_traits() {
     assert_value_traits::<RateLimitErrorKind>();
     assert_value_traits::<PaginationErrorKind>();
     assert_value_traits::<ClientBuildErrorKind>();
+    assert_value_traits::<ClientInputKind>();
     assert_value_traits::<ConfigurationErrorKind>();
     assert_value_traits::<StatusBodyState>();
 
     let _: concord_core::prelude::ApiError;
     let _: concord_core::prelude::ErrorCategory;
     let _: concord_core::prelude::ClientBuildError;
+    let _: concord_core::prelude::ClientInputKind;
     let _: concord_core::prelude::ConfigurationError;
     let _: Option<HeaderName> = None;
 }

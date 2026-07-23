@@ -255,6 +255,63 @@ async fn request_options_are_local_and_core_clones_share_one_inner_owner() {
     assert_ne!(first.operation_id, second.operation_id);
 }
 
+#[tokio::test]
+async fn runtime_endpoints_inherit_the_snapshot_timeout_with_exact_tri_state_overrides() {
+    let executor = DeterministicExecutor::new();
+    let core = ClientCore::build_with_development(
+        "http://runtime-timeout.example.test/",
+        HttpConfigBuilder::new().http1_only(),
+        RuntimeConfigBuilder::new().operation_timeout(Duration::from_secs(13)),
+        &executor,
+    )
+    .expect("runtime timeout core");
+
+    let inherited = PreparedEndpoint::builder("Runtime::inherited", Method::GET)
+        .build()
+        .expect("inherited runtime endpoint");
+    let inherited = ready(
+        prepare_operation(Request::new(core.clone(), inherited))
+            .await
+            .expect("inherited preparation"),
+    );
+    assert_eq!(inherited.head.timeout(), Some(Duration::from_secs(13)));
+
+    let explicit = PreparedEndpoint::builder("Runtime::explicit", Method::GET)
+        .timeout(Duration::from_secs(7))
+        .build()
+        .expect("explicit runtime endpoint");
+    let explicit = ready(
+        prepare_operation(Request::new(core.clone(), explicit))
+            .await
+            .expect("explicit preparation"),
+    );
+    assert_eq!(explicit.head.timeout(), Some(Duration::from_secs(7)));
+
+    let disabled = PreparedEndpoint::builder("Runtime::disabled", Method::GET)
+        .disable_timeout()
+        .build()
+        .expect("disabled runtime endpoint");
+    let disabled = ready(
+        prepare_operation(Request::new(core.clone(), disabled))
+            .await
+            .expect("disabled preparation"),
+    );
+    assert_eq!(disabled.head.timeout(), None);
+
+    let request_override = PreparedEndpoint::builder("Runtime::request", Method::GET)
+        .build()
+        .expect("request override endpoint");
+    let request_override = ready(
+        prepare_operation(Request::new(core, request_override).timeout(Duration::from_secs(3)))
+            .await
+            .expect("request override preparation"),
+    );
+    assert_eq!(
+        request_override.head.timeout(),
+        Some(Duration::from_secs(3))
+    );
+}
+
 #[test]
 fn generated_private_endpoint_mapping_preserves_core_and_request_options() {
     struct ValueEndpoint(u32);

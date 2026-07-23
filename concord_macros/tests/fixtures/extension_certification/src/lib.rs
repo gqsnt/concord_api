@@ -531,13 +531,13 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
     let client = ExtensionApi::builder()
         .construction(ExtensionConstructionProbe::new())
         .session_provider(ExtensionProvider)
-        .http(|http| {
+        .configure_http(|http| {
             http.proxy(
                 SafeProxy::parse("http://127.0.0.1:43119")
                     .expect("fixed credential-free proxy origin"),
             )
         })
-        .runtime(|runtime| {
+        .configure_runtime(|runtime| {
             runtime
                 .rate_limiter(Arc::new(ExtensionLimiter))
                 .hooks(Arc::new(ExtensionHooks))

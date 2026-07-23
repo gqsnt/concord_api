@@ -1,10 +1,12 @@
 use std::fmt;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use concord_core::advanced::{
-    AuthError, CredentialMaterial, CredentialProvider, CredentialRequest, DecodeBody,
-    DecodeContext, ErrorCategory, SafeProxy, SecretCredential,
+    AuthError, ClientBuildErrorKind, ClientInputKind, CredentialMaterial, CredentialProvider,
+    CredentialRequest, DecodeBody, DecodeContext, ErrorCategory, SafeProxy, SecretCredential,
 };
-use concord_core::prelude::{AccessToken, Bytes, SecretString};
+use concord_core::prelude::{AccessToken, Bytes, ClientBuildError, SecretString};
 use concord_macros::api;
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 
@@ -52,6 +54,27 @@ impl CredentialProvider for SessionProvider {
         _context: CredentialRequest<'a>,
     ) -> concord_core::advanced::BoxFuture<'a, Result<Self::Material, AuthError>> {
         Box::pin(async { Ok(SessionToken(SecretString::new("provider-token"))) })
+    }
+}
+
+pub struct DroppingSessionProvider {
+    drops: Arc<AtomicUsize>,
+}
+
+impl Drop for DroppingSessionProvider {
+    fn drop(&mut self) {
+        self.drops.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+impl CredentialProvider for DroppingSessionProvider {
+    type Material = SessionToken;
+
+    fn acquire<'a>(
+        &'a self,
+        _context: CredentialRequest<'a>,
+    ) -> concord_core::advanced::BoxFuture<'a, Result<Self::Material, AuthError>> {
+        Box::pin(async { Ok(SessionToken(SecretString::new("selected-token"))) })
     }
 }
 
@@ -115,16 +138,7 @@ api! {
 
 #[test]
 fn generated_authentication_surface_has_ordered_inputs_and_source_specific_handles() {
-    let client = AuthApi::new(
-        "tenant".to_owned(),
-        "api-secret",
-        "bearer-secret",
-        "user",
-        "password",
-        BearerProvider,
-        SessionProvider,
-    )
-    .expect("generated auth client");
+    let client = auth_builder().build().expect("generated auth client");
     let credentials = client.credentials();
     let _ = credentials.application_key().credential();
     let _ = credentials.static_bearer().credential();
@@ -141,15 +155,126 @@ fn generated_authentication_surface_has_ordered_inputs_and_source_specific_handl
     let _ = client.nested().public();
 }
 
+fn assert_missing_input(
+    result: Result<AuthApi, ClientBuildError>,
+    field: &'static str,
+    input_kind: ClientInputKind,
+) {
+    let error = result.err().expect("required client input is absent");
+    assert_eq!(error.kind(), ClientBuildErrorKind::MissingInput);
+    assert_eq!(error.missing_field(), Some(field));
+    assert_eq!(error.missing_input_kind(), Some(input_kind));
+}
+
+#[test]
+fn every_required_client_input_has_focused_safe_builder_metadata() {
+    assert_missing_input(AuthApi::builder().build(), "tenant", ClientInputKind::Value);
+    assert_missing_input(
+        AuthApi::builder().tenant("tenant".to_owned()).build(),
+        "api_secret",
+        ClientInputKind::Secret,
+    );
+    let protected_error = AuthApi::builder()
+        .tenant("tenant".to_owned())
+        .api_secret(SecretString::new("first-secret-sentinel-9aa1"))
+        .build()
+        .err()
+        .expect("bearer secret is absent");
+    assert_eq!(protected_error.kind(), ClientBuildErrorKind::MissingInput);
+    assert_eq!(protected_error.missing_field(), Some("bearer_secret"));
+    assert_eq!(
+        protected_error.missing_input_kind(),
+        Some(ClientInputKind::Secret)
+    );
+    for rendered in [protected_error.to_string(), format!("{protected_error:?}")] {
+        assert!(!rendered.contains("first-secret-sentinel-9aa1"));
+    }
+    assert_missing_input(
+        AuthApi::builder()
+            .tenant("tenant".to_owned())
+            .api_secret(SecretString::new("api"))
+            .bearer_secret(SecretString::new("bearer"))
+            .build(),
+        "username",
+        ClientInputKind::Secret,
+    );
+    assert_missing_input(
+        AuthApi::builder()
+            .tenant("tenant".to_owned())
+            .api_secret(SecretString::new("api"))
+            .bearer_secret(SecretString::new("bearer"))
+            .username(SecretString::new("user"))
+            .build(),
+        "password",
+        ClientInputKind::Secret,
+    );
+    assert_missing_input(
+        AuthApi::builder()
+            .tenant("tenant".to_owned())
+            .api_secret(SecretString::new("api"))
+            .bearer_secret(SecretString::new("bearer"))
+            .username(SecretString::new("user"))
+            .password(SecretString::new("password"))
+            .build(),
+        "rotating_bearer_provider",
+        ClientInputKind::CredentialProvider,
+    );
+    let error = AuthApi::builder()
+        .tenant("tenant".to_owned())
+        .api_secret(SecretString::new("api"))
+        .bearer_secret(SecretString::new("bearer"))
+        .username(SecretString::new("user"))
+        .password(SecretString::new("last-secret-sentinel-4b71"))
+        .rotating_bearer_provider(BearerProvider)
+        .build()
+        .err()
+        .expect("session provider is absent");
+    assert_eq!(error.kind(), ClientBuildErrorKind::MissingInput);
+    assert_eq!(error.missing_field(), Some("session_provider"));
+    assert_eq!(
+        error.missing_input_kind(),
+        Some(ClientInputKind::CredentialProvider)
+    );
+    for rendered in [error.to_string(), format!("{error:?}")] {
+        assert!(!rendered.contains("last-secret-sentinel-4b71"));
+    }
+}
+
 fn auth_builder() -> AuthApiBuilder {
     AuthApi::builder()
         .tenant("tenant".to_owned())
-        .api_secret("api-secret")
-        .bearer_secret("bearer-secret")
-        .username("user")
-        .password("password")
+        .api_secret(SecretString::new("api-secret"))
+        .bearer_secret(SecretString::new("bearer-secret"))
+        .username(SecretString::new("user"))
+        .password(SecretString::new("password"))
         .rotating_bearer_provider(BearerProvider)
         .session_provider(SessionProvider)
+}
+
+#[test]
+fn repeated_provider_setters_replace_in_call_order() {
+    let replaced_drops = Arc::new(AtomicUsize::new(0));
+    let selected_drops = Arc::new(AtomicUsize::new(0));
+    let builder = AuthApi::builder()
+        .tenant("tenant".to_owned())
+        .api_secret(SecretString::new("api-secret"))
+        .bearer_secret(SecretString::new("bearer-secret"))
+        .username(SecretString::new("user"))
+        .password(SecretString::new("password"))
+        .rotating_bearer_provider(BearerProvider)
+        .session_provider(DroppingSessionProvider {
+            drops: Arc::clone(&replaced_drops),
+        })
+        .session_provider(DroppingSessionProvider {
+            drops: Arc::clone(&selected_drops),
+        });
+    assert_eq!(replaced_drops.load(Ordering::SeqCst), 1);
+    assert_eq!(selected_drops.load(Ordering::SeqCst), 0);
+
+    let client = builder.build().expect("provider replacement client");
+    assert_eq!(selected_drops.load(Ordering::SeqCst), 0);
+    drop(client);
+    assert_eq!(selected_drops.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
@@ -224,7 +349,7 @@ async fn endpoint_backed_acquisition_uses_normal_endpoint_execution_and_preserve
     .expect("endpoint credential server");
     let proxy = SafeProxy::parse(server.url("")).expect("local proxy");
     let client = auth_builder()
-        .http(move |http| http.proxy(proxy))
+        .configure_http(move |http| http.proxy(proxy))
         .build()
         .expect("proxied auth client");
 

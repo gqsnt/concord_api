@@ -144,7 +144,7 @@ pub trait RuntimeHooks: Send + Sync + 'static {
 Install:
 
 ```rust
-client_builder.runtime(|runtime| runtime.hooks(Arc::new(MyHooks)))
+client_builder.configure_runtime(|runtime| runtime.hooks(Arc::new(MyHooks)))
 ```
 
 ### `before_send`

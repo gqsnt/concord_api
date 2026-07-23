@@ -18,9 +18,9 @@ pub use crate::codec::{
     CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType, OctetStream, Text,
 };
 pub use crate::error::{
-    ApiError, AuthErrorKind, ClientBuildError, ClientBuildErrorKind, ConfigurationError,
-    ConfigurationErrorKind, ErrorCategory, HookError, HttpResponseFailure, PaginationErrorKind,
-    RateLimitErrorKind, StatusBody, StatusBodyDecodeError, StatusBodyState,
+    ApiError, AuthErrorKind, ClientBuildError, ClientBuildErrorKind, ClientInputKind,
+    ConfigurationError, ConfigurationErrorKind, ErrorCategory, HookError, HttpResponseFailure,
+    PaginationErrorKind, RateLimitErrorKind, StatusBody, StatusBodyDecodeError, StatusBodyState,
 };
 pub use crate::hooks::{
     BeforeSend, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel,

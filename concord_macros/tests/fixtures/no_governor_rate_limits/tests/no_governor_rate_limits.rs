@@ -199,7 +199,7 @@ async fn generated_clients_fail_closed_without_governor_unless_limiter_is_delibe
     let server = LoopbackServer::start(6).await;
 
     let empty = EmptyGeneratedApi::builder()
-        .http({
+        .configure_http({
             let proxy = server.proxy();
             move |http| http.proxy(proxy)
         })
@@ -209,7 +209,7 @@ async fn generated_clients_fail_closed_without_governor_unless_limiter_is_delibe
     assert_eq!(server.request_count(), 1);
 
     let fallback = match LimitedGeneratedApi::builder()
-        .http({
+        .configure_http({
             let proxy = server.proxy();
             move |http| http.proxy(proxy)
         })
@@ -224,11 +224,11 @@ async fn generated_clients_fail_closed_without_governor_unless_limiter_is_delibe
 
     let limiter = Arc::new(CapturingLimiter::default());
     let custom = LimitedGeneratedApi::builder()
-        .http({
+        .configure_http({
             let proxy = server.proxy();
             move |http| http.proxy(proxy)
         })
-        .runtime({
+        .configure_runtime({
             let limiter = Arc::clone(&limiter);
             move |runtime| runtime.rate_limiter(limiter)
         })
@@ -247,11 +247,11 @@ async fn generated_clients_fail_closed_without_governor_unless_limiter_is_delibe
     drop(generated_plan);
 
     let noop = LimitedGeneratedApi::builder()
-        .http({
+        .configure_http({
             let proxy = server.proxy();
             move |http| http.proxy(proxy)
         })
-        .runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
         .build()
         .expect("explicit generated no-op");
     noop.read().await.expect("no-op generated request");
@@ -259,7 +259,7 @@ async fn generated_clients_fail_closed_without_governor_unless_limiter_is_delibe
     assert_eq!(DEFAULT_OBSERVER_CALLS.load(Ordering::SeqCst), 0);
 
     let empty_prepared_client = EmptyGeneratedApi::builder()
-        .http({
+        .configure_http({
             let proxy = server.proxy();
             move |http| http.proxy(proxy)
         })
@@ -282,11 +282,11 @@ async fn generated_clients_fail_closed_without_governor_unless_limiter_is_delibe
 
     let prepared_limiter = Arc::new(CapturingLimiter::default());
     let custom_prepared_client = EmptyGeneratedApi::builder()
-        .http({
+        .configure_http({
             let proxy = server.proxy();
             move |http| http.proxy(proxy)
         })
-        .runtime({
+        .configure_runtime({
             let limiter = Arc::clone(&prepared_limiter);
             move |runtime| runtime.rate_limiter(limiter)
         })
@@ -303,11 +303,11 @@ async fn generated_clients_fail_closed_without_governor_unless_limiter_is_delibe
     ]);
 
     let noop_prepared_client = EmptyGeneratedApi::builder()
-        .http({
+        .configure_http({
             let proxy = server.proxy();
             move |http| http.proxy(proxy)
         })
-        .runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
         .build()
         .expect("no-op prepared client");
     noop_prepared_client

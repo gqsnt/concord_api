@@ -4,7 +4,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use concord_core::advanced::{ClientBuildErrorKind, MultipartBody, MultipartPart, SafeProxy};
+use concord_core::advanced::{
+    ClientBuildErrorKind, ClientInputKind, Method, MultipartBody, MultipartPart, PreparedEndpoint,
+    SafeProxy,
+};
 use concord_core::prelude::{
     ByteStream, Bytes, DecodedResponse, ErrorCategory, OctetStream, StreamBody,
 };
@@ -250,7 +253,7 @@ fn shaped_client(server: &ScriptedServer) -> ShapeApi {
         .tenant("tenant-a".to_owned())
         .locale("fr".to_owned())
         .client_marker(DropProbe::new("client-explicit", explicit_drops))
-        .http(move |http| http.proxy(proxy))
+        .configure_http(move |http| http.proxy(proxy))
         .build()
         .expect("shape client")
 }
@@ -269,6 +272,8 @@ async fn required_optional_defaulted_client_values_and_missing_input_are_stable(
         .err()
         .expect("required tenant must be absent");
     assert_eq!(missing.kind(), ClientBuildErrorKind::MissingInput);
+    assert_eq!(missing.missing_field(), Some("tenant"));
+    assert_eq!(missing.missing_input_kind(), Some(ClientInputKind::Value));
 
     let before_default = CLIENT_DEFAULT_DROPS.load(Ordering::SeqCst);
     let before_explicit = EXPLICIT_DROPS.load(Ordering::SeqCst);
@@ -284,12 +289,18 @@ async fn required_optional_defaulted_client_values_and_missing_input_are_stable(
     assert_eq!(EXPLICIT_DROPS.load(Ordering::SeqCst), before_explicit + 1);
     assert_eq!(CLIENT_DEFAULT_DROPS.load(Ordering::SeqCst), before_default);
 
-    let selected = ShapeApi::new("tenant".to_owned()).expect("convenience constructor");
+    let selected = ShapeApi::builder()
+        .tenant("tenant".to_owned())
+        .build()
+        .expect("named client builder");
     drop(selected);
     assert_eq!(
         CLIENT_DEFAULT_DROPS.load(Ordering::SeqCst),
         before_default + 1
     );
+
+    let defaults_only = OtherApi::new().expect("optional/defaulted inputs preserve zero-input new");
+    drop(defaults_only);
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -306,7 +317,7 @@ async fn nested_facade_extension_setters_and_explicit_endpoint_have_head_parity(
     let other_proxy = proxy(&server);
     let other = OtherApi::builder()
         .label(Some("chosen".to_owned()))
-        .http(move |http| http.proxy(other_proxy))
+        .configure_http(move |http| http.proxy(other_proxy))
         .build()
         .expect("other client");
     let reset_other = OtherApi::builder()
@@ -486,7 +497,7 @@ async fn independently_built_clients_retain_independent_value_snapshots() {
         .clear_locale()
         .client_marker(DropProbe::new("discarded", explicit_drops))
         .reset_client_marker()
-        .http(move |http| http.proxy(first_proxy))
+        .configure_http(move |http| http.proxy(first_proxy))
         .build()
         .expect("first client");
     let second_proxy = proxy(&server);
@@ -494,7 +505,7 @@ async fn independently_built_clients_retain_independent_value_snapshots() {
         .tenant("tenant-two".to_owned())
         .locale("discarded".to_owned())
         .locale("es".to_owned())
-        .http(move |http| http.proxy(second_proxy))
+        .configure_http(move |http| http.proxy(second_proxy))
         .build()
         .expect("second client");
 
@@ -522,7 +533,7 @@ async fn collection_queries_and_every_standard_method_preserve_runtime_order() {
     let client = shaped_client(&server);
     let other_proxy = proxy(&server);
     let other = OtherApi::builder()
-        .http(move |http| http.proxy(other_proxy))
+        .configure_http(move |http| http.proxy(other_proxy))
         .build()
         .expect("method client");
 
@@ -685,7 +696,7 @@ async fn generated_timeout_inheritance_off_and_request_overrides_remain_distinct
     let _guard = request_shaping_test_guard().await;
     let gate = BodyGate::closed();
     let server = Arc::new(
-        ScriptedServer::start((0..6).map(|_| ResponseScript::GatedBody {
+        ScriptedServer::start((0..7).map(|_| ResponseScript::GatedBody {
             status: 200,
             body: b"done".to_vec(),
             gate: gate.clone(),
@@ -694,7 +705,7 @@ async fn generated_timeout_inheritance_off_and_request_overrides_remain_distinct
     );
     let timeout_proxy = proxy(&server);
     let client = TimeoutApi::builder()
-        .http(move |http| http.proxy(timeout_proxy))
+        .configure_http(move |http| http.proxy(timeout_proxy))
         .build()
         .expect("timeout client");
 
@@ -742,8 +753,18 @@ async fn generated_timeout_inheritance_off_and_request_overrides_remain_distinct
                 .await
         }
     });
+    let runtime_inherited = tokio::spawn({
+        let client = client.clone();
+        async move {
+            let endpoint = PreparedEndpoint::builder("TimeoutApi::runtime", Method::GET)
+                .response_bytes()
+                .build()
+                .expect("runtime endpoint");
+            client.request(endpoint).await
+        }
+    });
 
-    wait_for_requests(Arc::clone(&server), 6).await;
+    wait_for_requests(Arc::clone(&server), 7).await;
 
     let inherited = inherited
         .await
@@ -755,6 +776,11 @@ async fn generated_timeout_inheritance_off_and_request_overrides_remain_distinct
         .expect("request-local timeout task")
         .expect_err("request-local timeout must override endpoint off");
     assert_eq!(local.category(), ErrorCategory::Timeout);
+    let runtime_inherited = runtime_inherited
+        .await
+        .expect("runtime endpoint timeout task")
+        .expect_err("runtime endpoint must inherit the client timeout snapshot");
+    assert_eq!(runtime_inherited.category(), ErrorCategory::Timeout);
 
     gate.release();
     assert_eq!(
@@ -785,5 +811,5 @@ async fn generated_timeout_inheritance_off_and_request_overrides_remain_distinct
             .expect("return to endpoint inheritance"),
         b"done"[..]
     );
-    assert_eq!(server.request_count(), 6);
+    assert_eq!(server.request_count(), 7);
 }

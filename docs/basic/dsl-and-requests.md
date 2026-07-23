@@ -42,7 +42,7 @@ headers
 auth
 timeout
 rate_limit
-rate_limit_observer
+rate_limit_observer (legacy; runtime builder in canonical code)
 end of client block
 root scopes and endpoints
 ```
@@ -107,21 +107,21 @@ For exact syntax, use the [DSL reference](../reference/dsl.md#dsl-reference).
 The generated builder collects required values, secrets, providers, HTTP configuration, and runtime configuration. Configuration closures are applied before the client is built and become an immutable runtime snapshot.
 
 ```rust
-use concord_core::prelude::DebugLevel;
+use concord::{DebugLevel, SecretString};
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
 let client = Api::builder()
     .tenant("tenant-a".to_owned())
-    .api_key("secret")
-    .http(|http| {
+    .api_key(SecretString::new("secret"))
+    .configure_http(|http| {
         http
             .https_only(true)
             .connect_timeout(Duration::from_secs(5))
             .read_timeout(Duration::from_secs(15))
             .retry_off()
     })
-    .runtime(|runtime| {
+    .configure_runtime(|runtime| {
         runtime
             .request_body_limit(NonZeroUsize::new(8 * 1024 * 1024).unwrap())
             .response_body_limit(NonZeroUsize::new(8 * 1024 * 1024).unwrap())
@@ -135,14 +135,19 @@ let client = Api::builder()
 A generated client exposes:
 
 - `Client::builder()` and `ClientBuilder::new()`.
-- `Client::new(...)` when all required construction inputs can be supplied positionally.
+- Zero-argument `Client::new()` only when no required value, secret, or provider exists.
 - named setter methods for client values, secrets, and custom providers.
-- `.http(|builder| ...)` and `.runtime(|builder| ...)` exactly once each.
+- Ordered, repeatable `.configure_http(|builder| ...)` and
+  `.configure_runtime(|builder| ...)` transformations.
 - `.build()` returning `Result<Client, ClientBuildError>`.
 
-`new(...)` orders required public client values first, then secrets, then custom providers. The builder is preferable when optional values or configuration closures are involved.
+Configured clients use the builder. Secret setters require `SecretString`, so protected
+material is named and explicitly wrapped rather than implicitly converted or passed
+positionally.
 
-A defaulted client value is omitted from `new(...)`, remains overridable through its builder setter, and has a generated `reset_NAME()` builder method that restores deferred evaluation of the DSL default.
+A defaulted client value does not make zero-argument `new()` unavailable. It remains
+overridable through its builder setter and has a generated `reset_NAME()` builder method
+that restores deferred evaluation of the DSL default.
 
 ### HTTP configuration
 
@@ -160,11 +165,17 @@ A defaulted client value is omitted from `new(...)`, remains overridable through
 - disabling enabled decompression formats;
 - dangerous custom retry under its feature.
 
+The dangerous custom retry setter is
+`HttpConfigBuilder::dangerous_custom_retry(...)`.
+
 Application traffic defaults to retry off. Provider traffic uses a separate managed client and reviewed provider retry policy.
 
 ### Runtime configuration
 
-`RuntimeConfigBuilder` owns finite limits, hooks, debug defaults, limiter selection, and cooldown caps. See [Limits and defaults](../reference/features-limits-and-errors.md#limits-and-defaults) for exact defaults.
+`RuntimeConfigBuilder` owns the client operation-timeout default, finite limits, hooks,
+debug defaults, limiter selection, and cooldown caps. Runtime endpoints inherit that
+operation timeout unless they explicitly replace or disable it. See
+[Limits and defaults](../reference/features-limits-and-errors.md#limits-and-defaults) for exact defaults.
 
 ### Clone and build behavior
 
@@ -175,7 +186,10 @@ Application traffic defaults to retry off. Provider traffic uses a separate mana
 
 ### Build errors
 
-`ClientBuildErrorKind` distinguishes missing input, invalid base URL, unavailable TLS, HTTP configuration, runtime configuration, unavailable required limiter, and internal safe failure.
+`ClientBuildErrorKind` distinguishes missing input, invalid base URL, unavailable TLS,
+HTTP configuration, runtime configuration, unavailable required limiter, and internal
+safe failure. Missing-input errors additionally expose the static source field through
+`missing_field()` and its `ClientInputKind`; they never retain a supplied value.
 
 ### What cannot be changed per request
 

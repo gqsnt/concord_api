@@ -354,7 +354,7 @@ Prefer type-shaped syntax and stable trait selection over enumerating built-in c
 
 ## Generated contract
 
-The façade bridge and `concord_macros` currently share generated contract version **16**.
+The façade bridge and `concord_macros` currently share generated contract version **20**.
 
 The marker protects the private interface used by generated code. It is not the package version and is not a public capability number.
 

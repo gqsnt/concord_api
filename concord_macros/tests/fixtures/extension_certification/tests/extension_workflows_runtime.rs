@@ -61,8 +61,8 @@ async fn downstream_credential_limiter_and_hooks_execute_through_generated_runti
         .session_provider(DirectExtensionProvider::new(SecretString::new(
             CREDENTIAL_SENTINEL,
         )))
-        .http(move |http| http.proxy(proxy).add_root_certificate_pem(certificate))
-        .runtime(|runtime| {
+        .configure_http(move |http| http.proxy(proxy).add_root_certificate_pem(certificate))
+        .configure_runtime(|runtime| {
             runtime
                 .rate_limiter(Arc::new(ExtensionLimiter))
                 .hooks(Arc::new(ExtensionHooks))

@@ -11,6 +11,7 @@ const KIB: usize = 1_024;
 /// Private immutable finite runtime configuration.
 #[allow(dead_code, reason = "assembled into the private production ClientCore")]
 pub(crate) struct RuntimeConfig {
+    pub(crate) operation_timeout: Option<Duration>,
     pub(crate) request_body_limit: NonZeroUsize,
     pub(crate) response_body_limit: NonZeroUsize,
     pub(crate) stream_response_limit: NonZeroUsize,
@@ -48,6 +49,7 @@ impl RuntimeConfigBuilder {
         let rate_limit_key_limit = rate_limiter.preparation_key_limit();
         Self {
             config: RuntimeConfig {
+                operation_timeout: None,
                 request_body_limit: nonzero_usize(16 * MIB),
                 response_body_limit: nonzero_usize(16 * MIB),
                 stream_response_limit: nonzero_usize(16 * MIB),
@@ -67,6 +69,23 @@ impl RuntimeConfigBuilder {
             },
             limiter_selection: LimiterSelection::Fallback,
         }
+    }
+
+    /// Sets the client-wide Concord operation timeout inherited by runtime endpoints.
+    ///
+    /// Generated endpoints retain their effective declaration timeout; request-local
+    /// timeout selection can still replace or disable either default.
+    #[must_use]
+    pub fn operation_timeout(mut self, duration: Duration) -> Self {
+        self.config.operation_timeout = Some(duration);
+        self
+    }
+
+    /// Disables the client-wide operation timeout inherited by runtime endpoints.
+    #[must_use]
+    pub fn disable_operation_timeout(mut self) -> Self {
+        self.config.operation_timeout = None;
+        self
     }
 
     /// Sets the positive finite application request-body limit.
@@ -235,6 +254,7 @@ mod tests {
     #[test]
     fn defaults_are_exact_positive_finite_values() {
         let config = RuntimeConfigBuilder::new().resolve();
+        assert_eq!(config.operation_timeout, None);
         assert_eq!(config.request_body_limit.get(), 16 * MIB);
         assert_eq!(config.response_body_limit.get(), 16 * MIB);
         assert_eq!(config.stream_response_limit.get(), 16 * MIB);
@@ -300,6 +320,7 @@ mod tests {
         let one = NonZeroUsize::MIN;
         let one_page = NonZeroU32::MIN;
         let config = RuntimeConfigBuilder::new()
+            .operation_timeout(Duration::from_secs(59))
             .request_body_limit(one)
             .response_body_limit(one)
             .stream_response_limit(one)
@@ -314,6 +335,7 @@ mod tests {
             .provider_request_limit(one)
             .provider_response_limit(one)
             .resolve();
+        assert_eq!(config.operation_timeout, Some(Duration::from_secs(59)));
         assert_eq!(config.request_body_limit, one);
         assert_eq!(config.response_body_limit, one);
         assert_eq!(config.stream_response_limit, one);
@@ -340,6 +362,21 @@ mod tests {
             .status_body_limit(NonZeroUsize::MIN)
             .resolve();
         assert_eq!(enabled.status_body_limit, Some(NonZeroUsize::MIN));
+    }
+
+    #[test]
+    fn client_operation_timeout_replacement_and_disablement_are_ordered() {
+        let configured = RuntimeConfigBuilder::new()
+            .operation_timeout(Duration::from_secs(11))
+            .operation_timeout(Duration::from_secs(13))
+            .resolve();
+        assert_eq!(configured.operation_timeout, Some(Duration::from_secs(13)));
+
+        let disabled = RuntimeConfigBuilder::new()
+            .operation_timeout(Duration::from_secs(17))
+            .disable_operation_timeout()
+            .resolve();
+        assert_eq!(disabled.operation_timeout, None);
     }
 
     #[test]

@@ -92,7 +92,7 @@ async fn facade_installs_the_extras_governor_as_generated_default() {
     let server = ScriptedServer::start([ResponseScript::ok(b"default".to_vec())]).expect("server");
     let proxy = SafeProxy::parse(server.url("")).expect("proxy");
     let client = DefaultGovernorApi::builder()
-        .http(move |http| http.proxy(proxy))
+        .configure_http(move |http| http.proxy(proxy))
         .build()
         .expect("façade governor default");
 
@@ -119,6 +119,12 @@ fn generated_nonempty_plan_fails_closed_without_governor() {
 #[tokio::test]
 async fn explicit_limiter_wins_and_dsl_observer_is_not_constructed() {
     EXPLICIT_PATH_OBSERVERS.store(0, Ordering::SeqCst);
+    let replaced_acquisitions = Arc::new(AtomicUsize::new(0));
+    let replaced_observations = Arc::new(AtomicUsize::new(0));
+    let replaced_limiter: Arc<dyn RateLimiter> = Arc::new(CapturingLimiter {
+        acquisitions: Arc::clone(&replaced_acquisitions),
+        observations: Arc::clone(&replaced_observations),
+    });
     let acquisitions = Arc::new(AtomicUsize::new(0));
     let observations = Arc::new(AtomicUsize::new(0));
     let limiter: Arc<dyn RateLimiter> = Arc::new(CapturingLimiter {
@@ -128,12 +134,15 @@ async fn explicit_limiter_wins_and_dsl_observer_is_not_constructed() {
     let server = ScriptedServer::start([ResponseScript::ok(b"explicit".to_vec())]).expect("server");
     let proxy = SafeProxy::parse(server.url("")).expect("proxy");
     let client = ExplicitLimiterApi::builder()
-        .http(move |http| http.proxy(proxy))
-        .runtime(move |runtime| runtime.rate_limiter(limiter))
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(move |runtime| runtime.rate_limiter(replaced_limiter))
+        .configure_runtime(move |runtime| runtime.rate_limiter(limiter))
         .build()
         .expect("explicit limiter client");
 
     assert_eq!(EXPLICIT_PATH_OBSERVERS.load(Ordering::SeqCst), 0);
+    assert_eq!(replaced_acquisitions.load(Ordering::SeqCst), 0);
+    assert_eq!(replaced_observations.load(Ordering::SeqCst), 0);
     assert_eq!(
         client.read().await.expect("explicit-limited request"),
         Bytes::from_static(b"explicit")

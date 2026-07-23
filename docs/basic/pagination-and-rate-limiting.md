@@ -133,13 +133,19 @@ This simplicity is intentional. Per-user, per-item, per-region-value, dynamic-ho
 
 ### Observer
 
-A client may declare one observer:
+Observer policy is runtime configuration:
 
 ```rust
-rate_limit_observer crate::rate_limit::ProviderObserver;
+let limiter = GovernorRateLimiter::new()
+    .observer(Arc::new(ProviderObserver));
+let client = Api::builder()
+    .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(limiter)))
+    .build()?;
 ```
 
-It configures only the generated default governor. An explicitly supplied custom limiter owns its own observation and does not receive the DSL observer.
+The old `rate_limit_observer PATH` declaration is legacy pending DSL v2
+removal. An explicitly supplied custom limiter owns its observation policy and
+always wins over the generated default.
 
 The default observer interprets bounded future-only `Retry-After` information. Observation cannot replace, retry, suppress, or otherwise alter the current response.
 

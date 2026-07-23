@@ -17,6 +17,7 @@ use crate::error::{ApiError, ConfigurationError, ConfigurationErrorKind};
 use crate::rate_limit::{RateLimitPlan, RateLimitRule};
 use crate::response::{NoContent, ResponseBodySpec};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DeadlineSelection {
     Inherit,
     Explicit(Duration),
@@ -56,7 +57,7 @@ pub struct PreparedEndpoint<R = NoContent> {
     headers: HeaderMap,
     body: PreparedRequestBody,
     auth: Arc<AuthPlan>,
-    inherited_timeout: Option<Duration>,
+    deadline: DeadlineSelection,
     rate_limit_plan: Arc<RateLimitPlan>,
     response: PhantomData<R>,
 }
@@ -282,11 +283,6 @@ impl<R> PreparedEndpointBuilder<R> {
                 ConfigurationError::new(ConfigurationErrorKind::InvalidAuthentication)
             })?;
 
-        let inherited_timeout = match deadline {
-            DeadlineSelection::Inherit | DeadlineSelection::Disabled => None,
-            DeadlineSelection::Explicit(duration) => Some(duration),
-        };
-
         Ok(PreparedEndpoint {
             endpoint,
             method,
@@ -295,7 +291,7 @@ impl<R> PreparedEndpointBuilder<R> {
             headers: validated_headers,
             body,
             auth: Arc::new(auth_plan),
-            inherited_timeout,
+            deadline,
             rate_limit_plan: Arc::new(RateLimitPlan::from_rules(rate_limits)),
             response: PhantomData,
         })
@@ -325,7 +321,17 @@ where
     type Response = R;
 
     fn request_meta(&self) -> RequestMeta {
-        RequestMeta::new(self.endpoint, self.method.clone(), self.inherited_timeout)
+        match self.deadline {
+            DeadlineSelection::Inherit => {
+                RequestMeta::inheriting_client_timeout(self.endpoint, self.method.clone())
+            }
+            DeadlineSelection::Explicit(duration) => {
+                RequestMeta::new(self.endpoint, self.method.clone(), Some(duration))
+            }
+            DeadlineSelection::Disabled => {
+                RequestMeta::new(self.endpoint, self.method.clone(), None)
+            }
+        }
     }
 
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
@@ -377,6 +383,7 @@ mod tests {
             endpoint.request_meta(),
             &RequestOptions::new(),
             DebugLevel::None,
+            None,
         );
         endpoint.prepare_head(builder).expect("prepared head")
     }
@@ -445,7 +452,7 @@ mod tests {
             .build()
             .expect("valid prepared endpoint");
 
-        assert_eq!(endpoint.inherited_timeout, None);
+        assert_eq!(endpoint.deadline, DeadlineSelection::Disabled);
         assert_eq!(endpoint.rate_limit_plan.rules().len(), 2);
         assert_eq!(endpoint.rate_limit_plan.rules()[0].id().as_str(), "first");
         assert_eq!(endpoint.rate_limit_plan.rules()[1].id().as_str(), "second");
@@ -484,7 +491,10 @@ mod tests {
             .timeout(Duration::from_secs(7))
             .build()
             .expect("last timeout selection wins");
-        assert_eq!(explicit.inherited_timeout, Some(Duration::from_secs(7)));
+        assert_eq!(
+            explicit.deadline,
+            DeadlineSelection::Explicit(Duration::from_secs(7))
+        );
     }
 
     #[test]

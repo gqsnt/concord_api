@@ -5,7 +5,7 @@ use concord_core::advanced::ErrorCategory;
 
 #[test]
 fn generated_contract_version_matches_generic_specification_capability() {
-    assert_eq!(GENERATED_CONTRACT_VERSION, 19);
+    assert_eq!(GENERATED_CONTRACT_VERSION, 20);
 }
 
 #[test]
@@ -16,6 +16,7 @@ fn structured_head_builder_encodes_values_only_when_prepared() {
         RequestMeta::new("ProofApi::resources::ById", Method::GET, None),
         &RequestOptions::new(),
         DebugLevel::None,
+        None,
     );
     builder.push_static("resources").expect("static segment");
     builder.push_value("item%2Ftail").expect("dynamic segment");
@@ -38,6 +39,7 @@ fn structured_head_builder_enforces_one_non_dot_segment_per_atom() {
             RequestMeta::new("ProofApi::resources::ById", Method::GET, None),
             &RequestOptions::new(),
             DebugLevel::None,
+            None,
         );
         builder
             .push_value(value)
@@ -65,6 +67,7 @@ fn structured_head_builder_enforces_one_non_dot_segment_per_atom() {
             RequestMeta::new("ProofApi::resources::ById", Method::GET, None),
             &RequestOptions::new(),
             DebugLevel::None,
+            None,
         );
         let error = builder
             .push_static(invalid)

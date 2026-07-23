@@ -145,8 +145,8 @@ async fn oauth_extra_executes_through_generated_provider_lifecycle_and_generic_r
     let certificate = server.certificate_pem();
     let client = OAuthRuntimeApi::builder()
         .oauth_provider(provider(&token_url))
-        .http(move |http| http.http1_only().add_root_certificate_pem(certificate))
-        .runtime(move |runtime| runtime.rate_limiter(limiter))
+        .configure_http(move |http| http.http1_only().add_root_certificate_pem(certificate))
+        .configure_runtime(move |runtime| runtime.rate_limiter(limiter))
         .build()
         .expect("generated OAuth client");
 
@@ -236,8 +236,8 @@ async fn oversized_provider_response_remains_bounded_and_body_safe() {
     let certificate = server.certificate_pem();
     let client = OAuthRuntimeApi::builder()
         .oauth_provider(provider(&token_url))
-        .http(move |http| http.http1_only().add_root_certificate_pem(certificate))
-        .runtime(move |runtime| {
+        .configure_http(move |http| http.http1_only().add_root_certificate_pem(certificate))
+        .configure_runtime(move |runtime| {
             runtime
                 .provider_response_limit(NonZeroUsize::new(4).expect("finite response limit"))
                 .rate_limiter(limiter)

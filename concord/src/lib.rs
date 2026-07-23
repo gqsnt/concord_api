@@ -15,8 +15,8 @@ pub use concord_core::__development;
 pub use concord_core::prelude::Multipart;
 pub use concord_core::prelude::{
     AccessToken, ApiError, ApiKey, ApiResponse, BasicCredential, ByteStream, Bytes,
-    ClientBuildError, ConfigurationError, DebugLevel, DecodedResponse, ErrorCategory, NoContent,
-    OctetStream, RequestBody, SecretString, Stream, StreamBody, Text,
+    ClientBuildError, ClientInputKind, ConfigurationError, DebugLevel, DecodedResponse,
+    ErrorCategory, NoContent, OctetStream, RequestBody, SecretString, Stream, StreamBody, Text,
 };
 pub use concord_core::{PageLimit, PaginatedRequest, Request, ResponseRequest};
 #[cfg(feature = "json")]
@@ -119,10 +119,10 @@ pub mod endpoint {
 pub mod error {
     pub use concord_core::advanced::{
         ApiError, AuthError, AuthErrorKind, BodyError, BodyErrorKind, ClientBuildError,
-        ClientBuildErrorKind, CodecError, ConfigurationError, ConfigurationErrorKind,
-        ErrorCategory, HookError, HttpResponseFailure, PaginationError, PaginationErrorKind,
-        RateLimitError, RateLimitErrorKind, ResponseBodyError, ResponseBodyErrorKind, StatusBody,
-        StatusBodyDecodeError, StatusBodyState,
+        ClientBuildErrorKind, ClientInputKind, CodecError, ConfigurationError,
+        ConfigurationErrorKind, ErrorCategory, HookError, HttpResponseFailure, PaginationError,
+        PaginationErrorKind, RateLimitError, RateLimitErrorKind, ResponseBodyError,
+        ResponseBodyErrorKind, StatusBody, StatusBodyDecodeError, StatusBodyState,
     };
 }
 
@@ -174,9 +174,9 @@ pub mod prelude {
     pub use concord_core::prelude::Multipart;
     pub use concord_core::prelude::{
         AccessToken, ApiError, ApiKey, ApiResponse, BasicCredential, ByteStream, Bytes,
-        ClientBuildError, ConfigurationError, DebugLevel, DecodedResponse, ErrorCategory,
-        NoContent, OctetStream, PageLimit, PaginatedRequest, Request, RequestBody, ResponseRequest,
-        SecretString, Stream, StreamBody, Text,
+        ClientBuildError, ClientInputKind, ConfigurationError, DebugLevel, DecodedResponse,
+        ErrorCategory, NoContent, OctetStream, PageLimit, PaginatedRequest, Request, RequestBody,
+        ResponseRequest, SecretString, Stream, StreamBody, Text,
     };
     #[cfg(feature = "records")]
     pub use concord_core::prelude::{RecordBatches, RecordError, RecordStream, Records};
@@ -193,11 +193,11 @@ pub mod advanced {
     pub use concord_core::advanced::{
         ApiError, ApiResponse, Auth, AuthError, AuthErrorKind, BeforeSend, BodyError,
         BodyErrorKind, BodyFactory, BodyKind, BoxFuture, Buffered, ByteStream, Bytes, BytesMut,
-        ChallengePolicy, ClientBuildError, ClientBuildErrorKind, CodecError, CompletionEvent,
-        CompletionOutcome, ConfigurationError, ConfigurationErrorKind, Cooldown, CooldownScope,
-        CredentialHandle, CredentialMaterial, CredentialProvider, CredentialReason, CredentialRef,
-        CredentialRequest, DebugLevel, DecodeBody, DecodeContext, DecodedResponse, Discard,
-        EncodeBody, EncodeContext, ErrorCategory, ExecutionMeta, HeaderMap, HeaderName,
+        ChallengePolicy, ClientBuildError, ClientBuildErrorKind, ClientInputKind, CodecError,
+        CompletionEvent, CompletionOutcome, ConfigurationError, ConfigurationErrorKind, Cooldown,
+        CooldownScope, CredentialHandle, CredentialMaterial, CredentialProvider, CredentialReason,
+        CredentialRef, CredentialRequest, DebugLevel, DecodeBody, DecodeContext, DecodedResponse,
+        Discard, EncodeBody, EncodeContext, ErrorCategory, ExecutionMeta, HeaderMap, HeaderName,
         HeaderValue, HookError, HttpConfigBuilder, HttpResponseFailure, LengthHint, MediaType,
         Method, NoContent, NoopRateLimiter, OctetStream, OperationId, PageResponseSpec,
         PaginationCompletionEvent, PaginationController, PaginationError, PaginationErrorKind,
@@ -278,14 +278,13 @@ pub mod __private {
     pub use concord_core::__private::raw_response_request;
     #[doc(hidden)]
     pub use concord_core::__private::{
-        ApiError, ApiResponse, Auth, ClientBuildError, ClientCore, DebugLevel, EmptyBody,
-        EndpointSpec, GENERATED_CONTRACT_VERSION, GeneratedCredential, HeadBuilder, HeaderName,
-        Method, PageResponseSpec, PaginatedEndpoint, PreparedHead, RateLimitId, RateLimitKey,
-        RateLimitKeyPart, RateLimitRule, RateLimitWindow, RawResponseEndpoint, RequestBodyContext,
-        RequestBodyMetadata, RequestBodySpec, RequestMeta, RequestOptions, ResponseBodySpec,
-        TimeoutOverride, Url, assert_generated_contract, build_client_core, credential_store_error,
-        default_http_config, default_http_config_with_custom_retry,
-        duplicate_http_configuration_error, duplicate_runtime_configuration_error,
+        ApiError, ApiResponse, Auth, ClientBuildError, ClientCore, ClientInputKind, DebugLevel,
+        EmptyBody, EndpointSpec, GENERATED_CONTRACT_VERSION, GeneratedCredential, HeadBuilder,
+        HeaderName, Method, PageResponseSpec, PaginatedEndpoint, PreparedHead, RateLimitId,
+        RateLimitKey, RateLimitKeyPart, RateLimitRule, RateLimitWindow, RawResponseEndpoint,
+        RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestMeta, RequestOptions,
+        ResponseBodySpec, TimeoutOverride, Url, assert_generated_contract, build_client_core,
+        credential_store_error, default_http_config, default_http_config_with_custom_retry,
         inspect_endpoint, map_endpoint, missing_input_error, paginate_request, request,
         response_request,
     };

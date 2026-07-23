@@ -97,7 +97,9 @@ Return `RateLimitPermit::granted()` when authority is acquired. Dropping the acq
 
 ### Observation
 
-An explicit limiter owns its own `observe` behavior. The DSL `rate_limit_observer` is used only by the generated default governor and is not composed around a custom limiter.
+The selected limiter owns its own `observe` behavior. Observer policy is
+configured with the limiter instance rather than embedded in the remote
+contract declaration.
 
 ### Key limits and redaction
 
@@ -121,11 +123,19 @@ pub trait RateLimitObserver: Send + Sync + 'static {
 }
 ```
 
-Declare one on the client:
+Install one on the extras governor, then select that limiter on the runtime
+builder:
 
 ```rust
-rate_limit_observer crate::ProviderObserver;
+let limiter = GovernorRateLimiter::new()
+    .observer(Arc::new(ProviderObserver));
+let client = Api::builder()
+    .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(limiter)))
+    .build()?;
 ```
+
+The old `rate_limit_observer PATH` declaration is legacy pending DSL v2
+removal. An explicitly supplied limiter always wins over generated defaults.
 
 ### Response input
 
@@ -150,8 +160,8 @@ are ignored.
 
 ### Ownership
 
-The façade's DSL bridge configures only its generated default, extras-owned
-`GovernorRateLimiter`. Installing an explicit limiter means that limiter owns
+The façade installs an extras-owned `GovernorRateLimiter` when needed and no
+explicit limiter was supplied. Installing an explicit limiter means that limiter owns
 observation; the DSL observer is not constructed or called.
 
 ### Responsibility

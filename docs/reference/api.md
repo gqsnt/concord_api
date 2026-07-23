@@ -93,13 +93,14 @@ An `api!` declaration generates a module containing a client, builder, scope typ
 A generated client normally provides:
 
 - `Client::builder()` and `ClientBuilder::new()`;
-- `Client::new(...)` when all mandatory values can be supplied positionally;
+- zero-argument `Client::new()` only when no required value, secret, or provider exists;
 - named setters for required/optional client values, protected secrets, and custom providers;
-- `.http(...)` and `.runtime(...)` configuration closures;
+- `.configure_http(...)` and `.configure_runtime(...)` configuration closures;
 - `.build() -> Result<Client, ClientBuildError>`;
 - facade methods for scopes and endpoints.
 
-Required positional constructor order is public values, protected secrets, then custom providers. Prefer the builder when optional configuration is involved.
+Configured clients use the named builder exclusively. Secret setters require an explicit
+`SecretString`; protected material is never accepted positionally.
 
 ### Scope values
 
@@ -160,7 +161,7 @@ Generated docs describe constructors, endpoint parameters, body/response types, 
 
 ### Compatibility
 
-Generated code and the façade bridge currently share private contract version 16. Depending on `concord` keeps the implementation packages aligned.
+Generated code and the façade bridge currently share private contract version 20. Depending on `concord` keeps the implementation packages aligned.
 
 ## Request API reference
 
@@ -505,11 +506,11 @@ This compact list prevents extension families from disappearing from the manual.
 
 ### `concord_core::prelude`
 
-`AccessToken`, `ApiError`, `ApiKey`, `ApiResponse`, `BasicCredential`, `ByteStream`, `Bytes`, `ClientBuildError`, `ConfigurationError`, `Csv`, `DebugLevel`, `DecodedResponse`, `ErrorCategory`, `Json`, `Multipart`, `NdJson`, `NoContent`, `OctetStream`, `PageLimit`, `PaginatedRequest`, `RecordBatches`, `RecordError`, `RecordStream`, `Records`, `Request`, `RequestBody`, `ResponseRequest`, `SecretString`, `Stream`, `StreamBody`, `Text`.
+`AccessToken`, `ApiError`, `ApiKey`, `ApiResponse`, `BasicCredential`, `ByteStream`, `Bytes`, `ClientBuildError`, `ClientInputKind`, `ConfigurationError`, `Csv`, `DebugLevel`, `DecodedResponse`, `ErrorCategory`, `Json`, `Multipart`, `NdJson`, `NoContent`, `OctetStream`, `PageLimit`, `PaginatedRequest`, `RecordBatches`, `RecordError`, `RecordStream`, `Records`, `Request`, `RequestBody`, `ResponseRequest`, `SecretString`, `Stream`, `StreamBody`, `Text`.
 
 ### `concord_core::advanced`
 
-`ApiError`, `ApiResponse`, `Auth`, `AuthError`, `AuthErrorKind`, `BeforeSend`, `BodyError`, `BodyErrorKind`, `BodyFactory`, `BodyKind`, `BoxFuture`, `Buffered`, `ByteStream`, `Bytes`, `BytesMut`, `ChallengePolicy`, `ClientBuildError`, `ClientBuildErrorKind`, `CodecError`, `CompletionEvent`, `CompletionOutcome`, `ConfigurationError`, `ConfigurationErrorKind`, `Cooldown`, `CooldownScope`, `CredentialHandle`, `CredentialMaterial`, `CredentialProvider`, `CredentialReason`, `CredentialRef`, `CredentialRequest`, `Csv`, `CursorPagination`, `DebugLevel`, `DecodeBody`, `DecodeContext`, `DecodedResponse`, `Discard`, `EncodeBody`, `EncodeContext`, `ErrorCategory`, `ExecutionMeta`, `HasNextCursor`, `HeaderMap`, `HeaderName`, `HeaderValue`, `HookError`, `HttpConfigBuilder`, `HttpResponseFailure`, `Json`, `LengthHint`, `MediaType`, `Method`, `Multipart`, `MultipartBody`, `MultipartFactory`, `MultipartPart`, `NdJson`, `NoContent`, `NoopRateLimiter`, `OctetStream`, `OffsetPagination`, `OperationId`, `PagePagination`, `PageResponseSpec`, `PaginationCompletionEvent`, `PaginationController`, `PaginationError`, `PaginationErrorKind`, `PreparedEndpoint`, `PreparedEndpointBuilder`, `ProviderBody`, `ProviderBodyFactory`, `ProviderHttp`, `ProviderRequest`, `ProviderResponse`, `ProviderRetry`, `RateLimitError`, `RateLimitErrorKind`, `RateLimitId`, `RateLimitKey`, `RateLimitKeyPart`, `RateLimitObserver`, `RateLimitPermit`, `RateLimitPlan`, `RateLimitRequest`, `RateLimitResponse`, `RateLimitResponseHead`, `RateLimitRule`, `RateLimitWindow`, `RateLimiter`, `RecordBatches`, `RecordDecoder`, `RecordError`, `RecordErrorKind`, `RecordStream`, `Records`, `RecoveryMode`, `RequestBody`, `RequestBodyContext`, `RequestBodyMetadata`, `RequestBodySpec`, `RequestContentType`, `ResponseBodyError`, `ResponseBodyErrorKind`, `ResponseBodySpec`, `ResponseHead`, `ResponseHeadEvent`, `ResponseMode`, `RuntimeConfigBuilder`, `RuntimeHooks`, `SafeProxy`, `SanitizedHeaderMap`, `SanitizedHeaderValue`, `SanitizedHeaders`, `SecretCredential`, `StatusBody`, `StatusBodyDecodeError`, `StatusBodyState`, `StatusCode`, `Stream`, `StreamBody`, `Streaming`, `Text`, `Url`, `Version`.
+`ApiError`, `ApiResponse`, `Auth`, `AuthError`, `AuthErrorKind`, `BeforeSend`, `BodyError`, `BodyErrorKind`, `BodyFactory`, `BodyKind`, `BoxFuture`, `Buffered`, `ByteStream`, `Bytes`, `BytesMut`, `ChallengePolicy`, `ClientBuildError`, `ClientBuildErrorKind`, `ClientInputKind`, `CodecError`, `CompletionEvent`, `CompletionOutcome`, `ConfigurationError`, `ConfigurationErrorKind`, `Cooldown`, `CooldownScope`, `CredentialHandle`, `CredentialMaterial`, `CredentialProvider`, `CredentialReason`, `CredentialRef`, `CredentialRequest`, `Csv`, `CursorPagination`, `DebugLevel`, `DecodeBody`, `DecodeContext`, `DecodedResponse`, `Discard`, `EncodeBody`, `EncodeContext`, `ErrorCategory`, `ExecutionMeta`, `HasNextCursor`, `HeaderMap`, `HeaderName`, `HeaderValue`, `HookError`, `HttpConfigBuilder`, `HttpResponseFailure`, `Json`, `LengthHint`, `MediaType`, `Method`, `Multipart`, `MultipartBody`, `MultipartFactory`, `MultipartPart`, `NdJson`, `NoContent`, `NoopRateLimiter`, `OctetStream`, `OffsetPagination`, `OperationId`, `PagePagination`, `PageResponseSpec`, `PaginationCompletionEvent`, `PaginationController`, `PaginationError`, `PaginationErrorKind`, `PreparedEndpoint`, `PreparedEndpointBuilder`, `ProviderBody`, `ProviderBodyFactory`, `ProviderHttp`, `ProviderRequest`, `ProviderResponse`, `ProviderRetry`, `RateLimitError`, `RateLimitErrorKind`, `RateLimitId`, `RateLimitKey`, `RateLimitKeyPart`, `RateLimitObserver`, `RateLimitPermit`, `RateLimitPlan`, `RateLimitRequest`, `RateLimitResponse`, `RateLimitResponseHead`, `RateLimitRule`, `RateLimitWindow`, `RateLimiter`, `RecordBatches`, `RecordDecoder`, `RecordError`, `RecordErrorKind`, `RecordStream`, `Records`, `RecoveryMode`, `RequestBody`, `RequestBodyContext`, `RequestBodyMetadata`, `RequestBodySpec`, `RequestContentType`, `ResponseBodyError`, `ResponseBodyErrorKind`, `ResponseBodySpec`, `ResponseHead`, `ResponseHeadEvent`, `ResponseMode`, `RuntimeConfigBuilder`, `RuntimeHooks`, `SafeProxy`, `SanitizedHeaderMap`, `SanitizedHeaderValue`, `SanitizedHeaders`, `SecretCredential`, `StatusBody`, `StatusBodyDecodeError`, `StatusBodyState`, `StatusCode`, `Stream`, `StreamBody`, `Streaming`, `Text`, `Url`, `Version`.
 
 ### `concord_core::dangerous`
 
@@ -540,6 +541,7 @@ The following names are exported through `concord_core::prelude`, `concord_core:
 - `ChallengePolicy`
 - `ClientBuildError`
 - `ClientBuildErrorKind`
+- `ClientInputKind`
 - `CodecError`
 - `CompletionEvent`
 - `CompletionOutcome`

@@ -230,7 +230,10 @@ impl HttpConfigBuilder {
     /// Selects an application-owned native Reqwest retry builder.
     #[cfg(feature = "dangerous-custom-retry")]
     #[must_use]
-    pub fn dangerous_retry(mut self, builder: crate::dangerous::ReqwestRetryBuilder) -> Self {
+    pub fn dangerous_custom_retry(
+        mut self,
+        builder: crate::dangerous::ReqwestRetryBuilder,
+    ) -> Self {
         self.config.application_retry = ApplicationRetry::Dangerous(builder);
         self
     }
@@ -373,7 +376,7 @@ mod tests {
     #[test]
     fn dangerous_retry_selection_retains_only_the_reviewed_native_builder_type() {
         let config = HttpConfigBuilder::new()
-            .dangerous_retry(reqwest::retry::never())
+            .dangerous_custom_retry(reqwest::retry::never())
             .resolve();
         assert!(matches!(
             config.application_retry,

@@ -49,7 +49,7 @@ timeout
 rate_limit
 ```
 
-Pagination follows endpoint layer clauses. Client variables, credentials, and retry occur before layer clauses. Client `rate_limit_observer` follows the client rate-limit declaration and precedes the end of the client block. Root children are parsed only after that block closes.
+Pagination follows endpoint layer clauses. Client variables, credentials, and retry occur before layer clauses. The legacy client `rate_limit_observer` follows the client rate-limit declaration and precedes the end of the client block. Root children are parsed only after that block closes.
 
 The macro intentionally rejects arbitrary Rust expressions and semantic type-name dispatch.
 
@@ -95,7 +95,9 @@ Client-only. Defaults to off when omitted.
 
 ### Layer and observer
 
-Client request shaping, auth, timeout, and one lexical rate-limit rule follow in fixed order. `rate_limit_observer` is client-only and unique.
+Client request shaping, auth, timeout, and one lexical rate-limit rule follow in fixed
+order. `rate_limit_observer` is a legacy client-only clause; canonical code configures
+the observer on an explicit runtime limiter.
 
 ### Children
 
@@ -437,7 +439,10 @@ retry custom crate::retry_factory;
 
 Default when omitted: off.
 
-`retry custom` requires `dangerous-custom-retry` and a path returning the native retry builder.
+`retry custom` requires `dangerous-custom-retry` and a path returning the native retry
+builder. This declaration form is legacy and is removed by DSL v2; canonical code selects
+the policy with
+`.configure_http(|http| http.dangerous_custom_retry(retry_factory()))`.
 
 Native retry stays inside one Concord attempt and is separate from authentication recovery.
 
@@ -535,11 +540,15 @@ Rules add; descendants cannot replace, disable, or modify ancestors.
 
 ### Observer
 
-Client-only and unique:
+Legacy, client-only, and unique:
 
 ```rust
 rate_limit_observer crate::Observer;
 ```
+
+Canonical code installs the observer on a limiter instance through
+`ClientBuilder::configure_runtime`. DSL v2 removes this clause while retaining
+lexical quota declarations.
 
 ### Generated semantics
 

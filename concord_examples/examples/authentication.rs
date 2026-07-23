@@ -36,10 +36,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .scope("records.read")
         .build()?;
     let client = AuthenticationApi::builder()
-        .api_key("example-api-key")
-        .bearer_token("example-bearer")
-        .username("example-user")
-        .password("example-password")
+        .api_key(concord::SecretString::new("example-api-key"))
+        .bearer_token(concord::SecretString::new("example-bearer"))
+        .username(concord::SecretString::new("example-user"))
+        .password(concord::SecretString::new("example-password"))
         .oauth_provider(oauth)
         .custom_provider(concord_examples::ExampleProvider)
         .build()?;

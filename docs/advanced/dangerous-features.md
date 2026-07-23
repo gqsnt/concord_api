@@ -59,16 +59,18 @@ Raw success is absent from streaming, paginated, prepared, feature-disabled, and
 This feature exposes Reqwest's native retry builder through:
 
 ```rust
-concord_core::dangerous::ReqwestRetryBuilder
+concord::dangerous::ReqwestRetryBuilder
 ```
 
-The DSL selects a factory:
+Select the builder as explicit runtime policy:
 
-```text
-retry custom crate::bounded_retry;
+```rust
+let client = Api::builder()
+    .configure_http(|http| http.dangerous_custom_retry(bounded_retry()))
+    .build()?;
 ```
 
-or HTTP configuration can select a builder directly.
+The legacy `retry custom PATH` DSL form remains accepted only until DSL v2.
 
 ### Why it is dangerous
 

@@ -265,11 +265,10 @@ fn proxy(server: &ScriptedServer) -> SafeProxy {
 
 fn proxied_example(server: &ScriptedServer, hooks: Option<Arc<dyn RuntimeHooks>>) -> ExampleApi {
     let proxy = proxy(server);
-    let builder = ExampleApi::builder().http(move |http| http.proxy(proxy));
+    let builder = ExampleApi::builder().configure_http(move |http| http.proxy(proxy));
     let builder = match hooks {
-        Some(hooks) => {
-            builder.runtime(move |runtime| runtime.hooks(hooks).debug(DebugLevel::Headers))
-        }
+        Some(hooks) => builder
+            .configure_runtime(move |runtime| runtime.hooks(hooks).debug(DebugLevel::Headers)),
         None => builder,
     };
     builder.build().expect("proxied generated client")
@@ -278,7 +277,7 @@ fn proxied_example(server: &ScriptedServer, hooks: Option<Arc<dyn RuntimeHooks>>
 fn proxied_buffered(server: &ScriptedServer) -> BufferedApi {
     let proxy = proxy(server);
     BufferedApi::builder()
-        .http(move |http| http.proxy(proxy))
+        .configure_http(move |http| http.proxy(proxy))
         .build()
         .expect("proxied buffered generated client")
 }
@@ -286,8 +285,8 @@ fn proxied_buffered(server: &ScriptedServer) -> BufferedApi {
 fn proxied_streaming(server: &ScriptedServer, hooks: Arc<dyn RuntimeHooks>) -> StreamingApi {
     let proxy = proxy(server);
     StreamingApi::builder()
-        .http(move |http| http.proxy(proxy))
-        .runtime(move |runtime| runtime.hooks(hooks))
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(move |runtime| runtime.hooks(hooks))
         .build()
         .expect("proxied streaming generated client")
 }
@@ -325,49 +324,47 @@ fn new_builder_and_public_request_shapes_are_final() {
 }
 
 #[test]
-fn configuration_closures_are_immediate_and_duplicates_are_suppressed() {
-    let first_http = AtomicUsize::new(0);
-    let duplicate_http = AtomicUsize::new(0);
+fn repeated_configuration_closures_compose_immediately_in_call_order() {
+    let http_order = AtomicUsize::new(0);
     let builder = ExampleApi::builder()
-        .http(|http| {
-            first_http.fetch_add(1, Ordering::SeqCst);
-            http.retry_off()
+        .configure_http(|http| {
+            assert_eq!(http_order.fetch_add(1, Ordering::SeqCst), 0);
+            http.https_only(true).retry_reqwest_default()
         })
-        .http(|http| {
-            duplicate_http.fetch_add(1, Ordering::SeqCst);
-            http
+        .configure_http(|http| {
+            assert_eq!(http_order.fetch_add(1, Ordering::SeqCst), 1);
+            http.https_only(false).retry_off()
         });
-    assert_eq!(first_http.load(Ordering::SeqCst), 1);
-    assert_eq!(duplicate_http.load(Ordering::SeqCst), 0);
-    assert_eq!(
-        build_error(builder.build()).kind(),
-        ClientBuildErrorKind::HttpConfiguration
-    );
+    assert_eq!(http_order.load(Ordering::SeqCst), 2);
+    builder
+        .build()
+        .expect("later HTTP selections replace earlier selections");
 
-    let first_runtime = AtomicUsize::new(0);
-    let duplicate_runtime = AtomicUsize::new(0);
+    let runtime_order = AtomicUsize::new(0);
     let builder = ExampleApi::builder()
-        .runtime(|runtime| {
-            first_runtime.fetch_add(1, Ordering::SeqCst);
-            runtime.debug(DebugLevel::Basic)
-        })
-        .runtime(|runtime| {
-            duplicate_runtime.fetch_add(1, Ordering::SeqCst);
+        .configure_runtime(|runtime| {
+            assert_eq!(runtime_order.fetch_add(1, Ordering::SeqCst), 0);
             runtime
+                .operation_timeout(Duration::from_secs(11))
+                .debug(DebugLevel::Basic)
+        })
+        .configure_runtime(|runtime| {
+            assert_eq!(runtime_order.fetch_add(1, Ordering::SeqCst), 1);
+            runtime
+                .disable_operation_timeout()
+                .debug(DebugLevel::Headers)
         });
-    assert_eq!(first_runtime.load(Ordering::SeqCst), 1);
-    assert_eq!(duplicate_runtime.load(Ordering::SeqCst), 0);
-    assert_eq!(
-        build_error(builder.build()).kind(),
-        ClientBuildErrorKind::RuntimeConfiguration
-    );
+    assert_eq!(runtime_order.load(Ordering::SeqCst), 2);
+    builder
+        .build()
+        .expect("later runtime selections replace earlier selections");
 }
 
 #[test]
 fn fixed_base_and_http_configuration_fail_during_generated_build() {
     let error = build_error(
         ExampleApi::builder()
-            .http(|http| http.https_only(true))
+            .configure_http(|http| http.https_only(true))
             .build(),
     );
     assert_eq!(error.kind(), ClientBuildErrorKind::HttpConfiguration);
@@ -702,8 +699,8 @@ async fn request_creation_is_lazy_and_generated_client_clone_shares_runtime_conf
     let hooks = Arc::new(CountingHooks::new());
     let hook_object: Arc<dyn RuntimeHooks> = hooks.clone();
     let client = LazyApi::builder()
-        .http(move |http| http.proxy(proxy))
-        .runtime(move |runtime| runtime.hooks(hook_object))
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(move |runtime| runtime.hooks(hook_object))
         .build()
         .expect("lazy client");
     let clone = client.clone();

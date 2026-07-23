@@ -1,3 +1,4 @@
+use concord_core::prelude::SecretString;
 use concord_macros::api;
 
 api! {
@@ -11,7 +12,10 @@ api! {
 }
 
 fn main() {
-    let client = Api::new("protected").unwrap();
+    let client = Api::builder()
+        .token(SecretString::new("protected"))
+        .build()
+        .unwrap();
     let credential = client.credentials().session().credential();
     let _ = credential.clear();
 }

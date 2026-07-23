@@ -123,6 +123,7 @@ fn authentication_plan_state_is_absent_from_canonical_logical_identity() {
             RequestMeta::new("PaginationApi::protected", Method::GET, None),
             &RequestOptions::new(),
             DebugLevel::None,
+            None,
         );
         builder.push_static("items").expect("path");
         builder

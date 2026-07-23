@@ -125,6 +125,10 @@ impl ClientCore {
         self.inner.runtime.debug
     }
 
+    pub(crate) fn default_operation_timeout(&self) -> Option<std::time::Duration> {
+        self.inner.runtime.operation_timeout
+    }
+
     pub(crate) fn debug_dispatcher(&self, level: DebugLevel) -> DebugDispatcher {
         let dispatcher = DebugDispatcher::new(level);
         #[cfg(test)]
@@ -307,6 +311,7 @@ mod tests {
                 .http1_only()
                 .proxy(SafeProxy::parse(first_proxy).expect("safe proxy")),
             RuntimeConfigBuilder::new()
+                .operation_timeout(Duration::from_secs(7))
                 .request_body_limit(one)
                 .response_body_limit(two)
                 .stream_response_limit(three)
@@ -337,6 +342,10 @@ mod tests {
             )
         );
         assert_eq!(first.inner.runtime.request_body_limit, one);
+        assert_eq!(
+            first.inner.runtime.operation_timeout,
+            Some(Duration::from_secs(7))
+        );
         assert_eq!(first.inner.runtime.response_body_limit, two);
         assert_eq!(first.inner.runtime.stream_response_limit, three);
         assert_eq!(first.inner.runtime.status_body_limit, Some(four));
@@ -378,6 +387,10 @@ mod tests {
             &first_limiter
         ));
         assert_eq!(clone.inner.runtime.debug, DebugLevel::Headers);
+        assert_eq!(
+            clone.inner.runtime.operation_timeout,
+            Some(Duration::from_secs(7))
+        );
 
         let second = ClientCore::build_with_development(
             "http://second.example",
@@ -408,6 +421,10 @@ mod tests {
         );
 
         assert_eq!(first.inner.runtime.request_body_limit, one);
+        assert_eq!(
+            first.inner.runtime.operation_timeout,
+            Some(Duration::from_secs(7))
+        );
         assert_eq!(first.inner.runtime.pagination_max_pages.get(), 37);
         assert_eq!(
             first.inner.runtime.rate_limit_cooldown_cap,

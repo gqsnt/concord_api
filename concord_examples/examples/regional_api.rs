@@ -76,7 +76,10 @@ api! {
 }
 
 fn main() -> Result<(), concord::prelude::ClientBuildError> {
-    let client = RegionalGameApi::new("euw1".to_owned(), "example-developer-key")?;
+    let client = RegionalGameApi::builder()
+        .platform("euw1".to_owned())
+        .api_key(concord::SecretString::new("example-developer-key"))
+        .build()?;
     let _: regional_game_api::accounts::ByIdRequest = client
         .accounts("europe".to_owned())
         .by_id("account-42".to_owned());

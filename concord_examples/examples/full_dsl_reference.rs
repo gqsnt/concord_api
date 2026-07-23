@@ -62,7 +62,10 @@ api! {
 }
 
 fn main() -> Result<(), concord::prelude::ClientBuildError> {
-    let client = ReferenceApi::new("tenant-a".to_owned(), "example-api-key")?;
+    let client = ReferenceApi::builder()
+        .tenant("tenant-a".to_owned())
+        .api_key(concord::SecretString::new("example-api-key"))
+        .build()?;
     let _: reference_api::StatusRequest = client.status().verbose(true);
     let _: reference_api::regions::ResourceRequest = client
         .regions("eu-west".to_owned())
