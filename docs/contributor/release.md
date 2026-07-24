@@ -63,7 +63,7 @@ That recipe uses `git archive`, so the ZIP contains only tracked content from
 
 ## Generated bridge contract
 
-The generated contract version is **24** in `concord-macros` and
+The generated contract version is **25** in `concord-macros` and
 `concord-core`. The façade reexports the handshake through its hidden bridge.
 Any emitted bridge path or signature change requires an atomic version bump
 and the retained contract-mismatch fixture. The bridge is compiler/runtime

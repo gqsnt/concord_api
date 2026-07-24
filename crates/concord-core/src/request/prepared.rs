@@ -19,10 +19,11 @@ use crate::codec::{EncodeBody, MediaType};
 use crate::construction::{ErrorLatch, StructuralBudget, StructuralLimitError, format_bounded};
 use crate::endpoint::{
     EndpointCapabilities, EndpointDescription, EndpointId, MAX_FORMATTED_PUBLIC_VALUE_BYTES,
-    MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS, MAX_RUNTIME_ENDPOINT_COMPONENTS,
-    MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, RequestBodyCategory, TimeoutSelection,
+    MAX_RUNTIME_ENDPOINT_COMPONENTS, MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, RequestBodyCategory,
+    TimeoutSelection,
 };
 use crate::error::{ApiError, ConfigurationError, ConfigurationErrorKind};
+use crate::limits::MAX_AUTH_PLACEMENTS;
 use crate::rate_limit::{RateLimitPlan, RateLimitRule};
 use crate::response::{NoContent, ResponseBodySpec, ResponseMode};
 
@@ -302,7 +303,7 @@ impl<R> RuntimeEndpointBuilder<R> {
                 .len()
                 .checked_add(placements)
                 .ok_or(ConfigurationErrorKind::InvalidAuthentication)?;
-            if count > MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS {
+            if count > MAX_AUTH_PLACEMENTS {
                 return Err(ConfigurationErrorKind::InvalidAuthentication);
             }
             let budget =
@@ -1092,7 +1093,7 @@ mod tests {
         let credential = credential();
         let mut boundary =
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.auth"), Method::GET);
-        for index in 0..MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS {
+        for index in 0..MAX_AUTH_PLACEMENTS {
             boundary = boundary.auth(
                 Auth::query(format!("runtime-auth-{index}"), credential.clone())
                     .expect("valid authentication placement"),
@@ -1102,7 +1103,7 @@ mod tests {
 
         let mut excessive =
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.auth"), Method::GET);
-        for index in 0..=MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS {
+        for index in 0..=MAX_AUTH_PLACEMENTS {
             excessive = excessive.auth(
                 Auth::query(format!("runtime-auth-{index}"), credential.clone())
                     .expect("valid authentication placement"),

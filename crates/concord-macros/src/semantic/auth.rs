@@ -10,6 +10,7 @@ use super::model::{
     ResolvedChallengePolicy, ResolvedExpr, Secret, Value, ValueShape,
 };
 use super::surface::{RESERVED_GENERATED_METHODS, canonical_ident, insert_name, to_snake_case};
+use crate::MAX_AUTH_PLACEMENTS;
 use crate::syntax::ast::{
     AuthPlacementKind as SourceAuthPlacement, CredentialSource as SourceCredentialSource,
     CredentialsBlock,
@@ -94,6 +95,11 @@ pub(super) fn validate_auth_compatibility(
 }
 
 pub(super) fn validate_effective_auth(config: &NormalizedConfig) -> syn::Result<()> {
+    if let Some(first_excess) = config.auth.get(MAX_AUTH_PLACEMENTS) {
+        return Err(first_excess.span.error(format!(
+            "an effective authentication plan permits at most {MAX_AUTH_PLACEMENTS} placements"
+        )));
+    }
     let challenge_count = config
         .auth
         .iter()
@@ -104,12 +110,7 @@ pub(super) fn validate_effective_auth(config: &NormalizedConfig) -> syn::Result<
             .auth
             .iter()
             .find(|placement| placement.challenge != ResolvedChallengePolicy::Never)
-            .map(|placement| match &placement.kind {
-                ResolvedAuthPlacement::Header(name) | ResolvedAuthPlacement::Query(name) => {
-                    name.span()
-                }
-                ResolvedAuthPlacement::Bearer | ResolvedAuthPlacement::Basic => Span::call_site(),
-            })
+            .map(|placement| placement.span)
             .unwrap_or_else(Span::call_site);
         return Err(span.error(
             "one effective authentication plan may contain at most one challenge-enabled placement",
@@ -134,7 +135,7 @@ pub(super) fn validate_effective_auth(config: &NormalizedConfig) -> syn::Result<
                             ))
                     })
                 {
-                    return Err(Span::call_site().error(
+                    return Err(placement.span.error(
                         "effective authentication placements collide on `Authorization`",
                     ));
                 }

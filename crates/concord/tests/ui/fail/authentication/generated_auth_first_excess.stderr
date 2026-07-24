@@ -1,0 +1,5 @@
+error: an effective authentication plan permits at most 64 placements
+  --> tests/ui/fail/authentication/generated_auth_first_excess.rs:77:32
+   |
+77 |         auth query "auth-64" = key;
+   |                                ^^^

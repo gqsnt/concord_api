@@ -174,6 +174,7 @@ impl Resolver<'_> {
                             kind: resolve_auth_placement(&placement.kind),
                             credential,
                             challenge: resolve_challenge(challenge),
+                            span: placement.credential.span(),
                         });
                     }
                 }

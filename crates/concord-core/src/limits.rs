@@ -9,8 +9,8 @@ pub const MAX_RUNTIME_ENDPOINT_COMPONENTS: usize = 256;
 /// Maximum aggregate public UTF-8 bytes retained by one runtime endpoint.
 pub const MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES: usize = 65_536;
 
-/// Maximum authentication placements retained by one runtime endpoint.
-pub const MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS: usize = 64;
+/// Maximum authentication placements retained by one effective plan.
+pub const MAX_AUTH_PLACEMENTS: usize = 64;
 
 /// Maximum UTF-8 bytes in one rate-limit rule identifier.
 pub const MAX_RATE_LIMIT_ID_BYTES: usize = 256;

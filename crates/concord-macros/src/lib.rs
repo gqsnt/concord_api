@@ -1,13 +1,13 @@
 //! Declaration compiler for Concord APIs.
 //!
-//! Applications use the [`api`] reexport from the `concord` façade. This
-//! implementation package parses and validates declarations and emits against
-//! the façade's versioned generated-code bridge.
+//! This implementation crate supports `concord::api!`. Applications should
+//! depend on and import from `concord`. This package parses and validates
+//! façade declarations and emits against the façade's versioned generated-code
+//! bridge.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-mod crate_path;
 mod emit;
 mod semantic;
 mod syntax;
@@ -19,17 +19,10 @@ use syn::{Token, parenthesized};
 
 // Core owns these public structural limits. Compiler boundary tests exercise
 // the same exact first-excess behavior without coupling this crate to core.
+const MAX_AUTH_PLACEMENTS: usize = 64;
 const MAX_RATE_LIMIT_ID_BYTES: usize = 256;
 const MAX_RATE_LIMIT_WINDOWS_PER_RULE: usize = 16;
 const MAX_RATE_LIMIT_RULES_PER_PLAN: usize = 64;
-
-/// Declares a generated Concord client and its typed endpoints.
-#[proc_macro]
-pub fn api(input: TokenStream) -> TokenStream {
-    expand(input.into(), emit::Capabilities::default())
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
-}
 
 /// Internal façade entry point carrying façade-selected capability tokens.
 #[doc(hidden)]
@@ -41,11 +34,6 @@ pub fn __api(input: TokenStream) -> TokenStream {
         })
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
-}
-
-fn expand(input: TokenStream2, capabilities: emit::Capabilities) -> syn::Result<TokenStream2> {
-    let runtime_path = crate_path::resolve_runtime_path()?;
-    expand_with_runtime(input, capabilities, &runtime_path)
 }
 
 fn expand_with_runtime(
@@ -117,5 +105,30 @@ impl Parse for FacadeInput {
             runtime_path,
             declaration: input.parse()?,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn implementation_macro_has_no_public_api_entry() {
+        let source =
+            syn::parse_file(include_str!("lib.rs")).expect("macro crate source must parse");
+        let proc_macros = source
+            .items
+            .iter()
+            .filter_map(|item| {
+                let syn::Item::Fn(function) = item else {
+                    return None;
+                };
+                function
+                    .attrs
+                    .iter()
+                    .any(|attribute| attribute.path().is_ident("proc_macro"))
+                    .then(|| function.sig.ident.to_string())
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(proc_macros, ["__api"]);
     }
 }

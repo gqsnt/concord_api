@@ -8,9 +8,9 @@ pub use crate::auth::{
     AccessToken, ApiKey, Auth, AuthError, BasicCredential, ChallengePolicy, CredentialHandle,
     CredentialMaterial, CredentialMaterialError, CredentialMaterialErrorKind, CredentialProvider,
     CredentialReason, CredentialRef, CredentialRequest, MAX_AUTH_PLACEMENT_NAME_BYTES,
-    MAX_AUTH_QUERY_VALUE_BYTES, MAX_AUTHORIZATION_VALUE_BYTES, MAX_BASIC_PASSWORD_BYTES,
-    MAX_BASIC_USERNAME_BYTES, MAX_CREDENTIAL_SECRET_BYTES, MAX_SECRET_STRING_BYTES, RecoveryMode,
-    SecretCredential, SecretString,
+    MAX_AUTH_PLACEMENTS, MAX_AUTH_QUERY_VALUE_BYTES, MAX_AUTHORIZATION_VALUE_BYTES,
+    MAX_BASIC_PASSWORD_BYTES, MAX_BASIC_USERNAME_BYTES, MAX_CREDENTIAL_SECRET_BYTES,
+    MAX_SECRET_STRING_BYTES, RecoveryMode, SecretCredential, SecretString,
 };
 pub use crate::body::{
     BodyError, BodyErrorKind, BodyFactory, BodyKind, LengthHint, RequestBody, RequestBodyContext,
@@ -27,9 +27,9 @@ pub use crate::codec::{
 };
 pub use crate::endpoint::{
     EndpointCapabilities, EndpointDescription, EndpointId, MAX_ENDPOINT_ID_BYTES,
-    MAX_FORMATTED_PUBLIC_VALUE_BYTES, MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS,
-    MAX_RUNTIME_ENDPOINT_COMPONENTS, MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, RequestBodyCategory,
-    ResponseAcquisition, SafeRequestPlan, TimeoutSelection,
+    MAX_FORMATTED_PUBLIC_VALUE_BYTES, MAX_RUNTIME_ENDPOINT_COMPONENTS,
+    MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, RequestBodyCategory, ResponseAcquisition, SafeRequestPlan,
+    TimeoutSelection,
 };
 pub use crate::error::{
     ApiError, AuthErrorKind, ClientBuildError, ClientBuildErrorKind, ClientInputKind,

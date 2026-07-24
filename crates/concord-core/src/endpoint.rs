@@ -10,8 +10,8 @@ use crate::error::{ConfigurationError, ConfigurationErrorKind};
 use crate::redaction::SanitizedHeaderMap;
 
 pub use crate::limits::{
-    MAX_FORMATTED_PUBLIC_VALUE_BYTES, MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS,
-    MAX_RUNTIME_ENDPOINT_COMPONENTS, MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
+    MAX_FORMATTED_PUBLIC_VALUE_BYTES, MAX_RUNTIME_ENDPOINT_COMPONENTS,
+    MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
 };
 
 /// Maximum encoded length accepted for one endpoint contract identity.

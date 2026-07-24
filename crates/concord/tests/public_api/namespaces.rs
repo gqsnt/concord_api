@@ -44,6 +44,7 @@ fn semantic_domains_are_available_without_implementation_crate_imports() {
 fn hard_structural_limits_are_reachable_from_their_facade_domains() {
     let auth_limits = [
         auth::MAX_AUTH_PLACEMENT_NAME_BYTES,
+        auth::MAX_AUTH_PLACEMENTS,
         auth::MAX_CREDENTIAL_SECRET_BYTES,
         auth::MAX_BASIC_USERNAME_BYTES,
         auth::MAX_BASIC_PASSWORD_BYTES,
@@ -63,7 +64,6 @@ fn hard_structural_limits_are_reachable_from_their_facade_domains() {
         endpoint::MAX_FORMATTED_PUBLIC_VALUE_BYTES,
         endpoint::MAX_RUNTIME_ENDPOINT_COMPONENTS,
         endpoint::MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
-        endpoint::MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS,
     ];
     let rate_limits = [
         rate_limit::MAX_RATE_LIMIT_ID_BYTES,

@@ -41,7 +41,7 @@ ceilings selected for finite construction.
 | Multipart inline text | 16,777,216 | bytes |
 | Runtime endpoint top-level structure | 256 | components |
 | Runtime endpoint aggregate public shape | 65,536 | bytes |
-| Runtime endpoint authentication placements | 64 | placements |
+| Authentication plan | 64 | placements |
 | Rate-limit rule ID | 256 | bytes |
 | Rate-limit key | 32 | parts |
 | Rate-limit key-part name | 128 | bytes |

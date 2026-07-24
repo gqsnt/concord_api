@@ -326,6 +326,7 @@ pub(crate) struct NormalizedAuth {
     pub(crate) kind: ResolvedAuthPlacement,
     pub(crate) credential: usize,
     pub(crate) challenge: ResolvedChallengePolicy,
+    pub(crate) span: Span,
 }
 
 #[derive(Clone)]

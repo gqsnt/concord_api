@@ -6,7 +6,7 @@ use super::model::{
 };
 use super::*;
 use crate::syntax as parse;
-use crate::{MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_RULES_PER_PLAN};
+use crate::{MAX_AUTH_PLACEMENTS, MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_RULES_PER_PLAN};
 
 fn resolve_ok(tokens: proc_macro2::TokenStream) -> Api {
     resolve(parse::parse(tokens).expect("AST")).expect("normalized IR")
@@ -529,6 +529,63 @@ fn authentication_normalization_appends_replaces_clears_and_resolves_defaults() 
         panic!("public endpoint")
     };
     assert!(public.config.auth.is_empty());
+}
+
+#[test]
+fn generated_authentication_plan_accepts_exact_limit_and_rejects_first_excess_after_inheritance() {
+    fn placements(start: usize, end: usize) -> Vec<proc_macro2::TokenStream> {
+        (start..end)
+            .map(|index| {
+                let name =
+                    syn::LitStr::new(&format!("auth-{index}"), proc_macro2::Span::call_site());
+                quote!(auth query #name = key;)
+            })
+            .collect()
+    }
+
+    let exact = placements(0, MAX_AUTH_PLACEMENTS);
+    let api = resolve_ok(quote! {
+        client ExactAuthApi {
+            base "https://example.test";
+            credentials {
+                secret key_value: String;
+                credential key = api_key(secret.key_value);
+            }
+            #(#exact)*
+        }
+        GET read() -> Bytes;
+    });
+    assert_eq!(api.client.config.auth.len(), MAX_AUTH_PLACEMENTS);
+
+    let client = placements(0, MAX_AUTH_PLACEMENTS / 2);
+    let scope = placements(MAX_AUTH_PLACEMENTS / 2, MAX_AUTH_PLACEMENTS);
+    let error = resolve(
+        parse::parse(quote! {
+            client InheritedAuthApi {
+                base "https://example.test";
+                credentials {
+                    secret key_value: String;
+                    credential key = api_key(secret.key_value);
+                }
+                #(#client)*
+            }
+            scope secured() {
+                #(#scope)*
+                GET first_excess() -> Bytes {
+                    auth query "auth-first-excess" = key;
+                }
+            }
+        })
+        .expect("first-excess authentication AST"),
+    )
+    .err()
+    .expect("first-excess effective authentication plan");
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "an effective authentication plan permits at most {MAX_AUTH_PLACEMENTS} placements"
+        )
+    );
 }
 
 #[test]

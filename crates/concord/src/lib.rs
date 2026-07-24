@@ -49,10 +49,11 @@ pub mod auth {
         Auth, AuthError, AuthErrorKind, BoxFuture, ChallengePolicy, CredentialHandle,
         CredentialMaterial, CredentialMaterialError, CredentialMaterialErrorKind,
         CredentialProvider, CredentialReason, CredentialRef, CredentialRequest,
-        MAX_AUTH_PLACEMENT_NAME_BYTES, MAX_AUTH_QUERY_VALUE_BYTES, MAX_AUTHORIZATION_VALUE_BYTES,
-        MAX_BASIC_PASSWORD_BYTES, MAX_BASIC_USERNAME_BYTES, MAX_CREDENTIAL_SECRET_BYTES,
-        MAX_SECRET_STRING_BYTES, ProviderBody, ProviderBodyFactory, ProviderHttp, ProviderRequest,
-        ProviderResponse, ProviderRetry, RecoveryMode, SecretCredential,
+        MAX_AUTH_PLACEMENT_NAME_BYTES, MAX_AUTH_PLACEMENTS, MAX_AUTH_QUERY_VALUE_BYTES,
+        MAX_AUTHORIZATION_VALUE_BYTES, MAX_BASIC_PASSWORD_BYTES, MAX_BASIC_USERNAME_BYTES,
+        MAX_CREDENTIAL_SECRET_BYTES, MAX_SECRET_STRING_BYTES, ProviderBody, ProviderBodyFactory,
+        ProviderHttp, ProviderRequest, ProviderResponse, ProviderRetry, RecoveryMode,
+        SecretCredential,
     };
     #[cfg(feature = "oauth2-client")]
     pub use concord_extras::auth::{
@@ -93,10 +94,9 @@ pub mod codec {
 pub mod endpoint {
     pub use concord_core::contracts::{
         EndpointCapabilities, EndpointDescription, EndpointId, MAX_ENDPOINT_ID_BYTES,
-        MAX_FORMATTED_PUBLIC_VALUE_BYTES, MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS,
-        MAX_RUNTIME_ENDPOINT_COMPONENTS, MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, RequestBodyCategory,
-        ResponseAcquisition, RuntimeEndpoint, RuntimeEndpointBuilder, SafeRequestPlan,
-        TimeoutSelection,
+        MAX_FORMATTED_PUBLIC_VALUE_BYTES, MAX_RUNTIME_ENDPOINT_COMPONENTS,
+        MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, RequestBodyCategory, ResponseAcquisition,
+        RuntimeEndpoint, RuntimeEndpointBuilder, SafeRequestPlan, TimeoutSelection,
     };
     pub use concord_core::{Request, ResponseRequest};
 }

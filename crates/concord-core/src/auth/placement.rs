@@ -12,6 +12,7 @@ use crate::error::{ApiError, AuthErrorKind};
 use crate::hooks::BoxFuture;
 use crate::http::application::ApplicationRequest;
 use crate::http::provider::ProviderHttp;
+use crate::limits::MAX_AUTH_PLACEMENTS;
 
 use super::material::{BasicCredential, SecretCredential};
 use super::slot::{CredentialSource, PreparedCredential, SlotSelector};
@@ -298,6 +299,9 @@ impl AuthPlan {
         logical_url: &Url,
         public_headers: &HeaderMap,
     ) -> Result<(), AuthError> {
+        if self.placements.len() >= MAX_AUTH_PLACEMENTS {
+            return Err(AuthError::new(AuthErrorKind::InvalidConfiguration));
+        }
         if auth.challenge != ChallengePolicy::Never
             && self
                 .placements
@@ -327,6 +331,9 @@ impl AuthPlan {
         logical_url: &Url,
         public_headers: &HeaderMap,
     ) -> Result<(), AuthError> {
+        if self.placements.len() > MAX_AUTH_PLACEMENTS {
+            return Err(AuthError::new(AuthErrorKind::InvalidConfiguration));
+        }
         for (index, placement) in self.placements.iter().enumerate() {
             validate_public_collision(&placement.kind, logical_url, public_headers)?;
             if self.placements[..index]
@@ -911,5 +918,38 @@ mod tests {
         assert_eq!(error.kind(), AuthErrorKind::MaterialTooLarge);
         assert!(!error.to_string().contains(SENTINEL));
         assert!(!format!("{error:?}").contains(SENTINEL));
+    }
+
+    #[test]
+    fn auth_plan_defensive_first_excess_is_rejected_before_retention() {
+        const FIRST_EXCESS_NAME: &str = "private-auth-placement-first-excess-sentinel";
+
+        let logical_url = Url::parse("https://example.test/").expect("validation URL");
+        let public_headers = HeaderMap::new();
+        let credential = credential();
+        let mut plan = AuthPlan::default();
+        for index in 0..MAX_AUTH_PLACEMENTS {
+            plan.push(
+                Auth::query(format!("private-auth-{index}"), credential.clone())
+                    .expect("bounded unique authentication placement"),
+                &logical_url,
+                &public_headers,
+            )
+            .expect("exact authentication-plan limit");
+        }
+        assert_eq!(plan.placements.len(), MAX_AUTH_PLACEMENTS);
+
+        let error = plan
+            .push(
+                Auth::query(FIRST_EXCESS_NAME, credential)
+                    .expect("bounded first-excess authentication placement"),
+                &logical_url,
+                &public_headers,
+            )
+            .expect_err("first excess authentication placement");
+        assert_eq!(error.kind(), AuthErrorKind::InvalidConfiguration);
+        assert_eq!(plan.placements.len(), MAX_AUTH_PLACEMENTS);
+        assert!(!error.to_string().contains(FIRST_EXCESS_NAME));
+        assert!(!format!("{error:?}").contains(FIRST_EXCESS_NAME));
     }
 }

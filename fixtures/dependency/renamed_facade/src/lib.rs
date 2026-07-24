@@ -3,7 +3,7 @@ use runtime::api;
 const _: usize = runtime::endpoint::MAX_FORMATTED_PUBLIC_VALUE_BYTES;
 const _: usize = runtime::endpoint::MAX_RUNTIME_ENDPOINT_COMPONENTS;
 const _: usize = runtime::endpoint::MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES;
-const _: usize = runtime::endpoint::MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS;
+const _: usize = runtime::auth::MAX_AUTH_PLACEMENTS;
 const _: usize = runtime::rate_limit::MAX_RATE_LIMIT_ID_BYTES;
 const _: usize = runtime::rate_limit::MAX_RATE_LIMIT_KEY_PARTS;
 const _: usize = runtime::rate_limit::MAX_RATE_LIMIT_KEY_PART_NAME_BYTES;

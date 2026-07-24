@@ -11,6 +11,7 @@ mod slot;
 pub(crate) use placement::{AuthPlan, PreparedAuthPlan};
 pub(crate) use slot::SlotSelector;
 
+pub use crate::limits::MAX_AUTH_PLACEMENTS;
 pub use error::AuthError;
 pub use material::{
     AccessToken, ApiKey, BasicCredential, CredentialMaterial, CredentialMaterialError,
