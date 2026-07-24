@@ -51,10 +51,10 @@ implementation crate.
 
 ## Private generated bridge
 
-A downstream package cannot address a transitive dependency. The compiler
-therefore resolves the caller-visible `concord` package with Cargo dependency
-renaming support and emits all generated semantic operations through
-`concord::__private`.
+A downstream package cannot address a transitive dependency. Applications
+therefore declare APIs only through `concord::api!`, including when the façade
+dependency is renamed, and generated semantic operations go through the
+façade's hidden `__private` bridge.
 
 The façade `api!` wrapper passes its own path and enabled capability tokens to
 the hidden declaration compiler. This makes a downstream façade feature, such

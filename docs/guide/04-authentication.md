@@ -38,6 +38,10 @@ leaves the previous material and version unchanged. Custom
 `CredentialMaterial` does not need to implement `Clone`; Concord shares ready
 material behind its private slot storage.
 
+Generated declarations and runtime-defined endpoints enforce the same
+64-placement authentication-plan ceiling. The exact maximum is accepted, and
+the first excess placement is rejected before it can be retained.
+
 Credentials are resolved after public preparation and limiter acquisition, at
 the private native boundary. Hooks, descriptions, plans, errors, completion
 events, and debug output cannot see material. Authentication challenge

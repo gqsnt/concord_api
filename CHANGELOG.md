@@ -18,6 +18,15 @@
 
 ### Changed
 
+- Built-in credential constructors are fallible and bounded before storage;
+  generated static construction and replacement validate before slot mutation,
+  and protected-string clones share immutable storage.
+- Custom `CredentialMaterial` no longer requires `Clone`; Concord shares ready
+  material through private slot storage.
+- `concord::api!` is the sole application declaration entry, including for a
+  renamed façade dependency.
+- Generated declarations, runtime endpoints, and core authentication plans
+  enforce one shared 64-placement hard limit.
 - `EndpointId` validates borrowed input before allocation.
 - Bearer, Basic, Base64, and authentication-query construction use checked
   arithmetic and reject excess output before native request mutation.

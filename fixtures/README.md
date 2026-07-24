@@ -6,9 +6,6 @@ This workspace contains only proofs whose subject is Cargo resolution.
   no-governor fail-closed runtime proof.
 - `dependency/renamed_facade` proves that generated paths resolve a renamed
   `concord` dependency.
-- `dependency/direct_core_rejected` proves that the removed two-crate
-  `concord-core` plus `concord-macros` setup fails with the façade-dependency
-  diagnostic.
 - `dependency/contract_mismatch` replaces the façade bridge with an
   incompatible contract version and proves the generated handshake fails.
 

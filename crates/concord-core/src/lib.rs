@@ -40,9 +40,3 @@ mod execute;
 
 #[doc(hidden)]
 pub mod __private;
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn scaffold_test_target_runs() {}
-}

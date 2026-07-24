@@ -45,12 +45,12 @@ impl StructuralBudget {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) const fn components(self) -> usize {
         self.components
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) const fn public_bytes(self) -> usize {
         self.public_bytes
     }
@@ -188,34 +188,7 @@ where
     }
 }
 
-/// Collects at most `remaining` items and consumes one withheld excess item.
-#[allow(dead_code)]
-pub(crate) fn collect_bounded<I>(
-    values: I,
-    remaining: usize,
-) -> Result<Vec<I::Item>, StructuralLimitError>
-where
-    I: IntoIterator,
-{
-    let mut values = values.into_iter();
-    let mut retained = Vec::new();
-    while retained.len() < remaining {
-        let Some(value) = values.next() else {
-            return Ok(retained);
-        };
-        retained.push(value);
-    }
-    if values.next().is_some() {
-        Err(StructuralLimitError::ComponentLimitExceeded)
-    } else {
-        Ok(retained)
-    }
-}
-
 /// A consuming error latch whose updates run only while state remains valid.
-///
-/// C2 uses this shape to keep fluent runtime endpoint mutation inert after
-/// the first structural error.
 pub(crate) struct ErrorLatch<T, E> {
     state: Result<T, E>,
 }
@@ -223,11 +196,6 @@ pub(crate) struct ErrorLatch<T, E> {
 impl<T, E> ErrorLatch<T, E> {
     pub(crate) const fn from_value(value: T) -> Self {
         Self { state: Ok(value) }
-    }
-
-    #[allow(dead_code)]
-    pub(crate) const fn from_error(error: E) -> Self {
-        Self { state: Err(error) }
     }
 
     pub(crate) fn then<F>(self, update: F) -> Self
@@ -246,9 +214,6 @@ impl<T, E> ErrorLatch<T, E> {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
-    use std::rc::Rc;
-
     use super::*;
 
     const SENTINEL: &str = "formatted-first-excess-sentinel-4d8e";
@@ -260,25 +225,6 @@ mod tests {
             formatter.write_str("1234")?;
             let _ = formatter.write_str(SENTINEL);
             Ok(())
-        }
-    }
-
-    struct PanicBeyondFirstExcess {
-        next: usize,
-        first_excess: usize,
-    }
-
-    impl Iterator for PanicBeyondFirstExcess {
-        type Item = usize;
-
-        fn next(&mut self) -> Option<Self::Item> {
-            assert!(
-                self.next <= self.first_excess,
-                "iterator consumed beyond the first excess"
-            );
-            let value = self.next;
-            self.next += 1;
-            Some(value)
         }
     }
 
@@ -352,49 +298,5 @@ mod tests {
         assert!(output.write_str(SENTINEL).is_err());
         assert_eq!(output.output, "1234");
         assert!(!output.output.contains(SENTINEL));
-    }
-
-    #[test]
-    fn bounded_collection_accepts_boundary_and_withholds_first_excess() {
-        assert_eq!(
-            collect_bounded([1, 2, 3], 3).expect("exact boundary"),
-            vec![1, 2, 3]
-        );
-        assert_eq!(
-            collect_bounded([1, 2, 3], 2),
-            Err(StructuralLimitError::ComponentLimitExceeded)
-        );
-
-        let guarded = PanicBeyondFirstExcess {
-            next: 0,
-            first_excess: 3,
-        };
-        assert_eq!(
-            collect_bounded(guarded, 3),
-            Err(StructuralLimitError::ComponentLimitExceeded)
-        );
-    }
-
-    #[test]
-    fn latched_error_prevents_iterator_creation_or_consumption() {
-        let polls = Rc::new(Cell::new(0_usize));
-        let observed = Rc::clone(&polls);
-        let latch = ErrorLatch::<Vec<usize>, StructuralLimitError>::from_error(
-            StructuralLimitError::PublicByteLimitExceeded,
-        )
-        .then(|mut retained| {
-            let values = std::iter::from_fn(move || {
-                observed.set(observed.get() + 1);
-                Some(1)
-            });
-            retained.extend(collect_bounded(values, 1)?);
-            Ok(retained)
-        });
-
-        assert_eq!(polls.get(), 0);
-        assert_eq!(
-            latch.into_result(),
-            Err(StructuralLimitError::PublicByteLimitExceeded)
-        );
     }
 }
