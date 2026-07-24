@@ -123,6 +123,12 @@
 
 ### Release status
 
+- Implementation and local validation are complete for the Concord v2
+  closure. External release checks remain pending: the nine-row graphical
+  rust-analyzer protocol, remote GitHub Actions on Linux/Windows/macOS, and
+  release-owner approval of legal/repository metadata and registry names.
+  The exact local proof and owners are recorded in
+  `docs/contributor/evidence/closure-c8-final.md`.
 - All packages remain `publish = false`. No license/repository metadata or
   package-name ownership was approved in the reviewed repository, so registry
   publication remains an explicit release blocker rather than an inferred
