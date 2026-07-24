@@ -151,13 +151,22 @@ pub(super) fn generate_request_wrapper(
             #pagination_method
             #response_method
             #raw_response_method
-            #generated_core::__private::emit_generated_development_method!(
-                #endpoint_name,
-                __concord_inner
-            );
         }
 
         #storage_impl
+
+        #[doc(hidden)]
+        impl #generated_core::__benchmark::GeneratedRequest for #request_name
+        {
+            type Endpoint = #endpoint_name;
+
+            fn __concord_into_internal_request(
+                self,
+                _token: #generated_core::__benchmark::GeneratedRequestToken,
+            ) -> #core_path::Request<#endpoint_name> {
+                self.__concord_inner
+            }
+        }
 
         #[doc(hidden)]
         impl ::std::future::IntoFuture for #request_name
@@ -262,5 +271,10 @@ mod tests {
         assert!(output.contains("pub struct FetchItemRequest"));
         assert!(output.contains("pub fn verbose"));
         assert!(output.contains("IntoFuture"));
+        assert!(output.contains("__benchmark :: GeneratedRequest"));
+        assert!(output.contains("__benchmark :: GeneratedRequestToken"));
+        assert!(output.contains("__concord_into_internal_request"));
+        assert!(!output.contains("__concord_into_development_request"));
+        assert!(!output.contains("emit_generated_development_method"));
     }
 }

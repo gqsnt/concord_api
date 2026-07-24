@@ -22,7 +22,6 @@ brotli = ["runtime/brotli"]
 deflate = ["runtime/deflate"]
 dangerous-raw-response = ["runtime/dangerous-raw-response"]
 dangerous-custom-retry = ["runtime/dangerous-custom-retry"]
-dangerous-dev-tools = ["runtime/dangerous-dev-tools"]
 
 [dependencies]
 runtime = { package = "concord", path = "../../crates/concord", default-features = false }
@@ -58,12 +57,6 @@ test = false
 [[bin]]
 name = "deflate_absent"
 path = "src/bin/deflate_absent.rs"
-required-features = ["fixture-absence"]
-test = false
-
-[[bin]]
-name = "development_absent"
-path = "src/bin/development_absent.rs"
 required-features = ["fixture-absence"]
 test = false
 

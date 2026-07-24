@@ -8,7 +8,7 @@ publish = false
 autobenches = false
 
 [dependencies]
-concord = { version = "=0.1.0", path = "../../crates/concord", default-features = false, features = ["dangerous-dev-tools", "default-tls", "records"] }
+concord = { version = "=0.1.0", path = "../../crates/concord", default-features = false, features = ["default-tls", "records"] }
 concord_test_support = { package = "concord-test-support", version = "=0.1.0", path = "../../crates/concord-test-support", default-features = false }
 tokio.workspace = true
 

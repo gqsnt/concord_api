@@ -7,7 +7,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use concord::__development::{
+use concord::__benchmark::{
     BenchmarkOperation, benchmark_public_head, benchmark_ready_credentials,
 };
 use concord::PaginatedRequest;
@@ -276,12 +276,7 @@ fn public_head_preparation(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = configured_builder().build()?;
     let requests: Vec<_> = (0..iterations)
-        .map(|index| {
-            client
-                .records("archive".to_owned())
-                .show(index.to_string())
-                .__concord_into_development_request()
-        })
+        .map(|index| client.records("archive".to_owned()).show(index.to_string()))
         .collect();
     let started = Instant::now();
     for request in requests {
@@ -440,13 +435,7 @@ fn credential_ready_path_preparation(
     audit: &mut CategoryAudit,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = configured_credential_builder().build()?;
-    let requests: Vec<_> = (0..iterations)
-        .map(|_| {
-            client
-                .credential_ready()
-                .__concord_into_development_request()
-        })
-        .collect();
+    let requests: Vec<_> = (0..iterations).map(|_| client.credential_ready()).collect();
     let started = Instant::now();
     for request in requests {
         let observation = runtime.block_on(benchmark_ready_credentials(request))?;

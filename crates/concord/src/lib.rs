@@ -8,9 +8,8 @@
 
 pub use concord_macros::api;
 
-#[cfg(feature = "dangerous-dev-tools")]
 #[doc(hidden)]
-pub use concord_core::__development;
+pub use concord_core::__benchmark;
 #[cfg(feature = "multipart")]
 pub use concord_core::prelude::Multipart;
 pub use concord_core::prelude::{
@@ -50,25 +49,6 @@ macro_rules! __concord_emit_generated_raw_response_method {
 #[macro_export]
 macro_rules! __concord_emit_generated_raw_response_method {
     ($endpoint:ty, $endpoint_trait:path, $field:ident) => {};
-}
-
-#[cfg(feature = "dangerous-dev-tools")]
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __concord_emit_generated_development_method {
-    ($endpoint:ty, $field:ident) => {
-        #[doc(hidden)]
-        pub fn __concord_into_development_request(self) -> $crate::Request<$endpoint> {
-            self.$field
-        }
-    };
-}
-
-#[cfg(not(feature = "dangerous-dev-tools"))]
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __concord_emit_generated_development_method {
-    ($endpoint:ty, $field:ident) => {};
 }
 
 /// Credential material, provider contracts, and enabled first-party providers.
@@ -286,8 +266,6 @@ pub mod dangerous {
 /// Generated-code bridge. This is not a user extension surface.
 #[doc(hidden)]
 pub mod __private {
-    #[doc(hidden)]
-    pub use crate::__concord_emit_generated_development_method as emit_generated_development_method;
     #[doc(hidden)]
     pub use crate::__concord_emit_generated_raw_response_method as emit_generated_raw_response_method;
     #[cfg(feature = "dangerous-raw-response")]

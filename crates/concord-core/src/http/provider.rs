@@ -6,9 +6,9 @@ use bytes::{Bytes, BytesMut};
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use url::Url;
 
-#[cfg(any(test, feature = "dangerous-dev-tools"))]
+#[cfg(test)]
 use concord_test_support::executor::ProviderChannel;
-#[cfg(any(test, feature = "dangerous-dev-tools"))]
+#[cfg(test)]
 use concord_test_support::script::BoundaryRequest;
 
 use crate::auth::AuthError;
@@ -23,7 +23,7 @@ pub(super) struct ProviderHttpInner {
     tls: TlsCapability,
     request_limit: NonZeroUsize,
     response_limit: NonZeroUsize,
-    #[cfg(any(test, feature = "dangerous-dev-tools"))]
+    #[cfg(test)]
     development: Option<ProviderChannel>,
 }
 
@@ -215,12 +215,12 @@ impl ProviderHttpInner {
             tls,
             request_limit,
             response_limit,
-            #[cfg(any(test, feature = "dangerous-dev-tools"))]
+            #[cfg(test)]
             development: None,
         }
     }
 
-    #[cfg(any(test, feature = "dangerous-dev-tools"))]
+    #[cfg(test)]
     pub(super) fn with_development(mut self, development: ProviderChannel) -> Self {
         self.development = Some(development);
         self
@@ -290,7 +290,7 @@ impl ProviderHttpInner {
             (None, Some(parent)) => Some(parent),
             (None, None) => None,
         };
-        #[cfg(any(test, feature = "dangerous-dev-tools"))]
+        #[cfg(test)]
         let native_url = url.as_str().to_owned();
 
         let mut builder = self
@@ -302,7 +302,7 @@ impl ProviderHttpInner {
         }
 
         let operation = async {
-            #[cfg(any(test, feature = "dangerous-dev-tools"))]
+            #[cfg(test)]
             let response = {
                 use concord_test_support::script::BodyCategory;
                 let boundary = super::development::boundary_request(
@@ -323,7 +323,7 @@ impl ProviderHttpInner {
                     .await
                     .map_err(auth_http_error)?
             };
-            #[cfg(not(any(test, feature = "dangerous-dev-tools")))]
+            #[cfg(not(test))]
             let response = builder
                 .send()
                 .await
@@ -366,7 +366,7 @@ impl ProviderHttpInner {
         }
     }
 
-    #[cfg(any(test, feature = "dangerous-dev-tools"))]
+    #[cfg(test)]
     fn validate_response(
         &self,
         response: reqwest::Response,
@@ -380,7 +380,7 @@ impl ProviderHttpInner {
         Ok(response)
     }
 
-    #[cfg(any(test, feature = "dangerous-dev-tools"))]
+    #[cfg(test)]
     pub(super) async fn execute_at_boundary(
         &self,
         request: reqwest::RequestBuilder,

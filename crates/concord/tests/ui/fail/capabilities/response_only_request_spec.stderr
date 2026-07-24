@@ -178,37 +178,6 @@ help: the following other types implement trait `EncodeBody`
    = note: required for `ResponseOnly` to implement `RequestBodySpec`
    = note: this error originates in the macro `self::__concord_generated::__core::__private::emit_generated_raw_response_method` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `ResponseOnly: EncodeBody` is not satisfied
-  --> tests/ui/fail/capabilities/response_only_request_spec.rs:15:1
-   |
-15 | / api! {
-16 | |     client InvalidResponseOnlyRequestApi {
-17 | |         base "http://invalid-response-only.example.test/";
-...  |
-20 | |     POST invalid(#[body] body: crate::ResponseOnly) -> Bytes;
-21 | | }
-   | |_^ unsatisfied trait bound
-   |
-help: the trait `EncodeBody` is not implemented for `ResponseOnly`
-  --> tests/ui/fail/capabilities/response_only_request_spec.rs:4:1
-   |
- 4 | pub struct ResponseOnly;
-   | ^^^^^^^^^^^^^^^^^^^^^^^
-help: the following other types implement trait `EncodeBody`
-  --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
-   |
-   |   impl EncodeBody for Text {
-   |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Text`
-   |
-  ::: $WORKSPACE/crates/concord-extras/src/codec/json.rs
-   |
-   | / impl<T> EncodeBody for Json<T>
-   | | where
-   | |     T: serde::Serialize + Send + Sync + 'static,
-   | |________________________________________________^ `Json<T>`
-   = note: required for `ResponseOnly` to implement `RequestBodySpec`
-   = note: this error originates in the macro `self::__concord_generated::__core::__private::emit_generated_development_method` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
 error[E0599]: the associated function or constant `__concord_from_facade` exists for struct `Invalid<_>`, but its trait bounds were not satisfied
   --> tests/ui/fail/capabilities/response_only_request_spec.rs:15:1
    |

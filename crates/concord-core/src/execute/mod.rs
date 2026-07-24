@@ -680,7 +680,6 @@ async fn run_auth<T>(
         .map_err(|error| auth_api_error(head, error))
 }
 
-#[cfg(feature = "dangerous-dev-tools")]
 pub(crate) async fn benchmark_ready_credentials<E>(
     prepared: PreparedOperation<E>,
 ) -> Result<usize, ApiError>

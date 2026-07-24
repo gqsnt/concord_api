@@ -22,7 +22,6 @@ brotli = ["concord_core/brotli"]
 deflate = ["concord_core/deflate"]
 dangerous-raw-response = ["concord_core/dangerous-raw-response"]
 dangerous-custom-retry = ["concord_core/dangerous-custom-retry"]
-dangerous-dev-tools = ["concord_core/dangerous-dev-tools"]
 
 [dependencies]
 concord_core = { package = "concord-core", version = "=0.1.0", path = "../concord-core", default-features = false }

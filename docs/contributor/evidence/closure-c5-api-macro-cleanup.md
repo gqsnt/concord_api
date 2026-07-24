@@ -8,9 +8,8 @@ Started from commit:
 (`extras: bound OAuth2 configuration and encoding`) on branch `master`.
 
 Finished at commit:
-The C5 commit containing this evidence, with message
-`refactor: finish Concord semantic API boundaries`. Its exact hash will be
-backfilled in the closure ledger by C6.
+`38992febea6392f44071c5a12edc150449b8aa11`
+(`refactor: finish Concord semantic API boundaries`).
 
 Files changed:
 

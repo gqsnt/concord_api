@@ -151,7 +151,6 @@ name = "concord-core"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "concord-test-support",
  "futures-core",
  "http",
  "http-body",
@@ -227,10 +226,7 @@ name = "concord-test-support"
 version = "0.1.0"
 dependencies = [
  "base64",
- "bytes",
- "http",
  "rustls",
- "tokio",
 ]
 
 [[package]]

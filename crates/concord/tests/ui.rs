@@ -56,11 +56,7 @@ fn generated_privacy_and_capability_boundaries_are_compiler_enforced() {
     ] {
         cases.compile_fail(path);
     }
-    #[cfg(all(
-        feature = "json",
-        feature = "dangerous-raw-response",
-        feature = "dangerous-dev-tools"
-    ))]
+    #[cfg(all(feature = "json", feature = "dangerous-raw-response"))]
     {
         cases.compile_fail("tests/ui/fail/capabilities/no_content_request_spec.rs");
         cases.compile_fail("tests/ui/fail/capabilities/response_only_request_spec.rs");
@@ -68,8 +64,7 @@ fn generated_privacy_and_capability_boundaries_are_compiler_enforced() {
     #[cfg(all(
         feature = "json",
         feature = "multipart",
-        feature = "dangerous-raw-response",
-        feature = "dangerous-dev-tools"
+        feature = "dangerous-raw-response"
     ))]
     cases.compile_fail("tests/ui/fail/capabilities/multipart_response.rs");
     #[cfg(feature = "dangerous-raw-response")]

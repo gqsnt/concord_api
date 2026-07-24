@@ -83,13 +83,17 @@
 - Made core and extras defaults empty. The façade owns defaults and feature
   forwarding; ordinary defaults remain TLS, HTTP/2, and governor, with JSON
   opt-in.
+- Removed the public `dangerous-dev-tools` feature and core's normal
+  dependency on internal test support. Operation-exact performance probes now
+  use a doc-hidden, token-sealed façade/core bridge while the unpublished
+  benchmark package imports test support directly.
 
 ### Compatibility removals
 
 - Removed application-level two-crate setup and direct generated
   `concord-core` paths.
-- Removed obsolete direct-core generated raw/development helper macros; the
-  façade remains their sole generated-code owner.
+- Removed obsolete direct-core generated helper copies; the façade remains the
+  generated raw-response helper owner.
 - Removed `PreparedEndpoint`, `PreparedEndpointBuilder`, and
   `DecodedResponse` aliases.
 - Removed configured positional constructors, generated request extension

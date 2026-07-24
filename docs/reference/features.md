@@ -26,7 +26,6 @@ task.
 | `deflate` | no | Deflate response decompression |
 | `dangerous-raw-response` | no | Bounded undecoded successful-response terminal |
 | `dangerous-custom-retry` | no | Custom native transport retry policy |
-| `dangerous-dev-tools` | no | Internal development instrumentation |
 <!-- END GENERATED FEATURES -->
 
 ## Capability notes

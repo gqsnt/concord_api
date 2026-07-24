@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -248,7 +248,15 @@ fn run() -> Result<(), String> {
             }
             run_fixtures(&root)
         }
-        _ => Err("usage: cargo run -p concord-xtask -- <docs [--write] | fixtures>".into()),
+        Some("package") => {
+            if arguments.next().is_some() {
+                return Err("usage: cargo run -p concord-xtask -- package".into());
+            }
+            verify_product_packages(&root)
+        }
+        _ => {
+            Err("usage: cargo run -p concord-xtask -- <docs [--write] | fixtures | package>".into())
+        }
     }
 }
 
@@ -347,7 +355,6 @@ fn feature_description(name: &str) -> Option<&'static str> {
         "deflate" => Some("Deflate response decompression"),
         "dangerous-raw-response" => Some("Bounded undecoded successful-response terminal"),
         "dangerous-custom-retry" => Some("Custom native transport retry policy"),
-        "dangerous-dev-tools" => Some("Internal development instrumentation"),
         _ => None,
     }
 }
@@ -622,8 +629,273 @@ fn run_fixtures(root: &Path) -> Result<(), String> {
             "public_compile",
             "--no-default-features",
             "--locked",
+            "--",
+            "--test-threads=1",
         ],
     )
+}
+
+fn verify_product_packages(root: &Path) -> Result<(), String> {
+    struct Package<'a> {
+        name: &'a str,
+        patch_dependencies: &'a [&'a str],
+        sibling_dependencies: &'a [(&'a str, &'a str)],
+        patch_test_support: bool,
+    }
+
+    let packages = [
+        Package {
+            name: "concord-core",
+            patch_dependencies: &[],
+            sibling_dependencies: &[],
+            patch_test_support: true,
+        },
+        Package {
+            name: "concord-macros",
+            patch_dependencies: &[],
+            sibling_dependencies: &[],
+            patch_test_support: false,
+        },
+        Package {
+            name: "concord-extras",
+            patch_dependencies: &["concord-core"],
+            sibling_dependencies: &[("concord_core", "concord-core")],
+            patch_test_support: false,
+        },
+        Package {
+            name: "concord",
+            patch_dependencies: &["concord-core", "concord-macros", "concord-extras"],
+            sibling_dependencies: &[
+                ("concord_core", "concord-core"),
+                ("concord_macros", "concord-macros"),
+                ("concord_extras", "concord-extras"),
+            ],
+            patch_test_support: true,
+        },
+    ];
+    let target = package_target_directory(root);
+    let package_output = target.join("package");
+    let product_version = workspace_product_version(root)?;
+    let mut packaged = BTreeMap::<&str, PathBuf>::new();
+
+    for package in packages {
+        let mut arguments = Vec::<String>::new();
+        if package.patch_test_support {
+            push_path_patch(
+                &mut arguments,
+                "concord-test-support",
+                &root.join("crates/concord-test-support"),
+            )?;
+        }
+        for dependency in package.patch_dependencies {
+            push_path_patch(
+                &mut arguments,
+                dependency,
+                &root.join("crates").join(dependency),
+            )?;
+        }
+        arguments.extend([
+            "package".into(),
+            "--locked".into(),
+            "--allow-dirty".into(),
+            "-p".into(),
+            package.name.into(),
+        ]);
+        run_command_owned(root, "cargo", &arguments)?;
+
+        let directory = package_output.join(format!("{}-{product_version}", package.name));
+        verify_packaged_manifest(
+            package.name,
+            &product_version,
+            &directory,
+            package.sibling_dependencies,
+        )?;
+
+        let mut verification_arguments = Vec::<String>::new();
+        if package.patch_test_support {
+            push_path_patch(
+                &mut verification_arguments,
+                "concord-test-support",
+                &root.join("crates/concord-test-support"),
+            )?;
+        }
+        for dependency in package.patch_dependencies {
+            let path = packaged.get(dependency).ok_or_else(|| {
+                format!(
+                    "{} requires packaged dependency {dependency} before its verification",
+                    package.name
+                )
+            })?;
+            push_path_patch(&mut verification_arguments, dependency, path)?;
+        }
+        verification_arguments.extend([
+            "check".into(),
+            "--manifest-path".into(),
+            directory.join("Cargo.toml").display().to_string(),
+            "--lib".into(),
+            "--all-features".into(),
+            "--locked".into(),
+        ]);
+        run_command_owned(root, "cargo", &verification_arguments)?;
+        packaged.insert(package.name, directory);
+    }
+
+    println!(
+        "package verification passed in order: concord-core, concord-macros, concord-extras, concord"
+    );
+    Ok(())
+}
+
+fn workspace_product_version(root: &Path) -> Result<String, String> {
+    let manifest_path = root.join("Cargo.toml");
+    let manifest = read(&manifest_path)?;
+    let package = toml_section(&manifest, "workspace.package").ok_or_else(|| {
+        format!(
+            "{} has no workspace package section",
+            manifest_path.display()
+        )
+    })?;
+    package
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("version = \"")
+                .and_then(|value| value.strip_suffix('"'))
+        })
+        .filter(|version| !version.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            format!(
+                "{} has no literal workspace package version",
+                manifest_path.display()
+            )
+        })
+}
+
+fn push_path_patch(
+    arguments: &mut Vec<String>,
+    dependency: &str,
+    path: &Path,
+) -> Result<(), String> {
+    arguments.push("--config".into());
+    arguments.push(format!(
+        "patch.crates-io.{dependency}.path={}",
+        toml_path_literal(path)?
+    ));
+    Ok(())
+}
+
+fn package_target_directory(root: &Path) -> PathBuf {
+    match env::var_os("CARGO_TARGET_DIR").map(PathBuf::from) {
+        Some(path) if path.is_absolute() => path,
+        Some(path) => root.join(path),
+        None => root.join("target"),
+    }
+}
+
+fn toml_path_literal(path: &Path) -> Result<String, String> {
+    let canonical = path
+        .canonicalize()
+        .map_err(|error| format!("{}: {error}", path.display()))?
+        .to_string_lossy()
+        .into_owned();
+    let canonical = if let Some(path) = canonical.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{path}")
+    } else {
+        canonical
+            .strip_prefix(r"\\?\")
+            .unwrap_or(&canonical)
+            .to_owned()
+    };
+    let path = canonical.replace('\\', "/");
+    if path.contains('"') || path.contains('\n') || path.contains('\r') {
+        return Err(format!(
+            "package patch path cannot be encoded safely: {path}"
+        ));
+    }
+    Ok(format!("\"{path}\""))
+}
+
+fn verify_packaged_manifest(
+    package: &str,
+    version: &str,
+    directory: &Path,
+    sibling_dependencies: &[(&str, &str)],
+) -> Result<(), String> {
+    let manifest_path = directory.join("Cargo.toml");
+    let original_path = directory.join("Cargo.toml.orig");
+    let package_output = directory
+        .parent()
+        .ok_or_else(|| format!("{} has no package output parent", directory.display()))?;
+    let archive_path = package_output.join(format!("{package}-{version}.crate"));
+    for required in [&manifest_path, &original_path, &archive_path] {
+        if !required.is_file() {
+            return Err(format!(
+                "{package} packaging omitted {}",
+                required.display()
+            ));
+        }
+    }
+
+    let manifest = read(&manifest_path)?;
+    let package_section = toml_section(&manifest, "package").ok_or_else(|| {
+        format!(
+            "{} has no normalized package section",
+            manifest_path.display()
+        )
+    })?;
+    for expected in [
+        format!("name = \"{package}\""),
+        format!("version = \"{version}\""),
+        "publish = false".into(),
+    ] {
+        if !package_section.lines().any(|line| line.trim() == expected) {
+            return Err(format!(
+                "{} omitted normalized package fact `{expected}`",
+                manifest_path.display()
+            ));
+        }
+    }
+
+    if toml_section(&manifest, "dependencies.concord_test_support").is_some() {
+        return Err(format!(
+            "{package} packaged a normal dependency on concord-test-support"
+        ));
+    }
+    for (alias, dependency) in sibling_dependencies {
+        let section_name = format!("dependencies.{alias}");
+        let section = toml_section(&manifest, &section_name).ok_or_else(|| {
+            format!(
+                "{} omitted normalized sibling dependency {dependency}",
+                manifest_path.display()
+            )
+        })?;
+        for expected in [
+            format!("package = \"{dependency}\""),
+            format!("version = \"={version}\""),
+        ] {
+            if !section.lines().any(|line| line.trim() == expected) {
+                return Err(format!(
+                    "{} sibling {dependency} omitted `{expected}`",
+                    manifest_path.display()
+                ));
+            }
+        }
+    }
+
+    let mut dependency_section = false;
+    for line in manifest.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            dependency_section = line.contains("dependencies");
+        } else if dependency_section && line.starts_with("path =") {
+            return Err(format!(
+                "{} retained a path-only packaged dependency: {line}",
+                manifest_path.display()
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn run_command_quiet(root: &Path, program: &str, arguments: &[&str]) -> Result<(), String> {
@@ -642,6 +914,20 @@ fn run_command_quiet(root: &Path, program: &str, arguments: &[&str]) -> Result<(
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         ))
+    }
+}
+
+fn run_command_owned(root: &Path, program: &str, arguments: &[String]) -> Result<(), String> {
+    println!("running {program} {}", arguments.join(" "));
+    let status = Command::new(program)
+        .args(arguments)
+        .current_dir(root)
+        .status()
+        .map_err(|error| format!("could not run {program}: {error}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("{program} exited with {status}"))
     }
 }
 

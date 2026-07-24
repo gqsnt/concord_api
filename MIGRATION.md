@@ -217,6 +217,12 @@ This default applies only to runtime endpoints that inherit it. Generated
 endpoints keep their resolved DSL timeout, and request-local overrides remain
 unchanged.
 
+The internal `dangerous-dev-tools` feature has been removed from `concord` and
+`concord-core`. It was never an application capability. Workspace performance
+tooling now uses Concord's doc-hidden benchmark bridge and depends on
+`concord-test-support` directly; application manifests should simply remove
+the old feature if they selected it.
+
 Runtime endpoint query-name parameters now require `AsRef<str>` so the
 builder can validate length before copying. `&str`, `String`, and
 `Box<str>` continue to work directly. A custom wrapper that implemented only

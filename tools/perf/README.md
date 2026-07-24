@@ -2,7 +2,13 @@
 
 `concord-perf` is a harness-free benchmark package for relative local observation. It defines no product threshold and is not part of the Concord production dependency graph.
 
-The package reuses the workspace-pinned Tokio runtime and `concord_test_support` loopback server so body collection, credential preparation, limiter acquisition, pagination, generic specification selection, and bounded record framing can be exercised without internet latency or an external service. Ordinary product imports come only from the `concord` façade; the test-support dependency is benchmark-only.
+The package reuses the workspace-pinned Tokio runtime and imports
+`concord_test_support` directly for its loopback server, so body collection,
+credential preparation, limiter acquisition, pagination, generic
+specification selection, and bounded record framing can be exercised without
+internet latency or an external service. Ordinary product imports come only
+from the `concord` façade; the test-support dependency is benchmark-only and
+does not enter a product package.
 
 The safe-planning category uses the public `client.plan(&endpoint)` contract and
 the real sanitized head builder. The lower-level public-head probe calls the
@@ -11,9 +17,12 @@ work, authentication, limiting, native HTTP, or response handling. The
 ready-credential probe uses an HTTPS logical endpoint with a pre-populated
 static credential and calls the production preflight and post-limiter
 finalization operations; it stops before native materialization and performs no
-provider acquisition, refresh, or transport. The two lower-level probes use the
-explicitly unstable, feature-gated `concord::__development` boundary and
-receive only a body-free aggregate observation.
+provider acquisition, refresh, or transport. The two lower-level probes use
+the doc-hidden, explicitly unstable `concord::__benchmark` boundary and
+receive only a body-free aggregate observation. Named generated wrappers
+surrender their ordinary internal request carrier through a token-sealed
+conversion that only these helpers can invoke. The bridge performs no
+alternate transport and requires no public feature.
 
 `--smoke` forces one bounded iteration. The executable records each category
 only after its named operation completes and asserts that all sixteen distinct

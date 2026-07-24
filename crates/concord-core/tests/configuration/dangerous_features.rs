@@ -1,18 +1,12 @@
-#[cfg(not(any(
-    feature = "dangerous-custom-retry",
-    feature = "dangerous-dev-tools",
-    feature = "dangerous-raw-response"
-)))]
+#[cfg(not(any(feature = "dangerous-custom-retry", feature = "dangerous-raw-response")))]
 #[test]
 fn compiled_default_surface_enables_no_dangerous_feature() {
     assert!(!cfg!(feature = "dangerous-custom-retry"));
-    assert!(!cfg!(feature = "dangerous-dev-tools"));
     assert!(!cfg!(feature = "dangerous-raw-response"));
 }
 
 #[cfg(all(
     feature = "dangerous-custom-retry",
-    not(feature = "dangerous-dev-tools"),
     not(feature = "dangerous-raw-response")
 ))]
 #[test]
@@ -26,7 +20,6 @@ fn custom_retry_is_available_without_other_dangerous_or_optional_features() {
 
     let _: fn(HttpConfigBuilder, ReqwestRetryBuilder) -> HttpConfigBuilder = configure;
 
-    assert!(!cfg!(feature = "dangerous-dev-tools"));
     assert!(!cfg!(feature = "dangerous-raw-response"));
     assert!(!cfg!(feature = "default-tls"));
     assert!(!cfg!(feature = "http2"));
@@ -34,59 +27,11 @@ fn custom_retry_is_available_without_other_dangerous_or_optional_features() {
     assert!(!cfg!(feature = "gzip"));
     assert!(!cfg!(feature = "brotli"));
     assert!(!cfg!(feature = "deflate"));
-}
-
-#[cfg(all(
-    feature = "dangerous-dev-tools",
-    not(feature = "dangerous-custom-retry"),
-    not(feature = "dangerous-raw-response"),
-    not(feature = "default-tls"),
-    not(feature = "http2"),
-    not(feature = "multipart"),
-    not(feature = "gzip"),
-    not(feature = "brotli"),
-    not(feature = "deflate")
-))]
-#[test]
-fn development_tools_are_available_without_other_dangerous_or_optional_features() {
-    use concord_core::__development::DeterministicExecutor;
-
-    let _ = DeterministicExecutor::new();
-
-    assert!(!cfg!(feature = "dangerous-custom-retry"));
-    assert!(!cfg!(feature = "dangerous-raw-response"));
-    assert!(!cfg!(feature = "default-tls"));
-    assert!(!cfg!(feature = "http2"));
-    assert!(!cfg!(feature = "multipart"));
-    assert!(!cfg!(feature = "gzip"));
-    assert!(!cfg!(feature = "brotli"));
-    assert!(!cfg!(feature = "deflate"));
-}
-
-#[cfg(all(
-    feature = "dangerous-dev-tools",
-    feature = "default-tls",
-    feature = "http2",
-    not(feature = "dangerous-custom-retry"),
-    not(feature = "dangerous-raw-response")
-))]
-#[test]
-fn development_tools_coexist_with_default_runtime_features_when_workspace_unified() {
-    use concord_core::__development::DeterministicExecutor;
-
-    let _ = DeterministicExecutor::new();
-
-    assert!(cfg!(feature = "dangerous-dev-tools"));
-    assert!(cfg!(feature = "default-tls"));
-    assert!(cfg!(feature = "http2"));
-    assert!(!cfg!(feature = "dangerous-custom-retry"));
-    assert!(!cfg!(feature = "dangerous-raw-response"));
 }
 
 #[cfg(all(
     feature = "dangerous-raw-response",
-    not(feature = "dangerous-custom-retry"),
-    not(feature = "dangerous-dev-tools")
+    not(feature = "dangerous-custom-retry")
 ))]
 #[test]
 fn raw_response_api_is_available_without_other_dangerous_or_optional_features() {
@@ -104,7 +49,6 @@ fn raw_response_api_is_available_without_other_dangerous_or_optional_features() 
 
     assert!(cfg!(feature = "dangerous-raw-response"));
     assert!(!cfg!(feature = "dangerous-custom-retry"));
-    assert!(!cfg!(feature = "dangerous-dev-tools"));
     assert!(!cfg!(feature = "default-tls"));
     assert!(!cfg!(feature = "http2"));
     assert!(!cfg!(feature = "multipart"));

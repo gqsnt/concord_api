@@ -148,32 +148,6 @@ help: the following other types implement trait `EncodeBody`
   = note: required for `concord::NoContent` to implement `RequestBodySpec`
   = note: this error originates in the macro `self::__concord_generated::__core::__private::emit_generated_raw_response_method` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `concord::NoContent: EncodeBody` is not satisfied
- --> tests/ui/fail/capabilities/no_content_request_spec.rs:3:1
-  |
-3 | / api! {
-4 | |     client InvalidNoContentRequestApi {
-5 | |         base "http://invalid-no-content.example.test/";
-... |
-8 | |     POST invalid(#[body] body: NoContent) -> Bytes;
-9 | | }
-  | |_^ the trait `EncodeBody` is not implemented for `concord::NoContent`
-  |
-help: the following other types implement trait `EncodeBody`
- --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
-  |
-  |   impl EncodeBody for Text {
-  |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Text`
-  |
- ::: $WORKSPACE/crates/concord-extras/src/codec/json.rs
-  |
-  | / impl<T> EncodeBody for Json<T>
-  | | where
-  | |     T: serde::Serialize + Send + Sync + 'static,
-  | |________________________________________________^ `Json<T>`
-  = note: required for `concord::NoContent` to implement `RequestBodySpec`
-  = note: this error originates in the macro `self::__concord_generated::__core::__private::emit_generated_development_method` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
 error[E0599]: the associated function or constant `__concord_from_facade` exists for struct `Invalid<_>`, but its trait bounds were not satisfied
  --> tests/ui/fail/capabilities/no_content_request_spec.rs:3:1
   |

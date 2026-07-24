@@ -36,8 +36,3 @@ authentication recovery attempt.
 
 Retrying a non-replayable body is rejected by runtime replayability control.
 Keep policies finite and understand idempotency of the remote operation.
-
-## Development tools
-
-`dangerous-dev-tools` is internal test/performance instrumentation, not an
-application capability or compatibility contract.

@@ -119,7 +119,7 @@ impl ManagedHttp {
         })
     }
 
-    #[cfg(any(test, feature = "dangerous-dev-tools"))]
+    #[cfg(test)]
     pub(crate) fn build_with_development(
         http: HttpConfig,
         runtime: &RuntimeConfig,

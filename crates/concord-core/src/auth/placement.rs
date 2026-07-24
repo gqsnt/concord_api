@@ -265,7 +265,6 @@ pub(crate) struct AuthPlan {
 }
 
 impl AuthPlan {
-    #[cfg(feature = "dangerous-dev-tools")]
     pub(crate) fn len(&self) -> usize {
         self.placements.len()
     }
@@ -403,7 +402,6 @@ pub(crate) struct PreparedAuthPlan {
 }
 
 impl PreparedAuthPlan {
-    #[cfg(feature = "dangerous-dev-tools")]
     pub(crate) fn len(&self) -> usize {
         self.placements.len()
     }
@@ -544,7 +542,6 @@ pub(crate) struct FinalizedAuthPlan {
 }
 
 impl FinalizedAuthPlan {
-    #[cfg(feature = "dangerous-dev-tools")]
     pub(crate) fn len(&self) -> usize {
         self.placements.len()
     }

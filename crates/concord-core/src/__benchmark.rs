@@ -1,10 +1,38 @@
-//! Unstable scoped support for deterministic managed-boundary tests.
+//! Unstable, body-free probes for workspace performance tooling.
 //!
-//! This module is available only with `dangerous-dev-tools`. Its API is not
-//! covered by Concord's compatibility guarantees.
+//! The helpers in this hidden module reuse ordinary production preparation
+//! operations and stop before native transport. They expose no deterministic
+//! transport types and are not covered by Concord's compatibility guarantees.
 
 use crate::error::ApiError;
 use crate::request::{EndpointSpec, OperationPreparation, Request, prepare_operation};
+
+/// An unconstructible capability used by generated wrappers to surrender their
+/// internal request carrier only to this module's benchmark helpers.
+#[doc(hidden)]
+pub struct GeneratedRequestToken {
+    _private: (),
+}
+
+/// Hidden conversion implemented only for macro-generated named request
+/// wrappers.
+///
+/// The benchmark helpers require Concord's sealed endpoint bound, and callers
+/// cannot invoke the conversion because [`GeneratedRequestToken`] has no
+/// public constructor.
+#[doc(hidden)]
+pub trait GeneratedRequest {
+    /// The generated endpoint stored by this named wrapper.
+    type Endpoint;
+
+    /// Consumes the named wrapper into Concord's ordinary internal request
+    /// carrier.
+    #[doc(hidden)]
+    fn __concord_into_internal_request(
+        self,
+        token: GeneratedRequestToken,
+    ) -> Request<Self::Endpoint>;
+}
 
 /// The exact production operation exercised by a local benchmark probe.
 #[doc(hidden)]
@@ -38,12 +66,14 @@ impl BenchmarkObservation {
     }
 }
 
-async fn prepared_operation<E>(
-    request: Request<E>,
-) -> Result<crate::request::PreparedOperation<E>, ApiError>
+async fn prepared_operation<R>(
+    request: R,
+) -> Result<crate::request::PreparedOperation<R::Endpoint>, ApiError>
 where
-    E: EndpointSpec,
+    R: GeneratedRequest,
+    R::Endpoint: EndpointSpec,
 {
+    let request = request.__concord_into_internal_request(GeneratedRequestToken { _private: () });
     match prepare_operation(request).await? {
         OperationPreparation::Ready(prepared) => Ok(prepared),
         OperationPreparation::Failed(failure) => Err(failure.error),
@@ -53,9 +83,10 @@ where
 /// Prepares and validates one public request head without hooks, body
 /// materialization, credentials, limiting, native HTTP, or response handling.
 #[doc(hidden)]
-pub async fn benchmark_public_head<E>(request: Request<E>) -> Result<BenchmarkObservation, ApiError>
+pub async fn benchmark_public_head<R>(request: R) -> Result<BenchmarkObservation, ApiError>
 where
-    E: EndpointSpec,
+    R: GeneratedRequest,
+    R::Endpoint: EndpointSpec,
 {
     let prepared = prepared_operation(request).await?;
     let path_segments = prepared
@@ -79,11 +110,10 @@ where
 /// Runs the ordinary ready credential preflight and post-limiter finalization
 /// operations, stopping before native materialization or managed HTTP.
 #[doc(hidden)]
-pub async fn benchmark_ready_credentials<E>(
-    request: Request<E>,
-) -> Result<BenchmarkObservation, ApiError>
+pub async fn benchmark_ready_credentials<R>(request: R) -> Result<BenchmarkObservation, ApiError>
 where
-    E: EndpointSpec,
+    R: GeneratedRequest,
+    R::Endpoint: EndpointSpec,
 {
     let prepared = prepared_operation(request).await?;
     let work_units = crate::execute::benchmark_ready_credentials(prepared).await?;
@@ -92,12 +122,3 @@ where
         work_units,
     })
 }
-
-pub use concord_test_support::executor::{
-    ApplicationChannel, DeterministicExecutor, ProviderChannel,
-};
-pub use concord_test_support::gate::Gate;
-pub use concord_test_support::script::{
-    BodyCategory, CapturedHeader, CapturedHeaderValue, CapturedRequest, Channel, ExecutionFailure,
-    ExecutionFailureKind, ExpectedRequest, ScriptedResponse, TransportFailure,
-};

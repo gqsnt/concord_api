@@ -4,13 +4,13 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use bytes::Bytes;
-#[cfg(any(test, feature = "dangerous-dev-tools"))]
+#[cfg(test)]
 use bytes::BytesMut;
 use futures_core::Stream;
 use http::header::CONTENT_LENGTH;
 use http::{HeaderMap, Method, StatusCode, Version};
 
-#[cfg(any(test, feature = "dangerous-dev-tools"))]
+#[cfg(test)]
 use concord_test_support::executor::ApplicationChannel;
 #[cfg(test)]
 use concord_test_support::script::BoundaryRequest;
@@ -204,7 +204,7 @@ pub(crate) struct ApplicationHttp {
     https_only: bool,
     status_body_limit: Option<NonZeroUsize>,
     retry_after_cap: Duration,
-    #[cfg(any(test, feature = "dangerous-dev-tools"))]
+    #[cfg(test)]
     development: Option<ApplicationChannel>,
 }
 
@@ -222,7 +222,7 @@ impl ApplicationHttp {
             https_only,
             status_body_limit,
             retry_after_cap,
-            #[cfg(any(test, feature = "dangerous-dev-tools"))]
+            #[cfg(test)]
             development: None,
         }
     }
@@ -393,9 +393,9 @@ impl ApplicationHttp {
         body_kind: BodyKind,
         known_body_length: Option<u64>,
     ) -> Result<ApplicationResponse, ApiError> {
-        #[cfg(any(test, feature = "dangerous-dev-tools"))]
+        #[cfg(test)]
         let _ = public_headers;
-        #[cfg(any(test, feature = "dangerous-dev-tools"))]
+        #[cfg(test)]
         let native = match &self.development {
             Some(development) => {
                 let ApplicationRequest {
@@ -450,7 +450,7 @@ impl ApplicationHttp {
             }
         };
 
-        #[cfg(not(any(test, feature = "dangerous-dev-tools")))]
+        #[cfg(not(test))]
         let native = {
             let _ = (
                 safe_url,
@@ -477,7 +477,7 @@ impl ApplicationHttp {
         })
     }
 
-    #[cfg(any(test, feature = "dangerous-dev-tools"))]
+    #[cfg(test)]
     pub(super) fn with_development(mut self, development: ApplicationChannel) -> Self {
         self.development = Some(development);
         self
@@ -525,7 +525,7 @@ impl ApplicationHttp {
         method: Method,
         request: reqwest::RequestBuilder,
     ) -> Result<reqwest::Response, ApiError> {
-        #[cfg(any(test, feature = "dangerous-dev-tools"))]
+        #[cfg(test)]
         {
             let boundary = super::development::minimal_boundary_request(endpoint, method.clone());
             return self
@@ -533,7 +533,7 @@ impl ApplicationHttp {
                 .await;
         }
 
-        #[cfg(not(any(test, feature = "dangerous-dev-tools")))]
+        #[cfg(not(test))]
         request.send().await.map_err(|error| {
             ApiError::from_reqwest(EndpointId::from_static(endpoint), method, error, false)
         })
@@ -622,7 +622,7 @@ impl ApplicationHttp {
     }
 }
 
-#[cfg(any(test, feature = "dangerous-dev-tools"))]
+#[cfg(test)]
 async fn collect_request_body(body: reqwest::Body) -> Result<Bytes, ()> {
     use http_body::Body as _;
 
@@ -645,7 +645,7 @@ async fn collect_request_body(body: reqwest::Body) -> Result<Bytes, ()> {
     }
 }
 
-#[cfg(any(test, feature = "dangerous-dev-tools"))]
+#[cfg(test)]
 const fn boundary_body_category(kind: BodyKind) -> concord_test_support::script::BodyCategory {
     match kind {
         BodyKind::Empty => concord_test_support::script::BodyCategory::Empty,

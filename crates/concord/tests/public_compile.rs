@@ -137,10 +137,6 @@ fn core_owned_and_dangerous_capabilities_are_absent_without_forwarded_features()
             "custom_retry_absent",
             "no method named `dangerous_custom_retry`",
         ),
-        (
-            "development_absent",
-            "could not find `__development` in `runtime`",
-        ),
     ] {
         assert_fails_with(
             "concord-fixture-features",

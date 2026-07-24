@@ -315,7 +315,6 @@ fn facade_owns_the_complete_user_feature_topology_and_implementation_defaults_ar
             "deflate": ["reqwest/deflate"],
             "dangerous-raw-response": [],
             "dangerous-custom-retry": [],
-            "dangerous-dev-tools": ["dep:concord_test_support"],
         }),
         "core feature topology drifted from the semantic runtime kernel"
     );
@@ -349,7 +348,6 @@ fn facade_owns_the_complete_user_feature_topology_and_implementation_defaults_ar
             "deflate": ["concord_core/deflate"],
             "dangerous-raw-response": ["concord_core/dangerous-raw-response"],
             "dangerous-custom-retry": ["concord_core/dangerous-custom-retry"],
-            "dangerous-dev-tools": ["concord_core/dangerous-dev-tools"],
         }),
         "the façade must be the single exact user-facing feature owner"
     );
@@ -373,6 +371,54 @@ fn facade_owns_the_complete_user_feature_topology_and_implementation_defaults_ar
             serde_json::json!([]),
             "{} must retain the reviewed pre-release publish=false posture",
             package["name"]
+        );
+    }
+}
+
+#[test]
+fn product_graph_keeps_test_support_dev_only_and_benchmark_owned() {
+    let metadata = workspace_metadata();
+    for product in [
+        "concord-core",
+        "concord-extras",
+        "concord-macros",
+        "concord",
+    ] {
+        let package = package_metadata(&metadata, product);
+        assert!(
+            !has_metadata_dependency(package, "concord-test-support", None),
+            "{product} must not depend normally on internal test support"
+        );
+        assert!(
+            !has_metadata_dependency(package, "concord-test-support", Some("build")),
+            "{product} must not build-depend on internal test support"
+        );
+    }
+
+    for test_owner in ["concord-core", "concord"] {
+        assert!(
+            has_metadata_dependency(
+                package_metadata(&metadata, test_owner),
+                "concord-test-support",
+                Some("dev")
+            ),
+            "{test_owner} must keep deterministic support dev-only"
+        );
+    }
+
+    let benchmark = package_metadata(&metadata, "concord-perf");
+    assert!(
+        has_metadata_dependency(benchmark, "concord-test-support", None),
+        "the unpublished benchmark package must own its direct support dependency"
+    );
+    assert!(
+        has_metadata_dependency(benchmark, "concord", None),
+        "the benchmark must exercise the product through the façade"
+    );
+    for implementation in ["concord-core", "concord-extras", "concord-macros"] {
+        assert!(
+            !has_metadata_dependency(benchmark, implementation, None),
+            "the benchmark must not import implementation package {implementation}"
         );
     }
 }

@@ -17,11 +17,9 @@ brotli = ["reqwest/brotli"]
 deflate = ["reqwest/deflate"]
 dangerous-raw-response = []
 dangerous-custom-retry = []
-dangerous-dev-tools = ["dep:concord_test_support"]
 
 [dependencies]
 bytes.workspace = true
-concord_test_support = { package = "concord-test-support", version = "=0.1.0", path = "../concord-test-support", optional = true, default-features = false, features = ["deterministic"] }
 futures-core.workspace = true
 http.workspace = true
 http-body.workspace = true

@@ -8,8 +8,8 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-#[cfg(feature = "dangerous-dev-tools")]
-pub mod __development;
+#[doc(hidden)]
+pub mod __benchmark;
 pub mod advanced;
 #[cfg(any(feature = "dangerous-custom-retry", feature = "dangerous-raw-response"))]
 pub mod dangerous;

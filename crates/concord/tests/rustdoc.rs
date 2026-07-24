@@ -37,6 +37,48 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         .join("target/fixtures")
         .join(target_key)
         .join("doc/concord_core");
+    let core_index_path = documentation.join("index.html");
+    let core_index = std::fs::read_to_string(&core_index_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", core_index_path.display()));
+    for hidden in ["__benchmark", "__private", "__development"] {
+        assert!(
+            !core_index.contains(hidden),
+            "core's ordinary Rustdoc index exposed hidden integration {hidden}"
+        );
+    }
+
+    let facade_target_key = "rustdoc/facade-public-surface";
+    let facade_output = run(
+        &root,
+        facade_target_key,
+        "rustdoc",
+        [
+            "-p",
+            "concord",
+            "--all-features",
+            "--lib",
+            "--",
+            "-Dwarnings",
+        ],
+    );
+    assert!(
+        facade_output.status.success(),
+        "façade public Rustdoc failed\n{}",
+        diagnostics(&facade_output)
+    );
+    let facade_index_path = root
+        .join("target/fixtures")
+        .join(facade_target_key)
+        .join("doc/concord/index.html");
+    let facade_index = std::fs::read_to_string(&facade_index_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", facade_index_path.display()));
+    for hidden in ["__benchmark", "__private", "__development"] {
+        assert!(
+            !facade_index.contains(hidden),
+            "façade's ordinary Rustdoc index exposed hidden integration {hidden}"
+        );
+    }
+
     let request_path = documentation.join("struct.Request.html");
     let response_path = documentation.join("struct.ResponseRequest.html");
     let request = std::fs::read_to_string(&request_path)

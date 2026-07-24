@@ -7,7 +7,7 @@ pub(crate) mod application;
 )]
 pub(crate) mod build;
 mod config;
-#[cfg(any(test, feature = "dangerous-dev-tools"))]
+#[cfg(test)]
 mod development;
 pub(crate) mod provider;
 mod proxy;
