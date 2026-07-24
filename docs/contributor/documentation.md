@@ -22,24 +22,20 @@ private generated bridge in user-facing pages.
 Feature and limit tables are checked:
 
 ```text
-cargo run --locked -p concord-xtask -- docs --write  # regenerate
-cargo run --locked -p concord-xtask -- docs          # verify
+cargo run --locked -p concord-xtask -- docs --write --locked # regenerate
+cargo run --locked -p concord-xtask -- docs --locked # verify
 ```
 
-The same task validates local Markdown files and Markdown anchors, including
-historical evidence; required example/test links; parsed recipe command
-ownership; immutable workflow action revisions and required CI jobs; and
-retired/implementation vocabulary in user docs. External URLs are counted but
-not fetched, so a network URL check must be reported separately. `just docs`
-additionally runs workspace doctests and warning-denied Rustdoc.
+The task reads feature metadata with Cargo's typed metadata format, reads
+normative limits by linking core and extras, parses Markdown with a Markdown
+parser, and checks local links and anchors. External URLs are counted but not
+fetched, so a network URL check must be reported separately. Compiler
+diagnostics, command ownership, workflow structure, and user vocabulary belong
+to their compiler, Justfile, workflow, and documentation owners; the
+documentation task does not parse those source formats.
 
-Historical phase evidence lives under `docs/contributor/evidence`. It records
-commands and architecture decisions but is not normative user documentation.
-Its local links and anchors are checked, while its historical vocabulary and
-observed command text remain faithful to the state recorded in each phase.
-
-`just` may select PowerShell as its native Windows shell. Recipe bodies must
-therefore remain portable command lines rather than shell-specific scripts.
+`just docs` additionally runs workspace doctests and warning-denied Rustdoc.
+Recipe bodies remain portable command lines without shell-specific parsing.
 
 When a fact changes, update its canonical owner:
 
@@ -48,7 +44,7 @@ When a fact changes, update its canonical owner:
 | declaration grammar | `reference/dsl.md` |
 | generated shape | `reference/generated-api.md` |
 | features | façade manifest + generated feature table |
-| numeric defaults | core defaults source + generated limits table |
+| numeric defaults and ceilings | linked core/extras constants + generated limits table |
 | errors | `reference/errors.md` and Rustdoc |
 | package graph | `contributor/architecture.md` |
 | commands/CI | `justfile`, xtask, `contributor/testing.md` |

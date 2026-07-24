@@ -10,7 +10,7 @@ The test architecture follows contract ownership.
 | `concord` | consolidated generated, runtime, extension, public-API, and UI proof families |
 | `concord-examples` | canonical declaration construction, conventional Cargo examples, and deterministic local narratives |
 | `fixtures` | renamed-façade, contract-mismatch, feature-isolation, and MSRV Cargo graphs |
-| `tools/xtask` | Cargo-graph, semantic compiler-JSON, rustdoc, policy, and package orchestration |
+| `tools/xtask` | Cargo-graph, semantic compiler-JSON, documentation, policy, and package orchestration |
 
 ## Maintained commands
 
@@ -67,6 +67,21 @@ Canonical tests import declarations from `concord-examples`; they do not copy
 them. Executable wrappers live under `crates/concord-examples/examples/`.
 Ordinary compile-pass cases live in the package test suite. A standalone
 fixture exists only when a separate Cargo graph is the behavior under test.
+
+The inert local examples are ordinary Cargo examples:
+
+```text
+cargo run --locked -p concord-examples --example minimal
+cargo run --locked -p concord-examples --example records --no-default-features --features csv,ndjson
+```
+
+The Riot wrapper intentionally calls a live service and is never part of the
+deterministic matrix. Run it only with the documented environment and explicit
+opt-in:
+
+```text
+cargo run --locked -p concord-examples --example riot --no-default-features --features riot-live
+```
 
 ## UI and editor protocol
 

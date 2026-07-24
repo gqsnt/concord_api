@@ -77,8 +77,7 @@ Start with:
 Then use the [manual index](docs/README.md), [DSL reference](docs/reference/dsl.md),
 [generated API reference](docs/reference/generated-api.md), and
 [feature table](docs/reference/features.md).
-Existing workspace users should also read the [migration guide](MIGRATION.md)
-and [changelog](CHANGELOG.md).
+Current user-facing changes are summarized in the [changelog](CHANGELOG.md).
 
 ## Workspace
 
@@ -90,7 +89,7 @@ crates/concord-macros/        Extras-agnostic declaration compiler
 crates/concord-examples/      Importable, deterministic product examples
 crates/concord-test-support/  Internal deterministic test infrastructure
 fixtures/                     Locked Cargo-graph fixtures
-tools/xtask/                  Portable documentation and fixture checks
+tools/xtask/                  Typed documentation, graph, policy, and package checks
 tools/perf/                   Internal performance probes
 ```
 

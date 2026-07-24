@@ -8,8 +8,8 @@
 //! Transport compression features are intentionally not separate examples:
 //! gzip, Brotli, and deflate do not alter a declaration or generated request
 //! surface, so their canonical proofs remain transport-owned. Internal
-//! benchmark instrumentation is not a public application capability and is
-//! likewise omitted from the product narrative.
+//! performance tooling exercises only public behavior and is likewise omitted
+//! from the product narrative.
 
 pub mod contracts;
 pub mod getting_started;

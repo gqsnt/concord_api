@@ -1,135 +1,53 @@
 # Changelog
 
-## Unreleased — `0.1.0` architecture reset
+## [Unreleased]
 
-### Product contract
+### Added
 
-- Added the `concord` user façade as the only documented application
-  dependency.
-- Reframed Concord as a remote-contract compiler whose generated typed API,
-  explicit endpoint values, and runtime endpoints share one managed HTTP
-  lifecycle.
-- Added predictable scope-oriented modules, direct endpoint methods, public
-  endpoint values, named request wrappers, safe descriptions, and sanitized
-  planning.
-- Added named generated client builders; `Client::new()` now exists only for
-  zero-input clients.
+- A single `concord` application façade with generated clients, explicit
+  endpoint values, runtime endpoints, and one managed executor.
+- Named generated client builders, inherent request terminals, safe endpoint
+  descriptions, and sanitized request planning.
+- Finite public limits for endpoint identities, authentication placement and
+  material, encoded authentication output, multipart structure and metadata,
+  runtime endpoint shape, rate-limit structures, provider traffic, response
+  acquisition, and pagination.
+- First-party JSON, record codecs, pagination policies, rate limiting, and
+  OAuth2 client credentials as downstream implementations of public semantic
+  contracts.
 
-### Declaration compiler
+### Changed
 
-- Added order-independent named clauses with duplicate-span diagnostics.
-- Made endpoint and scope source identifiers `snake_case`, with deterministic
-  generated PascalCase types.
-- Made request-body roles explicit with `#[body]` and syntactic optionality
-  explicit with `Option<T>`.
-- Added optional stable contract IDs.
-- Removed fixed-order compatibility, PascalCase source identifiers,
-  name-inferred bodies, OAuth-specific sources, custom-retry/observer policy
-  syntax, and macro knowledge of concrete extras.
-- Removed the generated direct-core path fallback and bumped the private
-  generated bridge contract to version 23.
+- `EndpointId` validates borrowed input before allocation.
+- Bearer, Basic, Base64, and authentication-query construction use checked
+  arithmetic and reject excess output before native request mutation.
+- Multipart part and recipe construction is fallible. Factory output is
+  revalidated at the private transport boundary.
+- Dangerous raw-response methods are emitted directly by the declaration
+  compiler only when the calling façade passes the feature capability.
+- Generated direct methods, explicit endpoint values, runtime endpoints, and
+  every pagination page use the same lifecycle and completion protocol.
+- External dependencies use compatible semver requirements; Concord sibling
+  packages retain exact version requirements.
 
-### Runtime and security
+### Removed
 
-- Kept endpoint construction inert and client clones backed by one immutable
-  runtime snapshot.
-- Added bounded owned runtime endpoint IDs and the inherit/explicit/disabled
-  timeout tri-state.
-- Removed the infallible `From<&'static str> for EndpointId` conversion and
-  moved allocation-free static construction behind the generated-code bridge;
-  public callers use `EndpointId::new` or `TryFrom`.
-- Renamed runtime configuration
-  `operation_timeout`/`disable_operation_timeout` to
-  `runtime_endpoint_timeout`/`disable_runtime_endpoint_timeout` so the API
-  states that generated declaration timeouts are independent.
-- Runtime endpoint builders now account public shape incrementally, latch the
-  first safe structural error, cap each Concord-owned formatted value, and
-  stop repeated-query iterators at the withheld first excess.
-- Runtime query-name arguments now use `AsRef<str>` so Concord can validate
-  byte length before copying; ordinary `&str` and `String` calls are
-  unchanged.
-- Rate-limit IDs, key parts, keys, windows, and plans now enforce core-owned
-  hard structural ceilings incrementally. `RateLimitKeyPart::new` is
-  fallible, `RateLimitPlan::from_rules` is replaced by
-  `RateLimitPlan::try_from_rules`, duplicate rule IDs are rejected, and
-  limiter preparation limits above the hard key cap fail client construction.
-- Generated/public-head dynamic host, path, query, header, and
-  pagination-sensitive formatting now uses the same capped capture primitive
-  as runtime endpoints; query shaping returns a safe configuration failure on
-  excess output.
-- OAuth2 client-credentials configuration now has public finite URL, client
-  ID, client secret, scope, and Authorization-header ceilings. Its builder
-  validates borrowed text before copying, exposes explicit owned-secret
-  setters, checks percent/Base64/form lengths before allocation, and compares
-  the form body with the active provider request limit.
-- Preserved deterministic preparation, hook, limiter, authentication,
-  challenge-recovery, status, acquisition, completion, and cancellation
-  behavior.
-- Preserved redaction, provider HTTP isolation, one-additional-attempt
-  authentication recovery, finite bodies/streams/status capture/records,
-  fail-closed generated rate plans, and sequential all-or-error pagination.
-- Kept native requests, responses, multipart construction, and authentication
-  material private to the runtime kernel.
+- Direct application paths through implementation crates, generated request
+  extension traits, generated preludes, positional secret inputs, alternate
+  executors, native Reqwest escapes, and runtime pagination.
+- The façade `advanced` namespace, the core prelude, and the public benchmark
+  bridge and partial-lifecycle conversions.
+- Unbounded or partially managed response acquisition.
 
-### Crates and features
+### Safety guarantees
 
-- Added `concord-extras` as a downstream implementation package depending only
-  on public `concord-core` semantic contracts.
-- Moved JSON, CSV, NDJSON, built-in pagination controllers, governor/default
-  observer, and OAuth2 client credentials to extras.
-- Kept primitive wire types, multipart, generic record/pagination execution,
-  authentication/rate-limit contracts, transport, redaction, and the executor
-  in core.
-- Made core and extras defaults empty. The façade owns defaults and feature
-  forwarding; ordinary defaults remain TLS, HTTP/2, and governor, with JSON
-  opt-in.
-- Removed the public `dangerous-dev-tools` feature and core's normal
-  dependency on internal test support. Operation-exact performance probes now
-  use a doc-hidden, token-sealed façade/core bridge while the unpublished
-  benchmark package imports test support directly.
+- Construction and planning remain inert.
+- Authentication and native transport values remain private and redacted.
+- Authentication recovery permits at most one additional attempt.
+- Pagination is sequential, finite, cycle-detecting, first-excess
+  withholding, and all-or-error.
+- Completion remains exactly once, including cancellation-sensitive paths.
 
-### Compatibility removals
-
-- Removed application-level two-crate setup and direct generated
-  `concord-core` paths.
-- Removed obsolete direct-core generated helper copies; the façade remains the
-  generated raw-response helper owner.
-- Removed `PreparedEndpoint`, `PreparedEndpointBuilder`, and
-  `DecodedResponse` aliases.
-- Removed configured positional constructors, generated request extension
-  traits/preludes, and separate generated façade/endpoint trees.
-- See [MIGRATION.md](MIGRATION.md) for before/after forms.
-
-### Examples, tests, documentation, and tooling
-
-- Rebuilt examples as importable modules with thin binaries and deterministic
-  local proofs; split the Riot narrative into domain, declaration, usage, and
-  test layers.
-- Reassigned proofs to core, façade, extras, and Cargo-graph fixture owners.
-- Reorganized the workspace under `crates`, `fixtures`, and `tools`.
-- Added a product-path manual, generated feature/limit checks, portable
-  contributor commands, CI matrices, security gates, and observational
-  performance tooling.
-- Split local validation into explicit stable, MSRV, package, and
-  release-local scopes with locked Cargo commands and parsed command
-  ownership.
-- Added immutable-action CI owners for the complete validation matrix,
-  retained failure logs for UI/package diagnostics, and a generated-source
-  clean-tree policy.
-- Kept exact Trybuild snapshots stable-owned and added passing Rust 1.85
-  semantic JSON diagnostics with primary-span and internal-token checks.
-- Extended documentation policy to historical evidence and Markdown anchors;
-  external URLs remain an explicitly network-optional scope.
-
-### Release status
-
-- Implementation and local validation are complete for the Concord v2
-  closure. External release checks remain pending: the nine-row graphical
-  rust-analyzer protocol, remote GitHub Actions on Linux/Windows/macOS, and
-  release-owner approval of legal/repository metadata and registry names.
-  The exact local proof and owners are recorded in
-  `docs/contributor/evidence/closure-c8-final.md`.
-- All packages remain `publish = false`. No license/repository metadata or
-  package-name ownership was approved in the reviewed repository, so registry
-  publication remains an explicit release blocker rather than an inferred
-  success.
+All packages remain `publish = false`. Publication requires separate approval
+of legal metadata, repository identity, package-name ownership, and the exact
+publish operation.

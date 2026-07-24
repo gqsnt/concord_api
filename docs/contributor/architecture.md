@@ -28,7 +28,8 @@ concord-core <--- concord-extras
 ```
 
 - `crates/concord-core` owns the semantic runtime kernel, private native HTTP,
-  finite acquisition, lifecycle, security, and public extension traits.
+  finite acquisition, lifecycle, security, and public extension traits under
+  `concord_core::contracts`.
 - `crates/concord-extras` is an ordinary downstream consumer of those traits.
   It owns JSON, CSV, NDJSON, built-in pagination policies, governor/observer,
   and OAuth2 client credentials.
@@ -41,7 +42,7 @@ concord-core <--- concord-extras
   infrastructure only.
 - `fixtures` contains the isolated renamed-façade, contract-mismatch, feature,
   and MSRV Cargo graphs.
-- `tools/xtask` owns repository-level Cargo, rustdoc, policy, and package
+- `tools/xtask` owns typed documentation, fixture, MSRV, policy, and package
   orchestration; `tools/perf` observes public lifecycle behavior.
 
 Core never depends on extras, macros, or façade. Extras depends only on core.
@@ -54,6 +55,12 @@ A downstream package cannot address a transitive dependency. The compiler
 therefore resolves the caller-visible `concord` package with Cargo dependency
 renaming support and emits all generated semantic operations through
 `concord::__private`.
+
+The façade `api!` wrapper passes its own path and enabled capability tokens to
+the hidden declaration compiler. This makes a downstream façade feature, such
+as `dangerous-raw-response`, the source of truth without globally enabling a
+proc-macro feature. The compiler emits the final capability-specific inherent
+method directly.
 
 The façade bridge delegates semantics to core and installs approved
 feature-dependent composition such as the default governor. It is hidden,
@@ -76,6 +83,9 @@ When a semantic trait cannot support an extras implementation, improve the
 semantic contract. Do not expose Reqwest/native values or add friend-only
 access. When behavior could create a second lifecycle or unbounded mode,
 preserve the invariant and record a specification deviation.
+
+Applications use semantic façade modules or the small `concord::prelude`;
+keep imports focused on the contract family being implemented.
 
 ## Workspace
 

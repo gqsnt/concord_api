@@ -1,5 +1,6 @@
 /target
 **/target/
+**/wip/
 **/__pycache__/
 *.py[cod]
 .DS_Store

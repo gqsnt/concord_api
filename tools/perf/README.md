@@ -1,6 +1,8 @@
 # Concord local performance probes
 
-`concord-perf` is a harness-free benchmark package for relative local observation. It defines no product threshold and is not part of the Concord production dependency graph.
+`concord-perf` is a harness-free benchmark package for relative local
+observation. It defines no product threshold and is not part of the Concord
+production dependency graph.
 
 The package reuses the workspace-pinned Tokio runtime and imports
 `concord_test_support` directly for its loopback server, so body collection,
@@ -21,12 +23,20 @@ only after its named operation completes and asserts that all fifteen distinct
 categories ran. Otherwise `CONCORD_BENCH_ITERATIONS` selects between 1 and
 1,000 iterations, with a default of 100. Timings are observational only.
 
-`cargo run -p concord-perf --bin expansion_scale` generates isolated 1, 10,
-100, and 1,000-endpoint contracts under `target/perf`, expands each with the
-installed `cargo-expand`, and prints comparable line, character,
+Run the lifecycle probe with:
+
+```text
+cargo bench --locked -p concord-perf --bench concord_overhead
+cargo bench --locked -p concord-perf --bench concord_overhead -- --smoke
+```
+
+Interpret timings only as comparisons from the same machine, toolchain, build
+profile, and iteration count. Do not turn a single observation into a product
+threshold or commit generated result snapshots.
+
+`cargo run --locked -p concord-perf --bin expansion_scale` generates isolated
+1, 10, 100, and 1,000-endpoint contracts under `target/perf`, expands each
+with the installed `cargo-expand`, and prints comparable line, character,
 whitespace-fragment, declaration-shaped-item, and elapsed-time counters. Pass
 explicit endpoint counts to run a subset. Generated sources and build outputs
 remain disposable target artifacts.
-
-The current checked-in observation is
-[`results/phase-14-windows-msvc.md`](results/phase-14-windows-msvc.md).

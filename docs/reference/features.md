@@ -35,10 +35,14 @@ task.
 - JSON remains opt-in. CSV and NDJSON imply generic record support.
 - Built-in pagination controllers require no ecosystem feature.
 - Multipart remains a runtime-kernel capability because native construction
-  and replayability enforcement cannot cross the extension boundary.
+  and replayability enforcement cannot cross the extension boundary. Part and
+  recipe construction is fallible and structurally bounded.
 - OAuth2 client credentials, JSON, CSV, NDJSON, and governor ecosystem
   dependencies are enabled only by their named façade features.
 - Dangerous features never join the default set.
+- The façade passes dangerous capability tokens to generated code; proc-macro
+  crate features are not used to infer a downstream application's feature
+  selection.
 
 Use `default-features = false` for a minimal HTTP-capable contract and add only
 the listed capabilities:

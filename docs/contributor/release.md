@@ -1,82 +1,86 @@
 # Release and publication
 
-All packages currently retain `publish = false` intentionally. This is not a
-claim that packaging is complete: the repository snapshot has no approved
-license identifier/file, canonical repository URL, publication owner, or
-resolved façade-name ownership. Publishing any package would therefore be
-unsafe and is outside the current authorization.
+All packages retain `publish = false`. The repository has no approved license
+identifier or file, canonical repository URL, publication owner, or confirmed
+registry-name ownership. Do not infer or add that metadata, and do not publish
+without an explicit instruction for the exact operation.
 
-Before enabling publication:
+## Product order
 
-1. approve and add the license and repository metadata;
-2. verify ownership/availability of all public package names;
-3. choose public packages and keep support packages private;
-4. preserve the dependency order:
-   core, macros/extras, then façade;
-5. use exact sibling versions while releasing the set;
-6. run `just verify-package` to create and inspect each local product archive;
-7. build each extracted normalized library against the previously packaged
-   siblings;
-8. verify docs.rs feature metadata and public Rustdoc;
-9. run MSRV, stable, all-feature, no-default, fixture, security, and deny
-   lanes;
-10. publish only with an explicit user instruction for that exact action.
+| Package | Version | Role | Direct Concord product dependency |
+|---|---:|---|---|
+| `concord-core` | 0.1.0 | Runtime kernel and public semantic contracts | none |
+| `concord-macros` | 0.1.0 | Extras-agnostic declaration compiler | none |
+| `concord-extras` | 0.1.0 | First-party downstream implementations | `concord-core = "=0.1.0"` |
+| `concord` | 0.1.0 | Application façade and generated bridge owner | exact core, macros, and extras |
 
-The repository remains at version `0.1.0`. Phase 14 provides the migration
-guide, changelog/release notes, bridge-version audit, compatibility removal,
-and final package/version table. Do not infer publication success from
-workspace build success.
+If publication is approved later, publish core first, macros and extras after
+core is available, and the façade last. Keep exact sibling requirements for
+the coordinated release.
 
-## Final package and version table
+Internal workspace packages are not publication prerequisites:
 
-| Package | Version | Product role | Direct Concord dependency | Registry state/order |
-|---|---:|---|---|---|
-| `concord-core` | 0.1.0 | Semantic runtime kernel and public extension contracts | none (test support is dev-only) | disabled; first product package |
-| `concord-extras` | 0.1.0 | First-party downstream implementations | `concord-core = 0.1.0` | disabled; after core |
-| `concord-macros` | 0.1.0 | Extras-agnostic declaration compiler | none | disabled; alongside extras |
-| `concord` | 0.1.0 | User façade, feature owner, generated bridge composition | exact core, extras, macros | disabled; last |
-| `concord-examples` | 0.1.0 | Internal importable product narrative | `concord = 0.1.0` | internal only |
-| `concord-test-support` | 0.1.0 | Deterministic tests and fixture subprocess support | none | internal only; not a product dependency or registry prerequisite |
-| `concord-perf` | 0.1.0 | Observational performance probes | `concord = 0.1.0` | internal only |
-| `concord-xtask` | 0.1.0 | Portable documentation/fixture checks | none | internal only |
+- `concord-examples` contains importable product examples and depends only on
+  the façade;
+- `concord-test-support` contains deterministic and loopback test
+  infrastructure;
+- `concord-perf` observes public façade behavior;
+- `concord-xtask` owns typed documentation, fixture, MSRV, policy, and package
+  checks. Its core/extras path dependencies read normative limit constants.
 
-Package names use hyphens in Cargo metadata and underscores as Rust crate
-identifiers. Applications name only `concord`.
+## Local package proof
+
+Run:
+
+```text
+just package
+```
+
+The package task processes core, macros, extras, and the façade in dependency
+order. It:
+
+1. creates each `.crate` archive with locked Cargo resolution;
+2. inspects the normalized manifest and rejects path or test-support
+   dependencies;
+3. checks core and macros directly from their extracted archives;
+4. simulates unavailable registry siblings only from already-created product
+   archives;
+5. checks every extracted library with all features and a locked dependency
+   graph.
+
+The simulation never patches test support. Passing this task proves local
+archive structure and dependency closure; it does not prove registry
+ownership or publication.
+
+Build the source ZIP with:
+
+```text
+just source-archive
+```
+
+That recipe uses `git archive`, so the ZIP contains only tracked content from
+`HEAD` and no `.git` directory or ignored build output.
 
 ## Generated bridge contract
 
-The final generated contract version is **23** in both `concord-macros` and
-`concord-core`; the façade reexports the exact handshake through its hidden
-bridge. Any emitted bridge path or signature change requires an atomic version
-bump in the compiler and runtime plus the mismatch fixture. The bridge is
-version-checked compiler/runtime plumbing, not a stable extension surface.
+The generated contract version is **24** in `concord-macros` and
+`concord-core`. The façade reexports the handshake through its hidden bridge.
+Any emitted bridge path or signature change requires an atomic version bump
+and the retained contract-mismatch fixture. The bridge is compiler/runtime
+plumbing, not a public extension API.
 
-## Release artifacts and limitations
+## Release checklist
 
-- [Migration guide](../../MIGRATION.md)
-- [Changelog/release notes](../../CHANGELOG.md)
-- [Unsupported capabilities](../reference/unsupported.md)
-- [Compatibility reference](../reference/compatibility.md)
+Before enabling publication:
 
-Interactive rust-analyzer acceptance, remote Linux/Windows/macOS Actions,
-registry ownership, and approved legal/repository metadata remain external
-release gates until directly observed or supplied. Their absence does not
-weaken the runtime contract, but it prevents a publication-ready claim.
+1. approve and add legal and repository metadata;
+2. verify registry ownership for every selected public package;
+3. keep support and tooling packages private;
+4. run `just verify`;
+5. run `just source-archive` and inspect the ZIP;
+6. inspect generated Rustdoc and feature metadata;
+7. obtain successful remote Linux, Windows, and macOS CI results;
+8. publish only after an explicit instruction naming the packages and order.
 
-`cargo run --locked -p concord-xtask -- package` technically verifies all four
-product archives in dependency order. It inspects each normalized manifest and
-checks each extracted library with locked resolution against already packaged
-siblings. Ordinary registry preparation still cannot resolve unpublished
-siblings; that is a release-state fact, not a product dependency-cycle or
-test-support prerequisite.
-
-## Dependency and feature policy
-
-Public packages never use wildcard sibling versions. Implementation packages
-have empty default features. `concord` owns user defaults and forwarding.
-Examples depend only on the façade. Core never depends upward and macros stay
-extras-agnostic.
-
-Run `just verify-release-local` before requesting remote release validation.
-Record unavailable tools, remote platforms, editor sessions, and network
-acquisition separately.
+See the [changelog](../../CHANGELOG.md), [compatibility reference](../reference/compatibility.md),
+and [unsupported capabilities](../reference/unsupported.md).

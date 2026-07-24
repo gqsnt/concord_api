@@ -40,6 +40,7 @@ Run façade compile-pass/fail tests after every grammar or surface change. Read
 new stderr instead of accepting it blindly, and test privacy with compiler
 errors rather than source scans.
 
-Macro file reorganization follows stable domains; do not split files merely
-for size. Expansion/item measurements and rustdoc signatures are recorded in
-[phase evidence](evidence/refactor-phase-10-macro-architecture.md).
+Macro file organization follows stable domains; do not split files merely for
+size. Use the façade UI suites, warning-denied Rustdoc, and
+`rust-analyzer analysis-stats . --run-all-ide-things` to verify emitted
+structure and editor behavior.
