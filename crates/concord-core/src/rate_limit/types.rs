@@ -205,6 +205,10 @@ impl RateLimitRule {
     pub const fn windows(&self) -> &[RateLimitWindow] {
         &self.windows
     }
+
+    pub(crate) fn retained_structure_bytes(&self) -> Option<usize> {
+        self.id.value.len().checked_add(self.key.total_bytes)
+    }
 }
 
 /// The canonical immutable effective plan for one Concord attempt.

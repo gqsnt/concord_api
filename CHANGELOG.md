@@ -35,6 +35,12 @@
   runtime snapshot.
 - Added bounded owned runtime endpoint IDs and the inherit/explicit/disabled
   timeout tri-state.
+- Runtime endpoint builders now account public shape incrementally, latch the
+  first safe structural error, cap each Concord-owned formatted value, and
+  stop repeated-query iterators at the withheld first excess.
+- Runtime query-name arguments now use `AsRef<str>` so Concord can validate
+  byte length before copying; ordinary `&str` and `String` calls are
+  unchanged.
 - Preserved deterministic preparation, hook, limiter, authentication,
   challenge-recovery, status, acquisition, completion, and cancellation
   behavior.

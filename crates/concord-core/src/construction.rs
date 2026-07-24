@@ -55,14 +55,13 @@ impl StructuralBudget {
         self.public_bytes
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn remaining_components(
+    pub(crate) fn remaining_public_bytes(
         self,
         maximum: usize,
     ) -> Result<usize, StructuralLimitError> {
         maximum
-            .checked_sub(self.components)
-            .ok_or(StructuralLimitError::ComponentLimitExceeded)
+            .checked_sub(self.public_bytes)
+            .ok_or(StructuralLimitError::PublicByteLimitExceeded)
     }
 
     pub(crate) fn try_add(
@@ -91,7 +90,6 @@ impl StructuralBudget {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub(crate) fn try_replace_public_bytes(
         &mut self,
         previous_bytes: usize,
@@ -112,14 +110,12 @@ impl StructuralBudget {
 }
 
 /// A structural formatting failure that never retains the formatted value.
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum BoundedFormatError {
     LimitExceeded,
     FormattingFailed,
 }
 
-#[allow(dead_code)]
 impl fmt::Display for BoundedFormatError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -174,7 +170,6 @@ impl Write for CappedString {
 /// User `Display` code remains responsible for bounding its own CPU work and
 /// may panic or ignore formatting failures. This function bounds only the
 /// output retained by Concord.
-#[allow(dead_code)]
 pub(crate) fn format_bounded<T>(
     value: &T,
     maximum_bytes: usize,
@@ -221,17 +216,16 @@ where
 ///
 /// C2 uses this shape to keep fluent runtime endpoint mutation inert after
 /// the first structural error.
-#[allow(dead_code)]
 pub(crate) struct ErrorLatch<T, E> {
     state: Result<T, E>,
 }
 
-#[allow(dead_code)]
 impl<T, E> ErrorLatch<T, E> {
     pub(crate) const fn from_value(value: T) -> Self {
         Self { state: Ok(value) }
     }
 
+    #[allow(dead_code)]
     pub(crate) const fn from_error(error: E) -> Self {
         Self { state: Err(error) }
     }
@@ -297,7 +291,6 @@ mod tests {
             .expect("replacement at boundary");
         assert_eq!(budget.components(), 2);
         assert_eq!(budget.public_bytes(), 7);
-        assert_eq!(budget.remaining_components(3), Ok(1));
 
         let before = budget;
         assert_eq!(

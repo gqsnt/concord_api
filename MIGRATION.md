@@ -178,6 +178,14 @@ The old prepared-endpoint names are removed. Timeout selection is a real
 inherit/explicit/disabled tri-state. Runtime and generated endpoints expose
 the same safe description and planning model and use the same executor.
 
+Runtime endpoint query-name parameters now require `AsRef<str>` so the
+builder can validate length before copying. `&str`, `String`, and
+`Box<str>` continue to work directly. A custom wrapper that implemented only
+`Into<String>` must expose an `AsRef<str>` view or pass an owned `String`.
+The fluent builder still returns `Self`; its first structural failure is
+latched and reported by `build()` without formatting or consuming later
+inputs.
+
 ## Recheck capabilities and safety assumptions
 
 - Planning is sanitized and performs no hooks, credentials, limiter work, body

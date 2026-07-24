@@ -36,6 +36,12 @@ tri-state: inherit the client default, use an explicit duration, or disable
 the timeout. Runtime endpoints support only coherent typed contracts; there is
 no partial runtime pagination API.
 
+Path, query, header, authentication, and rate-rule shape is checked as each
+builder method runs. Repeated query iterators stop after consuming one
+withheld first-excess item, including for an infinite iterator. The fluent
+builder latches that safe structural category, skips later formatting and
+iterator work, and returns it from `build()`.
+
 `.plan()` returns the same sanitized description shape for generated and
 runtime endpoints. It constructs the real public request head without hooks,
 credentials, limiter work, body encoding/factories, stream polling, transport,

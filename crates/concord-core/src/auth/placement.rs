@@ -83,6 +83,18 @@ impl Auth {
         self
     }
 
+    pub(crate) const fn placement_count(&self) -> usize {
+        1
+    }
+
+    pub(crate) fn public_name_bytes(&self) -> usize {
+        match &self.kind {
+            PlacementKind::Bearer | PlacementKind::Basic => AUTHORIZATION.as_str().len(),
+            PlacementKind::Header(name) => name.as_str().len(),
+            PlacementKind::Query(name) => name.len(),
+        }
+    }
+
     fn secret<M>(kind: PlacementKind, credential: CredentialRef<M>) -> Self
     where
         M: SecretCredential,

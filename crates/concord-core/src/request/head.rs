@@ -692,10 +692,16 @@ pub(crate) fn validate_public_header(
     name: &HeaderName,
     value: &str,
 ) -> Result<HeaderValue, ConfigurationErrorKind> {
-    if reserved_public_header(name) {
-        return Err(ConfigurationErrorKind::InvalidHeader);
-    }
+    validate_public_header_name(name)?;
     HeaderValue::from_str(value).map_err(|_| ConfigurationErrorKind::InvalidHeader)
+}
+
+pub(crate) fn validate_public_header_name(name: &HeaderName) -> Result<(), ConfigurationErrorKind> {
+    if reserved_public_header(name) {
+        Err(ConfigurationErrorKind::InvalidHeader)
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(test)]

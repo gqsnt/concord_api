@@ -441,7 +441,7 @@ async fn generated_plan_matches_execution_and_body_work_stays_lazy_until_executi
 }
 
 #[test]
-fn runtime_endpoint_identity_description_and_timeout_selection_are_bounded_and_distinct() {
+fn runtime_endpoint_plan_remains_zero_effect() {
     let server = ScriptedServer::start([]).expect("unused planning server");
     let effects = Arc::new(EffectCounts::default());
     let client = configured_public_client(&server, &effects, Duration::from_secs(23));

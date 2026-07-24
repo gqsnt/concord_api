@@ -3,44 +3,56 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use std::time::Duration;
 
-use http::{HeaderMap, HeaderName, Method};
+use http::{HeaderMap, HeaderName, HeaderValue, Method};
 use url::Url;
 
-use super::{EndpointSpec, HeadBuilder, PreparedHead, RequestMeta, validate_public_header};
+use super::{
+    EndpointSpec, HeadBuilder, PreparedHead, RequestMeta, validate_public_header,
+    validate_public_header_name,
+};
 use crate::auth::{Auth, AuthPlan};
 use crate::body::{
     EmptyBody, PreparedBodySpec, PreparedRequestBody, RequestBody, RequestBodyContext,
     RequestBodyMetadata, RequestBodySpec, Stream,
 };
 use crate::codec::{EncodeBody, MediaType};
-use crate::construction::StructuralBudget;
+use crate::construction::{ErrorLatch, StructuralBudget, StructuralLimitError, format_bounded};
 use crate::endpoint::{
-    EndpointCapabilities, EndpointDescription, EndpointId, MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS,
-    MAX_RUNTIME_ENDPOINT_COMPONENTS, MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, RequestBodyCategory,
-    TimeoutSelection,
+    EndpointCapabilities, EndpointDescription, EndpointId, MAX_FORMATTED_PUBLIC_VALUE_BYTES,
+    MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS, MAX_RUNTIME_ENDPOINT_COMPONENTS,
+    MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, RequestBodyCategory, TimeoutSelection,
 };
 use crate::error::{ApiError, ConfigurationError, ConfigurationErrorKind};
-use crate::rate_limit::{RateLimitPlan, RateLimitRule};
+use crate::rate_limit::{MAX_RATE_LIMIT_RULES_PER_PLAN, RateLimitPlan, RateLimitRule};
 use crate::response::{NoContent, ResponseBodySpec, ResponseMode};
 
-/// Builds one owned hand-written endpoint for execution by a generated client.
-///
-/// Construction is side-effect free with respect to Concord execution: it does not allocate an
-/// operation identity, invoke codecs or factories, acquire credentials or limiter capacity, call
-/// hooks, construct a native request, or perform HTTP.
-/// Fields are intentionally private.
-pub struct RuntimeEndpointBuilder<R = NoContent> {
+struct RuntimeEndpointParts {
     endpoint_id: EndpointId,
     method: Method,
     path_segments: Vec<String>,
-    query: Vec<(String, String)>,
-    headers: Vec<(HeaderName, String)>,
+    query: Vec<(Arc<str>, String)>,
+    headers: Vec<(HeaderName, HeaderValue)>,
     body: PreparedRequestBody,
     body_category: RequestBodyCategory,
     body_specification: Option<&'static str>,
     auth: Vec<Auth>,
     timeout: TimeoutSelection,
     rate_limits: Vec<RateLimitRule>,
+    budget: StructuralBudget,
+}
+
+/// Builds one owned hand-written endpoint for execution by a generated client.
+///
+/// Construction is side-effect free with respect to Concord execution: it does not allocate an
+/// operation identity, invoke codecs or factories, acquire credentials or limiter capacity, call
+/// hooks, construct a native request, or perform HTTP.
+///
+/// Public request shape is accounted incrementally against the canonical runtime endpoint limits.
+/// The first structural failure is latched: later mutations do not format values or consume
+/// iterators, and [`RuntimeEndpointBuilder::build`] returns only its safe configuration category.
+/// Fields are intentionally private.
+pub struct RuntimeEndpointBuilder<R = NoContent> {
+    state: ErrorLatch<RuntimeEndpointParts, ConfigurationErrorKind>,
     response: PhantomData<R>,
 }
 
@@ -53,7 +65,7 @@ pub struct RuntimeEndpointBuilder<R = NoContent> {
 pub struct RuntimeEndpoint<R = NoContent> {
     description: EndpointDescription,
     path_segments: Box<[String]>,
-    query: Box<[(String, String)]>,
+    query: Box<[(Arc<str>, String)]>,
     headers: HeaderMap,
     body: PreparedRequestBody,
     auth: Arc<AuthPlan>,
@@ -66,17 +78,20 @@ impl RuntimeEndpoint<NoContent> {
     #[must_use]
     pub fn builder(endpoint_id: EndpointId, method: Method) -> RuntimeEndpointBuilder<NoContent> {
         RuntimeEndpointBuilder {
-            endpoint_id,
-            method,
-            path_segments: Vec::new(),
-            query: Vec::new(),
-            headers: Vec::new(),
-            body: PreparedRequestBody::new::<EmptyBody>(()),
-            body_category: RequestBodyCategory::Empty,
-            body_specification: None,
-            auth: Vec::new(),
-            timeout: TimeoutSelection::InheritClient,
-            rate_limits: Vec::new(),
+            state: ErrorLatch::from_value(RuntimeEndpointParts {
+                endpoint_id,
+                method,
+                path_segments: Vec::new(),
+                query: Vec::new(),
+                headers: Vec::new(),
+                body: PreparedRequestBody::new::<EmptyBody>(()),
+                body_category: RequestBodyCategory::Empty,
+                body_specification: None,
+                auth: Vec::new(),
+                timeout: TimeoutSelection::InheritClient,
+                rate_limits: Vec::new(),
+                budget: StructuralBudget::new(),
+            }),
             response: PhantomData,
         }
     }
@@ -85,28 +100,57 @@ impl RuntimeEndpoint<NoContent> {
 impl<R> RuntimeEndpointBuilder<R> {
     /// Appends one formatted value as exactly one URL-encoded path segment.
     #[must_use]
-    pub fn path_segment<T>(mut self, value: T) -> Self
+    pub fn path_segment<T>(self, value: T) -> Self
     where
         T: Display,
     {
-        self.path_segments.push(value.to_string());
-        self
+        self.update(move |mut parts| {
+            let mut budget = reserve_runtime_structure(parts.budget, 1, 0)
+                .map_err(|_| ConfigurationErrorKind::InvalidValue)?;
+            let maximum =
+                runtime_format_limit(budget).map_err(|_| ConfigurationErrorKind::InvalidValue)?;
+            let value = format_bounded(&value, maximum)
+                .map_err(|_| ConfigurationErrorKind::InvalidValue)?;
+            budget = reserve_runtime_structure(budget, 0, value.len())
+                .map_err(|_| ConfigurationErrorKind::InvalidValue)?;
+            parts.budget = budget;
+            parts.path_segments.push(value);
+            Ok(parts)
+        })
     }
 
     /// Appends one ordered public query pair.
+    ///
+    /// The name is borrowed through [`AsRef<str>`] so its byte length can be rejected before
+    /// Concord copies it.
     #[must_use]
-    pub fn query<T>(mut self, name: impl Into<String>, value: T) -> Self
+    pub fn query<N, T>(self, name: N, value: T) -> Self
     where
+        N: AsRef<str>,
         T: Display,
     {
-        self.query.push((name.into(), value.to_string()));
-        self
+        self.update(move |mut parts| {
+            let name = name.as_ref();
+            let mut budget = reserve_runtime_structure(parts.budget, 1, name.len())
+                .map_err(|_| ConfigurationErrorKind::InvalidValue)?;
+            let maximum =
+                runtime_format_limit(budget).map_err(|_| ConfigurationErrorKind::InvalidValue)?;
+            let value = format_bounded(&value, maximum)
+                .map_err(|_| ConfigurationErrorKind::InvalidValue)?;
+            budget = reserve_runtime_structure(budget, 0, value.len())
+                .map_err(|_| ConfigurationErrorKind::InvalidValue)?;
+            let name: Arc<str> = Arc::from(name);
+            parts.budget = budget;
+            parts.query.push((name, value));
+            Ok(parts)
+        })
     }
 
     /// Appends one ordered query pair when `value` is present.
     #[must_use]
-    pub fn query_optional<T>(self, name: impl Into<String>, value: Option<T>) -> Self
+    pub fn query_optional<N, T>(self, name: N, value: Option<T>) -> Self
     where
+        N: AsRef<str>,
         T: Display,
     {
         match value {
@@ -116,38 +160,103 @@ impl<R> RuntimeEndpointBuilder<R> {
     }
 
     /// Appends repeated ordered query pairs while preserving iterator order.
+    ///
+    /// Concord consumes only the values that fit plus one withheld first-excess value. An empty
+    /// iterator retains no copy of `name`.
     #[must_use]
-    pub fn query_values<T, I>(mut self, name: impl Into<String>, values: I) -> Self
+    pub fn query_values<N, T, I>(self, name: N, values: I) -> Self
     where
+        N: AsRef<str>,
         T: Display,
         I: IntoIterator<Item = T>,
     {
-        let name = name.into();
-        self.query.extend(
-            values
-                .into_iter()
-                .map(|value| (name.clone(), value.to_string())),
-        );
-        self
+        self.update(move |mut parts| {
+            let name = name.as_ref();
+            if name.len() > MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES {
+                return Err(ConfigurationErrorKind::InvalidValue);
+            }
+            let mut values = values.into_iter();
+            let Some(first) = values.next() else {
+                return Ok(parts);
+            };
+
+            let mut budget = reserve_runtime_structure(parts.budget, 1, name.len())
+                .map_err(|_| ConfigurationErrorKind::InvalidValue)?;
+            let maximum =
+                runtime_format_limit(budget).map_err(|_| ConfigurationErrorKind::InvalidValue)?;
+            let first = format_bounded(&first, maximum)
+                .map_err(|_| ConfigurationErrorKind::InvalidValue)?;
+            budget = reserve_runtime_structure(budget, 0, first.len())
+                .map_err(|_| ConfigurationErrorKind::InvalidValue)?;
+            let name: Arc<str> = Arc::from(name);
+            parts.budget = budget;
+            parts.query.push((Arc::clone(&name), first));
+
+            for value in values {
+                append_runtime_query_value(&mut parts, &name, value)?;
+            }
+            Ok(parts)
+        })
     }
 
     /// Inserts one public header, replacing an earlier case-insensitively equal name.
     #[must_use]
-    pub fn header<T>(mut self, name: HeaderName, value: T) -> Self
+    pub fn header<T>(self, name: HeaderName, value: T) -> Self
     where
         T: Display,
     {
-        let value = value.to_string();
-        if let Some((_, previous)) = self
-            .headers
-            .iter_mut()
-            .find(|(candidate, _)| candidate == name)
-        {
-            *previous = value;
-        } else {
-            self.headers.push((name, value));
-        }
-        self
+        self.update(move |mut parts| {
+            validate_public_header_name(&name)?;
+            let existing = parts
+                .headers
+                .iter()
+                .position(|(candidate, _)| candidate == name);
+            let (mut budget, maximum) = match existing {
+                Some(index) => {
+                    let mut formatting_budget = parts.budget;
+                    formatting_budget
+                        .try_replace_public_bytes(
+                            parts.headers[index].1.as_bytes().len(),
+                            0,
+                            MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
+                        )
+                        .map_err(|_| ConfigurationErrorKind::InvalidHeader)?;
+                    let maximum = runtime_format_limit(formatting_budget)
+                        .map_err(|_| ConfigurationErrorKind::InvalidHeader)?;
+                    (parts.budget, maximum)
+                }
+                None => {
+                    let budget = reserve_runtime_structure(parts.budget, 1, name.as_str().len())
+                        .map_err(|_| ConfigurationErrorKind::InvalidHeader)?;
+                    let maximum = runtime_format_limit(budget)
+                        .map_err(|_| ConfigurationErrorKind::InvalidHeader)?;
+                    (budget, maximum)
+                }
+            };
+            let formatted = format_bounded(&value, maximum)
+                .map_err(|_| ConfigurationErrorKind::InvalidHeader)?;
+            let value = validate_public_header(&name, &formatted)?;
+
+            match existing {
+                Some(index) => {
+                    budget
+                        .try_replace_public_bytes(
+                            parts.headers[index].1.as_bytes().len(),
+                            value.as_bytes().len(),
+                            MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
+                        )
+                        .map_err(|_| ConfigurationErrorKind::InvalidHeader)?;
+                    parts.headers[index].1 = value;
+                }
+                None => {
+                    budget = reserve_runtime_structure(budget, 0, value.as_bytes().len())
+                        .map_err(|_| ConfigurationErrorKind::InvalidHeader)?;
+                    parts.headers.push((name, value));
+                }
+            }
+            parts.budget = budget;
+            Ok(parts)
+        })
     }
 
     /// Replaces the selected request body with one existing advanced body value.
@@ -157,15 +266,21 @@ impl<R> RuntimeEndpointBuilder<R> {
     }
 
     /// Replaces the selected request body with an arbitrary request specification.
+    ///
+    /// Concord stores the application input without invoking body metadata,
+    /// encoding, factories, or streams. The input's own construction and
+    /// retained state are an application extension trust boundary.
     #[must_use]
-    pub fn body_spec<B>(mut self, input: B::Input) -> Self
+    pub fn body_spec<B>(self, input: B::Input) -> Self
     where
         B: RequestBodySpec,
     {
-        self.body = PreparedRequestBody::new::<B>(input);
-        self.body_category = RequestBodyCategory::Specification;
-        self.body_specification = Some(std::any::type_name::<B>());
-        self
+        self.update(move |mut parts| {
+            parts.body = PreparedRequestBody::new::<B>(input);
+            parts.body_category = RequestBodyCategory::Specification;
+            parts.body_specification = Some(std::any::type_name::<B>());
+            Ok(parts)
+        })
     }
 
     /// Replaces the selected request body with one lazily encoded codec input.
@@ -179,37 +294,74 @@ impl<R> RuntimeEndpointBuilder<R> {
 
     /// Appends one typed authentication placement.
     #[must_use]
-    pub fn auth(mut self, auth: Auth) -> Self {
-        self.auth.push(auth);
-        self
+    pub fn auth(self, auth: Auth) -> Self {
+        self.update(move |mut parts| {
+            let placements = auth.placement_count();
+            let count = parts
+                .auth
+                .len()
+                .checked_add(placements)
+                .ok_or(ConfigurationErrorKind::InvalidAuthentication)?;
+            if count > MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS {
+                return Err(ConfigurationErrorKind::InvalidAuthentication);
+            }
+            let budget =
+                reserve_runtime_structure(parts.budget, placements, auth.public_name_bytes())
+                    .map_err(|_| ConfigurationErrorKind::InvalidAuthentication)?;
+            parts.budget = budget;
+            parts.auth.push(auth);
+            Ok(parts)
+        })
     }
 
     /// Replaces the Concord operation deadline with one explicit duration.
     #[must_use]
-    pub fn timeout(mut self, duration: Duration) -> Self {
-        self.timeout = TimeoutSelection::Explicit(duration);
-        self
+    pub fn timeout(self, duration: Duration) -> Self {
+        self.update(move |mut parts| {
+            parts.timeout = TimeoutSelection::Explicit(duration);
+            Ok(parts)
+        })
     }
 
     /// Replaces the Concord operation deadline selection with explicit disablement.
     #[must_use]
-    pub fn disable_timeout(mut self) -> Self {
-        self.timeout = TimeoutSelection::Disabled;
-        self
+    pub fn disable_timeout(self) -> Self {
+        self.update(|mut parts| {
+            parts.timeout = TimeoutSelection::Disabled;
+            Ok(parts)
+        })
     }
 
     /// Restores timeout inheritance from the immutable built client.
     #[must_use]
-    pub fn inherit_timeout(mut self) -> Self {
-        self.timeout = TimeoutSelection::InheritClient;
-        self
+    pub fn inherit_timeout(self) -> Self {
+        self.update(|mut parts| {
+            parts.timeout = TimeoutSelection::InheritClient;
+            Ok(parts)
+        })
     }
 
     /// Appends one structurally validated rate-limit rule.
     #[must_use]
-    pub fn rate_limit(mut self, rule: RateLimitRule) -> Self {
-        self.rate_limits.push(rule);
-        self
+    pub fn rate_limit(self, rule: RateLimitRule) -> Self {
+        self.update(move |mut parts| {
+            let count = parts
+                .rate_limits
+                .len()
+                .checked_add(1)
+                .ok_or(ConfigurationErrorKind::InvalidRateLimit)?;
+            if count > MAX_RATE_LIMIT_RULES_PER_PLAN {
+                return Err(ConfigurationErrorKind::InvalidRateLimit);
+            }
+            let retained_bytes = rule
+                .retained_structure_bytes()
+                .ok_or(ConfigurationErrorKind::InvalidRateLimit)?;
+            let budget = reserve_runtime_structure(parts.budget, 1, retained_bytes)
+                .map_err(|_| ConfigurationErrorKind::InvalidRateLimit)?;
+            parts.budget = budget;
+            parts.rate_limits.push(rule);
+            Ok(parts)
+        })
     }
 
     /// Selects an arbitrary successful response specification.
@@ -247,7 +399,7 @@ impl<R> RuntimeEndpointBuilder<R> {
     where
         R: ResponseBodySpec,
     {
-        let Self {
+        let RuntimeEndpointParts {
             endpoint_id,
             method,
             path_segments,
@@ -259,33 +411,21 @@ impl<R> RuntimeEndpointBuilder<R> {
             auth,
             timeout,
             rate_limits,
-            response: _,
-        } = self;
-
-        validate_public_shape(
-            &path_segments,
-            &query,
-            &headers,
-            auth.len(),
-            rate_limits.len(),
-        )?;
-        if auth.len() > MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS {
-            return Err(ConfigurationError::new(
-                ConfigurationErrorKind::InvalidAuthentication,
-            ));
-        }
+            budget: _,
+        } = self.state.into_result().map_err(ConfigurationError::new)?;
 
         let mut validated_headers = HeaderMap::new();
         for (name, value) in headers {
-            let value = validate_public_header(&name, &value).map_err(ConfigurationError::new)?;
             validated_headers.insert(name, value);
         }
 
         let mut validation_url = Url::parse("https://runtime.invalid/")
             .expect("the fixed runtime validation origin is valid");
-        validation_url
-            .query_pairs_mut()
-            .extend_pairs(query.iter().map(|(name, value)| (name, value)));
+        validation_url.query_pairs_mut().extend_pairs(
+            query
+                .iter()
+                .map(|(name, value)| (name.as_ref(), value.as_str())),
+        );
         let mut auth_plan = AuthPlan::default();
         for auth in auth {
             auth_plan
@@ -335,17 +475,17 @@ impl<R> RuntimeEndpointBuilder<R> {
 
     fn with_response<Next>(self) -> RuntimeEndpointBuilder<Next> {
         RuntimeEndpointBuilder {
-            endpoint_id: self.endpoint_id,
-            method: self.method,
-            path_segments: self.path_segments,
-            query: self.query,
-            headers: self.headers,
-            body: self.body,
-            body_category: self.body_category,
-            body_specification: self.body_specification,
-            auth: self.auth,
-            timeout: self.timeout,
-            rate_limits: self.rate_limits,
+            state: self.state,
+            response: PhantomData,
+        }
+    }
+
+    fn update<F>(self, update: F) -> Self
+    where
+        F: FnOnce(RuntimeEndpointParts) -> Result<RuntimeEndpointParts, ConfigurationErrorKind>,
+    {
+        Self {
+            state: self.state.then(update),
             response: PhantomData,
         }
     }
@@ -378,7 +518,7 @@ where
             builder.push_prepared_segment(segment)?;
         }
         for (name, value) in &self.query {
-            builder.push_query_value(name, value);
+            builder.push_query_value(name.as_ref(), value);
         }
         for (name, value) in &self.headers {
             builder.insert_prepared_header(name.clone(), value.clone());
@@ -400,77 +540,43 @@ where
     }
 }
 
-fn validate_public_shape(
-    path_segments: &[String],
-    query: &[(String, String)],
-    headers: &[(HeaderName, String)],
-    auth_placements: usize,
-    rate_limit_rules: usize,
-) -> Result<(), ConfigurationError> {
-    let mut budget = StructuralBudget::new();
-    for components in [
-        path_segments.len(),
-        query.len(),
-        headers.len(),
-        auth_placements,
-        rate_limit_rules,
-    ] {
-        budget
-            .try_add(
-                components,
-                0,
-                MAX_RUNTIME_ENDPOINT_COMPONENTS,
-                MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
-            )
-            .map_err(|_| ConfigurationError::new(ConfigurationErrorKind::InvalidValue))?;
-    }
+fn reserve_runtime_structure(
+    mut budget: StructuralBudget,
+    components: usize,
+    public_bytes: usize,
+) -> Result<StructuralBudget, StructuralLimitError> {
+    budget.try_add(
+        components,
+        public_bytes,
+        MAX_RUNTIME_ENDPOINT_COMPONENTS,
+        MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
+    )?;
+    Ok(budget)
+}
 
-    for value in path_segments {
-        budget
-            .try_add(
-                0,
-                value.len(),
-                MAX_RUNTIME_ENDPOINT_COMPONENTS,
-                MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
-            )
-            .map_err(|_| ConfigurationError::new(ConfigurationErrorKind::InvalidValue))?;
-    }
-    for (name, value) in query {
-        budget
-            .try_add(
-                0,
-                name.len(),
-                MAX_RUNTIME_ENDPOINT_COMPONENTS,
-                MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
-            )
-            .and_then(|()| {
-                budget.try_add(
-                    0,
-                    value.len(),
-                    MAX_RUNTIME_ENDPOINT_COMPONENTS,
-                    MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
-                )
-            })
-            .map_err(|_| ConfigurationError::new(ConfigurationErrorKind::InvalidValue))?;
-    }
-    for (name, value) in headers {
-        budget
-            .try_add(
-                0,
-                name.as_str().len(),
-                MAX_RUNTIME_ENDPOINT_COMPONENTS,
-                MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
-            )
-            .and_then(|()| {
-                budget.try_add(
-                    0,
-                    value.len(),
-                    MAX_RUNTIME_ENDPOINT_COMPONENTS,
-                    MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
-                )
-            })
-            .map_err(|_| ConfigurationError::new(ConfigurationErrorKind::InvalidValue))?;
-    }
+fn runtime_format_limit(budget: StructuralBudget) -> Result<usize, StructuralLimitError> {
+    budget
+        .remaining_public_bytes(MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES)
+        .map(|remaining| remaining.min(MAX_FORMATTED_PUBLIC_VALUE_BYTES))
+}
+
+fn append_runtime_query_value<T>(
+    parts: &mut RuntimeEndpointParts,
+    name: &Arc<str>,
+    value: T,
+) -> Result<(), ConfigurationErrorKind>
+where
+    T: Display,
+{
+    let mut budget = reserve_runtime_structure(parts.budget, 1, name.len())
+        .map_err(|_| ConfigurationErrorKind::InvalidValue)?;
+    let maximum = runtime_format_limit(budget).map_err(|_| ConfigurationErrorKind::InvalidValue)?;
+    let value =
+        format_bounded(&value, maximum).map_err(|_| ConfigurationErrorKind::InvalidValue)?;
+    budget = reserve_runtime_structure(budget, 0, value.len())
+        .map_err(|_| ConfigurationErrorKind::InvalidValue)?;
+    parts.budget = budget;
+    parts.query.push((Arc::clone(name), value));
     Ok(())
 }
 
@@ -488,15 +594,137 @@ fn runtime_route_shape(path_segment_count: usize) -> Arc<str> {
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroU32;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use bytes::Bytes;
     use http::header::AUTHORIZATION;
 
     use super::*;
+    use crate::auth::{AccessToken, CredentialRef, SlotSelector};
     use crate::codec::{OctetStream, Text};
     use crate::hooks::DebugLevel;
     use crate::rate_limit::{RateLimitId, RateLimitKey, RateLimitWindow};
     use crate::request::RequestOptions;
+
+    const FORMAT_SENTINEL: &str = "runtime-format-first-excess-sentinel-3f4a";
+
+    #[derive(Clone, Copy)]
+    struct EmptyDisplay;
+
+    impl Display for EmptyDisplay {
+        fn fmt(&self, _formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            Ok(())
+        }
+    }
+
+    struct TrackedEmptyDisplay {
+        formatted: Arc<AtomicUsize>,
+    }
+
+    impl Display for TrackedEmptyDisplay {
+        fn fmt(&self, _formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            self.formatted.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    struct PanicBeyondFirstExcess {
+        next_calls: Arc<AtomicUsize>,
+        formatted: Arc<AtomicUsize>,
+    }
+
+    impl Iterator for PanicBeyondFirstExcess {
+        type Item = TrackedEmptyDisplay;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            let call = self.next_calls.fetch_add(1, Ordering::SeqCst);
+            assert!(call < 3, "iterator consumed beyond the first excess");
+            Some(TrackedEmptyDisplay {
+                formatted: Arc::clone(&self.formatted),
+            })
+        }
+    }
+
+    struct RetentionProbe {
+        _retained: Arc<()>,
+        formatted: Arc<AtomicUsize>,
+        text: &'static str,
+    }
+
+    impl Display for RetentionProbe {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            self.formatted.fetch_add(1, Ordering::SeqCst);
+            formatter.write_str(self.text)
+        }
+    }
+
+    struct PanicDisplay;
+
+    impl Display for PanicDisplay {
+        fn fmt(&self, _formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            panic!("latched builder formatted a later value")
+        }
+    }
+
+    struct PanicIntoIterator {
+        into_iter_calls: Arc<AtomicUsize>,
+    }
+
+    impl IntoIterator for PanicIntoIterator {
+        type Item = &'static str;
+        type IntoIter = std::iter::Empty<&'static str>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            self.into_iter_calls.fetch_add(1, Ordering::SeqCst);
+            panic!("latched builder consumed a later iterator")
+        }
+    }
+
+    struct PanicName;
+
+    impl AsRef<str> for PanicName {
+        fn as_ref(&self) -> &str {
+            panic!("latched builder inspected a later query name")
+        }
+    }
+
+    struct SentinelDisplay {
+        prefix: String,
+        _retained: Arc<()>,
+    }
+
+    impl Display for SentinelDisplay {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str(&self.prefix)?;
+            formatter.write_str(FORMAT_SENTINEL)
+        }
+    }
+
+    struct InertBodyInput {
+        calls: Arc<AtomicUsize>,
+    }
+
+    struct InertBodySpec;
+
+    impl RequestBodySpec for InertBodySpec {
+        type Input = InertBodyInput;
+
+        fn metadata(
+            input: &Self::Input,
+            _context: RequestBodyContext<'_>,
+        ) -> Result<RequestBodyMetadata, crate::body::BodyError> {
+            input.calls.fetch_add(1, Ordering::SeqCst);
+            panic!("runtime endpoint build invoked body metadata")
+        }
+
+        fn prepare(
+            input: Self::Input,
+            _context: RequestBodyContext<'_>,
+        ) -> Result<RequestBody, crate::body::BodyError> {
+            input.calls.fetch_add(1, Ordering::SeqCst);
+            panic!("runtime endpoint build invoked body preparation")
+        }
+    }
 
     fn head<R>(endpoint: &RuntimeEndpoint<R>, base: &str) -> PreparedHead
     where
@@ -525,6 +753,13 @@ mod tests {
             .expect("window")],
         )
         .expect("rule")
+    }
+
+    fn credential() -> CredentialRef<AccessToken> {
+        CredentialRef::new(SlotSelector::static_value(
+            AccessToken::new("runtime-auth-secret-sentinel"),
+            Duration::from_secs(1),
+        ))
     }
 
     #[test]
@@ -677,55 +912,293 @@ mod tests {
     }
 
     #[test]
-    fn runtime_public_shape_bounds_accept_the_boundary_and_reject_first_excess() {
+    fn runtime_endpoint_query_values_stops_at_first_excess() {
+        let mut builder =
+            RuntimeEndpoint::builder(EndpointId::from_static("runtime.query"), Method::GET);
+        for _ in 0..(MAX_RUNTIME_ENDPOINT_COMPONENTS - 2) {
+            builder = builder.query("", EmptyDisplay);
+        }
+
+        let next_calls = Arc::new(AtomicUsize::new(0));
+        let formatted = Arc::new(AtomicUsize::new(0));
+        let error = builder
+            .query_values(
+                "",
+                PanicBeyondFirstExcess {
+                    next_calls: Arc::clone(&next_calls),
+                    formatted: Arc::clone(&formatted),
+                },
+            )
+            .build()
+            .err()
+            .expect("third repeated query value is the first excess");
+
+        assert_eq!(error.kind(), ConfigurationErrorKind::InvalidValue);
+        assert_eq!(next_calls.load(Ordering::SeqCst), 3);
+        assert_eq!(formatted.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn runtime_endpoint_infinite_query_values_returns_configuration_error() {
+        let error =
+            RuntimeEndpoint::builder(EndpointId::from_static("runtime.infinite"), Method::GET)
+                .query_values("", std::iter::repeat(EmptyDisplay))
+                .build()
+                .err()
+                .expect("an infinite query iterator must reach the finite component limit");
+        assert_eq!(error.kind(), ConfigurationErrorKind::InvalidValue);
+    }
+
+    #[test]
+    fn runtime_endpoint_first_excess_component_is_not_retained() {
         let mut boundary =
-            RuntimeEndpoint::builder(EndpointId::from_static("runtime.components"), Method::GET);
+            RuntimeEndpoint::builder(EndpointId::from_static("runtime.components"), Method::GET)
+                .query_optional(PanicName, Option::<PanicDisplay>::None);
         for _ in 0..MAX_RUNTIME_ENDPOINT_COMPONENTS {
-            boundary = boundary.query("", "");
+            boundary = boundary.query("", EmptyDisplay);
         }
         boundary.build().expect("component boundary");
 
+        let retained = Arc::new(());
+        let formatted = Arc::new(AtomicUsize::new(0));
         let mut excessive =
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.components"), Method::GET);
-        for _ in 0..=MAX_RUNTIME_ENDPOINT_COMPONENTS {
-            excessive = excessive.query("", "");
+        for _ in 0..MAX_RUNTIME_ENDPOINT_COMPONENTS {
+            excessive = excessive.query("", EmptyDisplay);
         }
-        assert_eq!(
-            excessive
-                .build()
-                .err()
-                .expect("first excess component")
-                .kind(),
-            ConfigurationErrorKind::InvalidValue
-        );
+        let excessive = excessive.path_segment(RetentionProbe {
+            _retained: Arc::clone(&retained),
+            formatted: Arc::clone(&formatted),
+            text: FORMAT_SENTINEL,
+        });
 
-        let mut excessive_rules =
-            RuntimeEndpoint::builder(EndpointId::from_static("runtime.rules"), Method::GET);
-        for _ in 0..=MAX_RUNTIME_ENDPOINT_COMPONENTS {
-            excessive_rules = excessive_rules.rate_limit(rule("bounded", "tenant"));
-        }
-        assert_eq!(
-            excessive_rules
-                .build()
-                .err()
-                .expect("first excess rate-limit rule")
-                .kind(),
-            ConfigurationErrorKind::InvalidValue
-        );
+        assert_eq!(Arc::strong_count(&retained), 1);
+        assert_eq!(formatted.load(Ordering::SeqCst), 0);
+        let error = excessive.build().err().expect("first excess component");
+        assert_eq!(error.kind(), ConfigurationErrorKind::InvalidValue);
+        assert!(!error.to_string().contains(FORMAT_SENTINEL));
+        assert!(!format!("{error:?}").contains(FORMAT_SENTINEL));
+    }
 
+    #[test]
+    fn runtime_endpoint_first_excess_public_byte_is_not_retained() {
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.bytes"), Method::GET)
             .path_segment("x".repeat(MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES))
             .build()
             .expect("public-byte boundary");
-        assert_eq!(
+
+        let retained = Arc::new(());
+        let formatted = Arc::new(AtomicUsize::new(0));
+        let excessive =
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.bytes"), Method::GET)
-                .path_segment("x".repeat(MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES + 1))
+                .path_segment("x".repeat(MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES))
+                .path_segment(RetentionProbe {
+                    _retained: Arc::clone(&retained),
+                    formatted: Arc::clone(&formatted),
+                    text: FORMAT_SENTINEL,
+                });
+
+        assert_eq!(Arc::strong_count(&retained), 1);
+        assert_eq!(formatted.load(Ordering::SeqCst), 1);
+        let error = excessive.build().err().expect("first excess public byte");
+        assert_eq!(error.kind(), ConfigurationErrorKind::InvalidValue);
+        assert!(!error.to_string().contains(FORMAT_SENTINEL));
+        assert!(!format!("{error:?}").contains(FORMAT_SENTINEL));
+    }
+
+    #[test]
+    fn runtime_endpoint_errored_builder_does_not_consume_later_iterator() {
+        let into_iter_calls = Arc::new(AtomicUsize::new(0));
+        let error =
+            RuntimeEndpoint::builder(EndpointId::from_static("runtime.latched"), Method::GET)
+                .header(AUTHORIZATION, "reserved")
+                .response_bytes()
+                .query_values(
+                    PanicName,
+                    PanicIntoIterator {
+                        into_iter_calls: Arc::clone(&into_iter_calls),
+                    },
+                )
+                .path_segment(PanicDisplay)
                 .build()
                 .err()
-                .expect("first excess public byte")
-                .kind(),
-            ConfigurationErrorKind::InvalidValue
+                .expect("the original structural failure remains latched");
+
+        assert_eq!(error.kind(), ConfigurationErrorKind::InvalidHeader);
+        assert_eq!(into_iter_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn runtime_endpoint_header_replacement_updates_budget_exactly() {
+        let name = HeaderName::from_static("x-budget");
+        let initial = "a".repeat(MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES - name.as_str().len());
+        let replacement = "b";
+        let tail =
+            "c".repeat(MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES - name.as_str().len() - replacement.len());
+
+        let endpoint =
+            RuntimeEndpoint::builder(EndpointId::from_static("runtime.header"), Method::GET)
+                .header(name.clone(), initial)
+                .header(name.clone(), replacement)
+                .path_segment(tail)
+                .build()
+                .expect("replacement frees exactly the previous retained value bytes");
+
+        assert_eq!(
+            endpoint
+                .headers
+                .get(&name)
+                .and_then(|value| value.to_str().ok()),
+            Some(replacement)
         );
+
+        let retained = Arc::new(());
+        let formatted = Arc::new(AtomicUsize::new(0));
+        let excessive =
+            RuntimeEndpoint::builder(EndpointId::from_static("runtime.header"), Method::GET)
+                .header(name.clone(), "a")
+                .path_segment(
+                    "x".repeat(MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES - name.as_str().len() - 1),
+                )
+                .header(
+                    name,
+                    RetentionProbe {
+                        _retained: Arc::clone(&retained),
+                        formatted: Arc::clone(&formatted),
+                        text: FORMAT_SENTINEL,
+                    },
+                );
+
+        assert_eq!(Arc::strong_count(&retained), 1);
+        assert_eq!(formatted.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            excessive
+                .build()
+                .err()
+                .expect("oversized replacement")
+                .kind(),
+            ConfigurationErrorKind::InvalidHeader
+        );
+    }
+
+    #[test]
+    fn runtime_endpoint_auth_first_excess_is_rejected_before_push() {
+        let credential = credential();
+        let mut boundary =
+            RuntimeEndpoint::builder(EndpointId::from_static("runtime.auth"), Method::GET);
+        for index in 0..MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS {
+            boundary = boundary.auth(Auth::query(
+                format!("runtime-auth-{index}"),
+                credential.clone(),
+            ));
+        }
+        boundary.build().expect("authentication placement boundary");
+
+        let mut excessive =
+            RuntimeEndpoint::builder(EndpointId::from_static("runtime.auth"), Method::GET);
+        for index in 0..=MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS {
+            excessive = excessive.auth(Auth::query(
+                format!("runtime-auth-{index}"),
+                credential.clone(),
+            ));
+        }
+        let error = excessive
+            .build()
+            .err()
+            .expect("first excess authentication placement");
+        assert_eq!(error.kind(), ConfigurationErrorKind::InvalidAuthentication);
+    }
+
+    #[test]
+    fn runtime_endpoint_auth_public_name_bytes_are_bounded_and_redacted() {
+        const SECRET_SENTINEL: &str = "runtime-auth-material-sentinel-8a20";
+        let credential = CredentialRef::new(SlotSelector::static_value(
+            AccessToken::new(SECRET_SENTINEL),
+            Duration::from_secs(1),
+        ));
+        let error = RuntimeEndpoint::builder(EndpointId::from_static("runtime.auth"), Method::GET)
+            .path_segment("x".repeat(MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES - 1))
+            .auth(Auth::query(FORMAT_SENTINEL, credential))
+            .build()
+            .err()
+            .expect("authentication placement exceeds remaining shape bytes");
+
+        assert_eq!(error.kind(), ConfigurationErrorKind::InvalidAuthentication);
+        assert!(!error.to_string().contains(FORMAT_SENTINEL));
+        assert!(!error.to_string().contains(SECRET_SENTINEL));
+        assert!(!format!("{error:?}").contains(FORMAT_SENTINEL));
+        assert!(!format!("{error:?}").contains(SECRET_SENTINEL));
+    }
+
+    #[test]
+    fn runtime_endpoint_rate_rule_first_excess_is_rejected_before_push() {
+        let mut boundary =
+            RuntimeEndpoint::builder(EndpointId::from_static("runtime.rate"), Method::GET);
+        for index in 0..MAX_RATE_LIMIT_RULES_PER_PLAN {
+            boundary = boundary.rate_limit(rule(&format!("rule-{index}"), "tenant"));
+        }
+        boundary.build().expect("rate-rule boundary");
+
+        let mut excessive =
+            RuntimeEndpoint::builder(EndpointId::from_static("runtime.rate"), Method::GET);
+        for index in 0..=MAX_RATE_LIMIT_RULES_PER_PLAN {
+            excessive = excessive.rate_limit(rule(&format!("rule-{index}"), "tenant"));
+        }
+        let error = excessive
+            .build()
+            .err()
+            .expect("first excess rate-limit rule");
+        assert_eq!(error.kind(), ConfigurationErrorKind::InvalidRateLimit);
+    }
+
+    #[test]
+    fn runtime_endpoint_rate_key_bytes_are_bounded_and_redacted() {
+        let error = RuntimeEndpoint::builder(EndpointId::from_static("runtime.rate"), Method::GET)
+            .path_segment("x".repeat(MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES - 1))
+            .rate_limit(rule("r", FORMAT_SENTINEL))
+            .build()
+            .err()
+            .expect("rate key exceeds remaining retained-shape bytes");
+
+        assert_eq!(error.kind(), ConfigurationErrorKind::InvalidRateLimit);
+        assert!(!error.to_string().contains(FORMAT_SENTINEL));
+        assert!(!format!("{error:?}").contains(FORMAT_SENTINEL));
+    }
+
+    #[test]
+    fn runtime_endpoint_bounded_format_does_not_retain_sentinel() {
+        let retained = Arc::new(());
+        let builder =
+            RuntimeEndpoint::builder(EndpointId::from_static("runtime.format"), Method::GET)
+                .path_segment(SentinelDisplay {
+                    prefix: "x".repeat(MAX_FORMATTED_PUBLIC_VALUE_BYTES),
+                    _retained: Arc::clone(&retained),
+                });
+
+        assert_eq!(Arc::strong_count(&retained), 1);
+        let error = builder
+            .build()
+            .err()
+            .expect("the sentinel chunk is the first formatted excess");
+        assert_eq!(error.kind(), ConfigurationErrorKind::InvalidValue);
+        assert!(!error.to_string().contains(FORMAT_SENTINEL));
+        assert!(!format!("{error:?}").contains(FORMAT_SENTINEL));
+    }
+
+    #[test]
+    fn runtime_endpoint_build_remains_inert() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let endpoint =
+            RuntimeEndpoint::builder(EndpointId::from_static("runtime.inert"), Method::POST)
+                .body_spec::<InertBodySpec>(InertBodyInput {
+                    calls: Arc::clone(&calls),
+                })
+                .build()
+                .expect("inert application body input");
+
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        drop(endpoint);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
 
     #[test]

@@ -8,9 +8,8 @@ Started from commit:
 (`docs: establish Concord refactor closure baseline`) on branch `master`.
 
 Finished at commit:
-The C1 commit containing this evidence, with message
-`core: add canonical finite construction budgets`. Its exact hash will be
-backfilled in the closure ledger by C2.
+`ee2efc9cba310f2952d5c180d30ee3f08260d315`
+(`core: add canonical finite construction budgets`).
 
 Files changed:
 

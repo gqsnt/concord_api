@@ -98,6 +98,11 @@ typed runtime-defined endpoint. The builder owns public host/path/query/header
 shape, body/response specifications, and timeout tri-state. Binding it with
 `client.request(endpoint)` returns the ordinary managed `Request<E>`.
 
+Builder mutations are incrementally bounded. Dynamic values use capped
+formatted capture; repeated query values consume only through the first
+withheld excess; and a latched structural error prevents later formatting or
+iterator consumption before `build()` returns its safe category.
+
 Runtime endpoints have the same safe description, planning shape, and
 executor. They do not provide partial runtime pagination.
 

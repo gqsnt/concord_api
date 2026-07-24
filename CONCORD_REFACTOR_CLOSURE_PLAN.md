@@ -371,9 +371,9 @@ The agent must update this table in place after every phase.
 | Phase | Status | Commit | Evidence | Remaining blockers |
 |---:|---|---|---|---|
 | C0 Truth reset and baseline | Complete | `f5ce4bb2ed58215055b6a986fa76d97c4951728d` | [`closure-c0-baseline.md`](docs/contributor/evidence/closure-c0-baseline.md) | None for C0; every observed baseline defect is assigned to C1–C8 |
-| C1 Bounded-construction foundation | Complete | Commit containing this ledger update; exact hash will be backfilled by C2 | [`closure-c1-bounded-foundation.md`](docs/contributor/evidence/closure-c1-bounded-foundation.md) | None for C1; C2–C4 must apply the shared primitives to their assigned consumers |
-| C2 Runtime endpoint incremental bounds | Not started | — | — | Owner: implementation agent — phase not yet executed; C2 is next |
-| C3 Rate-limit structural bounds | Not started | — | — | Owner: implementation agent — C1 and C2 must complete first |
+| C1 Bounded-construction foundation | Complete | `ee2efc9cba310f2952d5c180d30ee3f08260d315` | [`closure-c1-bounded-foundation.md`](docs/contributor/evidence/closure-c1-bounded-foundation.md) | None for C1; C2–C4 must apply the shared primitives to their assigned consumers |
+| C2 Runtime endpoint incremental bounds | Complete | Commit containing this ledger update; exact hash will be backfilled by C3 | [`closure-c2-runtime-endpoint-bounds.md`](docs/contributor/evidence/closure-c2-runtime-endpoint-bounds.md) | None for C2; C3 must make every public rate-limit producer structurally bounded |
+| C3 Rate-limit structural bounds | Not started | — | — | Owner: implementation agent — C2 is complete and C3 is next |
 | C4 OAuth2 and formatted-value bounds | Not started | — | — | Owner: implementation agent — C1–C3 must complete first |
 | C5 Public API and macro semantic cleanup | Not started | — | — | Owner: implementation agent — C1–C4 must complete first |
 | C6 Internal tooling and package graph | Not started | — | — | Owner: implementation agent — C1–C5 must complete first |

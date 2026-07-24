@@ -18,9 +18,9 @@ pub(crate) use prepare::{
 pub(crate) use crate::body::PreparedBody;
 #[doc(hidden)]
 pub use endpoint::{EndpointSpec, RawResponseEndpoint};
-pub(crate) use head::validate_public_header;
 #[doc(hidden)]
 pub use head::{HeadBuilder, PreparedHead, RequestMeta};
+pub(crate) use head::{validate_public_header, validate_public_header_name};
 #[doc(hidden)]
 pub use options::{RequestOptions, TimeoutOverride};
 #[cfg(test)]
