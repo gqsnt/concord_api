@@ -100,15 +100,14 @@ mod tests {
         assert_eq!(cooldown.duration, Duration::from_secs(7));
         assert!(matches!(cooldown.scope, CooldownScope::Host));
 
-        let nonempty = RateLimitPlan::from_rules(vec![
-            RateLimitRule::new(
-                RateLimitId::new("application").expect("ID"),
-                RateLimitKey::global(),
-                NonZeroU32::MIN,
-                [RateLimitWindow::new(NonZeroU32::MIN, Duration::from_secs(1)).expect("window")],
-            )
-            .expect("rule"),
-        ]);
+        let nonempty = RateLimitPlan::try_from_rules([RateLimitRule::new(
+            RateLimitId::new("application").expect("ID"),
+            RateLimitKey::global(),
+            NonZeroU32::MIN,
+            [RateLimitWindow::new(NonZeroU32::MIN, Duration::from_secs(1)).expect("window")],
+        )
+        .expect("rule")])
+        .expect("plan");
         let bucket_response = RateLimitResponseHead {
             plan: &nonempty,
             ..response

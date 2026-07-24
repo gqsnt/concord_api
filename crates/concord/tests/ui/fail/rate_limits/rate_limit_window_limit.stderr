@@ -1,0 +1,5 @@
+error: a rate-limit rule permits at most 16 windows
+  --> tests/ui/fail/rate_limits/rate_limit_window_limit.rs:23:13
+   |
+23 |             1 / 17s;
+   |             ^

@@ -186,6 +186,29 @@ The fluent builder still returns `Self`; its first structural failure is
 latched and reported by `build()` without formatting or consuming later
 inputs.
 
+## Update advanced rate-limit construction
+
+Runtime rate-limit semantic values are now bounded when they are constructed.
+Handle the new fallible key-part and plan constructors:
+
+```rust
+use concord::rate_limit::{RateLimitKey, RateLimitKeyPart, RateLimitPlan};
+
+let tenant = RateLimitKeyPart::new("tenant", tenant_id)?;
+let key = RateLimitKey::from_parts([tenant])?;
+let plan = RateLimitPlan::try_from_rules([rule])?;
+```
+
+`RateLimitPlan::from_rules` is removed. Plans reject more than 64 rules and
+duplicate rule IDs; rules reject more than 16 windows; IDs, key-part names,
+part counts, and aggregate key bytes use the hard ceilings in
+`concord::rate_limit`. Iterators stop after the withheld first excess item.
+
+Custom `RateLimiter::preparation_key_limit` values may be lower than the hard
+aggregate key cap, including zero for global-only keys, but may not exceed it.
+An excessive selected limit now produces a redaction-safe client build error.
+`GovernorRateLimiter::key_limit` applies the same hard ceiling.
+
 ## Recheck capabilities and safety assumptions
 
 - Planning is sanitized and performs no hooks, credentials, limiter work, body

@@ -13,10 +13,7 @@ use crate::auth::{Auth, AuthPlan};
 use crate::endpoint::{EndpointDescription, EndpointId, TimeoutSelection};
 use crate::error::{ApiError, ConfigurationErrorKind};
 use crate::hooks::DebugLevel;
-use crate::rate_limit::{
-    RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPlan, RateLimitRule,
-    RateLimitWindow,
-};
+use crate::rate_limit::{RateLimitError, RateLimitId, RateLimitKey, RateLimitPlan, RateLimitRule};
 use crate::redaction::render_safe_url;
 
 /// Static generated metadata required before public-head preparation.
@@ -164,8 +161,11 @@ impl HeadBuilder {
     }
 
     /// Appends one generated, structurally validated effective rate-limit rule.
+    ///
+    /// Key name/value pairs are validated and copied incrementally inside the
+    /// builder; the first excess or duplicate part stops iteration.
     #[doc(hidden)]
-    pub fn push_rate_limit_rule<I, W>(
+    pub fn push_rate_limit_rule<I, N, V, W>(
         &mut self,
         id: &str,
         parts: I,
@@ -173,25 +173,19 @@ impl HeadBuilder {
         windows: W,
     ) -> Result<(), ApiError>
     where
-        I: IntoIterator<Item = RateLimitKeyPart>,
+        I: IntoIterator<Item = (N, V)>,
+        N: AsRef<str>,
+        V: AsRef<str>,
         W: IntoIterator<Item = (u32, Duration)>,
     {
         let rule = (|| -> Result<RateLimitRule, RateLimitError> {
+            RateLimitPlan::validate_rule_id_append(&self.rate_limit_rules, id)?;
             let id = RateLimitId::new(id)?;
-            let key = RateLimitKey::from_parts(parts)?;
             let cost = NonZeroU32::new(cost).ok_or_else(|| {
                 RateLimitError::new(crate::error::RateLimitErrorKind::InvalidConfiguration)
             })?;
-            let windows = windows
-                .into_iter()
-                .map(|(capacity, duration)| {
-                    let capacity = NonZeroU32::new(capacity).ok_or_else(|| {
-                        RateLimitError::new(crate::error::RateLimitErrorKind::InvalidConfiguration)
-                    })?;
-                    RateLimitWindow::new(capacity, duration)
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            RateLimitRule::new(id, key, cost, windows)
+            let key = RateLimitKey::from_values(parts)?;
+            RateLimitRule::from_window_values(id, key, cost, windows)
         })()
         .map_err(|error| {
             drop(error);
@@ -201,8 +195,14 @@ impl HeadBuilder {
                 ConfigurationErrorKind::InvalidRateLimit,
             )
         })?;
-        self.rate_limit_rules.push(rule);
-        Ok(())
+        RateLimitPlan::push_validated_rule(&mut self.rate_limit_rules, rule).map_err(|error| {
+            drop(error);
+            ApiError::configuration(
+                self.meta.endpoint_id().clone(),
+                self.meta.method().clone(),
+                ConfigurationErrorKind::InvalidRateLimit,
+            )
+        })
     }
 
     /// Adds one generated lexical rule with a declaration-scoped global key.
@@ -217,20 +217,12 @@ impl HeadBuilder {
         W: IntoIterator<Item = (u32, Duration)>,
     {
         let rule = (|| -> Result<RateLimitRule, RateLimitError> {
+            RateLimitPlan::validate_rule_id_append(&self.rate_limit_rules, id)?;
             let id = RateLimitId::new(id)?;
             let cost = NonZeroU32::new(cost).ok_or_else(|| {
                 RateLimitError::new(crate::error::RateLimitErrorKind::InvalidConfiguration)
             })?;
-            let windows = windows
-                .into_iter()
-                .map(|(capacity, duration)| {
-                    let capacity = NonZeroU32::new(capacity).ok_or_else(|| {
-                        RateLimitError::new(crate::error::RateLimitErrorKind::InvalidConfiguration)
-                    })?;
-                    RateLimitWindow::new(capacity, duration)
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            RateLimitRule::new(id, RateLimitKey::global(), cost, windows)
+            RateLimitRule::from_window_values(id, RateLimitKey::global(), cost, windows)
         })()
         .map_err(|error| {
             drop(error);
@@ -240,8 +232,14 @@ impl HeadBuilder {
                 ConfigurationErrorKind::InvalidRateLimit,
             )
         })?;
-        self.rate_limit_rules.push(rule);
-        Ok(())
+        RateLimitPlan::push_validated_rule(&mut self.rate_limit_rules, rule).map_err(|error| {
+            drop(error);
+            ApiError::configuration(
+                self.meta.endpoint_id().clone(),
+                self.meta.method().clone(),
+                ConfigurationErrorKind::InvalidRateLimit,
+            )
+        })
     }
 
     pub(crate) fn use_prepared_auth_plan(&mut self, auth: Arc<AuthPlan>) {
@@ -494,9 +492,9 @@ impl HeadBuilder {
             timeout: self.timeout,
             debug: self.debug,
             auth: self.auth,
-            rate_limit_plan: self
-                .prepared_rate_limit_plan
-                .unwrap_or_else(|| Arc::new(RateLimitPlan::from_rules(self.rate_limit_rules))),
+            rate_limit_plan: self.prepared_rate_limit_plan.unwrap_or_else(|| {
+                Arc::new(RateLimitPlan::from_validated_rules(self.rate_limit_rules))
+            }),
         }
     }
 }
@@ -706,8 +704,86 @@ pub(crate) fn validate_public_header_name(name: &HeaderName) -> Result<(), Confi
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use super::*;
     use crate::error::{ConfigurationErrorKind, ErrorCategory};
+
+    const RATE_ID_SENTINEL: &str = "generated-rate-id-sentinel-c31f";
+    const RATE_KEY_SENTINEL: &str = "generated-rate-key-sentinel-a592";
+
+    struct GuardedRateWindows {
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl Iterator for GuardedRateWindows {
+        type Item = (u32, Duration);
+
+        fn next(&mut self) -> Option<Self::Item> {
+            let call = self.calls.fetch_add(1, Ordering::SeqCst);
+            assert!(
+                call <= crate::rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_RULE,
+                "generated window iterator consumed beyond the first excess"
+            );
+            Some((
+                1,
+                Duration::from_secs(u64::try_from(call + 1).expect("test index")),
+            ))
+        }
+    }
+
+    struct UnpolledRateWindows;
+
+    impl IntoIterator for UnpolledRateWindows {
+        type Item = (u32, Duration);
+        type IntoIter = std::iter::Empty<Self::Item>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            panic!("rejected generated rule converted its window iterator")
+        }
+    }
+
+    struct GuardedRateText {
+        text: String,
+        may_inspect: bool,
+    }
+
+    impl AsRef<str> for GuardedRateText {
+        fn as_ref(&self) -> &str {
+            assert!(
+                self.may_inspect,
+                "generated key inspected the first excess part"
+            );
+            &self.text
+        }
+    }
+
+    struct GuardedRateParts {
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl Iterator for GuardedRateParts {
+        type Item = (GuardedRateText, GuardedRateText);
+
+        fn next(&mut self) -> Option<Self::Item> {
+            let call = self.calls.fetch_add(1, Ordering::SeqCst);
+            assert!(
+                call <= crate::rate_limit::MAX_RATE_LIMIT_KEY_PARTS,
+                "generated key iterator consumed beyond the first excess"
+            );
+            let may_inspect = call < crate::rate_limit::MAX_RATE_LIMIT_KEY_PARTS;
+            Some((
+                GuardedRateText {
+                    text: format!("part-{call}"),
+                    may_inspect,
+                },
+                GuardedRateText {
+                    text: RATE_KEY_SENTINEL.to_owned(),
+                    may_inspect,
+                },
+            ))
+        }
+    }
 
     fn prepared() -> PreparedHead {
         HeadBuilder::new(
@@ -728,6 +804,134 @@ mod tests {
             DebugLevel::None,
             None,
         )
+    }
+
+    #[test]
+    fn generated_rate_limits_obey_same_structural_limits() {
+        let mut window_boundary = builder("https://example.test/");
+        window_boundary
+            .push_generated_rate_limit_rule(
+                "window-boundary",
+                1,
+                (0..crate::rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_RULE).map(|index| {
+                    (
+                        1,
+                        Duration::from_secs(u64::try_from(index + 1).expect("test index")),
+                    )
+                }),
+            )
+            .expect("maximum generated window count");
+        assert_eq!(
+            window_boundary.finish().rate_limit_plan().rules()[0]
+                .windows()
+                .len(),
+            crate::rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_RULE
+        );
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut excessive_windows = builder("https://example.test/");
+        let error = excessive_windows
+            .push_generated_rate_limit_rule(
+                RATE_ID_SENTINEL,
+                1,
+                GuardedRateWindows {
+                    calls: Arc::clone(&calls),
+                },
+            )
+            .expect_err("first excess generated window");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            crate::rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_RULE + 1
+        );
+        assert_eq!(
+            error.configuration_kind(),
+            Some(ConfigurationErrorKind::InvalidRateLimit)
+        );
+        assert!(!error.to_string().contains(RATE_ID_SENTINEL));
+        assert!(!format!("{error:?}").contains(RATE_ID_SENTINEL));
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut excessive_parts = builder("https://example.test/");
+        let error = excessive_parts
+            .push_rate_limit_rule(
+                RATE_ID_SENTINEL,
+                GuardedRateParts {
+                    calls: Arc::clone(&calls),
+                },
+                1,
+                UnpolledRateWindows,
+            )
+            .expect_err("first excess generated key part");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            crate::rate_limit::MAX_RATE_LIMIT_KEY_PARTS + 1
+        );
+        assert_eq!(
+            error.configuration_kind(),
+            Some(ConfigurationErrorKind::InvalidRateLimit)
+        );
+        assert!(!error.to_string().contains(RATE_ID_SENTINEL));
+        assert!(!error.to_string().contains(RATE_KEY_SENTINEL));
+        assert!(!format!("{error:?}").contains(RATE_ID_SENTINEL));
+        assert!(!format!("{error:?}").contains(RATE_KEY_SENTINEL));
+
+        let first = "x".repeat(crate::rate_limit::MAX_RATE_LIMIT_KEY_BYTES - 1);
+        let second = RATE_KEY_SENTINEL.to_owned();
+        let mut excessive_key = builder("https://example.test/");
+        let error = excessive_key
+            .push_rate_limit_rule(
+                RATE_ID_SENTINEL,
+                [("a", first), ("b", second)],
+                1,
+                [(1, Duration::from_secs(1))],
+            )
+            .expect_err("aggregate generated key above the hard cap");
+        assert_eq!(
+            error.configuration_kind(),
+            Some(ConfigurationErrorKind::InvalidRateLimit)
+        );
+        assert!(!error.to_string().contains(RATE_ID_SENTINEL));
+        assert!(!error.to_string().contains(RATE_KEY_SENTINEL));
+        assert!(!format!("{error:?}").contains(RATE_ID_SENTINEL));
+        assert!(!format!("{error:?}").contains(RATE_KEY_SENTINEL));
+
+        let mut plan_boundary = builder("https://example.test/");
+        for index in 0..crate::rate_limit::MAX_RATE_LIMIT_RULES_PER_PLAN {
+            plan_boundary
+                .push_generated_rate_limit_rule(
+                    &format!("generated-rule-{index}"),
+                    1,
+                    [(1, Duration::from_secs(1))],
+                )
+                .expect("maximum generated rule count");
+        }
+        let error = plan_boundary
+            .push_generated_rate_limit_rule(RATE_ID_SENTINEL, 1, UnpolledRateWindows)
+            .expect_err("first excess generated rule");
+        assert_eq!(
+            error.configuration_kind(),
+            Some(ConfigurationErrorKind::InvalidRateLimit)
+        );
+        assert!(!error.to_string().contains(RATE_ID_SENTINEL));
+        assert!(!format!("{error:?}").contains(RATE_ID_SENTINEL));
+        assert_eq!(
+            plan_boundary.finish().rate_limit_plan().rules().len(),
+            crate::rate_limit::MAX_RATE_LIMIT_RULES_PER_PLAN
+        );
+
+        let mut duplicate = builder("https://example.test/");
+        duplicate
+            .push_generated_rate_limit_rule(RATE_ID_SENTINEL, 1, [(1, Duration::from_secs(1))])
+            .expect("first generated rule ID");
+        let error = duplicate
+            .push_generated_rate_limit_rule(RATE_ID_SENTINEL, 1, UnpolledRateWindows)
+            .expect_err("duplicate generated rule ID");
+        assert_eq!(
+            error.configuration_kind(),
+            Some(ConfigurationErrorKind::InvalidRateLimit)
+        );
+        assert!(!error.to_string().contains(RATE_ID_SENTINEL));
+        assert!(!format!("{error:?}").contains(RATE_ID_SENTINEL));
     }
 
     #[test]

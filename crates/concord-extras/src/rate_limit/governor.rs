@@ -7,9 +7,9 @@ use std::time::Duration;
 
 use concord_core::advanced::{BoxFuture, RateLimitErrorKind};
 use concord_core::rate_limit::{
-    Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, RateLimitError, RateLimitObserver,
-    RateLimitPermit, RateLimitPlan, RateLimitRequest, RateLimitResponse, RateLimitResponseHead,
-    RateLimitRule, RateLimitWindow, RateLimiter,
+    Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_BYTES,
+    RateLimitError, RateLimitObserver, RateLimitPermit, RateLimitPlan, RateLimitRequest,
+    RateLimitResponse, RateLimitResponseHead, RateLimitRule, RateLimitWindow, RateLimiter,
 };
 
 use super::DefaultRateLimitObserver;
@@ -112,8 +112,12 @@ impl GovernorRateLimiter {
 
     /// Sets the maximum aggregate byte length of one resolved key.
     ///
-    /// Zero permits only a global key.
+    /// Zero permits only a global key. Values above
+    /// [`MAX_RATE_LIMIT_KEY_BYTES`] are rejected.
     pub fn key_limit(mut self, bytes: usize) -> Result<Self, RateLimitError> {
+        if bytes > MAX_RATE_LIMIT_KEY_BYTES {
+            return Err(invalid_configuration());
+        }
         self.config.key_limit = bytes;
         Ok(self)
     }
@@ -276,6 +280,9 @@ struct Contributions(BTreeMap<BucketKey, u128>);
 
 impl Contributions {
     fn from_plan(plan: &RateLimitPlan, key_limit: usize) -> Result<Self, RateLimitError> {
+        if key_limit > MAX_RATE_LIMIT_KEY_BYTES {
+            return Err(invalid_configuration());
+        }
         if plan
             .rules()
             .iter()
@@ -285,8 +292,9 @@ impl Contributions {
         }
         let mut contributions = BTreeMap::<BucketKey, u128>::new();
         for rule in plan.rules() {
+            let rule_key = RuleKey::new(rule);
             for window in rule.windows() {
-                let key = BucketKey::new(rule, window);
+                let key = BucketKey::new(rule_key.clone(), window);
                 let cost = contributions.entry(key).or_default();
                 *cost = cost
                     .checked_add(u128::from(rule.cost().get()))
@@ -314,21 +322,22 @@ impl RuleKeys {
 
 #[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
 struct RuleKey {
-    id: Box<str>,
-    parts: Box<[(Box<str>, Box<str>)]>,
+    id: Arc<str>,
+    parts: Arc<[(Arc<str>, Arc<str>)]>,
 }
 
 impl RuleKey {
     fn new(rule: &RateLimitRule) -> Self {
         Self {
             id: rule.id().as_str().into(),
-            parts: rule
-                .key()
-                .parts()
-                .iter()
-                .map(|part| (part.name().into(), part.value().into()))
-                .collect::<Vec<_>>()
-                .into_boxed_slice(),
+            parts: Arc::from(
+                rule.key()
+                    .parts()
+                    .iter()
+                    .map(|part| (Arc::from(part.name()), Arc::from(part.value())))
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+            ),
         }
     }
 }
@@ -341,9 +350,9 @@ struct BucketKey {
 }
 
 impl BucketKey {
-    fn new(rule: &RateLimitRule, window: &RateLimitWindow) -> Self {
+    fn new(rule: RuleKey, window: &RateLimitWindow) -> Self {
         Self {
-            rule: RuleKey::new(rule),
+            rule,
             capacity: window.capacity().get(),
             duration: window.duration(),
         }
@@ -649,7 +658,8 @@ mod tests {
     use super::*;
     use concord_core::advanced::SanitizedHeaders;
     use concord_core::rate_limit::{
-        RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitRule, RateLimitWindow,
+        MAX_RATE_LIMIT_RULES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_RULE, RateLimitId, RateLimitKey,
+        RateLimitKeyPart, RateLimitRule, RateLimitWindow,
     };
 
     fn rule(id: &str, key: &str, cost: u32, windows: &[(u32, Duration)]) -> RateLimitRule {
@@ -658,7 +668,10 @@ mod tests {
             if key.is_empty() {
                 RateLimitKey::global()
             } else {
-                RateLimitKey::from_parts([RateLimitKeyPart::new("tenant", key)]).expect("key")
+                RateLimitKey::from_parts([
+                    RateLimitKeyPart::new("tenant", key).expect("tenant key part")
+                ])
+                .expect("key")
             },
             NonZeroU32::new(cost).expect("cost"),
             windows.iter().map(|(capacity, duration)| {
@@ -670,7 +683,7 @@ mod tests {
     }
 
     fn plan(rules: Vec<RateLimitRule>) -> RateLimitPlan {
-        RateLimitPlan::from_rules(rules)
+        RateLimitPlan::try_from_rules(rules).expect("valid test plan")
     }
 
     fn rate_error<T>(result: Result<T, RateLimitError>, message: &str) -> RateLimitError {
@@ -833,6 +846,46 @@ mod tests {
         GovernorRateLimiter::new()
             .key_limit(0)
             .expect("zero key limit is valid");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn governor_accepts_maximum_valid_plan() {
+        let rules = (0..MAX_RATE_LIMIT_RULES_PER_PLAN)
+            .map(|rule_index| {
+                RateLimitRule::new(
+                    RateLimitId::new(format!("maximum-rule-{rule_index}")).expect("bounded ID"),
+                    RateLimitKey::global(),
+                    NonZeroU32::MIN,
+                    (0..MAX_RATE_LIMIT_WINDOWS_PER_RULE).map(|window_index| {
+                        RateLimitWindow::new(
+                            NonZeroU32::MIN,
+                            Duration::from_secs(
+                                u64::try_from(window_index + 1).expect("test index"),
+                            ),
+                        )
+                        .expect("bounded window")
+                    }),
+                )
+                .expect("maximum-window rule")
+            })
+            .collect();
+        let plan = plan(rules);
+        let limiter = GovernorRateLimiter::new()
+            .key_limit(0)
+            .expect("global keys fit a zero-byte preparation limit");
+
+        acquire(&limiter, &plan, Some("example.test")).await;
+
+        assert_eq!(plan.rules().len(), MAX_RATE_LIMIT_RULES_PER_PLAN);
+        assert!(
+            plan.rules()
+                .iter()
+                .all(|rule| rule.windows().len() == MAX_RATE_LIMIT_WINDOWS_PER_RULE)
+        );
+        assert_eq!(
+            limiter.test_quota_entry_count(),
+            MAX_RATE_LIMIT_RULES_PER_PLAN * MAX_RATE_LIMIT_WINDOWS_PER_RULE
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -1035,10 +1088,12 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn duplicate_equivalent_contributions_cannot_undercount() {
         let limiter = GovernorRateLimiter::new();
-        let plan = plan(vec![
-            rule("same", "north", 1, &[(2, Duration::from_secs(10))]),
-            rule("same", "north", 1, &[(2, Duration::from_secs(10))]),
-        ]);
+        let plan = plan(vec![rule(
+            "same",
+            "north",
+            1,
+            &[(2, Duration::from_secs(10)), (2, Duration::from_secs(10))],
+        )]);
         acquire(&limiter, &plan, Some("example.test")).await;
         let request = limiter.acquire(RateLimitRequest {
             endpoint: "RateApi::get",
@@ -1060,11 +1115,16 @@ mod tests {
     #[tokio::test]
     async fn equivalent_contributions_above_capacity_fail_before_state_insertion() {
         let limiter = GovernorRateLimiter::new();
-        let plan = plan(vec![
-            rule("same", "north", 1, &[(2, Duration::from_secs(10))]),
-            rule("same", "north", 1, &[(2, Duration::from_secs(10))]),
-            rule("same", "north", 1, &[(2, Duration::from_secs(10))]),
-        ]);
+        let plan = plan(vec![rule(
+            "same",
+            "north",
+            1,
+            &[
+                (2, Duration::from_secs(10)),
+                (2, Duration::from_secs(10)),
+                (2, Duration::from_secs(10)),
+            ],
+        )]);
         let error = rate_error(
             limiter
                 .acquire(RateLimitRequest {
@@ -1522,14 +1582,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn configured_key_limit_revalidates_before_governor_state_insertion() {
+    async fn governor_rejects_first_excess_without_sensitive_output() {
+        const ID_SENTINEL: &str = "configured-governor-id-private-b3f1";
         const KEY_SENTINEL: &str = "configured-governor-key-private-781d32";
+        let configuration_error = rate_error(
+            GovernorRateLimiter::new().key_limit(MAX_RATE_LIMIT_KEY_BYTES + 1),
+            "key limit above the hard cap unexpectedly succeeded",
+        );
+        assert_eq!(
+            configuration_error.kind(),
+            RateLimitErrorKind::InvalidConfiguration
+        );
+
         let limit = "tenant".len() + KEY_SENTINEL.len() - 1;
         let limiter = GovernorRateLimiter::new()
             .key_limit(limit)
             .expect("configured key limit");
         let keyed = plan(vec![rule(
-            "keyed",
+            ID_SENTINEL,
             KEY_SENTINEL,
             1,
             &[(1, Duration::from_secs(1))],
@@ -1552,7 +1622,9 @@ mod tests {
         assert_eq!(limiter.test_quota_entry_count(), 0);
         let mut source: Option<&(dyn std::error::Error + 'static)> = Some(&error);
         while let Some(current) = source {
+            assert!(!current.to_string().contains(ID_SENTINEL));
             assert!(!current.to_string().contains(KEY_SENTINEL));
+            assert!(!format!("{current:?}").contains(ID_SENTINEL));
             assert!(!format!("{current:?}").contains(KEY_SENTINEL));
             source = current.source();
         }

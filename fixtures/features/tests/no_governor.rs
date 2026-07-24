@@ -186,8 +186,8 @@ fn explicit_runtime_endpoint() -> runtime::advanced::RuntimeEndpoint<Bytes> {
         .rate_limit(runtime_rule(
             "Runtime::parts",
             RateLimitKey::from_parts([
-                RateLimitKeyPart::new("tenant", "fixture-tenant"),
-                RateLimitKeyPart::new("region", "fixture-region"),
+                RateLimitKeyPart::new("tenant", "fixture-tenant").expect("tenant key part"),
+                RateLimitKeyPart::new("region", "fixture-region").expect("region key part"),
             ])
             .expect("runtime explicit key"),
             3,

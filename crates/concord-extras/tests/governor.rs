@@ -35,7 +35,7 @@ fn one_per_minute() -> RateLimitPlan {
         [window],
     )
     .expect("valid public rule");
-    RateLimitPlan::from_rules(vec![rule])
+    RateLimitPlan::try_from_rules([rule]).expect("valid public plan")
 }
 
 #[tokio::test(start_paused = true)]

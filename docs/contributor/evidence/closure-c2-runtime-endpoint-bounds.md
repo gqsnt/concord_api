@@ -8,9 +8,8 @@ Started from commit:
 (`core: add canonical finite construction budgets`) on branch `master`.
 
 Finished at commit:
-The C2 commit containing this evidence, with message
-`core: bound runtime endpoint construction incrementally`. Its exact hash will
-be backfilled in the closure ledger by C3.
+`1fe6351b61aa8eba96f5ae63fc2859189f88b23e`
+(`core: bound runtime endpoint construction incrementally`).
 
 Files changed:
 

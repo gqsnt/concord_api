@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::hooks::{DebugLevel, RuntimeHooks, default_hooks};
-use crate::rate_limit::RateLimiter;
+use crate::rate_limit::{MAX_RATE_LIMIT_KEY_BYTES, RateLimiter};
 use crate::runtime::defaults::{
     DEFAULT_AUTH_FAILURE_COOLDOWN_SECONDS, DEFAULT_PAGINATION_IDENTITY_BYTES,
     DEFAULT_PAGINATION_MAX_ITEMS, DEFAULT_PAGINATION_MAX_PAGES, DEFAULT_PROVIDER_REQUEST_BYTES,
@@ -206,6 +206,18 @@ impl RuntimeConfigBuilder {
         self.config
     }
 
+    pub(crate) fn validate_rate_limit_key_limit(
+        &self,
+    ) -> Result<(), crate::error::ClientBuildError> {
+        if self.config.rate_limit_key_limit > MAX_RATE_LIMIT_KEY_BYTES {
+            Err(crate::error::ClientBuildError::new(
+                crate::error::ClientBuildErrorKind::RuntimeConfiguration,
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
     pub(crate) fn install_generated_default_limiter(
         mut self,
         limiter: Arc<dyn RateLimiter>,
@@ -223,6 +235,7 @@ impl RuntimeConfigBuilder {
         self,
         requires_limiter: bool,
     ) -> Result<Self, crate::error::ClientBuildError> {
+        self.validate_rate_limit_key_limit()?;
         if requires_limiter && self.limiter_selection == LimiterSelection::Fallback {
             return Err(crate::error::ClientBuildError::new(
                 crate::error::ClientBuildErrorKind::LimiterUnavailable,

@@ -620,16 +620,18 @@ async fn prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_ord
             ))
             .rate_limit(rule(
                 "one-part",
-                RateLimitKey::from_parts([RateLimitKeyPart::new("tenant", "west")])
-                    .expect("one-part rate key"),
+                RateLimitKey::from_parts([
+                    RateLimitKeyPart::new("tenant", "west").expect("tenant key part")
+                ])
+                .expect("one-part rate key"),
                 2,
                 &[(20, 2)],
             ))
             .rate_limit(rule(
                 "several-parts",
                 RateLimitKey::from_parts([
-                    RateLimitKeyPart::new("tenant", "east"),
-                    RateLimitKeyPart::new("region", "eu"),
+                    RateLimitKeyPart::new("tenant", "east").expect("tenant key part"),
+                    RateLimitKeyPart::new("region", "eu").expect("region key part"),
                 ])
                 .expect("several-parts rate key"),
                 3,

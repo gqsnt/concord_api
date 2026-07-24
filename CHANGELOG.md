@@ -41,6 +41,11 @@
 - Runtime query-name arguments now use `AsRef<str>` so Concord can validate
   byte length before copying; ordinary `&str` and `String` calls are
   unchanged.
+- Rate-limit IDs, key parts, keys, windows, and plans now enforce core-owned
+  hard structural ceilings incrementally. `RateLimitKeyPart::new` is
+  fallible, `RateLimitPlan::from_rules` is replaced by
+  `RateLimitPlan::try_from_rules`, duplicate rule IDs are rejected, and
+  limiter preparation limits above the hard key cap fail client construction.
 - Preserved deterministic preparation, hook, limiter, authentication,
   challenge-recovery, status, acquisition, completion, and cancellation
   behavior.

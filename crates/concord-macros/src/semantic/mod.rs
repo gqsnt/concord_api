@@ -347,6 +347,7 @@ mod tests {
     use super::*;
     use crate::syntax as parse;
     use crate::syntax::ast::AuthChallenge;
+    use crate::{MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_RULES_PER_PLAN};
 
     fn resolve_ok(tokens: proc_macro2::TokenStream) -> Api {
         resolve(parse::parse(tokens).expect("AST")).expect("normalized IR")
@@ -450,6 +451,91 @@ mod tests {
         .err()
         .expect("named declaration is removed");
         assert!(syntax.to_string().contains("direct `rate_limit { ... }`"));
+    }
+
+    #[test]
+    fn rate_limit_normalization_rejects_the_first_excess_effective_rule() {
+        let mut source = String::from(
+            r#"
+                client RateApi {
+                    base "https://example.test";
+                    rate_limit { 1 / 1s; }
+                }
+            "#,
+        );
+        for _ in 1..MAX_RATE_LIMIT_RULES_PER_PLAN {
+            source.push_str("scope s() { rate_limit { 1 / 1s; }");
+        }
+        source.push_str("GET read() -> Bytes { rate_limit { 1 / 1s; } }");
+        for _ in 1..MAX_RATE_LIMIT_RULES_PER_PLAN {
+            source.push('}');
+        }
+        let tokens = source
+            .parse::<proc_macro2::TokenStream>()
+            .expect("test token stream");
+        let source = parse::parse(tokens).expect("source syntax");
+        let error = resolve(source)
+            .err()
+            .expect("first excess effective rate-limit rule");
+
+        assert!(
+            error
+                .to_string()
+                .contains("an effective rate-limit plan permits at most 64 rules")
+        );
+    }
+
+    #[test]
+    fn rate_limit_normalization_rejects_duplicate_effective_ids() {
+        let source = parse::parse(quote! {
+            client RateApi {
+                base "https://example.test";
+                rate_limit { 1 / 1s; }
+            }
+            GET read() -> Bytes {
+                id "rate_api";
+                rate_limit { 1 / 1s; }
+            }
+        })
+        .expect("source syntax");
+        let error = resolve(source)
+            .err()
+            .expect("duplicate effective rate-limit rule ID");
+
+        assert!(
+            error
+                .to_string()
+                .contains("an effective rate-limit plan contains a duplicate rule ID")
+        );
+    }
+
+    #[test]
+    fn rate_limit_normalization_rejects_the_first_excess_id_byte() {
+        const SUFFIX: &str = ".rate_limit";
+        let client_name = format!(
+            "R{}",
+            "a".repeat(MAX_RATE_LIMIT_ID_BYTES + 1 - SUFFIX.len() - 1)
+        );
+        let tokens = format!(
+            r#"
+                client {client_name} {{
+                    base "https://example.test";
+                    rate_limit {{ 1 / 1s; }}
+                }}
+            "#
+        )
+        .parse::<proc_macro2::TokenStream>()
+        .expect("test token stream");
+        let source = parse::parse(tokens).expect("source syntax");
+        let error = resolve(source)
+            .err()
+            .expect("first excess generated rate-limit ID byte");
+
+        assert!(
+            error
+                .to_string()
+                .contains("a rate-limit rule ID permits at most 256 UTF-8 bytes")
+        );
     }
 
     #[test]

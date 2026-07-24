@@ -29,7 +29,6 @@ use crate::hooks::{
 };
 use crate::http::HttpConfigBuilder;
 use crate::operation::OperationId;
-use crate::rate_limit::RateLimitKeyPart;
 use crate::rate_limit::{
     RateLimitError, RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimiter,
 };
@@ -204,11 +203,12 @@ impl EndpointSpec for HostRateEndpoint {
         builder.push_query_value("stable", &"public");
         builder.push_pagination_query_value("cursor", &self.host);
         builder.insert_pagination_header_value("x-page-cursor", &self.host)?;
+        let rate_limit_host = builder.rate_limit_host().to_owned();
         builder.push_rate_limit_rule(
             "PaginationRuntimeApi::rate_limit::host_page_key",
             [
-                RateLimitKeyPart::new("host", builder.rate_limit_host()),
-                RateLimitKeyPart::new("ep.host", self.host.clone()),
+                ("host", rate_limit_host.as_str()),
+                ("ep.host", self.host.as_str()),
             ],
             1,
             [(100, Duration::from_secs(60))],
@@ -271,7 +271,7 @@ impl EndpointSpec for RateKeyEndpoint {
         builder.push_auth(Auth::bearer(self.credential.clone()))?;
         builder.push_rate_limit_rule(
             "PaginationRuntimeApi::rate_limit::page_key",
-            [RateLimitKeyPart::new("ep.cursor", self.key.clone())],
+            [("ep.cursor", self.key.as_str())],
             1,
             [(1, Duration::from_secs(60))],
         )?;

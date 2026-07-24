@@ -49,6 +49,13 @@ The inherited client operation timeout is disabled by default. Generated
 endpoint timeout declarations remain effective independently; runtime-defined
 endpoints select inherit, explicit duration, or disabled.
 
+Public rate-limit construction validates IDs, key parts, aggregate keys,
+windows, and plans incrementally against the hard `MAX_RATE_LIMIT_*`
+ceilings. Duplicate key-part names and rule IDs are rejected without
+consuming an iterator tail. A limiter may select a lower preparation-key
+limit, including zero for global-only keys, but client construction rejects a
+selection above `MAX_RATE_LIMIT_KEY_BYTES`.
+
 Terminal status-body capture is enabled at its finite default. The builder can
 disable capture entirely; that does not create an unbounded mode.
 

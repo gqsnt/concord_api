@@ -6,6 +6,7 @@ use syn::{LitInt, Token, braced};
 use super::ast::{DurationLiteral, RateLimitDecl, RateLimitWindowLiteral};
 use super::diagnostics::{SpanError, validate_duration_integer, validate_integer};
 use super::keyword;
+use crate::MAX_RATE_LIMIT_WINDOWS_PER_RULE;
 
 pub(super) fn parse_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitDecl> {
     input.parse::<keyword::rate_limit>()?;
@@ -43,6 +44,11 @@ pub(super) fn parse_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitD
         let capacity_literal: LitInt = body.parse().map_err(|_| {
             body.error("a rate-limit rule requires at least one `CAPACITY / DURATION;` window")
         })?;
+        if windows.len() >= MAX_RATE_LIMIT_WINDOWS_PER_RULE {
+            return Err(capacity_literal.span().error(format!(
+                "a rate-limit rule permits at most {MAX_RATE_LIMIT_WINDOWS_PER_RULE} windows"
+            )));
+        }
         let capacity = parse_positive_u32(&capacity_literal, "rate-limit window capacity")?;
         body.parse::<Token![/]>()?;
         let duration_literal: LitInt = body.parse().map_err(|_| {
@@ -126,6 +132,7 @@ fn parse_rate_duration(literal: &LitInt) -> syn::Result<Duration> {
 mod tests {
     use quote::quote;
 
+    use crate::MAX_RATE_LIMIT_WINDOWS_PER_RULE;
     use crate::syntax::ast::SourceChild;
 
     #[test]
@@ -157,5 +164,24 @@ mod tests {
             2
         );
         assert_eq!(endpoint.layer.rate_limit.as_ref().unwrap().value.cost, 2);
+    }
+
+    #[test]
+    fn rejects_the_first_excess_static_window() {
+        let windows = (0..=MAX_RATE_LIMIT_WINDOWS_PER_RULE).map(|_| quote! { 1 / 1s; });
+        let error = super::super::parse(quote! {
+            client RateApi {
+                base "https://example.test";
+                rate_limit { #(#windows)* }
+            }
+        })
+        .err()
+        .expect("first excess static window");
+
+        assert!(
+            error
+                .to_string()
+                .contains("a rate-limit rule permits at most 16 windows")
+        );
     }
 }

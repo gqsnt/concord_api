@@ -39,6 +39,7 @@ impl ClientCore {
         http: HttpConfigBuilder,
         runtime: RuntimeConfigBuilder,
     ) -> Result<Self, ClientBuildError> {
+        runtime.validate_rate_limit_key_limit()?;
         let base_url = parse_fixed_base(fixed_base)?;
         let runtime = runtime.resolve();
         let http = http.resolve();
@@ -67,6 +68,7 @@ impl ClientCore {
         runtime: RuntimeConfigBuilder,
         executor: &concord_test_support::executor::DeterministicExecutor,
     ) -> Result<Self, ClientBuildError> {
+        runtime.validate_rate_limit_key_limit()?;
         let base_url = parse_fixed_base(fixed_base)?;
         let runtime = runtime.resolve();
         let http = http.resolve();
@@ -280,6 +282,39 @@ mod tests {
             assert!(!error.to_string().contains(invalid));
             assert!(!format!("{error:?}").contains(invalid));
         }
+    }
+
+    #[test]
+    fn rate_limiter_rejects_preparation_limit_above_hard_cap() {
+        struct ExcessiveKeyLimit;
+
+        impl crate::rate_limit::RateLimiter for ExcessiveKeyLimit {
+            fn preparation_key_limit(&self) -> usize {
+                crate::rate_limit::MAX_RATE_LIMIT_KEY_BYTES + 1
+            }
+
+            fn acquire<'a>(
+                &'a self,
+                _request: crate::rate_limit::RateLimitRequest<'a>,
+            ) -> crate::hooks::BoxFuture<
+                'a,
+                Result<crate::rate_limit::RateLimitPermit, crate::rate_limit::RateLimitError>,
+            > {
+                Box::pin(async { Ok(crate::rate_limit::RateLimitPermit::granted()) })
+            }
+        }
+
+        let executor = concord_test_support::executor::DeterministicExecutor::new();
+        let error = ClientCore::build_with_development(
+            "http://runtime-limit.example",
+            HttpConfigBuilder::new(),
+            RuntimeConfigBuilder::new().rate_limiter(Arc::new(ExcessiveKeyLimit)),
+            &executor,
+        )
+        .err()
+        .expect("an excessive limiter preparation bound must fail client construction");
+
+        assert_eq!(error.kind(), ClientBuildErrorKind::RuntimeConfiguration);
     }
 
     #[test]

@@ -39,7 +39,7 @@ use crate::pagination::{
     PageLimit, PaginatedEndpoint, PaginatedRequest, PaginationController, PaginationError,
 };
 use crate::rate_limit::{
-    RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitRequest,
+    RateLimitError, RateLimitId, RateLimitKey, RateLimitPermit, RateLimitRequest,
     RateLimitResponse, RateLimitRule, RateLimitWindow, RateLimiter,
 };
 use crate::request::{
@@ -135,7 +135,7 @@ impl EndpointSpec for PaginatedProtectedEndpoint {
         builder.push_value(&self.page)?;
         builder.push_rate_limit_rule(
             "AuthenticationApi::rate_limit::pagination",
-            std::iter::empty::<RateLimitKeyPart>(),
+            std::iter::empty::<(&str, &str)>(),
             1,
             [(1, Duration::from_secs(1))],
         )?;
@@ -538,7 +538,7 @@ impl EndpointSpec for FinalizationExpiryEndpoint {
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_rate_limit_rule(
             "AuthenticationApi::rate_limit::finalization",
-            std::iter::empty::<RateLimitKeyPart>(),
+            std::iter::empty::<(&str, &str)>(),
             1,
             [(1, Duration::from_secs(10))],
         )?;
@@ -577,7 +577,7 @@ impl EndpointSpec for ProtectedEndpoint {
         if let Some(rate_key) = &self.rate_key {
             builder.push_rate_limit_rule(
                 "AuthenticationApi::rate_limit::tenant",
-                [RateLimitKeyPart::new("vars.tenant", rate_key.clone())],
+                [("vars.tenant", rate_key.as_str())],
                 1,
                 [(1, Duration::from_secs(1))],
             )?;

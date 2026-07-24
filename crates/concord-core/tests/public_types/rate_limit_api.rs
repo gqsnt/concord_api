@@ -6,8 +6,8 @@ use std::time::Duration;
 use concord_core::advanced::{
     BoxFuture, Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, NoopRateLimiter,
     RateLimitError, RateLimitErrorKind, RateLimitId, RateLimitKey, RateLimitKeyPart,
-    RateLimitObserver, RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimitResponseHead,
-    RateLimitRule, RateLimitWindow, RateLimiter, RuntimeConfigBuilder,
+    RateLimitObserver, RateLimitPermit, RateLimitPlan, RateLimitRequest, RateLimitResponse,
+    RateLimitResponseHead, RateLimitRule, RateLimitWindow, RateLimiter, RuntimeConfigBuilder,
 };
 
 struct CustomLimiter;
@@ -153,8 +153,8 @@ fn custom_extensions_compile_with_body_free_plan_inspection() {
 fn exact_advanced_rate_limit_constructors_accessors_and_traits_compile() {
     let id = RateLimitId::new("application").expect("rate-limit ID");
     assert_eq!(id.as_str(), "application");
-    let first = RateLimitKeyPart::new("host", "api.example.test");
-    let second = RateLimitKeyPart::new("vars.tenant", "north");
+    let first = RateLimitKeyPart::new("host", "api.example.test").expect("host key part");
+    let second = RateLimitKeyPart::new("vars.tenant", "north").expect("tenant key part");
     let key = RateLimitKey::from_parts([first, second]).expect("ordered key");
     assert!(!key.is_global());
     assert_eq!(key.parts()[0].name(), "host");
@@ -177,6 +177,8 @@ fn exact_advanced_rate_limit_constructors_accessors_and_traits_compile() {
     assert_eq!(rule.key().parts().len(), 2);
     assert_eq!(rule.cost().get(), 2);
     assert_eq!(rule.windows().len(), 1);
+    let plan = RateLimitPlan::try_from_rules([rule]).expect("bounded plan");
+    assert_eq!(plan.rules().len(), 1);
 
     let safe = RateLimitError::with_safe_message(
         RateLimitErrorKind::Acquire,

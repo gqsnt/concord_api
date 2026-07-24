@@ -164,6 +164,21 @@ const LIMITS: &[(&str, &str, &str, &str)] = &[
     ),
 ];
 
+const MACRO_LIMIT_MIRRORS: &[(&str, &str)] = &[
+    (
+        "MAX_RATE_LIMIT_ID_BYTES",
+        "crates/concord-macros/src/lib.rs",
+    ),
+    (
+        "MAX_RATE_LIMIT_WINDOWS_PER_RULE",
+        "crates/concord-macros/src/lib.rs",
+    ),
+    (
+        "MAX_RATE_LIMIT_RULES_PER_PLAN",
+        "crates/concord-macros/src/lib.rs",
+    ),
+];
+
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
@@ -217,6 +232,7 @@ fn workspace_root() -> Result<PathBuf, String> {
 }
 
 fn check_docs(root: &Path, write: bool) -> Result<(), String> {
+    check_macro_limit_mirrors(root)?;
     synchronize_generated_section(
         &root.join("docs/reference/features.md"),
         GENERATED_FEATURES_START,
@@ -303,24 +319,45 @@ fn feature_description(name: &str) -> Option<&'static str> {
 fn generated_limit_table(root: &Path) -> Result<String, String> {
     let mut table = String::from("| Bound | Value | Unit |\n|---|---:|---|\n");
     for (relative_source, constant, label, unit) in LIMITS {
-        let source_path = root.join(relative_source);
-        let source = read(&source_path)?;
-        let prefix = format!("pub const {constant}:");
-        let line = source
-            .lines()
-            .find(|line| line.trim_start().starts_with(&prefix))
-            .ok_or_else(|| format!("missing {constant} in {}", source_path.display()))?;
-        let value = line
-            .split_once('=')
-            .and_then(|(_, value)| value.split_once(';').map(|(value, _)| value.trim()))
-            .ok_or_else(|| format!("could not parse {constant} in {}", source_path.display()))?;
-        let number = value
-            .replace('_', "")
-            .parse::<u64>()
-            .map_err(|_| format!("{constant} must remain one integer literal"))?;
+        let number = integer_constant(root, relative_source, constant)?;
         table.push_str(&format!("| {label} | {} | {unit} |\n", grouped(number)));
     }
     Ok(table)
+}
+
+fn check_macro_limit_mirrors(root: &Path) -> Result<(), String> {
+    for (constant, macro_source) in MACRO_LIMIT_MIRRORS {
+        let core = integer_constant(root, "crates/concord-core/src/limits.rs", constant)?;
+        let mirrored = integer_constant(root, macro_source, constant)?;
+        if core != mirrored {
+            return Err(format!(
+                "{constant} is {core} in core but {mirrored} in {macro_source}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn integer_constant(root: &Path, relative_source: &str, constant: &str) -> Result<u64, String> {
+    let source_path = root.join(relative_source);
+    let source = read(&source_path)?;
+    let public_prefix = format!("pub const {constant}:");
+    let private_prefix = format!("const {constant}:");
+    let line = source
+        .lines()
+        .find(|line| {
+            let line = line.trim_start();
+            line.starts_with(&public_prefix) || line.starts_with(&private_prefix)
+        })
+        .ok_or_else(|| format!("missing {constant} in {}", source_path.display()))?;
+    let value = line
+        .split_once('=')
+        .and_then(|(_, value)| value.split_once(';').map(|(value, _)| value.trim()))
+        .ok_or_else(|| format!("could not parse {constant} in {}", source_path.display()))?;
+    value
+        .replace('_', "")
+        .parse::<u64>()
+        .map_err(|_| format!("{constant} must remain one integer literal"))
 }
 
 fn synchronize_generated_section(

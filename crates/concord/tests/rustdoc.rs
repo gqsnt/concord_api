@@ -684,7 +684,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "id=\"method.from_parts\"",
         "id=\"method.total_bytes\"",
         "id=\"method.empty\"",
-        "id=\"method.from_rules\"",
+        "id=\"method.try_from_rules\"",
         "id=\"method.acquire\"",
         "id=\"method.observe\"",
         "id=\"method.preparation_key_limit\"",
@@ -705,6 +705,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "OBSERVATION_COOLDOWN_CAP",
         "fallback_limiter",
         "as_any",
+        "id=\"method.from_rules\"",
         "rate-key-rustdoc-sentinel-64c2e9",
     ] {
         assert!(

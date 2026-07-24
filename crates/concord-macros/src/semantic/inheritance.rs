@@ -9,6 +9,7 @@ use crate::syntax::ast::{
     AuthChallenge, AuthOperation, HeaderEntry, HeaderOperation, HostOperation, Layer,
     PathOperation, PublicExpr, QueryEntry, QueryOperation, TimeoutOperation,
 };
+use crate::{MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_RULES_PER_PLAN};
 
 #[derive(Clone, Copy)]
 enum ExpressionUse {
@@ -170,11 +171,28 @@ impl Resolver<'_> {
             };
         }
         if let Some(declaration) = &layer.rate_limit {
-            normalized.rate_limits.push(self.resolve_rate_limit(
-                &declaration.value,
-                rate_id_path,
-                rate_lexical_origin,
-            ));
+            if normalized.rate_limits.len() >= MAX_RATE_LIMIT_RULES_PER_PLAN {
+                return Err(declaration.key_span.error(format!(
+                    "an effective rate-limit plan permits at most {MAX_RATE_LIMIT_RULES_PER_PLAN} rules"
+                )));
+            }
+            let rule =
+                self.resolve_rate_limit(&declaration.value, rate_id_path, rate_lexical_origin);
+            if rule.id.len() > MAX_RATE_LIMIT_ID_BYTES {
+                return Err(declaration.key_span.error(format!(
+                    "a rate-limit rule ID permits at most {MAX_RATE_LIMIT_ID_BYTES} UTF-8 bytes"
+                )));
+            }
+            if normalized
+                .rate_limits
+                .iter()
+                .any(|existing| existing.id == rule.id)
+            {
+                return Err(declaration
+                    .key_span
+                    .error("an effective rate-limit plan contains a duplicate rule ID"));
+            }
+            normalized.rate_limits.push(rule);
         }
         Ok(normalized)
     }

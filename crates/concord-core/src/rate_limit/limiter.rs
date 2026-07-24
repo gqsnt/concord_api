@@ -57,9 +57,12 @@ pub trait RateLimiter: Send + Sync + 'static {
     /// resolved rate-limit key.
     ///
     /// The default is [`DEFAULT_RATE_LIMIT_KEY_BYTES`]. Returning zero permits
-    /// only global keys. Core snapshots this value with the selected limiter and
-    /// validates generated and runtime-defined plans before credentials,
-    /// limiter acquisition, body materialization, or transport work.
+    /// only global keys. Values above
+    /// [`crate::rate_limit::MAX_RATE_LIMIT_KEY_BYTES`] are invalid and fail
+    /// client construction. Core snapshots this value with the selected
+    /// limiter and validates generated and runtime-defined plans before
+    /// credentials, limiter acquisition, body materialization, or transport
+    /// work.
     fn preparation_key_limit(&self) -> usize {
         DEFAULT_RATE_LIMIT_KEY_BYTES
     }

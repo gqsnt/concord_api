@@ -146,10 +146,7 @@ where
         builder.push_pagination_query_value("continuation", &self.query);
         builder.push_rate_limit_rule(
             "ExecutionApi::rate_limit::records",
-            [RateLimitKeyPart::new(
-                "records.partition",
-                "record-surface-rate-key",
-            )],
+            [("records.partition", "record-surface-rate-key")],
             1,
             [(100, Duration::from_secs(1))],
         )?;
@@ -959,7 +956,7 @@ impl EndpointSpec for RateLimitedBytesEndpoint {
         builder.push_static("bytes")?;
         builder.push_rate_limit_rule(
             "ExecutionApi::rate_limit::tenant",
-            [RateLimitKeyPart::new("vars.tenant", self.key.clone())],
+            [("vars.tenant", self.key.as_str())],
             1,
             [(self.capacity, self.window)],
         )?;
@@ -993,7 +990,7 @@ impl EndpointSpec for GlobalRateLimitedBytesEndpoint {
         builder.push_static("bytes")?;
         builder.push_rate_limit_rule(
             "ExecutionApi::rate_limit::global",
-            std::iter::empty(),
+            std::iter::empty::<(&str, &str)>(),
             1,
             [(100, Duration::from_secs(1))],
         )?;
@@ -1887,8 +1884,10 @@ async fn prepared_plans_use_selected_limiter_metadata_and_configured_key_limit()
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.key_limit"), Method::GET)
             .rate_limit(rule(
                 "Prepared::key_limit",
-                RateLimitKey::from_parts([RateLimitKeyPart::new("tenant", "sensitive-key")])
-                    .expect("prepared oversized key"),
+                RateLimitKey::from_parts([
+                    RateLimitKeyPart::new("tenant", "sensitive-key").expect("tenant key part")
+                ])
+                .expect("prepared oversized key"),
             ))
             .response_bytes()
             .build()
