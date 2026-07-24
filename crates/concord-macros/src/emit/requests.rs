@@ -8,6 +8,7 @@ pub(super) fn generate_request_wrapper(
     generated_core: &TokenStream,
     core_path: &TokenStream,
     where_clause: &TokenStream,
+    capabilities: Capabilities,
 ) -> TokenStream {
     let endpoint_name = &endpoint.surface.endpoint_type_name;
     let request_name = &endpoint.surface.request_type_name;
@@ -85,13 +86,25 @@ pub(super) fn generate_request_wrapper(
         }
     });
     let raw_response_method = match endpoint.surface.terminals.raw_response {
-        RawResponseCapability::SealedResponseMode => quote! {
-            #generated_core::__private::emit_generated_raw_response_method!(
-                #endpoint_name,
-                #support_path::Endpoint,
-                __concord_inner
-            );
+        RawResponseCapability::SealedResponseMode if capabilities.raw_response => quote! {
+            /// Selects the complete bounded successful response without decoding it.
+            ///
+            /// This method exists only when the `dangerous-raw-response` capability is
+            /// enabled and the declared sealed response mode supports bounded raw
+            /// acquisition.
+            #[must_use]
+            pub fn raw_response<Mode>(
+                self,
+            ) -> #generated_core::dangerous::RawResponseRequest<#endpoint_name>
+            where
+                <#endpoint_name as #support_path::Endpoint>::Response:
+                    #generated_core::advanced::ResponseBodySpec<Mode = Mode>,
+                Mode: #generated_core::dangerous::RawResponseMode,
+            {
+                #generated_core::__private::raw_response_request(self.__concord_inner)
+            }
         },
+        RawResponseCapability::SealedResponseMode => quote!(),
     };
     let storage_impl = (!storage_methods.is_empty()).then(|| {
         quote! {
@@ -154,19 +167,6 @@ pub(super) fn generate_request_wrapper(
         }
 
         #storage_impl
-
-        #[doc(hidden)]
-        impl #generated_core::__benchmark::GeneratedRequest for #request_name
-        {
-            type Endpoint = #endpoint_name;
-
-            fn __concord_into_internal_request(
-                self,
-                _token: #generated_core::__benchmark::GeneratedRequestToken,
-            ) -> #core_path::Request<#endpoint_name> {
-                self.__concord_inner
-            }
-        }
 
         #[doc(hidden)]
         impl ::std::future::IntoFuture for #request_name
@@ -265,16 +265,31 @@ mod tests {
             &core,
             &core,
             &quote!(),
+            Capabilities::default(),
         )
         .to_string();
 
         assert!(output.contains("pub struct FetchItemRequest"));
         assert!(output.contains("pub fn verbose"));
         assert!(output.contains("IntoFuture"));
-        assert!(output.contains("__benchmark :: GeneratedRequest"));
-        assert!(output.contains("__benchmark :: GeneratedRequestToken"));
-        assert!(output.contains("__concord_into_internal_request"));
         assert!(!output.contains("__concord_into_development_request"));
         assert!(!output.contains("emit_generated_development_method"));
+        assert!(!output.contains("raw_response"));
+        assert!(!output.contains("emit_generated_raw_response_method"));
+
+        let raw_output = generate_request_wrapper(
+            &api.client,
+            &[],
+            endpoint,
+            &quote!(super),
+            &core,
+            &core,
+            &quote!(),
+            Capabilities { raw_response: true },
+        )
+        .to_string();
+        assert!(raw_output.contains("pub fn raw_response"));
+        assert!(raw_output.contains("__private :: raw_response_request"));
+        assert!(!raw_output.contains("emit_generated_raw_response_method"));
     }
 }

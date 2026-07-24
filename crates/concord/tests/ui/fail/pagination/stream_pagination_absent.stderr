@@ -5,9 +5,8 @@ error[E0599]: no method named `paginate` found for struct `DownloadRequest` in t
  4 | |     client StreamingApi {
  5 | |         base "http://streaming.example.test";
 ...  |
- 9 | |         path ["transfers"];
-10 | |         GET download() -> Stream<OctetStream>;
-   | |____________________- method `paginate` not found for this struct
+12 | | }
+   | |_- method `paginate` not found for this struct
 ...
 16 |       let _ = client.transfers().download().paginate(1_u32);
    |                                             ^^^^^^^^ method not found in `DownloadRequest`

@@ -1,7 +1,6 @@
 #[test]
 fn source_only_public_surface_failures_use_trybuild() {
     let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/fail/benchmark_conversion_token_private.rs");
     cases.compile_fail("tests/ui/fail/authentication_private_material.rs");
     cases.compile_fail("tests/ui/fail/managed_reqwest_escape.rs");
     cases.compile_fail("tests/ui/fail/proxy_raw_url_escape.rs");

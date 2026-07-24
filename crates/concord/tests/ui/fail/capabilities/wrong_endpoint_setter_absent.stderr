@@ -5,9 +5,9 @@ error[E0599]: no method named `verbose` found for struct `SecondRequest` in the 
  5 | |     client SetterApi {
  6 | |         base "http://setter.example.test";
 ...  |
- 9 | |     GET first(verbose: Option<bool>) -> Bytes;
 10 | |     GET second() -> Bytes;
-   | |______________- method `verbose` not found for this struct
+11 | | }
+   | |_- method `verbose` not found for this struct
 ...
 15 |       let _ = client.second().verbose(true);
    |                               ^^^^^^^ method not found in `SecondRequest`

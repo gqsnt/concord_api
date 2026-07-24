@@ -25,4 +25,4 @@ help: there is a method `is_set` with a similar name, but with different argumen
 ...  |
 31 | | }
    | |_^
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

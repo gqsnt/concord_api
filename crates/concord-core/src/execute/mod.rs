@@ -680,51 +680,6 @@ async fn run_auth<T>(
         .map_err(|error| auth_api_error(head, error))
 }
 
-pub(crate) async fn benchmark_ready_credentials<E>(
-    prepared: PreparedOperation<E>,
-) -> Result<usize, ApiError>
-where
-    E: EndpointSpec,
-{
-    let PreparedOperation {
-        core,
-        endpoint,
-        operation_id,
-        deadline,
-        head,
-        body_metadata,
-    } = prepared;
-    let declared_count = head.auth().len();
-    let prepared_auth = run_auth(
-        &core,
-        deadline,
-        &head,
-        head.auth().preflight(core.provider_http(Some(deadline))),
-    )
-    .await?;
-    debug_assert_eq!(prepared_auth.len(), declared_count);
-    let (prepared_auth, finalized_auth) = run_auth(
-        &core,
-        deadline,
-        &head,
-        prepared_auth.finalize(core.provider_http(Some(deadline))),
-    )
-    .await?;
-    debug_assert_eq!(prepared_auth.len(), declared_count);
-    debug_assert_eq!(finalized_auth.len(), declared_count);
-
-    // The benchmark seam intentionally stops before native materialization.
-    // Keep every production value private and return only the aggregate count.
-    drop((
-        endpoint,
-        operation_id,
-        body_metadata,
-        prepared_auth,
-        finalized_auth,
-    ));
-    Ok(declared_count)
-}
-
 fn auth_api_error(head: &crate::request::PreparedHead, error: crate::auth::AuthError) -> ApiError {
     ApiError::authentication(head.endpoint_id().clone(), head.method().clone(), error)
 }

@@ -1,5 +1,0 @@
-error[E0451]: field `_private` of struct `concord_core::__benchmark::GeneratedRequestToken` is private
- --> tests/ui/fail/benchmark_conversion_token_private.rs:4:37
-  |
-4 |     let _ = GeneratedRequestToken { _private: () };
-  |                                     ^^^^^^^^ private field

@@ -73,7 +73,7 @@ fn incompatible_facade_bridge_fails_the_generated_contract_handshake() {
         "concord-fixture-contract-mismatch",
         "dependency/contract-mismatch",
         &[],
-        "concord macro/facade contract mismatch: facade 999, generated 23",
+        "concord macro/facade contract mismatch: facade 999, generated 24",
     );
 }
 

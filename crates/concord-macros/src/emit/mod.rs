@@ -37,8 +37,17 @@ use requests::*;
 use scopes::*;
 use shaping::*;
 
-pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
-    generate_client(&api.client, core_path)
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct Capabilities {
+    pub(crate) raw_response: bool,
+}
+
+pub(crate) fn generate(
+    api: &Api,
+    core_path: &TokenStream,
+    capabilities: Capabilities,
+) -> TokenStream {
+    generate_client(&api.client, core_path, capabilities)
 }
 
 #[cfg(test)]
@@ -118,7 +127,7 @@ mod tests {
                 GET list() -> NoContent;
             }
         });
-        let output = generate(&api, &quote!(::concord)).to_string();
+        let output = generate(&api, &quote!(::concord), Capabilities::default()).to_string();
         assert!(!output.contains("FirstApiRegions"));
         assert!(output.contains("RootRequest"));
         assert!(output.contains("resources"));
@@ -170,7 +179,7 @@ mod tests {
             ResolvedChallengePolicy::UnauthorizedOrForbidden
         );
 
-        let output = generate(&api, &quote!(::concord)).to_string();
+        let output = generate(&api, &quote!(::concord), Capabilities::default()).to_string();
         for expected in [
             "retry_reqwest_default",
             "PROPFIND",
@@ -238,7 +247,12 @@ mod tests {
             );
         }
 
-        let output = generate(&test_support::api(), &quote!(::concord)).to_string();
+        let output = generate(
+            &test_support::api(),
+            &quote!(::concord),
+            Capabilities::default(),
+        )
+        .to_string();
         for forbidden in &implementation_feature_names {
             assert!(
                 !output.contains(forbidden.as_str()),

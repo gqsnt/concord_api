@@ -11,21 +11,13 @@ from the `concord` façade; the test-support dependency is benchmark-only and
 does not enter a product package.
 
 The safe-planning category uses the public `client.plan(&endpoint)` contract and
-the real sanitized head builder. The lower-level public-head probe calls the
-same production preparation and validation path, then stops before hooks, body
-work, authentication, limiting, native HTTP, or response handling. The
-ready-credential probe uses an HTTPS logical endpoint with a pre-populated
-static credential and calls the production preflight and post-limiter
-finalization operations; it stops before native materialization and performs no
-provider acquisition, refresh, or transport. The two lower-level probes use
-the doc-hidden, explicitly unstable `concord::__benchmark` boundary and
-receive only a body-free aggregate observation. Named generated wrappers
-surrender their ordinary internal request carrier through a token-sealed
-conversion that only these helpers can invoke. The bridge performs no
-alternate transport and requires no public feature.
+the real sanitized head builder. Authentication and rate-limiting measurements
+execute generated requests through the ordinary managed lifecycle and bounded
+loopback transport. No benchmark-only runtime API or generated conversion is
+part of a product crate.
 
 `--smoke` forces one bounded iteration. The executable records each category
-only after its named operation completes and asserts that all sixteen distinct
+only after its named operation completes and asserts that all fifteen distinct
 categories ran. Otherwise `CONCORD_BENCH_ITERATIONS` selects between 1 and
 1,000 iterations, with a default of 100. Timings are observational only.
 

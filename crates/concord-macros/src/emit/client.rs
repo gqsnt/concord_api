@@ -1,6 +1,10 @@
 use super::*;
 
-pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
+pub(super) fn generate_client(
+    client: &Client,
+    core_path: &TokenStream,
+    capabilities: Capabilities,
+) -> TokenStream {
     let client_name = &client.name;
     let builder_name = &client.surface.builder_name;
     let support_name = &client.surface.support_name;
@@ -176,7 +180,7 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
         )?
     );
 
-    let scope_tree = generate_scope_tree(client, &client.children, &[], core_path);
+    let scope_tree = generate_scope_tree(client, &client.children, &[], core_path, capabilities);
     let client_child_methods = generate_client_child_methods(client, core_path);
     let rate_limit_identity_constants = rate_limit_identity_constants(client);
 
@@ -544,7 +548,12 @@ mod tests {
     #[test]
     fn emits_client_builder_and_sealed_endpoint_contract() {
         let api = test_support::api();
-        let output = generate_client(&api.client, &test_support::core_path()).to_string();
+        let output = generate_client(
+            &api.client,
+            &test_support::core_path(),
+            Capabilities::default(),
+        )
+        .to_string();
 
         assert!(output.contains("pub struct ArtifactApi"));
         assert!(output.contains("pub struct ArtifactApiBuilder"));

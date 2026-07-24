@@ -3,7 +3,12 @@ error[E0599]: no associated function or constant named `new` found for struct `C
    |
  3 | / api! {
  4 | |     client ConfiguredApi {
-   | |________________________- associated function or constant `new` not found for this struct
+ 5 | |         base "http://configured.example.test/";
+ 6 | |         vars {
+...  |
+15 | |     GET read() -> NoContent;
+16 | | }
+   | |_- associated function or constant `new` not found for this struct
 ...
 19 |       let _ = ConfiguredApi::new(
    |                              ^^^ associated function or constant not found in `ConfiguredApi`

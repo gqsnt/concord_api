@@ -48,7 +48,7 @@ error[E0277]: `()` is not an iterator
    |
    = help: the trait `Iterator` is not implemented for `()`
    = note: required for `()` to implement `IntoIterator`
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `()` is not an iterator
   --> tests/ui/fail/pagination/pagination_modes.rs:39:1
@@ -82,7 +82,21 @@ note: required for `no_content_pagination::Read` to implement `concord::__privat
    | |         ^^^^
 ...  |
 47 | | }
-   | |_^
+   | |_^ unsatisfied trait bound introduced here
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `()` is not an iterator
+  --> tests/ui/fail/pagination/pagination_modes.rs:39:1
+   |
+39 | / api! {
+40 | |     client NoContentPagination {
+41 | |         base "https://example.test";
+...  |
+47 | | }
+   | |_^ `()` is not an iterator
+   |
+   = help: the trait `Iterator` is not implemented for `()`
+   = note: required for `()` to implement `IntoIterator`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0271]: type mismatch resolving `<NoContent as ResponseBodySpec>::Mode == Buffered`
@@ -157,8 +171,8 @@ note: required for `no_content_pagination::Read` to implement `concord::__privat
    | |         ^^^^
 ...  |
 47 | | }
-   | |_^
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   | |_^ unsatisfied trait bound introduced here
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `()` is not an iterator
   --> tests/ui/fail/pagination/pagination_modes.rs:39:1
@@ -192,8 +206,8 @@ note: required for `no_content_pagination::Read` to implement `concord::__privat
    | |         ^^^^
 ...  |
 47 | | }
-   | |_^
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   | |_^ unsatisfied trait bound introduced here
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `no_content_pagination::ReadRequest` is not a future
   --> tests/ui/fail/pagination/pagination_modes.rs:39:1
@@ -212,8 +226,8 @@ help: the trait `IntoFuture` is not implemented for `no_content_pagination::Read
 40 | |     client NoContentPagination {
 41 | |         base "https://example.test";
 ...  |
-44 | |     GET read() -> NoContent {
-   | |____________^
+47 | | }
+   | |_^
    = note: no_content_pagination::ReadRequest must be a future or must implement `IntoFuture` to be awaited
 help: the trait `IntoFuture` is implemented for `no_content_pagination::ReadRequest`
   --> tests/ui/fail/pagination/pagination_modes.rs:39:1
@@ -224,7 +238,7 @@ help: the trait `IntoFuture` is implemented for `no_content_pagination::ReadRequ
 ...  |
 47 | | }
    | |_^
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `no_content_pagination::ReadRequest` is not a future
   --> tests/ui/fail/pagination/pagination_modes.rs:44:9
@@ -239,8 +253,8 @@ help: the trait `IntoFuture` is not implemented for `no_content_pagination::Read
 40 | |     client NoContentPagination {
 41 | |         base "https://example.test";
 ...  |
-44 | |     GET read() -> NoContent {
-   | |____________^
+47 | | }
+   | |_^
    = note: no_content_pagination::ReadRequest must be a future or must implement `IntoFuture` to be awaited
 help: the trait `IntoFuture` is implemented for `no_content_pagination::ReadRequest`
   --> tests/ui/fail/pagination/pagination_modes.rs:39:1
@@ -251,7 +265,7 @@ help: the trait `IntoFuture` is implemented for `no_content_pagination::ReadRequ
 ...  |
 47 | | }
    | |_^
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `ByteStream` is not an iterator
   --> tests/ui/fail/pagination/pagination_modes.rs:49:1
@@ -265,7 +279,7 @@ error[E0277]: `ByteStream` is not an iterator
    |
    = help: the trait `Iterator` is not implemented for `ByteStream`
    = note: required for `ByteStream` to implement `IntoIterator`
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `ByteStream` is not an iterator
   --> tests/ui/fail/pagination/pagination_modes.rs:49:1
@@ -299,7 +313,21 @@ note: required for `stream_pagination::Read` to implement `concord::__private::E
    | |         ^^^^
 ...  |
 57 | | }
-   | |_^
+   | |_^ unsatisfied trait bound introduced here
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `ByteStream` is not an iterator
+  --> tests/ui/fail/pagination/pagination_modes.rs:49:1
+   |
+49 | / api! {
+50 | |     client StreamPagination {
+51 | |         base "https://example.test";
+...  |
+57 | | }
+   | |_^ `ByteStream` is not an iterator
+   |
+   = help: the trait `Iterator` is not implemented for `ByteStream`
+   = note: required for `ByteStream` to implement `IntoIterator`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0271]: type mismatch resolving `<Stream<OctetStream> as ResponseBodySpec>::Mode == Buffered`
@@ -374,8 +402,8 @@ note: required for `stream_pagination::Read` to implement `concord::__private::E
    | |         ^^^^
 ...  |
 57 | | }
-   | |_^
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   | |_^ unsatisfied trait bound introduced here
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `ByteStream` is not an iterator
   --> tests/ui/fail/pagination/pagination_modes.rs:49:1
@@ -409,8 +437,8 @@ note: required for `stream_pagination::Read` to implement `concord::__private::P
    | |         ^^^^
 ...  |
 57 | | }
-   | |_^
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   | |_^ unsatisfied trait bound introduced here
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `stream_pagination::ReadRequest` is not a future
   --> tests/ui/fail/pagination/pagination_modes.rs:49:1
@@ -429,8 +457,8 @@ help: the trait `IntoFuture` is not implemented for `stream_pagination::ReadRequ
 50 | |     client StreamPagination {
 51 | |         base "https://example.test";
 ...  |
-54 | |     GET read() -> Stream<OctetStream> {
-   | |____________^
+57 | | }
+   | |_^
    = note: stream_pagination::ReadRequest must be a future or must implement `IntoFuture` to be awaited
 help: the trait `IntoFuture` is implemented for `stream_pagination::ReadRequest`
   --> tests/ui/fail/pagination/pagination_modes.rs:49:1
@@ -441,7 +469,7 @@ help: the trait `IntoFuture` is implemented for `stream_pagination::ReadRequest`
 ...  |
 57 | | }
    | |_^
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `stream_pagination::ReadRequest` is not a future
   --> tests/ui/fail/pagination/pagination_modes.rs:54:9
@@ -456,8 +484,8 @@ help: the trait `IntoFuture` is not implemented for `stream_pagination::ReadRequ
 50 | |     client StreamPagination {
 51 | |         base "https://example.test";
 ...  |
-54 | |     GET read() -> Stream<OctetStream> {
-   | |____________^
+57 | | }
+   | |_^
    = note: stream_pagination::ReadRequest must be a future or must implement `IntoFuture` to be awaited
 help: the trait `IntoFuture` is implemented for `stream_pagination::ReadRequest`
   --> tests/ui/fail/pagination/pagination_modes.rs:49:1
@@ -468,7 +496,7 @@ help: the trait `IntoFuture` is implemented for `stream_pagination::ReadRequest`
 ...  |
 57 | | }
    | |_^
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `concord::Request<no_content_pagination::Read>` is not a future
   --> tests/ui/fail/pagination/pagination_modes.rs:39:1
@@ -489,7 +517,7 @@ help: the trait `IntoFuture` is implemented for `concord::Request<E>`
    | | where
    | |     E: EndpointSpec,
    | |____________________^
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `concord::Request<stream_pagination::Read>` is not a future
   --> tests/ui/fail/pagination/pagination_modes.rs:49:1
@@ -510,4 +538,4 @@ help: the trait `IntoFuture` is implemented for `concord::Request<E>`
    | | where
    | |     E: EndpointSpec,
    | |____________________^
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

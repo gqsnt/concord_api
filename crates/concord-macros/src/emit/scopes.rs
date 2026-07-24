@@ -22,12 +22,17 @@ pub(super) fn generate_scope_tree(
     children: &[Child],
     ancestors: &[&Scope],
     core_path: &TokenStream,
+    capabilities: Capabilities,
 ) -> TokenStream {
     let items = children
         .iter()
         .map(|child| match child {
-            Child::Scope(scope) => generate_scope_module(client, scope, ancestors, core_path),
-            Child::Endpoint(endpoint) => generate_endpoint(client, ancestors, endpoint, core_path),
+            Child::Scope(scope) => {
+                generate_scope_module(client, scope, ancestors, core_path, capabilities)
+            }
+            Child::Endpoint(endpoint) => {
+                generate_endpoint(client, ancestors, endpoint, core_path, capabilities)
+            }
         })
         .collect::<Vec<_>>();
     quote!(#(#items)*)
@@ -38,6 +43,7 @@ pub(super) fn generate_scope_module(
     scope: &Scope,
     ancestors: &[&Scope],
     core_path: &TokenStream,
+    capabilities: Capabilities,
 ) -> TokenStream {
     let mut visible = ancestors.to_vec();
     visible.push(scope);
@@ -76,7 +82,7 @@ pub(super) fn generate_scope_module(
             }
         })
         .collect::<Vec<_>>();
-    let nested = generate_scope_tree(client, &scope.children, &visible, core_path);
+    let nested = generate_scope_tree(client, &scope.children, &visible, core_path, capabilities);
 
     quote! {
         pub mod #module_name {
@@ -396,6 +402,7 @@ mod tests {
             &api.client.children,
             &[],
             &test_support::core_path(),
+            Capabilities::default(),
         )
         .to_string();
 

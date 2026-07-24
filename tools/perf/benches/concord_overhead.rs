@@ -7,9 +7,6 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use concord::__benchmark::{
-    BenchmarkOperation, benchmark_public_head, benchmark_ready_credentials,
-};
 use concord::PaginatedRequest;
 use concord::api;
 use concord::codec::{BytesMut, CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext};
@@ -19,7 +16,9 @@ use concord::prelude::{Bytes, PageLimit, SecretString, StreamBody};
 use concord::rate_limit::NoopRateLimiter;
 use concord::records::{RecordDecoder, RecordError};
 use concord::response::ResponseHead;
+use concord_test_support::proxy::ConnectProxy;
 use concord_test_support::server::{ResponseScript, ScriptedServer};
+use concord_test_support::tls::TlsServer;
 
 pub struct BenchCodec;
 
@@ -126,7 +125,7 @@ api! {
 
 api! {
     client CredentialBenchApi {
-        base "https://credential-benchmark.example.test/";
+        base "https://localhost/";
         credentials {
             secret api_secret: String;
             credential application_key = bearer(secret.api_secret);
@@ -138,19 +137,18 @@ api! {
     }
 }
 
-const EXPECTED_CATEGORIES: [&str; 16] = [
+const EXPECTED_CATEGORIES: [&str; 15] = [
     "core client construction",
     "generated endpoint construction",
     "request binding",
     "safe public planning",
-    "public head preparation",
     "codec encoding and decoding",
     "body-limit polling",
     "direct execution overhead",
     "explicit generated endpoint execution overhead",
     "runtime endpoint execution overhead",
-    "credential ready-path preparation and finalization",
-    "limiter ready-path acquisition",
+    "authenticated managed execution",
+    "rate-limited managed execution",
     "pagination loop overhead",
     "stream wrapping",
     "generic specification selection",
@@ -186,7 +184,7 @@ impl CategoryAudit {
                 "benchmark category did not execute: {expected}"
             );
         }
-        println!("benchmark operation audit: 16/16 named categories executed");
+        println!("benchmark operation audit: 15/15 named categories executed");
     }
 }
 
@@ -266,29 +264,6 @@ fn safe_public_planning(
         black_box(client.plan(endpoint)?);
     }
     report(audit, "safe public planning", iterations, started);
-    Ok(())
-}
-
-fn public_head_preparation(
-    iterations: usize,
-    runtime: &tokio::runtime::Runtime,
-    audit: &mut CategoryAudit,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let client = configured_builder().build()?;
-    let requests: Vec<_> = (0..iterations)
-        .map(|index| client.records("archive".to_owned()).show(index.to_string()))
-        .collect();
-    let started = Instant::now();
-    for request in requests {
-        let observation = runtime.block_on(benchmark_public_head(request))?;
-        assert_eq!(
-            observation.operation(),
-            BenchmarkOperation::PublicHeadPreparation
-        );
-        assert!(observation.work_units() > 0);
-        black_box(observation);
-    }
-    report(audit, "public head preparation", iterations, started);
     Ok(())
 }
 
@@ -429,33 +404,47 @@ fn runtime_endpoint_execution_overhead(
     Ok(())
 }
 
-fn credential_ready_path_preparation(
+fn authenticated_managed_execution(
     iterations: usize,
     runtime: &tokio::runtime::Runtime,
     audit: &mut CategoryAudit,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let client = configured_credential_builder().build()?;
-    let requests: Vec<_> = (0..iterations).map(|_| client.credential_ready()).collect();
+    let tls = TlsServer::start().map_err(|error| std::io::Error::other(error.to_string()))?;
+    let proxy = ConnectProxy::start(tls.address())?;
+    let safe_proxy = SafeProxy::parse(proxy.url())?;
+    let certificate = tls.certificate_pem();
+    let client = configured_credential_builder()
+        .configure_http(move |http| {
+            http.http1_only()
+                .proxy(safe_proxy)
+                .add_root_certificate_pem(certificate)
+        })
+        .build()?;
     let started = Instant::now();
-    for request in requests {
-        let observation = runtime.block_on(benchmark_ready_credentials(request))?;
-        assert_eq!(
-            observation.operation(),
-            BenchmarkOperation::CredentialReadyPreparation
-        );
-        assert_eq!(observation.work_units(), 1);
-        black_box(observation);
+    for _ in 0..iterations {
+        black_box(runtime.block_on(client.credential_ready().into_future())?);
     }
     report(
         audit,
-        "credential ready-path preparation and finalization",
+        "authenticated managed execution",
         iterations,
         started,
     );
+
+    tls.wait_for_requests(iterations, Duration::from_secs(5))
+        .map_err(std::io::Error::other)?;
+    let requests = tls.requests();
+    assert_eq!(requests.len(), iterations);
+    for request in requests {
+        assert_eq!(
+            request.header("authorization"),
+            Some("Bearer benchmark-only-ready-credential")
+        );
+    }
     Ok(())
 }
 
-fn limiter_ready_path_acquisition(
+fn rate_limited_managed_execution(
     iterations: usize,
     runtime: &tokio::runtime::Runtime,
     audit: &mut CategoryAudit,
@@ -470,7 +459,7 @@ fn limiter_ready_path_acquisition(
     for _ in 0..iterations {
         black_box(runtime.block_on(client.limited().into_future())?);
     }
-    report(audit, "limiter ready-path acquisition", iterations, started);
+    report(audit, "rate-limited managed execution", iterations, started);
     Ok(())
 }
 
@@ -567,14 +556,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     generated_endpoint_construction(iterations, &mut audit);
     request_binding(iterations, &mut audit);
     safe_public_planning(iterations, &mut audit)?;
-    public_head_preparation(iterations, &runtime, &mut audit)?;
     codec_encoding_and_decoding(iterations, &mut audit);
     body_limit_polling(iterations, &runtime, &mut audit)?;
     direct_execution_overhead(iterations, &runtime, &mut audit)?;
     explicit_generated_endpoint_execution_overhead(iterations, &runtime, &mut audit)?;
     runtime_endpoint_execution_overhead(iterations, &runtime, &mut audit)?;
-    credential_ready_path_preparation(iterations, &runtime, &mut audit)?;
-    limiter_ready_path_acquisition(iterations, &runtime, &mut audit)?;
+    authenticated_managed_execution(iterations, &runtime, &mut audit)?;
+    rate_limited_managed_execution(iterations, &runtime, &mut audit)?;
     pagination_loop_overhead(iterations, &runtime, &mut audit)?;
     stream_wrapping(iterations, &mut audit);
     generic_specification_selection(iterations, &mut audit);

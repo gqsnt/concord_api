@@ -6,10 +6,35 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-pub use concord_macros::api;
+/// Declares a generated Concord client and its typed endpoints.
+#[cfg(feature = "dangerous-raw-response")]
+#[macro_export]
+macro_rules! api {
+    ($($declaration:tt)*) => {
+        $crate::__concord_api! {
+            @concord_capabilities(raw_response)
+            @concord_facade($crate)
+            $($declaration)*
+        }
+    };
+}
+
+/// Declares a generated Concord client and its typed endpoints.
+#[cfg(not(feature = "dangerous-raw-response"))]
+#[macro_export]
+macro_rules! api {
+    ($($declaration:tt)*) => {
+        $crate::__concord_api! {
+            @concord_capabilities()
+            @concord_facade($crate)
+            $($declaration)*
+        }
+    };
+}
 
 #[doc(hidden)]
-pub use concord_core::__benchmark;
+pub use concord_macros::__api as __concord_api;
+
 #[cfg(feature = "multipart")]
 pub use concord_core::prelude::Multipart;
 pub use concord_core::prelude::{
@@ -21,35 +46,6 @@ pub use concord_core::{PageLimit, PaginatedRequest, Request, ResponseRequest};
 #[cfg(feature = "json")]
 pub use concord_extras::codec::Json;
 pub use concord_extras::pagination::{CursorPagination, OffsetPagination, PagePagination};
-
-#[cfg(feature = "dangerous-raw-response")]
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __concord_emit_generated_raw_response_method {
-    ($endpoint:ty, $endpoint_trait:path, $field:ident) => {
-        /// Selects the complete bounded successful response without decoding it.
-        ///
-        /// This method exists only when the `dangerous-raw-response` capability is
-        /// enabled and the declared sealed response mode supports bounded raw
-        /// acquisition.
-        #[must_use]
-        pub fn raw_response<Mode>(self) -> $crate::dangerous::RawResponseRequest<$endpoint>
-        where
-            <$endpoint as $endpoint_trait>::Response:
-                $crate::advanced::ResponseBodySpec<Mode = Mode>,
-            Mode: $crate::dangerous::RawResponseMode,
-        {
-            $crate::__private::raw_response_request(self.$field)
-        }
-    };
-}
-
-#[cfg(not(feature = "dangerous-raw-response"))]
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __concord_emit_generated_raw_response_method {
-    ($endpoint:ty, $endpoint_trait:path, $field:ident) => {};
-}
 
 /// Credential material, provider contracts, and enabled first-party providers.
 pub mod auth {
@@ -164,7 +160,7 @@ pub mod rate_limit {
 
 /// Common imports for declarations and ordinary generated-client use.
 pub mod prelude {
-    pub use concord_macros::api;
+    pub use crate::api;
 
     #[cfg(feature = "multipart")]
     pub use concord_core::prelude::Multipart;
@@ -272,8 +268,6 @@ pub mod dangerous {
 /// Generated-code bridge. This is not a user extension surface.
 #[doc(hidden)]
 pub mod __private {
-    #[doc(hidden)]
-    pub use crate::__concord_emit_generated_raw_response_method as emit_generated_raw_response_method;
     #[cfg(feature = "dangerous-raw-response")]
     #[doc(hidden)]
     pub use concord_core::__private::raw_response_request;
@@ -290,7 +284,6 @@ pub mod __private {
         default_http_config, endpoint_id_from_static, inspect_endpoint, map_endpoint,
         missing_input_error, paginate_request, request, response_request, safe_request_plan,
     };
-
     /// Creates the façade-owned generated-client runtime baseline.
     #[doc(hidden)]
     #[must_use]

@@ -85,6 +85,7 @@ pub(super) fn generate_endpoint(
     scopes: &[&Scope],
     endpoint: &Endpoint,
     core_path: &TokenStream,
+    capabilities: Capabilities,
 ) -> TokenStream {
     let endpoint_name = &endpoint.surface.endpoint_type_name;
     let request_name = &endpoint.surface.request_type_name;
@@ -228,6 +229,7 @@ pub(super) fn generate_endpoint(
         &generated_core,
         core_path,
         &where_clause,
+        capabilities,
     );
     let pagination_impl = generate_pagination_impl(
         client,
@@ -1047,8 +1049,14 @@ mod tests {
     fn emits_explicit_endpoint_value_and_binding_contract() {
         let api = test_support::api();
         let endpoint = test_support::endpoint(&api);
-        let output =
-            generate_endpoint(&api.client, &[], endpoint, &test_support::core_path()).to_string();
+        let output = generate_endpoint(
+            &api.client,
+            &[],
+            endpoint,
+            &test_support::core_path(),
+            Capabilities::default(),
+        )
+        .to_string();
         let endpoint_name = endpoint.surface.endpoint_type_name.to_string();
 
         assert!(output.contains(&format!("pub struct {endpoint_name}")));

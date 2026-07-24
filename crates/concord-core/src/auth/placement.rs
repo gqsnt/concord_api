@@ -295,10 +295,6 @@ pub(crate) struct AuthPlan {
 }
 
 impl AuthPlan {
-    pub(crate) fn len(&self) -> usize {
-        self.placements.len()
-    }
-
     pub(crate) fn push(
         &mut self,
         auth: Auth,
@@ -434,10 +430,6 @@ pub(crate) struct PreparedAuthPlan {
 }
 
 impl PreparedAuthPlan {
-    pub(crate) fn len(&self) -> usize {
-        self.placements.len()
-    }
-
     pub(crate) fn challenge_index(&self, status: StatusCode) -> Option<usize> {
         self.placements.iter().position(|placement| {
             matches!(
@@ -574,10 +566,6 @@ pub(crate) struct FinalizedAuthPlan {
 }
 
 impl FinalizedAuthPlan {
-    pub(crate) fn len(&self) -> usize {
-        self.placements.len()
-    }
-
     pub(crate) fn materialize(
         self,
         request: &mut ApplicationRequest,
