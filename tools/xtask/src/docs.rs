@@ -447,27 +447,29 @@ fn check_markdown_links(root: &Path) -> Result<(), String> {
                 ));
             }
             local_files += usize::from(!file_target.is_empty());
-            if let Some(anchor) = anchor.filter(|anchor| !anchor.is_empty())
-                && resolved.extension() == Some(OsStr::new("md"))
-            {
-                let target_document = match parsed.get(&resolved) {
-                    Some(document) => document,
-                    None => {
-                        parsed.insert(resolved.clone(), parse_markdown(&resolved)?);
-                        parsed
-                            .get(&resolved)
-                            .expect("inserted Markdown target is available")
-                    }
-                };
-                if !target_document.anchors.contains(anchor) {
-                    return Err(format!(
-                        "{} links to missing anchor `#{anchor}` in {}",
-                        path.display(),
-                        resolved.display()
-                    ));
-                }
-                local_anchors += 1;
+            let Some(anchor) = anchor.filter(|anchor| !anchor.is_empty()) else {
+                continue;
+            };
+            if resolved.extension() != Some(OsStr::new("md")) {
+                continue;
             }
+            let target_document = match parsed.get(&resolved) {
+                Some(document) => document,
+                None => {
+                    parsed.insert(resolved.clone(), parse_markdown(&resolved)?);
+                    parsed
+                        .get(&resolved)
+                        .expect("inserted Markdown target is available")
+                }
+            };
+            if !target_document.anchors.contains(anchor) {
+                return Err(format!(
+                    "{} links to missing anchor `#{anchor}` in {}",
+                    path.display(),
+                    resolved.display()
+                ));
+            }
+            local_anchors += 1;
         }
     }
     println!(

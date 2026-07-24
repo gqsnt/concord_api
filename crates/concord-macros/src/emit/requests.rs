@@ -1,15 +1,24 @@
 use super::*;
 
+pub(super) struct RequestBridge<'a> {
+    pub(super) support_path: &'a TokenStream,
+    pub(super) generated_core: &'a TokenStream,
+    pub(super) capabilities: Capabilities,
+}
+
 pub(super) fn generate_request_wrapper(
     client: &Client,
     scopes: &[&Scope],
     endpoint: &Endpoint,
-    support_path: &TokenStream,
-    generated_core: &TokenStream,
+    bridge: RequestBridge<'_>,
     core_path: &TokenStream,
     where_clause: &TokenStream,
-    capabilities: Capabilities,
 ) -> TokenStream {
+    let RequestBridge {
+        support_path,
+        generated_core,
+        capabilities,
+    } = bridge;
     let endpoint_name = &endpoint.surface.endpoint_type_name;
     let request_name = &endpoint.surface.request_type_name;
     let setter_methods = endpoint
@@ -264,11 +273,13 @@ mod tests {
             &api.client,
             &[],
             endpoint,
-            &quote!(super),
-            &core,
+            RequestBridge {
+                support_path: &quote!(super),
+                generated_core: &core,
+                capabilities: Capabilities::default(),
+            },
             &core,
             &quote!(),
-            Capabilities::default(),
         )
         .to_string();
 
@@ -284,11 +295,13 @@ mod tests {
             &api.client,
             &[],
             endpoint,
-            &quote!(super),
-            &core,
+            RequestBridge {
+                support_path: &quote!(super),
+                generated_core: &core,
+                capabilities: Capabilities { raw_response: true },
+            },
             &core,
             &quote!(),
-            Capabilities { raw_response: true },
         )
         .to_string();
         assert!(raw_output.contains("pub fn raw_response"));

@@ -500,11 +500,15 @@ fn check_dependency_tables(manifest: &DocumentMut, path: &Path) -> Result<(), St
 
 fn visit_table(table: &Table, path: &Path) -> Result<(), String> {
     for (key, item) in table {
-        if matches!(
+        let dependencies = if matches!(
             key,
             "dependencies" | "dev-dependencies" | "build-dependencies"
-        ) && let Some(dependencies) = item.as_table()
-        {
+        ) {
+            item.as_table()
+        } else {
+            None
+        };
+        if let Some(dependencies) = dependencies {
             for (alias, dependency) in dependencies {
                 if alias == "concord-test-support"
                     || dependency_field(dependency, "package") == Some("concord-test-support")

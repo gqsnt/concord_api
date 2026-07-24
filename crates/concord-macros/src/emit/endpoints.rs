@@ -225,11 +225,13 @@ pub(super) fn generate_endpoint(
         client,
         scopes,
         endpoint,
-        &support_path,
-        &generated_core,
+        RequestBridge {
+            support_path: &support_path,
+            generated_core: &generated_core,
+            capabilities,
+        },
         core_path,
         &where_clause,
-        capabilities,
     );
     let pagination_impl = generate_pagination_impl(
         client,

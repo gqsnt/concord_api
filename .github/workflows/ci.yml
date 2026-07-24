@@ -57,8 +57,8 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-test
-      - run: cargo test --workspace --lib --tests --examples --locked
-      - run: cargo test --workspace --lib --tests --examples --all-features --locked
+      - run: cargo test --workspace --exclude concord-macros --lib --tests --examples --locked
+      - run: cargo test --workspace --exclude concord-macros --lib --tests --examples --all-features --locked
       - run: cargo test --workspace --doc --all-features --locked
       - run: cargo rustdoc -p concord --all-features --locked -- -D warnings
       - run: cargo rustdoc -p concord-core --all-features --locked -- -D warnings
@@ -136,7 +136,7 @@ jobs:
         with:
           key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-platform
       - run: cargo check --workspace --all-targets --all-features --locked
-      - run: cargo test -p concord --test runtime --all-features --locked runtime::deterministic::
+      - run: 'cargo test -p concord --test runtime --all-features --locked runtime::deterministic::'
 
   analyzer:
     name: Rust analyzer

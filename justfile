@@ -1,3 +1,6 @@
+# Use the native shell on Windows; recipe bodies remain portable commands.
+set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
+
 default:
     @just --list
 
@@ -20,8 +23,8 @@ lint:
     cargo +stable clippy --workspace --all-targets --all-features --locked -- -D warnings
 
 test:
-    cargo test --workspace --lib --tests --examples --locked
-    cargo test --workspace --lib --tests --examples --all-features --locked
+    cargo test --workspace --exclude concord-macros --lib --tests --examples --locked
+    cargo test --workspace --exclude concord-macros --lib --tests --examples --all-features --locked
 
 ui:
     cargo +stable test -p concord-macros --lib --locked

@@ -41,6 +41,11 @@ serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["test-util"] }
 trybuild = "1.0.118"
 
+[[test]]
+name = "ui"
+path = "tests/ui.rs"
+test = false
+
 [package.metadata.docs.rs]
 all-features = true
 

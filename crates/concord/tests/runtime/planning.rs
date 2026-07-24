@@ -447,7 +447,7 @@ fn runtime_endpoint_plan_remains_zero_effect() {
     let client = configured_public_client(&server, &effects, Duration::from_secs(23));
 
     let inherited = RuntimeEndpoint::builder(
-        EndpointId::new("runtime.timeout.inherited".to_owned()).expect("owned ID"),
+        EndpointId::new("runtime.timeout.inherited").expect("owned ID"),
         Method::GET,
     )
     .path_segment("inherited")
