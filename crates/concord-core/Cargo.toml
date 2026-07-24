@@ -39,7 +39,7 @@ reqwest = { workspace = true, features = ["http2", "rustls-no-provider", "system
 rustls.workspace = true
 serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["test-util"] }
-trybuild = "=1.0.118"
+trybuild = "1.0.118"
 
 [package.metadata.docs.rs]
 all-features = true

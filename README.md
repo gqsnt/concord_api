@@ -105,19 +105,19 @@ Run `just --list` for the maintained inventory. The primary gates are:
 ```text
 just fmt
 just check
+just lint
 just test
-just test-all
 just ui
+just msrv
 just fixtures
 just docs
-just security
-just verify-local
-just verify-msrv
-just verify-package
-just verify-release-local
+just package
+just analyzer
+just verify
+just source-archive
 ```
 
-Tests are deterministic and make no external service calls. Performance smoke
-checks remain observational even when the release-local scope executes them.
-Local scopes cannot prove remote Actions execution, other operating systems,
-interactive editor behavior, registry ownership, or legal approval.
+Tests are deterministic and make no external service calls. `just bench`
+remains observational. Local checks cannot prove remote Actions execution,
+other operating systems, interactive editor behavior, registry ownership, or
+legal approval.

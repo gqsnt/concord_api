@@ -3,4 +3,6 @@ mod public_api {
     pub(crate) mod type_neutrality;
 }
 
-pub(crate) use public_api::type_neutrality::{Json, RenamedJson};
+pub(crate) use public_api::type_neutrality::Json;
+#[cfg(feature = "json")]
+pub(crate) use public_api::type_neutrality::RenamedJson;

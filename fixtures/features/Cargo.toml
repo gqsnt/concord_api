@@ -28,4 +28,4 @@ runtime = { package = "concord", path = "../../crates/concord", default-features
 
 [dev-dependencies]
 concord-test-support = { package = "concord-test-support", path = "../../crates/concord-test-support", default-features = false, features = ["loopback"] }
-tokio = { version = "=1.52.4", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
+tokio = { version = "1.52.4", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }

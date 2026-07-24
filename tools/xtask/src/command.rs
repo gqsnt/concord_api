@@ -1,4 +1,4 @@
-//! Bounded Cargo subprocess support for repository-level xtask proofs.
+//! Bounded subprocess support for repository-level xtask proofs.
 
 use std::ffi::{OsStr, OsString};
 use std::fs;
@@ -43,38 +43,6 @@ where
     })
 }
 
-/// Runs locked, offline Cargo Nextest with an isolated target directory.
-///
-/// Cargo's built-in flags follow `nextest run`, unlike built-in Cargo
-/// subcommands where [`run`] places them immediately after the subcommand.
-/// The standalone invocation uses its own default profile rather than an
-/// outer Nextest runner's inherited profile selection.
-#[must_use]
-pub fn run_nextest<I, S>(workspace_root: &Path, target_key: &str, arguments: I) -> Output
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<OsStr>,
-{
-    let target_dir = fixture_target_dir(workspace_root, target_key);
-    let mut command = Command::new(env!("CARGO"));
-    command
-        .current_dir(workspace_root)
-        .args([
-            "nextest",
-            "run",
-            "--offline",
-            "--locked",
-            "--color",
-            "never",
-        ])
-        .args(arguments)
-        .env_remove("NEXTEST_PROFILE")
-        .env("CARGO_TARGET_DIR", target_dir);
-    command.output().unwrap_or_else(|error| {
-        panic!("failed to run Cargo Nextest for fixture target `{target_key}`: {error}")
-    })
-}
-
 /// Checks one standalone fixture manifest with the shared locked/offline
 /// policy and an isolated target directory.
 #[must_use]
@@ -101,6 +69,36 @@ pub fn diagnostics(output: &Output) -> String {
         bounded_lossy(&output.stdout),
         bounded_lossy(&output.stderr)
     )
+}
+
+/// Runs Cargo with inherited output for a repository task.
+pub fn cargo_status<I, S>(workspace_root: &Path, arguments: I) -> Result<(), String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let arguments = arguments
+        .into_iter()
+        .map(|argument| argument.as_ref().to_owned())
+        .collect::<Vec<_>>();
+    println!(
+        "running cargo {}",
+        arguments
+            .iter()
+            .map(|argument| argument.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    let status = Command::new(env!("CARGO"))
+        .current_dir(workspace_root)
+        .args(&arguments)
+        .status()
+        .map_err(|error| format!("could not run Cargo: {error}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("Cargo exited with {status}"))
+    }
 }
 
 /// Compiles the listed fixture binaries and verifies compiler-independent

@@ -17,8 +17,8 @@ use proc_macro2::{Ident, TokenStream as TokenStream2};
 use syn::parse::{Parse, ParseStream};
 use syn::{Token, parenthesized};
 
-// Core owns these public structural limits. The documentation xtask
-// mechanically checks these parser/resolver mirrors against core literals.
+// Core owns these public structural limits. Compiler boundary tests exercise
+// the same exact first-excess behavior without coupling this crate to core.
 const MAX_RATE_LIMIT_ID_BYTES: usize = 256;
 const MAX_RATE_LIMIT_WINDOWS_PER_RULE: usize = 16;
 const MAX_RATE_LIMIT_RULES_PER_PLAN: usize = 64;

@@ -1,7 +1,7 @@
 //! Normative finite defaults for one immutable client runtime snapshot.
 //!
-//! Keep exact numeric defaults here. The documentation checker reads these
-//! declarations to keep `docs/reference/limits.md` synchronized with core.
+//! Keep exact numeric defaults here. The documentation checker links against
+//! the values reexported through the hidden integration surface.
 
 /// Default aggregate request-body byte ceiling.
 pub const DEFAULT_REQUEST_BODY_BYTES: usize = 16_777_216;

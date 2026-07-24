@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Output;
 
-use crate::cargo::{check_manifest, diagnostics, run};
+use crate::command::{check_manifest, diagnostics, run};
 
 fn manifest(root: &Path) -> PathBuf {
     root.join("fixtures/Cargo.toml")

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::cargo::assert_semantic_compile_failures;
+use crate::command::assert_semantic_compile_failures;
 
 pub(crate) fn run(root: &Path) {
     let manifest = root.join("fixtures/Cargo.toml");
