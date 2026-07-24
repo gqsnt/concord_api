@@ -338,7 +338,7 @@ impl EndpointSpec for DynamicCollisionEndpoint {
 
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_auth(Auth::query("access", self.credential.clone()))?;
-        builder.push_query_value("access", &"materially-present-public-value");
+        builder.push_query_value("access", &"materially-present-public-value")?;
         Ok(builder.finish())
     }
 

@@ -32,6 +32,9 @@ pub enum CredentialReason {
 /// Bounded context supplied to a credential provider.
 pub struct CredentialRequest<'a> {
     /// Isolated provider HTTP capability for this operation.
+    ///
+    /// Its [`ProviderHttp::request_body_limit`] accessor lets a provider check
+    /// encoded output against the active runtime ceiling before allocation.
     pub http: ProviderHttp<'a>,
     /// Reason for acquisition or refresh.
     pub reason: CredentialReason,

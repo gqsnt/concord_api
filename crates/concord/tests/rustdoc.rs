@@ -339,6 +339,15 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             ][..],
         ),
         (
+            "struct.CredentialRequest.html",
+            &[
+                "Bounded context",
+                "request_body_limit",
+                "encoded output",
+                "active runtime ceiling",
+            ][..],
+        ),
+        (
             "trait.ProviderBodyFactory.html",
             &[
                 "operations may overlap",
@@ -412,6 +421,9 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
                 "Dropping the provider future",
                 "sensitive",
                 "logging and storage",
+                "active semantic request-body ceiling",
+                "native transport state",
+                "method.request_body_limit",
             ][..],
         ),
     ];

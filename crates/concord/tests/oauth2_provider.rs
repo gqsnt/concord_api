@@ -222,6 +222,47 @@ async fn oauth_extra_executes_through_generated_provider_lifecycle_and_generic_r
 }
 
 #[tokio::test]
+async fn oauth_form_body_uses_runtime_provider_limit_before_transport() {
+    const SCOPE_SENTINEL: &str = "oauth-runtime-limit-scope-sentinel-73e0";
+    let server = TlsServer::start().expect("bounded OAuth provider TLS server");
+    server
+        .queue_response(200, br#"{"access_token":"unused"}"#)
+        .expect("defensive provider response");
+    let token_url = server.url("localhost", "/request-limit-sentinel-93c1");
+    let certificate = server.certificate_pem();
+    let oauth = OAuth2ClientCredentials::builder(&token_url)
+        .client_id("runtime-limit-client-id-sentinel-1f02")
+        .client_secret("runtime-limit-client-secret-sentinel-445d")
+        .scope(SCOPE_SENTINEL)
+        .build()
+        .expect("bounded OAuth provider");
+    let client = OAuthRuntimeApi::builder()
+        .oauth_provider(oauth)
+        .configure_http(move |http| http.http1_only().add_root_certificate_pem(certificate))
+        .configure_runtime(|runtime| {
+            runtime.provider_request_limit(NonZeroUsize::new(1).expect("finite request limit"))
+        })
+        .build()
+        .expect("generated OAuth client");
+
+    let error = client
+        .protected()
+        .await
+        .expect_err("OAuth form exceeds the runtime provider request limit");
+    assert_eq!(error.category(), ErrorCategory::AuthenticationProvider);
+    assert!(server.requests().is_empty());
+    let rendered = render_error_chain(&error);
+    for sentinel in [
+        "runtime-limit-client-id-sentinel-1f02",
+        "runtime-limit-client-secret-sentinel-445d",
+        SCOPE_SENTINEL,
+        "request-limit-sentinel-93c1",
+    ] {
+        assert!(!rendered.contains(sentinel));
+    }
+}
+
+#[tokio::test]
 async fn oversized_provider_response_remains_bounded_and_body_safe() {
     const SENTINEL: &str = "oversized-oauth-provider-body-sentinel-803ef4";
     let server = TlsServer::start().expect("bounded OAuth provider TLS server");

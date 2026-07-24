@@ -46,6 +46,15 @@
   fallible, `RateLimitPlan::from_rules` is replaced by
   `RateLimitPlan::try_from_rules`, duplicate rule IDs are rejected, and
   limiter preparation limits above the hard key cap fail client construction.
+- Generated/public-head dynamic host, path, query, header, and
+  pagination-sensitive formatting now uses the same capped capture primitive
+  as runtime endpoints; query shaping returns a safe configuration failure on
+  excess output.
+- OAuth2 client-credentials configuration now has public finite URL, client
+  ID, client secret, scope, and Authorization-header ceilings. Its builder
+  validates borrowed text before copying, exposes explicit owned-secret
+  setters, checks percent/Base64/form lengths before allocation, and compares
+  the form body with the active provider request limit.
 - Preserved deterministic preparation, hook, limiter, authentication,
   challenge-recovery, status, acquisition, completion, and cancellation
   behavior.

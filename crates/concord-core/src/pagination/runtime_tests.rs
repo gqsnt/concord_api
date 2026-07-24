@@ -134,8 +134,8 @@ impl EndpointSpec for PageEndpoint {
 
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("items")?;
-        builder.push_query_value("stable", &"public");
-        builder.push_pagination_query_value("cursor", &self.cursor);
+        builder.push_query_value("stable", &"public")?;
+        builder.push_pagination_query_value("cursor", &self.cursor)?;
         builder.insert_pagination_header_value("x-page-cursor", &self.cursor)?;
         Ok(builder.finish())
     }
@@ -200,8 +200,8 @@ impl EndpointSpec for HostRateEndpoint {
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_pagination_host_value(&self.host)?;
         builder.push_static("host-rate-items")?;
-        builder.push_query_value("stable", &"public");
-        builder.push_pagination_query_value("cursor", &self.host);
+        builder.push_query_value("stable", &"public")?;
+        builder.push_pagination_query_value("cursor", &self.host)?;
         builder.insert_pagination_header_value("x-page-cursor", &self.host)?;
         let rate_limit_host = builder.rate_limit_host().to_owned();
         builder.push_rate_limit_rule(
@@ -265,8 +265,8 @@ impl EndpointSpec for RateKeyEndpoint {
 
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("rate-key-items")?;
-        builder.push_query_value("stable", &"public");
-        builder.push_pagination_query_value("cursor", &self.key);
+        builder.push_query_value("stable", &"public")?;
+        builder.push_pagination_query_value("cursor", &self.key)?;
         builder.insert_pagination_header_value("x-page-cursor", &self.key)?;
         builder.push_auth(Auth::bearer(self.credential.clone()))?;
         builder.push_rate_limit_rule(

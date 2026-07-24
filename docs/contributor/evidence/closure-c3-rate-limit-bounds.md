@@ -9,9 +9,8 @@ Started from commit:
 `master`.
 
 Finished at commit:
-The C3 commit containing this evidence, with message
-`core: enforce finite rate limit structures`. Its exact hash will be
-backfilled in the closure ledger by C4.
+`12a71f612dd0bfd2ccb877f401067a2bd33ad2f5`
+(`core: enforce finite rate limit structures`).
 
 Files changed:
 

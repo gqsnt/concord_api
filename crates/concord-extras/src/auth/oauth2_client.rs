@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::fmt;
+use std::num::NonZeroUsize;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
@@ -10,15 +11,30 @@ use concord_core::advanced::{
 use concord_core::prelude::{AccessToken, SecretString};
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
 
+/// Maximum UTF-8 bytes accepted for one OAuth2 token URL.
+pub const MAX_OAUTH2_TOKEN_URL_BYTES: usize = 8_192;
+
+/// Maximum UTF-8 bytes accepted for one OAuth2 client identifier.
+pub const MAX_OAUTH2_CLIENT_ID_BYTES: usize = 8_192;
+
+/// Maximum UTF-8 bytes accepted for one OAuth2 client secret.
+pub const MAX_OAUTH2_CLIENT_SECRET_BYTES: usize = 8_192;
+
+/// Maximum UTF-8 bytes accepted for one OAuth2 scope string.
+pub const MAX_OAUTH2_SCOPE_BYTES: usize = 65_536;
+
+/// Maximum bytes in the final OAuth2 Basic Authorization header value.
+pub const MAX_OAUTH2_AUTHORIZATION_HEADER_BYTES: usize = 32_768;
+
 /// A client-credentials provider that acquires bearer access tokens through
 /// Concord's isolated, bounded provider-HTTP capability.
 ///
 /// The provider stores the token URL and protected client credentials in one
 /// immutable configuration. Provider requests remain outside application
 /// hooks, application rate limiting, and application transport pools. Concord
-/// bounds request and response bodies and the enclosing credential operation;
-/// callers remain responsible for bounding the strings supplied to the
-/// builder.
+/// bounds configuration strings, encoded headers, request and response bodies,
+/// and the enclosing credential operation. Encoding lengths are checked before
+/// final output allocation.
 pub struct OAuth2ClientCredentials {
     token_url: Url,
     client_id: SecretString,
@@ -37,7 +53,7 @@ impl OAuth2ClientCredentials {
     }
 
     async fn exchange(&self, context: CredentialRequest<'_>) -> Result<AccessToken, AuthError> {
-        let parts = self.exchange_parts()?;
+        let parts = self.exchange_parts(context.http.request_body_limit())?;
         let request = ProviderRequest::new(Method::POST, self.token_url.clone())
             .header(AUTHORIZATION, parts.authorization)
             .header(
@@ -49,23 +65,10 @@ impl OAuth2ClientCredentials {
         decode_token_response(response.status(), response.body())
     }
 
-    fn exchange_parts(&self) -> Result<ExchangeParts, AuthError> {
-        let username = form_component(self.client_id.expose_secret());
-        let password = form_component(self.client_secret.expose_secret());
-        let authorization = format!(
-            "Basic {}",
-            encode_base64(format!("{username}:{password}").as_bytes())
-        );
-        let authorization = HeaderValue::from_str(&authorization)
-            .map_err(|_| AuthError::new(AuthErrorKind::InvalidConfiguration))?;
-        let body = Bytes::from({
-            let mut form = url::form_urlencoded::Serializer::new(String::new());
-            form.append_pair("grant_type", "client_credentials");
-            if let Some(scope) = &self.scope {
-                form.append_pair("scope", scope);
-            }
-            form.finish()
-        });
+    fn exchange_parts(&self, request_body_limit: NonZeroUsize) -> Result<ExchangeParts, AuthError> {
+        let lengths = ExchangeLengths::checked(self, request_body_limit)?;
+        let authorization = encode_authorization(self, lengths.authorization)?;
+        let body = encode_form_body(self.scope.as_deref(), lengths.body)?;
         Ok(ExchangeParts {
             authorization,
             body,
@@ -111,7 +114,7 @@ impl CredentialProvider for OAuth2ClientCredentials {
 /// Named, secret-safe builder for [`OAuth2ClientCredentials`].
 pub struct OAuth2ClientCredentialsBuilder {
     token_url: Option<Url>,
-    invalid_token_url: bool,
+    failure: Option<OAuth2ClientCredentialsBuildErrorKind>,
     client_id: Option<SecretString>,
     client_secret: Option<SecretString>,
     scope: Option<Box<str>>,
@@ -119,43 +122,116 @@ pub struct OAuth2ClientCredentialsBuilder {
 
 impl OAuth2ClientCredentialsBuilder {
     fn new(token_url: &str) -> Self {
-        let token_url = Url::parse(token_url).ok().filter(valid_token_url);
+        let (token_url, failure) = if token_url.len() > MAX_OAUTH2_TOKEN_URL_BYTES {
+            (
+                None,
+                Some(OAuth2ClientCredentialsBuildErrorKind::TokenUrlTooLong),
+            )
+        } else {
+            match Url::parse(token_url).ok().filter(valid_token_url) {
+                Some(token_url) => (Some(token_url), None),
+                None => (
+                    None,
+                    Some(OAuth2ClientCredentialsBuildErrorKind::InvalidTokenUrl),
+                ),
+            }
+        };
         Self {
-            invalid_token_url: token_url.is_none(),
             token_url,
+            failure,
             client_id: None,
             client_secret: None,
             scope: None,
         }
     }
 
-    /// Sets the required protected OAuth client identifier.
+    /// Copies one required protected OAuth client identifier after validating
+    /// its borrowed UTF-8 byte length.
     #[must_use]
-    pub fn client_id(mut self, client_id: impl Into<SecretString>) -> Self {
-        self.client_id = Some(client_id.into());
+    pub fn client_id(mut self, client_id: impl AsRef<str>) -> Self {
+        if self.failure.is_some() {
+            return self;
+        }
+        self.client_id = None;
+        let client_id = client_id.as_ref();
+        if client_id.len() > MAX_OAUTH2_CLIENT_ID_BYTES {
+            self.failure = Some(OAuth2ClientCredentialsBuildErrorKind::ClientIdTooLong);
+        } else {
+            self.client_id = Some(SecretString::new(client_id));
+        }
         self
     }
 
-    /// Sets the required protected OAuth client secret.
+    /// Retains one already-owned protected OAuth client identifier after
+    /// validating its UTF-8 byte length.
     #[must_use]
-    pub fn client_secret(mut self, client_secret: impl Into<SecretString>) -> Self {
-        self.client_secret = Some(client_secret.into());
+    pub fn client_id_owned(mut self, client_id: SecretString) -> Self {
+        if self.failure.is_some() {
+            return self;
+        }
+        self.client_id = None;
+        if client_id.expose_secret().len() > MAX_OAUTH2_CLIENT_ID_BYTES {
+            self.failure = Some(OAuth2ClientCredentialsBuildErrorKind::ClientIdTooLong);
+        } else {
+            self.client_id = Some(client_id);
+        }
         self
     }
 
-    /// Sets the optional OAuth scope string.
+    /// Copies one required protected OAuth client secret after validating its
+    /// borrowed UTF-8 byte length.
     #[must_use]
-    pub fn scope(mut self, scope: impl Into<String>) -> Self {
-        self.scope = Some(scope.into().into_boxed_str());
+    pub fn client_secret(mut self, client_secret: impl AsRef<str>) -> Self {
+        if self.failure.is_some() {
+            return self;
+        }
+        self.client_secret = None;
+        let client_secret = client_secret.as_ref();
+        if client_secret.len() > MAX_OAUTH2_CLIENT_SECRET_BYTES {
+            self.failure = Some(OAuth2ClientCredentialsBuildErrorKind::ClientSecretTooLong);
+        } else {
+            self.client_secret = Some(SecretString::new(client_secret));
+        }
+        self
+    }
+
+    /// Retains one already-owned protected OAuth client secret after
+    /// validating its UTF-8 byte length.
+    #[must_use]
+    pub fn client_secret_owned(mut self, client_secret: SecretString) -> Self {
+        if self.failure.is_some() {
+            return self;
+        }
+        self.client_secret = None;
+        if client_secret.expose_secret().len() > MAX_OAUTH2_CLIENT_SECRET_BYTES {
+            self.failure = Some(OAuth2ClientCredentialsBuildErrorKind::ClientSecretTooLong);
+        } else {
+            self.client_secret = Some(client_secret);
+        }
+        self
+    }
+
+    /// Copies one optional OAuth scope string after validating its borrowed
+    /// UTF-8 byte length.
+    #[must_use]
+    pub fn scope(mut self, scope: impl AsRef<str>) -> Self {
+        if self.failure.is_some() {
+            return self;
+        }
+        self.scope = None;
+        let scope = scope.as_ref();
+        if scope.len() > MAX_OAUTH2_SCOPE_BYTES {
+            self.failure = Some(OAuth2ClientCredentialsBuildErrorKind::ScopeTooLong);
+        } else {
+            self.scope = Some(scope.into());
+        }
         self
     }
 
     /// Validates required inputs and builds the immutable provider.
     pub fn build(self) -> Result<OAuth2ClientCredentials, OAuth2ClientCredentialsBuildError> {
-        if self.invalid_token_url {
-            return Err(OAuth2ClientCredentialsBuildError::new(
-                OAuth2ClientCredentialsBuildErrorKind::InvalidTokenUrl,
-            ));
+        if let Some(failure) = self.failure {
+            return Err(OAuth2ClientCredentialsBuildError::new(failure));
         }
         let token_url = self.token_url.ok_or_else(|| {
             OAuth2ClientCredentialsBuildError::new(
@@ -185,6 +261,7 @@ impl fmt::Debug for OAuth2ClientCredentialsBuilder {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("OAuth2ClientCredentialsBuilder")
+            .field("configuration_valid", &self.failure.is_none())
             .field("token_url_valid", &self.token_url.is_some())
             .field("client_id_configured", &self.client_id.is_some())
             .field("client_secret_configured", &self.client_secret.is_some())
@@ -197,9 +274,19 @@ impl fmt::Debug for OAuth2ClientCredentialsBuilder {
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OAuth2ClientCredentialsBuildErrorKind {
+    /// The supplied token URL exceeded [`MAX_OAUTH2_TOKEN_URL_BYTES`].
+    TokenUrlTooLong,
     /// The token URL was not an absolute HTTPS URL with a host, or contained
     /// user information or a fragment.
     InvalidTokenUrl,
+    /// The supplied client identifier exceeded
+    /// [`MAX_OAUTH2_CLIENT_ID_BYTES`].
+    ClientIdTooLong,
+    /// The supplied client secret exceeded
+    /// [`MAX_OAUTH2_CLIENT_SECRET_BYTES`].
+    ClientSecretTooLong,
+    /// The supplied scope exceeded [`MAX_OAUTH2_SCOPE_BYTES`].
+    ScopeTooLong,
     /// No client identifier was supplied.
     MissingClientId,
     /// No client secret was supplied.
@@ -227,8 +314,20 @@ impl OAuth2ClientCredentialsBuildError {
 impl fmt::Display for OAuth2ClientCredentialsBuildError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let detail = match self.kind {
+            OAuth2ClientCredentialsBuildErrorKind::TokenUrlTooLong => {
+                "token URL exceeds the supported byte limit"
+            }
             OAuth2ClientCredentialsBuildErrorKind::InvalidTokenUrl => {
                 "token URL must be absolute HTTPS with a host and no user information or fragment"
+            }
+            OAuth2ClientCredentialsBuildErrorKind::ClientIdTooLong => {
+                "client identifier exceeds the supported byte limit"
+            }
+            OAuth2ClientCredentialsBuildErrorKind::ClientSecretTooLong => {
+                "client secret exceeds the supported byte limit"
+            }
+            OAuth2ClientCredentialsBuildErrorKind::ScopeTooLong => {
+                "scope exceeds the supported byte limit"
             }
             OAuth2ClientCredentialsBuildErrorKind::MissingClientId => {
                 "client identifier is required"
@@ -250,6 +349,56 @@ struct ExchangeParts {
     authorization: HeaderValue,
     body: Bytes,
 }
+
+struct ExchangeLengths {
+    authorization: usize,
+    body: usize,
+}
+
+impl ExchangeLengths {
+    fn checked(
+        provider: &OAuth2ClientCredentials,
+        request_body_limit: NonZeroUsize,
+    ) -> Result<Self, AuthError> {
+        let client_id = form_component_length(provider.client_id.expose_secret())?;
+        let client_secret = form_component_length(provider.client_secret.expose_secret())?;
+        let authorization_source = client_id
+            .checked_add(1)
+            .and_then(|length| length.checked_add(client_secret))
+            .ok_or_else(invalid_oauth_configuration)?;
+        let authorization = BASIC_PREFIX
+            .len()
+            .checked_add(base64_output_length(authorization_source)?)
+            .ok_or_else(invalid_oauth_configuration)?;
+        if authorization > MAX_OAUTH2_AUTHORIZATION_HEADER_BYTES {
+            return Err(invalid_oauth_configuration());
+        }
+
+        let body = if let Some(scope) = provider.scope.as_deref() {
+            let scope = form_component_length(scope)?;
+            FORM_GRANT
+                .len()
+                .checked_add(FORM_SCOPE_PREFIX.len())
+                .and_then(|length| length.checked_add(scope))
+                .ok_or_else(invalid_oauth_configuration)?
+        } else {
+            FORM_GRANT.len()
+        };
+        if body > request_body_limit.get() {
+            return Err(AuthError::new(AuthErrorKind::RequestTooLarge));
+        }
+
+        Ok(Self {
+            authorization,
+            body,
+        })
+    }
+}
+
+const BASIC_PREFIX: &[u8] = b"Basic ";
+const BASE64_TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const FORM_GRANT: &[u8] = b"grant_type=client_credentials";
+const FORM_SCOPE_PREFIX: &[u8] = b"&scope=";
 
 fn valid_token_url(url: &Url) -> bool {
     url.scheme() == "https"
@@ -299,39 +448,124 @@ fn decode_token_response(status: StatusCode, body: &Bytes) -> Result<AccessToken
     })
 }
 
-fn form_component(value: &str) -> String {
-    let encoded = url::form_urlencoded::Serializer::new(String::new())
-        .append_pair("", value)
-        .finish();
-    encoded
-        .strip_prefix('=')
-        .expect("form serializer always emits the empty key separator")
-        .to_owned()
+fn invalid_oauth_configuration() -> AuthError {
+    AuthError::new(AuthErrorKind::InvalidConfiguration)
 }
 
-fn encode_base64(input: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut output = String::with_capacity(input.len().div_ceil(3) * 4);
-    for chunk in input.chunks(3) {
-        let first = chunk[0];
-        let second = chunk.get(1).copied().unwrap_or(0);
-        let third = chunk.get(2).copied().unwrap_or(0);
-        output.push(char::from(TABLE[usize::from(first >> 2)]));
-        output.push(char::from(
-            TABLE[usize::from(((first & 3) << 4) | (second >> 4))],
-        ));
-        output.push(if chunk.len() > 1 {
-            char::from(TABLE[usize::from(((second & 15) << 2) | (third >> 6))])
-        } else {
-            '='
-        });
-        output.push(if chunk.len() > 2 {
-            char::from(TABLE[usize::from(third & 63)])
-        } else {
-            '='
-        });
+fn form_component_length(value: &str) -> Result<usize, AuthError> {
+    url::form_urlencoded::byte_serialize(value.as_bytes()).try_fold(0_usize, |length, component| {
+        length
+            .checked_add(component.len())
+            .ok_or_else(invalid_oauth_configuration)
+    })
+}
+
+fn append_form_component(output: &mut Vec<u8>, value: &str) {
+    for component in url::form_urlencoded::byte_serialize(value.as_bytes()) {
+        output.extend_from_slice(component.as_bytes());
     }
+}
+
+fn base64_output_length(input: usize) -> Result<usize, AuthError> {
+    let groups = (input / 3)
+        .checked_add(usize::from(input % 3 != 0))
+        .ok_or_else(invalid_oauth_configuration)?;
+    groups
+        .checked_mul(4)
+        .ok_or_else(invalid_oauth_configuration)
+}
+
+fn encode_authorization(
+    provider: &OAuth2ClientCredentials,
+    length: usize,
+) -> Result<HeaderValue, AuthError> {
+    let mut output = Vec::new();
     output
+        .try_reserve_exact(length)
+        .map_err(|_| invalid_oauth_configuration())?;
+    output.extend_from_slice(BASIC_PREFIX);
+    let mut encoder = Base64Encoder::new(&mut output);
+    for component in
+        url::form_urlencoded::byte_serialize(provider.client_id.expose_secret().as_bytes())
+    {
+        encoder.write(component.as_bytes());
+    }
+    encoder.write(b":");
+    for component in
+        url::form_urlencoded::byte_serialize(provider.client_secret.expose_secret().as_bytes())
+    {
+        encoder.write(component.as_bytes());
+    }
+    encoder.finish();
+    debug_assert_eq!(output.len(), length);
+    HeaderValue::from_maybe_shared(Bytes::from(output)).map_err(|_| invalid_oauth_configuration())
+}
+
+fn encode_form_body(scope: Option<&str>, length: usize) -> Result<Bytes, AuthError> {
+    let mut output = Vec::new();
+    output
+        .try_reserve_exact(length)
+        .map_err(|_| invalid_oauth_configuration())?;
+    output.extend_from_slice(FORM_GRANT);
+    if let Some(scope) = scope {
+        output.extend_from_slice(FORM_SCOPE_PREFIX);
+        append_form_component(&mut output, scope);
+    }
+    debug_assert_eq!(output.len(), length);
+    Ok(Bytes::from(output))
+}
+
+struct Base64Encoder<'a> {
+    output: &'a mut Vec<u8>,
+    pending: [u8; 3],
+    pending_length: usize,
+}
+
+impl<'a> Base64Encoder<'a> {
+    fn new(output: &'a mut Vec<u8>) -> Self {
+        Self {
+            output,
+            pending: [0; 3],
+            pending_length: 0,
+        }
+    }
+
+    fn write(&mut self, input: &[u8]) {
+        for byte in input {
+            self.pending[self.pending_length] = *byte;
+            self.pending_length += 1;
+            if self.pending_length == self.pending.len() {
+                self.write_group(3);
+                self.pending_length = 0;
+            }
+        }
+    }
+
+    fn finish(mut self) {
+        if self.pending_length != 0 {
+            self.write_group(self.pending_length);
+        }
+    }
+
+    fn write_group(&mut self, length: usize) {
+        let first = self.pending[0];
+        let second = self.pending[1];
+        let third = self.pending[2];
+        self.output.push(BASE64_TABLE[usize::from(first >> 2)]);
+        self.output
+            .push(BASE64_TABLE[usize::from(((first & 3) << 4) | (second >> 4))]);
+        self.output.push(if length > 1 {
+            BASE64_TABLE[usize::from(((second & 15) << 2) | (third >> 6))]
+        } else {
+            b'='
+        });
+        self.output.push(if length > 2 {
+            BASE64_TABLE[usize::from(third & 63)]
+        } else {
+            b'='
+        });
+        self.pending = [0; 3];
+    }
 }
 
 #[cfg(test)]
@@ -341,6 +575,14 @@ mod tests {
 
     const CLIENT_ID: &str = "oauth-client-id-sentinel-4db370ebb046";
     const CLIENT_SECRET: &str = "oauth-client-secret-sentinel-9f8b14c2e6a1";
+
+    fn request_limit(bytes: usize) -> NonZeroUsize {
+        NonZeroUsize::new(bytes).expect("positive OAuth request limit")
+    }
+
+    fn exchange_parts(provider: &OAuth2ClientCredentials) -> Result<ExchangeParts, AuthError> {
+        provider.exchange_parts(request_limit(1_048_576))
+    }
 
     fn provider(scope: Option<&str>) -> OAuth2ClientCredentials {
         let builder = OAuth2ClientCredentials::builder(
@@ -361,6 +603,29 @@ mod tests {
             Ok(_) => panic!("expected OAuth authentication failure"),
             Err(error) => error,
         }
+    }
+
+    fn build_error(
+        result: Result<OAuth2ClientCredentials, OAuth2ClientCredentialsBuildError>,
+    ) -> OAuth2ClientCredentialsBuildError {
+        match result {
+            Ok(_) => panic!("expected OAuth builder failure"),
+            Err(error) => error,
+        }
+    }
+
+    fn assert_build_error_safe(
+        error: OAuth2ClientCredentialsBuildError,
+        expected: OAuth2ClientCredentialsBuildErrorKind,
+        sentinels: &[&str],
+    ) {
+        assert_eq!(error.kind(), expected);
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            for sentinel in sentinels {
+                assert!(!rendered.contains(sentinel));
+            }
+        }
+        assert!(Error::source(&error).is_none());
     }
 
     #[test]
@@ -434,10 +699,143 @@ mod tests {
     }
 
     #[test]
-    fn oauth_success_uses_exact_post_basic_form_scope_and_expiry() {
+    fn oauth_token_url_max_and_first_excess() {
+        const PREFIX: &str = "https://auth.example.test/";
+        let maximum = format!(
+            "{PREFIX}{}",
+            "a".repeat(MAX_OAUTH2_TOKEN_URL_BYTES - PREFIX.len())
+        );
+        assert_eq!(maximum.len(), MAX_OAUTH2_TOKEN_URL_BYTES);
+        OAuth2ClientCredentials::builder(&maximum)
+            .client_id(CLIENT_ID)
+            .client_secret(CLIENT_SECRET)
+            .build()
+            .expect("maximum token URL");
+
+        let excessive = format!("{maximum}a");
+        let error = build_error(
+            OAuth2ClientCredentials::builder(&excessive)
+                .client_id(CLIENT_ID)
+                .client_secret(CLIENT_SECRET)
+                .build(),
+        );
+        assert_build_error_safe(
+            error,
+            OAuth2ClientCredentialsBuildErrorKind::TokenUrlTooLong,
+            &[&excessive, CLIENT_ID, CLIENT_SECRET],
+        );
+    }
+
+    #[test]
+    fn oauth_client_id_max_and_first_excess() {
+        let maximum = "i".repeat(MAX_OAUTH2_CLIENT_ID_BYTES);
+        OAuth2ClientCredentials::builder("https://auth.example.test/token")
+            .client_id(&maximum)
+            .client_secret(CLIENT_SECRET)
+            .build()
+            .expect("maximum client identifier");
+
+        let excessive = format!("{maximum}x");
+        let error = build_error(
+            OAuth2ClientCredentials::builder("https://auth.example.test/token")
+                .client_id(&excessive)
+                .client_secret(CLIENT_SECRET)
+                .build(),
+        );
+        assert_build_error_safe(
+            error,
+            OAuth2ClientCredentialsBuildErrorKind::ClientIdTooLong,
+            &[&excessive, CLIENT_SECRET],
+        );
+    }
+
+    #[test]
+    fn oauth_client_secret_max_and_first_excess() {
+        let maximum = "s".repeat(MAX_OAUTH2_CLIENT_SECRET_BYTES);
+        OAuth2ClientCredentials::builder("https://auth.example.test/token")
+            .client_id(CLIENT_ID)
+            .client_secret_owned(SecretString::new(maximum))
+            .build()
+            .expect("maximum client secret");
+
+        let excessive = format!("{}x", "s".repeat(MAX_OAUTH2_CLIENT_SECRET_BYTES));
+        let error = build_error(
+            OAuth2ClientCredentials::builder("https://auth.example.test/token")
+                .client_id(CLIENT_ID)
+                .client_secret_owned(SecretString::new(excessive.clone()))
+                .build(),
+        );
+        assert_build_error_safe(
+            error,
+            OAuth2ClientCredentialsBuildErrorKind::ClientSecretTooLong,
+            &[&excessive, CLIENT_ID],
+        );
+    }
+
+    #[test]
+    fn oauth_scope_max_and_first_excess() {
+        let maximum = "r".repeat(MAX_OAUTH2_SCOPE_BYTES);
+        OAuth2ClientCredentials::builder("https://auth.example.test/token")
+            .client_id(CLIENT_ID)
+            .client_secret(CLIENT_SECRET)
+            .scope(&maximum)
+            .build()
+            .expect("maximum scope");
+
+        let excessive = format!("{maximum}x");
+        let error = build_error(
+            OAuth2ClientCredentials::builder("https://auth.example.test/token")
+                .client_id(CLIENT_ID)
+                .client_secret(CLIENT_SECRET)
+                .scope(&excessive)
+                .build(),
+        );
+        assert_build_error_safe(
+            error,
+            OAuth2ClientCredentialsBuildErrorKind::ScopeTooLong,
+            &[&excessive, CLIENT_ID, CLIENT_SECRET],
+        );
+    }
+
+    #[test]
+    fn oauth_encoded_authorization_checked_before_allocation() {
+        let client_id = "%".repeat(MAX_OAUTH2_CLIENT_ID_BYTES);
+        let client_secret = "%".repeat(MAX_OAUTH2_CLIENT_SECRET_BYTES);
+        let provider = OAuth2ClientCredentials::builder("https://auth.example.test/token")
+            .client_id(&client_id)
+            .client_secret(&client_secret)
+            .build()
+            .expect("bounded raw credentials");
+        let error = auth_error(exchange_parts(&provider));
+        assert_eq!(error.kind(), AuthErrorKind::InvalidConfiguration);
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(!rendered.contains(&client_id));
+            assert!(!rendered.contains(&client_secret));
+        }
+    }
+
+    #[test]
+    fn oauth_form_body_checked_against_provider_limit() {
+        const SCOPE: &str = "oauth-body-scope-sentinel-27d1";
+        let provider = provider(Some(SCOPE));
+        let expected_length = FORM_GRANT.len() + FORM_SCOPE_PREFIX.len() + SCOPE.len();
+        let error = auth_error(provider.exchange_parts(request_limit(expected_length - 1)));
+        assert_eq!(error.kind(), AuthErrorKind::RequestTooLarge);
+        assert!(!error.to_string().contains(SCOPE));
+        assert!(!format!("{error:?}").contains(SCOPE));
+        assert!(Error::source(&error).is_none());
+        assert!(
+            provider
+                .exchange_parts(request_limit(expected_length))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn oauth_boundary_request_is_protocol_correct() {
         const TOKEN: &str = "oauth-result-token-41e79c";
         let provider = provider(Some("users.read offline"));
-        let parts = provider.exchange_parts().expect("exchange parts");
+        let parts = exchange_parts(&provider).expect("exchange parts");
         assert_eq!(
             parts.authorization,
             HeaderValue::from_static(
@@ -467,7 +865,7 @@ mod tests {
     fn oauth_refresh_reacquires_without_scope_or_refresh_token_grant() {
         let provider = provider(None);
         assert_eq!(provider.recovery_mode(), RecoveryMode::Refresh);
-        let parts = provider.exchange_parts().expect("exchange parts");
+        let parts = exchange_parts(&provider).expect("exchange parts");
         assert_eq!(
             parts.body,
             Bytes::from_static(b"grant_type=client_credentials")
@@ -482,7 +880,7 @@ mod tests {
             .client_secret("s e:cret+")
             .build()
             .expect("OAuth provider");
-        let parts = provider.exchange_parts().expect("exchange parts");
+        let parts = exchange_parts(&provider).expect("exchange parts");
         assert_eq!(
             parts.authorization,
             HeaderValue::from_static("Basic Y2xpZW50K2lkJTNBcGx1cyUyQjpzK2UlM0FjcmV0JTJC")
@@ -517,6 +915,109 @@ mod tests {
                 assert!(!rendered.contains(SENTINEL));
             }
             assert!(Error::source(&error).is_none());
+        }
+    }
+
+    #[test]
+    fn oauth_first_excess_errors_are_secret_safe() {
+        const URL_SENTINEL: &str = "oauth-url-first-excess-sentinel-c91e";
+        const ID_SENTINEL: &str = "oauth-id-first-excess-sentinel-9a2f";
+        const SECRET_SENTINEL: &str = "oauth-secret-first-excess-sentinel-5d63";
+        const SCOPE_SENTINEL: &str = "oauth-scope-first-excess-sentinel-f12b";
+
+        let url = format!(
+            "https://auth.example.test/{URL_SENTINEL}{}",
+            "u".repeat(MAX_OAUTH2_TOKEN_URL_BYTES)
+        );
+        assert_build_error_safe(
+            build_error(
+                OAuth2ClientCredentials::builder(&url)
+                    .client_id(CLIENT_ID)
+                    .client_secret(CLIENT_SECRET)
+                    .build(),
+            ),
+            OAuth2ClientCredentialsBuildErrorKind::TokenUrlTooLong,
+            &[URL_SENTINEL, CLIENT_ID, CLIENT_SECRET],
+        );
+
+        let client_id = format!("{ID_SENTINEL}{}", "i".repeat(MAX_OAUTH2_CLIENT_ID_BYTES));
+        assert_build_error_safe(
+            build_error(
+                OAuth2ClientCredentials::builder("https://auth.example.test/token")
+                    .client_id(&client_id)
+                    .client_secret(CLIENT_SECRET)
+                    .build(),
+            ),
+            OAuth2ClientCredentialsBuildErrorKind::ClientIdTooLong,
+            &[ID_SENTINEL, CLIENT_SECRET],
+        );
+
+        let client_secret = format!(
+            "{SECRET_SENTINEL}{}",
+            "s".repeat(MAX_OAUTH2_CLIENT_SECRET_BYTES)
+        );
+        assert_build_error_safe(
+            build_error(
+                OAuth2ClientCredentials::builder("https://auth.example.test/token")
+                    .client_id(CLIENT_ID)
+                    .client_secret(&client_secret)
+                    .build(),
+            ),
+            OAuth2ClientCredentialsBuildErrorKind::ClientSecretTooLong,
+            &[SECRET_SENTINEL, CLIENT_ID],
+        );
+
+        let scope = format!("{SCOPE_SENTINEL}{}", "r".repeat(MAX_OAUTH2_SCOPE_BYTES));
+        assert_build_error_safe(
+            build_error(
+                OAuth2ClientCredentials::builder("https://auth.example.test/token")
+                    .client_id(CLIENT_ID)
+                    .client_secret(CLIENT_SECRET)
+                    .scope(&scope)
+                    .build(),
+            ),
+            OAuth2ClientCredentialsBuildErrorKind::ScopeTooLong,
+            &[SCOPE_SENTINEL, CLIENT_ID, CLIENT_SECRET],
+        );
+    }
+
+    #[test]
+    fn oauth_debug_and_display_remain_redacted() {
+        const URL_SENTINEL: &str = "oauth-debug-url-sentinel-e791";
+        const ID_SENTINEL: &str = "oauth-debug-id-sentinel-100a";
+        const SECRET_SENTINEL: &str = "oauth-debug-secret-sentinel-2db5";
+        const SCOPE_SENTINEL: &str = "oauth-debug-scope-sentinel-4f60";
+
+        let builder = OAuth2ClientCredentials::builder(format!(
+            "https://auth.example.test/token?value={URL_SENTINEL}"
+        ))
+        .client_id_owned(SecretString::new(ID_SENTINEL))
+        .client_secret_owned(SecretString::new(SECRET_SENTINEL))
+        .scope(SCOPE_SENTINEL);
+        let builder_debug = format!("{builder:?}");
+        for sentinel in [URL_SENTINEL, ID_SENTINEL, SECRET_SENTINEL, SCOPE_SENTINEL] {
+            assert!(!builder_debug.contains(sentinel));
+        }
+
+        let provider = builder.build().expect("redacted provider");
+        let provider_debug = format!("{provider:?}");
+        for sentinel in [URL_SENTINEL, ID_SENTINEL, SECRET_SENTINEL, SCOPE_SENTINEL] {
+            assert!(!provider_debug.contains(sentinel));
+        }
+
+        let excessive = format!(
+            "{SECRET_SENTINEL}{}",
+            "x".repeat(MAX_OAUTH2_CLIENT_SECRET_BYTES)
+        );
+        let error = build_error(
+            OAuth2ClientCredentials::builder("https://auth.example.test/token")
+                .client_id(ID_SENTINEL)
+                .client_secret(&excessive)
+                .build(),
+        );
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(!rendered.contains(ID_SENTINEL));
+            assert!(!rendered.contains(SECRET_SENTINEL));
         }
     }
 }

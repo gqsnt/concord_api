@@ -214,6 +214,7 @@ impl CredentialProvider for ExtensionProvider {
         context: CredentialRequest<'a>,
     ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
         Box::pin(async move {
+            let _request_body_limit = context.http.request_body_limit();
             let request = ProviderRequest::new(
                 Method::POST,
                 Url::parse("https://provider.example.test/token")

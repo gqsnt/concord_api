@@ -23,16 +23,21 @@ let client = PrivateApi::builder()
 Supported declaration sources include API key, bearer, Basic, endpoint-backed,
 and generic custom providers. A custom provider is an ordinary Rust type
 implementing the semantic provider contract. For OAuth2 client credentials,
-construct `concord::OAuth2ClientCredentials` with its named builder and pass it
-through the generated provider setter; the declaration compiler has no
-OAuth-specific or JSON-specific branch.
+construct `concord::auth::OAuth2ClientCredentials` with its named builder and
+pass it through the generated provider setter; the declaration compiler has
+no OAuth-specific or JSON-specific branch. The builder validates its borrowed
+URL, identifier, secret, and scope inputs against the exact
+`concord::auth::MAX_OAUTH2_*` limits before copying. The `client_id_owned` and
+`client_secret_owned` setters accept already-owned `SecretString` values.
 
 Credentials are resolved after public preparation and limiter acquisition, at
 the private native boundary. Hooks, descriptions, plans, errors, completion
 events, and debug output cannot see material. Authentication challenge
 recovery is deterministic and bounded to at most one additional attempt.
 Provider HTTP is isolated, finite, redacted, and does not recursively execute
-the parent endpoint lifecycle.
+the parent endpoint lifecycle. Custom providers can read the active semantic
+request-body ceiling with `CredentialRequest::http.request_body_limit()`
+without gaining access to native transport state.
 
 See the [DSL authentication grammar](../reference/dsl.md#authentication), the
 [security model](../concepts/security-and-redaction.md), and

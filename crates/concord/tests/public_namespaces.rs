@@ -86,6 +86,11 @@ fn multipart_remains_core_owned_but_is_exposed_by_the_body_domain() {
 #[test]
 fn oauth_provider_is_exposed_by_the_auth_domain() {
     assert!(!public_type::<concord::auth::OAuth2ClientCredentials>().is_empty());
+    assert_eq!(concord::auth::MAX_OAUTH2_TOKEN_URL_BYTES, 8_192);
+    assert_eq!(concord::auth::MAX_OAUTH2_CLIENT_ID_BYTES, 8_192);
+    assert_eq!(concord::auth::MAX_OAUTH2_CLIENT_SECRET_BYTES, 8_192);
+    assert_eq!(concord::auth::MAX_OAUTH2_SCOPE_BYTES, 65_536);
+    assert_eq!(concord::auth::MAX_OAUTH2_AUTHORIZATION_HEADER_BYTES, 32_768);
 }
 
 #[cfg(feature = "rate-limit-governor")]

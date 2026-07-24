@@ -143,7 +143,7 @@ where
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("records")?;
         builder.push_static("stream")?;
-        builder.push_pagination_query_value("continuation", &self.query);
+        builder.push_pagination_query_value("continuation", &self.query)?;
         builder.push_rate_limit_rule(
             "ExecutionApi::rate_limit::records",
             [("records.partition", "record-surface-rate-key")],

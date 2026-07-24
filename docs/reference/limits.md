@@ -41,9 +41,16 @@ when Concord invokes their `Display` implementation. User formatting may do
 arbitrary CPU work, block, panic, or ignore a formatting error. Concord's
 capped capture primitive stops retaining UTF-8 output at
 `concord::endpoint::MAX_FORMATTED_PUBLIC_VALUE_BYTES` and rejects excess
-rather than truncating it. The closure ledger tracks migration of every
-request-shaping consumer to that primitive; finite formatted capture is not a
-global completion claim until C2 and C4 are complete.
+rather than truncating it. Runtime endpoints and generated/public-head host,
+path, query, header, and pagination-sensitive shaping all use that primitive.
+
+The optional OAuth2 client-credentials provider owns exact public ceilings for
+token URL text, client identifiers, client secrets, scope text, and the final
+Basic Authorization header under `concord::auth::MAX_OAUTH2_*`. It validates
+borrowed configuration text before copying. Percent-encoded and Base64 output
+lengths are checked before allocation, and the final form body is also checked
+against the active `ProviderHttp::request_body_limit()` selected by the client
+runtime.
 
 The inherited client operation timeout is disabled by default. Generated
 endpoint timeout declarations remain effective independently; runtime-defined

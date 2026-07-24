@@ -103,29 +103,29 @@ pub(super) fn query_statements(
                 let access = resolved_value_access(value.reference, client, scopes, endpoint);
                 match &value.shape {
                     ValueShape::Scalar => {
-                        quote!(#push(#key, #access);)
+                        quote!(#push(#key, #access)?;)
                     }
                     ValueShape::Option { .. } => quote! {
                         if let ::std::option::Option::Some(value) = #access.as_ref() {
-                            #push(#key, value);
+                            #push(#key, value)?;
                         }
                     },
                     ValueShape::Vec { .. } => quote! {
                         for value in #access.iter() {
-                            #push(#key, value);
+                            #push(#key, value)?;
                         }
                     },
                     ValueShape::OptionVec { .. } => quote! {
                         if let ::std::option::Option::Some(values) = #access.as_ref() {
                             for value in values.iter() {
-                                #push(#key, value);
+                                #push(#key, value)?;
                             }
                         }
                     },
                 }
             } else {
                 let value = display_argument(&entry.value, client, scopes, endpoint);
-                quote!(#push(#key, #value);)
+                quote!(#push(#key, #value)?;)
             }
         })
         .collect::<Vec<_>>();

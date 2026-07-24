@@ -34,7 +34,10 @@ pub(super) struct ProviderHttpInner {
 /// request timeout. Dropping the provider future cancels later polling but does
 /// not roll back bytes already sent or other completed external effects. Provider
 /// URLs, headers, bodies, and responses may be sensitive; applications and
-/// providers remain responsible for their own logging and storage.
+/// providers remain responsible for their own logging and storage. Providers can
+/// inspect the active semantic request-body ceiling through
+/// [`ProviderHttp::request_body_limit`] without gaining access to native
+/// transport state.
 #[derive(Clone, Copy)]
 pub struct ProviderHttp<'a> {
     inner: Option<&'a ProviderHttpInner>,
@@ -164,6 +167,19 @@ impl<'a> ProviderHttp<'a> {
         ProviderHttp {
             inner: None,
             deadline: None,
+        }
+    }
+
+    /// Returns the active finite request-body byte ceiling.
+    ///
+    /// Built-in providers can use this semantic bound to reject encoded output
+    /// before allocating it. The value exposes no native client, pool, TLS, or
+    /// request-builder state.
+    #[must_use]
+    pub const fn request_body_limit(&self) -> NonZeroUsize {
+        match self.inner {
+            Some(inner) => inner.request_limit,
+            None => NonZeroUsize::MIN,
         }
     }
 
@@ -440,6 +456,13 @@ mod tests {
             Ok(_) => panic!("expected provider HTTP failure"),
             Err(error) => error,
         }
+    }
+
+    #[test]
+    fn provider_http_exposes_the_active_request_body_limit() {
+        let executor = DeterministicExecutor::new();
+        let provider = inner(&executor, 37, 64, TlsCapability::Available);
+        assert_eq!(provider.capability(None).request_body_limit().get(), 37);
     }
 
     #[tokio::test]

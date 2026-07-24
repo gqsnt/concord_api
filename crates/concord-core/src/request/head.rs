@@ -10,9 +10,11 @@ use url::{Host, Url};
 
 use super::RequestOptions;
 use crate::auth::{Auth, AuthPlan};
+use crate::construction::format_bounded;
 use crate::endpoint::{EndpointDescription, EndpointId, TimeoutSelection};
 use crate::error::{ApiError, ConfigurationErrorKind};
 use crate::hooks::DebugLevel;
+use crate::limits::MAX_FORMATTED_PUBLIC_VALUE_BYTES;
 use crate::rate_limit::{RateLimitError, RateLimitId, RateLimitKey, RateLimitPlan, RateLimitRule};
 use crate::redaction::render_safe_url;
 
@@ -264,7 +266,9 @@ impl HeadBuilder {
     where
         T: Display + ?Sized,
     {
-        self.push_host_label(&value.to_string())
+        let value = format_bounded(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+        self.push_host_label(&value)
     }
 
     /// Formats and adds one pagination-sensitive dynamic host-prefix label.
@@ -273,7 +277,9 @@ impl HeadBuilder {
     where
         T: Display + ?Sized,
     {
-        self.push_host_label_with_safe(&value.to_string(), "x")
+        let value = format_bounded(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+        self.push_host_label_with_safe(&value, "x")
     }
 
     /// Returns the final logical host for advanced rate-key construction.
@@ -329,7 +335,8 @@ impl HeadBuilder {
     where
         T: Display + ?Sized,
     {
-        let segment = value.to_string();
+        let segment = format_bounded(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
         self.push_segment(&segment)
     }
 
@@ -339,7 +346,8 @@ impl HeadBuilder {
     where
         T: Display + ?Sized,
     {
-        let segment = value.to_string();
+        let segment = format_bounded(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
         self.push_segment_with_safe(&segment, "<redacted>")
     }
 
@@ -413,29 +421,32 @@ impl HeadBuilder {
 
     /// Appends one public query pair after formatting its value.
     #[doc(hidden)]
-    pub fn push_query_value<T>(&mut self, key: &str, value: &T)
+    pub fn push_query_value<T>(&mut self, key: &str, value: &T) -> Result<(), ApiError>
     where
         T: Display + ?Sized,
     {
-        let value = value.to_string();
+        let value = format_bounded(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
         self.logical_url.query_pairs_mut().append_pair(key, &value);
         self.safe_logical_url
             .query_pairs_mut()
             .append_pair(key, &value);
+        Ok(())
     }
 
     /// Appends one pagination-sensitive public query pair.
     #[doc(hidden)]
-    pub fn push_pagination_query_value<T>(&mut self, key: &str, value: &T)
+    pub fn push_pagination_query_value<T>(&mut self, key: &str, value: &T) -> Result<(), ApiError>
     where
         T: Display + ?Sized,
     {
-        self.logical_url
-            .query_pairs_mut()
-            .append_pair(key, &value.to_string());
+        let value = format_bounded(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+        self.logical_url.query_pairs_mut().append_pair(key, &value);
         self.safe_logical_url
             .query_pairs_mut()
             .append_pair(key, "<redacted>");
+        Ok(())
     }
 
     /// Inserts or replaces one validated public header.
@@ -446,7 +457,9 @@ impl HeadBuilder {
     {
         let name = HeaderName::from_bytes(name.as_bytes())
             .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
-        let value = validate_public_header(&name, &value.to_string())
+        let value = format_bounded(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        let value = validate_public_header(&name, &value)
             .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
         self.public_headers.insert(name, value);
         Ok(())
@@ -471,7 +484,9 @@ impl HeadBuilder {
         if reserved_public_header(&name) {
             return Err(invalid_header(self.meta.endpoint_id(), self.meta.method()));
         }
-        let value = HeaderValue::from_str(&value.to_string())
+        let value = format_bounded(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        let value = HeaderValue::from_str(&value)
             .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
         self.pagination_sensitive_headers.insert(name.clone());
         self.public_headers.insert(name, value);
@@ -704,6 +719,7 @@ pub(crate) fn validate_public_header_name(name: &HeaderName) -> Result<(), Confi
 
 #[cfg(test)]
 mod tests {
+    use std::fmt;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
@@ -711,6 +727,25 @@ mod tests {
 
     const RATE_ID_SENTINEL: &str = "generated-rate-id-sentinel-c31f";
     const RATE_KEY_SENTINEL: &str = "generated-rate-key-sentinel-a592";
+    const FORMAT_SENTINEL: &str = "generated-format-sentinel-a4f1";
+
+    struct FirstExcessDisplay {
+        ignore_format_error: bool,
+    }
+
+    impl fmt::Display for FirstExcessDisplay {
+        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            let boundary = "x".repeat(MAX_FORMATTED_PUBLIC_VALUE_BYTES);
+            if self.ignore_format_error {
+                let _ = formatter.write_str(&boundary);
+                let _ = formatter.write_str(FORMAT_SENTINEL);
+                Ok(())
+            } else {
+                formatter.write_str(&boundary)?;
+                formatter.write_str(FORMAT_SENTINEL)
+            }
+        }
+    }
 
     struct GuardedRateWindows {
         calls: Arc<AtomicUsize>,
@@ -804,6 +839,116 @@ mod tests {
             DebugLevel::None,
             None,
         )
+    }
+
+    fn assert_format_error_is_safe(error: &ApiError, expected: ConfigurationErrorKind) {
+        assert_eq!(error.configuration_kind(), Some(expected));
+        assert!(!error.to_string().contains(FORMAT_SENTINEL));
+        assert!(!format!("{error:?}").contains(FORMAT_SENTINEL));
+    }
+
+    #[test]
+    fn generated_path_formatted_value_first_excess() {
+        let mut builder = builder("https://example.test/root/");
+        let error = builder
+            .push_value(&FirstExcessDisplay {
+                ignore_format_error: false,
+            })
+            .expect_err("first excess generated path value");
+        assert_format_error_is_safe(&error, ConfigurationErrorKind::InvalidRoute);
+        let head = builder.finish();
+        assert_eq!(head.logical_url().path(), "/root/");
+        assert!(!head.safe_url().contains(FORMAT_SENTINEL));
+    }
+
+    #[test]
+    fn generated_query_formatted_value_first_excess() {
+        let mut builder = builder("https://example.test/root/");
+        let error = builder
+            .push_query_value(
+                "value",
+                &FirstExcessDisplay {
+                    ignore_format_error: false,
+                },
+            )
+            .expect_err("first excess generated query value");
+        assert_format_error_is_safe(&error, ConfigurationErrorKind::InvalidRoute);
+        let head = builder.finish();
+        assert_eq!(head.logical_url().query(), None);
+        assert!(!head.safe_url().contains(FORMAT_SENTINEL));
+    }
+
+    #[test]
+    fn generated_header_formatted_value_first_excess() {
+        let mut builder = builder("https://example.test/root/");
+        let error = builder
+            .insert_header_value(
+                "x-bounded",
+                &FirstExcessDisplay {
+                    ignore_format_error: false,
+                },
+            )
+            .expect_err("first excess generated header value");
+        assert_format_error_is_safe(&error, ConfigurationErrorKind::InvalidHeader);
+        assert!(builder.finish().public_headers().is_empty());
+    }
+
+    #[test]
+    fn pagination_formatted_value_first_excess() {
+        let mut builder = builder("https://example.test/root/");
+        let error = builder
+            .push_pagination_query_value(
+                "cursor",
+                &FirstExcessDisplay {
+                    ignore_format_error: false,
+                },
+            )
+            .expect_err("first excess pagination query");
+        assert_format_error_is_safe(&error, ConfigurationErrorKind::InvalidRoute);
+        let error = builder
+            .insert_pagination_header_value(
+                "x-cursor",
+                &FirstExcessDisplay {
+                    ignore_format_error: false,
+                },
+            )
+            .expect_err("first excess pagination header");
+        assert_format_error_is_safe(&error, ConfigurationErrorKind::InvalidHeader);
+        let error = builder
+            .push_pagination_value(&FirstExcessDisplay {
+                ignore_format_error: false,
+            })
+            .expect_err("first excess pagination path");
+        assert_format_error_is_safe(&error, ConfigurationErrorKind::InvalidRoute);
+        let error = builder
+            .push_pagination_host_value(&FirstExcessDisplay {
+                ignore_format_error: false,
+            })
+            .expect_err("first excess pagination host");
+        assert_format_error_is_safe(&error, ConfigurationErrorKind::InvalidRoute);
+
+        let head = builder.finish();
+        assert_eq!(head.logical_url().query(), None);
+        assert_eq!(head.logical_url().path(), "/root/");
+        assert!(head.public_headers().is_empty());
+        assert!(!head.safe_url().contains(FORMAT_SENTINEL));
+    }
+
+    #[test]
+    fn bounded_formatter_does_not_retain_protected_sentinel() {
+        let mut builder = builder("https://example.test/root/");
+        let error = builder
+            .push_pagination_query_value(
+                "cursor",
+                &FirstExcessDisplay {
+                    ignore_format_error: true,
+                },
+            )
+            .expect_err("ignored formatting error still fails closed");
+        assert_format_error_is_safe(&error, ConfigurationErrorKind::InvalidRoute);
+        let head = builder.finish();
+        assert_eq!(head.logical_url().query(), None);
+        assert!(!head.safe_url().contains(FORMAT_SENTINEL));
     }
 
     #[test]
@@ -1048,10 +1193,18 @@ mod tests {
     #[test]
     fn ordered_query_and_safe_redaction_are_finalized_together() {
         let mut builder = builder("https://example.test/v1");
-        builder.push_query_value("keep", &"first");
-        builder.push_query_value("tag", &"one two");
-        builder.push_query_value("tag", &"three");
-        builder.push_query_value("api_key", &"sensitive");
+        builder
+            .push_query_value("keep", &"first")
+            .expect("public query");
+        builder
+            .push_query_value("tag", &"one two")
+            .expect("public query");
+        builder
+            .push_query_value("tag", &"three")
+            .expect("public query");
+        builder
+            .push_query_value("api_key", &"sensitive")
+            .expect("public query");
         let head = builder.finish();
         assert_eq!(
             head.logical_url().query(),

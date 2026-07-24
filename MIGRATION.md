@@ -129,6 +129,24 @@ Declare its slot generically with
 `credential oauth = custom OAuth2ClientCredentials;`. The `api!` compiler does
 not recognize OAuth2, JSON, governor, or built-in pagination type names.
 
+OAuth2 builder text setters now borrow through `AsRef<str>` so length is
+validated before Concord creates a protected copy. If configuration already
+exists as `SecretString`, use the explicit owned setters:
+
+```rust
+let oauth = OAuth2ClientCredentials::builder(token_url)
+    .client_id_owned(client_id)
+    .client_secret_owned(client_secret)
+    .scope("items.read")
+    .build()?;
+```
+
+The public `concord::auth::MAX_OAUTH2_*` constants define the raw and final
+Authorization limits. Oversized URL, ID, secret, and scope inputs now produce
+new secret-safe `OAuth2ClientCredentialsBuildErrorKind` categories. Encoded
+form output can also fail with `AuthErrorKind::RequestTooLarge` when the
+client's configured provider request limit is lower.
+
 ## Use the scope-oriented generated API
 
 There are no generated `facades` and `endpoints` trees, generated preludes, or

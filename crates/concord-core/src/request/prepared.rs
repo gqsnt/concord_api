@@ -514,7 +514,7 @@ where
             builder.push_prepared_segment(segment)?;
         }
         for (name, value) in &self.query {
-            builder.push_query_value(name.as_ref(), value);
+            builder.push_query_value(name.as_ref(), value)?;
         }
         for (name, value) in &self.headers {
             builder.insert_prepared_header(name.clone(), value.clone());
