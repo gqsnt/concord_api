@@ -535,10 +535,13 @@ async fn prepared_protected_http_fails_before_hooks_or_body_materialization() {
         .body(RequestBody::factory(FreshFactory {
             calls: Arc::clone(&factory_calls),
         }))
-        .auth(Auth::header(
-            HeaderName::from_static("x-api-key"),
-            client.credentials().api_key().credential(),
-        ))
+        .auth(
+            Auth::header(
+                HeaderName::from_static("x-api-key"),
+                client.credentials().api_key().credential(),
+            )
+            .expect("valid header placement"),
+        )
         .build()
         .expect("structurally valid protected endpoint");
 
@@ -710,10 +713,10 @@ fn prepared_authentication_uses_canonical_collision_and_challenge_validation() {
 
     let header_collision = RuntimeEndpoint::builder(runtime_id("runtime.auth"), Method::GET)
         .header(HeaderName::from_static("x-api-key"), "public")
-        .auth(Auth::header(
-            HeaderName::from_static("x-api-key"),
-            credential.clone(),
-        ))
+        .auth(
+            Auth::header(HeaderName::from_static("x-api-key"), credential.clone())
+                .expect("valid header placement"),
+        )
         .build()
         .err()
         .expect("public/auth header collision");
@@ -724,7 +727,7 @@ fn prepared_authentication_uses_canonical_collision_and_challenge_validation() {
 
     let query_collision = RuntimeEndpoint::builder(runtime_id("runtime.auth"), Method::GET)
         .query("token", "public")
-        .auth(Auth::query("token", credential.clone()))
+        .auth(Auth::query("token", credential.clone()).expect("valid query placement"))
         .build()
         .err()
         .expect("public/auth query collision");
@@ -736,10 +739,12 @@ fn prepared_authentication_uses_canonical_collision_and_challenge_validation() {
     let two_challenges = RuntimeEndpoint::builder(runtime_id("runtime.auth"), Method::GET)
         .auth(
             Auth::header(HeaderName::from_static("x-first"), credential.clone())
+                .expect("valid header placement")
                 .challenge(ChallengePolicy::Unauthorized),
         )
         .auth(
             Auth::query("second", credential.clone())
+                .expect("valid query placement")
                 .challenge(ChallengePolicy::UnauthorizedOrForbidden),
         )
         .build()
@@ -751,11 +756,11 @@ fn prepared_authentication_uses_canonical_collision_and_challenge_validation() {
     );
 
     RuntimeEndpoint::builder(runtime_id("runtime.auth"), Method::GET)
-        .auth(Auth::header(
-            HeaderName::from_static("x-first"),
-            credential.clone(),
-        ))
-        .auth(Auth::query("second", credential))
+        .auth(
+            Auth::header(HeaderName::from_static("x-first"), credential.clone())
+                .expect("valid header placement"),
+        )
+        .auth(Auth::query("second", credential).expect("valid query placement"))
         .build()
         .expect("compatible ordered placements");
 }

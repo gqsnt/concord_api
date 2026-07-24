@@ -557,16 +557,17 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
     let _: Auth = Auth::header(
         HeaderName::from_static("x-prepared-session"),
         credential.clone(),
-    );
+    )
+    .expect("valid header placement");
 
     let buffered =
         RuntimeEndpoint::builder(runtime_id("extension_api.runtime_buffered"), Method::POST)
             .path_segment("buffered")
             .body_codec::<ExtensionCodec>("bounded-input".to_owned())
-            .auth(Auth::header(
-                HeaderName::from_static("x-prepared-session"),
-                credential,
-            ))
+            .auth(
+                Auth::header(HeaderName::from_static("x-prepared-session"), credential)
+                    .expect("valid header placement"),
+            )
             .response::<ExtensionCodec>()
             .build()
             .expect("valid buffered runtime endpoint");

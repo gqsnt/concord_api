@@ -44,13 +44,9 @@ impl EndpointId {
     /// IDs contain 1–128 ASCII bytes in dot-separated 1–63 byte segments.
     /// Every segment begins and ends with a lowercase letter or digit and may
     /// additionally contain lowercase letters, digits, `_`, or `-`.
-    pub fn new(value: impl Into<String>) -> Result<Self, ConfigurationError> {
-        let value = value.into();
-        if !valid_endpoint_id(&value) {
-            return Err(ConfigurationError::new(
-                ConfigurationErrorKind::InvalidValue,
-            ));
-        }
+    pub fn new(value: impl AsRef<str>) -> Result<Self, ConfigurationError> {
+        let value = value.as_ref();
+        validate_endpoint_id(value)?;
         Ok(Self {
             storage: EndpointIdStorage::Owned(Arc::from(value)),
         })
@@ -91,7 +87,10 @@ impl TryFrom<String> for EndpointId {
     type Error = ConfigurationError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::new(value)
+        validate_endpoint_id(&value)?;
+        Ok(Self {
+            storage: EndpointIdStorage::Owned(Arc::from(value)),
+        })
     }
 }
 
@@ -99,14 +98,7 @@ impl TryFrom<&str> for EndpointId {
     type Error = ConfigurationError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        if !valid_endpoint_id(value) {
-            return Err(ConfigurationError::new(
-                ConfigurationErrorKind::InvalidValue,
-            ));
-        }
-        Ok(Self {
-            storage: EndpointIdStorage::Owned(Arc::from(value)),
-        })
+        Self::new(value)
     }
 }
 
@@ -615,6 +607,16 @@ const fn valid_endpoint_id(value: &str) -> bool {
     true
 }
 
+fn validate_endpoint_id(value: &str) -> Result<(), ConfigurationError> {
+    if valid_endpoint_id(value) {
+        Ok(())
+    } else {
+        Err(ConfigurationError::new(
+            ConfigurationErrorKind::InvalidValue,
+        ))
+    }
+}
+
 const fn is_lower_alphanumeric(byte: u8) -> bool {
     (byte >= b'a' && byte <= b'z') || (byte >= b'0' && byte <= b'9')
 }
@@ -683,5 +685,22 @@ mod tests {
         assert!(EndpointId::new(excessive).is_err());
         assert!(EndpointId::new(format!("{}.b", "a".repeat(63))).is_ok());
         assert!(EndpointId::new(format!("{}.b", "a".repeat(64))).is_err());
+    }
+
+    #[test]
+    fn borrowed_endpoint_id_first_excess_is_rejected_before_ownership() {
+        let maximum = format!("{}.b.{}", "a".repeat(63), "a".repeat(62));
+        let exact = EndpointId::new(maximum.as_str()).expect("exact endpoint identity limit");
+        assert_eq!(exact.as_str(), maximum);
+
+        let first_excess = format!("{}.b.{}", "a".repeat(63), "a".repeat(63));
+        assert_eq!(first_excess.len(), MAX_ENDPOINT_ID_BYTES + 1);
+        EndpointId::new(first_excess.as_str()).expect_err("first excess must fail");
+
+        let sentinel = "endpoint-identity-sentinel-427c".repeat(4_096);
+        let error = EndpointId::new(sentinel.as_str()).expect_err("huge borrowed input must fail");
+        assert_eq!(error.kind(), ConfigurationErrorKind::InvalidValue);
+        assert!(!error.to_string().contains("endpoint-identity-sentinel"));
+        assert!(!format!("{error:?}").contains("endpoint-identity-sentinel"));
     }
 }

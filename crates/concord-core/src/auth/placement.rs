@@ -2,19 +2,36 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use bytes::{Bytes, BytesMut};
 use http::header::AUTHORIZATION;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use url::Url;
 
 use crate::endpoint::EndpointId;
-use crate::error::{ApiError, AuthErrorKind, ConfigurationErrorKind};
+use crate::error::{ApiError, AuthErrorKind};
 use crate::hooks::BoxFuture;
 use crate::http::application::ApplicationRequest;
 use crate::http::provider::ProviderHttp;
 
-use super::material::{BasicCredential, SecretCredential, SecretString};
+use super::material::{BasicCredential, SecretCredential};
 use super::slot::{CredentialSource, PreparedCredential, SlotSelector};
 use super::{AuthError, CredentialMaterial, CredentialRef, RecoveryMode};
+
+/// Maximum retained byte length of one named authentication placement.
+pub const MAX_AUTH_PLACEMENT_NAME_BYTES: usize = 256;
+/// Maximum raw byte length accepted from one single-string credential.
+pub const MAX_CREDENTIAL_SECRET_BYTES: usize = 65_536;
+/// Maximum raw byte length of a Basic authentication username.
+pub const MAX_BASIC_USERNAME_BYTES: usize = 8_192;
+/// Maximum raw byte length of a Basic authentication password.
+pub const MAX_BASIC_PASSWORD_BYTES: usize = 32_768;
+/// Maximum byte length of one final native authentication header value.
+pub const MAX_AUTHORIZATION_VALUE_BYTES: usize = 65_536;
+/// Maximum encoded byte length of one private authentication query value.
+pub const MAX_AUTH_QUERY_VALUE_BYTES: usize = 65_536;
+
+const BEARER_PREFIX: &[u8] = b"Bearer ";
+const BASIC_PREFIX: &[u8] = b"Basic ";
 
 /// Statuses that may be attributed to one authentication placement.
 #[non_exhaustive]
@@ -59,21 +76,25 @@ impl Auth {
     }
 
     /// Places a single-string credential in one private native header.
-    #[must_use]
-    pub fn header<M>(name: HeaderName, credential: CredentialRef<M>) -> Self
+    pub fn header<M>(name: HeaderName, credential: CredentialRef<M>) -> Result<Self, AuthError>
     where
         M: SecretCredential,
     {
-        Self::secret(PlacementKind::Header(name), credential)
+        validate_placement_name(name.as_str())?;
+        Ok(Self::secret(PlacementKind::Header(name), credential))
     }
 
     /// Places a single-string credential in one private native query pair.
-    #[must_use]
-    pub fn query<M>(name: impl Into<String>, credential: CredentialRef<M>) -> Self
+    pub fn query<M>(name: impl AsRef<str>, credential: CredentialRef<M>) -> Result<Self, AuthError>
     where
         M: SecretCredential,
     {
-        Self::secret(PlacementKind::Query(name.into()), credential)
+        let name = name.as_ref();
+        validate_placement_name(name)?;
+        Ok(Self::secret(
+            PlacementKind::Query(name.to_owned()),
+            credential,
+        ))
     }
 
     /// Replaces the challenge policy for this placement.
@@ -118,12 +139,11 @@ enum PlacementKind {
     Query(String),
 }
 
-#[derive(Clone)]
-enum NativeMaterial {
-    Secret(SecretString),
+enum NativeMaterial<'a> {
+    Secret(&'a str),
     Basic {
-        username: SecretString,
-        password: SecretString,
+        username: &'a str,
+        password: &'a str,
     },
 }
 
@@ -152,12 +172,15 @@ trait ErasedCredential: Send + Sync {
     ) -> BoxFuture<'a, Result<Option<ErasedPrepared>, AuthError>>;
     fn reject_exact(&self, prepared: &ErasedPrepared) -> Result<(), AuthError>;
     fn clear_exact(&self, prepared: &ErasedPrepared) -> Result<(), AuthError>;
-    fn materialize(&self, prepared: &ErasedPrepared) -> Result<NativeMaterial, AuthError>;
+    fn materialize<'a>(
+        &self,
+        prepared: &'a ErasedPrepared,
+    ) -> Result<NativeMaterial<'a>, AuthError>;
 }
 
 struct TypedCredential<M> {
     selector: Arc<SlotSelector<M>>,
-    materialize: fn(&M) -> NativeMaterial,
+    materialize: for<'a> fn(&'a M) -> Result<NativeMaterial<'a>, AuthError>,
 }
 
 impl<M> TypedCredential<M>
@@ -240,23 +263,30 @@ where
         self.selector.clear_exact(Self::typed(prepared)?)
     }
 
-    fn materialize(&self, prepared: &ErasedPrepared) -> Result<NativeMaterial, AuthError> {
-        Ok((self.materialize)(Self::typed(prepared)?.value()))
+    fn materialize<'a>(
+        &self,
+        prepared: &'a ErasedPrepared,
+    ) -> Result<NativeMaterial<'a>, AuthError> {
+        (self.materialize)(Self::typed(prepared)?.value())
     }
 }
 
-fn secret_material<M>(value: &M) -> NativeMaterial
+fn secret_material<M>(value: &M) -> Result<NativeMaterial<'_>, AuthError>
 where
     M: SecretCredential,
 {
-    NativeMaterial::Secret(SecretString::new(value.expose_secret()))
+    let secret = value.expose_secret();
+    validate_material_len(secret.len(), MAX_CREDENTIAL_SECRET_BYTES)?;
+    Ok(NativeMaterial::Secret(secret))
 }
 
-fn basic_material(value: &BasicCredential) -> NativeMaterial {
-    NativeMaterial::Basic {
-        username: SecretString::new(value.username()),
-        password: SecretString::new(value.password()),
-    }
+fn basic_material(value: &BasicCredential) -> Result<NativeMaterial<'_>, AuthError> {
+    validate_material_len(value.username().len(), MAX_BASIC_USERNAME_BYTES)?;
+    validate_material_len(value.password().len(), MAX_BASIC_PASSWORD_BYTES)?;
+    Ok(NativeMaterial::Basic {
+        username: value.username(),
+        password: value.password(),
+    })
 }
 
 #[derive(Default)]
@@ -561,85 +591,352 @@ impl FinalizedAuthPlan {
                 .map_err(|error| {
                     ApiError::authentication(endpoint.clone(), method.clone(), error)
                 })?;
-            match (placement.kind, material) {
+            match (&placement.kind, material) {
                 (PlacementKind::Bearer, NativeMaterial::Secret(secret)) => {
-                    let value =
-                        HeaderValue::from_str(&format!("Bearer {}", secret.expose_secret()))
-                            .map_err(|_| invalid_auth(endpoint, method))?;
+                    let value = prefixed_header_value(BEARER_PREFIX, secret)
+                        .map_err(|error| auth_error(endpoint, method, error))?;
                     request.insert_auth_header(AUTHORIZATION, value);
                 }
                 (PlacementKind::Basic, NativeMaterial::Basic { username, password }) => {
-                    let mut input = String::with_capacity(
-                        username.expose_secret().len() + password.expose_secret().len() + 1,
-                    );
-                    input.push_str(username.expose_secret());
-                    input.push(':');
-                    input.push_str(password.expose_secret());
-                    let encoded = encode_base64(input.as_bytes());
-                    let value = HeaderValue::from_str(&format!("Basic {encoded}"))
-                        .map_err(|_| invalid_auth(endpoint, method))?;
+                    let value = basic_header_value(username, password)
+                        .map_err(|error| auth_error(endpoint, method, error))?;
                     request.insert_auth_header(AUTHORIZATION, value);
                 }
                 (PlacementKind::Header(name), NativeMaterial::Secret(secret)) => {
-                    let value = HeaderValue::from_str(secret.expose_secret())
-                        .map_err(|_| invalid_auth(endpoint, method))?;
-                    request.insert_auth_header(name, value);
+                    let value = plain_header_value(secret)
+                        .map_err(|error| auth_error(endpoint, method, error))?;
+                    request.insert_auth_header(name.clone(), value);
                 }
                 (PlacementKind::Query(name), NativeMaterial::Secret(secret)) => {
-                    request.append_auth_query(&name, secret.expose_secret());
+                    let encoded_name = encoded_query_component_len(name)
+                        .map_err(|error| auth_error(endpoint, method, error))?;
+                    let encoded_value = encoded_query_component_len(secret)
+                        .map_err(|error| auth_error(endpoint, method, error))?;
+                    if encoded_value > MAX_AUTH_QUERY_VALUE_BYTES {
+                        return Err(auth_error(
+                            endpoint,
+                            method,
+                            AuthError::new(AuthErrorKind::MaterialTooLarge),
+                        ));
+                    }
+                    let encoded_pair = encoded_name
+                        .checked_add(1)
+                        .and_then(|length| length.checked_add(encoded_value))
+                        .ok_or_else(|| {
+                            auth_error(
+                                endpoint,
+                                method,
+                                AuthError::new(AuthErrorKind::MaterialTooLarge),
+                            )
+                        })?;
+                    request
+                        .append_auth_query(name, secret, encoded_pair)
+                        .map_err(|()| {
+                            auth_error(
+                                endpoint,
+                                method,
+                                AuthError::new(AuthErrorKind::MaterialTooLarge),
+                            )
+                        })?;
                 }
-                _ => return Err(invalid_auth(endpoint, method)),
+                _ => {
+                    return Err(auth_error(
+                        endpoint,
+                        method,
+                        AuthError::new(AuthErrorKind::InvalidConfiguration),
+                    ));
+                }
             }
         }
         Ok(())
     }
 }
 
-fn invalid_auth(endpoint: &EndpointId, method: &Method) -> ApiError {
-    ApiError::configuration(
-        endpoint.clone(),
-        method.clone(),
-        ConfigurationErrorKind::InvalidAuthentication,
-    )
+fn auth_error(endpoint: &EndpointId, method: &Method, error: AuthError) -> ApiError {
+    if error.kind() == AuthErrorKind::InvalidConfiguration {
+        drop(error);
+        ApiError::configuration(
+            endpoint.clone(),
+            method.clone(),
+            crate::error::ConfigurationErrorKind::InvalidAuthentication,
+        )
+    } else {
+        ApiError::authentication(endpoint.clone(), method.clone(), error)
+    }
 }
 
-fn encode_base64(input: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut output = String::with_capacity(input.len().div_ceil(3) * 4);
-    for chunk in input.chunks(3) {
-        let first = chunk[0];
-        let second = chunk.get(1).copied().unwrap_or(0);
-        let third = chunk.get(2).copied().unwrap_or(0);
-        output.push(char::from(TABLE[usize::from(first >> 2)]));
-        output.push(char::from(
-            TABLE[usize::from(((first & 0x03) << 4) | (second >> 4))],
-        ));
-        if chunk.len() > 1 {
-            output.push(char::from(
-                TABLE[usize::from(((second & 0x0f) << 2) | (third >> 6))],
-            ));
-        } else {
-            output.push('=');
-        }
-        if chunk.len() > 2 {
-            output.push(char::from(TABLE[usize::from(third & 0x3f)]));
-        } else {
-            output.push('=');
-        }
+fn validate_placement_name(name: &str) -> Result<(), AuthError> {
+    if name.is_empty() || name.len() > MAX_AUTH_PLACEMENT_NAME_BYTES {
+        Err(AuthError::new(AuthErrorKind::InvalidConfiguration))
+    } else {
+        Ok(())
     }
-    output
+}
+
+fn validate_material_len(length: usize, limit: usize) -> Result<(), AuthError> {
+    if length > limit {
+        Err(AuthError::new(AuthErrorKind::MaterialTooLarge))
+    } else {
+        Ok(())
+    }
+}
+
+fn checked_base64_len(input_len: usize) -> Option<usize> {
+    input_len.checked_add(2)?.checked_div(3)?.checked_mul(4)
+}
+
+fn prefixed_header_value(prefix: &[u8], secret: &str) -> Result<HeaderValue, AuthError> {
+    let output_len = prefix
+        .len()
+        .checked_add(secret.len())
+        .ok_or_else(|| AuthError::new(AuthErrorKind::MaterialTooLarge))?;
+    validate_material_len(output_len, MAX_AUTHORIZATION_VALUE_BYTES)?;
+    validate_native_header_value(secret.as_bytes())?;
+    let mut output = BytesMut::with_capacity(output_len);
+    output.extend_from_slice(prefix);
+    output.extend_from_slice(secret.as_bytes());
+    sensitive_header_value(output.freeze())
+}
+
+fn plain_header_value(secret: &str) -> Result<HeaderValue, AuthError> {
+    validate_material_len(secret.len(), MAX_AUTHORIZATION_VALUE_BYTES)?;
+    let mut value = HeaderValue::from_bytes(secret.as_bytes())
+        .map_err(|_| AuthError::new(AuthErrorKind::InvalidConfiguration))?;
+    value.set_sensitive(true);
+    Ok(value)
+}
+
+fn basic_header_value(username: &str, password: &str) -> Result<HeaderValue, AuthError> {
+    let input_len = username
+        .len()
+        .checked_add(1)
+        .and_then(|length| length.checked_add(password.len()))
+        .ok_or_else(|| AuthError::new(AuthErrorKind::MaterialTooLarge))?;
+    let encoded_len = checked_base64_len(input_len)
+        .ok_or_else(|| AuthError::new(AuthErrorKind::MaterialTooLarge))?;
+    let output_len = BASIC_PREFIX
+        .len()
+        .checked_add(encoded_len)
+        .ok_or_else(|| AuthError::new(AuthErrorKind::MaterialTooLarge))?;
+    validate_material_len(output_len, MAX_AUTHORIZATION_VALUE_BYTES)?;
+
+    let mut output = BytesMut::with_capacity(output_len);
+    output.extend_from_slice(BASIC_PREFIX);
+    encode_base64_into(
+        username
+            .bytes()
+            .chain(std::iter::once(b':'))
+            .chain(password.bytes()),
+        &mut output,
+    );
+    debug_assert_eq!(output.len(), output_len);
+    sensitive_header_value(output.freeze())
+}
+
+fn sensitive_header_value(value: Bytes) -> Result<HeaderValue, AuthError> {
+    let mut value = HeaderValue::from_maybe_shared(value)
+        .map_err(|_| AuthError::new(AuthErrorKind::InvalidConfiguration))?;
+    value.set_sensitive(true);
+    Ok(value)
+}
+
+fn validate_native_header_value(value: &[u8]) -> Result<(), AuthError> {
+    if value
+        .iter()
+        .copied()
+        .all(|byte| byte >= 32 && byte != 127 || byte == b'\t')
+    {
+        Ok(())
+    } else {
+        Err(AuthError::new(AuthErrorKind::InvalidConfiguration))
+    }
+}
+
+fn encoded_query_component_len(value: &str) -> Result<usize, AuthError> {
+    url::form_urlencoded::byte_serialize(value.as_bytes()).try_fold(0_usize, |length, fragment| {
+        length
+            .checked_add(fragment.len())
+            .ok_or_else(|| AuthError::new(AuthErrorKind::MaterialTooLarge))
+    })
+}
+
+fn encode_base64_into(input: impl Iterator<Item = u8>, output: &mut BytesMut) {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut input = input;
+    while let Some(first) = input.next() {
+        let second = input.next();
+        let third = input.next();
+        let second_value = second.unwrap_or(0);
+        let third_value = third.unwrap_or(0);
+        output.extend_from_slice(&[
+            TABLE[usize::from(first >> 2)],
+            TABLE[usize::from(((first & 0x03) << 4) | (second_value >> 4))],
+            second.map_or(b'=', |_| {
+                TABLE[usize::from(((second_value & 0x0f) << 2) | (third_value >> 6))]
+            }),
+            third.map_or(b'=', |_| TABLE[usize::from(third_value & 0x3f)]),
+        ]);
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
+    use crate::auth::{ApiKey, CredentialMaterial};
+
+    #[derive(Clone)]
+    struct CustomSecret(String);
+
+    impl CredentialMaterial for CustomSecret {}
+
+    impl SecretCredential for CustomSecret {
+        fn expose_secret(&self) -> &str {
+            &self.0
+        }
+    }
+
+    fn credential() -> CredentialRef<ApiKey> {
+        CredentialRef::new(SlotSelector::static_value(
+            ApiKey::new("test-key"),
+            Duration::from_secs(1),
+        ))
+    }
 
     #[test]
     fn basic_encoding_matches_rfc4648_vectors() {
+        let value = basic_header_value("Aladdin", "open sesame").expect("valid Basic value");
         assert_eq!(
-            encode_base64(b"Aladdin:open sesame"),
-            "QWxhZGRpbjpvcGVuIHNlc2FtZQ=="
+            value.to_str().expect("ASCII Basic value"),
+            "Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ=="
         );
-        assert_eq!(encode_base64(b"a:b"), "YTpi");
+        assert!(value.is_sensitive());
+        assert_eq!(
+            basic_header_value("a", "b")
+                .expect("valid Basic value")
+                .to_str()
+                .expect("ASCII Basic value"),
+            "Basic YTpi"
+        );
+    }
+
+    #[test]
+    fn auth_placement_name_exact_limit_and_first_excess_are_redacted() {
+        let exact = "n".repeat(MAX_AUTH_PLACEMENT_NAME_BYTES);
+        let query = Auth::query(exact.as_str(), credential()).expect("exact query-name limit");
+        assert_eq!(query.public_name_bytes(), MAX_AUTH_PLACEMENT_NAME_BYTES);
+
+        let header = HeaderName::from_bytes(exact.as_bytes()).expect("valid exact header name");
+        Auth::header(header, credential()).expect("exact header-name limit");
+
+        let sentinel = format!("{}sentinel", "n".repeat(MAX_AUTH_PLACEMENT_NAME_BYTES));
+        let error = Auth::query(sentinel.as_str(), credential())
+            .err()
+            .expect("query-name first excess");
+        assert_eq!(error.kind(), AuthErrorKind::InvalidConfiguration);
+        assert!(!error.to_string().contains("sentinel"));
+        assert!(!format!("{error:?}").contains("sentinel"));
+
+        let header =
+            HeaderName::from_bytes(sentinel.as_bytes()).expect("HTTP accepts oversized name");
+        let error = Auth::header(header, credential())
+            .err()
+            .expect("header-name first excess");
+        assert_eq!(error.kind(), AuthErrorKind::InvalidConfiguration);
+        assert!(Auth::query("", credential()).is_err());
+    }
+
+    #[test]
+    fn bearer_and_raw_secret_limits_reject_first_excess_before_copy() {
+        let exact = "a".repeat(MAX_AUTHORIZATION_VALUE_BYTES - BEARER_PREFIX.len());
+        let value = prefixed_header_value(BEARER_PREFIX, exact.as_str())
+            .expect("exact Bearer authorization limit");
+        assert_eq!(value.as_bytes().len(), MAX_AUTHORIZATION_VALUE_BYTES);
+        assert!(value.is_sensitive());
+
+        let first_excess = format!("{exact}x");
+        let error = prefixed_header_value(BEARER_PREFIX, first_excess.as_str())
+            .expect_err("first Bearer output excess");
+        assert_eq!(error.kind(), AuthErrorKind::MaterialTooLarge);
+
+        let sentinel = CustomSecret(format!(
+            "{}credential-sentinel",
+            "s".repeat(MAX_CREDENTIAL_SECRET_BYTES)
+        ));
+        let error = secret_material(&sentinel)
+            .err()
+            .expect("first raw credential excess");
+        assert_eq!(error.kind(), AuthErrorKind::MaterialTooLarge);
+        assert!(!error.to_string().contains("credential-sentinel"));
+        assert!(!format!("{error:?}").contains("credential-sentinel"));
+    }
+
+    #[test]
+    fn basic_limits_and_checked_base64_arithmetic_are_finite() {
+        let username = "u".repeat(MAX_BASIC_USERNAME_BYTES);
+        let password = "p".repeat(MAX_BASIC_PASSWORD_BYTES);
+        let credential = BasicCredential::new(username.as_str(), password.as_str());
+        let NativeMaterial::Basic { username, password } =
+            basic_material(&credential).expect("exact Basic component limits")
+        else {
+            panic!("Basic material expected");
+        };
+        let value = basic_header_value(username, password).expect("bounded Basic output");
+        assert!(value.as_bytes().len() <= MAX_AUTHORIZATION_VALUE_BYTES);
+        assert!(value.is_sensitive());
+
+        let oversized_username =
+            BasicCredential::new("u".repeat(MAX_BASIC_USERNAME_BYTES + 1), "password");
+        let error = basic_material(&oversized_username)
+            .err()
+            .expect("first username excess");
+        assert_eq!(error.kind(), AuthErrorKind::MaterialTooLarge);
+
+        let oversized_password =
+            BasicCredential::new("username", "p".repeat(MAX_BASIC_PASSWORD_BYTES + 1));
+        let error = basic_material(&oversized_password)
+            .err()
+            .expect("first password excess");
+        assert_eq!(error.kind(), AuthErrorKind::MaterialTooLarge);
+        assert_eq!(checked_base64_len(0), Some(0));
+        assert_eq!(checked_base64_len(3), Some(4));
+        assert_eq!(checked_base64_len(4), Some(8));
+        assert_eq!(checked_base64_len(usize::MAX), None);
+    }
+
+    #[test]
+    fn auth_query_encoded_value_exact_limit_and_first_excess_are_checked() {
+        let exact = format!("{}a", "%".repeat((MAX_AUTH_QUERY_VALUE_BYTES - 1) / 3));
+        assert_eq!(
+            encoded_query_component_len(&exact).expect("encoded query length"),
+            MAX_AUTH_QUERY_VALUE_BYTES
+        );
+
+        let first_excess = format!("{exact}%");
+        let encoded =
+            encoded_query_component_len(&first_excess).expect("finite encoded query length");
+        assert!(encoded > MAX_AUTH_QUERY_VALUE_BYTES);
+
+        let raw_exact = "q".repeat(MAX_CREDENTIAL_SECRET_BYTES);
+        assert_eq!(
+            encoded_query_component_len(&raw_exact).expect("unreserved exact query value"),
+            MAX_AUTH_QUERY_VALUE_BYTES
+        );
+    }
+
+    #[test]
+    fn custom_material_limit_error_contains_no_value() {
+        const SENTINEL: &str = "custom-provider-material-sentinel-52cc";
+        let material = CustomSecret(format!(
+            "{}{SENTINEL}",
+            "x".repeat(MAX_CREDENTIAL_SECRET_BYTES)
+        ));
+        let error = secret_material(&material)
+            .err()
+            .expect("custom material must be revalidated by core");
+        assert_eq!(error.kind(), AuthErrorKind::MaterialTooLarge);
+        assert!(!error.to_string().contains(SENTINEL));
+        assert!(!format!("{error:?}").contains(SENTINEL));
     }
 }

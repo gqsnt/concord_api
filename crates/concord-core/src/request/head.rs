@@ -151,6 +151,24 @@ impl HeadBuilder {
             })
     }
 
+    /// Validates and appends one fallibly constructed named authentication
+    /// placement without exposing its value in diagnostics.
+    #[doc(hidden)]
+    pub fn push_auth_result(
+        &mut self,
+        auth: Result<Auth, crate::auth::AuthError>,
+    ) -> Result<(), ApiError> {
+        let auth = auth.map_err(|error| {
+            drop(error);
+            ApiError::configuration(
+                self.meta.endpoint_id().clone(),
+                self.meta.method().clone(),
+                ConfigurationErrorKind::InvalidAuthentication,
+            )
+        })?;
+        self.push_auth(auth)
+    }
+
     /// Appends one generated, structurally validated effective rate-limit rule.
     ///
     /// Key name/value pairs are validated and copied incrementally inside the

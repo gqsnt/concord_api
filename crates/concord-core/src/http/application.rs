@@ -35,11 +35,30 @@ impl ApplicationRequest {
         self.native.headers_mut().insert(name, value);
     }
 
-    pub(crate) fn append_auth_query(&mut self, name: &str, value: &str) {
+    pub(crate) fn append_auth_query(
+        &mut self,
+        name: &str,
+        value: &str,
+        encoded_pair_len: usize,
+    ) -> Result<(), ()> {
+        let separator_len = usize::from(
+            self.native
+                .url()
+                .query()
+                .is_some_and(|query| !query.is_empty()),
+        );
+        self.native
+            .url()
+            .as_str()
+            .len()
+            .checked_add(separator_len)
+            .and_then(|length| length.checked_add(encoded_pair_len))
+            .ok_or(())?;
         self.native
             .url_mut()
             .query_pairs_mut()
             .append_pair(name, value);
+        Ok(())
     }
 }
 

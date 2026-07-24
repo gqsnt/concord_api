@@ -56,6 +56,9 @@ pub enum AuthErrorKind {
     RequestTooLarge,
     /// A provider response exceeded its finite limit.
     ResponseTooLarge,
+    /// Credential material or its encoded native representation exceeded a
+    /// core-owned authentication limit.
+    MaterialTooLarge,
     /// Authentication failed an internal invariant.
     Internal,
 }

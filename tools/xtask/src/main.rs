@@ -140,6 +140,42 @@ const LIMITS: &[(&str, &str, &str, &str)] = &[
         "bytes",
     ),
     (
+        "crates/concord-core/src/auth/placement.rs",
+        "MAX_AUTH_PLACEMENT_NAME_BYTES",
+        "Authentication placement name",
+        "bytes",
+    ),
+    (
+        "crates/concord-core/src/auth/placement.rs",
+        "MAX_CREDENTIAL_SECRET_BYTES",
+        "Raw credential secret",
+        "bytes",
+    ),
+    (
+        "crates/concord-core/src/auth/placement.rs",
+        "MAX_BASIC_USERNAME_BYTES",
+        "Basic authentication username",
+        "bytes",
+    ),
+    (
+        "crates/concord-core/src/auth/placement.rs",
+        "MAX_BASIC_PASSWORD_BYTES",
+        "Basic authentication password",
+        "bytes",
+    ),
+    (
+        "crates/concord-core/src/auth/placement.rs",
+        "MAX_AUTHORIZATION_VALUE_BYTES",
+        "Native authentication header value",
+        "bytes",
+    ),
+    (
+        "crates/concord-core/src/auth/placement.rs",
+        "MAX_AUTH_QUERY_VALUE_BYTES",
+        "Encoded authentication query value",
+        "bytes",
+    ),
+    (
         "crates/concord-core/src/limits.rs",
         "MAX_RUNTIME_ENDPOINT_COMPONENTS",
         "Runtime endpoint top-level structure",

@@ -26,6 +26,12 @@ ceilings selected for finite construction.
 | Default limiter-prepared rate-limit key | 1,024 | bytes |
 | One formatted public value | 65,536 | bytes |
 | Endpoint contract identity | 128 | bytes |
+| Authentication placement name | 256 | bytes |
+| Raw credential secret | 65,536 | bytes |
+| Basic authentication username | 8,192 | bytes |
+| Basic authentication password | 32,768 | bytes |
+| Native authentication header value | 65,536 | bytes |
+| Encoded authentication query value | 65,536 | bytes |
 | Runtime endpoint top-level structure | 256 | components |
 | Runtime endpoint aggregate public shape | 65,536 | bytes |
 | Runtime endpoint authentication placements | 64 | placements |
@@ -49,6 +55,12 @@ capped capture primitive stops retaining UTF-8 output at
 `concord::endpoint::MAX_FORMATTED_PUBLIC_VALUE_BYTES` and rejects excess
 rather than truncating it. Runtime endpoints and generated/public-head host,
 path, query, header, and pagination-sensitive shaping all use that primitive.
+
+Core validates named authentication placements before copying them. After
+limiter authority and credential finalization, it validates borrowed secret
+material, computes Bearer and Basic output with checked arithmetic, and bounds
+the final private header or percent-encoded query value before mutating the
+native request. These hard limits are exposed under `concord::auth`.
 
 The optional OAuth2 client-credentials provider owns exact public ceilings for
 token URL text, client identifiers, client secrets, scope text, and the final

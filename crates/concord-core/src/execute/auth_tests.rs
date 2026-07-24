@@ -15,8 +15,8 @@ use http::{HeaderValue, Method, StatusCode};
 
 use crate::auth::{
     AccessToken, ApiKey, Auth, AuthError, BasicCredential, ChallengePolicy, CredentialMaterial,
-    CredentialProvider, CredentialReason, CredentialRef, CredentialRequest, RecoveryMode,
-    SecretCredential, SecretString, SlotSelector,
+    CredentialProvider, CredentialReason, CredentialRef, CredentialRequest,
+    MAX_CREDENTIAL_SECRET_BYTES, RecoveryMode, SecretCredential, SecretString, SlotSelector,
 };
 use crate::body::{
     BodyError, BodyFactory, EmptyBody, RequestBody, RequestBodyContext, RequestBodyMetadata,
@@ -232,10 +232,13 @@ impl EndpointSpec for HeaderEndpoint {
 
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("header")?;
-        builder.push_auth(Auth::header(
-            http::HeaderName::from_static("x-api-key"),
-            self.credential.clone(),
-        ))?;
+        builder.push_auth(
+            Auth::header(
+                http::HeaderName::from_static("x-api-key"),
+                self.credential.clone(),
+            )
+            .expect("valid header placement"),
+        )?;
         Ok(builder.finish())
     }
 
@@ -297,10 +300,13 @@ impl EndpointSpec for MultiAuthEndpoint {
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("protected")?;
         builder.push_auth(Auth::bearer(self.first.clone()).challenge(self.first_challenge))?;
-        builder.push_auth(Auth::header(
-            http::HeaderName::from_static("x-secondary-token"),
-            self.second.clone(),
-        ))?;
+        builder.push_auth(
+            Auth::header(
+                http::HeaderName::from_static("x-secondary-token"),
+                self.second.clone(),
+            )
+            .expect("valid header placement"),
+        )?;
         Ok(builder.finish())
     }
 
@@ -337,7 +343,9 @@ impl EndpointSpec for DynamicCollisionEndpoint {
     }
 
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
-        builder.push_auth(Auth::query("access", self.credential.clone()))?;
+        builder.push_auth(
+            Auth::query("access", self.credential.clone()).expect("valid query placement"),
+        )?;
         builder.push_query_value("access", &"materially-present-public-value")?;
         Ok(builder.finish())
     }
@@ -569,7 +577,7 @@ impl EndpointSpec for ProtectedEndpoint {
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("protected")?;
         let auth = if self.query {
-            Auth::query("access", self.credential.clone())
+            Auth::query("access", self.credential.clone()).expect("valid query placement")
         } else {
             Auth::bearer(self.credential.clone())
         };
@@ -793,6 +801,23 @@ impl CredentialProvider for FailingProvider {
         _context: CredentialRequest<'a>,
     ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
         Box::pin(async { Err(AuthError::new(AuthErrorKind::Acquisition)) })
+    }
+}
+
+struct OversizedMaterialProvider;
+
+impl CredentialProvider for OversizedMaterialProvider {
+    type Material = AccessToken;
+
+    fn acquire<'a>(
+        &'a self,
+        _context: CredentialRequest<'a>,
+    ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
+        Box::pin(async {
+            let mut value = "x".repeat(MAX_CREDENTIAL_SECRET_BYTES);
+            value.push_str("provider-material-sentinel-82dc");
+            Ok(AccessToken::new(value))
+        })
     }
 }
 
@@ -2258,12 +2283,13 @@ async fn prepared_bearer_basic_header_and_query_auth_use_only_the_native_boundar
             Auth::header(
                 http::HeaderName::from_static("x-api-key"),
                 CredentialRef::new(Arc::clone(&key)),
-            ),
+            )
+            .expect("valid header placement"),
             Bytes::from_static(b"header"),
         ),
         (
             "query",
-            Auth::query("access", CredentialRef::new(key)),
+            Auth::query("access", CredentialRef::new(key)).expect("valid query placement"),
             Bytes::from_static(b"query"),
         ),
     ];
@@ -2332,14 +2358,20 @@ async fn prepared_authentication_attachments_materialize_in_builder_order() {
     );
     let endpoint =
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.ordered_auth"), Method::GET)
-            .auth(Auth::header(
-                http::HeaderName::from_static("x-first-auth"),
-                CredentialRef::new(first),
-            ))
-            .auth(Auth::header(
-                http::HeaderName::from_static("x-second-auth"),
-                CredentialRef::new(second),
-            ))
+            .auth(
+                Auth::header(
+                    http::HeaderName::from_static("x-first-auth"),
+                    CredentialRef::new(first),
+                )
+                .expect("valid first header placement"),
+            )
+            .auth(
+                Auth::header(
+                    http::HeaderName::from_static("x-second-auth"),
+                    CredentialRef::new(second),
+                )
+                .expect("valid second header placement"),
+            )
             .response_bytes()
             .build()
             .expect("ordered prepared authentication endpoint");
@@ -3484,6 +3516,35 @@ async fn invalid_native_auth_value_fails_after_safe_debug_and_before_execution()
     let rendered = debug.lock().expect("debug output").join("\n");
     assert!(rendered.contains("request"));
     assert!(!rendered.contains("invalid-auth-sentinel-91af"));
+}
+
+#[tokio::test]
+async fn custom_provider_oversized_material_is_revalidated_at_the_core_boundary() {
+    const SENTINEL: &str = "provider-material-sentinel-82dc";
+    let executor = DeterministicExecutor::new();
+    let hooks = Arc::new(AuthHooks::default());
+    let (core, debug) = core(&executor, Arc::clone(&hooks));
+    let selector = SlotSelector::provider(OversizedMaterialProvider, Duration::ZERO);
+
+    let error = api_error(
+        request(
+            core,
+            &selector,
+            ChallengePolicy::Never,
+            RequestBody::bytes(Bytes::new()),
+        )
+        .await,
+    );
+
+    assert_eq!(error.category(), ErrorCategory::AuthenticationProvider);
+    assert_eq!(error.auth_kind(), Some(AuthErrorKind::MaterialTooLarge));
+    assert_eq!(executor.application().request_count().expect("count"), 0);
+    assert_eq!(hooks.before.lock().expect("before records").len(), 1);
+    let diagnostics = format!(
+        "{error:?}\n{}",
+        debug.lock().expect("debug output").join("\n")
+    );
+    assert!(!diagnostics.contains(SENTINEL));
 }
 
 #[tokio::test]

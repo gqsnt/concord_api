@@ -1089,20 +1089,20 @@ mod tests {
         let mut boundary =
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.auth"), Method::GET);
         for index in 0..MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS {
-            boundary = boundary.auth(Auth::query(
-                format!("runtime-auth-{index}"),
-                credential.clone(),
-            ));
+            boundary = boundary.auth(
+                Auth::query(format!("runtime-auth-{index}"), credential.clone())
+                    .expect("valid authentication placement"),
+            );
         }
         boundary.build().expect("authentication placement boundary");
 
         let mut excessive =
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.auth"), Method::GET);
         for index in 0..=MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS {
-            excessive = excessive.auth(Auth::query(
-                format!("runtime-auth-{index}"),
-                credential.clone(),
-            ));
+            excessive = excessive.auth(
+                Auth::query(format!("runtime-auth-{index}"), credential.clone())
+                    .expect("valid authentication placement"),
+            );
         }
         let error = excessive
             .build()
@@ -1120,7 +1120,7 @@ mod tests {
         ));
         let error = RuntimeEndpoint::builder(EndpointId::from_static("runtime.auth"), Method::GET)
             .path_segment("x".repeat(MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES - 1))
-            .auth(Auth::query(FORMAT_SENTINEL, credential))
+            .auth(Auth::query(FORMAT_SENTINEL, credential).expect("valid authentication placement"))
             .build()
             .err()
             .expect("authentication placement exceeds remaining shape bytes");

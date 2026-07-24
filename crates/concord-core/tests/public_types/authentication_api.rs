@@ -76,9 +76,11 @@ fn exact_handle_and_auth_signatures(
     let _: CredentialRef<SessionToken> = handle.credential();
     let _: bool = handle.is_set();
     let _: Auth = Auth::bearer(secret.clone());
-    let _: Auth = Auth::header(HeaderName::from_static("x-session"), secret.clone());
-    let _: Auth =
-        Auth::query("session", secret).challenge(ChallengePolicy::UnauthorizedOrForbidden);
+    let _: Auth = Auth::header(HeaderName::from_static("x-session"), secret.clone())
+        .expect("valid header placement");
+    let _: Auth = Auth::query("session", secret)
+        .expect("valid query placement")
+        .challenge(ChallengePolicy::UnauthorizedOrForbidden);
     let _: Auth = Auth::basic(basic).challenge(ChallengePolicy::Unauthorized);
     let _: ChallengePolicy = ChallengePolicy::Never;
 

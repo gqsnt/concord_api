@@ -195,32 +195,38 @@ pub(super) fn auth_statements(
                 CredentialSource::Custom { provider } => provider.span(),
                 _ => credential.name.span(),
             };
-            let constructor = match &placement.kind {
-                ResolvedAuthPlacement::Bearer => {
+            let (constructor, fallible) = match &placement.kind {
+                ResolvedAuthPlacement::Bearer => (
                     quote_spanned!(source_span=>
                         #core_path::__private::Auth::bearer::<#material>(#reference)
-                    )
-                }
-                ResolvedAuthPlacement::Basic => {
+                    ),
+                    false,
+                ),
+                ResolvedAuthPlacement::Basic => (
                     quote_spanned!(source_span=>
                         #core_path::__private::Auth::basic(#reference)
-                    )
-                }
+                    ),
+                    false,
+                ),
                 ResolvedAuthPlacement::Header(name) => {
                     let canonical =
                         syn::LitStr::new(&name.value().to_ascii_lowercase(), name.span());
-                    quote_spanned!(source_span=>
-                        #core_path::__private::Auth::header::<#material>(
-                            #core_path::__private::HeaderName::from_static(#canonical),
-                            #reference,
-                        )
+                    (
+                        quote_spanned!(source_span=>
+                            #core_path::__private::Auth::header::<#material>(
+                                #core_path::__private::HeaderName::from_static(#canonical),
+                                #reference,
+                            )
+                        ),
+                        true,
                     )
                 }
-                ResolvedAuthPlacement::Query(name) => {
+                ResolvedAuthPlacement::Query(name) => (
                     quote_spanned!(source_span=>
                         #core_path::__private::Auth::query::<#material>(#name, #reference)
-                    )
-                }
+                    ),
+                    true,
+                ),
             };
             let policy = match placement.challenge {
                 ResolvedChallengePolicy::Unauthorized => quote!(
@@ -233,8 +239,16 @@ pub(super) fn auth_statements(
                     quote!(#core_path::advanced::ChallengePolicy::Never)
                 }
             };
-            quote! {
-                __concord_builder.push_auth((#constructor).challenge(#policy))?;
+            if fallible {
+                quote! {
+                    __concord_builder.push_auth_result(
+                        (#constructor).map(|auth| auth.challenge(#policy))
+                    )?;
+                }
+            } else {
+                quote! {
+                    __concord_builder.push_auth((#constructor).challenge(#policy))?;
+                }
             }
         })
         .collect::<Vec<_>>();
