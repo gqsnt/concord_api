@@ -119,7 +119,7 @@ struct FreshMultipartFactory {
 impl MultipartFactory for FreshMultipartFactory {
     fn create(&self) -> Result<MultipartBody, BodyError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        MultipartBody::new().part("factory", MultipartPart::text("multipart-factory"))
+        MultipartBody::new().part("factory", MultipartPart::text("multipart-factory")?)
     }
 }
 
@@ -430,7 +430,10 @@ async fn all_prepared_body_forms_use_the_existing_lazy_body_architecture() {
         RuntimeEndpoint::builder(runtime_id("runtime.multipart"), Method::POST)
             .body(RequestBody::multipart(
                 MultipartBody::new()
-                    .part("field", MultipartPart::text("multipart-body"))
+                    .part(
+                        "field",
+                        MultipartPart::text("multipart-body").expect("bounded multipart text"),
+                    )
                     .expect("multipart part"),
             ))
             .build()

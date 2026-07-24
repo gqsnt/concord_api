@@ -179,7 +179,7 @@ pub struct ExtensionMultipartFactory;
 #[cfg(feature = "multipart")]
 impl MultipartFactory for ExtensionMultipartFactory {
     fn create(&self) -> Result<MultipartBody, BodyError> {
-        MultipartBody::new().part("extension", MultipartPart::text("multipart"))
+        MultipartBody::new().part("extension", MultipartPart::text("multipart")?)
     }
 }
 

@@ -32,6 +32,12 @@ ceilings selected for finite construction.
 | Basic authentication password | 32,768 | bytes |
 | Native authentication header value | 65,536 | bytes |
 | Encoded authentication query value | 65,536 | bytes |
+| Multipart recipe | 128 | parts |
+| Multipart part name | 256 | bytes |
+| Multipart filename | 1,024 | bytes |
+| Multipart part content type | 256 | bytes |
+| Multipart aggregate metadata | 65,536 | bytes |
+| Multipart inline text | 16,777,216 | bytes |
 | Runtime endpoint top-level structure | 256 | components |
 | Runtime endpoint aggregate public shape | 65,536 | bytes |
 | Runtime endpoint authentication placements | 64 | placements |
@@ -61,6 +67,13 @@ limiter authority and credential finalization, it validates borrowed secret
 material, computes Bearer and Basic output with checked arithmetic, and bounds
 the final private header or percent-encoded query value before mutating the
 native request. These hard limits are exposed under `concord::auth`.
+
+Multipart constructors validate borrowed names, filenames, content types, and
+inline text before copying them. Recipes retain at most 128 parts and track
+aggregate metadata incrementally; factory output is revalidated before private
+native conversion. The active request-body limit still bounds serialized
+payload and framing and may be lower than these structural ceilings. Multipart
+limits are exposed under `concord::body`.
 
 The optional OAuth2 client-credentials provider owns exact public ceilings for
 token URL text, client identifiers, client secrets, scope text, and the final

@@ -47,6 +47,15 @@ fn hard_structural_limits_are_reachable_from_their_facade_domains() {
         auth::MAX_AUTHORIZATION_VALUE_BYTES,
         auth::MAX_AUTH_QUERY_VALUE_BYTES,
     ];
+    #[cfg(feature = "multipart")]
+    let body_limits = [
+        body::MAX_MULTIPART_PARTS,
+        body::MAX_MULTIPART_NAME_BYTES,
+        body::MAX_MULTIPART_FILENAME_BYTES,
+        body::MAX_MULTIPART_CONTENT_TYPE_BYTES,
+        body::MAX_MULTIPART_METADATA_BYTES,
+        body::MAX_MULTIPART_INLINE_TEXT_BYTES,
+    ];
     let endpoint_limits = [
         endpoint::MAX_FORMATTED_PUBLIC_VALUE_BYTES,
         endpoint::MAX_RUNTIME_ENDPOINT_COMPONENTS,
@@ -63,6 +72,8 @@ fn hard_structural_limits_are_reachable_from_their_facade_domains() {
     ];
 
     assert!(auth_limits.into_iter().all(|limit| limit > 0));
+    #[cfg(feature = "multipart")]
+    assert!(body_limits.into_iter().all(|limit| limit > 0));
     assert!(endpoint_limits.into_iter().all(|limit| limit > 0));
     assert!(rate_limits.into_iter().all(|limit| limit > 0));
 }

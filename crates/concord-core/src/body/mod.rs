@@ -9,7 +9,11 @@ mod stream;
 
 pub use error::{BodyError, BodyErrorKind};
 #[cfg(feature = "multipart")]
-pub use multipart::{MultipartBody, MultipartFactory, MultipartPart};
+pub use multipart::{
+    MAX_MULTIPART_CONTENT_TYPE_BYTES, MAX_MULTIPART_FILENAME_BYTES,
+    MAX_MULTIPART_INLINE_TEXT_BYTES, MAX_MULTIPART_METADATA_BYTES, MAX_MULTIPART_NAME_BYTES,
+    MAX_MULTIPART_PARTS, MultipartBody, MultipartFactory, MultipartPart,
+};
 pub use prepared::{BodyFactory, BodyKind, RequestBody};
 #[cfg(feature = "multipart")]
 pub use spec::Multipart;

@@ -682,7 +682,7 @@ impl MultipartFactory for ProbeMultipartFactory {
         } else {
             MultipartBody::new().part(
                 "factory-field",
-                MultipartPart::text("factory-multipart-value"),
+                MultipartPart::text("factory-multipart-value")?,
             )
         }
     }
@@ -2667,7 +2667,10 @@ async fn multipart_aggregate_framing_limit_and_factory_failure_are_pre_native() 
     );
     let body = RequestBody::multipart(
         MultipartBody::new()
-            .part("field", MultipartPart::text("x"))
+            .part(
+                "field",
+                MultipartPart::text("x").expect("bounded multipart text"),
+            )
             .expect("multipart part"),
     );
     let error = body_request(core, body)
@@ -4694,13 +4697,15 @@ async fn real_reqwest_multipart_upload_owns_framing_and_supports_streams_and_fac
     let buffered = MultipartBody::new()
         .part(
             "text-field",
-            MultipartPart::text("multipart-text-value-secret-017c"),
+            MultipartPart::text("multipart-text-value-secret-017c")
+                .expect("bounded multipart text"),
         )
         .expect("text part")
         .part(
             "file-field",
             MultipartPart::bytes(Bytes::from_static(b"multipart-bytes-value-secret-929d"))
-                .filename("upload-secret-name.txt")
+                .expect("bounded multipart bytes")
+                .file_name("upload-secret-name.txt")
                 .expect("filename")
                 .content_type("application/x-concord-part")
                 .expect("part content type"),
@@ -4725,7 +4730,7 @@ async fn real_reqwest_multipart_upload_owns_framing_and_supports_streams_and_fac
         .part(
             "stream-field",
             MultipartPart::stream(streamed)
-                .filename("stream-secret-name.bin")
+                .file_name("stream-secret-name.bin")
                 .expect("stream filename")
                 .content_type("application/octet-stream")
                 .expect("stream content type"),

@@ -185,7 +185,8 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
     let multipart = runtime::advanced::MultipartBody::new()
         .part(
             "field",
-            runtime::advanced::MultipartPart::text("renamed multipart"),
+            runtime::advanced::MultipartPart::text("renamed multipart")
+                .expect("bounded renamed multipart text"),
         )
         .expect("valid renamed multipart recipe");
     let _: renamed_api::resources::MultipartUploadRequest = client

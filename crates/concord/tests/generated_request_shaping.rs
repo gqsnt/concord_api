@@ -640,7 +640,10 @@ async fn generated_public_media_headers_obey_single_map_ownership() {
     assert_eq!(stream_error.category(), ErrorCategory::Configuration);
 
     let multipart = MultipartBody::new()
-        .part("field", MultipartPart::text("value"))
+        .part(
+            "field",
+            MultipartPart::text("value").expect("bounded multipart text"),
+        )
         .expect("multipart recipe");
     let multipart_error = client
         .multipart_conflict(multipart)

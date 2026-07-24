@@ -79,7 +79,11 @@ pub mod body {
         StreamBody,
     };
     #[cfg(feature = "multipart")]
-    pub use concord_core::advanced::{Multipart, MultipartBody, MultipartFactory, MultipartPart};
+    pub use concord_core::advanced::{
+        MAX_MULTIPART_CONTENT_TYPE_BYTES, MAX_MULTIPART_FILENAME_BYTES,
+        MAX_MULTIPART_INLINE_TEXT_BYTES, MAX_MULTIPART_METADATA_BYTES, MAX_MULTIPART_NAME_BYTES,
+        MAX_MULTIPART_PARTS, Multipart, MultipartBody, MultipartFactory, MultipartPart,
+    };
 }
 
 /// Buffered codec contracts, primitives, and enabled ecosystem codecs.

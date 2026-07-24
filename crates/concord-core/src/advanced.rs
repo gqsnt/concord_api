@@ -15,7 +15,11 @@ pub use crate::body::{
     RequestBodyMetadata, RequestBodySpec, RequestContentType, Stream, StreamBody,
 };
 #[cfg(feature = "multipart")]
-pub use crate::body::{Multipart, MultipartBody, MultipartFactory, MultipartPart};
+pub use crate::body::{
+    MAX_MULTIPART_CONTENT_TYPE_BYTES, MAX_MULTIPART_FILENAME_BYTES,
+    MAX_MULTIPART_INLINE_TEXT_BYTES, MAX_MULTIPART_METADATA_BYTES, MAX_MULTIPART_NAME_BYTES,
+    MAX_MULTIPART_PARTS, Multipart, MultipartBody, MultipartFactory, MultipartPart,
+};
 pub use crate::codec::{
     CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType, OctetStream, Text,
 };

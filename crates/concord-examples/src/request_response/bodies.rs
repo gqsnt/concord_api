@@ -35,10 +35,10 @@ pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
     )));
     let _: body_api::DownloadRequest = client.download();
     let multipart = MultipartBody::new()
-        .part("description", MultipartPart::text("deterministic example"))?
+        .part("description", MultipartPart::text("deterministic example")?)?
         .part(
             "payload",
-            MultipartPart::bytes(Bytes::from_static(b"multipart bytes")),
+            MultipartPart::bytes(Bytes::from_static(b"multipart bytes"))?,
         )?;
     let _: body_api::MultipartUploadRequest = client.multipart_upload(multipart);
     Ok(())

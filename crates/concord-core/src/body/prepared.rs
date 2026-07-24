@@ -466,7 +466,7 @@ impl PreparedBody {
             #[cfg(feature = "multipart")]
             Self::ReplayableMultipart { recipe } => {
                 let body = recipe
-                    .clone_reusable()
+                    .clone_reusable()?
                     .ok_or_else(|| BodyError::new(BodyErrorKind::Multipart))?;
                 Ok(NativeBody::Multipart {
                     form: body.into_form(limit)?,
@@ -821,7 +821,7 @@ mod tests {
             self.calls.fetch_add(1, Ordering::SeqCst);
             MultipartBody::new().part(
                 "factory-field",
-                crate::body::MultipartPart::text("factory-value"),
+                crate::body::MultipartPart::text("factory-value")?,
             )
         }
     }
@@ -931,14 +931,16 @@ mod tests {
             MultipartBody::new()
                 .part(
                     "text",
-                    crate::body::MultipartPart::text("multipart-secret-text"),
+                    crate::body::MultipartPart::text("multipart-secret-text")
+                        .expect("bounded multipart text"),
                 )
                 .expect("text part")
                 .part(
                     "bytes",
                     crate::body::MultipartPart::bytes(Bytes::from_static(
                         b"multipart-secret-bytes",
-                    )),
+                    ))
+                    .expect("bounded multipart bytes"),
                 )
                 .expect("bytes part"),
         );
@@ -955,7 +957,11 @@ mod tests {
 
         let mut reusable_prepared = RequestBody::multipart(
             MultipartBody::new()
-                .part("text", crate::body::MultipartPart::text("fresh recipe"))
+                .part(
+                    "text",
+                    crate::body::MultipartPart::text("fresh recipe")
+                        .expect("bounded multipart text"),
+                )
                 .expect("text part"),
         )
         .into_prepared(NonZeroUsize::new(4096).expect("positive limit"))

@@ -176,6 +176,42 @@ const LIMITS: &[(&str, &str, &str, &str)] = &[
         "bytes",
     ),
     (
+        "crates/concord-core/src/body/multipart.rs",
+        "MAX_MULTIPART_PARTS",
+        "Multipart recipe",
+        "parts",
+    ),
+    (
+        "crates/concord-core/src/body/multipart.rs",
+        "MAX_MULTIPART_NAME_BYTES",
+        "Multipart part name",
+        "bytes",
+    ),
+    (
+        "crates/concord-core/src/body/multipart.rs",
+        "MAX_MULTIPART_FILENAME_BYTES",
+        "Multipart filename",
+        "bytes",
+    ),
+    (
+        "crates/concord-core/src/body/multipart.rs",
+        "MAX_MULTIPART_CONTENT_TYPE_BYTES",
+        "Multipart part content type",
+        "bytes",
+    ),
+    (
+        "crates/concord-core/src/body/multipart.rs",
+        "MAX_MULTIPART_METADATA_BYTES",
+        "Multipart aggregate metadata",
+        "bytes",
+    ),
+    (
+        "crates/concord-core/src/body/multipart.rs",
+        "MAX_MULTIPART_INLINE_TEXT_BYTES",
+        "Multipart inline text",
+        "bytes",
+    ),
+    (
         "crates/concord-core/src/limits.rs",
         "MAX_RUNTIME_ENDPOINT_COMPONENTS",
         "Runtime endpoint top-level structure",

@@ -595,13 +595,15 @@ async fn generated_stream_and_multipart_facade_and_explicit_endpoints_use_one_ru
     let multipart = MultipartBody::new()
         .part(
             "text",
-            MultipartPart::text("generated-multipart-text-secret"),
+            MultipartPart::text("generated-multipart-text-secret")
+                .expect("bounded generated multipart text"),
         )
         .expect("generated multipart part")
         .part(
             "bytes",
             MultipartPart::bytes(Bytes::from_static(b"generated-multipart-bytes-secret"))
-                .filename("generated-secret-name.bin")
+                .expect("bounded generated multipart bytes")
+                .file_name("generated-secret-name.bin")
                 .expect("generated multipart filename"),
         )
         .expect("generated multipart bytes part");

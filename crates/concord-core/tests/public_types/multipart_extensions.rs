@@ -10,10 +10,10 @@ struct DownstreamMultipartFactory;
 impl MultipartFactory for DownstreamMultipartFactory {
     fn create(&self) -> Result<MultipartBody, BodyError> {
         MultipartBody::new()
-            .part("text", MultipartPart::text("downstream text"))?
+            .part("text", MultipartPart::text("downstream text")?)?
             .part(
                 "bytes",
-                MultipartPart::bytes(Bytes::from_static(b"downstream bytes")),
+                MultipartPart::bytes(Bytes::from_static(b"downstream bytes"))?,
             )
     }
 }
@@ -24,7 +24,7 @@ fn downstream_multipart_contract_uses_only_advanced_public_imports() {
     fn assert_sync<T: Sync>(_: &T) {}
 
     let streamed = MultipartPart::stream(StreamBody::from_bytes(Bytes::from_static(b"stream")))
-        .filename("public-name.bin")
+        .file_name("public-name.bin")
         .expect("valid filename")
         .content_type("application/octet-stream")
         .expect("valid content type");
