@@ -47,11 +47,12 @@ pub mod auth {
     pub use concord_core::contracts::{AccessToken, ApiKey, BasicCredential, SecretString};
     pub use concord_core::contracts::{
         Auth, AuthError, AuthErrorKind, BoxFuture, ChallengePolicy, CredentialHandle,
-        CredentialMaterial, CredentialProvider, CredentialReason, CredentialRef, CredentialRequest,
+        CredentialMaterial, CredentialMaterialError, CredentialMaterialErrorKind,
+        CredentialProvider, CredentialReason, CredentialRef, CredentialRequest,
         MAX_AUTH_PLACEMENT_NAME_BYTES, MAX_AUTH_QUERY_VALUE_BYTES, MAX_AUTHORIZATION_VALUE_BYTES,
         MAX_BASIC_PASSWORD_BYTES, MAX_BASIC_USERNAME_BYTES, MAX_CREDENTIAL_SECRET_BYTES,
-        ProviderBody, ProviderBodyFactory, ProviderHttp, ProviderRequest, ProviderResponse,
-        ProviderRetry, RecoveryMode, SecretCredential,
+        MAX_SECRET_STRING_BYTES, ProviderBody, ProviderBodyFactory, ProviderHttp, ProviderRequest,
+        ProviderResponse, ProviderRetry, RecoveryMode, SecretCredential,
     };
     #[cfg(feature = "oauth2-client")]
     pub use concord_extras::auth::{
@@ -223,9 +224,10 @@ pub mod __private {
         RateLimitKeyPart, RateLimitRule, RateLimitWindow, RawResponseEndpoint, RequestBodyCategory,
         RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestMeta, RequestOptions,
         ResponseAcquisition, ResponseBodySpec, SafeRequestPlan, TimeoutOverride, TimeoutSelection,
-        Url, assert_generated_contract, build_client_core, credential_store_error,
-        default_http_config, endpoint_id_from_static, inspect_endpoint, map_endpoint,
-        missing_input_error, paginate_request, request, response_request, safe_request_plan,
+        Url, assert_generated_contract, basic_credential_input_error, build_client_core,
+        credential_input_error, credential_store_error, default_http_config,
+        endpoint_id_from_static, inspect_endpoint, map_endpoint, missing_input_error,
+        paginate_request, request, response_request, safe_request_plan,
     };
     /// Creates the façade-owned generated-client runtime baseline.
     #[doc(hidden)]

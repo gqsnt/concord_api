@@ -44,7 +44,9 @@ impl DecodeBody for ExampleTokenCodec {
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
         let token = String::from_utf8(body.to_vec())
             .map_err(|_| CodecError::new("example token UTF-8 decode"))?;
-        Ok(ExampleToken(SecretString::new(token)))
+        Ok(ExampleToken(SecretString::try_from(token).map_err(
+            |_| CodecError::new("example token exceeds protected storage limit"),
+        )?))
     }
 }
 
@@ -78,7 +80,9 @@ impl CredentialProvider for ExampleProvider {
             }
             let token = String::from_utf8(response.into_body().to_vec())
                 .map_err(|_| AuthError::new(AuthErrorKind::Acquisition))?;
-            Ok(ExampleToken(SecretString::new(token)))
+            Ok(ExampleToken(
+                SecretString::try_new(token).map_err(AuthError::from)?,
+            ))
         })
     }
 }

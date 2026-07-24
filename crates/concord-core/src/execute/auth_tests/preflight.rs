@@ -162,7 +162,7 @@ async fn complete_plan_preflight_failure_preserves_earlier_acquisition_and_stops
 #[tokio::test]
 async fn limiter_failure_is_typed_and_prevents_finalization_debug_and_send() {
     let executor = DeterministicExecutor::new();
-    let selector = SlotSelector::static_value(AccessToken::new(INITIAL), Duration::ZERO);
+    let selector = SlotSelector::static_value(access_token(INITIAL), Duration::ZERO);
     let hooks = Arc::new(AuthHooks::default());
     let limiter_acquires = Arc::new(AtomicUsize::new(0));
     let (core, debug) = core_with_runtime(
@@ -205,7 +205,7 @@ async fn limiter_failure_is_typed_and_prevents_finalization_debug_and_send() {
 #[tokio::test]
 async fn clear_during_limiter_wait_prevents_stale_credential_send() {
     let executor = DeterministicExecutor::new();
-    let selector = SlotSelector::static_value(AccessToken::new(INITIAL), Duration::ZERO);
+    let selector = SlotSelector::static_value(access_token(INITIAL), Duration::ZERO);
     let gate = Gate::closed();
     let limiter_acquires = Arc::new(AtomicUsize::new(0));
     let (core, _) = core_with_runtime(
@@ -248,7 +248,7 @@ async fn complete_source_replacement_during_wait_uses_only_the_new_slot() {
             ScriptedResponse::success(Bytes::from_static(b"new slot")),
         )
         .expect("new-slot response");
-    let selector = SlotSelector::static_value(AccessToken::new(INITIAL), Duration::ZERO);
+    let selector = SlotSelector::static_value(access_token(INITIAL), Duration::ZERO);
     let gate = Gate::closed();
     let limiter_acquires = Arc::new(AtomicUsize::new(0));
     let (core, _) = core_with_runtime(
@@ -271,7 +271,7 @@ async fn complete_source_replacement_during_wait_uses_only_the_new_slot() {
     });
     gate.wait_until_reached().await;
     selector
-        .replace_static(AccessToken::new(NEWER))
+        .replace_static(access_token(NEWER))
         .expect("complete source replacement");
     gate.open();
     assert_eq!(
@@ -367,7 +367,7 @@ async fn finalization_expiration_prevents_native_construction_debug_and_send() {
     let checks = Arc::new(AtomicUsize::new(0));
     let selector = SlotSelector::static_value(
         FinalizationExpiryToken {
-            value: SecretString::new(INITIAL),
+            value: secret_string(INITIAL),
             freshness_checks: Arc::clone(&checks),
             expire_after_preflight: true,
         },
@@ -434,7 +434,7 @@ async fn reservation_is_retained_after_credential_finalization_failure() {
     );
     let expiring = SlotSelector::static_value(
         FinalizationExpiryToken {
-            value: SecretString::new(INITIAL),
+            value: secret_string(INITIAL),
             freshness_checks: Arc::new(AtomicUsize::new(0)),
             expire_after_preflight: true,
         },
@@ -454,7 +454,7 @@ async fn reservation_is_retained_after_credential_finalization_failure() {
 
     let stable = SlotSelector::static_value(
         FinalizationExpiryToken {
-            value: SecretString::new(NEWER),
+            value: secret_string(NEWER),
             freshness_checks: Arc::new(AtomicUsize::new(0)),
             expire_after_preflight: false,
         },
@@ -540,7 +540,7 @@ async fn expiry_during_limiter_wait_refreshes_at_current_finalization() {
 async fn invalid_native_auth_value_fails_after_safe_debug_and_before_execution() {
     const INVALID: &str = "invalid-auth-sentinel-91af\r\nnot-a-header";
     let executor = DeterministicExecutor::new();
-    let selector = SlotSelector::static_value(AccessToken::new(INVALID), Duration::ZERO);
+    let selector = SlotSelector::static_value(access_token(INVALID), Duration::ZERO);
     let (core, debug) = core(&executor, Arc::new(AuthHooks::default()));
     let error = api_error(
         request(
@@ -571,11 +571,11 @@ async fn custom_provider_oversized_material_is_revalidated_at_the_core_boundary(
     let selector = SlotSelector::provider(OversizedMaterialProvider, Duration::ZERO);
 
     let error = api_error(
-        request(
+        Request::new(
             core,
-            &selector,
-            ChallengePolicy::Never,
-            RequestBody::bytes(Bytes::new()),
+            OversizedMaterialEndpoint {
+                credential: CredentialRef::new(selector),
+            },
         )
         .await,
     );
@@ -654,7 +654,7 @@ async fn request_debug_is_emitted_before_native_boundary_and_never_contains_auth
     let exposed_after_debug = Arc::new(AtomicBool::new(false));
     let selector = SlotSelector::static_value(
         ExposureToken {
-            value: SecretString::new(INITIAL),
+            value: secret_string(INITIAL),
             debug: Arc::clone(&debug),
             exposed_after_debug: Arc::clone(&exposed_after_debug),
         },

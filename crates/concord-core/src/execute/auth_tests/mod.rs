@@ -52,6 +52,22 @@ const INITIAL: &str = "initial-auth-token-1148c7";
 const REFRESHED: &str = "refreshed-auth-token-709fe2";
 const NEWER: &str = "newer-auth-token-265f0a";
 
+fn secret_string(value: impl AsRef<str>) -> SecretString {
+    SecretString::try_new(value).expect("bounded test protected string")
+}
+
+fn access_token(value: impl AsRef<str>) -> AccessToken {
+    AccessToken::try_new(value).expect("bounded test access token")
+}
+
+fn api_key(value: impl AsRef<str>) -> ApiKey {
+    ApiKey::try_new(value).expect("bounded test API key")
+}
+
+fn basic_credential(username: impl AsRef<str>, password: impl AsRef<str>) -> BasicCredential {
+    BasicCredential::try_new(username, password).expect("bounded test Basic credential")
+}
+
 struct ProtectedEndpoint {
     credential: CredentialRef<AccessToken>,
     challenge: ChallengePolicy,
@@ -430,7 +446,7 @@ impl CredentialProvider for LimiterWaitExpiryProvider {
         let expired = Arc::clone(&self.initial_expired);
         Box::pin(async move {
             Ok(LimiterWaitExpiryToken {
-                value: SecretString::new(INITIAL),
+                value: secret_string(INITIAL),
                 expired,
             })
         })
@@ -445,7 +461,7 @@ impl CredentialProvider for LimiterWaitExpiryProvider {
         self.refreshes.fetch_add(1, Ordering::SeqCst);
         Box::pin(async {
             Ok(LimiterWaitExpiryToken {
-                value: SecretString::new(REFRESHED),
+                value: secret_string(REFRESHED),
                 expired: Arc::new(AtomicBool::new(false)),
             })
         })
@@ -716,7 +732,7 @@ impl RuntimeHooks for AuthHooks {
         {
             selector
                 .expect("replacement selector")
-                .set(AccessToken::new(NEWER))
+                .set(access_token(NEWER))
                 .expect("response-hook replacement");
         }
         Box::pin(async {})
@@ -765,7 +781,7 @@ impl CredentialProvider for RotatingProvider {
     ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
         self.acquires.fetch_add(1, Ordering::SeqCst);
         assert_eq!(context.reason, CredentialReason::Missing);
-        Box::pin(async { Ok(AccessToken::new(INITIAL)) })
+        Box::pin(async { Ok(access_token(INITIAL)) })
     }
 
     fn refresh<'a>(
@@ -779,7 +795,7 @@ impl CredentialProvider for RotatingProvider {
             Ordering::SeqCst,
         );
         assert_eq!(context.reason, CredentialReason::Rejected);
-        Box::pin(async { Ok(AccessToken::new(REFRESHED)) })
+        Box::pin(async { Ok(access_token(REFRESHED)) })
     }
 
     fn recovery_mode(&self) -> RecoveryMode {
@@ -806,8 +822,18 @@ impl CredentialProvider for FailingProvider {
 
 struct OversizedMaterialProvider;
 
+struct OversizedMaterial(SecretString);
+
+impl CredentialMaterial for OversizedMaterial {}
+
+impl SecretCredential for OversizedMaterial {
+    fn expose_secret(&self) -> &str {
+        self.0.expose_secret()
+    }
+}
+
 impl CredentialProvider for OversizedMaterialProvider {
-    type Material = AccessToken;
+    type Material = OversizedMaterial;
 
     fn acquire<'a>(
         &'a self,
@@ -816,8 +842,38 @@ impl CredentialProvider for OversizedMaterialProvider {
         Box::pin(async {
             let mut value = "x".repeat(MAX_CREDENTIAL_SECRET_BYTES);
             value.push_str("provider-material-sentinel-82dc");
-            Ok(AccessToken::new(value))
+            Ok(OversizedMaterial(secret_string(value)))
         })
+    }
+}
+
+struct OversizedMaterialEndpoint {
+    credential: CredentialRef<OversizedMaterial>,
+}
+
+impl EndpointSpec for OversizedMaterialEndpoint {
+    type Body = RequestBody;
+    type Response = Bytes;
+
+    fn request_meta(&self) -> RequestMeta {
+        RequestMeta::new(ENDPOINT, Method::GET, Some(Duration::from_secs(30)))
+    }
+
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
+        builder.push_static("oversized-custom-material")?;
+        builder.push_auth(Auth::bearer(self.credential.clone()))?;
+        Ok(builder.finish())
+    }
+
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        RequestBody::metadata(&RequestBody::bytes(Bytes::new()), context)
+    }
+
+    fn into_body(self) -> Self::Body {
+        RequestBody::bytes(Bytes::new())
     }
 }
 
@@ -1019,7 +1075,7 @@ impl CredentialProvider for IsolatedHttpProvider {
             if response.body() != &Bytes::from_static(b"provider-response-body-f7ae16b96f2d") {
                 return Err(AuthError::new(AuthErrorKind::Acquisition));
             }
-            Ok(AccessToken::new("application-token-e6cc09dfdf24"))
+            Ok(access_token("application-token-e6cc09dfdf24"))
         })
     }
 }
@@ -1043,7 +1099,7 @@ impl CredentialProvider for LoopbackHttpProvider {
             if response.body() != &Bytes::from_static(b"ok") {
                 return Err(AuthError::new(AuthErrorKind::Acquisition));
             }
-            Ok(AccessToken::new("real-provider-application-token"))
+            Ok(access_token("real-provider-application-token"))
         })
     }
 }
@@ -1056,7 +1112,7 @@ impl CredentialProvider for CountingProvider {
         _context: CredentialRequest<'a>,
     ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async { Ok(AccessToken::new(INITIAL)) })
+        Box::pin(async { Ok(access_token(INITIAL)) })
     }
 }
 

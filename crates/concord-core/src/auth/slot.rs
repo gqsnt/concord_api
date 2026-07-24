@@ -7,8 +7,8 @@ use crate::error::AuthErrorKind;
 use crate::http::provider::ProviderHttp;
 
 use super::{
-    AuthError, CredentialMaterial, CredentialProvider, CredentialReason, CredentialRequest,
-    RecoveryMode,
+    AuthError, CredentialMaterial, CredentialMaterialError, CredentialProvider, CredentialReason,
+    CredentialRequest, RecoveryMode,
 };
 
 const REFRESH_SKEW: Duration = Duration::from_secs(60);
@@ -20,11 +20,20 @@ pub(crate) enum CredentialSource {
     Provider,
 }
 
-#[derive(Clone)]
 struct Ready<M> {
     version: u64,
     value: Arc<M>,
     expires_at: Option<Instant>,
+}
+
+impl<M> Clone for Ready<M> {
+    fn clone(&self) -> Self {
+        Self {
+            version: self.version,
+            value: Arc::clone(&self.value),
+            expires_at: self.expires_at,
+        }
+    }
 }
 
 struct Cooldown {
@@ -71,11 +80,20 @@ enum FlightOutcome<M> {
     Reevaluate,
 }
 
-#[derive(Clone)]
 pub(crate) struct PreparedCredential<M> {
     slot: Arc<CredentialSlot<M>>,
     version: u64,
     value: Arc<M>,
+}
+
+impl<M> Clone for PreparedCredential<M> {
+    fn clone(&self) -> Self {
+        Self {
+            slot: Arc::clone(&self.slot),
+            version: self.version,
+            value: Arc::clone(&self.value),
+        }
+    }
 }
 
 impl<M> PreparedCredential<M> {
@@ -114,6 +132,7 @@ where
                 None,
                 Some(value),
                 cooldown_cap,
+                1,
             )),
         })
     }
@@ -125,6 +144,7 @@ where
                 None,
                 None,
                 cooldown_cap,
+                0,
             )),
         })
     }
@@ -139,6 +159,7 @@ where
                 Some(Arc::new(provider)),
                 None,
                 cooldown_cap,
+                0,
             )),
         })
     }
@@ -153,6 +174,7 @@ where
                 Some(provider),
                 None,
                 cooldown_cap,
+                0,
             )),
         })
     }
@@ -231,31 +253,64 @@ where
     }
 
     pub(crate) fn replace_static(&self, value: M) -> Result<(), AuthError> {
-        let cooldown_cap = self.selected()?.cooldown_cap;
-        let replacement =
-            CredentialSlot::new(CredentialSource::Static, None, Some(value), cooldown_cap);
+        let expires_at = value.expires_at();
         let previous = {
             let mut selected = lock(&self.selected)?;
-            std::mem::replace(&mut *selected, replacement)
+            let current = Arc::clone(&selected);
+            let state = lock(&current.state)?;
+            let version = state
+                .next_version
+                .checked_add(1)
+                .ok_or_else(|| AuthError::new(AuthErrorKind::Internal))?;
+            let replacement = CredentialSlot::new_prepared(
+                CredentialSource::Static,
+                None,
+                RecoveryMode::None,
+                Some((value, expires_at)),
+                current.cooldown_cap,
+                version,
+            );
+            let previous = std::mem::replace(&mut *selected, replacement);
+            drop(state);
+            previous
         };
         drop(previous);
         Ok(())
+    }
+
+    pub(crate) fn replace_static_result(
+        &self,
+        value: Result<M, CredentialMaterialError>,
+    ) -> Result<(), AuthError> {
+        let value = value.map_err(AuthError::from)?;
+        self.replace_static(value)
     }
 
     pub(crate) fn replace_provider<P>(&self, provider: P) -> Result<(), AuthError>
     where
         P: CredentialProvider<Material = M>,
     {
-        let cooldown_cap = self.selected()?.cooldown_cap;
-        let replacement = CredentialSlot::new(
-            CredentialSource::Provider,
-            Some(Arc::new(provider)),
-            None,
-            cooldown_cap,
-        );
+        let provider: Arc<dyn CredentialProvider<Material = M>> = Arc::new(provider);
+        let recovery_mode = provider.recovery_mode();
         let previous = {
             let mut selected = lock(&self.selected)?;
-            std::mem::replace(&mut *selected, replacement)
+            let current = Arc::clone(&selected);
+            let state = lock(&current.state)?;
+            let version = state
+                .next_version
+                .checked_add(1)
+                .ok_or_else(|| AuthError::new(AuthErrorKind::Internal))?;
+            let replacement = CredentialSlot::new_prepared(
+                CredentialSource::Provider,
+                Some(provider),
+                recovery_mode,
+                None,
+                current.cooldown_cap,
+                version,
+            );
+            let previous = std::mem::replace(&mut *selected, replacement);
+            drop(state);
+            previous
         };
         drop(previous);
         Ok(())
@@ -285,14 +340,37 @@ where
         provider: Option<Arc<dyn CredentialProvider<Material = M>>>,
         value: Option<M>,
         cooldown_cap: Duration,
+        initial_version: u64,
     ) -> Arc<Self> {
         let recovery_mode = provider
             .as_ref()
             .map_or(RecoveryMode::None, |provider| provider.recovery_mode());
-        let ready = value.map(|value| Ready {
-            expires_at: value.expires_at(),
+        let value = value.map(|value| {
+            let expires_at = value.expires_at();
+            (value, expires_at)
+        });
+        Self::new_prepared(
+            source,
+            provider,
+            recovery_mode,
+            value,
+            cooldown_cap,
+            initial_version,
+        )
+    }
+
+    fn new_prepared(
+        source: CredentialSource,
+        provider: Option<Arc<dyn CredentialProvider<Material = M>>>,
+        recovery_mode: RecoveryMode,
+        value: Option<(M, Option<Instant>)>,
+        cooldown_cap: Duration,
+        initial_version: u64,
+    ) -> Arc<Self> {
+        let ready = value.map(|(value, expires_at)| Ready {
+            expires_at,
             value: Arc::new(value),
-            version: 1,
+            version: initial_version,
         });
         Arc::new(Self {
             source,
@@ -300,7 +378,7 @@ where
             recovery_mode,
             cooldown_cap,
             state: Mutex::new(SlotState {
-                next_version: u64::from(ready.is_some()),
+                next_version: initial_version,
                 ready,
                 rejected_version: None,
                 in_flight: None,
@@ -908,9 +986,16 @@ fn lock<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>, AuthError> {
 }
 
 /// A typed read-only credential capability.
-#[derive(Clone)]
 pub struct CredentialRef<M> {
     pub(crate) selector: Arc<SlotSelector<M>>,
+}
+
+impl<M> Clone for CredentialRef<M> {
+    fn clone(&self) -> Self {
+        Self {
+            selector: Arc::clone(&self.selector),
+        }
+    }
 }
 
 impl<M> CredentialRef<M>
@@ -923,9 +1008,16 @@ where
 }
 
 /// A typed mutable endpoint-backed credential capability.
-#[derive(Clone)]
 pub struct CredentialHandle<M> {
     selector: Arc<SlotSelector<M>>,
+}
+
+impl<M> Clone for CredentialHandle<M> {
+    fn clone(&self) -> Self {
+        Self {
+            selector: Arc::clone(&self.selector),
+        }
+    }
 }
 
 impl<M> CredentialHandle<M>

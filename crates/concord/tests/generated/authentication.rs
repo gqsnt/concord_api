@@ -1,20 +1,27 @@
 use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use concord::api;
 use concord::auth::{
-    AccessToken, AuthError, BoxFuture, CredentialMaterial, CredentialProvider, CredentialRequest,
-    SecretCredential,
+    AccessToken, AuthError, AuthErrorKind, BoxFuture, CredentialMaterial, CredentialProvider,
+    CredentialRequest, MAX_BASIC_PASSWORD_BYTES, MAX_BASIC_USERNAME_BYTES,
+    MAX_CREDENTIAL_SECRET_BYTES, SecretCredential,
 };
 use concord::codec::{CodecError, DecodeBody, DecodeContext};
 use concord::error::{ClientBuildErrorKind, ClientInputKind, ErrorCategory};
 use concord::http::SafeProxy;
 use concord::{Bytes, ClientBuildError, SecretString};
+use concord_test_support::proxy::ConnectProxy;
 use concord_test_support::server::{ResponseScript, ScriptedServer};
+use concord_test_support::tls::TlsServer;
 
-#[derive(Clone)]
 pub struct SessionToken(SecretString);
+
+fn secret(value: impl AsRef<str>) -> SecretString {
+    SecretString::try_new(value).expect("bounded test protected string")
+}
 
 impl CredentialMaterial for SessionToken {}
 
@@ -40,7 +47,7 @@ impl DecodeBody for SessionCodec {
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
         let value =
             String::from_utf8(body.to_vec()).map_err(|_| CodecError::new("safe session decode"))?;
-        Ok(SessionToken(SecretString::new(value)))
+        Ok(SessionToken(secret(value)))
     }
 }
 
@@ -53,7 +60,7 @@ impl CredentialProvider for SessionProvider {
         &'a self,
         _context: CredentialRequest<'a>,
     ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
-        Box::pin(async { Ok(SessionToken(SecretString::new("provider-token"))) })
+        Box::pin(async { Ok(SessionToken(secret("provider-token"))) })
     }
 }
 
@@ -74,7 +81,7 @@ impl CredentialProvider for DroppingSessionProvider {
         &'a self,
         _context: CredentialRequest<'a>,
     ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
-        Box::pin(async { Ok(SessionToken(SecretString::new("selected-token"))) })
+        Box::pin(async { Ok(SessionToken(secret("selected-token"))) })
     }
 }
 
@@ -87,7 +94,10 @@ impl CredentialProvider for BearerProvider {
         &'a self,
         _context: CredentialRequest<'a>,
     ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
-        Box::pin(async { Ok(AccessToken::new("provider-bearer-token")) })
+        Box::pin(async {
+            Ok(AccessToken::try_new("provider-bearer-token")
+                .expect("bounded provider access token"))
+        })
     }
 }
 
@@ -136,6 +146,42 @@ api! {
     }
 }
 
+api! {
+    client SharedSecretApi {
+        base "http://shared-secret.example.test/";
+        credentials {
+            secret shared: String;
+            credential key = api_key(secret.shared);
+            credential token = bearer(secret.shared);
+        }
+    }
+
+    GET keyed() -> Bytes {
+        auth header "X-Api-Key" = key;
+    }
+    GET bearer() -> Bytes {
+        auth bearer token;
+    }
+}
+
+api! {
+    client CredentialProofApi {
+        base "https://localhost/";
+        credentials {
+            secret api_secret: String;
+            credential application_key = api_key(secret.api_secret);
+            credential session = custom crate::SessionProvider;
+        }
+    }
+
+    GET api_key_endpoint() -> Bytes {
+        auth header "X-Api-Key" = application_key;
+    }
+    GET session_endpoint() -> Bytes {
+        auth header "X-Session" = session challenge never;
+    }
+}
+
 #[test]
 fn generated_authentication_surface_has_ordered_inputs_and_source_specific_handles() {
     let client = auth_builder().build().expect("generated auth client");
@@ -162,8 +208,8 @@ fn assert_missing_input(
 ) {
     let error = result.err().expect("required client input is absent");
     assert_eq!(error.kind(), ClientBuildErrorKind::MissingInput);
-    assert_eq!(error.missing_field(), Some(field));
-    assert_eq!(error.missing_input_kind(), Some(input_kind));
+    assert_eq!(error.input_field(), Some(field));
+    assert_eq!(error.input_kind(), Some(input_kind));
 }
 
 #[test]
@@ -176,24 +222,21 @@ fn every_required_client_input_has_focused_safe_builder_metadata() {
     );
     let protected_error = AuthApi::builder()
         .tenant("tenant".to_owned())
-        .api_secret(SecretString::new("first-secret-sentinel-9aa1"))
+        .api_secret(secret("first-secret-sentinel-9aa1"))
         .build()
         .err()
         .expect("bearer secret is absent");
     assert_eq!(protected_error.kind(), ClientBuildErrorKind::MissingInput);
-    assert_eq!(protected_error.missing_field(), Some("bearer_secret"));
-    assert_eq!(
-        protected_error.missing_input_kind(),
-        Some(ClientInputKind::Secret)
-    );
+    assert_eq!(protected_error.input_field(), Some("bearer_secret"));
+    assert_eq!(protected_error.input_kind(), Some(ClientInputKind::Secret));
     for rendered in [protected_error.to_string(), format!("{protected_error:?}")] {
         assert!(!rendered.contains("first-secret-sentinel-9aa1"));
     }
     assert_missing_input(
         AuthApi::builder()
             .tenant("tenant".to_owned())
-            .api_secret(SecretString::new("api"))
-            .bearer_secret(SecretString::new("bearer"))
+            .api_secret(secret("api"))
+            .bearer_secret(secret("bearer"))
             .build(),
         "username",
         ClientInputKind::Secret,
@@ -201,9 +244,9 @@ fn every_required_client_input_has_focused_safe_builder_metadata() {
     assert_missing_input(
         AuthApi::builder()
             .tenant("tenant".to_owned())
-            .api_secret(SecretString::new("api"))
-            .bearer_secret(SecretString::new("bearer"))
-            .username(SecretString::new("user"))
+            .api_secret(secret("api"))
+            .bearer_secret(secret("bearer"))
+            .username(secret("user"))
             .build(),
         "password",
         ClientInputKind::Secret,
@@ -211,28 +254,28 @@ fn every_required_client_input_has_focused_safe_builder_metadata() {
     assert_missing_input(
         AuthApi::builder()
             .tenant("tenant".to_owned())
-            .api_secret(SecretString::new("api"))
-            .bearer_secret(SecretString::new("bearer"))
-            .username(SecretString::new("user"))
-            .password(SecretString::new("password"))
+            .api_secret(secret("api"))
+            .bearer_secret(secret("bearer"))
+            .username(secret("user"))
+            .password(secret("password"))
             .build(),
         "rotating_bearer_provider",
         ClientInputKind::CredentialProvider,
     );
     let error = AuthApi::builder()
         .tenant("tenant".to_owned())
-        .api_secret(SecretString::new("api"))
-        .bearer_secret(SecretString::new("bearer"))
-        .username(SecretString::new("user"))
-        .password(SecretString::new("last-secret-sentinel-4b71"))
+        .api_secret(secret("api"))
+        .bearer_secret(secret("bearer"))
+        .username(secret("user"))
+        .password(secret("last-secret-sentinel-4b71"))
         .rotating_bearer_provider(BearerProvider)
         .build()
         .err()
         .expect("session provider is absent");
     assert_eq!(error.kind(), ClientBuildErrorKind::MissingInput);
-    assert_eq!(error.missing_field(), Some("session_provider"));
+    assert_eq!(error.input_field(), Some("session_provider"));
     assert_eq!(
-        error.missing_input_kind(),
+        error.input_kind(),
         Some(ClientInputKind::CredentialProvider)
     );
     for rendered in [error.to_string(), format!("{error:?}")] {
@@ -240,14 +283,136 @@ fn every_required_client_input_has_focused_safe_builder_metadata() {
     }
 }
 
+fn assert_invalid_credential(
+    result: Result<AuthApi, ClientBuildError>,
+    field: &'static str,
+    sentinel: &str,
+) {
+    let error = result.err().expect("credential input must be rejected");
+    assert_eq!(error.kind(), ClientBuildErrorKind::InvalidCredential);
+    assert_eq!(error.input_field(), Some(field));
+    assert_eq!(error.input_kind(), Some(ClientInputKind::Secret));
+    for rendered in [error.to_string(), format!("{error:?}")] {
+        assert!(!rendered.contains(sentinel));
+    }
+}
+
+#[test]
+fn static_built_in_credentials_validate_exact_limits_during_client_build() {
+    auth_builder()
+        .api_secret(secret("a".repeat(MAX_CREDENTIAL_SECRET_BYTES)))
+        .build()
+        .expect("exact API-key material limit");
+    auth_builder()
+        .bearer_secret(secret("b".repeat(MAX_CREDENTIAL_SECRET_BYTES)))
+        .build()
+        .expect("exact access-token material limit");
+    auth_builder()
+        .username(secret("u".repeat(MAX_BASIC_USERNAME_BYTES)))
+        .password(secret("p".repeat(MAX_BASIC_PASSWORD_BYTES)))
+        .build()
+        .expect("exact Basic component limits");
+}
+
+#[test]
+fn static_built_in_credential_first_excess_fails_build_with_safe_field_metadata() {
+    const FIRST_EXCESS_SENTINEL: &str = "\u{7f}";
+
+    assert_invalid_credential(
+        auth_builder()
+            .api_secret(secret(format!(
+                "{}{FIRST_EXCESS_SENTINEL}",
+                "a".repeat(MAX_CREDENTIAL_SECRET_BYTES)
+            )))
+            .build(),
+        "api_secret",
+        FIRST_EXCESS_SENTINEL,
+    );
+    assert_invalid_credential(
+        auth_builder()
+            .bearer_secret(secret(format!(
+                "{}{FIRST_EXCESS_SENTINEL}",
+                "b".repeat(MAX_CREDENTIAL_SECRET_BYTES)
+            )))
+            .build(),
+        "bearer_secret",
+        FIRST_EXCESS_SENTINEL,
+    );
+    assert_invalid_credential(
+        auth_builder()
+            .username(secret(format!(
+                "{}{FIRST_EXCESS_SENTINEL}",
+                "u".repeat(MAX_BASIC_USERNAME_BYTES)
+            )))
+            .build(),
+        "username",
+        FIRST_EXCESS_SENTINEL,
+    );
+    assert_invalid_credential(
+        auth_builder()
+            .password(secret(format!(
+                "{}{FIRST_EXCESS_SENTINEL}",
+                "p".repeat(MAX_BASIC_PASSWORD_BYTES)
+            )))
+            .build(),
+        "password",
+        FIRST_EXCESS_SENTINEL,
+    );
+}
+
+#[test]
+fn one_declared_secret_can_feed_multiple_credentials_through_shared_clones() {
+    SharedSecretApi::builder()
+        .shared(secret("one-shared-protected-value"))
+        .build()
+        .expect("one bounded secret can feed multiple built-in sources");
+}
+
+#[tokio::test]
+async fn non_clone_custom_material_compiles_and_executes_through_generated_storage() {
+    let server = TlsServer::start().expect("non-Clone material TLS server");
+    server
+        .queue_response(200, b"non-clone".to_vec())
+        .expect("non-Clone material response");
+    let tunnel = ConnectProxy::start(server.address()).expect("non-Clone CONNECT tunnel");
+    let proxy = SafeProxy::parse(tunnel.url()).expect("safe CONNECT proxy");
+    let certificate = server.certificate_pem();
+    let client = credential_proof_builder()
+        .configure_http(move |http| {
+            http.http1_only()
+                .proxy(proxy)
+                .add_root_certificate_pem(certificate)
+        })
+        .build()
+        .expect("non-Clone material client");
+
+    client
+        .session_endpoint()
+        .await
+        .expect("non-Clone provider material request");
+
+    server
+        .wait_for_requests(1, Duration::from_secs(10))
+        .expect("non-Clone material request");
+    let requests = server.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].header("x-session"), Some("provider-token"));
+}
+
 fn auth_builder() -> AuthApiBuilder {
     AuthApi::builder()
         .tenant("tenant".to_owned())
-        .api_secret(SecretString::new("api-secret"))
-        .bearer_secret(SecretString::new("bearer-secret"))
-        .username(SecretString::new("user"))
-        .password(SecretString::new("password"))
+        .api_secret(secret("api-secret"))
+        .bearer_secret(secret("bearer-secret"))
+        .username(secret("user"))
+        .password(secret("password"))
         .rotating_bearer_provider(BearerProvider)
+        .session_provider(SessionProvider)
+}
+
+fn credential_proof_builder() -> CredentialProofApiBuilder {
+    CredentialProofApi::builder()
+        .api_secret(secret("proof-api-key"))
         .session_provider(SessionProvider)
 }
 
@@ -257,10 +422,10 @@ fn repeated_provider_setters_replace_in_call_order() {
     let selected_drops = Arc::new(AtomicUsize::new(0));
     let builder = AuthApi::builder()
         .tenant("tenant".to_owned())
-        .api_secret(SecretString::new("api-secret"))
-        .bearer_secret(SecretString::new("bearer-secret"))
-        .username(SecretString::new("user"))
-        .password(SecretString::new("password"))
+        .api_secret(secret("api-secret"))
+        .bearer_secret(secret("bearer-secret"))
+        .username(secret("user"))
+        .password(secret("password"))
         .rotating_bearer_provider(BearerProvider)
         .session_provider(DroppingSessionProvider {
             drops: Arc::clone(&replaced_drops),
@@ -284,7 +449,7 @@ async fn generated_handles_share_clone_state_keep_independent_builds_and_replace
     clone
         .credentials()
         .acquired()
-        .set(SessionToken(SecretString::new("endpoint-token")))
+        .set(SessionToken(secret("endpoint-token")))
         .await
         .expect("endpoint set");
     assert!(client.credentials().acquired().is_set());
@@ -300,7 +465,7 @@ async fn generated_handles_share_clone_state_keep_independent_builds_and_replace
     clone
         .credentials()
         .acquired()
-        .set(SessionToken(SecretString::new("clone-only")))
+        .set(SessionToken(secret("clone-only")))
         .await
         .expect("clone set");
     assert!(client.credentials().acquired().is_set());
@@ -340,6 +505,75 @@ async fn generated_handles_share_clone_state_keep_independent_builds_and_replace
 }
 
 #[tokio::test]
+async fn credential_replace_exact_limit_succeeds() {
+    let client = credential_proof_builder()
+        .build()
+        .expect("static credential client");
+    client
+        .credentials()
+        .application_key()
+        .replace("x".repeat(MAX_CREDENTIAL_SECRET_BYTES))
+        .await
+        .expect("exact API-key replacement limit");
+}
+
+#[tokio::test]
+async fn failed_static_replacement_preserves_previous_material_and_returns_safe_error() {
+    const INITIAL_KEY: &str = "preserved-static-api-key";
+    const FIRST_EXCESS_SENTINEL: &str = "\u{7f}";
+
+    let server = TlsServer::start().expect("replacement preservation TLS server");
+    server
+        .queue_response(200, b"before".to_vec())
+        .expect("before replacement response");
+    server
+        .queue_response(200, b"after".to_vec())
+        .expect("after replacement response");
+    let tunnel = ConnectProxy::start(server.address()).expect("replacement CONNECT tunnel");
+    let proxy = SafeProxy::parse(tunnel.url()).expect("safe CONNECT proxy");
+    let certificate = server.certificate_pem();
+    let client = credential_proof_builder()
+        .api_secret(secret(INITIAL_KEY))
+        .configure_http(move |http| {
+            http.http1_only()
+                .proxy(proxy)
+                .add_root_certificate_pem(certificate)
+        })
+        .build()
+        .expect("proxied authentication client");
+
+    client
+        .api_key_endpoint()
+        .await
+        .expect("request before failed replacement");
+    let excessive = format!(
+        "{}{FIRST_EXCESS_SENTINEL}",
+        "x".repeat(MAX_CREDENTIAL_SECRET_BYTES)
+    );
+    let error = client
+        .credentials()
+        .application_key()
+        .replace(&excessive)
+        .await
+        .expect_err("first excess replacement");
+    assert_eq!(error.kind(), AuthErrorKind::MaterialTooLarge);
+    assert!(!error.to_string().contains(FIRST_EXCESS_SENTINEL));
+    assert!(!format!("{error:?}").contains(FIRST_EXCESS_SENTINEL));
+    client
+        .api_key_endpoint()
+        .await
+        .expect("request after failed replacement");
+
+    server
+        .wait_for_requests(2, Duration::from_secs(10))
+        .expect("replacement preservation requests");
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].header("x-api-key"), Some(INITIAL_KEY));
+    assert_eq!(requests[1].header("x-api-key"), Some(INITIAL_KEY));
+}
+
+#[tokio::test]
 async fn endpoint_backed_acquisition_uses_normal_endpoint_execution_and_preserves_on_failure() {
     let server = ScriptedServer::start([
         ResponseScript::ok(b"acquired-session".to_vec())
@@ -363,7 +597,7 @@ async fn endpoint_backed_acquisition_uses_normal_endpoint_execution_and_preserve
     client
         .credentials()
         .acquired()
-        .set(SessionToken(SecretString::new("preserved-existing")))
+        .set(SessionToken(secret("preserved-existing")))
         .await
         .expect("existing endpoint material");
     let error = client

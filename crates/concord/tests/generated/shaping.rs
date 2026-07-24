@@ -274,8 +274,8 @@ async fn required_optional_defaulted_client_values_and_missing_input_are_stable(
         .err()
         .expect("required tenant must be absent");
     assert_eq!(missing.kind(), ClientBuildErrorKind::MissingInput);
-    assert_eq!(missing.missing_field(), Some("tenant"));
-    assert_eq!(missing.missing_input_kind(), Some(ClientInputKind::Value));
+    assert_eq!(missing.input_field(), Some("tenant"));
+    assert_eq!(missing.input_kind(), Some(ClientInputKind::Value));
 
     let before_default = CLIENT_DEFAULT_DROPS.load(Ordering::SeqCst);
     let before_explicit = EXPLICIT_DROPS.load(Ordering::SeqCst);

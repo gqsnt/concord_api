@@ -148,7 +148,9 @@ impl CredentialProvider for CountingProvider {
         _context: CredentialRequest<'a>,
     ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
         self.effects.provider.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async { Ok(AccessToken::new(PROVIDER_SENTINEL)) })
+        Box::pin(async {
+            Ok(AccessToken::try_new(PROVIDER_SENTINEL).expect("bounded test access token"))
+        })
     }
 }
 

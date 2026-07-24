@@ -201,7 +201,6 @@ impl MultipartFactory for ExtensionMultipartFactory {
     }
 }
 
-#[derive(Clone)]
 pub struct ExtensionCredential(SecretString);
 
 impl CredentialMaterial for ExtensionCredential {}
@@ -251,7 +250,9 @@ impl CredentialProvider for ExtensionProvider {
             let response = context.http.send(request).await?;
             let value = String::from_utf8(response.into_body().to_vec())
                 .map_err(|_| AuthError::new(AuthErrorKind::Acquisition))?;
-            Ok(ExtensionCredential(SecretString::new(value)))
+            Ok(ExtensionCredential(
+                SecretString::try_new(value).map_err(AuthError::from)?,
+            ))
         })
     }
 }
@@ -752,9 +753,9 @@ async fn downstream_credential_limiter_and_hooks_execute_through_generated_runti
 
     reset_extension_runtime_probes();
     let client = SecureExtensionApi::builder()
-        .session_provider(DirectExtensionProvider::new(SecretString::new(
-            CREDENTIAL_SENTINEL,
-        )))
+        .session_provider(DirectExtensionProvider::new(
+            SecretString::try_new(CREDENTIAL_SENTINEL).expect("bounded extension credential"),
+        ))
         .configure_http(move |http| http.proxy(safe_proxy).add_root_certificate_pem(certificate))
         .configure_runtime(|runtime| {
             runtime

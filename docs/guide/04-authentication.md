@@ -16,7 +16,7 @@ Generated builders expose named setters that accept secret-safe wrappers:
 
 ```rust
 let client = PrivateApi::builder()
-    .api_token(concord::SecretString::new(token))
+    .api_token(concord::SecretString::try_new(token)?)
     .build()?;
 ```
 
@@ -29,6 +29,14 @@ no OAuth-specific or JSON-specific branch. The builder validates its borrowed
 URL, identifier, secret, and scope inputs against the exact
 `concord::auth::MAX_OAUTH2_*` limits before copying. The `client_id_owned` and
 `client_secret_owned` setters accept already-owned `SecretString` values.
+
+`SecretString::try_new` bounds generic protected-string storage, and its
+clones share immutable storage. Built-in API-key, bearer, and Basic sources
+apply their tighter public limits when the generated client is built and
+before a generated credential handle replaces a slot. A rejected replacement
+leaves the previous material and version unchanged. Custom
+`CredentialMaterial` does not need to implement `Clone`; Concord shares ready
+material behind its private slot storage.
 
 Credentials are resolved after public preparation and limiter acquisition, at
 the private native boundary. Hooks, descriptions, plans, errors, completion

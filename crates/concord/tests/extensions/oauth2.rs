@@ -57,7 +57,7 @@ impl CredentialProvider for LocalAccessTokenProvider {
     ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         let token = self.token;
-        Box::pin(async move { Ok(AccessToken::new(token)) })
+        Box::pin(async move { Ok(AccessToken::try_new(token).expect("bounded test access token")) })
     }
 }
 

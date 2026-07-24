@@ -139,8 +139,11 @@ where
     }
 
     #[doc(hidden)]
-    pub async fn replace_static(&self, value: M) -> Result<(), crate::auth::AuthError> {
-        self.selector.replace_static(value)
+    pub async fn replace_static(
+        &self,
+        value: Result<M, crate::auth::CredentialMaterialError>,
+    ) -> Result<(), crate::auth::AuthError> {
+        self.selector.replace_static_result(value)
     }
 
     #[doc(hidden)]
@@ -236,6 +239,31 @@ pub const fn missing_input_error(
     input_kind: ClientInputKind,
 ) -> ClientBuildError {
     ClientBuildError::missing_input(field, input_kind)
+}
+
+/// Produces a safe generated-builder error for one invalid single-string credential input.
+#[doc(hidden)]
+pub fn credential_input_error(
+    field: &'static str,
+    _error: crate::auth::CredentialMaterialError,
+) -> ClientBuildError {
+    ClientBuildError::invalid_credential(field)
+}
+
+/// Produces a safe generated-builder error for one invalid Basic credential input.
+#[doc(hidden)]
+pub fn basic_credential_input_error(
+    username_field: &'static str,
+    password_field: &'static str,
+    error: crate::auth::CredentialMaterialError,
+) -> ClientBuildError {
+    let field = match error.kind() {
+        crate::auth::CredentialMaterialErrorKind::BasicPasswordTooLarge => password_field,
+        crate::auth::CredentialMaterialErrorKind::SecretStringTooLarge
+        | crate::auth::CredentialMaterialErrorKind::CredentialSecretTooLarge
+        | crate::auth::CredentialMaterialErrorKind::BasicUsernameTooLarge => username_field,
+    };
+    ClientBuildError::invalid_credential(field)
 }
 
 /// Creates one side-effect-free stable pending request wrapper.

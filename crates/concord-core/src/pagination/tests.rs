@@ -117,7 +117,10 @@ fn canonical_identity_sorts_names_lowercase_and_preserves_repeated_value_order()
 #[test]
 fn authentication_plan_state_is_absent_from_canonical_logical_identity() {
     fn protected_head(token: &'static str) -> crate::request::PreparedHead {
-        let selector = SlotSelector::static_value(AccessToken::new(token), Duration::ZERO);
+        let selector = SlotSelector::static_value(
+            AccessToken::try_new(token).expect("bounded test access token"),
+            Duration::ZERO,
+        );
         let mut builder = HeadBuilder::new(
             &Url::parse("https://pagination.example.test/v1/").expect("base"),
             RequestMeta::new("pagination_api.protected", Method::GET, None),

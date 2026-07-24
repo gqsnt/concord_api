@@ -35,10 +35,10 @@ async fn actual_authentication_example_stores_and_applies_endpoint_credentials_o
         .build()
         .expect("OAuth helper");
     let client = AuthenticationApi::builder()
-        .api_key(SecretString::new("local-api-key"))
-        .bearer_token(SecretString::new("local-bearer"))
-        .username(SecretString::new("local-user"))
-        .password(SecretString::new("local-password"))
+        .api_key(SecretString::try_new("local-api-key").expect("bounded local API key"))
+        .bearer_token(SecretString::try_new("local-bearer").expect("bounded local bearer token"))
+        .username(SecretString::try_new("local-user").expect("bounded local username"))
+        .password(SecretString::try_new("local-password").expect("bounded local password"))
         .oauth_provider(oauth)
         .custom_provider(ExampleProvider)
         .configure_http(move |http| {

@@ -13,7 +13,7 @@ api! {
 
 fn main() {
     let client = Api::builder()
-        .token(SecretString::new("protected"))
+        .token(SecretString::try_new("protected").expect("bounded protected input"))
         .build()
         .unwrap();
     let credential = client.credentials().session().credential();

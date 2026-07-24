@@ -18,6 +18,6 @@ api! {
 fn main() {
     let _ = ConfiguredApi::new(
         "tenant".to_owned(),
-        SecretString::new("protected"),
+        SecretString::try_new("protected").expect("bounded protected input"),
     );
 }

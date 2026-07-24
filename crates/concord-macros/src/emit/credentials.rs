@@ -134,6 +134,75 @@ pub(super) fn generate_credential_store_fields(
     quote!(#(#fields)*)
 }
 
+pub(super) fn generate_static_credential_resolution(
+    client: &Client,
+    core_path: &TokenStream,
+) -> TokenStream {
+    let statements = client
+        .credentials
+        .iter()
+        .enumerate()
+        .filter_map(|(index, credential)| {
+            let resolved = resolved_credential_material(index, &credential.name);
+            let statement = match &credential.source {
+                CredentialSource::ApiKey { secret } => {
+                    let source = resolved_secret(*secret, &client.secrets[*secret].name);
+                    let field = &client.secrets[*secret].name;
+                    quote! {
+                        let #resolved = #core_path::auth::ApiKey::try_from_secret(#source.clone())
+                            .map_err(|error| {
+                                __concord_generated::__core::__private::credential_input_error(
+                                    ::std::stringify!(#field),
+                                    error,
+                                )
+                            })?;
+                    }
+                }
+                CredentialSource::Bearer { secret } => {
+                    let source = resolved_secret(*secret, &client.secrets[*secret].name);
+                    let field = &client.secrets[*secret].name;
+                    quote! {
+                        let #resolved =
+                            #core_path::auth::AccessToken::try_from_secret(#source.clone())
+                                .map_err(|error| {
+                                    __concord_generated::__core::__private::credential_input_error(
+                                        ::std::stringify!(#field),
+                                        error,
+                                    )
+                                })?;
+                    }
+                }
+                CredentialSource::Basic { username, password } => {
+                    let username_source =
+                        resolved_secret(*username, &client.secrets[*username].name);
+                    let password_source =
+                        resolved_secret(*password, &client.secrets[*password].name);
+                    let username_field = &client.secrets[*username].name;
+                    let password_field = &client.secrets[*password].name;
+                    quote! {
+                        let #resolved = #core_path::auth::BasicCredential::try_from_secrets(
+                            #username_source.clone(),
+                            #password_source.clone(),
+                        )
+                        .map_err(|error| {
+                            __concord_generated::__core::__private::basic_credential_input_error(
+                                ::std::stringify!(#username_field),
+                                ::std::stringify!(#password_field),
+                                error,
+                            )
+                        })?;
+                    }
+                }
+                CredentialSource::Endpoint { .. } | CredentialSource::Custom { .. } => {
+                    return None;
+                }
+            };
+            Some(statement)
+        })
+        .collect::<Vec<_>>();
+    quote!(#(#statements)*)
+}
+
 pub(super) fn generate_credential_store_initializers(
     client: &Client,
     core_path: &TokenStream,
@@ -145,29 +214,13 @@ pub(super) fn generate_credential_store_initializers(
         .map(|(index, credential)| {
             let field = credential_store_field(index, &credential.name);
             let value = match &credential.source {
-                CredentialSource::ApiKey { secret } => {
-                    let secret = resolved_secret(*secret, &client.secrets[*secret].name);
+                CredentialSource::ApiKey { .. }
+                | CredentialSource::Bearer { .. }
+                | CredentialSource::Basic { .. } => {
+                    let material = resolved_credential_material(index, &credential.name);
                     quote!(#core_path::__private::GeneratedCredential::static_value(
                         &core,
-                        #core_path::auth::ApiKey::new(#secret.clone()),
-                    ))
-                }
-                CredentialSource::Bearer { secret } => {
-                    let secret = resolved_secret(*secret, &client.secrets[*secret].name);
-                    quote!(#core_path::__private::GeneratedCredential::static_value(
-                        &core,
-                        #core_path::auth::AccessToken::new(#secret.clone()),
-                    ))
-                }
-                CredentialSource::Basic { username, password } => {
-                    let username = resolved_secret(*username, &client.secrets[*username].name);
-                    let password = resolved_secret(*password, &client.secrets[*password].name);
-                    quote!(#core_path::__private::GeneratedCredential::static_value(
-                        &core,
-                        #core_path::auth::BasicCredential::new(
-                            #username.clone(),
-                            #password.clone(),
-                        ),
+                        #material,
                     ))
                 }
                 CredentialSource::Endpoint { .. } => {
@@ -276,9 +329,9 @@ pub(super) fn generate_credential_handle_types(
                 }
                 pub async fn replace(
                     &self,
-                    value: impl ::std::convert::Into<#core_path::auth::SecretString>,
+                    value: impl ::std::convert::AsRef<str>,
                 ) -> ::std::result::Result<(), #core_path::auth::AuthError> {
-                    self.inner.replace_static(#core_path::auth::ApiKey::new(value)).await
+                    self.inner.replace_static(#core_path::auth::ApiKey::try_new(value)).await
                 }
             }
         });
@@ -298,9 +351,9 @@ pub(super) fn generate_credential_handle_types(
                 }
                 pub async fn replace(
                     &self,
-                    value: impl ::std::convert::Into<#core_path::auth::SecretString>,
+                    value: impl ::std::convert::AsRef<str>,
                 ) -> ::std::result::Result<(), #core_path::auth::AuthError> {
-                    self.inner.replace_static(#core_path::auth::AccessToken::new(value)).await
+                    self.inner.replace_static(#core_path::auth::AccessToken::try_new(value)).await
                 }
             }
         });
@@ -320,11 +373,11 @@ pub(super) fn generate_credential_handle_types(
                 }
                 pub async fn replace(
                     &self,
-                    username: impl ::std::convert::Into<#core_path::auth::SecretString>,
-                    password: impl ::std::convert::Into<#core_path::auth::SecretString>,
+                    username: impl ::std::convert::AsRef<str>,
+                    password: impl ::std::convert::AsRef<str>,
                 ) -> ::std::result::Result<(), #core_path::auth::AuthError> {
                     self.inner.replace_static(
-                        #core_path::auth::BasicCredential::new(username, password),
+                        #core_path::auth::BasicCredential::try_new(username, password),
                     ).await
                 }
             }

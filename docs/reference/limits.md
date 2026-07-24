@@ -27,6 +27,7 @@ ceilings selected for finite construction.
 | One formatted public value | 65,536 | bytes |
 | Endpoint contract identity | 128 | bytes |
 | Authentication placement name | 256 | bytes |
+| Generic protected string | 1,048,576 | bytes |
 | Raw credential secret | 65,536 | bytes |
 | Basic authentication username | 8,192 | bytes |
 | Basic authentication password | 32,768 | bytes |
@@ -62,11 +63,16 @@ capped capture primitive stops retaining UTF-8 output at
 rather than truncating it. Runtime endpoints and generated/public-head host,
 path, query, header, and pagination-sensitive shaping all use that primitive.
 
-Core validates named authentication placements before copying them. After
-limiter authority and credential finalization, it validates borrowed secret
-material, computes Bearer and Basic output with checked arithmetic, and bounds
-the final private header or percent-encoded query value before mutating the
-native request. These hard limits are exposed under `concord::auth`.
+`SecretString` validates its generic retained-storage ceiling before copying,
+and clones share the same immutable allocation. Generated client construction
+validates built-in static credentials against their tighter API-key, bearer,
+and Basic limits before creating the immutable snapshot or credential slots;
+generated replacement validates before slot mutation. After limiter authority
+and credential finalization, core defensively validates borrowed secret
+material from every source, computes Bearer and Basic output with checked
+arithmetic, and bounds the final private header or percent-encoded query value
+before mutating the native request. These hard limits are exposed under
+`concord::auth`.
 
 Multipart constructors validate borrowed names, filenames, content types, and
 inline text before copying them. Recipes retain at most 128 parts and track

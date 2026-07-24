@@ -69,7 +69,9 @@ api! {
 pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
     let client = ReferenceApi::builder()
         .tenant("tenant-a".to_owned())
-        .api_key(concord::SecretString::new("example-api-key"))
+        .api_key(
+            concord::SecretString::try_new("example-api-key").expect("bounded example API key"),
+        )
         .build()?;
     let _: reference_api::StatusRequest = client.status().verbose(true);
     let _: reference_api::regions::FetchRequest = client

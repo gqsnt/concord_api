@@ -23,7 +23,7 @@ There are no separate façade/endpoints public trees and no generated prelude.
 let builder: CatalogApiBuilder = CatalogApi::builder();
 let client: CatalogApi = builder
     .required_value(value)
-    .required_secret(concord::SecretString::new(secret))
+    .required_secret(concord::SecretString::try_new(secret)?)
     .provider(provider)
     .configure_http(|http| /* safe transport configuration */ http)
     .configure_runtime(|runtime| /* limits/hooks/limiter */ runtime)
@@ -37,6 +37,12 @@ exists only when none are required. Missing inputs are runtime-validated at
 Optional setters have `clear_NAME()`. Defaulted setters have `reset_NAME()`.
 Replacement configuration is last-write-wins. An explicit limiter takes
 precedence over generated façade composition.
+
+Built-in static credential material is validated during `build()` before the
+immutable client snapshot and credential slots are created. Its generated
+credential handles expose fallible replacement methods; validation failure
+preserves the prior slot material and version. Construction and replacement
+errors identify only safe generated input names and categories.
 
 ## Scopes
 

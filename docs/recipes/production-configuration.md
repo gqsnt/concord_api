@@ -5,7 +5,7 @@ Treat the generated builder as the one composition root:
 ```rust
 let client = ServiceApi::builder()
     .tenant(settings.tenant)
-    .token(concord::SecretString::new(settings.token))
+    .token(concord::SecretString::try_new(settings.token)?)
     .configure_http(|http| {
         http.connect_timeout(settings.connect_timeout)
     })

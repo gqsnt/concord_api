@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use concord_test_support::executor::DeterministicExecutor;
 use concord_test_support::gate::Gate;
 
+use crate::auth::{ApiKey, MAX_CREDENTIAL_SECRET_BYTES, SecretCredential};
 use crate::hooks::BoxFuture;
 
 use super::*;
@@ -166,6 +167,52 @@ async fn credential_versions_remain_monotonic_across_deterministic_mutations() {
         );
         previous = prepared.version;
     }
+}
+
+#[tokio::test]
+async fn built_in_replacement_exact_limit_succeeds_and_failure_preserves_material_and_version() {
+    const INITIAL: &str = "preserved-slot-api-key";
+    const FIRST_EXCESS_SENTINEL: &str = "\u{7f}";
+
+    let executor = DeterministicExecutor::new();
+    let core = core(&executor);
+    let selector = SlotSelector::static_value(
+        ApiKey::try_new(INITIAL).expect("bounded initial API key"),
+        Duration::ZERO,
+    );
+    let before = selector
+        .preflight(core.provider_http(None))
+        .await
+        .expect("initial ready material");
+    let exact = "e".repeat(MAX_CREDENTIAL_SECRET_BYTES);
+    selector
+        .replace_static_result(ApiKey::try_new(&exact))
+        .expect("exact replacement limit");
+    let replaced = selector
+        .preflight(core.provider_http(None))
+        .await
+        .expect("exact replacement material");
+    assert!(replaced.version > before.version);
+    assert_eq!(replaced.value.expose_secret(), exact);
+
+    let excessive = format!(
+        "{}{FIRST_EXCESS_SENTINEL}",
+        "x".repeat(MAX_CREDENTIAL_SECRET_BYTES)
+    );
+    let error = selector
+        .replace_static_result(ApiKey::try_new(&excessive))
+        .expect_err("first excess replacement");
+    assert_eq!(error.kind(), AuthErrorKind::MaterialTooLarge);
+    assert!(!error.to_string().contains(FIRST_EXCESS_SENTINEL));
+    assert!(!format!("{error:?}").contains(FIRST_EXCESS_SENTINEL));
+
+    let after = selector
+        .preflight(core.provider_http(None))
+        .await
+        .expect("old material remains ready");
+    assert_eq!(after.version, replaced.version);
+    assert_eq!(after.value.expose_secret(), exact);
+    assert!(Arc::ptr_eq(&after.value, &replaced.value));
 }
 
 #[tokio::test]

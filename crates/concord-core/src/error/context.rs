@@ -6,8 +6,8 @@ use super::{ClientBuildErrorKind, ClientInputKind, ConfigurationErrorKind};
 /// A safe client-construction failure.
 pub struct ClientBuildError {
     kind: ClientBuildErrorKind,
-    missing_field: Option<&'static str>,
-    missing_input_kind: Option<ClientInputKind>,
+    input_field: Option<&'static str>,
+    input_kind: Option<ClientInputKind>,
 }
 
 impl ClientBuildError {
@@ -15,16 +15,24 @@ impl ClientBuildError {
     pub(crate) const fn new(kind: ClientBuildErrorKind) -> Self {
         Self {
             kind,
-            missing_field: None,
-            missing_input_kind: None,
+            input_field: None,
+            input_kind: None,
         }
     }
 
     pub(crate) const fn missing_input(field: &'static str, input_kind: ClientInputKind) -> Self {
         Self {
             kind: ClientBuildErrorKind::MissingInput,
-            missing_field: Some(field),
-            missing_input_kind: Some(input_kind),
+            input_field: Some(field),
+            input_kind: Some(input_kind),
+        }
+    }
+
+    pub(crate) const fn invalid_credential(field: &'static str) -> Self {
+        Self {
+            kind: ClientBuildErrorKind::InvalidCredential,
+            input_field: Some(field),
+            input_kind: Some(ClientInputKind::Secret),
         }
     }
 
@@ -34,28 +42,33 @@ impl ClientBuildError {
         self.kind
     }
 
-    /// Returns the named generated builder input that is missing.
+    /// Returns the named generated builder input associated with this failure.
     ///
     /// This is a static Rust setter identifier selected by the declaration
     /// compiler. It never contains a supplied value or protected secret
     /// material.
     #[must_use]
-    pub const fn missing_field(&self) -> Option<&'static str> {
-        self.missing_field
+    pub const fn input_field(&self) -> Option<&'static str> {
+        self.input_field
     }
 
-    /// Returns the semantic category of the missing generated input.
+    /// Returns the semantic category of the associated generated input.
     #[must_use]
-    pub const fn missing_input_kind(&self) -> Option<ClientInputKind> {
-        self.missing_input_kind
+    pub const fn input_kind(&self) -> Option<ClientInputKind> {
+        self.input_kind
     }
 }
 
 impl fmt::Display for ClientBuildError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "client construction failed ({:?})", self.kind)?;
-        if let (Some(field), Some(input_kind)) = (self.missing_field, self.missing_input_kind) {
-            write!(formatter, ": missing {input_kind:?} field `{field}`")?;
+        if let (Some(field), Some(input_kind)) = (self.input_field, self.input_kind) {
+            let reason = match self.kind {
+                ClientBuildErrorKind::MissingInput => "missing",
+                ClientBuildErrorKind::InvalidCredential => "invalid",
+                _ => "associated",
+            };
+            write!(formatter, ": {reason} {input_kind:?} field `{field}`")?;
         }
         Ok(())
     }
@@ -66,8 +79,8 @@ impl fmt::Debug for ClientBuildError {
         formatter
             .debug_struct("ClientBuildError")
             .field("kind", &self.kind)
-            .field("missing_field", &self.missing_field)
-            .field("missing_input_kind", &self.missing_input_kind)
+            .field("input_field", &self.input_field)
+            .field("input_kind", &self.input_kind)
             .finish()
     }
 }
@@ -119,8 +132,8 @@ mod tests {
         let error = ClientBuildError::missing_input("api_key", ClientInputKind::Secret);
 
         assert_eq!(error.kind(), ClientBuildErrorKind::MissingInput);
-        assert_eq!(error.missing_field(), Some("api_key"));
-        assert_eq!(error.missing_input_kind(), Some(ClientInputKind::Secret));
+        assert_eq!(error.input_field(), Some("api_key"));
+        assert_eq!(error.input_kind(), Some(ClientInputKind::Secret));
         for rendered in [error.to_string(), format!("{error:?}")] {
             assert!(rendered.contains("api_key"));
             assert!(!rendered.contains(SENTINEL));

@@ -17,7 +17,7 @@ fn imports_and_constructs_every_enabled_canonical_declaration() {
         concord_examples::contracts::full_dsl::construct().expect("full DSL construction");
         let reference = ReferenceApi::builder()
             .tenant("tenant-a".to_owned())
-            .api_key(SecretString::new("construction-key"))
+            .api_key(SecretString::try_new("construction-key").expect("bounded construction key"))
             .build()
             .expect("reference client");
         let _explicit = concord_examples::contracts::explicit_endpoints::construct(&reference);

@@ -520,9 +520,10 @@ async fn prepared_protected_http_fails_before_hooks_or_body_materialization() {
     let hook_calls = Arc::new(AtomicUsize::new(0));
     let selected_hooks = Arc::clone(&hook_calls);
     let client = PreparedAuthApi::builder()
-        .token(concord::prelude::SecretString::new(
-            "prepared-credential-15e8d20c",
-        ))
+        .token(
+            concord::prelude::SecretString::try_new("prepared-credential-15e8d20c")
+                .expect("bounded prepared credential"),
+        )
         .configure_http({
             let proxy = proxy(&server);
             move |http| http.proxy(proxy)
@@ -710,7 +711,10 @@ async fn prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_ord
 #[test]
 fn prepared_authentication_uses_canonical_collision_and_challenge_validation() {
     let client = PreparedAuthApi::builder()
-        .token(concord::prelude::SecretString::new("credential-sentinel"))
+        .token(
+            concord::prelude::SecretString::try_new("credential-sentinel")
+                .expect("bounded prepared credential"),
+        )
         .build()
         .expect("auth client");
     let credential = client.credentials().api_key().credential();

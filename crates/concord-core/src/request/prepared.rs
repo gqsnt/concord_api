@@ -608,6 +608,10 @@ mod tests {
     const RATE_ID_SENTINEL: &str = "runtime-rate-id-sentinel-527d";
     const RATE_KEY_SENTINEL: &str = "runtime-rate-key-sentinel-28b1";
 
+    fn access_token(value: impl AsRef<str>) -> AccessToken {
+        AccessToken::try_new(value).expect("bounded test access token")
+    }
+
     #[derive(Clone, Copy)]
     struct EmptyDisplay;
 
@@ -759,7 +763,7 @@ mod tests {
 
     fn credential() -> CredentialRef<AccessToken> {
         CredentialRef::new(SlotSelector::static_value(
-            AccessToken::new("runtime-auth-secret-sentinel"),
+            access_token("runtime-auth-secret-sentinel"),
             Duration::from_secs(1),
         ))
     }
@@ -1115,7 +1119,7 @@ mod tests {
     fn runtime_endpoint_auth_public_name_bytes_are_bounded_and_redacted() {
         const SECRET_SENTINEL: &str = "runtime-auth-material-sentinel-8a20";
         let credential = CredentialRef::new(SlotSelector::static_value(
-            AccessToken::new(SECRET_SENTINEL),
+            access_token(SECRET_SENTINEL),
             Duration::from_secs(1),
         ));
         let error = RuntimeEndpoint::builder(EndpointId::from_static("runtime.auth"), Method::GET)

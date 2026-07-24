@@ -58,7 +58,10 @@ impl RateLimitObserver for RiotRateLimitHeaders {
 /// Constructs representative platform, regional, paginated, and Data Dragon requests.
 pub fn construct() -> Result<(), concord::ClientBuildError> {
     let riot = RiotApi::builder()
-        .api_key(concord::SecretString::new("manual-example-key"))
+        .api_key(
+            concord::SecretString::try_new("manual-example-key")
+                .expect("bounded manual example key"),
+        )
         .build()?;
     let _: riot_api::platform::summoner_v4::SummonerByPuuidRequest = riot
         .platform()
@@ -91,7 +94,7 @@ pub async fn run_live_from_environment() -> Result<(), Box<dyn Error>> {
 
     let limiter = GovernorRateLimiter::new().observer(Arc::new(RiotRateLimitHeaders));
     let riot = RiotApi::builder()
-        .api_key(concord::SecretString::new(api_key))
+        .api_key(concord::SecretString::try_from(api_key)?)
         .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(limiter)))
         .build()?;
 

@@ -18,10 +18,10 @@ pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
         .scope("records.read")
         .build()?;
     let client = AuthenticationApi::builder()
-        .api_key(SecretString::new("example-api-key"))
-        .bearer_token(SecretString::new("example-bearer"))
-        .username(SecretString::new("example-user"))
-        .password(SecretString::new("example-password"))
+        .api_key(SecretString::try_new("example-api-key")?)
+        .bearer_token(SecretString::try_new("example-bearer")?)
+        .username(SecretString::try_new("example-user")?)
+        .password(SecretString::try_new("example-password")?)
         .oauth_provider(oauth)
         .custom_provider(ExampleProvider)
         .build()?;

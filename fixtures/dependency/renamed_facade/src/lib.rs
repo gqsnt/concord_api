@@ -128,7 +128,10 @@ api! {
 pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
     let client = RenamedApi::builder()
         .tenant("tenant".to_owned())
-        .api_key(runtime::SecretString::new("protected-api-key"))
+        .api_key(
+            runtime::SecretString::try_new("protected-api-key")
+                .expect("bounded protected API key"),
+        )
         .build()?;
     let _ = client.credentials().application_key().credential();
     let request = client

@@ -19,7 +19,7 @@ fn client() -> RiotApi {
     RiotApi::builder()
         .platform(PlatformRoute::Na1)
         .regional(RegionalRoute::Americas)
-        .api_key(SecretString::new(API_KEY_SENTINEL))
+        .api_key(SecretString::try_new(API_KEY_SENTINEL).expect("bounded Riot test key"))
         .build()
         .expect("Riot client")
 }

@@ -20,7 +20,7 @@ use concord_core::contracts::{
     MAX_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES, MAX_RATE_LIMIT_KEY_PARTS,
     MAX_RATE_LIMIT_RULES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_RULE,
     MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS, MAX_RUNTIME_ENDPOINT_COMPONENTS,
-    MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
+    MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, MAX_SECRET_STRING_BYTES,
 };
 use concord_extras::auth::{
     MAX_OAUTH2_AUTHORIZATION_HEADER_BYTES, MAX_OAUTH2_CLIENT_ID_BYTES,
@@ -229,6 +229,11 @@ fn documented_limits() -> Vec<Limit> {
         Limit {
             label: "Authentication placement name",
             value: MAX_AUTH_PLACEMENT_NAME_BYTES as u64,
+            unit: "bytes",
+        },
+        Limit {
+            label: "Generic protected string",
+            value: MAX_SECRET_STRING_BYTES as u64,
             unit: "bytes",
         },
         Limit {

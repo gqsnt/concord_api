@@ -320,7 +320,12 @@ impl CredentialProvider for CountingRateKeyProvider {
         _context: CredentialRequest<'a>,
     ) -> BoxFuture<'a, Result<Self::Material, crate::auth::AuthError>> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async { Ok(AccessToken::new("rate-key-auth-token-8b71")) })
+        Box::pin(async {
+            Ok(
+                AccessToken::try_new("rate-key-auth-token-8b71")
+                    .expect("bounded test access token"),
+            )
+        })
     }
 }
 

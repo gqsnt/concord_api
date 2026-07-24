@@ -157,7 +157,10 @@ impl OAuth2ClientCredentialsBuilder {
         if client_id.len() > MAX_OAUTH2_CLIENT_ID_BYTES {
             self.failure = Some(OAuth2ClientCredentialsBuildErrorKind::ClientIdTooLong);
         } else {
-            self.client_id = Some(SecretString::new(client_id));
+            self.client_id = Some(
+                SecretString::try_new(client_id)
+                    .expect("the OAuth2 client-ID limit is below the protected-string limit"),
+            );
         }
         self
     }
@@ -190,7 +193,10 @@ impl OAuth2ClientCredentialsBuilder {
         if client_secret.len() > MAX_OAUTH2_CLIENT_SECRET_BYTES {
             self.failure = Some(OAuth2ClientCredentialsBuildErrorKind::ClientSecretTooLong);
         } else {
-            self.client_secret = Some(SecretString::new(client_secret));
+            self.client_secret = Some(
+                SecretString::try_new(client_secret)
+                    .expect("the OAuth2 client-secret limit is below the protected-string limit"),
+            );
         }
         self
     }
@@ -442,10 +448,12 @@ fn decode_token_response(status: StatusCode, body: &Bytes) -> Result<AccessToken
                 .ok_or_else(|| AuthError::new(AuthErrorKind::Acquisition))
         })
         .transpose()?;
-    Ok(match expiration {
-        Some(expires_at) => AccessToken::with_expiration(token, expires_at),
-        None => AccessToken::new(token),
-    })
+    match expiration {
+        Some(expires_at) => {
+            AccessToken::try_with_expiration(token, expires_at).map_err(AuthError::from)
+        }
+        None => AccessToken::try_new(token).map_err(AuthError::from),
+    }
 }
 
 fn invalid_oauth_configuration() -> AuthError {
@@ -754,7 +762,9 @@ mod tests {
         let maximum = "s".repeat(MAX_OAUTH2_CLIENT_SECRET_BYTES);
         OAuth2ClientCredentials::builder("https://auth.example.test/token")
             .client_id(CLIENT_ID)
-            .client_secret_owned(SecretString::new(maximum))
+            .client_secret_owned(
+                SecretString::try_new(maximum).expect("bounded OAuth2 client secret"),
+            )
             .build()
             .expect("maximum client secret");
 
@@ -762,7 +772,10 @@ mod tests {
         let error = build_error(
             OAuth2ClientCredentials::builder("https://auth.example.test/token")
                 .client_id(CLIENT_ID)
-                .client_secret_owned(SecretString::new(excessive.clone()))
+                .client_secret_owned(
+                    SecretString::try_new(excessive.clone())
+                        .expect("bounded generic protected string"),
+                )
                 .build(),
         );
         assert_build_error_safe(
@@ -991,8 +1004,12 @@ mod tests {
         let builder = OAuth2ClientCredentials::builder(format!(
             "https://auth.example.test/token?value={URL_SENTINEL}"
         ))
-        .client_id_owned(SecretString::new(ID_SENTINEL))
-        .client_secret_owned(SecretString::new(SECRET_SENTINEL))
+        .client_id_owned(
+            SecretString::try_new(ID_SENTINEL).expect("bounded OAuth2 client identifier"),
+        )
+        .client_secret_owned(
+            SecretString::try_new(SECRET_SENTINEL).expect("bounded OAuth2 client secret"),
+        )
         .scope(SCOPE_SENTINEL);
         let builder_debug = format!("{builder:?}");
         for sentinel in [URL_SENTINEL, ID_SENTINEL, SECRET_SENTINEL, SCOPE_SENTINEL] {

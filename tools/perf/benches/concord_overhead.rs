@@ -208,12 +208,15 @@ fn report(audit: &mut CategoryAudit, name: &'static str, iterations: usize, star
 
 fn configured_builder() -> BenchApiBuilder {
     BenchApi::builder()
-        .api_secret(SecretString::new("benchmark-only-key"))
+        .api_secret(SecretString::try_new("benchmark-only-key").expect("bounded benchmark key"))
         .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
 }
 
 fn configured_credential_builder() -> CredentialBenchApiBuilder {
-    CredentialBenchApi::builder().api_secret(SecretString::new("benchmark-only-ready-credential"))
+    CredentialBenchApi::builder().api_secret(
+        SecretString::try_new("benchmark-only-ready-credential")
+            .expect("bounded benchmark credential"),
+    )
 }
 
 fn core_client_construction(iterations: usize, audit: &mut CategoryAudit) {
@@ -308,7 +311,7 @@ fn body_limit_polling(
     }))?;
     let proxy = SafeProxy::parse(server.url(""))?;
     let client = BenchApi::builder()
-        .api_secret(SecretString::new("benchmark-only-key"))
+        .api_secret(SecretString::try_new("benchmark-only-key").expect("bounded benchmark key"))
         .configure_http(move |http| http.proxy(proxy))
         .configure_runtime(|runtime| {
             runtime

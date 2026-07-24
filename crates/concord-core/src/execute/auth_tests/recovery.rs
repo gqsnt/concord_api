@@ -1082,7 +1082,7 @@ async fn static_and_endpoint_challenges_mutate_only_exact_attributed_source_with
             Bytes::from_static(b"static terminal"),
         ))
         .expect("static challenge");
-    let static_slot = SlotSelector::static_value(AccessToken::new(INITIAL), Duration::ZERO);
+    let static_slot = SlotSelector::static_value(access_token(INITIAL), Duration::ZERO);
     let (core, _) = core(&executor, Arc::new(AuthHooks::default()));
     let first = api_error(
         request(
@@ -1107,7 +1107,7 @@ async fn static_and_endpoint_challenges_mutate_only_exact_attributed_source_with
     assert_eq!(second.auth_kind(), Some(AuthErrorKind::Rejected));
     assert_eq!(executor.application().request_count().expect("count"), 1);
     static_slot
-        .replace_static(AccessToken::new(REFRESHED))
+        .replace_static(access_token(REFRESHED))
         .expect("complete static replacement");
     executor
         .application()
@@ -1127,7 +1127,7 @@ async fn static_and_endpoint_challenges_mutate_only_exact_attributed_source_with
 
     let endpoint_slot = SlotSelector::endpoint(Duration::ZERO);
     endpoint_slot
-        .set(AccessToken::new(INITIAL))
+        .set(access_token(INITIAL))
         .expect("endpoint material");
     executor
         .application()
@@ -1167,8 +1167,8 @@ async fn forbidden_policy_and_single_attribution_leave_unrelated_credentials_unc
             ScriptedResponse::status(StatusCode::FORBIDDEN, Bytes::from_static(b"terminal")),
         )
         .expect("attributed forbidden response");
-    let first = SlotSelector::static_value(AccessToken::new(INITIAL), Duration::ZERO);
-    let second = SlotSelector::static_value(AccessToken::new(NEWER), Duration::ZERO);
+    let first = SlotSelector::static_value(access_token(INITIAL), Duration::ZERO);
+    let second = SlotSelector::static_value(access_token(NEWER), Duration::ZERO);
     let hooks = Arc::new(AuthHooks::default());
     hooks.observe(Arc::clone(&first));
     let (core, _) = core(&executor, Arc::clone(&hooks));
@@ -1203,8 +1203,8 @@ async fn forbidden_policy_and_single_attribution_leave_unrelated_credentials_unc
             Bytes::from_static(b"ordinary forbidden"),
         ))
         .expect("ordinary forbidden response");
-    let first = SlotSelector::static_value(AccessToken::new(INITIAL), Duration::ZERO);
-    let second = SlotSelector::static_value(AccessToken::new(NEWER), Duration::ZERO);
+    let first = SlotSelector::static_value(access_token(INITIAL), Duration::ZERO);
+    let second = SlotSelector::static_value(access_token(NEWER), Duration::ZERO);
     let error = api_error(
         Request::new(
             core,
@@ -1233,7 +1233,7 @@ async fn default_never_preserves_static_material_and_query_auth_exists_only_in_n
             Bytes::from_static(b"ordinary status"),
         ))
         .expect("ordinary status");
-    let selector = SlotSelector::static_value(AccessToken::new(INITIAL), Duration::ZERO);
+    let selector = SlotSelector::static_value(access_token(INITIAL), Duration::ZERO);
     let (core, _) = core(&executor, Arc::new(AuthHooks::default()));
     let error = api_error(
         request(

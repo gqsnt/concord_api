@@ -13,7 +13,6 @@ use concord_core::contracts::{
 
 const SENTINEL: &str = "authentication-public-api-sentinel-f629cb6a8fe749ea";
 
-#[derive(Clone)]
 struct SessionToken(SecretString);
 
 impl CredentialMaterial for SessionToken {}
@@ -46,7 +45,9 @@ impl CredentialProvider for SessionProvider {
             .timeout(Duration::from_secs(2))
             .response_limit(NonZeroUsize::new(4_096).expect("positive response limit"));
             let _response = context.http.send(request).await?;
-            Ok(SessionToken(SecretString::new("provider-result")))
+            Ok(SessionToken(
+                SecretString::try_new("provider-result").expect("bounded provider result"),
+            ))
         })
     }
 
@@ -86,7 +87,9 @@ fn exact_handle_and_auth_signatures(
 
     async fn mutate(handle: &CredentialHandle<SessionToken>) -> Result<(), AuthError> {
         handle
-            .set(SessionToken(SecretString::new("replacement")))
+            .set(SessionToken(
+                SecretString::try_new("replacement").expect("bounded replacement"),
+            ))
             .await?;
         handle.clear().await
     }
@@ -135,13 +138,14 @@ fn authentication_contracts_are_available_only_through_approved_namespaces() {
 
 #[test]
 fn built_in_materials_and_errors_are_explicit_and_secret_safe() {
-    let secret = SecretString::new(SENTINEL);
+    let secret = SecretString::try_new(SENTINEL).expect("bounded protected string");
     assert_eq!(secret.expose_secret().len(), SENTINEL.len());
     let expiration = Instant::now() + Duration::from_secs(300);
-    let token = AccessToken::with_expiration(secret.clone(), expiration);
-    let plain_token = AccessToken::new(SENTINEL);
-    let key = ApiKey::new(SENTINEL);
-    let basic = BasicCredential::new(SENTINEL, SENTINEL);
+    let token = AccessToken::try_from_secret_with_expiration(secret.clone(), expiration)
+        .expect("bounded expiring access token");
+    let plain_token = AccessToken::try_new(SENTINEL).expect("bounded access token");
+    let key = ApiKey::try_new(SENTINEL).expect("bounded API key");
+    let basic = BasicCredential::try_new(SENTINEL, SENTINEL).expect("bounded Basic credential");
     assert_eq!(token.expires_at(), Some(expiration));
     assert_eq!(plain_token.expires_at(), None);
 

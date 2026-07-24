@@ -105,6 +105,8 @@ pub enum PaginationErrorKind {
 pub enum ClientBuildErrorKind {
     /// A required generated input was absent.
     MissingInput,
+    /// A configured built-in credential violated a finite material limit.
+    InvalidCredential,
     /// The generated client's base URL was invalid.
     InvalidBaseUrl,
     /// The requested TLS capability was unavailable.

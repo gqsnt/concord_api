@@ -3,9 +3,10 @@ use std::time::Duration;
 
 use concord_core::contracts::{
     ApiError, AuthErrorKind, Bytes, ClientBuildError, ClientBuildErrorKind, ClientInputKind,
-    CodecError, ConfigurationError, ConfigurationErrorKind, DecodeBody, DecodeContext, EndpointId,
-    ErrorCategory, HeaderName, HttpResponseFailure, Method, PaginationErrorKind,
-    RateLimitErrorKind, SanitizedHeaderMap, StatusBody, StatusBodyDecodeError, StatusBodyState,
+    CodecError, ConfigurationError, ConfigurationErrorKind, CredentialMaterialError,
+    CredentialMaterialErrorKind, DecodeBody, DecodeContext, EndpointId, ErrorCategory, HeaderName,
+    HttpResponseFailure, Method, PaginationErrorKind, RateLimitErrorKind, SanitizedHeaderMap,
+    StatusBody, StatusBodyDecodeError, StatusBodyState,
 };
 
 fn api_error_accessors(error: &ApiError) {
@@ -35,8 +36,8 @@ fn response_accessors(response: &HttpResponseFailure) {
 
 fn client_build_accessors(error: &ClientBuildError) {
     let _: ClientBuildErrorKind = error.kind();
-    let _: Option<&'static str> = error.missing_field();
-    let _: Option<ClientInputKind> = error.missing_input_kind();
+    let _: Option<&'static str> = error.input_field();
+    let _: Option<ClientInputKind> = error.input_kind();
 }
 
 fn owning_accessors(error: ApiError, response: HttpResponseFailure, body: StatusBody) {
@@ -86,6 +87,7 @@ fn downstream_surface_has_exact_structured_accessors_and_traits() {
 
     assert_error_traits::<ApiError>();
     assert_error_traits::<ClientBuildError>();
+    assert_error_traits::<CredentialMaterialError>();
     assert_error_traits::<ConfigurationError>();
     assert_error_traits::<CodecError>();
     assert_error_traits::<StatusBodyDecodeError>();
@@ -98,6 +100,7 @@ fn downstream_surface_has_exact_structured_accessors_and_traits() {
     assert_value_traits::<PaginationErrorKind>();
     assert_value_traits::<ClientBuildErrorKind>();
     assert_value_traits::<ClientInputKind>();
+    assert_value_traits::<CredentialMaterialErrorKind>();
     assert_value_traits::<ConfigurationErrorKind>();
     assert_value_traits::<StatusBodyState>();
 

@@ -138,6 +138,8 @@ pub(super) fn generate_client(
         .collect::<Vec<_>>();
     let build_secret_statements = generate_secret_resolution(client, core_path);
     let build_provider_statements = generate_provider_resolution(client, core_path);
+    let build_static_credential_statements =
+        generate_static_credential_resolution(client, core_path);
     let snapshot_fields = client
         .values
         .iter()
@@ -410,6 +412,7 @@ pub(super) fn generate_client(
                     #(#build_value_statements)*
                     #build_secret_statements
                     #build_provider_statements
+                    #build_static_credential_statements
                     let Some(http) = self.__concord_http else {
                         unreachable!("generated HTTP builder state is internally consistent");
                     };

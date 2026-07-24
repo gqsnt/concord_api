@@ -13,12 +13,13 @@ pub(crate) use slot::SlotSelector;
 
 pub use error::AuthError;
 pub use material::{
-    AccessToken, ApiKey, BasicCredential, CredentialMaterial, SecretCredential, SecretString,
+    AccessToken, ApiKey, BasicCredential, CredentialMaterial, CredentialMaterialError,
+    CredentialMaterialErrorKind, MAX_BASIC_PASSWORD_BYTES, MAX_BASIC_USERNAME_BYTES,
+    MAX_CREDENTIAL_SECRET_BYTES, MAX_SECRET_STRING_BYTES, SecretCredential, SecretString,
 };
 pub use placement::{
     Auth, ChallengePolicy, MAX_AUTH_PLACEMENT_NAME_BYTES, MAX_AUTH_QUERY_VALUE_BYTES,
-    MAX_AUTHORIZATION_VALUE_BYTES, MAX_BASIC_PASSWORD_BYTES, MAX_BASIC_USERNAME_BYTES,
-    MAX_CREDENTIAL_SECRET_BYTES,
+    MAX_AUTHORIZATION_VALUE_BYTES,
 };
 pub use provider::{CredentialProvider, CredentialReason, CredentialRequest, RecoveryMode};
 pub use slot::{CredentialHandle, CredentialRef};

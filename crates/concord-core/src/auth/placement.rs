@@ -15,16 +15,13 @@ use crate::http::provider::ProviderHttp;
 
 use super::material::{BasicCredential, SecretCredential};
 use super::slot::{CredentialSource, PreparedCredential, SlotSelector};
-use super::{AuthError, CredentialMaterial, CredentialRef, RecoveryMode};
+use super::{
+    AuthError, CredentialMaterial, CredentialRef, MAX_BASIC_PASSWORD_BYTES,
+    MAX_BASIC_USERNAME_BYTES, MAX_CREDENTIAL_SECRET_BYTES, RecoveryMode,
+};
 
 /// Maximum retained byte length of one named authentication placement.
 pub const MAX_AUTH_PLACEMENT_NAME_BYTES: usize = 256;
-/// Maximum raw byte length accepted from one single-string credential.
-pub const MAX_CREDENTIAL_SECRET_BYTES: usize = 65_536;
-/// Maximum raw byte length of a Basic authentication username.
-pub const MAX_BASIC_USERNAME_BYTES: usize = 8_192;
-/// Maximum raw byte length of a Basic authentication password.
-pub const MAX_BASIC_PASSWORD_BYTES: usize = 32_768;
 /// Maximum byte length of one final native authentication header value.
 pub const MAX_AUTHORIZATION_VALUE_BYTES: usize = 65_536;
 /// Maximum encoded byte length of one private authentication query value.
@@ -787,7 +784,7 @@ mod tests {
 
     fn credential() -> CredentialRef<ApiKey> {
         CredentialRef::new(SlotSelector::static_value(
-            ApiKey::new("test-key"),
+            ApiKey::try_new("test-key").expect("bounded test API key"),
             Duration::from_secs(1),
         ))
     }
@@ -864,7 +861,8 @@ mod tests {
     fn basic_limits_and_checked_base64_arithmetic_are_finite() {
         let username = "u".repeat(MAX_BASIC_USERNAME_BYTES);
         let password = "p".repeat(MAX_BASIC_PASSWORD_BYTES);
-        let credential = BasicCredential::new(username.as_str(), password.as_str());
+        let credential = BasicCredential::try_new(username.as_str(), password.as_str())
+            .expect("exact Basic component limits");
         let NativeMaterial::Basic { username, password } =
             basic_material(&credential).expect("exact Basic component limits")
         else {
@@ -874,19 +872,6 @@ mod tests {
         assert!(value.as_bytes().len() <= MAX_AUTHORIZATION_VALUE_BYTES);
         assert!(value.is_sensitive());
 
-        let oversized_username =
-            BasicCredential::new("u".repeat(MAX_BASIC_USERNAME_BYTES + 1), "password");
-        let error = basic_material(&oversized_username)
-            .err()
-            .expect("first username excess");
-        assert_eq!(error.kind(), AuthErrorKind::MaterialTooLarge);
-
-        let oversized_password =
-            BasicCredential::new("username", "p".repeat(MAX_BASIC_PASSWORD_BYTES + 1));
-        let error = basic_material(&oversized_password)
-            .err()
-            .expect("first password excess");
-        assert_eq!(error.kind(), AuthErrorKind::MaterialTooLarge);
         assert_eq!(checked_base64_len(0), Some(0));
         assert_eq!(checked_base64_len(3), Some(4));
         assert_eq!(checked_base64_len(4), Some(8));

@@ -125,6 +125,10 @@ pub(super) fn resolved_provider(index: usize, name: &Ident) -> Ident {
     private_ident("resolved_provider", index, name)
 }
 
+pub(super) fn resolved_credential_material(index: usize, name: &Ident) -> Ident {
+    private_ident("resolved_credential_material", index, name)
+}
+
 pub(super) fn credential_store_field(index: usize, name: &Ident) -> Ident {
     private_ident("credential", index, name)
 }

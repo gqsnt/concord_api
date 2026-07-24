@@ -17,7 +17,7 @@ async fn production_managed_reqwest_inserts_auth_over_real_tls_loopback() {
     )
     .expect("managed TLS core")
     .with_debug_output(Arc::clone(&debug));
-    let selector = SlotSelector::static_value(AccessToken::new(NATIVE_ONLY), Duration::ZERO);
+    let selector = SlotSelector::static_value(access_token(NATIVE_ONLY), Duration::ZERO);
 
     let output = request(
         core,
@@ -77,9 +77,8 @@ async fn basic_and_custom_header_material_exist_only_at_the_native_boundary() {
         .expect("header response");
     let hooks = Arc::new(AuthHooks::default());
     let (core, debug) = core(&executor, hooks);
-    let basic =
-        SlotSelector::static_value(BasicCredential::new("user", "password"), Duration::ZERO);
-    let key = SlotSelector::static_value(ApiKey::new(API_KEY), Duration::ZERO);
+    let basic = SlotSelector::static_value(basic_credential("user", "password"), Duration::ZERO);
+    let key = SlotSelector::static_value(api_key(API_KEY), Duration::ZERO);
 
     let basic_result = Request::new(
         core.clone(),
@@ -172,10 +171,9 @@ async fn prepared_bearer_basic_header_and_query_auth_use_only_the_native_boundar
         )
         .expect("prepared query response");
     let (core, debug) = core(&executor, Arc::new(AuthHooks::default()));
-    let bearer = SlotSelector::static_value(AccessToken::new(BEARER), Duration::ZERO);
-    let basic =
-        SlotSelector::static_value(BasicCredential::new("user", "password"), Duration::ZERO);
-    let key = SlotSelector::static_value(ApiKey::new(API_KEY), Duration::ZERO);
+    let bearer = SlotSelector::static_value(access_token(BEARER), Duration::ZERO);
+    let basic = SlotSelector::static_value(basic_credential("user", "password"), Duration::ZERO);
+    let key = SlotSelector::static_value(api_key(API_KEY), Duration::ZERO);
 
     let cases = [
         (
@@ -253,7 +251,7 @@ async fn prepared_authentication_attachments_materialize_in_builder_order() {
     let first = SlotSelector::static_value(
         OrderedPreparedCredential {
             id: "first",
-            value: SecretString::new("first-prepared-auth-1f31c4"),
+            value: secret_string("first-prepared-auth-1f31c4"),
             calls: Arc::clone(&calls),
         },
         Duration::ZERO,
@@ -261,7 +259,7 @@ async fn prepared_authentication_attachments_materialize_in_builder_order() {
     let second = SlotSelector::static_value(
         OrderedPreparedCredential {
             id: "second",
-            value: SecretString::new("second-prepared-auth-b4f28e"),
+            value: secret_string("second-prepared-auth-b4f28e"),
             calls: Arc::clone(&calls),
         },
         Duration::ZERO,
