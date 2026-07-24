@@ -113,8 +113,10 @@ pub mod codec {
 pub mod endpoint {
     pub use concord_core::advanced::{
         EndpointCapabilities, EndpointDescription, EndpointId, MAX_ENDPOINT_ID_BYTES,
-        RequestBodyCategory, ResponseAcquisition, RuntimeEndpoint, RuntimeEndpointBuilder,
-        SafeRequestPlan, TimeoutSelection,
+        MAX_FORMATTED_PUBLIC_VALUE_BYTES, MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS,
+        MAX_RUNTIME_ENDPOINT_COMPONENTS, MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, RequestBodyCategory,
+        ResponseAcquisition, RuntimeEndpoint, RuntimeEndpointBuilder, SafeRequestPlan,
+        TimeoutSelection,
     };
     pub use concord_core::{PaginatedRequest, Request, ResponseRequest};
 }
@@ -161,10 +163,12 @@ pub mod pagination {
 pub mod rate_limit {
     pub use concord_core::advanced::{BoxFuture, RateLimitErrorKind};
     pub use concord_core::rate_limit::{
-        Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, NoopRateLimiter, RateLimitError,
-        RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitObserver, RateLimitPermit,
-        RateLimitPlan, RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimitRule,
-        RateLimitWindow, RateLimiter,
+        Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_ID_BYTES,
+        MAX_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES, MAX_RATE_LIMIT_KEY_PARTS,
+        MAX_RATE_LIMIT_RULES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_RULE, NoopRateLimiter,
+        RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitObserver,
+        RateLimitPermit, RateLimitPlan, RateLimitRequest, RateLimitResponse, RateLimitResponseHead,
+        RateLimitRule, RateLimitWindow, RateLimiter,
     };
     #[cfg(feature = "rate-limit-governor")]
     pub use concord_extras::rate_limit::{DefaultRateLimitObserver, GovernorRateLimiter};
@@ -203,20 +207,25 @@ pub mod advanced {
         CredentialRef, CredentialRequest, DebugLevel, DecodeBody, DecodeContext, Discard,
         EncodeBody, EncodeContext, EndpointCapabilities, EndpointDescription, EndpointId,
         ErrorCategory, ExecutionMeta, HeaderMap, HeaderName, HeaderValue, HookError,
-        HttpConfigBuilder, HttpResponseFailure, LengthHint, MAX_ENDPOINT_ID_BYTES, MediaType,
-        Method, NoContent, NoopRateLimiter, OctetStream, OperationId, PageResponseSpec,
-        PaginationCompletionEvent, PaginationController, PaginationError, PaginationErrorKind,
-        ProviderBody, ProviderBodyFactory, ProviderHttp, ProviderRequest, ProviderResponse,
-        ProviderRetry, RateLimitError, RateLimitErrorKind, RateLimitId, RateLimitKey,
-        RateLimitKeyPart, RateLimitObserver, RateLimitPermit, RateLimitPlan, RateLimitRequest,
-        RateLimitResponse, RateLimitResponseHead, RateLimitRule, RateLimitWindow, RateLimiter,
-        RecoveryMode, RequestBody, RequestBodyCategory, RequestBodyContext, RequestBodyMetadata,
-        RequestBodySpec, RequestContentType, ResponseAcquisition, ResponseBodyError,
-        ResponseBodyErrorKind, ResponseBodySpec, ResponseHead, ResponseHeadEvent, ResponseMode,
-        RuntimeConfigBuilder, RuntimeEndpoint, RuntimeEndpointBuilder, RuntimeHooks, SafeProxy,
-        SafeRequestPlan, SanitizedHeaderMap, SanitizedHeaderValue, SanitizedHeaders,
-        SecretCredential, StatusBody, StatusBodyDecodeError, StatusBodyState, StatusCode, Stream,
-        StreamBody, Streaming, Text, TimeoutSelection, Url, Version,
+        HttpConfigBuilder, HttpResponseFailure, LengthHint, MAX_ENDPOINT_ID_BYTES,
+        MAX_FORMATTED_PUBLIC_VALUE_BYTES, MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_BYTES,
+        MAX_RATE_LIMIT_KEY_PART_NAME_BYTES, MAX_RATE_LIMIT_KEY_PARTS,
+        MAX_RATE_LIMIT_RULES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_RULE,
+        MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS, MAX_RUNTIME_ENDPOINT_COMPONENTS,
+        MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, MediaType, Method, NoContent, NoopRateLimiter,
+        OctetStream, OperationId, PageResponseSpec, PaginationCompletionEvent,
+        PaginationController, PaginationError, PaginationErrorKind, ProviderBody,
+        ProviderBodyFactory, ProviderHttp, ProviderRequest, ProviderResponse, ProviderRetry,
+        RateLimitError, RateLimitErrorKind, RateLimitId, RateLimitKey, RateLimitKeyPart,
+        RateLimitObserver, RateLimitPermit, RateLimitPlan, RateLimitRequest, RateLimitResponse,
+        RateLimitResponseHead, RateLimitRule, RateLimitWindow, RateLimiter, RecoveryMode,
+        RequestBody, RequestBodyCategory, RequestBodyContext, RequestBodyMetadata, RequestBodySpec,
+        RequestContentType, ResponseAcquisition, ResponseBodyError, ResponseBodyErrorKind,
+        ResponseBodySpec, ResponseHead, ResponseHeadEvent, ResponseMode, RuntimeConfigBuilder,
+        RuntimeEndpoint, RuntimeEndpointBuilder, RuntimeHooks, SafeProxy, SafeRequestPlan,
+        SanitizedHeaderMap, SanitizedHeaderValue, SanitizedHeaders, SecretCredential, StatusBody,
+        StatusBodyDecodeError, StatusBodyState, StatusCode, Stream, StreamBody, Streaming, Text,
+        TimeoutSelection, Url, Version,
     };
     #[cfg(feature = "multipart")]
     pub use concord_core::advanced::{Multipart, MultipartBody, MultipartFactory, MultipartPart};

@@ -29,58 +29,138 @@ const REQUIRED_RECIPES: &[&str] = &[
     "verify",
 ];
 
-const LIMITS: &[(&str, &str, &str)] = &[
-    ("DEFAULT_REQUEST_BODY_BYTES", "Request body", "bytes"),
+const LIMITS: &[(&str, &str, &str, &str)] = &[
     (
+        "crates/concord-core/src/runtime/defaults.rs",
+        "DEFAULT_REQUEST_BODY_BYTES",
+        "Request body",
+        "bytes",
+    ),
+    (
+        "crates/concord-core/src/runtime/defaults.rs",
         "DEFAULT_RESPONSE_BODY_BYTES",
         "Buffered successful response",
         "bytes",
     ),
     (
+        "crates/concord-core/src/runtime/defaults.rs",
         "DEFAULT_STREAM_RESPONSE_BYTES",
         "Streaming response",
         "bytes",
     ),
     (
+        "crates/concord-core/src/runtime/defaults.rs",
         "DEFAULT_STATUS_BODY_BYTES",
         "Captured terminal status body",
         "bytes",
     ),
     (
+        "crates/concord-core/src/runtime/defaults.rs",
         "DEFAULT_PROVIDER_REQUEST_BYTES",
         "Credential-provider request body",
         "bytes",
     ),
     (
+        "crates/concord-core/src/runtime/defaults.rs",
         "DEFAULT_PROVIDER_RESPONSE_BYTES",
         "Credential-provider response body",
         "bytes",
     ),
-    ("DEFAULT_PAGINATION_MAX_PAGES", "Pagination pages", "pages"),
     (
+        "crates/concord-core/src/runtime/defaults.rs",
+        "DEFAULT_PAGINATION_MAX_PAGES",
+        "Pagination pages",
+        "pages",
+    ),
+    (
+        "crates/concord-core/src/runtime/defaults.rs",
         "DEFAULT_PAGINATION_MAX_ITEMS",
         "Pagination accumulated items",
         "items",
     ),
     (
+        "crates/concord-core/src/runtime/defaults.rs",
         "DEFAULT_PAGINATION_IDENTITY_BYTES",
         "Retained pagination identities",
         "bytes",
     ),
     (
+        "crates/concord-core/src/runtime/defaults.rs",
         "DEFAULT_AUTH_FAILURE_COOLDOWN_SECONDS",
         "Authentication-failure cooldown cap",
         "seconds",
     ),
     (
+        "crates/concord-core/src/runtime/defaults.rs",
         "DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS",
         "Server-directed rate-limit cooldown cap",
         "seconds",
     ),
     (
+        "crates/concord-core/src/runtime/defaults.rs",
         "DEFAULT_RATE_LIMIT_KEY_BYTES",
-        "Resolved rate-limit key",
+        "Default limiter-prepared rate-limit key",
         "bytes",
+    ),
+    (
+        "crates/concord-core/src/limits.rs",
+        "MAX_FORMATTED_PUBLIC_VALUE_BYTES",
+        "One formatted public value",
+        "bytes",
+    ),
+    (
+        "crates/concord-core/src/limits.rs",
+        "MAX_RUNTIME_ENDPOINT_COMPONENTS",
+        "Runtime endpoint top-level structure",
+        "components",
+    ),
+    (
+        "crates/concord-core/src/limits.rs",
+        "MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES",
+        "Runtime endpoint aggregate public shape",
+        "bytes",
+    ),
+    (
+        "crates/concord-core/src/limits.rs",
+        "MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS",
+        "Runtime endpoint authentication placements",
+        "placements",
+    ),
+    (
+        "crates/concord-core/src/limits.rs",
+        "MAX_RATE_LIMIT_ID_BYTES",
+        "Rate-limit rule ID",
+        "bytes",
+    ),
+    (
+        "crates/concord-core/src/limits.rs",
+        "MAX_RATE_LIMIT_KEY_PARTS",
+        "Rate-limit key",
+        "parts",
+    ),
+    (
+        "crates/concord-core/src/limits.rs",
+        "MAX_RATE_LIMIT_KEY_PART_NAME_BYTES",
+        "Rate-limit key-part name",
+        "bytes",
+    ),
+    (
+        "crates/concord-core/src/limits.rs",
+        "MAX_RATE_LIMIT_KEY_BYTES",
+        "Rate-limit hard aggregate key",
+        "bytes",
+    ),
+    (
+        "crates/concord-core/src/limits.rs",
+        "MAX_RATE_LIMIT_WINDOWS_PER_RULE",
+        "Rate-limit rule",
+        "windows",
+    ),
+    (
+        "crates/concord-core/src/limits.rs",
+        "MAX_RATE_LIMIT_RULES_PER_PLAN",
+        "Rate-limit plan",
+        "rules",
     ),
 ];
 
@@ -221,10 +301,10 @@ fn feature_description(name: &str) -> Option<&'static str> {
 }
 
 fn generated_limit_table(root: &Path) -> Result<String, String> {
-    let source_path = root.join("crates/concord-core/src/runtime/defaults.rs");
-    let source = read(&source_path)?;
-    let mut table = String::from("| Runtime bound | Default | Unit |\n|---|---:|---|\n");
-    for (constant, label, unit) in LIMITS {
+    let mut table = String::from("| Bound | Value | Unit |\n|---|---:|---|\n");
+    for (relative_source, constant, label, unit) in LIMITS {
+        let source_path = root.join(relative_source);
+        let source = read(&source_path)?;
         let prefix = format!("pub const {constant}:");
         let line = source
             .lines()

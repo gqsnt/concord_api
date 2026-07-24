@@ -19,7 +19,9 @@ pub use crate::codec::{
 };
 pub use crate::endpoint::{
     EndpointCapabilities, EndpointDescription, EndpointId, MAX_ENDPOINT_ID_BYTES,
-    RequestBodyCategory, ResponseAcquisition, SafeRequestPlan, TimeoutSelection,
+    MAX_FORMATTED_PUBLIC_VALUE_BYTES, MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS,
+    MAX_RUNTIME_ENDPOINT_COMPONENTS, MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, RequestBodyCategory,
+    ResponseAcquisition, SafeRequestPlan, TimeoutSelection,
 };
 pub use crate::error::{
     ApiError, AuthErrorKind, ClientBuildError, ClientBuildErrorKind, ClientInputKind,
@@ -37,10 +39,12 @@ pub use crate::http::{HttpConfigBuilder, ProviderRetry, SafeProxy};
 pub use crate::operation::OperationId;
 pub use crate::pagination::{PaginationController, PaginationError};
 pub use crate::rate_limit::{
-    Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, NoopRateLimiter, RateLimitError,
-    RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitObserver, RateLimitPermit, RateLimitPlan,
-    RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimitRule, RateLimitWindow,
-    RateLimiter,
+    Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_ID_BYTES,
+    MAX_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES, MAX_RATE_LIMIT_KEY_PARTS,
+    MAX_RATE_LIMIT_RULES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_RULE, NoopRateLimiter,
+    RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitObserver,
+    RateLimitPermit, RateLimitPlan, RateLimitRequest, RateLimitResponse, RateLimitResponseHead,
+    RateLimitRule, RateLimitWindow, RateLimiter,
 };
 #[cfg(feature = "records")]
 pub use crate::records::{

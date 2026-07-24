@@ -6,6 +6,12 @@ use concord::{
     auth, body, codec, endpoint, error, hooks, http, pagination, rate_limit, response, runtime,
 };
 
+const _: () = assert!(
+    endpoint::MAX_FORMATTED_PUBLIC_VALUE_BYTES <= endpoint::MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES
+);
+const _: () =
+    assert!(rate_limit::DEFAULT_RATE_LIMIT_KEY_BYTES <= rate_limit::MAX_RATE_LIMIT_KEY_BYTES);
+
 fn public_type<T>() -> &'static str {
     type_name::<T>()
 }
@@ -29,6 +35,27 @@ fn semantic_domains_are_available_without_implementation_crate_imports() {
     ];
 
     assert!(names.iter().all(|name| !name.is_empty()));
+}
+
+#[test]
+fn hard_structural_limits_are_reachable_from_their_facade_domains() {
+    let endpoint_limits = [
+        endpoint::MAX_FORMATTED_PUBLIC_VALUE_BYTES,
+        endpoint::MAX_RUNTIME_ENDPOINT_COMPONENTS,
+        endpoint::MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
+        endpoint::MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS,
+    ];
+    let rate_limits = [
+        rate_limit::MAX_RATE_LIMIT_ID_BYTES,
+        rate_limit::MAX_RATE_LIMIT_KEY_PARTS,
+        rate_limit::MAX_RATE_LIMIT_KEY_PART_NAME_BYTES,
+        rate_limit::MAX_RATE_LIMIT_KEY_BYTES,
+        rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_RULE,
+        rate_limit::MAX_RATE_LIMIT_RULES_PER_PLAN,
+    ];
+
+    assert!(endpoint_limits.into_iter().all(|limit| limit > 0));
+    assert!(rate_limits.into_iter().all(|limit| limit > 0));
 }
 
 #[cfg(feature = "records")]

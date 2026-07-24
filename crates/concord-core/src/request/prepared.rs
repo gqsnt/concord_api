@@ -13,16 +13,15 @@ use crate::body::{
     RequestBodyMetadata, RequestBodySpec, Stream,
 };
 use crate::codec::{EncodeBody, MediaType};
+use crate::construction::StructuralBudget;
 use crate::endpoint::{
-    EndpointCapabilities, EndpointDescription, EndpointId, RequestBodyCategory, TimeoutSelection,
+    EndpointCapabilities, EndpointDescription, EndpointId, MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS,
+    MAX_RUNTIME_ENDPOINT_COMPONENTS, MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, RequestBodyCategory,
+    TimeoutSelection,
 };
 use crate::error::{ApiError, ConfigurationError, ConfigurationErrorKind};
 use crate::rate_limit::{RateLimitPlan, RateLimitRule};
 use crate::response::{NoContent, ResponseBodySpec, ResponseMode};
-
-const MAX_RUNTIME_PUBLIC_COMPONENTS: usize = 256;
-const MAX_RUNTIME_PUBLIC_BYTES: usize = 64 * 1024;
-const MAX_RUNTIME_AUTH_PLACEMENTS: usize = 64;
 
 /// Builds one owned hand-written endpoint for execution by a generated client.
 ///
@@ -270,7 +269,7 @@ impl<R> RuntimeEndpointBuilder<R> {
             auth.len(),
             rate_limits.len(),
         )?;
-        if auth.len() > MAX_RUNTIME_AUTH_PLACEMENTS {
+        if auth.len() > MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS {
             return Err(ConfigurationError::new(
                 ConfigurationErrorKind::InvalidAuthentication,
             ));
@@ -408,41 +407,69 @@ fn validate_public_shape(
     auth_placements: usize,
     rate_limit_rules: usize,
 ) -> Result<(), ConfigurationError> {
-    let components = path_segments
-        .len()
-        .checked_add(query.len())
-        .and_then(|count| count.checked_add(headers.len()))
-        .and_then(|count| count.checked_add(auth_placements))
-        .and_then(|count| count.checked_add(rate_limit_rules))
-        .ok_or_else(|| ConfigurationError::new(ConfigurationErrorKind::InvalidValue))?;
-    if components > MAX_RUNTIME_PUBLIC_COMPONENTS {
-        return Err(ConfigurationError::new(
-            ConfigurationErrorKind::InvalidValue,
-        ));
+    let mut budget = StructuralBudget::new();
+    for components in [
+        path_segments.len(),
+        query.len(),
+        headers.len(),
+        auth_placements,
+        rate_limit_rules,
+    ] {
+        budget
+            .try_add(
+                components,
+                0,
+                MAX_RUNTIME_ENDPOINT_COMPONENTS,
+                MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
+            )
+            .map_err(|_| ConfigurationError::new(ConfigurationErrorKind::InvalidValue))?;
     }
 
-    let mut bytes = 0_usize;
     for value in path_segments {
-        bytes = bytes
-            .checked_add(value.len())
-            .ok_or_else(|| ConfigurationError::new(ConfigurationErrorKind::InvalidValue))?;
+        budget
+            .try_add(
+                0,
+                value.len(),
+                MAX_RUNTIME_ENDPOINT_COMPONENTS,
+                MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
+            )
+            .map_err(|_| ConfigurationError::new(ConfigurationErrorKind::InvalidValue))?;
     }
     for (name, value) in query {
-        bytes = bytes
-            .checked_add(name.len())
-            .and_then(|sum| sum.checked_add(value.len()))
-            .ok_or_else(|| ConfigurationError::new(ConfigurationErrorKind::InvalidValue))?;
+        budget
+            .try_add(
+                0,
+                name.len(),
+                MAX_RUNTIME_ENDPOINT_COMPONENTS,
+                MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
+            )
+            .and_then(|()| {
+                budget.try_add(
+                    0,
+                    value.len(),
+                    MAX_RUNTIME_ENDPOINT_COMPONENTS,
+                    MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
+                )
+            })
+            .map_err(|_| ConfigurationError::new(ConfigurationErrorKind::InvalidValue))?;
     }
     for (name, value) in headers {
-        bytes = bytes
-            .checked_add(name.as_str().len())
-            .and_then(|sum| sum.checked_add(value.len()))
-            .ok_or_else(|| ConfigurationError::new(ConfigurationErrorKind::InvalidValue))?;
-    }
-    if bytes > MAX_RUNTIME_PUBLIC_BYTES {
-        return Err(ConfigurationError::new(
-            ConfigurationErrorKind::InvalidValue,
-        ));
+        budget
+            .try_add(
+                0,
+                name.as_str().len(),
+                MAX_RUNTIME_ENDPOINT_COMPONENTS,
+                MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
+            )
+            .and_then(|()| {
+                budget.try_add(
+                    0,
+                    value.len(),
+                    MAX_RUNTIME_ENDPOINT_COMPONENTS,
+                    MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
+                )
+            })
+            .map_err(|_| ConfigurationError::new(ConfigurationErrorKind::InvalidValue))?;
     }
     Ok(())
 }
@@ -653,14 +680,14 @@ mod tests {
     fn runtime_public_shape_bounds_accept_the_boundary_and_reject_first_excess() {
         let mut boundary =
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.components"), Method::GET);
-        for _ in 0..MAX_RUNTIME_PUBLIC_COMPONENTS {
+        for _ in 0..MAX_RUNTIME_ENDPOINT_COMPONENTS {
             boundary = boundary.query("", "");
         }
         boundary.build().expect("component boundary");
 
         let mut excessive =
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.components"), Method::GET);
-        for _ in 0..=MAX_RUNTIME_PUBLIC_COMPONENTS {
+        for _ in 0..=MAX_RUNTIME_ENDPOINT_COMPONENTS {
             excessive = excessive.query("", "");
         }
         assert_eq!(
@@ -674,7 +701,7 @@ mod tests {
 
         let mut excessive_rules =
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.rules"), Method::GET);
-        for _ in 0..=MAX_RUNTIME_PUBLIC_COMPONENTS {
+        for _ in 0..=MAX_RUNTIME_ENDPOINT_COMPONENTS {
             excessive_rules = excessive_rules.rate_limit(rule("bounded", "tenant"));
         }
         assert_eq!(
@@ -687,12 +714,12 @@ mod tests {
         );
 
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.bytes"), Method::GET)
-            .path_segment("x".repeat(MAX_RUNTIME_PUBLIC_BYTES))
+            .path_segment("x".repeat(MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES))
             .build()
             .expect("public-byte boundary");
         assert_eq!(
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.bytes"), Method::GET)
-                .path_segment("x".repeat(MAX_RUNTIME_PUBLIC_BYTES + 1))
+                .path_segment("x".repeat(MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES + 1))
                 .build()
                 .err()
                 .expect("first excess public byte")

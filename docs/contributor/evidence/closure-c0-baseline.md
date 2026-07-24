@@ -8,9 +8,8 @@ Started from commit:
 (`refactor: harden final concord contract`) on branch `master`.
 
 Finished at commit:
-The C0 commit containing this evidence, with message
-`docs: establish Concord refactor closure baseline`. Its exact hash is
-self-referential here and will be backfilled in the closure ledger by C1.
+`f5ce4bb2ed58215055b6a986fa76d97c4951728d`
+(`docs: establish Concord refactor closure baseline`).
 
 Files changed:
 

@@ -4,11 +4,13 @@ Every cumulative lifecycle surface is finite. Runtime setters replace these
 defaults on the generated client builder; positive counts/byte limits use
 `NonZeroU32` or `NonZeroUsize`.
 
-The table is generated from the single normative core defaults source and
-checked by `cargo run -p concord-xtask -- docs`.
+The table is generated from normative core constants and checked by
+`cargo run --locked -p concord-xtask -- docs`. `DEFAULT_*` entries are
+selected runtime defaults; `MAX_*` entries are non-adjustable structural
+ceilings selected for finite construction.
 
 <!-- BEGIN GENERATED LIMITS -->
-| Runtime bound | Default | Unit |
+| Bound | Value | Unit |
 |---|---:|---|
 | Request body | 16,777,216 | bytes |
 | Buffered successful response | 16,777,216 | bytes |
@@ -21,8 +23,27 @@ checked by `cargo run -p concord-xtask -- docs`.
 | Retained pagination identities | 4,194,304 | bytes |
 | Authentication-failure cooldown cap | 60 | seconds |
 | Server-directed rate-limit cooldown cap | 60 | seconds |
-| Resolved rate-limit key | 1,024 | bytes |
+| Default limiter-prepared rate-limit key | 1,024 | bytes |
+| One formatted public value | 65,536 | bytes |
+| Runtime endpoint top-level structure | 256 | components |
+| Runtime endpoint aggregate public shape | 65,536 | bytes |
+| Runtime endpoint authentication placements | 64 | placements |
+| Rate-limit rule ID | 256 | bytes |
+| Rate-limit key | 32 | parts |
+| Rate-limit key-part name | 128 | bytes |
+| Rate-limit hard aggregate key | 65,536 | bytes |
+| Rate-limit rule | 16 | windows |
+| Rate-limit plan | 64 | rules |
 <!-- END GENERATED LIMITS -->
+
+Dynamic host, path, query, and header values cross a user-code trust boundary
+when Concord invokes their `Display` implementation. User formatting may do
+arbitrary CPU work, block, panic, or ignore a formatting error. Concord's
+capped capture primitive stops retaining UTF-8 output at
+`concord::endpoint::MAX_FORMATTED_PUBLIC_VALUE_BYTES` and rejects excess
+rather than truncating it. The closure ledger tracks migration of every
+request-shaping consumer to that primitive; finite formatted capture is not a
+global completion claim until C2 and C4 are complete.
 
 The inherited client operation timeout is disabled by default. Generated
 endpoint timeout declarations remain effective independently; runtime-defined
