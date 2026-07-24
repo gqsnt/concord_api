@@ -30,22 +30,22 @@ serde_json = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
-concord-test-support = { package = "concord-test-support", version = "=0.1.0", path = "../concord-test-support", default-features = false, features = ["loopback"] }
+concord-test-support = { path = "../concord-test-support", default-features = false, features = ["loopback"] }
 futures-core.workspace = true
 tokio.workspace = true
 
-[[bin]]
+[[example]]
 name = "minimal"
-path = "src/bin/minimal.rs"
+path = "examples/minimal.rs"
 
-[[bin]]
+[[example]]
 name = "records"
-path = "src/bin/records.rs"
+path = "examples/records.rs"
 required-features = ["csv", "ndjson"]
 
-[[bin]]
+[[example]]
 name = "riot"
-path = "src/bin/riot.rs"
+path = "examples/riot.rs"
 required-features = ["riot-live"]
 
 [lints]

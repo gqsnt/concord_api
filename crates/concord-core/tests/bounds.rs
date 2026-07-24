@@ -1,2 +1,3 @@
-#[path = "bounds/status_body_contract.rs"]
-mod status_body_contract;
+mod bounds {
+    mod status_body_contract;
+}

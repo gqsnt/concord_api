@@ -7,8 +7,7 @@ rust-version.workspace = true
 publish = false
 
 [features]
-default = ["cargo-fixture", "deterministic", "loopback"]
-cargo-fixture = ["dep:serde_json"]
+default = ["deterministic", "loopback"]
 deterministic = ["dep:bytes", "dep:http", "dep:tokio"]
 loopback = ["dep:base64", "dep:rustls"]
 
@@ -17,7 +16,6 @@ base64 = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
 http = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
-serde_json = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 
 [package.metadata.docs.rs]

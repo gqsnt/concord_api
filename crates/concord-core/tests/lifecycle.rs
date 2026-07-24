@@ -1,2 +1,3 @@
-#[path = "lifecycle/https_auth_contract.rs"]
-mod https_auth_contract;
+mod lifecycle {
+    mod https_auth_contract;
+}

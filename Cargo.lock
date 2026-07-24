@@ -223,13 +223,15 @@ dependencies = [
  "bytes",
  "http",
  "rustls",
- "serde_json",
  "tokio",
 ]
 
 [[package]]
 name = "concord-xtask"
 version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "core-foundation"

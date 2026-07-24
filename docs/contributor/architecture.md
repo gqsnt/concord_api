@@ -37,8 +37,12 @@ concord-core <--- concord-extras
 - `crates/concord` is the application façade, public namespace owner, macro
   reexport, feature-forwarding owner, and approved default-composition owner.
 - `crates/concord-examples` depends only on `concord`.
-- `crates/concord-test-support`, `fixtures`, `tools/xtask`, and `tools/perf`
-  remain internal support.
+- `crates/concord-test-support` contains deterministic runtime and loopback
+  infrastructure only.
+- `fixtures` contains the isolated renamed-façade, contract-mismatch, feature,
+  and MSRV Cargo graphs.
+- `tools/xtask` owns repository-level Cargo, rustdoc, policy, and package
+  orchestration; `tools/perf` observes public lifecycle behavior.
 
 Core never depends on extras, macros, or façade. Extras depends only on core.
 Macros do not depend on extras or core at runtime. Examples do not import an

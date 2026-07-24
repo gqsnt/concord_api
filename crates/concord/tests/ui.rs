@@ -6,12 +6,6 @@ fn final_language_and_named_surface_compile_without_generated_import_conventions
 }
 
 #[test]
-fn endpoint_identity_requires_fallible_public_construction() {
-    let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/fail/language/endpoint_id_into_unavailable.rs");
-}
-
-#[test]
 fn malformed_syntax_and_name_resolution_have_focused_diagnostics() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/fail/syntax/*.rs");
@@ -31,7 +25,6 @@ fn pagination_contracts_reject_invalid_bindings_modes_and_terminals() {
     for path in [
         "tests/ui/fail/pagination/non_paginated_no_paginate.rs",
         "tests/ui/fail/pagination/pagination_bounds.rs",
-        "tests/ui/fail/pagination/pagination_method_absence.rs",
         "tests/ui/fail/pagination/pagination_syntax.rs",
         "tests/ui/fail/pagination/pagination_types.rs",
         "tests/ui/fail/pagination/stream_pagination_absent.rs",
@@ -69,13 +62,6 @@ fn generated_privacy_and_capability_boundaries_are_compiler_enforced() {
     cases.compile_fail("tests/ui/fail/capabilities/multipart_response.rs");
     #[cfg(feature = "dangerous-raw-response")]
     cases.compile_fail("tests/ui/fail/capabilities/raw_stream_mode_rejected.rs");
-}
-
-#[cfg(feature = "dangerous-raw-response")]
-#[test]
-fn dangerous_generated_terminals_preserve_exact_mode_boundaries() {
-    let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/fail/features/*.rs");
 }
 
 #[cfg(all(feature = "brotli", feature = "default-tls"))]

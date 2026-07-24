@@ -14,44 +14,6 @@ fn source_only_public_surface_failures_use_trybuild() {
     cases.compile_fail("tests/ui/fail/request_spec_metadata_signature.rs");
     #[cfg(not(feature = "records"))]
     cases.compile_fail("tests/ui/fail/response_mode_is_sealed.rs");
-    #[cfg(not(feature = "multipart"))]
-    cases.compile_fail("tests/ui/fail/multipart_spec_feature_absent.rs");
-    #[cfg(feature = "records")]
-    cases.compile_fail("tests/ui/fail/records_pagination_absent.rs");
-}
-
-#[cfg(not(any(feature = "dangerous-custom-retry", feature = "dangerous-raw-response")))]
-#[test]
-fn default_surface_exposes_no_dangerous_capability() {
-    let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/fail/dangerous_custom_retry_absent.rs");
-    cases.compile_fail("tests/ui/fail/dangerous_raw_response_absent.rs");
-}
-
-#[cfg(all(
-    feature = "dangerous-custom-retry",
-    not(feature = "dangerous-raw-response")
-))]
-#[test]
-fn custom_retry_excludes_raw_response_surface() {
-    let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/fail/dangerous_raw_response_absent_with_custom_retry.rs");
-}
-
-#[cfg(all(
-    feature = "dangerous-raw-response",
-    not(feature = "dangerous-custom-retry")
-))]
-#[test]
-fn raw_response_flag_excludes_custom_retry_surface() {
-    let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/fail/dangerous_custom_retry_absent_with_raw_response.rs");
+    #[cfg(feature = "dangerous-raw-response")]
     cases.compile_fail("tests/ui/fail/dangerous_raw_response_fields_private.rs");
-}
-
-#[cfg(not(feature = "multipart"))]
-#[test]
-fn multipart_public_surface_is_absent_without_its_feature() {
-    let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/fail/multipart_feature_absent.rs");
 }

@@ -29,7 +29,7 @@ concord_extras = { package = "concord-extras", version = "=0.1.0", path = "../co
 concord_macros = { package = "concord-macros", version = "=0.1.0", path = "../concord-macros", default-features = false }
 
 [dev-dependencies]
-concord_test_support = { package = "concord-test-support", version = "=0.1.0", path = "../concord-test-support", default-features = false, features = ["cargo-fixture", "loopback"] }
+concord_test_support = { package = "concord-test-support", path = "../concord-test-support", default-features = false, features = ["loopback"] }
 futures-core.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

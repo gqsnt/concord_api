@@ -1,5 +1,9 @@
 #![forbid(unsafe_code)]
 
+mod cargo;
+mod fixtures;
+mod msrv_ui;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
@@ -340,10 +344,13 @@ fn run() -> Result<(), String> {
             check_docs(&root, write)
         }
         Some("fixtures") => {
-            if arguments.next().is_some() {
-                return Err("usage: cargo run -p concord-xtask -- fixtures".into());
-            }
-            run_fixtures(&root)
+            accept_optional_locked(arguments, "fixtures")?;
+            fixtures::run_all(&root)
+        }
+        Some("msrv-ui") => {
+            accept_optional_locked(arguments, "msrv-ui")?;
+            msrv_ui::run(&root);
+            Ok(())
         }
         Some("package") => {
             if arguments.next().is_some() {
@@ -360,9 +367,20 @@ fn run() -> Result<(), String> {
             Ok(())
         }
         _ => Err(
-            "usage: cargo run -p concord-xtask -- <docs [--write] | fixtures | package | policy>"
-                .into(),
+            "usage: cargo run -p concord-xtask -- <docs [--write] | fixtures [--locked] | msrv-ui [--locked] | package | policy>".into(),
         ),
+    }
+}
+
+fn accept_optional_locked(
+    mut arguments: impl Iterator<Item = String>,
+    command: &str,
+) -> Result<(), String> {
+    match (arguments.next().as_deref(), arguments.next()) {
+        (None, None) | (Some("--locked"), None) => Ok(()),
+        _ => Err(format!(
+            "usage: cargo run -p concord-xtask -- {command} [--locked]"
+        )),
     }
 }
 
@@ -1122,37 +1140,6 @@ fn collect_markdown(directory: &Path, files: &mut Vec<PathBuf>) -> Result<(), St
         }
     }
     Ok(())
-}
-
-fn run_fixtures(root: &Path) -> Result<(), String> {
-    run_command_quiet(
-        root,
-        "cargo",
-        &[
-            "metadata",
-            "--manifest-path",
-            "fixtures/Cargo.toml",
-            "--locked",
-            "--no-deps",
-            "--format-version",
-            "1",
-        ],
-    )?;
-    run_command(
-        root,
-        "cargo",
-        &[
-            "test",
-            "-p",
-            "concord",
-            "--test",
-            "public_compile",
-            "--no-default-features",
-            "--locked",
-            "--",
-            "--test-threads=1",
-        ],
-    )
 }
 
 fn verify_product_packages(root: &Path) -> Result<(), String> {

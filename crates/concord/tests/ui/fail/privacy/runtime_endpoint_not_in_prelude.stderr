@@ -1,5 +1,0 @@
-error[E0432]: unresolved import `concord::prelude::RuntimeEndpoint`
- --> tests/ui/fail/privacy/runtime_endpoint_not_in_prelude.rs:1:5
-  |
-1 | use concord::prelude::RuntimeEndpoint;
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `RuntimeEndpoint` in `prelude`

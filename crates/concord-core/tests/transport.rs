@@ -1,4 +1,4 @@
-#[path = "transport/proxy.rs"]
-mod proxy;
-#[path = "transport/reqwest_contract.rs"]
-mod reqwest_contract;
+mod transport {
+    mod proxy;
+    mod reqwest_contract;
+}

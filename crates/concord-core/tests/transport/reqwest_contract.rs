@@ -844,7 +844,7 @@ fn child_command(test_name: &str) -> Command {
     let mut command = Command::new(executable);
     command
         .arg("--exact")
-        .arg(format!("reqwest_contract::{test_name}"))
+        .arg(format!("transport::reqwest_contract::{test_name}"))
         .arg("--test-threads=1");
     command
 }

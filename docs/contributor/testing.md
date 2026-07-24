@@ -7,9 +7,10 @@ The test architecture follows contract ownership.
 | `concord-core` | lifecycle, security/redaction, bounds, transport, sealed modes, cancellation |
 | `concord-extras` | downstream trait sufficiency and implementation behavior |
 | `concord-macros` | syntax/semantic unit tests and expansion structure |
-| `concord` | generated public API, UI pass/fail, feature composition, renamed façade, runtime convergence |
-| `concord-examples` | canonical declaration construction and deterministic local narratives |
-| `fixtures` | separate Cargo graph, dependency, privacy, and feature isolation |
+| `concord` | consolidated generated, runtime, extension, public-API, and UI proof families |
+| `concord-examples` | canonical declaration construction, conventional Cargo examples, and deterministic local narratives |
+| `fixtures` | renamed-façade, contract-mismatch, feature-isolation, and MSRV Cargo graphs |
+| `tools/xtask` | Cargo-graph, semantic compiler-JSON, rustdoc, policy, and package orchestration |
 
 ## Maintained commands
 
@@ -37,6 +38,11 @@ just verify-package       # technical local package proof
 just verify-release-local # all local scopes, deny, and observational performance
 ```
 
+The repository-level subprocess owners are also directly available as
+`cargo run --locked -p concord-xtask -- fixtures --locked` and
+`cargo run --locked -p concord-xtask -- msrv-ui --locked`. Run
+Cargo-spawning xtask commands serially on Windows.
+
 Clippy, cargo-deny, and explicitly selected toolchains must be installed for
 their recipes. Never report a missing tool/component as a passing check.
 
@@ -58,14 +64,16 @@ run passed.
 
 ## Determinism
 
-No test calls an external service or uses arbitrary sleeps. Use
+Ordinary Rust tests do not launch Cargo or rustdoc. Repository subprocess
+proofs belong to xtask. No test calls an external service or uses arbitrary sleeps. Use
 `concord-test-support` scripted/loopback transport, paused Tokio time,
 barriers, and exact event/attempt assertions. Verify first-excess withholding
 for every finite surface. Cancellation tests assert no detached correctness
 work remains.
 
 Canonical tests import declarations from `concord-examples`; they do not copy
-them. Ordinary compile-pass cases live in the package test suite. A standalone
+them. Executable wrappers live under `crates/concord-examples/examples/`.
+Ordinary compile-pass cases live in the package test suite. A standalone
 fixture exists only when a separate Cargo graph is the behavior under test.
 
 ## UI and editor protocol
