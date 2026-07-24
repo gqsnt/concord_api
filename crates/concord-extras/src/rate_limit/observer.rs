@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime};
 
-use concord_core::advanced::SanitizedHeaderValue;
+use concord_core::contracts::SanitizedHeaderValue;
 use concord_core::rate_limit::{Cooldown, CooldownScope, RateLimitObserver, RateLimitResponseHead};
 use http::StatusCode;
 use http::header::RETRY_AFTER;
@@ -51,7 +51,7 @@ mod tests {
     use std::num::NonZeroU32;
     use std::time::UNIX_EPOCH;
 
-    use concord_core::advanced::{HeaderMap, HeaderValue, Method, SanitizedHeaders};
+    use concord_core::contracts::{HeaderMap, HeaderValue, Method, SanitizedHeaders};
     use concord_core::rate_limit::{
         RateLimitId, RateLimitKey, RateLimitPlan, RateLimitRule, RateLimitWindow,
     };

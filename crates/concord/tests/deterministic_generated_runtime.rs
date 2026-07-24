@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use concord::advanced::{CodecError, EncodeBody, EncodeContext};
+use concord::codec::{CodecError, EncodeBody, EncodeContext};
 use concord::error::HookError;
 use concord::hooks::{BeforeSend, BoxFuture, CompletionEvent, ResponseHeadEvent, RuntimeHooks};
 use concord::http::SafeProxy;

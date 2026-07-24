@@ -27,7 +27,7 @@ does not detect concrete helper names or select implementations.
 
 Applications should import these contracts through `concord::body`,
 `concord::response`, `concord::auth`, `concord::pagination`,
-`concord::rate_limit`, or `concord::advanced`. Ordinary generated requests do
+`concord::rate_limit`, or another semantic façade module. Ordinary generated requests do
 not require an extension trait import.
 
 See the [Generated API reference](../reference/generated-api.md) and

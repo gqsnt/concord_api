@@ -3,14 +3,23 @@ use std::num::{NonZeroU32, NonZeroU64, NonZeroUsize};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use concord::advanced::{
-    BoxFuture, Buffered, CodecError, DecodeBody, DecodeContext, HookError, PageResponseSpec,
-    PaginationController, PaginationError, RateLimitError, RateLimitPermit, RateLimitRequest,
-    RateLimitResponse, RateLimiter, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec,
-    ResponseHead, RuntimeHooks, SafeProxy,
-};
+use concord::Bytes;
 use concord::api;
-use concord::prelude::Bytes;
+use concord::codec::{CodecError, DecodeBody, DecodeContext};
+use concord::error::HookError;
+use concord::hooks::{
+    BeforeSend, BoxFuture, CompletionEvent, PaginationCompletionEvent, ResponseHeadEvent,
+    RuntimeHooks,
+};
+use concord::http::SafeProxy;
+use concord::pagination::{PaginationController, PaginationError, PaginationErrorKind};
+use concord::rate_limit::{
+    RateLimitError, RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimiter,
+};
+use concord::response::{
+    Buffered, PageResponseSpec, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec,
+    ResponseHead,
+};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 
 mod support;
@@ -108,9 +117,7 @@ mod application_count_controller {
                 .offset
                 .0
                 .checked_add(u64::from(self.page_size.get()))
-                .ok_or_else(|| {
-                    PaginationError::new(concord::advanced::PaginationErrorKind::Overflow)
-                })?;
+                .ok_or_else(|| PaginationError::new(PaginationErrorKind::Overflow))?;
             Ok(Some(Self {
                 offset: CountedOffset(offset),
                 page_size: self.page_size,
@@ -566,10 +573,7 @@ impl RateLimiter for PaginationLimiterProbe {
 }
 
 impl RuntimeHooks for PaginationHooks {
-    fn before_send<'a>(
-        &'a self,
-        context: concord::advanced::BeforeSend<'a>,
-    ) -> BoxFuture<'a, Result<(), HookError>> {
+    fn before_send<'a>(&'a self, context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
         Box::pin(async move {
             self.before
                 .lock()
@@ -581,7 +585,7 @@ impl RuntimeHooks for PaginationHooks {
 
     fn on_pagination_complete<'a>(
         &'a self,
-        context: concord::advanced::PaginationCompletionEvent<'a>,
+        context: PaginationCompletionEvent<'a>,
     ) -> BoxFuture<'a, ()> {
         Box::pin(async move {
             self.aggregate.lock().expect("aggregate lock").push((
@@ -593,10 +597,7 @@ impl RuntimeHooks for PaginationHooks {
         })
     }
 
-    fn on_response_head<'a>(
-        &'a self,
-        context: concord::advanced::ResponseHeadEvent<'a>,
-    ) -> BoxFuture<'a, ()> {
+    fn on_response_head<'a>(&'a self, context: ResponseHeadEvent<'a>) -> BoxFuture<'a, ()> {
         Box::pin(async move {
             self.response
                 .lock()
@@ -605,10 +606,7 @@ impl RuntimeHooks for PaginationHooks {
         })
     }
 
-    fn on_complete<'a>(
-        &'a self,
-        context: concord::advanced::CompletionEvent<'a>,
-    ) -> BoxFuture<'a, ()> {
+    fn on_complete<'a>(&'a self, context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
         Box::pin(async move {
             self.completion
                 .lock()
@@ -742,7 +740,7 @@ async fn generated_page_number_soft_and_hard_limits_are_deterministic() {
         .expect_err("next page beyond hard cap");
     assert_eq!(
         error.pagination_kind(),
-        Some(concord::advanced::PaginationErrorKind::HardCapExceeded)
+        Some(PaginationErrorKind::HardCapExceeded)
     );
     assert_eq!(hard_server.requests().len(), 1);
 }
@@ -1002,15 +1000,17 @@ async fn explicit_endpoint_nested_scope_alias_and_repeated_helpers_have_parity()
     assert!(nested_safe[0].contains("repository-b"));
 
     let collision_client = CollisionPaginationApi::new().expect("collision client");
-    let _: concord::PaginatedRequest<_> = collision_client.left().items(0, nz32(1)).paginate(1_u32);
-    let _: concord::PaginatedRequest<_> = collision_client
+    let _: concord::pagination::PaginatedRequest<_> =
+        collision_client.left().items(0, nz32(1)).paginate(1_u32);
+    let _: concord::pagination::PaginatedRequest<_> = collision_client
         .right()
         .items(nz64(1), nz32(1))
         .paginate(1_u32);
 
     let nested_macro_client =
         repeated_nested_expansion::NestedMacroPaginationApi::new().expect("nested macro client");
-    let _: concord::PaginatedRequest<_> = nested_macro_client.items(0, nz32(1)).paginate(1_u32);
+    let _: concord::pagination::PaginatedRequest<_> =
+        nested_macro_client.items(0, nz32(1)).paginate(1_u32);
 }
 
 #[tokio::test]

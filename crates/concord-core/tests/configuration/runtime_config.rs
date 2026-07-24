@@ -1,7 +1,7 @@
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::time::Duration;
 
-use concord_core::advanced::RuntimeConfigBuilder;
+use concord_core::contracts::RuntimeConfigBuilder;
 
 fn finite_methods(
     builder: RuntimeConfigBuilder,

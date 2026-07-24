@@ -6,8 +6,9 @@
 //! `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use concord::api;
-use concord::body::{MultipartBody, MultipartPart};
-use concord::prelude::{Bytes, StreamBody};
+use concord::body::{Multipart, MultipartBody, MultipartPart, Stream, StreamBody};
+use concord::codec::OctetStream;
+use concord::{Bytes, Json, NoContent, Text};
 
 api! {
     client BodyApi {

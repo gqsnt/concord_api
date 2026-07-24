@@ -11,20 +11,20 @@ pub(super) fn generate_endpoint_description(
     let route = syn::LitStr::new(&route_shape(&endpoint.config.path), endpoint.name.span());
     let method = method_token(&endpoint.method, core_path);
     let timeout = endpoint.config.timeout.map_or_else(
-        || quote!(#core_path::advanced::TimeoutSelection::Disabled),
+        || quote!(#core_path::endpoint::TimeoutSelection::Disabled),
         |duration| {
             let seconds = duration.as_secs();
             let nanos = duration.subsec_nanos();
             quote! {
-                #core_path::advanced::TimeoutSelection::Explicit(
+                #core_path::endpoint::TimeoutSelection::Explicit(
                     ::std::time::Duration::new(#seconds, #nanos)
                 )
             }
         },
     );
     let body_category = endpoint.body.as_ref().map_or_else(
-        || quote!(#core_path::advanced::RequestBodyCategory::Empty),
-        |_| quote!(#core_path::advanced::RequestBodyCategory::Specification),
+        || quote!(#core_path::endpoint::RequestBodyCategory::Empty),
+        |_| quote!(#core_path::endpoint::RequestBodyCategory::Specification),
     );
     let body_specification = endpoint.body.as_ref().map_or_else(
         || quote!(::std::option::Option::None),
@@ -39,12 +39,12 @@ pub(super) fn generate_endpoint_description(
     let rate_limit = !endpoint.config.rate_limits.is_empty();
     let tokens = quote! {
         static #description_static:
-            ::std::sync::LazyLock<#core_path::advanced::EndpointDescription> =
+            ::std::sync::LazyLock<#core_path::endpoint::EndpointDescription> =
             ::std::sync::LazyLock::new(|| {
                 let __concord_response_acquisition =
-                    <<#response as #core_path::advanced::ResponseBodySpec>::Mode
-                    as #core_path::advanced::ResponseMode>::ACQUISITION;
-                #core_path::advanced::EndpointDescription::generated(
+                    <<#response as #core_path::response::ResponseBodySpec>::Mode
+                    as #core_path::response::ResponseMode>::ACQUISITION;
+                #core_path::endpoint::EndpointDescription::generated(
                     #core_path::__private::endpoint_id_from_static(#contract_id),
                     #method,
                     #source_path,
@@ -52,7 +52,7 @@ pub(super) fn generate_endpoint_description(
                     #body_category,
                     #body_specification,
                     __concord_response_acquisition,
-                    #core_path::advanced::EndpointCapabilities::generated(
+                    #core_path::endpoint::EndpointCapabilities::generated(
                         #pagination,
                         #credential_storage,
                         __concord_response_acquisition.raw_response_eligible(),

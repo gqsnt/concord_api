@@ -1,4 +1,4 @@
-use concord_core::advanced::StatusBody;
+use concord_core::contracts::StatusBody;
 
 fn require_clone<T: Clone>() {}
 fn require_serialize<T: serde::Serialize>() {}

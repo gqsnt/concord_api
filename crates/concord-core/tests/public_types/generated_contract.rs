@@ -1,7 +1,7 @@
 use concord_core::__private::{
     DebugLevel, GENERATED_CONTRACT_VERSION, HeadBuilder, Method, RequestMeta, RequestOptions, Url,
 };
-use concord_core::advanced::ErrorCategory;
+use concord_core::contracts::ErrorCategory;
 
 #[test]
 fn generated_contract_version_matches_generic_specification_capability() {

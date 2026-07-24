@@ -1,4 +1,4 @@
-use concord_core::advanced::{MultipartBody, MultipartFactory, MultipartPart};
+use concord_core::contracts::{MultipartBody, MultipartFactory, MultipartPart};
 
 fn main() {
     let _ = std::mem::size_of::<MultipartBody>();

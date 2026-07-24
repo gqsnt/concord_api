@@ -47,8 +47,8 @@ help: the trait `PaginationController<Vec<u8>>` is not implemented for `NotContr
 help: the trait `PaginationController<Vec<u8>>` is implemented for `private_controller::Controller`
    --> tests/ui/fail/pagination/pagination_types.rs:17:5
     |
- 17 |     impl concord::advanced::PaginationController<Vec<u8>> for Controller {
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 17 |     impl concord::pagination::PaginationController<Vec<u8>> for Controller {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0308]: mismatched types

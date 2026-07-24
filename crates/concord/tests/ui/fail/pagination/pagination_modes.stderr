@@ -342,7 +342,7 @@ error[E0271]: type mismatch resolving `<Stream<OctetStream> as ResponseBodySpec>
    |
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `concord::Stream<concord::OctetStream>: PageResponseSpec` is not satisfied
+error[E0277]: the trait bound `concord::body::Stream<concord::codec::OctetStream>: PageResponseSpec` is not satisfied
   --> tests/ui/fail/pagination/pagination_modes.rs:49:1
    |
 49 | / api! {
@@ -350,7 +350,7 @@ error[E0277]: the trait bound `concord::Stream<concord::OctetStream>: PageRespon
 51 | |         base "https://example.test";
 ...  |
 57 | | }
-   | |_^ the trait `DecodeBody` is not implemented for `concord::Stream<concord::OctetStream>`
+   | |_^ the trait `DecodeBody` is not implemented for `concord::body::Stream<concord::codec::OctetStream>`
    |
 help: the following other types implement trait `DecodeBody`
   --> tests/ui/fail/pagination/../../../support/mod.rs
@@ -371,7 +371,7 @@ help: the following other types implement trait `DecodeBody`
    | | where
    | |     T: serde::de::DeserializeOwned + Send + Sync + 'static,
    | |___________________________________________________________^ `concord::Json<T>`
-   = note: required for `concord::Stream<concord::OctetStream>` to implement `PageResponseSpec`
+   = note: required for `concord::body::Stream<concord::codec::OctetStream>` to implement `PageResponseSpec`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `ByteStream` is not an iterator
@@ -498,7 +498,7 @@ help: the trait `IntoFuture` is implemented for `stream_pagination::ReadRequest`
    | |_^
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: `concord::Request<no_content_pagination::Read>` is not a future
+error[E0277]: `concord::endpoint::Request<no_content_pagination::Read>` is not a future
   --> tests/ui/fail/pagination/pagination_modes.rs:39:1
    |
 39 | / api! {
@@ -506,11 +506,11 @@ error[E0277]: `concord::Request<no_content_pagination::Read>` is not a future
 41 | |         base "https://example.test";
 ...  |
 47 | | }
-   | |_^ `concord::Request<no_content_pagination::Read>` is not a future
+   | |_^ `concord::endpoint::Request<no_content_pagination::Read>` is not a future
    |
-   = help: the trait `IntoFuture` is not implemented for `concord::Request<no_content_pagination::Read>`
-   = note: concord::Request<no_content_pagination::Read> must be a future or must implement `IntoFuture` to be awaited
-help: the trait `IntoFuture` is implemented for `concord::Request<E>`
+   = help: the trait `IntoFuture` is not implemented for `concord::endpoint::Request<no_content_pagination::Read>`
+   = note: concord::endpoint::Request<no_content_pagination::Read> must be a future or must implement `IntoFuture` to be awaited
+help: the trait `IntoFuture` is implemented for `concord::endpoint::Request<E>`
   --> $WORKSPACE/crates/concord-core/src/execute/mod.rs
    |
    | / impl<E> IntoFuture for Request<E>
@@ -519,7 +519,7 @@ help: the trait `IntoFuture` is implemented for `concord::Request<E>`
    | |____________________^
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: `concord::Request<stream_pagination::Read>` is not a future
+error[E0277]: `concord::endpoint::Request<stream_pagination::Read>` is not a future
   --> tests/ui/fail/pagination/pagination_modes.rs:49:1
    |
 49 | / api! {
@@ -527,11 +527,11 @@ error[E0277]: `concord::Request<stream_pagination::Read>` is not a future
 51 | |         base "https://example.test";
 ...  |
 57 | | }
-   | |_^ `concord::Request<stream_pagination::Read>` is not a future
+   | |_^ `concord::endpoint::Request<stream_pagination::Read>` is not a future
    |
-   = help: the trait `IntoFuture` is not implemented for `concord::Request<stream_pagination::Read>`
-   = note: concord::Request<stream_pagination::Read> must be a future or must implement `IntoFuture` to be awaited
-help: the trait `IntoFuture` is implemented for `concord::Request<E>`
+   = help: the trait `IntoFuture` is not implemented for `concord::endpoint::Request<stream_pagination::Read>`
+   = note: concord::endpoint::Request<stream_pagination::Read> must be a future or must implement `IntoFuture` to be awaited
+help: the trait `IntoFuture` is implemented for `concord::endpoint::Request<E>`
   --> $WORKSPACE/crates/concord-core/src/execute/mod.rs
    |
    | / impl<E> IntoFuture for Request<E>

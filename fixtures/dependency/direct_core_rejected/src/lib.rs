@@ -1,4 +1,4 @@
-use concord_core::prelude::Bytes;
+use concord_core::contracts::Bytes;
 use concord_macros::api;
 
 api! {

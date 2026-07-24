@@ -16,7 +16,7 @@ pub(super) fn generate_secret_builder_methods(
                 #[doc = "Sets one required protected client secret; a later call replaces it."]
                 pub fn #method(
                     mut self,
-                    value: #core_path::prelude::SecretString,
+                    value: #core_path::auth::SecretString,
                 ) -> Self {
                     self.#field = ::std::option::Option::Some(value);
                     self
@@ -46,8 +46,8 @@ pub(super) fn generate_provider_builder_methods(
                 #[doc = "Sets one required custom credential provider; a later call replaces it."]
                 pub fn #method<P>(mut self, provider: P) -> Self
                 where
-                    P: #core_path::advanced::CredentialProvider<
-                        Material = <#provider as #core_path::advanced::CredentialProvider>::Material
+                    P: #core_path::auth::CredentialProvider<
+                        Material = <#provider as #core_path::auth::CredentialProvider>::Material
                     >,
                 {
                     self.#field = ::std::option::Option::Some(::std::sync::Arc::new(provider));
@@ -149,14 +149,14 @@ pub(super) fn generate_credential_store_initializers(
                     let secret = resolved_secret(*secret, &client.secrets[*secret].name);
                     quote!(#core_path::__private::GeneratedCredential::static_value(
                         &core,
-                        #core_path::prelude::ApiKey::new(#secret.clone()),
+                        #core_path::auth::ApiKey::new(#secret.clone()),
                     ))
                 }
                 CredentialSource::Bearer { secret } => {
                     let secret = resolved_secret(*secret, &client.secrets[*secret].name);
                     quote!(#core_path::__private::GeneratedCredential::static_value(
                         &core,
-                        #core_path::prelude::AccessToken::new(#secret.clone()),
+                        #core_path::auth::AccessToken::new(#secret.clone()),
                     ))
                 }
                 CredentialSource::Basic { username, password } => {
@@ -164,7 +164,7 @@ pub(super) fn generate_credential_store_initializers(
                     let password = resolved_secret(*password, &client.secrets[*password].name);
                     quote!(#core_path::__private::GeneratedCredential::static_value(
                         &core,
-                        #core_path::prelude::BasicCredential::new(
+                        #core_path::auth::BasicCredential::new(
                             #username.clone(),
                             #password.clone(),
                         ),
@@ -267,18 +267,18 @@ pub(super) fn generate_credential_handle_types(
         .then(|| quote! {
             /// Handle for one static API-key source.
             pub struct ApiKeyCredentialHandle {
-                pub(super) inner: #core_path::__private::GeneratedCredential<#core_path::prelude::ApiKey>,
+                pub(super) inner: #core_path::__private::GeneratedCredential<#core_path::auth::ApiKey>,
             }
             impl ApiKeyCredentialHandle {
                 #[must_use]
-                pub fn credential(&self) -> #core_path::advanced::CredentialRef<#core_path::prelude::ApiKey> {
+                pub fn credential(&self) -> #core_path::auth::CredentialRef<#core_path::auth::ApiKey> {
                     self.inner.credential()
                 }
                 pub async fn replace(
                     &self,
-                    value: impl ::std::convert::Into<#core_path::prelude::SecretString>,
-                ) -> ::std::result::Result<(), #core_path::advanced::AuthError> {
-                    self.inner.replace_static(#core_path::prelude::ApiKey::new(value)).await
+                    value: impl ::std::convert::Into<#core_path::auth::SecretString>,
+                ) -> ::std::result::Result<(), #core_path::auth::AuthError> {
+                    self.inner.replace_static(#core_path::auth::ApiKey::new(value)).await
                 }
             }
         });
@@ -289,18 +289,18 @@ pub(super) fn generate_credential_handle_types(
         .then(|| quote! {
             /// Handle for one static bearer source.
             pub struct BearerCredentialHandle {
-                pub(super) inner: #core_path::__private::GeneratedCredential<#core_path::prelude::AccessToken>,
+                pub(super) inner: #core_path::__private::GeneratedCredential<#core_path::auth::AccessToken>,
             }
             impl BearerCredentialHandle {
                 #[must_use]
-                pub fn credential(&self) -> #core_path::advanced::CredentialRef<#core_path::prelude::AccessToken> {
+                pub fn credential(&self) -> #core_path::auth::CredentialRef<#core_path::auth::AccessToken> {
                     self.inner.credential()
                 }
                 pub async fn replace(
                     &self,
-                    value: impl ::std::convert::Into<#core_path::prelude::SecretString>,
-                ) -> ::std::result::Result<(), #core_path::advanced::AuthError> {
-                    self.inner.replace_static(#core_path::prelude::AccessToken::new(value)).await
+                    value: impl ::std::convert::Into<#core_path::auth::SecretString>,
+                ) -> ::std::result::Result<(), #core_path::auth::AuthError> {
+                    self.inner.replace_static(#core_path::auth::AccessToken::new(value)).await
                 }
             }
         });
@@ -311,20 +311,20 @@ pub(super) fn generate_credential_handle_types(
         .then(|| quote! {
             /// Handle for one atomic static Basic source.
             pub struct BasicCredentialHandle {
-                pub(super) inner: #core_path::__private::GeneratedCredential<#core_path::prelude::BasicCredential>,
+                pub(super) inner: #core_path::__private::GeneratedCredential<#core_path::auth::BasicCredential>,
             }
             impl BasicCredentialHandle {
                 #[must_use]
-                pub fn credential(&self) -> #core_path::advanced::CredentialRef<#core_path::prelude::BasicCredential> {
+                pub fn credential(&self) -> #core_path::auth::CredentialRef<#core_path::auth::BasicCredential> {
                     self.inner.credential()
                 }
                 pub async fn replace(
                     &self,
-                    username: impl ::std::convert::Into<#core_path::prelude::SecretString>,
-                    password: impl ::std::convert::Into<#core_path::prelude::SecretString>,
-                ) -> ::std::result::Result<(), #core_path::advanced::AuthError> {
+                    username: impl ::std::convert::Into<#core_path::auth::SecretString>,
+                    password: impl ::std::convert::Into<#core_path::auth::SecretString>,
+                ) -> ::std::result::Result<(), #core_path::auth::AuthError> {
                     self.inner.replace_static(
-                        #core_path::prelude::BasicCredential::new(username, password),
+                        #core_path::auth::BasicCredential::new(username, password),
                     ).await
                 }
             }
@@ -337,22 +337,22 @@ pub(super) fn generate_credential_handle_types(
             /// Handle for one explicitly acquired endpoint-backed source.
             pub struct EndpointCredentialHandle<M>
             where
-                M: #core_path::advanced::CredentialMaterial,
+                M: #core_path::auth::CredentialMaterial,
             {
                 pub(super) inner: #core_path::__private::GeneratedCredential<M>,
             }
             impl<M> EndpointCredentialHandle<M>
             where
-                M: #core_path::advanced::CredentialMaterial,
+                M: #core_path::auth::CredentialMaterial,
             {
                 #[must_use]
-                pub fn credential(&self) -> #core_path::advanced::CredentialRef<M> {
+                pub fn credential(&self) -> #core_path::auth::CredentialRef<M> {
                     self.inner.credential()
                 }
-                pub async fn set(&self, value: M) -> ::std::result::Result<(), #core_path::advanced::AuthError> {
+                pub async fn set(&self, value: M) -> ::std::result::Result<(), #core_path::auth::AuthError> {
                     self.inner.set(value).await
                 }
-                pub async fn clear(&self) -> ::std::result::Result<(), #core_path::advanced::AuthError> {
+                pub async fn clear(&self) -> ::std::result::Result<(), #core_path::auth::AuthError> {
                     self.inner.clear().await
                 }
                 #[must_use]
@@ -369,27 +369,27 @@ pub(super) fn generate_credential_handle_types(
             /// Handle for one custom provider-backed source.
             pub struct CustomProviderCredentialHandle<M>
             where
-                M: #core_path::advanced::CredentialMaterial,
+                M: #core_path::auth::CredentialMaterial,
             {
                 pub(super) inner: #core_path::__private::GeneratedCredential<M>,
             }
             impl<M> CustomProviderCredentialHandle<M>
             where
-                M: #core_path::advanced::CredentialMaterial,
+                M: #core_path::auth::CredentialMaterial,
             {
                 #[must_use]
-                pub fn credential(&self) -> #core_path::advanced::CredentialRef<M> {
+                pub fn credential(&self) -> #core_path::auth::CredentialRef<M> {
                     self.inner.credential()
                 }
-                pub async fn clear(&self) -> ::std::result::Result<(), #core_path::advanced::AuthError> {
+                pub async fn clear(&self) -> ::std::result::Result<(), #core_path::auth::AuthError> {
                     self.inner.clear().await
                 }
                 pub async fn replace_provider<P>(
                     &self,
                     provider: P,
-                ) -> ::std::result::Result<(), #core_path::advanced::AuthError>
+                ) -> ::std::result::Result<(), #core_path::auth::AuthError>
                 where
-                    P: #core_path::advanced::CredentialProvider<Material = M>,
+                    P: #core_path::auth::CredentialProvider<Material = M>,
                 {
                     self.inner.replace_provider(provider).await
                 }
@@ -431,11 +431,11 @@ pub(super) fn credential_material_type(
     core_path: &TokenStream,
 ) -> TokenStream {
     match &credential.source {
-        CredentialSource::ApiKey { .. } => quote!(#core_path::prelude::ApiKey),
-        CredentialSource::Bearer { .. } => quote!(#core_path::prelude::AccessToken),
-        CredentialSource::Basic { .. } => quote!(#core_path::prelude::BasicCredential),
+        CredentialSource::ApiKey { .. } => quote!(#core_path::auth::ApiKey),
+        CredentialSource::Bearer { .. } => quote!(#core_path::auth::AccessToken),
+        CredentialSource::Basic { .. } => quote!(#core_path::auth::BasicCredential),
         CredentialSource::Custom { provider } => {
-            quote!(<#provider as #core_path::advanced::CredentialProvider>::Material)
+            quote!(<#provider as #core_path::auth::CredentialProvider>::Material)
         }
         CredentialSource::Endpoint {
             endpoint_id: Some(endpoint_id),
@@ -455,7 +455,7 @@ pub(super) fn credential_material_type(
 }
 
 pub(super) fn response_output_type(response: &Type, core_path: &TokenStream) -> TokenStream {
-    quote!(<#response as #core_path::advanced::ResponseBodySpec>::Output)
+    quote!(<#response as #core_path::response::ResponseBodySpec>::Output)
 }
 
 pub(super) fn find_endpoint_by_id(children: &[Child], id: usize) -> Option<&Endpoint> {

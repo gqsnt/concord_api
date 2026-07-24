@@ -1,6 +1,6 @@
-use concord::advanced::{
-    EndpointId, Method, NoContent, RuntimeEndpoint, RuntimeEndpointBuilder,
-};
+use concord::endpoint::{EndpointId, RuntimeEndpoint, RuntimeEndpointBuilder};
+use concord::http::Method;
+use concord::NoContent;
 
 fn main() {
     let _ = RuntimeEndpointBuilder::<NoContent> {};

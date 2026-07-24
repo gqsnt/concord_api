@@ -4,7 +4,7 @@ error[E0277]: the trait bound `Records<Decoder>: PageResponseSpec` is not satisf
 31 |     requires_page_response::<Records<Decoder>>();
    |                              ^^^^^^^^^^^^^^^^ the trait `DecodeBody` is not implemented for `Records<Decoder>`
    |
-help: the trait `DecodeBody` is implemented for `concord_core::advanced::Text`
+help: the trait `DecodeBody` is implemented for `concord_core::contracts::Text`
   --> src/codec/mod.rs
    |
    | impl DecodeBody for Text {

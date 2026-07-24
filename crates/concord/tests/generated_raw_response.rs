@@ -4,10 +4,13 @@ use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use concord::advanced::{CodecError, DecodeBody, DecodeContext, ErrorCategory, SafeProxy};
 use concord::api;
+use concord::body::Stream;
+use concord::codec::{CodecError, DecodeBody, DecodeContext, OctetStream};
 use concord::dangerous::{RawResponse, RawResponseRequest};
-use concord::prelude::{ApiResponse, Bytes};
+use concord::error::ErrorCategory;
+use concord::http::SafeProxy;
+use concord::{ApiResponse, Bytes};
 use concord_test_support::server::{BodyGate, ResponseScript, ScriptedServer};
 
 mod support;

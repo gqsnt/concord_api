@@ -6,12 +6,14 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use concord::advanced::{
-    ClientBuildErrorKind, ClientInputKind, EndpointId, Method, MultipartBody, MultipartPart,
-    RuntimeEndpoint, SafeProxy,
-};
+use concord::Bytes;
 use concord::api;
-use concord::prelude::{ApiResponse, ByteStream, Bytes, ErrorCategory, OctetStream, StreamBody};
+use concord::body::{Multipart, MultipartBody, MultipartPart, Stream, StreamBody};
+use concord::codec::OctetStream;
+use concord::endpoint::{EndpointId, RuntimeEndpoint};
+use concord::error::{ClientBuildErrorKind, ClientInputKind, ErrorCategory};
+use concord::http::{Method, SafeProxy};
+use concord::response::{ApiResponse, ByteStream};
 use concord_test_support::server::{BodyGate, ResponseScript, ScriptedServer};
 use futures_core::Stream as FuturesStream;
 use tokio::sync::{Mutex, MutexGuard};

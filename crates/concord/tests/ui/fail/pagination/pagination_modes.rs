@@ -7,11 +7,11 @@ use support::Json;
 
 pub struct Controller {}
 
-impl<Page> concord::advanced::PaginationController<Page> for Controller {
+impl<Page> concord::pagination::PaginationController<Page> for Controller {
     fn next(
         self,
         _page: &Page,
-    ) -> Result<Option<Self>, concord::advanced::PaginationError> {
+    ) -> Result<Option<Self>, concord::pagination::PaginationError> {
         Ok(None)
     }
 }

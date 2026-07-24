@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::time::Duration;
 
-use concord_core::advanced::{
+use concord_core::contracts::{
     ApiError, AuthErrorKind, Bytes, ClientBuildError, ClientBuildErrorKind, ClientInputKind,
     CodecError, ConfigurationError, ConfigurationErrorKind, DecodeBody, DecodeContext, EndpointId,
     ErrorCategory, HeaderName, HttpResponseFailure, Method, PaginationErrorKind,
@@ -14,7 +14,7 @@ fn api_error_accessors(error: &ApiError) {
     let _: &str = error.endpoint();
     let _: &EndpointId = error.endpoint_id();
     let _: &Method = error.method();
-    let _: Option<concord_core::advanced::StatusCode> = error.http_status();
+    let _: Option<concord_core::contracts::StatusCode> = error.http_status();
     let _: Option<&SanitizedHeaderMap> = error.http_headers();
     let _: Option<&HttpResponseFailure> = error.http_response();
     let _: Option<AuthErrorKind> = error.auth_kind();
@@ -27,7 +27,7 @@ fn response_accessors(response: &HttpResponseFailure) {
     let _: &str = response.endpoint();
     let _: &EndpointId = response.endpoint_id();
     let _: &Method = response.method();
-    let _: concord_core::advanced::StatusCode = response.status();
+    let _: concord_core::contracts::StatusCode = response.status();
     let _: &SanitizedHeaderMap = response.headers();
     let _: &StatusBody = response.body();
     let _: Option<Duration> = response.retry_after();
@@ -101,11 +101,6 @@ fn downstream_surface_has_exact_structured_accessors_and_traits() {
     assert_value_traits::<ConfigurationErrorKind>();
     assert_value_traits::<StatusBodyState>();
 
-    let _: concord_core::prelude::ApiError;
-    let _: concord_core::prelude::ErrorCategory;
-    let _: concord_core::prelude::ClientBuildError;
-    let _: concord_core::prelude::ClientInputKind;
-    let _: concord_core::prelude::ConfigurationError;
     let _: Option<HeaderName> = None;
 }
 

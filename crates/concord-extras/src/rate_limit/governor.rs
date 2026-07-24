@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use concord_core::advanced::{BoxFuture, RateLimitErrorKind};
+use concord_core::contracts::{BoxFuture, RateLimitErrorKind};
 use concord_core::rate_limit::{
     Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_BYTES,
     RateLimitError, RateLimitObserver, RateLimitPermit, RateLimitPlan, RateLimitRequest,
@@ -55,7 +55,7 @@ struct GovernorConfig {
 
 #[allow(
     clippy::new_without_default,
-    reason = "the normative advanced API specifies an explicit constructor without a Default contract"
+    reason = "the normative contract specifies an explicit constructor without a Default contract"
 )]
 impl GovernorRateLimiter {
     /// Creates an independent governor with the normative finite defaults.
@@ -656,7 +656,7 @@ mod tests {
     use http::{HeaderMap, Method, StatusCode};
 
     use super::*;
-    use concord_core::advanced::SanitizedHeaders;
+    use concord_core::contracts::SanitizedHeaders;
     use concord_core::rate_limit::{
         MAX_RATE_LIMIT_RULES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_RULE, RateLimitId, RateLimitKey,
         RateLimitKeyPart, RateLimitRule, RateLimitWindow,

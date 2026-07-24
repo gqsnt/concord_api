@@ -1112,7 +1112,7 @@ mod tests {
                 base "https://example.test";
             }
             GET offset(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
-                paginate concord_core::advanced::OffsetController {
+                paginate concord_core::contracts::OffsetController {
                     offset: bind ep.offset,
                     page_size: bind ep.limit,
                 }

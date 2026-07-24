@@ -1,4 +1,6 @@
-use concord::{OctetStream, Stream, api};
+use concord::api;
+use concord::body::Stream;
+use concord::codec::OctetStream;
 
 api! {
     client StreamApi {

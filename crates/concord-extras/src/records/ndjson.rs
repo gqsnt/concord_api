@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 
-use concord_core::advanced::{BytesMut, ResponseHead};
+use concord_core::contracts::{BytesMut, ResponseHead};
 use concord_core::records::{RecordDecoder, RecordError, RecordErrorKind};
 use serde::de::DeserializeOwned;
 

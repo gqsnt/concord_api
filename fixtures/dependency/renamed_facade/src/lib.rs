@@ -15,48 +15,48 @@ pub struct WireCodec;
 
 pub struct PageCodec;
 
-impl runtime::advanced::EncodeBody for WireCodec {
+impl runtime::codec::EncodeBody for WireCodec {
     type Input = String;
 
     const CONTENT_TYPE: Option<&'static str> = Some("application/x-wire");
 
     fn encode(
         input: Self::Input,
-        _context: runtime::advanced::EncodeContext<'_>,
-    ) -> Result<runtime::advanced::Bytes, runtime::advanced::CodecError> {
-        Ok(runtime::advanced::Bytes::from(input))
+        _context: runtime::codec::EncodeContext<'_>,
+    ) -> Result<runtime::Bytes, runtime::codec::CodecError> {
+        Ok(runtime::Bytes::from(input))
     }
 }
 
-impl runtime::advanced::DecodeBody for WireCodec {
+impl runtime::codec::DecodeBody for WireCodec {
     type Output = String;
 
     const ACCEPT: Option<&'static str> = Some("application/x-wire");
 
     fn decode(
-        body: runtime::advanced::Bytes,
-        _context: runtime::advanced::DecodeContext<'_>,
-    ) -> Result<Self::Output, runtime::advanced::CodecError> {
+        body: runtime::Bytes,
+        _context: runtime::codec::DecodeContext<'_>,
+    ) -> Result<Self::Output, runtime::codec::CodecError> {
         String::from_utf8(body.to_vec())
-            .map_err(|_| runtime::advanced::CodecError::new("wire decode failed"))
+            .map_err(|_| runtime::codec::CodecError::new("wire decode failed"))
     }
 }
 
-impl runtime::advanced::DecodeBody for PageCodec {
+impl runtime::codec::DecodeBody for PageCodec {
     type Output = Vec<u8>;
 
     const ACCEPT: Option<&'static str> = None;
 
     fn validate_content_type(
         _content_type: Option<&str>,
-    ) -> Result<(), runtime::advanced::CodecError> {
+    ) -> Result<(), runtime::codec::CodecError> {
         Ok(())
     }
 
     fn decode(
-        body: runtime::advanced::Bytes,
-        _context: runtime::advanced::DecodeContext<'_>,
-    ) -> Result<Self::Output, runtime::advanced::CodecError> {
+        body: runtime::Bytes,
+        _context: runtime::codec::DecodeContext<'_>,
+    ) -> Result<Self::Output, runtime::codec::CodecError> {
         Ok(body.to_vec())
     }
 }
@@ -65,8 +65,8 @@ pub struct RenamedController {
     pub cursor: Option<String>,
 }
 
-impl runtime::advanced::PaginationController<Vec<u8>> for RenamedController {
-    fn next(self, _page: &Vec<u8>) -> Result<Option<Self>, runtime::advanced::PaginationError> {
+impl runtime::pagination::PaginationController<Vec<u8>> for RenamedController {
+    fn next(self, _page: &Vec<u8>) -> Result<Option<Self>, runtime::pagination::PaginationError> {
         Ok(None)
     }
 }
@@ -155,37 +155,37 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
             .limit(20)
             .reset_limit(),
     );
-    let runtime_endpoint = runtime::advanced::RuntimeEndpoint::builder(
-        runtime::advanced::EndpointId::new("renamed_api.runtime")
+    let runtime_endpoint = runtime::endpoint::RuntimeEndpoint::builder(
+        runtime::endpoint::EndpointId::new("renamed_api.runtime")
             .expect("valid renamed runtime endpoint ID"),
-        runtime::advanced::Method::GET,
+        runtime::http::Method::GET,
     )
     .path_segment("prepared")
     .query_values("value", ["first", "second"])
-    .response::<runtime::advanced::Text>()
+    .response::<runtime::Text>()
     .build()
     .expect("valid renamed runtime endpoint");
-    let _: runtime::Request<_> = client.request(runtime_endpoint);
+    let _: runtime::endpoint::Request<_> = client.request(runtime_endpoint);
     let raw_request: renamed_api::resources::CustomRequest = client
         .resources("renamed-scope".to_owned())
         .custom("custom-body".to_owned());
     let _: runtime::dangerous::RawResponseRequest<_> = raw_request.raw_response();
     let _: renamed_api::resources::StreamUploadRequest = client
         .resources("renamed-scope".to_owned())
-        .stream_upload(runtime::prelude::StreamBody::from_bytes(
-            runtime::prelude::Bytes::from_static(b"renamed stream"),
+        .stream_upload(runtime::body::StreamBody::from_bytes(
+            runtime::Bytes::from_static(b"renamed stream"),
         ));
     let _: renamed_api::resources::StreamDownloadRequest = client
         .resources("renamed-scope".to_owned())
         .stream_download();
-    let _: runtime::PaginatedRequest<_> = client
+    let _: runtime::pagination::PaginatedRequest<_> = client
         .resources("renamed-scope".to_owned())
         .pages()
         .paginate(runtime::prelude::PageLimit::Take(1));
-    let multipart = runtime::advanced::MultipartBody::new()
+    let multipart = runtime::body::MultipartBody::new()
         .part(
             "field",
-            runtime::advanced::MultipartPart::text("renamed multipart")
+            runtime::body::MultipartPart::text("renamed multipart")
                 .expect("bounded renamed multipart text"),
         )
         .expect("valid renamed multipart recipe");
@@ -196,7 +196,7 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
         .tenant("renamed-rate-key-sentinel".to_owned())
         .configure_runtime(|runtime| {
             runtime.rate_limiter(std::sync::Arc::new(
-                runtime::advanced::NoopRateLimiter::new(),
+                runtime::rate_limit::NoopRateLimiter::new(),
             ))
         })
         .build()?;

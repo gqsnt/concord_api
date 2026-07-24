@@ -60,7 +60,7 @@ pub trait EncodeBody: Send + Sync + 'static {
 /// A safe failure reported by an application codec.
 ///
 /// Codec-provided text is deliberately not reproduced by Concord formatting
-/// or copied into [`crate::advanced::ApiError`]. A codec remains trusted for any
+/// or copied into [`crate::contracts::ApiError`]. A codec remains trusted for any
 /// application-owned side effects it performs before returning this value.
 pub struct CodecError {
     _message: String,

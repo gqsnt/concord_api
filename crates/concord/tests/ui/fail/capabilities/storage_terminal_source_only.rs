@@ -1,4 +1,5 @@
-use concord::advanced::{CodecError, CredentialMaterial, DecodeBody, DecodeContext};
+use concord::auth::CredentialMaterial;
+use concord::codec::{CodecError, DecodeBody, DecodeContext};
 use concord::{Bytes, Text, api};
 
 #[derive(Clone)]

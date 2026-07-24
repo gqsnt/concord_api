@@ -1,4 +1,4 @@
-use concord_core::advanced::PaginationRequest;
+use concord_core::contracts::PaginationRequest;
 use concord_core::PaginatedRequest;
 
 fn wrapper_storage(request: PaginatedRequest<()>) {

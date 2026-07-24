@@ -1,8 +1,8 @@
-error[E0432]: unresolved import `concord_core::advanced::PaginationRequest`
+error[E0432]: unresolved import `concord_core::contracts::PaginationRequest`
  --> tests/ui/fail/pagination_private_state.rs:1:5
   |
-1 | use concord_core::advanced::PaginationRequest;
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `PaginationRequest` in `advanced`
+1 | use concord_core::contracts::PaginationRequest;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `PaginationRequest` in `contracts`
 
 error[E0616]: field `request` of struct `PaginatedRequest` is private
  --> tests/ui/fail/pagination_private_state.rs:5:22

@@ -7,15 +7,16 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use concord::PaginatedRequest;
 use concord::api;
+use concord::body::StreamBody;
 use concord::codec::{BytesMut, CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext};
 use concord::endpoint::{EndpointId, RuntimeEndpoint};
 use concord::http::{Method, SafeProxy, StatusCode};
-use concord::prelude::{Bytes, PageLimit, SecretString, StreamBody};
+use concord::pagination::PaginatedRequest;
 use concord::rate_limit::NoopRateLimiter;
 use concord::records::{RecordDecoder, RecordError};
 use concord::response::ResponseHead;
+use concord::{Bytes, PageLimit, SecretString};
 use concord_test_support::proxy::ConnectProxy;
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 use concord_test_support::tls::TlsServer;

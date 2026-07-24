@@ -5,8 +5,9 @@
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use concord::codec::{CodecError, DecodeBody, DecodeContext};
+use concord::pagination::PaginatedRequest;
 use concord::pagination::{HasNextCursor, PaginationController, PaginationError};
-use concord::{Bytes, PageLimit, PaginatedRequest};
+use concord::{Bytes, PageLimit};
 
 use super::PaginationApi;
 

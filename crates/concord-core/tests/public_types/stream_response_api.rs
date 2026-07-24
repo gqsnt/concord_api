@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use concord_core::advanced::{
+use concord_core::contracts::{
     ApiError, ApiResponse, ByteStream, Bytes, ExecutionMeta, HeaderMap, StatusCode, Url, Version,
 };
 use futures_core::Stream;

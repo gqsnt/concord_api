@@ -1,4 +1,4 @@
-use concord_core::advanced::{RateLimitPermit, RateLimitPlan};
+use concord_core::contracts::{RateLimitPermit, RateLimitPlan};
 
 fn main() {
     let _ = RateLimitPermit { _private: () };

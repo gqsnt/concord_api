@@ -1,4 +1,4 @@
-use concord_core::advanced::{RateLimitRequest, RateLimitResponse};
+use concord_core::contracts::{RateLimitRequest, RateLimitResponse};
 
 fn inspect_request(request: RateLimitRequest<'_>) {
     let _ = request.body;

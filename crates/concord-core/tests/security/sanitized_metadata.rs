@@ -1,4 +1,4 @@
-use concord_core::advanced::{
+use concord_core::contracts::{
     Bytes, HeaderMap, HeaderName, HeaderValue, Method, SanitizedHeaderMap, SanitizedHeaderValue,
     SanitizedHeaders, StatusCode, Url, Version,
 };
@@ -19,7 +19,7 @@ fn owned_signatures(headers: &SanitizedHeaderMap, name: &HeaderName) {
     let _: Vec<(&HeaderName, SanitizedHeaderValue<'_>)> = headers.iter().collect();
 }
 
-fn advanced_wire_exports() {
+fn contract_wire_exports() {
     let _: Option<Bytes> = None;
     let _: Option<HeaderMap> = None;
     let _: Option<HeaderName> = None;
@@ -38,10 +38,8 @@ fn requires_debug<T: std::fmt::Debug>() {}
 fn downstream_public_surface_has_required_exports_and_signatures() {
     let _: for<'a> fn(SanitizedHeaders<'a>, &HeaderName) = borrowed_signatures;
     let _: fn(&SanitizedHeaderMap, &HeaderName) = owned_signatures;
-    advanced_wire_exports();
+    contract_wire_exports();
 
-    let prelude_bytes: concord_core::prelude::Bytes = Bytes::new();
-    let _: Bytes = prelude_bytes;
     requires_value_traits::<SanitizedHeaderValue<'static>>();
     requires_view_traits::<SanitizedHeaders<'static>>();
     requires_debug::<SanitizedHeaderMap>();

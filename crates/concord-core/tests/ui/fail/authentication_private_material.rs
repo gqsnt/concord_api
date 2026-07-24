@@ -1,5 +1,6 @@
-use concord_core::advanced::{CredentialMaterial, CredentialRef};
-use concord_core::prelude::{AccessToken, BasicCredential};
+use concord_core::contracts::{
+    AccessToken, BasicCredential, CredentialMaterial, CredentialRef,
+};
 
 #[derive(Clone)]
 struct Material;

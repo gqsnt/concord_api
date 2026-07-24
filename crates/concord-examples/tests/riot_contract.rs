@@ -8,7 +8,8 @@
 use std::num::NonZeroU32;
 
 use concord::http::{HeaderName, Method};
-use concord::{PageLimit, PaginatedRequest, SecretString};
+use concord::pagination::PaginatedRequest;
+use concord::{PageLimit, SecretString};
 use concord_examples::riot::api::{DDragonApi, RiotApi, d_dragon_api, riot_api};
 use concord_examples::riot::domain::{DDragonLocale, MatchType, PlatformRoute, RegionalRoute};
 

@@ -8,10 +8,9 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-pub mod advanced;
+pub mod contracts;
 #[cfg(any(feature = "dangerous-custom-retry", feature = "dangerous-raw-response"))]
 pub mod dangerous;
-pub mod prelude;
 #[cfg(feature = "records")]
 pub mod records;
 

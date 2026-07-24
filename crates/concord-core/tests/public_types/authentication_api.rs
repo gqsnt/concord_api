@@ -3,13 +3,13 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use concord_core::advanced::{
-    Auth, AuthError, AuthErrorKind, BoxFuture, ChallengePolicy, CredentialHandle,
-    CredentialMaterial, CredentialProvider, CredentialReason, CredentialRef, CredentialRequest,
-    HeaderName, HeaderValue, Method, ProviderBody, ProviderBodyFactory, ProviderHttp,
-    ProviderRequest, ProviderResponse, RecoveryMode, SecretCredential, StatusCode, Url,
+use concord_core::contracts::{
+    AccessToken, ApiKey, Auth, AuthError, AuthErrorKind, BasicCredential, BoxFuture,
+    ChallengePolicy, CredentialHandle, CredentialMaterial, CredentialProvider, CredentialReason,
+    CredentialRef, CredentialRequest, HeaderName, HeaderValue, Method, ProviderBody,
+    ProviderBodyFactory, ProviderHttp, ProviderRequest, ProviderResponse, RecoveryMode,
+    SecretCredential, SecretString, StatusCode, Url,
 };
-use concord_core::prelude::{AccessToken, ApiKey, BasicCredential, SecretString};
 
 const SENTINEL: &str = "authentication-public-api-sentinel-f629cb6a8fe749ea";
 
@@ -58,7 +58,7 @@ impl CredentialProvider for SessionProvider {
 struct Factory;
 
 impl ProviderBodyFactory for Factory {
-    fn create(&self) -> Result<concord_core::advanced::Bytes, AuthError> {
+    fn create(&self) -> Result<concord_core::contracts::Bytes, AuthError> {
         Ok("factory".into())
     }
 }
@@ -106,9 +106,9 @@ async fn exact_provider_response_surface(http: ProviderHttp<'_>) -> Result<(), A
         )
         .await?;
     let _: StatusCode = response.status();
-    let _: &concord_core::advanced::HeaderMap = response.headers();
-    let _: &concord_core::advanced::Bytes = response.body();
-    let _: concord_core::advanced::Bytes = response.into_body();
+    let _: &concord_core::contracts::HeaderMap = response.headers();
+    let _: &concord_core::contracts::Bytes = response.body();
+    let _: concord_core::contracts::Bytes = response.into_body();
     Ok(())
 }
 

@@ -1,4 +1,4 @@
-use concord_core::advanced::{
+use concord_core::contracts::{
     HeaderMap, HeaderName, HeaderValue, SanitizedHeaderMap, SanitizedHeaders,
 };
 

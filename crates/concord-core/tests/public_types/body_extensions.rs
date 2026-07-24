@@ -2,7 +2,7 @@ use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use concord_core::advanced::{
+use concord_core::contracts::{
     BodyError, BodyErrorKind, BodyFactory, BodyKind, Bytes, HeaderValue, RequestBody, StreamBody,
 };
 use futures_core::Stream;
@@ -32,7 +32,7 @@ impl BodyFactory for DownstreamFactory {
 }
 
 #[test]
-fn downstream_body_contracts_need_only_the_advanced_public_surface() {
+fn downstream_body_contracts_need_only_the_contract_surface() {
     fn assert_send<T: Send>(_: &T) {}
     fn assert_sync<T: Sync>(_: &T) {}
 

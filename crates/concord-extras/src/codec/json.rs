@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
-use concord_core::advanced::Bytes;
 use concord_core::codec::{CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext};
+use concord_core::contracts::Bytes;
 
 /// Typed JSON request and response codec.
 ///
@@ -61,7 +61,7 @@ fn is_json_media_type(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use concord_core::advanced::{Method, StatusCode};
+    use concord_core::contracts::{Method, StatusCode};
 
     use super::*;
 

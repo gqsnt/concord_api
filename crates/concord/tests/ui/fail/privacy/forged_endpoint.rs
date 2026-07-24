@@ -15,9 +15,9 @@ struct ForgedEndpoint;
 
 impl sealed_api::Endpoint for ForgedEndpoint {
     type Request = ();
-    type Response = concord::advanced::NoContent;
+    type Response = concord::NoContent;
 
-    fn description(&self) -> &concord::advanced::EndpointDescription {
+    fn description(&self) -> &concord::endpoint::EndpointDescription {
         unreachable!()
     }
 
@@ -27,8 +27,8 @@ impl sealed_api::Endpoint for ForgedEndpoint {
         &self,
         _client: &SealedApi,
     ) -> Result<
-        concord::advanced::SafeRequestPlan,
-        concord::advanced::ApiError,
+        concord::endpoint::SafeRequestPlan,
+        concord::ApiError,
     > {
         unreachable!()
     }

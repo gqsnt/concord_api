@@ -1,4 +1,4 @@
-use concord_core::advanced::{ResponseAcquisition, ResponseMode};
+use concord_core::contracts::{ResponseAcquisition, ResponseMode};
 
 struct NativeOrUnboundedMode;
 

@@ -1,30 +1,33 @@
-error[E0432]: unresolved imports `concord_core::advanced::MultipartBody`, `concord_core::advanced::MultipartFactory`, `concord_core::advanced::MultipartPart`
- --> tests/ui/fail/multipart_feature_absent.rs:1:30
+error[E0432]: unresolved imports `concord_core::contracts::MultipartBody`, `concord_core::contracts::MultipartFactory`, `concord_core::contracts::MultipartPart`
+ --> tests/ui/fail/multipart_feature_absent.rs:1:31
   |
-1 | use concord_core::advanced::{MultipartBody, MultipartFactory, MultipartPart};
-  |                              ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^ no `MultipartPart` in `advanced`
-  |                              |              |
-  |                              |              no `MultipartFactory` in `advanced`
-  |                              no `MultipartBody` in `advanced`
+1 | use concord_core::contracts::{MultipartBody, MultipartFactory, MultipartPart};
+  |                               ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^ no `MultipartPart` in `contracts`
+  |                               |              |
+  |                               |              no `MultipartFactory` in `contracts`
+  |                               no `MultipartBody` in `contracts`
   |
 note: found an item that was configured out
- --> src/advanced.rs
+ --> src/contracts.rs
   |
   | #[cfg(feature = "multipart")]
   |       --------------------- the item is gated behind the `multipart` feature
-  | pub use crate::body::{Multipart, MultipartBody, MultipartFactory, MultipartPart};
-  |                                  ^^^^^^^^^^^^^
+...
+  |     MAX_MULTIPART_PARTS, Multipart, MultipartBody, MultipartFactory, MultipartPart,
+  |                                     ^^^^^^^^^^^^^
 note: found an item that was configured out
- --> src/advanced.rs
+ --> src/contracts.rs
   |
   | #[cfg(feature = "multipart")]
   |       --------------------- the item is gated behind the `multipart` feature
-  | pub use crate::body::{Multipart, MultipartBody, MultipartFactory, MultipartPart};
-  |                                                 ^^^^^^^^^^^^^^^^
+...
+  |     MAX_MULTIPART_PARTS, Multipart, MultipartBody, MultipartFactory, MultipartPart,
+  |                                                    ^^^^^^^^^^^^^^^^
 note: found an item that was configured out
- --> src/advanced.rs
+ --> src/contracts.rs
   |
   | #[cfg(feature = "multipart")]
   |       --------------------- the item is gated behind the `multipart` feature
-  | pub use crate::body::{Multipart, MultipartBody, MultipartFactory, MultipartPart};
-  |                                                                   ^^^^^^^^^^^^^
+...
+  |     MAX_MULTIPART_PARTS, Multipart, MultipartBody, MultipartFactory, MultipartPart,
+  |                                                                      ^^^^^^^^^^^^^

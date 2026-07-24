@@ -289,7 +289,7 @@ impl HeadBuilder {
         self.push_host_label_with_safe(&value, "x")
     }
 
-    /// Returns the final logical host for advanced rate-key construction.
+    /// Returns the final logical host for custom rate-key construction.
     #[doc(hidden)]
     pub fn rate_limit_host(&self) -> &str {
         self.logical_url

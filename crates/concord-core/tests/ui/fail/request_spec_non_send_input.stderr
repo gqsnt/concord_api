@@ -5,7 +5,7 @@ error[E0277]: `Rc<String>` cannot be sent between threads safely
    |                  ^^^^^^^^^^ `Rc<String>` cannot be sent between threads safely
    |
    = help: the trait `Send` is not implemented for `Rc<String>`
-note: required by a bound in `concord_core::advanced::RequestBodySpec::Input`
+note: required by a bound in `concord_core::contracts::RequestBodySpec::Input`
   --> src/body/spec.rs
    |
    |     type Input: Send + 'static;

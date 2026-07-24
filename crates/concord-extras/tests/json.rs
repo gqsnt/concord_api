@@ -1,7 +1,7 @@
 #![cfg(feature = "json")]
 
-use concord_core::advanced::{Bytes, Method, StatusCode};
 use concord_core::codec::{DecodeBody, DecodeContext, EncodeBody, EncodeContext};
+use concord_core::contracts::{Bytes, Method, StatusCode};
 use concord_extras::codec::Json;
 use serde::{Deserialize, Serialize};
 

@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use concord_core::advanced::CodecError;
+use concord_core::contracts::CodecError;
 
 const CODEC_SENTINEL: &str = "codec-body-sentinel-298b23";
 

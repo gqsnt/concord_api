@@ -4,13 +4,12 @@
 //! execution. Documentation owner: `docs/guide/05-bodies-responses-and-streams.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
-use concord::Request;
 use concord::api;
 use concord::body::{
     BodyError, BodyKind, LengthHint, RequestBody, RequestBodyContext, RequestBodyMetadata,
     RequestBodySpec, RequestContentType,
 };
-use concord::endpoint::{EndpointId, RuntimeEndpoint};
+use concord::endpoint::{EndpointId, Request, RuntimeEndpoint};
 use concord::http::Method;
 use concord::prelude::Bytes;
 use concord::response::{

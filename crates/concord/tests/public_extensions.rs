@@ -7,24 +7,42 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 #[cfg(feature = "json")]
-use concord::advanced::Json;
-use concord::advanced::{
-    Auth, AuthError, AuthErrorKind, BeforeSend, BodyError, BodyFactory, BodyKind, BoxFuture,
-    Buffered, ByteStream, CodecError, CompletionEvent, Cooldown, CooldownScope, CredentialMaterial,
-    CredentialProvider, CredentialRequest, DecodeBody, DecodeContext, Discard, EncodeBody,
-    EncodeContext, EndpointId, HasNextCursor, HeaderName, HeaderValue, HookError, LengthHint,
-    MediaType, Method, PaginationCompletionEvent, PaginationController, PaginationError,
-    ProviderBody, ProviderBodyFactory, ProviderRequest, RateLimitError, RateLimitObserver,
-    RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimiter,
-    RequestBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestContentType,
-    ResponseBodyError, ResponseBodySpec, ResponseHead, ResponseHeadEvent, RuntimeEndpoint,
-    RuntimeHooks, SafeProxy, SecretCredential, StatusCode, Streaming, Url,
+use concord::Json;
+use concord::auth::{
+    Auth, AuthError, AuthErrorKind, CredentialMaterial, CredentialProvider, CredentialRequest,
+    ProviderBody, ProviderBodyFactory, ProviderRequest, SecretCredential,
 };
-#[cfg(feature = "records")]
-use concord::advanced::{BytesMut, RecordDecoder, RecordError};
+use concord::body::{
+    BodyError, BodyFactory, BodyKind, LengthHint, RequestBody, RequestBodyContext,
+    RequestBodyMetadata, RequestBodySpec, RequestContentType, StreamBody,
+};
 #[cfg(feature = "multipart")]
-use concord::advanced::{MultipartBody, MultipartFactory, MultipartPart};
-use concord::prelude::{Bytes, ClientBuildError, Request, SecretString, StreamBody};
+use concord::body::{MultipartBody, MultipartFactory, MultipartPart};
+#[cfg(feature = "records")]
+use concord::codec::BytesMut;
+use concord::codec::{CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType};
+use concord::endpoint::{EndpointId, Request, RuntimeEndpoint};
+use concord::error::HookError;
+use concord::hooks::{
+    BeforeSend, BoxFuture, CompletionEvent, PaginationCompletionEvent, ResponseHeadEvent,
+    RuntimeHooks,
+};
+use concord::http::{HeaderName, HeaderValue, Method, SafeProxy, StatusCode, Url};
+use concord::pagination::{HasNextCursor, PaginationController, PaginationError};
+use concord::rate_limit::{
+    Cooldown, CooldownScope, RateLimitError, RateLimitObserver, RateLimitPermit, RateLimitRequest,
+    RateLimitResponse, RateLimitResponseHead, RateLimiter,
+};
+#[cfg(feature = "csv")]
+use concord::records::Csv;
+#[cfg(feature = "ndjson")]
+use concord::records::NdJson;
+#[cfg(feature = "records")]
+use concord::records::{RecordDecoder, RecordError, Records};
+use concord::response::{
+    Buffered, ByteStream, Discard, ResponseBodyError, ResponseBodySpec, ResponseHead, Streaming,
+};
+use concord::{Bytes, ClientBuildError, SecretString};
 
 fn runtime_id(value: &str) -> EndpointId {
     EndpointId::try_from(value).expect("valid runtime endpoint ID")

@@ -4,12 +4,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::{fmt, fmt::Display};
 
-use concord::advanced::{
-    BoxFuture, ClientBuildErrorKind, NoopRateLimiter, RateLimitError, RateLimitPermit,
-    RateLimitRequest, RateLimitResponse, RateLimiter, SafeProxy,
-};
+use concord::Bytes;
 use concord::api;
-use concord::prelude::Bytes;
+use concord::error::ClientBuildErrorKind;
+use concord::http::SafeProxy;
+use concord::rate_limit::{
+    BoxFuture, NoopRateLimiter, RateLimitError, RateLimitPermit, RateLimitPlan, RateLimitRequest,
+    RateLimitResponse, RateLimiter,
+};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 
 api! {
@@ -262,7 +264,7 @@ impl RateLimiter for GatedLimiter {
 }
 
 impl CapturingLimiter {
-    fn capture(plan: &concord::advanced::RateLimitPlan) -> Vec<CapturedRule> {
+    fn capture(plan: &RateLimitPlan) -> Vec<CapturedRule> {
         plan.rules()
             .iter()
             .map(|rule| CapturedRule {

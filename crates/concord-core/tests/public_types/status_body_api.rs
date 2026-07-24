@@ -1,4 +1,4 @@
-use concord_core::advanced::{Bytes, StatusBody, StatusBodyState};
+use concord_core::contracts::{Bytes, StatusBody, StatusBodyState};
 
 fn public_accessors(body: &StatusBody) {
     let _: StatusBodyState = body.state();

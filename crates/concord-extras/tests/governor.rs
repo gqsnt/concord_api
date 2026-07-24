@@ -5,7 +5,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 
-use concord_core::advanced::{HeaderMap, Method, SanitizedHeaders};
+use concord_core::contracts::{HeaderMap, Method, SanitizedHeaders};
 use concord_core::rate_limit::{
     Cooldown, CooldownScope, RateLimitId, RateLimitKey, RateLimitObserver, RateLimitPlan,
     RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimitRule, RateLimitWindow,

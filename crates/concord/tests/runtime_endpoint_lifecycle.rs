@@ -7,16 +7,23 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use concord::advanced::{
-    Auth, BodyError, BodyFactory, BoxFuture, ChallengePolicy, CodecError, DecodeBody,
-    DecodeContext, EncodeBody, EncodeContext, EndpointId, ErrorCategory, HeaderName, HookError,
-    MediaType, Method, MultipartBody, MultipartFactory, MultipartPart, NoopRateLimiter,
-    RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitRequest,
-    RateLimitRule, RateLimitWindow, RateLimiter, RequestBody, RuntimeEndpoint,
-    RuntimeEndpointBuilder, RuntimeHooks, SafeProxy, Stream as StreamSpec, StreamBody,
-};
 use concord::api;
-use concord::prelude::{ByteStream, Bytes, NoContent};
+use concord::auth::{Auth, ChallengePolicy};
+use concord::body::{
+    BodyError, BodyFactory, MultipartBody, MultipartFactory, MultipartPart, RequestBody,
+    Stream as StreamSpec, StreamBody,
+};
+use concord::codec::{CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType};
+use concord::endpoint::{EndpointId, RuntimeEndpoint, RuntimeEndpointBuilder};
+use concord::error::{ConfigurationErrorKind, ErrorCategory, HookError};
+use concord::hooks::{BeforeSend, BoxFuture, RuntimeHooks};
+use concord::http::{HeaderName, Method, SafeProxy};
+use concord::rate_limit::{
+    NoopRateLimiter, RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit,
+    RateLimitRequest, RateLimitRule, RateLimitWindow, RateLimiter,
+};
+use concord::response::ByteStream;
+use concord::{Bytes, NoContent};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 use futures_core::Stream;
 
@@ -175,10 +182,7 @@ impl RateLimiter for CapturingLimiter {
 struct RejectingHooks;
 
 impl RuntimeHooks for RejectingHooks {
-    fn before_send<'a>(
-        &'a self,
-        _context: concord::advanced::BeforeSend<'a>,
-    ) -> BoxFuture<'a, Result<(), HookError>> {
+    fn before_send<'a>(&'a self, _context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
         Box::pin(async { Err(HookError::new("prepared hook veto")) })
     }
 }
@@ -188,10 +192,7 @@ struct CountingHooks {
 }
 
 impl RuntimeHooks for CountingHooks {
-    fn before_send<'a>(
-        &'a self,
-        _context: concord::advanced::BeforeSend<'a>,
-    ) -> BoxFuture<'a, Result<(), HookError>> {
+    fn before_send<'a>(&'a self, _context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Box::pin(async { Ok(()) })
     }
@@ -239,7 +240,7 @@ fn exact_builder_contracts() {
 }
 
 #[test]
-fn exact_runtime_endpoint_types_are_available_from_advanced() {
+fn exact_runtime_endpoint_types_are_available_from_endpoint_domain() {
     exact_builder_contracts();
 }
 
@@ -725,7 +726,7 @@ fn prepared_authentication_uses_canonical_collision_and_challenge_validation() {
         .expect("public/auth header collision");
     assert_eq!(
         header_collision.kind(),
-        concord::advanced::ConfigurationErrorKind::InvalidAuthentication
+        ConfigurationErrorKind::InvalidAuthentication
     );
 
     let query_collision = RuntimeEndpoint::builder(runtime_id("runtime.auth"), Method::GET)
@@ -736,7 +737,7 @@ fn prepared_authentication_uses_canonical_collision_and_challenge_validation() {
         .expect("public/auth query collision");
     assert_eq!(
         query_collision.kind(),
-        concord::advanced::ConfigurationErrorKind::InvalidAuthentication
+        ConfigurationErrorKind::InvalidAuthentication
     );
 
     let two_challenges = RuntimeEndpoint::builder(runtime_id("runtime.auth"), Method::GET)
@@ -755,7 +756,7 @@ fn prepared_authentication_uses_canonical_collision_and_challenge_validation() {
         .expect("two challenge placements");
     assert_eq!(
         two_challenges.kind(),
-        concord::advanced::ConfigurationErrorKind::InvalidAuthentication
+        ConfigurationErrorKind::InvalidAuthentication
     );
 
     RuntimeEndpoint::builder(runtime_id("runtime.auth"), Method::GET)

@@ -1,7 +1,6 @@
-use concord::advanced::{
-    Bytes, CodecError, DecodeBody, DecodeContext, PaginationController, PaginationError,
-};
 use concord::api;
+use concord::codec::{Bytes, CodecError, DecodeBody, DecodeContext};
+use concord::pagination::{PaginationController, PaginationError};
 
 #[path = "../../../support/mod.rs"]
 mod support;

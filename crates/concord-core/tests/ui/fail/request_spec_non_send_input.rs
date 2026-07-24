@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use concord_core::advanced::{
+use concord_core::contracts::{
     BodyError, RequestBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec,
 };
 

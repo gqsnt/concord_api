@@ -124,7 +124,7 @@ Ordinary imports come from `concord`:
 | `records` | bounded record streams/decoders |
 | `response` | modes, metadata, specifications |
 | `runtime` | finite runtime configuration |
-| `advanced` | curated semantic extension surface |
+| semantic modules | extension contracts grouped by responsibility |
 | `dangerous` | explicit feature-gated capabilities |
 
 `concord::prelude` is optional convenience for common handwritten code; it is

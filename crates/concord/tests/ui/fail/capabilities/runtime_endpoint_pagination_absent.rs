@@ -1,5 +1,6 @@
-use concord::advanced::{EndpointId, Method, RuntimeEndpoint};
 use concord::api;
+use concord::endpoint::{EndpointId, RuntimeEndpoint};
+use concord::http::Method;
 
 api! {
     client RuntimePaginationApi {

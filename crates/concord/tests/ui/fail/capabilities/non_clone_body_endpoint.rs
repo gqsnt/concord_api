@@ -1,4 +1,7 @@
-use concord::{Bytes, OctetStream, Stream, StreamBody, api};
+use concord::api;
+use concord::body::{Stream, StreamBody};
+use concord::codec::OctetStream;
+use concord::Bytes;
 
 api! {
     client UploadApi {

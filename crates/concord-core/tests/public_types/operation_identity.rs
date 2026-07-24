@@ -1,6 +1,6 @@
 use std::hash::Hash;
 
-use concord_core::advanced::OperationId;
+use concord_core::contracts::OperationId;
 
 fn assert_identity_traits<T: Clone + Copy + Eq + Hash + Send + Sync + 'static>() {}
 

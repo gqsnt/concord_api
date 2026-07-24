@@ -1,4 +1,4 @@
-use concord_core::advanced::{BodyError, RequestBody, RequestBodyContext, RequestBodySpec};
+use concord_core::contracts::{BodyError, RequestBody, RequestBodyContext, RequestBodySpec};
 
 struct MalformedMetadataSpec;
 

@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use concord_core::advanced::{ConfigurationErrorKind, SafeProxy};
+use concord_core::contracts::{ConfigurationErrorKind, SafeProxy};
 
 const PROXY_SENTINEL: &str = "proxy-user-password-sentinel-430f5a";
 

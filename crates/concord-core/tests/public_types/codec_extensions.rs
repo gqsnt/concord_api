@@ -1,4 +1,4 @@
-use concord_core::advanced::{
+use concord_core::contracts::{
     Bytes, CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType,
 };
 
@@ -49,7 +49,7 @@ impl DecodeBody for VendorCodec {
 }
 
 #[test]
-fn downstream_buffered_codecs_need_only_the_advanced_public_surface() {
+fn downstream_buffered_codecs_need_only_the_contract_surface() {
     let method = http::Method::POST;
     let bytes = VendorCodec::encode(
         "extension-value".to_owned(),

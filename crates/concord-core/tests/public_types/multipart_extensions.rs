@@ -1,6 +1,6 @@
 #![cfg(feature = "multipart")]
 
-use concord_core::advanced::{
+use concord_core::contracts::{
     BodyError, BodyKind, Bytes, MultipartBody, MultipartFactory, MultipartPart, RequestBody,
     StreamBody,
 };
@@ -19,7 +19,7 @@ impl MultipartFactory for DownstreamMultipartFactory {
 }
 
 #[test]
-fn downstream_multipart_contract_uses_only_advanced_public_imports() {
+fn downstream_multipart_contract_uses_only_contract_imports() {
     fn assert_send<T: Send>(_: &T) {}
     fn assert_sync<T: Sync>(_: &T) {}
 

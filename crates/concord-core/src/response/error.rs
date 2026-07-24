@@ -3,7 +3,7 @@ use std::fmt;
 
 /// A safe failure reported by a successful-response specification.
 ///
-/// Concord converts this value to a structural [`crate::prelude::ApiError`]
+/// Concord converts this value to a structural [`crate::contracts::ApiError`]
 /// category and discards application text before automatic diagnostics.
 pub struct ResponseBodyError {
     kind: ResponseBodyErrorKind,

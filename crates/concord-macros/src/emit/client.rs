@@ -65,7 +65,7 @@ pub(super) fn generate_client(
         .enumerate()
         .map(|(index, secret)| {
             let field = secret_builder_field(index, &secret.name);
-            quote!(#field: ::std::option::Option<#core_path::prelude::SecretString>,)
+            quote!(#field: ::std::option::Option<#core_path::auth::SecretString>,)
         })
         .collect::<Vec<_>>();
     let provider_builder_fields = client
@@ -77,8 +77,8 @@ pub(super) fn generate_client(
                 let field = provider_builder_field(index, &credential.name);
                 Some(quote!(
                     #field: ::std::option::Option<::std::sync::Arc<
-                        dyn #core_path::advanced::CredentialProvider<
-                            Material = <#provider as #core_path::advanced::CredentialProvider>::Material
+                        dyn #core_path::auth::CredentialProvider<
+                            Material = <#provider as #core_path::auth::CredentialProvider>::Material
                         >
                     >>,
                 ))
@@ -125,7 +125,7 @@ pub(super) fn generate_client(
     let client_constructor = (!client.has_required_construction_inputs()).then(|| {
         quote! {
             #[doc = #constructor_doc]
-            pub fn new() -> ::std::result::Result<Self, #core_path::prelude::ClientBuildError> {
+            pub fn new() -> ::std::result::Result<Self, #core_path::ClientBuildError> {
                 Self::builder().build()
             }
         }
@@ -218,8 +218,8 @@ pub(super) fn generate_client(
             #(#builder_value_fields)*
             #(#secret_builder_fields)*
             #(#provider_builder_fields)*
-            __concord_http: ::std::option::Option<#core_path::advanced::HttpConfigBuilder>,
-            __concord_runtime: ::std::option::Option<#core_path::advanced::RuntimeConfigBuilder>,
+            __concord_http: ::std::option::Option<#core_path::http::HttpConfigBuilder>,
+            __concord_runtime: ::std::option::Option<#core_path::runtime::RuntimeConfigBuilder>,
         }
 
         #[doc = #support_doc]
@@ -248,7 +248,7 @@ pub(super) fn generate_client(
                 /// Returns the safe static or bounded runtime endpoint description.
                 fn description(
                     &self,
-                ) -> &#core_path::advanced::EndpointDescription;
+                ) -> &#core_path::endpoint::EndpointDescription;
 
                 #[doc(hidden)]
                 fn __concord_bind(self, client: &super::#client_name) -> Self::Request;
@@ -258,29 +258,29 @@ pub(super) fn generate_client(
                     &self,
                     client: &super::#client_name,
                 ) -> ::std::result::Result<
-                    #core_path::advanced::SafeRequestPlan,
-                    #core_path::advanced::ApiError,
+                    #core_path::endpoint::SafeRequestPlan,
+                    #core_path::ApiError,
                 >;
             }
 
             #[doc(hidden)]
             impl<R> __concord_endpoint_seal::Sealed
-                for #core_path::advanced::RuntimeEndpoint<R>
+                for #core_path::endpoint::RuntimeEndpoint<R>
             where
-                R: #core_path::advanced::ResponseBodySpec,
+                R: #core_path::response::ResponseBodySpec,
             {}
 
             #[doc(hidden)]
-            impl<R> Endpoint for #core_path::advanced::RuntimeEndpoint<R>
+            impl<R> Endpoint for #core_path::endpoint::RuntimeEndpoint<R>
             where
-                R: #core_path::advanced::ResponseBodySpec,
+                R: #core_path::response::ResponseBodySpec,
             {
-                type Request = #core_path::Request<Self>;
+                type Request = #core_path::endpoint::Request<Self>;
                 type Response = R;
 
                 fn description(
                     &self,
-                ) -> &#core_path::advanced::EndpointDescription {
+                ) -> &#core_path::endpoint::EndpointDescription {
                     self.description()
                 }
 
@@ -295,8 +295,8 @@ pub(super) fn generate_client(
                     &self,
                     client: &super::#client_name,
                 ) -> ::std::result::Result<
-                    #core_path::advanced::SafeRequestPlan,
-                    #core_path::advanced::ApiError,
+                    #core_path::endpoint::SafeRequestPlan,
+                    #core_path::ApiError,
                 > {
                     __concord_generated::__core::__private::safe_request_plan(
                         &client.__concord_core,
@@ -329,7 +329,7 @@ pub(super) fn generate_client(
 
                 #[must_use]
                 /// Creates a side-effect-free pending request from an explicit endpoint generated
-                /// for this client or a stable advanced runtime endpoint.
+                /// for this client or a stable runtime endpoint.
                 pub fn request<E>(&self, endpoint: E) -> E::Request
                 where
                     E: Endpoint,
@@ -342,8 +342,8 @@ pub(super) fn generate_client(
                     &self,
                     endpoint: &E,
                 ) -> ::std::result::Result<
-                    #core_path::advanced::SafeRequestPlan,
-                    #core_path::advanced::ApiError,
+                    #core_path::endpoint::SafeRequestPlan,
+                    #core_path::ApiError,
                 >
                 where
                     E: Endpoint,
@@ -376,8 +376,8 @@ pub(super) fn generate_client(
                 pub fn configure_http<F>(mut self, configure: F) -> Self
                 where
                     F: ::std::ops::FnOnce(
-                        #core_path::advanced::HttpConfigBuilder,
-                    ) -> #core_path::advanced::HttpConfigBuilder,
+                        #core_path::http::HttpConfigBuilder,
+                    ) -> #core_path::http::HttpConfigBuilder,
                 {
                     let Some(http) = self.__concord_http.take() else {
                         unreachable!("generated HTTP builder state is internally consistent");
@@ -393,8 +393,8 @@ pub(super) fn generate_client(
                 pub fn configure_runtime<F>(mut self, configure: F) -> Self
                 where
                     F: ::std::ops::FnOnce(
-                        #core_path::advanced::RuntimeConfigBuilder,
-                    ) -> #core_path::advanced::RuntimeConfigBuilder,
+                        #core_path::runtime::RuntimeConfigBuilder,
+                    ) -> #core_path::runtime::RuntimeConfigBuilder,
                 {
                     let Some(runtime) = self.__concord_runtime.take() else {
                         unreachable!("generated runtime builder state is internally consistent");
@@ -406,7 +406,7 @@ pub(super) fn generate_client(
                 /// Resolves selected defaults once and builds the immutable generated client snapshot.
                 pub fn build(
                     self,
-                ) -> ::std::result::Result<super::#client_name, #core_path::prelude::ClientBuildError> {
+                ) -> ::std::result::Result<super::#client_name, #core_path::ClientBuildError> {
                     #(#build_value_statements)*
                     #build_secret_statements
                     #build_provider_statements

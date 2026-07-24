@@ -4,7 +4,8 @@
 //! Documentation owner: `docs/guide/06-pagination-and-rate-limits.md`.
 //! Proving test: `tests/construction.rs`.
 
-use concord::{PageLimit, PaginatedRequest};
+use concord::PageLimit;
+use concord::pagination::PaginatedRequest;
 
 use super::PaginationApi;
 

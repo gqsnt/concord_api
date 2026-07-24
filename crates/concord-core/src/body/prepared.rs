@@ -59,7 +59,7 @@ pub trait BodyFactory: Send + Sync + 'static {
     fn create(&self) -> Result<StreamBody, BodyError>;
 }
 
-/// Opaque advanced request body used by the shared body architecture.
+/// Opaque explicit request body used by the shared body architecture.
 pub struct RequestBody {
     value: RequestBodyValue,
     content_type: Option<HeaderValue>,

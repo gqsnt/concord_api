@@ -1,4 +1,4 @@
-use concord_core::advanced::{
+use concord_core::contracts::{
     BeforeSend, BoxFuture, CompletionEvent, HookError, PaginationCompletionEvent,
     ResponseHeadEvent, RuntimeHooks,
 };

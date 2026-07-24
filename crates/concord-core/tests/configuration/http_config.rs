@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use concord_core::advanced::{HttpConfigBuilder, ProviderRetry, SafeProxy};
+use concord_core::contracts::{HttpConfigBuilder, ProviderRetry, SafeProxy};
 
 fn always_available_methods(builder: HttpConfigBuilder, proxy: SafeProxy) -> HttpConfigBuilder {
     builder

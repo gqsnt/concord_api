@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use concord_core::advanced::HookError;
+use concord_core::contracts::HookError;
 
 const SAFE_MESSAGE: &str = "application-approved lifecycle veto";
 const BODY_SENTINEL: &str = "hook-body-sentinel-771bca";

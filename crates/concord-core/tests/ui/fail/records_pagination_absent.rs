@@ -1,6 +1,6 @@
 use std::num::NonZeroUsize;
 
-use concord_core::advanced::{BytesMut, PageResponseSpec, ResponseHead};
+use concord_core::contracts::{BytesMut, PageResponseSpec, ResponseHead};
 use concord_core::records::{RecordDecoder, RecordError, Records};
 
 struct Decoder;

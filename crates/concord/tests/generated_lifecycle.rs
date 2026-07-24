@@ -7,16 +7,20 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use concord::advanced::{
-    BeforeSend, BoxFuture, ClientBuildErrorKind, CodecError, CompletionEvent, CompletionOutcome,
-    DebugLevel, DecodeBody, DecodeContext, EncodeBody, EncodeContext, HookError, MediaType,
-    MultipartBody, MultipartPart, ResponseHeadEvent, RuntimeHooks, SafeProxy,
-};
 use concord::api;
-use concord::prelude::{
-    ApiResponse, ByteStream, Bytes, ClientBuildError, OctetStream, RequestBody, ResponseRequest,
-    StreamBody,
+use concord::body::{Multipart, MultipartBody, MultipartPart, RequestBody, Stream, StreamBody};
+use concord::codec::{
+    CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType, OctetStream,
 };
+use concord::endpoint::ResponseRequest;
+use concord::error::{ClientBuildErrorKind, HookError};
+use concord::hooks::{
+    BeforeSend, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel, ResponseHeadEvent,
+    RuntimeHooks,
+};
+use concord::http::{SafeProxy, StatusCode};
+use concord::response::{ApiResponse, ByteStream};
+use concord::{Bytes, ClientBuildError};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 use futures_core::Stream as FuturesStream;
 
@@ -571,7 +575,7 @@ async fn generated_stream_and_multipart_facade_and_explicit_endpoints_use_one_ru
         .response()
         .await
         .expect("generated stream metadata response");
-    assert_eq!(response.status(), concord::advanced::StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::OK);
     let mut download = response.into_value();
     let mut downloaded = Vec::new();
     while let Some(chunk) = next_stream_chunk(&mut download).await {

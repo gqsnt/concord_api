@@ -66,10 +66,11 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "façade public Rustdoc failed\n{}",
         diagnostics(&facade_output)
     );
-    let facade_index_path = root
+    let facade_documentation = root
         .join("target/fixtures")
         .join(facade_target_key)
-        .join("doc/concord/index.html");
+        .join("doc/concord");
+    let facade_index_path = facade_documentation.join("index.html");
     let facade_index = std::fs::read_to_string(&facade_index_path)
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", facade_index_path.display()));
     for hidden in ["__benchmark", "__private", "__development"] {
@@ -85,10 +86,10 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", request_path.display()));
     let response = std::fs::read_to_string(&response_path)
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", response_path.display()));
-    let multipart_body_path = documentation.join("advanced/struct.MultipartBody.html");
-    let multipart_part_path = documentation.join("advanced/struct.MultipartPart.html");
-    let multipart_factory_path = documentation.join("advanced/trait.MultipartFactory.html");
-    let byte_stream_path = documentation.join("advanced/struct.ByteStream.html");
+    let multipart_body_path = documentation.join("contracts/struct.MultipartBody.html");
+    let multipart_part_path = documentation.join("contracts/struct.MultipartPart.html");
+    let multipart_factory_path = documentation.join("contracts/trait.MultipartFactory.html");
+    let byte_stream_path = documentation.join("contracts/struct.ByteStream.html");
     let multipart_body = std::fs::read_to_string(&multipart_body_path).unwrap_or_else(|error| {
         panic!("failed to read {}: {error}", multipart_body_path.display())
     });
@@ -129,7 +130,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
     .join("\n");
     assert!(
         !documentation
-            .join("advanced/struct.PaginationRequest.html")
+            .join("contracts/struct.PaginationRequest.html")
             .exists(),
         "removed PaginationRequest unexpectedly remains in public Rustdoc"
     );
@@ -175,7 +176,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         "struct.PreparedStream.html",
     ] {
         assert!(
-            !documentation.join("advanced").join(removed).exists(),
+            !documentation.join("contracts").join(removed).exists(),
             "removed prepared response marker remains in Rustdoc: {removed}"
         );
     }
@@ -185,22 +186,22 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
     ]
     .into_iter()
     .map(|name| {
-        let path = documentation.join("advanced").join(name);
+        let path = documentation.join("contracts").join(name);
         std::fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
     })
     .collect::<Vec<_>>()
     .join("\n");
-    let endpoint_id_path = documentation.join("advanced/struct.EndpointId.html");
+    let endpoint_id_path = documentation.join("contracts/struct.EndpointId.html");
     let endpoint_id = std::fs::read_to_string(&endpoint_id_path)
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", endpoint_id_path.display()));
-    let runtime_config_path = documentation.join("advanced/struct.RuntimeConfigBuilder.html");
+    let runtime_config_path = documentation.join("contracts/struct.RuntimeConfigBuilder.html");
     let runtime_config = std::fs::read_to_string(&runtime_config_path).unwrap_or_else(|error| {
         panic!("failed to read {}: {error}", runtime_config_path.display())
     });
     let generic_spec_record_contracts = [
         (
-            "advanced/trait.RequestBodySpec.html",
+            "contracts/trait.RequestBodySpec.html",
             &[
                 "single managed outgoing-body lifecycle",
                 "before the before-send hook",
@@ -212,7 +213,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             ][..],
         ),
         (
-            "advanced/trait.ResponseBodySpec.html",
+            "contracts/trait.ResponseBodySpec.html",
             &[
                 "ordinary non-2xx status handling",
                 "known-length preflight",
@@ -224,7 +225,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             ][..],
         ),
         (
-            "advanced/trait.ResponseMode.html",
+            "contracts/trait.ResponseMode.html",
             &[
                 "core-owned successful-response acquisition mode",
                 "cannot implement another mode",
@@ -232,7 +233,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             ][..],
         ),
         (
-            "advanced/struct.ResponseHead.html",
+            "contracts/struct.ResponseHead.html",
             &[
                 "logical application URL",
                 "actual successful response headers",
@@ -241,7 +242,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             ][..],
         ),
         (
-            "advanced/struct.ApiResponse.html",
+            "contracts/struct.ApiResponse.html",
             &[
                 "single metadata wrapper",
                 "never formats",
@@ -251,7 +252,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             ][..],
         ),
         (
-            "advanced/struct.ByteStream.html",
+            "contracts/struct.ByteStream.html",
             &[
                 "media-independent",
                 "post-decompression",
@@ -325,7 +326,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             ][..],
         ),
         (
-            "trait.BodyFactory.html",
+            "contracts/trait.BodyFactory.html",
             &[
                 "operations may overlap",
                 "sensitive",
@@ -338,7 +339,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             ][..],
         ),
         (
-            "trait.MultipartFactory.html",
+            "contracts/trait.MultipartFactory.html",
             &[
                 "operations may overlap",
                 "sensitive",
@@ -351,7 +352,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             ][..],
         ),
         (
-            "trait.CredentialMaterial.html",
+            "contracts/trait.CredentialMaterial.html",
             &[
                 "overlapping credential operations",
                 "sensitive application-owned state",
@@ -364,7 +365,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             ][..],
         ),
         (
-            "trait.SecretCredential.html",
+            "contracts/trait.SecretCredential.html",
             &[
                 "native authentication boundary",
                 "logging, storage",
@@ -375,7 +376,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             ][..],
         ),
         (
-            "trait.CredentialProvider.html",
+            "contracts/trait.CredentialProvider.html",
             &[
                 "Calls may overlap",
                 "sensitive credential material",
@@ -388,7 +389,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             ][..],
         ),
         (
-            "struct.CredentialRequest.html",
+            "contracts/struct.CredentialRequest.html",
             &[
                 "Bounded context",
                 "request_body_limit",
@@ -397,7 +398,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             ][..],
         ),
         (
-            "trait.ProviderBodyFactory.html",
+            "contracts/trait.ProviderBodyFactory.html",
             &[
                 "operations may overlap",
                 "sensitive",
@@ -449,7 +450,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             ][..],
         ),
         (
-            "trait.RuntimeHooks.html",
+            "contracts/trait.RuntimeHooks.html",
             &[
                 "Calls may overlap",
                 "operationally sensitive",
@@ -462,7 +463,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             ][..],
         ),
         (
-            "struct.ProviderHttp.html",
+            "contracts/struct.ProviderHttp.html",
             &[
                 "separate managed provider client",
                 "finite body limits",
@@ -476,7 +477,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             ][..],
         ),
     ];
-    let prelude = std::fs::read_to_string(documentation.join("prelude/index.html"))
+    let prelude = std::fs::read_to_string(facade_documentation.join("prelude/index.html"))
         .expect("ordinary prelude Rustdoc");
     let dangerous = std::fs::read_to_string(documentation.join("dangerous/index.html"))
         .expect("dangerous namespace Rustdoc");
@@ -628,11 +629,11 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         }
     }
     for relative in [
-        "advanced/struct.Buffered.html",
-        "advanced/struct.Streaming.html",
-        "advanced/struct.Discard.html",
-        "advanced/struct.ResponseBodyError.html",
-        "advanced/enum.ResponseBodyErrorKind.html",
+        "contracts/struct.Buffered.html",
+        "contracts/struct.Streaming.html",
+        "contracts/struct.Discard.html",
+        "contracts/struct.ResponseBodyError.html",
+        "contracts/enum.ResponseBodyErrorKind.html",
         "records/struct.Records.html",
         "records/struct.RecordError.html",
         "records/enum.RecordErrorKind.html",
@@ -644,13 +645,13 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
     }
     assert!(
         !documentation
-            .join("advanced/type.DecodedResponse.html")
+            .join("contracts/type.DecodedResponse.html")
             .exists(),
         "removed DecodedResponse compatibility alias unexpectedly remains in public Rustdoc"
     );
     assert!(
         !documentation
-            .join("advanced/struct.StreamResponse.html")
+            .join("contracts/struct.StreamResponse.html")
             .exists(),
         "removed StreamResponse unexpectedly remains in public Rustdoc"
     );
@@ -687,7 +688,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
     ] {
         assert!(
             !documentation.join("pagination").join(moved).exists()
-                && !documentation.join("advanced").join(moved).exists(),
+                && !documentation.join("contracts").join(moved).exists(),
             "extras-owned pagination item remains in core Rustdoc: {moved}"
         );
     }
@@ -750,11 +751,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
         );
     }
     for (name, expected) in extension_contracts {
-        let path = if name.contains('/') {
-            documentation.join(name)
-        } else {
-            documentation.join("advanced").join(name)
-        };
+        let path = documentation.join(name);
         let page = std::fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
         let page = page.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -801,7 +798,7 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
     }
     assert!(
         !prelude.contains("RateLimitPlan") && !prelude.contains("GovernorRateLimiter"),
-        "ordinary prelude unexpectedly exported advanced rate-limit contracts"
+        "ordinary prelude unexpectedly exported rate-limit contracts"
     );
     assert!(
         prelude.contains("PageLimit")

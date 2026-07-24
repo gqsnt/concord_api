@@ -75,7 +75,7 @@ fn extras_public_types_satisfy_only_semantic_core_contracts() {
     #[cfg(any(feature = "csv", feature = "ndjson"))]
     fn decoder<T: concord_core::records::RecordDecoder>() {}
     #[cfg(feature = "oauth2-client")]
-    fn provider<T: concord_core::advanced::CredentialProvider>() {}
+    fn provider<T: concord_core::contracts::CredentialProvider>() {}
     #[cfg(feature = "rate-limit-governor")]
     fn limiter<T: concord_core::rate_limit::RateLimiter>() {}
     #[cfg(feature = "rate-limit-governor")]

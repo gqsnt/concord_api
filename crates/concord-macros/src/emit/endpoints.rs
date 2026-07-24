@@ -20,7 +20,7 @@ pub(super) fn generate_endpoint_method(
         let body_specification = body_specification_name(endpoint);
         quote!(
             <#invocation_path::#specification_module::#body_specification
-                as #core_path::advanced::RequestBodySpec>::Input
+                as #core_path::body::RequestBodySpec>::Input
         )
     });
     let parameters = endpoint
@@ -266,7 +266,7 @@ pub(super) fn generate_endpoint(
             #[must_use]
             pub fn description(
                 &self,
-            ) -> &'static #core_path::advanced::EndpointDescription {
+            ) -> &'static #core_path::endpoint::EndpointDescription {
                 ::std::sync::LazyLock::force(&#description_static)
             }
 
@@ -316,7 +316,7 @@ pub(super) fn generate_endpoint(
 
             fn description(
                 &self,
-            ) -> &#core_path::advanced::EndpointDescription {
+            ) -> &#core_path::endpoint::EndpointDescription {
                 ::std::sync::LazyLock::force(&#description_static)
             }
 
@@ -342,8 +342,8 @@ pub(super) fn generate_endpoint(
                 &self,
                 client: &#invocation_path::#client_name,
             ) -> ::std::result::Result<
-                #core_path::advanced::SafeRequestPlan,
-                #core_path::advanced::ApiError,
+                #core_path::endpoint::SafeRequestPlan,
+                #core_path::ApiError,
             > {
                 #generated_core::__private::safe_request_plan(
                     &client.__concord_core,
@@ -397,7 +397,7 @@ pub(super) fn generate_endpoint(
                 __concord_context: #generated_core::__private::RequestBodyContext<'_>,
             ) -> ::std::result::Result<
                 #generated_core::__private::RequestBodyMetadata,
-                #generated_core::advanced::BodyError,
+                #generated_core::body::BodyError,
             > {
                 <Self::Body as #generated_core::__private::RequestBodySpec>::metadata(
                     &self.__concord_body,
@@ -480,7 +480,7 @@ pub(super) fn generate_pagination_impl(
     let specification_module = specification_module_name(client);
     let response_specification = response_specification_name(endpoint);
     let response = quote!(#invocation_path::#specification_module::#response_specification);
-    let page_type = quote!(<#response as #core_path::advanced::ResponseBodySpec>::Output);
+    let page_type = quote!(<#response as #core_path::response::ResponseBodySpec>::Output);
     let controller = &pagination.controller;
     let controller_type = pagination_controller_type(controller, invocation_path, false);
     let controller_fields = pagination
@@ -548,7 +548,7 @@ pub(super) fn generate_pagination_impl(
                 &self,
             ) -> ::std::result::Result<
                 #controller_type,
-                #generated_core::advanced::PaginationError,
+                #generated_core::pagination::PaginationError,
             > {
                 let __concord_endpoint = self;
                 let __concord_client_values = __concord_endpoint
@@ -564,7 +564,7 @@ pub(super) fn generate_pagination_impl(
                 __concord_controller: &#controller_type,
             ) -> ::std::result::Result<
                 (),
-                #generated_core::advanced::PaginationError,
+                #generated_core::pagination::PaginationError,
             > {
                 #(#binding_statements)*
                 ::std::result::Result::Ok(())

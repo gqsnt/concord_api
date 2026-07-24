@@ -4,11 +4,11 @@ use std::num::NonZeroUsize;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use concord_core::advanced::{
-    AuthError, AuthErrorKind, BoxFuture, CredentialProvider, CredentialRequest, HeaderValue,
-    Method, ProviderBody, ProviderRequest, RecoveryMode, StatusCode, Url,
+use concord_core::contracts::{
+    AccessToken, AuthError, AuthErrorKind, BoxFuture, CredentialProvider, CredentialRequest,
+    HeaderValue, Method, ProviderBody, ProviderRequest, RecoveryMode, SecretString, StatusCode,
+    Url,
 };
-use concord_core::prelude::{AccessToken, SecretString};
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
 
 /// Maximum UTF-8 bytes accepted for one OAuth2 token URL.
@@ -571,7 +571,7 @@ impl<'a> Base64Encoder<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use concord_core::advanced::{CredentialMaterial, SecretCredential};
+    use concord_core::contracts::{CredentialMaterial, SecretCredential};
 
     const CLIENT_ID: &str = "oauth-client-id-sentinel-4db370ebb046";
     const CLIENT_SECRET: &str = "oauth-client-secret-sentinel-9f8b14c2e6a1";

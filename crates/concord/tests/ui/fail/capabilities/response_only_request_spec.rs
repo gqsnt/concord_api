@@ -1,5 +1,5 @@
-use concord::advanced::{Discard, ResponseBodyError, ResponseBodySpec, ResponseHead};
 use concord::api;
+use concord::response::{Discard, ResponseBodyError, ResponseBodySpec, ResponseHead};
 
 pub struct ResponseOnly;
 

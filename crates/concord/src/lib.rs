@@ -35,21 +35,17 @@ macro_rules! api {
 #[doc(hidden)]
 pub use concord_macros::__api as __concord_api;
 
-#[cfg(feature = "multipart")]
-pub use concord_core::prelude::Multipart;
-pub use concord_core::prelude::{
-    AccessToken, ApiError, ApiKey, ApiResponse, BasicCredential, ByteStream, Bytes,
-    ClientBuildError, ClientInputKind, ConfigurationError, DebugLevel, ErrorCategory, NoContent,
-    OctetStream, RequestBody, SecretString, Stream, StreamBody, Text,
+pub use concord_core::PageLimit;
+pub use concord_core::contracts::{
+    ApiError, ApiResponse, Bytes, ClientBuildError, NoContent, SecretString, Text,
 };
-pub use concord_core::{PageLimit, PaginatedRequest, Request, ResponseRequest};
 #[cfg(feature = "json")]
 pub use concord_extras::codec::Json;
-pub use concord_extras::pagination::{CursorPagination, OffsetPagination, PagePagination};
 
 /// Credential material, provider contracts, and enabled first-party providers.
 pub mod auth {
-    pub use concord_core::advanced::{
+    pub use concord_core::contracts::{AccessToken, ApiKey, BasicCredential, SecretString};
+    pub use concord_core::contracts::{
         Auth, AuthError, AuthErrorKind, BoxFuture, ChallengePolicy, CredentialHandle,
         CredentialMaterial, CredentialProvider, CredentialReason, CredentialRef, CredentialRequest,
         MAX_AUTH_PLACEMENT_NAME_BYTES, MAX_AUTH_QUERY_VALUE_BYTES, MAX_AUTHORIZATION_VALUE_BYTES,
@@ -57,7 +53,6 @@ pub mod auth {
         ProviderBody, ProviderBodyFactory, ProviderHttp, ProviderRequest, ProviderResponse,
         ProviderRetry, RecoveryMode, SecretCredential,
     };
-    pub use concord_core::prelude::{AccessToken, ApiKey, BasicCredential, SecretString};
     #[cfg(feature = "oauth2-client")]
     pub use concord_extras::auth::{
         MAX_OAUTH2_AUTHORIZATION_HEADER_BYTES, MAX_OAUTH2_CLIENT_ID_BYTES,
@@ -69,13 +64,13 @@ pub mod auth {
 
 /// Request-body specifications, factories, metadata, and bounded streaming primitives.
 pub mod body {
-    pub use concord_core::advanced::{
+    pub use concord_core::contracts::{
         BodyError, BodyErrorKind, BodyFactory, BodyKind, LengthHint, RequestBody,
         RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestContentType, Stream,
         StreamBody,
     };
     #[cfg(feature = "multipart")]
-    pub use concord_core::advanced::{
+    pub use concord_core::contracts::{
         MAX_MULTIPART_CONTENT_TYPE_BYTES, MAX_MULTIPART_FILENAME_BYTES,
         MAX_MULTIPART_INLINE_TEXT_BYTES, MAX_MULTIPART_METADATA_BYTES, MAX_MULTIPART_NAME_BYTES,
         MAX_MULTIPART_PARTS, Multipart, MultipartBody, MultipartFactory, MultipartPart,
@@ -84,30 +79,30 @@ pub mod body {
 
 /// Buffered codec contracts, primitives, and enabled ecosystem codecs.
 pub mod codec {
-    pub use concord_core::advanced::{Bytes, BytesMut};
     pub use concord_core::codec::{
         CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType, OctetStream,
         Text,
     };
+    pub use concord_core::contracts::{Bytes, BytesMut};
     #[cfg(feature = "json")]
     pub use concord_extras::codec::Json;
 }
 
 /// Explicit endpoint values and typed pending request contracts.
 pub mod endpoint {
-    pub use concord_core::advanced::{
+    pub use concord_core::contracts::{
         EndpointCapabilities, EndpointDescription, EndpointId, MAX_ENDPOINT_ID_BYTES,
         MAX_FORMATTED_PUBLIC_VALUE_BYTES, MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS,
         MAX_RUNTIME_ENDPOINT_COMPONENTS, MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, RequestBodyCategory,
         ResponseAcquisition, RuntimeEndpoint, RuntimeEndpointBuilder, SafeRequestPlan,
         TimeoutSelection,
     };
-    pub use concord_core::{PaginatedRequest, Request, ResponseRequest};
+    pub use concord_core::{Request, ResponseRequest};
 }
 
 /// Safe runtime, configuration, lifecycle, and decoding errors.
 pub mod error {
-    pub use concord_core::advanced::{
+    pub use concord_core::contracts::{
         ApiError, AuthError, AuthErrorKind, BodyError, BodyErrorKind, ClientBuildError,
         ClientBuildErrorKind, ClientInputKind, CodecError, ConfigurationError,
         ConfigurationErrorKind, ErrorCategory, HookError, HttpResponseFailure, PaginationError,
@@ -118,7 +113,7 @@ pub mod error {
 
 /// Sanitized lifecycle observation contracts and completion events.
 pub mod hooks {
-    pub use concord_core::advanced::{
+    pub use concord_core::contracts::{
         BeforeSend, BodyKind, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel,
         PaginationCompletionEvent, ResponseHeadEvent, RuntimeHooks, SanitizedHeaderMap,
         SanitizedHeaderValue, SanitizedHeaders,
@@ -127,7 +122,7 @@ pub mod hooks {
 
 /// HTTP value types and safe managed-transport configuration.
 pub mod http {
-    pub use concord_core::advanced::{
+    pub use concord_core::contracts::{
         HeaderMap, HeaderName, HeaderValue, HttpConfigBuilder, Method, SafeProxy, StatusCode, Url,
         Version,
     };
@@ -145,7 +140,7 @@ pub mod pagination {
 
 /// Core rate-limit contracts and the enabled first-party implementation.
 pub mod rate_limit {
-    pub use concord_core::advanced::{BoxFuture, RateLimitErrorKind};
+    pub use concord_core::contracts::{BoxFuture, RateLimitErrorKind};
     pub use concord_core::rate_limit::{
         Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_ID_BYTES,
         MAX_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES, MAX_RATE_LIMIT_KEY_PARTS,
@@ -160,74 +155,22 @@ pub mod rate_limit {
 
 /// Common imports for declarations and ordinary generated-client use.
 pub mod prelude {
-    pub use crate::api;
-
-    #[cfg(feature = "multipart")]
-    pub use concord_core::prelude::Multipart;
-    pub use concord_core::prelude::{
-        AccessToken, ApiError, ApiKey, ApiResponse, BasicCredential, ByteStream, Bytes,
-        ClientBuildError, ClientInputKind, ConfigurationError, DebugLevel, ErrorCategory,
-        NoContent, OctetStream, PageLimit, PaginatedRequest, Request, RequestBody, ResponseRequest,
-        SecretString, Stream, StreamBody, Text,
-    };
-    #[cfg(feature = "records")]
-    pub use concord_core::prelude::{RecordBatches, RecordError, RecordStream, Records};
     #[cfg(feature = "json")]
-    pub use concord_extras::codec::Json;
-    #[cfg(feature = "csv")]
-    pub use concord_extras::records::Csv;
-    #[cfg(feature = "ndjson")]
-    pub use concord_extras::records::NdJson;
-}
-
-/// Stable advanced semantic contracts and runtime configuration types.
-pub mod advanced {
-    pub use concord_core::advanced::{
-        ApiError, ApiResponse, Auth, AuthError, AuthErrorKind, BeforeSend, BodyError,
-        BodyErrorKind, BodyFactory, BodyKind, BoxFuture, Buffered, ByteStream, Bytes, BytesMut,
-        ChallengePolicy, ClientBuildError, ClientBuildErrorKind, ClientInputKind, CodecError,
-        CompletionEvent, CompletionOutcome, ConfigurationError, ConfigurationErrorKind, Cooldown,
-        CooldownScope, CredentialHandle, CredentialMaterial, CredentialProvider, CredentialReason,
-        CredentialRef, CredentialRequest, DebugLevel, DecodeBody, DecodeContext, Discard,
-        EncodeBody, EncodeContext, EndpointCapabilities, EndpointDescription, EndpointId,
-        ErrorCategory, ExecutionMeta, HeaderMap, HeaderName, HeaderValue, HookError,
-        HttpConfigBuilder, HttpResponseFailure, LengthHint, MAX_ENDPOINT_ID_BYTES,
-        MAX_FORMATTED_PUBLIC_VALUE_BYTES, MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_BYTES,
-        MAX_RATE_LIMIT_KEY_PART_NAME_BYTES, MAX_RATE_LIMIT_KEY_PARTS,
-        MAX_RATE_LIMIT_RULES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_RULE,
-        MAX_RUNTIME_ENDPOINT_AUTH_PLACEMENTS, MAX_RUNTIME_ENDPOINT_COMPONENTS,
-        MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, MediaType, Method, NoContent, NoopRateLimiter,
-        OctetStream, OperationId, PageResponseSpec, PaginationCompletionEvent,
-        PaginationController, PaginationError, PaginationErrorKind, ProviderBody,
-        ProviderBodyFactory, ProviderHttp, ProviderRequest, ProviderResponse, ProviderRetry,
-        RateLimitError, RateLimitErrorKind, RateLimitId, RateLimitKey, RateLimitKeyPart,
-        RateLimitObserver, RateLimitPermit, RateLimitPlan, RateLimitRequest, RateLimitResponse,
-        RateLimitResponseHead, RateLimitRule, RateLimitWindow, RateLimiter, RecoveryMode,
-        RequestBody, RequestBodyCategory, RequestBodyContext, RequestBodyMetadata, RequestBodySpec,
-        RequestContentType, ResponseAcquisition, ResponseBodyError, ResponseBodyErrorKind,
-        ResponseBodySpec, ResponseHead, ResponseHeadEvent, ResponseMode, RuntimeConfigBuilder,
-        RuntimeEndpoint, RuntimeEndpointBuilder, RuntimeHooks, SafeProxy, SafeRequestPlan,
-        SanitizedHeaderMap, SanitizedHeaderValue, SanitizedHeaders, SecretCredential, StatusBody,
-        StatusBodyDecodeError, StatusBodyState, StatusCode, Stream, StreamBody, Streaming, Text,
-        TimeoutSelection, Url, Version,
-    };
+    pub use crate::Json;
     #[cfg(feature = "multipart")]
-    pub use concord_core::advanced::{Multipart, MultipartBody, MultipartFactory, MultipartPart};
-    #[cfg(feature = "records")]
-    pub use concord_core::advanced::{
-        RecordBatches, RecordDecoder, RecordError, RecordErrorKind, RecordStream, Records,
-    };
-    #[cfg(feature = "json")]
-    pub use concord_extras::codec::Json;
-    pub use concord_extras::pagination::{
-        CursorPagination, HasNextCursor, OffsetPagination, PagePagination,
-    };
-    #[cfg(feature = "rate-limit-governor")]
-    pub use concord_extras::rate_limit::{DefaultRateLimitObserver, GovernorRateLimiter};
+    pub use crate::body::Multipart;
+    pub use crate::body::Stream;
+    pub use crate::codec::OctetStream;
     #[cfg(feature = "csv")]
-    pub use concord_extras::records::Csv;
+    pub use crate::records::Csv;
     #[cfg(feature = "ndjson")]
-    pub use concord_extras::records::NdJson;
+    pub use crate::records::NdJson;
+    #[cfg(feature = "records")]
+    pub use crate::records::Records;
+    pub use crate::{
+        ApiError, ApiResponse, Bytes, ClientBuildError, NoContent, PageLimit, SecretString, Text,
+        api,
+    };
 }
 
 /// Generic bounded record-stream contracts and enabled concrete decoders.
@@ -244,7 +187,7 @@ pub mod records {
 
 /// Bounded response specifications, acquisition modes, and response metadata.
 pub mod response {
-    pub use concord_core::advanced::{
+    pub use concord_core::contracts::{
         ApiResponse, Buffered, ByteStream, Discard, ExecutionMeta, NoContent, PageResponseSpec,
         ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec, ResponseHead, ResponseMode,
         Streaming,
@@ -253,7 +196,7 @@ pub mod response {
 
 /// Immutable client-runtime configuration and safe operation identity.
 pub mod runtime {
-    pub use concord_core::advanced::{OperationId, RuntimeConfigBuilder};
+    pub use concord_core::contracts::{OperationId, RuntimeConfigBuilder};
 }
 
 /// Explicitly feature-gated capabilities with reduced ordinary safety guarantees.
@@ -287,7 +230,7 @@ pub mod __private {
     /// Creates the façade-owned generated-client runtime baseline.
     #[doc(hidden)]
     #[must_use]
-    pub fn default_runtime_config() -> concord_core::advanced::RuntimeConfigBuilder {
+    pub fn default_runtime_config() -> concord_core::contracts::RuntimeConfigBuilder {
         let runtime = concord_core::__private::default_runtime_config();
         #[cfg(feature = "rate-limit-governor")]
         {
@@ -304,9 +247,9 @@ pub mod __private {
     /// Applies generated rate-limit requirements to the selected runtime.
     #[doc(hidden)]
     pub fn prepare_generated_rate_limits(
-        runtime: concord_core::advanced::RuntimeConfigBuilder,
+        runtime: concord_core::contracts::RuntimeConfigBuilder,
         requires_limiter: bool,
-    ) -> Result<concord_core::advanced::RuntimeConfigBuilder, ClientBuildError> {
+    ) -> Result<concord_core::contracts::RuntimeConfigBuilder, ClientBuildError> {
         concord_core::__private::prepare_generated_rate_limits(runtime, requires_limiter)
     }
 }

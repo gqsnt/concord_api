@@ -2,8 +2,8 @@ use std::cell::Cell;
 use std::error::Error;
 use std::num::NonZeroU32;
 
-use concord_core::advanced::{PaginationController, PaginationError, PaginationErrorKind};
-use concord_core::prelude::PageLimit;
+use concord_core::PageLimit;
+use concord_core::contracts::{PaginationController, PaginationError, PaginationErrorKind};
 
 struct CustomPage<T> {
     items: Vec<T>,

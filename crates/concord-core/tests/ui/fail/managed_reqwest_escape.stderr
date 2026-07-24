@@ -1,19 +1,19 @@
-error[E0432]: unresolved import `concord_core::advanced::ApplicationHttp`
+error[E0432]: unresolved import `concord_core::contracts::ApplicationHttp`
  --> tests/ui/fail/managed_reqwest_escape.rs:1:5
   |
-1 | use concord_core::advanced::ApplicationHttp;
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `ApplicationHttp` in `advanced`
+1 | use concord_core::contracts::ApplicationHttp;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `ApplicationHttp` in `contracts`
 
-error[E0432]: unresolved import `concord_core::advanced::ProviderHttpInner`
+error[E0432]: unresolved import `concord_core::contracts::ProviderHttpInner`
  --> tests/ui/fail/managed_reqwest_escape.rs:3:5
   |
-3 | use concord_core::advanced::ProviderHttpInner;
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `ProviderHttpInner` in `advanced`
+3 | use concord_core::contracts::ProviderHttpInner;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `ProviderHttpInner` in `contracts`
   |
 help: a similar name exists in the module
   |
-3 - use concord_core::advanced::ProviderHttpInner;
-3 + use concord_core::advanced::ProviderHttp;
+3 - use concord_core::contracts::ProviderHttpInner;
+3 + use concord_core::contracts::ProviderHttp;
   |
 
 error[E0599]: no method named `client` found for struct `HttpConfigBuilder` in the current scope

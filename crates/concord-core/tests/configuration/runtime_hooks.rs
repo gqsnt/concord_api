@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use concord_core::advanced::{DebugLevel, RuntimeConfigBuilder, RuntimeHooks};
+use concord_core::contracts::{DebugLevel, RuntimeConfigBuilder, RuntimeHooks};
 
 struct Hooks;
 impl RuntimeHooks for Hooks {}

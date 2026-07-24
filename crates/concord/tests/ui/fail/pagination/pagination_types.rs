@@ -14,11 +14,11 @@ mod private_controller {
         state: u64,
     }
 
-    impl concord::advanced::PaginationController<Vec<u8>> for Controller {
+    impl concord::pagination::PaginationController<Vec<u8>> for Controller {
         fn next(
             self,
             _page: &Vec<u8>,
-        ) -> Result<Option<Self>, concord::advanced::PaginationError> {
+        ) -> Result<Option<Self>, concord::pagination::PaginationError> {
             Ok(None)
         }
     }

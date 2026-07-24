@@ -5,9 +5,8 @@
 //! `docs/guide/07-explicit-and-runtime-endpoints.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
-use concord::Request;
 use concord::api;
-use concord::endpoint::{EndpointId, RuntimeEndpoint};
+use concord::endpoint::{EndpointId, Request, RuntimeEndpoint};
 use concord::http::{HeaderName, Method};
 
 api! {

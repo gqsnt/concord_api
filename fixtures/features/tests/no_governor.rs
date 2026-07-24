@@ -8,10 +8,13 @@ use std::time::Duration;
 
 use concord_fixture_features::{EmptyGeneratedApi, LimitedGeneratedApi};
 use runtime::Bytes;
-use runtime::advanced::{
-    BoxFuture, ClientBuildErrorKind, EndpointId, ErrorCategory, Method, NoopRateLimiter,
-    RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitRequest,
-    RateLimitResponse, RateLimitRule, RateLimitWindow, RateLimiter, RuntimeEndpoint, SafeProxy,
+use runtime::endpoint::{EndpointId, RuntimeEndpoint};
+use runtime::error::{ClientBuildErrorKind, ErrorCategory};
+use runtime::http::{Method, SafeProxy};
+use runtime::rate_limit::{
+    BoxFuture, NoopRateLimiter, RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart,
+    RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimitRule, RateLimitWindow,
+    RateLimiter,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -166,7 +169,7 @@ fn runtime_rule(id: &str, key: RateLimitKey, cost: u32, windows: &[(u32, u64)]) 
     .expect("runtime rule")
 }
 
-fn empty_runtime_endpoint() -> runtime::advanced::RuntimeEndpoint<Bytes> {
+fn empty_runtime_endpoint() -> RuntimeEndpoint<Bytes> {
     RuntimeEndpoint::builder(
         EndpointId::try_from("runtime.empty").expect("runtime endpoint ID"),
         Method::GET,
@@ -177,7 +180,7 @@ fn empty_runtime_endpoint() -> runtime::advanced::RuntimeEndpoint<Bytes> {
         .expect("empty runtime endpoint")
 }
 
-fn explicit_runtime_endpoint() -> runtime::advanced::RuntimeEndpoint<Bytes> {
+fn explicit_runtime_endpoint() -> RuntimeEndpoint<Bytes> {
     RuntimeEndpoint::builder(
         EndpointId::try_from("runtime.explicit").expect("runtime endpoint ID"),
         Method::GET,
@@ -299,7 +302,7 @@ async fn generated_clients_fail_closed_without_governor_unless_limiter_is_delibe
     assert_eq!(error.category(), ErrorCategory::RateLimit);
     assert_eq!(
         error.rate_limit_kind(),
-        Some(runtime::advanced::RateLimitErrorKind::InvalidConfiguration)
+        Some(runtime::rate_limit::RateLimitErrorKind::InvalidConfiguration)
     );
     assert_eq!(server.request_count(), 4);
 

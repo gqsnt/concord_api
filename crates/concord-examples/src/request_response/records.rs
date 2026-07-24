@@ -9,7 +9,7 @@ use std::num::NonZeroUsize;
 
 use concord::api;
 use concord::codec::BytesMut;
-use concord::records::{RecordDecoder, RecordError, RecordErrorKind};
+use concord::records::{Csv, NdJson, RecordDecoder, RecordError, RecordErrorKind, Records};
 use concord::response::ResponseHead;
 
 pub struct PipeRecords;

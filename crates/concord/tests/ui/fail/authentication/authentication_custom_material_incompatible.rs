@@ -1,4 +1,4 @@
-use concord::advanced::{
+use concord::auth::{
     AuthError, BoxFuture, CredentialMaterial, CredentialProvider, CredentialRequest,
 };
 use concord::api;

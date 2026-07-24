@@ -1,6 +1,6 @@
-use concord_core::advanced::ApplicationHttp;
-use concord_core::advanced::HttpConfigBuilder;
-use concord_core::advanced::ProviderHttpInner;
+use concord_core::contracts::ApplicationHttp;
+use concord_core::contracts::HttpConfigBuilder;
+use concord_core::contracts::ProviderHttpInner;
 
 fn raw_client_escape(builder: HttpConfigBuilder) {
     let _ = builder.client();

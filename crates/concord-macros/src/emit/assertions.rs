@@ -88,24 +88,24 @@ pub(super) fn endpoint_where_clause(
         },
     );
     if include_execution {
-        bounds.push(quote!(#body: #core_path::advanced::RequestBodySpec));
+        bounds.push(quote!(#body: #core_path::body::RequestBodySpec));
     }
     let response_specification = response_specification_name(endpoint);
     let response = quote!(#invocation_path::#specification_module::#response_specification);
     if include_execution {
-        bounds.push(quote!(#response: #core_path::advanced::ResponseBodySpec));
+        bounds.push(quote!(#response: #core_path::response::ResponseBodySpec));
         if let Some(pagination) = &endpoint.pagination {
-            let page = quote!(<#response as #core_path::advanced::ResponseBodySpec>::Output);
+            let page = quote!(<#response as #core_path::response::ResponseBodySpec>::Output);
             let controller =
                 pagination_controller_type(&pagination.controller, invocation_path, false);
-            bounds.push(quote!(#response: #core_path::advanced::PageResponseSpec));
+            bounds.push(quote!(#response: #core_path::response::PageResponseSpec));
             bounds.push(quote!(#page: ::std::iter::IntoIterator));
             bounds.push(quote! {
                 <#page as ::std::iter::IntoIterator>::Item:
                     ::std::marker::Send + 'static
             });
             bounds.push(quote! {
-                #controller: #core_path::advanced::PaginationController<#page>
+                #controller: #core_path::pagination::PaginationController<#page>
             });
         }
     }

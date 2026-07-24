@@ -3,7 +3,7 @@
 use std::marker::PhantomData;
 use std::num::{NonZeroU32, NonZeroU64, NonZeroUsize};
 
-use concord::advanced::{Bytes, CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext};
+use concord::codec::{Bytes, CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext};
 use concord::pagination::{PaginationController, PaginationError, PaginationErrorKind};
 
 /// Test-local codec deliberately named `Json` to prove spelling is not macro semantics.

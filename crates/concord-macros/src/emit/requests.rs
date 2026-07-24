@@ -37,7 +37,7 @@ pub(super) fn generate_request_wrapper(
                 /// endpoint-backed credential selected by the declaration.
                 pub async fn #method(
                     self,
-                ) -> ::std::result::Result<(), #core_path::prelude::ApiError> {
+                ) -> ::std::result::Result<(), #core_path::ApiError> {
                     let __concord_credential = #generated_core::__private::inspect_endpoint(
                         &self.__concord_inner,
                         |endpoint| {
@@ -68,9 +68,12 @@ pub(super) fn generate_request_wrapper(
         quote! {
             /// Consumes this request and creates one directly awaitable bounded sequential pagination operation.
             #[must_use]
-            pub fn paginate<L>(self, limit: L) -> #core_path::PaginatedRequest<#endpoint_name>
+            pub fn paginate<L>(
+                self,
+                limit: L,
+            ) -> #core_path::pagination::PaginatedRequest<#endpoint_name>
             where
-                L: ::std::convert::Into<#core_path::prelude::PageLimit>,
+                L: ::std::convert::Into<#core_path::PageLimit>,
             {
                 #generated_core::__private::paginate_request(self.__concord_inner, limit)
             }
@@ -80,7 +83,7 @@ pub(super) fn generate_request_wrapper(
         quote! {
             /// Selects universal successful response metadata while retaining the declared output.
             #[must_use]
-            pub fn response(self) -> #core_path::ResponseRequest<#endpoint_name> {
+            pub fn response(self) -> #core_path::endpoint::ResponseRequest<#endpoint_name> {
                 #generated_core::__private::response_request(self.__concord_inner)
             }
         }
@@ -98,7 +101,7 @@ pub(super) fn generate_request_wrapper(
             ) -> #generated_core::dangerous::RawResponseRequest<#endpoint_name>
             where
                 <#endpoint_name as #support_path::Endpoint>::Response:
-                    #generated_core::advanced::ResponseBodySpec<Mode = Mode>,
+                    #generated_core::response::ResponseBodySpec<Mode = Mode>,
                 Mode: #generated_core::dangerous::RawResponseMode,
             {
                 #generated_core::__private::raw_response_request(self.__concord_inner)
@@ -125,7 +128,7 @@ pub(super) fn generate_request_wrapper(
         #[doc = #request_doc]
         #[must_use = "request construction is inert; await it or select a terminal"]
         pub struct #request_name {
-            __concord_inner: #core_path::Request<#endpoint_name>,
+            __concord_inner: #core_path::endpoint::Request<#endpoint_name>,
         }
 
         impl #request_name {
@@ -173,9 +176,9 @@ pub(super) fn generate_request_wrapper(
         #where_clause
         {
             type Output =
-                <#core_path::Request<#endpoint_name> as ::std::future::IntoFuture>::Output;
+                <#core_path::endpoint::Request<#endpoint_name> as ::std::future::IntoFuture>::Output;
             type IntoFuture =
-                <#core_path::Request<#endpoint_name> as ::std::future::IntoFuture>::IntoFuture;
+                <#core_path::endpoint::Request<#endpoint_name> as ::std::future::IntoFuture>::IntoFuture;
 
             fn into_future(self) -> Self::IntoFuture {
                 ::std::future::IntoFuture::into_future(self.__concord_inner)

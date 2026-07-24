@@ -36,5 +36,5 @@ fn main() {
         TimeoutSelection::InheritClient
     );
     let _ = client.plan(&endpoint).expect("safe runtime plan");
-    let _: concord::Request<_> = client.request(endpoint);
+    let _: concord::endpoint::Request<_> = client.request(endpoint);
 }

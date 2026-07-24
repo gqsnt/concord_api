@@ -1,4 +1,5 @@
-use concord::advanced::{EndpointId, Method, RuntimeEndpoint};
+use concord::endpoint::{EndpointId, RuntimeEndpoint};
+use concord::http::Method;
 
 fn main() {
     let builder = RuntimeEndpoint::builder(EndpointId::new("runtime.route").unwrap(), Method::GET);

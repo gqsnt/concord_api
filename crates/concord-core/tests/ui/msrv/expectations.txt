@@ -3,4 +3,4 @@ rate_limit_key_debug_absent|RateLimitKey;;doesn't implement `Debug`|crates/conco
 managed_reqwest_escape|no method named `client`|crates/concord-core/tests/ui/fail/managed_reqwest_escape.rs
 request_spec_non_send_input|Rc<String>;;cannot be sent between threads safely|crates/concord-core/tests/ui/fail/request_spec_non_send_input.rs
 dangerous_raw_response_absent|could not find `dangerous` in `concord_core`|crates/concord-core/tests/ui/fail/dangerous_raw_response_absent.rs
-multipart_feature_absent|no `MultipartBody` in `advanced`|crates/concord-core/tests/ui/fail/multipart_feature_absent.rs
+multipart_feature_absent|no `MultipartBody` in `contracts`|crates/concord-core/tests/ui/fail/multipart_feature_absent.rs

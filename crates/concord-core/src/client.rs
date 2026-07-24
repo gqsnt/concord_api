@@ -255,7 +255,7 @@ mod tests {
     use std::num::{NonZeroU32, NonZeroUsize};
     use std::time::Duration;
 
-    use crate::advanced::NoopRateLimiter;
+    use crate::contracts::NoopRateLimiter;
     use crate::http::SafeProxy;
 
     struct FirstHooks;

@@ -2,12 +2,15 @@ use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use concord::advanced::{
-    AuthError, ClientBuildErrorKind, ClientInputKind, CredentialMaterial, CredentialProvider,
-    CredentialRequest, DecodeBody, DecodeContext, ErrorCategory, SafeProxy, SecretCredential,
-};
 use concord::api;
-use concord::prelude::{AccessToken, Bytes, ClientBuildError, SecretString};
+use concord::auth::{
+    AccessToken, AuthError, BoxFuture, CredentialMaterial, CredentialProvider, CredentialRequest,
+    SecretCredential,
+};
+use concord::codec::{CodecError, DecodeBody, DecodeContext};
+use concord::error::{ClientBuildErrorKind, ClientInputKind, ErrorCategory};
+use concord::http::SafeProxy;
+use concord::{Bytes, ClientBuildError, SecretString};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 
 #[derive(Clone)]
@@ -34,12 +37,9 @@ impl DecodeBody for SessionCodec {
 
     const ACCEPT: Option<&'static str> = Some("application/session");
 
-    fn decode(
-        body: Bytes,
-        _context: DecodeContext<'_>,
-    ) -> Result<Self::Output, concord::advanced::CodecError> {
-        let value = String::from_utf8(body.to_vec())
-            .map_err(|_| concord::advanced::CodecError::new("safe session decode"))?;
+    fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
+        let value =
+            String::from_utf8(body.to_vec()).map_err(|_| CodecError::new("safe session decode"))?;
         Ok(SessionToken(SecretString::new(value)))
     }
 }
@@ -52,7 +52,7 @@ impl CredentialProvider for SessionProvider {
     fn acquire<'a>(
         &'a self,
         _context: CredentialRequest<'a>,
-    ) -> concord::advanced::BoxFuture<'a, Result<Self::Material, AuthError>> {
+    ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
         Box::pin(async { Ok(SessionToken(SecretString::new("provider-token"))) })
     }
 }
@@ -73,7 +73,7 @@ impl CredentialProvider for DroppingSessionProvider {
     fn acquire<'a>(
         &'a self,
         _context: CredentialRequest<'a>,
-    ) -> concord::advanced::BoxFuture<'a, Result<Self::Material, AuthError>> {
+    ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
         Box::pin(async { Ok(SessionToken(SecretString::new("selected-token"))) })
     }
 }
@@ -86,7 +86,7 @@ impl CredentialProvider for BearerProvider {
     fn acquire<'a>(
         &'a self,
         _context: CredentialRequest<'a>,
-    ) -> concord::advanced::BoxFuture<'a, Result<Self::Material, AuthError>> {
+    ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
         Box::pin(async { Ok(AccessToken::new("provider-bearer-token")) })
     }
 }

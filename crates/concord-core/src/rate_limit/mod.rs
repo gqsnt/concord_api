@@ -1,4 +1,4 @@
-//! Stable advanced rate-limit contracts and private execution support.
+//! Stable rate-limit contracts and private execution support.
 
 mod error;
 mod limiter;

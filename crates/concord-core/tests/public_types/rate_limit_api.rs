@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 
-use concord_core::advanced::{
+use concord_core::contracts::{
     BoxFuture, Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, NoopRateLimiter,
     RateLimitError, RateLimitErrorKind, RateLimitId, RateLimitKey, RateLimitKeyPart,
     RateLimitObserver, RateLimitPermit, RateLimitPlan, RateLimitRequest, RateLimitResponse,
@@ -150,7 +150,7 @@ fn custom_extensions_compile_with_body_free_plan_inspection() {
 }
 
 #[test]
-fn exact_advanced_rate_limit_constructors_accessors_and_traits_compile() {
+fn exact_rate_limit_contract_constructors_accessors_and_traits_compile() {
     let id = RateLimitId::new("application").expect("rate-limit ID");
     assert_eq!(id.as_str(), "application");
     let first = RateLimitKeyPart::new("host", "api.example.test").expect("host key part");

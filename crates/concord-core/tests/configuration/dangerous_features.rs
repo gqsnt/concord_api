@@ -11,7 +11,7 @@ fn compiled_default_surface_enables_no_dangerous_feature() {
 ))]
 #[test]
 fn custom_retry_is_available_without_other_dangerous_or_optional_features() {
-    use concord_core::advanced::HttpConfigBuilder;
+    use concord_core::contracts::HttpConfigBuilder;
     use concord_core::dangerous::ReqwestRetryBuilder;
 
     fn configure(builder: HttpConfigBuilder, retry: ReqwestRetryBuilder) -> HttpConfigBuilder {
@@ -35,7 +35,7 @@ fn custom_retry_is_available_without_other_dangerous_or_optional_features() {
 ))]
 #[test]
 fn raw_response_api_is_available_without_other_dangerous_or_optional_features() {
-    use concord_core::advanced::{Bytes, ExecutionMeta, HeaderMap, StatusCode, Url, Version};
+    use concord_core::contracts::{Bytes, ExecutionMeta, HeaderMap, StatusCode, Url, Version};
     use concord_core::dangerous::{RawResponse, RawResponseRequest};
 
     let _: fn(&RawResponse) -> &Url = RawResponse::url;

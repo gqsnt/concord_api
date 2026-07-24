@@ -1,4 +1,4 @@
-use concord_core::advanced::{RateLimitKey, RateLimitPlan};
+use concord_core::contracts::{RateLimitKey, RateLimitPlan};
 
 fn inspect(key: RateLimitKey, plan: &RateLimitPlan) {
     let _ = format!("{key:?}");

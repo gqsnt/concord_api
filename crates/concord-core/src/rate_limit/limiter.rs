@@ -137,7 +137,7 @@ pub struct NoopRateLimiter;
 
 #[allow(
     clippy::new_without_default,
-    reason = "the normative advanced API specifies an explicit constructor without a Default contract"
+    reason = "the normative contract specifies an explicit constructor without a Default contract"
 )]
 impl NoopRateLimiter {
     /// Creates an explicit no-op limiter.

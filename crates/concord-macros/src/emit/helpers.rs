@@ -19,7 +19,7 @@ pub(super) fn method_token(method: &ResolvedMethod, core_path: &TokenStream) -> 
 }
 
 pub(super) fn request_body_input_type(body: &TokenStream, core_path: &TokenStream) -> TokenStream {
-    quote!(<#body as #core_path::advanced::RequestBodySpec>::Input)
+    quote!(<#body as #core_path::body::RequestBodySpec>::Input)
 }
 
 pub(super) fn default_expr(value: &ResolvedDefault) -> TokenStream {

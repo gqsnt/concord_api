@@ -64,7 +64,7 @@ pub fn construct() -> Result<(), concord::ClientBuildError> {
         .platform()
         .summoner_v4()
         .summoner_by_puuid("example-puuid".to_owned());
-    let _: concord::PaginatedRequest<_> = riot
+    let _: concord::pagination::PaginatedRequest<_> = riot
         .regional()
         .match_v5()
         .match_ids_by_puuid("example-puuid".to_owned())

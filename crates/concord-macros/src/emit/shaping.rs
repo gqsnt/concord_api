@@ -230,13 +230,13 @@ pub(super) fn auth_statements(
             };
             let policy = match placement.challenge {
                 ResolvedChallengePolicy::Unauthorized => quote!(
-                    #core_path::advanced::ChallengePolicy::Unauthorized
+                    #core_path::auth::ChallengePolicy::Unauthorized
                 ),
                 ResolvedChallengePolicy::UnauthorizedOrForbidden => quote!(
-                    #core_path::advanced::ChallengePolicy::UnauthorizedOrForbidden
+                    #core_path::auth::ChallengePolicy::UnauthorizedOrForbidden
                 ),
                 ResolvedChallengePolicy::Never => {
-                    quote!(#core_path::advanced::ChallengePolicy::Never)
+                    quote!(#core_path::auth::ChallengePolicy::Never)
                 }
             };
             if fallible {

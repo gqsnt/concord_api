@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use concord_core::advanced::RuntimeConfigBuilder;
+use concord_core::contracts::RuntimeConfigBuilder;
 
 #[test]
 fn runtime_endpoint_timeout_names_expose_their_exact_scope() {

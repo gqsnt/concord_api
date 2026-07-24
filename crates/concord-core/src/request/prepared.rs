@@ -259,7 +259,7 @@ impl<R> RuntimeEndpointBuilder<R> {
         })
     }
 
-    /// Replaces the selected request body with one existing advanced body value.
+    /// Replaces the selected request body with one existing explicit body value.
     #[must_use]
     pub fn body(self, body: RequestBody) -> Self {
         self.body_spec::<RequestBody>(body)

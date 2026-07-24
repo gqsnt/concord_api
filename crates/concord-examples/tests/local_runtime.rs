@@ -99,7 +99,7 @@ async fn actual_body_example_round_trips_the_custom_codec_locally() {
 #[tokio::test]
 async fn actual_specification_example_runs_generated_and_runtime_endpoints_locally() {
     use concord::Bytes;
-    use concord::Request;
+    use concord::endpoint::Request;
     use concord::endpoint::{EndpointId, RuntimeEndpoint};
     use concord::http::Method;
     use concord_examples::request_response::specifications::{
