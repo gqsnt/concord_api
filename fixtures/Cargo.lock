@@ -222,6 +222,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-msrv-core"
+version = "0.0.0"
+dependencies = [
+ "concord-core",
+]
+
+[[package]]
+name = "concord-msrv-facade"
+version = "0.0.0"
+dependencies = [
+ "concord 0.1.0",
+]
+
+[[package]]
 name = "concord-test-support"
 version = "0.1.0"
 dependencies = [

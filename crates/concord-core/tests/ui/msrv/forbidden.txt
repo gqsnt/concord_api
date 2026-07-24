@@ -1,0 +1,7 @@
+# Internal implementation vocabulary and protected test input.
+__concord_generated
+__concord_from_facade
+__concord_inner
+__private
+__benchmark
+MSRV_PROTECTED_VALUE_SENTINEL

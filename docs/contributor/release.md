@@ -12,10 +12,11 @@ Before enabling publication:
 2. verify ownership/availability of all public package names;
 3. choose public packages and keep support packages private;
 4. preserve the dependency order:
-   test support, core, extras/macros, then façade;
+   core, macros/extras, then façade;
 5. use exact sibling versions while releasing the set;
-6. run `cargo package --list` and `cargo package` for each public package;
-7. build a consumer from packaged artifacts, including a renamed façade;
+6. run `just verify-package` to create and inspect each local product archive;
+7. build each extracted normalized library against the previously packaged
+   siblings;
 8. verify docs.rs feature metadata and public Rustdoc;
 9. run MSRV, stable, all-feature, no-default, fixture, security, and deny
    lanes;
@@ -30,12 +31,12 @@ workspace build success.
 
 | Package | Version | Product role | Direct Concord dependency | Registry state/order |
 |---|---:|---|---|---|
-| `concord-core` | 0.1.0 | Semantic runtime kernel and public extension contracts | optional internal test support | disabled; after test support |
+| `concord-core` | 0.1.0 | Semantic runtime kernel and public extension contracts | none (test support is dev-only) | disabled; first product package |
 | `concord-extras` | 0.1.0 | First-party downstream implementations | `concord-core = 0.1.0` | disabled; after core |
 | `concord-macros` | 0.1.0 | Extras-agnostic declaration compiler | none | disabled; alongside extras |
 | `concord` | 0.1.0 | User façade, feature owner, generated bridge composition | exact core, extras, macros | disabled; last |
 | `concord-examples` | 0.1.0 | Internal importable product narrative | `concord = 0.1.0` | internal only |
-| `concord-test-support` | 0.1.0 | Deterministic tests, fixtures, and feature-gated core development support | none | internal user surface; registry prerequisite and first if approved |
+| `concord-test-support` | 0.1.0 | Deterministic tests and fixture subprocess support | none | internal only; not a product dependency or registry prerequisite |
 | `concord-perf` | 0.1.0 | Observational performance probes | `concord = 0.1.0` | internal only |
 | `concord-xtask` | 0.1.0 | Portable documentation/fixture checks | none | internal only |
 
@@ -57,17 +58,17 @@ version-checked compiler/runtime plumbing, not a stable extension surface.
 - [Unsupported capabilities](../reference/unsupported.md)
 - [Compatibility reference](../reference/compatibility.md)
 
-Interactive rust-analyzer acceptance, non-Windows CI lanes, registry ownership,
-and approved legal/repository metadata remain external release gates until
-directly observed or supplied. Their absence does not weaken the runtime
-contract, but it prevents a publication-ready claim.
+Interactive rust-analyzer acceptance, remote Linux/Windows/macOS Actions,
+registry ownership, and approved legal/repository metadata remain external
+release gates until directly observed or supplied. Their absence does not
+weaken the runtime contract, but it prevents a publication-ready claim.
 
-The package inventories for test support, core, extras, macros, and façade
-pass. Full package verification passes for test support and macros. Core
-cannot complete registry preparation until exact test support is published;
-extras and façade likewise wait for exact core. This is why the internal test
-support package precedes product packages in the registry order even though
-applications never depend on it.
+`cargo run --locked -p concord-xtask -- package` technically verifies all four
+product archives in dependency order. It inspects each normalized manifest and
+checks each extracted library with locked resolution against already packaged
+siblings. Ordinary registry preparation still cannot resolve unpublished
+siblings; that is a release-state fact, not a product dependency-cycle or
+test-support prerequisite.
 
 ## Dependency and feature policy
 
@@ -76,6 +77,6 @@ have empty default features. `concord` owns user defaults and forwarding.
 Examples depend only on the façade. Core never depends upward and macros stay
 extras-agnostic.
 
-Run `cargo metadata`, the dependency policy test, fixture workspace checks,
-warning-denied Rustdoc, and cargo-deny before any packaging dry run. Record
-unavailable tools and network acquisition separately.
+Run `just verify-release-local` before requesting remote release validation.
+Record unavailable tools, remote platforms, editor sessions, and network
+acquisition separately.

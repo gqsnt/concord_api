@@ -4,6 +4,8 @@ members = [
     "dependency/contract_mismatch",
     "dependency/direct_core_rejected",
     "dependency/renamed_facade",
+    "msrv/core",
+    "msrv/facade",
 ]
 exclude = ["dependency/contract_mismatch/incompatible_facade"]
 resolver = "3"

@@ -379,10 +379,12 @@ fn placements_collide(left: &PlacementKind, right: &PlacementKind) -> bool {
         (
             PlacementKind::Bearer | PlacementKind::Basic,
             PlacementKind::Bearer | PlacementKind::Basic,
-        )
-        | (PlacementKind::Bearer | PlacementKind::Basic, PlacementKind::Header(AUTHORIZATION))
-        | (PlacementKind::Header(AUTHORIZATION), PlacementKind::Bearer | PlacementKind::Basic) => {
-            true
+        ) => true,
+        (PlacementKind::Bearer | PlacementKind::Basic, PlacementKind::Header(right)) => {
+            right == AUTHORIZATION
+        }
+        (PlacementKind::Header(left), PlacementKind::Bearer | PlacementKind::Basic) => {
+            left == AUTHORIZATION
         }
         (PlacementKind::Header(left), PlacementKind::Header(right)) => left == right,
         (PlacementKind::Query(left), PlacementKind::Query(right)) => left == right,

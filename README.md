@@ -4,6 +4,16 @@ Concord compiles a remote HTTP contract into an ordinary typed Rust API and
 executes every request through one bounded, redaction-aware managed lifecycle.
 Applications depend on one package:
 
+The packages are not currently published. For development from a checkout,
+use the façade package by path (adjust the relative path for your workspace):
+
+```toml
+[dependencies]
+concord = { path = "../concord_api/crates/concord", features = ["json"] }
+```
+
+After an approved future registry release, the intended dependency form is:
+
 ```toml
 [dependencies]
 concord = { version = "0.1.0", features = ["json"] }
@@ -101,8 +111,13 @@ just ui
 just fixtures
 just docs
 just security
-just verify
+just verify-local
+just verify-msrv
+just verify-package
+just verify-release-local
 ```
 
 Tests are deterministic and make no external service calls. Performance smoke
-checks are observational and intentionally separate from `just verify`.
+checks remain observational even when the release-local scope executes them.
+Local scopes cannot prove remote Actions execution, other operating systems,
+interactive editor behavior, registry ownership, or legal approval.

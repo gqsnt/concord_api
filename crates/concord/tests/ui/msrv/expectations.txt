@@ -1,0 +1,6 @@
+# binary|required message fragment;;additional fragment|primary source suffix
+pascal_source_name|endpoint source identifier `HTTPStatus` must be snake_case|crates/concord/tests/ui/fail/names/pascal_source_name.rs
+rate_limit_window_limit|a rate-limit rule permits at most 16 windows|crates/concord/tests/ui/fail/rate_limits/rate_limit_window_limit.rs
+non_paginated_no_paginate|no method named `paginate`|crates/concord/tests/ui/fail/pagination/non_paginated_no_paginate.rs
+wrong_endpoint_setter_absent|no method named `verbose`|crates/concord/tests/ui/fail/capabilities/wrong_endpoint_setter_absent.rs
+endpoint_id_into_unavailable|EndpointId: From<&str>;;is not satisfied|crates/concord/tests/ui/fail/language/endpoint_id_into_unavailable.rs

@@ -1,7 +1,7 @@
 # Concord refactor Phase 0 baseline
 
 This is the directly observed baseline for the architectural refactor specified by
-[`CONCORD_REFACTOR_REFERENCE.md`](../../CONCORD_REFACTOR_REFERENCE.md). It records the
+[`CONCORD_REFACTOR_REFERENCE.md`](../../../CONCORD_REFACTOR_REFERENCE.md). It records the
 starting state before product code changes. The reference remains authoritative.
 
 ## Repository and toolchain

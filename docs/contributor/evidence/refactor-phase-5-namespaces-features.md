@@ -134,7 +134,7 @@ owns release metadata, archive inspection, and a dependency-order temporary
 registry proof. The unrelated crates.io package already occupying `concord`
 remains the release-name blocker. No publish operation was performed.
 
-See [Packaging and publication posture](packaging-and-publication.md).
+See [release and publication policy](../release.md).
 
 ## Commands and observed results
 

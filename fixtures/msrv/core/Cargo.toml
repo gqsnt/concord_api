@@ -1,0 +1,8 @@
+[package]
+name = "concord-msrv-core"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+concord-core = { path = "../../../crates/concord-core", default-features = false }

@@ -24,9 +24,34 @@ const REQUIRED_RECIPES: &[&str] = &[
     "examples",
     "docs",
     "security",
+    "features",
+    "policy",
+    "package",
+    "deny",
     "perf-smoke",
     "perf-scale",
-    "verify",
+    "verify-local",
+    "verify-msrv",
+    "verify-package",
+    "verify-release-local",
+];
+
+const REQUIRED_WORKFLOW_JOBS: &[&str] = &[
+    "format_metadata",
+    "feature_checks",
+    "clippy",
+    "tests",
+    "lifecycle_security_bounds",
+    "macro_ui",
+    "msrv",
+    "extras",
+    "fixtures",
+    "examples_docs",
+    "policy",
+    "package",
+    "platform_smoke",
+    "performance",
+    "release_clean",
 ];
 
 const LIMITS: &[(&str, &str, &str, &str)] = &[
@@ -254,9 +279,18 @@ fn run() -> Result<(), String> {
             }
             verify_product_packages(&root)
         }
-        _ => {
-            Err("usage: cargo run -p concord-xtask -- <docs [--write] | fixtures | package>".into())
+        Some("policy") => {
+            if arguments.next().is_some() {
+                return Err("usage: cargo run -p concord-xtask -- policy".into());
+            }
+            check_repository_policy(&root)?;
+            println!("repository policy checks passed");
+            Ok(())
         }
+        _ => Err(
+            "usage: cargo run -p concord-xtask -- <docs [--write] | fixtures | package | policy>"
+                .into(),
+        ),
     }
 }
 
@@ -291,7 +325,7 @@ fn check_docs(root: &Path, write: bool) -> Result<(), String> {
         &generated_limit_table(root)?,
         write,
     )?;
-    check_recipe_inventory(root)?;
+    check_repository_policy(root)?;
     check_example_proofs(root)?;
     check_user_vocabulary(root)?;
     check_markdown_links(root)?;
@@ -450,33 +484,340 @@ fn replace_section(
     Ok(output)
 }
 
-fn check_recipe_inventory(root: &Path) -> Result<(), String> {
-    let justfile = read(&root.join("justfile"))?;
-    let recipes = justfile
+#[derive(Default)]
+struct JustRecipe {
+    dependencies: BTreeSet<String>,
+    commands: Vec<String>,
+}
+
+fn check_repository_policy(root: &Path) -> Result<(), String> {
+    let manifest = read(&root.join("Cargo.toml"))?;
+    if !manifest
         .lines()
-        .filter_map(|line| {
-            if line.chars().next().is_some_and(char::is_whitespace)
-                || line.starts_with('#')
-                || line.starts_with("set ")
-            {
-                return None;
-            }
-            line.split_once(':').map(|(name, _)| name.trim().to_owned())
-        })
-        .collect::<BTreeSet<_>>();
+        .any(|line| line.trim() == "exclude = [\"fixtures\"]")
+    {
+        return Err("root Cargo workspace must exclude the isolated `fixtures` workspace".into());
+    }
+    check_recipe_inventory(root)?;
+    check_workflow_policy(root)
+}
+
+fn check_recipe_inventory(root: &Path) -> Result<(), String> {
+    let justfile_path = root.join("justfile");
+    let justfile = read(&justfile_path)?;
+    let recipes = parse_justfile(&justfile);
     let missing = REQUIRED_RECIPES
         .iter()
-        .filter(|recipe| !recipes.contains(**recipe))
+        .filter(|recipe| !recipes.contains_key(**recipe))
+        .copied()
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(format!(
+            "justfile is missing recipes: {}",
+            missing.join(", ")
+        ));
+    }
+
+    if recipes.contains_key("verify") {
+        return Err(
+            "justfile must use explicit verify scopes, not the retired `verify` gate".into(),
+        );
+    }
+
+    for (name, recipe) in &recipes {
+        for command in &recipe.commands {
+            let command = command.strip_prefix('@').unwrap_or(command);
+            if cargo_command_is_unlocked(command) {
+                return Err(format!(
+                    "just recipe `{name}` has an unlocked Cargo command: {command}"
+                ));
+            }
+        }
+    }
+
+    require_recipe_dependencies(
+        &recipes,
+        "verify-local",
+        &[
+            "fmt-check",
+            "check",
+            "check-all",
+            "lint",
+            "test",
+            "test-all",
+            "ui",
+            "fixtures",
+            "examples",
+            "docs",
+            "security",
+            "features",
+            "policy",
+        ],
+    )?;
+    require_recipe_dependencies(&recipes, "verify-msrv", &["test-msrv"])?;
+    require_recipe_dependencies(&recipes, "verify-package", &["package"])?;
+    require_recipe_dependencies(
+        &recipes,
+        "verify-release-local",
+        &[
+            "verify-local",
+            "verify-msrv",
+            "verify-package",
+            "deny",
+            "perf-smoke",
+        ],
+    )?;
+    require_recipe_command(&recipes, "test-msrv", "concord --test ui_msrv_semantic")?;
+    require_recipe_command(
+        &recipes,
+        "test-msrv",
+        "concord-core --test ui_msrv_semantic",
+    )?;
+    require_recipe_command(&recipes, "policy", "concord-xtask -- policy")?;
+    require_recipe_command(&recipes, "package", "concord-xtask -- package")?;
+    Ok(())
+}
+
+fn parse_justfile(justfile: &str) -> BTreeMap<String, JustRecipe> {
+    let mut recipes = BTreeMap::<String, JustRecipe>::new();
+    let mut active = None::<String>;
+    for line in justfile.lines() {
+        if !line.chars().next().is_some_and(char::is_whitespace) {
+            active = None;
+            if line.is_empty() || line.starts_with('#') || line.starts_with("set ") {
+                continue;
+            }
+            if let Some((name, dependencies)) = line.split_once(':') {
+                let name = name.trim().to_owned();
+                let recipe = recipes.entry(name.clone()).or_default();
+                recipe.dependencies.extend(
+                    dependencies
+                        .split_whitespace()
+                        .map(str::trim)
+                        .filter(|dependency| !dependency.is_empty())
+                        .map(str::to_owned),
+                );
+                active = Some(name);
+            }
+            continue;
+        }
+        let command = line.trim();
+        if command.is_empty() || command.starts_with('#') {
+            continue;
+        }
+        if let Some(name) = &active {
+            recipes
+                .get_mut(name)
+                .expect("active just recipe exists")
+                .commands
+                .push(command.to_owned());
+        }
+    }
+    recipes
+}
+
+fn cargo_command_is_unlocked(command: &str) -> bool {
+    let command = command.trim();
+    let command = command
+        .strip_prefix("- run:")
+        .or_else(|| command.strip_prefix("run:"))
+        .map(str::trim_start)
+        .unwrap_or(command);
+    let command = command
+        .strip_prefix('@')
+        .map(str::trim_start)
+        .unwrap_or(command);
+    let Some(after_cargo) = command.strip_prefix("cargo ") else {
+        return false;
+    };
+    let subcommand = after_cargo
+        .strip_prefix('+')
+        .and_then(|toolchain_and_command| toolchain_and_command.split_once(' '))
+        .map_or(after_cargo, |(_, subcommand)| subcommand.trim_start());
+    !subcommand.starts_with("fmt ")
+        && !subcommand.starts_with("deny ")
+        && !command.contains(" --locked")
+}
+
+fn require_recipe_dependencies(
+    recipes: &BTreeMap<String, JustRecipe>,
+    name: &str,
+    expected: &[&str],
+) -> Result<(), String> {
+    let recipe = recipes
+        .get(name)
+        .ok_or_else(|| format!("justfile is missing recipe `{name}`"))?;
+    let missing = expected
+        .iter()
+        .filter(|dependency| !recipe.dependencies.contains(**dependency))
         .copied()
         .collect::<Vec<_>>();
     if missing.is_empty() {
         Ok(())
     } else {
         Err(format!(
-            "justfile is missing recipes: {}",
+            "just recipe `{name}` does not own dependencies: {}",
             missing.join(", ")
         ))
     }
+}
+
+fn require_recipe_command(
+    recipes: &BTreeMap<String, JustRecipe>,
+    name: &str,
+    expected: &str,
+) -> Result<(), String> {
+    let recipe = recipes
+        .get(name)
+        .ok_or_else(|| format!("justfile is missing recipe `{name}`"))?;
+    if recipe
+        .commands
+        .iter()
+        .any(|command| command.contains(expected))
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "just recipe `{name}` does not execute command owner `{expected}`"
+        ))
+    }
+}
+
+fn check_workflow_policy(root: &Path) -> Result<(), String> {
+    let path = root.join(".github/workflows/ci.yml");
+    let workflow = read(&path)?;
+    for required in [
+        "push:",
+        "pull_request:",
+        "workflow_dispatch:",
+        "permissions:",
+        "contents: read",
+    ] {
+        if !workflow.lines().any(|line| line.trim() == required) {
+            return Err(format!("{} is missing `{required}`", path.display()));
+        }
+    }
+
+    let jobs = workflow_jobs(&workflow);
+    let missing = REQUIRED_WORKFLOW_JOBS
+        .iter()
+        .filter(|job| !jobs.contains_key(**job))
+        .copied()
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(format!(
+            "{} is missing required jobs: {}",
+            path.display(),
+            missing.join(", ")
+        ));
+    }
+    for job in REQUIRED_WORKFLOW_JOBS {
+        let body = jobs
+            .get(*job)
+            .expect("required workflow job was checked above");
+        if !body
+            .lines()
+            .any(|line| line.trim_start().starts_with("timeout-minutes:"))
+        {
+            return Err(format!("workflow job `{job}` needs an explicit timeout"));
+        }
+    }
+
+    for (index, line) in workflow.lines().enumerate() {
+        let line = line.trim();
+        let Some((_, action)) = line.split_once("uses:") else {
+            continue;
+        };
+        let action = action.trim();
+        if action.starts_with("./") {
+            continue;
+        }
+        let Some((_, revision)) = action.rsplit_once('@') else {
+            return Err(format!(
+                "{}:{} has an action without a revision",
+                path.display(),
+                index + 1
+            ));
+        };
+        if revision.len() != 40
+            || !revision
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(format!(
+                "{}:{} must pin `{action}` to a lowercase 40-hex revision",
+                path.display(),
+                index + 1
+            ));
+        }
+    }
+
+    for required in [
+        "${{ runner.os }}",
+        "${{ hashFiles('**/Cargo.lock') }}",
+        "cargo test -p concord --test ui --no-default-features --locked",
+        "cargo +1.85.0 test -p concord --test ui_msrv_semantic --no-default-features --locked",
+        "cargo +1.85.0 test -p concord-core --test ui_msrv_semantic --no-default-features --locked",
+        "cargo run --locked -p concord-xtask -- fixtures",
+        "cargo run --locked -p concord-xtask -- package",
+        "cargo run --locked -p concord-xtask -- policy",
+        "git diff --check",
+        "git diff --exit-code",
+        "git status --porcelain",
+    ] {
+        if !workflow.contains(required) {
+            return Err(format!(
+                "{} does not own required policy text `{required}`",
+                path.display()
+            ));
+        }
+    }
+
+    for (index, line) in workflow.lines().enumerate() {
+        let command = line.trim();
+        if cargo_command_is_unlocked(command) {
+            return Err(format!(
+                "{}:{} has an unlocked Cargo command: {command}",
+                path.display(),
+                index + 1
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn workflow_jobs(workflow: &str) -> BTreeMap<String, String> {
+    let mut jobs = BTreeMap::<String, String>::new();
+    let mut active = None::<String>;
+    let mut in_jobs = false;
+    for line in workflow.lines() {
+        if line == "jobs:" {
+            in_jobs = true;
+            continue;
+        }
+        if !in_jobs {
+            continue;
+        }
+        if let Some(candidate) = line.strip_prefix("  ") {
+            if !candidate.starts_with(' ') && candidate.ends_with(':') {
+                let name = candidate.trim_end_matches(':');
+                if name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+                {
+                    jobs.entry(name.to_owned()).or_default();
+                    active = Some(name.to_owned());
+                    continue;
+                }
+            }
+        }
+        if let Some(name) = &active {
+            let body = jobs.get_mut(name).expect("active workflow job exists");
+            body.push_str(line);
+            body.push('\n');
+        }
+    }
+    jobs
 }
 
 fn check_example_proofs(root: &Path) -> Result<(), String> {
@@ -522,13 +863,11 @@ fn check_user_vocabulary(root: &Path) -> Result<(), String> {
 fn check_markdown_links(root: &Path) -> Result<(), String> {
     let mut paths = vec![root.join("README.md")];
     paths.extend(markdown_files(&root.join("docs"))?);
+    let mut local_files = 0_usize;
+    let mut local_anchors = 0_usize;
+    let mut external_urls = 0_usize;
+    let mut anchor_cache = BTreeMap::<PathBuf, BTreeSet<String>>::new();
     for path in paths {
-        if path
-            .components()
-            .any(|component| component.as_os_str() == "evidence")
-        {
-            continue;
-        }
         let text = read(&path)?;
         let mut fenced = false;
         for (index, line) in text.lines().enumerate() {
@@ -541,32 +880,141 @@ fn check_markdown_links(root: &Path) -> Result<(), String> {
             }
             for target in markdown_link_targets(line) {
                 let target = target.trim_matches(['<', '>']);
-                if target.is_empty()
-                    || target.starts_with('#')
-                    || target.contains("://")
-                    || target.starts_with("mailto:")
-                {
+                if target.is_empty() {
+                    continue;
+                }
+                if target.contains("://") || target.starts_with("mailto:") {
+                    external_urls += 1;
                     continue;
                 }
                 let target = target
-                    .split('#')
-                    .next()
-                    .unwrap_or(target)
                     .split(" \"")
                     .next()
+                    .unwrap_or(target)
+                    .split(" '")
+                    .next()
                     .unwrap_or(target);
-                let resolved = path.parent().unwrap_or(root).join(target);
+                let (file_target, anchor) = target
+                    .split_once('#')
+                    .map_or((target, None), |(file, anchor)| (file, Some(anchor)));
+                let resolved = if file_target.is_empty() {
+                    path.clone()
+                } else if let Some(repository_path) = file_target.strip_prefix('/') {
+                    root.join(repository_path)
+                } else {
+                    path.parent().unwrap_or(root).join(file_target)
+                };
                 if !resolved.exists() {
                     return Err(format!(
-                        "{}:{} links to missing `{target}`",
+                        "{}:{} links to missing `{file_target}`",
                         path.display(),
                         index + 1
                     ));
                 }
+                local_files += usize::from(!file_target.is_empty());
+                if let Some(anchor) = anchor.filter(|anchor| !anchor.is_empty()) {
+                    if resolved
+                        .extension()
+                        .is_some_and(|extension| extension == "md")
+                    {
+                        let anchors = match anchor_cache.get(&resolved) {
+                            Some(anchors) => anchors,
+                            None => {
+                                let target_text = read(&resolved)?;
+                                anchor_cache
+                                    .entry(resolved.clone())
+                                    .or_insert_with(|| markdown_anchors(&target_text))
+                            }
+                        };
+                        if !anchors.contains(anchor) {
+                            return Err(format!(
+                                "{}:{} links to missing anchor `#{anchor}` in {}",
+                                path.display(),
+                                index + 1,
+                                resolved.display()
+                            ));
+                        }
+                        local_anchors += 1;
+                    }
+                }
             }
         }
     }
+    println!(
+        "markdown links checked: {local_files} local file links, {local_anchors} local anchors; {external_urls} external URLs were syntax-counted but not fetched"
+    );
     Ok(())
+}
+
+fn markdown_anchors(text: &str) -> BTreeSet<String> {
+    let mut anchors = BTreeSet::new();
+    let mut occurrences = BTreeMap::<String, usize>::new();
+    let mut fenced = false;
+    for line in text.lines() {
+        if line.trim_start().starts_with("```") {
+            fenced = !fenced;
+            continue;
+        }
+        if fenced {
+            continue;
+        }
+        let trimmed = line.trim_start();
+        let hashes = trimmed.bytes().take_while(|byte| *byte == b'#').count();
+        if (1..=6).contains(&hashes)
+            && trimmed
+                .as_bytes()
+                .get(hashes)
+                .is_some_and(u8::is_ascii_whitespace)
+        {
+            let heading = trimmed[hashes..].trim().trim_end_matches('#').trim();
+            let base = github_heading_anchor(heading);
+            if !base.is_empty() {
+                let occurrence = occurrences.entry(base.clone()).or_default();
+                let anchor = if *occurrence == 0 {
+                    base
+                } else {
+                    format!("{base}-{}", *occurrence)
+                };
+                *occurrence += 1;
+                anchors.insert(anchor);
+            }
+        }
+        collect_explicit_html_anchors(trimmed, &mut anchors);
+    }
+    anchors
+}
+
+fn github_heading_anchor(heading: &str) -> String {
+    heading
+        .chars()
+        .flat_map(char::to_lowercase)
+        .filter_map(|character| {
+            if character.is_alphanumeric() || matches!(character, '-' | '_') {
+                Some(character)
+            } else if character.is_whitespace() {
+                Some('-')
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn collect_explicit_html_anchors(line: &str, anchors: &mut BTreeSet<String>) {
+    for prefix in ["id=\"", "name=\"", "id='", "name='"] {
+        let quote = if prefix.ends_with('"') { '"' } else { '\'' };
+        let mut rest = line;
+        while let Some(start) = rest.find(prefix) {
+            rest = &rest[start + prefix.len()..];
+            let Some(end) = rest.find(quote) else {
+                break;
+            };
+            if end > 0 {
+                anchors.insert(rest[..end].to_owned());
+            }
+            rest = &rest[end + 1..];
+        }
+    }
 }
 
 fn markdown_link_targets(line: &str) -> Vec<&str> {
@@ -983,4 +1431,25 @@ fn grouped(value: u64) -> String {
 
 fn read(path: &Path) -> Result<String, String> {
     fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cargo_command_is_unlocked;
+
+    #[test]
+    fn locked_command_policy_covers_toolchains_and_workflow_run_steps() {
+        assert!(cargo_command_is_unlocked(
+            "cargo +stable clippy --workspace --all-targets"
+        ));
+        assert!(cargo_command_is_unlocked("- run: cargo test --workspace"));
+        assert!(!cargo_command_is_unlocked(
+            "cargo +stable clippy --workspace --locked -- -D warnings"
+        ));
+        assert!(!cargo_command_is_unlocked(
+            "- run: cargo test --workspace --locked"
+        ));
+        assert!(!cargo_command_is_unlocked("cargo fmt --all -- --check"));
+        assert!(!cargo_command_is_unlocked("cargo deny check"));
+    }
 }

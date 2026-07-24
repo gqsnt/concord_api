@@ -7,6 +7,22 @@ Validation used Rust/Cargo 1.97.1 on `x86_64-pc-windows-msvc`, with Rust
 memory. Installed supporting tools were Just 1.46.0, cargo-expand 1.0.123,
 and rust-analyzer 1.97.1.
 
+## Closure C7 correction (2026-07-24)
+
+This document preserves original Phase 14 command results, including the
+then-current `just verify` run and exact MSRV Trybuild mismatches. They did not
+constitute closure:
+
+- the overloaded `verify` recipe has been replaced by `verify-local`,
+  `verify-msrv`, `verify-package`, and `verify-release-local`;
+- stable remains the exact Trybuild owner, while passing Rust 1.85 semantic
+  JSON diagnostics now own MSRV behavior;
+- C6 removed the public development feature and normal test-support product
+  edge, then technically verified all four product archives locally;
+- C7 owns immutable workflow actions, action/policy linting, failed-job logs,
+  and clean-tree policy. Remote Actions and interactive editor results remain
+  separate observations.
+
 ## Final product contract
 
 Applications depend only on `concord`. The façade owns public paths, feature
@@ -66,7 +82,7 @@ capability absence, privacy, and feature-absence tests remain.
 
 ## Lifecycle, security, and boundedness
 
-The complete `just verify` gate passed. Its dedicated security recipe reran
+The then-current Phase 14 `just verify` gate passed. Its dedicated security recipe reran
 core security, bounds, and lifecycle suites plus façade planning,
 authentication, generated lifecycle, and runtime-endpoint lifecycle tests
 with all features.
@@ -92,7 +108,7 @@ alternate executor.
 
 ## Commands and observed results
 
-The authoritative final correctness command was:
+The authoritative correctness command for the original Phase 14 record was:
 
 | Command | Result |
 |---|---|
@@ -134,7 +150,7 @@ previously reviewed duplicate-version warnings for `core-foundation` and
 
 ## MSRV and editor results
 
-The representative MSRV commands inside `just verify` pass:
+The representative MSRV commands inside the original `just verify` passed:
 
 ```text
 cargo +1.85.0 check --workspace --all-targets --no-default-features
@@ -150,8 +166,10 @@ The two exact MSRV Trybuild integration targets were also executed:
 | `cargo +1.85.0 test -p concord-core --test ui --no-default-features --locked` | FAIL only in 14 compiler-rendering snapshot differences: 3 dangerous-feature absence cases, 10 of 14 source-only cases, and 1 multipart case. |
 
 The snapshots remain owned by the pinned stable 1.97.1 compiler and were not
-blindly replaced. The semantic compiler failures on MSRV are the intended
-ones; only diagnostic layout differs.
+blindly replaced. Closure C7 no longer treats these exact MSRV mismatches as a
+passing owner: separate semantic JSON tests now pass on Rust 1.85 and assert
+the intended message, primary source span, and absence of bridge/sentinel
+text.
 
 The rust-analyzer binary/version check passed, but completion ranking, hover,
 navigation, rename-dependency completion, and diagnostic presentation require
@@ -181,11 +199,10 @@ Full package commands produced:
 | `cargo package -p concord-extras --allow-dirty --locked` | FAIL during registry preparation because exact `concord-core = 0.1.0` is unpublished |
 | `cargo package -p concord --allow-dirty --locked` | FAIL during registry preparation because exact `concord-core = 0.1.0` is unpublished |
 
-These failures establish the real publication order:
-`concord-test-support` → `concord-core` → `concord-extras` and
-`concord-macros` → `concord`. Test support remains an internal, undocumented
-user entry point even if registry publication is required for core's
-feature-gated development support.
+These were the original Phase 14 registry-resolution results. C6 removed
+test support from the normal product graph; the technical product order is now
+`concord-core` → `concord-macros` and `concord-extras` → `concord`.
+Test support is dev-only/internal and is not a product registry prerequisite.
 
 Every package warns that license/license-file, documentation/homepage, and
 repository metadata are absent. The public `concord` registry name is
@@ -215,8 +232,9 @@ Arbitrary unbounded streaming, native transport escape, and other unsupported
 forms remain documented in the reference.
 
 Unresolved release limitations are the registry/legal/repository blockers,
-interactive rust-analyzer acceptance, non-Windows CI execution, and
-compiler-version-specific MSRV Trybuild rendering described above. None
-changes the product language or weakens a lifecycle/security invariant.
+interactive rust-analyzer acceptance, and remote Linux/Windows/macOS Actions
+execution. Exact MSRV Trybuild rendering is no longer a release blocker
+because it is not the MSRV diagnostic owner. None changes the product language
+or weakens a lifecycle/security invariant.
 
 No selected design decision required a deviation record.

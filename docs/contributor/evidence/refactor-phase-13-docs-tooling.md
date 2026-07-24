@@ -4,6 +4,21 @@ Phase 13 started from the Phase 12 commit `62278d1`. The late package-path
 move was isolated in commit `1ffb54c`; this document records the complete
 Phase 13 worktree before its documentation/tooling completion commit.
 
+## Closure C7 correction (2026-07-24)
+
+This file remains a record of commands actually observed during original
+Phase 13; its current-tooling claims are superseded as follows:
+
+- `just` does select PowerShell as the native shell on Windows, while recipe
+  command bodies remain portable;
+- evidence files now participate in local-file and Markdown-anchor checking;
+- recipe policy parses command bodies and locked ownership, not just names;
+- C6 added passing local archive/extracted-manifest verification for all four
+  product packages without a normal test-support edge;
+- C7 replaced the workflow with immutable action revisions and explicit
+  policy/package/release-clean owners. Source policy and local `actionlint`
+  results belong to C7 evidence; no remote Actions run is inferred here.
+
 ## Outcome
 
 The repository now exposes its architecture at the root:
@@ -37,13 +52,14 @@ eight reference pages, and five primary contributor pages. Every guide links
 to an importable example and proving test. Exact façade features and runtime
 numeric defaults are generated/checked against their manifest/core source.
 Historical phase evidence moved under `docs/contributor/evidence` and remains
-non-normative.
+non-normative; C7 now checks its local links and anchors.
 
 `tools/xtask` provides portable `docs` and `fixtures` tasks with no ecosystem
-dependencies. The documentation task checks generated tables, relative links,
-guide proof links, the `justfile` inventory, and retired/implementation
-vocabulary in user pages. The `justfile` no longer selects PowerShell or
-requires Nextest; direct Cargo commands are the primary path.
+dependencies. The documentation task checks generated tables, local files and
+anchors, guide proof links, parsed `justfile` ownership, and
+retired/implementation vocabulary in user pages. `just` selects PowerShell on
+Windows, but the recipes use portable direct commands and do not require
+Nextest.
 
 `.github/workflows/ci.yml` defines explicit format, stable, all-feature,
 no-default, MSRV, Clippy, generated/UI, lifecycle/security, extras, fixtures,
@@ -123,9 +139,9 @@ These timings are not thresholds and are not cross-machine comparisons.
 - Two early combined workspace-test invocations used command timeouts that
   killed Cargo and produced a Windows broken-pipe message. The same exact test
   commands were rerun cleanly with a ten-minute command budget and passed.
-- Product `cargo package` dry runs remain intentionally deferred: every
-  package is unpublished and exact path siblings plus absent approved release
-  metadata make a registry package proof non-representative.
+- Original Phase 13 product package dry runs were deferred. C6 later supplied
+  the separate local patched archive and extracted-manifest proof; publication
+  metadata and registry ownership remain external.
 
 The localized MSVC proc-macro linker message remains a warning in ordinary
 build/test output. No reference deviation was required.

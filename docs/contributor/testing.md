@@ -22,18 +22,39 @@ just check-all    # all-feature check
 just lint         # rustfmt + Clippy with warnings denied
 just test         # stable workspace tests
 just test-all     # all-feature workspace tests
-just test-msrv    # Rust 1.85.0 checks and representative tests
-just ui           # façade/core compile-pass and compile-fail cases
+just test-msrv    # Rust 1.85.0 checks plus semantic JSON diagnostics
+just ui           # stable exact façade/core compile-pass and compile-fail cases
 just fixtures     # one locked root fixture workspace
 just examples     # canonical example modules and local tests
 just docs         # generated tables, links, doctests, warning-denied rustdoc
 just security     # redaction, bounds, lifecycle, planning matrix
+just policy       # parsed recipe/workflow/action policy
+just package      # local product archives and extracted-manifest verification
 just perf-smoke   # observational operation-exact probe
-just verify       # correctness gate (performance remains separate)
+just verify-local         # reproducible stable checks on this host
+just verify-msrv          # Rust 1.85 compilation and semantic UI
+just verify-package       # technical local package proof
+just verify-release-local # all local scopes, deny, and observational performance
 ```
 
 Clippy, cargo-deny, and explicitly selected toolchains must be installed for
 their recipes. Never report a missing tool/component as a passing check.
+
+## Executable CI
+
+`.github/workflows/ci.yml` runs on pushes, pull requests, and manual dispatch.
+Its explicit jobs own formatting/metadata, feature checks, Clippy, workspace
+tests, lifecycle/security/bounds, stable exact UI, MSRV semantic UI, extras,
+fixtures, examples/docs, dependency/workflow policy, product packages, the
+three-platform smoke matrix, and observational performance. Failed UI, MSRV,
+and package lanes retain bounded command logs. The final `release_clean` job
+reruns documentation generation and rejects tracked diffs or untracked files.
+
+All third-party actions are pinned to immutable revisions. `actionlint` checks
+workflow syntax in CI; `just policy` independently checks required job IDs,
+action pins, timeouts, locked command ownership, cache-key facts, and the
+release-clean commands. A checked-in workflow is not evidence that a remote
+run passed.
 
 ## Determinism
 
@@ -59,6 +80,12 @@ After generated-surface changes:
 6. confirm ordinary completion needs no generated prelude/trait import;
 7. open fixtures separately only when testing their graph.
 
-MSRV Trybuild rendering can differ from the pinned stable compiler. A compile
-success with stderr formatting mismatch is not a full UI pass and must be
-recorded precisely.
+Stable Rust owns exact Trybuild snapshots. Rust 1.85 owns separate semantic
+JSON checks that require compilation failure, user-facing message fragments,
+the expected primary source span, and absence of internal bridge names or
+protected sentinels. Exact MSRV rendering is intentionally not an owner.
+
+`verify-local` cannot establish remote GitHub execution, Linux/macOS behavior
+from a Windows host, interactive completion/navigation, registry ownership, or
+legal approval. Record those scopes separately; never infer them from a local
+gate.

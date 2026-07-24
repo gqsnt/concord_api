@@ -3,110 +3,90 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_STABLE: 1.97.1
+  RUST_MSRV: 1.85.0
 
 jobs:
-  format:
-    name: Format
+  format_metadata:
+    name: Format and metadata
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
-          toolchain: 1.97.1
+          toolchain: ${{ env.RUST_STABLE }}
           components: rustfmt
-      - run: cargo fmt --all -- --check
+      - name: Formatting
+        run: cargo fmt --all -- --check
+      - name: Locked metadata
+        run: cargo metadata --format-version 1 --all-features --locked > /dev/null
 
-  stable:
-    name: Stable workspace
+  feature_checks:
+    name: Stable feature checks
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
-          toolchain: 1.97.1
-      - uses: Swatinem/rust-cache@v2
+          toolchain: ${{ env.RUST_STABLE }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-features
       - run: cargo check --workspace --all-targets --locked
-      - run: cargo test --workspace --locked
-
-  all-features:
-    name: All features
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.97.1
-      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --all-targets --no-default-features --locked
       - run: cargo check --workspace --all-targets --all-features --locked
-      - run: cargo test --workspace --all-features --locked
-
-  no-default:
-    name: No default features
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.97.1
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo check --workspace --all-targets --no-default-features --locked
-      - run: cargo test -p concord --test ui --no-default-features --locked
-
-  msrv:
-    name: MSRV 1.85.0
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.85.0
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo check --workspace --all-targets --no-default-features --locked
-      - run: cargo test -p concord-core --lib --no-default-features --locked
-      - run: cargo test -p concord-extras --all-features --locked
 
   clippy:
-    name: Clippy
+    name: Stable Clippy
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
-          toolchain: 1.97.1
+          toolchain: ${{ env.RUST_STABLE }}
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-clippy
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
-  generated-ui:
-    name: Generated API and UI
+  tests:
+    name: Stable unit and integration tests
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
-          toolchain: 1.97.1
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test -p concord --test ui --no-default-features --locked
-      - run: cargo test -p concord --test ui --all-features --locked
-      - run: cargo test -p concord-core --test ui --no-default-features --locked
-      - run: cargo test -p concord --test generated_surface --all-features --locked
-      - run: cargo test -p concord --test rustdoc --all-features --locked
+          toolchain: ${{ env.RUST_STABLE }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-tests
+      - run: cargo test --workspace --locked
+      - run: cargo test --workspace --all-features --locked
 
-  security:
-    name: Lifecycle, bounds, and redaction
+  lifecycle_security_bounds:
+    name: Lifecycle, security, and bounds
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
-          toolchain: 1.97.1
-      - uses: Swatinem/rust-cache@v2
+          toolchain: ${{ env.RUST_STABLE }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-security
       - run: cargo test -p concord-core --test security --all-features --locked
       - run: cargo test -p concord-core --test bounds --all-features --locked
       - run: cargo test -p concord-core --test lifecycle --all-features --locked
@@ -115,90 +95,228 @@ jobs:
       - run: cargo test -p concord --test generated_lifecycle --all-features --locked
       - run: cargo test -p concord --test runtime_endpoint_lifecycle --all-features --locked
 
-  extras:
-    name: Downstream extras contracts
+  macro_ui:
+    name: Macro and stable exact UI
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
-          toolchain: 1.97.1
-      - uses: Swatinem/rust-cache@v2
+          toolchain: ${{ env.RUST_STABLE }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-ui
+      - name: Exact diagnostics
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p target/ci-logs
+          cargo test -p concord-macros --lib --locked 2>&1 | tee target/ci-logs/macro-unit.log
+          cargo test -p concord --test ui --no-default-features --locked 2>&1 | tee target/ci-logs/facade-ui-no-default.log
+          cargo test -p concord --test ui --all-features --locked 2>&1 | tee target/ci-logs/facade-ui-all-features.log
+          cargo test -p concord-core --test ui --no-default-features --locked 2>&1 | tee target/ci-logs/core-ui.log
+      - name: Retain failed UI logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: stable-ui-${{ github.run_id }}
+          path: target/ci-logs
+          if-no-files-found: error
+
+  msrv:
+    name: MSRV compilation and semantic UI
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: ${{ env.RUST_MSRV }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          key: ${{ runner.os }}-${{ env.RUST_MSRV }}-${{ hashFiles('**/Cargo.lock') }}-msrv
+      - name: MSRV owners
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p target/ci-logs
+          cargo +1.85.0 check --workspace --all-targets --no-default-features --locked 2>&1 | tee target/ci-logs/msrv-check.log
+          cargo +1.85.0 test -p concord-core --lib --no-default-features --locked 2>&1 | tee target/ci-logs/msrv-core.log
+          cargo +1.85.0 test -p concord-extras --all-features --locked 2>&1 | tee target/ci-logs/msrv-extras.log
+          cargo +1.85.0 test -p concord --test ui_msrv_semantic --no-default-features --locked 2>&1 | tee target/ci-logs/msrv-facade-semantic-ui.log
+          cargo +1.85.0 test -p concord-core --test ui_msrv_semantic --no-default-features --locked 2>&1 | tee target/ci-logs/msrv-core-semantic-ui.log
+      - name: Retain failed MSRV logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: msrv-ui-${{ github.run_id }}
+          path: target/ci-logs
+          if-no-files-found: error
+
+  extras:
+    name: Extras contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-extras
       - run: cargo test -p concord-extras --all-features --locked
       - run: cargo test -p concord --test public_extensions --all-features --locked
 
   fixtures:
-    name: Locked Cargo fixtures
+    name: Fixtures and public compilation
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
-          toolchain: 1.97.1
-      - uses: Swatinem/rust-cache@v2
+          toolchain: ${{ env.RUST_STABLE }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-fixtures
       - run: cargo run --locked -p concord-xtask -- fixtures
 
-  examples:
-    name: Canonical examples
+  examples_docs:
+    name: Examples and documentation
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
-          toolchain: 1.97.1
-      - uses: Swatinem/rust-cache@v2
+          toolchain: ${{ env.RUST_STABLE }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-docs
       - run: cargo check -p concord-examples --all-targets --no-default-features --locked
       - run: cargo test -p concord-examples --all-features --locked
-
-  docs:
-    name: Documentation and links
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.97.1
-      - uses: Swatinem/rust-cache@v2
       - run: cargo run --locked -p concord-xtask -- docs
       - run: cargo test --workspace --doc --locked
       - run: cargo test --workspace --doc --all-features --locked
-      - run: cargo rustdoc -p concord --all-features --locked -- -D warnings
-      - run: cargo rustdoc -p concord-core --all-features --locked -- -D warnings
-      - run: cargo rustdoc -p concord-extras --all-features --locked -- -D warnings
+      - run: cargo rustdoc --locked -p concord --all-features -- -D warnings
+      - run: cargo rustdoc --locked -p concord-core --all-features -- -D warnings
+      - run: cargo rustdoc --locked -p concord-extras --all-features -- -D warnings
 
-  platforms:
-    name: Platform ${{ matrix.os }}
+  policy:
+    name: Workflow and dependency policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-policy
+      - name: Action syntax
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7
+        with:
+          version: 1.7.12
+      - run: cargo run --locked -p concord-xtask -- policy
+      - run: cargo test -p concord --test dependency_policy --all-features --locked
+      - name: Cargo deny
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25
+        with:
+          command: check
+
+  package:
+    name: Product package verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-package
+      - name: Build and verify archives
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p target/ci-logs
+          cargo run --locked -p concord-xtask -- package 2>&1 | tee target/ci-logs/package.log
+      - name: Retain failed package logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: package-${{ github.run_id }}
+          path: target/ci-logs
+          if-no-files-found: error
+
+  platform_smoke:
+    name: Platform smoke (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
-          toolchain: 1.97.1
-      - uses: Swatinem/rust-cache@v2
+          toolchain: ${{ env.RUST_STABLE }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-platform
       - run: cargo check --workspace --all-targets --locked
-
-  deny:
-    name: Dependency policy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          command: check
 
   performance:
     name: Performance smoke (observational)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
-          toolchain: 1.97.1
-      - uses: Swatinem/rust-cache@v2
+          toolchain: ${{ env.RUST_STABLE }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-performance
       - run: cargo bench -p concord-perf --bench concord_overhead --no-run --locked
       - run: cargo bench -p concord-perf --bench concord_overhead --locked -- --smoke
+
+  release_clean:
+    name: Generated-source and clean-tree policy
+    needs:
+      - format_metadata
+      - feature_checks
+      - clippy
+      - tests
+      - lifecycle_security_bounds
+      - macro_ui
+      - msrv
+      - extras
+      - fixtures
+      - examples_docs
+      - policy
+      - package
+      - platform_smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-release-clean
+      - run: cargo run --locked -p concord-xtask -- docs --write
+      - run: cargo run --locked -p concord-xtask -- docs
+      - run: git diff --check
+      - run: git diff --exit-code
+      - name: No generated or untracked files
+        shell: bash
+        run: test -z "$(git status --porcelain)"

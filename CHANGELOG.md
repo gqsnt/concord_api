@@ -110,6 +110,16 @@
 - Added a product-path manual, generated feature/limit checks, portable
   contributor commands, CI matrices, security gates, and observational
   performance tooling.
+- Split local validation into explicit stable, MSRV, package, and
+  release-local scopes with locked Cargo commands and parsed command
+  ownership.
+- Added immutable-action CI owners for the complete validation matrix,
+  retained failure logs for UI/package diagnostics, and a generated-source
+  clean-tree policy.
+- Kept exact Trybuild snapshots stable-owned and added passing Rust 1.85
+  semantic JSON diagnostics with primary-span and internal-token checks.
+- Extended documentation policy to historical evidence and Markdown anchors;
+  external URLs remain an explicitly network-optional scope.
 
 ### Release status
 

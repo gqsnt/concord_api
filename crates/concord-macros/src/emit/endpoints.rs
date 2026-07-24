@@ -545,7 +545,7 @@ pub(super) fn generate_pagination_impl(
             fn initial_controller(
                 &self,
             ) -> ::std::result::Result<
-                Self::Controller,
+                #controller_type,
                 #generated_core::advanced::PaginationError,
             > {
                 let __concord_endpoint = self;
@@ -559,7 +559,7 @@ pub(super) fn generate_pagination_impl(
 
             fn bind_controller(
                 __concord_endpoint: &mut Self,
-                __concord_controller: &Self::Controller,
+                __concord_controller: &#controller_type,
             ) -> ::std::result::Result<
                 (),
                 #generated_core::advanced::PaginationError,
