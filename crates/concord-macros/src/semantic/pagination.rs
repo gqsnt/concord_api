@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use super::model::{Pagination, PaginationField, PaginationInitializer, PaginationValue, Value};
-use super::symbols::ScopeFrame;
+use super::symbols::{ScopeFrame, resolve_default};
 use super::{Resolver, SpanError};
 use crate::syntax::ast::{
     PaginationDecl, PaginationInitializer as SourcePaginationInitializer,
@@ -51,7 +51,9 @@ impl Resolver<'_> {
                                     Some(endpoint),
                                 )?)
                             }
-                            SourcePaginationValue::Stable(value) => PaginationValue::Stable(value),
+                            SourcePaginationValue::Stable(value) => {
+                                PaginationValue::Stable(resolve_default(value))
+                            }
                         };
                         PaginationInitializer::Value(value)
                     }

@@ -12,14 +12,17 @@ use proc_macro2::Span;
 use syn::Ident;
 
 use self::model::{
-    Api, Child, Client, ContractId, Credential, Endpoint, NormalizedConfig, RequestBody, Scope,
-    Value,
+    Api, Child, Client, ContractId, Credential, Endpoint, NormalizedConfig, RequestBody,
+    ResolvedMethod, ResolvedRetry, Scope, Value,
 };
 use self::surface::{
     canonical_ident, client_surface, endpoint_surface, finalize_endpoint_surfaces, scope_surface,
     to_snake_case, validate_surface_modules,
 };
-use crate::syntax::ast::{RetrySelection, SourceApi, SourceChild, SourceEndpoint, SourceScope};
+use crate::syntax::ast::{
+    MethodKind as SourceMethod, RetrySelection as SourceRetry, SourceApi, SourceChild,
+    SourceEndpoint, SourceScope,
+};
 use auth::{
     convert_credentials, resolve_endpoint_credentials, validate_credential_cycles,
     validate_credential_names,
@@ -94,10 +97,7 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
         values,
         secrets,
         credentials,
-        retry: source_client
-            .retry
-            .map(|clause| clause.value)
-            .unwrap_or(RetrySelection::Disabled),
+        retry: resolve_retry(source_client.retry.map(|clause| clause.value)),
         requires_limiter: source_declares_limiter,
         config,
         children,
@@ -248,7 +248,7 @@ impl Resolver<'_> {
         );
         Ok(Endpoint {
             id,
-            method: source.method,
+            method: resolve_method(source.method),
             name: source.name,
             surface,
             parameters,
@@ -259,6 +259,28 @@ impl Resolver<'_> {
             pagination,
             dsl_path,
         })
+    }
+}
+
+fn resolve_retry(source: Option<SourceRetry>) -> ResolvedRetry {
+    match source.unwrap_or(SourceRetry::Disabled) {
+        SourceRetry::Disabled => ResolvedRetry::Disabled,
+        SourceRetry::ReqwestDefault => ResolvedRetry::ReqwestDefault,
+    }
+}
+
+fn resolve_method(source: SourceMethod) -> ResolvedMethod {
+    match source {
+        SourceMethod::Get => ResolvedMethod::Get,
+        SourceMethod::Post => ResolvedMethod::Post,
+        SourceMethod::Put => ResolvedMethod::Put,
+        SourceMethod::Patch => ResolvedMethod::Patch,
+        SourceMethod::Delete => ResolvedMethod::Delete,
+        SourceMethod::Head => ResolvedMethod::Head,
+        SourceMethod::Options => ResolvedMethod::Options,
+        SourceMethod::Trace => ResolvedMethod::Trace,
+        SourceMethod::Connect => ResolvedMethod::Connect,
+        SourceMethod::Custom(value) => ResolvedMethod::Custom(value),
     }
 }
 
@@ -308,10 +330,10 @@ impl SpanError for Span {
 }
 
 #[cfg(test)]
-mod test_support {
+pub(crate) mod test_support {
     use super::*;
 
-    pub(super) fn resolve_tokens(tokens: proc_macro2::TokenStream) -> Api {
+    pub(crate) fn resolve_tokens(tokens: proc_macro2::TokenStream) -> Api {
         let source = crate::syntax::parse(tokens).expect("semantic test syntax");
         resolve(source).expect("normalized semantic model")
     }
@@ -341,12 +363,11 @@ mod tests {
     use quote::quote;
 
     use super::model::{
-        CloneEligibility, PaginationInitializer, PaginationValue, RequiredArgument, ResolvedValue,
-        ValueReference, ValueShape,
+        CloneEligibility, PaginationInitializer, PaginationValue, RequiredArgument,
+        ResolvedChallengePolicy, ResolvedValue, ValueReference, ValueShape,
     };
     use super::*;
     use crate::syntax as parse;
-    use crate::syntax::ast::AuthChallenge;
     use crate::{MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_RULES_PER_PLAN};
 
     fn resolve_ok(tokens: proc_macro2::TokenStream) -> Api {
@@ -830,13 +851,22 @@ mod tests {
         });
         let client = &api.client;
         assert_eq!(client.config.auth.len(), 1);
-        assert_eq!(client.config.auth[0].challenge, AuthChallenge::Never);
+        assert_eq!(
+            client.config.auth[0].challenge,
+            ResolvedChallengePolicy::Never
+        );
         let Child::Scope(scope) = &client.children[1] else {
             panic!("secured scope")
         };
         assert_eq!(scope.config.auth.len(), 2);
-        assert_eq!(scope.config.auth[0].challenge, AuthChallenge::Never);
-        assert_eq!(scope.config.auth[1].challenge, AuthChallenge::Unauthorized);
+        assert_eq!(
+            scope.config.auth[0].challenge,
+            ResolvedChallengePolicy::Never
+        );
+        assert_eq!(
+            scope.config.auth[1].challenge,
+            ResolvedChallengePolicy::Unauthorized
+        );
         let Child::Endpoint(inherited) = &scope.children[0] else {
             panic!("inherited endpoint")
         };
@@ -845,12 +875,18 @@ mod tests {
             panic!("replaced endpoint")
         };
         assert_eq!(replaced.config.auth.len(), 1);
-        assert_eq!(replaced.config.auth[0].challenge, AuthChallenge::Never);
+        assert_eq!(
+            replaced.config.auth[0].challenge,
+            ResolvedChallengePolicy::Never
+        );
         let Child::Endpoint(custom) = &scope.children[2] else {
             panic!("custom endpoint")
         };
         assert_eq!(custom.config.auth.len(), 1);
-        assert_eq!(custom.config.auth[0].challenge, AuthChallenge::Never);
+        assert_eq!(
+            custom.config.auth[0].challenge,
+            ResolvedChallengePolicy::Never
+        );
         let Child::Endpoint(public) = &scope.children[3] else {
             panic!("public endpoint")
         };

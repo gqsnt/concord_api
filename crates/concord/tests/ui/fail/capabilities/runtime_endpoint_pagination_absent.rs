@@ -1,4 +1,4 @@
-use concord::advanced::{Method, RuntimeEndpoint};
+use concord::advanced::{EndpointId, Method, RuntimeEndpoint};
 use concord::api;
 
 api! {
@@ -11,7 +11,7 @@ api! {
 
 fn main() {
     let client = RuntimePaginationApi::new().unwrap();
-    let endpoint = RuntimeEndpoint::builder("runtime.pages".into(), Method::GET)
+    let endpoint = RuntimeEndpoint::builder(EndpointId::new("runtime.pages").unwrap(), Method::GET)
         .response_bytes()
         .build()
         .unwrap();

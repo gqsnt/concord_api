@@ -525,12 +525,14 @@ fn stream_wrapping(iterations: usize, audit: &mut CategoryAudit) {
 fn generic_specification_selection(iterations: usize, audit: &mut CategoryAudit) {
     let started = Instant::now();
     for _ in 0..iterations {
-        let endpoint =
-            RuntimeEndpoint::builder(EndpointId::from_static("bench_api.runtime"), Method::POST)
-                .body_spec::<BenchCodec>("benchmark generic body".to_owned())
-                .response::<BenchCodec>()
-                .build()
-                .expect("generic benchmark endpoint");
+        let endpoint = RuntimeEndpoint::builder(
+            EndpointId::new("bench_api.runtime").expect("valid benchmark endpoint ID"),
+            Method::POST,
+        )
+        .body_spec::<BenchCodec>("benchmark generic body".to_owned())
+        .response::<BenchCodec>()
+        .build()
+        .expect("generic benchmark endpoint");
         black_box(endpoint);
     }
     report(

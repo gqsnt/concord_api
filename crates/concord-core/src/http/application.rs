@@ -495,7 +495,7 @@ impl ApplicationHttp {
             .expect("deterministic test endpoint IDs use the public runtime grammar");
         let url = url::Url::parse(url).map_err(|_| {
             ApiError::classified(
-                endpoint,
+                endpoint_id.clone(),
                 method.clone(),
                 crate::error::ErrorCategory::Configuration,
             )
@@ -510,7 +510,7 @@ impl ApplicationHttp {
         }
         if url.scheme() == "https" && self.tls == TlsCapability::Unavailable {
             return Err(ApiError::classified(
-                endpoint,
+                endpoint_id,
                 method,
                 crate::error::ErrorCategory::Configuration,
             ));
@@ -534,10 +534,9 @@ impl ApplicationHttp {
         }
 
         #[cfg(not(any(test, feature = "dangerous-dev-tools")))]
-        request
-            .send()
-            .await
-            .map_err(|error| ApiError::from_reqwest(endpoint, method, error, false))
+        request.send().await.map_err(|error| {
+            ApiError::from_reqwest(EndpointId::from_static(endpoint), method, error, false)
+        })
     }
 
     #[cfg(test)]
@@ -549,10 +548,9 @@ impl ApplicationHttp {
         boundary: BoundaryRequest,
     ) -> Result<reqwest::Response, ApiError> {
         let Some(development) = &self.development else {
-            return request
-                .send()
-                .await
-                .map_err(|error| ApiError::from_reqwest(endpoint, method, error, false));
+            return request.send().await.map_err(|error| {
+                ApiError::from_reqwest(EndpointId::from_static(endpoint), method, error, false)
+            });
         };
         drop(request);
         development
@@ -561,7 +559,7 @@ impl ApplicationHttp {
             .map(super::development::scripted_response)
             .map_err(|failure| {
                 ApiError::classified(
-                    endpoint,
+                    EndpointId::from_static(endpoint),
                     method,
                     super::development::failure_category(failure.kind()),
                 )

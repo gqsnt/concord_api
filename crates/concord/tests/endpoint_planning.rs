@@ -295,7 +295,7 @@ fn configured_public_client(
         .configure_http(move |http| http.proxy(proxy))
         .configure_runtime(move |runtime| {
             runtime
-                .operation_timeout(timeout)
+                .runtime_endpoint_timeout(timeout)
                 .rate_limiter(limiter)
                 .hooks(hooks)
         })
@@ -395,7 +395,7 @@ fn safe_planning_uses_real_head_shaping_without_any_lifecycle_effect() {
 }
 
 #[tokio::test]
-async fn generated_plan_matches_execution_and_body_work_stays_lazy_until_execution() {
+async fn runtime_endpoint_timeout_does_not_change_generated_timeout_or_lazy_execution() {
     let server =
         ScriptedServer::start([ResponseScript::ok(b"planned".to_vec())]).expect("plan server");
     let effects = Arc::new(EffectCounts::default());
@@ -455,7 +455,7 @@ fn runtime_endpoint_plan_remains_zero_effect() {
     .build()
     .expect("inherited runtime endpoint");
     let explicit = RuntimeEndpoint::builder(
-        EndpointId::from_static("runtime.timeout.explicit"),
+        EndpointId::new("runtime.timeout.explicit").expect("valid endpoint ID"),
         Method::GET,
     )
     .path_segment("explicit")
@@ -464,7 +464,7 @@ fn runtime_endpoint_plan_remains_zero_effect() {
     .build()
     .expect("explicit runtime endpoint");
     let disabled = RuntimeEndpoint::builder(
-        EndpointId::from_static("runtime.timeout.disabled"),
+        EndpointId::new("runtime.timeout.disabled").expect("valid endpoint ID"),
         Method::GET,
     )
     .path_segment("disabled")
@@ -530,7 +530,7 @@ async fn generated_and_runtime_endpoints_use_the_same_ordered_lifecycle() {
         Bytes::from_static(b"generated")
     );
     let runtime = RuntimeEndpoint::builder(
-        EndpointId::from_static("planning.runtime.lifecycle"),
+        EndpointId::new("planning.runtime.lifecycle").expect("valid endpoint ID"),
         Method::GET,
     )
     .path_segment("lifecycle")

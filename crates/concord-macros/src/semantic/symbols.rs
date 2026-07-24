@@ -4,10 +4,14 @@ use proc_macro2::Span;
 use syn::spanned::Spanned;
 use syn::{GenericArgument, Ident, PathArguments, Type, TypePath};
 
-use super::model::{Child, ResolvedValue, Value, ValueReference, ValueShape};
+use super::model::{
+    Child, ResolvedDefault, ResolvedValue, ResolvedValueKind, Value, ValueReference, ValueShape,
+};
 use super::surface::{RESERVED_GENERATED_METHODS, canonical_ident, insert_name};
 use super::{Resolver, SpanError};
-use crate::syntax::ast::{ValueDecl, syntactic_option_inner};
+use crate::syntax::ast::{
+    DefaultExpr as SourceDefault, ValueDecl, ValueKind as SourceValueKind, syntactic_option_inner,
+};
 
 #[derive(Clone)]
 pub(super) struct ScopeFrame {
@@ -23,12 +27,31 @@ pub(super) fn convert_values(values: Vec<ValueDecl>) -> syn::Result<Vec<Value>> 
             Ok(Value {
                 name: value.name,
                 ty: value.ty,
-                kind: value.kind,
+                kind: resolve_value_kind(value.kind),
                 shape,
                 source_position: value.position,
             })
         })
         .collect()
+}
+
+pub(super) fn resolve_default(source: SourceDefault) -> ResolvedDefault {
+    match source {
+        SourceDefault::String(value) => ResolvedDefault::String(value),
+        SourceDefault::Integer { negative, literal } => {
+            ResolvedDefault::Integer { negative, literal }
+        }
+        SourceDefault::Boolean(value) => ResolvedDefault::Boolean(value),
+        SourceDefault::Path(value) => ResolvedDefault::Path(value),
+    }
+}
+
+fn resolve_value_kind(source: SourceValueKind) -> ResolvedValueKind {
+    match source {
+        SourceValueKind::Required => ResolvedValueKind::Required,
+        SourceValueKind::Optional => ResolvedValueKind::Optional,
+        SourceValueKind::Defaulted(value) => ResolvedValueKind::Defaulted(resolve_default(value)),
+    }
 }
 
 fn value_shape(ty: &Type) -> syn::Result<ValueShape> {

@@ -12,11 +12,11 @@ use concord::advanced::{
     Auth, AuthError, AuthErrorKind, BeforeSend, BodyError, BodyFactory, BodyKind, BoxFuture,
     Buffered, ByteStream, CodecError, CompletionEvent, Cooldown, CooldownScope, CredentialMaterial,
     CredentialProvider, CredentialRequest, DecodeBody, DecodeContext, Discard, EncodeBody,
-    EncodeContext, HasNextCursor, HeaderName, HeaderValue, HookError, LengthHint, MediaType,
-    Method, PaginationCompletionEvent, PaginationController, PaginationError, ProviderBody,
-    ProviderBodyFactory, ProviderRequest, RateLimitError, RateLimitObserver, RateLimitPermit,
-    RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimiter, RequestBody,
-    RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestContentType,
+    EncodeContext, EndpointId, HasNextCursor, HeaderName, HeaderValue, HookError, LengthHint,
+    MediaType, Method, PaginationCompletionEvent, PaginationController, PaginationError,
+    ProviderBody, ProviderBodyFactory, ProviderRequest, RateLimitError, RateLimitObserver,
+    RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimiter,
+    RequestBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestContentType,
     ResponseBodyError, ResponseBodySpec, ResponseHead, ResponseHeadEvent, RuntimeEndpoint,
     RuntimeHooks, SafeProxy, SecretCredential, StatusCode, Streaming, Url,
 };
@@ -25,6 +25,10 @@ use concord::advanced::{BytesMut, RecordDecoder, RecordError};
 #[cfg(feature = "multipart")]
 use concord::advanced::{MultipartBody, MultipartFactory, MultipartPart};
 use concord::prelude::{Bytes, ClientBuildError, Request, SecretString, StreamBody};
+
+fn runtime_id(value: &str) -> EndpointId {
+    EndpointId::try_from(value).expect("valid runtime endpoint ID")
+}
 
 pub struct ExtensionRequestSpec;
 
@@ -555,19 +559,20 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
         credential.clone(),
     );
 
-    let buffered = RuntimeEndpoint::builder("extension_api.runtime_buffered".into(), Method::POST)
-        .path_segment("buffered")
-        .body_codec::<ExtensionCodec>("bounded-input".to_owned())
-        .auth(Auth::header(
-            HeaderName::from_static("x-prepared-session"),
-            credential,
-        ))
-        .response::<ExtensionCodec>()
-        .build()
-        .expect("valid buffered runtime endpoint");
+    let buffered =
+        RuntimeEndpoint::builder(runtime_id("extension_api.runtime_buffered"), Method::POST)
+            .path_segment("buffered")
+            .body_codec::<ExtensionCodec>("bounded-input".to_owned())
+            .auth(Auth::header(
+                HeaderName::from_static("x-prepared-session"),
+                credential,
+            ))
+            .response::<ExtensionCodec>()
+            .build()
+            .expect("valid buffered runtime endpoint");
     let _: Request<_> = client.request(buffered);
 
-    let bytes = RuntimeEndpoint::builder("extension_api.runtime_bytes".into(), Method::POST)
+    let bytes = RuntimeEndpoint::builder(runtime_id("extension_api.runtime_bytes"), Method::POST)
         .path_segment("bytes")
         .body(RequestBody::factory(ExtensionBodyFactory))
         .response_bytes()
@@ -575,25 +580,27 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
         .expect("valid bytes runtime endpoint");
     let _: Request<_> = client.request(bytes);
 
-    let no_content = RuntimeEndpoint::builder("extension_api.runtime_none".into(), Method::DELETE)
-        .path_segment("none")
-        .build()
-        .expect("valid no-content runtime endpoint");
+    let no_content =
+        RuntimeEndpoint::builder(runtime_id("extension_api.runtime_none"), Method::DELETE)
+            .path_segment("none")
+            .build()
+            .expect("valid no-content runtime endpoint");
     let _: Request<_> = client.request(no_content);
 
-    let stream = RuntimeEndpoint::builder("extension_api.runtime_stream".into(), Method::GET)
+    let stream = RuntimeEndpoint::builder(runtime_id("extension_api.runtime_stream"), Method::GET)
         .path_segment("stream")
         .response_stream::<ExtensionMedia>()
         .build()
         .expect("valid streaming runtime endpoint");
     let _: Request<_> = client.request(stream);
 
-    let generic = RuntimeEndpoint::builder("extension_api.runtime_generic".into(), Method::POST)
-        .path_segment("generic")
-        .body_spec::<ExtensionRequestSpec>(Bytes::from_static(b"prepared generic input"))
-        .response::<ExtensionBufferedSpec>()
-        .build()
-        .expect("valid generic runtime endpoint");
+    let generic =
+        RuntimeEndpoint::builder(runtime_id("extension_api.runtime_generic"), Method::POST)
+            .path_segment("generic")
+            .body_spec::<ExtensionRequestSpec>(Bytes::from_static(b"prepared generic input"))
+            .response::<ExtensionBufferedSpec>()
+            .build()
+            .expect("valid generic runtime endpoint");
     let _: Request<_> = client.request(generic);
 
     let page = ExtensionPage {
@@ -611,7 +618,7 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
 
     #[cfg(feature = "json")]
     {
-        let json = RuntimeEndpoint::builder("extension_api.runtime_json".into(), Method::POST)
+        let json = RuntimeEndpoint::builder(runtime_id("extension_api.runtime_json"), Method::POST)
             .body_codec::<Json<Vec<u32>>>(vec![1, 2, 3])
             .response::<Json<Vec<u32>>>()
             .build()
@@ -622,7 +629,7 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
     #[cfg(feature = "multipart")]
     {
         let multipart =
-            RuntimeEndpoint::builder("extension_api.runtime_multipart".into(), Method::POST)
+            RuntimeEndpoint::builder(runtime_id("extension_api.runtime_multipart"), Method::POST)
                 .body(RequestBody::multipart_factory(ExtensionMultipartFactory))
                 .build()
                 .expect("valid multipart runtime endpoint");

@@ -1,4 +1,4 @@
-use concord::advanced::{Method, RuntimeEndpoint};
+use concord::advanced::{EndpointId, Method, RuntimeEndpoint};
 use concord::api;
 
 api! {
@@ -11,7 +11,7 @@ api! {
 
 fn main() {
     let client = RawRuntimeApi::new().expect("client construction");
-    let endpoint = RuntimeEndpoint::builder("runtime.bytes".into(), Method::GET)
+    let endpoint = RuntimeEndpoint::builder(EndpointId::new("runtime.bytes").unwrap(), Method::GET)
         .response_bytes()
         .build()
         .expect("runtime endpoint");

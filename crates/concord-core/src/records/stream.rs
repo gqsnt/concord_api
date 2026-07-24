@@ -285,6 +285,7 @@ mod tests {
     use bytes::{Bytes, BytesMut};
 
     use super::*;
+    use crate::endpoint::EndpointId;
     use crate::error::{ApiError, ErrorCategory};
     use crate::http::application::{ApplicationByteStream, bounded_byte_stream};
 
@@ -359,7 +360,7 @@ mod tests {
         });
         let body = ByteStream::new(bounded_byte_stream(
             body,
-            "records.custom".into(),
+            EndpointId::from_static("records.custom"),
             http::Method::GET,
             1024,
         ));
@@ -423,7 +424,7 @@ mod tests {
         let polls = Arc::new(AtomicUsize::new(0));
         let dropped = Arc::new(AtomicBool::new(false));
         let body_error = ApiError::classified(
-            "records_api.custom",
+            EndpointId::from_static("records_api.custom"),
             http::Method::GET,
             ErrorCategory::ResponseBody,
         );

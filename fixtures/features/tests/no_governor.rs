@@ -9,8 +9,8 @@ use std::time::Duration;
 use concord_fixture_features::{EmptyGeneratedApi, LimitedGeneratedApi};
 use runtime::Bytes;
 use runtime::advanced::{
-    BoxFuture, ClientBuildErrorKind, ErrorCategory, Method, NoopRateLimiter, RateLimitError,
-    RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitRequest,
+    BoxFuture, ClientBuildErrorKind, EndpointId, ErrorCategory, Method, NoopRateLimiter,
+    RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitRequest,
     RateLimitResponse, RateLimitRule, RateLimitWindow, RateLimiter, RuntimeEndpoint, SafeProxy,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -167,7 +167,10 @@ fn runtime_rule(id: &str, key: RateLimitKey, cost: u32, windows: &[(u32, u64)]) 
 }
 
 fn empty_runtime_endpoint() -> runtime::advanced::RuntimeEndpoint<Bytes> {
-    RuntimeEndpoint::builder("runtime.empty".into(), Method::GET)
+    RuntimeEndpoint::builder(
+        EndpointId::try_from("runtime.empty").expect("runtime endpoint ID"),
+        Method::GET,
+    )
         .path_segment("runtime-empty")
         .response_bytes()
         .build()
@@ -175,7 +178,10 @@ fn empty_runtime_endpoint() -> runtime::advanced::RuntimeEndpoint<Bytes> {
 }
 
 fn explicit_runtime_endpoint() -> runtime::advanced::RuntimeEndpoint<Bytes> {
-    RuntimeEndpoint::builder("runtime.explicit".into(), Method::GET)
+    RuntimeEndpoint::builder(
+        EndpointId::try_from("runtime.explicit").expect("runtime endpoint ID"),
+        Method::GET,
+    )
         .path_segment("runtime-explicit")
         .rate_limit(runtime_rule(
             "Runtime::global",

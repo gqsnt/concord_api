@@ -70,6 +70,7 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use super::*;
+    use crate::endpoint::EndpointId;
     use crate::error::ErrorCategory;
 
     struct ProbeStream {
@@ -109,7 +110,7 @@ mod tests {
         });
         ByteStream::new(crate::http::application::bounded_byte_stream(
             body,
-            "stream.download".into(),
+            EndpointId::from_static("stream.download"),
             http::Method::GET,
             limit,
         ))

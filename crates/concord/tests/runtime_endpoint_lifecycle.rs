@@ -9,16 +9,20 @@ use std::time::Duration;
 
 use concord::advanced::{
     Auth, BodyError, BodyFactory, BoxFuture, ChallengePolicy, CodecError, DecodeBody,
-    DecodeContext, EncodeBody, EncodeContext, ErrorCategory, HeaderName, HookError, MediaType,
-    Method, MultipartBody, MultipartFactory, MultipartPart, NoopRateLimiter, RateLimitError,
-    RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitRequest, RateLimitRule,
-    RateLimitWindow, RateLimiter, RequestBody, RuntimeEndpoint, RuntimeEndpointBuilder,
-    RuntimeHooks, SafeProxy, Stream as StreamSpec, StreamBody,
+    DecodeContext, EncodeBody, EncodeContext, EndpointId, ErrorCategory, HeaderName, HookError,
+    MediaType, Method, MultipartBody, MultipartFactory, MultipartPart, NoopRateLimiter,
+    RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitRequest,
+    RateLimitRule, RateLimitWindow, RateLimiter, RequestBody, RuntimeEndpoint,
+    RuntimeEndpointBuilder, RuntimeHooks, SafeProxy, Stream as StreamSpec, StreamBody,
 };
 use concord::api;
 use concord::prelude::{ByteStream, Bytes, NoContent};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 use futures_core::Stream;
+
+fn runtime_id(value: &str) -> EndpointId {
+    EndpointId::try_from(value).expect("valid runtime endpoint ID")
+}
 
 api! {
     client PreparedAlphaApi {
@@ -225,7 +229,7 @@ fn rule(id: &str, key: RateLimitKey, cost: u32, windows: &[(u32, u64)]) -> RateL
 
 fn exact_builder_contracts() {
     let default: RuntimeEndpointBuilder<NoContent> =
-        RuntimeEndpoint::builder("runtime.default".into(), Method::GET);
+        RuntimeEndpoint::builder(runtime_id("runtime.default"), Method::GET);
     let buffered: RuntimeEndpointBuilder<EchoCodec> = default.response::<EchoCodec>();
     let bytes: RuntimeEndpointBuilder<Bytes> = buffered.response_bytes();
     let stream: RuntimeEndpointBuilder<StreamSpec<VendorMedia>> =
@@ -252,7 +256,7 @@ async fn prepared_modes_use_the_ordinary_generated_client_runtime() {
     .expect("prepared mode server");
     let client = alpha(&server);
 
-    let buffered = RuntimeEndpoint::builder("runtime.buffered".into(), Method::POST)
+    let buffered = RuntimeEndpoint::builder(runtime_id("runtime.buffered"), Method::POST)
         .path_segment("items")
         .path_segment("slash/value")
         .path_segment("..")
@@ -270,7 +274,7 @@ async fn prepared_modes_use_the_ordinary_generated_client_runtime() {
         "decoded"
     );
 
-    let bytes = RuntimeEndpoint::builder("runtime.bytes".into(), Method::GET)
+    let bytes = RuntimeEndpoint::builder(runtime_id("runtime.bytes"), Method::GET)
         .path_segment("bytes")
         .response_bytes()
         .build()
@@ -280,7 +284,7 @@ async fn prepared_modes_use_the_ordinary_generated_client_runtime() {
         b"bytes"[..]
     );
 
-    let no_content = RuntimeEndpoint::builder("runtime.none".into(), Method::DELETE)
+    let no_content = RuntimeEndpoint::builder(runtime_id("runtime.none"), Method::DELETE)
         .path_segment("none")
         .build()
         .expect("no-content runtime endpoint");
@@ -289,7 +293,7 @@ async fn prepared_modes_use_the_ordinary_generated_client_runtime() {
         .await
         .expect("no-content response");
 
-    let stream = RuntimeEndpoint::builder("runtime.stream".into(), Method::GET)
+    let stream = RuntimeEndpoint::builder(runtime_id("runtime.stream"), Method::GET)
         .path_segment("stream")
         .response_stream::<VendorMedia>()
         .build()
@@ -361,7 +365,7 @@ async fn the_same_prepared_definition_uses_each_selected_client_base_and_core() 
         .build()
         .expect("runtime-distinct beta client");
     let definition = || {
-        RuntimeEndpoint::builder("runtime.portable".into(), Method::GET)
+        RuntimeEndpoint::builder(runtime_id("runtime.portable"), Method::GET)
             .path_segment("portable")
             .response_bytes()
             .build()
@@ -399,31 +403,31 @@ async fn all_prepared_body_forms_use_the_existing_lazy_body_architecture() {
     let multipart_factory_calls = Arc::new(AtomicUsize::new(0));
 
     let bodies = [
-        RuntimeEndpoint::builder("runtime.empty".into(), Method::POST)
+        RuntimeEndpoint::builder(runtime_id("runtime.empty"), Method::POST)
             .body(RequestBody::empty())
             .build()
             .expect("empty"),
-        RuntimeEndpoint::builder("runtime.bytes".into(), Method::POST)
+        RuntimeEndpoint::builder(runtime_id("runtime.bytes"), Method::POST)
             .body(RequestBody::bytes(Bytes::from_static(b"bytes-body")))
             .build()
             .expect("bytes"),
-        RuntimeEndpoint::builder("runtime.stream".into(), Method::POST)
+        RuntimeEndpoint::builder(runtime_id("runtime.stream"), Method::POST)
             .body(RequestBody::stream(StreamBody::from_bytes(
                 Bytes::from_static(b"stream-body"),
             )))
             .build()
             .expect("stream"),
-        RuntimeEndpoint::builder("runtime.factory".into(), Method::POST)
+        RuntimeEndpoint::builder(runtime_id("runtime.factory"), Method::POST)
             .body(RequestBody::factory(FreshFactory {
                 calls: Arc::clone(&factory_calls),
             }))
             .build()
             .expect("factory"),
-        RuntimeEndpoint::builder("runtime.codec".into(), Method::POST)
+        RuntimeEndpoint::builder(runtime_id("runtime.codec"), Method::POST)
             .body_codec::<EchoCodec>("codec-body".to_owned())
             .build()
             .expect("codec"),
-        RuntimeEndpoint::builder("runtime.multipart".into(), Method::POST)
+        RuntimeEndpoint::builder(runtime_id("runtime.multipart"), Method::POST)
             .body(RequestBody::multipart(
                 MultipartBody::new()
                     .part("field", MultipartPart::text("multipart-body"))
@@ -431,7 +435,7 @@ async fn all_prepared_body_forms_use_the_existing_lazy_body_architecture() {
             ))
             .build()
             .expect("multipart"),
-        RuntimeEndpoint::builder("runtime.multipart_factory".into(), Method::POST)
+        RuntimeEndpoint::builder(runtime_id("runtime.multipart_factory"), Method::POST)
             .body(RequestBody::multipart_factory(FreshMultipartFactory {
                 calls: Arc::clone(&multipart_factory_calls),
             }))
@@ -478,7 +482,7 @@ async fn hook_rejection_prevents_prepared_factory_and_native_work() {
         .configure_runtime(|runtime| runtime.hooks(Arc::new(RejectingHooks)))
         .build()
         .expect("hooked client");
-    let endpoint = RuntimeEndpoint::builder("runtime.veto".into(), Method::POST)
+    let endpoint = RuntimeEndpoint::builder(runtime_id("runtime.veto"), Method::POST)
         .body(RequestBody::factory(FreshFactory {
             calls: Arc::clone(&calls),
         }))
@@ -493,7 +497,7 @@ async fn hook_rejection_prevents_prepared_factory_and_native_work() {
     assert_eq!(calls.load(Ordering::SeqCst), 0);
 
     let encode_calls = Arc::new(AtomicUsize::new(0));
-    let endpoint = RuntimeEndpoint::builder("runtime.codec_veto".into(), Method::POST)
+    let endpoint = RuntimeEndpoint::builder(runtime_id("runtime.codec_veto"), Method::POST)
         .body_codec::<CountingEncodeCodec>(Arc::clone(&encode_calls))
         .build()
         .expect("lazy codec endpoint");
@@ -527,7 +531,7 @@ async fn prepared_protected_http_fails_before_hooks_or_body_materialization() {
         .build()
         .expect("prepared authentication client");
     let factory_calls = Arc::new(AtomicUsize::new(0));
-    let endpoint = RuntimeEndpoint::builder("runtime.protected_http".into(), Method::POST)
+    let endpoint = RuntimeEndpoint::builder(runtime_id("runtime.protected_http"), Method::POST)
         .body(RequestBody::factory(FreshFactory {
             calls: Arc::clone(&factory_calls),
         }))
@@ -562,11 +566,11 @@ async fn prepared_bodies_and_responses_cannot_bypass_runtime_limits() {
         .build()
         .expect("request-limited client");
     for endpoint in [
-        RuntimeEndpoint::builder("runtime.limited_bytes".into(), Method::POST)
+        RuntimeEndpoint::builder(runtime_id("runtime.limited_bytes"), Method::POST)
             .body(RequestBody::bytes(Bytes::from_static(b"four")))
             .build()
             .expect("limited bytes endpoint"),
-        RuntimeEndpoint::builder("runtime.limited_codec".into(), Method::POST)
+        RuntimeEndpoint::builder(runtime_id("runtime.limited_codec"), Method::POST)
             .body_codec::<EchoCodec>("four".to_owned())
             .build()
             .expect("limited codec endpoint"),
@@ -591,7 +595,7 @@ async fn prepared_bodies_and_responses_cannot_bypass_runtime_limits() {
         })
         .build()
         .expect("response-limited client");
-    let endpoint = RuntimeEndpoint::builder("runtime.limited_response".into(), Method::GET)
+    let endpoint = RuntimeEndpoint::builder(runtime_id("runtime.limited_response"), Method::GET)
         .response_bytes()
         .build()
         .expect("limited response endpoint");
@@ -611,7 +615,7 @@ async fn prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_ord
     ])
     .expect("prepared limiter server");
     let endpoint = || {
-        RuntimeEndpoint::builder("runtime.limited".into(), Method::GET)
+        RuntimeEndpoint::builder(runtime_id("runtime.limited"), Method::GET)
             .rate_limit(rule(
                 "global",
                 RateLimitKey::global(),
@@ -704,7 +708,7 @@ fn prepared_authentication_uses_canonical_collision_and_challenge_validation() {
         .expect("auth client");
     let credential = client.credentials().api_key().credential();
 
-    let header_collision = RuntimeEndpoint::builder("runtime.auth".into(), Method::GET)
+    let header_collision = RuntimeEndpoint::builder(runtime_id("runtime.auth"), Method::GET)
         .header(HeaderName::from_static("x-api-key"), "public")
         .auth(Auth::header(
             HeaderName::from_static("x-api-key"),
@@ -718,7 +722,7 @@ fn prepared_authentication_uses_canonical_collision_and_challenge_validation() {
         concord::advanced::ConfigurationErrorKind::InvalidAuthentication
     );
 
-    let query_collision = RuntimeEndpoint::builder("runtime.auth".into(), Method::GET)
+    let query_collision = RuntimeEndpoint::builder(runtime_id("runtime.auth"), Method::GET)
         .query("token", "public")
         .auth(Auth::query("token", credential.clone()))
         .build()
@@ -729,7 +733,7 @@ fn prepared_authentication_uses_canonical_collision_and_challenge_validation() {
         concord::advanced::ConfigurationErrorKind::InvalidAuthentication
     );
 
-    let two_challenges = RuntimeEndpoint::builder("runtime.auth".into(), Method::GET)
+    let two_challenges = RuntimeEndpoint::builder(runtime_id("runtime.auth"), Method::GET)
         .auth(
             Auth::header(HeaderName::from_static("x-first"), credential.clone())
                 .challenge(ChallengePolicy::Unauthorized),
@@ -746,7 +750,7 @@ fn prepared_authentication_uses_canonical_collision_and_challenge_validation() {
         concord::advanced::ConfigurationErrorKind::InvalidAuthentication
     );
 
-    RuntimeEndpoint::builder("runtime.auth".into(), Method::GET)
+    RuntimeEndpoint::builder(runtime_id("runtime.auth"), Method::GET)
         .auth(Auth::header(
             HeaderName::from_static("x-first"),
             credential.clone(),

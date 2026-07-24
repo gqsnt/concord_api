@@ -4,9 +4,9 @@ Every cumulative lifecycle surface is finite. Runtime setters replace these
 defaults on the generated client builder; positive counts/byte limits use
 `NonZeroU32` or `NonZeroUsize`.
 
-The table is generated from normative core constants and checked by
-`cargo run --locked -p concord-xtask -- docs`. `DEFAULT_*` entries are
-selected runtime defaults; `MAX_*` entries are non-adjustable structural
+The table is generated from the normative public core and extras constants and
+checked by `cargo run --locked -p concord-xtask -- docs`. `DEFAULT_*` entries
+are selected runtime defaults; `MAX_*` entries are non-adjustable structural
 ceilings selected for finite construction.
 
 <!-- BEGIN GENERATED LIMITS -->
@@ -25,6 +25,7 @@ ceilings selected for finite construction.
 | Server-directed rate-limit cooldown cap | 60 | seconds |
 | Default limiter-prepared rate-limit key | 1,024 | bytes |
 | One formatted public value | 65,536 | bytes |
+| Endpoint contract identity | 128 | bytes |
 | Runtime endpoint top-level structure | 256 | components |
 | Runtime endpoint aggregate public shape | 65,536 | bytes |
 | Runtime endpoint authentication placements | 64 | placements |
@@ -34,6 +35,11 @@ ceilings selected for finite construction.
 | Rate-limit hard aggregate key | 65,536 | bytes |
 | Rate-limit rule | 16 | windows |
 | Rate-limit plan | 64 | rules |
+| OAuth2 token URL text | 8,192 | bytes |
+| OAuth2 client identifier | 8,192 | bytes |
+| OAuth2 client secret | 8,192 | bytes |
+| OAuth2 scope | 65,536 | bytes |
+| OAuth2 Basic Authorization value | 32,768 | bytes |
 <!-- END GENERATED LIMITS -->
 
 Dynamic host, path, query, and header values cross a user-code trust boundary
@@ -52,9 +58,9 @@ lengths are checked before allocation, and the final form body is also checked
 against the active `ProviderHttp::request_body_limit()` selected by the client
 runtime.
 
-The inherited client operation timeout is disabled by default. Generated
-endpoint timeout declarations remain effective independently; runtime-defined
-endpoints select inherit, explicit duration, or disabled.
+The runtime-endpoint timeout default is disabled. Generated endpoint timeout
+declarations remain effective independently; runtime-defined endpoints select
+inherit, explicit duration, or disabled.
 
 Public rate-limit construction validates IDs, key parts, aggregate keys,
 windows, and plans incrementally against the hard `MAX_RATE_LIMIT_*`

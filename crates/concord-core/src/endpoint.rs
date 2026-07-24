@@ -27,8 +27,10 @@ enum EndpointIdStorage {
 
 /// A bounded, public contract identity for one generated or runtime endpoint.
 ///
-/// Generated declarations use [`EndpointId::from_static`] without allocating.
-/// Runtime endpoints use [`EndpointId::new`], which validates and owns at most
+/// Generated declarations construct validated static identities through
+/// Concord's hidden generated-code bridge. Runtime endpoints use
+/// [`EndpointId::new`], [`EndpointId::try_from`], or the standard
+/// [`TryFrom`] implementations, which validate and own at most
 /// [`MAX_ENDPOINT_ID_BYTES`] bytes. Contract identities are public metadata:
 /// callers must never place credentials or other protected values in them.
 #[derive(Clone)]
@@ -54,12 +56,7 @@ impl EndpointId {
         })
     }
 
-    /// Creates one allocation-free generated endpoint identity.
-    ///
-    /// This constructor validates the same grammar as [`EndpointId::new`] in a
-    /// constant context and therefore fails compilation for an invalid literal.
-    #[must_use]
-    pub const fn from_static(value: &'static str) -> Self {
+    pub(crate) const fn from_static(value: &'static str) -> Self {
         assert!(
             valid_endpoint_id(value),
             "invalid static Concord endpoint identity"
@@ -90,9 +87,26 @@ impl AsRef<str> for EndpointId {
     }
 }
 
-impl From<&'static str> for EndpointId {
-    fn from(value: &'static str) -> Self {
-        Self::from_static(value)
+impl TryFrom<String> for EndpointId {
+    type Error = ConfigurationError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for EndpointId {
+    type Error = ConfigurationError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        if !valid_endpoint_id(value) {
+            return Err(ConfigurationError::new(
+                ConfigurationErrorKind::InvalidValue,
+            ));
+        }
+        Ok(Self {
+            storage: EndpointIdStorage::Owned(Arc::from(value)),
+        })
     }
 }
 
@@ -620,9 +634,15 @@ mod tests {
     #[test]
     fn static_and_owned_ids_share_bounded_value_semantics() {
         let owned = EndpointId::new("users.get_by_id").expect("owned ID");
+        let borrowed =
+            EndpointId::try_from("users.get_by_id").expect("fallible borrowed construction");
+        let transferred = EndpointId::try_from(String::from("users.get_by_id"))
+            .expect("fallible owned construction");
         assert!(STATIC_ID.is_static());
         assert!(!owned.is_static());
         assert_eq!(STATIC_ID, owned);
+        assert_eq!(STATIC_ID, borrowed);
+        assert_eq!(STATIC_ID, transferred);
         assert_eq!(STATIC_ID, "users.get_by_id");
         assert_eq!(STATIC_ID.to_string(), "users.get_by_id");
         assert_eq!(format!("{STATIC_ID:?}"), "EndpointId(\"users.get_by_id\")");

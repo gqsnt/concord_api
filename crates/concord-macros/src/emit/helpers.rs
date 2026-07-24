@@ -1,17 +1,17 @@
 use super::*;
 
-pub(super) fn method_token(method: &MethodKind, core_path: &TokenStream) -> TokenStream {
+pub(super) fn method_token(method: &ResolvedMethod, core_path: &TokenStream) -> TokenStream {
     match method {
-        MethodKind::Get => quote!(#core_path::__private::Method::GET),
-        MethodKind::Post => quote!(#core_path::__private::Method::POST),
-        MethodKind::Put => quote!(#core_path::__private::Method::PUT),
-        MethodKind::Patch => quote!(#core_path::__private::Method::PATCH),
-        MethodKind::Delete => quote!(#core_path::__private::Method::DELETE),
-        MethodKind::Head => quote!(#core_path::__private::Method::HEAD),
-        MethodKind::Options => quote!(#core_path::__private::Method::OPTIONS),
-        MethodKind::Trace => quote!(#core_path::__private::Method::TRACE),
-        MethodKind::Connect => quote!(#core_path::__private::Method::CONNECT),
-        MethodKind::Custom(value) => quote!(
+        ResolvedMethod::Get => quote!(#core_path::__private::Method::GET),
+        ResolvedMethod::Post => quote!(#core_path::__private::Method::POST),
+        ResolvedMethod::Put => quote!(#core_path::__private::Method::PUT),
+        ResolvedMethod::Patch => quote!(#core_path::__private::Method::PATCH),
+        ResolvedMethod::Delete => quote!(#core_path::__private::Method::DELETE),
+        ResolvedMethod::Head => quote!(#core_path::__private::Method::HEAD),
+        ResolvedMethod::Options => quote!(#core_path::__private::Method::OPTIONS),
+        ResolvedMethod::Trace => quote!(#core_path::__private::Method::TRACE),
+        ResolvedMethod::Connect => quote!(#core_path::__private::Method::CONNECT),
+        ResolvedMethod::Custom(value) => quote!(
             #core_path::__private::Method::from_bytes(#value.as_bytes())
                 .expect("the Concord macro validates custom HTTP method tokens")
         ),
@@ -22,13 +22,13 @@ pub(super) fn request_body_input_type(body: &TokenStream, core_path: &TokenStrea
     quote!(<#body as #core_path::advanced::RequestBodySpec>::Input)
 }
 
-pub(super) fn default_expr(value: &DefaultExpr) -> TokenStream {
+pub(super) fn default_expr(value: &ResolvedDefault) -> TokenStream {
     match value {
-        DefaultExpr::String(value) => quote!(#value),
-        DefaultExpr::Integer { negative, literal } if *negative => quote!(-#literal),
-        DefaultExpr::Integer { literal, .. } => quote!(#literal),
-        DefaultExpr::Boolean(value) => quote!(#value),
-        DefaultExpr::Path(value) => quote!(#value),
+        ResolvedDefault::String(value) => quote!(#value),
+        ResolvedDefault::Integer { negative, literal } if *negative => quote!(-#literal),
+        ResolvedDefault::Integer { literal, .. } => quote!(#literal),
+        ResolvedDefault::Boolean(value) => quote!(#value),
+        ResolvedDefault::Path(value) => quote!(#value),
     }
 }
 

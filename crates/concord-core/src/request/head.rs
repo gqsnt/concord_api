@@ -45,18 +45,6 @@ impl RequestMeta {
         }
     }
 
-    /// Creates metadata for a runtime endpoint that inherits the built client's
-    /// operation timeout.
-    #[doc(hidden)]
-    #[must_use]
-    pub const fn inheriting_client_timeout(endpoint: &'static str, method: Method) -> Self {
-        Self {
-            endpoint: EndpointId::from_static(endpoint),
-            method,
-            timeout: TimeoutSelection::InheritClient,
-        }
-    }
-
     #[doc(hidden)]
     #[must_use]
     pub fn from_description(description: &EndpointDescription) -> Self {
@@ -89,9 +77,9 @@ impl RequestMeta {
 
     pub(crate) const fn resolve_inherited_timeout(
         &self,
-        client_timeout: Option<Duration>,
+        runtime_endpoint_timeout: Option<Duration>,
     ) -> Option<Duration> {
-        self.timeout.resolve(client_timeout)
+        self.timeout.resolve(runtime_endpoint_timeout)
     }
 }
 
@@ -122,14 +110,15 @@ impl HeadBuilder {
         meta: RequestMeta,
         options: &RequestOptions,
         inherited_debug: DebugLevel,
-        client_timeout: Option<Duration>,
+        runtime_endpoint_timeout: Option<Duration>,
     ) -> Self {
         let base_host = base
             .host_str()
             .expect("generated clients validate that fixed bases have a host")
             .to_owned();
         Self {
-            timeout: options.resolve_timeout(meta.resolve_inherited_timeout(client_timeout)),
+            timeout: options
+                .resolve_timeout(meta.resolve_inherited_timeout(runtime_endpoint_timeout)),
             debug: options.resolve_debug(inherited_debug),
             meta,
             logical_url: base.clone(),

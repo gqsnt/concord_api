@@ -196,17 +196,17 @@ pub(super) fn auth_statements(
                 _ => credential.name.span(),
             };
             let constructor = match &placement.kind {
-                AuthPlacementKind::Bearer => {
+                ResolvedAuthPlacement::Bearer => {
                     quote_spanned!(source_span=>
                         #core_path::__private::Auth::bearer::<#material>(#reference)
                     )
                 }
-                AuthPlacementKind::Basic => {
+                ResolvedAuthPlacement::Basic => {
                     quote_spanned!(source_span=>
                         #core_path::__private::Auth::basic(#reference)
                     )
                 }
-                AuthPlacementKind::Header(name) => {
+                ResolvedAuthPlacement::Header(name) => {
                     let canonical =
                         syn::LitStr::new(&name.value().to_ascii_lowercase(), name.span());
                     quote_spanned!(source_span=>
@@ -216,20 +216,22 @@ pub(super) fn auth_statements(
                         )
                     )
                 }
-                AuthPlacementKind::Query(name) => {
+                ResolvedAuthPlacement::Query(name) => {
                     quote_spanned!(source_span=>
                         #core_path::__private::Auth::query::<#material>(#name, #reference)
                     )
                 }
             };
             let policy = match placement.challenge {
-                AuthChallenge::Unauthorized => quote!(
+                ResolvedChallengePolicy::Unauthorized => quote!(
                     #core_path::advanced::ChallengePolicy::Unauthorized
                 ),
-                AuthChallenge::UnauthorizedOrForbidden => quote!(
+                ResolvedChallengePolicy::UnauthorizedOrForbidden => quote!(
                     #core_path::advanced::ChallengePolicy::UnauthorizedOrForbidden
                 ),
-                AuthChallenge::Never => quote!(#core_path::advanced::ChallengePolicy::Never),
+                ResolvedChallengePolicy::Never => {
+                    quote!(#core_path::advanced::ChallengePolicy::Never)
+                }
             };
             quote! {
                 __concord_builder.push_auth((#constructor).challenge(#policy))?;

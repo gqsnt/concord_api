@@ -348,13 +348,13 @@ fn repeated_configuration_closures_compose_immediately_in_call_order() {
         .configure_runtime(|runtime| {
             assert_eq!(runtime_order.fetch_add(1, Ordering::SeqCst), 0);
             runtime
-                .operation_timeout(Duration::from_secs(11))
+                .runtime_endpoint_timeout(Duration::from_secs(11))
                 .debug(DebugLevel::Basic)
         })
         .configure_runtime(|runtime| {
             assert_eq!(runtime_order.fetch_add(1, Ordering::SeqCst), 1);
             runtime
-                .disable_operation_timeout()
+                .disable_runtime_endpoint_timeout()
                 .debug(DebugLevel::Headers)
         });
     assert_eq!(runtime_order.load(Ordering::SeqCst), 2);

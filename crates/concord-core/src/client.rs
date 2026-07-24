@@ -128,8 +128,8 @@ impl ClientCore {
         self.inner.runtime.debug
     }
 
-    pub(crate) fn default_operation_timeout(&self) -> Option<std::time::Duration> {
-        self.inner.runtime.operation_timeout
+    pub(crate) fn default_runtime_endpoint_timeout(&self) -> Option<std::time::Duration> {
+        self.inner.runtime.runtime_endpoint_timeout
     }
 
     pub(crate) fn debug_dispatcher(&self, level: DebugLevel) -> DebugDispatcher {
@@ -347,7 +347,7 @@ mod tests {
                 .http1_only()
                 .proxy(SafeProxy::parse(first_proxy).expect("safe proxy")),
             RuntimeConfigBuilder::new()
-                .operation_timeout(Duration::from_secs(7))
+                .runtime_endpoint_timeout(Duration::from_secs(7))
                 .request_body_limit(one)
                 .response_body_limit(two)
                 .stream_response_limit(three)
@@ -379,7 +379,7 @@ mod tests {
         );
         assert_eq!(first.inner.runtime.request_body_limit, one);
         assert_eq!(
-            first.inner.runtime.operation_timeout,
+            first.inner.runtime.runtime_endpoint_timeout,
             Some(Duration::from_secs(7))
         );
         assert_eq!(first.inner.runtime.response_body_limit, two);
@@ -424,7 +424,7 @@ mod tests {
         ));
         assert_eq!(clone.inner.runtime.debug, DebugLevel::Headers);
         assert_eq!(
-            clone.inner.runtime.operation_timeout,
+            clone.inner.runtime.runtime_endpoint_timeout,
             Some(Duration::from_secs(7))
         );
 
@@ -458,7 +458,7 @@ mod tests {
 
         assert_eq!(first.inner.runtime.request_body_limit, one);
         assert_eq!(
-            first.inner.runtime.operation_timeout,
+            first.inner.runtime.runtime_endpoint_timeout,
             Some(Duration::from_secs(7))
         );
         assert_eq!(first.inner.runtime.pagination_max_pages.get(), 37);

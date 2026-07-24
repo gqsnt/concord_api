@@ -150,10 +150,10 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
     let credentials_method = generate_credentials_method(client);
 
     let retry_baseline = match &client.retry {
-        RetrySelection::Disabled => {
+        ResolvedRetry::Disabled => {
             quote!(__concord_generated::__core::__private::default_http_config())
         }
-        RetrySelection::ReqwestDefault => quote!(
+        ResolvedRetry::ReqwestDefault => quote!(
             __concord_generated::__core::__private::default_http_config().retry_reqwest_default()
         ),
     };
@@ -164,7 +164,7 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
             let nanos = duration.subsec_nanos();
             quote!(
                 __concord_generated::__core::__private::default_runtime_config()
-                    .operation_timeout(::std::time::Duration::new(#seconds, #nanos))
+                    .runtime_endpoint_timeout(::std::time::Duration::new(#seconds, #nanos))
             )
         },
     );
@@ -477,15 +477,15 @@ pub(super) fn generate_builder_value_methods(index: usize, value: &Value) -> Tok
         quote!()
     };
     let setter_doc = match &value.kind {
-        ValueKind::Required => format!(
+        ResolvedValueKind::Required => format!(
             "Sets the required client value `{}`; a later call replaces this selection.",
             canonical_ident(&value.name)
         ),
-        ValueKind::Optional => format!(
+        ResolvedValueKind::Optional => format!(
             "Selects `Some(value)` for optional client value `{}`; a later call replaces this selection.",
             canonical_ident(&value.name)
         ),
-        ValueKind::Defaulted(_) => format!(
+        ResolvedValueKind::Defaulted(_) => format!(
             "Overrides defaulted client value `{}`; while selected, its DSL default is not evaluated.",
             canonical_ident(&value.name)
         ),
@@ -508,7 +508,7 @@ pub(super) fn generate_client_value_resolution(index: usize, value: &Value) -> T
     let method = &value.name;
     let ty = &value.ty;
     match &value.kind {
-        ValueKind::Required => quote! {
+        ResolvedValueKind::Required => quote! {
             let #resolved: #ty = match self.#builder_field {
                 ::std::option::Option::Some(value) => value,
                 ::std::option::Option::None => {
@@ -521,10 +521,10 @@ pub(super) fn generate_client_value_resolution(index: usize, value: &Value) -> T
                 }
             };
         },
-        ValueKind::Optional => quote! {
+        ResolvedValueKind::Optional => quote! {
             let #resolved: #ty = self.#builder_field;
         },
-        ValueKind::Defaulted(default) => {
+        ResolvedValueKind::Defaulted(default) => {
             let default = default_expr(default);
             quote! {
                 let #resolved: #ty = match self.#builder_field {

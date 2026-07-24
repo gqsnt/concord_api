@@ -196,6 +196,27 @@ The old prepared-endpoint names are removed. Timeout selection is a real
 inherit/explicit/disabled tri-state. Runtime and generated endpoints expose
 the same safe description and planning model and use the same executor.
 
+`EndpointId::from_static` is now generated-private, and the infallible
+`From<&'static str>` conversion is removed. Replace `"inventory.dynamic".into()`
+or public `from_static` calls with fallible construction:
+
+```rust
+let borrowed = EndpointId::try_from("inventory.dynamic")?;
+let owned = EndpointId::try_from(String::from("inventory.dynamic"))?;
+```
+
+Rename runtime configuration calls:
+
+```rust
+let runtime = runtime.runtime_endpoint_timeout(duration);
+let runtime_without_default = runtime.disable_runtime_endpoint_timeout();
+```
+
+The old names were `operation_timeout` and `disable_operation_timeout`.
+This default applies only to runtime endpoints that inherit it. Generated
+endpoints keep their resolved DSL timeout, and request-local overrides remain
+unchanged.
+
 Runtime endpoint query-name parameters now require `AsRef<str>` so the
 builder can validate length before copying. `&str`, `String`, and
 `Box<str>` continue to work directly. A custom wrapper that implemented only

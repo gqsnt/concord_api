@@ -18,13 +18,13 @@ pub struct ExecutionMeta {
 impl ExecutionMeta {
     #[allow(dead_code, reason = "constructed by the production executor")]
     pub(crate) fn new(
-        endpoint: impl Into<EndpointId>,
+        endpoint: EndpointId,
         method: Method,
         page_index: u32,
         recovered_authentication: bool,
     ) -> Self {
         Self {
-            endpoint: endpoint.into(),
+            endpoint,
             method,
             page_index,
             recovered_authentication,
@@ -297,7 +297,12 @@ mod tests {
             StatusCode::OK,
             Version::HTTP_11,
             headers,
-            ExecutionMeta::new("metadata_api.value", Method::GET, 0, false),
+            ExecutionMeta::new(
+                EndpointId::from_static("metadata_api.value"),
+                Method::GET,
+                0,
+                false,
+            ),
             VALUE_SECRET.to_owned(),
         );
 

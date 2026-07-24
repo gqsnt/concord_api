@@ -20,6 +20,8 @@ mod pagination_api;
 mod rate_limit_api;
 #[path = "public_types/request_wrappers.rs"]
 mod request_wrappers;
+#[path = "public_types/runtime_config.rs"]
+mod runtime_config;
 #[path = "public_types/status_body_api.rs"]
 mod status_body_api;
 #[path = "public_types/stream_response_api.rs"]

@@ -8,9 +8,8 @@ Started from commit:
 (`core: enforce finite rate limit structures`) on branch `master`.
 
 Finished at commit:
-The C4 commit containing this evidence, with message
-`extras: bound OAuth2 configuration and encoding`. Its exact hash will be
-backfilled in the closure ledger by C5.
+`ab193005800cb1e114f1d03f7209896bda9b02b1`
+(`extras: bound OAuth2 configuration and encoding`).
 
 Files changed:
 

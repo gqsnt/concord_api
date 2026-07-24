@@ -45,7 +45,7 @@ pub(super) fn generate_endpoint_description(
                     <<#response as #core_path::advanced::ResponseBodySpec>::Mode
                     as #core_path::advanced::ResponseMode>::ACQUISITION;
                 #core_path::advanced::EndpointDescription::generated(
-                    #core_path::advanced::EndpointId::from_static(#contract_id),
+                    #core_path::__private::endpoint_id_from_static(#contract_id),
                     #method,
                     #source_path,
                     #route,
@@ -85,7 +85,7 @@ mod tests {
         let output = tokens.to_string();
 
         assert!(output.contains("EndpointDescription :: generated"));
-        assert!(output.contains("EndpointId :: from_static"));
+        assert!(output.contains("__private :: endpoint_id_from_static"));
         assert!(output.contains("EndpointCapabilities :: generated"));
         assert!(!output.contains("bearer_value"));
     }

@@ -35,6 +35,13 @@
   runtime snapshot.
 - Added bounded owned runtime endpoint IDs and the inherit/explicit/disabled
   timeout tri-state.
+- Removed the infallible `From<&'static str> for EndpointId` conversion and
+  moved allocation-free static construction behind the generated-code bridge;
+  public callers use `EndpointId::new` or `TryFrom`.
+- Renamed runtime configuration
+  `operation_timeout`/`disable_operation_timeout` to
+  `runtime_endpoint_timeout`/`disable_runtime_endpoint_timeout` so the API
+  states that generated declaration timeouts are independent.
 - Runtime endpoint builders now account public shape incrementally, latch the
   first safe structural error, cap each Concord-owned formatted value, and
   stop repeated-query iterators at the withheld first excess.
@@ -81,6 +88,8 @@
 
 - Removed application-level two-crate setup and direct generated
   `concord-core` paths.
+- Removed obsolete direct-core generated raw/development helper macros; the
+  façade remains their sole generated-code owner.
 - Removed `PreparedEndpoint`, `PreparedEndpointBuilder`, and
   `DecodedResponse` aliases.
 - Removed configured positional constructors, generated request extension

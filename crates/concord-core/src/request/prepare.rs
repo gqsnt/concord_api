@@ -58,8 +58,8 @@ where
     let operation_id = core.allocate_operation_id(meta.endpoint_id(), meta.method())?;
     let safe_base_url = core.safe_base_url();
     let debug = options.resolve_debug(core.default_debug());
-    let timeout =
-        options.resolve_timeout(meta.resolve_inherited_timeout(core.default_operation_timeout()));
+    let timeout = options
+        .resolve_timeout(meta.resolve_inherited_timeout(core.default_runtime_endpoint_timeout()));
     let deadline = match OperationDeadline::new(started, timeout) {
         Ok(deadline) => deadline,
         Err(_) => {
@@ -97,7 +97,7 @@ where
         meta.clone(),
         &options,
         core.default_debug(),
-        core.default_operation_timeout(),
+        core.default_runtime_endpoint_timeout(),
     );
     let mut head = match endpoint.prepare_head(builder) {
         Ok(prepared) => prepared,
@@ -186,7 +186,7 @@ where
         meta.clone(),
         &options,
         core.default_debug(),
-        core.default_operation_timeout(),
+        core.default_runtime_endpoint_timeout(),
     );
     let mut head = endpoint.prepare_head(builder)?;
     let body_metadata = endpoint

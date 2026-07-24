@@ -1,11 +1,7 @@
 use std::time::Duration;
 
 use proc_macro2::Span;
-use syn::{Ident, LitInt, LitStr, Path, Type};
-
-pub(crate) use crate::syntax::ast::{
-    AuthChallenge, AuthPlacementKind, DefaultExpr, MethodKind, RetrySelection, ValueKind,
-};
+use syn::{Ident, LitBool, LitInt, LitStr, Path, Type};
 
 #[derive(Clone)]
 pub(crate) struct Api {
@@ -20,7 +16,7 @@ pub(crate) struct Client {
     pub(crate) values: Vec<Value>,
     pub(crate) secrets: Vec<Secret>,
     pub(crate) credentials: Vec<Credential>,
-    pub(crate) retry: RetrySelection,
+    pub(crate) retry: ResolvedRetry,
     pub(crate) requires_limiter: bool,
     #[allow(dead_code, reason = "retained as the normalized client-layer IR root")]
     pub(crate) config: NormalizedConfig,
@@ -82,7 +78,7 @@ pub(crate) struct Endpoint {
         reason = "stable semantic identity retained in normalized IR"
     )]
     pub(crate) id: usize,
-    pub(crate) method: MethodKind,
+    pub(crate) method: ResolvedMethod,
     pub(crate) name: Ident,
     pub(crate) surface: EndpointSurface,
     pub(crate) parameters: Vec<Value>,
@@ -182,7 +178,7 @@ pub(crate) enum PaginationInitializer {
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum PaginationValue {
     Reference(ResolvedValue),
-    Stable(DefaultExpr),
+    Stable(ResolvedDefault),
 }
 
 #[derive(Clone)]
@@ -221,7 +217,7 @@ pub(crate) enum CredentialSource {
 pub(crate) struct Value {
     pub(crate) name: Ident,
     pub(crate) ty: Type,
-    pub(crate) kind: ValueKind,
+    pub(crate) kind: ResolvedValueKind,
     pub(crate) shape: ValueShape,
     pub(crate) source_position: usize,
 }
@@ -239,19 +235,54 @@ impl Value {
     }
 
     pub(crate) fn is_required(&self) -> bool {
-        matches!(self.kind, ValueKind::Required)
+        matches!(self.kind, ResolvedValueKind::Required)
     }
 
     pub(crate) fn is_optional(&self) -> bool {
-        matches!(self.kind, ValueKind::Optional)
+        matches!(self.kind, ResolvedValueKind::Optional)
     }
 
-    pub(crate) fn default(&self) -> Option<&DefaultExpr> {
+    pub(crate) fn default(&self) -> Option<&ResolvedDefault> {
         match &self.kind {
-            ValueKind::Defaulted(value) => Some(value),
-            ValueKind::Required | ValueKind::Optional => None,
+            ResolvedValueKind::Defaulted(value) => Some(value),
+            ResolvedValueKind::Required | ResolvedValueKind::Optional => None,
         }
     }
+}
+
+#[derive(Clone)]
+pub(crate) enum ResolvedValueKind {
+    Required,
+    Optional,
+    Defaulted(ResolvedDefault),
+}
+
+#[derive(Clone)]
+pub(crate) enum ResolvedDefault {
+    String(LitStr),
+    Integer { negative: bool, literal: LitInt },
+    Boolean(LitBool),
+    Path(Path),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ResolvedRetry {
+    Disabled,
+    ReqwestDefault,
+}
+
+#[derive(Clone)]
+pub(crate) enum ResolvedMethod {
+    Get,
+    Post,
+    Put,
+    Patch,
+    Delete,
+    Head,
+    Options,
+    Trace,
+    Connect,
+    Custom(LitStr),
 }
 
 #[derive(Clone)]
@@ -292,9 +323,24 @@ pub(crate) struct NormalizedRateLimitWindow {
 
 #[derive(Clone)]
 pub(crate) struct NormalizedAuth {
-    pub(crate) kind: AuthPlacementKind,
+    pub(crate) kind: ResolvedAuthPlacement,
     pub(crate) credential: usize,
-    pub(crate) challenge: AuthChallenge,
+    pub(crate) challenge: ResolvedChallengePolicy,
+}
+
+#[derive(Clone)]
+pub(crate) enum ResolvedAuthPlacement {
+    Bearer,
+    Basic,
+    Header(LitStr),
+    Query(LitStr),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ResolvedChallengePolicy {
+    Unauthorized,
+    UnauthorizedOrForbidden,
+    Never,
 }
 
 #[derive(Clone)]

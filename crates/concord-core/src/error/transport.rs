@@ -63,7 +63,7 @@ impl ApiError {
     }
 
     pub(crate) fn from_reqwest(
-        endpoint: impl Into<EndpointId>,
+        endpoint: EndpointId,
         method: Method,
         error: reqwest::Error,
         managed_body_failed: bool,
@@ -73,12 +73,12 @@ impl ApiError {
     }
 
     pub(crate) fn classified(
-        endpoint: impl Into<EndpointId>,
+        endpoint: EndpointId,
         method: Method,
         category: ErrorCategory,
     ) -> Self {
         Self {
-            endpoint: endpoint.into(),
+            endpoint,
             method,
             category,
             configuration_kind: None,
@@ -93,7 +93,7 @@ impl ApiError {
     }
 
     pub(crate) fn configuration(
-        endpoint: impl Into<EndpointId>,
+        endpoint: EndpointId,
         method: Method,
         kind: ConfigurationErrorKind,
     ) -> Self {
@@ -103,7 +103,7 @@ impl ApiError {
     }
 
     pub(crate) fn authentication(
-        endpoint: impl Into<EndpointId>,
+        endpoint: EndpointId,
         method: Method,
         error: crate::auth::AuthError,
     ) -> Self {
@@ -120,7 +120,7 @@ impl ApiError {
     }
 
     pub(crate) fn rate_limit(
-        endpoint: impl Into<EndpointId>,
+        endpoint: EndpointId,
         method: Method,
         error: crate::rate_limit::RateLimitError,
     ) -> Self {
@@ -132,7 +132,7 @@ impl ApiError {
     }
 
     pub(crate) fn pagination(
-        endpoint: impl Into<EndpointId>,
+        endpoint: EndpointId,
         method: Method,
         error: crate::pagination::PaginationError,
     ) -> Self {
@@ -144,11 +144,7 @@ impl ApiError {
     }
 
     #[cfg(test)]
-    fn with_auth_kind(
-        endpoint: impl Into<EndpointId>,
-        method: Method,
-        kind: AuthErrorKind,
-    ) -> Self {
+    fn with_auth_kind(endpoint: EndpointId, method: Method, kind: AuthErrorKind) -> Self {
         let category = match kind {
             AuthErrorKind::Unavailable => ErrorCategory::AuthenticationUnavailable,
             AuthErrorKind::Rejected => ErrorCategory::AuthenticationRejected,
@@ -161,7 +157,7 @@ impl ApiError {
 
     #[cfg(test)]
     fn with_rate_limit_kind(
-        endpoint: impl Into<EndpointId>,
+        endpoint: EndpointId,
         method: Method,
         kind: RateLimitErrorKind,
     ) -> Self {
@@ -172,7 +168,7 @@ impl ApiError {
 
     #[cfg(test)]
     fn with_pagination_kind(
-        endpoint: impl Into<EndpointId>,
+        endpoint: EndpointId,
         method: Method,
         kind: PaginationErrorKind,
     ) -> Self {
@@ -379,7 +375,7 @@ mod tests {
             HeaderValue::from_static(HEADER_SENTINEL),
         );
         let response = HttpResponseFailure::new(
-            "widgets.fetch",
+            EndpointId::from_static("widgets.fetch"),
             Method::GET,
             StatusCode::BAD_GATEWAY,
             headers,
@@ -427,7 +423,11 @@ mod tests {
 
     #[test]
     fn non_response_error_is_returned_unchanged_by_owning_extraction() {
-        let error = ApiError::classified("widgets.fetch", Method::POST, ErrorCategory::Internal);
+        let error = ApiError::classified(
+            EndpointId::from_static("widgets.fetch"),
+            Method::POST,
+            ErrorCategory::Internal,
+        );
         let error = error
             .into_http_response()
             .expect_err("non-response error should be returned");
@@ -437,15 +437,18 @@ mod tests {
 
     #[test]
     fn subsystem_kinds_are_machine_readable_without_messages() {
-        let auth =
-            ApiError::with_auth_kind("widgets.fetch", Method::GET, AuthErrorKind::Acquisition);
+        let auth = ApiError::with_auth_kind(
+            EndpointId::from_static("widgets.fetch"),
+            Method::GET,
+            AuthErrorKind::Acquisition,
+        );
         let rate = ApiError::with_rate_limit_kind(
-            "widgets.fetch",
+            EndpointId::from_static("widgets.fetch"),
             Method::GET,
             RateLimitErrorKind::Acquire,
         );
         let pagination = ApiError::with_pagination_kind(
-            "widgets.fetch",
+            EndpointId::from_static("widgets.fetch"),
             Method::GET,
             PaginationErrorKind::RepeatedRequest,
         );
@@ -461,7 +464,7 @@ mod tests {
     fn provider_owned_safe_message_remains_application_visible() {
         const SAFE_MESSAGE: &str = "operator-approved credential broker outage";
         let error = ApiError::authentication(
-            "widgets.fetch",
+            EndpointId::from_static("widgets.fetch"),
             Method::GET,
             crate::auth::AuthError::with_safe_message(AuthErrorKind::Acquisition, SAFE_MESSAGE),
         );
@@ -482,7 +485,11 @@ mod tests {
             PaginationErrorKind::CollectedItemCeilingExceeded,
             PaginationErrorKind::IdentityStorageCeilingExceeded,
         ] {
-            let error = ApiError::with_pagination_kind("widgets.list", Method::GET, kind);
+            let error = ApiError::with_pagination_kind(
+                EndpointId::from_static("widgets.list"),
+                Method::GET,
+                kind,
+            );
             assert_eq!(error.category(), ErrorCategory::Pagination);
             assert_eq!(error.pagination_kind(), Some(kind));
             assert_eq!(
@@ -518,7 +525,12 @@ mod tests {
                 .is_some_and(|url| url.as_str().contains(URL_SENTINEL)),
             "the native Reqwest error must carry the authenticated URL sentinel before reduction"
         );
-        let reduced = ApiError::from_reqwest("widgets.fetch", Method::GET, native, false);
+        let reduced = ApiError::from_reqwest(
+            EndpointId::from_static("widgets.fetch"),
+            Method::GET,
+            native,
+            false,
+        );
         assert!(matches!(
             reduced.category(),
             ErrorCategory::Connect | ErrorCategory::Transport
@@ -583,7 +595,12 @@ mod tests {
             "the sentinel-bearing body source must actually have failed"
         );
         assert!(FailingBodyError.to_string().contains(BODY_SENTINEL));
-        let reduced = ApiError::from_reqwest("widgets.create", Method::POST, native, true);
+        let reduced = ApiError::from_reqwest(
+            EndpointId::from_static("widgets.create"),
+            Method::POST,
+            native,
+            true,
+        );
         assert_eq!(reduced.category(), ErrorCategory::RequestBody);
         assert_recursive_sources_are_safe(&reduced, &[BODY_SENTINEL]);
     }

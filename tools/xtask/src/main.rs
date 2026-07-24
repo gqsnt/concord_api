@@ -109,6 +109,12 @@ const LIMITS: &[(&str, &str, &str, &str)] = &[
         "bytes",
     ),
     (
+        "crates/concord-core/src/endpoint.rs",
+        "MAX_ENDPOINT_ID_BYTES",
+        "Endpoint contract identity",
+        "bytes",
+    ),
+    (
         "crates/concord-core/src/limits.rs",
         "MAX_RUNTIME_ENDPOINT_COMPONENTS",
         "Runtime endpoint top-level structure",
@@ -161,6 +167,36 @@ const LIMITS: &[(&str, &str, &str, &str)] = &[
         "MAX_RATE_LIMIT_RULES_PER_PLAN",
         "Rate-limit plan",
         "rules",
+    ),
+    (
+        "crates/concord-extras/src/auth/oauth2_client.rs",
+        "MAX_OAUTH2_TOKEN_URL_BYTES",
+        "OAuth2 token URL text",
+        "bytes",
+    ),
+    (
+        "crates/concord-extras/src/auth/oauth2_client.rs",
+        "MAX_OAUTH2_CLIENT_ID_BYTES",
+        "OAuth2 client identifier",
+        "bytes",
+    ),
+    (
+        "crates/concord-extras/src/auth/oauth2_client.rs",
+        "MAX_OAUTH2_CLIENT_SECRET_BYTES",
+        "OAuth2 client secret",
+        "bytes",
+    ),
+    (
+        "crates/concord-extras/src/auth/oauth2_client.rs",
+        "MAX_OAUTH2_SCOPE_BYTES",
+        "OAuth2 scope",
+        "bytes",
+    ),
+    (
+        "crates/concord-extras/src/auth/oauth2_client.rs",
+        "MAX_OAUTH2_AUTHORIZATION_HEADER_BYTES",
+        "OAuth2 Basic Authorization value",
+        "bytes",
     ),
 ];
 

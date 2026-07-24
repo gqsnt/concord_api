@@ -133,7 +133,7 @@ mod tests {
         match managed
             .application
             .terminal_status(
-                "managed.status".into(),
+                EndpointId::from_static("managed.status"),
                 Method::GET,
                 response,
                 StatusDisposition::Terminal,
@@ -311,7 +311,7 @@ mod tests {
         let capture = tokio::time::timeout(
             Duration::from_millis(300),
             managed.application.terminal_status(
-                "managed.challenge".into(),
+                EndpointId::from_static("managed.challenge"),
                 Method::GET,
                 response(&managed, &recoverable, "/recoverable").await,
                 StatusDisposition::RecoverableChallenge,

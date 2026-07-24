@@ -137,10 +137,10 @@ pub(super) fn value_category_summary(values: &[Value], owner: &str) -> String {
     }
 }
 
-pub(super) fn retry_summary(retry: &RetrySelection) -> &'static str {
+pub(super) fn retry_summary(retry: &ResolvedRetry) -> &'static str {
     match retry {
-        RetrySelection::Disabled => "Application native retry is disabled.",
-        RetrySelection::ReqwestDefault => {
+        ResolvedRetry::Disabled => "Application native retry is disabled.",
+        ResolvedRetry::ReqwestDefault => {
             "Reqwest default native retry is explicitly selected; an HTTP builder retry method may replace it."
         }
     }
@@ -168,15 +168,15 @@ pub(super) fn endpoint_configuration_summary(client: &Client, endpoint: &Endpoin
             .iter()
             .map(|placement| {
                 let category = match placement.kind {
-                    AuthPlacementKind::Bearer => "bearer",
-                    AuthPlacementKind::Basic => "basic",
-                    AuthPlacementKind::Header(_) => "custom header",
-                    AuthPlacementKind::Query(_) => "private native query",
+                    ResolvedAuthPlacement::Bearer => "bearer",
+                    ResolvedAuthPlacement::Basic => "basic",
+                    ResolvedAuthPlacement::Header(_) => "custom header",
+                    ResolvedAuthPlacement::Query(_) => "private native query",
                 };
                 let challenge = match placement.challenge {
-                    AuthChallenge::Unauthorized => "unauthorized",
-                    AuthChallenge::UnauthorizedOrForbidden => "unauthorized-or-forbidden",
-                    AuthChallenge::Never => "never",
+                    ResolvedChallengePolicy::Unauthorized => "unauthorized",
+                    ResolvedChallengePolicy::UnauthorizedOrForbidden => "unauthorized-or-forbidden",
+                    ResolvedChallengePolicy::Never => "never",
                 };
                 format!("{category} ({challenge})")
             })
@@ -243,18 +243,18 @@ pub(super) fn credential_summary(client: &Client) -> String {
     )
 }
 
-pub(super) fn method_name(method: &MethodKind) -> String {
+pub(super) fn method_name(method: &ResolvedMethod) -> String {
     match method {
-        MethodKind::Get => "GET".to_owned(),
-        MethodKind::Post => "POST".to_owned(),
-        MethodKind::Put => "PUT".to_owned(),
-        MethodKind::Patch => "PATCH".to_owned(),
-        MethodKind::Delete => "DELETE".to_owned(),
-        MethodKind::Head => "HEAD".to_owned(),
-        MethodKind::Options => "OPTIONS".to_owned(),
-        MethodKind::Trace => "TRACE".to_owned(),
-        MethodKind::Connect => "CONNECT".to_owned(),
-        MethodKind::Custom(value) => value.value(),
+        ResolvedMethod::Get => "GET".to_owned(),
+        ResolvedMethod::Post => "POST".to_owned(),
+        ResolvedMethod::Put => "PUT".to_owned(),
+        ResolvedMethod::Patch => "PATCH".to_owned(),
+        ResolvedMethod::Delete => "DELETE".to_owned(),
+        ResolvedMethod::Head => "HEAD".to_owned(),
+        ResolvedMethod::Options => "OPTIONS".to_owned(),
+        ResolvedMethod::Trace => "TRACE".to_owned(),
+        ResolvedMethod::Connect => "CONNECT".to_owned(),
+        ResolvedMethod::Custom(value) => value.value(),
     }
 }
 

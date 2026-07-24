@@ -149,6 +149,13 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
     })
     .collect::<Vec<_>>()
     .join("\n");
+    let endpoint_id_path = documentation.join("advanced/struct.EndpointId.html");
+    let endpoint_id = std::fs::read_to_string(&endpoint_id_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", endpoint_id_path.display()));
+    let runtime_config_path = documentation.join("advanced/struct.RuntimeConfigBuilder.html");
+    let runtime_config = std::fs::read_to_string(&runtime_config_path).unwrap_or_else(|error| {
+        panic!("failed to read {}: {error}", runtime_config_path.display())
+    });
     let generic_spec_record_contracts = [
         (
             "advanced/trait.RequestBodySpec.html",
@@ -506,6 +513,31 @@ fn stable_request_terminals_are_semantic_and_private_in_rendered_rustdoc() {
             "dangerous raw Rustdoc exposed private integration {forbidden}"
         );
     }
+    for expected in [
+        "id=\"method.runtime_endpoint_timeout\"",
+        "id=\"method.disable_runtime_endpoint_timeout\"",
+        "runtime endpoints",
+        "Generated endpoints retain",
+    ] {
+        assert!(
+            runtime_config.contains(expected),
+            "runtime configuration Rustdoc omitted scoped timeout contract {expected:?}"
+        );
+    }
+    for forbidden in [
+        "id=\"method.operation_timeout\"",
+        "id=\"method.disable_operation_timeout\"",
+    ] {
+        assert!(
+            !runtime_config.contains(forbidden),
+            "runtime configuration Rustdoc retained misleading timeout API {forbidden:?}"
+        );
+    }
+    assert!(
+        endpoint_id.contains("MAX_ENDPOINT_ID_BYTES")
+            && !endpoint_id.contains("id=\"method.from_static\""),
+        "endpoint identity Rustdoc omitted its public bound or exposed static generated construction"
+    );
     assert!(
         response.contains("<title>ResponseRequest in concord_core"),
         "ResponseRequest Rustdoc page omitted its public identity"

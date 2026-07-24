@@ -374,9 +374,9 @@ The agent must update this table in place after every phase.
 | C1 Bounded-construction foundation | Complete | `ee2efc9cba310f2952d5c180d30ee3f08260d315` | [`closure-c1-bounded-foundation.md`](docs/contributor/evidence/closure-c1-bounded-foundation.md) | None for C1; C2–C4 must apply the shared primitives to their assigned consumers |
 | C2 Runtime endpoint incremental bounds | Complete | `1fe6351b61aa8eba96f5ae63fc2859189f88b23e` | [`closure-c2-runtime-endpoint-bounds.md`](docs/contributor/evidence/closure-c2-runtime-endpoint-bounds.md) | None for C2; C3 completed the remaining public rate-limit producer bounds |
 | C3 Rate-limit structural bounds | Complete | `12a71f612dd0bfd2ccb877f401067a2bd33ad2f5` | [`closure-c3-rate-limit-bounds.md`](docs/contributor/evidence/closure-c3-rate-limit-bounds.md) | None for C3; C4 completed OAuth2 and remaining formatted-capture bounds |
-| C4 OAuth2 and formatted-value bounds | Complete | Commit containing this ledger update; exact hash will be backfilled by C5 | [`closure-c4-oauth-and-format-bounds.md`](docs/contributor/evidence/closure-c4-oauth-and-format-bounds.md) | None for C4; C5 must remove the panic-prone endpoint conversion, rename the runtime timeout setting, and finish macro semantic normalization |
-| C5 Public API and macro semantic cleanup | Not started | — | — | Owner: implementation agent — C1–C4 must complete first |
-| C6 Internal tooling and package graph | Not started | — | — | Owner: implementation agent — C1–C5 must complete first |
+| C4 OAuth2 and formatted-value bounds | Complete | `ab193005800cb1e114f1d03f7209896bda9b02b1` | [`closure-c4-oauth-and-format-bounds.md`](docs/contributor/evidence/closure-c4-oauth-and-format-bounds.md) | None for C4; C5 completed the remaining public API and macro semantic cleanup |
+| C5 Public API and macro semantic cleanup | Complete | Commit containing this ledger update; exact hash will be backfilled by C6 | [`closure-c5-api-macro-cleanup.md`](docs/contributor/evidence/closure-c5-api-macro-cleanup.md) | None for C5; C6 must remove public development tooling and the normal test-support product edge |
+| C6 Internal tooling and package graph | Not started | — | — | Owner: implementation agent — C5 is complete; C6 has not begun |
 | C7 Executable validation and truthful docs | Not started | — | — | Owner: implementation agent — C1–C6 must complete first |
 | C8 Final closure certification | Not started | — | — | Owner: implementation agent — C1–C7 must complete first; external editor/platform/release checks may remain owner-blocked |
 

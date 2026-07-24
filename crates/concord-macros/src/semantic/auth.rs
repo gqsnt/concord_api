@@ -6,12 +6,13 @@ use syn::spanned::Spanned;
 
 use super::SpanError;
 use super::model::{
-    Child, Credential, CredentialSource, Endpoint, NormalizedConfig, ResolvedExpr, Secret, Value,
-    ValueShape,
+    Child, Credential, CredentialSource, Endpoint, NormalizedConfig, ResolvedAuthPlacement,
+    ResolvedChallengePolicy, ResolvedExpr, Secret, Value, ValueShape,
 };
 use super::surface::{RESERVED_GENERATED_METHODS, canonical_ident, insert_name, to_snake_case};
 use crate::syntax::ast::{
-    AuthChallenge, AuthPlacementKind, CredentialSource as SourceCredentialSource, CredentialsBlock,
+    AuthPlacementKind as SourceAuthPlacement, CredentialSource as SourceCredentialSource,
+    CredentialsBlock,
 };
 
 pub(super) fn convert_credentials(
@@ -68,7 +69,7 @@ pub(super) fn find_credential(credentials: &[Credential], name: &Ident) -> syn::
 }
 
 pub(super) fn validate_auth_compatibility(
-    placement: &AuthPlacementKind,
+    placement: &SourceAuthPlacement,
     source: &CredentialSource,
     span: &Ident,
 ) -> syn::Result<()> {
@@ -76,11 +77,11 @@ pub(super) fn validate_auth_compatibility(
         CredentialSource::ApiKey { .. } => {
             matches!(
                 placement,
-                AuthPlacementKind::Header(_) | AuthPlacementKind::Query(_)
+                SourceAuthPlacement::Header(_) | SourceAuthPlacement::Query(_)
             )
         }
-        CredentialSource::Bearer { .. } => matches!(placement, AuthPlacementKind::Bearer),
-        CredentialSource::Basic { .. } => matches!(placement, AuthPlacementKind::Basic),
+        CredentialSource::Bearer { .. } => matches!(placement, SourceAuthPlacement::Bearer),
+        CredentialSource::Basic { .. } => matches!(placement, SourceAuthPlacement::Basic),
         CredentialSource::Endpoint { .. } | CredentialSource::Custom { .. } => true,
     };
     if compatible {
@@ -96,16 +97,18 @@ pub(super) fn validate_effective_auth(config: &NormalizedConfig) -> syn::Result<
     let challenge_count = config
         .auth
         .iter()
-        .filter(|placement| placement.challenge != AuthChallenge::Never)
+        .filter(|placement| placement.challenge != ResolvedChallengePolicy::Never)
         .count();
     if challenge_count > 1 {
         let span = config
             .auth
             .iter()
-            .find(|placement| placement.challenge != AuthChallenge::Never)
+            .find(|placement| placement.challenge != ResolvedChallengePolicy::Never)
             .map(|placement| match &placement.kind {
-                AuthPlacementKind::Header(name) | AuthPlacementKind::Query(name) => name.span(),
-                AuthPlacementKind::Bearer | AuthPlacementKind::Basic => Span::call_site(),
+                ResolvedAuthPlacement::Header(name) | ResolvedAuthPlacement::Query(name) => {
+                    name.span()
+                }
+                ResolvedAuthPlacement::Bearer | ResolvedAuthPlacement::Basic => Span::call_site(),
             })
             .unwrap_or_else(Span::call_site);
         return Err(span.error(
@@ -114,7 +117,7 @@ pub(super) fn validate_effective_auth(config: &NormalizedConfig) -> syn::Result<
     }
     for (index, placement) in config.auth.iter().enumerate() {
         match &placement.kind {
-            AuthPlacementKind::Bearer | AuthPlacementKind::Basic => {
+            ResolvedAuthPlacement::Bearer | ResolvedAuthPlacement::Basic => {
                 if config
                     .auth
                     .iter()
@@ -123,10 +126,10 @@ pub(super) fn validate_effective_auth(config: &NormalizedConfig) -> syn::Result<
                         other != index
                             && (matches!(
                                 &candidate.kind,
-                                AuthPlacementKind::Bearer | AuthPlacementKind::Basic
+                                ResolvedAuthPlacement::Bearer | ResolvedAuthPlacement::Basic
                             ) || matches!(
                                 &candidate.kind,
-                                AuthPlacementKind::Header(name)
+                                ResolvedAuthPlacement::Header(name)
                                     if name.value().eq_ignore_ascii_case("authorization")
                             ))
                     })
@@ -136,7 +139,7 @@ pub(super) fn validate_effective_auth(config: &NormalizedConfig) -> syn::Result<
                     ));
                 }
             }
-            AuthPlacementKind::Header(name) => {
+            ResolvedAuthPlacement::Header(name) => {
                 let canonical = name.value().to_ascii_lowercase();
                 if canonical == "authorization"
                     || config.headers.iter().any(|header| {
@@ -144,7 +147,7 @@ pub(super) fn validate_effective_auth(config: &NormalizedConfig) -> syn::Result<
                             && resolved_expr_is_guaranteed_present(&header.value)
                     })
                     || config.auth[..index].iter().any(|candidate| {
-                        matches!(&candidate.kind, AuthPlacementKind::Header(other) if other.value().eq_ignore_ascii_case(&name.value()))
+                        matches!(&candidate.kind, ResolvedAuthPlacement::Header(other) if other.value().eq_ignore_ascii_case(&name.value()))
                     })
                 {
                     return Err(name.span().error(
@@ -152,12 +155,12 @@ pub(super) fn validate_effective_auth(config: &NormalizedConfig) -> syn::Result<
                     ));
                 }
             }
-            AuthPlacementKind::Query(name) => {
+            ResolvedAuthPlacement::Query(name) => {
                 if config.query.iter().any(|query| {
                     query.key.value() == name.value()
                         && resolved_expr_is_guaranteed_present(&query.value)
                 }) || config.auth[..index].iter().any(|candidate| {
-                    matches!(&candidate.kind, AuthPlacementKind::Query(other) if other.value() == name.value())
+                    matches!(&candidate.kind, ResolvedAuthPlacement::Query(other) if other.value() == name.value())
                 }) {
                     return Err(name.span().error(
                         "authentication query key collides with an effective public or authentication query key",
@@ -372,6 +375,9 @@ mod tests {
         ));
         assert_eq!(endpoint.config.auth.len(), 1);
         assert_eq!(endpoint.config.auth[0].credential, 0);
-        assert_eq!(endpoint.config.auth[0].challenge, AuthChallenge::Never);
+        assert_eq!(
+            endpoint.config.auth[0].challenge,
+            ResolvedChallengePolicy::Never
+        );
     }
 }

@@ -7,8 +7,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use concord::advanced::{
-    ClientBuildErrorKind, ClientInputKind, Method, MultipartBody, MultipartPart, RuntimeEndpoint,
-    SafeProxy,
+    ClientBuildErrorKind, ClientInputKind, EndpointId, Method, MultipartBody, MultipartPart,
+    RuntimeEndpoint, SafeProxy,
 };
 use concord::api;
 use concord::prelude::{ApiResponse, ByteStream, Bytes, ErrorCategory, OctetStream, StreamBody};
@@ -756,10 +756,13 @@ async fn generated_timeout_inheritance_off_and_request_overrides_remain_distinct
     let runtime_inherited = tokio::spawn({
         let client = client.clone();
         async move {
-            let endpoint = RuntimeEndpoint::builder("timeout_api.runtime".into(), Method::GET)
-                .response_bytes()
-                .build()
-                .expect("runtime endpoint");
+            let endpoint = RuntimeEndpoint::builder(
+                EndpointId::try_from("timeout_api.runtime").expect("valid runtime endpoint ID"),
+                Method::GET,
+            )
+            .response_bytes()
+            .build()
+            .expect("runtime endpoint");
             client.request(endpoint).await
         }
     });

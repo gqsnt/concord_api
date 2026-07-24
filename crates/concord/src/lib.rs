@@ -303,16 +303,9 @@ pub mod __private {
         RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestMeta, RequestOptions,
         ResponseAcquisition, ResponseBodySpec, SafeRequestPlan, TimeoutOverride, TimeoutSelection,
         Url, assert_generated_contract, build_client_core, credential_store_error,
-        default_http_config, inspect_endpoint, map_endpoint, missing_input_error, paginate_request,
-        request, response_request, safe_request_plan,
+        default_http_config, endpoint_id_from_static, inspect_endpoint, map_endpoint,
+        missing_input_error, paginate_request, request, response_request, safe_request_plan,
     };
-
-    /// Produces a focused const-evaluation diagnostic when multipart is unavailable.
-    #[doc(hidden)]
-    pub const fn assert_multipart_feature() {
-        #[cfg(not(feature = "multipart"))]
-        panic!("Concord multipart DSL requires the `concord/multipart` feature");
-    }
 
     /// Creates the façade-owned generated-client runtime baseline.
     #[doc(hidden)]

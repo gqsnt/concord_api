@@ -156,7 +156,8 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
             .reset_limit(),
     );
     let runtime_endpoint = runtime::advanced::RuntimeEndpoint::builder(
-        runtime::advanced::EndpointId::from_static("renamed_api.runtime"),
+        runtime::advanced::EndpointId::new("renamed_api.runtime")
+            .expect("valid renamed runtime endpoint ID"),
         runtime::advanced::Method::GET,
     )
     .path_segment("prepared")

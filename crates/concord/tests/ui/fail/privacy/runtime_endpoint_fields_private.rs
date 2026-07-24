@@ -1,9 +1,12 @@
 use concord::advanced::{
-    Method, NoContent, RuntimeEndpoint, RuntimeEndpointBuilder,
+    EndpointId, Method, NoContent, RuntimeEndpoint, RuntimeEndpointBuilder,
 };
 
 fn main() {
     let _ = RuntimeEndpointBuilder::<NoContent> {};
     let _ = RuntimeEndpoint::<NoContent> {};
-    let _ = RuntimeEndpoint::builder("runtime.private".into(), Method::GET);
+    let _ = RuntimeEndpoint::builder(
+        EndpointId::try_from("runtime.private").unwrap(),
+        Method::GET,
+    );
 }

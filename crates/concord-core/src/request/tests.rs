@@ -262,7 +262,7 @@ async fn runtime_endpoints_inherit_the_snapshot_timeout_with_exact_tri_state_ove
     let core = ClientCore::build_with_development(
         "http://runtime-timeout.example.test/",
         HttpConfigBuilder::new().http1_only(),
-        RuntimeConfigBuilder::new().operation_timeout(Duration::from_secs(13)),
+        RuntimeConfigBuilder::new().runtime_endpoint_timeout(Duration::from_secs(13)),
         &executor,
     )
     .expect("runtime timeout core");

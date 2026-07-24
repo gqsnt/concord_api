@@ -224,7 +224,7 @@ pub struct HttpResponseFailure {
 impl HttpResponseFailure {
     #[allow(dead_code, reason = "constructed by the managed response collector")]
     pub(crate) fn new(
-        endpoint: impl Into<EndpointId>,
+        endpoint: EndpointId,
         method: Method,
         status: StatusCode,
         headers: HeaderMap,
@@ -232,7 +232,7 @@ impl HttpResponseFailure {
         retry_after_cap: Duration,
     ) -> Self {
         Self::new_at(
-            endpoint.into(),
+            endpoint,
             method,
             status,
             headers,
@@ -396,7 +396,7 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/test"));
         HttpResponseFailure::new_at(
-            "widgets.fetch".into(),
+            EndpointId::from_static("widgets.fetch"),
             Method::GET,
             StatusCode::BAD_GATEWAY,
             headers,

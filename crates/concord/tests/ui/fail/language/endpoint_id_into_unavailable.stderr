@@ -1,0 +1,7 @@
+error[E0277]: the trait bound `EndpointId: From<&str>` is not satisfied
+ --> tests/ui/fail/language/endpoint_id_into_unavailable.rs:4:57
+  |
+4 |     let _: EndpointId = "not a valid endpoint identity".into();
+  |                                                         ^^^^ the trait `From<&str>` is not implemented for `EndpointId`
+  |
+  = note: required for `&str` to implement `Into<EndpointId>`

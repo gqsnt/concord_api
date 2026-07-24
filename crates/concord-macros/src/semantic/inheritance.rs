@@ -1,13 +1,14 @@
 use super::auth::{find_credential, validate_auth_compatibility, validate_effective_auth};
 use super::model::{
     CredentialSource, NormalizedAuth, NormalizedConfig, NormalizedHeader, NormalizedQuery,
-    ResolvedExpr, Value, ValueShape,
+    ResolvedAuthPlacement, ResolvedChallengePolicy, ResolvedExpr, Value, ValueShape,
 };
 use super::symbols::ScopeFrame;
 use super::{Resolver, SpanError};
 use crate::syntax::ast::{
-    AuthChallenge, AuthOperation, HeaderEntry, HeaderOperation, HostOperation, Layer,
-    PathOperation, PublicExpr, QueryEntry, QueryOperation, TimeoutOperation,
+    AuthChallenge as SourceChallenge, AuthOperation, AuthPlacementKind as SourceAuthPlacement,
+    HeaderEntry, HeaderOperation, HostOperation, Layer, PathOperation, PublicExpr, QueryEntry,
+    QueryOperation, TimeoutOperation,
 };
 use crate::{MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_RULES_PER_PLAN};
 
@@ -16,6 +17,25 @@ enum ExpressionUse {
     Single,
     Query,
     Header,
+}
+
+fn resolve_auth_placement(source: &SourceAuthPlacement) -> ResolvedAuthPlacement {
+    match source {
+        SourceAuthPlacement::Bearer => ResolvedAuthPlacement::Bearer,
+        SourceAuthPlacement::Basic => ResolvedAuthPlacement::Basic,
+        SourceAuthPlacement::Header(name) => ResolvedAuthPlacement::Header(name.clone()),
+        SourceAuthPlacement::Query(name) => ResolvedAuthPlacement::Query(name.clone()),
+    }
+}
+
+fn resolve_challenge(source: SourceChallenge) -> ResolvedChallengePolicy {
+    match source {
+        SourceChallenge::Unauthorized => ResolvedChallengePolicy::Unauthorized,
+        SourceChallenge::UnauthorizedOrForbidden => {
+            ResolvedChallengePolicy::UnauthorizedOrForbidden
+        }
+        SourceChallenge::Never => ResolvedChallengePolicy::Never,
+    }
 }
 
 impl Resolver<'_> {
@@ -147,13 +167,13 @@ impl Resolver<'_> {
                                         "an auth placement using a custom provider requires an explicit challenge suffix",
                                     ));
                                 }
-                                _ => AuthChallenge::Never,
+                                _ => SourceChallenge::Never,
                             },
                         };
                         normalized.auth.push(NormalizedAuth {
-                            kind: placement.kind.clone(),
+                            kind: resolve_auth_placement(&placement.kind),
                             credential,
-                            challenge,
+                            challenge: resolve_challenge(challenge),
                         });
                     }
                 }

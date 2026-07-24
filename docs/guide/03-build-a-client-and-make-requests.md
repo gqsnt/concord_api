@@ -8,7 +8,7 @@ is always the predictable construction entry point.
 let client = CatalogApi::builder()
     .tenant("north".to_owned())
     .configure_runtime(|runtime| {
-        runtime.operation_timeout(std::time::Duration::from_secs(20))
+        runtime.runtime_endpoint_timeout(std::time::Duration::from_secs(20))
     })
     .build()?;
 ```
@@ -18,6 +18,11 @@ secret-safe `ClientBuildError`. Repeated setters are deterministic:
 replacement settings use the last value, while generated rate limits remain
 lexically additive. An explicitly configured limiter wins over façade default
 composition.
+
+`runtime_endpoint_timeout` applies only when a `RuntimeEndpoint` selects
+`TimeoutSelection::InheritClient`. Generated endpoints keep the timeout
+resolved from their declaration, and a request-local timeout selection can
+replace or disable either result.
 
 Calling an endpoint constructs an inert named request:
 

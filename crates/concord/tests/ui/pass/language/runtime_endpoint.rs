@@ -17,6 +17,11 @@ api! {
 
 fn main() {
     let client = RuntimeSurfaceApi::new().expect("zero-input client");
+    let from_borrowed = EndpointId::try_from("runtime.borrowed").expect("borrowed runtime ID");
+    let from_owned =
+        EndpointId::try_from(String::from("runtime.owned")).expect("owned runtime ID");
+    assert_eq!(from_borrowed.as_str(), "runtime.borrowed");
+    assert_eq!(from_owned.as_str(), "runtime.owned");
     let builder: RuntimeEndpointBuilder<NoContent> = RuntimeEndpoint::builder(
         EndpointId::new("runtime.surface").expect("bounded runtime ID"),
         Method::GET,

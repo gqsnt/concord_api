@@ -12,23 +12,11 @@ pub const fn assert_generated_contract(expected: u32) {
     );
 }
 
-/// Produces a focused const-evaluation diagnostic for generated multipart
-/// syntax when the runtime dependency omitted its `multipart` feature.
-#[doc(hidden)]
-pub const fn assert_multipart_feature() {
-    #[cfg(not(feature = "multipart"))]
-    panic!("Concord multipart DSL requires the `concord_core/multipart` feature");
-}
-
 #[doc(hidden)]
 pub use http::{HeaderName, Method};
 #[doc(hidden)]
 pub use url::Url;
 
-#[doc(hidden)]
-pub use crate::__concord_emit_generated_development_method as emit_generated_development_method;
-#[doc(hidden)]
-pub use crate::__concord_emit_generated_raw_response_method as emit_generated_raw_response_method;
 #[doc(hidden)]
 pub use crate::auth::Auth;
 #[doc(hidden)]
@@ -57,6 +45,13 @@ pub use crate::request::{
 };
 #[doc(hidden)]
 pub use crate::response::{ApiResponse, PageResponseSpec, ResponseBodySpec};
+
+/// Creates one allocation-free, compile-time-validated generated endpoint ID.
+#[doc(hidden)]
+#[must_use]
+pub const fn endpoint_id_from_static(value: &'static str) -> EndpointId {
+    EndpointId::from_static(value)
+}
 
 /// Generated-private owner for one credential source selection.
 #[doc(hidden)]
@@ -178,7 +173,7 @@ pub fn credential_store_error(
     method: Method,
     error: crate::auth::AuthError,
 ) -> ApiError {
-    ApiError::authentication(endpoint, method, error)
+    ApiError::authentication(EndpointId::from_static(endpoint), method, error)
 }
 
 /// Creates the ordinary generated-client HTTP configuration baseline.
@@ -255,7 +250,7 @@ pub fn safe_request_plan(
         meta,
         &RequestOptions::new(),
         core.default_debug(),
-        core.default_operation_timeout(),
+        core.default_runtime_endpoint_timeout(),
     );
     let head = prepare_head(builder)?;
     if head.endpoint_id() != description.endpoint_id() || head.method() != description.method() {

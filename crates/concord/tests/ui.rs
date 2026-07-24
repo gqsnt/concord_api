@@ -6,6 +6,12 @@ fn final_language_and_named_surface_compile_without_generated_import_conventions
 }
 
 #[test]
+fn endpoint_identity_requires_fallible_public_construction() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/fail/language/endpoint_id_into_unavailable.rs");
+}
+
+#[test]
 fn malformed_syntax_and_name_resolution_have_focused_diagnostics() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/fail/syntax/*.rs");
