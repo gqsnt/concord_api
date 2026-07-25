@@ -4,6 +4,7 @@ Concord makes cumulative work explicit and bounded:
 
 - request body preparation and multipart serialization;
 - buffered and streaming successful responses;
+- empty transport-chunk progress within streaming responses;
 - captured terminal status bodies;
 - provider request and response bodies;
 - record-decoder staging;
@@ -18,6 +19,12 @@ append, page, item, or identity rather than accepting an over-limit unit and
 failing afterward. Pagination is sequential and cycle-detecting, returns all
 items only on success, and never exposes a partial result under its existing
 terminal.
+
+Empty transport chunks do not represent application body bytes and are never
+yielded. Core bounds their total count for one response independently of the
+cumulative nonempty-byte limit. It also processes only a bounded run per task
+poll, wakes the task, and returns `Pending` so an immediately ready source
+cannot monopolize the executor.
 
 Sealed response acquisition modes prevent an extension from introducing an
 unbounded/native response escape. Multipart remains inside the private

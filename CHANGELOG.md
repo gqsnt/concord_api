@@ -58,6 +58,19 @@
 - Generated and runtime-defined requests share final core-owned component,
   logical and credential-sanitized URL, header-count, and aggregate-header
   byte ceilings.
+- Empty transport response chunks are suppressed before `ByteStream`,
+  `RecordStream`, or custom streaming response specifications can observe
+  them. One response accepts at most 1,024 empty chunks, and bounded per-poll
+  work yields cooperatively before continuing.
+- Host-prefix shaping is rejected at compile time when an endpoint's final
+  normalized shape uses an IPv4 or IPv6 fixed base. IP-literal bases remain
+  valid without shaping, including when `host off` clears an inherited
+  prefix. DNS-domain shaping is unchanged.
+- `RecordDecoder` now documents the enforceable net staging-buffer contract:
+  the resulting length cannot increase, `Some(record)` requires a strict net
+  decrease, and `None` may consume bytes.
+- The IP host-shaping rule changes source-language acceptance but not emitted
+  bridge calls or types, so generated-contract version 26 remains unchanged.
 - A sanitized response head reaches limiter observation before the user
   response hook. Observation uses the remaining operation deadline, and its
   failure prevents the hook and body acquisition.
@@ -96,6 +109,9 @@
   headers.
 - The first JSON, request-head, or startup excess is rejected without
   retaining the rejected unit or exposing supplied content.
+- Empty transport chunks are never application items; their first total-count
+  excess produces one redacted terminal response-body error, while a
+  per-poll work budget preserves executor fairness.
 - Authentication recovery permits at most one additional attempt.
 - Limiter response observation is core-first and deadline-governed.
 - Pagination is sequential, finite, cycle-detecting, first-excess

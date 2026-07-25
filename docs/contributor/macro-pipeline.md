@@ -13,7 +13,9 @@ requiring textual order, while ordered lists preserve their source order.
 `crates/concord-macros/src/semantic` resolves inheritance, optionality,
 defaults, identities, shaping, authentication, pagination, rate limits, and
 cross-declaration constraints. The resolved model is the only source for
-generated names and meanings.
+generated names and meanings. Host-base compatibility is checked against each
+endpoint's final normalized host shape: DNS-domain bases may receive labels,
+while IPv4 and IPv6 bases require the effective list to be empty.
 
 `crates/concord-macros/src/semantic/surface.rs` derives the public capability
 model: client construction, scope/endpoint names, request wrappers,
@@ -28,6 +30,12 @@ hidden bridge calls, and feature assertions. Applications invoke only
 the hidden implementation entry. Output never emits direct `::concord_core`
 paths and never recognizes JSON, CSV, NDJSON, OAuth2, governor, or
 pagination-controller type names.
+
+A source-language acceptance or diagnostic change does not by itself change
+the hidden generated bridge. The DNS/IP host-shaping validation leaves
+generated-contract version 26 unchanged because emitted bridge calls, types,
+and semantics are unchanged. Bump the version only when generated code and
+the façade/core bridge must agree on a different private contract.
 
 ## Diagnostic rules
 

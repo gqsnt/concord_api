@@ -20,12 +20,14 @@ use super::RecordError;
 /// state may be sensitive; implementations own logging, storage, CPU, memory,
 /// metric cardinality, and external I/O behavior.
 ///
-/// Implementations must not append to the supplied staging buffer. Returning
-/// `Some(record)` requires removing at least one byte from the buffer. Core
-/// terminates the stream with an internal record error when this contract is
-/// violated. `decode` may consume bytes and return `None`; core immediately
-/// retries decoding before polling the response body. `decode_eof` follows the
-/// same progress rules after the body reaches EOF.
+/// Core enforces net staging-buffer progress across each callback.
+/// Implementations must not increase the supplied staging buffer's length.
+/// Returning `Some(record)` requires a strict net decrease in buffer length.
+/// Returning `None` may consume bytes; when it leaves the length unchanged,
+/// core polls for more body data or completes EOF handling. A decoder may
+/// mutate the buffer only within these resulting net-progress constraints.
+/// Core terminates the stream with an internal record error when the observed
+/// before-and-after lengths violate the contract.
 ///
 /// One logical decoder output must correspond to staged-byte consumption. A
 /// format that expands one framed input into several values should return that

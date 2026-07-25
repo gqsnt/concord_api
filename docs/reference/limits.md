@@ -65,6 +65,15 @@ ceilings selected for finite construction.
 | OAuth2 Basic Authorization value | 32,768 | bytes |
 <!-- END GENERATED LIMITS -->
 
+The streaming-response byte limit counts only nonempty post-decompression
+bytes. Empty transport chunks are framing artifacts: core suppresses them,
+accepts at most `concord::response::MAX_EMPTY_RESPONSE_CHUNKS` for one
+response, and returns one redacted terminal response-body error on the first
+excess. A bounded internal per-poll work budget wakes the task and returns
+control to the executor before continuing through another ready run of empty
+chunks. Caller-driven polling after the stream opens remains outside the
+endpoint deadline.
+
 Dynamic host, path, query, and header values cross a user-code trust boundary
 when Concord invokes their `Display` implementation. User formatting may do
 arbitrary CPU work, block, panic, or ignore a formatting error. Concord's

@@ -75,10 +75,12 @@ correctness work remains.
 Hardening proofs stay with the lowest semantic owner:
 
 - macro semantic/UI tests own statically knowable authentication-header and
-  request-head rejection plus generated documentation capabilities;
+  request-head rejection, normalized DNS/IP host-shaping acceptance, exact
+  diagnostics, and generated documentation capabilities;
 - core unit tests own capped arithmetic, JSON-independent body defense,
-  startup retention, reader-buffer reuse, pagination identity bytes, and
-  lifecycle event order;
+  startup retention, reader-buffer reuse, response-stream empty-chunk totals,
+  deterministic per-poll wake/fairness behavior, pagination identity bytes,
+  and lifecycle event order;
 - extras unit tests own capped JSON serialization and concrete downstream
   codec/provider behavior;
 - façade integration tests own generated/runtime parity and public namespace
@@ -90,6 +92,13 @@ Exact-limit tests must pair maximum with maximum-plus-one and inspect retained
 state, iterator progress, or deterministic events so a late reject cannot
 masquerade as first-excess withholding. Error tests use sentinels and inspect
 both `Display` and `Debug`.
+
+Ready-empty response-stream probes use manual polling, upstream poll counters,
+and an instrumented waker. Direct `ByteStream` tests own suppression, total
+ceiling, terminal redaction, and unchanged nonempty-byte limits;
+`RecordStream` tests own the no-spin composition proof. Host-base semantic
+unit tests own inheritance and `host off`; façade Trybuild cases own the
+IPv4/IPv6 user-facing spans and DNS/IP compile-pass surface.
 
 Canonical tests import declarations from `concord-examples`; they do not copy
 them. Executable wrappers live under `crates/concord-examples/examples/`.

@@ -97,7 +97,8 @@ entry, and `auth off` is exclusive.
 
 `base` is required but need not be textually first. It must be an absolute
 `http` or `https` URL with a host and no username, password, query, or
-fragment. A base path is allowed.
+fragment. A base path is allowed. The fixed host may be a DNS domain, an IPv4
+literal, or an IPv6 literal.
 
 ## Values, optionality, and defaults
 
@@ -238,7 +239,11 @@ host off;
 ```
 
 Host replaces inherited generated labels. Static labels are validated as DNS
-labels.
+labels. A non-empty final host-label list requires a DNS-domain fixed base;
+host-prefix shaping cannot be applied to IPv4 or IPv6 literals. The compiler
+checks this rule after client, scope, and endpoint inheritance is normalized.
+IP-literal bases remain valid when the final list is empty, including when
+`host off` removes an inherited prefix.
 
 ### Path
 
@@ -465,6 +470,7 @@ Structural diagnostics include:
 - invalid or duplicate contract IDs;
 - invalid, defaulted, or multiple body roles;
 - invalid public expression namespaces and shaping literals;
+- host-prefix shaping over an IPv4 or IPv6 fixed base;
 - duplicate query, header, authentication, pagination, and rate-limit entries;
 
 Rust diagnostics cover:

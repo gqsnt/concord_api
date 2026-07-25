@@ -39,6 +39,13 @@ Wire and staging limits bound Concord-owned bytes, not the allocation size of
 the decoded application value. Custom decoders and response specifications
 must bound their own CPU, memory, state, and side effects.
 
+`RecordDecoder` receives a mutable staging buffer, but core can enforce only
+the net length observed across a callback. The resulting length must not
+increase. Returning a record requires a strict net decrease; returning no
+record may still consume bytes, while an unchanged length makes core poll for
+more body data or finish EOF handling. Decoder mutations must stay within
+those net-progress constraints.
+
 ## Configuring CSV records
 
 `Csv<T>` remains header-bearing, comma-delimited CSV. The record type stays

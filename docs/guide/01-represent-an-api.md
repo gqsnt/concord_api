@@ -74,6 +74,11 @@ enter routes, public headers, descriptions, or credential-sanitized URLs.
 These restrictions make shaping deterministic and keep authentication
 material inside the private runtime.
 
+Fixed bases may use DNS-domain, IPv4, or IPv6 hosts. `host [...]` shaping adds
+DNS labels and therefore requires a DNS-domain fixed base; the compiler
+rejects an inherited or local non-empty host shape over an IP literal. An IP
+base remains valid when host shaping is absent or cleared with `host off`.
+
 The exact accepted forms live in the [DSL reference](../reference/dsl.md).
 Declare runtime policy—hooks, a concrete limiter, transport settings, and
 operational observers—on the generated client builder, not in the remote
