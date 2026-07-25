@@ -30,6 +30,12 @@ Keep one built client per stable configuration and clone it. The clone shares
 the immutable transport/runtime snapshot. Rebuild only when configuration
 changes intentionally.
 
+An explicit proxy and custom root certificates configured through
+`configure_http` apply to both application traffic and isolated credential
+provider HTTP. A configured application client identity is installed only on
+the application client; provider HTTP never receives that identity. The two
+clients retain separate connection pools and lifecycle roles.
+
 Use lifecycle hooks for safe metrics and tracing, not request mutation or
 credential inspection. Attach endpoint ID, operation ID, attempt, safe status,
 and elapsed time. Keep application labels finite and do not reflect arbitrary

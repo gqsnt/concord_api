@@ -58,6 +58,10 @@ pub(crate) struct HttpConfig {
 }
 
 /// A consuming builder for reviewed plain HTTP configuration.
+///
+/// An explicit proxy and custom root certificates apply to both the
+/// application and isolated provider clients. An application identity applies
+/// only to the application client and is never installed on provider HTTP.
 pub struct HttpConfigBuilder {
     config: HttpConfig,
 }
@@ -156,7 +160,8 @@ impl HttpConfigBuilder {
         self
     }
 
-    /// Installs one explicitly validated proxy origin.
+    /// Installs one explicitly validated proxy origin for both application and
+    /// provider HTTP.
     #[must_use]
     pub fn proxy(mut self, proxy: SafeProxy) -> Self {
         self.config.proxy = Some(proxy);
@@ -164,6 +169,10 @@ impl HttpConfigBuilder {
     }
 
     /// Enables Reqwest's native default retry policy for application traffic.
+    ///
+    /// Native retry may perform multiple physical sends inside one visible
+    /// Concord attempt. Those sends share one limiter admission, lifecycle-hook
+    /// accounting unit, and exactly-once completion event.
     #[must_use]
     pub fn retry_reqwest_default(mut self) -> Self {
         self.config.application_retry = ApplicationRetry::ReqwestDefault;
@@ -184,7 +193,8 @@ impl HttpConfigBuilder {
         self
     }
 
-    /// Retains a root-certificate PEM for parsing during client construction.
+    /// Retains a root-certificate PEM for both application and provider client
+    /// construction.
     #[cfg(feature = "default-tls")]
     #[must_use]
     pub fn add_root_certificate_pem(mut self, pem: impl Into<Vec<u8>>) -> Self {
@@ -226,6 +236,10 @@ impl HttpConfigBuilder {
     }
 
     /// Selects an application-owned native Reqwest retry builder.
+    ///
+    /// Native retry may perform multiple physical sends inside one visible
+    /// Concord attempt. Those sends share one limiter admission, lifecycle-hook
+    /// accounting unit, and exactly-once completion event.
     #[cfg(feature = "dangerous-custom-retry")]
     #[must_use]
     pub fn dangerous_custom_retry(

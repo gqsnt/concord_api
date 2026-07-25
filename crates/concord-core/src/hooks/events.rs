@@ -17,7 +17,8 @@ pub struct BeforeSend<'a> {
     pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
-    /// Sanitized logical URL with no native-only authentication.
+    /// Credential-sanitized logical URL. Public values may still contain
+    /// operational identifiers or personally identifiable information.
     pub safe_url: &'a str,
     /// Zero-based page index; direct requests use zero.
     pub page_index: u32,
@@ -42,7 +43,8 @@ pub struct ResponseHeadEvent<'a> {
     pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
-    /// Sanitized logical URL with no native-only authentication.
+    /// Credential-sanitized logical URL. Public values may still contain
+    /// operational identifiers or personally identifiable information.
     pub safe_url: &'a str,
     /// Zero-based page index; direct requests use zero.
     pub page_index: u32,
@@ -65,7 +67,8 @@ pub struct CompletionEvent<'a> {
     pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
-    /// Sanitized logical URL with no native-only authentication.
+    /// Credential-sanitized logical URL. Public values may still contain
+    /// operational identifiers or personally identifiable information.
     pub safe_url: &'a str,
     /// Zero-based page index; direct requests use zero.
     pub page_index: u32,

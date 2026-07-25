@@ -33,8 +33,8 @@ rate_limit {
 Client, outer-scope, inner-scope, and endpoint rules are additive. With the
 default façade features, Concord installs the downstream governor
 implementation. Without a configured/default limiter, a non-empty plan fails
-closed before credentials, body work, or transport. A user-supplied limiter
-always wins.
+closed during client construction, before a request lifecycle can begin. A
+user-supplied limiter always wins.
 
 Limiters and observers receive safe semantic plans, keys, and response-head
 context—not native requests, responses, or credentials. Key preparation and
@@ -49,6 +49,11 @@ response-head hook. A limiter error or timeout prevents that hook and any
 challenge, status, or body handling. Disabling the operation timeout therefore
 trusts a custom limiter future not to remain pending indefinitely; custom
 limiter state and synchronous work are also application-owned bounds.
+
+`RateLimitPermit` is a zero-sized proof that one visible attempt was admitted.
+It is not an in-flight concurrency lease: Concord does not retain or drop it to
+signal request completion. A limiter that enforces concurrency must own that
+state and its release protocol itself.
 
 ## Running proof
 

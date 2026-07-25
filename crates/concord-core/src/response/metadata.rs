@@ -80,8 +80,9 @@ impl fmt::Debug for ExecutionMeta {
 /// byte streams, record streams, and application-defined outputs. Its `Debug`
 /// implementation is structural: it never formats `T`, the logical URL, or any
 /// response header value. Accessors intentionally expose the actual successful
-/// headers and logical URL to application code, which owns later logging and
-/// storage.
+/// headers and credential-sanitized logical URL to application code, which owns
+/// later logging and storage. Public URL values may still contain operational
+/// identifiers or personally identifiable information.
 pub struct ApiResponse<T> {
     url: Url,
     status: StatusCode,
@@ -112,7 +113,8 @@ impl<T> ApiResponse<T> {
     }
 
     #[must_use]
-    /// Returns the logical URL without native-only authentication.
+    /// Returns the credential-sanitized logical URL. Public values may still
+    /// contain operational identifiers or personally identifiable information.
     pub const fn url(&self) -> &Url {
         &self.url
     }
@@ -169,11 +171,12 @@ impl<T> fmt::Debug for ApiResponse<T> {
 /// A complete bounded successful response whose declared decoder was skipped.
 ///
 /// This value is available only with `dangerous-raw-response`. Its logical URL
-/// remains free of native-only authentication, and it never exposes a Reqwest
-/// response. Unlike ordinary decoded results, however, its actual successful
-/// headers and body bytes may contain secrets. Concord excludes those values
-/// from its own automatic diagnostics; callers assume responsibility for all
-/// later logging, formatting, storage, and disclosure.
+/// is credential-sanitized, and it never exposes a Reqwest response. Public URL
+/// values may still contain operational identifiers or personally identifiable
+/// information. Unlike ordinary decoded results, its actual successful headers
+/// and body bytes may contain secrets. Concord excludes those values from its
+/// own automatic diagnostics; callers assume responsibility for all later
+/// logging, formatting, storage, and disclosure.
 ///
 /// Fields are intentionally private:
 ///
@@ -215,7 +218,8 @@ impl RawResponse {
     }
 
     #[must_use]
-    /// Returns the logical URL without native-only authentication.
+    /// Returns the credential-sanitized logical URL. Public values may still
+    /// contain operational identifiers or personally identifiable information.
     pub fn url(&self) -> &Url {
         &self.url
     }

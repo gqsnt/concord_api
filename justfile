@@ -46,6 +46,12 @@ fixtures:
 docs:
     cargo run --locked -p concord-xtask -- docs --locked
     cargo test --workspace --doc --all-features --locked
+    cargo rustdoc -p concord-core --no-default-features --locked -- -D warnings
+    cargo rustdoc -p concord-extras --no-default-features --locked -- -D warnings
+    cargo rustdoc -p concord --no-default-features --locked -- -D warnings
+    cargo rustdoc -p concord --features csv --locked -- -D warnings
+    cargo rustdoc -p concord --features json --locked -- -D warnings
+    cargo rustdoc -p concord --features dangerous-raw-response --locked -- -D warnings
     cargo rustdoc -p concord --all-features --locked -- -D warnings
     cargo rustdoc -p concord-core --all-features --locked -- -D warnings
     cargo rustdoc -p concord-extras --all-features --locked -- -D warnings

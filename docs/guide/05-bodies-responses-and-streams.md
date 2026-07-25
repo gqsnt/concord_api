@@ -26,6 +26,16 @@ bodies, provider responses, and pagination accumulation use separate limits.
 No extension receives a native transport response or can introduce a new
 unbounded acquisition mode.
 
+The endpoint deadline governs opening a returned `ByteStream`, not later
+caller-driven polling. Stream polling remains cumulatively byte-bounded but
+can wait independently of that endpoint deadline. When liveness needs a
+polling or whole-download deadline, wrap stream consumption in the timeout or
+cancellation primitive owned by the calling runtime.
+
+Wire and staging limits bound Concord-owned bytes, not the allocation size of
+the decoded application value. Custom decoders and response specifications
+must bound their own CPU, memory, state, and side effects.
+
 ## Configuring CSV records
 
 `Csv<T>` remains header-bearing, comma-delimited CSV. The record type stays
@@ -72,6 +82,11 @@ embedded newlines, ignored empty physical lines, an optional final newline,
 redacted errors, and a one-MiB staged-record limit. They all accept and validate
 `text/csv`, including valid parameters. `TabDelimiter` changes parsing only; it
 does not select `text/tab-separated-values`.
+
+CSV width acceptance is target-type-driven. Structs, tuples, and tuple structs
+usually reject incompatible widths through deserialization, while
+sequence-like targets such as `Vec<String>` may accept varying widths. Concord
+does not impose a separate global cross-record width check.
 
 Use `.response().await` when response metadata is required. Use the ordinary
 await terminal for the declared output. The bounded raw response terminal is

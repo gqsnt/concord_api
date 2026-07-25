@@ -111,6 +111,10 @@ impl RequestBodyMetadata {
 /// independent requests may overlap. Inputs may be sensitive; implementations
 /// own their logging, storage, CPU, memory, metric cardinality, and external
 /// I/O behavior.
+///
+/// Ordinary complete buffered encoders should implement
+/// [`EncodeBody`](crate::codec::EncodeBody) instead; Concord supplies this
+/// specification through a blanket implementation.
 pub trait RequestBodySpec: Send + Sync + 'static {
     /// Application input stored by a pending request.
     type Input: Send + 'static;

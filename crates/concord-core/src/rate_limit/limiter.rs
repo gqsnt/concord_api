@@ -18,7 +18,8 @@ pub struct RateLimitRequest<'a> {
     pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
-    /// Sanitized logical URL.
+    /// Credential-sanitized logical URL. Public values may still contain
+    /// operational identifiers or personally identifiable information.
     pub safe_url: &'a str,
     /// Final logical host when one exists.
     pub host: Option<&'a str>,
@@ -71,7 +72,10 @@ pub trait RateLimiter: Send + Sync + 'static {
         DEFAULT_RATE_LIMIT_KEY_BYTES
     }
 
-    /// Acquires authority for exactly one visible Concord attempt.
+    /// Acquires admission for exactly one visible Concord attempt.
+    ///
+    /// The returned [`RateLimitPermit`] is a proof of admission, not a
+    /// concurrency lease retained until request completion.
     fn acquire<'a>(
         &'a self,
         request: RateLimitRequest<'a>,
@@ -110,7 +114,8 @@ pub struct RateLimitResponseHead<'a> {
     pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
-    /// Sanitized logical URL.
+    /// Credential-sanitized logical URL. Public values may still contain
+    /// operational identifiers or personally identifiable information.
     pub safe_url: &'a str,
     /// Final logical host when one exists.
     pub host: Option<&'a str>,

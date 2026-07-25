@@ -19,6 +19,13 @@ timing where appropriate. They do not contain credentials, protected
 authentication headers/query values, provider payloads, native requests or
 responses, response bodies, or body-factory output.
 
+The URL on these surfaces is a **credential-sanitized URL**: native-only
+authentication query material is absent or redacted. It is not an anonymized
+URL. Public path and query values can still contain account identifiers,
+resource names, operational identifiers, or other personally identifiable
+information, so applications must apply their own logging and retention
+policy.
+
 Planning is deliberately not an exact request preview. It builds the real
 public head, then stops before hooks, credentials, limiter acquisition, body
 encoding/factories, stream polling, transport, and completion.

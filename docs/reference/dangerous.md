@@ -32,7 +32,11 @@ let client = Api::builder()
 The policy remains inside private managed transport. It does not create a
 second executor and cannot bypass Concord status, authentication-recovery,
 acquisition, or completion behavior. It is distinct from the one-additional
-authentication recovery attempt.
+authentication recovery attempt. A native policy may perform multiple
+physical wire sends inside one visible Concord attempt. Those sends share that
+attempt's limiter admission, lifecycle-hook accounting, and exactly-once
+completion event; Concord does not report each physical send as a separate
+attempt.
 
 Retrying a non-replayable body is rejected by runtime replayability control.
 Keep policies finite and understand idempotency of the remote operation.

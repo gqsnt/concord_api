@@ -13,10 +13,13 @@ use crate::http::application::ApplicationByteStream;
 /// The endpoint operation is complete once this value is returned. Later
 /// caller-driven polling is not governed by the endpoint deadline. Every
 /// yielded chunk has passed the configured cumulative stream limit, measured
-/// post-decompression. Unknown chunks remain unpolled at return, and the first chunk that
-/// would exceed the cumulative limit is withheld. Native read failures become
-/// safe [`ApiError`] items. Dropping the stream cancels and drops the owned
-/// native body; later failures do not emit another completion event.
+/// post-decompression. Callers that require a polling or whole-download
+/// deadline must wrap consumption in their runtime's own timeout or
+/// cancellation primitive. Unknown chunks remain unpolled at return, and the
+/// first chunk that would exceed the cumulative limit is withheld. Native read
+/// failures become safe [`ApiError`] items. Dropping the stream cancels and
+/// drops the owned native body; later failures do not emit another completion
+/// event.
 ///
 /// `ByteStream` contains neither response metadata nor a media marker. Its
 /// `Debug` implementation does not inspect the body or any response data.

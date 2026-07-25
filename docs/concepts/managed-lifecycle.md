@@ -5,18 +5,24 @@ terminal is polled.
 
 The logical order is:
 
-1. validate operation and build the safe public request head;
-2. run the before-send hook with sanitized semantic data;
-3. resolve and acquire the ordered rate-limit plan;
-4. acquire credential material;
-5. materialize the bounded request body;
-6. build and send the private native request;
-7. sanitize the received response head and let the core-selected limiter
-   observe it under the remaining operation deadline;
-8. run the user response-head hook under that same deadline;
-9. perform at most one authentication-recovery attempt when allowed;
-10. classify status and acquire the selected sealed response mode;
-11. fix the result and run deterministic completion outside the deadline.
+1. build the public request head;
+2. compute structural request-body metadata;
+3. validate the head and body metadata against their finite limits;
+4. run the before-send hook before body materialization;
+5. materialize the managed body and prepare replay state;
+6. perform credential preflight without placing private material;
+7. acquire the ordered rate-limit plan;
+8. finalize credential acquisition;
+9. create the attempt's native body and request;
+10. place private authentication;
+11. perform the HTTP exchange;
+12. sanitize the received response head and let the core-selected limiter
+    observe it under the remaining operation deadline;
+13. run the user response-head hook under that same deadline;
+14. perform at most one authentication recovery when allowed, or classify
+    status and acquire the selected sealed response mode;
+15. fix the result;
+16. await deterministic completion outside the operation deadline.
 
 After a response arrives, limiter failure or timeout wins before a response
 hook can run. A response-hook failure or timeout wins before challenge, status,
@@ -28,10 +34,12 @@ endpoints, every pagination page, and dangerous bounded terminals use this one
 protocol. Provider HTTP is isolated support work rather than a second endpoint
 executor.
 
-Cancellation does not detach correctness work. Once result fixation reaches
-required completion, dropping the caller cannot leave a background task whose
-outcome determines the request result. Completion events contain safe
-operation, attempt, timing, and outcome data only.
+Cancellation does not detach correctness work. Completion is an awaited,
+delivery-blocking observation of an already-fixed result: it runs exactly once
+outside the operation deadline, has no automatic completion timeout, and can
+delay delivery if application code remains pending. This is a trusted
+application liveness boundary, not background correctness work. Completion
+events contain safe operation, attempt, timing, and outcome data only.
 
 The client produced by `.build()` is an immutable runtime snapshot. Clones
 share that snapshot, so hooks, limiter state, transport policy, and providers

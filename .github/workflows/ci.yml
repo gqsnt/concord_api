@@ -60,6 +60,12 @@ jobs:
       - run: cargo test --workspace --exclude concord-macros --lib --tests --examples --locked
       - run: cargo test --workspace --exclude concord-macros --lib --tests --examples --all-features --locked
       - run: cargo test --workspace --doc --all-features --locked
+      - run: cargo rustdoc -p concord-core --no-default-features --locked -- -D warnings
+      - run: cargo rustdoc -p concord-extras --no-default-features --locked -- -D warnings
+      - run: cargo rustdoc -p concord --no-default-features --locked -- -D warnings
+      - run: cargo rustdoc -p concord --features csv --locked -- -D warnings
+      - run: cargo rustdoc -p concord --features json --locked -- -D warnings
+      - run: cargo rustdoc -p concord --features dangerous-raw-response --locked -- -D warnings
       - run: cargo rustdoc -p concord --all-features --locked -- -D warnings
       - run: cargo rustdoc -p concord-core --all-features --locked -- -D warnings
       - run: cargo rustdoc -p concord-extras --all-features --locked -- -D warnings

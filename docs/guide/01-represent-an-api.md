@@ -42,6 +42,38 @@ POST replace(
 }
 ```
 
+## Value namespaces
+
+Request shaping uses four explicit namespaces:
+
+```text
+vars.locale      client value
+scope.region     visible enclosing-scope value
+ep.filename      current endpoint value
+secret.api_key   protected client secret
+```
+
+`vars`, visible `scope` values, and `ep` values may be used only where their
+lexical owner exists. A scope clause cannot refer to an endpoint value because
+the endpoint does not exist there. A `scope.name` reference must identify one
+visible scope input unambiguously; declarations with ambiguous visible names
+are rejected instead of choosing one. Optional values omit the shaping
+operation when absent, while defaults are evaluated at construction and can be
+restored by generated reset methods.
+
+Use `fmt[...]` to concatenate public atoms into one host label, path segment,
+query value, or header value:
+
+```rust
+path [fmt[scope.region, "-", ep.filename, ".json"]];
+```
+
+Only public `vars`, `scope`, and `ep` references can shape the public request.
+`secret` references are accepted only by credential definitions and never
+enter routes, public headers, descriptions, or credential-sanitized URLs.
+These restrictions make shaping deterministic and keep authentication
+material inside the private runtime.
+
 The exact accepted forms live in the [DSL reference](../reference/dsl.md).
 Declare runtime policy—hooks, a concrete limiter, transport settings, and
 operational observers—on the generated client builder, not in the remote

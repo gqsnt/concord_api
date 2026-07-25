@@ -47,7 +47,10 @@ pub struct Discard;
 /// Applications may select one of Concord's public marker types but cannot
 /// implement another mode or obtain a native or unbounded response body.
 pub trait ResponseMode: private::Sealed + Send + Sync + 'static {
-    /// Body value delivered after core-owned acquisition.
+    /// Semantic body value delivered after core-owned acquisition.
+    ///
+    /// This associated type is the input to [`ResponseBodySpec::from_body`];
+    /// it is not a public `ResponseBody` trait or a native transport response.
     type Body: Send + 'static;
 
     /// Safe structural acquisition category used by endpoint descriptions and
@@ -129,17 +132,20 @@ impl RawResponseMode for Discard {}
 
 /// Borrowed successful response-head facts supplied to a response extension.
 ///
-/// `url` is the logical application URL and never the native authenticated URL.
-/// Headers are the actual successful response headers and may contain sensitive
-/// values. The selected extension intentionally receives these documented
-/// inputs and owns their logging and storage behavior. No native response or
-/// transport handle is exposed.
+/// `url` is the credential-sanitized logical application URL and never the
+/// native authenticated URL. Public path/query values may still contain
+/// operational identifiers or personally identifiable information. Headers
+/// are the actual successful response headers and may contain sensitive values.
+/// The selected extension intentionally receives these documented inputs and
+/// owns their logging and storage behavior. No native response or transport
+/// handle is exposed.
 pub struct ResponseHead<'a> {
     /// Stable generated or runtime endpoint identity.
     pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
-    /// Logical application URL without native-only authentication.
+    /// Credential-sanitized logical application URL. Public values may still
+    /// contain operational identifiers or personally identifiable information.
     pub url: &'a Url,
     /// Successful HTTP status.
     pub status: StatusCode,
@@ -168,6 +174,8 @@ pub struct ResponseHead<'a> {
 /// Calls for independent responses may overlap. The successful head and mode
 /// body can contain sensitive application data; implementations own their
 /// logging, storage, CPU, memory, metric cardinality, and external I/O behavior.
+/// Concord's acquisition limit bounds retained wire bytes, not the heap size of
+/// the output value produced by `from_body`.
 pub trait ResponseBodySpec: Send + Sync + 'static {
     /// Successful semantic output.
     type Output: Send + 'static;

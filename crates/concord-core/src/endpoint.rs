@@ -445,10 +445,12 @@ impl fmt::Debug for EndpointDescription {
     }
 }
 
-/// A sanitized, owned projection of real public-head preparation.
+/// A credential-sanitized, owned projection of real public-head preparation.
 ///
 /// Planning never contains native requests, authentication material, protected
-/// rate-limit keys, encoded body bytes, or response values.
+/// rate-limit keys, encoded body bytes, or response values. Public URL values
+/// may still contain operational identifiers or personally identifiable
+/// information.
 pub struct SafeRequestPlan {
     description: EndpointDescription,
     safe_url: Arc<str>,
@@ -495,7 +497,8 @@ impl SafeRequestPlan {
         self.description.method()
     }
 
-    /// Returns the sanitized logical URL produced by real public-head shaping.
+    /// Returns the credential-sanitized logical URL produced by real
+    /// public-head shaping.
     #[must_use]
     pub fn safe_url(&self) -> &str {
         &self.safe_url

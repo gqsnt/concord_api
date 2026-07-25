@@ -33,15 +33,19 @@ pub enum DebugLevel {
 ///
 /// Calls may overlap. Result-determining hooks run under the operation
 /// deadline. Completion hooks observe an already-fixed result outside that
-/// deadline and must bound their own work. Hook metadata is sanitized but may
-/// still be operationally sensitive; implementations own all logging and
-/// storage. They must bound CPU, memory, retries, maps, queues, spawned tasks,
-/// metric cardinality, and external I/O. Hook futures are dropped on
-/// cancellation, without rollback of completed extension effects. Concord does
-/// not automatically time-limit completion callbacks or bound custom hook state,
-/// synchronous work before a future is returned, or application-created tasks.
+/// deadline. Completion is awaited exactly once and blocks delivery of that
+/// fixed result, so completion observers are a trusted application liveness
+/// boundary and must bound their own work. Hook metadata is credential-sanitized
+/// but may still contain operational identifiers or personally identifiable
+/// information; implementations own all logging and storage. They must bound
+/// CPU, memory, retries, maps, queues, spawned tasks, metric cardinality, and
+/// external I/O. Hook futures are dropped on cancellation, without rollback of
+/// completed extension effects. Concord does not automatically time-limit
+/// completion callbacks or bound custom hook state, synchronous work before a
+/// future is returned, or application-created tasks.
 pub trait RuntimeHooks: Send + Sync + 'static {
-    /// Approves or rejects one attempt before body work and native execution begin.
+    /// Approves or rejects one attempt before body materialization and native
+    /// execution begin.
     fn before_send<'a>(&'a self, _context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
         Box::pin(async { Ok(()) })
     }
@@ -55,12 +59,14 @@ pub trait RuntimeHooks: Send + Sync + 'static {
         Box::pin(async { Ok(()) })
     }
 
-    /// Observes one already-fixed direct request or page result outside its deadline.
+    /// Observes one already-fixed direct request or page result outside its
+    /// deadline and delays delivery until this future completes.
     fn on_complete<'a>(&'a self, _context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
         Box::pin(async {})
     }
 
-    /// Observes one already-fixed aggregate pagination result outside its deadline.
+    /// Observes one already-fixed aggregate pagination result outside its
+    /// deadline and delays delivery until this future completes.
     fn on_pagination_complete<'a>(
         &'a self,
         _context: PaginationCompletionEvent<'a>,

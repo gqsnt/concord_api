@@ -392,13 +392,17 @@ impl RateLimitPlan {
     }
 }
 
-/// Opaque proof that a limiter granted authority for one attempt.
+/// Opaque proof that a limiter admitted one visible Concord attempt.
+///
+/// This zero-sized value is not an in-flight concurrency lease. Concord does
+/// not retain it through HTTP execution or use its drop to notify the limiter.
+/// Custom concurrency limiting must own its state and release protocol.
 pub struct RateLimitPermit {
     _private: (),
 }
 
 impl RateLimitPermit {
-    /// Creates an opaque granted permit for a custom limiter.
+    /// Creates an opaque attempt-admission proof for a custom limiter.
     #[must_use]
     pub const fn granted() -> Self {
         Self { _private: () }

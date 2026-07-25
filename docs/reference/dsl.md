@@ -227,8 +227,8 @@ fmt["prefix-", ep.id, "-", scope.region]
 
 Calls, indexing, methods, macros, chained fields, secrets, and credentials are
 not public expressions. This prevents authentication material from entering
-safe URLs, public headers, descriptions, hooks, pagination identity, or
-generated rate-limit keys.
+credential-sanitized URLs, public headers, descriptions, hooks, pagination
+identity, or generated rate-limit keys.
 
 ### Host
 
@@ -357,7 +357,9 @@ let client = ExampleApi::builder()
 
 That builder method requires the explicit `dangerous-custom-retry` feature.
 Native transport retry remains inside one Concord attempt and is distinct from
-the one-additional-attempt authentication recovery limit.
+the one-additional-attempt authentication recovery limit. It may perform
+multiple physical wire sends inside one visible Concord attempt; those sends
+share one limiter admission, hook attempt, and completion accounting unit.
 
 Timeouts are available at client, scope, and endpoint layers:
 

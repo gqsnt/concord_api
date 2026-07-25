@@ -27,6 +27,12 @@ Custom extensions must bound their own internal CPU, memory, retries, maps,
 queues, storage, and synchronous work. Concord bounds semantic inputs and its
 own lifecycle but cannot infer arbitrary downstream implementation state.
 
+Concord-owned acquisition and staging are byte-bounded. Application-owned
+decoding, callback state, and callback work are trusted: a bounded wire body
+does not bound the heap size of the decoded object, and an extension can
+allocate or retain more state than its input bytes. The application must set
+its own limits for those transformations and side effects.
+
 Exact normative defaults and the setters that replace them are listed in
 [Limits](../reference/limits.md). Unsupported unbounded or partially managed
 forms are explicit in [Unsupported forms](../reference/unsupported.md).
