@@ -436,10 +436,13 @@ impl RateLimiter for ExtensionLimiter {
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 
-    fn observe<'a>(&'a self, response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
+    fn observe<'a>(
+        &'a self,
+        response: RateLimitResponse<'a>,
+    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
         EXTENSION_LIMITER_OBSERVATIONS.fetch_add(1, Ordering::SeqCst);
         let _status = response.status;
-        Box::pin(async {})
+        Box::pin(async { Ok(()) })
     }
 }
 
@@ -463,9 +466,12 @@ impl RuntimeHooks for ExtensionHooks {
         Box::pin(async { Ok(()) })
     }
 
-    fn on_response_head<'a>(&'a self, _context: ResponseHeadEvent<'a>) -> BoxFuture<'a, ()> {
+    fn on_response_head<'a>(
+        &'a self,
+        _context: ResponseHeadEvent<'a>,
+    ) -> BoxFuture<'a, Result<(), HookError>> {
         EXTENSION_HOOK_RESPONSE.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async {})
+        Box::pin(async { Ok(()) })
     }
 
     fn on_complete<'a>(&'a self, _context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {

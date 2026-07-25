@@ -42,10 +42,13 @@ impl RateLimiter for CapturingLimiter {
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 
-    fn observe<'a>(&'a self, response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
+    fn observe<'a>(
+        &'a self,
+        response: RateLimitResponse<'a>,
+    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
         assert_eq!(response.cooldown_cap, std::time::Duration::from_secs(60));
         self.observations.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async {})
+        Box::pin(async { Ok(()) })
     }
 }
 

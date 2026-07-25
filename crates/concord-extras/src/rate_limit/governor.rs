@@ -169,7 +169,10 @@ impl GovernorRateLimiter {
         })
     }
 
-    fn observe_response(&self, response: RateLimitResponse<'_>) {
+    fn observe_response(&self, response: RateLimitResponse<'_>) -> Result<(), RateLimitError> {
+        if self.internal_failed.load(AtomicOrdering::Acquire) {
+            return Err(internal_error());
+        }
         let RateLimitResponse {
             request,
             status,
@@ -195,9 +198,9 @@ impl GovernorRateLimiter {
             headers,
         };
         let Some(cooldown) = self.observer.observe(&response_head) else {
-            return;
+            return Ok(());
         };
-        self.apply_cooldown(host, plan, cooldown, cooldown_cap);
+        self.apply_cooldown(host, plan, cooldown, cooldown_cap)
     }
 
     fn apply_cooldown(
@@ -206,19 +209,22 @@ impl GovernorRateLimiter {
         plan: &RateLimitPlan,
         cooldown: Cooldown,
         cap: Duration,
-    ) {
+    ) -> Result<(), RateLimitError> {
         let duration = cooldown.duration.min(cap);
-        if duration.is_zero() || self.internal_failed.load(AtomicOrdering::Acquire) {
-            return;
+        if duration.is_zero() {
+            return Ok(());
+        }
+        if self.internal_failed.load(AtomicOrdering::Acquire) {
+            return Err(internal_error());
         }
         let now = tokio::time::Instant::now();
-        let Some(expiration) = now.checked_add(duration) else {
-            self.internal_failed.store(true, AtomicOrdering::Release);
-            return;
+        let expiration = match now.checked_add(duration) {
+            Some(expiration) => expiration,
+            None => return Err(self.fail_internal()),
         };
-        let Ok(mut state) = self.state.lock() else {
-            self.internal_failed.store(true, AtomicOrdering::Release);
-            return;
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(_) => return Err(self.fail_internal()),
         };
         state.prune(now, self.config.idle_ttl);
         let result = match cooldown.scope {
@@ -251,9 +257,16 @@ impl GovernorRateLimiter {
                 }
             }
         };
-        if result.is_err() {
+        if let Err(error) = result {
             self.internal_failed.store(true, AtomicOrdering::Release);
+            return Err(error);
         }
+        Ok(())
+    }
+
+    fn fail_internal(&self) -> RateLimitError {
+        self.internal_failed.store(true, AtomicOrdering::Release);
+        internal_error()
     }
 }
 
@@ -271,7 +284,10 @@ impl RateLimiter for GovernorRateLimiter {
         self.acquire_loop(request)
     }
 
-    fn observe<'a>(&'a self, response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
+    fn observe<'a>(
+        &'a self,
+        response: RateLimitResponse<'a>,
+    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
         Box::pin(async move { self.observe_response(response) })
     }
 }

@@ -130,7 +130,8 @@ async fn observe(
             headers: SanitizedHeaders::new(&headers),
             cooldown_cap: cap,
         })
-        .await;
+        .await
+        .expect("governor observes response");
 }
 
 async fn observe_headers(
@@ -156,7 +157,8 @@ async fn observe_headers(
             headers: SanitizedHeaders::new(headers),
             cooldown_cap: cap,
         })
-        .await;
+        .await
+        .expect("governor observes response headers");
 }
 
 #[test]
@@ -691,7 +693,8 @@ async fn cooldown_is_clamped_extended_never_shortened_and_zero_is_noop() {
             scope: CooldownScope::Client,
         },
         Duration::from_secs(10),
-    );
+    )
+    .expect("shorter cooldown update");
     let waiting = spawn_acquire(Arc::clone(&long), Arc::clone(&plan), Some("example.test"));
     tokio::time::advance(Duration::from_secs(7)).await;
     tokio::task::yield_now().await;
@@ -713,7 +716,8 @@ async fn cooldown_is_clamped_extended_never_shortened_and_zero_is_noop() {
             scope: CooldownScope::Client,
         },
         Duration::from_secs(60),
-    );
+    )
+    .expect("zero cooldown");
     acquire(&long, &plan, Some("example.test")).await;
 
     long.apply_cooldown(
@@ -724,7 +728,8 @@ async fn cooldown_is_clamped_extended_never_shortened_and_zero_is_noop() {
             scope: CooldownScope::Client,
         },
         Duration::from_secs(60),
-    );
+    )
+    .expect("initial extended cooldown");
     tokio::time::advance(Duration::from_secs(1)).await;
     long.apply_cooldown(
         Some("example.test"),
@@ -734,7 +739,8 @@ async fn cooldown_is_clamped_extended_never_shortened_and_zero_is_noop() {
             scope: CooldownScope::Client,
         },
         Duration::from_secs(60),
-    );
+    )
+    .expect("later extended cooldown");
     let extended = spawn_acquire(Arc::clone(&long), Arc::clone(&plan), Some("example.test"));
     tokio::time::advance(Duration::from_secs(5)).await;
     tokio::task::yield_now().await;
@@ -987,13 +993,24 @@ fn poisoned_state_fails_future_acquisition_closed() {
     }));
     let runtime = tokio::runtime::Runtime::new().expect("runtime");
     let empty = RateLimitPlan::empty();
-    runtime.block_on(observe(
-        &limiter,
-        &empty,
-        Some("example.test"),
-        StatusCode::OK,
-        Duration::from_secs(60),
-    ));
+    let headers = HeaderMap::new();
+    let observation_error = rate_error(
+        runtime.block_on(limiter.observe(RateLimitResponse {
+            request: RateLimitRequest {
+                endpoint: "RateApi::get",
+                method: &Method::GET,
+                safe_url: "https://example.test/get",
+                host: Some("example.test"),
+                page_index: 0,
+                plan: &empty,
+            },
+            status: StatusCode::OK,
+            headers: SanitizedHeaders::new(&headers),
+            cooldown_cap: Duration::from_secs(60),
+        })),
+        "poisoned state observation unexpectedly succeeded",
+    );
+    assert_eq!(observation_error.kind(), RateLimitErrorKind::Internal);
     assert!(limiter.internal_failed.load(AtomicOrdering::Acquire));
     let error = rate_error(
         runtime.block_on(limiter.acquire(RateLimitRequest {

@@ -46,9 +46,13 @@ pub trait RuntimeHooks: Send + Sync + 'static {
         Box::pin(async { Ok(()) })
     }
 
-    /// Observes one final response head before challenge or body handling.
-    fn on_response_head<'a>(&'a self, _context: ResponseHeadEvent<'a>) -> BoxFuture<'a, ()> {
-        Box::pin(async {})
+    /// Observes or rejects one final response head after core limiter
+    /// observation and before challenge, status, or body handling.
+    fn on_response_head<'a>(
+        &'a self,
+        _context: ResponseHeadEvent<'a>,
+    ) -> BoxFuture<'a, Result<(), HookError>> {
+        Box::pin(async { Ok(()) })
     }
 
     /// Observes one already-fixed direct request or page result outside its deadline.
@@ -112,9 +116,13 @@ mod tests {
             })
         }
 
-        fn on_response_head<'a>(&'a self, _context: ResponseHeadEvent<'a>) -> BoxFuture<'a, ()> {
+        fn on_response_head<'a>(
+            &'a self,
+            _context: ResponseHeadEvent<'a>,
+        ) -> BoxFuture<'a, Result<(), HookError>> {
             Box::pin(async move {
                 self.response.fetch_add(1, Ordering::SeqCst);
+                Ok(())
             })
         }
 
@@ -187,7 +195,8 @@ mod tests {
                 status: StatusCode::NO_CONTENT,
                 headers: SanitizedHeaders::new(&headers),
             })
-            .await;
+            .await
+            .expect("response hook");
         hooks
             .on_complete(CompletionEvent {
                 operation_id,

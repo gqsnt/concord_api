@@ -168,9 +168,12 @@ impl RateLimiter for CountingLimiter {
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 
-    fn observe<'a>(&'a self, _response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
+    fn observe<'a>(
+        &'a self,
+        _response: RateLimitResponse<'a>,
+    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
         self.effects.limiter_observe.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async {})
+        Box::pin(async { Ok(()) })
     }
 }
 
@@ -194,14 +197,17 @@ impl RuntimeHooks for CountingHooks {
         Box::pin(async { Ok(()) })
     }
 
-    fn on_response_head<'a>(&'a self, context: ResponseHeadEvent<'a>) -> BoxFuture<'a, ()> {
+    fn on_response_head<'a>(
+        &'a self,
+        context: ResponseHeadEvent<'a>,
+    ) -> BoxFuture<'a, Result<(), HookError>> {
         self.effects.response_head.fetch_add(1, Ordering::SeqCst);
         self.effects
             .lifecycle
             .lock()
             .expect("lifecycle capture")
             .push((context.endpoint.to_owned(), "response_head"));
-        Box::pin(async {})
+        Box::pin(async { Ok(()) })
     }
 
     fn on_complete<'a>(&'a self, context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {

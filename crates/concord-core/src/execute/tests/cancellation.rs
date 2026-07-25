@@ -335,6 +335,59 @@ async fn one_deadline_bounds_native_execution_and_response_head_hook() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn limiter_observation_timeout_is_operation_error() {
+    let executor = DeterministicExecutor::new();
+    let body_polls = Arc::new(AtomicUsize::new(0));
+    executor
+        .application()
+        .queue_response(
+            ScriptedResponse::success(Bytes::from_static(b"withheld"))
+                .body_poll_counter(Arc::clone(&body_polls)),
+        )
+        .expect("limiter-timeout response");
+    let observe_gate = Gate::closed();
+    let hooks = Arc::new(ProbeHooks::new());
+    let limiter = Arc::new(ProbeRateLimiter {
+        observe_gate: Some(observe_gate.clone()),
+        response_body_polls: Some(Arc::clone(&body_polls)),
+        ..ProbeRateLimiter::new()
+    });
+    let core = development_core(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new().rate_limiter(limiter.clone()),
+    );
+    let task =
+        tokio::spawn(async move { bytes_request(core).timeout(Duration::from_secs(2)).await });
+
+    observe_gate.wait_until_reached().await;
+    assert!(matches!(
+        hooks.records().as_slice(),
+        [LifecycleRecord::Before { .. }]
+    ));
+    assert_eq!(body_polls.load(Ordering::SeqCst), 0);
+    tokio::time::advance(Duration::from_secs(2)).await;
+    let error = task
+        .await
+        .expect("limiter-timeout join")
+        .expect_err("limiter observation timeout");
+    assert_eq!(error.category(), ErrorCategory::Timeout);
+    assert_eq!(limiter.observations.load(Ordering::SeqCst), 1);
+    assert_eq!(body_polls.load(Ordering::SeqCst), 0);
+    assert!(matches!(
+        hooks.records().as_slice(),
+        [
+            LifecycleRecord::Before { .. },
+            LifecycleRecord::Complete {
+                outcome: CompletionOutcome::Timeout,
+                status: Some(StatusCode::OK),
+                ..
+            }
+        ]
+    ));
+}
+
+#[tokio::test(start_paused = true)]
 async fn delayed_polling_consumes_no_budget_and_disable_timeout_is_distinct() {
     let delayed_executor = DeterministicExecutor::new();
     delayed_executor

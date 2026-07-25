@@ -510,10 +510,18 @@ async fn run_response_head_hook(
     let method = event.method;
     let future = core.hooks().on_response_head(event);
     check_deadline(deadline, &endpoint_id, method)?;
-    deadline
-        .run(future)
-        .await
-        .map_err(|_| timeout_error(&endpoint_id, method))
+    match deadline.run(future).await {
+        Err(_) => Err(timeout_error(&endpoint_id, method)),
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(error)) => {
+            drop(error);
+            Err(ApiError::classified(
+                endpoint_id,
+                method.clone(),
+                ErrorCategory::Hook,
+            ))
+        }
+    }
 }
 
 fn before_send_event<'a>(
@@ -659,8 +667,8 @@ async fn send_attempt(
     };
     core.debug_dispatcher(head.debug())
         .response_head(&response_event);
+    observe_rate_limit_response(core, context, deadline, head, status, response.headers()).await?;
     run_response_head_hook(core, deadline, head.endpoint_id(), response_event).await?;
-    observe_rate_limit_response(core, context, head, status, response.headers()).await;
     Ok(AttemptResponse {
         response,
         applied_auth,
@@ -727,10 +735,12 @@ async fn acquire_rate_limit_authority(
 async fn observe_rate_limit_response(
     core: &ClientCore,
     context: ExecutionContext,
+    deadline: OperationDeadline,
     head: &crate::request::PreparedHead,
     status: StatusCode,
     headers: &http::HeaderMap,
-) {
+) -> Result<(), ApiError> {
+    check_deadline(deadline, head.endpoint_id(), head.method())?;
     let response = RateLimitResponse {
         request: RateLimitRequest {
             endpoint: head.endpoint(),
@@ -744,7 +754,15 @@ async fn observe_rate_limit_response(
         headers: SanitizedHeaders::new(headers),
         cooldown_cap: core.rate_limit_cooldown_cap(),
     };
-    core.rate_limiter().observe(response).await;
+    let future = core.rate_limiter().observe(response);
+    check_deadline(deadline, head.endpoint_id(), head.method())?;
+    deadline
+        .run(future)
+        .await
+        .map_err(|_| timeout_error(head.endpoint_id(), head.method()))?
+        .map_err(|error| {
+            ApiError::rate_limit(head.endpoint_id().clone(), head.method().clone(), error)
+        })
 }
 
 fn check_deadline(

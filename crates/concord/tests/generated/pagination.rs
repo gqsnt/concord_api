@@ -552,7 +552,10 @@ impl RateLimiter for PaginationLimiterProbe {
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 
-    fn observe<'a>(&'a self, response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
+    fn observe<'a>(
+        &'a self,
+        response: RateLimitResponse<'a>,
+    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
         let request = response.request;
         let parts = request
             .plan
@@ -570,7 +573,7 @@ impl RateLimiter for PaginationLimiterProbe {
                 request.host.map(str::to_owned),
                 parts,
             ));
-        Box::pin(async {})
+        Box::pin(async { Ok(()) })
     }
 }
 
@@ -599,12 +602,16 @@ impl RuntimeHooks for PaginationHooks {
         })
     }
 
-    fn on_response_head<'a>(&'a self, context: ResponseHeadEvent<'a>) -> BoxFuture<'a, ()> {
+    fn on_response_head<'a>(
+        &'a self,
+        context: ResponseHeadEvent<'a>,
+    ) -> BoxFuture<'a, Result<(), HookError>> {
         Box::pin(async move {
             self.response
                 .lock()
                 .expect("response lock")
                 .push(format!("{} {:?}", context.safe_url, context.headers));
+            Ok(())
         })
     }
 

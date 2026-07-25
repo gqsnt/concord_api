@@ -73,6 +73,8 @@ pub enum RateLimitErrorKind {
     InvalidKey,
     /// Rate-limit authority could not be acquired.
     Acquire,
+    /// A received response head could not be observed.
+    Observe,
     /// Rate limiting failed an internal invariant.
     Internal,
 }

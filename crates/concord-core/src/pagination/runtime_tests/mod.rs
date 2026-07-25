@@ -22,7 +22,7 @@ use crate::auth::{
 use crate::body::{EmptyBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec};
 use crate::client::ClientCore;
 use crate::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext};
-use crate::error::{ApiError, ErrorCategory, PaginationErrorKind, RateLimitErrorKind};
+use crate::error::{ApiError, ErrorCategory, HookError, PaginationErrorKind, RateLimitErrorKind};
 use crate::hooks::{
     BeforeSend, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel,
     PaginationCompletionEvent, ResponseHeadEvent, RuntimeHooks,
@@ -495,7 +495,10 @@ impl RuntimeHooks for PaginationProbe {
         Box::pin(async { Ok(()) })
     }
 
-    fn on_response_head<'a>(&'a self, context: ResponseHeadEvent<'a>) -> BoxFuture<'a, ()> {
+    fn on_response_head<'a>(
+        &'a self,
+        context: ResponseHeadEvent<'a>,
+    ) -> BoxFuture<'a, Result<(), HookError>> {
         self.response.lock().expect("response lock").push((
             context.operation_id,
             context.parent_operation_id,
@@ -504,7 +507,7 @@ impl RuntimeHooks for PaginationProbe {
             context.status,
             format!("{} {:?}", context.safe_url, context.headers),
         ));
-        Box::pin(async {})
+        Box::pin(async { Ok(()) })
     }
 
     fn on_complete<'a>(&'a self, context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
@@ -574,12 +577,15 @@ impl RateLimiter for LimiterProbe {
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 
-    fn observe<'a>(&'a self, response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
+    fn observe<'a>(
+        &'a self,
+        response: RateLimitResponse<'a>,
+    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
         self.observations
             .lock()
             .expect("observation lock")
             .push((response.request.page_index, response.status));
-        Box::pin(async {})
+        Box::pin(async { Ok(()) })
     }
 }
 
@@ -625,12 +631,15 @@ impl RateLimiter for HostLimiterProbe {
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 
-    fn observe<'a>(&'a self, response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
+    fn observe<'a>(
+        &'a self,
+        response: RateLimitResponse<'a>,
+    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
         self.observations
             .lock()
             .expect("host limiter observations")
             .push(Self::capture(&response.request));
-        Box::pin(async {})
+        Box::pin(async { Ok(()) })
     }
 }
 

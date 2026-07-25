@@ -303,13 +303,17 @@ impl RateLimiter for CapturingLimiter {
         })
     }
 
-    fn observe<'a>(&'a self, response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
+    fn observe<'a>(
+        &'a self,
+        response: RateLimitResponse<'a>,
+    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
         let captured = Self::capture(response.request.plan);
         Box::pin(async move {
             self.observations
                 .lock()
                 .expect("observation capture lock")
                 .push(captured);
+            Ok(())
         })
     }
 }

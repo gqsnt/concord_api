@@ -46,12 +46,16 @@ pub struct RateLimitResponse<'a> {
 /// retries, maps, queues, spawned tasks, metric cardinality, and external I/O,
 /// and must treat resolved plan keys and logical hosts as potentially sensitive.
 /// Custom implementations are responsible for protecting those values in their
-/// own logs and storage. Acquisition is result-determining and runs under the
-/// operation deadline. Observation cannot replace the current result and is
-/// awaited before body processing; implementations must self-bound it because
-/// Concord checks the deadline only after it returns. Futures are dropped on
-/// cancellation, but completed reservations and external effects are not rolled
-/// back. Concord does not automatically bound custom limiter state or work.
+/// own logs and storage. Acquisition and response observation are
+/// correctness-relevant runtime authority and run under the remaining operation
+/// deadline. Observation cannot replace the received response, but its safe
+/// error or timeout determines the operation before the user response hook,
+/// challenge handling, status handling, or body acquisition. With the operation
+/// timeout disabled, a custom observation future is trusted and may remain
+/// pending. Futures are dropped on cancellation, but completed reservations and
+/// external effects are not rolled back. Concord does not automatically bound
+/// custom limiter state, synchronous work before a future is returned, or
+/// application-created tasks.
 pub trait RateLimiter: Send + Sync + 'static {
     /// Returns the maximum aggregate byte length accepted while preparing one
     /// resolved rate-limit key.
@@ -73,9 +77,12 @@ pub trait RateLimiter: Send + Sync + 'static {
         request: RateLimitRequest<'a>,
     ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>>;
 
-    /// Observes one sanitized response head without replacing that response.
-    fn observe<'a>(&'a self, _response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
-        Box::pin(async {})
+    /// Observes one sanitized response head before the user response hook.
+    fn observe<'a>(
+        &'a self,
+        _response: RateLimitResponse<'a>,
+    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
+        Box::pin(async { Ok(()) })
     }
 }
 

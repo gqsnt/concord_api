@@ -42,6 +42,14 @@ server-directed cooldowns are bounded. Exact syntax is in the
 [DSL reference](../reference/dsl.md#rate-limits); defaults are in
 [Limits](../reference/limits.md).
 
+Limiter acquisition and response observation are correctness authority. After
+each native response, Concord sanitizes the head, awaits limiter observation
+under the remaining operation deadline, and only then runs the user
+response-head hook. A limiter error or timeout prevents that hook and any
+challenge, status, or body handling. Disabling the operation timeout therefore
+trusts a custom limiter future not to remain pending indefinitely; custom
+limiter state and synchronous work are also application-owned bounds.
+
 ## Running proof
 
 The importable

@@ -1086,6 +1086,7 @@ struct ProbeHooks {
     response_gate: Option<Gate>,
     completion_gate: Option<Gate>,
     veto: AtomicBool,
+    response_fail: bool,
     completion_returned: AtomicUsize,
 }
 
@@ -1100,16 +1101,26 @@ struct LimiterRequestRecord {
     key_values: Vec<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct LimiterResponseRecord {
+    safe_url: String,
+    status: StatusCode,
+    headers: String,
+}
+
 struct ProbeRateLimiter {
     acquisitions: AtomicUsize,
     observations: AtomicUsize,
+    learned_cooldown: AtomicBool,
     requests: Mutex<Vec<LimiterRequestRecord>>,
+    responses: Mutex<Vec<LimiterResponseRecord>>,
     response_cooldown_caps: Mutex<Vec<Duration>>,
     trace: Option<Arc<Mutex<Vec<String>>>>,
     acquire_gate: Option<Gate>,
     observe_gate: Option<Gate>,
     response_body_polls: Option<Arc<AtomicUsize>>,
     fail: bool,
+    observe_fail: bool,
     key_limit: usize,
 }
 
@@ -1144,12 +1155,15 @@ impl RuntimeHooks for AutomaticSurfaceHooks {
         Box::pin(async { Ok(()) })
     }
 
-    fn on_response_head<'a>(&'a self, context: ResponseHeadEvent<'a>) -> BoxFuture<'a, ()> {
+    fn on_response_head<'a>(
+        &'a self,
+        context: ResponseHeadEvent<'a>,
+    ) -> BoxFuture<'a, Result<(), HookError>> {
         self.entries
             .lock()
             .expect("automatic hook entries")
             .push(format!("response-head {context:?}"));
-        Box::pin(async {})
+        Box::pin(async { Ok(()) })
     }
 
     fn on_complete<'a>(&'a self, context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
@@ -1207,7 +1221,10 @@ impl RateLimiter for AutomaticSurfaceLimiter {
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 
-    fn observe<'a>(&'a self, response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
+    fn observe<'a>(
+        &'a self,
+        response: RateLimitResponse<'a>,
+    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
         self.observations.fetch_add(1, Ordering::SeqCst);
         self.entries
             .lock()
@@ -1221,7 +1238,7 @@ impl RateLimiter for AutomaticSurfaceLimiter {
                 response.status,
                 response.headers,
             ));
-        Box::pin(async {})
+        Box::pin(async { Ok(()) })
     }
 }
 
@@ -1230,19 +1247,26 @@ impl ProbeRateLimiter {
         Self {
             acquisitions: AtomicUsize::new(0),
             observations: AtomicUsize::new(0),
+            learned_cooldown: AtomicBool::new(false),
             requests: Mutex::new(Vec::new()),
+            responses: Mutex::new(Vec::new()),
             response_cooldown_caps: Mutex::new(Vec::new()),
             trace: None,
             acquire_gate: None,
             observe_gate: None,
             response_body_polls: None,
             fail: false,
+            observe_fail: false,
             key_limit: crate::rate_limit::DEFAULT_RATE_LIMIT_KEY_BYTES,
         }
     }
 
     fn request_records(&self) -> Vec<LimiterRequestRecord> {
         self.requests.lock().expect("limiter requests").clone()
+    }
+
+    fn response_records(&self) -> Vec<LimiterResponseRecord> {
+        self.responses.lock().expect("limiter responses").clone()
     }
 }
 
@@ -1299,8 +1323,25 @@ impl RateLimiter for ProbeRateLimiter {
         })
     }
 
-    fn observe<'a>(&'a self, response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
+    fn observe<'a>(
+        &'a self,
+        response: RateLimitResponse<'a>,
+    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
         self.observations.fetch_add(1, Ordering::SeqCst);
+        if response.status == StatusCode::TOO_MANY_REQUESTS
+            && response.headers.get(&http::header::RETRY_AFTER)
+                == Some(crate::redaction::SanitizedHeaderValue::Text("5"))
+        {
+            self.learned_cooldown.store(true, Ordering::SeqCst);
+        }
+        self.responses
+            .lock()
+            .expect("limiter responses")
+            .push(LimiterResponseRecord {
+                safe_url: response.request.safe_url.to_owned(),
+                status: response.status,
+                headers: format!("{:?}", response.headers),
+            });
         self.response_cooldown_caps
             .lock()
             .expect("response cooldown caps")
@@ -1322,6 +1363,13 @@ impl RateLimiter for ProbeRateLimiter {
             if let Some(gate) = &self.observe_gate {
                 gate.wait().await;
             }
+            if self.observe_fail {
+                Err(RateLimitError::new(
+                    crate::error::RateLimitErrorKind::Observe,
+                ))
+            } else {
+                Ok(())
+            }
         })
     }
 }
@@ -1335,6 +1383,7 @@ impl ProbeHooks {
             response_gate: None,
             completion_gate: None,
             veto: AtomicBool::new(false),
+            response_fail: false,
             completion_returned: AtomicUsize::new(0),
         }
     }
@@ -1380,7 +1429,10 @@ impl RuntimeHooks for ProbeHooks {
         })
     }
 
-    fn on_response_head<'a>(&'a self, context: ResponseHeadEvent<'a>) -> BoxFuture<'a, ()> {
+    fn on_response_head<'a>(
+        &'a self,
+        context: ResponseHeadEvent<'a>,
+    ) -> BoxFuture<'a, Result<(), HookError>> {
         self.push_trace("on_response_head");
         self.records
             .lock()
@@ -1392,6 +1444,11 @@ impl RuntimeHooks for ProbeHooks {
         Box::pin(async move {
             if let Some(gate) = &self.response_gate {
                 gate.wait().await;
+            }
+            if self.response_fail {
+                Err(HookError::new("safe response-hook rejection"))
+            } else {
+                Ok(())
             }
         })
     }

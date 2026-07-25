@@ -45,6 +45,13 @@ Builder errors distinguish a missing public value, protected secret, or
 credential provider without including its value. Provider and extension error
 messages cross a safe-text contract and must not include protected inputs.
 
+For a received response, error precedence is core limiter observation, then the
+user response-head hook, then authentication challenge, status, and acquisition
+handling. A limiter observation failure is `ErrorCategory::RateLimit` with
+`RateLimitErrorKind::Observe`; an observation timeout is
+`ErrorCategory::Timeout`. Both retain the final response status for completion
+metadata without acquiring the response body.
+
 Debug/display representations are redaction-aware but are not intended as
 stable parsing formats. Treat the typed category/kind accessors as the
 compatibility contract.

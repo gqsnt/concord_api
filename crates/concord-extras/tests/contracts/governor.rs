@@ -61,7 +61,8 @@ async fn downstream_governor_uses_public_contracts_and_core_cooldown_cap() {
             headers: SanitizedHeaders::new(&headers),
             cooldown_cap: Duration::from_secs(3),
         })
-        .await;
+        .await
+        .expect("public governor observation");
 
     let mut pending = Box::pin(limiter.acquire(request()));
     let waker = std::task::Waker::noop();

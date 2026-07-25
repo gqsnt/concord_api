@@ -266,7 +266,7 @@ async fn paginated_authentication_failure_keeps_its_ordinary_category_and_correl
 }
 
 #[tokio::test]
-async fn refresh_recovery_reuses_identity_reenters_full_attempt_and_keeps_secrets_native() {
+async fn challenge_recovery_still_observes_each_received_response_once() {
     const CHALLENGE_BODY: &[u8] = &[b'x'; 70_000];
     let executor = DeterministicExecutor::new();
     let challenge_body_polls = Arc::new(AtomicUsize::new(0));

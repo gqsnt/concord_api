@@ -10,8 +10,11 @@ impl RuntimeHooks for PublicHooks {
         Box::pin(async { Ok(()) })
     }
 
-    fn on_response_head<'a>(&'a self, _context: ResponseHeadEvent<'a>) -> BoxFuture<'a, ()> {
-        Box::pin(async {})
+    fn on_response_head<'a>(
+        &'a self,
+        _context: ResponseHeadEvent<'a>,
+    ) -> BoxFuture<'a, Result<(), HookError>> {
+        Box::pin(async { Ok(()) })
     }
 
     fn on_complete<'a>(&'a self, _context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {

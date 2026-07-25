@@ -250,9 +250,12 @@ impl RuntimeHooks for CountingHooks {
         Box::pin(async { Ok(()) })
     }
 
-    fn on_response_head<'a>(&'a self, _context: ResponseHeadEvent<'a>) -> BoxFuture<'a, ()> {
+    fn on_response_head<'a>(
+        &'a self,
+        _context: ResponseHeadEvent<'a>,
+    ) -> BoxFuture<'a, Result<(), HookError>> {
         self.response.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async {})
+        Box::pin(async { Ok(()) })
     }
 
     fn on_complete<'a>(&'a self, context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {

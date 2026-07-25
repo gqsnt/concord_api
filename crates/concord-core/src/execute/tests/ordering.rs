@@ -1,7 +1,7 @@
 use super::*;
 
 #[tokio::test]
-async fn custom_limiter_context_and_response_observation_use_one_ordered_attempt() {
+async fn limiter_observes_before_user_response_hook() {
     const KEY_SENTINEL: &str = "controlled-custom-key-5e8c7f2b";
     let executor = DeterministicExecutor::new();
     let body_polls = Arc::new(AtomicUsize::new(0));
@@ -41,12 +41,7 @@ async fn custom_limiter_context_and_response_observation_use_one_ordered_attempt
     assert_eq!(body_polls.load(Ordering::SeqCst), 0);
     assert_eq!(
         trace.lock().expect("trace").as_slice(),
-        [
-            "before_send",
-            "limiter acquire",
-            "on_response_head",
-            "limiter observe",
-        ]
+        ["before_send", "limiter acquire", "limiter observe"]
     );
     observe_gate.open();
     assert_eq!(
@@ -55,6 +50,16 @@ async fn custom_limiter_context_and_response_observation_use_one_ordered_attempt
     );
     assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 1);
     assert_eq!(limiter.observations.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        trace.lock().expect("trace").as_slice(),
+        [
+            "before_send",
+            "limiter acquire",
+            "limiter observe",
+            "on_response_head",
+            "on_complete",
+        ]
+    );
     assert_eq!(
         limiter
             .response_cooldown_caps
@@ -85,6 +90,167 @@ async fn custom_limiter_context_and_response_observation_use_one_ordered_attempt
         !ordinary_diagnostics.contains(KEY_SENTINEL),
         "resolved keys are visible only in the controlled custom-limiter capture"
     );
+}
+
+#[tokio::test]
+async fn limiter_learns_cooldown_when_user_hook_would_fail() {
+    let executor = DeterministicExecutor::new();
+    let body_polls = Arc::new(AtomicUsize::new(0));
+    let mut headers = http::HeaderMap::new();
+    headers.insert(
+        http::header::RETRY_AFTER,
+        http::HeaderValue::from_static("5"),
+    );
+    executor
+        .application()
+        .queue_response(
+            ScriptedResponse::status(
+                StatusCode::TOO_MANY_REQUESTS,
+                Bytes::from_static(b"withheld"),
+            )
+            .headers(headers)
+            .body_poll_counter(Arc::clone(&body_polls)),
+        )
+        .expect("cooldown response");
+    let hooks = Arc::new(ProbeHooks {
+        response_fail: true,
+        ..ProbeHooks::new()
+    });
+    let limiter = Arc::new(ProbeRateLimiter {
+        response_body_polls: Some(Arc::clone(&body_polls)),
+        ..ProbeRateLimiter::new()
+    });
+    let core = development_core(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new().rate_limiter(limiter.clone()),
+    );
+
+    let error = bytes_request(core)
+        .await
+        .expect_err("response hook rejection");
+    assert_eq!(error.category(), ErrorCategory::Hook);
+    assert!(limiter.learned_cooldown.load(Ordering::SeqCst));
+    assert_eq!(limiter.observations.load(Ordering::SeqCst), 1);
+    assert_eq!(body_polls.load(Ordering::SeqCst), 0);
+    assert!(matches!(
+        hooks.records().as_slice(),
+        [
+            LifecycleRecord::Before { .. },
+            LifecycleRecord::Response(_, StatusCode::TOO_MANY_REQUESTS),
+            LifecycleRecord::Complete {
+                outcome: CompletionOutcome::Hook,
+                status: Some(StatusCode::TOO_MANY_REQUESTS),
+                ..
+            }
+        ]
+    ));
+}
+
+#[tokio::test]
+async fn limiter_observation_error_prevents_user_hook() {
+    const RESPONSE_SECRET: &str = "response-observation-secret-4f6a";
+    let executor = DeterministicExecutor::new();
+    let body_polls = Arc::new(AtomicUsize::new(0));
+    let mut headers = http::HeaderMap::new();
+    headers.insert(
+        http::header::AUTHORIZATION,
+        http::HeaderValue::from_static(RESPONSE_SECRET),
+    );
+    executor
+        .application()
+        .queue_response(
+            ScriptedResponse::success(Bytes::from_static(b"withheld"))
+                .headers(headers)
+                .body_poll_counter(Arc::clone(&body_polls)),
+        )
+        .expect("observation-error response");
+    let hooks = Arc::new(ProbeHooks {
+        response_fail: true,
+        ..ProbeHooks::new()
+    });
+    let limiter = Arc::new(ProbeRateLimiter {
+        response_body_polls: Some(Arc::clone(&body_polls)),
+        observe_fail: true,
+        ..ProbeRateLimiter::new()
+    });
+    let core = development_core(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new().rate_limiter(limiter.clone()),
+    );
+
+    let error = bytes_request(core)
+        .await
+        .expect_err("limiter observation failure");
+    assert_eq!(error.category(), ErrorCategory::RateLimit);
+    assert_eq!(
+        error.rate_limit_kind(),
+        Some(crate::error::RateLimitErrorKind::Observe)
+    );
+    assert_eq!(limiter.observations.load(Ordering::SeqCst), 1);
+    assert_eq!(body_polls.load(Ordering::SeqCst), 0);
+    assert!(matches!(
+        hooks.records().as_slice(),
+        [
+            LifecycleRecord::Before { .. },
+            LifecycleRecord::Complete {
+                outcome: CompletionOutcome::RateLimit,
+                status: Some(StatusCode::OK),
+                ..
+            }
+        ]
+    ));
+    let mut source: Option<&(dyn std::error::Error + 'static)> = Some(&error);
+    while let Some(current) = source {
+        assert!(!current.to_string().contains(RESPONSE_SECRET));
+        assert!(!format!("{current:?}").contains(RESPONSE_SECRET));
+        source = current.source();
+    }
+}
+
+#[tokio::test]
+async fn limiter_observation_uses_sanitized_head() {
+    const RESPONSE_SECRET: &str = "response-header-secret-a31d";
+    const PUBLIC_VALUE: &str = "public-response-marker-920b";
+    let executor = DeterministicExecutor::new();
+    let mut headers = http::HeaderMap::new();
+    headers.insert(
+        http::header::AUTHORIZATION,
+        http::HeaderValue::from_static(RESPONSE_SECRET),
+    );
+    headers.insert(
+        http::HeaderName::from_static("x-observation-marker"),
+        http::HeaderValue::from_static(PUBLIC_VALUE),
+    );
+    executor
+        .application()
+        .queue_response(
+            ScriptedResponse::success(Bytes::from_static(b"sanitized")).headers(headers),
+        )
+        .expect("sanitized response");
+    let limiter = Arc::new(ProbeRateLimiter::new());
+    let core = development_core(
+        &executor,
+        Arc::new(ProbeHooks::new()),
+        RuntimeConfigBuilder::new().rate_limiter(limiter.clone()),
+    );
+
+    assert_eq!(
+        bytes_request(core).await.expect("sanitized response"),
+        Bytes::from_static(b"sanitized")
+    );
+    let responses = limiter.response_records();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(
+        responses[0].safe_url,
+        "http://execution.example.test/v1/health/bytes"
+    );
+    assert_eq!(responses[0].status, StatusCode::OK);
+    assert!(responses[0].headers.contains("authorization"));
+    assert!(responses[0].headers.contains("Redacted"));
+    assert!(responses[0].headers.contains(PUBLIC_VALUE));
+    assert!(!responses[0].headers.contains(RESPONSE_SECRET));
 }
 
 #[cfg(feature = "dangerous-raw-response")]

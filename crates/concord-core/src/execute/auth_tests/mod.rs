@@ -704,7 +704,10 @@ impl RuntimeHooks for AuthHooks {
         })
     }
 
-    fn on_response_head<'a>(&'a self, context: ResponseHeadEvent<'a>) -> BoxFuture<'a, ()> {
+    fn on_response_head<'a>(
+        &'a self,
+        context: ResponseHeadEvent<'a>,
+    ) -> BoxFuture<'a, Result<(), crate::error::HookError>> {
         self.response.lock().expect("response records").push((
             context.operation_id,
             context.recovery_index,
@@ -735,7 +738,7 @@ impl RuntimeHooks for AuthHooks {
                 .set(access_token(NEWER))
                 .expect("response-hook replacement");
         }
-        Box::pin(async {})
+        Box::pin(async { Ok(()) })
     }
 
     fn on_complete<'a>(&'a self, context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
@@ -1008,7 +1011,10 @@ impl RateLimiter for AuthRateLimiter {
         })
     }
 
-    fn observe<'a>(&'a self, _response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
+    fn observe<'a>(
+        &'a self,
+        _response: RateLimitResponse<'a>,
+    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
         self.observations.fetch_add(1, Ordering::SeqCst);
         if let Some((selector, records)) = &self.observed_selector {
             records
@@ -1016,7 +1022,7 @@ impl RateLimiter for AuthRateLimiter {
                 .expect("limiter observation records")
                 .push(selector.is_set());
         }
-        Box::pin(async {})
+        Box::pin(async { Ok(()) })
     }
 }
 
