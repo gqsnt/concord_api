@@ -231,6 +231,30 @@ pub(super) fn validate_public_header_name(name: &LitStr) -> syn::Result<()> {
     Ok(())
 }
 
+pub(super) fn validate_auth_header_name(name: &LitStr) -> syn::Result<()> {
+    validate_public_header_name(name)?;
+    validate_auth_placement_name_bytes(name, "header")
+}
+
+pub(super) fn validate_auth_query_name(name: &LitStr) -> syn::Result<()> {
+    if name.value().is_empty() {
+        return Err(name
+            .span()
+            .error("an authentication query name cannot be empty"));
+    }
+    validate_auth_placement_name_bytes(name, "query")
+}
+
+fn validate_auth_placement_name_bytes(name: &LitStr, kind: &str) -> syn::Result<()> {
+    if name.value().len() > crate::MAX_AUTH_PLACEMENT_NAME_BYTES {
+        return Err(name.span().error(format!(
+            "an authentication {kind} name permits at most {} UTF-8 bytes",
+            crate::MAX_AUTH_PLACEMENT_NAME_BYTES
+        )));
+    }
+    Ok(())
+}
+
 pub(super) fn insert_unique_value(
     names: &mut HashSet<String>,
     value: &ValueDecl,

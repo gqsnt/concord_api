@@ -32,18 +32,24 @@ pub(super) fn convert_credentials(
         .enumerate()
         .map(|(index, secret)| (canonical_ident(&secret.name), index))
         .collect::<HashMap<_, _>>();
+    let mut used_secrets = vec![false; secrets.len()];
+    let mut resolve_secret = |secret: &Ident| {
+        let index = secret_index[&canonical_ident(secret)];
+        used_secrets[index] = true;
+        index
+    };
     let mut credentials = Vec::new();
     for credential in block.credentials {
         let source = match credential.source {
             SourceCredentialSource::ApiKey { secret } => CredentialSource::ApiKey {
-                secret: secret_index[&canonical_ident(&secret)],
+                secret: resolve_secret(&secret),
             },
             SourceCredentialSource::Bearer { secret } => CredentialSource::Bearer {
-                secret: secret_index[&canonical_ident(&secret)],
+                secret: resolve_secret(&secret),
             },
             SourceCredentialSource::Basic { username, password } => CredentialSource::Basic {
-                username: secret_index[&canonical_ident(&username)],
-                password: secret_index[&canonical_ident(&password)],
+                username: resolve_secret(&username),
+                password: resolve_secret(&password),
             },
             SourceCredentialSource::Endpoint { path } => CredentialSource::Endpoint {
                 path,
@@ -55,6 +61,22 @@ pub(super) fn convert_credentials(
             name: credential.name,
             source,
         });
+    }
+    let mut unused = secrets
+        .iter()
+        .zip(used_secrets)
+        .filter(|(_, used)| !used)
+        .map(|(secret, _)| {
+            secret.name.span().error(format!(
+                "secret `{}` is never used by a credential source",
+                canonical_ident(&secret.name)
+            ))
+        });
+    if let Some(mut error) = unused.next() {
+        for additional in unused {
+            error.combine(additional);
+        }
+        return Err(error);
     }
     Ok((secrets, credentials))
 }
@@ -351,8 +373,14 @@ pub(super) fn validate_credential_cycles(
 mod tests {
     use quote::quote;
 
+    use super::super::model::Api;
     use super::super::test_support;
     use super::*;
+
+    fn resolve(tokens: proc_macro2::TokenStream) -> syn::Result<Api> {
+        let source = crate::syntax::parse(tokens)?;
+        super::super::resolve(source)
+    }
 
     #[test]
     fn normalizes_generic_credential_sources_and_effective_auth() {
@@ -380,5 +408,110 @@ mod tests {
             endpoint.config.auth[0].challenge,
             ResolvedChallengePolicy::Never
         );
+    }
+
+    #[test]
+    fn unused_secret_is_rejected() {
+        let error = resolve(quote! {
+            client AuthApi {
+                base "https://example.test";
+                credentials {
+                    secret unused: String;
+                }
+            }
+            GET read() -> Bytes;
+        })
+        .err()
+        .expect("unused secret");
+
+        assert_eq!(
+            error.to_string(),
+            "secret `unused` is never used by a credential source"
+        );
+    }
+
+    #[test]
+    fn all_builtin_secret_uses_count_as_used() {
+        resolve(quote! {
+            client AuthApi {
+                base "https://example.test";
+                credentials {
+                    secret api_key: String;
+                    secret token: String;
+                    secret username: String;
+                    secret password: String;
+                    credential api = api_key(secret.api_key);
+                    credential bearer = bearer(secret.token);
+                    credential basic = basic(secret.username, secret.password);
+                }
+            }
+            GET read() -> Bytes;
+        })
+        .expect("all built-in credential sources consume their declared secrets");
+    }
+
+    #[test]
+    fn basic_username_and_password_each_count_as_used() {
+        resolve(quote! {
+            client AuthApi {
+                base "https://example.test";
+                credentials {
+                    secret username: String;
+                    secret password: String;
+                    credential basic = basic(secret.username, secret.password);
+                }
+            }
+            GET read() -> Bytes;
+        })
+        .expect("both Basic components consume their declared secrets");
+    }
+
+    #[test]
+    fn one_secret_used_by_multiple_credentials_is_valid() {
+        resolve(quote! {
+            client AuthApi {
+                base "https://example.test";
+                credentials {
+                    secret shared: String;
+                    credential first = api_key(secret.shared);
+                    credential second = api_key(secret.shared);
+                }
+            }
+            GET read() -> Bytes;
+        })
+        .expect("one declared secret may be shared by credentials");
+    }
+
+    #[test]
+    fn multiple_unused_secrets_report_deterministically() {
+        let error = resolve(quote! {
+            client AuthApi {
+                base "https://example.test";
+                credentials {
+                    secret first: String;
+                    secret used: String;
+                    secret second: String;
+                    credential bearer = bearer(secret.used);
+                }
+            }
+            GET read() -> Bytes;
+        })
+        .err()
+        .expect("multiple unused secrets");
+        let diagnostic = error.into_compile_error().to_string();
+        let first = diagnostic
+            .find("secret `first` is never used by a credential source")
+            .expect("first declaration diagnostic");
+        let second = diagnostic
+            .find("secret `second` is never used by a credential source")
+            .expect("second declaration diagnostic");
+
+        assert_eq!(
+            diagnostic
+                .matches("is never used by a credential source")
+                .count(),
+            2
+        );
+        assert!(first < second);
     }
 }

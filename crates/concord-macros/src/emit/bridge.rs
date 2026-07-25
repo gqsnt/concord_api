@@ -6,6 +6,7 @@ pub(super) const GENERATED_CONTRACT_VERSION: u32 = 25;
 pub(super) fn generated_contract_assertion() -> TokenStream {
     let version = GENERATED_CONTRACT_VERSION;
     let max_auth_placements = crate::MAX_AUTH_PLACEMENTS;
+    let max_auth_placement_name_bytes = crate::MAX_AUTH_PLACEMENT_NAME_BYTES;
     let max_rate_limit_id_bytes = crate::MAX_RATE_LIMIT_ID_BYTES;
     let max_rate_limit_windows_per_rule = crate::MAX_RATE_LIMIT_WINDOWS_PER_RULE;
     let max_rate_limit_rules_per_plan = crate::MAX_RATE_LIMIT_RULES_PER_PLAN;
@@ -14,6 +15,10 @@ pub(super) fn generated_contract_assertion() -> TokenStream {
         const _: () = assert!(
             __core::auth::MAX_AUTH_PLACEMENTS == #max_auth_placements,
             "Concord macro/core authentication placement limits differ",
+        );
+        const _: () = assert!(
+            __core::auth::MAX_AUTH_PLACEMENT_NAME_BYTES == #max_auth_placement_name_bytes,
+            "Concord macro/core authentication placement-name limits differ",
         );
         const _: () = assert!(
             __core::rate_limit::MAX_RATE_LIMIT_ID_BYTES == #max_rate_limit_id_bytes,
@@ -43,6 +48,7 @@ mod tests {
         assert!(output.contains(&GENERATED_CONTRACT_VERSION.to_string()));
         assert!(output.contains("__core :: auth :: MAX_AUTH_PLACEMENTS"));
         assert!(output.contains(&crate::MAX_AUTH_PLACEMENTS.to_string()));
+        assert!(output.contains("__core :: auth :: MAX_AUTH_PLACEMENT_NAME_BYTES"));
         assert!(output.contains("__core :: rate_limit :: MAX_RATE_LIMIT_ID_BYTES"));
         assert!(output.contains("__core :: rate_limit :: MAX_RATE_LIMIT_WINDOWS_PER_RULE"));
         assert!(output.contains("__core :: rate_limit :: MAX_RATE_LIMIT_RULES_PER_PLAN"));

@@ -8,7 +8,9 @@ use super::ast::{
     AuthChallenge, AuthOperation, AuthPlacement, AuthPlacementKind, CredentialDecl,
     CredentialSource, CredentialsBlock, SecretDecl,
 };
-use super::diagnostics::{SpanError, is_named_marker, validate_public_header_name};
+use super::diagnostics::{
+    SpanError, is_named_marker, validate_auth_header_name, validate_auth_query_name,
+};
 use super::keyword;
 use crate::semantic::surface::canonical_ident;
 
@@ -158,17 +160,13 @@ pub(super) fn parse_auth(input: ParseStream<'_>) -> syn::Result<AuthOperation> {
     } else if input.peek(keyword::header) {
         input.parse::<keyword::header>()?;
         let name: LitStr = input.parse()?;
-        validate_public_header_name(&name)?;
+        validate_auth_header_name(&name)?;
         input.parse::<Token![=]>()?;
         (AuthPlacementKind::Header(name), input.parse()?)
     } else if input.peek(keyword::query) {
         input.parse::<keyword::query>()?;
         let name: LitStr = input.parse()?;
-        if name.value().is_empty() {
-            return Err(name
-                .span()
-                .error("an authentication query name cannot be empty"));
-        }
+        validate_auth_query_name(&name)?;
         input.parse::<Token![=]>()?;
         (AuthPlacementKind::Query(name), input.parse()?)
     } else {
@@ -209,7 +207,11 @@ pub(super) fn parse_auth(input: ParseStream<'_>) -> syn::Result<AuthOperation> {
 
 #[cfg(test)]
 mod tests {
+    use proc_macro2::Span;
     use quote::quote;
+    use syn::LitStr;
+
+    use crate::MAX_AUTH_PLACEMENT_NAME_BYTES;
 
     #[test]
     fn parses_secret_sources_generic_providers_and_auth_placements() {
@@ -233,5 +235,62 @@ mod tests {
         assert_eq!(block.secrets.len(), 1);
         assert_eq!(block.credentials.len(), 2);
         assert!(source.client.layer.auth.is_some());
+    }
+
+    #[test]
+    fn auth_header_name_exact_256_bytes_passes() {
+        let value = "a".repeat(MAX_AUTH_PLACEMENT_NAME_BYTES);
+        let name = LitStr::new(&value, Span::call_site());
+
+        super::validate_auth_header_name(&name).expect("exact header-name limit");
+    }
+
+    #[test]
+    fn auth_header_name_257_bytes_fails() {
+        let value = "a".repeat(MAX_AUTH_PLACEMENT_NAME_BYTES + 1);
+        let name = LitStr::new(&value, Span::call_site());
+        let error = super::validate_auth_header_name(&name).expect_err("first excess header name");
+
+        assert_eq!(
+            error.to_string(),
+            "an authentication header name permits at most 256 UTF-8 bytes"
+        );
+    }
+
+    #[test]
+    fn auth_query_name_exact_256_bytes_passes() {
+        let value = "q".repeat(MAX_AUTH_PLACEMENT_NAME_BYTES);
+        let name = LitStr::new(&value, Span::call_site());
+
+        super::validate_auth_query_name(&name).expect("exact query-name limit");
+    }
+
+    #[test]
+    fn auth_query_name_257_bytes_fails() {
+        let value = "q".repeat(MAX_AUTH_PLACEMENT_NAME_BYTES + 1);
+        let name = LitStr::new(&value, Span::call_site());
+        let error = super::validate_auth_query_name(&name).expect_err("first excess query name");
+
+        assert_eq!(
+            error.to_string(),
+            "an authentication query name permits at most 256 UTF-8 bytes"
+        );
+    }
+
+    #[test]
+    fn auth_name_limit_counts_utf8_bytes() {
+        let exact_value = "é".repeat(MAX_AUTH_PLACEMENT_NAME_BYTES / 2);
+        assert_eq!(exact_value.len(), MAX_AUTH_PLACEMENT_NAME_BYTES);
+        let exact = LitStr::new(&exact_value, Span::call_site());
+        super::validate_auth_query_name(&exact).expect("exact multi-byte query-name limit");
+
+        let excess_value = format!("{exact_value}a");
+        assert_eq!(
+            excess_value.chars().count(),
+            MAX_AUTH_PLACEMENT_NAME_BYTES / 2 + 1
+        );
+        assert_eq!(excess_value.len(), MAX_AUTH_PLACEMENT_NAME_BYTES + 1);
+        let excess = LitStr::new(&excess_value, Span::call_site());
+        super::validate_auth_query_name(&excess).expect_err("first excess UTF-8 byte");
     }
 }
