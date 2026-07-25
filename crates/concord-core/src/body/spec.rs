@@ -161,10 +161,7 @@ where
                 body_limit: Some(context.body_limit.get()),
             },
         )
-        .map_err(|error| {
-            drop(error);
-            BodyError::new(BodyErrorKind::Producer)
-        })?;
+        .map_err(|_| BodyError::new(BodyErrorKind::Producer))?;
         if bytes.len() > context.body_limit.get() {
             return Err(BodyError::new(BodyErrorKind::LimitExceeded));
         }

@@ -10,7 +10,8 @@ use std::time::Duration;
 use concord::api;
 use concord::body::{Multipart, MultipartBody, MultipartPart, RequestBody, Stream, StreamBody};
 use concord::codec::{
-    CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType, OctetStream,
+    CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType,
+    OctetStream,
 };
 use concord::endpoint::ResponseRequest;
 use concord::error::{ClientBuildErrorKind, HookError};
@@ -81,14 +82,14 @@ impl DecodeBody for WireCodec {
         if content_type == Some("application/x-concord-wire") {
             Ok(())
         } else {
-            Err(CodecError::new("wire media mismatch"))
+            Err(CodecError::new(CodecErrorKind::Decode))
         }
     }
 
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
         String::from_utf8(body.to_vec()).map_err(|error| {
             drop(error);
-            CodecError::new("wire decode failure")
+            CodecError::new(CodecErrorKind::Decode)
         })
     }
 }

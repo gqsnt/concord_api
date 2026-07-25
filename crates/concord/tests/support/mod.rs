@@ -3,7 +3,9 @@
 use std::marker::PhantomData;
 use std::num::{NonZeroU32, NonZeroU64, NonZeroUsize};
 
-use concord::codec::{Bytes, CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext};
+use concord::codec::{
+    Bytes, CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext,
+};
 use concord::pagination::{PaginationController, PaginationError, PaginationErrorKind};
 
 /// Test-local codec deliberately named `Json` to prove spelling is not macro semantics.
@@ -22,7 +24,7 @@ where
             .map(Bytes::from)
             .map_err(|error| {
                 drop(error);
-                CodecError::new("test JSON encoding failed")
+                CodecError::new(CodecErrorKind::Encode)
             })
     }
 }
@@ -42,14 +44,14 @@ where
         {
             Ok(())
         } else {
-            Err(CodecError::new("test JSON media mismatch"))
+            Err(CodecError::new(CodecErrorKind::Decode))
         }
     }
 
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
         serde_json::from_slice(&body).map_err(|error| {
             drop(error);
-            CodecError::new("test JSON decoding failed")
+            CodecError::new(CodecErrorKind::Decode)
         })
     }
 }

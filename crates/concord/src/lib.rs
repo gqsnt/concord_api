@@ -82,8 +82,8 @@ pub mod body {
 /// Buffered codec contracts, primitives, and enabled ecosystem codecs.
 pub mod codec {
     pub use concord_core::codec::{
-        CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType, OctetStream,
-        Text,
+        CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext,
+        MediaType, OctetStream, Text,
     };
     pub use concord_core::contracts::{Bytes, BytesMut};
     #[cfg(feature = "json")]
@@ -105,7 +105,7 @@ pub mod endpoint {
 pub mod error {
     pub use concord_core::contracts::{
         ApiError, AuthError, AuthErrorKind, BodyError, BodyErrorKind, ClientBuildError,
-        ClientBuildErrorKind, ClientInputKind, CodecError, ConfigurationError,
+        ClientBuildErrorKind, ClientInputKind, CodecError, CodecErrorKind, ConfigurationError,
         ConfigurationErrorKind, ErrorCategory, HookError, HttpResponseFailure, PaginationError,
         PaginationErrorKind, RateLimitError, RateLimitErrorKind, ResponseBodyError,
         ResponseBodyErrorKind, StatusBody, StatusBodyDecodeError, StatusBodyState,

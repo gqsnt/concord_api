@@ -29,7 +29,8 @@ use crate::body::{
 #[cfg(feature = "multipart")]
 use crate::body::{MultipartBody, MultipartFactory, MultipartPart};
 use crate::codec::{
-    CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType, OctetStream, Text,
+    CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType,
+    OctetStream, Text,
 };
 use crate::endpoint::EndpointId;
 use crate::error::{ErrorCategory, HookError, StatusBodyState};
@@ -759,7 +760,7 @@ impl EncodeBody for ProbeEncoder {
         assert!(context.body_limit.is_some_and(|limit| limit > 0));
         input.calls.fetch_add(1, Ordering::SeqCst);
         if input.fail {
-            Err(CodecError::new("request-codec-secret-ec2d"))
+            Err(CodecError::new(CodecErrorKind::Encode))
         } else {
             Ok(input.bytes)
         }
@@ -781,7 +782,7 @@ impl DecodeBody for ProbeDecoder {
         if content_type == Some("application/x-concord-probe") {
             Ok(())
         } else {
-            Err(CodecError::new("media-contract-secret-7cb1"))
+            Err(CodecError::new(CodecErrorKind::Decode))
         }
     }
 
@@ -795,7 +796,7 @@ impl DecodeBody for ProbeDecoder {
             .map(|value| format!("decoded:{value}"))
             .map_err(|error| {
                 drop(error);
-                CodecError::new("probe decoder UTF-8 failure")
+                CodecError::new(CodecErrorKind::Decode)
             })
     }
 }
@@ -811,7 +812,7 @@ impl DecodeBody for FailingDecoder {
 
     fn decode(_body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
         FAILING_DECODER_CALLS.fetch_add(1, Ordering::SeqCst);
-        Err(CodecError::new("response-decoder-secret-c413"))
+        Err(CodecError::new(CodecErrorKind::Decode))
     }
 }
 
@@ -825,7 +826,7 @@ impl DecodeBody for RejectingDecoder {
     const ACCEPT: Option<&'static str> = Some("application/x-required");
 
     fn validate_content_type(_content_type: Option<&str>) -> Result<(), CodecError> {
-        Err(CodecError::new("content-type-secret-4fea"))
+        Err(CodecError::new(CodecErrorKind::Decode))
     }
 
     fn decode(_body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
@@ -860,14 +861,14 @@ impl DecodeBody for RealCustomDecoder {
         if content_type == Some("application/x-concord-probe") {
             Ok(())
         } else {
-            Err(CodecError::new("custom media mismatch"))
+            Err(CodecError::new(CodecErrorKind::Decode))
         }
     }
 
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
         String::from_utf8(body.to_vec()).map_err(|error| {
             drop(error);
-            CodecError::new("custom UTF-8 decode failed")
+            CodecError::new(CodecErrorKind::Decode)
         })
     }
 }

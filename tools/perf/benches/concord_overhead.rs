@@ -9,7 +9,9 @@ use std::time::{Duration, Instant};
 
 use concord::api;
 use concord::body::StreamBody;
-use concord::codec::{BytesMut, CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext};
+use concord::codec::{
+    BytesMut, CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext,
+};
 use concord::endpoint::{EndpointId, RuntimeEndpoint};
 use concord::http::{Method, SafeProxy, StatusCode};
 use concord::pagination::PaginatedRequest;
@@ -39,7 +41,7 @@ impl DecodeBody for BenchCodec {
     const ACCEPT: Option<&'static str> = Some("application/vnd.concord.benchmark");
 
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
-        String::from_utf8(body.to_vec()).map_err(|_| CodecError::new("benchmark UTF-8"))
+        String::from_utf8(body.to_vec()).map_err(|_| CodecError::new(CodecErrorKind::Decode))
     }
 }
 

@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use concord::Bytes;
 use concord::api;
-use concord::codec::{CodecError, DecodeBody, DecodeContext};
+use concord::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext};
 use concord::error::HookError;
 use concord::hooks::{
     BeforeSend, BoxFuture, CompletionEvent, PaginationCompletionEvent, ResponseHeadEvent,
@@ -254,15 +254,16 @@ impl DecodeBody for VendorPageCodec {
         if content_type == Self::ACCEPT {
             Ok(())
         } else {
-            Err(CodecError::new("page media mismatch"))
+            Err(CodecError::new(CodecErrorKind::Decode))
         }
     }
 
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
-        let text = std::str::from_utf8(&body).map_err(|_| CodecError::new("page utf8"))?;
+        let text =
+            std::str::from_utf8(&body).map_err(|_| CodecError::new(CodecErrorKind::Decode))?;
         let (items, next) = text
             .split_once('|')
-            .ok_or_else(|| CodecError::new("page structure"))?;
+            .ok_or_else(|| CodecError::new(CodecErrorKind::Decode))?;
         let items = if items.is_empty() {
             Vec::new()
         } else {
@@ -270,7 +271,7 @@ impl DecodeBody for VendorPageCodec {
                 .split(',')
                 .map(|item| {
                     item.parse::<u32>()
-                        .map_err(|_| CodecError::new("page item"))
+                        .map_err(|_| CodecError::new(CodecErrorKind::Decode))
                 })
                 .collect::<Result<Vec<_>, _>>()?
         };
@@ -292,13 +293,14 @@ impl DecodeBody for NonClonePageCodec {
     }
 
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
-        let text = std::str::from_utf8(&body).map_err(|_| CodecError::new("item utf8"))?;
+        let text =
+            std::str::from_utf8(&body).map_err(|_| CodecError::new(CodecErrorKind::Decode))?;
         text.split(',')
             .filter(|item| !item.is_empty())
             .map(|item| {
                 item.parse::<u32>()
                     .map(NonCloneItem)
-                    .map_err(|_| CodecError::new("item number"))
+                    .map_err(|_| CodecError::new(CodecErrorKind::Decode))
             })
             .collect()
     }

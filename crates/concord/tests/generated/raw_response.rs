@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use concord::api;
 use concord::body::Stream;
-use concord::codec::{CodecError, DecodeBody, DecodeContext, OctetStream};
+use concord::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext, OctetStream};
 use concord::dangerous::{RawResponse, RawResponseRequest};
 use concord::error::ErrorCategory;
 use concord::http::SafeProxy;
@@ -28,13 +28,13 @@ impl DecodeBody for ObservedCodec {
         if content_type == Self::ACCEPT {
             Ok(())
         } else {
-            Err(CodecError::new("observed codec media mismatch"))
+            Err(CodecError::new(CodecErrorKind::Decode))
         }
     }
 
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
         DECODER_CALLS.fetch_add(1, Ordering::SeqCst);
-        String::from_utf8(body.to_vec()).map_err(|_| CodecError::new("observed codec utf8"))
+        String::from_utf8(body.to_vec()).map_err(|_| CodecError::new(CodecErrorKind::Decode))
     }
 }
 

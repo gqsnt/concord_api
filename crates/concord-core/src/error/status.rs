@@ -388,7 +388,7 @@ mod tests {
     use http::HeaderValue;
 
     use super::*;
-    use crate::codec::CodecError;
+    use crate::codec::{CodecError, CodecErrorKind};
 
     const BODY_SENTINEL: &str = "terminal-body-sentinel-7d5921";
 
@@ -485,9 +485,7 @@ mod tests {
         const ACCEPT: Option<&'static str> = None;
 
         fn decode(_body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
-            Err(CodecError::new(format!(
-                "decoder copied {BODY_SENTINEL} into its error"
-            )))
+            Err(CodecError::new(CodecErrorKind::Decode))
         }
     }
 

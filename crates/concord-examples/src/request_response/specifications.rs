@@ -16,7 +16,9 @@ use concord::response::{
     Buffered, ByteStream, Discard, ResponseBodyError, ResponseBodySpec, ResponseHead, Streaming,
 };
 
-use concord::codec::{CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext};
+use concord::codec::{
+    CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext,
+};
 
 /// A complete buffered custom media codec.
 pub struct ExampleCodec;
@@ -40,12 +42,12 @@ impl DecodeBody for ExampleCodec {
         if content_type == Self::ACCEPT {
             Ok(())
         } else {
-            Err(CodecError::new("example media mismatch"))
+            Err(CodecError::new(CodecErrorKind::Decode))
         }
     }
 
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
-        String::from_utf8(body.to_vec()).map_err(|_| CodecError::new("example UTF-8 decode"))
+        String::from_utf8(body.to_vec()).map_err(|_| CodecError::new(CodecErrorKind::Decode))
     }
 }
 

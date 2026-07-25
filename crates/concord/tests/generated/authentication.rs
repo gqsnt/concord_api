@@ -9,7 +9,7 @@ use concord::auth::{
     CredentialRequest, MAX_BASIC_PASSWORD_BYTES, MAX_BASIC_USERNAME_BYTES,
     MAX_CREDENTIAL_SECRET_BYTES, SecretCredential,
 };
-use concord::codec::{CodecError, DecodeBody, DecodeContext};
+use concord::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext};
 use concord::error::{ClientBuildErrorKind, ClientInputKind, ErrorCategory};
 use concord::http::SafeProxy;
 use concord::{Bytes, ClientBuildError, SecretString};
@@ -45,8 +45,8 @@ impl DecodeBody for SessionCodec {
     const ACCEPT: Option<&'static str> = Some("application/session");
 
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
-        let value =
-            String::from_utf8(body.to_vec()).map_err(|_| CodecError::new("safe session decode"))?;
+        let value = String::from_utf8(body.to_vec())
+            .map_err(|_| CodecError::new(CodecErrorKind::Decode))?;
         Ok(SessionToken(secret(value)))
     }
 }

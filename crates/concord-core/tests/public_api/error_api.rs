@@ -3,10 +3,10 @@ use std::time::Duration;
 
 use concord_core::contracts::{
     ApiError, AuthErrorKind, Bytes, ClientBuildError, ClientBuildErrorKind, ClientInputKind,
-    CodecError, ConfigurationError, ConfigurationErrorKind, CredentialMaterialError,
-    CredentialMaterialErrorKind, DecodeBody, DecodeContext, EndpointId, ErrorCategory, HeaderName,
-    HttpResponseFailure, Method, PaginationErrorKind, RateLimitErrorKind, SanitizedHeaderMap,
-    StatusBody, StatusBodyDecodeError, StatusBodyState,
+    CodecError, CodecErrorKind, ConfigurationError, ConfigurationErrorKind,
+    CredentialMaterialError, CredentialMaterialErrorKind, DecodeBody, DecodeContext, EndpointId,
+    ErrorCategory, HeaderName, HttpResponseFailure, Method, PaginationErrorKind,
+    RateLimitErrorKind, SanitizedHeaderMap, StatusBody, StatusBodyDecodeError, StatusBodyState,
 };
 
 fn api_error_accessors(error: &ApiError) {
@@ -102,7 +102,11 @@ fn downstream_surface_has_exact_structured_accessors_and_traits() {
     assert_value_traits::<ClientInputKind>();
     assert_value_traits::<CredentialMaterialErrorKind>();
     assert_value_traits::<ConfigurationErrorKind>();
+    assert_value_traits::<CodecErrorKind>();
     assert_value_traits::<StatusBodyState>();
+
+    let codec_error = CodecError::new(CodecErrorKind::Limit);
+    assert_eq!(codec_error.kind(), CodecErrorKind::Limit);
 
     let _: Option<HeaderName> = None;
 }

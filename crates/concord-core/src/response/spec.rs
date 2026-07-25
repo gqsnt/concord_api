@@ -207,10 +207,8 @@ where
             .headers
             .get(CONTENT_TYPE)
             .and_then(|value| value.to_str().ok());
-        C::validate_content_type(content_type).map_err(|error| {
-            drop(error);
-            ResponseBodyError::new(ResponseBodyErrorKind::InvalidMediaType)
-        })
+        C::validate_content_type(content_type)
+            .map_err(|_| ResponseBodyError::new(ResponseBodyErrorKind::InvalidMediaType))
     }
 
     fn from_body(
@@ -230,10 +228,7 @@ where
                 content_type,
             },
         )
-        .map_err(|error| {
-            drop(error);
-            ResponseBodyError::new(ResponseBodyErrorKind::Decode)
-        })
+        .map_err(|_| ResponseBodyError::new(ResponseBodyErrorKind::Decode))
     }
 }
 

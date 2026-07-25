@@ -37,8 +37,9 @@ impl runtime::codec::DecodeBody for WireCodec {
         body: runtime::Bytes,
         _context: runtime::codec::DecodeContext<'_>,
     ) -> Result<Self::Output, runtime::codec::CodecError> {
-        String::from_utf8(body.to_vec())
-            .map_err(|_| runtime::codec::CodecError::new("wire decode failed"))
+        String::from_utf8(body.to_vec()).map_err(|_| {
+            runtime::codec::CodecError::new(runtime::codec::CodecErrorKind::Decode)
+        })
     }
 }
 

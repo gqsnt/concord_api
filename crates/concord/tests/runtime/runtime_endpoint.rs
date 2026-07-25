@@ -13,7 +13,9 @@ use concord::body::{
     BodyError, BodyFactory, MultipartBody, MultipartFactory, MultipartPart, RequestBody,
     Stream as StreamSpec, StreamBody,
 };
-use concord::codec::{CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType};
+use concord::codec::{
+    CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType,
+};
 use concord::endpoint::{EndpointId, RuntimeEndpoint, RuntimeEndpointBuilder};
 use concord::error::{ConfigurationErrorKind, ErrorCategory, HookError};
 use concord::hooks::{BeforeSend, BoxFuture, RuntimeHooks};
@@ -93,12 +95,12 @@ impl DecodeBody for EchoCodec {
         if content_type == Self::ACCEPT {
             Ok(())
         } else {
-            Err(CodecError::new("prepared media mismatch"))
+            Err(CodecError::new(CodecErrorKind::Decode))
         }
     }
 
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
-        String::from_utf8(body.to_vec()).map_err(|_| CodecError::new("prepared utf8"))
+        String::from_utf8(body.to_vec()).map_err(|_| CodecError::new(CodecErrorKind::Decode))
     }
 }
 

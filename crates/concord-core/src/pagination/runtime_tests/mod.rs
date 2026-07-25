@@ -21,7 +21,7 @@ use crate::auth::{
 };
 use crate::body::{EmptyBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec};
 use crate::client::ClientCore;
-use crate::codec::{CodecError, DecodeBody, DecodeContext};
+use crate::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext};
 use crate::error::{ApiError, ErrorCategory, PaginationErrorKind, RateLimitErrorKind};
 use crate::hooks::{
     BeforeSend, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel,
@@ -63,7 +63,8 @@ impl DecodeBody for PageCodec {
     }
 
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
-        let text = std::str::from_utf8(&body).map_err(|_| CodecError::new("page utf8"))?;
+        let text =
+            std::str::from_utf8(&body).map_err(|_| CodecError::new(CodecErrorKind::Decode))?;
         if text.is_empty() {
             return Ok(TestPage {
                 items: Vec::new(),
@@ -72,7 +73,7 @@ impl DecodeBody for PageCodec {
         }
         let (items, next) = text
             .split_once('|')
-            .ok_or_else(|| CodecError::new("page structure"))?;
+            .ok_or_else(|| CodecError::new(CodecErrorKind::Decode))?;
         let items = if items.is_empty() {
             Vec::new()
         } else {

@@ -4,7 +4,7 @@
 //! Documentation owner: `docs/guide/06-pagination-and-rate-limits.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
-use concord::codec::{CodecError, DecodeBody, DecodeContext};
+use concord::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext};
 use concord::pagination::PaginatedRequest;
 use concord::pagination::{HasNextCursor, PaginationController, PaginationError};
 use concord::{Bytes, PageLimit};
@@ -41,17 +41,18 @@ impl DecodeBody for ExamplePageCodec {
     const ACCEPT: Option<&'static str> = Some("application/vnd.concord.page");
 
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
-        let text = std::str::from_utf8(&body).map_err(|_| CodecError::new("page UTF-8"))?;
+        let text =
+            std::str::from_utf8(&body).map_err(|_| CodecError::new(CodecErrorKind::Decode))?;
         let (items, next) = text
             .split_once('|')
-            .ok_or_else(|| CodecError::new("page shape"))?;
+            .ok_or_else(|| CodecError::new(CodecErrorKind::Decode))?;
         let items = items
             .split(',')
             .filter(|value| !value.is_empty())
             .map(|value| {
                 value
                     .parse::<u32>()
-                    .map_err(|_| CodecError::new("page item"))
+                    .map_err(|_| CodecError::new(CodecErrorKind::Decode))
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(ExamplePage {

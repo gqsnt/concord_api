@@ -21,6 +21,7 @@ fn semantic_domains_are_available_without_implementation_crate_imports() {
     let names = [
         public_type::<auth::Auth>(),
         public_type::<body::RequestBody>(),
+        public_type::<codec::CodecErrorKind>(),
         public_type::<codec::Text>(),
         public_type::<endpoint::RuntimeEndpoint>(),
         public_type::<endpoint::Request<()>>(),

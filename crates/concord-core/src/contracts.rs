@@ -23,7 +23,8 @@ pub use crate::body::{
     MAX_MULTIPART_PARTS, Multipart, MultipartBody, MultipartFactory, MultipartPart,
 };
 pub use crate::codec::{
-    CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType, OctetStream, Text,
+    CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType,
+    OctetStream, Text,
 };
 pub use crate::endpoint::{
     EndpointCapabilities, EndpointDescription, EndpointId, MAX_ENDPOINT_ID_BYTES,

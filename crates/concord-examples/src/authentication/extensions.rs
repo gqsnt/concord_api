@@ -11,7 +11,7 @@ use concord::auth::{
     AuthError, AuthErrorKind, BoxFuture, CredentialMaterial, CredentialProvider, CredentialRequest,
     ProviderBody, ProviderRequest, SecretCredential,
 };
-use concord::codec::{CodecError, DecodeBody, DecodeContext};
+use concord::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext};
 use concord::http::{HeaderName, HeaderValue, Method, Url};
 use concord::{Bytes, SecretString};
 
@@ -43,10 +43,10 @@ impl DecodeBody for ExampleTokenCodec {
 
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
         let token = String::from_utf8(body.to_vec())
-            .map_err(|_| CodecError::new("example token UTF-8 decode"))?;
-        Ok(ExampleToken(SecretString::try_from(token).map_err(
-            |_| CodecError::new("example token exceeds protected storage limit"),
-        )?))
+            .map_err(|_| CodecError::new(CodecErrorKind::Decode))?;
+        Ok(ExampleToken(
+            SecretString::try_from(token).map_err(|_| CodecError::new(CodecErrorKind::Limit))?,
+        ))
     }
 }
 

@@ -1,5 +1,6 @@
 use concord_core::contracts::{
-    Bytes, CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType,
+    Bytes, CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext,
+    MediaType,
 };
 
 struct VendorMedia;
@@ -32,7 +33,7 @@ impl DecodeBody for VendorCodec {
         if content_type == Some(VendorMedia::MEDIA_TYPE) {
             Ok(())
         } else {
-            Err(CodecError::new("downstream-media-detail-secret"))
+            Err(CodecError::new(CodecErrorKind::Decode))
         }
     }
 
@@ -43,7 +44,7 @@ impl DecodeBody for VendorCodec {
         assert_eq!(context.content_type, Some(VendorMedia::MEDIA_TYPE));
         String::from_utf8(body.to_vec()).map_err(|error| {
             drop(error);
-            CodecError::new("downstream-decode-detail-secret")
+            CodecError::new(CodecErrorKind::Decode)
         })
     }
 }
@@ -76,11 +77,13 @@ fn downstream_buffered_codecs_need_only_the_contract_surface() {
 }
 
 #[test]
-fn codec_error_formatting_and_source_chain_do_not_repeat_extension_text() {
+fn codec_error_formatting_and_source_chain_are_category_only() {
     use std::error::Error as _;
 
     const SENTINEL: &str = "custom-codec-message-secret-95d7";
-    let error = CodecError::new(SENTINEL);
+    let error = CodecError::new(CodecErrorKind::Encode);
+    assert_eq!(error.kind(), CodecErrorKind::Encode);
+    assert_eq!(error.to_string(), "codec operation failed (Encode)");
     assert!(error.source().is_none());
     for formatted in [error.to_string(), format!("{error:?}")] {
         assert!(!formatted.contains(SENTINEL));

@@ -57,34 +57,53 @@ pub trait EncodeBody: Send + Sync + 'static {
     fn encode(input: Self::Input, context: EncodeContext<'_>) -> Result<Bytes, CodecError>;
 }
 
-/// A safe failure reported by an application codec.
+/// Stable finite category for one buffered codec failure.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CodecErrorKind {
+    /// Request encoding failed.
+    Encode,
+    /// Response media validation or decoding failed.
+    Decode,
+    /// Encoding exceeded a configured finite limit.
+    Limit,
+}
+
+/// A category-only safe failure reported by an application codec.
 ///
-/// Codec-provided text is deliberately not reproduced by Concord formatting
-/// or copied into [`crate::contracts::ApiError`]. A codec remains trusted for any
-/// application-owned side effects it performs before returning this value.
+/// This value retains no codec-authored text or native source error. A codec
+/// remains trusted for any application-owned side effects it performs before
+/// returning this value.
 pub struct CodecError {
-    _message: String,
+    kind: CodecErrorKind,
 }
 
 impl CodecError {
-    /// Creates a codec failure.
+    /// Creates a codec failure in one finite category.
     #[must_use]
-    pub fn new(message: impl Into<String>) -> Self {
-        Self {
-            _message: message.into(),
-        }
+    pub const fn new(kind: CodecErrorKind) -> Self {
+        Self { kind }
+    }
+
+    /// Returns the stable codec failure category.
+    #[must_use]
+    pub const fn kind(&self) -> CodecErrorKind {
+        self.kind
     }
 }
 
 impl fmt::Display for CodecError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("codec operation failed")
+        write!(formatter, "codec operation failed ({:?})", self.kind)
     }
 }
 
 impl fmt::Debug for CodecError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.debug_struct("CodecError").finish_non_exhaustive()
+        formatter
+            .debug_struct("CodecError")
+            .field("kind", &self.kind)
+            .finish()
     }
 }
 
@@ -152,7 +171,7 @@ impl DecodeBody for Text {
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
         String::from_utf8(body.to_vec()).map_err(|error| {
             drop(error);
-            CodecError::new("response was not valid UTF-8")
+            CodecError::new(CodecErrorKind::Decode)
         })
     }
 }
@@ -191,7 +210,8 @@ mod tests {
         );
         let error = Text::decode(Bytes::from_static(&[0xff]), decode_context(None))
             .expect_err("invalid UTF-8 must fail");
-        assert_eq!(error.to_string(), "codec operation failed");
+        assert_eq!(error.kind(), CodecErrorKind::Decode);
+        assert_eq!(error.to_string(), "codec operation failed (Decode)");
     }
 
     #[test]

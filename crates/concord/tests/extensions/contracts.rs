@@ -20,7 +20,9 @@ use concord::body::{
 use concord::body::{MultipartBody, MultipartFactory, MultipartPart};
 #[cfg(feature = "records")]
 use concord::codec::BytesMut;
-use concord::codec::{CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType};
+use concord::codec::{
+    CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType,
+};
 use concord::endpoint::{EndpointId, Request, RuntimeEndpoint};
 use concord::error::HookError;
 use concord::hooks::{
@@ -170,12 +172,12 @@ impl DecodeBody for ExtensionCodec {
         if content_type == Self::ACCEPT {
             Ok(())
         } else {
-            Err(CodecError::new("extension media mismatch"))
+            Err(CodecError::new(CodecErrorKind::Decode))
         }
     }
 
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
-        String::from_utf8(body.to_vec()).map_err(|_| CodecError::new("extension UTF-8"))
+        String::from_utf8(body.to_vec()).map_err(|_| CodecError::new(CodecErrorKind::Decode))
     }
 }
 
@@ -339,10 +341,10 @@ impl DecodeBody for ExtensionPageCodec {
 
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
         let text =
-            std::str::from_utf8(&body).map_err(|_| CodecError::new("extension page UTF-8"))?;
+            std::str::from_utf8(&body).map_err(|_| CodecError::new(CodecErrorKind::Decode))?;
         let (items, next) = text
             .split_once('|')
-            .ok_or_else(|| CodecError::new("extension page structure"))?;
+            .ok_or_else(|| CodecError::new(CodecErrorKind::Decode))?;
         let items = if items.is_empty() {
             Vec::new()
         } else {
@@ -350,7 +352,7 @@ impl DecodeBody for ExtensionPageCodec {
                 .split(',')
                 .map(|item| {
                     item.parse::<u8>()
-                        .map_err(|_| CodecError::new("extension page item"))
+                        .map_err(|_| CodecError::new(CodecErrorKind::Decode))
                 })
                 .collect::<Result<Vec<_>, _>>()?
         };
