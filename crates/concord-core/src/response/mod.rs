@@ -14,6 +14,7 @@ mod metadata;
 mod spec;
 mod stream;
 
+pub use crate::limits::MAX_EMPTY_RESPONSE_CHUNKS;
 pub use error::{ResponseBodyError, ResponseBodyErrorKind};
 #[cfg(feature = "dangerous-raw-response")]
 pub use metadata::RawResponse;

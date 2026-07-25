@@ -21,6 +21,7 @@ use crate::error::{
     ApiError, ClientBuildError, ClientBuildErrorKind, ConfigurationErrorKind, HttpResponseFailure,
 };
 use crate::hooks::BodyKind;
+use crate::limits::{MAX_EMPTY_RESPONSE_CHUNKS, MAX_EMPTY_RESPONSE_CHUNKS_PER_POLL};
 
 use super::build::TlsCapability;
 use super::status::{StatusCapture, StatusDisposition, collect_terminal_status};
@@ -122,22 +123,40 @@ pub(crate) fn bounded_byte_stream(
     limit: u64,
 ) -> ApplicationByteStream {
     Box::pin(BoundedResponseStream {
-        source,
+        source: Some(source),
         endpoint,
         method,
         limit,
         observed: 0,
+        empty_chunks_seen: 0,
         finished: false,
     })
 }
 
 struct BoundedResponseStream {
-    source: ApplicationByteStream,
+    source: Option<ApplicationByteStream>,
     endpoint: EndpointId,
     method: Method,
     limit: u64,
     observed: u64,
+    empty_chunks_seen: usize,
     finished: bool,
+}
+
+impl BoundedResponseStream {
+    fn finish(&mut self) {
+        self.finished = true;
+        self.source = None;
+    }
+
+    fn response_body_error(&mut self) -> Poll<Option<Result<Bytes, ApiError>>> {
+        self.finish();
+        Poll::Ready(Some(Err(ApiError::classified(
+            self.endpoint.clone(),
+            self.method.clone(),
+            crate::error::ErrorCategory::ResponseBody,
+        ))))
+    }
 }
 
 impl Stream for BoundedResponseStream {
@@ -148,38 +167,52 @@ impl Stream for BoundedResponseStream {
         if this.finished {
             return Poll::Ready(None);
         }
-        match this.source.as_mut().poll_next(context) {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(None) => {
-                this.finished = true;
-                Poll::Ready(None)
-            }
-            Poll::Ready(Some(Err(error))) => {
-                this.finished = true;
-                Poll::Ready(Some(Err(error)))
-            }
-            Poll::Ready(Some(Ok(bytes))) => {
-                let Some(next) = this
-                    .observed
-                    .checked_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX))
-                else {
-                    this.finished = true;
-                    return Poll::Ready(Some(Err(ApiError::classified(
-                        this.endpoint.clone(),
-                        this.method.clone(),
-                        crate::error::ErrorCategory::ResponseBody,
-                    ))));
-                };
-                if next > this.limit {
-                    this.finished = true;
-                    return Poll::Ready(Some(Err(ApiError::classified(
-                        this.endpoint.clone(),
-                        this.method.clone(),
-                        crate::error::ErrorCategory::ResponseBody,
-                    ))));
+
+        let mut empty_chunks_this_poll = 0_usize;
+        loop {
+            let polled = this
+                .source
+                .as_mut()
+                .expect("an unfinished bounded response stream retains its source")
+                .as_mut()
+                .poll_next(context);
+            match polled {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(None) => {
+                    this.finish();
+                    return Poll::Ready(None);
                 }
-                this.observed = next;
-                Poll::Ready(Some(Ok(bytes)))
+                Poll::Ready(Some(Err(error))) => {
+                    this.finish();
+                    return Poll::Ready(Some(Err(error)));
+                }
+                Poll::Ready(Some(Ok(bytes))) if bytes.is_empty() => {
+                    let Some(next) = this.empty_chunks_seen.checked_add(1) else {
+                        return this.response_body_error();
+                    };
+                    if next > MAX_EMPTY_RESPONSE_CHUNKS {
+                        return this.response_body_error();
+                    }
+                    this.empty_chunks_seen = next;
+                    empty_chunks_this_poll += 1;
+                    if empty_chunks_this_poll == MAX_EMPTY_RESPONSE_CHUNKS_PER_POLL {
+                        context.waker().wake_by_ref();
+                        return Poll::Pending;
+                    }
+                }
+                Poll::Ready(Some(Ok(bytes))) => {
+                    let Some(next) = this
+                        .observed
+                        .checked_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX))
+                    else {
+                        return this.response_body_error();
+                    };
+                    if next > this.limit {
+                        return this.response_body_error();
+                    }
+                    this.observed = next;
+                    return Poll::Ready(Some(Ok(bytes)));
+                }
             }
         }
     }

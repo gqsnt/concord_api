@@ -85,6 +85,7 @@ fn hard_structural_limits_are_reachable_from_their_facade_domains() {
         rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_RULE,
         rate_limit::MAX_RATE_LIMIT_RULES_PER_PLAN,
     ];
+    let response_limits = [response::MAX_EMPTY_RESPONSE_CHUNKS];
 
     assert!(auth_limits.into_iter().all(|limit| limit > 0));
     #[cfg(feature = "multipart")]
@@ -92,6 +93,7 @@ fn hard_structural_limits_are_reachable_from_their_facade_domains() {
     assert!(endpoint_limits.into_iter().all(|limit| limit > 0));
     assert!(http_limits.into_iter().all(|limit| limit > 0));
     assert!(rate_limits.into_iter().all(|limit| limit > 0));
+    assert!(response_limits.into_iter().all(|limit| limit > 0));
 }
 
 #[cfg(feature = "records")]

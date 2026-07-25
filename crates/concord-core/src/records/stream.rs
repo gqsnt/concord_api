@@ -285,6 +285,7 @@ mod tests {
     use std::future::poll_fn;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::task::{Wake, Waker};
 
     use bytes::{Bytes, BytesMut};
 
@@ -292,6 +293,7 @@ mod tests {
     use crate::endpoint::EndpointId;
     use crate::error::{ApiError, ErrorCategory};
     use crate::http::application::{ApplicationByteStream, bounded_byte_stream};
+    use crate::limits::MAX_EMPTY_RESPONSE_CHUNKS_PER_POLL;
 
     struct LineDecoder;
 
@@ -434,6 +436,21 @@ mod tests {
     impl Drop for ProbeBody {
         fn drop(&mut self) {
             self.dropped.store(true, Ordering::SeqCst);
+        }
+    }
+
+    #[derive(Default)]
+    struct WakeCounter {
+        wakes: AtomicUsize,
+    }
+
+    impl Wake for WakeCounter {
+        fn wake(self: Arc<Self>) {
+            self.wakes.fetch_add(1, Ordering::SeqCst);
+        }
+
+        fn wake_by_ref(self: &Arc<Self>) {
+            self.wakes.fetch_add(1, Ordering::SeqCst);
         }
     }
 
@@ -624,6 +641,39 @@ mod tests {
             b"polled"
         );
         assert_eq!(polls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn record_stream_does_not_spin_over_ready_empty_chunks() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let mut chunks = std::iter::repeat_with(|| Ok(Bytes::new()))
+            .take(MAX_EMPTY_RESPONSE_CHUNKS_PER_POLL + 1)
+            .collect::<Vec<_>>();
+        chunks.push(Ok(Bytes::from_static(b"record\n")));
+        let mut records = stream(chunks, &polls, &dropped, 64);
+        let wakes = Arc::new(WakeCounter::default());
+        let waker = Waker::from(Arc::clone(&wakes));
+        let mut context = Context::from_waker(&waker);
+
+        assert!(matches!(
+            Pin::new(&mut records).poll_next(&mut context),
+            Poll::Pending
+        ));
+        assert_eq!(
+            polls.load(Ordering::SeqCst),
+            MAX_EMPTY_RESPONSE_CHUNKS_PER_POLL
+        );
+        assert_eq!(wakes.wakes.load(Ordering::SeqCst), 1);
+
+        let Poll::Ready(Some(Ok(record))) = Pin::new(&mut records).poll_next(&mut context) else {
+            panic!("the next bounded poll yields the staged record");
+        };
+        assert_eq!(record, b"record");
+        assert_eq!(
+            polls.load(Ordering::SeqCst),
+            MAX_EMPTY_RESPONSE_CHUNKS_PER_POLL + 2
+        );
     }
 
     #[tokio::test]

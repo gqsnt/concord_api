@@ -1,7 +1,8 @@
 use std::fmt::Debug;
 
 use concord_core::contracts::{
-    ApiError, ApiResponse, ByteStream, Bytes, ExecutionMeta, HeaderMap, StatusCode, Url, Version,
+    ApiError, ApiResponse, ByteStream, Bytes, ExecutionMeta, HeaderMap, MAX_EMPTY_RESPONSE_CHUNKS,
+    StatusCode, Url, Version,
 };
 use futures_core::Stream;
 
@@ -24,4 +25,5 @@ fn accessors(response: &ApiResponse<ByteStream>) -> &ExecutionMeta {
 fn downstream_byte_stream_has_media_independent_stream_and_universal_metadata_surfaces() {
     assert_stream_contract::<ByteStream>();
     let _ = accessors as fn(&ApiResponse<ByteStream>) -> &ExecutionMeta;
+    assert_eq!(MAX_EMPTY_RESPONSE_CHUNKS, 1_024);
 }

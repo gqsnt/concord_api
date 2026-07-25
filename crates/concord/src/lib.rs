@@ -194,9 +194,9 @@ pub mod records {
 /// Bounded response specifications, acquisition modes, and response metadata.
 pub mod response {
     pub use concord_core::contracts::{
-        ApiResponse, Buffered, ByteStream, Discard, ExecutionMeta, NoContent, PageResponseSpec,
-        ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec, ResponseHead, ResponseMode,
-        Streaming,
+        ApiResponse, Buffered, ByteStream, Discard, ExecutionMeta, MAX_EMPTY_RESPONSE_CHUNKS,
+        NoContent, PageResponseSpec, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec,
+        ResponseHead, ResponseMode, Streaming,
     };
 }
 

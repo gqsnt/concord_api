@@ -20,11 +20,14 @@ and aggregate limits can be enforced.
 
 Buffered responses are fully acquired under the configured response limit
 before decoding. Streaming responses expose a media-independent `ByteStream`;
-the first chunk that would exceed the cumulative limit is withheld. CSV and
-NDJSON record decoders have an independent finite staging bound. Status
-bodies, provider responses, and pagination accumulation use separate limits.
-No extension receives a native transport response or can introduce a new
-unbounded acquisition mode.
+empty transport chunks are suppressed and are not application stream items.
+A finite response-level empty-chunk ceiling bounds non-byte progress, and a
+per-poll work budget yields cooperatively to the executor. Nonempty bytes retain
+their cumulative stream limit, with the first chunk that would exceed it
+withheld. CSV and NDJSON record decoders have an independent finite staging
+bound. Status bodies, provider responses, and pagination accumulation use
+separate limits. No extension receives a native transport response or can
+introduce a new unbounded acquisition mode.
 
 The endpoint deadline governs opening a returned `ByteStream`, not later
 caller-driven polling. Stream polling remains cumulatively byte-bounded but

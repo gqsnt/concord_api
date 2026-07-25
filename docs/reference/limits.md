@@ -15,6 +15,7 @@ ceilings selected for finite construction.
 | Request body | 16,777,216 | bytes |
 | Buffered successful response | 16,777,216 | bytes |
 | Streaming response | 16,777,216 | bytes |
+| Empty transport chunks in one response stream | 1,024 | chunks |
 | Captured terminal status body | 65,536 | bytes |
 | Credential-provider request body | 1,048,576 | bytes |
 | Credential-provider response body | 1,048,576 | bytes |
