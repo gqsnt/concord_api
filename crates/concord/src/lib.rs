@@ -180,10 +180,13 @@ pub mod records {
     pub use concord_core::records::{
         RecordBatches, RecordDecoder, RecordError, RecordErrorKind, RecordStream, Records,
     };
-    #[cfg(feature = "csv")]
-    pub use concord_extras::records::Csv;
     #[cfg(feature = "ndjson")]
     pub use concord_extras::records::NdJson;
+    #[cfg(feature = "csv")]
+    pub use concord_extras::records::{
+        CommaDelimiter, Csv, CsvDelimiter, CsvHeaderMode, HasHeader, NoHeader, SemicolonDelimiter,
+        TabDelimiter,
+    };
 }
 
 /// Bounded response specifications, acquisition modes, and response metadata.

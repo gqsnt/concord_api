@@ -73,7 +73,17 @@ pub(crate) fn run_all(root: &Path) -> Result<(), String> {
         (
             "records_codecs_absent",
             "fixture-absence,records",
-            &["no `Csv` in `records`", "no `NdJson` in `records`"][..],
+            &[
+                "no `Csv` in `records`",
+                "no `NdJson` in `records`",
+                "no `CsvHeaderMode` in `records`",
+                "no `CsvDelimiter` in `records`",
+                "no `HasHeader` in `records`",
+                "no `NoHeader` in `records`",
+                "no `CommaDelimiter` in `records`",
+                "no `SemicolonDelimiter` in `records`",
+                "no `TabDelimiter` in `records`",
+            ][..],
         ),
         (
             "oauth2_absent",

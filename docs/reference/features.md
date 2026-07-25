@@ -18,7 +18,7 @@ task.
 | `json` | no | `Json<T>` request and response codec |
 | `oauth2-client` | no | OAuth2 client-credentials provider helper |
 | `records` | no | Generic bounded record streaming |
-| `csv` | no | CSV record decoder (also enables `records`) |
+| `csv` | no | Type-configurable CSV record decoder (also enables `records`) |
 | `ndjson` | no | NDJSON record decoder (also enables `records`) |
 | `multipart` | no | Managed multipart request construction |
 | `gzip` | no | Gzip response decompression |
@@ -33,6 +33,9 @@ task.
 - Ordinary defaults preserve default TLS, HTTP/2, and the process-local
   governor.
 - JSON remains opt-in. CSV and NDJSON imply generic record support.
+- CSV header presence and comma, semicolon, or tab parsing are selected with
+  sealed type policies. Every CSV configuration retains the `text/csv` media
+  contract.
 - Built-in pagination controllers require no ecosystem feature.
 - Multipart remains a runtime-kernel capability because native construction
   and replayability enforcement cannot cross the extension boundary. Part and

@@ -26,6 +26,53 @@ bodies, provider responses, and pagination accumulation use separate limits.
 No extension receives a native transport response or can introduce a new
 unbounded acquisition mode.
 
+## Configuring CSV records
+
+`Csv<T>` remains header-bearing, comma-delimited CSV. The record type stays
+first, while trailing type policies select header handling and the delimiter:
+
+```rust
+use concord::records::{
+    Csv,
+    HasHeader,
+    Records,
+    SemicolonDelimiter,
+};
+
+type ConfCsv<T> =
+    Csv<T, HasHeader, SemicolonDelimiter>;
+
+concord::api! {
+    client RowsApi {
+        base "https://records.example.test/";
+    }
+
+    GET rows() -> Records<ConfCsv<Row>>;
+}
+```
+
+Use `NoHeader` when every non-empty record is application data. Headerless
+decoding is positional, so tuples and tuple structs are recommended:
+
+```rust
+use concord::records::{
+    Csv,
+    NoHeader,
+    TabDelimiter,
+};
+
+type HeaderlessTsv<T> =
+    Csv<T, NoHeader, TabDelimiter>;
+```
+
+The built-in delimiters are `CommaDelimiter`, `SemicolonDelimiter`, and
+`TabDelimiter`. All combinations retain the same safety and media contract:
+UTF-8, double-quote quoting and doubled-quote escaping, LF and CRLF, quoted
+embedded newlines, ignored empty physical lines, an optional final newline,
+redacted errors, and a one-MiB staged-record limit. They all accept and validate
+`text/csv`, including valid parameters. `TabDelimiter` changes parsing only; it
+does not select `text/tab-separated-values`.
+
 Use `.response().await` when response metadata is required. Use the ordinary
 await terminal for the declared output. The bounded raw response terminal is
 an explicit dangerous capability; see [Dangerous capabilities](../reference/dangerous.md).

@@ -15,6 +15,18 @@
 - First-party JSON, record codecs, pagination policies, rate limiting, and
   OAuth2 client credentials as downstream implementations of public semantic
   contracts.
+- Type-configurable CSV decoding while preserving `Csv<T>` as header-bearing,
+  comma-delimited CSV. `HasHeader` and `NoHeader` select header presence;
+  `CommaDelimiter`, `SemicolonDelimiter`, and `TabDelimiter` select parsing
+  delimiters. The `CsvHeaderMode` and `CsvDelimiter` policy traits are sealed.
+  Configured aliases are supported:
+
+  ```rust
+  type ConfCsv<T> =
+      Csv<T, HasHeader, SemicolonDelimiter>;
+  ```
+
+  `TabDelimiter` retains the `text/csv` media contract.
 
 ### Changed
 

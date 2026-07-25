@@ -33,10 +33,10 @@ use concord::rate_limit::{
     Cooldown, CooldownScope, RateLimitError, RateLimitObserver, RateLimitPermit, RateLimitRequest,
     RateLimitResponse, RateLimitResponseHead, RateLimiter,
 };
-#[cfg(feature = "csv")]
-use concord::records::Csv;
 #[cfg(feature = "ndjson")]
 use concord::records::NdJson;
+#[cfg(feature = "csv")]
+use concord::records::{Csv, HasHeader, NoHeader, SemicolonDelimiter, TabDelimiter};
 #[cfg(feature = "records")]
 use concord::records::{RecordDecoder, RecordError, Records};
 use concord::response::{
@@ -532,12 +532,41 @@ concord::api! {
 }
 
 #[cfg(feature = "csv")]
+pub type ConfCsv<T> = Csv<T, HasHeader, SemicolonDelimiter>;
+
+#[cfg(feature = "csv")]
+pub type HeaderlessTsv<T> = Csv<T, NoHeader, TabDelimiter>;
+
+#[cfg(feature = "csv")]
+pub type Row = (String, u32);
+
+#[cfg(feature = "csv")]
 concord::api! {
     client CsvExtensionApi {
         base "http://csv-extension.example.test/";
     }
 
     GET rows() -> Records<Csv<Vec<String>>>;
+    GET configured_rows() -> Records<ConfCsv<Row>>;
+    GET headerless_rows() -> Records<HeaderlessTsv<Row>>;
+}
+
+#[cfg(feature = "csv")]
+#[test]
+fn facade_reexports_the_complete_csv_policy_surface() {
+    use concord::records::{CommaDelimiter, CsvDelimiter, CsvHeaderMode};
+
+    fn header_mode<H: CsvHeaderMode>() {}
+    fn delimiter<D: CsvDelimiter>() {}
+    fn decoder<D: RecordDecoder>() {}
+
+    header_mode::<HasHeader>();
+    header_mode::<NoHeader>();
+    delimiter::<CommaDelimiter>();
+    delimiter::<SemicolonDelimiter>();
+    delimiter::<TabDelimiter>();
+    decoder::<ConfCsv<Row>>();
+    decoder::<HeaderlessTsv<Row>>();
 }
 
 #[cfg(feature = "ndjson")]
@@ -667,6 +696,8 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
     {
         let records = CsvExtensionApi::new().expect("CSV extension client");
         let _: csv_extension_api::RowsRequest = records.rows();
+        let _: csv_extension_api::ConfiguredRowsRequest = records.configured_rows();
+        let _: csv_extension_api::HeaderlessRowsRequest = records.headerless_rows();
     }
 
     #[cfg(feature = "ndjson")]

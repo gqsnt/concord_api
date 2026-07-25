@@ -49,6 +49,8 @@ fn generated_privacy_and_capability_boundaries_are_compiler_enforced() {
     ] {
         cases.compile_fail(path);
     }
+    #[cfg(feature = "csv")]
+    cases.compile_fail("tests/ui/fail/capabilities/csv_policy_traits_sealed.rs");
     #[cfg(all(feature = "json", feature = "dangerous-raw-response"))]
     {
         cases.compile_fail("tests/ui/fail/capabilities/no_content_request_spec.rs");

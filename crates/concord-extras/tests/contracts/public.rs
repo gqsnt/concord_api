@@ -34,7 +34,23 @@ fn extras_public_types_satisfy_only_semantic_core_contracts() {
         request_codec::<concord_extras::codec::Json<String>>();
     }
     #[cfg(feature = "csv")]
-    decoder::<concord_extras::records::Csv<String>>();
+    {
+        type ConfCsv<T> = concord_extras::records::Csv<
+            T,
+            concord_extras::records::HasHeader,
+            concord_extras::records::SemicolonDelimiter,
+        >;
+
+        decoder::<concord_extras::records::Csv<String>>();
+        decoder::<ConfCsv<String>>();
+        decoder::<
+            concord_extras::records::Csv<
+                (String, u32),
+                concord_extras::records::NoHeader,
+                concord_extras::records::TabDelimiter,
+            >,
+        >();
+    }
     #[cfg(feature = "ndjson")]
     decoder::<concord_extras::records::NdJson<String>>();
     #[cfg(feature = "oauth2-client")]

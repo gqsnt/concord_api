@@ -244,6 +244,7 @@ mod record_boundaries {
     #[tokio::test]
     async fn actual_csv_and_ndjson_declarations_survive_one_byte_and_arbitrary_chunks() {
         let csv = b"name,count\nalpha,1\nbeta,2\n";
+        let configured_csv = b"name;count\nconfigured;3\n";
         let ndjson = b"1\n20\r\n3";
         let server = ScriptedServer::start([
             response("text/csv", one_byte(csv)),
@@ -256,6 +257,7 @@ mod record_boundaries {
                     b"eta,2\n".to_vec(),
                 ],
             ),
+            response("text/csv", one_byte(configured_csv)),
             response("application/x-ndjson", one_byte(ndjson)),
             response(
                 "application/ndjson",
@@ -284,6 +286,16 @@ mod record_boundaries {
             assert_eq!(values, expected);
         }
 
+        let configured = collect(
+            client
+                .configured_csv_rows()
+                .await
+                .expect("configured CSV stream opens"),
+        )
+        .await
+        .expect("configured CSV stream decodes");
+        assert_eq!(configured, [("configured".to_owned(), 3)]);
+
         for _ in 0..2 {
             let values = collect(client.nd_json_values().await.expect("NDJSON stream opens"))
                 .await
@@ -291,7 +303,7 @@ mod record_boundaries {
             assert_eq!(values, [1, 20, 3]);
         }
 
-        assert_eq!(server.request_count(), 4);
+        assert_eq!(server.request_count(), 5);
     }
 }
 

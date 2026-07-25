@@ -7,19 +7,137 @@ use serde::de::DeserializeOwned;
 
 const MAX_STAGED_RECORD_BYTES: usize = 1024 * 1024;
 
-/// Typed incremental CSV decoding with one required header row.
+mod private {
+    pub trait Sealed {}
+}
+
+/// A sealed type-level policy selecting whether a CSV stream has a header row.
 ///
-/// The fixed dialect is UTF-8, comma-delimited, double-quoted with doubled quote
-/// escaping, and accepts LF or CRLF including quoted embedded newlines. Header
-/// names drive typed deserialization; empty physical lines are ignored. The
-/// final record may omit its newline. Undecoded staging is bounded to 1 MiB.
-/// Parser text, headers, fields, and record values are absent from errors. This
-/// type is available through the independent `csv` feature, which does not
-/// enable NDJSON or the general endpoint `json` feature.
-pub struct Csv<T> {
+/// Concord provides [`HasHeader`] and [`NoHeader`]. Downstream implementations
+/// are intentionally unsupported; custom record formats can implement
+/// [`RecordDecoder`] instead.
+pub trait CsvHeaderMode: private::Sealed + Send + Sync + 'static {
+    #[doc(hidden)]
+    const HAS_HEADER: bool;
+}
+
+/// A sealed type-level policy selecting a built-in CSV delimiter.
+///
+/// Concord provides [`CommaDelimiter`], [`SemicolonDelimiter`], and
+/// [`TabDelimiter`]. Downstream implementations are intentionally unsupported;
+/// custom record formats can implement [`RecordDecoder`] instead.
+pub trait CsvDelimiter: private::Sealed + Send + Sync + 'static {
+    #[doc(hidden)]
+    const BYTE: u8;
+}
+
+/// Requires and consumes one header row before decoding application records.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct HasHeader;
+
+/// Decodes every non-empty record positionally without consuming a header row.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NoHeader;
+
+/// Selects comma-delimited CSV records.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CommaDelimiter;
+
+/// Selects semicolon-delimited CSV records.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SemicolonDelimiter;
+
+/// Selects tab-delimited CSV records while retaining the `text/csv` media type.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TabDelimiter;
+
+impl private::Sealed for HasHeader {}
+impl private::Sealed for NoHeader {}
+impl private::Sealed for CommaDelimiter {}
+impl private::Sealed for SemicolonDelimiter {}
+impl private::Sealed for TabDelimiter {}
+
+impl CsvHeaderMode for HasHeader {
+    const HAS_HEADER: bool = true;
+}
+
+impl CsvHeaderMode for NoHeader {
+    const HAS_HEADER: bool = false;
+}
+
+impl CsvDelimiter for CommaDelimiter {
+    const BYTE: u8 = b',';
+}
+
+impl CsvDelimiter for SemicolonDelimiter {
+    const BYTE: u8 = b';';
+}
+
+impl CsvDelimiter for TabDelimiter {
+    const BYTE: u8 = b'\t';
+}
+
+/// Typed incremental CSV decoding with type-level header and delimiter policies.
+///
+/// The record type `T` is the first generic parameter. Header mode `H` and
+/// delimiter `D` are trailing policies so [`Csv<T>`](Csv) remains source
+/// compatible and means `Csv<T, HasHeader, CommaDelimiter>`.
+///
+/// [`HasHeader`] consumes the first non-empty record, rejects empty or duplicate
+/// header names, and uses those names when deserializing subsequent records.
+/// [`NoHeader`] treats the first non-empty record as application data and
+/// deserializes every record without column names. Headerless records are
+/// positional, so tuples and tuple structs are recommended; named-struct
+/// column matching is not available without a header.
+///
+/// [`CommaDelimiter`], [`SemicolonDelimiter`], and [`TabDelimiter`] select the
+/// delimiter used by both incremental framing and record parsing. Every
+/// configuration otherwise has the same fixed dialect and safety contract:
+/// UTF-8, double-quote quoting, doubled-quote escaping, LF and CRLF record
+/// endings, quoted embedded newlines, ignored empty physical lines, an optional
+/// final newline, and a one-MiB staged-record limit. Parser text, headers,
+/// fields, and record values are absent from errors.
+///
+/// Every configuration accepts and validates `text/csv`, including valid media
+/// type parameters. In particular, [`TabDelimiter`] changes parsing only and
+/// still validates `text/csv`, not `text/tab-separated-values`.
+///
+/// Configuration aliases keep endpoint declarations compact:
+///
+/// ```rust
+/// use concord_extras::records::{
+///     Csv,
+///     HasHeader,
+///     SemicolonDelimiter,
+/// };
+///
+/// type ConfCsv<T> =
+///     Csv<T, HasHeader, SemicolonDelimiter>;
+/// ```
+///
+/// Headerless tab-delimited records can be named similarly:
+///
+/// ```rust
+/// use concord_extras::records::{
+///     Csv,
+///     NoHeader,
+///     TabDelimiter,
+/// };
+///
+/// type HeaderlessTsv<T> =
+///     Csv<T, NoHeader, TabDelimiter>;
+/// ```
+///
+/// This type is available through the independent `csv` feature, which does
+/// not enable NDJSON or the general endpoint `json` feature.
+pub struct Csv<T, H = HasHeader, D = CommaDelimiter> {
     headers: Option<csv::StringRecord>,
     scan: CsvScan,
-    marker: PhantomData<fn() -> T>,
+    #[allow(
+        clippy::type_complexity,
+        reason = "one marker must carry the record type and both policies without storing instances"
+    )]
+    marker: PhantomData<fn() -> (T, H, D)>,
 }
 
 #[derive(Default)]
@@ -45,9 +163,11 @@ impl CsvScan {
     }
 }
 
-impl<T> Csv<T>
+impl<T, H, D> Csv<T, H, D>
 where
     T: DeserializeOwned + Send + 'static,
+    H: CsvHeaderMode,
+    D: CsvDelimiter,
 {
     fn take_record(
         &mut self,
@@ -90,7 +210,7 @@ where
                 b'"' => {
                     return Err(RecordError::new(RecordErrorKind::InvalidFraming));
                 }
-                b',' => {
+                byte if byte == D::BYTE => {
                     self.scan.field_start = true;
                     self.scan.after_quote = false;
                     self.scan.index += 1;
@@ -150,6 +270,7 @@ where
         let mut reader = csv::ReaderBuilder::new()
             .has_headers(false)
             .flexible(false)
+            .delimiter(D::BYTE)
             .from_reader(bytes);
         let mut record = csv::StringRecord::new();
         let present = reader.read_record(&mut record).map_err(|error| {
@@ -171,6 +292,12 @@ where
 
     fn consume_record(&mut self, bytes: &[u8]) -> Result<Option<T>, RecordError> {
         let record = Self::parse_record(bytes)?;
+        if !H::HAS_HEADER {
+            return record.deserialize(None).map(Some).map_err(|error| {
+                drop(error);
+                RecordError::new(RecordErrorKind::Decode)
+            });
+        }
         let Some(headers) = self.headers.as_ref() else {
             if record.is_empty() || record.iter().any(str::is_empty) {
                 return Err(RecordError::new(RecordErrorKind::InvalidFraming));
@@ -201,16 +328,18 @@ where
                 return Ok(Some(record));
             }
         }
-        if eof && self.headers.is_none() {
+        if eof && H::HAS_HEADER && self.headers.is_none() {
             return Err(RecordError::new(RecordErrorKind::IncompleteRecord));
         }
         Ok(None)
     }
 }
 
-impl<T> RecordDecoder for Csv<T>
+impl<T, H, D> RecordDecoder for Csv<T, H, D>
 where
     T: DeserializeOwned + Send + 'static,
+    H: CsvHeaderMode,
+    D: CsvDelimiter,
 {
     type Record = T;
 
@@ -263,6 +392,7 @@ fn is_csv_media_type(value: &str) -> bool {
 mod tests {
     use std::error::Error as _;
 
+    use concord_core::records::RecordDecoder;
     use serde::Deserialize;
 
     use super::*;
@@ -274,7 +404,23 @@ mod tests {
         count: u32,
     }
 
-    fn decoder() -> Csv<Row> {
+    #[derive(Debug, Deserialize, Eq, PartialEq)]
+    struct PositionalRow(String, String, u32);
+
+    #[derive(Debug, Deserialize, Eq, PartialEq)]
+    struct FramedRow(String, String, String);
+
+    #[derive(Debug, Deserialize, Eq, PartialEq)]
+    struct SensitiveRow {
+        #[serde(rename = "private-header-alpha")]
+        alpha: String,
+        #[serde(rename = "private-header-beta")]
+        beta: String,
+        #[serde(rename = "private-header-number")]
+        number: u32,
+    }
+
+    fn decoder<T, H, D>() -> Csv<T, H, D> {
         Csv {
             headers: None,
             scan: CsvScan::new(),
@@ -282,27 +428,33 @@ mod tests {
         }
     }
 
-    fn feed(chunks: impl IntoIterator<Item = Vec<u8>>) -> Result<Vec<Row>, RecordError> {
-        let mut decoder = decoder();
+    fn feed<D>(
+        mut decoder: D,
+        chunks: impl IntoIterator<Item = Vec<u8>>,
+    ) -> Result<Vec<D::Record>, RecordError>
+    where
+        D: RecordDecoder,
+    {
         let mut buffer = BytesMut::new();
-        let mut rows = Vec::new();
+        let mut records = Vec::new();
         for chunk in chunks {
             buffer.extend_from_slice(&chunk);
-            while let Some(row) = decoder.decode(&mut buffer)? {
-                rows.push(row);
+            while let Some(record) = decoder.decode(&mut buffer)? {
+                records.push(record);
             }
         }
-        while let Some(row) = decoder.decode_eof(&mut buffer)? {
-            rows.push(row);
+        while let Some(record) = decoder.decode_eof(&mut buffer)? {
+            records.push(record);
         }
-        Ok(rows)
+        Ok(records)
     }
 
     #[test]
-    fn csv_frames_headers_quotes_line_endings_empty_lines_and_final_record_across_one_byte_chunks()
-    {
+    fn default_csv_retains_header_plus_comma_compatibility() {
+        let decoder: Csv<Row> = decoder();
         let input = b"\r\nname,note,count\r\nalpha,\"comma, value\",1\nbeta,\"line one\nline \"\"two\"\"\",2\r\n\ngamma,plain,3";
-        let rows = feed(input.iter().map(|byte| vec![*byte])).expect("one-byte CSV splits");
+        let rows = feed(decoder, input.iter().map(|byte| vec![*byte]))
+            .expect("default one-byte CSV splits");
         assert_eq!(
             rows,
             [
@@ -326,38 +478,213 @@ mod tests {
     }
 
     #[test]
-    fn csv_decodes_several_rows_from_one_chunk_with_optional_final_newline() {
-        let rows = feed([b"name,note,count\na,first,1\nb,second,2\n".to_vec()])
-            .expect("multi-row CSV chunk");
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[1].name, "b");
+    fn header_mode_decodes_named_structs_by_column_name_for_each_delimiter() {
+        fn assert_delimiter<D>(delimiter: char)
+        where
+            D: CsvDelimiter,
+        {
+            let input =
+                format!("count{delimiter}name{delimiter}note\r\n7{delimiter}alpha{delimiter}plain");
+            let rows =
+                feed(decoder::<Row, HasHeader, D>(), [input.into_bytes()]).expect("header CSV");
+            assert_eq!(
+                rows,
+                [Row {
+                    name: "alpha".into(),
+                    note: "plain".into(),
+                    count: 7,
+                }]
+            );
+        }
+
+        assert_delimiter::<CommaDelimiter>(',');
+        assert_delimiter::<SemicolonDelimiter>(';');
+        assert_delimiter::<TabDelimiter>('\t');
     }
 
     #[test]
-    fn csv_rejects_invalid_duplicate_headers_malformed_quotes_and_typed_values_safely() {
+    fn no_header_mode_decodes_all_three_delimiters_positionally() {
+        fn assert_delimiter<D>(delimiter: char)
+        where
+            D: CsvDelimiter,
+        {
+            let input =
+                format!("first{delimiter}one{delimiter}1\nsecond{delimiter}two{delimiter}2");
+            let rows = feed(
+                decoder::<PositionalRow, NoHeader, D>(),
+                [input.into_bytes()],
+            )
+            .expect("headerless CSV");
+            assert_eq!(
+                rows,
+                [
+                    PositionalRow("first".into(), "one".into(), 1),
+                    PositionalRow("second".into(), "two".into(), 2),
+                ]
+            );
+        }
+
+        assert_delimiter::<CommaDelimiter>(',');
+        assert_delimiter::<SemicolonDelimiter>(';');
+        assert_delimiter::<TabDelimiter>('\t');
+    }
+
+    #[test]
+    fn framing_uses_each_delimiter_across_quotes_line_endings_and_chunk_boundaries() {
+        fn assert_delimiter<D>(delimiter: char)
+        where
+            D: CsvDelimiter,
+        {
+            let input = format!(
+                "\"left{delimiter}right\"{delimiter}\"say \"\"hello\"\"\"{delimiter}\"line one\nline two\"\r\n\
+                 \"line one\r\nline two\"{delimiter}plain{delimiter}tail\r\n\
+                 last{delimiter}record{delimiter}here"
+            )
+            .into_bytes();
+            let expected = [
+                FramedRow(
+                    format!("left{delimiter}right"),
+                    "say \"hello\"".into(),
+                    "line one\nline two".into(),
+                ),
+                FramedRow("line one\r\nline two".into(), "plain".into(), "tail".into()),
+                FramedRow("last".into(), "record".into(), "here".into()),
+            ];
+
+            let one_chunk = feed(decoder::<FramedRow, NoHeader, D>(), [input.clone()])
+                .expect("several records in one chunk");
+            assert_eq!(one_chunk, expected);
+
+            let one_byte = feed(
+                decoder::<FramedRow, NoHeader, D>(),
+                input.iter().map(|byte| vec![*byte]),
+            )
+            .expect("records split at every byte");
+            assert_eq!(one_byte, expected);
+        }
+
+        assert_delimiter::<CommaDelimiter>(',');
+        assert_delimiter::<SemicolonDelimiter>(';');
+        assert_delimiter::<TabDelimiter>('\t');
+    }
+
+    #[test]
+    fn malformed_quotes_are_safely_classified_for_each_delimiter() {
+        fn assert_delimiter<D>(delimiter: char)
+        where
+            D: CsvDelimiter,
+        {
+            let cases = [
+                (
+                    format!("left{delimiter}\"closed\"after{delimiter}right\n"),
+                    RecordErrorKind::InvalidFraming,
+                ),
+                (
+                    format!("left{delimiter}un\"quoted{delimiter}right\n"),
+                    RecordErrorKind::InvalidFraming,
+                ),
+                (
+                    format!("left{delimiter}\"unterminated-sensitive-value\n"),
+                    RecordErrorKind::IncompleteRecord,
+                ),
+            ];
+            for (input, expected) in cases {
+                let error = feed(
+                    decoder::<(String, String, String), NoHeader, D>(),
+                    [input.into_bytes()],
+                )
+                .expect_err("malformed CSV must fail");
+                assert_eq!(error.kind(), expected);
+                let rendered = format!("{error} {error:?}");
+                assert!(!rendered.contains("unterminated-sensitive-value"));
+                assert!(error.source().is_none());
+            }
+        }
+
+        assert_delimiter::<CommaDelimiter>(',');
+        assert_delimiter::<SemicolonDelimiter>(';');
+        assert_delimiter::<TabDelimiter>('\t');
+    }
+
+    #[test]
+    fn header_validation_and_empty_input_follow_the_selected_mode() {
+        for input in [b"name,,count\n".as_slice(), b"name,name,count\n"] {
+            let error = feed(
+                decoder::<Row, HasHeader, CommaDelimiter>(),
+                [input.to_vec()],
+            )
+            .expect_err("invalid header must fail");
+            assert_eq!(error.kind(), RecordErrorKind::InvalidFraming);
+        }
+
+        let empty_value = feed(
+            decoder::<(String, String, String), NoHeader, CommaDelimiter>(),
+            [b"name,,count\n".to_vec()],
+        )
+        .expect("empty data field is not header validation");
+        assert_eq!(
+            empty_value,
+            [("name".into(), String::new(), "count".into())]
+        );
+
+        let duplicate_values = feed(
+            decoder::<(String, String, String), NoHeader, CommaDelimiter>(),
+            [b"name,name,count\n".to_vec()],
+        )
+        .expect("duplicate first-row values are data");
+        assert_eq!(
+            duplicate_values,
+            [("name".into(), "name".into(), "count".into())]
+        );
+
+        let header_only = feed(
+            decoder::<Row, HasHeader, CommaDelimiter>(),
+            [b"name,note,count\n".to_vec()],
+        )
+        .expect("header-only input");
+        assert!(header_only.is_empty());
+
+        let missing_header = feed(decoder::<Row, HasHeader, CommaDelimiter>(), [Vec::new()])
+            .expect_err("header mode requires a header");
+        assert_eq!(missing_header.kind(), RecordErrorKind::IncompleteRecord);
+
+        let empty_headerless = feed(
+            decoder::<PositionalRow, NoHeader, CommaDelimiter>(),
+            [Vec::new()],
+        )
+        .expect("empty headerless input");
+        assert!(empty_headerless.is_empty());
+    }
+
+    #[test]
+    fn typed_decode_failures_are_decode_errors_without_csv_values() {
         let cases = [
-            (
-                b"name,,count\na,value,1\n".as_slice(),
-                RecordErrorKind::InvalidFraming,
-            ),
-            (
-                b"name,name,count\na,value,1\n".as_slice(),
-                RecordErrorKind::InvalidFraming,
-            ),
-            (
-                b"name,note,count\na,\"unterminated,1\n".as_slice(),
-                RecordErrorKind::IncompleteRecord,
-            ),
-            (
-                b"name,note,count\na,value,not-a-number\n".as_slice(),
-                RecordErrorKind::Decode,
-            ),
+            feed(
+                decoder::<SensitiveRow, HasHeader, CommaDelimiter>(),
+                [b"private-header-alpha,private-header-beta,private-header-number\nprivate-record-alpha,private-record-beta,private-record-number\n".to_vec()],
+            )
+            .expect_err("typed header decode must fail"),
+            feed(
+                decoder::<PositionalRow, NoHeader, SemicolonDelimiter>(),
+                [b"private-positional-alpha;private-positional-beta;private-positional-number\n"
+                    .to_vec()],
+            )
+            .expect_err("typed positional decode must fail"),
         ];
-        for (input, expected) in cases {
-            let error = feed([input.to_vec()]).expect_err("invalid CSV must fail");
-            assert_eq!(error.kind(), expected);
+        for error in cases {
+            assert_eq!(error.kind(), RecordErrorKind::Decode);
             let rendered = format!("{error} {error:?}");
-            for forbidden in ["unterminated", "not-a-number", "value"] {
+            for forbidden in [
+                "private-header-alpha",
+                "private-header-beta",
+                "private-header-number",
+                "private-record-alpha",
+                "private-record-beta",
+                "private-record-number",
+                "private-positional-alpha",
+                "private-positional-beta",
+                "private-positional-number",
+            ] {
                 assert!(!rendered.contains(forbidden));
             }
             assert!(error.source().is_none());
@@ -365,12 +692,22 @@ mod tests {
     }
 
     #[test]
-    fn csv_media_requires_text_csv_but_accepts_parameters() {
+    fn csv_media_and_staging_contract_apply_to_every_configuration() {
         assert!(is_csv_media_type("text/csv"));
         assert!(is_csv_media_type("text/csv; charset=utf-8"));
         assert!(!is_csv_media_type("application/json"));
+        assert!(!is_csv_media_type("text/tab-separated-values"));
         assert!(!is_csv_media_type("text/csv; broken=\"unterminated"));
+
         assert_eq!(Csv::<Row>::accept(), Some("text/csv"));
         assert_eq!(Csv::<Row>::max_buffered_bytes().get(), 1024 * 1024);
+        assert_eq!(
+            Csv::<Row, NoHeader, SemicolonDelimiter>::accept(),
+            Some("text/csv")
+        );
+        assert_eq!(
+            Csv::<Row, HasHeader, TabDelimiter>::max_buffered_bytes().get(),
+            1024 * 1024
+        );
     }
 }
