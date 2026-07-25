@@ -27,16 +27,19 @@ just fixtures       # isolated Cargo-graph contracts
 just docs           # generated tables, links, doctests, and warning-denied rustdoc
 just package        # product archives and extracted-manifest verification
 just deny           # dependency and license policy
+just workflow       # actionlint for the GitHub Actions workflow
 just analyzer       # structural analysis and diagnostics
 just bench          # observational public-lifecycle benchmark compilation
-just verify         # every required local owner exactly once
-just source-archive # tracked source ZIP built by git archive
+just verify         # every required local owner, including workflow lint, exactly once
+just source-archive # fresh-clone-safe tracked source ZIP built by git archive
 ```
 
 The repository-level subprocess owners are also directly available as
 `cargo run --locked -p concord-xtask -- fixtures --locked` and
-`cargo run --locked -p concord-xtask -- msrv-ui --locked`. Run
-Cargo-spawning xtask commands serially on Windows.
+`cargo run --locked -p concord-xtask -- msrv-ui --locked`. The source artifact
+owner is `cargo run --locked -p concord-xtask -- source-archive`; it creates
+`target/` when needed and writes `target/concord-source.zip`. Run Cargo-spawning
+xtask commands serially on Windows.
 
 Clippy, cargo-deny, and explicitly selected toolchains must be installed for
 their recipes. Never report a missing tool/component as a passing check.
@@ -95,11 +98,13 @@ After generated-surface changes:
 6. confirm ordinary completion needs no generated prelude/trait import;
 7. open fixtures separately only when testing their graph.
 
-Stable Rust owns exact Trybuild snapshots. Rust 1.85 owns separate semantic
-JSON checks that require compilation failure, user-facing message fragments,
-the expected primary source span, and absence of internal bridge names or
-protected sentinels. Exact MSRV rendering is intentionally not an owner.
+The exact current toolchain pinned by `rust-toolchain.toml` owns Trybuild
+snapshots and Clippy. Rust 1.85 owns separate semantic JSON checks that require
+compilation failure, user-facing message fragments, the expected primary source
+span, and absence of internal bridge names or protected sentinels. Exact MSRV
+rendering is intentionally not an owner.
 
-`just verify` cannot establish remote GitHub execution, Linux/macOS behavior
-from a Windows host, graphical editor interaction, registry ownership, or legal
-approval. Record those scopes separately; never infer them from a local gate.
+`just verify` includes `just workflow` once, but it cannot establish remote
+GitHub execution, Linux/macOS behavior from a Windows host, graphical editor
+interaction, registry ownership, or legal approval. Record those scopes
+separately; never infer them from a local gate.

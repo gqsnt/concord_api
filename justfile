@@ -20,17 +20,17 @@ check:
     cargo run --locked -p concord-xtask -- policy --locked
 
 lint:
-    cargo +stable clippy --workspace --all-targets --all-features --locked -- -D warnings
+    cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
 test:
     cargo test --workspace --exclude concord-macros --lib --tests --examples --locked
     cargo test --workspace --exclude concord-macros --lib --tests --examples --all-features --locked
 
 ui:
-    cargo +stable test -p concord-macros --lib --locked
-    cargo +stable test -p concord --test ui --no-default-features --locked
-    cargo +stable test -p concord --test ui --all-features --locked
-    cargo +stable test -p concord-core --test ui --no-default-features --locked
+    cargo test -p concord-macros --lib --locked
+    cargo test -p concord --test ui --no-default-features --locked
+    cargo test -p concord --test ui --all-features --locked
+    cargo test -p concord-core --test ui --no-default-features --locked
 
 msrv:
     cargo +1.85.0 check -p concord-core --lib --all-features --locked
@@ -56,6 +56,9 @@ package:
 deny:
     cargo deny check
 
+workflow:
+    actionlint .github/workflows/ci.yml
+
 analyzer:
     rust-analyzer analysis-stats . --run-all-ide-things
     rust-analyzer diagnostics .
@@ -63,7 +66,7 @@ analyzer:
 bench:
     cargo bench -p concord-perf --bench concord_overhead --no-run --locked
 
-verify: fmt check lint test ui msrv fixtures docs package deny analyzer bench
+verify: fmt check lint test ui msrv fixtures docs package deny workflow analyzer bench
 
 source-archive:
-    git archive --format=zip --output=target/concord-source.zip HEAD
+    cargo run --locked -p concord-xtask -- source-archive

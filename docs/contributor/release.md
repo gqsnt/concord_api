@@ -58,8 +58,11 @@ Build the source ZIP with:
 just source-archive
 ```
 
-That recipe uses `git archive`, so the ZIP contains only tracked content from
-`HEAD` and no `.git` directory or ignored build output.
+The xtask creates `target/` when needed and delegates archive creation to
+`git archive`, so the recipe works in a fresh clone. The ZIP contains only
+tracked content from `HEAD` and no `.git` directory or ignored build output.
+Use `target/concord-source.zip` as the review or release source artifact; do
+not substitute a ZIP of the working directory.
 
 ## Generated bridge contract
 

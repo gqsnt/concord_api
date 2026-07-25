@@ -46,10 +46,7 @@ pub(crate) fn run(root: &Path) -> Result<(), String> {
 
     for package in PACKAGES {
         let (command_root, directory) = if package.siblings.is_empty() {
-            cargo_status(
-                root,
-                ["package", "--locked", "--allow-dirty", "-p", package.name],
-            )?;
+            cargo_status(root, ["package", "--locked", "-p", package.name])?;
             (
                 root.to_owned(),
                 package_output.join(format!("{}-{version}", package.name)),

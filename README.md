@@ -9,7 +9,7 @@ use the façade package by path (adjust the relative path for your workspace):
 
 ```toml
 [dependencies]
-concord = { path = "../concord_api/crates/concord", features = ["json"] }
+concord = { path = "../path/to/concord/crates/concord", features = ["json"] }
 ```
 
 After an approved future registry release, the intended dependency form is:
@@ -111,12 +111,18 @@ just msrv
 just fixtures
 just docs
 just package
+just deny
+just workflow
 just analyzer
+just bench
 just verify
 just source-archive
 ```
 
-Tests are deterministic and make no external service calls. `just bench`
-remains observational. Local checks cannot prove remote Actions execution,
-other operating systems, interactive editor behavior, registry ownership, or
-legal approval.
+Tests are deterministic and make no external service calls. `just verify`
+includes workflow linting; its benchmark owner compiles the observational
+benchmark without running it. `just source-archive` creates the tracked-source
+review/release artifact at `target/concord-source.zip`, including from a fresh
+clone. Share that Git source archive rather than a ZIP of the working
+directory. Local checks cannot prove remote Actions execution, other operating
+systems, interactive editor behavior, registry ownership, or legal approval.
