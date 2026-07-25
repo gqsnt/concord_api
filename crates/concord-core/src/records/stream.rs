@@ -293,7 +293,7 @@ mod tests {
     use crate::endpoint::EndpointId;
     use crate::error::{ApiError, ErrorCategory};
     use crate::http::application::{ApplicationByteStream, bounded_byte_stream};
-    use crate::limits::MAX_EMPTY_RESPONSE_CHUNKS_PER_POLL;
+    use crate::limits::MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN;
 
     struct LineDecoder;
 
@@ -648,7 +648,7 @@ mod tests {
         let polls = Arc::new(AtomicUsize::new(0));
         let dropped = Arc::new(AtomicBool::new(false));
         let mut chunks = std::iter::repeat_with(|| Ok(Bytes::new()))
-            .take(MAX_EMPTY_RESPONSE_CHUNKS_PER_POLL + 1)
+            .take(MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN + 1)
             .collect::<Vec<_>>();
         chunks.push(Ok(Bytes::from_static(b"record\n")));
         let mut records = stream(chunks, &polls, &dropped, 64);
@@ -662,7 +662,7 @@ mod tests {
         ));
         assert_eq!(
             polls.load(Ordering::SeqCst),
-            MAX_EMPTY_RESPONSE_CHUNKS_PER_POLL
+            MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN
         );
         assert_eq!(wakes.wakes.load(Ordering::SeqCst), 1);
 
@@ -672,7 +672,7 @@ mod tests {
         assert_eq!(record, b"record");
         assert_eq!(
             polls.load(Ordering::SeqCst),
-            MAX_EMPTY_RESPONSE_CHUNKS_PER_POLL + 2
+            MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN + 2
         );
     }
 

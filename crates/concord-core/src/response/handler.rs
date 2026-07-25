@@ -161,3 +161,142 @@ async fn collect_bounded(input: ResponseInput) -> Result<Bytes, ApiError> {
         .await
         .map_err(|_| timeout(&timeout_endpoint, &method))?
 }
+
+#[cfg(test)]
+mod tests {
+    use std::future::Future;
+    use std::io;
+    use std::num::NonZeroUsize;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::task::{Context, Poll, Waker};
+
+    use bytes::Bytes;
+
+    use super::*;
+    use crate::error::ErrorCategory;
+    use crate::http::response_progress::test_support::{empty_chunks, response as native_response};
+    use crate::limits::{MAX_EMPTY_RESPONSE_CHUNKS, MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN};
+
+    fn input(
+        chunks: impl IntoIterator<Item = Result<Bytes, io::Error>>,
+        polls: &Arc<AtomicUsize>,
+        dropped: &Arc<AtomicBool>,
+        limit: usize,
+    ) -> ResponseInput {
+        let endpoint = EndpointId::from_static("buffered.success");
+        let method = http::Method::GET;
+        let limit = NonZeroUsize::new(limit).expect("positive response limit");
+        ResponseInput {
+            response: ApplicationResponse::from_native_for_test(
+                native_response(chunks, polls, dropped),
+                endpoint.clone(),
+                method.clone(),
+            ),
+            limit,
+            stream_limit: limit,
+            deadline: OperationDeadline::new(tokio::time::Instant::now(), None)
+                .expect("disabled deadline"),
+            endpoint,
+            method,
+        }
+    }
+
+    #[tokio::test]
+    async fn buffered_success_suppresses_empty_chunks() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let result = acquire_buffered(input(
+            [
+                Ok(Bytes::new()),
+                Ok(Bytes::from_static(b"buffered")),
+                Ok(Bytes::new()),
+            ],
+            &polls,
+            &dropped,
+            64,
+        ))
+        .await
+        .expect("buffered response");
+
+        assert_eq!(result, Bytes::from_static(b"buffered"));
+        assert_eq!(polls.load(Ordering::SeqCst), 4);
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn buffered_success_yields_executor_after_ready_empty_budget() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let mut chunks = empty_chunks(MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN);
+        chunks.push(Ok(Bytes::from_static(b"deferred")));
+        let mut acquisition = Box::pin(acquire_buffered(input(chunks, &polls, &dropped, 64)));
+        let mut context = Context::from_waker(Waker::noop());
+
+        assert!(matches!(
+            acquisition.as_mut().poll(&mut context),
+            Poll::Pending
+        ));
+        assert_eq!(
+            polls.load(Ordering::SeqCst),
+            MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN
+        );
+    }
+
+    #[tokio::test]
+    async fn buffered_success_exact_empty_limit_succeeds() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let mut chunks = empty_chunks(MAX_EMPTY_RESPONSE_CHUNKS);
+        chunks.push(Ok(Bytes::from_static(b"exact")));
+
+        let result = acquire_buffered(input(chunks, &polls, &dropped, 64))
+            .await
+            .expect("exact empty-chunk limit");
+        assert_eq!(result, Bytes::from_static(b"exact"));
+        assert_eq!(polls.load(Ordering::SeqCst), MAX_EMPTY_RESPONSE_CHUNKS + 2);
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn buffered_success_first_excess_fails() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+
+        let error = acquire_buffered(input(
+            empty_chunks(MAX_EMPTY_RESPONSE_CHUNKS + 1),
+            &polls,
+            &dropped,
+            64,
+        ))
+        .await
+        .expect_err("first excess empty response chunk");
+        assert_eq!(error.category(), ErrorCategory::ResponseBody);
+        assert_eq!(polls.load(Ordering::SeqCst), MAX_EMPTY_RESPONSE_CHUNKS + 1);
+        assert!(dropped.load(Ordering::SeqCst));
+        let rendered = format!("{error} {error:?}");
+        assert!(!rendered.contains(&(MAX_EMPTY_RESPONSE_CHUNKS + 1).to_string()));
+        assert!(!rendered.contains("empty chunk"));
+    }
+
+    #[tokio::test]
+    async fn buffered_success_nonempty_byte_limit_is_unchanged() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+
+        let error = acquire_buffered(input(
+            [
+                Ok(Bytes::from_static(b"abc")),
+                Ok(Bytes::from_static(b"de")),
+            ],
+            &polls,
+            &dropped,
+            4,
+        ))
+        .await
+        .expect_err("first nonempty byte excess");
+        assert_eq!(error.category(), ErrorCategory::ResponseBody);
+        assert_eq!(polls.load(Ordering::SeqCst), 2);
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+}

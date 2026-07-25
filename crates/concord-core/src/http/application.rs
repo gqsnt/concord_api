@@ -21,9 +21,11 @@ use crate::error::{
     ApiError, ClientBuildError, ClientBuildErrorKind, ConfigurationErrorKind, HttpResponseFailure,
 };
 use crate::hooks::BodyKind;
-use crate::limits::{MAX_EMPTY_RESPONSE_CHUNKS, MAX_EMPTY_RESPONSE_CHUNKS_PER_POLL};
 
 use super::build::TlsCapability;
+use super::response_progress::{
+    EmptyChunkAction, ResponseChunkError, ResponseChunkProgress, next_nonempty_chunk,
+};
 use super::status::{StatusCapture, StatusDisposition, collect_terminal_status};
 
 pub(crate) struct ApplicationRequest {
@@ -64,63 +66,124 @@ impl ApplicationRequest {
 }
 
 pub(crate) struct ApplicationResponse {
-    native: reqwest::Response,
+    native: Option<reqwest::Response>,
     endpoint: EndpointId,
     method: Method,
+    progress: ResponseChunkProgress,
 }
 
 impl ApplicationResponse {
+    fn native(&self) -> &reqwest::Response {
+        self.native
+            .as_ref()
+            .expect("an active application response retains its native response")
+    }
+
     pub(crate) fn status(&self) -> StatusCode {
-        self.native.status()
+        self.native().status()
     }
 
     pub(crate) fn version(&self) -> Version {
-        self.native.version()
+        self.native().version()
     }
 
     pub(crate) fn headers(&self) -> &HeaderMap {
-        self.native.headers()
+        self.native().headers()
     }
 
     pub(crate) fn content_length(&self) -> Option<u64> {
-        self.native.content_length()
+        self.native().content_length()
     }
 
     pub(crate) async fn chunk(&mut self) -> Result<Option<Bytes>, ApiError> {
-        self.native.chunk().await.map_err(|error| {
-            drop(error);
-            ApiError::classified(
-                self.endpoint.clone(),
-                self.method.clone(),
-                crate::error::ErrorCategory::ResponseBody,
-            )
-        })
+        let result = next_nonempty_chunk(
+            self.native
+                .as_mut()
+                .expect("an active application response retains its native response"),
+            &mut self.progress,
+        )
+        .await;
+        match result {
+            Ok(Some(bytes)) => Ok(Some(bytes)),
+            Ok(None) => {
+                self.native = None;
+                Ok(None)
+            }
+            Err(ResponseChunkError::Acquisition | ResponseChunkError::LimitExceeded) => {
+                self.native = None;
+                Err(ApiError::classified(
+                    self.endpoint.clone(),
+                    self.method.clone(),
+                    crate::error::ErrorCategory::ResponseBody,
+                ))
+            }
+        }
     }
 
-    pub(crate) fn into_byte_stream(self, limit: u64) -> ApplicationByteStream {
+    pub(crate) fn into_byte_stream(mut self, limit: u64) -> ApplicationByteStream {
+        let native = self
+            .native
+            .take()
+            .expect("an active application response retains its native response");
         let endpoint = self.endpoint.clone();
         let method = self.method.clone();
         let source: ApplicationByteStream = Box::pin(ReducedResponseStream {
-            inner: Box::pin(self.native.bytes_stream()),
+            inner: Box::pin(native.bytes_stream()),
             endpoint: endpoint.clone(),
             method: self.method,
         });
-        bounded_byte_stream(source, endpoint, method, limit)
+        bounded_byte_stream_with_progress(source, endpoint, method, limit, self.progress)
     }
 
-    fn into_native(self) -> reqwest::Response {
-        self.native
+    fn into_native(mut self) -> (reqwest::Response, ResponseChunkProgress) {
+        (
+            self.native
+                .take()
+                .expect("an active application response retains its native response"),
+            self.progress,
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_native_for_test(
+        native: reqwest::Response,
+        endpoint: EndpointId,
+        method: Method,
+    ) -> Self {
+        Self {
+            native: Some(native),
+            endpoint,
+            method,
+            progress: ResponseChunkProgress::default(),
+        }
     }
 }
 
 pub(crate) type ApplicationByteStream =
     Pin<Box<dyn Stream<Item = Result<Bytes, ApiError>> + Send + 'static>>;
 
+#[cfg(test)]
 pub(crate) fn bounded_byte_stream(
     source: ApplicationByteStream,
     endpoint: EndpointId,
     method: Method,
     limit: u64,
+) -> ApplicationByteStream {
+    bounded_byte_stream_with_progress(
+        source,
+        endpoint,
+        method,
+        limit,
+        ResponseChunkProgress::default(),
+    )
+}
+
+fn bounded_byte_stream_with_progress(
+    source: ApplicationByteStream,
+    endpoint: EndpointId,
+    method: Method,
+    limit: u64,
+    progress: ResponseChunkProgress,
 ) -> ApplicationByteStream {
     Box::pin(BoundedResponseStream {
         source: Some(source),
@@ -128,7 +191,7 @@ pub(crate) fn bounded_byte_stream(
         method,
         limit,
         observed: 0,
-        empty_chunks_seen: 0,
+        progress,
         finished: false,
     })
 }
@@ -139,7 +202,7 @@ struct BoundedResponseStream {
     method: Method,
     limit: u64,
     observed: u64,
-    empty_chunks_seen: usize,
+    progress: ResponseChunkProgress,
     finished: bool,
 }
 
@@ -168,7 +231,7 @@ impl Stream for BoundedResponseStream {
             return Poll::Ready(None);
         }
 
-        let mut empty_chunks_this_poll = 0_usize;
+        this.progress.begin_turn();
         loop {
             let polled = this
                 .source
@@ -187,17 +250,15 @@ impl Stream for BoundedResponseStream {
                     return Poll::Ready(Some(Err(error)));
                 }
                 Poll::Ready(Some(Ok(bytes))) if bytes.is_empty() => {
-                    let Some(next) = this.empty_chunks_seen.checked_add(1) else {
-                        return this.response_body_error();
-                    };
-                    if next > MAX_EMPTY_RESPONSE_CHUNKS {
-                        return this.response_body_error();
-                    }
-                    this.empty_chunks_seen = next;
-                    empty_chunks_this_poll += 1;
-                    if empty_chunks_this_poll == MAX_EMPTY_RESPONSE_CHUNKS_PER_POLL {
-                        context.waker().wake_by_ref();
-                        return Poll::Pending;
+                    match this.progress.observe_empty() {
+                        EmptyChunkAction::Continue => {}
+                        EmptyChunkAction::YieldExecutor => {
+                            context.waker().wake_by_ref();
+                            return Poll::Pending;
+                        }
+                        EmptyChunkAction::LimitExceeded => {
+                            return this.response_body_error();
+                        }
                     }
                 }
                 Poll::Ready(Some(Ok(bytes))) => {
@@ -523,9 +584,10 @@ impl ApplicationHttp {
         };
 
         Ok(ApplicationResponse {
-            native,
+            native: Some(native),
             endpoint: endpoint.clone(),
             method: method.clone(),
+            progress: ResponseChunkProgress::default(),
         })
     }
 
@@ -618,6 +680,7 @@ impl ApplicationHttp {
             })
     }
 
+    #[cfg(test)]
     pub(super) async fn terminal_status(
         &self,
         endpoint: EndpointId,
@@ -634,6 +697,7 @@ impl ApplicationHttp {
             self.status_body_limit,
             self.retry_after_cap,
             deadline,
+            ResponseChunkProgress::default(),
         )
         .await
     }
@@ -645,14 +709,9 @@ impl ApplicationHttp {
         response: ApplicationResponse,
         deadline: Option<tokio::time::Instant>,
     ) -> HttpResponseFailure {
+        let (native, progress) = response.into_native();
         match self
-            .terminal_status(
-                endpoint,
-                method,
-                response.into_native(),
-                StatusDisposition::Terminal,
-                deadline,
-            )
+            .collect_terminal_status_with_progress(endpoint, method, native, deadline, progress)
             .await
         {
             StatusCapture::Terminal(failure) => failure,
@@ -660,6 +719,27 @@ impl ApplicationHttp {
                 unreachable!("terminal status capture cannot be recoverable")
             }
         }
+    }
+
+    async fn collect_terminal_status_with_progress(
+        &self,
+        endpoint: EndpointId,
+        method: Method,
+        response: reqwest::Response,
+        deadline: Option<tokio::time::Instant>,
+        progress: ResponseChunkProgress,
+    ) -> StatusCapture {
+        collect_terminal_status(
+            endpoint,
+            method,
+            response,
+            StatusDisposition::Terminal,
+            self.status_body_limit,
+            self.retry_after_cap,
+            deadline,
+            progress,
+        )
+        .await
     }
 
     #[cfg(test)]

@@ -16,6 +16,7 @@ use crate::error::{AuthErrorKind, ErrorCategory, reqwest_category};
 use crate::operation::OperationDeadline;
 
 use super::build::TlsCapability;
+use super::response_progress::{ResponseChunkError, ResponseChunkProgress, next_nonempty_chunk};
 
 /// Private provider HTTP owner with an independent client and pool.
 pub(super) struct ProviderHttpInner {
@@ -335,28 +336,7 @@ impl ProviderHttpInner {
             {
                 return Err(AuthError::new(AuthErrorKind::ResponseTooLarge));
             }
-            let status = response.status();
-            let headers = response.headers().clone();
-            let mut native = response;
-            let mut collected = BytesMut::new();
-            while let Some(chunk) = native.chunk().await.map_err(|error| {
-                drop(error);
-                AuthError::new(AuthErrorKind::Acquisition)
-            })? {
-                let next = collected
-                    .len()
-                    .checked_add(chunk.len())
-                    .ok_or_else(|| AuthError::new(AuthErrorKind::ResponseTooLarge))?;
-                if next > effective_response_limit {
-                    return Err(AuthError::new(AuthErrorKind::ResponseTooLarge));
-                }
-                collected.extend_from_slice(&chunk);
-            }
-            Ok(ProviderResponse {
-                status,
-                headers,
-                body: collected.freeze(),
-            })
+            collect_provider_response(response, effective_response_limit).await
         };
         match effective_timeout {
             Some(timeout) => tokio::time::timeout(timeout, operation)
@@ -403,6 +383,41 @@ impl ProviderHttpInner {
     }
 }
 
+async fn collect_provider_response(
+    mut response: reqwest::Response,
+    limit: usize,
+) -> Result<ProviderResponse, AuthError> {
+    let status = response.status();
+    let headers = response.headers().clone();
+    let mut collected = BytesMut::new();
+    let mut progress = ResponseChunkProgress::default();
+    loop {
+        let chunk = next_nonempty_chunk(&mut response, &mut progress)
+            .await
+            .map_err(|error| match error {
+                ResponseChunkError::Acquisition => AuthError::new(AuthErrorKind::Acquisition),
+                ResponseChunkError::LimitExceeded => {
+                    AuthError::new(AuthErrorKind::ResponseTooLarge)
+                }
+            })?;
+        let Some(chunk) = chunk else {
+            return Ok(ProviderResponse {
+                status,
+                headers,
+                body: collected.freeze(),
+            });
+        };
+        let next = collected
+            .len()
+            .checked_add(chunk.len())
+            .ok_or_else(|| AuthError::new(AuthErrorKind::ResponseTooLarge))?;
+        if next > limit {
+            return Err(AuthError::new(AuthErrorKind::ResponseTooLarge));
+        }
+        collected.extend_from_slice(&chunk);
+    }
+}
+
 fn auth_http_error(category: ErrorCategory) -> AuthError {
     let kind = match category {
         ErrorCategory::RequestBody => AuthErrorKind::RequestTooLarge,
@@ -415,13 +430,57 @@ fn auth_http_error(category: ErrorCategory) -> AuthError {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::future::Future;
+    use std::io;
+    use std::pin::Pin;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::task::{Context, Poll, Waker};
 
     use concord_test_support::executor::DeterministicExecutor;
     use concord_test_support::gate::Gate;
     use concord_test_support::script::ScriptedResponse;
+    use futures_core::Stream;
 
     use super::*;
+    use crate::http::response_progress::test_support::{empty_chunks, response as native_response};
+    use crate::limits::{MAX_EMPTY_RESPONSE_CHUNKS, MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN};
+
+    struct InfiniteEmptyBody {
+        polls: Arc<AtomicUsize>,
+        dropped: Arc<AtomicBool>,
+        fairness_reached: Arc<tokio::sync::Notify>,
+    }
+
+    impl Stream for InfiniteEmptyBody {
+        type Item = Result<Bytes, io::Error>;
+
+        fn poll_next(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            let polls = self.polls.fetch_add(1, Ordering::SeqCst) + 1;
+            if polls == MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN {
+                self.fairness_reached.notify_one();
+            }
+            Poll::Ready(Some(Ok(Bytes::new())))
+        }
+    }
+
+    impl Drop for InfiniteEmptyBody {
+        fn drop(&mut self) {
+            self.dropped.store(true, Ordering::SeqCst);
+        }
+    }
+
+    fn infinite_empty_response(
+        polls: &Arc<AtomicUsize>,
+        dropped: &Arc<AtomicBool>,
+        fairness_reached: &Arc<tokio::sync::Notify>,
+    ) -> reqwest::Response {
+        let body = reqwest::Body::wrap_stream(InfiniteEmptyBody {
+            polls: Arc::clone(polls),
+            dropped: Arc::clone(dropped),
+            fairness_reached: Arc::clone(fairness_reached),
+        });
+        http::Response::new(body).into()
+    }
 
     struct CountingFactory {
         calls: Arc<AtomicUsize>,
@@ -586,6 +645,117 @@ mod tests {
         assert_eq!(response.body(), &Bytes::from_static(b"safe"));
         assert_eq!(executor.provider().request_count().expect("count"), 1);
         assert_eq!(executor.application().request_count().expect("count"), 0);
+    }
+
+    #[tokio::test]
+    async fn provider_response_suppresses_empty_chunks() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let response = collect_provider_response(
+            native_response(
+                [
+                    Ok(Bytes::new()),
+                    Ok(Bytes::from_static(b"provider")),
+                    Ok(Bytes::new()),
+                ],
+                &polls,
+                &dropped,
+            ),
+            64,
+        )
+        .await
+        .expect("provider response");
+
+        assert_eq!(response.body(), &Bytes::from_static(b"provider"));
+        assert_eq!(polls.load(Ordering::SeqCst), 4);
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn provider_response_yields_executor_after_ready_empty_budget() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let mut chunks = empty_chunks(MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN);
+        chunks.push(Ok(Bytes::from_static(b"deferred")));
+        let mut collection = Box::pin(collect_provider_response(
+            native_response(chunks, &polls, &dropped),
+            64,
+        ));
+        let mut context = Context::from_waker(Waker::noop());
+
+        assert!(matches!(
+            collection.as_mut().poll(&mut context),
+            Poll::Pending
+        ));
+        assert_eq!(
+            polls.load(Ordering::SeqCst),
+            MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN
+        );
+    }
+
+    #[tokio::test]
+    async fn provider_response_first_excess_is_safe() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+
+        let error = error(
+            collect_provider_response(
+                native_response(
+                    empty_chunks(MAX_EMPTY_RESPONSE_CHUNKS + 1),
+                    &polls,
+                    &dropped,
+                ),
+                64,
+            )
+            .await,
+        );
+        assert_eq!(error.kind(), AuthErrorKind::ResponseTooLarge);
+        assert_eq!(polls.load(Ordering::SeqCst), MAX_EMPTY_RESPONSE_CHUNKS + 1);
+        assert!(dropped.load(Ordering::SeqCst));
+        let rendered = format!("{error} {error:?}");
+        assert!(!rendered.contains(&(MAX_EMPTY_RESPONSE_CHUNKS + 1).to_string()));
+        assert!(!rendered.contains("empty chunk"));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn provider_response_deadline_can_fire_during_empty_chunk_run() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let fairness_reached = Arc::new(tokio::sync::Notify::new());
+        let response = infinite_empty_response(&polls, &dropped, &fairness_reached);
+        let collection = tokio::spawn(async move {
+            tokio::time::timeout(
+                Duration::from_secs(1),
+                collect_provider_response(response, 64),
+            )
+            .await
+        });
+        fairness_reached.notified().await;
+        assert_eq!(
+            polls.load(Ordering::SeqCst),
+            MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN
+        );
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert!(collection.await.expect("provider collection task").is_err());
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn provider_response_error_contains_no_body_or_url() {
+        const BODY_SENTINEL: &str = "provider-body-secret-61f8";
+        const URL_SENTINEL: &str = "https://provider-secret.invalid/token";
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let mut chunks = vec![Ok(Bytes::from_static(BODY_SENTINEL.as_bytes()))];
+        chunks.extend(empty_chunks(MAX_EMPTY_RESPONSE_CHUNKS + 1));
+
+        let error =
+            error(collect_provider_response(native_response(chunks, &polls, &dropped), 64).await);
+        let rendered = format!("{error} {error:?}");
+        assert_eq!(error.kind(), AuthErrorKind::ResponseTooLarge);
+        assert!(!rendered.contains(BODY_SENTINEL));
+        assert!(!rendered.contains(URL_SENTINEL));
+        assert!(!rendered.contains(&(MAX_EMPTY_RESPONSE_CHUNKS + 1).to_string()));
     }
 
     #[tokio::test]

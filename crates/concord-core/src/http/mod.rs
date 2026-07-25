@@ -12,6 +12,7 @@ mod development;
 mod limits;
 pub(crate) mod provider;
 mod proxy;
+pub(crate) mod response_progress;
 #[allow(dead_code, reason = "called by the private managed response boundary")]
 mod status;
 #[cfg(all(test, feature = "http2"))]

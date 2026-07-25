@@ -36,11 +36,11 @@ pub const MAX_RATE_LIMIT_KEY_PART_NAME_BYTES: usize = 128;
 /// Maximum aggregate UTF-8 bytes in one resolved rate-limit key.
 pub const MAX_RATE_LIMIT_KEY_BYTES: usize = 65_536;
 
-/// Maximum empty transport chunks accepted by one response stream.
+/// Maximum empty transport chunks accepted by one response.
 pub const MAX_EMPTY_RESPONSE_CHUNKS: usize = 1_024;
 
-/// Maximum immediately ready empty response chunks handled by one task poll.
-pub(crate) const MAX_EMPTY_RESPONSE_CHUNKS_PER_POLL: usize = 32;
+/// Maximum immediately ready empty response chunks handled in one task turn.
+pub(crate) const MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN: usize = 32;
 
 /// Maximum windows retained by one rate-limit rule.
 pub const MAX_RATE_LIMIT_WINDOWS_PER_RULE: usize = 16;

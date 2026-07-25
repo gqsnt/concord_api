@@ -81,7 +81,7 @@ mod tests {
     use super::*;
     use crate::endpoint::EndpointId;
     use crate::error::ErrorCategory;
-    use crate::limits::{MAX_EMPTY_RESPONSE_CHUNKS, MAX_EMPTY_RESPONSE_CHUNKS_PER_POLL};
+    use crate::limits::{MAX_EMPTY_RESPONSE_CHUNKS, MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN};
 
     struct ProbeStream {
         chunks: VecDeque<Result<Bytes, ApiError>>,
@@ -199,7 +199,7 @@ mod tests {
     async fn direct_byte_stream_never_exposes_empty_items() {
         let polls = Arc::new(AtomicUsize::new(0));
         let dropped = Arc::new(AtomicBool::new(false));
-        let mut chunks = empty_chunks(MAX_EMPTY_RESPONSE_CHUNKS_PER_POLL + 1);
+        let mut chunks = empty_chunks(MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN + 1);
         chunks.push(Ok(Bytes::from_static(b"first")));
         chunks.push(Ok(Bytes::new()));
         chunks.push(Ok(Bytes::from_static(b"second")));
@@ -222,7 +222,7 @@ mod tests {
     fn per_poll_empty_chunk_budget_returns_pending() {
         let polls = Arc::new(AtomicUsize::new(0));
         let dropped = Arc::new(AtomicBool::new(false));
-        let mut chunks = empty_chunks(MAX_EMPTY_RESPONSE_CHUNKS_PER_POLL);
+        let mut chunks = empty_chunks(MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN);
         chunks.push(Ok(Bytes::from_static(b"deferred")));
         let mut response = response(chunks, &polls, &dropped, 64);
         let wakes = Arc::new(WakeCounter::default());
@@ -235,7 +235,7 @@ mod tests {
         ));
         assert_eq!(
             polls.load(Ordering::SeqCst),
-            MAX_EMPTY_RESPONSE_CHUNKS_PER_POLL
+            MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN
         );
     }
 
@@ -243,7 +243,7 @@ mod tests {
     fn per_poll_budget_wakes_the_task() {
         let polls = Arc::new(AtomicUsize::new(0));
         let dropped = Arc::new(AtomicBool::new(false));
-        let mut chunks = empty_chunks(MAX_EMPTY_RESPONSE_CHUNKS_PER_POLL);
+        let mut chunks = empty_chunks(MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN);
         chunks.push(Ok(Bytes::from_static(b"deferred")));
         let mut response = response(chunks, &polls, &dropped, 64);
         let wakes = Arc::new(WakeCounter::default());
