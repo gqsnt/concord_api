@@ -18,7 +18,12 @@ const READER_BUFFER_BYTES: usize = 8 * 1024;
 ///
 /// Construction is lazy: Concord does not poll the source until native
 /// request execution begins. Producer failures are reduced to a structural
-/// [`BodyErrorKind::Producer`] and producer-authored text is discarded.
+/// [`BodyErrorKind::Producer`] and producer-authored text is discarded. The
+/// final managed stream suppresses empty chunks before native transport,
+/// accepts at most [`MAX_EMPTY_REQUEST_CHUNKS`](super::MAX_EMPTY_REQUEST_CHUNKS)
+/// for one request body, and yields cooperatively during immediately ready
+/// empty runs. Empty chunks consume neither the body-byte limit nor an exact
+/// declared length.
 pub struct StreamBody {
     source: BodyStream,
     source_length: Option<u64>,
@@ -38,6 +43,10 @@ impl StreamBody {
     }
 
     /// Wraps an application stream and sanitizes every producer failure.
+    ///
+    /// The source may return `Pending` and perform trusted application work.
+    /// Empty chunks are not a progress mechanism: Concord suppresses and
+    /// bounds them when the resulting body enters native transport.
     #[must_use]
     pub fn from_stream<S, E>(stream: S) -> Self
     where
@@ -86,7 +95,10 @@ impl StreamBody {
         })
     }
 
-    /// Declares the exact number of bytes this stream must produce.
+    /// Declares the exact number of nonempty bytes this stream must produce.
+    ///
+    /// Empty chunks do not advance this length. Their first total-count excess
+    /// fails before any later end-of-stream length validation.
     #[must_use]
     pub fn exact_length(mut self, bytes: u64) -> Self {
         self.declared_length = Some(bytes);

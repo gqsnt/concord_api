@@ -190,9 +190,11 @@ pub enum RequestBodyCategory {
 /// One core-owned successful-response acquisition category.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ResponseAcquisition {
-    /// Complete bytes are acquired under the configured finite limit.
+    /// Complete bytes are acquired under the configured finite byte and
+    /// empty-transport-chunk limits.
     Buffered,
-    /// A lazy byte stream is exposed behind core-owned finite accounting.
+    /// A lazy byte stream is exposed behind core-owned byte and
+    /// empty-transport-chunk accounting.
     Streaming,
     /// The successful response body is discarded without polling.
     Discard,

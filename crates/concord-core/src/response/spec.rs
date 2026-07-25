@@ -31,6 +31,9 @@ pub(crate) mod private {
 }
 
 /// Complete bounded response acquisition before specification conversion.
+///
+/// Empty transport chunks are suppressed and bounded independently of the
+/// configured nonempty-byte limit.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Buffered;
 
@@ -175,7 +178,9 @@ pub struct ResponseHead<'a> {
 /// body can contain sensitive application data; implementations own their
 /// logging, storage, CPU, memory, metric cardinality, and external I/O behavior.
 /// Concord's acquisition limit bounds retained wire bytes, not the heap size of
-/// the output value produced by `from_body`.
+/// the output value produced by `from_body`. Every core-owned body-polling mode
+/// suppresses empty transport chunks and applies the same finite response-wide
+/// empty-chunk ceiling before extension conversion.
 pub trait ResponseBodySpec: Send + Sync + 'static {
     /// Successful semantic output.
     type Output: Send + 'static;

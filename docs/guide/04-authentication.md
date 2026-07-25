@@ -63,7 +63,10 @@ recovery is deterministic and bounded to at most one additional attempt.
 Provider HTTP is isolated, finite, redacted, and does not recursively execute
 the parent endpoint lifecycle. Custom providers can read the active semantic
 request-body ceiling with `CredentialRequest::http.request_body_limit()`
-without gaining access to native transport state.
+without gaining access to native transport state. Provider responses suppress
+empty transport chunks under the same response-wide ceiling as application
+acquisition, yield cooperatively during ready-empty runs, and remain governed
+by the existing provider/parent deadline.
 
 See the [DSL authentication grammar](../reference/dsl.md#authentication), the
 [security model](../concepts/security-and-redaction.md), and

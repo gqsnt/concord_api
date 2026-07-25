@@ -112,6 +112,11 @@ impl RequestBodyMetadata {
 /// own their logging, storage, CPU, memory, metric cardinality, and external
 /// I/O behavior.
 ///
+/// A custom specification may return a managed stream whose source returns
+/// `Pending`, performs trusted application work, or reports a safe producer
+/// error. Core suppresses and finitely bounds successful empty chunks before
+/// transport; extensions may not use them as an unbounded progress mechanism.
+///
 /// Ordinary complete buffered encoders should implement
 /// [`EncodeBody`](crate::codec::EncodeBody) instead; Concord supplies this
 /// specification through a blanket implementation.

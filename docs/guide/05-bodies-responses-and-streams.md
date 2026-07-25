@@ -16,18 +16,27 @@ semantic traits.
 A body specification is inert until execution. Body factories run only after
 public preparation, hooks, and limiter authority permit the attempt.
 Multipart serialization remains inside the native boundary so replayability
-and aggregate limits can be enforced.
+and aggregate limits can be enforced. Every direct, factory-produced, or
+multipart-backed request stream crosses one final managed boundary. Empty
+request chunks are suppressed before native transport and bounded by
+`concord::body::MAX_EMPTY_REQUEST_CHUNKS`; they consume neither the nonempty
+byte limit nor an exact declared length. The first empty-chunk excess wins
+before any later EOF exact-length error.
 
 Buffered responses are fully acquired under the configured response limit
-before decoding. Streaming responses expose a media-independent `ByteStream`;
-empty transport chunks are suppressed and are not application stream items.
-A finite response-level empty-chunk ceiling bounds non-byte progress, and a
-per-poll work budget yields cooperatively to the executor. Nonempty bytes retain
-their cumulative stream limit, with the first chunk that would exceed it
-withheld. CSV and NDJSON record decoders have an independent finite staging
-bound. Status bodies, provider responses, and pagination accumulation use
-separate limits. No extension receives a native transport response or can
-introduce a new unbounded acquisition mode.
+before decoding. Streaming responses expose a media-independent `ByteStream`.
+Every core-owned response acquisition path—buffered success, streaming
+success, terminal status capture, and provider HTTP—suppresses empty
+transport chunks and accepts at most
+`concord::response::MAX_EMPTY_RESPONSE_CHUNKS` for one response. Empty chunks
+are never application items, their total is not reset by nonempty data, and
+bounded per-poll or per-turn work yields cooperatively to the executor.
+Nonempty bytes retain the applicable cumulative byte limit, with the first
+chunk that would exceed it withheld. CSV and NDJSON record decoders have an
+independent finite staging bound. Status bodies, provider responses, and
+pagination accumulation retain their separate byte/item limits. No extension
+receives a native transport response or can introduce a new unbounded
+acquisition mode.
 
 The endpoint deadline governs opening a returned `ByteStream`, not later
 caller-driven polling. Stream polling remains cumulatively byte-bounded but
@@ -37,7 +46,10 @@ cancellation primitive owned by the calling runtime.
 
 Wire and staging limits bound Concord-owned bytes, not the allocation size of
 the decoded application value. Custom decoders and response specifications
-must bound their own CPU, memory, state, and side effects.
+must bound their own CPU, memory, state, and side effects. Custom request
+streams may return `Pending`, perform trusted application work, and produce
+safe upstream errors, but core does not permit empty chunks to serve as an
+unbounded progress mechanism.
 
 `RecordDecoder` receives a mutable staging buffer, but core can enforce only
 the net length observed across a callback. The resulting length must not

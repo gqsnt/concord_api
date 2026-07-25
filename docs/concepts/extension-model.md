@@ -27,6 +27,13 @@ extension must provide structural request metadata and managed preparation, or
 must select and convert one of the sealed buffered, streaming, or discard
 response modes.
 
+Custom request streams may return `Pending`, perform trusted application work,
+and report safe producer errors. Empty chunks are framing artifacts rather
+than a progress mechanism: the final core-owned stream suppresses them,
+enforces a request-wide total ceiling, and bounds ready-empty work per poll.
+Factory and multipart streams cross the same boundary. Response extensions
+receive only bodies acquired through the equivalent response-wide contract.
+
 There is no public trait named `ResponseBody`. `ResponseMode::Body` is the
 core-acquired semantic input passed to `ResponseBodySpec::from_body`; it is not
 a native response and cannot introduce another acquisition mode.

@@ -38,7 +38,9 @@ pub(super) struct ProviderHttpInner {
 /// providers remain responsible for their own logging and storage. Providers can
 /// inspect the active semantic request-body ceiling through
 /// [`ProviderHttp::request_body_limit`] without gaining access to native
-/// transport state.
+/// transport state. Provider response acquisition suppresses empty transport
+/// chunks, applies the response-wide empty-chunk ceiling, and yields
+/// cooperatively during ready-empty runs under the existing deadline.
 #[derive(Clone, Copy)]
 pub struct ProviderHttp<'a> {
     inner: Option<&'a ProviderHttpInner>,
@@ -123,6 +125,9 @@ pub trait ProviderBodyFactory: Send + Sync + 'static {
 }
 
 /// A complete bounded provider response, including non-success statuses.
+///
+/// Empty transport chunks have already been suppressed and bounded before this
+/// value is made available to a provider.
 pub struct ProviderResponse {
     status: StatusCode,
     headers: HeaderMap,

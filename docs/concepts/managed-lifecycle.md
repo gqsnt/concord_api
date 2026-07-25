@@ -15,12 +15,14 @@ The logical order is:
 8. finalize credential acquisition;
 9. create the attempt's native body and request;
 10. place private authentication;
-11. perform the HTTP exchange;
+11. perform the HTTP exchange while the final managed request stream
+    suppresses and bounds empty chunks before transport;
 12. sanitize the received response head and let the core-selected limiter
     observe it under the remaining operation deadline;
 13. run the user response-head hook under that same deadline;
 14. perform at most one authentication recovery when allowed, or classify
-    status and acquire the selected sealed response mode;
+    status and acquire the selected sealed response mode while suppressing and
+    bounding empty transport chunks;
 15. fix the result;
 16. await deterministic completion outside the operation deadline.
 
@@ -32,7 +34,8 @@ final head even when later user policy rejects the operation.
 Generated direct methods, explicit generated endpoint values, runtime-defined
 endpoints, every pagination page, and dangerous bounded terminals use this one
 protocol. Provider HTTP is isolated support work rather than a second endpoint
-executor.
+executor. Its body-acquisition loop uses the same response empty-chunk
+contract and retains its existing deadline.
 
 Cancellation does not detach correctness work. Completion is an awaited,
 delivery-blocking observation of an already-fixed result: it runs exactly once

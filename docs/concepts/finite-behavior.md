@@ -2,9 +2,9 @@
 
 Concord makes cumulative work explicit and bounded:
 
-- request body preparation and multipart serialization;
+- request body preparation, streaming, and multipart serialization;
 - buffered and streaming successful responses;
-- empty transport-chunk progress within streaming responses;
+- empty transport-chunk progress across every body-acquiring response mode;
 - captured terminal status bodies;
 - provider request and response bodies;
 - record-decoder staging;
@@ -20,11 +20,15 @@ failing afterward. Pagination is sequential and cycle-detecting, returns all
 items only on success, and never exposes a partial result under its existing
 terminal.
 
-Empty transport chunks do not represent application body bytes and are never
-yielded. Core bounds their total count for one response independently of the
-cumulative nonempty-byte limit. It also processes only a bounded run per task
-poll, wakes the task, and returns `Pending` so an immediately ready source
-cannot monopolize the executor.
+Empty chunks do not represent application body bytes and are never yielded or
+forwarded. Core bounds their total count independently for one request body
+and one response body; neither total resets after nonempty data. Request
+chunks do not consume body bytes or advance an exact length. Response chunks
+do not consume the applicable post-decompression byte limit. Core processes
+only a bounded ready-empty run per poll or async turn, waking or yielding so
+the source cannot monopolize the executor and existing deadlines can regain
+control. A request empty-chunk excess wins before eventual EOF exact-length
+validation; a response excess wins before later byte, status, or decode work.
 
 Sealed response acquisition modes prevent an extension from introducing an
 unbounded/native response escape. Multipart remains inside the private

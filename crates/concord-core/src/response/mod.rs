@@ -6,7 +6,9 @@
 //! full validation and conversion contract for a sealed response mode. There
 //! is no public `ResponseBody` trait. [`ResponseMode::Body`] is the semantic
 //! value acquired by core and passed to `ResponseBodySpec::from_body`, never a
-//! native response.
+//! native response. Every core-owned mode that polls a response body suppresses
+//! empty transport chunks and accepts at most
+//! [`MAX_EMPTY_RESPONSE_CHUNKS`] for one response.
 
 mod error;
 mod handler;

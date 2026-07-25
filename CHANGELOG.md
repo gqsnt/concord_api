@@ -58,10 +58,15 @@
 - Generated and runtime-defined requests share final core-owned component,
   logical and credential-sanitized URL, header-count, and aggregate-header
   byte ceilings.
-- Empty transport response chunks are suppressed before `ByteStream`,
-  `RecordStream`, or custom streaming response specifications can observe
-  them. One response accepts at most 1,024 empty chunks, and bounded per-poll
-  work yields cooperatively before continuing.
+- Empty transport response chunks are suppressed across buffered success,
+  streaming success, terminal status capture, and provider HTTP before
+  application code can observe them. One response accepts at most 1,024 empty
+  chunks, and bounded per-poll or per-turn work yields cooperatively before
+  continuing. Nonempty response-byte limits are unchanged.
+- Empty request chunks are suppressed before native transport across direct,
+  factory-produced, and multipart-backed managed streams. One request body
+  accepts at most 1,024 empty chunks; bounded per-poll work preserves
+  fairness, while nonempty byte and exact-length accounting is unchanged.
 - Host-prefix shaping is rejected at compile time when an endpoint's final
   normalized shape uses an IPv4 or IPv6 fixed base. IP-literal bases remain
   valid without shaping, including when `host off` clears an inherited
@@ -109,9 +114,10 @@
   headers.
 - The first JSON, request-head, or startup excess is rejected without
   retaining the rejected unit or exposing supplied content.
-- Empty transport chunks are never application items; their first total-count
-  excess produces one redacted terminal response-body error, while a
-  per-poll work budget preserves executor fairness.
+- Empty request chunks are never native transport items, and empty response
+  chunks are never application items. Their total counts do not reset after
+  nonempty data; the first excess produces one redacted terminal error, while
+  bounded per-poll/per-turn work preserves executor fairness.
 - Authentication recovery permits at most one additional attempt.
 - Limiter response observation is core-first and deadline-governed.
 - Pagination is sequential, finite, cycle-detecting, first-excess

@@ -1,4 +1,8 @@
 //! Stable request-body contracts and the single private prepared-body model.
+//!
+//! Every managed request stream suppresses empty chunks before native
+//! transport and accepts at most [`MAX_EMPTY_REQUEST_CHUNKS`] for one body.
+//! Empty chunks do not consume the byte limit or advance an exact length.
 
 mod error;
 #[cfg(feature = "multipart")]

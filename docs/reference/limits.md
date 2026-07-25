@@ -13,9 +13,10 @@ ceilings selected for finite construction.
 | Bound | Value | Unit |
 |---|---:|---|
 | Request body | 16,777,216 | bytes |
+| Empty chunks in one managed request body | 1,024 | chunks |
 | Buffered successful response | 16,777,216 | bytes |
 | Streaming response | 16,777,216 | bytes |
-| Empty transport chunks in one response stream | 1,024 | chunks |
+| Empty transport chunks in one acquired response body | 1,024 | chunks |
 | Captured terminal status body | 65,536 | bytes |
 | Credential-provider request body | 1,048,576 | bytes |
 | Credential-provider response body | 1,048,576 | bytes |
@@ -65,14 +66,24 @@ ceilings selected for finite construction.
 | OAuth2 Basic Authorization value | 32,768 | bytes |
 <!-- END GENERATED LIMITS -->
 
-The streaming-response byte limit counts only nonempty post-decompression
-bytes. Empty transport chunks are framing artifacts: core suppresses them,
-accepts at most `concord::response::MAX_EMPTY_RESPONSE_CHUNKS` for one
-response, and returns one redacted terminal response-body error on the first
-excess. A bounded internal per-poll work budget wakes the task and returns
-control to the executor before continuing through another ready run of empty
-chunks. Caller-driven polling after the stream opens remains outside the
-endpoint deadline.
+Empty chunks are framing artifacts and have separate structural ceilings.
+Every managed request body suppresses them before native transport and accepts
+at most `concord::body::MAX_EMPTY_REQUEST_CHUNKS`. The total is not reset by
+nonempty data. Empty chunks consume neither the request-body byte limit nor an
+exact declared length, and their first excess fails before eventual EOF
+exact-length validation. A bounded internal per-poll work budget wakes the
+task and returns control to the executor during an immediately ready run.
+
+Every core-owned response acquisition mode that polls a body suppresses empty
+transport chunks and accepts at most
+`concord::response::MAX_EMPTY_RESPONSE_CHUNKS` for one response. The total is
+not reset by nonempty data. Empty chunks do not consume the applicable
+nonempty post-decompression byte limit. Internal per-poll and per-turn work
+budgets return control to the executor, allowing existing operation and
+provider deadlines to regain control. The first empty-chunk excess produces
+one redacted terminal error before later byte, status, or decode processing.
+Nonempty first-excess byte withholding is unchanged. Caller-driven polling
+after a successful stream opens remains outside the endpoint deadline.
 
 Dynamic host, path, query, and header values cross a user-code trust boundary
 when Concord invokes their `Display` implementation. User formatting may do

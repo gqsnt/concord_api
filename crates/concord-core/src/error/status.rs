@@ -42,6 +42,9 @@ enum StatusBodyInner {
 }
 
 /// An opaque finite complete-only terminal HTTP status body.
+///
+/// Capture suppresses empty transport chunks and applies the response-wide
+/// empty-chunk ceiling before later status-body processing.
 pub struct StatusBody {
     inner: StatusBodyInner,
 }

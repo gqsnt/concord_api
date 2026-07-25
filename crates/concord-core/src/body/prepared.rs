@@ -50,6 +50,8 @@ pub(crate) enum Replayability {
 /// I/O. Both callbacks are synchronous and cannot be preempted by Concord; the
 /// operation deadline is checked after return, cancellation prevents later work
 /// only, and Concord does not automatically bound custom factory state.
+/// Every returned stream subsequently crosses the same core-owned empty-chunk,
+/// byte-limit, and exact-length boundary as a direct [`StreamBody`].
 pub trait BodyFactory: Send + Sync + 'static {
     /// Returns the stable content type for every body produced by this factory.
     fn content_type(&self) -> Option<HeaderValue> {
@@ -61,6 +63,10 @@ pub trait BodyFactory: Send + Sync + 'static {
 }
 
 /// Opaque explicit request body used by the shared body architecture.
+///
+/// Stream, factory, and multipart-backed variants converge on one final
+/// managed stream. Empty chunks are suppressed before native transport and
+/// bounded independently of the nonempty byte and exact-length accounting.
 pub struct RequestBody {
     value: RequestBodyValue,
     content_type: Option<HeaderValue>,
@@ -99,7 +105,7 @@ impl RequestBody {
         }
     }
 
-    /// Creates a one-shot body from a lazy stream.
+    /// Creates a one-shot body from a lazy, empty-chunk-bounded stream.
     #[must_use]
     pub fn stream(value: StreamBody) -> Self {
         Self {
@@ -109,6 +115,9 @@ impl RequestBody {
     }
 
     /// Creates a reconstructible body and captures its structural content type.
+    ///
+    /// Each factory result uses the same final empty-chunk contract as a
+    /// directly supplied stream.
     #[must_use]
     pub fn factory<F>(factory: F) -> Self
     where
