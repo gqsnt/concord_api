@@ -135,6 +135,10 @@ where
             } else {
                 this.decoder.decode(&mut this.buffer)
             };
+            let after = this.buffer.len();
+            if after > before || matches!(&decoded, Ok(Some(_)) if after >= before) {
+                return this.fail(RecordErrorKind::Internal);
+            }
             if this.buffer.len() > this.max_buffered_bytes {
                 return this.fail(RecordErrorKind::LimitExceeded);
             }
@@ -323,6 +327,92 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Copy)]
+    enum DecoderBehavior {
+        SomeWithoutConsumption,
+        SomeFromEmpty,
+        Growth,
+        EofSomeWithoutConsumption,
+        EofGrowth,
+        ConsumeNoneThenYield,
+    }
+
+    struct ContractDecoder {
+        behavior: DecoderBehavior,
+        calls: Arc<AtomicUsize>,
+        consumed_without_record: bool,
+    }
+
+    impl ContractDecoder {
+        fn new(behavior: DecoderBehavior, calls: &Arc<AtomicUsize>) -> Self {
+            Self {
+                behavior,
+                calls: Arc::clone(calls),
+                consumed_without_record: false,
+            }
+        }
+    }
+
+    impl RecordDecoder for ContractDecoder {
+        type Record = Vec<u8>;
+
+        fn start(_head: &ResponseHead<'_>) -> Result<Self, RecordError> {
+            unreachable!("contract decoder is constructed directly")
+        }
+
+        fn decode(&mut self, buffer: &mut BytesMut) -> Result<Option<Self::Record>, RecordError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            match self.behavior {
+                DecoderBehavior::SomeWithoutConsumption if !buffer.is_empty() => {
+                    Ok(Some(buffer.to_vec()))
+                }
+                DecoderBehavior::SomeFromEmpty => {
+                    Ok(Some(b"unconsumed-record-sentinel-6f218d".to_vec()))
+                }
+                DecoderBehavior::Growth => {
+                    buffer.extend_from_slice(b"decoder-growth-sentinel-a18c4d");
+                    Ok(None)
+                }
+                DecoderBehavior::ConsumeNoneThenYield if !buffer.is_empty() => {
+                    if self.consumed_without_record {
+                        Ok(Some(buffer.split_to(1).to_vec()))
+                    } else {
+                        let consumed = buffer.split_to(1);
+                        drop(consumed);
+                        self.consumed_without_record = true;
+                        Ok(None)
+                    }
+                }
+                DecoderBehavior::SomeWithoutConsumption
+                | DecoderBehavior::EofSomeWithoutConsumption
+                | DecoderBehavior::EofGrowth
+                | DecoderBehavior::ConsumeNoneThenYield => Ok(None),
+            }
+        }
+
+        fn decode_eof(
+            &mut self,
+            buffer: &mut BytesMut,
+        ) -> Result<Option<Self::Record>, RecordError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            match self.behavior {
+                DecoderBehavior::EofSomeWithoutConsumption => Ok(Some(buffer.to_vec())),
+                DecoderBehavior::EofGrowth => {
+                    buffer.extend_from_slice(b"decoder-eof-growth-sentinel-0b63cc");
+                    Ok(None)
+                }
+                DecoderBehavior::SomeWithoutConsumption
+                | DecoderBehavior::SomeFromEmpty
+                | DecoderBehavior::Growth
+                | DecoderBehavior::ConsumeNoneThenYield => Ok(None),
+            }
+        }
+
+        fn max_buffered_bytes() -> NonZeroUsize {
+            NonZeroUsize::new(64).expect("positive contract-test bound")
+        }
+    }
+
     struct ProbeBody {
         chunks: VecDeque<Result<Bytes, ApiError>>,
         polls: Arc<AtomicUsize>,
@@ -353,6 +443,19 @@ mod tests {
         dropped: &Arc<AtomicBool>,
         staging: usize,
     ) -> RecordStream<LineDecoder> {
+        stream_with_decoder(LineDecoder, chunks, polls, dropped, staging)
+    }
+
+    fn stream_with_decoder<D>(
+        decoder: D,
+        chunks: impl IntoIterator<Item = Result<Bytes, ApiError>>,
+        polls: &Arc<AtomicUsize>,
+        dropped: &Arc<AtomicBool>,
+        staging: usize,
+    ) -> RecordStream<D>
+    where
+        D: RecordDecoder,
+    {
         let body: ApplicationByteStream = Box::pin(ProbeBody {
             chunks: chunks.into_iter().collect(),
             polls: Arc::clone(polls),
@@ -366,7 +469,7 @@ mod tests {
         ));
         RecordStream::new(
             body,
-            LineDecoder,
+            decoder,
             NonZeroUsize::new(staging).expect("positive test staging bound"),
         )
     }
@@ -376,6 +479,236 @@ mod tests {
         S: Stream + Unpin,
     {
         poll_fn(|context| Pin::new(&mut *stream).poll_next(context)).await
+    }
+
+    #[tokio::test]
+    async fn decoder_some_without_consumption_fails() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut records = stream_with_decoder(
+            ContractDecoder::new(DecoderBehavior::SomeWithoutConsumption, &calls),
+            [Ok(Bytes::from_static(b"record"))],
+            &polls,
+            &dropped,
+            64,
+        );
+
+        let error = next(&mut records)
+            .await
+            .expect("terminal error")
+            .expect_err("record without progress");
+        assert_eq!(error.kind(), RecordErrorKind::Internal);
+        assert_eq!(polls.load(Ordering::SeqCst), 1);
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn decoder_some_from_empty_buffer_fails() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut records = stream_with_decoder(
+            ContractDecoder::new(DecoderBehavior::SomeFromEmpty, &calls),
+            Vec::<Result<Bytes, ApiError>>::new(),
+            &polls,
+            &dropped,
+            64,
+        );
+
+        let error = next(&mut records)
+            .await
+            .expect("terminal error")
+            .expect_err("empty-buffer record");
+        assert_eq!(error.kind(), RecordErrorKind::Internal);
+        assert_eq!(polls.load(Ordering::SeqCst), 0);
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn decoder_growth_fails() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut records = stream_with_decoder(
+            ContractDecoder::new(DecoderBehavior::Growth, &calls),
+            Vec::<Result<Bytes, ApiError>>::new(),
+            &polls,
+            &dropped,
+            64,
+        );
+
+        let error = next(&mut records)
+            .await
+            .expect("terminal error")
+            .expect_err("decoder growth");
+        assert_eq!(error.kind(), RecordErrorKind::Internal);
+        assert_eq!(polls.load(Ordering::SeqCst), 0);
+        assert!(records.buffer.is_empty());
+    }
+
+    #[tokio::test]
+    async fn decode_eof_some_without_consumption_fails() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut records = stream_with_decoder(
+            ContractDecoder::new(DecoderBehavior::EofSomeWithoutConsumption, &calls),
+            [Ok(Bytes::from_static(b"unterminated"))],
+            &polls,
+            &dropped,
+            64,
+        );
+
+        let error = next(&mut records)
+            .await
+            .expect("terminal error")
+            .expect_err("EOF record without progress");
+        assert_eq!(error.kind(), RecordErrorKind::Internal);
+        assert_eq!(polls.load(Ordering::SeqCst), 2);
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn decode_eof_growth_fails() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut records = stream_with_decoder(
+            ContractDecoder::new(DecoderBehavior::EofGrowth, &calls),
+            Vec::<Result<Bytes, ApiError>>::new(),
+            &polls,
+            &dropped,
+            64,
+        );
+
+        let error = next(&mut records)
+            .await
+            .expect("terminal error")
+            .expect_err("EOF decoder growth");
+        assert_eq!(error.kind(), RecordErrorKind::Internal);
+        assert_eq!(polls.load(Ordering::SeqCst), 1);
+        assert!(records.buffer.is_empty());
+    }
+
+    #[tokio::test]
+    async fn decoder_none_with_consumption_is_retried() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut records = stream_with_decoder(
+            ContractDecoder::new(DecoderBehavior::ConsumeNoneThenYield, &calls),
+            [Ok(Bytes::from_static(b"xy"))],
+            &polls,
+            &dropped,
+            64,
+        );
+
+        assert_eq!(
+            next(&mut records).await.expect("record").expect("valid"),
+            b"y"
+        );
+        assert_eq!(polls.load(Ordering::SeqCst), 1);
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
+        assert!(records.buffer.is_empty());
+    }
+
+    #[tokio::test]
+    async fn decoder_none_without_consumption_polls_body() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let mut records = stream([Ok(Bytes::from_static(b"polled\n"))], &polls, &dropped, 64);
+
+        assert_eq!(
+            next(&mut records).await.expect("record").expect("valid"),
+            b"polled"
+        );
+        assert_eq!(polls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn valid_decoder_consumes_and_yields() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let mut records = stream(
+            [Ok(Bytes::from_static(b"first\nsecond\n"))],
+            &polls,
+            &dropped,
+            64,
+        );
+
+        assert_eq!(
+            next(&mut records).await.expect("first").expect("valid"),
+            b"first"
+        );
+        assert_eq!(
+            next(&mut records).await.expect("second").expect("valid"),
+            b"second"
+        );
+        assert_eq!(polls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn contract_failure_is_terminal() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut records = stream_with_decoder(
+            ContractDecoder::new(DecoderBehavior::SomeFromEmpty, &calls),
+            Vec::<Result<Bytes, ApiError>>::new(),
+            &polls,
+            &dropped,
+            64,
+        );
+
+        assert!(next(&mut records).await.expect("one error").is_err());
+        let calls_after_failure = calls.load(Ordering::SeqCst);
+        assert!(next(&mut records).await.is_none());
+        assert!(next(&mut records).await.is_none());
+        assert_eq!(calls.load(Ordering::SeqCst), calls_after_failure);
+    }
+
+    #[tokio::test]
+    async fn contract_failure_releases_body_and_staging() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut records = stream_with_decoder(
+            ContractDecoder::new(DecoderBehavior::SomeWithoutConsumption, &calls),
+            [Ok(Bytes::from_static(b"staged-release-sentinel-509ba2"))],
+            &polls,
+            &dropped,
+            64,
+        );
+
+        assert!(next(&mut records).await.expect("one error").is_err());
+        assert!(records.body.is_none());
+        assert!(records.buffer.is_empty());
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn contract_failure_error_is_redacted() {
+        const SENTINEL: &[u8] = b"record-and-buffer-secret-sentinel-fab784";
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut records = stream_with_decoder(
+            ContractDecoder::new(DecoderBehavior::SomeWithoutConsumption, &calls),
+            [Ok(Bytes::from_static(SENTINEL))],
+            &polls,
+            &dropped,
+            64,
+        );
+
+        let error = next(&mut records)
+            .await
+            .expect("terminal error")
+            .expect_err("contract error");
+        let rendered = format!("{error} {error:?}");
+        assert_eq!(error.kind(), RecordErrorKind::Internal);
+        assert!(!rendered.contains("record-and-buffer-secret-sentinel"));
+        assert!(!rendered.contains("ContractDecoder"));
     }
 
     #[tokio::test]

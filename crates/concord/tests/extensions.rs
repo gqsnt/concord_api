@@ -4,9 +4,9 @@ mod extensions {
     mod rate_limit_composition;
 }
 
-#[cfg(feature = "records")]
-pub(crate) use extensions::contracts::ExtensionRecordDecoder;
 pub(crate) use extensions::contracts::{
     ExtensionBufferedSpec, ExtensionConstructionProbe, ExtensionController, ExtensionDiscardSpec,
     ExtensionPageCodec, ExtensionProvider, ExtensionRequestSpec, ExtensionStreamingSpec,
 };
+#[cfg(feature = "records")]
+pub(crate) use extensions::contracts::{ExtensionRecordDecoder, NoProgressRecordDecoder};

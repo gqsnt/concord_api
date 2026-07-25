@@ -19,6 +19,17 @@ use super::RecordError;
 /// independently enforced positive finite staging bound. Inputs and decoder
 /// state may be sensitive; implementations own logging, storage, CPU, memory,
 /// metric cardinality, and external I/O behavior.
+///
+/// Implementations must not append to the supplied staging buffer. Returning
+/// `Some(record)` requires removing at least one byte from the buffer. Core
+/// terminates the stream with an internal record error when this contract is
+/// violated. `decode` may consume bytes and return `None`; core immediately
+/// retries decoding before polling the response body. `decode_eof` follows the
+/// same progress rules after the body reaches EOF.
+///
+/// One logical decoder output must correspond to staged-byte consumption. A
+/// format that expands one framed input into several values should return that
+/// collection as one record or use a different response specification.
 pub trait RecordDecoder: Sized + Send + 'static {
     /// One successfully decoded record.
     type Record: Send + 'static;
@@ -36,10 +47,10 @@ pub trait RecordDecoder: Sized + Send + 'static {
     /// Creates one request-local decoder before the first body poll.
     fn start(head: &ResponseHead<'_>) -> Result<Self, RecordError>;
 
-    /// Decodes at most one record from the current staging buffer.
+    /// Decodes at most one record while obeying the trait-level progress contract.
     fn decode(&mut self, buffer: &mut BytesMut) -> Result<Option<Self::Record>, RecordError>;
 
-    /// Resolves at most one final record after the byte stream reaches EOF.
+    /// Resolves at most one final record under the same progress contract.
     fn decode_eof(&mut self, buffer: &mut BytesMut) -> Result<Option<Self::Record>, RecordError>;
 
     /// Returns the positive finite maximum number of undecoded staged bytes.

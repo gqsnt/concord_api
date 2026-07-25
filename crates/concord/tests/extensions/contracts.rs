@@ -2,6 +2,8 @@
 
 #[cfg(feature = "records")]
 use std::num::NonZeroUsize;
+#[cfg(feature = "records")]
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -45,6 +47,8 @@ use concord::response::{
     Buffered, ByteStream, Discard, ResponseBodyError, ResponseBodySpec, ResponseHead, Streaming,
 };
 use concord::{Bytes, ClientBuildError, SecretString};
+#[cfg(feature = "records")]
+use futures_core::Stream;
 
 fn runtime_id(value: &str) -> EndpointId {
     EndpointId::try_from(value).expect("valid runtime endpoint ID")
@@ -142,6 +146,32 @@ impl RecordDecoder for ExtensionRecordDecoder {
 
     fn max_buffered_bytes() -> NonZeroUsize {
         NonZeroUsize::new(64 * 1024).expect("positive extension staging bound")
+    }
+}
+
+#[cfg(feature = "records")]
+pub struct NoProgressRecordDecoder;
+
+#[cfg(feature = "records")]
+impl RecordDecoder for NoProgressRecordDecoder {
+    type Record = Bytes;
+
+    fn start(_head: &ResponseHead<'_>) -> Result<Self, RecordError> {
+        Ok(Self)
+    }
+
+    fn decode(&mut self, _buffer: &mut BytesMut) -> Result<Option<Bytes>, RecordError> {
+        Ok(Some(Bytes::from_static(
+            b"public-no-progress-record-sentinel-cfe809",
+        )))
+    }
+
+    fn decode_eof(&mut self, _buffer: &mut BytesMut) -> Result<Option<Bytes>, RecordError> {
+        Ok(None)
+    }
+
+    fn max_buffered_bytes() -> NonZeroUsize {
+        NonZeroUsize::new(64).expect("positive public contract-test bound")
     }
 }
 
@@ -537,6 +567,7 @@ concord::api! {
     }
 
     GET custom() -> Records<crate::ExtensionRecordDecoder>;
+    GET invalid_decoder() -> Records<crate::NoProgressRecordDecoder>;
 }
 
 #[cfg(feature = "csv")]
@@ -768,6 +799,38 @@ async fn downstream_generated_controller_constructs_binds_and_collects_two_pages
     assert!(requests[0].target().contains("cursor=initial"));
     assert!(requests[1].target().contains("cursor=continuation"));
     assert_eq!(probe_counts, (1, 2, 2));
+}
+
+#[cfg(feature = "records")]
+#[tokio::test(flavor = "current_thread")]
+async fn records_public_decoder_some_from_empty_buffer_fails() {
+    use concord::records::RecordErrorKind;
+    use concord_test_support::server::{ResponseScript, ScriptedServer};
+
+    let server =
+        ScriptedServer::start([ResponseScript::ok("")]).expect("bounded loopback record server");
+    let proxy = SafeProxy::parse(server.url("")).expect("credential-free loopback proxy URL");
+    let client = RecordExtensionApi::builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .build()
+        .expect("public record-extension client");
+    let mut records = client
+        .invalid_decoder()
+        .await
+        .expect("successful streaming response");
+
+    let error = std::future::poll_fn(|context| Pin::new(&mut records).poll_next(context))
+        .await
+        .expect("one terminal record error")
+        .expect_err("empty-buffer record must violate progress");
+    assert_eq!(error.kind(), RecordErrorKind::Internal);
+    let rendered = format!("{error} {error:?}");
+    assert!(!rendered.contains("public-no-progress-record-sentinel"));
+    assert!(
+        std::future::poll_fn(|context| Pin::new(&mut records).poll_next(context))
+            .await
+            .is_none()
+    );
 }
 
 #[cfg(feature = "default-tls")]
