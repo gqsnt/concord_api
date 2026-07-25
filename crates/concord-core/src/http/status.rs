@@ -20,6 +20,10 @@ pub(super) enum StatusCapture {
     Terminal(HttpResponseFailure),
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the private status boundary receives one complete set of lifecycle and response-progress owners"
+)]
 pub(super) async fn collect_terminal_status(
     endpoint: EndpointId,
     method: Method,

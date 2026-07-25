@@ -78,13 +78,15 @@ Hardening proofs stay with the lowest semantic owner:
   request-head rejection, normalized DNS/IP host-shaping acceptance, exact
   diagnostics, and generated documentation capabilities;
 - core unit tests own capped arithmetic, JSON-independent body defense,
-  startup retention, reader-buffer reuse, response-stream empty-chunk totals,
-  deterministic per-poll wake/fairness behavior, pagination identity bytes,
-  and lifecycle event order;
+  startup retention, reader-buffer reuse, shared response-progress arithmetic,
+  streaming/buffered/status/provider empty-chunk totals and fairness,
+  managed-request empty-chunk totals, wake behavior, exact-length ordering,
+  pagination identity bytes, and lifecycle event order;
 - extras unit tests own capped JSON serialization and concrete downstream
   codec/provider behavior;
-- façade integration tests own generated/runtime parity and public namespace
-  reachability;
+- façade integration tests own generated/runtime parity, public namespace
+  reachability, and custom `RequestBodySpec` suppression before loopback
+  transport;
 - documentation, fixture, analyzer, package, and archive behavior remains in
   its repository-level command owner.
 
@@ -93,12 +95,17 @@ state, iterator progress, or deterministic events so a late reject cannot
 masquerade as first-excess withholding. Error tests use sentinels and inspect
 both `Display` and `Debug`.
 
-Ready-empty response-stream probes use manual polling, upstream poll counters,
-and an instrumented waker. Direct `ByteStream` tests own suppression, total
-ceiling, terminal redaction, and unchanged nonempty-byte limits;
-`RecordStream` tests own the no-spin composition proof. Host-base semantic
-unit tests own inheritance and `host off`; façade Trybuild cases own the
-IPv4/IPv6 user-facing spans and DNS/IP compile-pass surface.
+Ready-empty stream probes use manual polling, upstream poll counters, and an
+instrumented waker. Async response collectors additionally use explicit poll
+boundaries, yield observation, and paused time for deadline control.
+`ByteStream`, buffered success, status capture, and provider tests own
+response suppression, the shared total ceiling, terminal redaction, and
+unchanged nonempty-byte limits; `RecordStream` owns the no-spin composition
+proof. Managed request-stream tests own suppression before native transport,
+the total/per-poll contract, source drop, body-factory/multipart convergence,
+and exact-length error ordering. Host-base semantic unit tests own inheritance
+and `host off`; façade Trybuild cases own the IPv4/IPv6 user-facing spans and
+DNS/IP compile-pass surface.
 
 Canonical tests import declarations from `concord-examples`; they do not copy
 them. Executable wrappers live under `crates/concord-examples/examples/`.

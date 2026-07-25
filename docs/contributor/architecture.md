@@ -108,6 +108,19 @@ errors cross back into core only as finite categories. No extension may
 smuggle a native source error or an unbounded message into the managed
 lifecycle.
 
+All outgoing application stream forms—direct `StreamBody`, body factories,
+and multipart/native serialization—converge on the final core-owned managed
+request stream. That boundary suppresses empty chunks, owns request-wide
+empty-chunk and byte totals, preserves exact-length accounting, and yields
+cooperatively during ready-empty runs.
+
+Every core-owned response path that polls a native body uses one private
+response-progress owner. Streaming success applies its per-poll decision in
+the bounded response stream; buffered success, terminal status capture, and
+provider HTTP use the corresponding async helper and cooperative yield.
+Neither owner retains a chunk value or native error, and neither performs a
+background drain after terminal failure.
+
 ## Workspace
 
 Open the repository root in rust-analyzer. Use the normal workspace for

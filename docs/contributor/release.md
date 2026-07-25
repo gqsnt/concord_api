@@ -52,6 +52,13 @@ The simulation never patches test support. Passing this task proves local
 archive structure and dependency closure; it does not prove registry
 ownership or publication.
 
+The release-facing body-progress contract has two feature-independent public
+ceilings: `concord::body::MAX_EMPTY_REQUEST_CHUNKS` and
+`concord::response::MAX_EMPTY_RESPONSE_CHUNKS`. The generated limits reference
+must read both constants from core. Package review must preserve those exports
+under no-default and all-feature builds; internal fairness budgets remain
+private implementation details rather than compatibility constants.
+
 Build the source ZIP with:
 
 ```text
@@ -85,9 +92,11 @@ Before enabling publication:
 7. run `just source-archive`, compare ZIP entries with tracked `HEAD`, and
    inspect the ZIP;
 8. inspect no-default, selected-feature, and all-feature generated Rustdoc;
-9. record the exact branch, commit, and clean worktree status;
-10. obtain successful remote Linux, Windows, and macOS CI results;
-11. publish only after an explicit instruction naming the packages and order.
+9. confirm request and response empty-chunk limits appear once in the generated
+   limits reference and remain available without default features;
+10. record the exact branch, commit, and clean worktree status;
+11. obtain successful remote Linux, Windows, and macOS CI results;
+12. publish only after an explicit instruction naming the packages and order.
 
 See the [changelog](../../CHANGELOG.md), [compatibility reference](../reference/compatibility.md),
 and [unsupported capabilities](../reference/unsupported.md).
