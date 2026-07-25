@@ -13,6 +13,7 @@ use crate::hooks::BoxFuture;
 use crate::http::application::ApplicationRequest;
 use crate::http::provider::ProviderHttp;
 use crate::limits::MAX_AUTH_PLACEMENTS;
+use crate::request::reserved_public_header;
 
 use super::material::{BasicCredential, SecretCredential};
 use super::slot::{CredentialSource, PreparedCredential, SlotSelector};
@@ -73,12 +74,17 @@ impl Auth {
         }
     }
 
-    /// Places a single-string credential in one private native header.
+    /// Places a single-string credential in one ordinary custom private header.
+    ///
+    /// Concord rejects transport- and request-owned names, including generic
+    /// `Authorization`, media headers, cookies, proxy authorization, and
+    /// connection/framing headers. Use [`Auth::bearer`] or [`Auth::basic`] for
+    /// authorization owned by those dedicated placements.
     pub fn header<M>(name: HeaderName, credential: CredentialRef<M>) -> Result<Self, AuthError>
     where
         M: SecretCredential,
     {
-        validate_placement_name(name.as_str())?;
+        validate_auth_header_name(&name)?;
         Ok(Self::secret(PlacementKind::Header(name), credential))
     }
 
@@ -299,6 +305,7 @@ impl AuthPlan {
         logical_url: &Url,
         public_headers: &HeaderMap,
     ) -> Result<(), AuthError> {
+        validate_placement_kind(&auth.kind)?;
         if self.placements.len() >= MAX_AUTH_PLACEMENTS {
             return Err(AuthError::new(AuthErrorKind::InvalidConfiguration));
         }
@@ -335,6 +342,7 @@ impl AuthPlan {
             return Err(AuthError::new(AuthErrorKind::InvalidConfiguration));
         }
         for (index, placement) in self.placements.iter().enumerate() {
+            validate_placement_kind(&placement.kind)?;
             validate_public_collision(&placement.kind, logical_url, public_headers)?;
             if self.placements[..index]
                 .iter()
@@ -359,6 +367,9 @@ impl AuthPlan {
         &self,
         http: ProviderHttp<'_>,
     ) -> Result<PreparedAuthPlan, AuthError> {
+        for placement in &self.placements {
+            validate_placement_kind(&placement.kind)?;
+        }
         let mut cache: HashMap<usize, ErasedPrepared> = HashMap::new();
         let mut placements = Vec::with_capacity(self.placements.len());
         for placement in &self.placements {
@@ -520,6 +531,9 @@ impl PreparedAuthPlan {
         &self,
         http: ProviderHttp<'_>,
     ) -> Result<(Self, FinalizedAuthPlan), AuthError> {
+        for placement in &self.placements {
+            validate_placement_kind(&placement.kind)?;
+        }
         let mut cache: HashMap<usize, ErasedPrepared> = HashMap::new();
         let mut prepared_placements = Vec::with_capacity(self.placements.len());
         let mut finalized_placements = Vec::with_capacity(self.placements.len());
@@ -576,6 +590,10 @@ impl FinalizedAuthPlan {
         endpoint: &EndpointId,
         method: &Method,
     ) -> Result<(), ApiError> {
+        for placement in &self.placements {
+            validate_placement_kind(&placement.kind)
+                .map_err(|error| auth_error(endpoint, method, error))?;
+        }
         for placement in self.placements {
             let material = placement
                 .credential
@@ -659,6 +677,25 @@ fn auth_error(endpoint: &EndpointId, method: &Method, error: AuthError) -> ApiEr
 
 fn validate_placement_name(name: &str) -> Result<(), AuthError> {
     if name.is_empty() || name.len() > MAX_AUTH_PLACEMENT_NAME_BYTES {
+        Err(AuthError::new(AuthErrorKind::InvalidConfiguration))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_placement_kind(kind: &PlacementKind) -> Result<(), AuthError> {
+    match kind {
+        PlacementKind::Bearer | PlacementKind::Basic => Ok(()),
+        PlacementKind::Header(name) => validate_auth_header_name(name),
+        PlacementKind::Query(name) => validate_placement_name(name),
+    }
+}
+
+fn validate_auth_header_name(name: &HeaderName) -> Result<(), AuthError> {
+    if name.as_str().len() > MAX_AUTH_PLACEMENT_NAME_BYTES
+        || reserved_public_header(name)
+        || matches!(name.as_str(), "accept" | "content-type" | "user-agent")
+    {
         Err(AuthError::new(AuthErrorKind::InvalidConfiguration))
     } else {
         Ok(())
@@ -837,6 +874,83 @@ mod tests {
             .expect("header-name first excess");
         assert_eq!(error.kind(), AuthErrorKind::InvalidConfiguration);
         assert!(Auth::query("", credential()).is_err());
+    }
+
+    #[test]
+    fn runtime_auth_headers_reject_every_request_owned_name_and_accept_custom_names() {
+        const PROTECTED_CREDENTIAL: &str = "protected-auth-value-sentinel-47ad";
+        const RESERVED: &[&str] = &[
+            "host",
+            "content-length",
+            "transfer-encoding",
+            "connection",
+            "keep-alive",
+            "te",
+            "trailer",
+            "upgrade",
+            "proxy-authorization",
+            "authorization",
+            "cookie",
+            "set-cookie",
+            "accept",
+            "content-type",
+            "user-agent",
+        ];
+
+        let credential = CredentialRef::new(SlotSelector::static_value(
+            ApiKey::try_new(PROTECTED_CREDENTIAL).expect("bounded protected test API key"),
+            Duration::from_secs(1),
+        ));
+        for reserved in RESERVED {
+            let name = HeaderName::from_bytes(reserved.as_bytes()).expect("valid reserved name");
+            let error = Auth::header(name, credential.clone())
+                .err()
+                .expect("request-owned authentication header must fail");
+            assert_eq!(error.kind(), AuthErrorKind::InvalidConfiguration);
+            assert_eq!(
+                error.to_string(),
+                "authentication failed (InvalidConfiguration)"
+            );
+            assert_eq!(
+                format!("{error:?}"),
+                "AuthError { kind: InvalidConfiguration, safe_message: None, retry_after: None }"
+            );
+            assert!(!error.to_string().contains(PROTECTED_CREDENTIAL));
+        }
+
+        Auth::header(HeaderName::from_static("x-api-key"), credential.clone())
+            .expect("ordinary custom authentication header");
+        Auth::header(HeaderName::from_static("x-session-token"), credential)
+            .expect("another ordinary custom authentication header");
+    }
+
+    #[test]
+    fn defensive_auth_plan_validation_rejects_reserved_names_without_retention() {
+        let logical_url = Url::parse("https://example.test/").expect("validation URL");
+        let public_headers = HeaderMap::new();
+        let mut forged = Auth::header(HeaderName::from_static("x-api-key"), credential())
+            .expect("initially valid placement");
+        forged.kind = PlacementKind::Header(HeaderName::from_static("content-type"));
+
+        let mut plan = AuthPlan::default();
+        let error = plan
+            .push(forged, &logical_url, &public_headers)
+            .expect_err("defensive push validation");
+        assert_eq!(error.kind(), AuthErrorKind::InvalidConfiguration);
+        assert!(plan.placements.is_empty());
+
+        let mut forged = Auth::header(HeaderName::from_static("x-api-key"), credential())
+            .expect("initially valid placement");
+        forged.kind = PlacementKind::Header(HeaderName::from_static("host"));
+        let plan = AuthPlan {
+            placements: vec![forged],
+        };
+        let error = plan
+            .validate_public(&logical_url, &public_headers)
+            .expect_err("defensive final plan validation");
+        assert_eq!(error.kind(), AuthErrorKind::InvalidConfiguration);
+        assert!(!error.to_string().contains("host"));
+        assert!(!format!("{error:?}").contains("host"));
     }
 
     #[test]

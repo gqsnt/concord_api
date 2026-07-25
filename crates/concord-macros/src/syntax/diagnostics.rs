@@ -205,12 +205,38 @@ pub(super) fn validate_static_segment(segment: &LitStr) -> syn::Result<()> {
 }
 
 pub(super) fn validate_public_header_name(name: &LitStr) -> syn::Result<()> {
-    let parsed = HeaderName::from_bytes(name.value().as_bytes()).map_err(|_| {
-        name.span()
-            .error("public header name is not a valid HTTP header name")
-    })?;
-    if matches!(
-        parsed.as_str(),
+    let parsed = parse_header_name(name, "public")?;
+    if reserved_public_header(&parsed) {
+        return Err(name
+            .span()
+            .error("this public header name is reserved by transport, authentication, cookies, or proxy authentication"));
+    }
+    Ok(())
+}
+
+pub(super) fn validate_auth_header_name(name: &LitStr) -> syn::Result<()> {
+    let parsed = parse_header_name(name, "authentication")?;
+    if reserved_public_header(&parsed)
+        || matches!(parsed.as_str(), "accept" | "content-type" | "user-agent")
+    {
+        return Err(name.span().error(
+            "this authentication header name is owned by Concord request or transport processing",
+        ));
+    }
+    validate_auth_placement_name_bytes(name, "header")
+}
+
+fn parse_header_name(name: &LitStr, owner: &str) -> syn::Result<HeaderName> {
+    HeaderName::from_bytes(name.value().as_bytes()).map_err(|_| {
+        name.span().error(format!(
+            "{owner} header name is not a valid HTTP header name"
+        ))
+    })
+}
+
+fn reserved_public_header(name: &HeaderName) -> bool {
+    matches!(
+        name.as_str(),
         "host"
             | "content-length"
             | "transfer-encoding"
@@ -223,17 +249,7 @@ pub(super) fn validate_public_header_name(name: &LitStr) -> syn::Result<()> {
             | "proxy-authorization"
             | "cookie"
             | "set-cookie"
-    ) {
-        return Err(name
-            .span()
-            .error("this public header name is reserved by transport, authentication, cookies, or proxy authentication"));
-    }
-    Ok(())
-}
-
-pub(super) fn validate_auth_header_name(name: &LitStr) -> syn::Result<()> {
-    validate_public_header_name(name)?;
-    validate_auth_placement_name_bytes(name, "header")
+    )
 }
 
 pub(super) fn validate_auth_query_name(name: &LitStr) -> syn::Result<()> {
@@ -282,7 +298,11 @@ impl SpanError for Span {
 
 #[cfg(test)]
 mod tests {
+    use proc_macro2::Span;
     use quote::quote;
+    use syn::LitStr;
+
+    use super::validate_auth_header_name;
 
     #[test]
     fn duplicate_clauses_retain_both_diagnostic_spans() {
@@ -300,5 +320,38 @@ mod tests {
         assert_eq!(diagnostic.matches("compile_error").count(), 2);
         assert!(diagnostic.contains("duplicate `path` clause"));
         assert!(diagnostic.contains("first `path` clause"));
+    }
+
+    #[test]
+    fn static_auth_header_policy_matches_the_complete_runtime_contract() {
+        for reserved in [
+            "host",
+            "content-length",
+            "transfer-encoding",
+            "connection",
+            "keep-alive",
+            "te",
+            "trailer",
+            "upgrade",
+            "proxy-authorization",
+            "authorization",
+            "cookie",
+            "set-cookie",
+            "accept",
+            "content-type",
+            "user-agent",
+        ] {
+            let literal = LitStr::new(reserved, Span::call_site());
+            let error = validate_auth_header_name(&literal)
+                .expect_err("request-owned authentication header must fail");
+            assert!(
+                error
+                    .to_string()
+                    .contains("owned by Concord request or transport processing")
+            );
+        }
+
+        validate_auth_header_name(&LitStr::new("X-API-Key", Span::call_site()))
+            .expect("ordinary custom authentication header");
     }
 }
