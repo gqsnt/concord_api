@@ -17,8 +17,10 @@ generated names and meanings.
 
 `crates/concord-macros/src/semantic/surface.rs` derives the public capability
 model: client construction, scope/endpoint names, request wrappers,
-descriptions, and valid inherent terminals. Emitters consume this model and
-must not discover new user errors.
+descriptions, valid inherent terminals, and each endpoint's structured
+`EndpointDocModel`. Façade-selected capabilities are resolved into that model
+before emission. Emitters render the model and must not rediscover semantic
+facts or new user errors.
 
 `crates/concord-macros/src/emit` produces public artifacts, documentation,
 hidden bridge calls, and feature assertions. Applications invoke only

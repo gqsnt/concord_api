@@ -22,17 +22,12 @@ pub(super) fn generate_scope_tree(
     children: &[Child],
     ancestors: &[&Scope],
     core_path: &TokenStream,
-    capabilities: Capabilities,
 ) -> TokenStream {
     let items = children
         .iter()
         .map(|child| match child {
-            Child::Scope(scope) => {
-                generate_scope_module(client, scope, ancestors, core_path, capabilities)
-            }
-            Child::Endpoint(endpoint) => {
-                generate_endpoint(client, ancestors, endpoint, core_path, capabilities)
-            }
+            Child::Scope(scope) => generate_scope_module(client, scope, ancestors, core_path),
+            Child::Endpoint(endpoint) => generate_endpoint(client, ancestors, endpoint, core_path),
         })
         .collect::<Vec<_>>();
     quote!(#(#items)*)
@@ -43,7 +38,6 @@ pub(super) fn generate_scope_module(
     scope: &Scope,
     ancestors: &[&Scope],
     core_path: &TokenStream,
-    capabilities: Capabilities,
 ) -> TokenStream {
     let mut visible = ancestors.to_vec();
     visible.push(scope);
@@ -53,9 +47,9 @@ pub(super) fn generate_scope_module(
     let invocation_path = super_chain(depth + 1);
     let support_path = super_chain(depth);
     let client_name = &client.name;
-    let scope_values = value_category_summary(&scope.parameters, "local scope");
+    let scope_values = value_category_summary(&scope.parameters, "Scope");
     let facade_doc = format!(
-        "Immutable facade snapshot for the `{}` scope. {scope_values} Optional and defaulted local values use consuming setters; defaults are retained for reset without re-evaluation.",
+        "Immutable `{}` scope selection. {scope_values} Optional and defaulted inputs use consuming setters; reset methods restore retained defaults without re-evaluation.",
         scope.name
     );
 
@@ -82,7 +76,7 @@ pub(super) fn generate_scope_module(
             }
         })
         .collect::<Vec<_>>();
-    let nested = generate_scope_tree(client, &scope.children, &visible, core_path, capabilities);
+    let nested = generate_scope_tree(client, &scope.children, &visible, core_path);
 
     quote! {
         pub mod #module_name {
@@ -156,9 +150,9 @@ pub(super) fn generate_scope_entry(
     let return_path = quote!(#module::#facade);
     let constructor_path = return_path.clone();
     let doc = format!(
-        "Creates an immutable `{}` facade snapshot. {} Selected scope defaults are evaluated once here.",
+        "Creates an immutable `{}` scope selection. {} Scope defaults are evaluated once here.",
         scope.name,
-        value_category_summary(&scope.parameters, "local scope")
+        value_category_summary(&scope.parameters, "Scope")
     );
     let _ = client;
     quote! {
@@ -402,7 +396,6 @@ mod tests {
             &api.client.children,
             &[],
             &test_support::core_path(),
-            Capabilities::default(),
         )
         .to_string();
 

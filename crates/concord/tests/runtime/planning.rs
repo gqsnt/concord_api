@@ -351,10 +351,7 @@ fn safe_planning_uses_real_head_shaping_without_any_lifecycle_effect() {
     assert_eq!(description.id(), "planning.secure.protected");
     assert_eq!(description.method(), Method::POST);
     assert_eq!(description.source_path(), "SecurePlanningApi::protected");
-    assert_eq!(
-        description.route_shape(),
-        "/<fixed base>/resources/{ep.VALUE}"
-    );
+    assert_eq!(description.route_shape(), "/resources/{ep.resource}");
     assert_eq!(
         description.body_category(),
         RequestBodyCategory::Specification

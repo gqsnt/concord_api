@@ -63,7 +63,7 @@ pub(super) fn generate_endpoint_method(
     } else {
         quote!(&self.__concord_client)
     };
-    let endpoint_doc = endpoint_method_doc(client, scopes, endpoint);
+    let endpoint_doc = endpoint_method_doc(endpoint);
     quote! {
         #[must_use]
         #[doc = #endpoint_doc]
@@ -85,7 +85,6 @@ pub(super) fn generate_endpoint(
     scopes: &[&Scope],
     endpoint: &Endpoint,
     core_path: &TokenStream,
-    capabilities: Capabilities,
 ) -> TokenStream {
     let endpoint_name = &endpoint.surface.endpoint_type_name;
     let request_name = &endpoint.surface.request_type_name;
@@ -99,13 +98,10 @@ pub(super) fn generate_endpoint(
     let specification_module = specification_module_name(client);
     let response_specification = response_specification_name(endpoint);
     let response = quote!(#invocation_path::#specification_module::#response_specification);
-    let endpoint_identity = endpoint_identity(client, scopes, endpoint);
     let (description_static, description_declaration) =
         generate_endpoint_description(endpoint, &response, core_path);
-    let endpoint_doc = endpoint_type_doc(client, scopes, endpoint);
-    let constructor_doc = format!(
-        "Creates an explicit `{endpoint_identity}` snapshot. Required enclosing scope values are outer-to-inner; optional/defaulted controls are inherent methods."
-    );
+    let endpoint_doc = endpoint_type_doc(endpoint);
+    let constructor_doc = endpoint_constructor_doc(endpoint);
 
     let scope_fields = endpoint_scope_fields(scopes);
     let endpoint_fields = endpoint_value_fields(endpoint);
@@ -223,12 +219,10 @@ pub(super) fn generate_endpoint(
         endpoint_where_clause(client, scopes, endpoint, core_path, &invocation_path, true);
     let request_wrapper = generate_request_wrapper(
         client,
-        scopes,
         endpoint,
         RequestBridge {
             support_path: &support_path,
             generated_core: &generated_core,
-            capabilities,
         },
         core_path,
         &where_clause,
@@ -1052,14 +1046,8 @@ mod tests {
     fn emits_explicit_endpoint_value_and_binding_contract() {
         let api = test_support::api();
         let endpoint = test_support::endpoint(&api);
-        let output = generate_endpoint(
-            &api.client,
-            &[],
-            endpoint,
-            &test_support::core_path(),
-            Capabilities::default(),
-        )
-        .to_string();
+        let output =
+            generate_endpoint(&api.client, &[], endpoint, &test_support::core_path()).to_string();
         let endpoint_name = endpoint.surface.endpoint_type_name.to_string();
 
         assert!(output.contains(&format!("pub struct {endpoint_name}")));

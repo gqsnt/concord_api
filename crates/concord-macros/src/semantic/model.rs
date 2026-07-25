@@ -81,6 +81,7 @@ pub(crate) struct Endpoint {
     pub(crate) method: ResolvedMethod,
     pub(crate) name: Ident,
     pub(crate) surface: EndpointSurface,
+    pub(crate) docs: EndpointDocModel,
     pub(crate) parameters: Vec<Value>,
     pub(crate) body: Option<RequestBody>,
     pub(crate) contract_id: ContractId,
@@ -88,6 +89,122 @@ pub(crate) struct Endpoint {
     pub(crate) response: Type,
     pub(crate) pagination: Option<Pagination>,
     pub(crate) dsl_path: Vec<Ident>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct EndpointDocModel {
+    pub(crate) client_name: String,
+    pub(crate) scope_chain: Vec<String>,
+    pub(crate) direct_method_name: String,
+    pub(crate) endpoint_type_path: String,
+    pub(crate) request_type_path: String,
+    pub(crate) http_method: String,
+    pub(crate) base_url: String,
+    pub(crate) route_atoms: Vec<EndpointDocRouteAtom>,
+    pub(crate) scope_inputs: Vec<EndpointDocInput>,
+    pub(crate) required_endpoint_inputs: Vec<EndpointDocInput>,
+    pub(crate) endpoint_setters: Vec<EndpointDocSetter>,
+    pub(crate) safe_query_names: Vec<String>,
+    pub(crate) safe_header_names: Vec<String>,
+    pub(crate) body: Option<EndpointDocBody>,
+    pub(crate) response: EndpointDocResponse,
+    pub(crate) authentication: Vec<EndpointDocAuthPlacement>,
+    pub(crate) rate_limits: Vec<EndpointDocRateLimit>,
+    pub(crate) timeout: EndpointDocTimeout,
+    pub(crate) terminals: EndpointDocTerminals,
+    pub(crate) native_retry: ResolvedRetry,
+    pub(crate) contract_id: String,
+    pub(crate) explicit_contract_id: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum EndpointDocRouteAtom {
+    Literal(String),
+    Value {
+        namespace: EndpointDocNamespace,
+        name: String,
+    },
+    Format(Vec<EndpointDocRouteAtom>),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum EndpointDocNamespace {
+    Vars,
+    Scope,
+    Endpoint,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct EndpointDocInput {
+    pub(crate) owner: Option<String>,
+    pub(crate) name: String,
+    pub(crate) type_name: String,
+    pub(crate) kind: EndpointDocInputKind,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum EndpointDocInputKind {
+    Required,
+    Optional,
+    Defaulted,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct EndpointDocSetter {
+    pub(crate) name: String,
+    pub(crate) method: String,
+    pub(crate) helper: String,
+    pub(crate) type_name: String,
+    pub(crate) kind: EndpointDocInputKind,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct EndpointDocBody {
+    pub(crate) argument: String,
+    pub(crate) specification: String,
+    pub(crate) input_type: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct EndpointDocResponse {
+    pub(crate) specification: String,
+    pub(crate) output_type: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct EndpointDocAuthPlacement {
+    pub(crate) placement: String,
+    pub(crate) challenge: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct EndpointDocRateLimit {
+    pub(crate) id: String,
+    pub(crate) origin: String,
+    pub(crate) cost: u32,
+    pub(crate) windows: Vec<EndpointDocRateLimitWindow>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct EndpointDocRateLimitWindow {
+    pub(crate) capacity: u32,
+    pub(crate) duration: Duration,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum EndpointDocTimeout {
+    Inherited(Duration),
+    Disabled,
+    Overridden(Duration),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct EndpointDocTerminals {
+    pub(crate) direct_await: bool,
+    pub(crate) response: bool,
+    pub(crate) pagination: bool,
+    pub(crate) raw_response: bool,
+    pub(crate) credential_storage: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -133,13 +250,8 @@ pub(crate) struct EndpointSetter {
 pub(crate) struct RequestTerminals {
     pub(crate) response: bool,
     pub(crate) pagination: bool,
-    pub(crate) raw_response: RawResponseCapability,
+    pub(crate) raw_response: bool,
     pub(crate) credential_storage: Vec<CredentialStorageTerminal>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum RawResponseCapability {
-    SealedResponseMode,
 }
 
 #[derive(Clone)]

@@ -3,12 +3,10 @@ use super::*;
 pub(super) struct RequestBridge<'a> {
     pub(super) support_path: &'a TokenStream,
     pub(super) generated_core: &'a TokenStream,
-    pub(super) capabilities: Capabilities,
 }
 
 pub(super) fn generate_request_wrapper(
     client: &Client,
-    scopes: &[&Scope],
     endpoint: &Endpoint,
     bridge: RequestBridge<'_>,
     core_path: &TokenStream,
@@ -17,7 +15,6 @@ pub(super) fn generate_request_wrapper(
     let RequestBridge {
         support_path,
         generated_core,
-        capabilities,
     } = bridge;
     let endpoint_name = &endpoint.surface.endpoint_type_name;
     let request_name = &endpoint.surface.request_type_name;
@@ -39,7 +36,7 @@ pub(super) fn generate_request_wrapper(
             let credential = &client.credentials[terminal.credential];
             let method = &terminal.method;
             let field = credential_store_field(terminal.credential, &credential.name);
-            let identity = endpoint_identity(client, scopes, endpoint);
+            let identity = endpoint_identity(endpoint);
             let native_method = method_token(&endpoint.method, core_path);
             quote! {
                 /// Executes this endpoint and atomically stores its decoded output as the
@@ -97,13 +94,13 @@ pub(super) fn generate_request_wrapper(
             }
         }
     });
-    let raw_response_method = match endpoint.surface.terminals.raw_response {
-        RawResponseCapability::SealedResponseMode if capabilities.raw_response => quote! {
+    let raw_response_method = if endpoint.surface.terminals.raw_response {
+        quote! {
             /// Selects the complete bounded successful response without decoding it.
             ///
-            /// This method exists only when the `dangerous-raw-response` capability is
-            /// enabled and the declared sealed response mode supports bounded raw
-            /// acquisition.
+            /// This method is generated only with the `dangerous-raw-response`
+            /// feature and can be called only when the response specification
+            /// supports bounded raw acquisition.
             #[must_use]
             pub fn raw_response<Mode>(
                 self,
@@ -115,8 +112,9 @@ pub(super) fn generate_request_wrapper(
             {
                 #generated_core::__private::raw_response_request(self.__concord_inner)
             }
-        },
-        RawResponseCapability::SealedResponseMode => quote!(),
+        }
+    } else {
+        quote!()
     };
     let storage_impl = (!storage_methods.is_empty()).then(|| {
         quote! {
@@ -127,10 +125,7 @@ pub(super) fn generate_request_wrapper(
             }
         }
     });
-    let request_doc = format!(
-        "Inert named request for `{}`. Construction and consuming setters have no lifecycle effects; awaiting delegates to Concord's single managed executor.",
-        endpoint.surface.docs_identity
-    );
+    let request_doc = request_wrapper_doc(endpoint);
     let debug_name = canonical_ident(request_name);
 
     quote! {
@@ -271,12 +266,10 @@ mod tests {
         let core = test_support::core_path();
         let output = generate_request_wrapper(
             &api.client,
-            &[],
             endpoint,
             RequestBridge {
                 support_path: &quote!(super),
                 generated_core: &core,
-                capabilities: Capabilities::default(),
             },
             &core,
             &quote!(),
@@ -291,14 +284,17 @@ mod tests {
         assert!(!output.contains("raw_response"));
         assert!(!output.contains("emit_generated_raw_response_method"));
 
+        let raw_api =
+            test_support::api_with_capabilities(crate::semantic::surface::SurfaceCapabilities {
+                raw_response: true,
+            });
+        let raw_endpoint = test_support::endpoint(&raw_api);
         let raw_output = generate_request_wrapper(
-            &api.client,
-            &[],
-            endpoint,
+            &raw_api.client,
+            raw_endpoint,
             RequestBridge {
                 support_path: &quote!(super),
                 generated_core: &core,
-                capabilities: Capabilities { raw_response: true },
             },
             &core,
             &quote!(),

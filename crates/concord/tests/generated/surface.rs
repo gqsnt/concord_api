@@ -63,7 +63,7 @@ fn one_facade_dependency_exposes_predictable_named_inherent_surface() {
     assert_eq!(description.source_path(), "FacadeApi::resources::fetch");
     assert_eq!(
         description.route_shape(),
-        "/<fixed base>/resources/{scope.VALUE}/{ep.VALUE}"
+        "/resources/{scope.scope_value}/{ep.id}"
     );
     assert_eq!(description.method(), concord::http::Method::GET);
     assert_eq!(

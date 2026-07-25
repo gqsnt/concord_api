@@ -1,10 +1,6 @@
 use super::*;
 
-pub(super) fn generate_client(
-    client: &Client,
-    core_path: &TokenStream,
-    capabilities: Capabilities,
-) -> TokenStream {
+pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
     let client_name = &client.name;
     let builder_name = &client.surface.builder_name;
     let support_name = &client.surface.support_name;
@@ -15,25 +11,31 @@ pub(super) fn generate_client(
     let base = &client.base;
     let contract_assertion = generated_contract_assertion();
 
-    let value_summary = value_category_summary(&client.values, "client");
-    let retry_summary = retry_summary(&client.retry);
+    let value_summary = value_category_summary(&client.values, "Client vars");
+    let retry_summary = retry_summary(client.retry);
     let credential_summary = credential_summary(client);
+    let timeout_summary = client.config.timeout.map_or_else(
+        || "Default operation timeout: disabled.".to_owned(),
+        |duration| format!("Default operation timeout: {}.", human_duration(duration)),
+    );
     let rate_summary = if client.requires_limiter {
-        "This client statically declares or attaches rate-limit rules and therefore requires functional or explicit no-op limiter selection."
+        "Rate-limit rules are declared; building requires a selected functional or explicit no-op limiter."
     } else {
-        "This client declares no rate-limit rule."
+        "Rate-limit rules: none."
     };
     let client_doc = format!(
-        "Generated Concord client `{client_name}` with one fixed immutable public-value snapshot. {value_summary} {credential_summary} {retry_summary} {rate_summary}"
+        "Immutable generated client for base URL `{}`. Build it with [`{builder_name}`]. Transport, runtime policy, vars, and credential sources are fixed in the built snapshot.",
+        client.base.value()
     );
     let builder_doc = format!(
-        "Canonical fallible builder for [`{client_name}`]. {value_summary} {credential_summary} Selected client defaults are evaluated once by `build`; overridden defaults are not evaluated. {retry_summary} {rate_summary}"
+        "Builder for [`{client_name}`].\n\n# Inputs\n\n{value_summary} {credential_summary}\n\n# Defaults\n\nBase URL: `{}`. {timeout_summary} {retry_summary} {rate_summary} Default expressions are evaluated once by `build` unless overridden.\n\n# Configuration\n\nUse `configure_http` for transport policy and `configure_runtime` for hooks, limits, limiter selection, and runtime policy. Transformations apply immediately in call order.",
+        client.base.value()
     );
     let support_doc = format!(
-        "Predictable generated scopes, endpoints, and named request types for [`{client_name}`]."
+        "Generated scope methods, explicit endpoint types, and named requests for [`{client_name}`]."
     );
     let constructor_doc = format!(
-        "Builds zero-input client `{client_name}` through its canonical fallible builder. {value_summary} {credential_summary}"
+        "Builds `{client_name}` with its declared defaults. This constructor exists only when no required vars, secrets, or custom providers are missing."
     );
     let capability_doc = format!(
         "Sealed endpoint contract for [`{client_name}`]. Its associated [`Request`](Endpoint::Request) is the named bound request type returned by this client's direct and explicit binding paths. Downstream types cannot implement this trait."
@@ -182,7 +184,7 @@ pub(super) fn generate_client(
         )?
     );
 
-    let scope_tree = generate_scope_tree(client, &client.children, &[], core_path, capabilities);
+    let scope_tree = generate_scope_tree(client, &client.children, &[], core_path);
     let client_child_methods = generate_client_child_methods(client, core_path);
     let rate_limit_identity_constants = rate_limit_identity_constants(client);
 
@@ -552,12 +554,7 @@ mod tests {
     #[test]
     fn emits_client_builder_and_sealed_endpoint_contract() {
         let api = test_support::api();
-        let output = generate_client(
-            &api.client,
-            &test_support::core_path(),
-            Capabilities::default(),
-        )
-        .to_string();
+        let output = generate_client(&api.client, &test_support::core_path()).to_string();
 
         assert!(output.contains("pub struct ArtifactApi"));
         assert!(output.contains("pub struct ArtifactApiBuilder"));

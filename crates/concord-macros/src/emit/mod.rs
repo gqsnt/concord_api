@@ -6,10 +6,12 @@ use syn::spanned::Spanned;
 use syn::{PathArguments, Type};
 
 use crate::semantic::model::{
-    Api, Child, Client, CloneEligibility, Credential, CredentialSource, Endpoint, NormalizedConfig,
-    PaginationInitializer, PaginationValue, RawResponseCapability, RequestBody, RequiredArgument,
-    ResolvedAuthPlacement, ResolvedChallengePolicy, ResolvedDefault, ResolvedExpr, ResolvedMethod,
-    ResolvedRetry, ResolvedValueKind, Scope, Value, ValueReference, ValueShape,
+    Api, Child, Client, CloneEligibility, Credential, CredentialSource, Endpoint, EndpointDocInput,
+    EndpointDocInputKind, EndpointDocModel, EndpointDocNamespace, EndpointDocRouteAtom,
+    EndpointDocSetter, EndpointDocTimeout, NormalizedConfig, PaginationInitializer,
+    PaginationValue, RequiredArgument, ResolvedAuthPlacement, ResolvedChallengePolicy,
+    ResolvedDefault, ResolvedExpr, ResolvedMethod, ResolvedRetry, ResolvedValueKind, Scope, Value,
+    ValueReference, ValueShape,
 };
 use crate::semantic::surface::{canonical_ident, public_ident, to_snake_case};
 
@@ -37,17 +39,8 @@ use requests::*;
 use scopes::*;
 use shaping::*;
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct Capabilities {
-    pub(crate) raw_response: bool,
-}
-
-pub(crate) fn generate(
-    api: &Api,
-    core_path: &TokenStream,
-    capabilities: Capabilities,
-) -> TokenStream {
-    generate_client(&api.client, core_path, capabilities)
+pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
+    generate_client(&api.client, core_path)
 }
 
 #[cfg(test)]
@@ -56,25 +49,33 @@ mod test_support {
 
     use super::*;
     use crate::semantic;
+    use crate::semantic::surface::SurfaceCapabilities;
 
     pub(super) fn api() -> Api {
-        semantic::test_support::resolve_tokens(quote! {
-            client ArtifactApi {
-                base "https://example.test";
-                vars { tenant: String; }
-                credentials {
-                    secret bearer_value: String;
-                    credential bearer = bearer(secret.bearer_value);
+        api_with_capabilities(SurfaceCapabilities::default())
+    }
+
+    pub(super) fn api_with_capabilities(capabilities: SurfaceCapabilities) -> Api {
+        semantic::test_support::resolve_tokens_with_capabilities(
+            quote! {
+                client ArtifactApi {
+                    base "https://example.test";
+                    vars { tenant: String; }
+                    credentials {
+                        secret bearer_value: String;
+                        credential bearer = bearer(secret.bearer_value);
+                    }
                 }
-            }
-            GET fetch_item(id: String, verbose: Option<bool>) -> Bytes {
-                path [vars.tenant, ep.id];
-                auth bearer bearer;
-            }
-            scope resources(region: String) {
-                GET list() -> NoContent;
-            }
-        })
+                GET fetch_item(id: String, verbose: Option<bool>) -> Bytes {
+                    path [vars.tenant, ep.id];
+                    auth bearer bearer;
+                }
+                scope resources(region: String) {
+                    GET list() -> NoContent;
+                }
+            },
+            capabilities,
+        )
     }
 
     pub(super) fn endpoint(api: &Api) -> &Endpoint {
@@ -127,7 +128,7 @@ mod tests {
                 GET list() -> NoContent;
             }
         });
-        let output = generate(&api, &quote!(::concord), Capabilities::default()).to_string();
+        let output = generate(&api, &quote!(::concord)).to_string();
         assert!(!output.contains("FirstApiRegions"));
         assert!(output.contains("RootRequest"));
         assert!(output.contains("resources"));
@@ -179,7 +180,7 @@ mod tests {
             ResolvedChallengePolicy::UnauthorizedOrForbidden
         );
 
-        let output = generate(&api, &quote!(::concord), Capabilities::default()).to_string();
+        let output = generate(&api, &quote!(::concord)).to_string();
         for expected in [
             "retry_reqwest_default",
             "PROPFIND",
@@ -247,12 +248,7 @@ mod tests {
             );
         }
 
-        let output = generate(
-            &test_support::api(),
-            &quote!(::concord),
-            Capabilities::default(),
-        )
-        .to_string();
+        let output = generate(&test_support::api(), &quote!(::concord)).to_string();
         for forbidden in &implementation_feature_names {
             assert!(
                 !output.contains(forbidden.as_str()),

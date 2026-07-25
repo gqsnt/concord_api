@@ -1,109 +1,349 @@
+use std::time::Duration;
+
 use super::*;
 
-pub(super) fn endpoint_method_doc(
-    client: &Client,
-    scopes: &[&Scope],
-    endpoint: &Endpoint,
-) -> String {
-    let identity = endpoint_identity(client, scopes, endpoint);
-    let method = method_name(&endpoint.method);
-    let route = route_shape(&endpoint.config.path);
-    let controls = endpoint
-        .parameters
-        .iter()
-        .filter(|value| !value.is_required())
-        .map(|value| canonical_ident(&value.name))
-        .collect::<Vec<_>>();
-    let control_doc = if controls.is_empty() {
-        "This endpoint has no endpoint-specific request setters.".to_owned()
+pub(super) fn endpoint_method_doc(endpoint: &Endpoint) -> String {
+    let docs = &endpoint.docs;
+    let endpoint_name = local_type_name(&docs.endpoint_type_path);
+    let request_name = local_type_name(&docs.request_type_path);
+    let arguments = if docs.required_endpoint_inputs.is_empty() {
+        "Required arguments: none.".to_owned()
     } else {
         format!(
-            "Use the inherent consuming request setters for: {}.",
-            controls.join(", ")
+            "Required arguments: {}.",
+            docs.required_endpoint_inputs
+                .iter()
+                .map(render_argument)
+                .collect::<Vec<_>>()
+                .join(", ")
         )
     };
-    let values = value_category_summary(&endpoint.parameters, "endpoint");
-    let configuration = endpoint_configuration_summary(client, endpoint);
-    let features = endpoint_feature_summary(client, endpoint);
-    let contract_id = contract_identity_doc(endpoint);
     format!(
-        "Creates a side-effect-free pending `{method}` request for `{identity}` at `{route}`. {contract_id} {values} {control_doc} {configuration} {} Direct await uses the `{}` response specification. {} {features}",
-        request_body_doc(endpoint.body.as_ref()),
-        response_name(&endpoint.response),
-        response_doc(&endpoint.response),
+        "`{} {}`\n\nCreates an inert request for [`{endpoint_name}`]. {arguments} Returns [`{request_name}`].",
+        docs.http_method,
+        render_route(docs),
     )
 }
 
-pub(super) fn endpoint_type_doc(client: &Client, scopes: &[&Scope], endpoint: &Endpoint) -> String {
-    let identity = endpoint_identity(client, scopes, endpoint);
-    let mut public_path = canonical_ident(&client.surface.support_name);
-    for module in &endpoint.surface.module_path {
-        public_path.push_str("::");
-        public_path.push_str(&canonical_ident(module));
-    }
-    public_path.push_str("::");
-    public_path.push_str(&canonical_ident(&endpoint.surface.endpoint_type_name));
-    let method = method_name(&endpoint.method);
-    let route = route_shape(&endpoint.config.path);
-    let endpoint_values = value_category_summary(&endpoint.parameters, "endpoint");
-    let scope_values = if scopes.is_empty() {
-        "No enclosing scope values are stored.".to_owned()
+pub(super) fn endpoint_type_doc(endpoint: &Endpoint) -> String {
+    let docs = &endpoint.docs;
+    let scope_chain = if docs.scope_chain.is_empty() {
+        "the client".to_owned()
     } else {
-        scopes
-            .iter()
-            .map(|scope| value_category_summary(&scope.parameters, "enclosing scope"))
-            .collect::<Vec<_>>()
-            .join(" ")
+        format!("scope chain `{}`", docs.scope_chain.join("::"))
     };
-    let configuration = endpoint_configuration_summary(client, endpoint);
-    let features = endpoint_feature_summary(client, endpoint);
-    let contract_id = contract_identity_doc(endpoint);
+    let inputs = render_inputs(docs);
+    let request = render_request(docs);
+    let response = render_response(docs);
+    let identity = if docs.explicit_contract_id {
+        format!("Stable contract ID: `{}` (explicit).", docs.contract_id)
+    } else {
+        format!(
+            "Stable contract ID: `{}` (derived from the declaration path; renaming that path changes the ID).",
+            docs.contract_id
+        )
+    };
     format!(
-        "Explicit `{method}` endpoint snapshot for `{identity}` at route `{route}`. Its predictable public path is `{public_path}` and it executes through the same client request path as its facade method. {contract_id} {scope_values} {endpoint_values} {configuration} {} Direct await uses the `{}` response specification. {} {features}",
-        request_body_doc(endpoint.body.as_ref()),
-        response_name(&endpoint.response),
-        response_doc(&endpoint.response),
+        "Endpoint contract for `{} {}`.\n\n# Summary\n\nRelative route `{}` on base URL `{}`.\n\n# Usage\n\nCall the `{}` direct scope method on {scope_chain}, or construct `{}` and bind it with `{}::request`. Both return `{}`.\n\n# Inputs\n\n{inputs}\n\n# Request\n\n{request}\n\n# Response\n\n{response}\n\n# Identity\n\n{identity}\n\nEndpoint type: `{}`.\n\nRequest type: `{}`.",
+        docs.http_method,
+        render_route(docs),
+        render_route(docs),
+        docs.base_url,
+        docs.direct_method_name,
+        docs.endpoint_type_path,
+        docs.client_name,
+        docs.request_type_path,
+        docs.endpoint_type_path,
+        docs.request_type_path,
     )
 }
 
-pub(super) fn endpoint_identity(client: &Client, scopes: &[&Scope], endpoint: &Endpoint) -> String {
-    let _ = (client, scopes);
+pub(super) fn endpoint_constructor_doc(endpoint: &Endpoint) -> String {
+    let docs = &endpoint.docs;
+    let scope_inputs = docs
+        .scope_inputs
+        .iter()
+        .filter(|input| input.kind == EndpointDocInputKind::Required)
+        .count();
+    let endpoint_inputs = docs.required_endpoint_inputs.len();
+    format!(
+        "Creates an inert `{}` endpoint value. Arguments contain {scope_inputs} required scope input(s) followed by {endpoint_inputs} required endpoint/body input(s).",
+        docs.endpoint_type_path
+    )
+}
+
+pub(super) fn request_wrapper_doc(endpoint: &Endpoint) -> String {
+    let docs = &endpoint.docs;
+    let endpoint_name = local_type_name(&docs.endpoint_type_path);
+    let mut controls = docs
+        .endpoint_setters
+        .iter()
+        .flat_map(|setter| {
+            [
+                format!("`.{}`", setter.method),
+                format!("`.{}()`", setter.helper),
+            ]
+        })
+        .collect::<Vec<_>>();
+    controls.extend([
+        "`.timeout(...)`".to_owned(),
+        "`.disable_timeout()`".to_owned(),
+        "`.inherit_timeout()`".to_owned(),
+    ]);
+
+    let mut terminals = Vec::new();
+    if docs.terminals.direct_await {
+        terminals.push(format!("`.await` returns `{}`", docs.response.output_type));
+    }
+    if docs.terminals.response {
+        terminals.push("`.response()` includes successful response metadata".to_owned());
+    }
+    if docs.terminals.pagination {
+        terminals.push("`.paginate(...)` runs bounded sequential pagination".to_owned());
+    }
+    terminals.extend(
+        docs.terminals
+            .credential_storage
+            .iter()
+            .map(|method| format!("`.{method}()` stores the decoded credential")),
+    );
+    if docs.terminals.raw_response {
+        terminals.push(
+            "`.raw_response()` selects bounded undecoded bytes when the response mode permits it"
+                .to_owned(),
+        );
+    }
+
+    format!(
+        "Inert named request for [`{endpoint_name}`]. Construction and setters perform no request lifecycle work.\n\nControls: {}.\n\nTerminals:\n\n{}",
+        controls.join(", "),
+        terminals
+            .iter()
+            .map(|terminal| format!("- {terminal}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+}
+
+pub(super) fn endpoint_identity(endpoint: &Endpoint) -> String {
     endpoint.surface.docs_identity.clone()
 }
 
-pub(super) fn contract_identity_doc(endpoint: &Endpoint) -> String {
-    if endpoint.contract_id.explicit {
+pub(super) fn render_route(docs: &EndpointDocModel) -> String {
+    if docs.route_atoms.is_empty() {
+        return "/".to_owned();
+    }
+    format!(
+        "/{}",
+        docs.route_atoms
+            .iter()
+            .map(render_route_atom)
+            .collect::<Vec<_>>()
+            .join("/")
+    )
+}
+
+fn render_route_atom(atom: &EndpointDocRouteAtom) -> String {
+    match atom {
+        EndpointDocRouteAtom::Literal(value) => value.clone(),
+        EndpointDocRouteAtom::Value { namespace, name } => {
+            let namespace = match namespace {
+                EndpointDocNamespace::Vars => "vars",
+                EndpointDocNamespace::Scope => "scope",
+                EndpointDocNamespace::Endpoint => "ep",
+            };
+            format!("{{{namespace}.{name}}}")
+        }
+        EndpointDocRouteAtom::Format(values) => {
+            values.iter().map(render_route_atom).collect::<String>()
+        }
+    }
+}
+
+fn render_inputs(docs: &EndpointDocModel) -> String {
+    let mut values = Vec::new();
+    values.extend(docs.scope_inputs.iter().map(|input| {
+        let owner = input.owner.as_deref().unwrap_or("scope");
         format!(
-            "Its explicit stable contract ID is `{}`.",
-            endpoint.contract_id.value
+            "- `scope.{}: {}` — {} input from `{owner}`.",
+            input.name,
+            input.type_name,
+            input_kind_name(input.kind)
         )
+    }));
+    values.extend(docs.required_endpoint_inputs.iter().map(|input| {
+        format!(
+            "- `ep.{}: {}` — required direct argument.",
+            input.name, input.type_name
+        )
+    }));
+    values.extend(docs.endpoint_setters.iter().map(render_setter));
+    if values.is_empty() {
+        "None.".to_owned()
+    } else {
+        values.join("\n")
+    }
+}
+
+fn render_setter(setter: &EndpointDocSetter) -> String {
+    format!(
+        "- `ep.{}: {}` — {}; set with `.{}(...)`, restore with `.{}()`.",
+        setter.name,
+        setter.type_name,
+        input_kind_name(setter.kind),
+        setter.method,
+        setter.helper,
+    )
+}
+
+fn render_request(docs: &EndpointDocModel) -> String {
+    let query = render_names("Public query names", &docs.safe_query_names);
+    let headers = render_names("Public header names", &docs.safe_header_names);
+    let body = docs.body.as_ref().map_or_else(
+        || "Body: none.".to_owned(),
+        |body| {
+            format!(
+                "Body argument: `ep.{}`. Specification: `{}`. Input type: `{}`.",
+                body.argument, body.specification, body.input_type
+            )
+        },
+    );
+    let authentication = if docs.authentication.is_empty() {
+        "Authentication: none.".to_owned()
     } else {
         format!(
-            "Its deterministic source-path contract ID is `{}`; renaming the client, scope, or endpoint changes this default.",
-            endpoint.contract_id.value
+            "Authentication: {}.",
+            docs.authentication
+                .iter()
+                .map(|placement| { format!("{} ({})", placement.placement, placement.challenge) })
+                .collect::<Vec<_>>()
+                .join("; ")
+        )
+    };
+    let rate_limits = if docs.rate_limits.is_empty() {
+        "Rate limits: none.".to_owned()
+    } else {
+        format!(
+            "Rate limits: {}.",
+            docs.rate_limits
+                .iter()
+                .map(|rule| {
+                    let windows = rule
+                        .windows
+                        .iter()
+                        .map(|window| {
+                            format!("{}/{}", window.capacity, human_duration(window.duration))
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!(
+                        "{} (`{}`, cost {}; {windows})",
+                        rule.origin, rule.id, rule.cost
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("; ")
+        )
+    };
+    let timeout = match docs.timeout {
+        EndpointDocTimeout::Inherited(duration) => format!(
+            "Timeout: inherited {}. Request controls can override, disable, or restore it.",
+            human_duration(duration)
+        ),
+        EndpointDocTimeout::Disabled => {
+            "Timeout: disabled. Request controls can set or restore it.".to_owned()
+        }
+        EndpointDocTimeout::Overridden(duration) => format!(
+            "Timeout: endpoint override {}. Request controls can override, disable, or restore it.",
+            human_duration(duration)
+        ),
+    };
+    let retry = match docs.native_retry {
+        ResolvedRetry::Disabled => String::new(),
+        ResolvedRetry::ReqwestDefault => "\n\nNative retry: enabled.".to_owned(),
+    };
+    format!(
+        "{query}\n\n{headers}\n\n{body}\n\n{authentication}\n\n{rate_limits}\n\n{timeout}{retry}"
+    )
+}
+
+fn render_response(docs: &EndpointDocModel) -> String {
+    format!(
+        "Specification: `{}`.\n\nOutput type: `{}`.\n\nThe response specification selects buffered, streaming, or discard acquisition. The named request documents the terminals actually available for this build.",
+        docs.response.specification, docs.response.output_type
+    )
+}
+
+fn render_names(label: &str, values: &[String]) -> String {
+    if values.is_empty() {
+        format!("{label}: none.")
+    } else {
+        format!(
+            "{label}: {}.",
+            values
+                .iter()
+                .map(|value| format!("`{value}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
         )
     }
 }
 
-pub(super) fn route_shape(path: &[ResolvedExpr]) -> String {
-    let values = path
-        .iter()
-        .map(|value| match value {
-            ResolvedExpr::String(value) => value.value(),
-            ResolvedExpr::Integer(value) => value.to_string(),
-            ResolvedExpr::Value(value) => match value.reference {
-                ValueReference::Client(_) => "{vars.VALUE}".to_owned(),
-                ValueReference::Scope { .. } => "{scope.VALUE}".to_owned(),
-                ValueReference::Endpoint(_) => "{ep.VALUE}".to_owned(),
-            },
-            ResolvedExpr::Format(_) => "{fmt[...]}".to_owned(),
-        })
-        .collect::<Vec<_>>();
-    if values.is_empty() {
-        "<fixed base path>".to_owned()
-    } else {
-        format!("/<fixed base>/{}", values.join("/"))
+fn render_argument(input: &EndpointDocInput) -> String {
+    format!("`{}: {}`", input.name, input.type_name)
+}
+
+fn input_kind_name(kind: EndpointDocInputKind) -> &'static str {
+    match kind {
+        EndpointDocInputKind::Required => "required",
+        EndpointDocInputKind::Optional => "optional",
+        EndpointDocInputKind::Defaulted => "defaulted",
     }
+}
+
+fn local_type_name(path: &str) -> &str {
+    path.rsplit("::").next().unwrap_or(path)
+}
+
+pub(super) fn human_duration(duration: Duration) -> String {
+    let total = duration.as_nanos();
+    if total == 0 {
+        return "0s".to_owned();
+    }
+    const NANOS_PER_MICROSECOND: u128 = 1_000;
+    const NANOS_PER_MILLISECOND: u128 = 1_000_000;
+    const NANOS_PER_SECOND: u128 = 1_000_000_000;
+    const NANOS_PER_MINUTE: u128 = 60 * NANOS_PER_SECOND;
+    const NANOS_PER_HOUR: u128 = 60 * NANOS_PER_MINUTE;
+
+    if total % NANOS_PER_HOUR == 0 {
+        return format!("{}h", total / NANOS_PER_HOUR);
+    }
+    if total % NANOS_PER_MINUTE == 0 {
+        return format!("{}m", total / NANOS_PER_MINUTE);
+    }
+    if total >= NANOS_PER_SECOND {
+        return format_scaled(total, NANOS_PER_SECOND, 9, "s");
+    }
+    if total >= NANOS_PER_MILLISECOND {
+        return format_scaled(total, NANOS_PER_MILLISECOND, 6, "ms");
+    }
+    if total >= NANOS_PER_MICROSECOND {
+        return format_scaled(total, NANOS_PER_MICROSECOND, 3, "µs");
+    }
+    format!("{total}ns")
+}
+
+fn format_scaled(total: u128, unit: u128, width: usize, suffix: &str) -> String {
+    let whole = total / unit;
+    let remainder = total % unit;
+    if remainder == 0 {
+        return format!("{whole}{suffix}");
+    }
+    let fraction = format!("{remainder:0width$}")
+        .trim_end_matches('0')
+        .to_owned();
+    format!("{whole}.{fraction}{suffix}")
 }
 
 pub(super) fn value_category_summary(values: &[Value], owner: &str) -> String {
@@ -111,7 +351,13 @@ pub(super) fn value_category_summary(values: &[Value], owner: &str) -> String {
         values
             .iter()
             .filter(|value| predicate(value))
-            .map(|value| format!("`{}`", canonical_ident(&value.name)))
+            .map(|value| {
+                format!(
+                    "`{}: {}`",
+                    canonical_ident(&value.name),
+                    value.ty.to_token_stream()
+                )
+            })
             .collect::<Vec<_>>()
     };
     let required = names(Value::is_required);
@@ -119,177 +365,211 @@ pub(super) fn value_category_summary(values: &[Value], owner: &str) -> String {
     let defaulted = names(|value| value.default().is_some());
     let mut categories = Vec::new();
     if !required.is_empty() {
-        categories.push(format!("Required {owner} values: {}.", required.join(", ")));
+        categories.push(format!("Required {owner} inputs: {}.", required.join(", ")));
     }
     if !optional.is_empty() {
-        categories.push(format!("Optional {owner} values: {}.", optional.join(", ")));
+        categories.push(format!("Optional {owner} inputs: {}.", optional.join(", ")));
     }
     if !defaulted.is_empty() {
         categories.push(format!(
-            "Defaulted {owner} values: {}; default expressions are intentionally omitted.",
+            "Defaulted {owner} inputs: {}.",
             defaulted.join(", ")
         ));
     }
     if categories.is_empty() {
-        format!("No {owner} values are declared.")
+        format!("{owner} inputs: none.")
     } else {
         categories.join(" ")
     }
 }
 
-pub(super) fn retry_summary(retry: &ResolvedRetry) -> &'static str {
+pub(super) fn retry_summary(retry: ResolvedRetry) -> &'static str {
     match retry {
-        ResolvedRetry::Disabled => "Application native retry is disabled.",
-        ResolvedRetry::ReqwestDefault => {
-            "Reqwest default native retry is explicitly selected; an HTTP builder retry method may replace it."
-        }
+        ResolvedRetry::Disabled => "Native retry: disabled.",
+        ResolvedRetry::ReqwestDefault => "Native retry: enabled.",
     }
-}
-
-pub(super) fn endpoint_configuration_summary(client: &Client, endpoint: &Endpoint) -> String {
-    let query_count = endpoint.config.query.len();
-    let header_count = endpoint.config.headers.len();
-    let timeout = endpoint.config.timeout.map_or_else(
-        || "No inherited operation deadline is active.".to_owned(),
-        |duration| {
-            format!(
-                "The inherited operation deadline is {} seconds and {} nanoseconds; inherent request setters may override, disable, or restore it.",
-                duration.as_secs(),
-                duration.subsec_nanos()
-            )
-        },
-    );
-    let authentication = if endpoint.config.auth.is_empty() {
-        "The effective authentication plan is empty.".to_owned()
-    } else {
-        let placements = endpoint
-            .config
-            .auth
-            .iter()
-            .map(|placement| {
-                let category = match placement.kind {
-                    ResolvedAuthPlacement::Bearer => "bearer",
-                    ResolvedAuthPlacement::Basic => "basic",
-                    ResolvedAuthPlacement::Header(_) => "custom header",
-                    ResolvedAuthPlacement::Query(_) => "private native query",
-                };
-                let challenge = match placement.challenge {
-                    ResolvedChallengePolicy::Unauthorized => "unauthorized",
-                    ResolvedChallengePolicy::UnauthorizedOrForbidden => "unauthorized-or-forbidden",
-                    ResolvedChallengePolicy::Never => "never",
-                };
-                format!("{category} ({challenge})")
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        format!(
-            "The effective authentication plan has {} placement(s), in declaration order: {placements}. Credential values are absent from generated documentation.",
-            endpoint.config.auth.len()
-        )
-    };
-    let rate_limits = if endpoint.config.rate_limits.is_empty() {
-        "The effective rate-limit plan is empty.".to_owned()
-    } else {
-        let rules = endpoint
-            .config
-            .rate_limits
-            .iter()
-            .map(|rule| {
-                let windows = rule
-                    .windows
-                    .iter()
-                    .map(|window| format!("{} / {}s", window.capacity, window.duration.as_secs()))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("{} (cost {}; windows: {windows})", rule.origin, rule.cost)
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        format!(
-            "The effective rate-limit plan has {} rule(s), in exact client-to-scope-to-endpoint composition order: {rules}. Each normal generated rule uses a declaration-scoped global bucket; request values and key parts are absent from generated documentation. Advanced explicit keys are a separate runtime/custom boundary.",
-            endpoint.config.rate_limits.len()
-        )
-    };
-    format!(
-        "The normalized public head contains {query_count} public query declaration(s) and {header_count} public header declaration(s). {authentication} {rate_limits} {timeout} {}",
-        retry_summary(&client.retry)
-    )
-}
-
-pub(super) fn endpoint_feature_summary(_client: &Client, _endpoint: &Endpoint) -> String {
-    "Request, response, and provider feature availability is owned by `concord` type and trait exports.".to_owned()
 }
 
 pub(super) fn credential_summary(client: &Client) -> String {
-    if client.credentials.is_empty() {
-        return "No credential sources are declared.".to_owned();
-    }
-    let sources = client
+    let secrets = client
+        .secrets
+        .iter()
+        .map(|secret| format!("`{}`", canonical_ident(&secret.name)))
+        .collect::<Vec<_>>();
+    let providers = client
         .credentials
         .iter()
-        .map(|credential| match credential.source {
-            CredentialSource::ApiKey { .. } => "static API key (replace)",
-            CredentialSource::Bearer { .. } => "static bearer (replace)",
-            CredentialSource::Basic { .. } => "atomic Basic pair (replace)",
-            CredentialSource::Endpoint { .. } => "endpoint-backed (set/clear)",
-            CredentialSource::Custom { .. } => "custom provider (clear/replace provider)",
+        .filter_map(|credential| {
+            matches!(credential.source, CredentialSource::Custom { .. })
+                .then(|| format!("`{}`", canonical_ident(&credential.name)))
         })
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!(
-        "It declares {} protected secret input(s) and {} credential source(s), in order: {sources}. Source-specific handles expose only their documented capabilities.",
-        client.secrets.len(),
-        client.credentials.len()
-    )
-}
-
-pub(super) fn method_name(method: &ResolvedMethod) -> String {
-    match method {
-        ResolvedMethod::Get => "GET".to_owned(),
-        ResolvedMethod::Post => "POST".to_owned(),
-        ResolvedMethod::Put => "PUT".to_owned(),
-        ResolvedMethod::Patch => "PATCH".to_owned(),
-        ResolvedMethod::Delete => "DELETE".to_owned(),
-        ResolvedMethod::Head => "HEAD".to_owned(),
-        ResolvedMethod::Options => "OPTIONS".to_owned(),
-        ResolvedMethod::Trace => "TRACE".to_owned(),
-        ResolvedMethod::Connect => "CONNECT".to_owned(),
-        ResolvedMethod::Custom(value) => value.value(),
-    }
-}
-
-pub(super) fn request_body_doc(body: Option<&RequestBody>) -> String {
-    match body {
-        None => "The request is bodyless.".to_owned(),
-        Some(body) => format!(
-            "The declared `{}` `#[body]` argument is the input of request specification `{}`. Concord obtains structural metadata before the hook and prepares the managed body only after hook approval.",
-            canonical_ident(&body.name),
-            body.ty.to_token_stream()
-        ),
-    }
-}
-
-pub(super) fn response_doc(_response: &Type) -> &'static str {
-    "Direct await returns the response specification output and `.response()` selects universal successful metadata. Acquisition mode, media validation, limits, and raw-response eligibility are enforced by core-owned capability bounds. The `raw_response()` terminal additionally requires the façade `dangerous-raw-response` feature; when the selected core capability permits it, that terminal returns complete bounded successful bytes with reduced secrecy guarantees."
-}
-
-pub(super) fn response_name(response: &Type) -> String {
-    response.to_token_stream().to_string()
+        .collect::<Vec<_>>();
+    let secret_summary = if secrets.is_empty() {
+        "Required protected secrets: none.".to_owned()
+    } else {
+        format!("Required protected secrets: {}.", secrets.join(", "))
+    };
+    let provider_summary = if providers.is_empty() {
+        "Required credential providers: none.".to_owned()
+    } else {
+        format!("Required credential providers: {}.", providers.join(", "))
+    };
+    format!("{secret_summary} {provider_summary}")
 }
 
 #[cfg(test)]
 mod tests {
+    use quote::quote;
+
     use super::super::test_support;
     use super::*;
+    use crate::semantic;
+    use crate::semantic::surface::SurfaceCapabilities;
 
     #[test]
-    fn documents_public_identity_route_and_capabilities_from_the_model() {
-        let api = test_support::api();
-        let endpoint = test_support::endpoint(&api);
-        let docs = endpoint_type_doc(&api.client, &[], endpoint);
+    fn renders_named_routes_human_durations_and_user_sections() {
+        let api = semantic::test_support::resolve_tokens(quote! {
+            client DDragonApi {
+                base "https://ddragon.example.test/root";
+                vars { locale: String = "en_US"; }
+                timeout 20s;
+            }
+            scope version(version: String) {
+                path ["cdn", scope.version];
+                scope data() {
+                    path ["data", vars.locale];
+                    GET realm(region: String, compact: Option<bool>) -> Json<Value> {
+                        path [fmt[ep.region, ".json"]];
+                        query { "compact" = ep.compact; }
+                        headers { "X-View" = "public"; }
+                        timeout 250ms;
+                        rate_limit { 10 / 1500ms; }
+                    }
+                }
+            }
+        });
+        let endpoint = semantic::test_support::endpoint(&api.client.children, "realm");
+        assert_eq!(
+            render_route(&endpoint.docs),
+            "/cdn/{scope.version}/data/{vars.locale}/{ep.region}.json"
+        );
+        let docs = endpoint_type_doc(endpoint);
+        for expected in [
+            "# Summary",
+            "# Usage",
+            "# Inputs",
+            "# Request",
+            "# Response",
+            "# Identity",
+            "Public query names: `compact`",
+            "Public header names: `X-View`",
+            "Timeout: endpoint override 250ms",
+            "10/1.5s",
+            "Stable contract ID: `d_dragon_api.version.data.realm`",
+        ] {
+            assert!(docs.contains(expected), "missing `{expected}` in:\n{docs}");
+        }
+        for forbidden in [
+            "{vars.VALUE}",
+            "{scope.VALUE}",
+            "{ep.VALUE}",
+            "/<fixed base>",
+            "normalized public head",
+            "facade method",
+            "core-owned capability bounds",
+            "selected core capability",
+            "application native retry",
+        ] {
+            assert!(
+                !docs.contains(forbidden),
+                "forbidden `{forbidden}` in:\n{docs}"
+            );
+        }
+    }
 
-        assert!(docs.contains("ArtifactApi::fetch_item"));
-        assert!(docs.contains("deterministic source-path contract ID"));
-        assert!(docs.contains("authentication plan has 1 placement(s)"));
+    #[test]
+    fn request_docs_list_only_feature_selected_and_endpoint_terminals() {
+        let without_raw = test_support::api();
+        let endpoint = test_support::endpoint(&without_raw);
+        let docs = request_wrapper_doc(endpoint);
+        assert!(docs.contains("`.response()`"));
+        assert!(!docs.contains("`.paginate(...)`"));
+        assert!(!docs.contains("`.raw_response()`"));
+
+        let with_raw =
+            test_support::api_with_capabilities(SurfaceCapabilities { raw_response: true });
+        let docs = request_wrapper_doc(test_support::endpoint(&with_raw));
+        assert!(docs.contains("`.raw_response()`"));
+    }
+
+    #[test]
+    fn emitted_markdown_separates_direct_endpoint_and_request_ownership() {
+        let api = semantic::test_support::resolve_tokens_with_capabilities(
+            quote! {
+                client DocsApi {
+                    base "https://docs.example.test";
+                    credentials {
+                        secret token: String;
+                        credential bearer = bearer(secret.token);
+                    }
+                    timeout 20s;
+                }
+                POST submit(
+                    #[body] body: Json<Input>,
+                    optional: Option<bool>,
+                ) -> Json<Output> {
+                    auth bearer bearer;
+                }
+                GET stream() -> Stream<OctetStream>;
+                GET discard() -> NoContent {
+                    timeout off;
+                }
+                GET pages(cursor: Option<String>) -> Json<Page> {
+                    paginate crate::Controller {
+                        cursor: bind ep.cursor,
+                    }
+                }
+            },
+            SurfaceCapabilities { raw_response: true },
+        );
+        let json = semantic::test_support::endpoint(&api.client.children, "submit");
+        let direct = endpoint_method_doc(json);
+        assert!(direct.starts_with("`POST /`"));
+        assert!(direct.contains("Creates an inert request for [`Submit`]"));
+        assert!(direct.contains("Returns [`SubmitRequest`]"));
+        assert!(!direct.contains("# Request"));
+
+        let endpoint = endpoint_type_doc(json);
+        assert!(endpoint.contains("Body argument: `ep.body`"));
+        assert!(endpoint.contains("Specification: `Json < Input >`"));
+        assert!(endpoint.contains("Authentication: Bearer authorization"));
+        assert!(endpoint.contains("Timeout: inherited 20s"));
+
+        let request = request_wrapper_doc(json);
+        assert!(request.contains("`.optional`"));
+        assert!(request.contains("`.response()`"));
+        assert!(request.contains("`.raw_response()`"));
+        assert!(!request.contains("`.paginate(...)`"));
+
+        let stream = semantic::test_support::endpoint(&api.client.children, "stream");
+        let stream_docs = endpoint_type_doc(stream);
+        assert!(stream_docs.contains("Specification: `Stream < OctetStream >`"));
+        assert!(stream_docs.contains("Body: none."));
+        assert!(stream_docs.contains("Authentication: none."));
+
+        let discard = semantic::test_support::endpoint(&api.client.children, "discard");
+        assert!(endpoint_type_doc(discard).contains("Specification: `NoContent`"));
+        assert!(endpoint_type_doc(discard).contains("Timeout: disabled"));
+
+        let pages = semantic::test_support::endpoint(&api.client.children, "pages");
+        assert!(request_wrapper_doc(pages).contains("`.paginate(...)`"));
+    }
+
+    #[test]
+    fn durations_are_compact_and_exact() {
+        assert_eq!(human_duration(Duration::from_secs(20)), "20s");
+        assert_eq!(human_duration(Duration::from_millis(250)), "250ms");
+        assert_eq!(human_duration(Duration::from_millis(1_500)), "1.5s");
+        assert_eq!(human_duration(Duration::from_secs(600)), "10m");
     }
 }

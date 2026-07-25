@@ -13,16 +13,17 @@ use proc_macro2::Span;
 use syn::Ident;
 
 use self::model::{
-    Api, Child, Client, ContractId, Credential, Endpoint, NormalizedConfig, RequestBody,
-    ResolvedMethod, ResolvedRetry, Scope, Value,
+    Api, Child, Client, ContractId, Credential, Endpoint, EndpointDocTimeout, NormalizedConfig,
+    RequestBody, ResolvedMethod, ResolvedRetry, Scope, Value,
 };
 use self::surface::{
-    canonical_ident, client_surface, endpoint_surface, finalize_endpoint_surfaces, scope_surface,
-    to_snake_case, validate_surface_modules,
+    EndpointDocContext, SurfaceCapabilities, VisibleScopeDoc, canonical_ident, client_surface,
+    endpoint_doc_model, endpoint_surface, finalize_endpoint_surfaces, scope_surface, to_snake_case,
+    validate_surface_modules,
 };
 use crate::syntax::ast::{
     MethodKind as SourceMethod, RetrySelection as SourceRetry, SourceApi, SourceChild,
-    SourceEndpoint, SourceScope,
+    SourceEndpoint, SourceScope, TimeoutOperation,
 };
 use auth::{
     convert_credentials, resolve_endpoint_credentials, validate_credential_cycles,
@@ -37,13 +38,24 @@ use symbols::{
 struct Resolver<'a> {
     base: &'a syn::LitStr,
     client_name: &'a Ident,
+    client_surface: &'a self::model::ClientSurface,
     client_values: &'a [Value],
     credentials: &'a [Credential],
+    retry: ResolvedRetry,
+    surface_capabilities: SurfaceCapabilities,
     next_scope_id: usize,
     next_endpoint_id: usize,
 }
 
+#[cfg(test)]
 pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
+    resolve_with_capabilities(source, SurfaceCapabilities::default())
+}
+
+pub(crate) fn resolve_with_capabilities(
+    source: SourceApi,
+    surface_capabilities: SurfaceCapabilities,
+) -> syn::Result<Api> {
     let SourceApi {
         client: source_client,
         children: source_children,
@@ -64,13 +76,17 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
     let client_name = source_client.name;
     let base = source_client.base.value;
     let surface = client_surface(&client_name);
+    let retry = resolve_retry(source_client.retry.map(|clause| clause.value));
 
     let (config, children) = {
         let mut resolver = Resolver {
             base: &base,
             client_name: &client_name,
+            client_surface: &surface,
             client_values: &values,
             credentials: &credentials,
+            retry,
+            surface_capabilities,
             next_scope_id: 0,
             next_endpoint_id: 0,
         };
@@ -101,7 +117,7 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
         values,
         secrets,
         credentials,
-        retry: resolve_retry(source_client.retry.map(|clause| clause.value)),
+        retry,
         requires_limiter: source_declares_limiter,
         config,
         children,
@@ -232,6 +248,15 @@ impl Resolver<'_> {
             &contract_id.value,
             &lexical_origin,
         )?;
+        let timeout = match source.layer.timeout.as_ref() {
+            Some(clause) => match &clause.value {
+                TimeoutOperation::Off => EndpointDocTimeout::Disabled,
+                TimeoutOperation::Set(value) => EndpointDocTimeout::Overridden(value.value),
+            },
+            None => config
+                .timeout
+                .map_or(EndpointDocTimeout::Disabled, EndpointDocTimeout::Inherited),
+        };
         head_limits::validate_static_head(self.base, &config, source.name.span())?;
         let pagination = self.resolve_pagination(
             source.pagination.map(|clause| clause.value),
@@ -243,6 +268,8 @@ impl Resolver<'_> {
             name: body.name,
             ty: body.ty,
         });
+        let method = resolve_method(source.method);
+        let response = source.response;
         let surface = endpoint_surface(
             self.client_name,
             scope_path,
@@ -250,17 +277,46 @@ impl Resolver<'_> {
             &parameters,
             body_position,
             pagination.is_some(),
+            self.surface_capabilities,
+        );
+        let visible_scope_docs = scope_path
+            .iter()
+            .zip(visible_scopes)
+            .map(|(name, scope)| VisibleScopeDoc {
+                id: scope.id,
+                name,
+                values: &scope.values,
+            })
+            .collect::<Vec<_>>();
+        let docs = endpoint_doc_model(
+            &surface,
+            EndpointDocContext {
+                client_name: self.client_name,
+                client_surface: self.client_surface,
+                base_url: self.base,
+                client_values: self.client_values,
+                scopes: &visible_scope_docs,
+                method: &method,
+                parameters: &parameters,
+                body: body.as_ref(),
+                config: &config,
+                response: &response,
+                timeout,
+                native_retry: self.retry,
+                contract_id: &contract_id,
+            },
         );
         Ok(Endpoint {
             id,
-            method: resolve_method(source.method),
+            method,
             name: source.name,
             surface,
+            docs,
             parameters,
             body,
             contract_id,
             config,
-            response: source.response,
+            response,
             pagination,
             dsl_path,
         })
@@ -339,8 +395,15 @@ pub(crate) mod test_support {
     use super::*;
 
     pub(crate) fn resolve_tokens(tokens: proc_macro2::TokenStream) -> Api {
+        resolve_tokens_with_capabilities(tokens, SurfaceCapabilities::default())
+    }
+
+    pub(crate) fn resolve_tokens_with_capabilities(
+        tokens: proc_macro2::TokenStream,
+        capabilities: SurfaceCapabilities,
+    ) -> Api {
         let source = crate::syntax::parse(tokens).expect("semantic test syntax");
-        resolve(source).expect("normalized semantic model")
+        resolve_with_capabilities(source, capabilities).expect("normalized semantic model")
     }
 
     fn find_endpoint<'a>(children: &'a [Child], name: &str) -> Option<&'a Endpoint> {
@@ -358,7 +421,7 @@ pub(crate) mod test_support {
         None
     }
 
-    pub(super) fn endpoint<'a>(children: &'a [Child], name: &str) -> &'a Endpoint {
+    pub(crate) fn endpoint<'a>(children: &'a [Child], name: &str) -> &'a Endpoint {
         find_endpoint(children, name).unwrap_or_else(|| panic!("endpoint `{name}`"))
     }
 }

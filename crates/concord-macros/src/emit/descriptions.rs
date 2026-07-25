@@ -8,7 +8,7 @@ pub(super) fn generate_endpoint_description(
     let description_static = private_ident("endpoint_description", endpoint.id, &endpoint.name);
     let contract_id = &endpoint.contract_id.value;
     let source_path = syn::LitStr::new(&endpoint.surface.docs_identity, endpoint.name.span());
-    let route = syn::LitStr::new(&route_shape(&endpoint.config.path), endpoint.name.span());
+    let route = syn::LitStr::new(&render_route(&endpoint.docs), endpoint.name.span());
     let method = method_token(&endpoint.method, core_path);
     let timeout = endpoint.config.timeout.map_or_else(
         || quote!(#core_path::endpoint::TimeoutSelection::Disabled),

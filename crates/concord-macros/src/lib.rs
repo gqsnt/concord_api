@@ -43,16 +43,16 @@ pub fn __api(input: TokenStream) -> TokenStream {
 
 fn expand_with_runtime(
     input: TokenStream2,
-    capabilities: emit::Capabilities,
+    capabilities: semantic::surface::SurfaceCapabilities,
     runtime_path: &TokenStream2,
 ) -> syn::Result<TokenStream2> {
     syntax::parse(input)
-        .and_then(semantic::resolve)
-        .map(|model| emit::generate(&model, runtime_path, capabilities))
+        .and_then(|source| semantic::resolve_with_capabilities(source, capabilities))
+        .map(|model| emit::generate(&model, runtime_path))
 }
 
 struct FacadeInput {
-    capabilities: emit::Capabilities,
+    capabilities: semantic::surface::SurfaceCapabilities,
     runtime_path: TokenStream2,
     declaration: TokenStream2,
 }
@@ -69,7 +69,7 @@ impl Parse for FacadeInput {
         }
         let content;
         parenthesized!(content in input);
-        let mut capabilities = emit::Capabilities::default();
+        let mut capabilities = semantic::surface::SurfaceCapabilities::default();
         while !content.is_empty() {
             let capability: Ident = content.parse()?;
             match capability.to_string().as_str() {

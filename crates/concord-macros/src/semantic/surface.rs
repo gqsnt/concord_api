@@ -1,13 +1,46 @@
 use std::collections::HashMap;
 
 use proc_macro2::Span;
-use syn::Ident;
+use quote::ToTokens;
+use syn::{Ident, LitStr, Type};
 
 use super::model::{
-    Child, ClientSurface, CloneEligibility, Credential, CredentialSource,
-    CredentialStorageTerminal, Endpoint, EndpointSetter, EndpointSurface, RawResponseCapability,
-    RequestTerminals, RequiredArgument, Scope, ScopeSurface, Value,
+    Child, ClientSurface, CloneEligibility, ContractId, Credential, CredentialSource,
+    CredentialStorageTerminal, Endpoint, EndpointDocAuthPlacement, EndpointDocBody,
+    EndpointDocInput, EndpointDocInputKind, EndpointDocModel, EndpointDocNamespace,
+    EndpointDocRateLimit, EndpointDocRateLimitWindow, EndpointDocResponse, EndpointDocRouteAtom,
+    EndpointDocSetter, EndpointDocTerminals, EndpointDocTimeout, EndpointSetter, EndpointSurface,
+    NormalizedConfig, RequestBody, RequestTerminals, RequiredArgument, ResolvedAuthPlacement,
+    ResolvedChallengePolicy, ResolvedExpr, ResolvedMethod, ResolvedRetry, Scope, ScopeSurface,
+    Value, ValueReference,
 };
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct SurfaceCapabilities {
+    pub(crate) raw_response: bool,
+}
+
+pub(crate) struct VisibleScopeDoc<'a> {
+    pub(crate) id: usize,
+    pub(crate) name: &'a Ident,
+    pub(crate) values: &'a [Value],
+}
+
+pub(crate) struct EndpointDocContext<'a> {
+    pub(crate) client_name: &'a Ident,
+    pub(crate) client_surface: &'a ClientSurface,
+    pub(crate) base_url: &'a LitStr,
+    pub(crate) client_values: &'a [Value],
+    pub(crate) scopes: &'a [VisibleScopeDoc<'a>],
+    pub(crate) method: &'a ResolvedMethod,
+    pub(crate) parameters: &'a [Value],
+    pub(crate) body: Option<&'a RequestBody>,
+    pub(crate) config: &'a NormalizedConfig,
+    pub(crate) response: &'a Type,
+    pub(crate) timeout: EndpointDocTimeout,
+    pub(crate) native_retry: ResolvedRetry,
+    pub(crate) contract_id: &'a ContractId,
+}
 
 pub(crate) const RESERVED_GENERATED_METHODS: &[&str] = &[
     "new",
@@ -58,6 +91,7 @@ pub(crate) fn endpoint_surface(
     parameters: &[Value],
     body_position: Option<usize>,
     paginated: bool,
+    capabilities: SurfaceCapabilities,
 ) -> EndpointSurface {
     let endpoint_type_name = pascal_ident(endpoint_name);
     let mut required_arguments = parameters
@@ -103,7 +137,7 @@ pub(crate) fn endpoint_surface(
         terminals: RequestTerminals {
             response: true,
             pagination: paginated,
-            raw_response: RawResponseCapability::SealedResponseMode,
+            raw_response: capabilities.raw_response,
             credential_storage: Vec::new(),
         },
         clone_eligibility: if body_position.is_some() {
@@ -112,6 +146,265 @@ pub(crate) fn endpoint_surface(
             CloneEligibility::Always
         },
         docs_identity: format!("{}::{}", canonical_ident(client_name), dsl_path.join("::")),
+    }
+}
+
+pub(crate) fn endpoint_doc_model(
+    surface: &EndpointSurface,
+    context: EndpointDocContext<'_>,
+) -> EndpointDocModel {
+    let EndpointDocContext {
+        client_name,
+        client_surface,
+        base_url,
+        client_values,
+        scopes,
+        method,
+        parameters,
+        body,
+        config,
+        response,
+        timeout,
+        native_retry,
+        contract_id,
+    } = context;
+    let mut endpoint_type_path = canonical_ident(&client_surface.support_name);
+    for module in &surface.module_path {
+        endpoint_type_path.push_str("::");
+        endpoint_type_path.push_str(&canonical_ident(module));
+    }
+    let mut request_type_path = endpoint_type_path.clone();
+    endpoint_type_path.push_str("::");
+    endpoint_type_path.push_str(&canonical_ident(&surface.endpoint_type_name));
+    request_type_path.push_str("::");
+    request_type_path.push_str(&canonical_ident(&surface.request_type_name));
+
+    let body = body.map(|body| {
+        let specification = type_name(&body.ty);
+        EndpointDocBody {
+            argument: canonical_ident(&body.name),
+            input_type: format!("<{specification} as RequestBodySpec>::Input"),
+            specification,
+        }
+    });
+    let required_endpoint_inputs = surface
+        .required_arguments
+        .iter()
+        .map(|argument| match argument {
+            RequiredArgument::Parameter(index) => doc_input(None, &parameters[*index]),
+            RequiredArgument::Body => {
+                let body = body.as_ref().expect("body documentation");
+                EndpointDocInput {
+                    owner: None,
+                    name: body.argument.clone(),
+                    type_name: body.input_type.clone(),
+                    kind: EndpointDocInputKind::Required,
+                }
+            }
+        })
+        .collect();
+    let endpoint_setters = surface
+        .setters
+        .iter()
+        .map(|setter| {
+            let value = &parameters[setter.parameter];
+            EndpointDocSetter {
+                name: canonical_ident(&value.name),
+                method: canonical_ident(&setter.method),
+                helper: canonical_ident(&setter.helper),
+                type_name: type_name(value.setter_type()),
+                kind: input_kind(value),
+            }
+        })
+        .collect();
+    let scope_inputs = scopes
+        .iter()
+        .flat_map(|scope| {
+            let owner = canonical_ident(scope.name);
+            scope
+                .values
+                .iter()
+                .map(move |value| doc_input(Some(owner.clone()), value))
+        })
+        .collect();
+    let route_atoms = config
+        .path
+        .iter()
+        .map(|atom| route_atom(atom, client_values, scopes, parameters))
+        .collect();
+    let authentication = config
+        .auth
+        .iter()
+        .map(|auth| EndpointDocAuthPlacement {
+            placement: match &auth.kind {
+                ResolvedAuthPlacement::Bearer => "Bearer authorization".to_owned(),
+                ResolvedAuthPlacement::Basic => "Basic authorization".to_owned(),
+                ResolvedAuthPlacement::Header(name) => {
+                    format!("private header {}", name.value())
+                }
+                ResolvedAuthPlacement::Query(name) => {
+                    format!("private query {}", name.value())
+                }
+            },
+            challenge: match auth.challenge {
+                ResolvedChallengePolicy::Unauthorized => "recover once after 401".to_owned(),
+                ResolvedChallengePolicy::UnauthorizedOrForbidden => {
+                    "recover once after 401 or 403".to_owned()
+                }
+                ResolvedChallengePolicy::Never => "no automatic recovery".to_owned(),
+            },
+        })
+        .collect();
+    let rate_limits = config
+        .rate_limits
+        .iter()
+        .map(|rule| EndpointDocRateLimit {
+            id: rule.id.clone(),
+            origin: rule.origin.clone(),
+            cost: rule.cost,
+            windows: rule
+                .windows
+                .iter()
+                .map(|window| EndpointDocRateLimitWindow {
+                    capacity: window.capacity,
+                    duration: window.duration,
+                })
+                .collect(),
+        })
+        .collect();
+    let response_specification = type_name(response);
+
+    EndpointDocModel {
+        client_name: canonical_ident(client_name),
+        scope_chain: scopes
+            .iter()
+            .map(|scope| canonical_ident(scope.name))
+            .collect(),
+        direct_method_name: canonical_ident(&surface.method_name),
+        endpoint_type_path,
+        request_type_path,
+        http_method: resolved_method_name(method),
+        base_url: base_url.value(),
+        route_atoms,
+        scope_inputs,
+        required_endpoint_inputs,
+        endpoint_setters,
+        safe_query_names: config.query.iter().map(|entry| entry.key.value()).collect(),
+        safe_header_names: config
+            .headers
+            .iter()
+            .map(|entry| entry.name.value())
+            .collect(),
+        body,
+        response: EndpointDocResponse {
+            output_type: format!("<{response_specification} as ResponseBodySpec>::Output"),
+            specification: response_specification,
+        },
+        authentication,
+        rate_limits,
+        timeout,
+        terminals: EndpointDocTerminals {
+            direct_await: true,
+            response: surface.terminals.response,
+            pagination: surface.terminals.pagination,
+            raw_response: surface.terminals.raw_response,
+            credential_storage: Vec::new(),
+        },
+        native_retry,
+        contract_id: contract_id.value.clone(),
+        explicit_contract_id: contract_id.explicit,
+    }
+}
+
+fn route_atom(
+    value: &ResolvedExpr,
+    client_values: &[Value],
+    scopes: &[VisibleScopeDoc<'_>],
+    endpoint_values: &[Value],
+) -> EndpointDocRouteAtom {
+    match value {
+        ResolvedExpr::String(value) => EndpointDocRouteAtom::Literal(value.value()),
+        ResolvedExpr::Integer(value) => EndpointDocRouteAtom::Literal(value.to_string()),
+        ResolvedExpr::Value(value) => {
+            let (namespace, name) = match value.reference {
+                ValueReference::Client(index) => (
+                    EndpointDocNamespace::Vars,
+                    &client_values
+                        .get(index)
+                        .expect("resolved client documentation value")
+                        .name,
+                ),
+                ValueReference::Scope {
+                    scope_id,
+                    parameter,
+                } => (
+                    EndpointDocNamespace::Scope,
+                    &scopes
+                        .iter()
+                        .find(|scope| scope.id == scope_id)
+                        .expect("resolved scope documentation frame")
+                        .values
+                        .get(parameter)
+                        .expect("resolved scope documentation value")
+                        .name,
+                ),
+                ValueReference::Endpoint(index) => (
+                    EndpointDocNamespace::Endpoint,
+                    &endpoint_values
+                        .get(index)
+                        .expect("resolved endpoint documentation value")
+                        .name,
+                ),
+            };
+            EndpointDocRouteAtom::Value {
+                namespace,
+                name: canonical_ident(name),
+            }
+        }
+        ResolvedExpr::Format(values) => EndpointDocRouteAtom::Format(
+            values
+                .iter()
+                .map(|value| route_atom(value, client_values, scopes, endpoint_values))
+                .collect(),
+        ),
+    }
+}
+
+fn doc_input(owner: Option<String>, value: &Value) -> EndpointDocInput {
+    EndpointDocInput {
+        owner,
+        name: canonical_ident(&value.name),
+        type_name: type_name(&value.ty),
+        kind: input_kind(value),
+    }
+}
+
+fn input_kind(value: &Value) -> EndpointDocInputKind {
+    if value.is_required() {
+        EndpointDocInputKind::Required
+    } else if value.is_optional() {
+        EndpointDocInputKind::Optional
+    } else {
+        EndpointDocInputKind::Defaulted
+    }
+}
+
+fn type_name(value: &Type) -> String {
+    value.to_token_stream().to_string()
+}
+
+fn resolved_method_name(method: &ResolvedMethod) -> String {
+    match method {
+        ResolvedMethod::Get => "GET".to_owned(),
+        ResolvedMethod::Post => "POST".to_owned(),
+        ResolvedMethod::Put => "PUT".to_owned(),
+        ResolvedMethod::Patch => "PATCH".to_owned(),
+        ResolvedMethod::Delete => "DELETE".to_owned(),
+        ResolvedMethod::Head => "HEAD".to_owned(),
+        ResolvedMethod::Options => "OPTIONS".to_owned(),
+        ResolvedMethod::Trace => "TRACE".to_owned(),
+        ResolvedMethod::Connect => "CONNECT".to_owned(),
+        ResolvedMethod::Custom(value) => value.value(),
     }
 }
 
@@ -125,7 +418,7 @@ pub(crate) fn finalize_endpoint_surfaces(
                 finalize_endpoint_surfaces(&mut scope.children, credentials)?;
             }
             Child::Endpoint(endpoint) => {
-                endpoint.surface.terminals.credential_storage = credentials
+                let credential_storage = credentials
                     .iter()
                     .enumerate()
                     .filter(|(_, credential)| {
@@ -141,7 +434,12 @@ pub(crate) fn finalize_endpoint_surfaces(
                         credential,
                         method: storage_terminal_name(&value.name),
                     })
+                    .collect::<Vec<_>>();
+                endpoint.docs.terminals.credential_storage = credential_storage
+                    .iter()
+                    .map(|terminal| canonical_ident(&terminal.method))
                     .collect();
+                endpoint.surface.terminals.credential_storage = credential_storage;
                 validate_request_surface(endpoint)?;
             }
         }
@@ -395,6 +693,8 @@ fn is_rust_keyword(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use quote::quote;
     use syn::parse_quote;
 
@@ -433,5 +733,188 @@ mod tests {
         assert_eq!(endpoint.surface.setters.len(), 1);
         assert!(endpoint.surface.terminals.response);
         assert!(!endpoint.surface.terminals.pagination);
+        assert!(!endpoint.surface.terminals.raw_response);
+        assert_eq!(endpoint.docs.direct_method_name, "get_http_status");
+        assert_eq!(
+            endpoint.docs.endpoint_type_path,
+            "surface_api::http_status::GetHttpStatus"
+        );
+    }
+
+    #[test]
+    fn endpoint_doc_model_resolves_riot_style_nested_names_and_flat_inputs() {
+        let api = test_support::resolve_tokens(quote! {
+            client DDragonApi {
+                base "https://ddragon.example.test/root";
+                vars { locale: String = "en_US"; }
+                timeout 20s;
+            }
+            scope version(version: String) {
+                path ["cdn", scope.version];
+                scope assets(category: Option<String>) {
+                    path ["data", vars.locale];
+                    GET image(
+                        filename: String,
+                        scale: u32 = 2,
+                    ) -> Bytes {
+                        path [fmt[ep.filename, ".png"]];
+                        query { "scale" = ep.scale; }
+                        headers { "X-Asset-View" = "public"; }
+                    }
+                }
+            }
+        });
+        let endpoint = test_support::endpoint(&api.client.children, "image");
+        let docs = &endpoint.docs;
+
+        assert_eq!(docs.client_name, "DDragonApi");
+        assert_eq!(docs.scope_chain, ["version", "assets"]);
+        assert_eq!(docs.direct_method_name, "image");
+        assert_eq!(
+            docs.endpoint_type_path,
+            "d_dragon_api::version::assets::Image"
+        );
+        assert_eq!(
+            docs.request_type_path,
+            "d_dragon_api::version::assets::ImageRequest"
+        );
+        assert_eq!(docs.http_method, "GET");
+        assert_eq!(docs.base_url, "https://ddragon.example.test/root");
+        assert_eq!(
+            docs.route_atoms,
+            [
+                EndpointDocRouteAtom::Literal("cdn".to_owned()),
+                EndpointDocRouteAtom::Value {
+                    namespace: EndpointDocNamespace::Scope,
+                    name: "version".to_owned(),
+                },
+                EndpointDocRouteAtom::Literal("data".to_owned()),
+                EndpointDocRouteAtom::Value {
+                    namespace: EndpointDocNamespace::Vars,
+                    name: "locale".to_owned(),
+                },
+                EndpointDocRouteAtom::Format(vec![
+                    EndpointDocRouteAtom::Value {
+                        namespace: EndpointDocNamespace::Endpoint,
+                        name: "filename".to_owned(),
+                    },
+                    EndpointDocRouteAtom::Literal(".png".to_owned()),
+                ]),
+            ]
+        );
+        assert_eq!(
+            docs.scope_inputs
+                .iter()
+                .map(|input| (input.owner.as_deref(), input.name.as_str(), input.kind))
+                .collect::<Vec<_>>(),
+            [
+                (Some("version"), "version", EndpointDocInputKind::Required),
+                (Some("assets"), "category", EndpointDocInputKind::Optional),
+            ]
+        );
+        assert_eq!(docs.required_endpoint_inputs[0].name, "filename");
+        assert_eq!(docs.endpoint_setters[0].name, "scale");
+        assert_eq!(docs.endpoint_setters[0].method, "scale");
+        assert_eq!(docs.endpoint_setters[0].helper, "reset_scale");
+        assert_eq!(docs.safe_query_names, ["scale"]);
+        assert_eq!(docs.safe_header_names, ["X-Asset-View"]);
+        assert!(docs.body.is_none());
+        assert!(docs.response.specification.contains("Bytes"));
+        assert!(docs.authentication.is_empty());
+        assert!(docs.rate_limits.is_empty());
+        assert_eq!(
+            docs.timeout,
+            EndpointDocTimeout::Inherited(Duration::from_secs(20))
+        );
+        assert!(docs.terminals.direct_await);
+        assert!(docs.terminals.response);
+        assert!(!docs.terminals.pagination);
+        assert!(!docs.terminals.raw_response);
+        assert_eq!(docs.contract_id, "d_dragon_api.version.assets.image");
+        assert!(!docs.explicit_contract_id);
+    }
+
+    #[test]
+    fn endpoint_doc_model_tracks_bodies_auth_timeouts_and_actual_terminals() {
+        let api = test_support::resolve_tokens_with_capabilities(
+            quote! {
+                client DocsApi {
+                    base "https://docs.example.test";
+                    credentials {
+                        secret token: String;
+                        credential bearer = bearer(secret.token);
+                        credential session = endpoint login;
+                    }
+                    timeout 20s;
+                }
+                POST login(
+                    #[body] body: Json<Login>,
+                    remember: Option<bool>,
+                    attempts: u32 = 3,
+                ) -> Json<Session> {
+                    id "stable.login";
+                    auth bearer bearer;
+                    timeout off;
+                }
+                GET page(cursor: Option<String>) -> Json<Page> {
+                    paginate crate::Controller {
+                        cursor: bind ep.cursor,
+                    }
+                }
+                GET stream() -> Stream<OctetStream>;
+                GET discard() -> NoContent {
+                    timeout 250ms;
+                }
+            },
+            SurfaceCapabilities { raw_response: true },
+        );
+        let login = test_support::endpoint(&api.client.children, "login");
+        assert!(login.docs.body.as_ref().is_some_and(|body| {
+            body.argument == "body"
+                && body.specification.contains("Json")
+                && body.input_type.contains("RequestBodySpec")
+        }));
+        assert!(login.docs.response.specification.contains("Session"));
+        assert_eq!(
+            login
+                .docs
+                .endpoint_setters
+                .iter()
+                .map(|setter| (setter.name.as_str(), setter.kind))
+                .collect::<Vec<_>>(),
+            [
+                ("remember", EndpointDocInputKind::Optional),
+                ("attempts", EndpointDocInputKind::Defaulted),
+            ]
+        );
+        assert_eq!(login.docs.authentication.len(), 1);
+        assert_eq!(login.docs.timeout, EndpointDocTimeout::Disabled);
+        assert!(login.docs.terminals.raw_response);
+        assert_eq!(
+            login.docs.terminals.credential_storage,
+            ["store_as_session"]
+        );
+        assert_eq!(login.docs.contract_id, "stable.login");
+        assert!(login.docs.explicit_contract_id);
+
+        let page = test_support::endpoint(&api.client.children, "page");
+        assert!(page.docs.body.is_none());
+        assert!(page.docs.authentication.is_empty());
+        assert!(page.docs.safe_query_names.is_empty());
+        assert!(page.docs.safe_header_names.is_empty());
+        assert!(page.docs.terminals.pagination);
+        assert_eq!(
+            page.docs.timeout,
+            EndpointDocTimeout::Inherited(Duration::from_secs(20))
+        );
+
+        let stream = test_support::endpoint(&api.client.children, "stream");
+        assert!(stream.docs.response.specification.contains("Stream"));
+        let discard = test_support::endpoint(&api.client.children, "discard");
+        assert!(discard.docs.response.specification.contains("NoContent"));
+        assert_eq!(
+            discard.docs.timeout,
+            EndpointDocTimeout::Overridden(Duration::from_millis(250))
+        );
     }
 }
