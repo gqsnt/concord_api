@@ -78,8 +78,17 @@ impl Auth {
     ///
     /// Concord rejects transport- and request-owned names, including generic
     /// `Authorization`, media headers, cookies, proxy authorization, and
-    /// connection/framing headers. Use [`Auth::bearer`] or [`Auth::basic`] for
-    /// authorization owned by those dedicated placements.
+    /// connection/framing headers. [`Auth::bearer`] and [`Auth::basic`] are the
+    /// only built-in placements that own `Authorization`; ordinary custom
+    /// private headers such as `X-API-Key` and private authentication query
+    /// values remain supported.
+    ///
+    /// Consequently, a complete custom `Authorization` scheme such as
+    /// `Signature`, `AWS4-HMAC-SHA256`, or `MAC` is not representable through
+    /// the current semantic placement model. Do not place it in public
+    /// headers. A dedicated authorization or request-signing contract requires
+    /// a separate design so Concord can preserve one private owner, collision
+    /// prevention, limiter-before-authentication ordering, and redaction.
     pub fn header<M>(name: HeaderName, credential: CredentialRef<M>) -> Result<Self, AuthError>
     where
         M: SecretCredential,

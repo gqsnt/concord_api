@@ -100,6 +100,7 @@ pub(crate) struct EndpointDocModel {
     pub(crate) request_type_path: String,
     pub(crate) http_method: String,
     pub(crate) base_url: String,
+    pub(crate) host: Option<EndpointDocHost>,
     pub(crate) route_atoms: Vec<EndpointDocRouteAtom>,
     pub(crate) scope_inputs: Vec<EndpointDocInput>,
     pub(crate) required_endpoint_inputs: Vec<EndpointDocInput>,
@@ -115,6 +116,13 @@ pub(crate) struct EndpointDocModel {
     pub(crate) native_retry: ResolvedRetry,
     pub(crate) contract_id: String,
     pub(crate) explicit_contract_id: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct EndpointDocHost {
+    pub(crate) label_atoms: Vec<EndpointDocRouteAtom>,
+    pub(crate) base_host: String,
+    pub(crate) port: Option<u16>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

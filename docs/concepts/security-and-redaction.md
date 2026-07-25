@@ -35,6 +35,12 @@ builders and provider errors implement redaction-aware formatting. Sentinel
 tests cover URL, headers, plans, descriptions, hooks, errors, debug,
 completion, limiter metadata, provider failures, and status bodies.
 
+Application-approved safe messages are trusted application-owned text. Concord
+does not automatically impose one universal size bound on every such
+extension-authored string. Applications and extensions must bound retained
+message storage appropriately and must never include credentials, protected
+values, body or response data, native diagnostics, or other secrets.
+
 Dangerous capabilities are separately feature-gated and remain bounded. Their
 reduced guarantees are documented in
 [Dangerous capabilities](../reference/dangerous.md).

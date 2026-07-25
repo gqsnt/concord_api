@@ -335,6 +335,18 @@ Material types must match their placement. Public/authentication target
 collisions fail during request preparation. Native credential values are never
 available to the macro or semantic extensions.
 
+Bearer and Basic are the only built-in placements that own `Authorization`.
+Generic private-header placement supports ordinary custom names such as
+`X-API-Key` but rejects `Authorization`; private authentication query
+placement remains supported. Therefore complete custom `Authorization`
+schemes such as `Signature`, `AWS4-HMAC-SHA256`, and `MAC` cannot be expressed
+through the current semantic placement model. They must not be placed in
+public headers.
+
+The restriction preserves one private `Authorization` owner, collision
+prevention, limiter-before-authentication ordering, and redaction. A future
+dedicated authorization or request-signing contract is a separate design.
+
 ## Retry and timeout
 
 Client declarations support:

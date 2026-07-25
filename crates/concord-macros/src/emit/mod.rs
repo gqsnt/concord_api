@@ -6,12 +6,12 @@ use syn::spanned::Spanned;
 use syn::{PathArguments, Type};
 
 use crate::semantic::model::{
-    Api, Child, Client, CloneEligibility, Credential, CredentialSource, Endpoint, EndpointDocInput,
-    EndpointDocInputKind, EndpointDocModel, EndpointDocNamespace, EndpointDocRouteAtom,
-    EndpointDocSetter, EndpointDocTimeout, NormalizedConfig, PaginationInitializer,
-    PaginationValue, RequiredArgument, ResolvedAuthPlacement, ResolvedChallengePolicy,
-    ResolvedDefault, ResolvedExpr, ResolvedMethod, ResolvedRetry, ResolvedValueKind, Scope, Value,
-    ValueReference, ValueShape,
+    Api, Child, Client, CloneEligibility, Credential, CredentialSource, Endpoint, EndpointDocHost,
+    EndpointDocInput, EndpointDocInputKind, EndpointDocModel, EndpointDocNamespace,
+    EndpointDocRouteAtom, EndpointDocSetter, EndpointDocTimeout, NormalizedConfig,
+    PaginationInitializer, PaginationValue, RequiredArgument, ResolvedAuthPlacement,
+    ResolvedChallengePolicy, ResolvedDefault, ResolvedExpr, ResolvedMethod, ResolvedRetry,
+    ResolvedValueKind, Scope, Value, ValueReference, ValueShape,
 };
 use crate::semantic::surface::{canonical_ident, public_ident, to_snake_case};
 

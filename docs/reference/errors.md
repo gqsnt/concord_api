@@ -43,7 +43,10 @@ Focused stable non-exhaustive kinds include:
 
 Builder errors distinguish a missing public value, protected secret, or
 credential provider without including its value. Provider and extension error
-messages cross a safe-text contract and must not include protected inputs.
+messages cross a safe-text contract. Application-approved safe messages are
+trusted application-owned text, are not automatically covered by one universal
+Concord size limit, and must not include protected inputs or other secrets.
+Applications and extensions must bound their own retained message storage.
 
 For a received response, error precedence is core limiter observation, then the
 user response-head hook, then authentication challenge, status, and acquisition

@@ -42,6 +42,20 @@ Generated declarations and runtime-defined endpoints enforce the same
 64-placement authentication-plan ceiling. The exact maximum is accepted, and
 the first excess placement is rejected before it can be retained.
 
+The built-in placement model supports Bearer through its dedicated bearer
+placement, Basic through its dedicated Basic placement, ordinary private
+custom headers such as `X-API-Key`, and private authentication query values.
+Generic private-header placement intentionally rejects `Authorization`.
+Consequently, complete custom `Authorization` schemes such as `Signature`,
+`AWS4-HMAC-SHA256`, and `MAC` are not currently representable. Do not place
+custom authorization in public headers.
+
+This restriction keeps one owner for `Authorization`, materializes credentials
+only at the private native boundary, prevents placement collisions, preserves
+limiter-before-authentication ordering, and keeps automatic surfaces redacted.
+A future dedicated authorization or request-signing contract requires a
+separate design.
+
 Credentials are resolved after public preparation and limiter acquisition, at
 the private native boundary. Hooks, descriptions, plans, errors, completion
 events, and debug output cannot see material. Authentication challenge

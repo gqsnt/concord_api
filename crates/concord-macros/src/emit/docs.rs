@@ -35,6 +35,7 @@ pub(super) fn endpoint_type_doc(endpoint: &Endpoint) -> String {
     let inputs = render_inputs(docs);
     let request = render_request(docs);
     let response = render_response(docs);
+    let summary = render_location(docs);
     let identity = if docs.explicit_contract_id {
         format!("Stable contract ID: `{}` (explicit).", docs.contract_id)
     } else {
@@ -44,11 +45,9 @@ pub(super) fn endpoint_type_doc(endpoint: &Endpoint) -> String {
         )
     };
     format!(
-        "Endpoint contract for `{} {}`.\n\n# Summary\n\nRelative route `{}` on base URL `{}`.\n\n# Usage\n\nCall the `{}` direct scope method on {scope_chain}, or construct `{}` and bind it with `{}::request`. Both return `{}`.\n\n# Inputs\n\n{inputs}\n\n# Request\n\n{request}\n\n# Response\n\n{response}\n\n# Identity\n\n{identity}\n\nEndpoint type: `{}`.\n\nRequest type: `{}`.",
+        "Endpoint contract for `{} {}`.\n\n# Summary\n\n{summary}\n\n# Usage\n\nCall the `{}` direct scope method on {scope_chain}, or construct `{}` and bind it with `{}::request`. Both return `{}`.\n\n# Inputs\n\n{inputs}\n\n# Request\n\n{request}\n\n# Response\n\n{response}\n\n# Identity\n\n{identity}\n\nEndpoint type: `{}`.\n\nRequest type: `{}`.",
         docs.http_method,
         render_route(docs),
-        render_route(docs),
-        docs.base_url,
         docs.direct_method_name,
         docs.endpoint_type_path,
         docs.client_name,
@@ -56,6 +55,33 @@ pub(super) fn endpoint_type_doc(endpoint: &Endpoint) -> String {
         docs.endpoint_type_path,
         docs.request_type_path,
     )
+}
+
+fn render_location(docs: &EndpointDocModel) -> String {
+    let mut lines = vec![format!("Base URL: `{}`.", docs.base_url)];
+    if let Some(host) = &docs.host {
+        lines.push(format!("Host template: `{}`.", render_host(host)));
+    }
+    lines.push(format!("Path: `{}`.", render_route(docs)));
+    lines.join("\n\n")
+}
+
+fn render_host(host: &EndpointDocHost) -> String {
+    let mut rendered = host
+        .label_atoms
+        .iter()
+        .map(render_route_atom)
+        .collect::<Vec<_>>()
+        .join(".");
+    if !rendered.is_empty() {
+        rendered.push('.');
+    }
+    rendered.push_str(&host.base_host);
+    if let Some(port) = host.port {
+        rendered.push(':');
+        rendered.push_str(&port.to_string());
+    }
+    rendered
 }
 
 pub(super) fn endpoint_constructor_doc(endpoint: &Endpoint) -> String {
@@ -417,12 +443,204 @@ pub(super) fn credential_summary(client: &Client) -> String {
 
 #[cfg(test)]
 mod tests {
+    use proc_macro2::TokenStream;
     use quote::quote;
 
     use super::super::test_support;
     use super::*;
     use crate::semantic;
     use crate::semantic::surface::SurfaceCapabilities;
+
+    fn emitted_endpoint_docs(tokens: TokenStream, endpoint_name: &str) -> String {
+        let api = semantic::test_support::resolve_tokens(tokens);
+        endpoint_type_doc(semantic::test_support::endpoint(
+            &api.client.children,
+            endpoint_name,
+        ))
+    }
+
+    fn riot_host_api() -> Api {
+        semantic::test_support::resolve_tokens(quote! {
+            client RiotApi {
+                base "https://riotgames.com/";
+                vars {
+                    platform: String;
+                    regional: String;
+                }
+            }
+            scope platform() {
+                host [vars.platform, "api"];
+                path ["lol", "league", "v4"];
+                GET challenger() -> Bytes;
+            }
+            scope regional() {
+                host [vars.regional, "api"];
+                path ["riot", "account", "v1"];
+                GET account() -> Bytes;
+            }
+        })
+    }
+
+    #[test]
+    fn static_host_prefix() {
+        let docs = emitted_endpoint_docs(
+            quote! {
+                client HostApi { base "https://example.test:8443/root"; }
+                GET read() -> Bytes {
+                    host ["api"];
+                    path ["items"];
+                }
+            },
+            "read",
+        );
+
+        assert!(docs.contains("Base URL: `https://example.test:8443/root`."));
+        assert!(docs.contains("Host template: `api.example.test:8443`."));
+        assert!(docs.contains("Path: `/items`."));
+    }
+
+    #[test]
+    fn client_value_in_host() {
+        let docs = emitted_endpoint_docs(
+            quote! {
+                client HostApi {
+                    base "https://example.test";
+                    vars { locale: String; }
+                }
+                GET localized() -> Bytes {
+                    host [vars.locale];
+                }
+            },
+            "localized",
+        );
+
+        assert!(docs.contains("Host template: `{vars.locale}.example.test`."));
+    }
+
+    #[test]
+    fn scope_value_in_host() {
+        let docs = emitted_endpoint_docs(
+            quote! {
+                client HostApi { base "https://example.test"; }
+                scope platform(platform: String) {
+                    GET scoped() -> Bytes {
+                        host [scope.platform];
+                    }
+                }
+            },
+            "scoped",
+        );
+
+        assert!(docs.contains("Host template: `{scope.platform}.example.test`."));
+    }
+
+    #[test]
+    fn formatted_host_atom() {
+        let docs = emitted_endpoint_docs(
+            quote! {
+                client HostApi { base "https://example.test"; }
+                GET formatted(value: String) -> Bytes {
+                    host [fmt["edge-", ep.value]];
+                }
+            },
+            "formatted",
+        );
+
+        assert!(docs.contains("Host template: `edge-{ep.value}.example.test`."));
+    }
+
+    #[test]
+    fn host_inheritance() {
+        let docs = emitted_endpoint_docs(
+            quote! {
+                client HostApi {
+                    base "https://example.test";
+                    host ["gateway"];
+                }
+                scope inherited() {
+                    GET read() -> Bytes;
+                }
+            },
+            "read",
+        );
+
+        assert!(docs.contains("Host template: `gateway.example.test`."));
+    }
+
+    #[test]
+    fn host_off() {
+        let docs = emitted_endpoint_docs(
+            quote! {
+                client HostApi {
+                    base "https://example.test/root";
+                    host ["gateway"];
+                }
+                scope base_host() {
+                    host off;
+                    GET read() -> Bytes;
+                }
+            },
+            "read",
+        );
+
+        assert!(docs.contains("Base URL: `https://example.test/root`."));
+        assert!(docs.contains("Path: `/`."));
+        assert!(!docs.contains("Host template:"));
+    }
+
+    #[test]
+    fn sibling_scopes_have_distinct_hosts() {
+        let api = semantic::test_support::resolve_tokens(quote! {
+            client HostApi { base "https://example.test"; }
+            scope platform() {
+                host ["platform"];
+                GET platform_status() -> Bytes;
+            }
+            scope regional() {
+                host ["regional"];
+                GET regional_status() -> Bytes;
+            }
+        });
+        let platform = endpoint_type_doc(semantic::test_support::endpoint(
+            &api.client.children,
+            "platform_status",
+        ));
+        let regional = endpoint_type_doc(semantic::test_support::endpoint(
+            &api.client.children,
+            "regional_status",
+        ));
+
+        assert!(platform.contains("Host template: `platform.example.test`."));
+        assert!(!platform.contains("regional.example.test"));
+        assert!(regional.contains("Host template: `regional.example.test`."));
+        assert!(!regional.contains("platform.example.test"));
+    }
+
+    #[test]
+    fn riot_platform_endpoint_host() {
+        let api = riot_host_api();
+        let docs = endpoint_type_doc(semantic::test_support::endpoint(
+            &api.client.children,
+            "challenger",
+        ));
+
+        assert!(docs.contains("Base URL: `https://riotgames.com/`."));
+        assert!(docs.contains("Host template: `{vars.platform}.api.riotgames.com`."));
+        assert!(docs.contains("Path: `/lol/league/v4`."));
+    }
+
+    #[test]
+    fn riot_regional_endpoint_host() {
+        let api = riot_host_api();
+        let docs = endpoint_type_doc(semantic::test_support::endpoint(
+            &api.client.children,
+            "account",
+        ));
+
+        assert!(docs.contains("Base URL: `https://riotgames.com/`."));
+        assert!(docs.contains("Host template: `{vars.regional}.api.riotgames.com`."));
+        assert!(docs.contains("Path: `/riot/account/v1`."));
+    }
 
     #[test]
     fn renders_named_routes_human_durations_and_user_sections() {

@@ -7,12 +7,12 @@ use syn::{Ident, LitStr, Type};
 use super::model::{
     Child, ClientSurface, CloneEligibility, ContractId, Credential, CredentialSource,
     CredentialStorageTerminal, Endpoint, EndpointDocAuthPlacement, EndpointDocBody,
-    EndpointDocInput, EndpointDocInputKind, EndpointDocModel, EndpointDocNamespace,
-    EndpointDocRateLimit, EndpointDocRateLimitWindow, EndpointDocResponse, EndpointDocRouteAtom,
-    EndpointDocSetter, EndpointDocTerminals, EndpointDocTimeout, EndpointSetter, EndpointSurface,
-    NormalizedConfig, RequestBody, RequestTerminals, RequiredArgument, ResolvedAuthPlacement,
-    ResolvedChallengePolicy, ResolvedExpr, ResolvedMethod, ResolvedRetry, Scope, ScopeSurface,
-    Value, ValueReference,
+    EndpointDocHost, EndpointDocInput, EndpointDocInputKind, EndpointDocModel,
+    EndpointDocNamespace, EndpointDocRateLimit, EndpointDocRateLimitWindow, EndpointDocResponse,
+    EndpointDocRouteAtom, EndpointDocSetter, EndpointDocTerminals, EndpointDocTimeout,
+    EndpointSetter, EndpointSurface, NormalizedConfig, RequestBody, RequestTerminals,
+    RequiredArgument, ResolvedAuthPlacement, ResolvedChallengePolicy, ResolvedExpr, ResolvedMethod,
+    ResolvedRetry, Scope, ScopeSurface, Value, ValueReference,
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -232,6 +232,24 @@ pub(crate) fn endpoint_doc_model(
         .iter()
         .map(|atom| route_atom(atom, client_values, scopes, parameters))
         .collect();
+    let host = if config.host.is_empty() {
+        None
+    } else {
+        let base = url::Url::parse(&base_url.value())
+            .expect("validated base URL for endpoint documentation");
+        Some(EndpointDocHost {
+            label_atoms: config
+                .host
+                .iter()
+                .map(|atom| route_atom(atom, client_values, scopes, parameters))
+                .collect(),
+            base_host: base
+                .host_str()
+                .expect("validated base host for endpoint documentation")
+                .to_owned(),
+            port: base.port(),
+        })
+    };
     let authentication = config
         .auth
         .iter()
@@ -285,6 +303,7 @@ pub(crate) fn endpoint_doc_model(
         request_type_path,
         http_method: resolved_method_name(method),
         base_url: base_url.value(),
+        host,
         route_atoms,
         scope_inputs,
         required_endpoint_inputs,
@@ -739,6 +758,182 @@ mod tests {
             endpoint.docs.endpoint_type_path,
             "surface_api::http_status::GetHttpStatus"
         );
+    }
+
+    #[test]
+    fn static_host_prefix() {
+        let api = test_support::resolve_tokens(quote! {
+            client HostApi { base "https://example.test:8443/root"; }
+            GET static_prefix() -> Bytes {
+                host ["api"];
+            }
+        });
+        let host = test_support::endpoint(&api.client.children, "static_prefix")
+            .docs
+            .host
+            .as_ref()
+            .expect("effective host");
+
+        assert_eq!(
+            host.label_atoms,
+            [EndpointDocRouteAtom::Literal("api".to_owned())]
+        );
+        assert_eq!(host.base_host, "example.test");
+        assert_eq!(host.port, Some(8443));
+    }
+
+    #[test]
+    fn client_value_in_host() {
+        let api = test_support::resolve_tokens(quote! {
+            client HostApi {
+                base "https://example.test";
+                vars { locale: String; }
+            }
+            GET localized() -> Bytes {
+                host [vars.locale];
+            }
+        });
+        let host = test_support::endpoint(&api.client.children, "localized")
+            .docs
+            .host
+            .as_ref()
+            .expect("effective host");
+
+        assert_eq!(
+            host.label_atoms,
+            [EndpointDocRouteAtom::Value {
+                namespace: EndpointDocNamespace::Vars,
+                name: "locale".to_owned(),
+            }]
+        );
+    }
+
+    #[test]
+    fn scope_value_in_host() {
+        let api = test_support::resolve_tokens(quote! {
+            client HostApi { base "https://example.test"; }
+            scope platform(platform: String) {
+                GET scoped() -> Bytes {
+                    host [scope.platform];
+                }
+            }
+        });
+        let host = test_support::endpoint(&api.client.children, "scoped")
+            .docs
+            .host
+            .as_ref()
+            .expect("effective host");
+
+        assert_eq!(
+            host.label_atoms,
+            [EndpointDocRouteAtom::Value {
+                namespace: EndpointDocNamespace::Scope,
+                name: "platform".to_owned(),
+            }]
+        );
+    }
+
+    #[test]
+    fn formatted_host_atom() {
+        let api = test_support::resolve_tokens(quote! {
+            client HostApi { base "https://example.test"; }
+            GET formatted(value: String) -> Bytes {
+                host [fmt["edge-", ep.value]];
+            }
+        });
+        let host = test_support::endpoint(&api.client.children, "formatted")
+            .docs
+            .host
+            .as_ref()
+            .expect("effective host");
+
+        assert_eq!(
+            host.label_atoms,
+            [EndpointDocRouteAtom::Format(vec![
+                EndpointDocRouteAtom::Literal("edge-".to_owned()),
+                EndpointDocRouteAtom::Value {
+                    namespace: EndpointDocNamespace::Endpoint,
+                    name: "value".to_owned(),
+                },
+            ])]
+        );
+    }
+
+    #[test]
+    fn host_inheritance() {
+        let api = test_support::resolve_tokens(quote! {
+            client HostApi {
+                base "https://example.test";
+                host ["gateway"];
+            }
+            scope inherited() {
+                GET read() -> Bytes;
+            }
+        });
+        let host = test_support::endpoint(&api.client.children, "read")
+            .docs
+            .host
+            .as_ref()
+            .expect("inherited effective host");
+
+        assert_eq!(
+            host.label_atoms,
+            [EndpointDocRouteAtom::Literal("gateway".to_owned())]
+        );
+    }
+
+    #[test]
+    fn host_off() {
+        let api = test_support::resolve_tokens(quote! {
+            client HostApi {
+                base "https://example.test";
+                host ["gateway"];
+            }
+            scope base_host() {
+                host off;
+                GET read() -> Bytes;
+            }
+        });
+        let endpoint = test_support::endpoint(&api.client.children, "read");
+
+        assert!(endpoint.config.host.is_empty());
+        assert!(endpoint.docs.host.is_none());
+        assert_eq!(endpoint.docs.base_url, "https://example.test");
+    }
+
+    #[test]
+    fn sibling_scopes_have_distinct_hosts() {
+        let api = test_support::resolve_tokens(quote! {
+            client HostApi { base "https://example.test"; }
+            scope platform() {
+                host ["platform"];
+                GET platform_status() -> Bytes;
+            }
+            scope regional() {
+                host ["regional"];
+                GET regional_status() -> Bytes;
+            }
+        });
+        let platform = test_support::endpoint(&api.client.children, "platform_status")
+            .docs
+            .host
+            .as_ref()
+            .expect("platform host");
+        let regional = test_support::endpoint(&api.client.children, "regional_status")
+            .docs
+            .host
+            .as_ref()
+            .expect("regional host");
+
+        assert_eq!(
+            platform.label_atoms,
+            [EndpointDocRouteAtom::Literal("platform".to_owned())]
+        );
+        assert_eq!(
+            regional.label_atoms,
+            [EndpointDocRouteAtom::Literal("regional".to_owned())]
+        );
+        assert_ne!(platform, regional);
     }
 
     #[test]
