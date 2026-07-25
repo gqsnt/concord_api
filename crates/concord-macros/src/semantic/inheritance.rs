@@ -51,10 +51,13 @@ impl Resolver<'_> {
         let mut normalized = parent.clone();
 
         if let Some(operation) = &layer.host {
-            let operation = &operation.value;
-            normalized.host = match operation {
-                HostOperation::Off => Vec::new(),
+            normalized.host = match &operation.value {
+                HostOperation::Off => {
+                    normalized.host_span = None;
+                    Vec::new()
+                }
                 HostOperation::Replace(values) => {
+                    normalized.host_span = Some(operation.key_span);
                     self.resolve_expressions(values, scopes, endpoint, ExpressionUse::Single)?
                 }
             };

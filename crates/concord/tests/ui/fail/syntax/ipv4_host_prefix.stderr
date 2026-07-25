@@ -1,0 +1,5 @@
+error: host-prefix shaping requires a DNS-domain fixed base; IP-literal bases cannot receive host labels
+ --> tests/ui/fail/syntax/ipv4_host_prefix.rs:4:9
+  |
+4 |         host ["api"];
+  |         ^^^^

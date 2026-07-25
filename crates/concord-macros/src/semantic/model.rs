@@ -419,6 +419,7 @@ pub(crate) enum ValueShape {
 #[derive(Clone, Default)]
 pub(crate) struct NormalizedConfig {
     pub(crate) host: Vec<ResolvedExpr>,
+    pub(crate) host_span: Option<Span>,
     pub(crate) path: Vec<ResolvedExpr>,
     pub(crate) query: Vec<NormalizedQuery>,
     pub(crate) headers: Vec<NormalizedHeader>,

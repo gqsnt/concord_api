@@ -500,6 +500,59 @@ mod tests {
     }
 
     #[test]
+    fn ip_bases_without_host_shaping_render_their_authorities() {
+        let ipv4 = emitted_endpoint_docs(
+            quote! {
+                client Ipv4Api { base "http://127.0.0.1:8080/root"; }
+                GET read() -> Bytes;
+            },
+            "read",
+        );
+        assert!(ipv4.contains("Base URL: `http://127.0.0.1:8080/root`."));
+        assert!(!ipv4.contains("Host template:"));
+
+        let ipv6 = emitted_endpoint_docs(
+            quote! {
+                client Ipv6Api { base "http://[2001:db8::1]:8080/root"; }
+                GET read() -> Bytes;
+            },
+            "read",
+        );
+        assert!(ipv6.contains("Base URL: `http://[2001:db8::1]:8080/root`."));
+        assert!(!ipv6.contains("Host template:"));
+    }
+
+    #[test]
+    fn impossible_ip_host_shaping_never_reaches_documentation_generation() {
+        for declaration in [
+            quote! {
+                client Ipv4Api {
+                    base "http://127.0.0.1:8080/";
+                    host ["api"];
+                }
+                GET read() -> Bytes;
+            },
+            quote! {
+                client Ipv6Api {
+                    base "http://[2001:db8::1]:8080/";
+                }
+                GET read() -> Bytes {
+                    host ["api"];
+                }
+            },
+        ] {
+            let error = semantic::test_support::try_resolve_tokens(declaration)
+                .err()
+                .expect("IP host shaping must fail before documentation IR");
+            assert!(
+                error
+                    .to_string()
+                    .contains("host-prefix shaping requires a DNS-domain fixed base")
+            );
+        }
+    }
+
+    #[test]
     fn client_value_in_host() {
         let docs = emitted_endpoint_docs(
             quote! {

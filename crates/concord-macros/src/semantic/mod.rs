@@ -402,8 +402,20 @@ pub(crate) mod test_support {
         tokens: proc_macro2::TokenStream,
         capabilities: SurfaceCapabilities,
     ) -> Api {
-        let source = crate::syntax::parse(tokens).expect("semantic test syntax");
-        resolve_with_capabilities(source, capabilities).expect("normalized semantic model")
+        try_resolve_tokens_with_capabilities(tokens, capabilities)
+            .expect("normalized semantic model")
+    }
+
+    pub(crate) fn try_resolve_tokens(tokens: proc_macro2::TokenStream) -> syn::Result<Api> {
+        try_resolve_tokens_with_capabilities(tokens, SurfaceCapabilities::default())
+    }
+
+    fn try_resolve_tokens_with_capabilities(
+        tokens: proc_macro2::TokenStream,
+        capabilities: SurfaceCapabilities,
+    ) -> syn::Result<Api> {
+        let source = crate::syntax::parse(tokens)?;
+        resolve_with_capabilities(source, capabilities)
     }
 
     fn find_endpoint<'a>(children: &'a [Child], name: &str) -> Option<&'a Endpoint> {
