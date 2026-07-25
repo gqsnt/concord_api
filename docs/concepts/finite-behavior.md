@@ -7,7 +7,8 @@ Concord makes cumulative work explicit and bounded:
 - captured terminal status bodies;
 - provider request and response bodies;
 - record-decoder staging;
-- pagination pages, accumulated items, and retained identities;
+- pagination pages, accumulated items, and complete encoded retained
+  identity vectors;
 - endpoint and rate-limit identities;
 - limiter state and server-directed cooldowns;
 - authentication recovery and provider reacquisition.

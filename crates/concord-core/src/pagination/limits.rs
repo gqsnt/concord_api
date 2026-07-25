@@ -31,26 +31,26 @@ impl CycleDetector {
         &self,
         identity: &CanonicalIdentity,
         byte_limit: usize,
-    ) -> Result<(u64, usize), PaginationError> {
-        let digest = (self.digest)(identity.bytes());
+    ) -> Result<u64, PaginationError> {
+        let digest = (self.digest)(identity.as_bytes());
         if self
             .buckets
             .get(&digest)
-            .is_some_and(|bucket| bucket.iter().any(|bytes| bytes == identity.bytes()))
+            .is_some_and(|bucket| bucket.iter().any(|bytes| bytes == identity.as_bytes()))
         {
             return Err(PaginationError::new(PaginationErrorKind::RepeatedRequest));
         }
 
         let retained_bytes = self
             .retained_identity_bytes
-            .checked_add(identity.retained_byte_len())
+            .checked_add(identity.len())
             .ok_or_else(|| PaginationError::new(PaginationErrorKind::Overflow))?;
         if retained_bytes > byte_limit {
             return Err(PaginationError::new(
                 PaginationErrorKind::IdentityStorageCeilingExceeded,
             ));
         }
-        Ok((digest, retained_bytes))
+        Ok(digest)
     }
 
     pub(crate) fn remaining_identity_bytes(
@@ -68,8 +68,11 @@ impl CycleDetector {
         &mut self,
         identity: CanonicalIdentity,
         digest: u64,
-        retained_bytes: usize,
     ) -> Result<(), PaginationError> {
+        let retained_bytes = self
+            .retained_identity_bytes
+            .checked_add(identity.len())
+            .ok_or_else(|| PaginationError::new(PaginationErrorKind::Overflow))?;
         let retained_count = self
             .retained_identity_count
             .checked_add(1)
@@ -89,8 +92,8 @@ impl CycleDetector {
         identity: CanonicalIdentity,
         byte_limit: usize,
     ) -> Result<(), PaginationError> {
-        let (digest, retained_bytes) = self.preflight(&identity, byte_limit)?;
-        self.retain(identity, digest, retained_bytes)
+        let digest = self.preflight(&identity, byte_limit)?;
+        self.retain(identity, digest)
     }
 
     #[cfg(test)]
@@ -114,5 +117,10 @@ impl CycleDetector {
             .values()
             .flatten()
             .any(|bytes| bytes.as_ptr() as usize == pointer)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn stored_identity_bytes_sum(&self) -> usize {
+        self.buckets.values().flatten().map(Vec::len).sum::<usize>()
     }
 }

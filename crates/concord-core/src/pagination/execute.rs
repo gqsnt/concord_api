@@ -154,11 +154,11 @@ where
             remaining_identity_bytes,
         )
         .map_err(|error| pagination_api_error(&meta, error))?;
-        let (digest, retained_bytes) = identities
+        let digest = identities
             .preflight(&identity, identity_limit)
             .map_err(|error| pagination_api_error(&meta, error))?;
         identities
-            .retain(identity, digest, retained_bytes)
+            .retain(identity, digest)
             .map_err(|error| pagination_api_error(&meta, error))?;
 
         let executed =

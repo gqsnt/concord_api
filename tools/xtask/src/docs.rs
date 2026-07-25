@@ -202,7 +202,7 @@ fn documented_limits() -> Vec<Limit> {
             unit: "items",
         },
         Limit {
-            label: "Retained pagination identities",
+            label: "Retained encoded pagination identities",
             value: DEFAULT_PAGINATION_IDENTITY_BYTES as u64,
             unit: "bytes",
         },

@@ -20,6 +20,12 @@ all-or-error. Every page is a fresh request through the same hooks,
 authentication, limiter, status, acquisition, and completion protocol. No
 partial result is returned under the existing terminal.
 
+The retained pagination-identity byte limit charges the complete canonical
+encoded identity vector for every page kept by cycle detection. The separate
+runtime page ceiling bounds the number of retained identities; allocator and
+container overhead is not included in the byte total. Construction withholds
+the first encoded byte that would exceed the configured identity limit.
+
 Rate-limit declarations form an ordered lexical plan:
 
 ```rust

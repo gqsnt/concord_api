@@ -146,7 +146,11 @@ impl RuntimeConfigBuilder {
         self
     }
 
-    /// Sets the positive finite pagination identity-storage ceiling.
+    /// Sets the positive finite byte ceiling for complete canonical encoded
+    /// pagination-identity vectors retained by cycle detection.
+    ///
+    /// The page ceiling separately bounds the number of retained identities;
+    /// allocator and container overhead is not included in this byte total.
     #[must_use]
     pub fn pagination_identity_limit(mut self, bytes: NonZeroUsize) -> Self {
         self.config.pagination_identity_limit = bytes;

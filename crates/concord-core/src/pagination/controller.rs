@@ -16,6 +16,11 @@ use super::PaginationError;
 /// per-page operation deadline, and cannot be preempted by Concord. Cancellation
 /// prevents later pages only, and Concord does not automatically bound custom
 /// controller state or callback time.
+///
+/// Core bounds its cycle detector by charging every byte in each complete
+/// canonical encoded pagination-identity vector. The separate runtime page
+/// ceiling bounds the number of retained identities; allocator and container
+/// overhead is not included in the retained-byte total.
 pub trait PaginationController<Page>: Sized + Send + 'static {
     /// Validates the current state before one page request is prepared.
     fn validate(&self) -> Result<(), PaginationError> {

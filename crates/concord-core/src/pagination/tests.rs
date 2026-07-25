@@ -6,7 +6,7 @@ use std::time::Duration;
 use http::{HeaderMap, HeaderValue, Method};
 use url::Url;
 
-use super::identity::{CanonicalIdentity, HeaderField, IdentityInput};
+use super::identity::{CanonicalIdentity, EncodingLimits, HeaderField, IdentityInput};
 use super::limits::CycleDetector;
 use super::*;
 use crate::auth::{AccessToken, Auth, CredentialRef, SlotSelector};
@@ -115,7 +115,7 @@ fn canonical_identity_sorts_names_lowercase_and_preserves_repeated_value_order()
 }
 
 #[test]
-fn canonical_identity_matches_the_frozen_vector_and_request_head_encoding() {
+fn identity_bytes_remain_deterministic_and_match_request_head_encoding() {
     let vector = identity(
         b"E",
         b"GET",
@@ -134,7 +134,7 @@ fn canonical_identity_matches_the_frozen_vector_and_request_head_encoding() {
         &b"\x06\0\0\0\0\0\0\0\x012"[..],
     ]
     .concat();
-    assert_eq!(vector.bytes(), expected);
+    assert_eq!(vector.as_bytes(), expected);
 
     let url = Url::parse("https://example.test/items?a=1").expect("URL");
     let mut headers = HeaderMap::new();
@@ -156,11 +156,11 @@ fn canonical_identity_matches_the_frozen_vector_and_request_head_encoding() {
         &Method::GET,
         &url,
         &headers,
-        legacy.retained_byte_len(),
+        legacy.len(),
     )
     .expect("exact remaining identity budget");
-    assert_eq!(direct.bytes(), legacy.bytes());
-    assert_eq!(direct.retained_byte_len(), legacy.retained_byte_len());
+    assert_eq!(direct.as_bytes(), legacy.as_bytes());
+    assert_eq!(direct.len(), legacy.len());
 
     assert_eq!(
         CanonicalIdentity::from_request_head_with_limit(
@@ -168,7 +168,7 @@ fn canonical_identity_matches_the_frozen_vector_and_request_head_encoding() {
             &Method::GET,
             &url,
             &headers,
-            legacy.retained_byte_len() - 1,
+            legacy.len() - 1,
         )
         .expect_err("first excess canonical component byte")
         .kind(),
@@ -349,7 +349,38 @@ fn canonical_url_query_order_encoding_and_non_utf8_header_bytes_participate() {
 }
 
 #[test]
-fn identity_accounting_counts_only_canonical_components_and_collisions_use_full_equality() {
+fn identity_limit_counts_per_header_overhead() {
+    let endpoint = b"E";
+    let method = b"GET";
+    let url = b"u";
+    let without_headers = identity(endpoint, method, url, &[]);
+    let headers = [HeaderField::new("x", b"")];
+    let with_header = identity(endpoint, method, url, &headers);
+    assert_eq!(
+        with_header.len() - without_headers.len(),
+        2 * (1 + std::mem::size_of::<u64>()) + 1,
+        "one header retains two field tags, two length prefixes, its name, and its value"
+    );
+    assert_eq!(
+        CanonicalIdentity::encode_with_limits(
+            IdentityInput {
+                endpoint_discriminator: endpoint,
+                method_token: method,
+                canonical_logical_url: url,
+                public_headers: &headers,
+            },
+            EncodingLimits {
+                max_retained_length: with_header.len() - 1,
+                ..EncodingLimits::default()
+            },
+        )
+        .expect_err("per-header encoded overhead must be charged"),
+        super::identity::IdentityEncodingError::IdentityStorageCeilingExceeded
+    );
+}
+
+#[test]
+fn cycle_detector_counter_equals_sum_of_stored_lengths() {
     let headers = [
         HeaderField::new("X-One", b"abc"),
         HeaderField::new("x-one", [0xff, 0xfe]),
@@ -358,19 +389,79 @@ fn identity_accounting_counts_only_canonical_components_and_collisions_use_full_
     let method = b"GET";
     let url = b"https://example.test/items";
     let first_identity = identity(endpoint, method, url, &headers);
+    let second_identity = identity(b"Other", method, url, &headers);
+    let expected = first_identity.len() + second_identity.len();
+    let mut detector = CycleDetector::default();
+    detector
+        .check_and_retain(first_identity, expected)
+        .expect("first identity");
+    detector
+        .check_and_retain(second_identity, expected)
+        .expect("second identity");
+
+    assert_eq!(detector.retained_identity_bytes(), expected);
     assert_eq!(
-        first_identity.retained_byte_len(),
-        endpoint.len()
-            + method.len()
-            + url.len()
-            + b"x-one".len()
-            + b"abc".len()
-            + b"x-one".len()
-            + 2
+        detector.retained_identity_bytes(),
+        detector.stored_identity_bytes_sum()
     );
+}
+
+#[test]
+fn remaining_identity_bytes_uses_encoded_storage() {
+    let first = identity(b"E", b"GET", b"u", &[HeaderField::new("x", b"")]);
+    let limit = first.len() + 17;
+    let mut detector = CycleDetector::default();
+    detector
+        .check_and_retain(first, limit)
+        .expect("first identity");
+
+    assert_eq!(
+        detector
+            .remaining_identity_bytes(limit)
+            .expect("remaining encoded bytes"),
+        17
+    );
+}
+
+#[test]
+fn many_empty_or_short_headers_cannot_bypass_byte_limit() {
+    let headers = (0..64)
+        .map(|_| HeaderField::new("x", b""))
+        .collect::<Vec<_>>();
+    let input = IdentityInput {
+        endpoint_discriminator: b"E",
+        method_token: b"GET",
+        canonical_logical_url: b"u",
+        public_headers: &headers,
+    };
+    let logical_value_bytes = b"E".len() + b"GET".len() + b"u".len() + headers.len();
+    let encoded = CanonicalIdentity::encode(input.clone()).expect("complete identity");
+    assert!(encoded.len() > logical_value_bytes);
+    assert_eq!(
+        CanonicalIdentity::encode_with_limits(
+            input,
+            EncodingLimits {
+                max_retained_length: logical_value_bytes,
+                ..EncodingLimits::default()
+            },
+        )
+        .expect_err("structural bytes prevent bypass"),
+        super::identity::IdentityEncodingError::IdentityStorageCeilingExceeded
+    );
+}
+
+#[test]
+fn collision_detection_remains_correct() {
+    let headers = [
+        HeaderField::new("X-One", b"abc"),
+        HeaderField::new("x-one", [0xff, 0xfe]),
+    ];
+    let method = b"GET";
+    let url = b"https://example.test/items";
+    let first_identity = identity(b"Endpoint", method, url, &headers);
 
     let repeated = first_identity.clone();
-    let allocation = first_identity.bytes().as_ptr() as usize;
+    let allocation = first_identity.as_bytes().as_ptr() as usize;
     let mut detector = CycleDetector::new(|_| 7);
     let other = identity(b"Other", method, url, &headers);
     detector
@@ -385,6 +476,10 @@ fn identity_accounting_counts_only_canonical_components_and_collisions_use_full_
         .expect("digest collision with distinct bytes");
     assert_eq!(detector.retained_identity_count(), 2);
     assert_eq!(
+        detector.retained_identity_bytes(),
+        detector.stored_identity_bytes_sum()
+    );
+    assert_eq!(
         detector
             .check_and_retain(repeated, usize::MAX)
             .expect_err("full equality repeats")
@@ -397,7 +492,7 @@ fn identity_accounting_counts_only_canonical_components_and_collisions_use_full_
 fn first_identity_above_the_byte_ceiling_is_not_retained() {
     let first_identity = identity(b"Endpoint", b"GET", b"https://example.test/items", &[]);
     let mut detector = CycleDetector::default();
-    let limit = first_identity.retained_byte_len() - 1;
+    let limit = first_identity.len() - 1;
     assert_eq!(
         detector
             .check_and_retain(first_identity, limit)

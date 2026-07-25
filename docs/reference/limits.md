@@ -20,7 +20,7 @@ ceilings selected for finite construction.
 | Credential-provider response body | 1,048,576 | bytes |
 | Pagination pages | 1,000 | pages |
 | Pagination accumulated items | 100,000 | items |
-| Retained pagination identities | 4,194,304 | bytes |
+| Retained encoded pagination identities | 4,194,304 | bytes |
 | Authentication-failure cooldown cap | 60 | seconds |
 | Server-directed rate-limit cooldown cap | 60 | seconds |
 | Default limiter-prepared rate-limit key | 1,024 | bytes |
@@ -141,7 +141,11 @@ arbitrary extension storage.
 Authentication challenge recovery permits at most one additional attempt.
 Pagination is sequential and constrained simultaneously by its request
 `PageLimit`, runtime page ceiling, item ceiling, retained identity ceiling,
-and cycle detector. The first excess unit is withheld.
+and cycle detector. The retained pagination-identity byte limit bounds
+complete canonical encoded identity vectors. The runtime page ceiling
+separately bounds the number of retained identities; allocator and container
+overhead, including `HashMap` and outer `Vec` allocations, is not included in
+the retained-byte total. The first excess encoded byte is withheld.
 
 `EndpointId` additionally enforces its documented byte/segment grammar; use
 `concord::endpoint::MAX_ENDPOINT_ID_BYTES` as the public source for its total

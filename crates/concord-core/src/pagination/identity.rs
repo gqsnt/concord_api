@@ -63,7 +63,6 @@ pub(crate) struct IdentityInput<'a> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CanonicalIdentity {
     bytes: Vec<u8>,
-    retained_byte_len: usize,
 }
 
 impl CanonicalIdentity {
@@ -115,26 +114,22 @@ impl CanonicalIdentity {
         encoder.field(1, endpoint_discriminator)?;
         encoder.field(2, method_token)?;
         encoder.field(3, canonical_logical_url)?;
-        encoder.tag(4)?;
-        encoder.count(headers.len())?;
+        encoder.tagged_count(4, headers.len())?;
         for header in headers {
             encoder.field(5, header.name.as_ref())?;
             encoder.field(6, header.value)?;
         }
-        let (bytes, retained_byte_len) = encoder.finish();
-
         Ok(Self {
-            bytes,
-            retained_byte_len,
+            bytes: encoder.finish(),
         })
     }
 
-    pub(crate) fn bytes(&self) -> &[u8] {
+    pub(crate) fn as_bytes(&self) -> &[u8] {
         &self.bytes
     }
 
-    pub(crate) fn retained_byte_len(&self) -> usize {
-        self.retained_byte_len
+    pub(crate) fn len(&self) -> usize {
+        self.bytes.len()
     }
 
     pub(crate) fn into_bytes(self) -> Vec<u8> {
@@ -244,7 +239,6 @@ fn is_header_token_byte(byte: u8) -> bool {
 
 struct Encoder {
     bytes: Vec<u8>,
-    retained_byte_len: usize,
     limits: EncodingLimits,
 }
 
@@ -252,13 +246,12 @@ impl Encoder {
     fn new(limits: EncodingLimits) -> Self {
         Self {
             bytes: Vec::new(),
-            retained_byte_len: 0,
             limits,
         }
     }
 
-    fn finish(self) -> (Vec<u8>, usize) {
-        (self.bytes, self.retained_byte_len)
+    fn finish(self) -> Vec<u8> {
+        self.bytes
     }
 
     fn checked_new_len(&self, additional: usize) -> Result<usize, IdentityEncodingError> {
@@ -270,6 +263,9 @@ impl Encoder {
         if new_len > self.limits.max_total_length {
             return Err(IdentityEncodingError::CanonicalIdentityLengthOverflow);
         }
+        if new_len > self.limits.max_retained_length {
+            return Err(IdentityEncodingError::IdentityStorageCeilingExceeded);
+        }
         Ok(new_len)
     }
 
@@ -279,19 +275,17 @@ impl Encoder {
         Ok(())
     }
 
-    fn tag(&mut self, tag: u8) -> Result<(), IdentityEncodingError> {
-        self.checked_new_len(1)?;
-        self.bytes.push(tag);
-        Ok(())
-    }
-
-    fn count(&mut self, count: usize) -> Result<(), IdentityEncodingError> {
+    fn tagged_count(&mut self, tag: u8, count: usize) -> Result<(), IdentityEncodingError> {
         let count =
             u64::try_from(count).map_err(|_| IdentityEncodingError::EncodedFieldLengthOverflow)?;
         if count > self.limits.max_field_length {
             return Err(IdentityEncodingError::EncodedFieldLengthOverflow);
         }
-        self.fixed(&count.to_be_bytes())
+        let encoded = count.to_be_bytes();
+        self.checked_new_len(1 + encoded.len())?;
+        self.bytes.push(tag);
+        self.bytes.extend_from_slice(&encoded);
+        Ok(())
     }
 
     fn field(&mut self, tag: u8, value: &[u8]) -> Result<(), IdentityEncodingError> {
@@ -305,18 +299,10 @@ impl Encoder {
             .and_then(|length| length.checked_add(value.len()))
             .ok_or(IdentityEncodingError::CanonicalIdentityLengthOverflow)?;
         self.checked_new_len(additional)?;
-        let retained_byte_len = self
-            .retained_byte_len
-            .checked_add(value.len())
-            .ok_or(IdentityEncodingError::CanonicalIdentityLengthOverflow)?;
-        if retained_byte_len > self.limits.max_retained_length {
-            return Err(IdentityEncodingError::IdentityStorageCeilingExceeded);
-        }
 
         self.bytes.push(tag);
         self.bytes.extend_from_slice(&length.to_be_bytes());
         self.bytes.extend_from_slice(value);
-        self.retained_byte_len = retained_byte_len;
         Ok(())
     }
 }
@@ -347,23 +333,130 @@ mod tests {
     }
 
     #[test]
-    fn retained_budget_accepts_exact_and_withholds_first_excess_field() {
+    fn identity_limit_counts_fixed_prefix() {
         let mut encoder = Encoder::new(EncodingLimits {
-            max_retained_length: 3,
+            max_retained_length: FORMAT_PREFIX.len() - 1,
+            ..EncodingLimits::default()
+        });
+        assert_eq!(
+            encoder
+                .fixed(FORMAT_PREFIX)
+                .expect_err("prefix first excess"),
+            IdentityEncodingError::IdentityStorageCeilingExceeded
+        );
+        assert!(encoder.bytes.is_empty());
+    }
+
+    #[test]
+    fn identity_limit_counts_field_tags() {
+        let mut encoder = Encoder::new(EncodingLimits {
+            max_retained_length: size_of::<u64>(),
+            ..EncodingLimits::default()
+        });
+        assert_eq!(
+            encoder
+                .field(1, b"")
+                .expect_err("empty field still has one tag"),
+            IdentityEncodingError::IdentityStorageCeilingExceeded
+        );
+        assert!(encoder.bytes.is_empty());
+    }
+
+    #[test]
+    fn identity_limit_counts_length_prefixes() {
+        let mut encoder = Encoder::new(EncodingLimits {
+            max_retained_length: 1,
+            ..EncodingLimits::default()
+        });
+        assert_eq!(
+            encoder
+                .field(1, b"")
+                .expect_err("field length prefix exceeds one tag byte"),
+            IdentityEncodingError::IdentityStorageCeilingExceeded
+        );
+        assert!(encoder.bytes.is_empty());
+    }
+
+    #[test]
+    fn identity_limit_counts_header_count() {
+        let encoded_count_len = 1 + size_of::<u64>();
+        let mut exact = Encoder::new(EncodingLimits {
+            max_retained_length: encoded_count_len,
+            ..EncodingLimits::default()
+        });
+        exact
+            .tagged_count(4, 0)
+            .expect("tagged header count exactly fits");
+        assert_eq!(exact.bytes.len(), encoded_count_len);
+
+        let mut excess = Encoder::new(EncodingLimits {
+            max_retained_length: encoded_count_len - 1,
+            ..EncodingLimits::default()
+        });
+        assert_eq!(
+            excess
+                .tagged_count(4, 0)
+                .expect_err("tagged header count first excess"),
+            IdentityEncodingError::IdentityStorageCeilingExceeded
+        );
+        assert!(excess.bytes.is_empty());
+    }
+
+    #[test]
+    fn exact_encoded_identity_limit_succeeds() {
+        let input = IdentityInput {
+            endpoint_discriminator: b"Endpoint",
+            method_token: b"GET",
+            canonical_logical_url: b"https://example.test/items",
+            public_headers: &[HeaderField::new("x-empty", b"")],
+        };
+        let encoded = CanonicalIdentity::encode(input.clone()).expect("unlimited identity");
+        let exact = CanonicalIdentity::encode_with_limits(
+            input,
+            EncodingLimits {
+                max_retained_length: encoded.len(),
+                ..EncodingLimits::default()
+            },
+        )
+        .expect("exact complete encoded identity limit");
+        assert_eq!(exact, encoded);
+    }
+
+    #[test]
+    fn first_excess_encoded_byte_is_not_retained() {
+        let exact_len = FORMAT_PREFIX.len() + 1 + size_of::<u64>() + 3;
+        let mut encoder = Encoder::new(EncodingLimits {
+            max_retained_length: exact_len,
             ..EncodingLimits::default()
         });
         encoder.fixed(FORMAT_PREFIX).expect("format prefix");
-        encoder.field(1, b"abc").expect("exact retained limit");
+        encoder.field(1, b"abc").expect("exact encoded limit");
         let exact_bytes = encoder.bytes.clone();
-        assert_eq!(encoder.retained_byte_len, 3);
 
         assert_eq!(
             encoder
                 .field(2, b"x")
-                .expect_err("first excess retained byte"),
+                .expect_err("first excess encoded byte"),
             IdentityEncodingError::IdentityStorageCeilingExceeded
         );
         assert_eq!(encoder.bytes, exact_bytes);
-        assert_eq!(encoder.retained_byte_len, 3);
+    }
+
+    #[test]
+    fn failed_field_append_leaves_identity_unchanged() {
+        let mut encoder = Encoder::new(EncodingLimits {
+            max_retained_length: 1 + size_of::<u64>() + 3,
+            ..EncodingLimits::default()
+        });
+        encoder.field(1, b"abc").expect("initial complete field");
+        let before = encoder.bytes.clone();
+
+        assert_eq!(
+            encoder
+                .field(2, b"x")
+                .expect_err("complete next field exceeds budget"),
+            IdentityEncodingError::IdentityStorageCeilingExceeded
+        );
+        assert_eq!(encoder.bytes, before);
     }
 }
