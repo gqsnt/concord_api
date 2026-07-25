@@ -29,6 +29,11 @@ ceilings selected for finite construction.
 | Logical or credential-sanitized request URL | 131,072 | bytes |
 | Public request headers before authentication | 256 | headers |
 | Aggregate public request headers | 65,536 | bytes |
+| Proxy URL text | 8,192 | bytes |
+| Custom root certificates | 64 | certificates |
+| One custom root certificate PEM | 1,048,576 | bytes |
+| Aggregate custom root certificate PEMs | 16,777,216 | bytes |
+| Application identity PEM | 4,194,304 | bytes |
 | Endpoint contract identity | 128 | bytes |
 | Authentication placement name | 256 | bytes |
 | Generic protected string | 1,048,576 | bytes |
@@ -92,6 +97,16 @@ borrowed configuration text before copying. Percent-encoded and Base64 output
 lengths are checked before allocation, and the final form body is also checked
 against the active `ProviderHttp::request_body_limit()` selected by the client
 runtime.
+
+Managed HTTP startup validates proxy URL text and application TLS material
+against the structural `concord::http::MAX_*` ceilings before parsing or
+copying it. Root-certificate count, per-certificate bytes, aggregate
+certificate bytes, and application identity bytes are all finite. Native URL
+and TLS parsers may reject structurally bounded inputs more strictly; startup
+errors retain only a safe category and never retain supplied proxy or PEM
+content. Custom roots and proxy configuration are inherited by both
+application and provider clients, while the application identity remains
+application-only.
 
 The runtime-endpoint timeout default is disabled. Generated endpoint timeout
 declarations remain effective independently; runtime-defined endpoints select

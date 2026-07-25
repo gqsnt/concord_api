@@ -42,7 +42,7 @@ impl ClientCore {
         runtime.validate_rate_limit_key_limit()?;
         let base_url = parse_fixed_base(fixed_base)?;
         let runtime = runtime.resolve();
-        let http = http.resolve();
+        let http = http.resolve()?;
         ManagedHttp::validate_fixed_base(&http, &base_url)?;
         let http = ManagedHttp::build(http, &runtime)?;
         http.application.validate_fixed_base(&base_url)?;
@@ -71,7 +71,7 @@ impl ClientCore {
         runtime.validate_rate_limit_key_limit()?;
         let base_url = parse_fixed_base(fixed_base)?;
         let runtime = runtime.resolve();
-        let http = http.resolve();
+        let http = http.resolve()?;
         ManagedHttp::validate_fixed_base(&http, &base_url)?;
         let http = ManagedHttp::build_with_development(http, &runtime, executor)?;
         http.application.validate_fixed_base(&base_url)?;

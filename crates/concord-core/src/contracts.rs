@@ -45,7 +45,10 @@ pub use crate::hooks::{
 pub use crate::http::provider::{
     ProviderBody, ProviderBodyFactory, ProviderHttp, ProviderRequest, ProviderResponse,
 };
-pub use crate::http::{HttpConfigBuilder, ProviderRetry, SafeProxy};
+pub use crate::http::{
+    HttpConfigBuilder, MAX_IDENTITY_PEM_BYTES, MAX_PROXY_URL_BYTES, MAX_ROOT_CERTIFICATE_BYTES,
+    MAX_ROOT_CERTIFICATES, MAX_ROOT_CERTIFICATES_TOTAL_BYTES, ProviderRetry, SafeProxy,
+};
 pub use crate::operation::OperationId;
 pub use crate::pagination::{PaginationController, PaginationError};
 pub use crate::rate_limit::{

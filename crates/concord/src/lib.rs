@@ -125,8 +125,9 @@ pub mod hooks {
 /// HTTP value types and safe managed-transport configuration.
 pub mod http {
     pub use concord_core::contracts::{
-        HeaderMap, HeaderName, HeaderValue, HttpConfigBuilder, Method, SafeProxy, StatusCode, Url,
-        Version,
+        HeaderMap, HeaderName, HeaderValue, HttpConfigBuilder, MAX_IDENTITY_PEM_BYTES,
+        MAX_PROXY_URL_BYTES, MAX_ROOT_CERTIFICATE_BYTES, MAX_ROOT_CERTIFICATES,
+        MAX_ROOT_CERTIFICATES_TOTAL_BYTES, Method, SafeProxy, StatusCode, Url, Version,
     };
 }
 

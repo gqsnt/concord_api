@@ -264,7 +264,11 @@ mod tests {
         #[cfg(not(feature = "default-tls"))]
         let _ = rustls::crypto::ring::default_provider().install_default();
         let runtime = RuntimeConfigBuilder::new().resolve();
-        ManagedHttp::build(builder.resolve(), &runtime).expect("managed clients should build")
+        ManagedHttp::build(
+            builder.resolve().expect("valid HTTP configuration"),
+            &runtime,
+        )
+        .expect("managed clients should build")
     }
 
     fn assert_send_sync_static<T: Send + Sync + 'static>() {}
@@ -627,7 +631,8 @@ mod tests {
         let invalid_root = ManagedHttp::build(
             HttpConfigBuilder::new()
                 .add_root_certificate_pem(ROOT_SENTINEL.as_bytes().to_vec())
-                .resolve(),
+                .resolve()
+                .expect("structurally valid root certificate"),
             &RuntimeConfigBuilder::new().resolve(),
         );
         assert_safe_pem_error(invalid_root, ROOT_SENTINEL);
@@ -635,7 +640,8 @@ mod tests {
         let invalid_identity = ManagedHttp::build(
             HttpConfigBuilder::new()
                 .identity_pem(IDENTITY_SENTINEL.as_bytes().to_vec())
-                .resolve(),
+                .resolve()
+                .expect("structurally valid identity"),
             &RuntimeConfigBuilder::new().resolve(),
         );
         assert_safe_pem_error(invalid_identity, IDENTITY_SENTINEL);

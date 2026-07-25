@@ -2,6 +2,8 @@ use url::Url;
 
 use crate::error::{ConfigurationError, ConfigurationErrorKind};
 
+use super::MAX_PROXY_URL_BYTES;
+
 /// A credential-free HTTP(S) proxy origin.
 pub struct SafeProxy {
     url: Url,
@@ -11,6 +13,7 @@ impl SafeProxy {
     /// Parses and validates one credential-free HTTP(S) origin.
     pub fn parse(value: impl AsRef<str>) -> Result<Self, ConfigurationError> {
         let value = value.as_ref();
+        validate_proxy_url_bytes(value)?;
         let url = Url::parse(value).map_err(|_| invalid_proxy())?;
         if value.bytes().any(|byte| byte.is_ascii_whitespace())
             || !matches!(url.scheme(), "http" | "https")
@@ -32,6 +35,14 @@ impl SafeProxy {
     #[allow(dead_code, reason = "used by managed Reqwest client construction")]
     pub(crate) fn as_str(&self) -> &str {
         self.url.as_str()
+    }
+}
+
+fn validate_proxy_url_bytes(value: &str) -> Result<(), ConfigurationError> {
+    if value.len() > MAX_PROXY_URL_BYTES {
+        Err(invalid_proxy())
+    } else {
+        Ok(())
     }
 }
 
@@ -108,6 +119,22 @@ mod tests {
                 Err(error) => error,
             };
             assert_eq!(error.kind(), ConfigurationErrorKind::InvalidProxy);
+        }
+    }
+
+    #[test]
+    fn proxy_url_structural_limit_accepts_exact_and_rejects_first_excess_without_values() {
+        const SENTINEL: &str = "proxy-startup-limit-sentinel-3f61";
+        let exact = "x".repeat(MAX_PROXY_URL_BYTES);
+        validate_proxy_url_bytes(&exact).expect("exact structural proxy URL limit");
+
+        let mut excess = "x".repeat(MAX_PROXY_URL_BYTES + 1);
+        excess.replace_range(..SENTINEL.len(), SENTINEL);
+        let error = validate_proxy_url_bytes(&excess).expect_err("first excess proxy URL byte");
+        assert_eq!(error.kind(), ConfigurationErrorKind::InvalidProxy);
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(!rendered.contains(SENTINEL));
+            assert!(!rendered.contains(&excess));
         }
     }
 }

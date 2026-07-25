@@ -115,6 +115,68 @@ fn canonical_identity_sorts_names_lowercase_and_preserves_repeated_value_order()
 }
 
 #[test]
+fn canonical_identity_matches_the_frozen_vector_and_request_head_encoding() {
+    let vector = identity(
+        b"E",
+        b"GET",
+        b"u",
+        &[HeaderField::new("X-B", b"2"), HeaderField::new("a", b"1")],
+    );
+    let expected = [
+        &b"CONCORD-PAGE-IDENTITY\x01"[..],
+        &b"\x01\0\0\0\0\0\0\0\x01E"[..],
+        &b"\x02\0\0\0\0\0\0\0\x03GET"[..],
+        &b"\x03\0\0\0\0\0\0\0\x01u"[..],
+        &b"\x04\0\0\0\0\0\0\0\x02"[..],
+        &b"\x05\0\0\0\0\0\0\0\x01a"[..],
+        &b"\x06\0\0\0\0\0\0\0\x011"[..],
+        &b"\x05\0\0\0\0\0\0\0\x03x-b"[..],
+        &b"\x06\0\0\0\0\0\0\0\x012"[..],
+    ]
+    .concat();
+    assert_eq!(vector.bytes(), expected);
+
+    let url = Url::parse("https://example.test/items?a=1").expect("URL");
+    let mut headers = HeaderMap::new();
+    headers.append("x-zeta", HeaderValue::from_static("z"));
+    headers.append("x-alpha", HeaderValue::from_static("one"));
+    headers.append("x-alpha", HeaderValue::from_static("two"));
+    let legacy = identity(
+        b"Endpoint",
+        b"GET",
+        url.as_str().as_bytes(),
+        &[
+            HeaderField::new("X-ZETA", b"z"),
+            HeaderField::new("X-ALPHA", b"one"),
+            HeaderField::new("x-alpha", b"two"),
+        ],
+    );
+    let direct = CanonicalIdentity::from_request_head_with_limit(
+        "Endpoint",
+        &Method::GET,
+        &url,
+        &headers,
+        legacy.retained_byte_len(),
+    )
+    .expect("exact remaining identity budget");
+    assert_eq!(direct.bytes(), legacy.bytes());
+    assert_eq!(direct.retained_byte_len(), legacy.retained_byte_len());
+
+    assert_eq!(
+        CanonicalIdentity::from_request_head_with_limit(
+            "Endpoint",
+            &Method::GET,
+            &url,
+            &headers,
+            legacy.retained_byte_len() - 1,
+        )
+        .expect_err("first excess canonical component byte")
+        .kind(),
+        PaginationErrorKind::IdentityStorageCeilingExceeded
+    );
+}
+
+#[test]
 fn authentication_plan_state_is_absent_from_canonical_logical_identity() {
     fn protected_head(token: &'static str) -> crate::request::PreparedHead {
         let selector = SlotSelector::static_value(
@@ -307,18 +369,24 @@ fn identity_accounting_counts_only_canonical_components_and_collisions_use_full_
             + 2
     );
 
+    let repeated = first_identity.clone();
+    let allocation = first_identity.bytes().as_ptr() as usize;
     let mut detector = CycleDetector::new(|_| 7);
     let other = identity(b"Other", method, url, &headers);
     detector
-        .check_and_retain(first_identity.clone(), usize::MAX)
+        .check_and_retain(first_identity, usize::MAX)
         .expect("first retain");
+    assert!(
+        detector.contains_allocation(allocation),
+        "cycle detector must take ownership of the encoded allocation"
+    );
     detector
         .check_and_retain(other, usize::MAX)
         .expect("digest collision with distinct bytes");
     assert_eq!(detector.retained_identity_count(), 2);
     assert_eq!(
         detector
-            .check_and_retain(first_identity, usize::MAX)
+            .check_and_retain(repeated, usize::MAX)
             .expect_err("full equality repeats")
             .kind(),
         PaginationErrorKind::RepeatedRequest

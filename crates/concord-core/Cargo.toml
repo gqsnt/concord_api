@@ -27,7 +27,7 @@ httpdate.workspace = true
 mime.workspace = true
 reqwest = { workspace = true, features = ["stream"] }
 rustls = { workspace = true, optional = true }
-tokio = { workspace = true, features = ["fs", "io-util"] }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "sync", "time"] }
 url.workspace = true
 
 [dev-dependencies]
@@ -38,7 +38,7 @@ http-body.workspace = true
 reqwest = { workspace = true, features = ["http2", "rustls-no-provider", "system-proxy"] }
 rustls.workspace = true
 serde = { workspace = true, features = ["derive"] }
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sync", "test-util", "time"] }
 trybuild = "1.0.118"
 
 [[test]]

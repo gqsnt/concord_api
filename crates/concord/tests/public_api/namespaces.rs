@@ -70,6 +70,13 @@ fn hard_structural_limits_are_reachable_from_their_facade_domains() {
         endpoint::MAX_RUNTIME_ENDPOINT_COMPONENTS,
         endpoint::MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
     ];
+    let http_limits = [
+        http::MAX_PROXY_URL_BYTES,
+        http::MAX_ROOT_CERTIFICATES,
+        http::MAX_ROOT_CERTIFICATE_BYTES,
+        http::MAX_ROOT_CERTIFICATES_TOTAL_BYTES,
+        http::MAX_IDENTITY_PEM_BYTES,
+    ];
     let rate_limits = [
         rate_limit::MAX_RATE_LIMIT_ID_BYTES,
         rate_limit::MAX_RATE_LIMIT_KEY_PARTS,
@@ -83,6 +90,7 @@ fn hard_structural_limits_are_reachable_from_their_facade_domains() {
     #[cfg(feature = "multipart")]
     assert!(body_limits.into_iter().all(|limit| limit > 0));
     assert!(endpoint_limits.into_iter().all(|limit| limit > 0));
+    assert!(http_limits.into_iter().all(|limit| limit > 0));
     assert!(rate_limits.into_iter().all(|limit| limit > 0));
 }
 

@@ -173,8 +173,14 @@ mod tests {
 
     fn managed(executor: &DeterministicExecutor) -> ManagedHttp {
         let runtime = RuntimeConfigBuilder::new().resolve();
-        ManagedHttp::build_with_development(HttpConfigBuilder::new().resolve(), &runtime, executor)
-            .expect("development managed clients should build")
+        ManagedHttp::build_with_development(
+            HttpConfigBuilder::new()
+                .resolve()
+                .expect("valid HTTP configuration"),
+            &runtime,
+            executor,
+        )
+        .expect("development managed clients should build")
     }
 
     fn application_request(

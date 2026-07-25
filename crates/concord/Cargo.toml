@@ -33,7 +33,7 @@ concord_test_support = { package = "concord-test-support", path = "../concord-te
 futures-core.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "macros", "rt-multi-thread", "sync", "time"] }
 trybuild = "1.0.118"
 
 [[test]]

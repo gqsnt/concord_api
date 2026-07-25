@@ -15,12 +15,13 @@ use concord_core::contracts::{
     MAX_AUTH_PLACEMENT_NAME_BYTES, MAX_AUTH_PLACEMENTS, MAX_AUTH_QUERY_VALUE_BYTES,
     MAX_AUTHORIZATION_VALUE_BYTES, MAX_BASIC_PASSWORD_BYTES, MAX_BASIC_USERNAME_BYTES,
     MAX_CREDENTIAL_SECRET_BYTES, MAX_ENDPOINT_ID_BYTES, MAX_FORMATTED_PUBLIC_VALUE_BYTES,
-    MAX_MULTIPART_CONTENT_TYPE_BYTES, MAX_MULTIPART_FILENAME_BYTES,
+    MAX_IDENTITY_PEM_BYTES, MAX_MULTIPART_CONTENT_TYPE_BYTES, MAX_MULTIPART_FILENAME_BYTES,
     MAX_MULTIPART_INLINE_TEXT_BYTES, MAX_MULTIPART_METADATA_BYTES, MAX_MULTIPART_NAME_BYTES,
-    MAX_MULTIPART_PARTS, MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_BYTES,
+    MAX_MULTIPART_PARTS, MAX_PROXY_URL_BYTES, MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_BYTES,
     MAX_RATE_LIMIT_KEY_PART_NAME_BYTES, MAX_RATE_LIMIT_KEY_PARTS, MAX_RATE_LIMIT_RULES_PER_PLAN,
     MAX_RATE_LIMIT_WINDOWS_PER_RULE, MAX_REQUEST_HEAD_COMPONENTS, MAX_REQUEST_HEADER_BYTES,
-    MAX_REQUEST_HEADER_COUNT, MAX_REQUEST_URL_BYTES, MAX_RUNTIME_ENDPOINT_COMPONENTS,
+    MAX_REQUEST_HEADER_COUNT, MAX_REQUEST_URL_BYTES, MAX_ROOT_CERTIFICATE_BYTES,
+    MAX_ROOT_CERTIFICATES, MAX_ROOT_CERTIFICATES_TOTAL_BYTES, MAX_RUNTIME_ENDPOINT_COMPONENTS,
     MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, MAX_SECRET_STRING_BYTES,
 };
 use concord_extras::auth::{
@@ -243,6 +244,31 @@ fn documented_limits() -> Vec<Limit> {
         Limit {
             label: "Aggregate public request headers",
             value: MAX_REQUEST_HEADER_BYTES as u64,
+            unit: "bytes",
+        },
+        Limit {
+            label: "Proxy URL text",
+            value: MAX_PROXY_URL_BYTES as u64,
+            unit: "bytes",
+        },
+        Limit {
+            label: "Custom root certificates",
+            value: MAX_ROOT_CERTIFICATES as u64,
+            unit: "certificates",
+        },
+        Limit {
+            label: "One custom root certificate PEM",
+            value: MAX_ROOT_CERTIFICATE_BYTES as u64,
+            unit: "bytes",
+        },
+        Limit {
+            label: "Aggregate custom root certificate PEMs",
+            value: MAX_ROOT_CERTIFICATES_TOTAL_BYTES as u64,
+            unit: "bytes",
+        },
+        Limit {
+            label: "Application identity PEM",
+            value: MAX_IDENTITY_PEM_BYTES as u64,
             unit: "bytes",
         },
         Limit {

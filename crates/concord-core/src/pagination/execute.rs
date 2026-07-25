@@ -143,11 +143,15 @@ where
             options,
         })?;
 
-        let identity = CanonicalIdentity::from_request_head(
+        let remaining_identity_bytes = identities
+            .remaining_identity_bytes(identity_limit)
+            .map_err(|error| pagination_api_error(&meta, error))?;
+        let identity = CanonicalIdentity::from_request_head_with_limit(
             page.head.endpoint(),
             page.head.method(),
             page.head.logical_url(),
             page.head.public_headers(),
+            remaining_identity_bytes,
         )
         .map_err(|error| pagination_api_error(&meta, error))?;
         let (digest, retained_bytes) = identities

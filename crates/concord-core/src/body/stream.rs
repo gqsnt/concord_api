@@ -12,6 +12,8 @@ use super::{BodyError, BodyErrorKind};
 
 pub(crate) type BodyStream = Pin<Box<dyn Stream<Item = Result<Bytes, BodyError>> + Send + 'static>>;
 
+const READER_BUFFER_BYTES: usize = 8 * 1024;
+
 /// An owned one-shot request byte stream.
 ///
 /// Construction is lazy: Concord does not poll the source until native
@@ -59,7 +61,7 @@ impl StreamBody {
         R: AsyncRead + Send + Unpin + 'static,
     {
         Self {
-            source: Box::pin(ReaderStream { reader }),
+            source: Box::pin(ReaderStream::new(reader)),
             source_length: None,
             declared_length: None,
         }
@@ -78,7 +80,7 @@ impl StreamBody {
             BodyError::new(BodyErrorKind::Producer)
         })?;
         Ok(Self {
-            source: Box::pin(ReaderStream { reader: file }),
+            source: Box::pin(ReaderStream::new(file)),
             source_length: Some(length.len()),
             declared_length: None,
         })
@@ -165,6 +167,16 @@ where
 
 struct ReaderStream<R> {
     reader: R,
+    buffer: Box<[u8]>,
+}
+
+impl<R> ReaderStream<R> {
+    fn new(reader: R) -> Self {
+        Self {
+            reader,
+            buffer: vec![0_u8; READER_BUFFER_BYTES].into_boxed_slice(),
+        }
+    }
 }
 
 impl<R> Stream for ReaderStream<R>
@@ -173,10 +185,10 @@ where
 {
     type Item = Result<Bytes, BodyError>;
 
-    fn poll_next(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let mut buffer = vec![0_u8; 8 * 1024];
-        let mut read = ReadBuf::new(&mut buffer);
-        match Pin::new(&mut self.reader).poll_read(context, &mut read) {
+    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        let mut read = ReadBuf::new(&mut this.buffer);
+        match Pin::new(&mut this.reader).poll_read(context, &mut read) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(Err(error)) => {
                 drop(error);
@@ -187,8 +199,7 @@ where
                 if length == 0 {
                     Poll::Ready(None)
                 } else {
-                    buffer.truncate(length);
-                    Poll::Ready(Some(Ok(Bytes::from(buffer))))
+                    Poll::Ready(Some(Ok(Bytes::copy_from_slice(read.filled()))))
                 }
             }
         }
@@ -197,6 +208,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::future::poll_fn;
     use std::io;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -205,6 +217,35 @@ mod tests {
 
     struct PollProbe {
         polls: Arc<AtomicUsize>,
+    }
+
+    #[derive(Default)]
+    struct PendingReader {
+        polls: usize,
+        buffers: Vec<(usize, usize)>,
+    }
+
+    impl AsyncRead for PendingReader {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            context: &mut Context<'_>,
+            read: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            let buffer = read.initialize_unfilled();
+            self.buffers.push((buffer.as_ptr() as usize, buffer.len()));
+            self.polls += 1;
+            match self.polls {
+                1 | 2 => {
+                    context.waker().wake_by_ref();
+                    Poll::Pending
+                }
+                3 => {
+                    read.put_slice(b"reader bytes");
+                    Poll::Ready(Ok(()))
+                }
+                _ => Poll::Ready(Ok(())),
+            }
+        }
     }
 
     impl Stream for PollProbe {
@@ -228,6 +269,32 @@ mod tests {
         let body = StreamBody::from_reader(&b"reader bytes"[..]).exact_length(12);
         assert_eq!(body.exact_length_value(), Some(12));
         assert_eq!(body.lower_bound(), None);
+    }
+
+    #[tokio::test]
+    async fn reader_reuses_one_buffer_across_pending_data_and_eof() {
+        let mut stream = ReaderStream::new(PendingReader::default());
+        let data = poll_fn(|context| Pin::new(&mut stream).poll_next(context))
+            .await
+            .expect("reader data")
+            .expect("successful reader data");
+        assert_eq!(data, Bytes::from_static(b"reader bytes"));
+        assert!(
+            poll_fn(|context| Pin::new(&mut stream).poll_next(context))
+                .await
+                .is_none()
+        );
+
+        assert_eq!(stream.reader.buffers.len(), 4);
+        let first = stream.reader.buffers[0];
+        assert_eq!(first.1, READER_BUFFER_BYTES);
+        assert!(
+            stream
+                .reader
+                .buffers
+                .iter()
+                .all(|&(pointer, capacity)| pointer == first.0 && capacity == first.1)
+        );
     }
 
     #[test]

@@ -9,6 +9,7 @@ pub(crate) mod build;
 mod config;
 #[cfg(test)]
 mod development;
+mod limits;
 pub(crate) mod provider;
 mod proxy;
 #[allow(dead_code, reason = "called by the private managed response boundary")]
@@ -17,4 +18,8 @@ mod status;
 pub(crate) mod test_support;
 
 pub use config::{HttpConfigBuilder, ProviderRetry};
+pub use limits::{
+    MAX_IDENTITY_PEM_BYTES, MAX_PROXY_URL_BYTES, MAX_ROOT_CERTIFICATE_BYTES, MAX_ROOT_CERTIFICATES,
+    MAX_ROOT_CERTIFICATES_TOTAL_BYTES,
+};
 pub use proxy::SafeProxy;

@@ -53,6 +53,17 @@ impl CycleDetector {
         Ok((digest, retained_bytes))
     }
 
+    pub(crate) fn remaining_identity_bytes(
+        &self,
+        byte_limit: usize,
+    ) -> Result<usize, PaginationError> {
+        byte_limit
+            .checked_sub(self.retained_identity_bytes)
+            .ok_or_else(|| {
+                PaginationError::new(PaginationErrorKind::IdentityStorageCeilingExceeded)
+            })
+    }
+
     pub(crate) fn retain(
         &mut self,
         identity: CanonicalIdentity,
@@ -66,7 +77,7 @@ impl CycleDetector {
         self.buckets
             .entry(digest)
             .or_default()
-            .push(identity.bytes().to_vec());
+            .push(identity.into_bytes());
         self.retained_identity_count = retained_count;
         self.retained_identity_bytes = retained_bytes;
         Ok(())
@@ -95,5 +106,13 @@ impl CycleDetector {
     #[cfg(test)]
     pub(crate) fn set_retained_identity_bytes(&mut self, bytes: usize) {
         self.retained_identity_bytes = bytes;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn contains_allocation(&self, pointer: usize) -> bool {
+        self.buckets
+            .values()
+            .flatten()
+            .any(|bytes| bytes.as_ptr() as usize == pointer)
     }
 }

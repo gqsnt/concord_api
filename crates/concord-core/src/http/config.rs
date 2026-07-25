@@ -1,6 +1,13 @@
 use std::time::Duration;
 
+use crate::error::{ClientBuildError, ClientBuildErrorKind};
+
 use super::SafeProxy;
+#[cfg(feature = "default-tls")]
+use super::{
+    MAX_IDENTITY_PEM_BYTES, MAX_ROOT_CERTIFICATE_BYTES, MAX_ROOT_CERTIFICATES,
+    MAX_ROOT_CERTIFICATES_TOTAL_BYTES,
+};
 
 /// Reviewed provider native-retry modes.
 #[non_exhaustive]
@@ -64,6 +71,9 @@ pub(crate) struct HttpConfig {
 /// only to the application client and is never installed on provider HTTP.
 pub struct HttpConfigBuilder {
     config: HttpConfig,
+    #[cfg(feature = "default-tls")]
+    root_certificates_total_bytes: usize,
+    invalid_startup_material: bool,
 }
 
 impl HttpConfigBuilder {
@@ -93,6 +103,9 @@ impl HttpConfigBuilder {
                 #[cfg(feature = "deflate")]
                 disable_deflate: false,
             },
+            #[cfg(feature = "default-tls")]
+            root_certificates_total_bytes: 0,
+            invalid_startup_material: false,
         }
     }
 
@@ -193,21 +206,52 @@ impl HttpConfigBuilder {
         self
     }
 
-    /// Retains a root-certificate PEM for both application and provider client
-    /// construction.
+    /// Retains a structurally bounded root-certificate PEM for both application
+    /// and provider client construction.
+    ///
+    /// Structural excess is latched without retaining the rejected bytes and
+    /// makes the eventual client build fail. TLS parsing may reject a
+    /// structurally valid input later.
     #[cfg(feature = "default-tls")]
     #[must_use]
-    pub fn add_root_certificate_pem(mut self, pem: impl Into<Vec<u8>>) -> Self {
-        self.config.root_certificates_pem.push(pem.into());
+    pub fn add_root_certificate_pem(mut self, pem: impl AsRef<[u8]>) -> Self {
+        if self.invalid_startup_material {
+            return self;
+        }
+        let pem = pem.as_ref();
+        let next_total = self.root_certificates_total_bytes.checked_add(pem.len());
+        let valid = self.config.root_certificates_pem.len() < MAX_ROOT_CERTIFICATES
+            && pem.len() <= MAX_ROOT_CERTIFICATE_BYTES
+            && next_total.is_some_and(|total| total <= MAX_ROOT_CERTIFICATES_TOTAL_BYTES);
+        if !valid {
+            self.invalid_startup_material = true;
+            return self;
+        }
+        self.config.root_certificates_pem.push(pem.to_vec());
+        self.root_certificates_total_bytes =
+            next_total.expect("validated root-certificate aggregate bytes");
         self
     }
 
-    /// Retains an application-client identity PEM for parsing during client
-    /// construction. The provider client never receives this identity.
+    /// Retains a structurally bounded application-client identity PEM for
+    /// parsing during client construction. The provider client never receives
+    /// this identity.
+    ///
+    /// Structural excess is latched without retaining the rejected bytes and
+    /// makes the eventual client build fail. TLS parsing may reject a
+    /// structurally valid input later.
     #[cfg(feature = "default-tls")]
     #[must_use]
-    pub fn identity_pem(mut self, pem: impl Into<Vec<u8>>) -> Self {
-        self.config.identity_pem = Some(pem.into());
+    pub fn identity_pem(mut self, pem: impl AsRef<[u8]>) -> Self {
+        if self.invalid_startup_material {
+            return self;
+        }
+        let pem = pem.as_ref();
+        if pem.len() > MAX_IDENTITY_PEM_BYTES {
+            self.invalid_startup_material = true;
+            return self;
+        }
+        self.config.identity_pem = Some(pem.to_vec());
         self
     }
 
@@ -251,8 +295,14 @@ impl HttpConfigBuilder {
     }
 
     #[allow(dead_code, reason = "consumed by managed Reqwest construction")]
-    pub(crate) fn resolve(self) -> HttpConfig {
-        self.config
+    pub(crate) fn resolve(self) -> Result<HttpConfig, ClientBuildError> {
+        if self.invalid_startup_material {
+            Err(ClientBuildError::new(
+                ClientBuildErrorKind::HttpConfiguration,
+            ))
+        } else {
+            Ok(self.config)
+        }
     }
 }
 
@@ -260,9 +310,44 @@ impl HttpConfigBuilder {
 mod tests {
     use super::*;
 
+    #[cfg(feature = "default-tls")]
+    fn startup_material_error(builder: HttpConfigBuilder) -> ClientBuildError {
+        match builder.resolve() {
+            Ok(_) => panic!("structurally excessive startup material must fail"),
+            Err(error) => error,
+        }
+    }
+
+    #[cfg(feature = "default-tls")]
+    fn assert_redacted_startup_material_error(builder: HttpConfigBuilder, sentinel: &str) {
+        let error = startup_material_error(builder);
+        assert_eq!(error.kind(), ClientBuildErrorKind::HttpConfiguration);
+        assert_eq!(error.input_field(), None);
+        assert_eq!(error.input_kind(), None);
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(!rendered.contains(sentinel));
+        }
+    }
+
+    #[cfg(feature = "default-tls")]
+    fn root_builder_with_bytes(mut bytes: usize) -> HttpConfigBuilder {
+        let chunk = vec![b'a'; MAX_ROOT_CERTIFICATE_BYTES];
+        let mut builder = HttpConfigBuilder::new();
+        while bytes >= chunk.len() {
+            builder = builder.add_root_certificate_pem(&chunk);
+            bytes -= chunk.len();
+        }
+        if bytes != 0 {
+            builder = builder.add_root_certificate_pem(&chunk[..bytes]);
+        }
+        builder
+    }
+
     #[test]
     fn defaults_are_plain_and_application_retry_is_disabled() {
-        let config = HttpConfigBuilder::new().resolve();
+        let config = HttpConfigBuilder::new()
+            .resolve()
+            .expect("default HTTP configuration");
         assert!(config.connect_timeout.is_none());
         assert!(config.read_timeout.is_none());
         assert!(config.pool_idle_timeout.is_none());
@@ -293,7 +378,8 @@ mod tests {
             .proxy(SafeProxy::parse("https://proxy.example").expect("safe proxy"))
             .retry_reqwest_default()
             .provider_retry(ProviderRetry::Disabled)
-            .resolve();
+            .resolve()
+            .expect("configured HTTP configuration");
         assert_eq!(config.connect_timeout, Some(Duration::from_secs(1)));
         assert_eq!(config.read_timeout, Some(Duration::from_secs(2)));
         assert_eq!(config.pool_idle_timeout, Some(Duration::from_secs(3)));
@@ -318,7 +404,8 @@ mod tests {
         let config = HttpConfigBuilder::new()
             .retry_reqwest_default()
             .retry_off()
-            .resolve();
+            .resolve()
+            .expect("disabled application retry");
         assert!(matches!(
             config.application_retry,
             ApplicationRetry::Disabled
@@ -331,7 +418,8 @@ mod tests {
         let config = HttpConfigBuilder::new()
             .http1_only()
             .http2_prior_knowledge()
-            .resolve();
+            .resolve()
+            .expect("HTTP/2 prior knowledge");
         assert_eq!(config.protocol, ProtocolMode::Http2PriorKnowledge);
     }
 
@@ -342,12 +430,141 @@ mod tests {
             .add_root_certificate_pem(b"root-one".to_vec())
             .add_root_certificate_pem(b"root-two".to_vec())
             .identity_pem(b"identity".to_vec())
-            .resolve();
+            .resolve()
+            .expect("bounded TLS material");
         assert_eq!(
             config.root_certificates_pem,
             [b"root-one".to_vec(), b"root-two".to_vec()]
         );
         assert_eq!(config.identity_pem.as_deref(), Some(&b"identity"[..]));
+    }
+
+    #[cfg(feature = "default-tls")]
+    #[test]
+    fn root_certificate_limits_accept_exact_and_withhold_first_excess() {
+        const SENTINEL: &[u8] = b"root-certificate-limit-sentinel-64be";
+        let exact_certificate = vec![b'r'; MAX_ROOT_CERTIFICATE_BYTES];
+        let exact = HttpConfigBuilder::new().add_root_certificate_pem(&exact_certificate);
+        assert_eq!(exact.config.root_certificates_pem.len(), 1);
+        assert_eq!(
+            exact.config.root_certificates_pem[0].len(),
+            MAX_ROOT_CERTIFICATE_BYTES
+        );
+        assert_eq!(
+            exact.root_certificates_total_bytes,
+            MAX_ROOT_CERTIFICATE_BYTES
+        );
+        exact.resolve().expect("exact root-certificate byte limit");
+
+        let mut oversized_certificate = vec![b'x'; MAX_ROOT_CERTIFICATE_BYTES + 1];
+        oversized_certificate[..SENTINEL.len()].copy_from_slice(SENTINEL);
+        let oversized = HttpConfigBuilder::new().add_root_certificate_pem(&oversized_certificate);
+        assert!(oversized.config.root_certificates_pem.is_empty());
+        assert_eq!(oversized.root_certificates_total_bytes, 0);
+        assert_redacted_startup_material_error(
+            oversized,
+            std::str::from_utf8(SENTINEL).expect("ASCII sentinel"),
+        );
+    }
+
+    #[cfg(feature = "default-tls")]
+    #[test]
+    fn root_certificate_count_accepts_exact_and_withholds_first_excess() {
+        const SENTINEL: &[u8] = b"root-certificate-count-sentinel-b620";
+        let mut builder = HttpConfigBuilder::new();
+        for _ in 0..MAX_ROOT_CERTIFICATES {
+            builder = builder.add_root_certificate_pem(b"x");
+        }
+        assert_eq!(
+            builder.config.root_certificates_pem.len(),
+            MAX_ROOT_CERTIFICATES
+        );
+        assert_eq!(builder.root_certificates_total_bytes, MAX_ROOT_CERTIFICATES);
+        assert!(!builder.invalid_startup_material);
+
+        builder = builder.add_root_certificate_pem(SENTINEL);
+        assert_eq!(
+            builder.config.root_certificates_pem.len(),
+            MAX_ROOT_CERTIFICATES
+        );
+        assert_eq!(builder.root_certificates_total_bytes, MAX_ROOT_CERTIFICATES);
+        assert!(
+            builder
+                .config
+                .root_certificates_pem
+                .iter()
+                .all(|pem| pem.as_slice() != SENTINEL)
+        );
+        assert_redacted_startup_material_error(
+            builder,
+            std::str::from_utf8(SENTINEL).expect("ASCII sentinel"),
+        );
+    }
+
+    #[cfg(feature = "default-tls")]
+    #[test]
+    fn root_certificate_aggregate_accepts_exact_and_withholds_first_excess() {
+        const SENTINEL: &[u8] = b"root-certificate-aggregate-sentinel-aa4d";
+        let certificate_count = MAX_ROOT_CERTIFICATES_TOTAL_BYTES / MAX_ROOT_CERTIFICATE_BYTES;
+        let exact = root_builder_with_bytes(MAX_ROOT_CERTIFICATES_TOTAL_BYTES);
+        assert_eq!(
+            exact.root_certificates_total_bytes,
+            MAX_ROOT_CERTIFICATES_TOTAL_BYTES
+        );
+        assert_eq!(exact.config.root_certificates_pem.len(), certificate_count);
+        exact
+            .resolve()
+            .expect("exact aggregate root-certificate byte limit");
+
+        let retained_before_excess = MAX_ROOT_CERTIFICATES_TOTAL_BYTES - SENTINEL.len() + 1;
+        assert_eq!(
+            retained_before_excess + SENTINEL.len(),
+            MAX_ROOT_CERTIFICATES_TOTAL_BYTES + 1
+        );
+        let mut builder = root_builder_with_bytes(retained_before_excess);
+        let certificate_count = builder.config.root_certificates_pem.len();
+        builder = builder.add_root_certificate_pem(SENTINEL);
+        assert_eq!(
+            builder.root_certificates_total_bytes,
+            retained_before_excess
+        );
+        assert_eq!(
+            builder.config.root_certificates_pem.len(),
+            certificate_count
+        );
+        assert!(
+            builder
+                .config
+                .root_certificates_pem
+                .iter()
+                .all(|pem| pem.as_slice() != SENTINEL)
+        );
+        assert_redacted_startup_material_error(
+            builder,
+            std::str::from_utf8(SENTINEL).expect("ASCII sentinel"),
+        );
+    }
+
+    #[cfg(feature = "default-tls")]
+    #[test]
+    fn identity_limit_accepts_exact_and_withholds_first_excess() {
+        const SENTINEL: &[u8] = b"identity-limit-sentinel-567f";
+        let exact_identity = vec![b'i'; MAX_IDENTITY_PEM_BYTES];
+        let exact = HttpConfigBuilder::new().identity_pem(&exact_identity);
+        assert_eq!(
+            exact.config.identity_pem.as_ref().map(Vec::len),
+            Some(MAX_IDENTITY_PEM_BYTES)
+        );
+        exact.resolve().expect("exact identity byte limit");
+
+        let mut oversized_identity = vec![b'x'; MAX_IDENTITY_PEM_BYTES + 1];
+        oversized_identity[..SENTINEL.len()].copy_from_slice(SENTINEL);
+        let oversized = HttpConfigBuilder::new().identity_pem(&oversized_identity);
+        assert!(oversized.config.identity_pem.is_none());
+        assert_redacted_startup_material_error(
+            oversized,
+            std::str::from_utf8(SENTINEL).expect("ASCII sentinel"),
+        );
     }
 
     #[cfg(all(feature = "gzip", feature = "brotli", feature = "deflate"))]
@@ -357,7 +574,8 @@ mod tests {
             .disable_gzip()
             .disable_brotli()
             .disable_deflate()
-            .resolve();
+            .resolve()
+            .expect("disabled content decoding");
         assert!(config.disable_gzip);
         assert!(config.disable_brotli);
         assert!(config.disable_deflate);
@@ -368,7 +586,8 @@ mod tests {
     fn dangerous_retry_selection_retains_only_the_reviewed_native_builder_type() {
         let config = HttpConfigBuilder::new()
             .dangerous_custom_retry(reqwest::retry::never())
-            .resolve();
+            .resolve()
+            .expect("reviewed native retry");
         assert!(matches!(
             config.application_retry,
             ApplicationRetry::Dangerous(_)
