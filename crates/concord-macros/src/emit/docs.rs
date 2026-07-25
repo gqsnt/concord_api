@@ -399,10 +399,8 @@ pub(super) fn credential_summary(client: &Client) -> String {
     let providers = client
         .credentials
         .iter()
-        .filter_map(|credential| {
-            matches!(credential.source, CredentialSource::Custom { .. })
-                .then(|| format!("`{}`", canonical_ident(&credential.name)))
-        })
+        .filter(|credential| matches!(credential.source, CredentialSource::Custom { .. }))
+        .map(|credential| format!("`{}`", canonical_ident(&credential.name)))
         .collect::<Vec<_>>();
     let secret_summary = if secrets.is_empty() {
         "Required protected secrets: none.".to_owned()

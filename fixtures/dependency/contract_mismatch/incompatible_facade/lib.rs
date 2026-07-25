@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 
-pub use concord_actual::*;
 #[doc(hidden)]
 pub use concord_actual::__concord_api as __fixture_api_impl;
+pub use concord_actual::*;
 
 #[macro_export]
 macro_rules! api {
@@ -25,12 +25,12 @@ pub mod __private {
     #[doc(hidden)]
     pub const fn assert_generated_contract(expected: u32) {
         assert!(
-            expected == 25,
+            expected == 26,
             "concord macro emitted an unexpected generated contract version"
         );
         assert!(
             GENERATED_CONTRACT_VERSION == expected,
-            "concord macro/facade contract mismatch: facade 999, generated 25"
+            "concord macro/facade contract mismatch: facade 999, generated 26"
         );
     }
 }

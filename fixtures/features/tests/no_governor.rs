@@ -73,9 +73,13 @@ impl RateLimiter for CapturingLimiter {
         })
     }
 
-    fn observe<'a>(&'a self, _response: RateLimitResponse<'a>) -> BoxFuture<'a, ()> {
+    fn observe<'a>(
+        &'a self,
+        _response: RateLimitResponse<'a>,
+    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
         Box::pin(async move {
             self.observations.fetch_add(1, Ordering::SeqCst);
+            Ok(())
         })
     }
 }
@@ -174,10 +178,10 @@ fn empty_runtime_endpoint() -> RuntimeEndpoint<Bytes> {
         EndpointId::try_from("runtime.empty").expect("runtime endpoint ID"),
         Method::GET,
     )
-        .path_segment("runtime-empty")
-        .response_bytes()
-        .build()
-        .expect("empty runtime endpoint")
+    .path_segment("runtime-empty")
+    .response_bytes()
+    .build()
+    .expect("empty runtime endpoint")
 }
 
 fn explicit_runtime_endpoint() -> RuntimeEndpoint<Bytes> {
@@ -185,26 +189,26 @@ fn explicit_runtime_endpoint() -> RuntimeEndpoint<Bytes> {
         EndpointId::try_from("runtime.explicit").expect("runtime endpoint ID"),
         Method::GET,
     )
-        .path_segment("runtime-explicit")
-        .rate_limit(runtime_rule(
-            "Runtime::global",
-            RateLimitKey::global(),
-            2,
-            &[(5, 1), (20, 10)],
-        ))
-        .rate_limit(runtime_rule(
-            "Runtime::parts",
-            RateLimitKey::from_parts([
-                RateLimitKeyPart::new("tenant", "fixture-tenant").expect("tenant key part"),
-                RateLimitKeyPart::new("region", "fixture-region").expect("region key part"),
-            ])
-            .expect("runtime explicit key"),
-            3,
-            &[(7, 2)],
-        ))
-        .response_bytes()
-        .build()
-        .expect("explicit runtime endpoint")
+    .path_segment("runtime-explicit")
+    .rate_limit(runtime_rule(
+        "Runtime::global",
+        RateLimitKey::global(),
+        2,
+        &[(5, 1), (20, 10)],
+    ))
+    .rate_limit(runtime_rule(
+        "Runtime::parts",
+        RateLimitKey::from_parts([
+            RateLimitKeyPart::new("tenant", "fixture-tenant").expect("tenant key part"),
+            RateLimitKeyPart::new("region", "fixture-region").expect("region key part"),
+        ])
+        .expect("runtime explicit key"),
+        3,
+        &[(7, 2)],
+    ))
+    .response_bytes()
+    .build()
+    .expect("explicit runtime endpoint")
 }
 
 #[tokio::test]

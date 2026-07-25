@@ -427,9 +427,9 @@ mod tests {
     #[test]
     fn pem_inputs_are_retained_without_parsing() {
         let config = HttpConfigBuilder::new()
-            .add_root_certificate_pem(b"root-one".to_vec())
-            .add_root_certificate_pem(b"root-two".to_vec())
-            .identity_pem(b"identity".to_vec())
+            .add_root_certificate_pem(b"root-one")
+            .add_root_certificate_pem(b"root-two")
+            .identity_pem(b"identity")
             .resolve()
             .expect("bounded TLS material");
         assert_eq!(

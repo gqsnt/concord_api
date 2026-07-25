@@ -66,11 +66,30 @@ workflow is not evidence that a remote run passed.
 ## Determinism
 
 Ordinary Rust tests do not launch Cargo or rustdoc. Repository subprocess
-proofs belong to xtask. No test calls an external service or uses arbitrary sleeps. Use
-`concord-test-support` scripted/loopback transport, paused Tokio time,
-barriers, and exact event/attempt assertions. Verify first-excess withholding
-for every finite surface. Cancellation tests assert no detached correctness
-work remains.
+proofs belong to xtask. No test calls an external service or uses arbitrary
+sleeps. Use `concord-test-support` scripted/loopback transport, paused Tokio
+time, barriers, and exact event/attempt assertions. Verify first-excess
+withholding for every finite surface. Cancellation tests assert no detached
+correctness work remains.
+
+Hardening proofs stay with the lowest semantic owner:
+
+- macro semantic/UI tests own statically knowable authentication-header and
+  request-head rejection plus generated documentation capabilities;
+- core unit tests own capped arithmetic, JSON-independent body defense,
+  startup retention, reader-buffer reuse, pagination identity bytes, and
+  lifecycle event order;
+- extras unit tests own capped JSON serialization and concrete downstream
+  codec/provider behavior;
+- façade integration tests own generated/runtime parity and public namespace
+  reachability;
+- documentation, fixture, analyzer, package, and archive behavior remains in
+  its repository-level command owner.
+
+Exact-limit tests must pair maximum with maximum-plus-one and inspect retained
+state, iterator progress, or deterministic events so a late reject cannot
+masquerade as first-excess withholding. Error tests use sentinels and inspect
+both `Display` and `Debug`.
 
 Canonical tests import declarations from `concord-examples`; they do not copy
 them. Executable wrappers live under `crates/concord-examples/examples/`.

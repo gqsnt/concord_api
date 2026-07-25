@@ -12,9 +12,15 @@
   material, encoded authentication output, multipart structure and metadata,
   runtime endpoint shape, rate-limit structures, provider traffic, response
   acquisition, and pagination.
+- Public structural ceilings for final request heads, proxy URL text, custom
+  root-certificate count and bytes, and application identity PEM bytes.
 - First-party JSON, record codecs, pagination policies, rate limiting, and
   OAuth2 client credentials as downstream implementations of public semantic
   contracts.
+- Generated endpoint Rustdoc backed by one semantic documentation model, with
+  named value inputs, flattened scope inputs, safe query/header names, route
+  shape, human-readable deadlines, and only the terminals each endpoint
+  actually supports.
 - Type-configurable CSV decoding while preserving `Csv<T>` as header-bearing,
   comma-delimited CSV. `HasHeader` and `NoHeader` select header presence;
   `CommaDelimiter`, `SemicolonDelimiter`, and `TabDelimiter` select parsing
@@ -42,8 +48,29 @@
 - `EndpointId` validates borrowed input before allocation.
 - Bearer, Basic, Base64, and authentication-query construction use checked
   arithmetic and reject excess output before native request mutation.
+- Generic authentication headers reject every transport- or request-owned
+  name consistently in static declarations, `Auth::header`, and defensive
+  authentication-plan validation.
+- JSON request serialization writes directly through the active body cap, so
+  it stops before retaining the first excess byte. Codec failures expose only
+  finite encode, decode, and limit categories without native or
+  application-authored error text.
+- Generated and runtime-defined requests share final core-owned component,
+  logical and credential-sanitized URL, header-count, and aggregate-header
+  byte ceilings.
+- A sanitized response head reaches limiter observation before the user
+  response hook. Observation uses the remaining operation deadline, and its
+  failure prevents the hook and body acquisition.
 - Multipart part and recipe construction is fallible. Factory output is
   revalidated at the private transport boundary.
+- Proxy and TLS startup material is structurally validated before parsing or
+  copying. Native URL and TLS parsers may remain stricter.
+- Reader-backed request streams reuse one 8 KiB scratch buffer. Pagination
+  identity encoding borrows normalized header names, enforces the remaining
+  identity budget during encoding, and moves encoded storage into cycle
+  detection.
+- Tokio capabilities are selected per crate; multi-thread test runtimes no
+  longer enlarge ordinary production dependency declarations.
 - Dangerous raw-response methods are emitted directly by the declaration
   compiler only when the calling façade passes the feature capability.
 - Generated direct methods, explicit endpoint values, runtime endpoints, and
@@ -64,7 +91,13 @@
 
 - Construction and planning remain inert.
 - Authentication and native transport values remain private and redacted.
+- Authentication cannot be placed in `Host`, framing, proxy authorization,
+  cookie, `Accept`, `Content-Type`, `User-Agent`, or generic `Authorization`
+  headers.
+- The first JSON, request-head, or startup excess is rejected without
+  retaining the rejected unit or exposing supplied content.
 - Authentication recovery permits at most one additional attempt.
+- Limiter response observation is core-first and deadline-governed.
 - Pagination is sequential, finite, cycle-detecting, first-excess
   withholding, and all-or-error.
 - Completion remains exactly once, including cancellation-sensitive paths.

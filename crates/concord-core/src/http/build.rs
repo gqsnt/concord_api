@@ -630,7 +630,7 @@ mod tests {
         const IDENTITY_SENTINEL: &str = "private-identity-pem-sentinel-f90e31";
         let invalid_root = ManagedHttp::build(
             HttpConfigBuilder::new()
-                .add_root_certificate_pem(ROOT_SENTINEL.as_bytes().to_vec())
+                .add_root_certificate_pem(ROOT_SENTINEL.as_bytes())
                 .resolve()
                 .expect("structurally valid root certificate"),
             &RuntimeConfigBuilder::new().resolve(),
@@ -639,7 +639,7 @@ mod tests {
 
         let invalid_identity = ManagedHttp::build(
             HttpConfigBuilder::new()
-                .identity_pem(IDENTITY_SENTINEL.as_bytes().to_vec())
+                .identity_pem(IDENTITY_SENTINEL.as_bytes())
                 .resolve()
                 .expect("structurally valid identity"),
             &RuntimeConfigBuilder::new().resolve(),

@@ -32,7 +32,12 @@ task.
 
 - Ordinary defaults preserve default TLS, HTTP/2, and the process-local
   governor.
-- JSON remains opt-in. CSV and NDJSON imply generic record support.
+- JSON remains opt-in. Its request serializer writes through the active body
+  cap, and its failures use the same finite codec categories as downstream
+  codecs. CSV and NDJSON imply generic record support.
+- `default-tls` exposes structurally bounded custom-root and application
+  identity configuration. Native TLS parsing may reject bounded input more
+  strictly. Proxy URL text is bounded independently of the TLS feature.
 - CSV header presence and comma, semicolon, or tab parsing are selected with
   sealed type policies. Every CSV configuration retains the `text/csv` media
   contract.
@@ -46,6 +51,8 @@ task.
 - The façade passes dangerous capability tokens to generated code; proc-macro
   crate features are not used to infer a downstream application's feature
   selection.
+- Feature selection changes available capabilities; it never disables the
+  core request-head, lifecycle, redaction, or acquisition ceilings.
 
 Use `default-features = false` for a minimal HTTP-capable contract and add only
 the listed capabilities:

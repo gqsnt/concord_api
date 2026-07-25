@@ -72,6 +72,17 @@ capped capture primitive stops retaining UTF-8 output at
 rather than truncating it. Runtime endpoints and generated/public-head host,
 path, query, header, and pagination-sensitive shaping all use that primitive.
 
+The final core `HeadBuilder` is authoritative for both generated and
+runtime-defined requests. It transactionally enforces component count,
+logical and credential-sanitized URL bytes, public-header count, and aggregate
+public-header bytes. Macro checks reject statically knowable excess earlier,
+but cannot replace this shared runtime boundary.
+
+With the `json` feature, `Json<T>` serializes directly into a writer capped by
+the active request-body limit. It never creates an unrestricted serialized
+`Vec` and then checks it, and it retains no byte from the first excess write.
+The final core body-length check remains as a defense shared by every codec.
+
 `SecretString` validates its generic retained-storage ceiling before copying,
 and clones share the same immutable allocation. Generated client construction
 validates built-in static credentials against their tighter API-key, bearer,

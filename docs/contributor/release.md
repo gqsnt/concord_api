@@ -66,7 +66,7 @@ not substitute a ZIP of the working directory.
 
 ## Generated bridge contract
 
-The generated contract version is **25** in `concord-macros` and
+The generated contract version is **26** in `concord-macros` and
 `concord-core`. The façade reexports the handshake through its hidden bridge.
 Any emitted bridge path or signature change requires an atomic version bump
 and the retained contract-mismatch fixture. The bridge is compiler/runtime
@@ -80,10 +80,14 @@ Before enabling publication:
 2. verify registry ownership for every selected public package;
 3. keep support and tooling packages private;
 4. run `just verify`;
-5. run `just source-archive` and inspect the ZIP;
-6. inspect generated Rustdoc and feature metadata;
-7. obtain successful remote Linux, Windows, and macOS CI results;
-8. publish only after an explicit instruction naming the packages and order.
+5. retain successful rust-analyzer diagnostics and analysis-statistics output;
+6. run `just package` and inspect every normalized product manifest;
+7. run `just source-archive`, compare ZIP entries with tracked `HEAD`, and
+   inspect the ZIP;
+8. inspect no-default, selected-feature, and all-feature generated Rustdoc;
+9. record the exact branch, commit, and clean worktree status;
+10. obtain successful remote Linux, Windows, and macOS CI results;
+11. publish only after an explicit instruction naming the packages and order.
 
 See the [changelog](../../CHANGELOG.md), [compatibility reference](../reference/compatibility.md),
 and [unsupported capabilities](../reference/unsupported.md).

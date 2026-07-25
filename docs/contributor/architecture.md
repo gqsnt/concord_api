@@ -87,6 +87,27 @@ preserve the invariant and record a specification deviation.
 Applications use semantic façade modules or the small `concord::prelude`;
 keep imports focused on the contract family being implemented.
 
+## Managed boundary ownership
+
+Core finalizes every generated and runtime-defined public request head under
+one component, URL, header-count, and header-byte budget. Authentication plans
+remain separate: public head construction finishes first, generic
+authentication cannot target a request- or transport-owned header, and
+private material is attached only after limiter authority at the native
+boundary.
+
+For received responses, core constructs the sanitized head, awaits limiter
+observation under the remaining operation deadline, and only then invokes the
+user response hook. Challenge/status handling and body acquisition follow.
+Limiter failure or timeout therefore prevents later response hooks and body
+work.
+
+Core also owns structural startup ceilings before native parsing or copying
+proxy and TLS inputs. Extras own concrete codec/provider behavior, but codec
+errors cross back into core only as finite categories. No extension may
+smuggle a native source error or an unbounded message into the managed
+lifecycle.
+
 ## Workspace
 
 Open the repository root in rust-analyzer. Use the normal workspace for
@@ -99,6 +120,12 @@ fixture development. Optional all-feature analysis can set:
 
 Do not add nested product workspaces or package-local lockfiles. The only
 lockfiles are the root and `fixtures/Cargo.lock`.
+
+The workspace Tokio dependency selects no global capability set. Each crate
+declares the features used by its ordinary code, while multi-thread runtimes
+and paused-time support stay in dev dependencies or explicit executable
+owners. Measure changes with `cargo tree -e features`; do not broaden the
+workspace entry for test convenience.
 
 See [Macro pipeline](macro-pipeline.md), [Testing](testing.md), and
 [Release](release.md).
