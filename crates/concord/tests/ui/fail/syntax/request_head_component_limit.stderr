@@ -1,0 +1,5 @@
+error: one effective request head permits at most 256 retained components
+  --> tests/ui/fail/syntax/request_head_component_limit.rs:10:9
+   |
+10 |     GET fetch() -> concord::NoContent {
+   |         ^^^^^

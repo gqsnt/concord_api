@@ -12,6 +12,7 @@ use concord::body::{
     BodyError, BodyFactory, BodyKind, LengthHint, RequestBody, RequestBodyContext,
     RequestBodyMetadata, RequestBodySpec, RequestContentType, StreamBody,
 };
+use concord::codec::Text;
 #[cfg(feature = "default-tls")]
 use concord::endpoint::RequestBodyCategory;
 use concord::endpoint::{EndpointId, ResponseAcquisition, RuntimeEndpoint, TimeoutSelection};
@@ -258,6 +259,11 @@ api! {
     GET lifecycle_probe() -> Bytes {
         id "planning.generated.lifecycle";
         path ["lifecycle"];
+    }
+
+    GET aggregate_head(values: Vec<u16>) -> Text {
+        id "planning.generated.aggregate_head";
+        query { "value" = ep.values; }
     }
 }
 
@@ -515,6 +521,62 @@ fn runtime_endpoint_plan_remains_zero_effect() {
     );
     assert!(!description.capabilities().pagination());
     assert!(!description.capabilities().credential_storage());
+}
+
+#[test]
+fn generated_and_runtime_planning_share_final_head_limits() {
+    let server = ScriptedServer::start([]).expect("unused head-limit planning server");
+    let effects = Arc::new(EffectCounts::default());
+    let client = configured_public_client(&server, &effects, Duration::from_secs(23));
+    let dynamic_components = concord::endpoint::MAX_REQUEST_HEAD_COMPONENTS - 1;
+
+    let generated_exact = public_planning_api::AggregateHead::new(vec![1; dynamic_components]);
+    client
+        .plan(&generated_exact)
+        .expect("generated head exact boundary including Accept");
+    let generated_excess = public_planning_api::AggregateHead::new(vec![1; dynamic_components + 1]);
+    let error = client
+        .plan(&generated_excess)
+        .expect_err("generated first excess including Accept");
+    assert_eq!(
+        error.category(),
+        concord::error::ErrorCategory::Configuration
+    );
+
+    let mut runtime_exact = RuntimeEndpoint::builder(
+        EndpointId::new("runtime.head.exact").expect("valid endpoint ID"),
+        Method::GET,
+    );
+    for _ in 0..dynamic_components {
+        runtime_exact = runtime_exact.path_segment("x");
+    }
+    let runtime_exact = runtime_exact
+        .response::<Text>()
+        .build()
+        .expect("runtime exact structural boundary");
+    client
+        .plan(&runtime_exact)
+        .expect("runtime head exact boundary including Accept");
+
+    let mut runtime_excess = RuntimeEndpoint::builder(
+        EndpointId::new("runtime.head.excess").expect("valid endpoint ID"),
+        Method::GET,
+    );
+    for _ in 0..(dynamic_components + 1) {
+        runtime_excess = runtime_excess.path_segment("x");
+    }
+    let runtime_excess = runtime_excess
+        .response::<Text>()
+        .build()
+        .expect("runtime early boundary remains valid");
+    let error = client
+        .plan(&runtime_excess)
+        .expect_err("runtime first excess including Accept");
+    assert_eq!(
+        error.category(),
+        concord::error::ErrorCategory::Configuration
+    );
+    effects.assert_no_effects();
 }
 
 #[tokio::test]

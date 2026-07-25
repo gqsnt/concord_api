@@ -74,7 +74,7 @@ impl EndpointSpec for BytesEndpoint {
         builder.push_static("accounts")?;
         builder.push_value(&self.account)?;
         builder.push_static("bytes")?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(
@@ -107,7 +107,7 @@ impl EndpointSpec for NoContentEndpoint {
     ) -> Result<PreparedHead, crate::error::ApiError> {
         builder.push_static("health")?;
         builder.push_static("ping")?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(

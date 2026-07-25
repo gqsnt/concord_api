@@ -25,6 +25,10 @@ ceilings selected for finite construction.
 | Server-directed rate-limit cooldown cap | 60 | seconds |
 | Default limiter-prepared rate-limit key | 1,024 | bytes |
 | One formatted public value | 65,536 | bytes |
+| Final managed request head | 256 | components |
+| Logical or credential-sanitized request URL | 131,072 | bytes |
+| Public request headers before authentication | 256 | headers |
+| Aggregate public request headers | 65,536 | bytes |
 | Endpoint contract identity | 128 | bytes |
 | Authentication placement name | 256 | bytes |
 | Generic protected string | 1,048,576 | bytes |

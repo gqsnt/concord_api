@@ -158,7 +158,7 @@ impl EndpointSpec for PaginatedProtectedEndpoint {
         builder.push_auth(
             Auth::bearer(self.credential.clone()).challenge(ChallengePolicy::Unauthorized),
         )?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(
@@ -218,7 +218,7 @@ impl EndpointSpec for BasicEndpoint {
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("basic")?;
         builder.push_auth(Auth::basic(self.credential.clone()))?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(
@@ -255,7 +255,7 @@ impl EndpointSpec for HeaderEndpoint {
             )
             .expect("valid header placement"),
         )?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(
@@ -283,7 +283,7 @@ impl EndpointSpec for ProtectedStreamEndpoint {
         builder.push_auth(
             Auth::bearer(self.credential.clone()).challenge(ChallengePolicy::Unauthorized),
         )?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(
@@ -323,7 +323,7 @@ impl EndpointSpec for MultiAuthEndpoint {
             )
             .expect("valid header placement"),
         )?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(
@@ -363,7 +363,7 @@ impl EndpointSpec for DynamicCollisionEndpoint {
             Auth::query("access", self.credential.clone()).expect("valid query placement"),
         )?;
         builder.push_query_value("access", &"materially-present-public-value")?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(
@@ -483,7 +483,7 @@ impl EndpointSpec for LimiterWaitExpiryEndpoint {
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("expiry-refresh")?;
         builder.push_auth(Auth::bearer(self.credential.clone()))?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(
@@ -536,7 +536,7 @@ impl EndpointSpec for ExposureEndpoint {
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("exposure")?;
         builder.push_auth(Auth::bearer(self.credential.clone()))?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(
@@ -567,7 +567,7 @@ impl EndpointSpec for FinalizationExpiryEndpoint {
             [(1, Duration::from_secs(10))],
         )?;
         builder.push_auth(Auth::bearer(self.credential.clone()))?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(
@@ -606,7 +606,7 @@ impl EndpointSpec for ProtectedEndpoint {
                 [(1, Duration::from_secs(1))],
             )?;
         }
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(
@@ -862,7 +862,7 @@ impl EndpointSpec for OversizedMaterialEndpoint {
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("oversized-custom-material")?;
         builder.push_auth(Auth::bearer(self.credential.clone()))?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(

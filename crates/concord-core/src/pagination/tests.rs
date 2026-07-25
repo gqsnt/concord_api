@@ -132,7 +132,7 @@ fn authentication_plan_state_is_absent_from_canonical_logical_identity() {
         builder
             .push_auth(Auth::bearer(CredentialRef::new(Arc::clone(&selector))))
             .expect("authentication plan");
-        builder.finish()
+        builder.finish().expect("bounded protected head")
     }
 
     let first = protected_head("authentication-state-sentinel-first-53c1");

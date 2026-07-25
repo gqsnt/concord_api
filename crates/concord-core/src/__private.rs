@@ -33,6 +33,11 @@ pub use crate::error::{ApiError, ClientBuildError, ClientInputKind};
 #[doc(hidden)]
 pub use crate::hooks::DebugLevel;
 #[doc(hidden)]
+pub use crate::limits::{
+    MAX_REQUEST_HEAD_COMPONENTS, MAX_REQUEST_HEADER_BYTES, MAX_REQUEST_HEADER_COUNT,
+    MAX_REQUEST_URL_BYTES,
+};
+#[doc(hidden)]
 pub use crate::pagination::PaginatedEndpoint;
 #[doc(hidden)]
 pub use crate::rate_limit::{
@@ -278,6 +283,7 @@ pub fn request<E>(core: &ClientCore, endpoint: E) -> crate::Request<E> {
 pub fn safe_request_plan(
     core: &ClientCore,
     description: &EndpointDescription,
+    response_accept: Option<&'static str>,
     prepare_head: impl FnOnce(HeadBuilder) -> Result<PreparedHead, ApiError>,
 ) -> Result<SafeRequestPlan, ApiError> {
     let meta = RequestMeta::from_description(description);
@@ -288,7 +294,7 @@ pub fn safe_request_plan(
         core.default_debug(),
         core.default_runtime_endpoint_timeout(),
     );
-    let head = prepare_head(builder)?;
+    let mut head = prepare_head(builder)?;
     if head.endpoint_id() != description.endpoint_id() || head.method() != description.method() {
         return Err(ApiError::classified(
             description.endpoint_id().clone(),
@@ -297,6 +303,20 @@ pub fn safe_request_plan(
         ));
     }
     head.validate_rate_limit_key_limit(core.rate_limit_key_limit())?;
+    if let Some(value) = response_accept {
+        crate::response::validate_accept(value).map_err(|error| {
+            drop(error);
+            ApiError::classified(
+                description.endpoint_id().clone(),
+                description.method().clone(),
+                crate::error::ErrorCategory::ResponseContract,
+            )
+        })?;
+    }
+    // Safe planning cannot call application-owned body metadata, but the
+    // response specification's static Accept value is part of every finalized
+    // head and must consume the same aggregate budget as execution.
+    head.apply_media_headers(response_accept, None, false)?;
     head.validate_auth()?;
     if head.auth().is_empty() {
         core.preflight_url(head.endpoint_id(), head.method(), head.logical_url())?;

@@ -1,12 +1,16 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
-pub(super) const GENERATED_CONTRACT_VERSION: u32 = 25;
+pub(super) const GENERATED_CONTRACT_VERSION: u32 = 26;
 
 pub(super) fn generated_contract_assertion() -> TokenStream {
     let version = GENERATED_CONTRACT_VERSION;
     let max_auth_placements = crate::MAX_AUTH_PLACEMENTS;
     let max_auth_placement_name_bytes = crate::MAX_AUTH_PLACEMENT_NAME_BYTES;
+    let max_request_head_components = crate::MAX_REQUEST_HEAD_COMPONENTS;
+    let max_request_url_bytes = crate::MAX_REQUEST_URL_BYTES;
+    let max_request_header_count = crate::MAX_REQUEST_HEADER_COUNT;
+    let max_request_header_bytes = crate::MAX_REQUEST_HEADER_BYTES;
     let max_rate_limit_id_bytes = crate::MAX_RATE_LIMIT_ID_BYTES;
     let max_rate_limit_windows_per_rule = crate::MAX_RATE_LIMIT_WINDOWS_PER_RULE;
     let max_rate_limit_rules_per_plan = crate::MAX_RATE_LIMIT_RULES_PER_PLAN;
@@ -19,6 +23,22 @@ pub(super) fn generated_contract_assertion() -> TokenStream {
         const _: () = assert!(
             __core::auth::MAX_AUTH_PLACEMENT_NAME_BYTES == #max_auth_placement_name_bytes,
             "Concord macro/core authentication placement-name limits differ",
+        );
+        const _: () = assert!(
+            __core::endpoint::MAX_REQUEST_HEAD_COMPONENTS == #max_request_head_components,
+            "Concord macro/core request-head component limits differ",
+        );
+        const _: () = assert!(
+            __core::endpoint::MAX_REQUEST_URL_BYTES == #max_request_url_bytes,
+            "Concord macro/core request URL limits differ",
+        );
+        const _: () = assert!(
+            __core::endpoint::MAX_REQUEST_HEADER_COUNT == #max_request_header_count,
+            "Concord macro/core request-header count limits differ",
+        );
+        const _: () = assert!(
+            __core::endpoint::MAX_REQUEST_HEADER_BYTES == #max_request_header_bytes,
+            "Concord macro/core request-header byte limits differ",
         );
         const _: () = assert!(
             __core::rate_limit::MAX_RATE_LIMIT_ID_BYTES == #max_rate_limit_id_bytes,
@@ -49,6 +69,10 @@ mod tests {
         assert!(output.contains("__core :: auth :: MAX_AUTH_PLACEMENTS"));
         assert!(output.contains(&crate::MAX_AUTH_PLACEMENTS.to_string()));
         assert!(output.contains("__core :: auth :: MAX_AUTH_PLACEMENT_NAME_BYTES"));
+        assert!(output.contains("__core :: endpoint :: MAX_REQUEST_HEAD_COMPONENTS"));
+        assert!(output.contains("__core :: endpoint :: MAX_REQUEST_URL_BYTES"));
+        assert!(output.contains("__core :: endpoint :: MAX_REQUEST_HEADER_COUNT"));
+        assert!(output.contains("__core :: endpoint :: MAX_REQUEST_HEADER_BYTES"));
         assert!(output.contains("__core :: rate_limit :: MAX_RATE_LIMIT_ID_BYTES"));
         assert!(output.contains("__core :: rate_limit :: MAX_RATE_LIMIT_WINDOWS_PER_RULE"));
         assert!(output.contains("__core :: rate_limit :: MAX_RATE_LIMIT_RULES_PER_PLAN"));

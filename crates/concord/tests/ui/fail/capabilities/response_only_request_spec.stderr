@@ -24,8 +24,8 @@ help: the following other types implement trait `EncodeBody`
    |
    | / impl<T> EncodeBody for Json<T>
    | | where
-   | |     T: serde::Serialize + Send + Sync + 'static,
-   | |________________________________________________^ `Json<T>`
+   | |     T: serde::Serialize + Send + 'static,
+   | |_________________________________________^ `Json<T>`
    = note: required for `ResponseOnly` to implement `RequestBodySpec`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -50,8 +50,8 @@ help: the following other types implement trait `EncodeBody`
    |
    | / impl<T> EncodeBody for Json<T>
    | | where
-   | |     T: serde::Serialize + Send + Sync + 'static,
-   | |________________________________________________^ `Json<T>`
+   | |     T: serde::Serialize + Send + 'static,
+   | |_________________________________________^ `Json<T>`
    = note: required for `ResponseOnly` to implement `RequestBodySpec`
 
 error[E0277]: the trait bound `ResponseOnly: EncodeBody` is not satisfied
@@ -80,8 +80,8 @@ help: the following other types implement trait `EncodeBody`
    |
    | / impl<T> EncodeBody for Json<T>
    | | where
-   | |     T: serde::Serialize + Send + Sync + 'static,
-   | |________________________________________________^ `Json<T>`
+   | |     T: serde::Serialize + Send + 'static,
+   | |_________________________________________^ `Json<T>`
    = note: required for `ResponseOnly` to implement `RequestBodySpec`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -111,8 +111,8 @@ help: the following other types implement trait `EncodeBody`
    |
    | / impl<T> EncodeBody for Json<T>
    | | where
-   | |     T: serde::Serialize + Send + Sync + 'static,
-   | |________________________________________________^ `Json<T>`
+   | |     T: serde::Serialize + Send + 'static,
+   | |_________________________________________^ `Json<T>`
    = note: required for `ResponseOnly` to implement `RequestBodySpec`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -142,8 +142,8 @@ help: the following other types implement trait `EncodeBody`
    |
    | / impl<T> EncodeBody for Json<T>
    | | where
-   | |     T: serde::Serialize + Send + Sync + 'static,
-   | |________________________________________________^ `Json<T>`
+   | |     T: serde::Serialize + Send + 'static,
+   | |_________________________________________^ `Json<T>`
    = note: required for `ResponseOnly` to implement `RequestBodySpec`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 

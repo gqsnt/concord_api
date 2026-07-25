@@ -94,7 +94,8 @@ pub mod codec {
 pub mod endpoint {
     pub use concord_core::contracts::{
         EndpointCapabilities, EndpointDescription, EndpointId, MAX_ENDPOINT_ID_BYTES,
-        MAX_FORMATTED_PUBLIC_VALUE_BYTES, MAX_RUNTIME_ENDPOINT_COMPONENTS,
+        MAX_FORMATTED_PUBLIC_VALUE_BYTES, MAX_REQUEST_HEAD_COMPONENTS, MAX_REQUEST_HEADER_BYTES,
+        MAX_REQUEST_HEADER_COUNT, MAX_REQUEST_URL_BYTES, MAX_RUNTIME_ENDPOINT_COMPONENTS,
         MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, RequestBodyCategory, ResponseAcquisition,
         RuntimeEndpoint, RuntimeEndpointBuilder, SafeRequestPlan, TimeoutSelection,
     };
@@ -222,15 +223,17 @@ pub mod __private {
     pub use concord_core::__private::{
         ApiError, ApiResponse, Auth, ClientBuildError, ClientCore, ClientInputKind, DebugLevel,
         EmptyBody, EndpointCapabilities, EndpointDescription, EndpointId, EndpointSpec,
-        GENERATED_CONTRACT_VERSION, GeneratedCredential, HeadBuilder, HeaderName, Method,
-        PageResponseSpec, PaginatedEndpoint, PreparedHead, RateLimitId, RateLimitKey,
-        RateLimitKeyPart, RateLimitRule, RateLimitWindow, RawResponseEndpoint, RequestBodyCategory,
-        RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestMeta, RequestOptions,
-        ResponseAcquisition, ResponseBodySpec, SafeRequestPlan, TimeoutOverride, TimeoutSelection,
-        Url, assert_generated_contract, basic_credential_input_error, build_client_core,
-        credential_input_error, credential_store_error, default_http_config,
-        endpoint_id_from_static, inspect_endpoint, map_endpoint, missing_input_error,
-        paginate_request, request, response_request, safe_request_plan,
+        GENERATED_CONTRACT_VERSION, GeneratedCredential, HeadBuilder, HeaderName,
+        MAX_REQUEST_HEAD_COMPONENTS, MAX_REQUEST_HEADER_BYTES, MAX_REQUEST_HEADER_COUNT,
+        MAX_REQUEST_URL_BYTES, Method, PageResponseSpec, PaginatedEndpoint, PreparedHead,
+        RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitRule, RateLimitWindow,
+        RawResponseEndpoint, RequestBodyCategory, RequestBodyContext, RequestBodyMetadata,
+        RequestBodySpec, RequestMeta, RequestOptions, ResponseAcquisition, ResponseBodySpec,
+        SafeRequestPlan, TimeoutOverride, TimeoutSelection, Url, assert_generated_contract,
+        basic_credential_input_error, build_client_core, credential_input_error,
+        credential_store_error, default_http_config, endpoint_id_from_static, inspect_endpoint,
+        map_endpoint, missing_input_error, paginate_request, request, response_request,
+        safe_request_plan,
     };
     /// Creates the façade-owned generated-client runtime baseline.
     #[doc(hidden)]

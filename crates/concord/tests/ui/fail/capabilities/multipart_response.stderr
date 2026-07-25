@@ -18,8 +18,8 @@ help: the following other types implement trait `DecodeBody`
    |
    | / impl<T> DecodeBody for Json<T>
    | | where
-   | |     T: serde::de::DeserializeOwned + Send + Sync + 'static,
-   | |___________________________________________________________^ `Json<T>`
+   | |     T: serde::de::DeserializeOwned + Send + 'static,
+   | |____________________________________________________^ `Json<T>`
    = note: required for `concord::body::Multipart` to implement `ResponseBodySpec`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -43,8 +43,8 @@ help: the following other types implement trait `DecodeBody`
    |
    | / impl<T> DecodeBody for Json<T>
    | | where
-   | |     T: serde::de::DeserializeOwned + Send + Sync + 'static,
-   | |___________________________________________________________^ `Json<T>`
+   | |     T: serde::de::DeserializeOwned + Send + 'static,
+   | |____________________________________________________^ `Json<T>`
    = note: required for `concord::body::Multipart` to implement `ResponseBodySpec`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -68,7 +68,7 @@ help: the following other types implement trait `DecodeBody`
    |
    | / impl<T> DecodeBody for Json<T>
    | | where
-   | |     T: serde::de::DeserializeOwned + Send + Sync + 'static,
-   | |___________________________________________________________^ `Json<T>`
+   | |     T: serde::de::DeserializeOwned + Send + 'static,
+   | |____________________________________________________^ `Json<T>`
    = note: required for `concord::body::Multipart` to implement `ResponseBodySpec`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

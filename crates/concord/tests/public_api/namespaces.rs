@@ -63,6 +63,10 @@ fn hard_structural_limits_are_reachable_from_their_facade_domains() {
     ];
     let endpoint_limits = [
         endpoint::MAX_FORMATTED_PUBLIC_VALUE_BYTES,
+        endpoint::MAX_REQUEST_HEAD_COMPONENTS,
+        endpoint::MAX_REQUEST_URL_BYTES,
+        endpoint::MAX_REQUEST_HEADER_COUNT,
+        endpoint::MAX_REQUEST_HEADER_BYTES,
         endpoint::MAX_RUNTIME_ENDPOINT_COMPONENTS,
         endpoint::MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
     ];

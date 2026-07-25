@@ -3,6 +3,18 @@
 /// Maximum UTF-8 bytes Concord retains from one formatted public value.
 pub const MAX_FORMATTED_PUBLIC_VALUE_BYTES: usize = 65_536;
 
+/// Maximum retained components in one final managed request head.
+pub const MAX_REQUEST_HEAD_COMPONENTS: usize = 256;
+
+/// Maximum serialized bytes in each logical or credential-sanitized request URL.
+pub const MAX_REQUEST_URL_BYTES: usize = 131_072;
+
+/// Maximum public headers retained before private authentication.
+pub const MAX_REQUEST_HEADER_COUNT: usize = 256;
+
+/// Maximum aggregate normalized-name and value bytes in public request headers.
+pub const MAX_REQUEST_HEADER_BYTES: usize = 65_536;
+
 /// Maximum top-level components retained by one runtime endpoint.
 pub const MAX_RUNTIME_ENDPOINT_COMPONENTS: usize = 256;
 

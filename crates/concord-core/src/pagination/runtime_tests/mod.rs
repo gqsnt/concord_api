@@ -138,7 +138,7 @@ impl EndpointSpec for PageEndpoint {
         builder.push_query_value("stable", &"public")?;
         builder.push_pagination_query_value("cursor", &self.cursor)?;
         builder.insert_pagination_header_value("x-page-cursor", &self.cursor)?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(
@@ -214,7 +214,7 @@ impl EndpointSpec for HostRateEndpoint {
             1,
             [(100, Duration::from_secs(60))],
         )?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(
@@ -276,7 +276,7 @@ impl EndpointSpec for RateKeyEndpoint {
             1,
             [(1, Duration::from_secs(60))],
         )?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(

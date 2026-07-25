@@ -518,11 +518,11 @@ where
             builder.push_query_value(name.as_ref(), value)?;
         }
         for (name, value) in &self.headers {
-            builder.insert_prepared_header(name.clone(), value.clone());
+            builder.insert_prepared_header(name.clone(), value.clone())?;
         }
-        builder.use_prepared_auth_plan(Arc::clone(&self.auth));
+        builder.use_prepared_auth_plan(Arc::clone(&self.auth))?;
         builder.use_prepared_rate_limit_plan(Arc::clone(&self.rate_limit_plan));
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(

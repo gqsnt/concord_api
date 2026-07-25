@@ -333,6 +333,10 @@ impl AuthPlan {
         self.placements.is_empty()
     }
 
+    pub(crate) fn placement_count(&self) -> usize {
+        self.placements.len()
+    }
+
     pub(crate) fn validate_public(
         &self,
         logical_url: &Url,

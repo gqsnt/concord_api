@@ -88,7 +88,7 @@ where
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("stream")?;
         builder.push_static("download")?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(
@@ -151,7 +151,7 @@ where
             1,
             [(100, Duration::from_secs(1))],
         )?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(
@@ -537,7 +537,7 @@ impl EndpointSpec for BodyEndpoint {
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("body")?;
         builder.push_static("upload")?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(
@@ -726,7 +726,7 @@ where
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("codec")?;
         builder.push_static("round-trip")?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(
@@ -911,7 +911,7 @@ impl EndpointSpec for BytesEndpoint {
         }
         builder.push_static("health")?;
         builder.push_static("bytes")?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(
@@ -961,7 +961,7 @@ impl EndpointSpec for RateLimitedBytesEndpoint {
             1,
             [(self.capacity, self.window)],
         )?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(
@@ -995,7 +995,7 @@ impl EndpointSpec for GlobalRateLimitedBytesEndpoint {
             1,
             [(100, Duration::from_secs(1))],
         )?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(
@@ -1025,7 +1025,7 @@ impl EndpointSpec for NoContentEndpoint {
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("health")?;
         builder.push_static("ping")?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(
@@ -1050,7 +1050,7 @@ impl EndpointSpec for InvalidEndpoint {
 
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_value(&"")?;
-        Ok(builder.finish())
+        builder.finish()
     }
 
     fn body_metadata(

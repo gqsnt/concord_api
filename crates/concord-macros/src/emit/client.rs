@@ -303,6 +303,7 @@ pub(super) fn generate_client(
                     __concord_generated::__core::__private::safe_request_plan(
                         &client.__concord_core,
                         self.description(),
+                        <R as #core_path::response::ResponseBodySpec>::accept(),
                         |builder| {
                             <Self as __concord_generated::__core::__private::EndpointSpec>::prepare_head(
                                 self,

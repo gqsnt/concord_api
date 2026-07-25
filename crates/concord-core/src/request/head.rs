@@ -14,7 +14,10 @@ use crate::construction::format_bounded;
 use crate::endpoint::{EndpointDescription, EndpointId, TimeoutSelection};
 use crate::error::{ApiError, ConfigurationErrorKind};
 use crate::hooks::DebugLevel;
-use crate::limits::MAX_FORMATTED_PUBLIC_VALUE_BYTES;
+use crate::limits::{
+    MAX_FORMATTED_PUBLIC_VALUE_BYTES, MAX_REQUEST_HEAD_COMPONENTS, MAX_REQUEST_HEADER_BYTES,
+    MAX_REQUEST_HEADER_COUNT, MAX_REQUEST_URL_BYTES,
+};
 use crate::rate_limit::{RateLimitError, RateLimitId, RateLimitKey, RateLimitPlan, RateLimitRule};
 use crate::redaction::render_safe_url;
 
@@ -83,6 +86,130 @@ impl RequestMeta {
     }
 }
 
+#[derive(Clone, Copy, Default)]
+struct RequestHeadBudget {
+    components: usize,
+    header_count: usize,
+    header_bytes: usize,
+}
+
+impl RequestHeadBudget {
+    const fn new() -> Self {
+        Self {
+            components: 0,
+            header_count: 0,
+            header_bytes: 0,
+        }
+    }
+
+    fn try_add_components(&mut self, count: usize) -> Result<(), RequestHeadLimitError> {
+        let next = self
+            .components
+            .checked_add(count)
+            .ok_or(RequestHeadLimitError::Arithmetic)?;
+        if next > MAX_REQUEST_HEAD_COMPONENTS {
+            return Err(RequestHeadLimitError::Components);
+        }
+        self.components = next;
+        Ok(())
+    }
+
+    fn try_insert_header(
+        &mut self,
+        headers: &HeaderMap,
+        name: &HeaderName,
+        value: &HeaderValue,
+    ) -> Result<(), RequestHeadLimitError> {
+        let name_bytes = name.as_str().len();
+        let value_bytes = value.as_bytes().len();
+        let replacement_bytes = name_bytes
+            .checked_add(value_bytes)
+            .ok_or(RequestHeadLimitError::Arithmetic)?;
+
+        let (next_components, next_count, next_bytes) = if let Some(previous) = headers.get(name) {
+            let previous_bytes = name_bytes
+                .checked_add(previous.as_bytes().len())
+                .ok_or(RequestHeadLimitError::Arithmetic)?;
+            let next_bytes = self
+                .header_bytes
+                .checked_sub(previous_bytes)
+                .and_then(|bytes| bytes.checked_add(replacement_bytes))
+                .ok_or(RequestHeadLimitError::Arithmetic)?;
+            (self.components, self.header_count, next_bytes)
+        } else {
+            let next_components = self
+                .components
+                .checked_add(1)
+                .ok_or(RequestHeadLimitError::Arithmetic)?;
+            let next_count = self
+                .header_count
+                .checked_add(1)
+                .ok_or(RequestHeadLimitError::Arithmetic)?;
+            let next_bytes = self
+                .header_bytes
+                .checked_add(replacement_bytes)
+                .ok_or(RequestHeadLimitError::Arithmetic)?;
+            (next_components, next_count, next_bytes)
+        };
+
+        if next_components > MAX_REQUEST_HEAD_COMPONENTS {
+            return Err(RequestHeadLimitError::Components);
+        }
+        if next_count > MAX_REQUEST_HEADER_COUNT {
+            return Err(RequestHeadLimitError::HeaderCount);
+        }
+        if next_bytes > MAX_REQUEST_HEADER_BYTES {
+            return Err(RequestHeadLimitError::HeaderBytes);
+        }
+
+        self.components = next_components;
+        self.header_count = next_count;
+        self.header_bytes = next_bytes;
+        Ok(())
+    }
+
+    fn validate_headers(&self, headers: &HeaderMap) -> Result<(), RequestHeadLimitError> {
+        let header_count = headers.len();
+        if header_count > MAX_REQUEST_HEADER_COUNT || header_count != self.header_count {
+            return Err(RequestHeadLimitError::HeaderCount);
+        }
+        let header_bytes = headers.iter().try_fold(0_usize, |total, (name, value)| {
+            total
+                .checked_add(name.as_str().len())
+                .and_then(|bytes| bytes.checked_add(value.as_bytes().len()))
+                .ok_or(RequestHeadLimitError::Arithmetic)
+        })?;
+        if header_bytes > MAX_REQUEST_HEADER_BYTES || header_bytes != self.header_bytes {
+            return Err(RequestHeadLimitError::HeaderBytes);
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    const fn components(self) -> usize {
+        self.components
+    }
+
+    #[cfg(test)]
+    const fn header_count(self) -> usize {
+        self.header_count
+    }
+
+    #[cfg(test)]
+    const fn header_bytes(self) -> usize {
+        self.header_bytes
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RequestHeadLimitError {
+    Components,
+    UrlBytes,
+    HeaderCount,
+    HeaderBytes,
+    Arithmetic,
+}
+
 /// Generated-private structured builder for one public request head.
 #[doc(hidden)]
 pub struct HeadBuilder {
@@ -100,6 +227,7 @@ pub struct HeadBuilder {
     auth: Arc<AuthPlan>,
     rate_limit_rules: Vec<RateLimitRule>,
     prepared_rate_limit_plan: Option<Arc<RateLimitPlan>>,
+    budget: RequestHeadBudget,
 }
 
 impl HeadBuilder {
@@ -132,23 +260,26 @@ impl HeadBuilder {
             auth: Arc::new(AuthPlan::default()),
             rate_limit_rules: Vec::new(),
             prepared_rate_limit_plan: None,
+            budget: RequestHeadBudget::new(),
         }
     }
 
     /// Appends one normalized generated authentication placement.
     #[doc(hidden)]
     pub fn push_auth(&mut self, auth: Auth) -> Result<(), ApiError> {
+        let mut budget = self.budget;
+        budget
+            .try_add_components(auth.placement_count())
+            .map_err(|_| invalid_auth(self.meta.endpoint_id(), self.meta.method()))?;
         Arc::get_mut(&mut self.auth)
             .expect("generated authentication is composed before a prepared plan is installed")
             .push(auth, &self.logical_url, &self.public_headers)
             .map_err(|error| {
                 drop(error);
-                ApiError::configuration(
-                    self.meta.endpoint_id().clone(),
-                    self.meta.method().clone(),
-                    ConfigurationErrorKind::InvalidAuthentication,
-                )
-            })
+                invalid_auth(self.meta.endpoint_id(), self.meta.method())
+            })?;
+        self.budget = budget;
+        Ok(())
     }
 
     /// Validates and appends one fallibly constructed named authentication
@@ -251,9 +382,15 @@ impl HeadBuilder {
         })
     }
 
-    pub(crate) fn use_prepared_auth_plan(&mut self, auth: Arc<AuthPlan>) {
+    pub(crate) fn use_prepared_auth_plan(&mut self, auth: Arc<AuthPlan>) -> Result<(), ApiError> {
         debug_assert!(self.auth.is_empty());
+        let mut budget = self.budget;
+        budget
+            .try_add_components(auth.placement_count())
+            .map_err(|_| invalid_auth(self.meta.endpoint_id(), self.meta.method()))?;
         self.auth = auth;
+        self.budget = budget;
+        Ok(())
     }
 
     pub(crate) fn use_prepared_rate_limit_plan(&mut self, plan: Arc<RateLimitPlan>) {
@@ -309,21 +446,28 @@ impl HeadBuilder {
             return Err(invalid_route(self.meta.endpoint_id(), self.meta.method()));
         }
 
-        self.host_labels.push(label.to_owned());
-        let mut host = self.host_labels.join(".");
-        host.push('.');
-        host.push_str(&self.base_host);
-        if host.len() > 253 || self.logical_url.set_host(Some(&host)).is_err() {
-            self.host_labels.pop();
+        let mut budget = self.budget;
+        budget
+            .try_add_components(1)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+        let host = prefixed_host(&self.host_labels, label, &self.base_host);
+        let mut logical_url = self.logical_url.clone();
+        if host.len() > 253 || logical_url.set_host(Some(&host)).is_err() {
             return Err(invalid_route(self.meta.endpoint_id(), self.meta.method()));
         }
-        self.safe_host_labels.push(safe_label.to_owned());
-        let mut safe_host = self.safe_host_labels.join(".");
-        safe_host.push('.');
-        safe_host.push_str(&self.base_host);
-        self.safe_logical_url
+        let safe_host = prefixed_host(&self.safe_host_labels, safe_label, &self.base_host);
+        let mut safe_logical_url = self.safe_logical_url.clone();
+        safe_logical_url
             .set_host(Some(&safe_host))
-            .expect("validated pagination-safe host labels preserve a valid host");
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+        validate_url_pair(&logical_url, &safe_logical_url)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+
+        self.host_labels.push(label.to_owned());
+        self.safe_host_labels.push(safe_label.to_owned());
+        self.logical_url = logical_url;
+        self.safe_logical_url = safe_logical_url;
+        self.budget = budget;
         Ok(())
     }
 
@@ -374,24 +518,24 @@ impl HeadBuilder {
         {
             return Err(invalid_route(self.meta.endpoint_id(), self.meta.method()));
         }
-        let mut path = self
-            .logical_url
-            .path_segments_mut()
-            .map_err(|()| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
-        if !self.appended_segment {
-            path.pop_if_empty();
-        }
-        path.push(segment);
-        drop(path);
-        let mut safe_path = self
-            .safe_logical_url
-            .path_segments_mut()
-            .map_err(|()| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
-        if !self.appended_segment {
-            safe_path.pop_if_empty();
-        }
-        safe_path.push(safe_segment);
+
+        let mut budget = self.budget;
+        budget
+            .try_add_components(1)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+        let mut logical_url = self.logical_url.clone();
+        push_url_segment(&mut logical_url, segment, self.appended_segment)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+        let mut safe_logical_url = self.safe_logical_url.clone();
+        push_url_segment(&mut safe_logical_url, safe_segment, self.appended_segment)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+        validate_url_pair(&logical_url, &safe_logical_url)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+
+        self.logical_url = logical_url;
+        self.safe_logical_url = safe_logical_url;
         self.appended_segment = true;
+        self.budget = budget;
         Ok(())
     }
 
@@ -405,24 +549,24 @@ impl HeadBuilder {
             ".." => "%2E%2E",
             segment => segment,
         };
-        let mut path = self
-            .logical_url
-            .path_segments_mut()
-            .map_err(|()| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
-        if !self.appended_segment {
-            path.pop_if_empty();
-        }
-        path.push(segment);
-        drop(path);
-        let mut safe_path = self
-            .safe_logical_url
-            .path_segments_mut()
-            .map_err(|()| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
-        if !self.appended_segment {
-            safe_path.pop_if_empty();
-        }
-        safe_path.push(segment);
+
+        let mut budget = self.budget;
+        budget
+            .try_add_components(1)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+        let mut logical_url = self.logical_url.clone();
+        push_url_segment(&mut logical_url, segment, self.appended_segment)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+        let mut safe_logical_url = self.safe_logical_url.clone();
+        push_url_segment(&mut safe_logical_url, segment, self.appended_segment)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+        validate_url_pair(&logical_url, &safe_logical_url)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+
+        self.logical_url = logical_url;
+        self.safe_logical_url = safe_logical_url;
         self.appended_segment = true;
+        self.budget = budget;
         Ok(())
     }
 
@@ -434,10 +578,21 @@ impl HeadBuilder {
     {
         let value = format_bounded(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
             .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
-        self.logical_url.query_pairs_mut().append_pair(key, &value);
-        self.safe_logical_url
-            .query_pairs_mut()
-            .append_pair(key, &value);
+
+        let mut budget = self.budget;
+        budget
+            .try_add_components(1)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+        let mut logical_url = self.logical_url.clone();
+        logical_url.query_pairs_mut().append_pair(key, &value);
+        let mut safe_logical_url = self.safe_logical_url.clone();
+        safe_logical_url.query_pairs_mut().append_pair(key, &value);
+        validate_url_pair(&logical_url, &safe_logical_url)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+
+        self.logical_url = logical_url;
+        self.safe_logical_url = safe_logical_url;
+        self.budget = budget;
         Ok(())
     }
 
@@ -449,10 +604,23 @@ impl HeadBuilder {
     {
         let value = format_bounded(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
             .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
-        self.logical_url.query_pairs_mut().append_pair(key, &value);
-        self.safe_logical_url
+
+        let mut budget = self.budget;
+        budget
+            .try_add_components(1)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+        let mut logical_url = self.logical_url.clone();
+        logical_url.query_pairs_mut().append_pair(key, &value);
+        let mut safe_logical_url = self.safe_logical_url.clone();
+        safe_logical_url
             .query_pairs_mut()
             .append_pair(key, "<redacted>");
+        validate_url_pair(&logical_url, &safe_logical_url)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+
+        self.logical_url = logical_url;
+        self.safe_logical_url = safe_logical_url;
+        self.budget = budget;
         Ok(())
     }
 
@@ -468,12 +636,15 @@ impl HeadBuilder {
             .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
         let value = validate_public_header(&name, &value)
             .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
-        self.public_headers.insert(name, value);
-        Ok(())
+        self.insert_public_header(name, value)
     }
 
-    pub(crate) fn insert_prepared_header(&mut self, name: HeaderName, value: HeaderValue) {
-        self.public_headers.insert(name, value);
+    pub(crate) fn insert_prepared_header(
+        &mut self,
+        name: HeaderName,
+        value: HeaderValue,
+    ) -> Result<(), ApiError> {
+        self.insert_public_header(name, value)
     }
 
     /// Inserts one pagination-sensitive validated public header.
@@ -495,17 +666,39 @@ impl HeadBuilder {
             .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
         let value = HeaderValue::from_str(&value)
             .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        self.insert_public_header(name.clone(), value)?;
         self.pagination_sensitive_headers.insert(name.clone());
+        Ok(())
+    }
+
+    fn insert_public_header(
+        &mut self,
+        name: HeaderName,
+        value: HeaderValue,
+    ) -> Result<(), ApiError> {
+        let mut budget = self.budget;
+        budget
+            .try_insert_header(&self.public_headers, &name, &value)
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
         self.public_headers.insert(name, value);
+        self.budget = budget;
         Ok(())
     }
 
     /// Finishes one immutable body-free public head.
     #[doc(hidden)]
-    #[must_use]
-    pub fn finish(self) -> PreparedHead {
-        let safe_url: Arc<str> = render_safe_url(&self.safe_logical_url, &HashSet::new()).into();
-        PreparedHead {
+    pub fn finish(self) -> Result<PreparedHead, ApiError> {
+        validate_url_pair(&self.logical_url, &self.safe_logical_url)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+        self.budget
+            .validate_headers(&self.public_headers)
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        let safe_url = render_safe_url(&self.safe_logical_url, &HashSet::new());
+        if safe_url.len() > MAX_REQUEST_URL_BYTES {
+            return Err(invalid_route(self.meta.endpoint_id(), self.meta.method()));
+        }
+        let safe_url: Arc<str> = safe_url.into();
+        Ok(PreparedHead {
             meta: self.meta,
             logical_url: self.logical_url,
             safe_url,
@@ -517,7 +710,8 @@ impl HeadBuilder {
             rate_limit_plan: self.prepared_rate_limit_plan.unwrap_or_else(|| {
                 Arc::new(RateLimitPlan::from_validated_rules(self.rate_limit_rules))
             }),
-        }
+            budget: self.budget,
+        })
     }
 }
 
@@ -533,6 +727,7 @@ pub struct PreparedHead {
     debug: DebugLevel,
     auth: Arc<AuthPlan>,
     rate_limit_plan: Arc<RateLimitPlan>,
+    budget: RequestHeadBudget,
 }
 
 impl PreparedHead {
@@ -555,29 +750,30 @@ impl PreparedHead {
         content_type: Option<&HeaderValue>,
         body_owns_content_type: bool,
     ) -> Result<(), ApiError> {
+        if body_owns_content_type && self.public_headers.contains_key(CONTENT_TYPE) {
+            return Err(invalid_header(self.meta.endpoint_id(), self.method()));
+        }
+
+        let mut headers = self.public_headers.clone();
+        let mut budget = self.budget;
         if let Some(accept) = accept {
-            if !self.public_headers.contains_key(ACCEPT) {
-                let value = HeaderValue::from_str(accept).map_err(|_| {
-                    ApiError::configuration(
-                        self.meta.endpoint_id().clone(),
-                        self.method().clone(),
-                        ConfigurationErrorKind::InvalidHeader,
-                    )
-                })?;
-                self.public_headers.insert(ACCEPT, value);
+            if !headers.contains_key(ACCEPT) {
+                let value = HeaderValue::from_str(accept)
+                    .map_err(|_| invalid_header(self.meta.endpoint_id(), self.method()))?;
+                budget
+                    .try_insert_header(&headers, &ACCEPT, &value)
+                    .map_err(|_| invalid_header(self.meta.endpoint_id(), self.method()))?;
+                headers.insert(ACCEPT, value);
             }
         }
-        if body_owns_content_type && self.public_headers.contains_key(CONTENT_TYPE) {
-            return Err(ApiError::configuration(
-                self.meta.endpoint_id().clone(),
-                self.method().clone(),
-                ConfigurationErrorKind::InvalidHeader,
-            ));
-        }
         if let Some(content_type) = content_type {
-            self.public_headers
-                .insert(CONTENT_TYPE, content_type.clone());
+            budget
+                .try_insert_header(&headers, &CONTENT_TYPE, content_type)
+                .map_err(|_| invalid_header(self.meta.endpoint_id(), self.method()))?;
+            headers.insert(CONTENT_TYPE, content_type.clone());
         }
+        self.public_headers = headers;
+        self.budget = budget;
         Ok(())
     }
 
@@ -663,11 +859,65 @@ impl PreparedHead {
     }
 }
 
+fn prefixed_host(labels: &[String], next: &str, base_host: &str) -> String {
+    let prefix_bytes = labels
+        .iter()
+        .try_fold(next.len(), |total, label| {
+            total
+                .checked_add(label.len())
+                .and_then(|bytes| bytes.checked_add(1))
+        })
+        .unwrap_or(usize::MAX);
+    let capacity = prefix_bytes
+        .checked_add(1)
+        .and_then(|bytes| bytes.checked_add(base_host.len()))
+        .unwrap_or(0);
+    let mut host = String::with_capacity(capacity);
+    for label in labels {
+        host.push_str(label);
+        host.push('.');
+    }
+    host.push_str(next);
+    host.push('.');
+    host.push_str(base_host);
+    host
+}
+
+fn push_url_segment(url: &mut Url, segment: &str, appended_segment: bool) -> Result<(), ()> {
+    let mut path = url.path_segments_mut()?;
+    if !appended_segment {
+        path.pop_if_empty();
+    }
+    path.push(segment);
+    Ok(())
+}
+
+fn validate_url_pair(
+    logical_url: &Url,
+    safe_logical_url: &Url,
+) -> Result<(), RequestHeadLimitError> {
+    if logical_url.as_str().len() > MAX_REQUEST_URL_BYTES
+        || safe_logical_url.as_str().len() > MAX_REQUEST_URL_BYTES
+    {
+        Err(RequestHeadLimitError::UrlBytes)
+    } else {
+        Ok(())
+    }
+}
+
 fn invalid_route(endpoint: &EndpointId, method: &Method) -> ApiError {
     ApiError::configuration(
         endpoint.clone(),
         method.clone(),
         ConfigurationErrorKind::InvalidRoute,
+    )
+}
+
+fn invalid_auth(endpoint: &EndpointId, method: &Method) -> ApiError {
+    ApiError::configuration(
+        endpoint.clone(),
+        method.clone(),
+        ConfigurationErrorKind::InvalidAuthentication,
     )
 }
 
@@ -836,6 +1086,7 @@ mod tests {
             None,
         )
         .finish()
+        .expect("bounded prepared head")
     }
 
     fn builder(base: &str) -> HeadBuilder {
@@ -854,6 +1105,327 @@ mod tests {
         assert!(!format!("{error:?}").contains(FORMAT_SENTINEL));
     }
 
+    fn base_with_serialized_len(length: usize) -> String {
+        const PREFIX: &str = "https://example.test/";
+        assert!(length >= PREFIX.len());
+        format!("{PREFIX}{}", "b".repeat(length - PREFIX.len()))
+    }
+
+    fn base_for_appended_segment(final_length: usize, segment_length: usize) -> String {
+        let mut base = base_with_serialized_len(final_length - segment_length - 1);
+        base.push('/');
+        assert_eq!(base.len() + segment_length, final_length);
+        base
+    }
+
+    #[test]
+    fn generated_head_exact_component_limit() {
+        let mut builder = builder("https://example.test/");
+        for _ in 0..MAX_REQUEST_HEAD_COMPONENTS {
+            builder.push_static("x").expect("component at boundary");
+        }
+        assert_eq!(builder.budget.components(), MAX_REQUEST_HEAD_COMPONENTS);
+        let head = builder.finish().expect("exact component boundary");
+        assert_eq!(
+            head.logical_url()
+                .path_segments()
+                .expect("hierarchical URL")
+                .count(),
+            MAX_REQUEST_HEAD_COMPONENTS
+        );
+    }
+
+    #[test]
+    fn generated_head_first_excess_component_not_retained() {
+        const SENTINEL: &str = "head-component-first-excess-sentinel-384d";
+        let mut builder = builder("https://example.test/");
+        for _ in 0..MAX_REQUEST_HEAD_COMPONENTS {
+            builder.push_static("x").expect("component at boundary");
+        }
+        let retained = builder.logical_url.clone();
+        let error = builder
+            .push_query_value(SENTINEL, &"withheld")
+            .expect_err("first excess component");
+        assert_eq!(
+            error.configuration_kind(),
+            Some(ConfigurationErrorKind::InvalidRoute)
+        );
+        assert_eq!(builder.budget.components(), MAX_REQUEST_HEAD_COMPONENTS);
+        assert_eq!(builder.logical_url, retained);
+        assert!(!builder.logical_url.as_str().contains(SENTINEL));
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(!rendered.contains(SENTINEL));
+        }
+    }
+
+    #[test]
+    fn generated_head_exact_header_count() {
+        let mut builder = builder("https://example.test/");
+        for index in 0..MAX_REQUEST_HEADER_COUNT {
+            builder
+                .insert_header_value(&format!("x-head-{index}"), &"x")
+                .expect("header at boundary");
+        }
+        assert_eq!(builder.budget.header_count(), MAX_REQUEST_HEADER_COUNT);
+        assert_eq!(builder.budget.components(), MAX_REQUEST_HEAD_COMPONENTS);
+        assert_eq!(
+            builder
+                .finish()
+                .expect("exact header-count boundary")
+                .public_headers()
+                .len(),
+            MAX_REQUEST_HEADER_COUNT
+        );
+    }
+
+    #[test]
+    fn generated_head_first_excess_header() {
+        const SENTINEL: &str = "x-head-first-excess-sentinel-921e";
+        let mut builder = builder("https://example.test/");
+        for index in 0..MAX_REQUEST_HEADER_COUNT {
+            builder
+                .insert_header_value(&format!("x-head-{index}"), &"x")
+                .expect("header at boundary");
+        }
+        let error = builder
+            .insert_header_value(SENTINEL, &"withheld")
+            .expect_err("first excess header");
+        assert_eq!(
+            error.configuration_kind(),
+            Some(ConfigurationErrorKind::InvalidHeader)
+        );
+        assert_eq!(builder.budget.header_count(), MAX_REQUEST_HEADER_COUNT);
+        assert!(!builder.public_headers.contains_key(SENTINEL));
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(!rendered.contains(SENTINEL));
+        }
+    }
+
+    #[test]
+    fn generated_head_header_replacement_updates_budget() {
+        let mut builder = builder("https://example.test/");
+        let name = "x-a";
+        let exact = "a".repeat(MAX_REQUEST_HEADER_BYTES - name.len());
+        builder
+            .insert_header_value(name, &exact)
+            .expect("exact aggregate header bytes");
+        assert_eq!(builder.budget.header_count(), 1);
+        assert_eq!(builder.budget.header_bytes(), MAX_REQUEST_HEADER_BYTES);
+
+        builder
+            .insert_header_value(name, &"short")
+            .expect("smaller replacement");
+        assert_eq!(builder.budget.header_count(), 1);
+        assert_eq!(builder.budget.header_bytes(), name.len() + "short".len());
+
+        builder
+            .insert_header_value(name, &exact)
+            .expect("replacement restores exact boundary");
+        let first_excess = "z".repeat(exact.len() + 1);
+        let error = builder
+            .insert_header_value(name, &first_excess)
+            .expect_err("first excess replacement");
+        assert_eq!(
+            error.configuration_kind(),
+            Some(ConfigurationErrorKind::InvalidHeader)
+        );
+        assert_eq!(builder.budget.header_count(), 1);
+        assert_eq!(builder.budget.header_bytes(), MAX_REQUEST_HEADER_BYTES);
+        assert_eq!(
+            builder.public_headers.get(name).map(HeaderValue::as_bytes),
+            Some(exact.as_bytes())
+        );
+    }
+
+    #[test]
+    fn logical_url_exact_limit() {
+        let segment = "s".repeat(MAX_FORMATTED_PUBLIC_VALUE_BYTES);
+        let base = base_for_appended_segment(MAX_REQUEST_URL_BYTES, segment.len());
+        let mut builder = builder(&base);
+        builder
+            .push_static(&segment)
+            .expect("logical URL exact boundary");
+        let head = builder.finish().expect("logical URL exact boundary");
+        assert_eq!(head.logical_url().as_str().len(), MAX_REQUEST_URL_BYTES);
+    }
+
+    #[test]
+    fn logical_url_first_excess() {
+        const SENTINEL: &str = "logical-url-first-excess-sentinel-7da4";
+        let segment = format!(
+            "{}{SENTINEL}",
+            "s".repeat(MAX_FORMATTED_PUBLIC_VALUE_BYTES - SENTINEL.len())
+        );
+        let base = base_for_appended_segment(MAX_REQUEST_URL_BYTES + 1, segment.len());
+        let mut builder = builder(&base);
+        let retained = builder.logical_url.clone();
+        let error = builder
+            .push_static(&segment)
+            .expect_err("first excess logical URL");
+        assert_eq!(builder.logical_url, retained);
+        assert!(!builder.logical_url.as_str().contains(SENTINEL));
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(!rendered.contains(SENTINEL));
+        }
+    }
+
+    #[test]
+    fn safe_url_exact_limit() {
+        const SAFE_SUFFIX: &str = "?token=%3Credacted%3E";
+        let base = base_with_serialized_len(MAX_REQUEST_URL_BYTES - SAFE_SUFFIX.len());
+        let mut builder = builder(&base);
+        builder
+            .push_query_value("token", &"x")
+            .expect("raw URLs remain bounded");
+        let head = builder.finish().expect("safe URL exact boundary");
+        assert_eq!(head.safe_url().len(), MAX_REQUEST_URL_BYTES);
+        assert!(head.logical_url().as_str().len() < MAX_REQUEST_URL_BYTES);
+    }
+
+    #[test]
+    fn safe_url_first_excess() {
+        const SAFE_SUFFIX: &str = "?token=%3Credacted%3E";
+        let base = base_with_serialized_len(MAX_REQUEST_URL_BYTES - SAFE_SUFFIX.len() + 1);
+        let mut builder = builder(&base);
+        builder
+            .push_query_value("token", &"x")
+            .expect("raw URLs remain bounded");
+        let error = builder
+            .finish()
+            .err()
+            .expect("credential-sanitized URL first excess");
+        assert_eq!(
+            error.configuration_kind(),
+            Some(ConfigurationErrorKind::InvalidRoute)
+        );
+    }
+
+    #[test]
+    fn aggregate_header_bytes_exact_limit() {
+        let mut builder = builder("https://example.test/");
+        let name = "x-b";
+        let exact = "a".repeat(MAX_REQUEST_HEADER_BYTES - name.len());
+        builder
+            .insert_header_value(name, &exact)
+            .expect("aggregate header byte boundary");
+        let head = builder.finish().expect("exact aggregate header bytes");
+        assert_eq!(head.budget.header_bytes(), MAX_REQUEST_HEADER_BYTES);
+    }
+
+    #[test]
+    fn aggregate_header_bytes_first_excess() {
+        let mut builder = builder("https://example.test/");
+        let name = "x-b";
+        let exact = "a".repeat(MAX_REQUEST_HEADER_BYTES - name.len());
+        builder
+            .insert_header_value(name, &exact)
+            .expect("aggregate header byte boundary");
+        let error = builder
+            .insert_header_value(name, &"z".repeat(exact.len() + 1))
+            .expect_err("aggregate header first excess");
+        assert_eq!(
+            error.configuration_kind(),
+            Some(ConfigurationErrorKind::InvalidHeader)
+        );
+        assert_eq!(builder.budget.header_bytes(), MAX_REQUEST_HEADER_BYTES);
+        assert_eq!(
+            builder.public_headers.get(name).map(HeaderValue::as_bytes),
+            Some(exact.as_bytes())
+        );
+    }
+
+    #[test]
+    fn media_header_first_excess_is_transactional() {
+        let mut builder = builder("https://example.test/");
+        for _ in 0..(MAX_REQUEST_HEAD_COMPONENTS - 1) {
+            builder.push_static("x").expect("component before media");
+        }
+        let mut head = builder.finish().expect("head before media");
+        let error = head
+            .apply_media_headers(
+                Some("application/json"),
+                Some(&HeaderValue::from_static("application/json")),
+                true,
+            )
+            .expect_err("Content-Type is the first excess after Accept");
+        assert_eq!(
+            error.configuration_kind(),
+            Some(ConfigurationErrorKind::InvalidHeader)
+        );
+        assert!(!head.public_headers().contains_key(ACCEPT));
+        assert!(!head.public_headers().contains_key(CONTENT_TYPE));
+        assert_eq!(head.budget.components(), MAX_REQUEST_HEAD_COMPONENTS - 1);
+    }
+
+    #[test]
+    fn pagination_mutation_respects_head_budget() {
+        const SENTINEL: &str = "pagination-head-first-excess-sentinel-41a6";
+        let mut builder = builder("https://example.test/");
+        for _ in 0..(MAX_REQUEST_HEAD_COMPONENTS - 1) {
+            builder.push_static("x").expect("component before boundary");
+        }
+        builder
+            .push_pagination_query_value("cursor", &"boundary")
+            .expect("pagination component at boundary");
+        let retained = builder.logical_url.clone();
+        let error = builder
+            .insert_pagination_header_value(SENTINEL, &"withheld")
+            .expect_err("pagination first excess");
+        assert_eq!(builder.logical_url, retained);
+        assert!(!builder.public_headers.contains_key(SENTINEL));
+        assert!(!builder.pagination_sensitive_headers.contains(SENTINEL));
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(!rendered.contains(SENTINEL));
+        }
+    }
+
+    #[test]
+    fn runtime_and_generated_head_limits_match() {
+        use crate::request::{EndpointSpec, RuntimeEndpoint};
+        use crate::response::NoContent;
+
+        let mut runtime =
+            RuntimeEndpoint::builder(EndpointId::from_static("runtime.head"), Method::GET);
+        for _ in 0..MAX_REQUEST_HEAD_COMPONENTS {
+            runtime = runtime.path_segment("x");
+        }
+        let runtime: RuntimeEndpoint<NoContent> =
+            runtime.build().expect("runtime exact component boundary");
+        let base = Url::parse("https://example.test/").expect("base URL");
+        let runtime_head = runtime
+            .prepare_head(HeadBuilder::new(
+                &base,
+                runtime.request_meta(),
+                &RequestOptions::new(),
+                DebugLevel::None,
+                None,
+            ))
+            .expect("runtime final head boundary");
+
+        let mut generated = builder("https://example.test/");
+        for _ in 0..MAX_REQUEST_HEAD_COMPONENTS {
+            generated.push_static("x").expect("generated component");
+        }
+        let generated_head = generated.finish().expect("generated final head boundary");
+        assert_eq!(runtime_head.logical_url(), generated_head.logical_url());
+    }
+
+    #[test]
+    fn head_limit_errors_are_redacted() {
+        const SENTINEL: &str = "head-limit-error-sentinel-6b27";
+        let segment = format!(
+            "{}{SENTINEL}",
+            "x".repeat(MAX_FORMATTED_PUBLIC_VALUE_BYTES - SENTINEL.len())
+        );
+        let base = base_for_appended_segment(MAX_REQUEST_URL_BYTES + 1, segment.len());
+        let mut builder = builder(&base);
+        let error = builder.push_static(&segment).expect_err("URL limit error");
+        assert_eq!(error.category(), ErrorCategory::Configuration);
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(!rendered.contains(SENTINEL));
+        }
+    }
+
     #[test]
     fn generated_path_formatted_value_first_excess() {
         let mut builder = builder("https://example.test/root/");
@@ -863,7 +1435,7 @@ mod tests {
             })
             .expect_err("first excess generated path value");
         assert_format_error_is_safe(&error, ConfigurationErrorKind::InvalidRoute);
-        let head = builder.finish();
+        let head = builder.finish().expect("unchanged bounded head");
         assert_eq!(head.logical_url().path(), "/root/");
         assert!(!head.safe_url().contains(FORMAT_SENTINEL));
     }
@@ -880,7 +1452,7 @@ mod tests {
             )
             .expect_err("first excess generated query value");
         assert_format_error_is_safe(&error, ConfigurationErrorKind::InvalidRoute);
-        let head = builder.finish();
+        let head = builder.finish().expect("unchanged bounded head");
         assert_eq!(head.logical_url().query(), None);
         assert!(!head.safe_url().contains(FORMAT_SENTINEL));
     }
@@ -897,7 +1469,13 @@ mod tests {
             )
             .expect_err("first excess generated header value");
         assert_format_error_is_safe(&error, ConfigurationErrorKind::InvalidHeader);
-        assert!(builder.finish().public_headers().is_empty());
+        assert!(
+            builder
+                .finish()
+                .expect("unchanged bounded head")
+                .public_headers()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -934,7 +1512,7 @@ mod tests {
             .expect_err("first excess pagination host");
         assert_format_error_is_safe(&error, ConfigurationErrorKind::InvalidRoute);
 
-        let head = builder.finish();
+        let head = builder.finish().expect("unchanged bounded head");
         assert_eq!(head.logical_url().query(), None);
         assert_eq!(head.logical_url().path(), "/root/");
         assert!(head.public_headers().is_empty());
@@ -953,7 +1531,7 @@ mod tests {
             )
             .expect_err("ignored formatting error still fails closed");
         assert_format_error_is_safe(&error, ConfigurationErrorKind::InvalidRoute);
-        let head = builder.finish();
+        let head = builder.finish().expect("unchanged bounded head");
         assert_eq!(head.logical_url().query(), None);
         assert!(!head.safe_url().contains(FORMAT_SENTINEL));
     }
@@ -974,7 +1552,11 @@ mod tests {
             )
             .expect("maximum generated window count");
         assert_eq!(
-            window_boundary.finish().rate_limit_plan().rules()[0]
+            window_boundary
+                .finish()
+                .expect("bounded rate-limit head")
+                .rate_limit_plan()
+                .rules()[0]
                 .windows()
                 .len(),
             crate::rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_RULE
@@ -1067,7 +1649,12 @@ mod tests {
         assert!(!error.to_string().contains(RATE_ID_SENTINEL));
         assert!(!format!("{error:?}").contains(RATE_ID_SENTINEL));
         assert_eq!(
-            plan_boundary.finish().rate_limit_plan().rules().len(),
+            plan_boundary
+                .finish()
+                .expect("bounded rate-limit head")
+                .rate_limit_plan()
+                .rules()
+                .len(),
             crate::rate_limit::MAX_RATE_LIMIT_RULES_PER_PLAN
         );
 
@@ -1093,7 +1680,7 @@ mod tests {
         builder
             .push_host_value(&"api")
             .expect("dynamic second label");
-        let head = builder.finish();
+        let head = builder.finish().expect("bounded host head");
         assert_eq!(head.logical_url().host_str(), Some("eu.api.example.test"));
         assert_eq!(head.logical_url().port(), Some(4317));
         assert_eq!(head.logical_url().path(), "/v1/");
@@ -1109,7 +1696,7 @@ mod tests {
             .expect("pagination host label");
         assert_eq!(builder.rate_limit_host(), expected_host);
 
-        let head = builder.finish();
+        let head = builder.finish().expect("bounded pagination host head");
         assert_eq!(head.rate_limit_host(), Some(expected_host.as_str()));
         assert_eq!(
             Url::parse(head.safe_url()).expect("safe URL").host_str(),
@@ -1165,7 +1752,11 @@ mod tests {
         builder.push_value(&"50%done").expect("percent as data");
         builder.push_static("tail").expect("tail");
         assert_eq!(
-            builder.finish().logical_url().as_str(),
+            builder
+                .finish()
+                .expect("bounded path head")
+                .logical_url()
+                .as_str(),
             "https://example.test/root/50%25done/tail"
         );
     }
@@ -1183,7 +1774,11 @@ mod tests {
             builder
                 .push_value(&segment)
                 .unwrap_or_else(|_| panic!("seed={SEED:#x} case={case_index}"));
-            let url = builder.finish().logical_url().clone();
+            let url = builder
+                .finish()
+                .expect("bounded property head")
+                .logical_url()
+                .clone();
             assert_eq!(url.query(), None, "seed={SEED:#x} case={case_index}");
             assert_eq!(url.fragment(), None, "seed={SEED:#x} case={case_index}");
             assert!(
@@ -1212,7 +1807,7 @@ mod tests {
         builder
             .push_query_value("api_key", &"sensitive")
             .expect("public query");
-        let head = builder.finish();
+        let head = builder.finish().expect("bounded query head");
         assert_eq!(
             head.logical_url().query(),
             Some("keep=first&tag=one+two&tag=three&api_key=sensitive")
@@ -1235,7 +1830,7 @@ mod tests {
         header_builder
             .insert_header_value("Accept", &"application/custom")
             .expect("public Accept");
-        let mut head = header_builder.finish();
+        let mut head = header_builder.finish().expect("bounded header head");
         assert_eq!(
             head.public_headers().get("X-Tenant"),
             Some(&HeaderValue::from_static("second"))
@@ -1326,7 +1921,7 @@ mod tests {
         bodyless_builder
             .insert_header_value("Content-Type", &"application/example")
             .expect("bodyless public Content-Type");
-        let mut head = bodyless_builder.finish();
+        let mut head = bodyless_builder.finish().expect("bounded bodyless head");
         head.apply_media_headers(None, None, false)
             .expect("no body source owns Content-Type");
 
@@ -1334,7 +1929,7 @@ mod tests {
         multipart_builder
             .insert_header_value("Content-Type", &"application/example")
             .expect("public header is structurally valid");
-        let mut head = multipart_builder.finish();
+        let mut head = multipart_builder.finish().expect("bounded multipart head");
         let error = head
             .apply_media_headers(None, None, true)
             .expect_err("multipart owns its top-level Content-Type boundary");

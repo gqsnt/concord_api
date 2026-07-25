@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 mod auth;
+mod head_limits;
 mod inheritance;
 pub(crate) mod model;
 mod pagination;
@@ -34,6 +35,7 @@ use symbols::{
 };
 
 struct Resolver<'a> {
+    base: &'a syn::LitStr,
     client_name: &'a Ident,
     client_values: &'a [Value],
     credentials: &'a [Credential],
@@ -60,10 +62,12 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
     validate_credential_names(&values, &secrets, &credentials)?;
 
     let client_name = source_client.name;
+    let base = source_client.base.value;
     let surface = client_surface(&client_name);
 
     let (config, children) = {
         let mut resolver = Resolver {
+            base: &base,
             client_name: &client_name,
             client_values: &values,
             credentials: &credentials,
@@ -93,7 +97,7 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
     let client = Client {
         name: client_name,
         surface,
-        base: source_client.base.value,
+        base,
         values,
         secrets,
         credentials,
@@ -228,6 +232,7 @@ impl Resolver<'_> {
             &contract_id.value,
             &lexical_origin,
         )?;
+        head_limits::validate_static_head(self.base, &config, source.name.span())?;
         let pagination = self.resolve_pagination(
             source.pagination.map(|clause| clause.value),
             visible_scopes,

@@ -305,7 +305,7 @@ pub(super) fn generate_endpoint(
                 #header_statements
                 #auth_statements
                 #rate_limit_statements
-                ::std::result::Result::Ok(__concord_builder.finish())
+                __concord_builder.finish()
             }
         }
 
@@ -350,6 +350,7 @@ pub(super) fn generate_endpoint(
                 #generated_core::__private::safe_request_plan(
                     &client.__concord_core,
                     ::std::sync::LazyLock::force(&#description_static),
+                    <#response as #core_path::response::ResponseBodySpec>::accept(),
                     |builder| self.__concord_prepare_head(
                         &client.__concord_values,
                         &client.__concord_credentials,

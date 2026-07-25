@@ -19,7 +19,8 @@ use concord_core::contracts::{
     MAX_MULTIPART_INLINE_TEXT_BYTES, MAX_MULTIPART_METADATA_BYTES, MAX_MULTIPART_NAME_BYTES,
     MAX_MULTIPART_PARTS, MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_BYTES,
     MAX_RATE_LIMIT_KEY_PART_NAME_BYTES, MAX_RATE_LIMIT_KEY_PARTS, MAX_RATE_LIMIT_RULES_PER_PLAN,
-    MAX_RATE_LIMIT_WINDOWS_PER_RULE, MAX_RUNTIME_ENDPOINT_COMPONENTS,
+    MAX_RATE_LIMIT_WINDOWS_PER_RULE, MAX_REQUEST_HEAD_COMPONENTS, MAX_REQUEST_HEADER_BYTES,
+    MAX_REQUEST_HEADER_COUNT, MAX_REQUEST_URL_BYTES, MAX_RUNTIME_ENDPOINT_COMPONENTS,
     MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, MAX_SECRET_STRING_BYTES,
 };
 use concord_extras::auth::{
@@ -222,6 +223,26 @@ fn documented_limits() -> Vec<Limit> {
         Limit {
             label: "One formatted public value",
             value: MAX_FORMATTED_PUBLIC_VALUE_BYTES as u64,
+            unit: "bytes",
+        },
+        Limit {
+            label: "Final managed request head",
+            value: MAX_REQUEST_HEAD_COMPONENTS as u64,
+            unit: "components",
+        },
+        Limit {
+            label: "Logical or credential-sanitized request URL",
+            value: MAX_REQUEST_URL_BYTES as u64,
+            unit: "bytes",
+        },
+        Limit {
+            label: "Public request headers before authentication",
+            value: MAX_REQUEST_HEADER_COUNT as u64,
+            unit: "headers",
+        },
+        Limit {
+            label: "Aggregate public request headers",
+            value: MAX_REQUEST_HEADER_BYTES as u64,
             unit: "bytes",
         },
         Limit {

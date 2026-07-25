@@ -31,8 +31,8 @@ help: the following other types implement trait `DecodeBody`
    |
    | / impl<T> DecodeBody for Json<T>
    | | where
-   | |     T: serde::de::DeserializeOwned + Send + Sync + 'static,
-   | |___________________________________________________________^ `concord::Json<T>`
+   | |     T: serde::de::DeserializeOwned + Send + 'static,
+   | |____________________________________________________^ `concord::Json<T>`
    = note: required for `concord::Bytes` to implement `PageResponseSpec`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -138,8 +138,8 @@ help: the following other types implement trait `DecodeBody`
    |
    | / impl<T> DecodeBody for Json<T>
    | | where
-   | |     T: serde::de::DeserializeOwned + Send + Sync + 'static,
-   | |___________________________________________________________^ `concord::Json<T>`
+   | |     T: serde::de::DeserializeOwned + Send + 'static,
+   | |____________________________________________________^ `concord::Json<T>`
    = note: required for `concord::NoContent` to implement `PageResponseSpec`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -369,8 +369,8 @@ help: the following other types implement trait `DecodeBody`
    |
    | / impl<T> DecodeBody for Json<T>
    | | where
-   | |     T: serde::de::DeserializeOwned + Send + Sync + 'static,
-   | |___________________________________________________________^ `concord::Json<T>`
+   | |     T: serde::de::DeserializeOwned + Send + 'static,
+   | |____________________________________________________^ `concord::Json<T>`
    = note: required for `concord::body::Stream<concord::codec::OctetStream>` to implement `PageResponseSpec`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 

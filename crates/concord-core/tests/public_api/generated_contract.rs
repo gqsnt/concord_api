@@ -5,7 +5,7 @@ use concord_core::contracts::ErrorCategory;
 
 #[test]
 fn generated_contract_version_matches_generic_specification_capability() {
-    assert_eq!(GENERATED_CONTRACT_VERSION, 25);
+    assert_eq!(GENERATED_CONTRACT_VERSION, 26);
 }
 
 #[test]
@@ -20,7 +20,7 @@ fn structured_head_builder_encodes_values_only_when_prepared() {
     );
     builder.push_static("resources").expect("static segment");
     builder.push_value("item%2Ftail").expect("dynamic segment");
-    let head = builder.finish();
+    let head = builder.finish().expect("bounded head");
     assert_eq!(head.endpoint(), "proof_api.resources.by_id");
     assert_eq!(head.method(), &Method::GET);
     assert_eq!(
@@ -44,7 +44,10 @@ fn structured_head_builder_enforces_one_non_dot_segment_per_atom() {
         builder
             .push_value(value)
             .map_err(|error| error.category())?;
-        Ok(builder.finish().logical_url().to_string())
+        builder
+            .finish()
+            .map(|head| head.logical_url().to_string())
+            .map_err(|error| error.category())
     }
 
     assert_eq!(dynamic("slash/value"), Err(ErrorCategory::Configuration));
