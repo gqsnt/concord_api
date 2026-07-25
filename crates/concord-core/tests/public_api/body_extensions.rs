@@ -3,7 +3,8 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use concord_core::contracts::{
-    BodyError, BodyErrorKind, BodyFactory, BodyKind, Bytes, HeaderValue, RequestBody, StreamBody,
+    BodyError, BodyErrorKind, BodyFactory, BodyKind, Bytes, HeaderValue, MAX_EMPTY_REQUEST_CHUNKS,
+    RequestBody, StreamBody,
 };
 use futures_core::Stream;
 
@@ -54,6 +55,7 @@ fn downstream_body_contracts_need_only_the_contract_surface() {
     assert_eq!(factory.kind(), BodyKind::Stream);
     assert_send(&factory);
     assert_sync(&DownstreamFactory);
+    assert_eq!(MAX_EMPTY_REQUEST_CHUNKS, 1_024);
 
     let error =
         BodyError::with_safe_message(BodyErrorKind::Factory, "safe downstream body configuration");

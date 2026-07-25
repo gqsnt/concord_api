@@ -13,8 +13,9 @@ pub use crate::auth::{
     MAX_SECRET_STRING_BYTES, RecoveryMode, SecretCredential, SecretString,
 };
 pub use crate::body::{
-    BodyError, BodyErrorKind, BodyFactory, BodyKind, LengthHint, RequestBody, RequestBodyContext,
-    RequestBodyMetadata, RequestBodySpec, RequestContentType, Stream, StreamBody,
+    BodyError, BodyErrorKind, BodyFactory, BodyKind, LengthHint, MAX_EMPTY_REQUEST_CHUNKS,
+    RequestBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestContentType,
+    Stream, StreamBody,
 };
 #[cfg(feature = "multipart")]
 pub use crate::body::{

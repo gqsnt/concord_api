@@ -1,11 +1,11 @@
 #![forbid(unsafe_code)]
 
-#[cfg(feature = "records")]
+use std::collections::VecDeque;
 use std::num::NonZeroUsize;
-#[cfg(feature = "records")]
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 #[cfg(feature = "json")]
@@ -47,7 +47,6 @@ use concord::response::{
     Buffered, ByteStream, Discard, ResponseBodyError, ResponseBodySpec, ResponseHead, Streaming,
 };
 use concord::{Bytes, ClientBuildError, SecretString};
-#[cfg(feature = "records")]
 use futures_core::Stream;
 
 fn runtime_id(value: &str) -> EndpointId {
@@ -75,6 +74,49 @@ impl RequestBodySpec for ExtensionRequestSpec {
         _context: RequestBodyContext<'_>,
     ) -> Result<RequestBody, BodyError> {
         Ok(RequestBody::bytes(input))
+    }
+}
+
+pub struct EmptyChunkRequestSpec;
+
+struct ExtensionEmptyChunkStream {
+    chunks: VecDeque<Result<Bytes, std::io::Error>>,
+}
+
+impl Stream for ExtensionEmptyChunkStream {
+    type Item = Result<Bytes, std::io::Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        Poll::Ready(self.chunks.pop_front())
+    }
+}
+
+impl RequestBodySpec for EmptyChunkRequestSpec {
+    type Input = Bytes;
+
+    fn metadata(
+        input: &Self::Input,
+        _context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        Ok(RequestBodyMetadata {
+            length: LengthHint::Exact(u64::try_from(input.len()).unwrap_or(u64::MAX)),
+            content_type: RequestContentType::None,
+            kind: BodyKind::Stream,
+        })
+    }
+
+    fn prepare(
+        input: Self::Input,
+        _context: RequestBodyContext<'_>,
+    ) -> Result<RequestBody, BodyError> {
+        let exact_length = u64::try_from(input.len()).unwrap_or(u64::MAX);
+        let stream = StreamBody::from_stream(ExtensionEmptyChunkStream {
+            chunks: [Ok(Bytes::new()), Ok(input), Ok(Bytes::new())]
+                .into_iter()
+                .collect(),
+        })
+        .exact_length(exact_length);
+        Ok(RequestBody::stream(stream))
     }
 }
 
@@ -542,6 +584,7 @@ concord::api! {
     }
 
     POST generic_body(#[body] body: crate::ExtensionRequestSpec) -> crate::ExtensionBufferedSpec;
+    POST empty_chunk_body(#[body] body: crate::EmptyChunkRequestSpec) -> Bytes;
     GET generic_stream() -> crate::ExtensionStreamingSpec;
     GET generic_discard() -> crate::ExtensionDiscardSpec;
 }
@@ -640,6 +683,8 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
     let _: extension_api::ProtectedRequest = client.protected();
     let _: extension_api::GenericBodyRequest =
         client.generic_body(Bytes::from_static(b"generic extension input"));
+    let _: extension_api::EmptyChunkBodyRequest =
+        client.empty_chunk_body(Bytes::from_static(b"empty chunk extension input"));
     let _: extension_api::GenericStreamRequest = client.generic_stream();
     let _: extension_api::GenericDiscardRequest = client.generic_discard();
     let _: Auth = Auth::header(
@@ -799,6 +844,41 @@ async fn downstream_generated_controller_constructs_binds_and_collects_two_pages
     assert!(requests[0].target().contains("cursor=initial"));
     assert!(requests[1].target().contains("cursor=continuation"));
     assert_eq!(probe_counts, (1, 2, 2));
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[allow(
+    clippy::await_holding_lock,
+    reason = "the process-global extension probes require whole-test serialization"
+)]
+async fn public_request_body_spec_suppresses_empty_chunks_before_transport() {
+    use concord_test_support::server::{ResponseScript, ScriptedServer};
+
+    let _guard = EXTENSION_TEST_LOCK
+        .lock()
+        .expect("extension test lock poisoned");
+    let server =
+        ScriptedServer::start([ResponseScript::ok("ok")]).expect("bounded loopback body server");
+    let proxy = SafeProxy::parse(server.url("")).expect("credential-free loopback proxy URL");
+    let client = ExtensionApi::builder()
+        .construction(ExtensionConstructionProbe::new())
+        .session_provider(ExtensionProvider)
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(ExtensionLimiter)))
+        .build()
+        .expect("downstream generated client");
+
+    let output = client
+        .empty_chunk_body(Bytes::from_static(b"public-body"))
+        .await
+        .expect("managed public request body");
+    assert_eq!(output, Bytes::from_static(b"ok"));
+    server
+        .wait_for_requests(1, Duration::from_secs(10))
+        .expect("one bounded body request");
+    let requests = server.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].body(), b"public-body");
 }
 
 #[cfg(feature = "records")]

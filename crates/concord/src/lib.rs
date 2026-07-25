@@ -67,9 +67,9 @@ pub mod auth {
 /// Request-body specifications, factories, metadata, and bounded streaming primitives.
 pub mod body {
     pub use concord_core::contracts::{
-        BodyError, BodyErrorKind, BodyFactory, BodyKind, LengthHint, RequestBody,
-        RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestContentType, Stream,
-        StreamBody,
+        BodyError, BodyErrorKind, BodyFactory, BodyKind, LengthHint, MAX_EMPTY_REQUEST_CHUNKS,
+        RequestBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestContentType,
+        Stream, StreamBody,
     };
     #[cfg(feature = "multipart")]
     pub use concord_core::contracts::{

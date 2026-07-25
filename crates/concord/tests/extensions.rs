@@ -5,8 +5,9 @@ mod extensions {
 }
 
 pub(crate) use extensions::contracts::{
-    ExtensionBufferedSpec, ExtensionConstructionProbe, ExtensionController, ExtensionDiscardSpec,
-    ExtensionPageCodec, ExtensionProvider, ExtensionRequestSpec, ExtensionStreamingSpec,
+    EmptyChunkRequestSpec, ExtensionBufferedSpec, ExtensionConstructionProbe, ExtensionController,
+    ExtensionDiscardSpec, ExtensionPageCodec, ExtensionProvider, ExtensionRequestSpec,
+    ExtensionStreamingSpec,
 };
 #[cfg(feature = "records")]
 pub(crate) use extensions::contracts::{ExtensionRecordDecoder, NoProgressRecordDecoder};

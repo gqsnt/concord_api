@@ -7,6 +7,7 @@ mod prepared;
 mod spec;
 mod stream;
 
+pub use crate::limits::MAX_EMPTY_REQUEST_CHUNKS;
 pub use error::{BodyError, BodyErrorKind};
 #[cfg(feature = "multipart")]
 pub use multipart::{

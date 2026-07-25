@@ -42,6 +42,12 @@ pub const MAX_EMPTY_RESPONSE_CHUNKS: usize = 1_024;
 /// Maximum immediately ready empty response chunks handled in one task turn.
 pub(crate) const MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN: usize = 32;
 
+/// Maximum empty chunks accepted from one managed request body.
+pub const MAX_EMPTY_REQUEST_CHUNKS: usize = 1_024;
+
+/// Maximum immediately ready empty request chunks handled by one task poll.
+pub(crate) const MAX_EMPTY_REQUEST_CHUNKS_PER_POLL: usize = 32;
+
 /// Maximum windows retained by one rate-limit rule.
 pub const MAX_RATE_LIMIT_WINDOWS_PER_RULE: usize = 16;
 

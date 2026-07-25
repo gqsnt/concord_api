@@ -52,8 +52,9 @@ fn hard_structural_limits_are_reachable_from_their_facade_domains() {
         auth::MAX_AUTHORIZATION_VALUE_BYTES,
         auth::MAX_AUTH_QUERY_VALUE_BYTES,
     ];
+    let body_limits = [body::MAX_EMPTY_REQUEST_CHUNKS];
     #[cfg(feature = "multipart")]
-    let body_limits = [
+    let multipart_limits = [
         body::MAX_MULTIPART_PARTS,
         body::MAX_MULTIPART_NAME_BYTES,
         body::MAX_MULTIPART_FILENAME_BYTES,
@@ -88,8 +89,9 @@ fn hard_structural_limits_are_reachable_from_their_facade_domains() {
     let response_limits = [response::MAX_EMPTY_RESPONSE_CHUNKS];
 
     assert!(auth_limits.into_iter().all(|limit| limit > 0));
-    #[cfg(feature = "multipart")]
     assert!(body_limits.into_iter().all(|limit| limit > 0));
+    #[cfg(feature = "multipart")]
+    assert!(multipart_limits.into_iter().all(|limit| limit > 0));
     assert!(endpoint_limits.into_iter().all(|limit| limit > 0));
     assert!(http_limits.into_iter().all(|limit| limit > 0));
     assert!(rate_limits.into_iter().all(|limit| limit > 0));

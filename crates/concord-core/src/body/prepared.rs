@@ -14,6 +14,7 @@ use super::spec::{LengthHint, RequestBodyMetadata, RequestContentType};
 use super::{BodyError, BodyErrorKind, StreamBody};
 #[cfg(feature = "multipart")]
 use super::{MultipartBody, MultipartFactory};
+use crate::limits::{MAX_EMPTY_REQUEST_CHUNKS, MAX_EMPTY_REQUEST_CHUNKS_PER_POLL};
 
 /// Structural category of a request body visible to lifecycle observers.
 #[non_exhaustive]
@@ -580,14 +581,7 @@ pub(super) fn stream_native(
     limit: NonZeroUsize,
 ) -> NativeBody {
     let failure = BodyFailureState::default();
-    let stream = ManagedRequestStream {
-        source: body.into_source(),
-        exact_length,
-        limit: u64::try_from(limit.get()).unwrap_or(u64::MAX),
-        observed: 0,
-        finished: false,
-        failure: failure.clone(),
-    };
+    let stream = managed_request_stream(body.into_source(), exact_length, limit, failure.clone());
     NativeBody::Stream {
         body: reqwest::Body::wrap_stream(stream),
         known_length: exact_length,
@@ -606,15 +600,25 @@ pub(crate) fn wrap_multipart_native_body(
         source: Box::pin(body),
         finished: false,
     });
-    let stream = ManagedRequestStream {
-        source,
+    let stream = managed_request_stream(source, exact_length, limit, failure.clone());
+    (reqwest::Body::wrap_stream(stream), failure)
+}
+
+fn managed_request_stream(
+    source: super::stream::BodyStream,
+    exact_length: Option<u64>,
+    limit: NonZeroUsize,
+    failure: BodyFailureState,
+) -> ManagedRequestStream {
+    ManagedRequestStream {
+        source: Some(source),
         exact_length,
         limit: u64::try_from(limit.get()).unwrap_or(u64::MAX),
         observed: 0,
+        empty_chunks_seen: 0,
         finished: false,
-        failure: failure.clone(),
-    };
-    (reqwest::Body::wrap_stream(stream), failure)
+        failure,
+    }
 }
 
 #[cfg(feature = "multipart")]
@@ -659,10 +663,11 @@ impl Stream for NativeMultipartStream {
 }
 
 struct ManagedRequestStream {
-    source: super::stream::BodyStream,
+    source: Option<super::stream::BodyStream>,
     exact_length: Option<u64>,
     limit: u64,
     observed: u64,
+    empty_chunks_seen: usize,
     finished: bool,
     failure: BodyFailureState,
 }
@@ -670,6 +675,7 @@ struct ManagedRequestStream {
 impl ManagedRequestStream {
     fn fail(&mut self, kind: BodyErrorKind) -> Poll<Option<Result<Bytes, BodyError>>> {
         self.finished = true;
+        self.source = None;
         self.failure.record(kind);
         Poll::Ready(Some(Err(BodyError::new(kind))))
     }
@@ -686,38 +692,63 @@ impl Stream for ManagedRequestStream {
         if this.finished {
             return Poll::Ready(None);
         }
-        match this.source.as_mut().poll_next(context) {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(Some(Err(error))) => {
-                let kind = error.kind();
-                drop(error);
-                this.fail(kind)
-            }
-            Poll::Ready(Some(Ok(bytes))) => {
-                let Some(next) = this
-                    .observed
-                    .checked_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX))
-                else {
-                    return this.fail(BodyErrorKind::LimitExceeded);
-                };
-                if this.exact_length.is_some_and(|exact| next > exact) {
-                    return this.fail(BodyErrorKind::InvalidLength);
+
+        let mut empty_chunks_this_poll = 0_usize;
+        loop {
+            let polled = this
+                .source
+                .as_mut()
+                .expect("an unfinished managed request stream retains its source")
+                .as_mut()
+                .poll_next(context);
+            match polled {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(Some(Err(error))) => {
+                    let kind = error.kind();
+                    drop(error);
+                    return this.fail(kind);
                 }
-                if next > this.limit {
-                    return this.fail(BodyErrorKind::LimitExceeded);
+                Poll::Ready(Some(Ok(bytes))) if bytes.is_empty() => {
+                    let Some(next) = this.empty_chunks_seen.checked_add(1) else {
+                        return this.fail(BodyErrorKind::LimitExceeded);
+                    };
+                    if next > MAX_EMPTY_REQUEST_CHUNKS {
+                        return this.fail(BodyErrorKind::LimitExceeded);
+                    }
+                    this.empty_chunks_seen = next;
+                    empty_chunks_this_poll += 1;
+                    if empty_chunks_this_poll == MAX_EMPTY_REQUEST_CHUNKS_PER_POLL {
+                        context.waker().wake_by_ref();
+                        return Poll::Pending;
+                    }
                 }
-                this.observed = next;
-                Poll::Ready(Some(Ok(bytes)))
-            }
-            Poll::Ready(None) => {
-                if this
-                    .exact_length
-                    .is_some_and(|exact| this.observed != exact)
-                {
-                    return this.fail(BodyErrorKind::InvalidLength);
+                Poll::Ready(Some(Ok(bytes))) => {
+                    let Some(next) = this
+                        .observed
+                        .checked_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX))
+                    else {
+                        return this.fail(BodyErrorKind::LimitExceeded);
+                    };
+                    if this.exact_length.is_some_and(|exact| next > exact) {
+                        return this.fail(BodyErrorKind::InvalidLength);
+                    }
+                    if next > this.limit {
+                        return this.fail(BodyErrorKind::LimitExceeded);
+                    }
+                    this.observed = next;
+                    return Poll::Ready(Some(Ok(bytes)));
                 }
-                this.finished = true;
-                Poll::Ready(None)
+                Poll::Ready(None) => {
+                    if this
+                        .exact_length
+                        .is_some_and(|exact| this.observed != exact)
+                    {
+                        return this.fail(BodyErrorKind::InvalidLength);
+                    }
+                    this.finished = true;
+                    this.source = None;
+                    return Poll::Ready(None);
+                }
             }
         }
     }

@@ -2,10 +2,11 @@ use std::collections::VecDeque;
 use std::future::poll_fn;
 use std::io;
 use std::pin::Pin;
-use std::sync::atomic::AtomicUsize;
-use std::task::{Context, Poll};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::task::{Context, Poll, Wake, Waker};
 
 use super::*;
+use crate::limits::{MAX_EMPTY_REQUEST_CHUNKS, MAX_EMPTY_REQUEST_CHUNKS_PER_POLL};
 use http_body::Body as _;
 
 struct Factory {
@@ -15,6 +16,39 @@ struct Factory {
 struct MetadataFactory {
     content_type_calls: Arc<AtomicUsize>,
     create_calls: Arc<AtomicUsize>,
+}
+
+struct EmptyChunkFactory {
+    polls: Arc<AtomicUsize>,
+}
+
+impl BodyFactory for EmptyChunkFactory {
+    fn create(&self) -> Result<StreamBody, BodyError> {
+        Ok(stream_bytes(
+            [
+                Ok(Bytes::new()),
+                Ok(Bytes::from_static(b"factory")),
+                Ok(Bytes::new()),
+            ],
+            &self.polls,
+        )
+        .exact_length(7))
+    }
+}
+
+#[derive(Default)]
+struct WakeCounter {
+    wakes: AtomicUsize,
+}
+
+impl Wake for WakeCounter {
+    fn wake(self: Arc<Self>) {
+        self.wakes.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.wakes.fetch_add(1, Ordering::SeqCst);
+    }
 }
 
 #[cfg(feature = "multipart")]
@@ -350,30 +384,53 @@ fn stream(
     frames: impl IntoIterator<Item = Result<&'static [u8], io::Error>>,
     polls: &Arc<AtomicUsize>,
 ) -> StreamBody {
-    StreamBody::from_stream(FrameStream {
-        frames: frames
+    stream_bytes(
+        frames
             .into_iter()
-            .map(|frame| frame.map(Bytes::from_static))
-            .collect(),
+            .map(|frame| frame.map(Bytes::from_static)),
+        polls,
+    )
+}
+
+fn stream_bytes(
+    frames: impl IntoIterator<Item = Result<Bytes, io::Error>>,
+    polls: &Arc<AtomicUsize>,
+) -> StreamBody {
+    StreamBody::from_stream(FrameStream {
+        frames: frames.into_iter().collect(),
         polls: Arc::clone(polls),
     })
 }
 
-async fn consume(
+fn empty_request_chunks(count: usize) -> Vec<Result<Bytes, io::Error>> {
+    std::iter::repeat_with(|| Ok(Bytes::new()))
+        .take(count)
+        .collect()
+}
+
+fn direct_managed(
     body: StreamBody,
     exact_length: Option<u64>,
     limit: usize,
-) -> (Vec<Bytes>, Option<BodyErrorKind>) {
-    let NativeBody::Stream {
-        mut body, failure, ..
-    } = stream_native(
-        body,
+) -> (ManagedRequestStream, BodyFailureState) {
+    let failure = BodyFailureState::default();
+    let managed = managed_request_stream(
+        body.into_source(),
         exact_length,
         NonZeroUsize::new(limit).expect("positive limit"),
-    )
-    else {
-        panic!("stream native body expected");
-    };
+        failure.clone(),
+    );
+    (managed, failure)
+}
+
+async fn next_managed(stream: &mut ManagedRequestStream) -> Option<Result<Bytes, BodyError>> {
+    poll_fn(|context| Pin::new(&mut *stream).poll_next(context)).await
+}
+
+async fn consume_native_stream(
+    mut body: reqwest::Body,
+    failure: BodyFailureState,
+) -> (Vec<Bytes>, Option<BodyErrorKind>) {
     let mut accepted = Vec::new();
     loop {
         match poll_fn(|context| Pin::new(&mut body).poll_frame(context)).await {
@@ -389,6 +446,21 @@ async fn consume(
             None => return (accepted, failure.kind()),
         }
     }
+}
+
+async fn consume(
+    body: StreamBody,
+    exact_length: Option<u64>,
+    limit: usize,
+) -> (Vec<Bytes>, Option<BodyErrorKind>) {
+    let NativeBody::Stream { body, failure, .. } = stream_native(
+        body,
+        exact_length,
+        NonZeroUsize::new(limit).expect("positive limit"),
+    ) else {
+        panic!("stream native body expected");
+    };
+    consume_native_stream(body, failure).await
 }
 
 #[tokio::test]
@@ -452,6 +524,349 @@ async fn managed_stream_detects_underflow_and_sanitizes_producer_failure() {
     assert_eq!(accepted.concat(), b"accepted");
     assert_eq!(failure, Some(BodyErrorKind::Producer));
     assert_eq!(producer_polls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn request_empty_chunk_is_not_forwarded() {
+    let polls = Arc::new(AtomicUsize::new(0));
+    let (accepted, failure) =
+        consume(stream([Ok(&b""[..]), Ok(&b"data"[..])], &polls), None, 64).await;
+
+    assert_eq!(accepted, [Bytes::from_static(b"data")]);
+    assert_eq!(failure, None);
+    assert_eq!(polls.load(Ordering::SeqCst), 3);
+}
+
+#[tokio::test]
+async fn request_empty_chunks_before_data_are_suppressed() {
+    let polls = Arc::new(AtomicUsize::new(0));
+    let (accepted, failure) = consume(
+        stream(
+            [
+                Ok(&b""[..]),
+                Ok(&b""[..]),
+                Ok(&b""[..]),
+                Ok(&b"payload"[..]),
+            ],
+            &polls,
+        ),
+        None,
+        64,
+    )
+    .await;
+
+    assert_eq!(accepted, [Bytes::from_static(b"payload")]);
+    assert_eq!(failure, None);
+}
+
+#[tokio::test]
+async fn request_empty_chunks_after_data_are_suppressed() {
+    let polls = Arc::new(AtomicUsize::new(0));
+    let (accepted, failure) = consume(
+        stream(
+            [
+                Ok(&b"first"[..]),
+                Ok(&b""[..]),
+                Ok(&b""[..]),
+                Ok(&b"second"[..]),
+                Ok(&b""[..]),
+            ],
+            &polls,
+        ),
+        None,
+        64,
+    )
+    .await;
+
+    assert_eq!(
+        accepted,
+        [Bytes::from_static(b"first"), Bytes::from_static(b"second")]
+    );
+    assert_eq!(failure, None);
+}
+
+#[test]
+fn request_per_poll_budget_returns_pending() {
+    let polls = Arc::new(AtomicUsize::new(0));
+    let mut chunks = empty_request_chunks(MAX_EMPTY_REQUEST_CHUNKS_PER_POLL);
+    chunks.push(Ok(Bytes::from_static(b"deferred")));
+    let (mut managed, _) = direct_managed(stream_bytes(chunks, &polls), None, 64);
+    let wakes = Arc::new(WakeCounter::default());
+    let waker = Waker::from(Arc::clone(&wakes));
+    let mut context = Context::from_waker(&waker);
+
+    assert!(matches!(
+        Pin::new(&mut managed).poll_next(&mut context),
+        Poll::Pending
+    ));
+    assert_eq!(
+        polls.load(Ordering::SeqCst),
+        MAX_EMPTY_REQUEST_CHUNKS_PER_POLL
+    );
+}
+
+#[test]
+fn request_per_poll_budget_wakes_task() {
+    let polls = Arc::new(AtomicUsize::new(0));
+    let mut chunks = empty_request_chunks(MAX_EMPTY_REQUEST_CHUNKS_PER_POLL);
+    chunks.push(Ok(Bytes::from_static(b"deferred")));
+    let (mut managed, _) = direct_managed(stream_bytes(chunks, &polls), None, 64);
+    let wakes = Arc::new(WakeCounter::default());
+    let waker = Waker::from(Arc::clone(&wakes));
+    let mut context = Context::from_waker(&waker);
+
+    assert!(matches!(
+        Pin::new(&mut managed).poll_next(&mut context),
+        Poll::Pending
+    ));
+    assert_eq!(wakes.wakes.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn request_exact_empty_limit_succeeds() {
+    let polls = Arc::new(AtomicUsize::new(0));
+    let mut chunks = empty_request_chunks(MAX_EMPTY_REQUEST_CHUNKS);
+    chunks.push(Ok(Bytes::from_static(b"data")));
+    let (accepted, failure) = consume(stream_bytes(chunks, &polls), Some(4), 64).await;
+
+    assert_eq!(accepted, [Bytes::from_static(b"data")]);
+    assert_eq!(failure, None);
+    assert_eq!(polls.load(Ordering::SeqCst), MAX_EMPTY_REQUEST_CHUNKS + 2);
+}
+
+#[tokio::test]
+async fn request_first_excess_is_terminal() {
+    let polls = Arc::new(AtomicUsize::new(0));
+    let (mut managed, failure) = direct_managed(
+        stream_bytes(empty_request_chunks(MAX_EMPTY_REQUEST_CHUNKS + 1), &polls),
+        None,
+        64,
+    );
+
+    let error = next_managed(&mut managed)
+        .await
+        .expect("one terminal body failure")
+        .expect_err("empty request chunk first excess");
+    assert_eq!(error.kind(), BodyErrorKind::LimitExceeded);
+    assert_eq!(failure.kind(), Some(BodyErrorKind::LimitExceeded));
+    assert_eq!(polls.load(Ordering::SeqCst), MAX_EMPTY_REQUEST_CHUNKS + 1);
+    assert!(next_managed(&mut managed).await.is_none());
+}
+
+#[tokio::test]
+async fn request_first_excess_error_is_redacted() {
+    const PRODUCER_SENTINEL: &str = "empty-request-producer-secret-509d";
+    let polls = Arc::new(AtomicUsize::new(0));
+    let (mut managed, _) = direct_managed(
+        stream_bytes(empty_request_chunks(MAX_EMPTY_REQUEST_CHUNKS + 1), &polls),
+        None,
+        64,
+    );
+
+    let error = next_managed(&mut managed)
+        .await
+        .expect("one terminal body failure")
+        .expect_err("empty request chunk first excess");
+    let rendered = format!("{error} {error:?}");
+    assert!(!rendered.contains(&(MAX_EMPTY_REQUEST_CHUNKS + 1).to_string()));
+    assert!(!rendered.contains(PRODUCER_SENTINEL));
+    assert!(!rendered.contains("empty chunk"));
+}
+
+#[tokio::test]
+async fn request_total_count_is_not_reset_by_nonempty_data() {
+    let polls = Arc::new(AtomicUsize::new(0));
+    let mut chunks = empty_request_chunks(MAX_EMPTY_REQUEST_CHUNKS / 2);
+    chunks.push(Ok(Bytes::from_static(b"progress")));
+    chunks.extend(empty_request_chunks(MAX_EMPTY_REQUEST_CHUNKS / 2 + 1));
+    let (mut managed, _) = direct_managed(stream_bytes(chunks, &polls), None, 64);
+
+    assert_eq!(
+        next_managed(&mut managed)
+            .await
+            .expect("nonempty request data")
+            .expect("successful request data"),
+        Bytes::from_static(b"progress")
+    );
+    let error = next_managed(&mut managed)
+        .await
+        .expect("one terminal body failure")
+        .expect_err("response-wide empty count");
+    assert_eq!(error.kind(), BodyErrorKind::LimitExceeded);
+}
+
+#[tokio::test]
+async fn request_nonempty_byte_limit_is_unchanged() {
+    let polls = Arc::new(AtomicUsize::new(0));
+    let (mut managed, _) =
+        direct_managed(stream([Ok(&b"abc"[..]), Ok(&b"de"[..])], &polls), None, 4);
+
+    assert_eq!(
+        next_managed(&mut managed)
+            .await
+            .expect("accepted prefix")
+            .expect("successful prefix"),
+        Bytes::from_static(b"abc")
+    );
+    let error = next_managed(&mut managed)
+        .await
+        .expect("one terminal body failure")
+        .expect_err("first byte excess");
+    assert_eq!(error.kind(), BodyErrorKind::LimitExceeded);
+}
+
+#[tokio::test]
+async fn request_exact_zero_with_empty_chunks_and_eof_succeeds() {
+    let (accepted, failure) = consume(StreamBody::from_bytes(Bytes::new()), Some(0), 64).await;
+
+    assert!(accepted.is_empty());
+    assert_eq!(failure, None);
+}
+
+#[tokio::test]
+async fn request_positive_exact_length_with_only_empty_chunks_fails_at_eof() {
+    let polls = Arc::new(AtomicUsize::new(0));
+    let (accepted, failure) =
+        consume(stream([Ok(&b""[..]), Ok(&b""[..])], &polls), Some(1), 64).await;
+
+    assert!(accepted.is_empty());
+    assert_eq!(failure, Some(BodyErrorKind::InvalidLength));
+}
+
+#[tokio::test]
+async fn request_empty_first_excess_precedes_exact_length_eof_error() {
+    let polls = Arc::new(AtomicUsize::new(0));
+    let (accepted, failure) = consume(
+        stream_bytes(empty_request_chunks(MAX_EMPTY_REQUEST_CHUNKS + 1), &polls),
+        Some(1),
+        64,
+    )
+    .await;
+
+    assert!(accepted.is_empty());
+    assert_eq!(failure, Some(BodyErrorKind::LimitExceeded));
+    assert_eq!(polls.load(Ordering::SeqCst), MAX_EMPTY_REQUEST_CHUNKS + 1);
+}
+
+#[tokio::test]
+async fn request_upstream_error_after_empty_chunks_is_reduced_safely() {
+    const ERROR_SENTINEL: &str = "request-upstream-secret-202a";
+    let polls = Arc::new(AtomicUsize::new(0));
+    let (mut managed, _) = direct_managed(
+        stream_bytes(
+            [
+                Ok(Bytes::new()),
+                Ok(Bytes::new()),
+                Err(io::Error::other(ERROR_SENTINEL)),
+            ],
+            &polls,
+        ),
+        None,
+        64,
+    );
+
+    let error = next_managed(&mut managed)
+        .await
+        .expect("one terminal body failure")
+        .expect_err("safe upstream reduction");
+    assert_eq!(error.kind(), BodyErrorKind::Producer);
+    let rendered = format!("{error} {error:?}");
+    assert!(!rendered.contains(ERROR_SENTINEL));
+}
+
+struct DroppableEmptyStream {
+    remaining: usize,
+    polls: Arc<AtomicUsize>,
+    dropped: Arc<AtomicBool>,
+}
+
+impl Stream for DroppableEmptyStream {
+    type Item = Result<Bytes, io::Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.polls.fetch_add(1, Ordering::SeqCst);
+        if self.remaining == 0 {
+            Poll::Ready(None)
+        } else {
+            self.remaining -= 1;
+            Poll::Ready(Some(Ok(Bytes::new())))
+        }
+    }
+}
+
+impl Drop for DroppableEmptyStream {
+    fn drop(&mut self) {
+        self.dropped.store(true, Ordering::SeqCst);
+    }
+}
+
+#[tokio::test]
+async fn request_source_is_dropped_after_first_excess() {
+    let polls = Arc::new(AtomicUsize::new(0));
+    let dropped = Arc::new(AtomicBool::new(false));
+    let body = StreamBody::from_stream(DroppableEmptyStream {
+        remaining: MAX_EMPTY_REQUEST_CHUNKS + 1,
+        polls: Arc::clone(&polls),
+        dropped: Arc::clone(&dropped),
+    });
+    let (mut managed, _) = direct_managed(body, None, 64);
+
+    let error = next_managed(&mut managed)
+        .await
+        .expect("one terminal body failure")
+        .expect_err("empty request chunk first excess");
+    assert_eq!(error.kind(), BodyErrorKind::LimitExceeded);
+    assert!(dropped.load(Ordering::SeqCst));
+    assert_eq!(polls.load(Ordering::SeqCst), MAX_EMPTY_REQUEST_CHUNKS + 1);
+}
+
+#[tokio::test]
+async fn body_factory_stream_uses_same_empty_chunk_contract() {
+    let polls = Arc::new(AtomicUsize::new(0));
+    let limit = NonZeroUsize::new(64).expect("positive limit");
+    let mut prepared = RequestBody::factory(EmptyChunkFactory {
+        polls: Arc::clone(&polls),
+    })
+    .into_prepared(limit)
+    .expect("factory body");
+    let NativeBody::Stream { body, failure, .. } = prepared
+        .prepare_native(limit)
+        .expect("managed factory body")
+    else {
+        panic!("stream native body expected");
+    };
+
+    let (accepted, kind) = consume_native_stream(body, failure).await;
+    assert_eq!(accepted, [Bytes::from_static(b"factory")]);
+    assert_eq!(kind, None);
+    assert_eq!(polls.load(Ordering::SeqCst), 4);
+}
+
+#[cfg(feature = "multipart")]
+#[tokio::test]
+async fn multipart_or_native_managed_stream_uses_same_contract() {
+    let polls = Arc::new(AtomicUsize::new(0));
+    let source = FrameStream {
+        frames: [
+            Ok(Bytes::new()),
+            Ok(Bytes::from_static(b"native")),
+            Ok(Bytes::new()),
+        ]
+        .into_iter()
+        .collect(),
+        polls: Arc::clone(&polls),
+    };
+    let native = reqwest::Body::wrap_stream(source);
+    let (managed, failure) = wrap_multipart_native_body(
+        native,
+        Some(6),
+        NonZeroUsize::new(64).expect("positive limit"),
+    );
+
+    let (accepted, kind) = consume_native_stream(managed, failure).await;
+    assert_eq!(accepted, [Bytes::from_static(b"native")]);
+    assert_eq!(kind, None);
+    assert_eq!(polls.load(Ordering::SeqCst), 4);
 }
 
 struct PendingStream {
