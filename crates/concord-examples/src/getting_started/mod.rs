@@ -1,7 +1,9 @@
-//! First-contact examples for a minimal Concord declaration and generated API.
+//! First-contact examples for a minimal declaration, generated API, and real
+//! managed request execution.
 //!
-//! Required features: none. Mode: construction-only and deterministic.
-//! Documentation owner: `docs/guide/01-represent-an-api.md`.
-//! Proving test: `tests/construction.rs`.
+//! Required features: none. Mode: inert construction plus deterministic
+//! loopback execution. Documentation owners: `docs/start/first-api.md` and
+//! `docs/start/first-request.md`. Proving tests: `tests/construction.rs` and
+//! `tests/local_runtime.rs`.
 
 pub mod minimal;

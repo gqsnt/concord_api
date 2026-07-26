@@ -7,6 +7,32 @@ fn proxy(server: &ScriptedServer) -> SafeProxy {
     SafeProxy::parse(server.url("")).expect("loopback proxy")
 }
 
+// ANCHOR: first_request_loopback
+#[tokio::test]
+async fn getting_started_request_executes_against_loopback() {
+    use concord_examples::getting_started::minimal::{MinimalApi, execute, minimal_api};
+
+    let server =
+        ScriptedServer::start([ResponseScript::status(204, Vec::new())]).expect("health server");
+    let proxy = proxy(&server);
+    let client = MinimalApi::builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .build()
+        .expect("minimal client");
+
+    let endpoint = minimal_api::Health::new();
+    let plan = client.plan(&endpoint).expect("safe health plan");
+    assert_eq!(plan.endpoint_id(), "minimal_api.health");
+
+    execute(&client).await.expect("successful health request");
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method(), "GET");
+    assert!(requests[0].target().ends_with("/v1/health"));
+}
+// ANCHOR_END: first_request_loopback
+
 #[cfg(all(feature = "oauth2-client", feature = "default-tls"))]
 #[tokio::test]
 async fn actual_authentication_example_stores_and_applies_endpoint_credentials_over_tls() {

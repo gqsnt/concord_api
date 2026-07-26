@@ -29,7 +29,7 @@ fn platform_and_regional_plans_compose_hosts_limits_and_redacted_auth() {
     assert!(
         platform_plan
             .safe_url()
-            .starts_with("https://na1.api.riotgames.com/")
+            .starts_with("https://euw1.api.riotgames.com/")
     );
     assert_eq!(platform_plan.rate_limit_rule_count(), 2);
 
@@ -42,7 +42,7 @@ fn platform_and_regional_plans_compose_hosts_limits_and_redacted_auth() {
     assert!(
         regional_plan
             .safe_url()
-            .starts_with("https://americas.api.riotgames.com/")
+            .starts_with("https://europe.api.riotgames.com/")
     );
     assert_eq!(regional_plan.rate_limit_rule_count(), 2);
 

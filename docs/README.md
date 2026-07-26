@@ -1,31 +1,85 @@
-# Concord manual
+# Concord
 
-Concord turns a remote HTTP contract into predictable typed Rust and executes
-it through one finite managed lifecycle. The manual follows that same path.
+Concord turns an explicit HTTP API contract into a typed Rust client and runs
+each request through one bounded, redaction-aware lifecycle.
+
+The smallest useful declaration names a client, a fixed base URL, and an
+endpoint:
+
+```rust,ignore
+{{#include ../crates/concord-examples/src/getting_started/minimal.rs:first_api}}
+```
+
+That declaration generates a `MinimalApi` builder, a client, an endpoint type,
+and a named request wrapper. Application code builds the client and constructs
+requests with ordinary inherent methods:
+
+```rust
+let client = MinimalApi::builder().build()?;
+let request = client.health();
+request.await?;
+```
+
+Request construction is inert. Awaiting the request starts Concord's managed
+work: public URL and header shaping, hooks, rate-limit admission,
+authentication, private HTTP transport, bounded response acquisition, typed
+decoding, and completion. Capabilities that an endpoint does not declare are
+absent from its generated API.
 
 ## Start here
 
-1. [Represent an API](guide/01-represent-an-api.md)
-2. [Understand generated Rust](guide/02-understand-generated-rust.md)
-3. [Build a client and make requests](guide/03-build-a-client-and-make-requests.md)
+New to Concord? Follow the short path in order:
 
-Continue with authentication, bodies, pagination, and explicit or runtime
-endpoints in the remaining [guides](SUMMARY.md).
+1. [Understand what Concord is](start/what-is-concord.md).
+2. [Install the façade crate](start/install.md).
+3. [Declare your first API](start/first-api.md).
+4. [Build a client and make the first request](start/first-request.md).
+5. [Choose the next feature for your API](start/next.md).
 
-## Choose a section
+The repository example uses the reserved `.test` domain so it cannot
+accidentally contact a public service. Its execution test routes the same
+request through a deterministic loopback server and observes a real HTTP
+response.
 
-- [Guides](guide/01-represent-an-api.md) teach one complete path and link to
-  importable, tested examples.
-- [Concepts](concepts/contract-model.md) explain the contract compiler,
-  lifecycle, finite behavior, security model, and extension boundary.
-- [Recipes](recipes/regional-apis.md) assemble capabilities for concrete jobs.
-- [Reference](reference/dsl.md) owns exact syntax, generated signatures,
-  features, limits, errors, compatibility, and dangerous capabilities.
-- [Contributor documentation](contributor/architecture.md) owns internal crate,
-  compiler, test, documentation, and release architecture.
-- The root [changelog](../CHANGELOG.md) summarizes current user-facing
-  changes.
+## What Concord generates
 
-Exact facts have one owner. Guides link to reference pages instead of copying
-feature tables, limits, or complete grammar. Internal bridge details appear
-only in contributor documentation.
+One declaration produces a domain-shaped Rust surface:
+
+- a named client builder and immutable client;
+- nested scope methods for reusable portions of a remote contract;
+- direct endpoint methods and reusable explicit endpoint values;
+- named request wrappers with only their valid controls and terminals;
+- safe endpoint descriptions and request plans.
+
+The compiler checks declaration structure and generated capability
+composition. Rust's type system checks body, response, provider, pagination,
+and extension implementations. Exact signatures remain in generated Rustdoc;
+this site teaches how the pieces fit together and which path to choose.
+
+## Find your task
+
+| You want to… | Read… |
+|---|---|
+| understand the declaration-to-request model | [Contract model](concepts/contract-model.md) |
+| learn the current declaration grammar | [DSL reference](reference/dsl.md) |
+| understand generated names and controls | [Generated API reference](reference/generated-api.md) |
+| add authentication | [Authentication guide](guide/04-authentication.md) |
+| send or receive bodies and streams | [Bodies, responses, and streams](guide/05-bodies-responses-and-streams.md) |
+| paginate or apply rate limits | [Pagination and rate limits](guide/06-pagination-and-rate-limits.md) |
+| choose request shape at runtime | [Explicit and runtime endpoints](guide/07-explicit-and-runtime-endpoints.md) |
+| compose a realistic client | [Regional API recipe](recipes/regional-apis.md) |
+| implement a semantic extension | [Extension model](concepts/extension-model.md) |
+| inspect exact features and limits | [Feature reference](reference/features.md) and [limits](reference/limits.md) |
+
+Advanced extension authors should begin with the
+[extension model](concepts/extension-model.md). Maintainers and fork authors
+should begin with the [architecture overview](contributor/architecture.md).
+For an exact Rust item, use the `concord` Rustdoc path named by the relevant
+guide.
+
+## Related
+
+- [What Concord is](start/what-is-concord.md)
+- [Your first API](start/first-api.md)
+- [Complete DSL reference](reference/dsl.md)
+- [Architecture overview](contributor/architecture.md)

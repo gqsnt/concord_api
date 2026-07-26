@@ -89,15 +89,18 @@ unrelated contracts requires compatible rule namespaces.
 
 ## Documentation
 
-Start with:
+Start with the complete mdBook path:
 
-- [Represent an API](docs/guide/01-represent-an-api.md)
-- [Understand generated Rust](docs/guide/02-understand-generated-rust.md)
-- [Build a client and make requests](docs/guide/03-build-a-client-and-make-requests.md)
+- [Documentation site landing](docs/README.md)
+- [What Concord is](docs/start/what-is-concord.md)
+- [Install Concord](docs/start/install.md)
+- [Your first API](docs/start/first-api.md)
+- [Make the first request](docs/start/first-request.md)
 
-Then use the [manual index](docs/README.md), [DSL reference](docs/reference/dsl.md),
-[generated API reference](docs/reference/generated-api.md), and
-[feature table](docs/reference/features.md).
+Then use the [DSL reference](docs/reference/dsl.md),
+[generated API reference](docs/reference/generated-api.md),
+[feature table](docs/reference/features.md), or
+[architecture overview](docs/contributor/architecture.md).
 Current user-facing changes are summarized in the [changelog](CHANGELOG.md).
 
 ## Workspace
@@ -130,6 +133,8 @@ just test
 just ui
 just msrv
 just fixtures
+just site
+just site-serve
 just docs
 just package
 just deny

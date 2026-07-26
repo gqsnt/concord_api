@@ -7,13 +7,13 @@ use concord::SecretString;
 fn imports_and_constructs_every_enabled_canonical_declaration() {
     let _minimal_builder = concord_examples::getting_started::minimal::MinimalApi::builder();
     let _reference_builder = concord_examples::contracts::full_dsl::ReferenceApi::builder();
+    let _minimal =
+        concord_examples::getting_started::minimal::construct().expect("minimal construction");
 
     #[cfg(feature = "default-tls")]
     {
         use concord_examples::contracts::full_dsl::ReferenceApi;
 
-        let _minimal =
-            concord_examples::getting_started::minimal::construct().expect("minimal construction");
         concord_examples::contracts::full_dsl::construct().expect("full DSL construction");
         let reference = ReferenceApi::builder()
             .set_tenant("tenant-a".to_owned())
