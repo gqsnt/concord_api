@@ -4,6 +4,14 @@
 
 ### Added
 
+- One complete mdBook documentation site for new users, feature users,
+  extension authors, and maintainers. It includes a request-executing Start
+  path, the Core Guide, focused feature guides, nine compiled-example recipes,
+  public extension paths, exact reference navigation, architecture/compiler
+  internals, runtime contracts, and maintenance procedures. The root
+  `book.toml`, `just site`, `just site-serve`, strict xtask inventory/link/include
+  checks, and the dedicated Documentation CI job use mdBook 0.5.4 and render
+  under `target/concord-docs/`.
 - A single `concord` application façade with generated clients, explicit
   endpoint values, runtime endpoints, and one managed executor.
 - Named generated client builders, inherent request terminals, safe endpoint

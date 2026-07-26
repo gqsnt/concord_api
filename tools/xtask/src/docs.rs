@@ -35,9 +35,9 @@ const GENERATED_FEATURES_START: &str = "<!-- BEGIN GENERATED FEATURES -->";
 const GENERATED_FEATURES_END: &str = "<!-- END GENERATED FEATURES -->";
 const GENERATED_LIMITS_START: &str = "<!-- BEGIN GENERATED LIMITS -->";
 const GENERATED_LIMITS_END: &str = "<!-- END GENERATED LIMITS -->";
-// D11 enables the final all-pages, outside-link, and wording gates after the
-// phased migration has removed the old pages.
-const STRICT_SITE_INVENTORY: bool = false;
+// The completed site keeps inventory, outside-link, and user-wording checks
+// enabled together so a later edit cannot recreate a migration-only gap.
+const STRICT_SITE_INVENTORY: bool = true;
 const USER_PAGE_DIRECTORIES: &[&str] = &["start", "guide", "features", "recipes", "extending"];
 const TEMPORARY_EXECUTION_AIDS: &[&str] = &[
     "CONCORD_DOCUMENTATION_SITE_AGENT_PROMPT.md",
@@ -1121,6 +1121,16 @@ mod tests {
         root.write("docs/SUMMARY.md", "# Summary\n\n- [Missing](missing.md)\n");
         let error = check_summary(root.path(), false).expect_err("missing target must fail");
         assert!(error.contains("missing SUMMARY target"), "{error}");
+    }
+
+    #[test]
+    fn strict_summary_rejects_an_unlisted_markdown_page() {
+        let root = TemporaryRoot::new();
+        root.write("docs/listed.md", "# Listed\n");
+        root.write("docs/unlisted.md", "# Unlisted\n");
+        root.write("docs/SUMMARY.md", "# Summary\n\n- [Listed](listed.md)\n");
+        let error = check_summary(root.path(), true).expect_err("unlisted page must fail");
+        assert!(error.contains("missing [\"unlisted.md\"]"), "{error}");
     }
 
     #[test]

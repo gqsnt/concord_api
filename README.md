@@ -96,11 +96,22 @@ Start with the complete mdBook path:
 - [Install Concord](docs/start/install.md)
 - [Your first API](docs/start/first-api.md)
 - [Make the first request](docs/start/first-request.md)
+- [Choose your next path](docs/start/next.md)
 
-Then use the [DSL reference](docs/reference/dsl.md),
-[generated API reference](docs/reference/generated-api.md),
-[feature table](docs/reference/features.md), or
-[architecture overview](docs/contributor/architecture.md).
+Continue through the [Core Guide](docs/concepts/contract-model.md), choose a
+[feature](docs/features/authentication.md) or
+[recipe](docs/recipes/regional-apis.md), and use the
+[DSL reference](docs/reference/dsl.md),
+[generated API reference](docs/reference/generated-api.md), and
+[feature table](docs/reference/features.md) for exact facts.
+
+Maintainers and forks start with the
+[architecture overview](docs/contributor/architecture.md), then use
+[runtime contracts](docs/contributor/contracts/authentication.md) and the
+[workspace guide](docs/contributor/workspace.md). Build the complete local
+site with `just site`; preview it with `just site-serve`. Both use the root
+`book.toml`, source from `docs/`, and the pinned mdBook 0.5.4 workflow.
+
 Current user-facing changes are summarized in the [changelog](CHANGELOG.md).
 
 ## Workspace
