@@ -17,8 +17,10 @@ contains operational policy and effects.
 
 Construction and navigation preserve declaration-domain names. Generated
 public value mutation is a distinct vocabulary: `set_*` selects a value,
-`clear_*` selects optional absence, and `reset_*` restores a DSL default.
-This keeps navigation from being confused with snapshot mutation.
+`clear_*` selects absence when the type permits it, and `reset_*` restores a
+DSL default when one exists. Absence and default capabilities are independent;
+a defaulted `Option` owns both controls. This keeps navigation from being
+confused with snapshot mutation.
 
 Keeping those layers separate matters. A concrete rate limiter, hook object,
 transport retry policy, proxy, or observer is deployment policy and belongs on

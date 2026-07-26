@@ -6,8 +6,9 @@
 //! policy exposed as `rate_limit::LocalRateLimiter`.
 //!
 //! Generated construction and navigation use declaration-domain method names.
-//! Public value mutation uses `set_*`; optional values additionally use
-//! `clear_*`, and defaulted values use `reset_*`.
+//! Public value mutation uses `set_*`; absence-capable values additionally use
+//! `clear_*`, and values with declaration defaults use `reset_*`. These
+//! capabilities are independent, so a defaulted `Option<T>` exposes all three.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -15,8 +16,9 @@
 /// Declares a generated Concord client and its typed endpoints.
 ///
 /// Generated constructors and navigation retain declaration-domain names.
-/// Public value mutations use `set_*`, with `clear_*` for optional values and
-/// `reset_*` for defaulted values.
+/// Public value mutations use `set_*`, with `clear_*` for absence-capable
+/// values and `reset_*` for values with declaration defaults. A value may have
+/// both capabilities.
 #[cfg(feature = "dangerous-raw-response")]
 #[macro_export]
 macro_rules! api {
@@ -32,8 +34,9 @@ macro_rules! api {
 /// Declares a generated Concord client and its typed endpoints.
 ///
 /// Generated constructors and navigation retain declaration-domain names.
-/// Public value mutations use `set_*`, with `clear_*` for optional values and
-/// `reset_*` for defaulted values.
+/// Public value mutations use `set_*`, with `clear_*` for absence-capable
+/// values and `reset_*` for values with declaration defaults. A value may have
+/// both capabilities.
 #[cfg(not(feature = "dangerous-raw-response"))]
 #[macro_export]
 macro_rules! api {

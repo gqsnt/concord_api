@@ -14,8 +14,9 @@ The stable direction is:
 - clients use named builders rather than positional secret/provider
   constructors;
 - generated construction/navigation keeps domain names, while public value
-  mutation uses `set_*`, optional absence uses `clear_*`, and default
-  restoration uses `reset_*`; no unpublished bare mutation aliases are kept;
+  mutation uses `set_*`, absence capability uses `clear_*`, and declaration
+  defaults use `reset_*`; both helpers coexist when both capabilities do, and
+  no unpublished bare mutation aliases are kept;
 - request bodies use explicit `#[body]`;
 - named clauses are order-independent;
 - runtime-defined endpoints use the current runtime endpoint API;

@@ -26,7 +26,9 @@ descriptions, valid inherent terminals, and each endpoint's structured
 before emission. It is also the single owner of `set_*` value-control names;
 collision validation, endpoint/request models, emitters, and generated
 Rustdoc consume those exact names. Emitters must not rediscover semantic facts
-or new user errors.
+or new user errors. Absence capability, declaration-default capability, and
+setter argument type are independent semantic facts; a defaulted `Option`
+therefore carries both clear and reset helpers through the surface model.
 
 `crates/concord-macros/src/emit` produces public artifacts, documentation,
 hidden bridge calls, and feature assertions. Applications invoke only

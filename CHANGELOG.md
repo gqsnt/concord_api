@@ -85,11 +85,19 @@
 - Ordered rate-limit key generation now formats referenced dimensions through
   the core-owned bounded bridge, raising the generated-contract version to 27.
 - Every generated public value mutation now uses
-  `value(value) -> set_value(value)`. Optional values retain `clear_value()`;
-  defaulted values retain `reset_value()`. Client/scope/endpoint construction
-  and navigation names, secret/credential/provider methods, timeout controls,
-  and handwritten builders are unchanged. The unpublished bare mutation
-  methods have no compatibility aliases.
+  `value(value) -> set_value(value)`. Absence-capable values retain
+  `clear_value()`; values with declaration defaults retain `reset_value()`.
+  Client/scope/endpoint construction and navigation names,
+  secret/credential/provider methods, timeout controls, and handwritten
+  builders are unchanged. The unpublished bare mutation methods have no
+  compatibility aliases.
+- Absence and declaration defaults are now independent generated-control
+  capabilities. A defaulted `Option<T>` or `Option<Vec<T>>` exposes
+  `set_value(inner)`, `clear_value()`, and `reset_value()` on every surface
+  that owns the value. Client-builder clear selects an explicit `None`, while
+  reset discards the override; snapshot reset restores the retained evaluated
+  default. Exact recognized `Option` syntax remains optional, while opaque
+  aliases remain required opaque values.
 - Effective inherited and local rate-limit partitions now reject direct
   `vars.*`, `scope.*`, or `ep.*` dimensions controlled by pagination. A
   `by [host]` dimension is also rejected when final host shaping depends

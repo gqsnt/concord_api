@@ -6,6 +6,15 @@
 
 use concord::api;
 
+/// Retained client default used to demonstrate clear/reset distinction.
+pub const DEFAULT_CLIENT_LABEL: Option<&'static str> = Some("client-default");
+/// Retained scope default used by explicit snapshots.
+pub const DEFAULT_SCOPE_LABEL: Option<&'static str> = Some("scope-default");
+/// Retained endpoint default used by named request wrappers.
+pub const DEFAULT_VERBOSE: Option<bool> = Some(false);
+/// Retained optional-vector endpoint default.
+pub const DEFAULT_TAGS: Option<Vec<&'static str>> = Some(Vec::new());
+
 api! {
     client ReferenceApi {
         base "https://reference.example.test/root/";
@@ -13,6 +22,8 @@ api! {
             tenant: String;
             locale: Option<String>;
             page_size: u32 = 25;
+            client_label: Option<&'static str> =
+                crate::contracts::full_dsl::DEFAULT_CLIENT_LABEL;
         }
         credentials {
             secret api_key: String;
@@ -33,14 +44,25 @@ api! {
         }
     }
 
-    GET status(verbose: Option<bool>) -> Bytes {
+    GET status(
+        verbose: Option<bool> = crate::contracts::full_dsl::DEFAULT_VERBOSE,
+        tags: Option<Vec<&'static str>> = crate::contracts::full_dsl::DEFAULT_TAGS,
+    ) -> Bytes {
         path ["status"];
-        query { "verbose" = ep.verbose; }
+        query {
+            "verbose" = ep.verbose;
+            "tag" = ep.tags;
+        }
         auth off;
         timeout off;
     }
 
-    scope regions(region: String, language: Option<String>) {
+    scope regions(
+        region: String,
+        language: Option<String>,
+        scope_label: Option<&'static str> =
+            crate::contracts::full_dsl::DEFAULT_SCOPE_LABEL,
+    ) {
         host [scope.region, "api"];
         path ["regions", scope.region];
         query { "language" = scope.language; }
@@ -73,22 +95,40 @@ pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
         .clear_locale()
         .set_page_size(50)
         .reset_page_size()
+        .set_client_label("client-override")
+        .clear_client_label()
+        .reset_client_label()
         .api_key(
             concord::SecretString::try_new("example-api-key").expect("bounded example API key"),
         )
         .build()?;
-    let _: reference_api::StatusRequest = client.status().set_verbose(true);
+    let _: reference_api::StatusRequest = client
+        .status()
+        .set_verbose(true)
+        .clear_verbose()
+        .reset_verbose()
+        .set_tags(vec!["stable", "documented"])
+        .clear_tags()
+        .reset_tags();
     let _: reference_api::regions::FetchRequest = client
         .regions("eu-west".to_owned())
         .set_language("fr".to_owned())
+        .set_scope_label("scope-override")
+        .clear_scope_label()
+        .reset_scope_label()
         .fetch("42".to_owned(), vec!["stable".to_owned()]);
     let endpoint = reference_api::regions::Fetch::new(
         "eu-west".to_owned(),
         "42".to_owned(),
         vec!["stable".to_owned()],
     );
-    let _: reference_api::regions::FetchRequest =
-        client.request(endpoint.set_language("fr".to_owned()));
+    let _: reference_api::regions::FetchRequest = client.request(
+        endpoint
+            .set_language("fr".to_owned())
+            .set_scope_label("scope-override")
+            .clear_scope_label()
+            .reset_scope_label(),
+    );
     let retry_client = ReqwestRetryReference::builder().build()?;
     let _: reqwest_retry_reference::HealthRequest = retry_client.health();
     Ok(())

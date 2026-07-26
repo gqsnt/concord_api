@@ -39,14 +39,19 @@ required. Missing inputs are runtime-validated at `build()` using
 
 Construction and navigation keep declaration-domain names. Value mutation
 uses `set_NAME(value)`; selecting absence uses `clear_NAME()`; restoring a DSL
-default uses `reset_NAME()`.
+default uses `reset_NAME()`. Absence capability and a declaration default are
+independent properties.
 
-| Generated owner | Required value | Optional value | Defaulted value |
-|---|---|---|---|
-| Client builder | `set_name` | `set_name` + `clear_name` | `set_name` + `reset_name` |
-| Scope façade | constructor argument only | `set_name` + `clear_name` | `set_name` + `reset_name` |
-| Explicit endpoint snapshot | constructor argument only | `set_name` + `clear_name` | `set_name` + `reset_name` |
-| Named request wrapper | construction only | owned endpoint control: `set_name` + `clear_name` | owned endpoint control: `set_name` + `reset_name` |
+| Generated owner | Plain required value | Absence-capable, no default | Has a default, not absence-capable | Absence-capable and has a default |
+|---|---|---|---|---|
+| Client builder | `set_name` | `set_name` + `clear_name` | `set_name` + `reset_name` | `set_name` + `clear_name` + `reset_name` |
+| Scope façade | constructor argument only | `set_name` + `clear_name` | `set_name` + `reset_name` | `set_name` + `clear_name` + `reset_name` |
+| Explicit endpoint snapshot | constructor argument only | `set_name` + `clear_name` | `set_name` + `reset_name` | `set_name` + `clear_name` + `reset_name` |
+| Named request wrapper | construction only | owned endpoint control: `set_name` + `clear_name` | owned endpoint control: `set_name` + `reset_name` | owned endpoint control: `set_name` + `clear_name` + `reset_name` |
+
+For `Option<T>`, `set_name` accepts `T`; for `Option<Vec<T>>`, it accepts
+`Vec<T>`. Neither setter requires the caller to wrap its argument in `Some`.
+`clear_name()` explicitly selects `None`.
 
 Named request wrappers do not gain inherited scope controls they did not
 already own. Required scope/endpoint values remain arguments to navigation or
@@ -57,16 +62,19 @@ builder APIs keep their existing names.
 Collision validation reserves the exact emitted names. For example, a value
 named `build` is legal when `set_build` is free, while a child method or
 unchanged secret/provider method named `set_region` collides with the control
-for value `region`. Optional `clear_*` and defaulted `reset_*` helper
-collisions remain errors.
+for value `region`. Absence-capable `clear_*` and declaration-default
+`reset_*` helper collisions remain errors. When both capabilities exist, both
+helper names are reserved and validated.
 
 All generated value controls consume and return the builder or immutable
-snapshot. `clear_name()` selects `None`. On a client builder,
-`reset_name()` discards the override and lets `build()` evaluate the DSL
-default. On a scope, explicit endpoint, or named request snapshot,
-`reset_name()` restores the retained evaluated default without re-evaluation.
-Repeated selection is last-write-wins. An explicit limiter takes precedence
-over generated façade composition.
+snapshot. For a defaulted `Option<T>`, a client builder retains three states:
+no override, an explicit `Some(value)`, and explicit absence. `clear_name()`
+selects explicit absence; `reset_name()` returns to no override and lets
+`build()` choose and evaluate the DSL default. A scope, explicit endpoint, or
+named request snapshot instead retains the evaluated default:
+`clear_name()` selects absence and `reset_name()` restores that retained value
+without re-evaluation. Repeated selection is last-write-wins. An explicit
+limiter takes precedence over generated façade composition.
 
 Built-in static credential material is validated during `build()` before the
 immutable client snapshot and credential slots are created. Its generated
@@ -82,9 +90,10 @@ A scope with required parameters is entered through:
 client.scope_name(required_in_declaration_order)
 ```
 
-It returns a named scope value with inherent optional/default `set_*` controls
-and child scope/endpoint methods. Scope values contain no client runtime and
-are inert until an endpoint is bound.
+It returns a named scope value with inherent non-required `set_*` controls,
+independently derived clear/reset helpers, and child scope/endpoint methods.
+Scope values contain no client runtime and are inert until an endpoint is
+bound.
 
 ## Endpoints and request wrappers
 

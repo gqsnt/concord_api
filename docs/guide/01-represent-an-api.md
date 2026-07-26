@@ -60,7 +60,8 @@ visible scope input unambiguously; declarations with ambiguous visible names
 are rejected instead of choosing one. Optional values omit the shaping
 operation when absent, while defaults are evaluated at construction and can be
 restored with generated `reset_*` controls. Value overrides use `set_*`, and
-optional absence is selected with `clear_*`.
+absence-capable values select explicit absence with `clear_*`. A value may
+both accept absence and have a default, in which case it exposes both helpers.
 
 Use `fmt[...]` to concatenate public atoms into one host label, path segment,
 query value, or header value:

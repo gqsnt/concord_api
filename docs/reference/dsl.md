@@ -110,6 +110,8 @@ vars {
     locale: Option<String>;
     qualified: std::option::Option<String>;
     page_size: u32 = 25;
+    label: Option<&'static str> = crate::DEFAULT_LABEL;
+    tags: Option<Vec<&'static str>> = crate::DEFAULT_TAGS;
 }
 ```
 
@@ -123,9 +125,9 @@ scope regions(region: String, locale: Option<String>) {
 
 Concord recognizes optionality syntactically, not semantically. Only
 `Option<T>` and `std::option::Option<T>` (optionally with a leading `::`) are
-optional declarations. The generated `.set_name(...)` control accepts `T`;
-`.clear_name()` selects `None`, which is omitted where the shaping operation
-permits it.
+absence-capable declarations. The generated `.set_name(...)` control accepts
+`T`; for `Option<Vec<T>>`, it accepts `Vec<T>`. `.clear_name()` explicitly
+selects `None`, which is omitted where the shaping operation permits it.
 
 A type alias remains required because a proc macro cannot resolve aliases:
 
@@ -136,7 +138,10 @@ type MaybeLocale = Option<String>;
 GET item(locale: MaybeLocale) -> Bytes;
 ```
 
-Defaults use `name: Type = expression`. Accepted expressions are:
+Defaults use `name: Type = expression`. Defaulting is independent of absence:
+an `Option<T>` or `Option<Vec<T>>` with a default has both capabilities and
+therefore exposes `set_*`, `clear_*`, and `reset_*`. Accepted default
+expressions are:
 
 - a string literal;
 - a signed base-10 integer literal;
@@ -144,19 +149,21 @@ Defaults use `name: Type = expression`. Accepted expressions are:
 - a Rust const path.
 
 Calls, methods, macros, blocks, and collection expressions are rejected.
-Defaulted values are overridden with `.set_name(...)`. On a client builder,
-`.reset_name()` discards the override so the declaration default is evaluated
-during `build()`. On an already evaluated scope, explicit endpoint, or named
-request snapshot, `.reset_name()` restores the retained default without
-re-evaluation.
+Values with defaults are overridden with `.set_name(...)`. On a client
+builder, `.clear_name()` records explicit absence while `.reset_name()`
+discards the override so the declaration default is evaluated during
+`build()`. The two operations remain observably different when the default is
+`Some(...)`. On an already evaluated scope, explicit endpoint, or named request
+snapshot, `.clear_name()` selects `None`, while `.reset_name()` restores the
+retained default without re-evaluation.
 
 Required client values use `.set_name(...)`. Required scope and endpoint
 arguments preserve declaration order and remain constructor/navigation
-arguments. Optional and defaulted scope values gain `set_*` plus
-`clear_*`/`reset_*` controls on their scope and explicit endpoint snapshots.
-Optional and defaulted endpoint values gain the same controls on explicit
-endpoint snapshots and the named request wrapper. A wrapper does not gain
-inherited scope controls it did not already own.
+arguments. Absence-capable and defaulted scope values independently gain
+`clear_*` and `reset_*` alongside `set_*` on their scope and explicit endpoint
+snapshots. Endpoint values use the same capability rule on explicit endpoint
+snapshots and the named request wrapper. A wrapper does not gain inherited
+scope controls it did not already own.
 
 ## Explicit request bodies
 

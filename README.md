@@ -52,10 +52,12 @@ assert!(response.status().is_success());
 Generated construction and navigation keep their domain names:
 `UsersApi::builder()`, scope methods, endpoint methods, and endpoint
 constructors still construct or navigate. Public value mutation is explicit:
-use `.set_name(value)`, `.clear_name()` for an optional value, and
-`.reset_name()` for a defaulted value. There are no legacy bare mutation
-aliases. See the [generated API reference](docs/reference/generated-api.md)
-for the exact client/scope/endpoint/request matrix and reset semantics.
+use `.set_name(value)`, `.clear_name()` when the value is absence-capable, and
+`.reset_name()` when it has a declaration default. These capabilities are
+independent: a defaulted `Option<T>` exposes all three controls, and its setter
+accepts `T`, not `Option<T>`. There are no legacy bare mutation aliases. See
+the [generated API reference](docs/reference/generated-api.md) for the exact
+client/scope/endpoint/request matrix and reset semantics.
 
 Each endpoint has a predictable direct method, public endpoint value, named
 request wrapper, and safe description. Generated endpoints, explicit values,

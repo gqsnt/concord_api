@@ -15,12 +15,14 @@ let client = CatalogApi::builder()
 
 Required configuration missing at `.build()` produces a focused,
 secret-safe `ClientBuildError`. Public value mutation always uses `set_*`;
-optional values additionally use `clear_*`, and defaulted values use
-`reset_*`. On this builder, reset discards the override so the DSL default is
-evaluated during `build()`. Repeated controls are deterministic: replacement
-settings use the last value, while generated rate limits remain lexically
-additive. An explicitly configured limiter wins over façade default
-composition.
+absence-capable values additionally use `clear_*`, and values with a
+declaration default use `reset_*`. These capabilities are independent, so a
+defaulted `Option<T>` exposes all three methods and `set_*` accepts `T`. On
+this builder, clear records explicit `None`; reset discards the override so
+the DSL default is evaluated during `build()`. Repeated controls are
+deterministic: replacement settings use the last value, while generated rate
+limits remain lexically additive. An explicitly configured limiter wins over
+façade default composition.
 
 `runtime_endpoint_timeout` applies only when a `RuntimeEndpoint` selects
 `TimeoutSelection::InheritClient`. Generated endpoints keep the timeout
@@ -36,9 +38,10 @@ let value = request.await?;
 
 The endpoint call remains a domain-named constructor/navigation method.
 `set_verbose` is a consuming mutation of the request snapshot. Clearing an
-optional value selects `None`; resetting a defaulted scope, endpoint, or
-request value restores its retained evaluated default without re-running the
-DSL default expression.
+absence-capable value selects `None`; resetting a scope, endpoint, or request
+value that has a declaration default restores its retained evaluated default
+without re-running the DSL default expression. Thus clear and reset remain
+different when that retained default is `Some(...)`.
 
 Construction does not run hooks, fetch credentials, acquire a limiter,
 materialize a body, poll a stream, or perform HTTP. Awaiting a valid terminal

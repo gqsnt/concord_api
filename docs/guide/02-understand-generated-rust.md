@@ -27,9 +27,8 @@ client.products(region).by_id(id)
 client.request(catalog_api::products::ById::new(region, id))
 ```
 
-Required values are ordered constructor or method arguments. Optional and
-defaulted values use explicit inherent controls on the scope, endpoint, or
-request value:
+Required values are ordered constructor or method arguments. Values owned by
+a mutable builder or immutable snapshot use explicit inherent controls:
 
 ```text
 construct or navigate  -> declaration-domain method name
@@ -44,6 +43,12 @@ constructor arguments. A named request exposes only the non-required endpoint
 controls it owns, not inherited scope controls. No generated prelude,
 extension trait, legacy bare setter, `with_*` alias, or mutable setter is
 required or emitted for normal use.
+
+Absence capability and a declaration default are independent. An
+absence-capable value gains `clear_name()`; one with a declaration default
+gains `reset_name()`. A defaulted `Option<T>` therefore has `set`, `clear`, and
+`reset`, with `set_name(T)` accepting the inner value. `Option<Vec<T>>`
+similarly accepts `Vec<T>`.
 
 Every endpoint supplies:
 
@@ -61,9 +66,10 @@ for application code.
 
 Direct and explicit forms bind the same endpoint model and enter the same
 executor. Endpoint values are reusable or cloneable only when their stored
-fields permit it. Builder `reset_*` defers DSL-default evaluation to
-`build()`; scope/endpoint/request `reset_*` restores the retained evaluated
-default without re-evaluation. See the exact
+fields permit it. Builder `clear_*` records explicit absence, while builder
+`reset_*` discards the override and defers DSL-default evaluation to `build()`.
+Scope/endpoint/request `reset_*` restores the retained evaluated default
+without re-evaluation. See the exact
 [generated API reference](../reference/generated-api.md).
 
 ## Running proof

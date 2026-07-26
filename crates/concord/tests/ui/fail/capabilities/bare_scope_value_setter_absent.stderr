@@ -1,0 +1,17 @@
+error[E0599]: no method named `label` found for struct `ControlScope` in the current scope
+  --> tests/ui/fail/capabilities/bare_scope_value_setter_absent.rs:16:36
+   |
+ 4 | / api! {
+ 5 | |     client ScopeSetterApi {
+ 6 | |         base "http://scope-setter.example.test";
+...  |
+12 | | }
+   | |_- method `label` not found for this struct
+...
+16 |       let _ = client.control_scope().label("selected".to_owned());
+   |                                      ^^^^^
+   |
+help: there is a method `set_label` with a similar name
+   |
+16 |     let _ = client.control_scope().set_label("selected".to_owned());
+   |                                    ++++

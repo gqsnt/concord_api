@@ -72,7 +72,8 @@ tests prove users cannot forge generated endpoint implementations.
 At all times:
 
 - the resolved macro model owns generated names and capabilities, including
-  exact `set_*`, optional `clear_*`, and defaulted `reset_*` value controls;
+  exact `set_*`, independently derived absence-capable `clear_*`, and
+  declaration-default `reset_*` value controls;
 - rate-limit declarations resolve applicability and ordered key dimensions in
   the lexical owner; inherited rules never re-resolve against descendant-only
   values;

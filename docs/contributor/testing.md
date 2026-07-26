@@ -79,8 +79,9 @@ Hardening proofs stay with the lowest semantic owner:
   request-head rejection, normalized DNS/IP host-shaping acceptance, exact
   diagnostics, rate-limit dimension grammar/visibility, effective inherited
   pagination-dependency closure (including final host expressions), exact
-  generated `set_*`/`clear_*`/`reset_*` control names and collisions, legacy
-  bare-control absence, and generated documentation capabilities;
+  generated `set_*`/`clear_*`/`reset_*` control names and collisions,
+  independent absence/default capabilities, legacy bare-control absence on
+  all four generated owners, and generated documentation capabilities;
 - core unit tests own capped arithmetic, JSON-independent body defense,
   startup retention, reader-buffer reuse, shared response-progress arithmetic,
   streaming/buffered/status/provider empty-chunk totals and fairness,
@@ -149,9 +150,10 @@ The exact current toolchain pinned by `rust-toolchain.toml` owns Trybuild
 snapshots and Clippy. Rust 1.85 owns separate semantic JSON checks that require
 compilation failure, user-facing message fragments, the expected primary source
 span, and absence of internal bridge names or protected sentinels. The
-generated-control MSRV case also requires the `set_*` replacement hint while
-the bare method remains absent. Exact MSRV rendering is intentionally not an
-owner.
+generated-control MSRV cases also require the `set_*` replacement hint while
+the bare method remains absent on their client-builder, scope-façade,
+explicit-endpoint, or request-wrapper owner. Exact MSRV rendering is
+intentionally not an owner.
 
 `just verify` includes `just workflow` once, but it cannot establish remote
 GitHub execution, Linux/macOS behavior from a Windows host, graphical editor

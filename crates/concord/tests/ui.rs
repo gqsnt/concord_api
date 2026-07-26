@@ -40,6 +40,9 @@ fn generated_privacy_and_capability_boundaries_are_compiler_enforced() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/fail/privacy/*.rs");
     for path in [
+        "tests/ui/fail/capabilities/bare_client_builder_value_setter_absent.rs",
+        "tests/ui/fail/capabilities/bare_endpoint_value_setter_absent.rs",
+        "tests/ui/fail/capabilities/bare_scope_value_setter_absent.rs",
         "tests/ui/fail/capabilities/bare_value_setter_absent.rs",
         "tests/ui/fail/capabilities/non_clone_body_endpoint.rs",
         "tests/ui/fail/capabilities/runtime_endpoint_builder_capabilities_absent.rs",
