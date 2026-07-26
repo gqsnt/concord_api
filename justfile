@@ -1,5 +1,6 @@
 # Use the native shell on Windows; recipe bodies remain portable commands.
-set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+set shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 
 default:
     @just --list
