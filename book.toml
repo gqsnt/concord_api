@@ -14,6 +14,7 @@ create-missing = false
 extra-watch-dirs = ["crates/concord-examples/src"]
 
 [output.html]
+no-section-label = true
 additional-css = ["docs/theme/concord.css"]
 
 [output.html.fold]

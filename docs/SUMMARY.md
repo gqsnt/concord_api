@@ -2,7 +2,7 @@
 
 - [Concord](README.md)
 
-# Using Concord
+# Start
 
 - [Start: What Concord is](start/what-is-concord.md)
   - [Install Concord](start/install.md)
@@ -71,7 +71,7 @@
 - [Dangerous capabilities](reference/dangerous.md)
 - [Unsupported forms](reference/unsupported.md)
 
-# Maintaining Concord
+---
 
 # Architecture
 
