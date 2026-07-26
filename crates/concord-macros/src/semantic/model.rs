@@ -160,7 +160,7 @@ pub(crate) enum EndpointDocInputKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct EndpointDocSetter {
     pub(crate) name: String,
-    pub(crate) method: String,
+    pub(crate) setter: String,
     pub(crate) helper: String,
     pub(crate) type_name: String,
     pub(crate) kind: EndpointDocInputKind,
@@ -251,7 +251,7 @@ pub(crate) enum RequiredArgument {
 #[derive(Clone)]
 pub(crate) struct EndpointSetter {
     pub(crate) parameter: usize,
-    pub(crate) method: Ident,
+    pub(crate) setter: Ident,
     pub(crate) helper: Ident,
 }
 

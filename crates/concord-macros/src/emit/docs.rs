@@ -106,7 +106,7 @@ pub(super) fn request_wrapper_doc(endpoint: &Endpoint) -> String {
         .iter()
         .flat_map(|setter| {
             [
-                format!("`.{}`", setter.method),
+                format!("`.{}`", setter.setter),
                 format!("`.{}()`", setter.helper),
             ]
         })
@@ -217,7 +217,7 @@ fn render_setter(setter: &EndpointDocSetter) -> String {
         setter.name,
         setter.type_name,
         input_kind_name(setter.kind),
-        setter.method,
+        setter.setter,
         setter.helper,
     )
 }
@@ -856,7 +856,7 @@ mod tests {
         assert!(endpoint.contains("Timeout: inherited 20s"));
 
         let request = request_wrapper_doc(json);
-        assert!(request.contains("`.optional`"));
+        assert!(request.contains("`.set_optional`"));
         assert!(request.contains("`.response()`"));
         assert!(request.contains("`.raw_response()`"));
         assert!(!request.contains("`.paginate(...)`"));

@@ -13,6 +13,6 @@ pub fn construct(client: &ReferenceApi) -> reference_api::regions::FetchRequest 
         "42".to_owned(),
         vec!["stable".to_owned()],
     )
-    .language("fr".to_owned());
+    .set_language("fr".to_owned());
     client.request(endpoint)
 }

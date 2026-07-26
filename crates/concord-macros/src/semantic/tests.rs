@@ -290,7 +290,7 @@ fn endpoint_surfaces_include_final_paths_names_and_capabilities() {
         ["regions", "users"]
     );
     assert_eq!(endpoint.surface.setters.len(), 1);
-    assert_eq!(endpoint.surface.setters[0].method, "verbose");
+    assert_eq!(endpoint.surface.setters[0].setter, "set_verbose");
     assert_eq!(endpoint.surface.setters[0].helper, "clear_verbose");
     assert!(endpoint.surface.terminals.response);
     assert!(!endpoint.surface.terminals.pagination);
@@ -776,50 +776,56 @@ fn generated_name_collisions_cover_request_types_and_inherent_methods() {
     .expect("request wrapper collision");
     assert!(trait_item.to_string().contains("collides"));
 
-    let request_method = resolve(
-        parse::parse(quote! {
-            client Api {
-                base "https://example.test";
-            }
-            GET read(timeout: Option<u64>) -> Bytes;
-        })
-        .expect("AST"),
-    )
-    .err()
-    .expect("generic request method collision");
-    assert!(request_method.to_string().contains("timeout"));
+    let request_method = resolve_ok(quote! {
+        client Api {
+            base "https://example.test";
+        }
+        GET read(timeout: Option<u64>) -> Bytes;
+    });
+    let request_method = test_support::endpoint(&request_method.client.children, "read");
+    assert_eq!(request_method.surface.setters[0].setter, "set_timeout");
 
-    let helper_method = resolve(
-        parse::parse(quote! {
-            client Api {
-                base "https://example.test";
-            }
-            GET read(
-                value: Option<String>,
-                clear_value: Option<String>,
-            ) -> Bytes;
-        })
-        .expect("AST"),
-    )
-    .err()
-    .expect("optional helper collision");
-    assert!(helper_method.to_string().contains("clear_value"));
+    let helper_names = resolve_ok(quote! {
+        client Api {
+            base "https://example.test";
+        }
+        GET read(
+            value: Option<String>,
+            clear_value: Option<String>,
+            limit: u32 = 25,
+            reset_limit: Option<bool>,
+        ) -> Bytes;
+    });
+    let helper_names = test_support::endpoint(&helper_names.client.children, "read");
+    assert_eq!(
+        helper_names
+            .surface
+            .setters
+            .iter()
+            .map(|setter| setter.setter.to_string())
+            .collect::<Vec<_>>(),
+        [
+            "set_value",
+            "set_clear_value",
+            "set_limit",
+            "set_reset_limit"
+        ]
+    );
 
-    let reset_method = resolve(
+    let child_setter = resolve(
         parse::parse(quote! {
             client Api {
                 base "https://example.test";
             }
-            GET read(
-                limit: u32 = 25,
-                reset_limit: Option<bool>,
-            ) -> Bytes;
+            scope resources(region: Option<String>) {
+                GET set_region() -> Bytes;
+            }
         })
         .expect("AST"),
     )
     .err()
-    .expect("default helper collision");
-    assert!(reset_method.to_string().contains("reset_limit"));
+    .expect("child method colliding with set-prefixed scope control");
+    assert!(child_setter.to_string().contains("set_region"));
 
     let scope_type = resolve(
         parse::parse(quote! {
@@ -849,21 +855,24 @@ fn generated_name_collisions_cover_request_types_and_inherent_methods() {
     .expect("endpoint trait collision");
     assert!(endpoint_trait.to_string().contains("Endpoint"));
 
-    let storage_terminal = resolve(
-        parse::parse(quote! {
-            client Api {
-                base "https://example.test";
-                credentials {
-                    credential session = endpoint source;
-                }
+    let storage_terminal = resolve_ok(quote! {
+        client Api {
+            base "https://example.test";
+            credentials {
+                credential session = endpoint source;
             }
-            GET source(store_as_session: Option<bool>) -> Bytes;
-        })
-        .expect("AST"),
-    )
-    .err()
-    .expect("credential storage terminal collision");
-    assert!(storage_terminal.to_string().contains("store_as_session"));
+        }
+        GET source(store_as_session: Option<bool>) -> Bytes;
+    });
+    let storage_terminal = test_support::endpoint(&storage_terminal.client.children, "source");
+    assert_eq!(
+        storage_terminal.surface.setters[0].setter,
+        "set_store_as_session"
+    );
+    assert_eq!(
+        storage_terminal.surface.terminals.credential_storage[0].method,
+        "store_as_session"
+    );
 }
 
 #[test]
@@ -900,6 +909,19 @@ fn authentication_generated_names_cover_builder_accessor_and_acquisition_namespa
     assert!(helper_secret.contains("clear_token"));
     assert!(helper_secret.contains("collides"));
 
+    let reset_secret = error(quote! {
+        client Api {
+            base "https://example.test";
+            vars { limit: u32 = 25; }
+            credentials {
+                secret reset_limit: String;
+                credential key = api_key(secret.reset_limit);
+            }
+        }
+    });
+    assert!(reset_secret.contains("reset_limit"));
+    assert!(reset_secret.contains("collides"));
+
     let internal_accessor = error(quote! {
         client Api {
             base "https://example.test";
@@ -912,15 +934,18 @@ fn authentication_generated_names_cover_builder_accessor_and_acquisition_namespa
     assert!(internal_accessor.contains("__concord_new"));
     assert!(internal_accessor.contains("collides"));
 
-    let acquisition_method = error(quote! {
+    let set_prefixed_secret = error(quote! {
         client Api {
             base "https://example.test";
-            credentials { credential session = endpoint login; }
+            vars { region: String; }
+            credentials {
+                secret set_region: String;
+                credential key = api_key(secret.set_region);
+            }
         }
-        GET login(store_as_session: Option<String>) -> Bytes;
     });
-    assert!(acquisition_method.contains("store_as_session"));
-    assert!(acquisition_method.contains("collides"));
+    assert!(set_prefixed_secret.contains("set_region"));
+    assert!(set_prefixed_secret.contains("collides"));
 
     let request_wrapper = error(quote! {
         client Api {

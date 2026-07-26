@@ -191,7 +191,7 @@ async fn actual_rate_limit_example_honors_an_explicit_downstream_limiter() {
     let limiter = CountingLimiter::new();
     let configured: Arc<dyn RateLimiter> = Arc::new(limiter.clone());
     let client = RateLimitApi::builder()
-        .tenant("tenant-a".to_owned())
+        .set_tenant("tenant-a".to_owned())
         .configure_http(move |http| http.proxy(proxy))
         .configure_runtime(move |runtime| runtime.rate_limiter(configured))
         .build()

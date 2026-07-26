@@ -691,7 +691,7 @@ async fn application_controller_selects_the_same_count_termination_without_macro
     .expect("application count server");
     let proxy = SafeProxy::parse(server.url("")).expect("local proxy");
     let client = ApplicationCountApi::builder()
-        .policy(StablePolicy("stable-policy"))
+        .set_policy(StablePolicy("stable-policy"))
         .configure_http(move |http| http.proxy(proxy))
         .build()
         .expect("application count client");

@@ -22,7 +22,7 @@ There are no separate façade/endpoints public trees and no generated prelude.
 ```rust
 let builder: CatalogApiBuilder = CatalogApi::builder();
 let client: CatalogApi = builder
-    .required_value(value)
+    .set_required_value(value)
     .required_secret(concord::SecretString::try_new(secret)?)
     .provider(provider)
     .configure_http(|http| /* safe transport configuration */ http)

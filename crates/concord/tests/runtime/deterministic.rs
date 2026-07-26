@@ -110,8 +110,8 @@ async fn direct_and_explicit_named_wrappers_preserve_inertness_and_lifecycle_equ
                 encodes: Arc::clone(&encodes),
             },
         )
-        .verbose(true)
-        .limit(50)
+        .set_verbose(true)
+        .set_limit(50)
         .timeout(Duration::from_secs(5));
     let endpoint = runtime_api::resources::Submit::new(
         SCOPE_SENTINEL.to_owned(),
@@ -121,8 +121,8 @@ async fn direct_and_explicit_named_wrappers_preserve_inertness_and_lifecycle_equ
             encodes: Arc::clone(&encodes),
         },
     )
-    .verbose(true)
-    .limit(50);
+    .set_verbose(true)
+    .set_limit(50);
     let explicit = client.request(endpoint).timeout(Duration::from_secs(5));
 
     assert_eq!(server.request_count(), 0);

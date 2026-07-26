@@ -7,7 +7,9 @@ use syn::{GenericArgument, Ident, PathArguments, Type, TypePath};
 use super::model::{
     Child, ResolvedDefault, ResolvedValue, ResolvedValueKind, Value, ValueReference, ValueShape,
 };
-use super::surface::{RESERVED_GENERATED_METHODS, canonical_ident, insert_name};
+use super::surface::{
+    RESERVED_GENERATED_METHODS, canonical_ident, insert_name, value_setter_ident,
+};
 use super::{Resolver, SpanError};
 use crate::syntax::ast::{
     DefaultExpr as SourceDefault, ValueDecl, ValueKind as SourceValueKind, syntactic_option_inner,
@@ -126,7 +128,7 @@ pub(super) fn validate_setter_namespace(
         if include_required || !value.is_required() {
             insert_name(
                 &mut names,
-                canonical_ident(&value.name),
+                canonical_ident(&value_setter_ident(&value.name)),
                 value.name.span(),
                 owner,
             )?;
@@ -185,7 +187,7 @@ pub(super) fn validate_child_methods(
     for value in local_values.iter().filter(|value| !value.is_required()) {
         insert_name(
             &mut names,
-            canonical_ident(&value.name),
+            canonical_ident(&value_setter_ident(&value.name)),
             value.name.span(),
             owner,
         )?;

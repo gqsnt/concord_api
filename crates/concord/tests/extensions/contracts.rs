@@ -664,7 +664,7 @@ concord::api! {
 pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
     let _: Arc<dyn RateLimitObserver> = Arc::new(ExtensionObserver);
     let client = ExtensionApi::builder()
-        .construction(ExtensionConstructionProbe::new())
+        .set_construction(ExtensionConstructionProbe::new())
         .session_provider(ExtensionProvider)
         .configure_http(|http| {
             http.proxy(
@@ -821,13 +821,16 @@ async fn downstream_generated_controller_constructs_binds_and_collects_two_pages
     let proxy = SafeProxy::parse(server.url("")).expect("credential-free loopback proxy URL");
 
     let client = ExtensionApi::builder()
-        .construction(ExtensionConstructionProbe::new())
+        .set_construction(ExtensionConstructionProbe::new())
         .session_provider(ExtensionProvider)
         .configure_http(move |http| http.proxy(proxy))
         .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(ExtensionLimiter)))
         .build()
         .expect("downstream generated client");
-    let pagination = client.pages().cursor("initial".to_owned()).paginate(10_u32);
+    let pagination = client
+        .pages()
+        .set_cursor("initial".to_owned())
+        .paginate(10_u32);
 
     reset_extension_pagination_probes();
     let items = pagination
@@ -861,7 +864,7 @@ async fn public_request_body_spec_suppresses_empty_chunks_before_transport() {
         ScriptedServer::start([ResponseScript::ok("ok")]).expect("bounded loopback body server");
     let proxy = SafeProxy::parse(server.url("")).expect("credential-free loopback proxy URL");
     let client = ExtensionApi::builder()
-        .construction(ExtensionConstructionProbe::new())
+        .set_construction(ExtensionConstructionProbe::new())
         .session_provider(ExtensionProvider)
         .configure_http(move |http| http.proxy(proxy))
         .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(ExtensionLimiter)))

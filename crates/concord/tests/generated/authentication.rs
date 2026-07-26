@@ -216,12 +216,12 @@ fn assert_missing_input(
 fn every_required_client_input_has_focused_safe_builder_metadata() {
     assert_missing_input(AuthApi::builder().build(), "tenant", ClientInputKind::Value);
     assert_missing_input(
-        AuthApi::builder().tenant("tenant".to_owned()).build(),
+        AuthApi::builder().set_tenant("tenant".to_owned()).build(),
         "api_secret",
         ClientInputKind::Secret,
     );
     let protected_error = AuthApi::builder()
-        .tenant("tenant".to_owned())
+        .set_tenant("tenant".to_owned())
         .api_secret(secret("first-secret-sentinel-9aa1"))
         .build()
         .err()
@@ -234,7 +234,7 @@ fn every_required_client_input_has_focused_safe_builder_metadata() {
     }
     assert_missing_input(
         AuthApi::builder()
-            .tenant("tenant".to_owned())
+            .set_tenant("tenant".to_owned())
             .api_secret(secret("api"))
             .bearer_secret(secret("bearer"))
             .build(),
@@ -243,7 +243,7 @@ fn every_required_client_input_has_focused_safe_builder_metadata() {
     );
     assert_missing_input(
         AuthApi::builder()
-            .tenant("tenant".to_owned())
+            .set_tenant("tenant".to_owned())
             .api_secret(secret("api"))
             .bearer_secret(secret("bearer"))
             .username(secret("user"))
@@ -253,7 +253,7 @@ fn every_required_client_input_has_focused_safe_builder_metadata() {
     );
     assert_missing_input(
         AuthApi::builder()
-            .tenant("tenant".to_owned())
+            .set_tenant("tenant".to_owned())
             .api_secret(secret("api"))
             .bearer_secret(secret("bearer"))
             .username(secret("user"))
@@ -263,7 +263,7 @@ fn every_required_client_input_has_focused_safe_builder_metadata() {
         ClientInputKind::CredentialProvider,
     );
     let error = AuthApi::builder()
-        .tenant("tenant".to_owned())
+        .set_tenant("tenant".to_owned())
         .api_secret(secret("api"))
         .bearer_secret(secret("bearer"))
         .username(secret("user"))
@@ -401,7 +401,7 @@ async fn non_clone_custom_material_compiles_and_executes_through_generated_stora
 
 fn auth_builder() -> AuthApiBuilder {
     AuthApi::builder()
-        .tenant("tenant".to_owned())
+        .set_tenant("tenant".to_owned())
         .api_secret(secret("api-secret"))
         .bearer_secret(secret("bearer-secret"))
         .username(secret("user"))
@@ -421,7 +421,7 @@ fn repeated_provider_setters_replace_in_call_order() {
     let replaced_drops = Arc::new(AtomicUsize::new(0));
     let selected_drops = Arc::new(AtomicUsize::new(0));
     let builder = AuthApi::builder()
-        .tenant("tenant".to_owned())
+        .set_tenant("tenant".to_owned())
         .api_secret(secret("api-secret"))
         .bearer_secret(secret("bearer-secret"))
         .username(secret("user"))

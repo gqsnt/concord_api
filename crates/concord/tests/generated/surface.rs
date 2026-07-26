@@ -33,13 +33,13 @@ fn one_facade_dependency_exposes_predictable_named_inherent_surface() {
     let client = FacadeApi::new().expect("zero-input façade client");
     let request = client
         .resources("tenant".to_owned())
-        .region("eu".to_owned())
-        .scope_limit(75)
+        .set_region("eu".to_owned())
+        .set_scope_limit(75)
         .reset_scope_limit()
         .fetch("resource".to_owned())
-        .verbose(true)
+        .set_verbose(true)
         .clear_verbose()
-        .page_size(100)
+        .set_page_size(100)
         .reset_page_size();
     assert_eq!(format!("{request:?}"), "FetchRequest { .. }");
     let _: facade_api::resources::FetchRequest = request;
@@ -53,8 +53,8 @@ fn one_facade_dependency_exposes_predictable_named_inherent_surface() {
             .update("resource".to_owned(), "body".to_owned(), 7);
 
     let endpoint = facade_api::resources::Fetch::new("tenant".to_owned(), "resource".to_owned())
-        .verbose(true)
-        .page_size(100);
+        .set_verbose(true)
+        .set_page_size(100);
     let cloned = endpoint.clone();
     let stored = [endpoint.clone(), cloned];
     assert_eq!(stored.len(), 2);

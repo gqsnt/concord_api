@@ -452,7 +452,7 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
 }
 
 pub(super) fn generate_builder_value_methods(index: usize, value: &Value) -> TokenStream {
-    let method = &value.name;
+    let setter = value_setter_ident(&value.name);
     let field = builder_value_field(index, value);
     let setter_type = value.setter_type();
     let helper = if value.is_optional() {
@@ -503,7 +503,7 @@ pub(super) fn generate_builder_value_methods(index: usize, value: &Value) -> Tok
     quote! {
         #[doc = #setter_doc]
         #[must_use]
-        pub fn #method(mut self, value: #setter_type) -> Self {
+        pub fn #setter(mut self, value: #setter_type) -> Self {
             self.#field = ::std::option::Option::Some(value);
             self
         }

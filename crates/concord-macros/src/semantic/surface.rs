@@ -114,7 +114,7 @@ pub(crate) fn endpoint_surface(
         .filter(|(_, value)| !value.is_required())
         .map(|(parameter, value)| EndpointSetter {
             parameter,
-            method: value.name.clone(),
+            setter: value_setter_ident(&value.name),
             helper: if value.is_optional() {
                 helper_ident("clear", &value.name)
             } else {
@@ -210,7 +210,7 @@ pub(crate) fn endpoint_doc_model(
             let value = &parameters[setter.parameter];
             EndpointDocSetter {
                 name: canonical_ident(&value.name),
-                method: canonical_ident(&setter.method),
+                setter: canonical_ident(&setter.setter),
                 helper: canonical_ident(&setter.helper),
                 type_name: type_name(value.setter_type()),
                 kind: input_kind(value),
@@ -483,8 +483,8 @@ fn validate_request_surface(endpoint: &Endpoint) -> syn::Result<()> {
     for setter in &endpoint.surface.setters {
         insert_name(
             &mut names,
-            canonical_ident(&setter.method),
-            setter.method.span(),
+            canonical_ident(&setter.setter),
+            setter.setter.span(),
             "named request wrapper methods",
         )?;
         insert_name(
@@ -661,6 +661,10 @@ pub(crate) fn storage_terminal_name(credential: &Ident) -> Ident {
 
 pub(crate) fn helper_ident(prefix: &str, name: &Ident) -> Ident {
     public_ident(&format!("{prefix}_{}", canonical_ident(name)), name.span())
+}
+
+pub(crate) fn value_setter_ident(name: &Ident) -> Ident {
+    helper_ident("set", name)
 }
 
 fn is_rust_keyword(value: &str) -> bool {
@@ -1018,7 +1022,7 @@ mod tests {
         );
         assert_eq!(docs.required_endpoint_inputs[0].name, "filename");
         assert_eq!(docs.endpoint_setters[0].name, "scale");
-        assert_eq!(docs.endpoint_setters[0].method, "scale");
+        assert_eq!(docs.endpoint_setters[0].setter, "set_scale");
         assert_eq!(docs.endpoint_setters[0].helper, "reset_scale");
         assert_eq!(docs.safe_query_names, ["scale"]);
         assert_eq!(docs.safe_header_names, ["X-Asset-View"]);

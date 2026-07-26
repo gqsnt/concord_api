@@ -981,10 +981,10 @@ pub(super) fn generate_endpoint_snapshot_setters(
     field: Ident,
     default: Option<Ident>,
 ) -> TokenStream {
-    let method = &value.name;
+    let setter = value_setter_ident(&value.name);
     let ty = value.setter_type();
     if value.is_optional() {
-        let clear = helper_ident("clear", method);
+        let clear = helper_ident("clear", &value.name);
         let setter_doc = format!(
             "Returns a new explicit endpoint snapshot selecting `Some(value)` for optional value `{}`.",
             canonical_ident(&value.name)
@@ -996,7 +996,7 @@ pub(super) fn generate_endpoint_snapshot_setters(
         quote! {
             #[doc = #setter_doc]
             #[must_use]
-            pub fn #method(mut self, value: #ty) -> Self {
+            pub fn #setter(mut self, value: #ty) -> Self {
                 self.#field = ::std::sync::Arc::new(::std::option::Option::Some(value));
                 self
             }
@@ -1009,7 +1009,7 @@ pub(super) fn generate_endpoint_snapshot_setters(
             }
         }
     } else {
-        let reset = helper_ident("reset", method);
+        let reset = helper_ident("reset", &value.name);
         let default = default.expect("default field");
         let setter_doc = format!(
             "Returns a new explicit endpoint snapshot overriding defaulted value `{}`.",
@@ -1022,7 +1022,7 @@ pub(super) fn generate_endpoint_snapshot_setters(
         quote! {
             #[doc = #setter_doc]
             #[must_use]
-            pub fn #method(mut self, value: #ty) -> Self {
+            pub fn #setter(mut self, value: #ty) -> Self {
                 self.#field = ::std::sync::Arc::new(value);
                 self
             }

@@ -1,0 +1,18 @@
+error[E0599]: no method named `verbose` found for struct `ReadRequest` in the current scope
+  --> tests/ui/fail/capabilities/bare_value_setter_absent.rs:14:27
+   |
+ 4 | / api! {
+ 5 | |     client SetterApi {
+ 6 | |         base "http://setter.example.test";
+...  |
+ 9 | |     GET read(verbose: Option<bool>) -> Bytes;
+10 | | }
+   | |_- method `verbose` not found for this struct
+...
+14 |       let _ = client.read().verbose(true);
+   |                             ^^^^^^^
+   |
+help: there is a method `set_verbose` with a similar name
+   |
+14 |     let _ = client.read().set_verbose(true);
+   |                           ++++

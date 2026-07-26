@@ -9,7 +9,9 @@ use super::model::{
     Child, Credential, CredentialSource, Endpoint, NormalizedConfig, ResolvedAuthPlacement,
     ResolvedChallengePolicy, ResolvedExpr, Secret, Value, ValueShape,
 };
-use super::surface::{RESERVED_GENERATED_METHODS, canonical_ident, insert_name, to_snake_case};
+use super::surface::{
+    RESERVED_GENERATED_METHODS, canonical_ident, insert_name, to_snake_case, value_setter_ident,
+};
 use crate::MAX_AUTH_PLACEMENTS;
 use crate::syntax::ast::{
     AuthPlacementKind as SourceAuthPlacement, CredentialSource as SourceCredentialSource,
@@ -214,7 +216,7 @@ pub(super) fn validate_credential_names(
     for value in values {
         insert_name(
             &mut builder,
-            canonical_ident(&value.name),
+            canonical_ident(&value_setter_ident(&value.name)),
             value.name.span(),
             "generated client builder method",
         )?;

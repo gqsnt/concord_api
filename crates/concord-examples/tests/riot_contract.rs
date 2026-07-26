@@ -13,8 +13,8 @@ const API_KEY_SENTINEL: &str = "riot-api-key-sentinel-phase11-a91f";
 
 fn client() -> RiotApi {
     RiotApi::builder()
-        .platform(PlatformRoute::Na1)
-        .regional(RegionalRoute::Americas)
+        .set_platform(PlatformRoute::Na1)
+        .set_regional(RegionalRoute::Americas)
         .api_key(SecretString::try_new(API_KEY_SENTINEL).expect("bounded Riot test key"))
         .build()
         .expect("Riot client")
@@ -72,9 +72,9 @@ fn optional_defaults_pagination_binding_and_explicit_description_are_predictable
     assert!(!default_plan.safe_url().contains("type="));
 
     let endpoint = riot_api::regional::match_v5::MatchIdsByPuuid::new("public-puuid".to_owned())
-        .match_type(MatchType::Ranked)
-        .start(40)
-        .count(NonZeroU32::new(10).expect("positive page size"));
+        .set_match_type(MatchType::Ranked)
+        .set_start(40)
+        .set_count(NonZeroU32::new(10).expect("positive page size"));
     let description = endpoint.description();
     assert_eq!(description.method(), Method::GET);
     assert!(
@@ -101,7 +101,7 @@ fn optional_defaults_pagination_binding_and_explicit_description_are_predictable
 #[test]
 fn data_dragon_is_an_independent_importable_contract() {
     let client = DDragonApi::builder()
-        .locale(DDragonLocale::FrFr)
+        .set_locale(DDragonLocale::FrFr)
         .build()
         .expect("Data Dragon client");
     let endpoint = d_dragon_api::version::data::Champions::new("15.1.1".to_owned());

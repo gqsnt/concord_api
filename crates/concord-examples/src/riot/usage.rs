@@ -72,8 +72,8 @@ pub fn construct() -> Result<(), concord::ClientBuildError> {
         .regional()
         .match_v5()
         .match_ids_by_puuid("example-puuid".to_owned())
-        .match_type(MatchType::Ranked)
-        .count(NonZeroU32::new(10).expect("positive page size"))
+        .set_match_type(MatchType::Ranked)
+        .set_count(NonZeroU32::new(10).expect("positive page size"))
         .paginate(PageLimit::Take(2));
 
     let data_dragon = DDragonApi::builder().build()?;
@@ -140,7 +140,7 @@ pub async fn run_live_from_environment() -> Result<(), Box<dyn Error>> {
         .platform()
         .champion_mastery_v4()
         .top_masteries_by_puuid(account.puuid.clone())
-        .count(5)
+        .set_count(5)
         .await?;
 
     println!("Top champion masteries: {}", top_masteries.len());
@@ -149,8 +149,8 @@ pub async fn run_live_from_environment() -> Result<(), Box<dyn Error>> {
         .regional()
         .match_v5()
         .match_ids_by_puuid(account.puuid.clone())
-        .match_type(MatchType::Ranked)
-        .count(NonZeroU32::new(20).expect("20 is non-zero"))
+        .set_match_type(MatchType::Ranked)
+        .set_count(NonZeroU32::new(20).expect("20 is non-zero"))
         .paginate(PageLimit::Take(2))
         .await?;
 

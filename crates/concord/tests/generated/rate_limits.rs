@@ -408,7 +408,7 @@ impl RateLimiter for CapturingLimiter {
 }
 
 fn builder() -> RateApiBuilder {
-    RateApi::builder().tenant("tenant-west".to_owned())
+    RateApi::builder().set_tenant("tenant-west".to_owned())
 }
 
 #[test]
@@ -630,7 +630,7 @@ async fn composite_keys_are_ordered_and_distinct() {
     let limiter = Arc::new(CapturingLimiter::default());
     let configured = Arc::clone(&limiter);
     let client = PartitionedRateApi::builder()
-        .tenant("tenant-a".to_owned())
+        .set_tenant("tenant-a".to_owned())
         .configure_http(move |http| http.proxy(proxy))
         .configure_runtime(move |runtime| runtime.rate_limiter(configured))
         .build()
@@ -683,7 +683,7 @@ async fn client_clones_share_state() {
         .expect("shared-client limiter server");
     let proxy = SafeProxy::parse(server.url("")).expect("shared-client limiter proxy");
     let client = PartitionedRateApi::builder()
-        .tenant("tenant-a".to_owned())
+        .set_tenant("tenant-a".to_owned())
         .configure_http(move |http| http.proxy(proxy))
         .build()
         .expect("default-limited partitioned client");
@@ -765,7 +765,7 @@ async fn endpoint_rule_by_argument_separates_values() {
     let limiter = Arc::new(CapturingLimiter::default());
     let configured = Arc::clone(&limiter);
     let client = PartitionedRateApi::builder()
-        .tenant("tenant-a".to_owned())
+        .set_tenant("tenant-a".to_owned())
         .configure_http(move |http| http.proxy(proxy))
         .configure_runtime(move |runtime| runtime.rate_limiter(configured))
         .build()
@@ -808,7 +808,7 @@ async fn generated_key_limit_first_excess_is_redacted() {
     let limiter = Arc::new(SmallKeyLimiter::default());
     let configured = Arc::clone(&limiter);
     let client = PartitionedRateApi::builder()
-        .tenant("tenant-a".to_owned())
+        .set_tenant("tenant-a".to_owned())
         .configure_http(move |http| http.proxy(proxy))
         .configure_runtime(move |runtime| runtime.rate_limiter(configured))
         .build()

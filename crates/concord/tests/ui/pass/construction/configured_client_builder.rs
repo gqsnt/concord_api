@@ -19,7 +19,7 @@ api! {
 
 fn main() {
     let client = ConfiguredApi::builder()
-        .tenant("tenant".to_owned())
+        .set_tenant("tenant".to_owned())
         .api_key(SecretString::try_new("protected").expect("bounded protected input"))
         .build()
         .expect("configured client");

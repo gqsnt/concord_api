@@ -325,11 +325,11 @@ pub(super) fn scope_constructor_local_arguments(scope: &Scope) -> TokenStream {
 }
 
 pub(super) fn generate_facade_setters(scope_id: usize, index: usize, value: &Value) -> TokenStream {
-    let method = &value.name;
+    let setter = value_setter_ident(&value.name);
     let field = scope_value_field(scope_id, index, value);
     let setter_type = value.setter_type();
     if value.is_optional() {
-        let clear = helper_ident("clear", method);
+        let clear = helper_ident("clear", &value.name);
         let setter_doc = format!(
             "Returns a new facade selecting `Some(value)` for optional scope value `{}`.",
             canonical_ident(&value.name)
@@ -341,7 +341,7 @@ pub(super) fn generate_facade_setters(scope_id: usize, index: usize, value: &Val
         quote! {
             #[doc = #setter_doc]
             #[must_use]
-            pub fn #method(mut self, value: #setter_type) -> Self {
+            pub fn #setter(mut self, value: #setter_type) -> Self {
                 self.#field = ::std::sync::Arc::new(::std::option::Option::Some(value));
                 self
             }
@@ -354,7 +354,7 @@ pub(super) fn generate_facade_setters(scope_id: usize, index: usize, value: &Val
             }
         }
     } else {
-        let reset = helper_ident("reset", method);
+        let reset = helper_ident("reset", &value.name);
         let default = scope_default_field(scope_id, index, value);
         let setter_doc = format!(
             "Returns a new facade overriding defaulted scope value `{}`.",
@@ -367,7 +367,7 @@ pub(super) fn generate_facade_setters(scope_id: usize, index: usize, value: &Val
         quote! {
             #[doc = #setter_doc]
             #[must_use]
-            pub fn #method(mut self, value: #setter_type) -> Self {
+            pub fn #setter(mut self, value: #setter_type) -> Self {
                 self.#field = ::std::sync::Arc::new(value);
                 self
             }

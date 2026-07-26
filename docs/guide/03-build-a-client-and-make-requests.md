@@ -6,7 +6,7 @@ is always the predictable construction entry point.
 
 ```rust
 let client = CatalogApi::builder()
-    .tenant("north".to_owned())
+    .set_tenant("north".to_owned())
     .configure_runtime(|runtime| {
         runtime.runtime_endpoint_timeout(std::time::Duration::from_secs(20))
     })
@@ -27,7 +27,7 @@ replace or disable either result.
 Calling an endpoint constructs an inert named request:
 
 ```rust
-let request = client.product(42).verbose(true);
+let request = client.product(42).set_verbose(true);
 let value = request.await?;
 ```
 

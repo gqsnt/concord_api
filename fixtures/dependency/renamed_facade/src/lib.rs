@@ -127,7 +127,7 @@ api! {
 
 pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
     let client = RenamedApi::builder()
-        .tenant("tenant".to_owned())
+        .set_tenant("tenant".to_owned())
         .api_key(
             runtime::SecretString::try_new("protected-api-key").expect("bounded protected API key"),
         )
@@ -135,12 +135,12 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
     let _ = client.credentials().application_key().credential();
     let request = client
         .resources("renamed-scope".to_owned())
-        .region("eu".to_owned())
-        .scope_limit(20)
+        .set_region("eu".to_owned())
+        .set_scope_limit(20)
         .reset_scope_limit()
         .by_id("renamed-endpoint".to_owned(), "renamed-body".to_owned())
-        .verbose(true)
-        .limit(20)
+        .set_verbose(true)
+        .set_limit(20)
         .reset_limit();
     let _: renamed_api::resources::ByIdRequest = request;
     let endpoint = renamed_api::resources::ById::new(
@@ -150,11 +150,11 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
     );
     let _: renamed_api::resources::ByIdRequest = client.request(
         endpoint
-            .region("eu".to_owned())
-            .scope_limit(20)
+            .set_region("eu".to_owned())
+            .set_scope_limit(20)
             .reset_scope_limit()
-            .verbose(true)
-            .limit(20)
+            .set_verbose(true)
+            .set_limit(20)
             .reset_limit(),
     );
     let runtime_endpoint = runtime::endpoint::RuntimeEndpoint::builder(
@@ -194,7 +194,7 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
         .resources("renamed-scope".to_owned())
         .multipart_upload(multipart);
     let rate_client = RenamedRateApi::builder()
-        .tenant("renamed-rate-key-sentinel".to_owned())
+        .set_tenant("renamed-rate-key-sentinel".to_owned())
         .configure_runtime(|runtime| {
             runtime.rate_limiter(std::sync::Arc::new(
                 runtime::rate_limit::NoopRateLimiter::new(),

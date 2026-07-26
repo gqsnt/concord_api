@@ -13,7 +13,7 @@ use crate::semantic::model::{
     ResolvedAuthPlacement, ResolvedChallengePolicy, ResolvedDefault, ResolvedExpr, ResolvedMethod,
     ResolvedRetry, ResolvedValueKind, Scope, Value, ValueReference, ValueShape,
 };
-use crate::semantic::surface::{canonical_ident, public_ident, to_snake_case};
+use crate::semantic::surface::{canonical_ident, public_ident, to_snake_case, value_setter_ident};
 
 mod assertions;
 mod bridge;
@@ -136,6 +136,107 @@ mod tests {
         assert!(!output.contains("RequestExt"));
         assert!(!output.contains("pub mod facades"));
         assert!(!output.contains("pub mod endpoints"));
+    }
+
+    #[test]
+    fn generated_value_mutations_use_the_exact_set_clear_reset_matrix() {
+        let api = semantic::test_support::resolve_tokens(quote! {
+            client ControlApi {
+                base "https://example.test";
+                vars {
+                    required_client_value: String;
+                    optional_client_value: Option<String>;
+                    defaulted_client_value: u32 = 10;
+                    build: String;
+                    timeout: Option<u64>;
+                    response: bool = true;
+                    debug: String;
+                }
+            }
+            scope group(
+                required_scope_value: String,
+                optional_scope_value: Option<String>,
+                defaulted_scope_value: u32 = 20,
+            ) {
+                GET item(
+                    required_endpoint_value: String,
+                    optional_endpoint_value: Option<String>,
+                    defaulted_endpoint_value: u32 = 30,
+                ) -> Bytes;
+            }
+        });
+        let output = generate(&api, &quote!(::concord)).to_string();
+
+        for method in [
+            "set_required_client_value",
+            "set_optional_client_value",
+            "clear_optional_client_value",
+            "set_defaulted_client_value",
+            "reset_defaulted_client_value",
+            "set_build",
+            "set_timeout",
+            "clear_timeout",
+            "set_response",
+            "reset_response",
+            "set_debug",
+            "set_optional_scope_value",
+            "clear_optional_scope_value",
+            "set_defaulted_scope_value",
+            "reset_defaulted_scope_value",
+            "set_optional_endpoint_value",
+            "clear_optional_endpoint_value",
+            "set_defaulted_endpoint_value",
+            "reset_defaulted_endpoint_value",
+        ] {
+            assert!(output.contains(&format!("pub fn {method}")), "{method}");
+        }
+        for absent in [
+            "set_required_scope_value",
+            "set_required_endpoint_value",
+            "clear_required_client_value",
+            "reset_required_client_value",
+            "reset_optional_client_value",
+            "clear_defaulted_client_value",
+            "clear_required_scope_value",
+            "reset_required_scope_value",
+            "reset_optional_scope_value",
+            "clear_defaulted_scope_value",
+            "clear_required_endpoint_value",
+            "reset_required_endpoint_value",
+            "reset_optional_endpoint_value",
+            "clear_defaulted_endpoint_value",
+            "required_client_value",
+            "optional_client_value",
+            "defaulted_client_value",
+            "optional_scope_value",
+            "defaulted_scope_value",
+            "optional_endpoint_value",
+            "defaulted_endpoint_value",
+        ] {
+            assert!(
+                !output.contains(&format!("pub fn {absent}")),
+                "unexpected generated method {absent}"
+            );
+        }
+        assert!(output.contains("pub fn group"));
+        assert!(output.contains("pub fn item"));
+
+        let endpoint = semantic::test_support::endpoint(&api.client.children, "item");
+        let request = generate_request_wrapper(
+            &api.client,
+            endpoint,
+            RequestBridge {
+                support_path: &quote!(super),
+                generated_core: &quote!(::concord),
+            },
+            &quote!(::concord),
+            &quote!(),
+        )
+        .to_string();
+        assert!(request.contains("endpoint . set_optional_endpoint_value (value)"));
+        assert!(request.contains("endpoint . reset_defaulted_endpoint_value ()"));
+        assert!(!request.contains("set_optional_scope_value"));
+        assert!(!request.contains("set_defaulted_scope_value"));
     }
 
     #[test]

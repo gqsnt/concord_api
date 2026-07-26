@@ -24,7 +24,7 @@ pub(super) fn generate_request_wrapper(
         .iter()
         .map(|setter| {
             let value = &endpoint.parameters[setter.parameter];
-            request_wrapper_setters(value, &setter.method, &setter.helper, generated_core)
+            request_wrapper_setters(value, &setter.setter, &setter.helper, generated_core)
         })
         .collect::<Vec<_>>();
     let storage_methods = endpoint
@@ -202,7 +202,7 @@ pub(super) fn generate_request_wrapper(
 
 pub(super) fn request_wrapper_setters(
     value: &Value,
-    method: &Ident,
+    setter: &Ident,
     helper: &Ident,
     generated_core: &TokenStream,
 ) -> TokenStream {
@@ -232,10 +232,10 @@ pub(super) fn request_wrapper_setters(
     quote! {
         #[doc = #setter_doc]
         #[must_use]
-        pub fn #method(mut self, value: #ty) -> Self {
+        pub fn #setter(mut self, value: #ty) -> Self {
             self.__concord_inner = #generated_core::__private::map_endpoint(
                 self.__concord_inner,
-                |endpoint| endpoint.#method(value),
+                |endpoint| endpoint.#setter(value),
             );
             self
         }
@@ -277,7 +277,7 @@ mod tests {
         .to_string();
 
         assert!(output.contains("pub struct FetchItemRequest"));
-        assert!(output.contains("pub fn verbose"));
+        assert!(output.contains("pub fn set_verbose"));
         assert!(output.contains("IntoFuture"));
         assert!(!output.contains("__concord_into_development_request"));
         assert!(!output.contains("emit_generated_development_method"));

@@ -68,15 +68,15 @@ api! {
 /// Constructs representative direct and explicit endpoint requests.
 pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
     let client = ReferenceApi::builder()
-        .tenant("tenant-a".to_owned())
+        .set_tenant("tenant-a".to_owned())
         .api_key(
             concord::SecretString::try_new("example-api-key").expect("bounded example API key"),
         )
         .build()?;
-    let _: reference_api::StatusRequest = client.status().verbose(true);
+    let _: reference_api::StatusRequest = client.status().set_verbose(true);
     let _: reference_api::regions::FetchRequest = client
         .regions("eu-west".to_owned())
-        .language("fr".to_owned())
+        .set_language("fr".to_owned())
         .fetch("42".to_owned(), vec!["stable".to_owned()]);
     let endpoint = reference_api::regions::Fetch::new(
         "eu-west".to_owned(),
@@ -84,7 +84,7 @@ pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
         vec!["stable".to_owned()],
     );
     let _: reference_api::regions::FetchRequest =
-        client.request(endpoint.language("fr".to_owned()));
+        client.request(endpoint.set_language("fr".to_owned()));
     let retry_client = ReqwestRetryReference::builder().build()?;
     let _: reqwest_retry_reference::HealthRequest = retry_client.health();
     Ok(())

@@ -83,7 +83,7 @@ api! {
 /// Constructs representative requests from each regional scope.
 pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
     let client = RegionalGameApi::builder()
-        .platform("euw1".to_owned())
+        .set_platform("euw1".to_owned())
         .api_key(
             concord::SecretString::try_new("example-developer-key")
                 .expect("bounded example developer key"),

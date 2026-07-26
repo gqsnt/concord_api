@@ -252,9 +252,9 @@ async fn wait_for_requests(server: Arc<ScriptedServer>, expected: usize) {
 fn shaped_client(server: &ScriptedServer) -> ShapeApi {
     let proxy = proxy(server);
     ShapeApi::builder()
-        .tenant("tenant-a".to_owned())
-        .locale("fr".to_owned())
-        .client_marker(DropProbe::new("client-explicit", explicit_drops))
+        .set_tenant("tenant-a".to_owned())
+        .set_locale("fr".to_owned())
+        .set_client_marker(DropProbe::new("client-explicit", explicit_drops))
         .configure_http(move |http| http.proxy(proxy))
         .build()
         .expect("shape client")
@@ -280,8 +280,8 @@ async fn required_optional_defaulted_client_values_and_missing_input_are_stable(
     let before_default = CLIENT_DEFAULT_DROPS.load(Ordering::SeqCst);
     let before_explicit = EXPLICIT_DROPS.load(Ordering::SeqCst);
     let explicit = ShapeApi::builder()
-        .tenant("tenant".to_owned())
-        .client_marker(DropProbe::new("explicit", explicit_drops))
+        .set_tenant("tenant".to_owned())
+        .set_client_marker(DropProbe::new("explicit", explicit_drops))
         .build()
         .expect("explicit default override");
     let clone = explicit.clone();
@@ -292,7 +292,7 @@ async fn required_optional_defaulted_client_values_and_missing_input_are_stable(
     assert_eq!(CLIENT_DEFAULT_DROPS.load(Ordering::SeqCst), before_default);
 
     let selected = ShapeApi::builder()
-        .tenant("tenant".to_owned())
+        .set_tenant("tenant".to_owned())
         .build()
         .expect("named client builder");
     drop(selected);
@@ -318,23 +318,25 @@ async fn nested_facade_extension_setters_and_explicit_endpoint_have_head_parity(
     let client = shaped_client(&server);
     let other_proxy = proxy(&server);
     let other = OtherApi::builder()
-        .label(Some("chosen".to_owned()))
+        .set_label(Some("chosen".to_owned()))
         .configure_http(move |http| http.proxy(other_proxy))
         .build()
         .expect("other client");
     let reset_other = OtherApi::builder()
-        .label(Some("unused".to_owned()))
+        .set_label(Some("unused".to_owned()))
         .reset_label()
         .build()
         .expect("defaulted Option client value");
     drop(reset_other);
 
-    let regions = client.regions("eu".to_owned()).language("de".to_owned());
+    let regions = client
+        .regions("eu".to_owned())
+        .set_language("de".to_owned());
     let users = regions.users("account-a".to_owned());
     let facade = users
         .fetch("42".to_owned())
-        .verbose(true)
-        .endpoint_marker(DropProbe::new("temporary", explicit_drops))
+        .set_verbose(true)
+        .set_endpoint_marker(DropProbe::new("temporary", explicit_drops))
         .reset_endpoint_marker()
         .await
         .expect("facade endpoint");
@@ -345,15 +347,15 @@ async fn nested_facade_extension_setters_and_explicit_endpoint_have_head_parity(
         "account-a".to_owned(),
         "42".to_owned(),
     )
-    .language("de".to_owned())
-    .verbose(true);
+    .set_language("de".to_owned())
+    .set_verbose(true);
     let explicit = client.request(explicit).await.expect("explicit endpoint");
     assert_eq!(explicit, b"explicit"[..]);
 
     let metadata: ApiResponse<Bytes> = client
         .root()
         .timeout(Duration::from_secs(1))
-        .verbose(true)
+        .set_verbose(true)
         .inherit_timeout()
         .response()
         .await
@@ -362,7 +364,7 @@ async fn nested_facade_extension_setters_and_explicit_endpoint_have_head_parity(
 
     let other_value = other
         .echo()
-        .verbose(true)
+        .set_verbose(true)
         .await
         .expect("second-client prelude setter");
     assert_eq!(other_value, b"other"[..]);
@@ -408,7 +410,7 @@ async fn scope_and_endpoint_resets_reuse_one_retained_default_without_clone_boun
     let facade = client.regions("eu".to_owned());
     let source = facade.clone();
     let reset = facade
-        .scope_marker(DropProbe::new("temporary", explicit_drops))
+        .set_scope_marker(DropProbe::new("temporary", explicit_drops))
         .reset_scope_marker();
     drop(source);
     assert_eq!(SCOPE_DEFAULT_DROPS.load(Ordering::SeqCst), scope_before);
@@ -416,7 +418,7 @@ async fn scope_and_endpoint_resets_reuse_one_retained_default_without_clone_boun
     let request: shape_api::regions::users::FetchRequest = reset
         .users("account".to_owned())
         .fetch("id".to_owned())
-        .endpoint_marker(DropProbe::new("temporary", explicit_drops))
+        .set_endpoint_marker(DropProbe::new("temporary", explicit_drops))
         .reset_endpoint_marker();
     drop(request);
     assert_eq!(
@@ -440,8 +442,8 @@ async fn consuming_request_setters_keep_sibling_snapshots_isolated() {
     .expect("sibling server");
     let client = shaped_client(&server);
 
-    let selected = client.root().verbose(true);
-    let cleared = client.root().verbose(false).clear_verbose();
+    let selected = client.root().set_verbose(true);
+    let cleared = client.root().set_verbose(false).clear_verbose();
     assert_eq!(selected.await.expect("selected sibling"), b"selected"[..]);
     assert_eq!(cleared.await.expect("cleared sibling"), b"cleared"[..]);
 
@@ -459,7 +461,9 @@ async fn facade_setters_leave_the_source_scope_snapshot_unchanged() {
     ])
     .expect("facade snapshot server");
     let client = shaped_client(&server);
-    let source = client.regions("eu".to_owned()).language("fr".to_owned());
+    let source = client
+        .regions("eu".to_owned())
+        .set_language("fr".to_owned());
     let cleared = source.clone().clear_language();
 
     assert_eq!(
@@ -493,20 +497,20 @@ async fn independently_built_clients_retain_independent_value_snapshots() {
     .expect("independent client server");
     let first_proxy = proxy(&server);
     let first = ShapeApi::builder()
-        .tenant("discarded".to_owned())
-        .tenant("tenant-one".to_owned())
-        .locale("discarded".to_owned())
+        .set_tenant("discarded".to_owned())
+        .set_tenant("tenant-one".to_owned())
+        .set_locale("discarded".to_owned())
         .clear_locale()
-        .client_marker(DropProbe::new("discarded", explicit_drops))
+        .set_client_marker(DropProbe::new("discarded", explicit_drops))
         .reset_client_marker()
         .configure_http(move |http| http.proxy(first_proxy))
         .build()
         .expect("first client");
     let second_proxy = proxy(&server);
     let second = ShapeApi::builder()
-        .tenant("tenant-two".to_owned())
-        .locale("discarded".to_owned())
-        .locale("es".to_owned())
+        .set_tenant("tenant-two".to_owned())
+        .set_locale("discarded".to_owned())
+        .set_locale("es".to_owned())
         .configure_http(move |http| http.proxy(second_proxy))
         .build()
         .expect("second client");
@@ -542,7 +546,7 @@ async fn collection_queries_and_every_standard_method_preserve_runtime_order() {
     assert_eq!(
         client
             .search(vec!["one two".to_owned(), "three".to_owned()])
-            .filters(vec!["x".to_owned(), "y".to_owned()])
+            .set_filters(vec!["x".to_owned(), "y".to_owned()])
             .await
             .expect("vector query"),
         b"search-values"[..]
@@ -617,7 +621,7 @@ async fn generated_public_media_headers_obey_single_map_ownership() {
 
     let mut streamed: ByteStream = client
         .streamed()
-        .verbose(true)
+        .set_verbose(true)
         .await
         .expect("direct stream await after generated setter");
     assert_eq!(

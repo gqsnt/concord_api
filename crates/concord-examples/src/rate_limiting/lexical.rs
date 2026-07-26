@@ -43,7 +43,7 @@ pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
     let limiter =
         LocalRateLimiter::new().observer(Arc::new(super::observer::DelegatingRetryAfterObserver));
     let client = RateLimitApi::builder()
-        .tenant("example-tenant".to_owned())
+        .set_tenant("example-tenant".to_owned())
         .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(limiter)))
         .build()?;
     let _: rate_limit_api::region::ItemRequest =
