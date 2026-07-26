@@ -291,7 +291,15 @@ fn endpoint_surfaces_include_final_paths_names_and_capabilities() {
     );
     assert_eq!(endpoint.surface.setters.len(), 1);
     assert_eq!(endpoint.surface.setters[0].setter, "set_verbose");
-    assert_eq!(endpoint.surface.setters[0].helper, "clear_verbose");
+    assert_eq!(
+        endpoint.surface.setters[0]
+            .clear
+            .as_ref()
+            .map(ToString::to_string)
+            .as_deref(),
+        Some("clear_verbose")
+    );
+    assert!(endpoint.surface.setters[0].reset.is_none());
     assert!(endpoint.surface.terminals.response);
     assert!(!endpoint.surface.terminals.pagination);
     assert_eq!(endpoint.surface.clone_eligibility, CloneEligibility::Always);
@@ -403,6 +411,68 @@ fn normalization_resolves_replace_remove_off_and_type_shapes() {
     assert_eq!(replaced.config.query.len(), 1);
     assert_eq!(replaced.config.headers[0].canonical_name, "x-only");
     assert_eq!(replaced.config.headers.len(), 1);
+}
+
+#[test]
+fn absence_and_default_capabilities_are_independent_and_syntactic() {
+    let api = resolve_ok(quote! {
+        client CapabilityApi {
+            base "https://example.test";
+            vars {
+                plain: String;
+                absence: Option<String>;
+                defaulted: u32 = 7;
+                both: Option<String> = None;
+                both_vector: Option<Vec<String>> = None;
+                opaque_option_alias: MaybeString;
+            }
+        }
+        GET read() -> Bytes;
+    });
+    let [plain, absence, defaulted, both, both_vector, opaque] = api.client.values.as_slice()
+    else {
+        panic!("capability values")
+    };
+    let type_name = |ty: &syn::Type| quote!(#ty).to_string();
+
+    assert!(!plain.accepts_absence());
+    assert!(!plain.has_default());
+    assert_eq!(type_name(plain.setter_argument_type()), "String");
+
+    assert!(absence.is_optional());
+    assert!(absence.accepts_absence());
+    assert!(!absence.has_default());
+    assert_eq!(type_name(absence.setter_argument_type()), "String");
+    assert_eq!(type_name(absence.client_builder_storage_type()), "String");
+
+    assert!(!defaulted.accepts_absence());
+    assert!(defaulted.has_default());
+    assert_eq!(type_name(defaulted.setter_argument_type()), "u32");
+
+    assert!(!both.is_optional());
+    assert!(both.accepts_absence());
+    assert!(both.has_default());
+    assert_eq!(type_name(both.setter_argument_type()), "String");
+    assert_eq!(
+        type_name(both.client_builder_storage_type()),
+        "Option < String >"
+    );
+
+    assert!(both_vector.accepts_absence());
+    assert!(both_vector.has_default());
+    assert_eq!(
+        type_name(both_vector.setter_argument_type()),
+        "Vec < String >"
+    );
+    assert_eq!(
+        type_name(both_vector.client_builder_storage_type()),
+        "Option < Vec < String > >"
+    );
+
+    assert!(opaque.is_required());
+    assert!(!opaque.accepts_absence());
+    assert!(!opaque.has_default());
+    assert_eq!(type_name(opaque.setter_argument_type()), "MaybeString");
 }
 
 #[test]
@@ -827,6 +897,25 @@ fn generated_name_collisions_cover_request_types_and_inherent_methods() {
     .expect("child method colliding with set-prefixed scope control");
     assert!(child_setter.to_string().contains("set_region"));
 
+    for helper in ["clear_label", "reset_label"] {
+        let helper = syn::Ident::new(helper, proc_macro2::Span::call_site());
+        let collision = resolve(
+            parse::parse(quote! {
+                client Api {
+                    base "https://example.test";
+                }
+                scope resources(label: Option<String> = None) {
+                    GET #helper() -> Bytes;
+                }
+            })
+            .expect("AST"),
+        )
+        .err()
+        .expect("child method colliding with a defaulted Option helper");
+        assert!(collision.to_string().contains(&helper.to_string()));
+        assert!(collision.to_string().contains("collides"));
+    }
+
     let scope_type = resolve(
         parse::parse(quote! {
             client Api {
@@ -921,6 +1010,32 @@ fn authentication_generated_names_cover_builder_accessor_and_acquisition_namespa
     });
     assert!(reset_secret.contains("reset_limit"));
     assert!(reset_secret.contains("collides"));
+
+    let defaulted_option_clear_secret = error(quote! {
+        client Api {
+            base "https://example.test";
+            vars { label: Option<String> = None; }
+            credentials {
+                secret clear_label: String;
+                credential key = api_key(secret.clear_label);
+            }
+        }
+    });
+    assert!(defaulted_option_clear_secret.contains("clear_label"));
+    assert!(defaulted_option_clear_secret.contains("collides"));
+
+    let defaulted_option_reset_secret = error(quote! {
+        client Api {
+            base "https://example.test";
+            vars { label: Option<String> = None; }
+            credentials {
+                secret reset_label: String;
+                credential key = api_key(secret.reset_label);
+            }
+        }
+    });
+    assert!(defaulted_option_reset_secret.contains("reset_label"));
+    assert!(defaulted_option_reset_secret.contains("collides"));
 
     let internal_accessor = error(quote! {
         client Api {

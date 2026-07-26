@@ -21,5 +21,7 @@ pub(crate) use generated::rate_limits::{DisplayOnly, NoDisplay, RouteHost};
 pub(crate) use generated::raw_response::ObservedCodec;
 #[cfg(feature = "multipart")]
 pub(crate) use generated::shaping::{
-    CLIENT_DEFAULT, DropProbe, ENDPOINT_DEFAULT, SCOPE_DEFAULT, ShapeProbe,
+    CLIENT_DEFAULT, DropProbe, ENDPOINT_DEFAULT, OPTIONAL_CLIENT_DEFAULT,
+    OPTIONAL_ENDPOINT_DEFAULT, OPTIONAL_SCOPE_DEFAULT, OPTIONAL_VALUES_DEFAULT, SCOPE_DEFAULT,
+    ShapeProbe,
 };

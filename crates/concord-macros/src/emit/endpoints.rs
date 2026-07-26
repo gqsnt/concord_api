@@ -982,25 +982,35 @@ pub(super) fn generate_endpoint_snapshot_setters(
     default: Option<Ident>,
 ) -> TokenStream {
     let setter = value_setter_ident(&value.name);
-    let ty = value.setter_type();
-    if value.is_optional() {
-        let clear = helper_ident("clear", &value.name);
-        let setter_doc = format!(
-            "Returns a new explicit endpoint snapshot selecting `Some(value)` for optional value `{}`.",
+    let ty = value.setter_argument_type();
+    let selected_value = if value.accepts_absence() {
+        quote!(::std::option::Option::Some(value))
+    } else {
+        quote!(value)
+    };
+    let setter_doc = if value.accepts_absence() && value.has_default() {
+        format!(
+            "Returns a new explicit endpoint snapshot overriding defaulted absence-capable value `{}` with `Some(value)`.",
             canonical_ident(&value.name)
-        );
+        )
+    } else if value.accepts_absence() {
+        format!(
+            "Returns a new explicit endpoint snapshot selecting `Some(value)` for absence-capable value `{}`.",
+            canonical_ident(&value.name)
+        )
+    } else {
+        format!(
+            "Returns a new explicit endpoint snapshot overriding defaulted value `{}`.",
+            canonical_ident(&value.name)
+        )
+    };
+    let clear = value.accepts_absence().then(|| {
+        let clear = helper_ident("clear", &value.name);
         let clear_doc = format!(
-            "Returns a new explicit endpoint snapshot selecting `None` for optional value `{}`.",
+            "Returns a new explicit endpoint snapshot explicitly selecting `None` for absence-capable value `{}`.",
             canonical_ident(&value.name)
         );
         quote! {
-            #[doc = #setter_doc]
-            #[must_use]
-            pub fn #setter(mut self, value: #ty) -> Self {
-                self.#field = ::std::sync::Arc::new(::std::option::Option::Some(value));
-                self
-            }
-
             #[doc = #clear_doc]
             #[must_use]
             pub fn #clear(mut self) -> Self {
@@ -1008,25 +1018,15 @@ pub(super) fn generate_endpoint_snapshot_setters(
                 self
             }
         }
-    } else {
+    });
+    let reset = value.has_default().then(|| {
         let reset = helper_ident("reset", &value.name);
         let default = default.expect("default field");
-        let setter_doc = format!(
-            "Returns a new explicit endpoint snapshot overriding defaulted value `{}`.",
-            canonical_ident(&value.name)
-        );
         let reset_doc = format!(
             "Returns a new explicit endpoint snapshot restoring the retained `{}` default without re-evaluation.",
             canonical_ident(&value.name)
         );
         quote! {
-            #[doc = #setter_doc]
-            #[must_use]
-            pub fn #setter(mut self, value: #ty) -> Self {
-                self.#field = ::std::sync::Arc::new(value);
-                self
-            }
-
             #[doc = #reset_doc]
             #[must_use]
             pub fn #reset(mut self) -> Self {
@@ -1034,6 +1034,17 @@ pub(super) fn generate_endpoint_snapshot_setters(
                 self
             }
         }
+    });
+    quote! {
+        #[doc = #setter_doc]
+        #[must_use]
+        pub fn #setter(mut self, value: #ty) -> Self {
+            self.#field = ::std::sync::Arc::new(#selected_value);
+            self
+        }
+
+        #clear
+        #reset
     }
 }
 

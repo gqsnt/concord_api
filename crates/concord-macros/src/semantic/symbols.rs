@@ -132,21 +132,22 @@ pub(super) fn validate_setter_namespace(
                 value.name.span(),
                 owner,
             )?;
-        }
-        if value.is_optional() {
-            insert_name(
-                &mut names,
-                format!("clear_{}", canonical_ident(&value.name)),
-                value.name.span(),
-                owner,
-            )?;
-        } else if value.default().is_some() {
-            insert_name(
-                &mut names,
-                format!("reset_{}", canonical_ident(&value.name)),
-                value.name.span(),
-                owner,
-            )?;
+            if value.accepts_absence() {
+                insert_name(
+                    &mut names,
+                    format!("clear_{}", canonical_ident(&value.name)),
+                    value.name.span(),
+                    owner,
+                )?;
+            }
+            if value.has_default() {
+                insert_name(
+                    &mut names,
+                    format!("reset_{}", canonical_ident(&value.name)),
+                    value.name.span(),
+                    owner,
+                )?;
+            }
         }
     }
     Ok(())
@@ -191,12 +192,22 @@ pub(super) fn validate_child_methods(
             value.name.span(),
             owner,
         )?;
-        let helper = if value.is_optional() {
-            format!("clear_{}", canonical_ident(&value.name))
-        } else {
-            format!("reset_{}", canonical_ident(&value.name))
-        };
-        insert_name(&mut names, helper, value.name.span(), owner)?;
+        if value.accepts_absence() {
+            insert_name(
+                &mut names,
+                format!("clear_{}", canonical_ident(&value.name)),
+                value.name.span(),
+                owner,
+            )?;
+        }
+        if value.has_default() {
+            insert_name(
+                &mut names,
+                format!("reset_{}", canonical_ident(&value.name)),
+                value.name.span(),
+                owner,
+            )?;
+        }
     }
     for child in children {
         let (name, span) = match child {

@@ -161,9 +161,9 @@ pub(crate) enum EndpointDocInputKind {
 pub(crate) struct EndpointDocSetter {
     pub(crate) name: String,
     pub(crate) setter: String,
-    pub(crate) helper: String,
+    pub(crate) clear: Option<String>,
+    pub(crate) reset: Option<String>,
     pub(crate) type_name: String,
-    pub(crate) kind: EndpointDocInputKind,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -252,7 +252,8 @@ pub(crate) enum RequiredArgument {
 pub(crate) struct EndpointSetter {
     pub(crate) parameter: usize,
     pub(crate) setter: Ident,
-    pub(crate) helper: Ident,
+    pub(crate) clear: Option<Ident>,
+    pub(crate) reset: Option<Ident>,
 }
 
 #[derive(Clone)]
@@ -344,12 +345,27 @@ pub(crate) struct Value {
 }
 
 impl Value {
-    pub(crate) fn setter_type(&self) -> &Type {
+    pub(crate) fn accepts_absence(&self) -> bool {
+        matches!(
+            self.shape,
+            ValueShape::Option { .. } | ValueShape::OptionVec { .. }
+        )
+    }
+
+    pub(crate) fn has_default(&self) -> bool {
+        matches!(self.kind, ResolvedValueKind::Defaulted(_))
+    }
+
+    pub(crate) fn setter_argument_type(&self) -> &Type {
+        match &self.shape {
+            ValueShape::Option { inner } | ValueShape::OptionVec { inner, .. } => inner,
+            ValueShape::Scalar | ValueShape::Vec { .. } => &self.ty,
+        }
+    }
+
+    pub(crate) fn client_builder_storage_type(&self) -> &Type {
         if self.is_optional() {
-            match &self.shape {
-                ValueShape::Option { inner } | ValueShape::OptionVec { inner, .. } => inner,
-                ValueShape::Scalar | ValueShape::Vec { .. } => &self.ty,
-            }
+            self.setter_argument_type()
         } else {
             &self.ty
         }

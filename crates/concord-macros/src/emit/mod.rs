@@ -147,6 +147,7 @@ mod tests {
                     required_client_value: String;
                     optional_client_value: Option<String>;
                     defaulted_client_value: u32 = 10;
+                    defaulted_optional_client_value: Option<String> = None;
                     build: String;
                     timeout: Option<u64>;
                     response: bool = true;
@@ -157,11 +158,14 @@ mod tests {
                 required_scope_value: String,
                 optional_scope_value: Option<String>,
                 defaulted_scope_value: u32 = 20,
+                defaulted_optional_scope_value: Option<String> = None,
             ) {
                 GET item(
                     required_endpoint_value: String,
                     optional_endpoint_value: Option<String>,
                     defaulted_endpoint_value: u32 = 30,
+                    defaulted_optional_endpoint_value: Option<String> = None,
+                    defaulted_optional_vector_endpoint_value: Option<Vec<String>> = None,
                 ) -> Bytes;
             }
         });
@@ -173,6 +177,9 @@ mod tests {
             "clear_optional_client_value",
             "set_defaulted_client_value",
             "reset_defaulted_client_value",
+            "set_defaulted_optional_client_value",
+            "clear_defaulted_optional_client_value",
+            "reset_defaulted_optional_client_value",
             "set_build",
             "set_timeout",
             "clear_timeout",
@@ -183,10 +190,19 @@ mod tests {
             "clear_optional_scope_value",
             "set_defaulted_scope_value",
             "reset_defaulted_scope_value",
+            "set_defaulted_optional_scope_value",
+            "clear_defaulted_optional_scope_value",
+            "reset_defaulted_optional_scope_value",
             "set_optional_endpoint_value",
             "clear_optional_endpoint_value",
             "set_defaulted_endpoint_value",
             "reset_defaulted_endpoint_value",
+            "set_defaulted_optional_endpoint_value",
+            "clear_defaulted_optional_endpoint_value",
+            "reset_defaulted_optional_endpoint_value",
+            "set_defaulted_optional_vector_endpoint_value",
+            "clear_defaulted_optional_vector_endpoint_value",
+            "reset_defaulted_optional_vector_endpoint_value",
         ] {
             assert!(output.contains(&format!("pub fn {method}")), "{method}");
         }
@@ -220,6 +236,22 @@ mod tests {
         }
         assert!(output.contains("pub fn group"));
         assert!(output.contains("pub fn item"));
+        assert!(
+            output
+                .contains("pub fn set_defaulted_optional_client_value (mut self , value : String)")
+        );
+        assert!(
+            output
+                .contains("pub fn set_defaulted_optional_scope_value (mut self , value : String)")
+        );
+        assert!(
+            output.contains(
+                "pub fn set_defaulted_optional_endpoint_value (mut self , value : String)"
+            )
+        );
+        assert!(output.contains(
+            "pub fn set_defaulted_optional_vector_endpoint_value (mut self , value : Vec < String >)"
+        ));
 
         let endpoint = semantic::test_support::endpoint(&api.client.children, "item");
         let request = generate_request_wrapper(
@@ -235,6 +267,14 @@ mod tests {
         .to_string();
         assert!(request.contains("endpoint . set_optional_endpoint_value (value)"));
         assert!(request.contains("endpoint . reset_defaulted_endpoint_value ()"));
+        assert!(request.contains("endpoint . set_defaulted_optional_endpoint_value (value)"));
+        assert!(request.contains("endpoint . clear_defaulted_optional_endpoint_value ()"));
+        assert!(request.contains("endpoint . reset_defaulted_optional_endpoint_value ()"));
+        assert!(
+            request.contains("endpoint . set_defaulted_optional_vector_endpoint_value (value)")
+        );
+        assert!(request.contains("endpoint . clear_defaulted_optional_vector_endpoint_value ()"));
+        assert!(request.contains("endpoint . reset_defaulted_optional_vector_endpoint_value ()"));
         assert!(!request.contains("set_optional_scope_value"));
         assert!(!request.contains("set_defaulted_scope_value"));
     }

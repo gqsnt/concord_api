@@ -80,6 +80,10 @@ fn explicit_drops() -> &'static AtomicUsize {
 pub const CLIENT_DEFAULT: DropProbe = DropProbe::new("client-default", client_default_drops);
 pub const SCOPE_DEFAULT: DropProbe = DropProbe::new("scope-default", scope_default_drops);
 pub const ENDPOINT_DEFAULT: DropProbe = DropProbe::new("endpoint-default", endpoint_default_drops);
+pub const OPTIONAL_CLIENT_DEFAULT: Option<&'static str> = Some("client-default");
+pub const OPTIONAL_SCOPE_DEFAULT: Option<&'static str> = Some("scope-default");
+pub const OPTIONAL_ENDPOINT_DEFAULT: Option<&'static str> = Some("endpoint-default");
+pub const OPTIONAL_VALUES_DEFAULT: Option<Vec<&'static str>> = Some(Vec::new());
 
 api! {
     client ShapeApi {
@@ -238,6 +242,36 @@ api! {
     }
 }
 
+api! {
+    client OptionalControlApi {
+        base "http://optional-controls.example.test/";
+        vars {
+            client_label: Option<&'static str> = crate::OPTIONAL_CLIENT_DEFAULT;
+        }
+        query {
+            "client_label" = vars.client_label;
+        }
+    }
+
+    scope groups(
+        scope_label: Option<&'static str> = crate::OPTIONAL_SCOPE_DEFAULT,
+    ) {
+        query {
+            "scope_label" = scope.scope_label;
+        }
+
+        GET inspect(
+            endpoint_label: Option<&'static str> = crate::OPTIONAL_ENDPOINT_DEFAULT,
+            values: Option<Vec<&'static str>> = crate::OPTIONAL_VALUES_DEFAULT,
+        ) -> Bytes {
+            query {
+                "endpoint_label" = ep.endpoint_label;
+                "value" = ep.values;
+            }
+        }
+    }
+}
+
 fn proxy(server: &ScriptedServer) -> SafeProxy {
     SafeProxy::parse(server.url("")).expect("local proxy")
 }
@@ -258,6 +292,17 @@ fn shaped_client(server: &ScriptedServer) -> ShapeApi {
         .configure_http(move |http| http.proxy(proxy))
         .build()
         .expect("shape client")
+}
+
+fn optional_control_url(
+    client: &OptionalControlApi,
+    endpoint: &optional_control_api::groups::Inspect,
+) -> String {
+    client
+        .plan(endpoint)
+        .expect("optional-control safe plan")
+        .safe_url()
+        .to_owned()
 }
 
 async fn next_stream_chunk(
@@ -305,6 +350,175 @@ async fn required_optional_defaulted_client_values_and_missing_input_are_stable(
     drop(defaults_only);
 }
 
+#[test]
+fn defaulted_option_client_clear_and_reset_are_distinct_override_states() {
+    let default_client = OptionalControlApi::new().expect("default optional-control client");
+    let default_url = optional_control_url(
+        &default_client,
+        &optional_control_api::groups::Inspect::new(),
+    );
+    assert!(default_url.contains("client_label=client-default"));
+
+    let selected = OptionalControlApi::builder()
+        .set_client_label("client-chosen")
+        .build()
+        .expect("selected client label");
+    let selected_url =
+        optional_control_url(&selected, &optional_control_api::groups::Inspect::new());
+    assert!(selected_url.contains("client_label=client-chosen"));
+
+    let cleared = OptionalControlApi::builder()
+        .clear_client_label()
+        .build()
+        .expect("explicitly absent client label");
+    let cleared_url = optional_control_url(&cleared, &optional_control_api::groups::Inspect::new());
+    assert!(!cleared_url.contains("client_label="));
+
+    let reset = OptionalControlApi::builder()
+        .clear_client_label()
+        .reset_client_label()
+        .build()
+        .expect("reset client label");
+    let reset_url = optional_control_url(&reset, &optional_control_api::groups::Inspect::new());
+    assert!(reset_url.contains("client_label=client-default"));
+}
+
+#[test]
+fn explicit_snapshots_restore_defaulted_option_and_option_vec_values() {
+    let client = OptionalControlApi::new().expect("optional-control client");
+
+    let default_url = optional_control_url(&client, &optional_control_api::groups::Inspect::new());
+    assert!(default_url.contains("scope_label=scope-default"));
+    assert!(default_url.contains("endpoint_label=endpoint-default"));
+    assert!(!default_url.contains("value="));
+
+    let selected = optional_control_api::groups::Inspect::new()
+        .set_scope_label("scope-chosen")
+        .set_endpoint_label("endpoint-chosen")
+        .set_values(vec!["first", "second"]);
+    let selected_url = optional_control_url(&client, &selected);
+    assert!(selected_url.contains("scope_label=scope-chosen"));
+    assert!(selected_url.contains("endpoint_label=endpoint-chosen"));
+    assert!(selected_url.contains("value=first&value=second"));
+
+    let cleared = optional_control_api::groups::Inspect::new()
+        .clear_scope_label()
+        .clear_endpoint_label()
+        .clear_values();
+    let cleared_url = optional_control_url(&client, &cleared);
+    assert!(!cleared_url.contains("scope_label="));
+    assert!(!cleared_url.contains("endpoint_label="));
+    assert!(!cleared_url.contains("value="));
+
+    let reset = optional_control_api::groups::Inspect::new()
+        .clear_scope_label()
+        .reset_scope_label()
+        .clear_endpoint_label()
+        .reset_endpoint_label()
+        .set_values(vec!["discarded"])
+        .reset_values();
+    let reset_url = optional_control_url(&client, &reset);
+    assert!(reset_url.contains("scope_label=scope-default"));
+    assert!(reset_url.contains("endpoint_label=endpoint-default"));
+    assert!(!reset_url.contains("value="));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn scope_and_request_controls_share_defaulted_option_snapshot_semantics() {
+    let _guard = request_shaping_test_guard().await;
+    let server = ScriptedServer::start((0..10).map(|_| ResponseScript::ok(b"ok".to_vec())))
+        .expect("optional-control server");
+    let selected_proxy = proxy(&server);
+    let client = OptionalControlApi::builder()
+        .configure_http(move |http| http.proxy(selected_proxy))
+        .build()
+        .expect("proxied optional-control client");
+
+    client
+        .groups()
+        .inspect()
+        .await
+        .expect("default scope selection");
+    client
+        .groups()
+        .set_scope_label("scope-chosen")
+        .inspect()
+        .await
+        .expect("selected scope value");
+    client
+        .groups()
+        .clear_scope_label()
+        .inspect()
+        .await
+        .expect("cleared scope value");
+    client
+        .groups()
+        .clear_scope_label()
+        .reset_scope_label()
+        .inspect()
+        .await
+        .expect("reset scope value");
+    client
+        .groups()
+        .inspect()
+        .set_endpoint_label("endpoint-chosen")
+        .await
+        .expect("selected request value");
+    client
+        .groups()
+        .inspect()
+        .clear_endpoint_label()
+        .await
+        .expect("cleared request value");
+    client
+        .groups()
+        .inspect()
+        .clear_endpoint_label()
+        .reset_endpoint_label()
+        .await
+        .expect("reset request value");
+    client
+        .groups()
+        .inspect()
+        .set_values(vec!["first", "second"])
+        .await
+        .expect("selected request vector");
+    client
+        .groups()
+        .inspect()
+        .clear_values()
+        .await
+        .expect("cleared request vector");
+    client
+        .groups()
+        .inspect()
+        .set_values(vec!["discarded"])
+        .reset_values()
+        .await
+        .expect("reset request vector");
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 10);
+    assert!(requests[0].target().contains("scope_label=scope-default"));
+    assert!(requests[1].target().contains("scope_label=scope-chosen"));
+    assert!(!requests[2].target().contains("scope_label="));
+    assert!(requests[3].target().contains("scope_label=scope-default"));
+    assert!(
+        requests[4]
+            .target()
+            .contains("endpoint_label=endpoint-chosen")
+    );
+    assert!(!requests[5].target().contains("endpoint_label="));
+    assert!(
+        requests[6]
+            .target()
+            .contains("endpoint_label=endpoint-default")
+    );
+    assert!(requests[7].target().contains("value=first&value=second"));
+    assert!(!requests[8].target().contains("value="));
+    assert!(!requests[9].target().contains("value="));
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn nested_facade_extension_setters_and_explicit_endpoint_have_head_parity() {
     let _guard = request_shaping_test_guard().await;
@@ -318,12 +532,12 @@ async fn nested_facade_extension_setters_and_explicit_endpoint_have_head_parity(
     let client = shaped_client(&server);
     let other_proxy = proxy(&server);
     let other = OtherApi::builder()
-        .set_label(Some("chosen".to_owned()))
+        .set_label("chosen".to_owned())
         .configure_http(move |http| http.proxy(other_proxy))
         .build()
         .expect("other client");
     let reset_other = OtherApi::builder()
-        .set_label(Some("unused".to_owned()))
+        .set_label("unused".to_owned())
         .reset_label()
         .build()
         .expect("defaulted Option client value");

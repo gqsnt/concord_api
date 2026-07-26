@@ -57,7 +57,7 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
         .enumerate()
         .map(|(index, value)| {
             let field = builder_value_field(index, value);
-            let ty = value.setter_type();
+            let ty = value.client_builder_storage_type();
             quote!(#field: ::std::option::Option<#ty>,)
         })
         .collect::<Vec<_>>();
@@ -454,22 +454,35 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
 pub(super) fn generate_builder_value_methods(index: usize, value: &Value) -> TokenStream {
     let setter = value_setter_ident(&value.name);
     let field = builder_value_field(index, value);
-    let setter_type = value.setter_type();
-    let helper = if value.is_optional() {
+    let setter_type = value.setter_argument_type();
+    let selected_value = if value.accepts_absence() && !value.is_optional() {
+        quote!(::std::option::Option::Some(::std::option::Option::Some(
+            value
+        )))
+    } else {
+        quote!(::std::option::Option::Some(value))
+    };
+    let clear = value.accepts_absence().then(|| {
         let clear = helper_ident("clear", &value.name);
         let clear_doc = format!(
-            "Selects `None` for the optional client value `{}`.",
+            "Explicitly selects `None` for the absence-capable client value `{}`.",
             canonical_ident(&value.name)
         );
+        let cleared_value = if value.is_optional() {
+            quote!(::std::option::Option::None)
+        } else {
+            quote!(::std::option::Option::Some(::std::option::Option::None))
+        };
         quote! {
             #[doc = #clear_doc]
             #[must_use]
             pub fn #clear(mut self) -> Self {
-                self.#field = ::std::option::Option::None;
+                self.#field = #cleared_value;
                 self
             }
         }
-    } else if value.default().is_some() {
+    });
+    let reset = value.has_default().then(|| {
         let reset = helper_ident("reset", &value.name);
         let reset_doc = format!(
             "Selects the DSL default for client value `{}` without evaluating it until `build`.",
@@ -483,16 +496,22 @@ pub(super) fn generate_builder_value_methods(index: usize, value: &Value) -> Tok
                 self
             }
         }
-    } else {
-        quote!()
-    };
+    });
     let setter_doc = match &value.kind {
+        ResolvedValueKind::Required if value.accepts_absence() => format!(
+            "Selects `Some(value)` for required absence-capable client value `{}`; a later call replaces this selection.",
+            canonical_ident(&value.name)
+        ),
         ResolvedValueKind::Required => format!(
             "Sets the required client value `{}`; a later call replaces this selection.",
             canonical_ident(&value.name)
         ),
         ResolvedValueKind::Optional => format!(
-            "Selects `Some(value)` for optional client value `{}`; a later call replaces this selection.",
+            "Selects `Some(value)` for absence-capable client value `{}`; a later call replaces this selection.",
+            canonical_ident(&value.name)
+        ),
+        ResolvedValueKind::Defaulted(_) if value.accepts_absence() => format!(
+            "Overrides defaulted absence-capable client value `{}` with `Some(value)`; while selected, its DSL default is not evaluated.",
             canonical_ident(&value.name)
         ),
         ResolvedValueKind::Defaulted(_) => format!(
@@ -504,11 +523,12 @@ pub(super) fn generate_builder_value_methods(index: usize, value: &Value) -> Tok
         #[doc = #setter_doc]
         #[must_use]
         pub fn #setter(mut self, value: #setter_type) -> Self {
-            self.#field = ::std::option::Option::Some(value);
+            self.#field = #selected_value;
             self
         }
 
-        #helper
+        #clear
+        #reset
     }
 }
 

@@ -115,11 +115,12 @@ pub(crate) fn endpoint_surface(
         .map(|(parameter, value)| EndpointSetter {
             parameter,
             setter: value_setter_ident(&value.name),
-            helper: if value.is_optional() {
-                helper_ident("clear", &value.name)
-            } else {
-                helper_ident("reset", &value.name)
-            },
+            clear: value
+                .accepts_absence()
+                .then(|| helper_ident("clear", &value.name)),
+            reset: value
+                .has_default()
+                .then(|| helper_ident("reset", &value.name)),
         })
         .collect();
     let dsl_path = scope_path
@@ -211,9 +212,9 @@ pub(crate) fn endpoint_doc_model(
             EndpointDocSetter {
                 name: canonical_ident(&value.name),
                 setter: canonical_ident(&setter.setter),
-                helper: canonical_ident(&setter.helper),
-                type_name: type_name(value.setter_type()),
-                kind: input_kind(value),
+                clear: setter.clear.as_ref().map(canonical_ident),
+                reset: setter.reset.as_ref().map(canonical_ident),
+                type_name: type_name(&value.ty),
             }
         })
         .collect();
@@ -487,12 +488,22 @@ fn validate_request_surface(endpoint: &Endpoint) -> syn::Result<()> {
             setter.setter.span(),
             "named request wrapper methods",
         )?;
-        insert_name(
-            &mut names,
-            canonical_ident(&setter.helper),
-            setter.helper.span(),
-            "named request wrapper methods",
-        )?;
+        if let Some(clear) = &setter.clear {
+            insert_name(
+                &mut names,
+                canonical_ident(clear),
+                clear.span(),
+                "named request wrapper methods",
+            )?;
+        }
+        if let Some(reset) = &setter.reset {
+            insert_name(
+                &mut names,
+                canonical_ident(reset),
+                reset.span(),
+                "named request wrapper methods",
+            )?;
+        }
     }
     for terminal in &endpoint.surface.terminals.credential_storage {
         insert_name(
@@ -1023,7 +1034,11 @@ mod tests {
         assert_eq!(docs.required_endpoint_inputs[0].name, "filename");
         assert_eq!(docs.endpoint_setters[0].name, "scale");
         assert_eq!(docs.endpoint_setters[0].setter, "set_scale");
-        assert_eq!(docs.endpoint_setters[0].helper, "reset_scale");
+        assert_eq!(docs.endpoint_setters[0].clear, None);
+        assert_eq!(
+            docs.endpoint_setters[0].reset.as_deref(),
+            Some("reset_scale")
+        );
         assert_eq!(docs.safe_query_names, ["scale"]);
         assert_eq!(docs.safe_header_names, ["X-Asset-View"]);
         assert!(docs.body.is_none());
@@ -1088,11 +1103,17 @@ mod tests {
                 .docs
                 .endpoint_setters
                 .iter()
-                .map(|setter| (setter.name.as_str(), setter.kind))
+                .map(|setter| {
+                    (
+                        setter.name.as_str(),
+                        setter.clear.as_deref(),
+                        setter.reset.as_deref(),
+                    )
+                })
                 .collect::<Vec<_>>(),
             [
-                ("remember", EndpointDocInputKind::Optional),
-                ("attempts", EndpointDocInputKind::Defaulted),
+                ("remember", Some("clear_remember"), None),
+                ("attempts", None, Some("reset_attempts")),
             ]
         );
         assert_eq!(login.docs.authentication.len(), 1);

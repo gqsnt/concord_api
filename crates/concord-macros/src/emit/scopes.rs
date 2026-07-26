@@ -327,25 +327,35 @@ pub(super) fn scope_constructor_local_arguments(scope: &Scope) -> TokenStream {
 pub(super) fn generate_facade_setters(scope_id: usize, index: usize, value: &Value) -> TokenStream {
     let setter = value_setter_ident(&value.name);
     let field = scope_value_field(scope_id, index, value);
-    let setter_type = value.setter_type();
-    if value.is_optional() {
-        let clear = helper_ident("clear", &value.name);
-        let setter_doc = format!(
-            "Returns a new facade selecting `Some(value)` for optional scope value `{}`.",
+    let setter_type = value.setter_argument_type();
+    let selected_value = if value.accepts_absence() {
+        quote!(::std::option::Option::Some(value))
+    } else {
+        quote!(value)
+    };
+    let setter_doc = if value.accepts_absence() && value.has_default() {
+        format!(
+            "Returns a new facade overriding defaulted absence-capable scope value `{}` with `Some(value)`.",
             canonical_ident(&value.name)
-        );
+        )
+    } else if value.accepts_absence() {
+        format!(
+            "Returns a new facade selecting `Some(value)` for absence-capable scope value `{}`.",
+            canonical_ident(&value.name)
+        )
+    } else {
+        format!(
+            "Returns a new facade overriding defaulted scope value `{}`.",
+            canonical_ident(&value.name)
+        )
+    };
+    let clear = value.accepts_absence().then(|| {
+        let clear = helper_ident("clear", &value.name);
         let clear_doc = format!(
-            "Returns a new facade selecting `None` for optional scope value `{}`.",
+            "Returns a new facade explicitly selecting `None` for absence-capable scope value `{}`.",
             canonical_ident(&value.name)
         );
         quote! {
-            #[doc = #setter_doc]
-            #[must_use]
-            pub fn #setter(mut self, value: #setter_type) -> Self {
-                self.#field = ::std::sync::Arc::new(::std::option::Option::Some(value));
-                self
-            }
-
             #[doc = #clear_doc]
             #[must_use]
             pub fn #clear(mut self) -> Self {
@@ -353,25 +363,15 @@ pub(super) fn generate_facade_setters(scope_id: usize, index: usize, value: &Val
                 self
             }
         }
-    } else {
+    });
+    let reset = value.has_default().then(|| {
         let reset = helper_ident("reset", &value.name);
         let default = scope_default_field(scope_id, index, value);
-        let setter_doc = format!(
-            "Returns a new facade overriding defaulted scope value `{}`.",
-            canonical_ident(&value.name)
-        );
         let reset_doc = format!(
             "Returns a new facade restoring the retained `{}` default without re-evaluation.",
             canonical_ident(&value.name)
         );
         quote! {
-            #[doc = #setter_doc]
-            #[must_use]
-            pub fn #setter(mut self, value: #setter_type) -> Self {
-                self.#field = ::std::sync::Arc::new(value);
-                self
-            }
-
             #[doc = #reset_doc]
             #[must_use]
             pub fn #reset(mut self) -> Self {
@@ -379,6 +379,17 @@ pub(super) fn generate_facade_setters(scope_id: usize, index: usize, value: &Val
                 self
             }
         }
+    });
+    quote! {
+        #[doc = #setter_doc]
+        #[must_use]
+        pub fn #setter(mut self, value: #setter_type) -> Self {
+            self.#field = ::std::sync::Arc::new(#selected_value);
+            self
+        }
+
+        #clear
+        #reset
     }
 }
 

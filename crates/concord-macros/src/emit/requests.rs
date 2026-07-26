@@ -24,7 +24,13 @@ pub(super) fn generate_request_wrapper(
         .iter()
         .map(|setter| {
             let value = &endpoint.parameters[setter.parameter];
-            request_wrapper_setters(value, &setter.setter, &setter.helper, generated_core)
+            request_wrapper_setters(
+                value,
+                &setter.setter,
+                setter.clear.as_ref(),
+                setter.reset.as_ref(),
+                generated_core,
+            )
         })
         .collect::<Vec<_>>();
     let storage_methods = endpoint
@@ -203,13 +209,19 @@ pub(super) fn generate_request_wrapper(
 pub(super) fn request_wrapper_setters(
     value: &Value,
     setter: &Ident,
-    helper: &Ident,
+    clear: Option<&Ident>,
+    reset: Option<&Ident>,
     generated_core: &TokenStream,
 ) -> TokenStream {
-    let ty = value.setter_type();
-    let setter_doc = if value.is_optional() {
+    let ty = value.setter_argument_type();
+    let setter_doc = if value.accepts_absence() && value.has_default() {
         format!(
-            "Consumes this request and selects `Some(value)` for optional endpoint value `{}`.",
+            "Consumes this request and overrides defaulted absence-capable endpoint value `{}` with `Some(value)`.",
+            canonical_ident(&value.name)
+        )
+    } else if value.accepts_absence() {
+        format!(
+            "Consumes this request and selects `Some(value)` for absence-capable endpoint value `{}`.",
             canonical_ident(&value.name)
         )
     } else {
@@ -218,17 +230,40 @@ pub(super) fn request_wrapper_setters(
             canonical_ident(&value.name)
         )
     };
-    let helper_doc = if value.is_optional() {
-        format!(
-            "Consumes this request and selects `None` for optional endpoint value `{}`.",
+    let clear_method = clear.map(|clear| {
+        let clear_doc = format!(
+            "Consumes this request and explicitly selects `None` for absence-capable endpoint value `{}`.",
             canonical_ident(&value.name)
-        )
-    } else {
-        format!(
+        );
+        quote! {
+            #[doc = #clear_doc]
+            #[must_use]
+            pub fn #clear(mut self) -> Self {
+                self.__concord_inner = #generated_core::__private::map_endpoint(
+                    self.__concord_inner,
+                    |endpoint| endpoint.#clear(),
+                );
+                self
+            }
+        }
+    });
+    let reset_method = reset.map(|reset| {
+        let reset_doc = format!(
             "Consumes this request and restores the retained `{}` default without re-evaluation.",
             canonical_ident(&value.name)
-        )
-    };
+        );
+        quote! {
+            #[doc = #reset_doc]
+            #[must_use]
+            pub fn #reset(mut self) -> Self {
+                self.__concord_inner = #generated_core::__private::map_endpoint(
+                    self.__concord_inner,
+                    |endpoint| endpoint.#reset(),
+                );
+                self
+            }
+        }
+    });
     quote! {
         #[doc = #setter_doc]
         #[must_use]
@@ -240,15 +275,8 @@ pub(super) fn request_wrapper_setters(
             self
         }
 
-        #[doc = #helper_doc]
-        #[must_use]
-        pub fn #helper(mut self) -> Self {
-            self.__concord_inner = #generated_core::__private::map_endpoint(
-                self.__concord_inner,
-                |endpoint| endpoint.#helper(),
-            );
-            self
-        }
+        #clear_method
+        #reset_method
     }
 }
 

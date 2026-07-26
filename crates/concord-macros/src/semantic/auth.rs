@@ -220,14 +220,15 @@ pub(super) fn validate_credential_names(
             value.name.span(),
             "generated client builder method",
         )?;
-        if value.is_optional() {
+        if value.accepts_absence() {
             insert_name(
                 &mut builder,
                 format!("clear_{}", canonical_ident(&value.name)),
                 value.name.span(),
                 "generated client builder method",
             )?;
-        } else if value.default().is_some() {
+        }
+        if value.has_default() {
             insert_name(
                 &mut builder,
                 format!("reset_{}", canonical_ident(&value.name)),
