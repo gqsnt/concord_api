@@ -12,6 +12,7 @@ check:
     cargo check --workspace --all-targets --locked
     cargo check --workspace --all-targets --no-default-features --locked
     cargo check --workspace --all-targets --all-features --locked
+    cargo check -p concord --lib --no-default-features --features rate-limit --locked
     cargo check -p concord --lib --no-default-features --features json --locked
     cargo check -p concord --lib --no-default-features --features oauth2-client --locked
     cargo check -p concord --lib --no-default-features --features multipart --locked
@@ -49,6 +50,8 @@ docs:
     cargo rustdoc -p concord-core --no-default-features --locked -- -D warnings
     cargo rustdoc -p concord-extras --no-default-features --locked -- -D warnings
     cargo rustdoc -p concord --no-default-features --locked -- -D warnings
+    cargo rustdoc -p concord --features rate-limit --locked -- -D warnings
+    cargo rustdoc -p concord-extras --features rate-limit --locked -- -D warnings
     cargo rustdoc -p concord --features csv --locked -- -D warnings
     cargo rustdoc -p concord --features json --locked -- -D warnings
     cargo rustdoc -p concord --features dangerous-raw-response --locked -- -D warnings

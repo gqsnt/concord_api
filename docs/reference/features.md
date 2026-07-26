@@ -14,7 +14,7 @@ task.
 | `default` | meta | Default TLS, HTTP/2, and process-local rate limiting |
 | `default-tls` | yes | HTTPS with the ordinary default TLS backend |
 | `http2` | yes | HTTP/2 transport support |
-| `rate-limit` | yes | Process-local generated rate-plan enforcement |
+| `rate-limit` | yes | Bounded process-local `LocalRateLimiter` policy |
 | `json` | no | `Json<T>` request and response codec |
 | `oauth2-client` | no | OAuth2 client-credentials provider helper |
 | `records` | no | Generic bounded record streaming |

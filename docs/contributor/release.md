@@ -59,6 +59,14 @@ must read both constants from core. Package review must preserve those exports
 under no-default and all-feature builds; internal fairness budgets remain
 private implementation details rather than compatibility constants.
 
+The release-facing rate-limit surface uses the default façade feature
+`rate-limit`, `concord::rate_limit::{LocalRateLimiter, RetryAfterObserver}`,
+and recoverable `RateLimitErrorKind::StateCapacity`. The unpublished
+`rate-limit-governor`, `GovernorRateLimiter`, and
+`DefaultRateLimitObserver` names must not reappear as aliases. Package and
+selected-feature Rustdoc checks must preserve the core custom-`RateLimiter`
+contract when the first-party implementation is disabled.
+
 Build the source ZIP with:
 
 ```text
@@ -92,11 +100,14 @@ Before enabling publication:
 7. run `just source-archive`, compare ZIP entries with tracked `HEAD`, and
    inspect the ZIP;
 8. inspect no-default, selected-feature, and all-feature generated Rustdoc;
-9. confirm request and response empty-chunk limits appear once in the generated
+9. confirm `rate-limit` remains a default façade feature, its selected façade
+   and extras Rustdoc is warning-free, and the removed unpublished names are
+   absent;
+10. confirm request and response empty-chunk limits appear once in the generated
    limits reference and remain available without default features;
-10. record the exact branch, commit, and clean worktree status;
-11. obtain successful remote Linux, Windows, and macOS CI results;
-12. publish only after an explicit instruction naming the packages and order.
+11. record the exact branch, commit, and clean worktree status;
+12. obtain successful remote Linux, Windows, and macOS CI results;
+13. publish only after an explicit instruction naming the packages and order.
 
 See the [changelog](../../CHANGELOG.md), [compatibility reference](../reference/compatibility.md),
 and [unsupported capabilities](../reference/unsupported.md).

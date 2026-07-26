@@ -45,7 +45,7 @@ const FEATURES: &[(&str, &str)] = &[
     ("http2", "HTTP/2 transport support"),
     (
         "rate-limit",
-        "Process-local generated rate-plan enforcement",
+        "Bounded process-local `LocalRateLimiter` policy",
     ),
     ("json", "`Json<T>` request and response codec"),
     ("oauth2-client", "OAuth2 client-credentials provider helper"),

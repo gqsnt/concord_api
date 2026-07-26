@@ -1231,18 +1231,19 @@ async fn existing_cooldown_remains_after_capacity_failure() {
         )
         .expect_err("second cooldown exceeds capacity");
     assert_eq!(error.kind(), RateLimitErrorKind::StateCapacity);
-    let state = limiter.state.lock().expect("state");
-    assert_eq!(state.cooldowns.len(), 1);
-    assert_eq!(
-        state
-            .cooldowns
-            .values()
-            .next()
-            .expect("retained cooldown")
-            .expiration,
-        expiration
-    );
-    drop(state);
+    {
+        let state = limiter.state.lock().expect("state");
+        assert_eq!(state.cooldowns.len(), 1);
+        assert_eq!(
+            state
+                .cooldowns
+                .values()
+                .next()
+                .expect("retained cooldown")
+                .expiration,
+            expiration
+        );
+    }
 
     let blocked = spawn_acquire(Arc::clone(&limiter), Arc::clone(&plan), Some("first.test"));
     tokio::task::yield_now().await;

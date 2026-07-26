@@ -36,10 +36,11 @@ documentation task does not parse those source formats.
 
 `just docs` additionally runs all-feature workspace doctests and
 warning-denied Rustdoc for core, extras, and façade no-default surfaces; the
-selected façade `csv`, `json`, and `dangerous-raw-response` surfaces; and the
-all-feature product surface. This is intentionally a maintained feature sample
-rather than a combinatorial matrix. Recipe bodies remain portable command
-lines without shell-specific parsing.
+selected façade/extras `rate-limit` surface; the selected façade `csv`, `json`,
+and `dangerous-raw-response` surfaces; and the all-feature product surface.
+This is intentionally a maintained feature sample rather than a combinatorial
+matrix. Recipe bodies remain portable command lines without shell-specific
+parsing.
 
 When a fact changes, update its canonical owner:
 

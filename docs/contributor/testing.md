@@ -35,10 +35,11 @@ just source-archive # fresh-clone-safe tracked source ZIP built by git archive
 ```
 
 The documentation recipe owns warning-denied no-default Rustdoc for each
-public product layer, selected façade Rustdoc for `csv`, `json`, and
-`dangerous-raw-response`, and all-feature Rustdoc. All-feature workspace
-doctests remain the comprehensive executable documentation owner; selected
-feature builds are added only when an example itself is feature-sensitive.
+public product layer, selected façade/extras Rustdoc for `rate-limit`, selected
+façade Rustdoc for `csv`, `json`, and `dangerous-raw-response`, and all-feature
+Rustdoc. All-feature workspace doctests remain the comprehensive executable
+documentation owner; selected feature builds are added only when an example
+itself is feature-sensitive.
 
 The repository-level subprocess owners are also directly available as
 `cargo run --locked -p concord-xtask -- fixtures --locked` and

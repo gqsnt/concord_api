@@ -14,10 +14,10 @@ pub(super) fn pagination_bound_values(pagination: Option<&Pagination>) -> Vec<Va
     let mut values = Vec::new();
     if let Some(pagination) = pagination {
         for field in &pagination.fields {
-            if let PaginationInitializer::Bound(value) = &field.initializer
-                && !values.contains(&value.reference)
-            {
-                values.push(value.reference);
+            if let PaginationInitializer::Bound(value) = &field.initializer {
+                if !values.contains(&value.reference) {
+                    values.push(value.reference);
+                }
             }
         }
     }
