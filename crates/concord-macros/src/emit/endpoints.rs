@@ -990,12 +990,12 @@ pub(super) fn generate_endpoint_snapshot_setters(
     };
     let setter_doc = if value.accepts_absence() && value.has_default() {
         format!(
-            "Returns a new explicit endpoint snapshot overriding defaulted absence-capable value `{}` with `Some(value)`.",
+            "Returns a new explicit endpoint snapshot selecting a present value for defaulted absence-capable value `{}`.",
             canonical_ident(&value.name)
         )
     } else if value.accepts_absence() {
         format!(
-            "Returns a new explicit endpoint snapshot selecting `Some(value)` for absence-capable value `{}`.",
+            "Returns a new explicit endpoint snapshot selecting a present value for absence-capable value `{}`.",
             canonical_ident(&value.name)
         )
     } else {
@@ -1007,7 +1007,7 @@ pub(super) fn generate_endpoint_snapshot_setters(
     let clear = value.accepts_absence().then(|| {
         let clear = helper_ident("clear", &value.name);
         let clear_doc = format!(
-            "Returns a new explicit endpoint snapshot explicitly selecting `None` for absence-capable value `{}`.",
+            "Returns a new explicit endpoint snapshot explicitly selecting absence for absence-capable value `{}`.",
             canonical_ident(&value.name)
         );
         quote! {

@@ -232,7 +232,7 @@ fn setter_capability_name(setter: &EndpointDocSetter) -> &'static str {
 fn render_value_controls(setter: &EndpointDocSetter, separator: &str) -> String {
     let mut controls = Vec::new();
     let set = if setter.clear.is_some() {
-        format!("select `Some(value)` with `.{}(...)`", setter.setter)
+        format!("set a present value with `.{}(...)`", setter.setter)
     } else if setter.reset.is_some() {
         format!("override with `.{}(...)`", setter.setter)
     } else {
@@ -240,7 +240,7 @@ fn render_value_controls(setter: &EndpointDocSetter, separator: &str) -> String 
     };
     controls.push(set);
     if let Some(clear) = &setter.clear {
-        controls.push(format!("clear with `.{clear}()`"));
+        controls.push(format!("select absence with `.{clear}()`"));
     }
     if let Some(reset) = &setter.reset {
         controls.push(format!("restore the retained default with `.{reset}()`"));
@@ -839,31 +839,33 @@ mod tests {
         let endpoint = semantic::test_support::endpoint(&api.client.children, "read");
         let endpoint_docs = endpoint_type_doc(endpoint);
         assert!(endpoint_docs.contains(
-            "absence-capable; select `Some(value)` with `.set_cursor(...)`, clear with `.clear_cursor()`"
+            "absence-capable; set a present value with `.set_cursor(...)`, select absence with `.clear_cursor()`"
         ));
         assert!(endpoint_docs.contains(
             "has a declaration default; override with `.set_limit(...)`, restore the retained default with `.reset_limit()`"
         ));
         assert!(endpoint_docs.contains(
-            "`ep.label: Option < String >` — absence-capable and has a declaration default; select `Some(value)` with `.set_label(...)`, clear with `.clear_label()`, restore the retained default with `.reset_label()`"
+            "`ep.label: Option < String >` — absence-capable and has a declaration default; set a present value with `.set_label(...)`, select absence with `.clear_label()`, restore the retained default with `.reset_label()`"
         ));
         assert!(endpoint_docs.contains(
-            "`ep.values: Option < Vec < String > >` — absence-capable and has a declaration default; select `Some(value)` with `.set_values(...)`, clear with `.clear_values()`, restore the retained default with `.reset_values()`"
+            "`ep.values: Option < Vec < String > >` — absence-capable and has a declaration default; set a present value with `.set_values(...)`, select absence with `.clear_values()`, restore the retained default with `.reset_values()`"
         ));
+        assert!(!endpoint_docs.contains("Some(value)"));
 
         let request_docs = request_wrapper_doc(endpoint);
         assert!(request_docs.contains(
-            "select `Some(value)` with `.set_cursor(...)`; clear with `.clear_cursor()`"
+            "set a present value with `.set_cursor(...)`; select absence with `.clear_cursor()`"
         ));
         assert!(request_docs.contains(
             "override with `.set_limit(...)`; restore the retained default with `.reset_limit()`"
         ));
         assert!(request_docs.contains(
-            "select `Some(value)` with `.set_label(...)`; clear with `.clear_label()`; restore the retained default with `.reset_label()`"
+            "set a present value with `.set_label(...)`; select absence with `.clear_label()`; restore the retained default with `.reset_label()`"
         ));
         assert!(request_docs.contains(
-            "select `Some(value)` with `.set_values(...)`; clear with `.clear_values()`; restore the retained default with `.reset_values()`"
+            "set a present value with `.set_values(...)`; select absence with `.clear_values()`; restore the retained default with `.reset_values()`"
         ));
+        assert!(!request_docs.contains("Some(value)"));
     }
 
     #[test]

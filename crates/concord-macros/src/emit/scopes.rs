@@ -335,12 +335,12 @@ pub(super) fn generate_facade_setters(scope_id: usize, index: usize, value: &Val
     };
     let setter_doc = if value.accepts_absence() && value.has_default() {
         format!(
-            "Returns a new facade overriding defaulted absence-capable scope value `{}` with `Some(value)`.",
+            "Returns a new facade selecting a present value for defaulted absence-capable scope value `{}`.",
             canonical_ident(&value.name)
         )
     } else if value.accepts_absence() {
         format!(
-            "Returns a new facade selecting `Some(value)` for absence-capable scope value `{}`.",
+            "Returns a new facade selecting a present value for absence-capable scope value `{}`.",
             canonical_ident(&value.name)
         )
     } else {
@@ -352,7 +352,7 @@ pub(super) fn generate_facade_setters(scope_id: usize, index: usize, value: &Val
     let clear = value.accepts_absence().then(|| {
         let clear = helper_ident("clear", &value.name);
         let clear_doc = format!(
-            "Returns a new facade explicitly selecting `None` for absence-capable scope value `{}`.",
+            "Returns a new facade explicitly selecting absence for absence-capable scope value `{}`.",
             canonical_ident(&value.name)
         );
         quote! {

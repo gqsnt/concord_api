@@ -216,12 +216,12 @@ pub(super) fn request_wrapper_setters(
     let ty = value.setter_argument_type();
     let setter_doc = if value.accepts_absence() && value.has_default() {
         format!(
-            "Consumes this request and overrides defaulted absence-capable endpoint value `{}` with `Some(value)`.",
+            "Consumes this request and selects a present value for defaulted absence-capable endpoint value `{}`.",
             canonical_ident(&value.name)
         )
     } else if value.accepts_absence() {
         format!(
-            "Consumes this request and selects `Some(value)` for absence-capable endpoint value `{}`.",
+            "Consumes this request and selects a present value for absence-capable endpoint value `{}`.",
             canonical_ident(&value.name)
         )
     } else {
@@ -232,7 +232,7 @@ pub(super) fn request_wrapper_setters(
     };
     let clear_method = clear.map(|clear| {
         let clear_doc = format!(
-            "Consumes this request and explicitly selects `None` for absence-capable endpoint value `{}`.",
+            "Consumes this request and explicitly selects absence for absence-capable endpoint value `{}`.",
             canonical_ident(&value.name)
         );
         quote! {
@@ -306,6 +306,13 @@ mod tests {
 
         assert!(output.contains("pub struct FetchItemRequest"));
         assert!(output.contains("pub fn set_verbose"));
+        assert!(output.contains(
+            "Consumes this request and selects a present value for absence-capable endpoint value"
+        ));
+        assert!(output.contains(
+            "Consumes this request and explicitly selects absence for absence-capable endpoint value"
+        ));
+        assert!(!output.contains("selects `Some(value)`"));
         assert!(output.contains("IntoFuture"));
         assert!(!output.contains("__concord_into_development_request"));
         assert!(!output.contains("emit_generated_development_method"));

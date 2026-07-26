@@ -465,7 +465,7 @@ pub(super) fn generate_builder_value_methods(index: usize, value: &Value) -> Tok
     let clear = value.accepts_absence().then(|| {
         let clear = helper_ident("clear", &value.name);
         let clear_doc = format!(
-            "Explicitly selects `None` for the absence-capable client value `{}`.",
+            "Explicitly selects absence for the absence-capable client value `{}`.",
             canonical_ident(&value.name)
         );
         let cleared_value = if value.is_optional() {
@@ -485,7 +485,7 @@ pub(super) fn generate_builder_value_methods(index: usize, value: &Value) -> Tok
     let reset = value.has_default().then(|| {
         let reset = helper_ident("reset", &value.name);
         let reset_doc = format!(
-            "Selects the DSL default for client value `{}` without evaluating it until `build`.",
+            "Removes the override for client value `{}` so its declaration default is selected during `.build()`.",
             canonical_ident(&value.name)
         );
         quote! {
@@ -499,7 +499,7 @@ pub(super) fn generate_builder_value_methods(index: usize, value: &Value) -> Tok
     });
     let setter_doc = match &value.kind {
         ResolvedValueKind::Required if value.accepts_absence() => format!(
-            "Selects `Some(value)` for required absence-capable client value `{}`; a later call replaces this selection.",
+            "Selects a present value for required absence-capable client value `{}`; a later call replaces this selection.",
             canonical_ident(&value.name)
         ),
         ResolvedValueKind::Required => format!(
@@ -507,11 +507,11 @@ pub(super) fn generate_builder_value_methods(index: usize, value: &Value) -> Tok
             canonical_ident(&value.name)
         ),
         ResolvedValueKind::Optional => format!(
-            "Selects `Some(value)` for absence-capable client value `{}`; a later call replaces this selection.",
+            "Selects a present value for absence-capable client value `{}`; a later call replaces this selection.",
             canonical_ident(&value.name)
         ),
         ResolvedValueKind::Defaulted(_) if value.accepts_absence() => format!(
-            "Overrides defaulted absence-capable client value `{}` with `Some(value)`; while selected, its DSL default is not evaluated.",
+            "Selects a present value for defaulted absence-capable client value `{}`; while selected, its DSL default is not evaluated.",
             canonical_ident(&value.name)
         ),
         ResolvedValueKind::Defaulted(_) => format!(

@@ -50,8 +50,8 @@ independent properties.
 | Named request wrapper | construction only | owned endpoint control: `set_name` + `clear_name` | owned endpoint control: `set_name` + `reset_name` | owned endpoint control: `set_name` + `clear_name` + `reset_name` |
 
 For `Option<T>`, `set_name` accepts `T`; for `Option<Vec<T>>`, it accepts
-`Vec<T>`. Neither setter requires the caller to wrap its argument in `Some`.
-`clear_name()` explicitly selects `None`.
+`Vec<T>`. Each setter selects a present value directly; `clear_name()` selects
+absence.
 
 Named request wrappers do not gain inherited scope controls they did not
 already own. Required scope/endpoint values remain arguments to navigation or
@@ -68,7 +68,7 @@ helper names are reserved and validated.
 
 All generated value controls consume and return the builder or immutable
 snapshot. For a defaulted `Option<T>`, a client builder retains three states:
-no override, an explicit `Some(value)`, and explicit absence. `clear_name()`
+no override, an explicitly present value, and explicit absence. `clear_name()`
 selects explicit absence; `reset_name()` returns to no override and lets
 `build()` choose and evaluate the DSL default. A scope, explicit endpoint, or
 named request snapshot instead retains the evaluated default:

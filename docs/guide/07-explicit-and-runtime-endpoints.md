@@ -14,7 +14,7 @@ managed execution. Explicit values are useful for storage, generic
 composition, and applying `set_*` controls before binding a client.
 Absence-capable fields additionally expose `clear_*`; fields with a declaration
 default expose `reset_*`. A defaulted `Option<T>` exposes all three:
-`set_name(T)` selects `Some(value)`, `clear_name()` selects `None`, and
+`set_name(T)` selects a present value, `clear_name()` selects absence, and
 `reset_name()` restores the retained evaluated default without re-evaluation.
 
 Use `concord::endpoint::RuntimeEndpoint` when method, public path, query, or
