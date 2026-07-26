@@ -139,5 +139,5 @@ Before enabling publication:
 15. obtain successful remote Linux, Windows, and macOS CI results;
 16. publish only after an explicit instruction naming the packages and order.
 
-See the [changelog](../../CHANGELOG.md), [compatibility reference](../reference/compatibility.md),
+See the repository `CHANGELOG.md`, [compatibility reference](../reference/compatibility.md),
 and [unsupported capabilities](../reference/unsupported.md).

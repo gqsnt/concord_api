@@ -115,5 +115,5 @@ that observation sits in the complete lifecycle.
 - [The managed lifecycle](../concepts/managed-lifecycle.md)
 - [Build and share clients](client-construction.md)
 - [Error reference](../reference/errors.md)
-- [Generated request capabilities](../reference/generated-api.md#request-capabilities)
+- [Generated request controls and terminals](../reference/generated-api.md#request-controls-and-terminals)
 - [Security and redaction](../concepts/security-and-redaction.md)

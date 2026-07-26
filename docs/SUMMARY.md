@@ -35,11 +35,6 @@
 - [Runtime-defined endpoints](features/runtime-endpoints.md)
 - [Production HTTP](features/production-http.md)
 
-# Concepts
-
-- [Finite behavior](concepts/finite-behavior.md)
-- [Security and redaction](concepts/security-and-redaction.md)
-
 # Recipes
 
 - [Regional APIs](recipes/regional-apis.md)
@@ -65,12 +60,14 @@
 
 # Reference
 
-- [DSL](reference/dsl.md)
+- [Complete DSL](reference/dsl.md)
 - [Generated API](reference/generated-api.md)
-- [Features](reference/features.md)
+- [Feature flags](reference/features.md)
 - [Limits](reference/limits.md)
 - [Errors](reference/errors.md)
-- [Compatibility](reference/compatibility.md)
+- [Compatibility and MSRV](reference/compatibility.md)
+- [Finite behavior](concepts/finite-behavior.md)
+- [Security and redaction](concepts/security-and-redaction.md)
 - [Dangerous capabilities](reference/dangerous.md)
 - [Unsupported forms](reference/unsupported.md)
 

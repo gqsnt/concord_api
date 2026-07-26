@@ -1,12 +1,29 @@
-# DSL reference
-
-> Audience: all declaration authors
-> Purpose: exact structural syntax, naming, identity, and diagnostics
+# Complete DSL reference
 
 `concord::api!` compiles one remote HTTP contract into ordinary Rust client,
 scope, endpoint, and request types. Rust types remain opaque to the macro.
 Trait implementations determine body, response, provider, pagination, and
 runtime behavior.
+
+This page is the canonical owner for declaration grammar. Generated method
+names and terminals are catalogued separately in the
+[Generated API reference](generated-api.md).
+
+## On this page
+
+- [Top-level structure](#top-level-structure)
+- [Generated namespaces and visibility](#generated-namespaces-and-visibility)
+- [Named clauses and ordering](#named-clauses-and-ordering)
+- [Feature-dependent capabilities](#feature-dependent-capabilities)
+- [Values, optionality, and defaults](#values-optionality-and-defaults)
+- [Explicit request bodies](#explicit-request-bodies)
+- [Endpoint identity](#endpoint-identity)
+- [Public expressions and request shaping](#public-expressions-and-request-shaping)
+- [Authentication](#authentication)
+- [Retry and timeout](#retry-and-timeout)
+- [Pagination](#pagination)
+- [Rate limits](#rate-limits)
+- [Diagnostics](#diagnostics)
 
 ## Top-level structure
 
@@ -61,6 +78,30 @@ GET r#type      -> method r#type, endpoint type Type
 Endpoint aliases are not supported. Write the desired public method name as the
 endpoint identifier.
 
+## Generated namespaces and visibility
+
+Generated items follow the Rust module containing the `api!` invocation:
+
+| Declaration | Generated location |
+|---|---|
+| `client CatalogApi` | public `CatalogApi` and `CatalogApiBuilder` beside the invocation |
+| client module | public `catalog_api` beside the invocation |
+| root endpoint `GET health` | `catalog_api::Health` and `catalog_api::HealthRequest` |
+| `scope product_groups` | method/module `product_groups` and type `catalog_api::product_groups::ProductGroups` |
+| endpoint `GET by_id` in that scope | `catalog_api::product_groups::ById` and `ByIdRequest` |
+
+The generated items are public relative to their containing Rust module.
+Ordinary Rust visibility of that containing module still controls whether
+another crate can reach them. The DSL has no `pub`, `pub(crate)`, or
+re-export clause; put the invocation in the module that should own the
+surface, then use ordinary Rust re-exports if needed.
+
+Scope modules nest according to declaration nesting. A child source identifier
+therefore participates in both its Rust path and its default endpoint identity.
+Each generated client module also contains the sealed generated `Endpoint`
+contract used by `client.request(...)`; downstream crates cannot implement it.
+There is no second public endpoint tree and no generated prelude.
+
 ## Named clauses and ordering
 
 Named clauses are order-independent within their owner. These client
@@ -99,6 +140,29 @@ entry, and `auth off` is exclusive.
 `http` or `https` URL with a host and no username, password, query, or
 fragment. A base path is allowed. The fixed host may be a DNS domain, an IPv4
 literal, or an IPv6 literal.
+
+## Feature-dependent capabilities
+
+The macro grammar does not change by recognizing concrete helper names.
+Cargo features make Rust types, implementations, transport capabilities, or
+generated terminals available:
+
+| Façade feature | Declaration effect |
+|---|---|
+| `json` | exposes `Json<T>` as a request/response codec; there is no `json` DSL clause |
+| `records` | exposes generic `Records<D>` streaming response support |
+| `csv` / `ndjson` | expose concrete record decoders and also enable `records` |
+| `multipart` | exposes the request-only `Multipart` body specification |
+| `rate-limit` | installs the first-party local limiter by default; `rate_limit { ... }` grammar itself remains core |
+| `oauth2-client` | exposes an OAuth2 provider type supplied through `credential ... = custom TYPE` |
+| `dangerous-raw-response` | adds the feature-gated request terminal; it adds no DSL clause |
+| `dangerous-custom-retry` | adds a Rust HTTP-builder method; it adds no DSL clause |
+| `default-tls`, `http2`, `gzip`, `brotli`, `deflate` | select managed transport capabilities outside declaration grammar |
+
+Built-in offset, page-number, and cursor controllers require no optional
+feature. Feature-disabled helper types fail through ordinary Rust name or
+trait diagnostics. The proc macro does not inspect concrete type names to
+infer a feature, implementation, or response mode.
 
 ## Values, optionality, and defaults
 
@@ -584,3 +648,11 @@ Rust diagnostics cover:
 Diagnostics identify declarations, types, and safe structural categories. They
 must not contain runtime values, secrets, credential material, protected URLs,
 or native requests.
+
+## Related
+
+- [The contract model](../concepts/contract-model.md)
+- [Understand generated Rust](../guide/generated-rust.md)
+- [Generated API reference](generated-api.md)
+- [Feature flags](features.md)
+- [Unsupported forms](unsupported.md)

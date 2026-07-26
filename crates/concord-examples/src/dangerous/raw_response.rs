@@ -8,6 +8,7 @@
 use concord::api;
 use concord::dangerous::RawResponseRequest;
 
+// ANCHOR: dangerous_raw_client
 api! {
     client RawResponseApi {
         base "http://raw-response.example.test/";
@@ -22,3 +23,4 @@ pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
     let _: RawResponseRequest<_> = client.record().raw_response();
     Ok(())
 }
+// ANCHOR_END: dangerous_raw_client

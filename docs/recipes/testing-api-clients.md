@@ -87,3 +87,4 @@ servers into every test module.
 - [Hooks and observability](../features/hooks-and-observability.md)
 - [Finite behavior](../concepts/finite-behavior.md)
 - [Contributor testing](../contributor/testing.md)
+- [Error reference](../reference/errors.md)

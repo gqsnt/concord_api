@@ -1,57 +1,159 @@
 # Unsupported forms
 
-Concord deliberately does not provide:
+Concord deliberately omits capabilities that would bypass its typed contract,
+private transport boundary, finite acquisition rules, or coherent operation
+accounting. This page describes the current checkout; absence is part of the
+public contract.
 
-- native request or response escape to extensions;
-- exact authenticated/native request previews;
-- unbounded body, response, stream, status-body, or provider modes;
-- parallel pagination, partial pagination results, or runtime pagination
-  without a coherent typed controller contract;
-- a second executor for runtime endpoints, providers, pagination, raw
-  responses, or downstream integrations;
+## Transport and acquisition
+
+| Unsupported form | Supported direction |
+|---|---|
+| native request, response, client, middleware, or transport escape | use public shaping, body/response specifications, hooks, and typed errors |
+| exact authenticated/native request preview | use `SafeRequestPlan` for the real public head and test private placement at controlled loopback |
+| unbounded request, buffered response, stream, status body, record staging, or provider HTTP | configure evidence-based finite limits within hard structural ceilings |
+| automatic redirects or redirect interception | handle the typed terminal 3xx status according to application policy |
+| a second executor for runtime endpoints, providers, pagination, raw success, or extensions | use the one managed lifecycle and its semantic extension contracts |
+| arbitrary native response modes | select the sealed `Buffered`, `Streaming`, or `Discard` mode |
+| WebSocket management | use a protocol-specific client outside Concord |
+| an SSE reconnection framework | consume a bounded byte/record stream and own a finite application reconnection policy |
+| multipart response parsing | implement an appropriate bounded response/record design outside the request-only multipart helper |
+
+`dangerous-raw-response` does not change this boundary. It returns actual
+successful headers and complete bounded bytes in a Concord-owned value, not a
+Reqwest response or live native body.
+
+## Authentication
+
+Concord does not support:
+
 - unlimited authentication recovery;
+- arbitrary access to the final request from a credential provider;
 - complete custom `Authorization` schemes such as `Signature`,
-  `AWS4-HMAC-SHA256`, or `MAC`; generic private-header placement rejects
-  `Authorization`, while dedicated Bearer and Basic placements remain
-  supported;
-- detached correctness completion work;
-- secret expressions in public URL/header shaping;
-- macro recognition of concrete codec, provider, limiter, or pagination
-  controller names;
-- trait-import-dependent ordinary request methods;
-- positional secret/provider client construction;
-- arbitrary Rust expressions in URL/header/auth shaping;
-- distributed strict quota enforcement;
-- automatic rate-limit key inference or `method`, path, query, full/safe URL,
-  body, secret, or credential key dimensions;
-- optional, vector, optional-vector, pagination-controlled, formatted, or
-  literal rate-limit key dimensions;
-- `host` rate-limit partitioning when final host shaping depends on a
+  `AWS4-HMAC-SHA256`, or `MAC`;
+- placing `Authorization` through a generic public or private custom-header
+  clause;
+- secret or credential expressions in public URL/header shaping;
+- automatic propagation of the application client identity to provider HTTP.
+
+Bearer and Basic are the dedicated `Authorization` owners. API keys and other
+single-string material can use a private custom header or query placement.
+Supporting another complete authorization or request-signing scheme needs a
+dedicated semantic design that preserves one private owner, collision
+prevention, limiter-before-placement ordering, replay semantics, and
+redaction.
+
+Do not work around the limitation with a public header. That would expose the
+value to plans, hooks, descriptions, pagination identity, and other public
+surfaces.
+
+Provider HTTP is the supported network capability for credential acquisition.
+It is isolated, HTTPS-only, bounded, and does not expose native signing state.
+
+## Pagination and multi-request protocols
+
+Generated pagination is sequential, typed, cycle-detecting, bounded, and
+all-or-error. Concord does not provide:
+
+- parallel page execution;
+- implicit partial results after a later page failure;
+- a resumable page-stream terminal;
+- pagination over streaming, record, discard, or raw response modes;
+- runtime-defined pagination without a coherent generated binding contract;
+- controller access to transport or external I/O.
+
+Use `PageLimit::Take` for an explicitly accepted prefix. Use an
+application-owned finite loop when the protocol requires partial delivery,
+parallelism, checkpoints, or dynamic multi-request transitions. That loop is
+not a hidden Concord pagination terminal and must own its own identity,
+limits, completion, and error semantics.
+
+## Rate limiting
+
+The DSL does not infer quota identity. It supports only `host`, `endpoint`, and
+required/defaulted scalar `vars.*`, visible `scope.*`, or `ep.*` dimensions.
+It does not support:
+
+- `method`, path, query, full/safe URL, body, literal, secret, or credential
+  dimensions;
+- optional, vector, optional-vector, formatted, or
+  pagination-controlled value dimensions;
+- `host` partitioning when final host shaping depends on a
   pagination-controlled value;
-- process-global limiter state, explicit generated rule IDs, repeatable named
-  rules, or observer chains;
-- WebSocket management, an SSE reconnection framework, or multipart response
-  parsing.
+- descendant replacement or disabling of an inherited rule;
+- explicit user-authored generated rate-rule IDs;
+- repeatable named rules at one lexical owner;
+- a built-in observer chain;
+- implicit process-global limiter state;
+- a first-party distributed strict-quota implementation.
 
-Alternatives are semantic extensions that remain inside the existing bounded
-lifecycle: define a body/response specification, record decoder, credential
-provider, pagination controller, limiter, observer, or hook. If an extension
-requires native transport ownership or an unbounded acquisition mode, it is
-outside Concord's managed-runtime contract.
+Omitting `by` is the declaration-global form; there is no `by global`
+spelling. Rules from client, scopes, and endpoint are additive.
 
-Do not work around the custom-`Authorization` limitation with public headers.
-Supporting another complete authorization scheme requires a dedicated
-authorization or request-signing design that retains one private owner,
-collision prevention, limiter-before-authentication ordering, and redaction.
+Install a custom bounded `RateLimiter` for distributed or non-token-bucket
+policy. Compose multiple response policies inside one custom
+`RateLimitObserver` if an observer chain is needed. Sharing one limiter across
+unrelated generated contracts requires deliberately compatible rule
+namespaces.
 
-Runtime-defined endpoints are appropriate for dynamic public request shape,
-but they still require a typed response specification and use the same
-executor. Use an application-level loop when a dynamic multi-request protocol
-cannot be represented by the existing typed pagination contract.
+## Compiler and generated surface
 
-For rate limits, omission of `by` is the declaration-global form. Use only
-`host`, `endpoint`, and required/defaulted scalar `vars.*`, visible `scope.*`,
-or `ep.*` dimensions, and keep every effective direct or host-derived
-dependency independent of pagination-controlled values. Supply a custom
-bounded `RateLimiter` when the local token-bucket policy or process/object
-locality does not match deployment requirements.
+The declaration language does not provide:
+
+- macro recognition of concrete codec, response, provider, limiter, observer,
+  or pagination-controller names;
+- arbitrary Rust expressions, calls, indexing, methods, macros, closures, or
+  blocks in public shaping;
+- proc-macro type-alias resolution for optionality;
+- endpoint aliases separate from the source method name;
+- custom visibility clauses;
+- positional secret/provider client construction;
+- legacy bare value setters, `with_*` aliases, or mutable request setters;
+- trait-import-dependent ordinary generated methods;
+- application implementations of the sealed generated `Endpoint` trait;
+- public access to the hidden generated-code bridge.
+
+Use ordinary Rust types behind public semantic traits. Put an `api!` invocation
+in the Rust module that should own its visibility. Choose the final endpoint
+source name directly, and use `set_*`, `clear_*`, and `reset_*` according to
+the generated capability matrix.
+
+## Runtime-defined endpoints
+
+`RuntimeEndpoint` supports dynamic public method, host, path, query, headers,
+body specification, response specification, and timeout selection. It still
+uses:
+
+- a validated `EndpointId`;
+- restricted bounded public values;
+- the same client base and runtime;
+- typed body and response specifications;
+- ordinary hooks, authentication boundary, limiter, status, acquisition, and
+  completion.
+
+It does not supply native mutation, custom auth signing, unbounded values, a
+different executor, or partial runtime pagination.
+
+## Choosing an extension
+
+Supported semantic extension families are:
+
+- `EncodeBody` / `DecodeBody`;
+- `RequestBodySpec` / `ResponseBodySpec`;
+- `RecordDecoder`;
+- `CredentialProvider`;
+- `PaginationController`;
+- `RateLimiter` / `RateLimitObserver`;
+- `RuntimeHooks`.
+
+If the required implementation cannot fit one of those contracts without
+native transport ownership, unlimited state, or hidden lifecycle work, it is
+outside Concord's current managed-runtime model.
+
+## Related
+
+- [Extension model](../extending/README.md)
+- [Complete DSL reference](dsl.md)
+- [Generated API reference](generated-api.md)
+- [Dangerous capabilities](dangerous.md)
+- [Finite behavior](../concepts/finite-behavior.md)

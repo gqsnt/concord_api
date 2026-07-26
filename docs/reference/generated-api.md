@@ -3,19 +3,35 @@
 This page owns the stable declaration-to-Rust naming and capability contract.
 Concrete signatures remain visible in generated Rustdoc.
 
-## Names
+## On this page
+
+- [Names and locations](#names-and-locations)
+- [Client construction](#client-construction)
+- [Generated value controls](#generated-value-controls)
+- [Scopes](#scopes)
+- [Endpoints and request wrappers](#endpoints-and-request-wrappers)
+- [Descriptions and planning](#descriptions-and-planning)
+- [Request controls and terminals](#request-controls-and-terminals)
+- [Runtime endpoints](#runtime-endpoints)
+- [Public namespaces](#public-namespaces)
+
+## Names and locations
 
 For `client CatalogApi`, the generated client builder is
 `CatalogApiBuilder` and the scope-oriented module root is `catalog_api`.
 Every source scope/endpoint identifier must be `snake_case`; deterministic
 PascalCase types are derived from it:
 
-| Declaration | Method/module | Generated types |
+| Declaration | Method/module | Generated types and path |
 |---|---|---|
-| `scope product_groups` | `product_groups` | `ProductGroups` |
-| `GET by_id` | `by_id` | `ById`, `ByIdRequest` |
+| `client CatalogApi` | `catalog_api` | `CatalogApi`, `CatalogApiBuilder` |
+| root `GET health` | `health` | `catalog_api::Health`, `catalog_api::HealthRequest` |
+| `scope product_groups` | `product_groups` | `catalog_api::product_groups::ProductGroups` |
+| scoped `GET by_id` | `by_id` | `catalog_api::product_groups::ById`, `ByIdRequest` |
 
 There are no separate façade/endpoints public trees and no generated prelude.
+Items are public relative to the Rust module containing the invocation; that
+module's ordinary visibility remains authoritative.
 
 ## Client construction
 
@@ -34,6 +50,13 @@ Required client values use `set_NAME`; secret and provider methods retain their
 declared generated names. `CatalogApi::new()` exists only when none are
 required. Missing inputs are runtime-validated at `build()` using
 `ClientBuildError` and safe `ClientInputKind`.
+
+Repeated `configure_http` and `configure_runtime` closures apply immediately
+in call order. `build()` validates the fixed base, required values, protected
+material, HTTP configuration, runtime configuration, and selected limiter
+before producing an immutable client. Client clones share that runtime and its
+credential slots, hooks, transport, and limiter. Independent builds remain
+separate unless the application explicitly shares an extension object.
 
 ## Generated value controls
 
@@ -92,8 +115,9 @@ client.scope_name(required_in_declaration_order)
 
 It returns a named scope value with inherent non-required `set_*` controls,
 independently derived clear/reset helpers, and child scope/endpoint methods.
-Scope values contain no client runtime and are inert until an endpoint is
-bound.
+The scope snapshot retains the original client's shared runtime and its own
+public value snapshot. Entering a scope performs no I/O, provider work, or
+transport construction; it remains inert until a request terminal is polled.
 
 ## Endpoints and request wrappers
 
@@ -111,11 +135,22 @@ named request. Existing non-required inherited scope controls remain on the
 explicit endpoint snapshot, not the named request wrapper. `Debug` for
 generated request values is body/secret-free.
 
-Every generated endpoint value exposes:
+The scope root defines a sealed generated `Endpoint` trait with associated
+`Request` and `Response` types and a safe description. It supports bounded
+generic composition; applications cannot implement it.
+
+## Descriptions and planning
+
+Every explicit endpoint value exposes:
 
 ```rust
 endpoint.description() -> &concord::endpoint::EndpointDescription
 ```
+
+The description contains stable structural identity, route/body/response
+categories, timeout selection, and capability flags including whether
+effective rate limits exist. It contains no bound runtime, body input,
+credentials, resolved rate keys, detailed rule values, or native request.
 
 Generated endpoint Rustdoc lists every applicable rate-limit rule in inherited
 order. Each entry includes its lexical origin, deterministic declaration rule
@@ -129,26 +164,52 @@ separate limiter objects. Sharing one limiter across instances of the same
 generated client intentionally shares matching rule state; sharing one across
 unrelated generated contracts requires compatible rule namespaces.
 
-The scope root defines a sealed generated `Endpoint` trait with associated
-`Request` and `Response` types and a safe description. It supports bounded
-generic composition; applications cannot implement it.
+Planning is a client operation on an unbound endpoint:
 
-## Request capabilities
+```rust
+let plan = client.plan(&endpoint)?;
+```
 
-All named requests can use the declared await terminal. Additional inherent
-methods exist only where coherent:
+It executes the real public head-shaping path and returns
+`SafeRequestPlan`. It does not run hooks, encode or poll a body, acquire
+credentials or limiter authority, open transport, or dispatch completion.
+There is no exact authenticated request preview.
 
-| Capability | Generated method |
+## Request controls and terminals
+
+All named request wrappers provide consuming request-local controls and the
+ordinary await terminal:
+
+| Capability | Generated surface | Result |
 |---|---|
-| Typed response metadata | `.response()` |
-| Pagination | `.paginate(PageLimit)` |
-| Request-local timeout | explicit duration/disable/restore methods documented in Rustdoc |
-| Safe preview | `client.plan(&endpoint)` before binding |
-| Bounded raw response | `.raw_response()` with the dangerous feature |
+| Declared output | `.await` / `IntoFuture` | `Result<Response::Output, ApiError>` |
+| Successful metadata plus output | `.response().await` | `Result<ApiResponse<Response::Output>, ApiError>` |
+| Explicit timeout | `.timeout(Duration)` | replaces the generated selection |
+| No deadline | `.disable_timeout()` | explicitly disables it for this request |
+| Declared deadline | `.inherit_timeout()` | restores the endpoint selection |
+| Built-in structural debug | `.debug(DebugLevel)` | request-local debug selection |
+| Pagination | `.paginate(PageLimit)` | only for a declared paginated endpoint |
+| Endpoint-backed credential storage | `.store_as_NAME().await` | only on the endpoint that supplies credential `NAME` |
+| Bounded raw success | `.raw_response().await` | feature-gated and type-valid only for a supported sealed mode |
 
 Invalid terminals are absent instead of being hidden behind a broad extension
-trait. Body input, response output, pagination controller, and provider types
-remain ordinary trait-driven Rust types.
+trait, except that the dangerous raw selector also carries an explicit
+sealed-mode trait bound. Body input, response output, pagination controller,
+and provider types remain ordinary trait-driven Rust types.
+
+Capability absence is part of the API:
+
+| Endpoint shape | Deliberately absent |
+|---|---|
+| no `paginate` declaration | `.paginate(...)` |
+| streaming, record, or otherwise non-page response | generated pagination |
+| not used as an endpoint-backed credential source | `.store_as_NAME()` |
+| dangerous feature disabled | `.raw_response()` |
+| declared response mode not `Buffered` or `Discard` | callable raw-success terminal |
+
+Named request wrappers retain controls only for their own non-required
+endpoint values. They do not gain inherited scope controls. Every control and
+terminal consumes the wrapper, so sibling request snapshots remain isolated.
 
 ## Runtime endpoints
 
@@ -187,3 +248,12 @@ Ordinary imports come from `concord`:
 
 `concord::prelude` is optional convenience for common handwritten code; it is
 not required to make generated methods appear.
+
+## Related
+
+- [Complete DSL reference](dsl.md)
+- [Build and share clients](../guide/client-construction.md)
+- [Requests, planning, and errors](../guide/requests-planning-errors.md)
+- [Feature flags](features.md)
+- [Dangerous capabilities](dangerous.md)
+- Rustdoc: the generated client and its `catalog_api`-style module

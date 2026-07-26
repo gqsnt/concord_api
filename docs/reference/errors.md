@@ -1,67 +1,191 @@
 # Error reference
 
-`concord::ApiError` is the safe structured failure from endpoint execution.
-Match its non-exhaustive `ErrorCategory` instead of formatting native causes.
+`concord::ApiError` is the safe structured failure returned by managed
+endpoint execution. Match its non-exhaustive `ErrorCategory` and focused kind
+accessors. `Display` and `Debug` are for people; they are not stable parsing
+formats.
 
-Top-level categories are:
+## Top-level categories
 
-```text
-Configuration
-RequestEncoding
-RequestBody
-AuthenticationUnavailable
-AuthenticationProvider
-AuthenticationRejected
-RateLimit
-Hook
-Timeout
-Connect
-Transport
-HttpStatus
-ResponseBody
-ResponseDecoding
-ResponseContract
-Pagination
-Internal
+| `ErrorCategory` | Meaning |
+|---|---|
+| `Configuration` | Client, endpoint, public shaping, or request configuration was invalid |
+| `RequestEncoding` | A buffered request codec failed |
+| `RequestBody` | A managed request body could not be prepared, reconstructed, or transmitted |
+| `AuthenticationUnavailable` | Required credential material could not be supplied |
+| `AuthenticationProvider` | Acquisition, refresh, provider HTTP, or material construction failed |
+| `AuthenticationRejected` | The protected service finally rejected attributed material |
+| `RateLimit` | Plan preparation, admission, state capacity, or response observation failed |
+| `Hook` | A result-determining application hook rejected the operation |
+| `Timeout` | The selected operation deadline expired |
+| `Connect` | Native connection establishment failed |
+| `Transport` | Another native transport operation failed |
+| `HttpStatus` | A terminal non-success status was received |
+| `ResponseBody` | A successful response body could not be acquired or later streamed |
+| `ResponseDecoding` | A successful bounded response could not be decoded |
+| `ResponseContract` | Successful response metadata or specification output violated the declared contract |
+| `Pagination` | Page limits, controller work, identity, or aggregate item limits failed |
+| `Internal` | Concord reduced an invariant failure without exposing internal state |
+
+The enum is `#[non_exhaustive]`. Match with a fallback so an application
+continues to compile when a future version adds a category:
+
+```rust,ignore
+match error.category() {
+    concord::error::ErrorCategory::Timeout
+    | concord::error::ErrorCategory::Connect => retry_later(error),
+    concord::error::ErrorCategory::AuthenticationRejected => rotate_credentials(error),
+    _ => propagate(error),
+}
 ```
 
-`ApiError` exposes the safe endpoint ID, application method, category, and
-focused optional sub-kinds. A terminal HTTP response may expose status,
-sanitized headers, bounded status-body state, and parsed `Retry-After`
-metadata. It never exposes a native response, authenticated URL/header set,
-credential material, provider payload, or unbounded body.
+Application policy still decides whether an operation is safe to repeat.
+Categories do not assert idempotency.
 
-Focused stable non-exhaustive kinds include:
+## Stable context and focused kinds
 
-- `ClientBuildErrorKind` and `ClientInputKind`;
-- `ConfigurationErrorKind`;
-- `AuthErrorKind`;
-- `RateLimitErrorKind`;
-- `PaginationErrorKind`;
-- `BodyErrorKind`, `CodecError`, `ResponseBodyErrorKind`, and
-  `RecordErrorKind` where the capability applies.
+Every `ApiError` exposes:
 
-Builder errors distinguish a missing public value, protected secret, or
-credential provider without including its value. Provider and extension error
-messages cross a safe-text contract. Application-approved safe messages are
-trusted application-owned text, are not automatically covered by one universal
-Concord size limit, and must not include protected inputs or other secrets.
-Applications and extensions must bound their own retained message storage.
+| Accessor | Value |
+|---|---|
+| `endpoint()` / `endpoint_id()` | stable generated or runtime endpoint identity |
+| `method()` | application HTTP method |
+| `category()` | top-level `ErrorCategory` |
+| `configuration_kind()` | optional `ConfigurationErrorKind` |
+| `auth_kind()` | optional `AuthErrorKind` |
+| `rate_limit_kind()` | optional `RateLimitErrorKind` |
+| `pagination_kind()` | optional `PaginationErrorKind` |
+| `http_status()` | final status only when a terminal response wrapper is retained |
+| `http_headers()` | sanitized final headers only with that wrapper |
+| `http_response()` | borrowed `HttpResponseFailure`, when present |
+| `into_http_response()` | owning extraction or the unchanged non-response error |
+| `retry_after()` | parsed, non-negative, capped terminal `Retry-After` metadata |
 
-For a received response, error precedence is core limiter observation, then the
-user response-head hook, then authentication challenge, status, and acquisition
-handling. A limiter-reported observation failure is
-`ErrorCategory::RateLimit` and retains the limiter's typed
-`RateLimitErrorKind`; an observation timeout is `ErrorCategory::Timeout`.
-Both retain the final response status for completion metadata without
-acquiring the response body.
+Focused kinds are also non-exhaustive. Their canonical item paths are:
 
-`RateLimitErrorKind::StateCapacity` means a bounded limiter could not retain
-new quota or cooldown state without discarding active history. The first-party
-`LocalRateLimiter` treats it as recoverable: it rejects that operation before
-transport, does not poison itself, does not evict active state, and leaves
-existing buckets operational.
+- `concord::error::ClientBuildErrorKind` and `ClientInputKind`;
+- `concord::error::ConfigurationErrorKind`;
+- `concord::error::AuthErrorKind`;
+- `concord::error::RateLimitErrorKind`;
+- `concord::error::PaginationErrorKind`;
+- `concord::error::BodyErrorKind`, `CodecErrorKind`,
+  `ResponseBodyErrorKind`, and `RecordErrorKind`.
 
-Debug/display representations are redaction-aware but are not intended as
-stable parsing formats. Treat the typed category/kind accessors as the
-compatibility contract.
+`ApiError::source()` retains only the category-safe authentication,
+rate-limit, or pagination error when one exists. Codec, body, hook, response
+specification, and native transport sources are deliberately dropped during
+reduction.
+
+## Reduction rules
+
+Subsystem errors reduce predictably:
+
+| Input failure | `ApiError` result |
+|---|---|
+| `AuthErrorKind::Unavailable` | `AuthenticationUnavailable` plus `auth_kind()` |
+| `AuthErrorKind::Rejected` | `AuthenticationRejected` plus `auth_kind()` |
+| every other `AuthErrorKind` | `AuthenticationProvider` plus `auth_kind()` |
+| any `RateLimitError` | `RateLimit` plus `rate_limit_kind()` |
+| any `PaginationError` | `Pagination` plus `pagination_kind()` |
+| `ResponseBodyErrorKind::InvalidMediaType` or `InvalidOutput` | `ResponseContract` |
+| `ResponseBodyErrorKind::Decode` | `ResponseDecoding` |
+| `ResponseBodyErrorKind::Internal` | `Internal` |
+| managed request-source or native request-body failure | `RequestBody` |
+| native timeout | `Timeout` |
+| native connect failure | `Connect` |
+| other native error | `Transport` |
+| `HookError` | `Hook`; hook-authored text is dropped |
+
+An `EncodeBody` error becomes `RequestEncoding`; a full
+`RequestBodySpec` producer/materialization error becomes `RequestBody`.
+Record opening errors reduce through the response contract, while failures
+after a `RecordStream` opens are typed `RecordError` stream items.
+`ByteStream` body failures remain `ApiError` items, normally
+`ResponseBody`.
+
+Safe messages on `AuthError`, `RateLimitError`, and `PaginationError` are
+explicit application trust boundaries and may be retained by `ApiError`.
+They must be bounded by the extension and contain no credential, body, cursor,
+key, header, URL, or backend diagnostic. `HookError` text is not retained by
+the resulting `ApiError`.
+
+## Terminal HTTP failures
+
+`HttpStatus` and final `AuthenticationRejected` errors retain an
+`HttpResponseFailure`. It owns:
+
+- endpoint and method;
+- final status;
+- sanitized response headers;
+- parsed capped `Retry-After`;
+- one opaque finite `StatusBody`.
+
+The status body has an explicit `StatusBodyState`:
+
+| State | Meaning |
+|---|---|
+| `Disabled` | capture was disabled |
+| `Empty` | the complete body had zero bytes |
+| `Complete` | complete bytes were retained within the configured cap |
+| `OmittedKnownTooLarge` | known length exceeded the cap before polling |
+| `OmittedLimitExceeded` | unknown-length collection crossed the cap and discarded its prefix |
+| `UnavailableReadFailure` | body reading failed after the head |
+| `UnavailableDeadline` | the deadline expired during capture |
+
+Formatting the error, response wrapper, or status body never prints retained
+bytes or header values. The application can nevertheless call
+`StatusBody::bytes`, `into_bytes`, or
+`HttpResponseFailure::decode_body<C>` for an explicitly retained `Complete`
+body. Those bytes may be sensitive and are then application-owned.
+
+Malformed `Retry-After` is ignored. Delta seconds and HTTP dates are parsed,
+past dates become zero, and future durations are clamped to the configured
+cap.
+
+## Failure ordering
+
+Before transport, the first failure in the managed order wins: public
+preparation, before-send hook, body preparation, credential preflight,
+limiter admission, private placement, then native send.
+
+For a received final head, ordering is:
+
+```text
+limiter observation
+→ response-head hook
+→ authentication challenge
+→ terminal status handling
+→ successful response validation and acquisition
+```
+
+A limiter observation error is `RateLimit`; an observation or hook timeout is
+`Timeout`. The received status is still available to completion metadata, but
+those errors do not acquire a status body or retain an
+`HttpResponseFailure`.
+
+Authentication recovery may run one additional visible attempt. A second
+challenge becomes the final `AuthenticationRejected` response. Pagination
+wraps page failures in the aggregate operation without exposing accumulated
+items as partial success.
+
+## Construction and extension errors
+
+`ClientBuildError` is separate from `ApiError` because no endpoint execution
+exists yet. It reports a safe `ClientBuildErrorKind` and, for missing generated
+input, a public generated input name plus `ClientInputKind` (`Value`,
+`Secret`, or `CredentialProvider`). It never retains the missing value.
+
+Extension-level `BodyError`, `CodecError`, `RecordError`, `AuthError`,
+`RateLimitError`, and `PaginationError` are category-safe contracts at their
+own boundary. Do not treat their source-less design as a reason to log the
+discarded native or parser error separately without redaction review.
+
+## Related
+
+- [Requests, planning, and errors](../guide/requests-planning-errors.md)
+- [Security and redaction](../concepts/security-and-redaction.md)
+- [Finite behavior](../concepts/finite-behavior.md)
+- [Hooks and observability](../features/hooks-and-observability.md)
+- [Limits](limits.md)
+- Rustdoc: `concord::error::ApiError` and
+  `concord::error::ErrorCategory`

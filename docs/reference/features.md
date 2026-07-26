@@ -1,4 +1,4 @@
-# Feature reference
+# Feature flags
 
 Applications select capabilities only on the `concord` dependency. The façade
 forwards lifecycle features and composes enabled downstream implementations.
@@ -27,6 +27,47 @@ task.
 | `dangerous-raw-response` | no | Bounded undecoded successful-response terminal |
 | `dangerous-custom-retry` | no | Custom native transport retry policy |
 <!-- END GENERATED FEATURES -->
+
+## Select a feature set
+
+The ordinary dependency uses the default bundle:
+
+```toml
+[dependencies]
+concord = "0.1.0"
+```
+
+For an explicit minimal set, disable defaults and list every required
+capability:
+
+```toml
+[dependencies.concord]
+version = "0.1.0"
+default-features = false
+features = ["json", "default-tls"]
+```
+
+With no default features, cleartext HTTP/1 contracts and the core managed
+lifecycle remain available. HTTPS construction requires `default-tls`;
+HTTP/2 requires `http2`; and a declaration with nonempty rate rules requires
+an explicitly configured limiter when `rate-limit` is absent.
+
+Cargo features are additive and unified for each resolved package. Enabling a
+dangerous feature through any dependency enables its public surface for the
+whole binary. Audit the resolved feature graph rather than assuming one leaf
+dependency can keep a capability private.
+
+## Feature composition
+
+| Selection | Implied capability |
+|---|---|
+| `default` | `default-tls`, `http2`, and `rate-limit` |
+| `csv` | `records` plus the CSV decoder |
+| `ndjson` | `records` plus the NDJSON decoder |
+| `records` alone | generic `Records<D>` and downstream decoder contracts |
+| `oauth2-client` | helper types only; provider HTTP still needs a TLS-capable build to call an HTTPS token endpoint |
+| all decompression features | independent gzip, Brotli, and deflate response decoding |
+| either dangerous feature | only that explicitly named reduced-guarantee capability |
 
 ## Capability notes
 
@@ -60,13 +101,21 @@ task.
 - Feature selection changes available capabilities; it never disables the
   core request-head, lifecycle, redaction, or acquisition ceilings.
 
-Use `default-features = false` for a minimal HTTP-capable contract and add only
-the listed capabilities:
+## Verification combinations
 
-```toml
-concord = {
-    version = "0.1.0",
-    default-features = false,
-    features = ["json", "default-tls"]
-}
-```
+The maintained local matrix includes the façade with no default features and
+with all features, plus package-specific feature tests. An application should
+also compile the exact feature set it ships; an all-features build can hide a
+missing declaration in `Cargo.toml`.
+
+Feature-disabled helpers fail as ordinary missing items or unsatisfied trait
+bounds. The macro does not infer that a type called `Json`, `Csv`, or
+`OAuth2ClientCredentials` should enable anything.
+
+## Related
+
+- [Install Concord](../start/install.md)
+- [Complete DSL reference](dsl.md#feature-dependent-capabilities)
+- [Limits](limits.md)
+- [Compatibility and MSRV](compatibility.md)
+- [Dangerous capabilities](dangerous.md)

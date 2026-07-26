@@ -9,6 +9,12 @@ checked by `cargo run --locked -p concord-xtask -- docs`. `DEFAULT_*` entries
 are selected runtime defaults; `MAX_*` entries are non-adjustable structural
 ceilings selected for finite construction.
 
+Runtime defaults can be reduced or replaced only through the corresponding
+typed client builder. A setter never disables the separate hard structural
+ceilings. Byte limits apply to the semantic representation named in the
+table—successful response limits, for example, count post-decompression
+bytes.
+
 <!-- BEGIN GENERATED LIMITS -->
 | Bound | Value | Unit |
 |---|---:|---|
@@ -66,6 +72,20 @@ ceilings selected for finite construction.
 | OAuth2 Basic Authorization value | 32,768 | bytes |
 <!-- END GENERATED LIMITS -->
 
+## Limit-family owners
+
+| Family | User behavior | Maintainer boundary |
+|---|---|---|
+| Request bodies, buffered/streamed responses, empty chunks | [Bodies and buffered responses](../features/bodies-and-buffered-responses.md), [Streaming](../features/streaming.md) | [Managed boundary ownership](../contributor/architecture.md#managed-boundary-ownership) |
+| Authentication material and provider HTTP | [Authentication](../features/authentication.md), [Credential providers](../features/credential-providers.md) | [Managed boundary ownership](../contributor/architecture.md#managed-boundary-ownership) |
+| Multipart structure and payload | [Multipart uploads](../features/multipart.md) | [Managed boundary ownership](../contributor/architecture.md#managed-boundary-ownership) |
+| Record staging and pagination | [Record streams](../features/records.md), [Pagination](../features/pagination.md) | [Managed boundary ownership](../contributor/architecture.md#managed-boundary-ownership) |
+| Rate plans, keys, cooldowns, local state | [Rate limiting](../features/rate-limiting.md) | [Managed boundary ownership](../contributor/architecture.md#managed-boundary-ownership) |
+| Public request heads and runtime endpoints | [Request shaping](../guide/request-shaping.md), [Runtime-defined endpoints](../features/runtime-endpoints.md) | [Managed boundary ownership](../contributor/architecture.md#managed-boundary-ownership) |
+| Proxy, roots, identity, and transport | [Production HTTP](../features/production-http.md) | [Managed boundary ownership](../contributor/architecture.md#managed-boundary-ownership) |
+
+## Body and response progress
+
 Empty chunks are framing artifacts and have separate structural ceilings.
 Every managed request body suppresses them before native transport and accepts
 at most `concord::body::MAX_EMPTY_REQUEST_CHUNKS`. The total is not reset by
@@ -85,6 +105,8 @@ one redacted terminal error before later byte, status, or decode processing.
 Nonempty first-excess byte withholding is unchanged. Caller-driven polling
 after a successful stream opens remains outside the endpoint deadline.
 
+## Public shaping and the final request head
+
 Dynamic host, path, query, and header values cross a user-code trust boundary
 when Concord invokes their `Display` implementation. User formatting may do
 arbitrary CPU work, block, panic, or ignore a formatting error. Concord's
@@ -98,6 +120,8 @@ runtime-defined requests. It transactionally enforces component count,
 logical and credential-sanitized URL bytes, public-header count, and aggregate
 public-header bytes. Macro checks reject statically knowable excess earlier,
 but cannot replace this shared runtime boundary.
+
+## Codecs, credentials, multipart, and provider HTTP
 
 With the `json` feature, `Json<T>` serializes directly into a writer capped by
 the active request-body limit. It never creates an unrestricted serialized
@@ -130,6 +154,8 @@ lengths are checked before allocation, and the final form body is also checked
 against the active `ProviderHttp::request_body_limit()` selected by the client
 runtime.
 
+## Managed HTTP configuration
+
 Managed HTTP startup validates proxy URL text and application TLS material
 against the structural `concord::http::MAX_*` ceilings before parsing or
 copying it. Root-certificate count, per-certificate bytes, aggregate
@@ -143,6 +169,8 @@ application-only.
 The runtime-endpoint timeout default is disabled. Generated endpoint timeout
 declarations remain effective independently; runtime-defined endpoints select
 inherit, explicit duration, or disabled.
+
+## Rate-limit structures and local state
 
 Public rate-limit construction validates IDs, key parts, aggregate keys,
 windows, and plans incrementally against the hard `MAX_RATE_LIMIT_*`
@@ -191,6 +219,8 @@ contract, not globally namespaced across unrelated `api!` expansions; a
 limiter shared across unrelated contracts therefore requires compatible rule
 namespaces.
 
+## Status bodies, records, authentication recovery, and pagination
+
 Terminal status-body capture is enabled at its finite default. The builder can
 disable capture entirely; that does not create an unbounded mode.
 
@@ -211,3 +241,11 @@ the retained-byte total. The first excess encoded byte is withheld.
 `EndpointId` additionally enforces its documented byte/segment grammar; use
 `concord::endpoint::MAX_ENDPOINT_ID_BYTES` as the public source for its total
 bound.
+
+## Related
+
+- [Finite behavior](../concepts/finite-behavior.md)
+- [Feature flags](features.md)
+- [Error reference](errors.md)
+- [Hooks, trusted work, and bounds](../extending/hooks-and-trusted-work.md)
+- [Unsupported forms](unsupported.md)

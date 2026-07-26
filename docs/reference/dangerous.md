@@ -1,42 +1,141 @@
 # Dangerous capabilities
 
-Dangerous capabilities are explicit, separately feature-gated, non-default,
-and bounded.
+Dangerous capabilities are explicit, independent Cargo features. Neither is in
+the default bundle. Both remain inside Concord's managed executor, but each
+hands the application data or policy with reduced ordinary safety guarantees.
+
+Cargo feature unification applies: if any dependency enables one of these
+features, its public surface is enabled for the resolved `concord` package in
+the whole binary.
 
 ## Bounded raw successful response
 
 Feature: `dangerous-raw-response`.
 
-Eligible named requests gain `.raw_response()`. It skips declared decoding but
-still uses status classification, the sealed acquisition mode, configured
-finite response limit, lifecycle hooks, rate limiting, authentication,
-completion, and redaction. It does not return a native transport response or
-an unbounded body.
+The feature generates `.raw_response()` on named requests. The selector
+type-checks only when the declared response mode implements the sealed
+`RawResponseMode`; Concord provides that capability for `Buffered` and
+`Discard`, not `Streaming`.
 
-Use it only when an application must inspect a complete bounded successful
-payload outside the declared decoder. Prefer a normal response specification
-for reusable behavior.
+This compiled example selects the terminal:
+
+```rust,ignore
+{{#include ../../crates/concord-examples/src/dangerous/raw_response.rs:dangerous_raw_client}}
+```
+
+Awaiting it:
+
+- retains ordinary public shaping, hooks, authentication, limiter admission,
+  status classification, operation deadline, completion, and redaction;
+- skips the declared successful-response validation and decoder;
+- collects one complete successful post-decompression body under the ordinary
+  buffered-response limit;
+- returns `concord::dangerous::RawResponse`, never `reqwest::Response`.
+
+Non-success status still becomes the ordinary typed `ApiError` and bounded
+terminal-status capture. The raw terminal does not bypass status policy or
+create an unbounded body.
+
+`RawResponse` exposes the credential-sanitized logical URL, successful status,
+HTTP version, safe execution metadata, actual successful headers, and complete
+bounded body bytes. The actual headers and body may contain secrets.
+`Debug` omits their values, but explicit `headers()`, `body()`, and
+`into_body()` access makes them application-owned.
+
+Use raw success for one-off inspection or migration when no reusable response
+specification is yet appropriate. For stable behavior, implement
+`DecodeBody` or `ResponseBodySpec` so media validation, conversion, and output
+typing remain part of the declaration.
+
+Raw success is not available for byte streams or record streams. Selecting a
+streaming declaration and then buffering it through a dangerous terminal would
+erase the declared liveness and memory contract, so the sealed mode bound
+rejects it.
 
 ## Custom native retry policy
 
 Feature: `dangerous-custom-retry`.
 
-Configure the policy through the generated client builder:
+The feature exposes Reqwest's retry builder as
+`concord::dangerous::ReqwestRetryBuilder` and adds
+`HttpConfigBuilder::dangerous_custom_retry`.
 
-```rust
-let client = Api::builder()
-    .configure_http(|http| http.dangerous_custom_retry(policy))
-    .build()?;
+The canonical example deliberately installs a no-retry native policy:
+
+```rust,ignore
+{{#include ../../crates/concord-examples/src/dangerous/custom_retry.rs:dangerous_retry_policy}}
 ```
 
-The policy remains inside private managed transport. It does not create a
-second executor and cannot bypass Concord status, authentication-recovery,
-acquisition, or completion behavior. It is distinct from the one-additional
-authentication recovery attempt. A native policy may perform multiple
-physical wire sends inside one visible Concord attempt. Those sends share that
-attempt's limiter admission, lifecycle-hook accounting, and exactly-once
-completion event; Concord does not report each physical send as a separate
-attempt.
+```rust,ignore
+{{#include ../../crates/concord-examples/src/dangerous/custom_retry.rs:dangerous_retry_client}}
+```
 
-Retrying a non-replayable body is rejected by runtime replayability control.
-Keep policies finite and understand idempotency of the remote operation.
+The capability is dangerous because a native retry classifier may observe
+materialized native URLs, including private query authentication. Logging or
+retaining classifier inputs is outside Concord's redaction boundary.
+
+A native policy remains inside one visible Concord attempt:
+
+```text
+one limiter admission
+→ one before-send hook event
+→ private authentication placement
+→ one or more policy-owned physical sends
+→ one response-head path
+→ one completion event
+```
+
+The policy cannot create a second Concord executor or bypass final status,
+authentication challenge recovery, response acquisition, or completion.
+Provider HTTP uses its separate managed client and is not configured by this
+application-transport policy.
+
+Multiple physical sends share one limiter admission and are not individually
+visible to hooks or completion. That can diverge from remote quotas and
+observability expectations. Review:
+
+- HTTP method and application idempotency;
+- whether the body is reusable or reconstructible;
+- maximum retry count and total delay;
+- status/error classifier inputs;
+- interaction with an outer application retry;
+- service-side deduplication and rate accounting.
+
+Runtime replayability control rejects retry of a one-shot body. It cannot prove
+that a semantically replayable body is safe for the remote operation.
+
+Prefer DSL `retry off` or the reviewed `retry reqwest_default` policy. Use a
+custom native policy only when its exact classifier and finite schedule are
+owned and tested by the application.
+
+## Capability comparison
+
+| Feature | Reduced guarantee | Still enforced |
+|---|---|---|
+| `dangerous-raw-response` | caller receives actual successful headers and bounded body bytes without declared decoding | status, byte limit, lifecycle, private transport |
+| `dangerous-custom-retry` | classifier may inspect native URL and perform hidden physical sends | managed attempt boundary, replayability, final response path |
+
+Neither feature exposes a native response, arbitrary middleware, redirect
+control, a transport client, or an unbounded acquisition mode.
+
+## Verification
+
+For raw success, test exact response limits, first excess, post-decompression
+counting, non-success status, actual header/body access, and redacted
+formatting.
+
+For custom retry, use deterministic local transport and assert physical send
+count, visible hook/limiter/completion count, body replayability, cancellation,
+and absence of native URL or credential sentinels from application
+diagnostics. Never use live failures or wall-clock sleeps as the policy's
+contract test.
+
+## Related
+
+- [Feature flags](features.md)
+- [Production HTTP](../features/production-http.md)
+- [Request and response body specifications](../extending/body-specifications.md)
+- [Security and redaction](../concepts/security-and-redaction.md)
+- [Unsupported forms](unsupported.md)
+- Rustdoc: `concord::dangerous::RawResponse` and
+  `concord::dangerous::ReqwestRetryBuilder`

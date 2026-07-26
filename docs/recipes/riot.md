@@ -112,3 +112,4 @@ scale checks when expanding the surface.
 - [Paginate all results](paginate-all.md)
 - [Per-host and per-account rate limits](rate-limit-partitioning.md)
 - [Production configuration](production-configuration.md)
+- [Generated API reference](../reference/generated-api.md)

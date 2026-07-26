@@ -95,3 +95,4 @@ calls.
 - [Authentication](../features/authentication.md)
 - [Rate limiting](../features/rate-limiting.md)
 - [Runtime-defined endpoints](../features/runtime-endpoints.md)
+- [Complete DSL reference](../reference/dsl.md)
