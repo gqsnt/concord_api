@@ -1,8 +1,9 @@
 //! Generic bounded record streaming with custom, CSV, and NDJSON decoders.
 //!
 //! Required features: `records`, `csv`, and `ndjson`. Mode: locally runnable
-//! through scripted loopback responses only. Documentation owner:
-//! `docs/features/records.md`. Proving test:
+//! through scripted loopback responses only. Documentation owners:
+//! `docs/features/records.md` and
+//! `docs/extending/record-decoders.md`. Proving test:
 //! `tests/local_runtime.rs`.
 
 use std::num::NonZeroUsize;
@@ -20,6 +21,7 @@ use futures_core::Stream as _;
 /// Header-bearing, semicolon-delimited CSV used by the configured endpoint.
 pub type ConfCsv<T> = Csv<T, HasHeader, SemicolonDelimiter>;
 
+// ANCHOR: record_decoder_extension
 pub struct PipeRecords;
 
 impl RecordDecoder for PipeRecords {
@@ -65,6 +67,7 @@ impl RecordDecoder for PipeRecords {
         NonZeroUsize::new(64 * 1024).expect("positive example staging bound")
     }
 }
+// ANCHOR_END: record_decoder_extension
 
 // ANCHOR: records_contract
 api! {

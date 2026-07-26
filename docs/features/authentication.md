@@ -99,4 +99,4 @@ copying them into application configuration.
 - [Shape the public request](../guide/request-shaping.md)
 - [DSL authentication reference](../reference/dsl.md#authentication)
 - [Security and redaction](../concepts/security-and-redaction.md)
-- [Extension model](../concepts/extension-model.md)
+- [Credentials and providers](../extending/credentials-and-providers.md)

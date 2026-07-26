@@ -103,4 +103,4 @@ custom CPU, memory, I/O, queues, or retries inside the callback.
 - [Streaming responses](streaming.md)
 - [Limits reference](../reference/limits.md)
 - [Finite behavior](../concepts/finite-behavior.md)
-- [Extension model](../concepts/extension-model.md)
+- [Request and response body specifications](../extending/body-specifications.md)

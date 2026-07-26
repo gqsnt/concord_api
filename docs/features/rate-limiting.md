@@ -113,4 +113,4 @@ ceilings stay canonical in the reference.
 - [DSL rate-limit reference](../reference/dsl.md#rate-limits)
 - [Limits reference](../reference/limits.md)
 - [Error reference](../reference/errors.md)
-- [Extension model](../concepts/extension-model.md)
+- [Rate limiters and observers](../extending/rate-limiting.md)

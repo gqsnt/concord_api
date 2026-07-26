@@ -22,7 +22,7 @@ exhaustive tables.
 | upload multipart text, bytes, or files | [Multipart uploads](../features/multipart.md) |
 | configure TLS, proxies, certificates, and finite limits | [Production HTTP](../features/production-http.md) |
 | choose public endpoint shape at runtime | [Runtime-defined endpoints](../features/runtime-endpoints.md) |
-| implement a custom body, decoder, provider, controller, limiter, or hook | [Extension model](../concepts/extension-model.md) |
+| implement a custom body, decoder, provider, controller, limiter, or hook | [Extension model](../extending/README.md) |
 | look up exact declaration syntax | [DSL reference](../reference/dsl.md) |
 | understand compiler and runtime internals | [Contributor architecture](../contributor/architecture.md) |
 

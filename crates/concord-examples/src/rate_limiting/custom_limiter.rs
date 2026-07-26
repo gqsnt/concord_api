@@ -5,6 +5,7 @@
 //! `docs/extending/rate-limiting.md`.
 //! Proving test: `tests/local_runtime.rs`.
 
+// ANCHOR: custom_limiter_extension
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -41,3 +42,14 @@ impl RateLimiter for CountingLimiter {
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 }
+// ANCHOR_END: custom_limiter_extension
+
+/// Selects the custom limiter on one generated client's runtime snapshot.
+// ANCHOR: custom_limiter_install
+pub fn install(
+    runtime: concord::runtime::RuntimeConfigBuilder,
+    limiter: Arc<CountingLimiter>,
+) -> concord::runtime::RuntimeConfigBuilder {
+    runtime.rate_limiter(limiter)
+}
+// ANCHOR_END: custom_limiter_install

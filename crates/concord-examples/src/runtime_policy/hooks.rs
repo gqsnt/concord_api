@@ -1,9 +1,11 @@
 //! Safe lifecycle hooks installed on one immutable client snapshot.
 //!
-//! Required features: none. Mode: construction-only. Documentation owner:
-//! `docs/features/hooks-and-observability.md`. Proving test:
+//! Required features: none. Mode: construction-only. Documentation owners:
+//! `docs/features/hooks-and-observability.md` and
+//! `docs/extending/hooks-and-trusted-work.md`. Proving test:
 //! `tests/construction.rs`.
 
+// ANCHOR: hooks_extension
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -76,3 +78,4 @@ pub fn construct() -> Result<ObservedApi, concord::ClientBuildError> {
         .build()
 }
 // ANCHOR_END: hooks_client
+// ANCHOR_END: hooks_extension

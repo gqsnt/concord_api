@@ -3,7 +3,8 @@
 //! Required features: `json` and `multipart`. Mode: construction and
 //! deterministic local execution. Documentation owners:
 //! `docs/features/bodies-and-buffered-responses.md`,
-//! `docs/features/streaming.md`, and `docs/features/multipart.md`.
+//! `docs/features/streaming.md`, `docs/features/multipart.md`, and
+//! `docs/extending/codecs.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use std::pin::Pin;
@@ -23,9 +24,11 @@ api! {
     // ANCHOR: buffered_endpoints
     POST json_round_trip(#[body] body: Json<Vec<u32>>) -> Json<Vec<u32>>;
     POST text_round_trip(#[body] body: Text) -> Text;
+    // ANCHOR: custom_codec_endpoint
     POST custom_round_trip(
         #[body] body: crate::request_response::specifications::ExampleCodec
     ) -> crate::request_response::specifications::ExampleCodec;
+    // ANCHOR_END: custom_codec_endpoint
     // ANCHOR_END: buffered_endpoints
 
     // ANCHOR: streaming_endpoints

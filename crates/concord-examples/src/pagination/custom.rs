@@ -4,6 +4,7 @@
 //! Documentation owner: `docs/extending/pagination.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
+// ANCHOR: pagination_controller_extension
 use concord::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext};
 use concord::pagination::PaginatedRequest;
 use concord::pagination::{HasNextCursor, PaginationController, PaginationError};
@@ -80,3 +81,4 @@ impl PaginationController<ExamplePage> for ExampleController {
 pub fn construct(client: &PaginationApi) {
     let _: PaginatedRequest<_> = client.custom().paginate(PageLimit::Take(2));
 }
+// ANCHOR_END: pagination_controller_extension

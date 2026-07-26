@@ -36,3 +36,4 @@ boost-paragraph = 1
 "/guide/05-bodies-responses-and-streams.html" = "/features/bodies-and-buffered-responses.html"
 "/guide/06-pagination-and-rate-limits.html" = "/features/pagination.html"
 "/guide/07-explicit-and-runtime-endpoints.html" = "/features/runtime-endpoints.html"
+"/concepts/extension-model.html" = "/extending/index.html"

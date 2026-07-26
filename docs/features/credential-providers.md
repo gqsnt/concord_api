@@ -81,7 +81,7 @@ custom `CredentialProvider`.
 Custom providers control their own external calls, CPU, retained state, cache
 cardinality, and safe error text. Concord bounds the semantic request/response
 surface but cannot make arbitrary provider work finite. Start with the
-[extension model](../concepts/extension-model.md) and use the exact public
+[credentials and providers](../extending/credentials-and-providers.md) and use the exact public
 provider traits from Rustdoc when implementing one.
 
 ## Related
@@ -90,4 +90,4 @@ provider traits from Rustdoc when implementing one.
 - [Error reference](../reference/errors.md)
 - [Limits reference](../reference/limits.md)
 - [Feature flags](../reference/features.md)
-- [Extension model](../concepts/extension-model.md)
+- [Credentials and providers](../extending/credentials-and-providers.md)

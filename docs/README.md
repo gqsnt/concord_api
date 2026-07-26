@@ -71,11 +71,11 @@ this site teaches how the pieces fit together and which path to choose.
 | choose request shape at runtime | [Runtime-defined endpoints](features/runtime-endpoints.md) |
 | configure deployment transport | [Production HTTP](features/production-http.md) |
 | compose a realistic client | [Regional API recipe](recipes/regional-apis.md) |
-| implement a semantic extension | [Extension model](concepts/extension-model.md) |
+| implement a semantic extension | [Extension model](extending/README.md) |
 | inspect exact features and limits | [Feature reference](reference/features.md) and [limits](reference/limits.md) |
 
 Advanced extension authors should begin with the
-[extension model](concepts/extension-model.md). Maintainers and fork authors
+[extension model](extending/README.md). Maintainers and fork authors
 should begin with the [architecture overview](contributor/architecture.md).
 For an exact Rust item, use the `concord` Rustdoc path named by the relevant
 guide.

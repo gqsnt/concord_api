@@ -39,7 +39,6 @@
 
 - [Finite behavior](concepts/finite-behavior.md)
 - [Security and redaction](concepts/security-and-redaction.md)
-- [Extension model](concepts/extension-model.md)
 
 # Recipes
 
@@ -52,6 +51,17 @@
 - [Testing API clients](recipes/testing-api-clients.md)
 - [Production configuration](recipes/production-configuration.md)
 - [Riot-style client](recipes/riot.md)
+
+# Extending Concord
+
+- [Extension model](extending/README.md)
+- [Codecs](extending/codecs.md)
+- [Request and response body specifications](extending/body-specifications.md)
+- [Record decoders](extending/record-decoders.md)
+- [Credentials and providers](extending/credentials-and-providers.md)
+- [Pagination controllers](extending/pagination.md)
+- [Rate limiters and observers](extending/rate-limiting.md)
+- [Hooks, trusted work, and bounds](extending/hooks-and-trusted-work.md)
 
 # Reference
 

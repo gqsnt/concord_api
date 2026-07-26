@@ -99,4 +99,4 @@ transport configuration on the HTTP builder.
 - [Security and redaction](../concepts/security-and-redaction.md)
 - [Error reference](../reference/errors.md)
 - [Finite behavior](../concepts/finite-behavior.md)
-- [Extension model](../concepts/extension-model.md)
+- [Hooks, trusted work, and bounds](../extending/hooks-and-trusted-work.md)

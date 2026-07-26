@@ -100,4 +100,4 @@ remain application-owned bounds.
 - [Hooks and observability](hooks-and-observability.md)
 - [The managed lifecycle](../concepts/managed-lifecycle.md)
 - [Limits reference](../reference/limits.md)
-- [Extension model](../concepts/extension-model.md)
+- [Pagination controllers](../extending/pagination.md)

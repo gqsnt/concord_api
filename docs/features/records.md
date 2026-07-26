@@ -106,4 +106,4 @@ queues.
 - [Pagination](pagination.md)
 - [Feature flags](../reference/features.md)
 - [Limits reference](../reference/limits.md)
-- [Extension model](../concepts/extension-model.md)
+- [Record decoders](../extending/record-decoders.md)

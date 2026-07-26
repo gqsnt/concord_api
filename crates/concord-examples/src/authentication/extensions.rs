@@ -4,6 +4,7 @@
 //! Documentation owner: `docs/extending/credentials-and-providers.md`.
 //! Proving tests: `tests/construction.rs` and façade provider tests.
 
+// ANCHOR: credential_provider_extension
 use std::fmt;
 use std::time::Duration;
 
@@ -86,3 +87,4 @@ impl CredentialProvider for ExampleProvider {
         })
     }
 }
+// ANCHOR_END: credential_provider_extension

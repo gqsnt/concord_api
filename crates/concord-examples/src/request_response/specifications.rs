@@ -2,7 +2,9 @@
 //!
 //! Required features: none. Mode: construction and deterministic local
 //! execution. Documentation owners:
-//! `docs/features/bodies-and-buffered-responses.md` and the Extending section.
+//! `docs/features/bodies-and-buffered-responses.md`,
+//! `docs/extending/codecs.md`, and
+//! `docs/extending/body-specifications.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use concord::api;
@@ -22,6 +24,7 @@ use concord::codec::{
 };
 
 /// A complete buffered custom media codec.
+// ANCHOR: codec_extension
 pub struct ExampleCodec;
 
 impl EncodeBody for ExampleCodec {
@@ -51,7 +54,9 @@ impl DecodeBody for ExampleCodec {
         String::from_utf8(body.to_vec()).map_err(|_| CodecError::new(CodecErrorKind::Decode))
     }
 }
+// ANCHOR_END: codec_extension
 
+// ANCHOR: request_body_spec_extension
 pub struct ExampleRequestSpec;
 
 impl RequestBodySpec for ExampleRequestSpec {
@@ -75,7 +80,9 @@ impl RequestBodySpec for ExampleRequestSpec {
         Ok(RequestBody::bytes(input))
     }
 }
+// ANCHOR_END: request_body_spec_extension
 
+// ANCHOR: response_body_spec_extension
 pub struct ExampleBufferedSpec;
 
 impl ResponseBodySpec for ExampleBufferedSpec {
@@ -111,7 +118,9 @@ impl ResponseBodySpec for ExampleDiscardSpec {
         Ok(())
     }
 }
+// ANCHOR_END: response_body_spec_extension
 
+// ANCHOR: body_spec_usage
 api! {
     client GenericSpecificationApi {
         base "http://generic-specifications.example.test/";
@@ -142,3 +151,4 @@ pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
     let _: Request<_> = client.request(runtime);
     Ok(())
 }
+// ANCHOR_END: body_spec_usage
