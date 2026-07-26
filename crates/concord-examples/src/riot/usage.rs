@@ -65,11 +65,11 @@ pub fn construct() -> Result<(), concord::ClientBuildError> {
         )
         .build()?;
     let _: riot_api::platform::summoner_v4::SummonerByPuuidRequest = riot
-        .platform()
+        .platform(crate::riot::domain::PlatformRoute::Euw1)
         .summoner_v4()
         .summoner_by_puuid("example-puuid".to_owned());
     let _: concord::pagination::PaginatedRequest<_> = riot
-        .regional()
+        .regional(super::domain::RegionalRoute::Europe)
         .match_v5()
         .match_ids_by_puuid("example-puuid".to_owned())
         .set_match_type(MatchType::Ranked)
@@ -100,7 +100,7 @@ pub async fn run_live_from_environment() -> Result<(), Box<dyn Error>> {
         .build()?;
 
     let account = riot
-        .regional()
+        .regional(crate::riot::domain::RegionalRoute::Europe)
         .account_v1()
         .account_by_riot_id(game_name, tag_line)
         .await?;
@@ -113,7 +113,7 @@ pub async fn run_live_from_environment() -> Result<(), Box<dyn Error>> {
     );
 
     let summoner = riot
-        .platform()
+        .platform(crate::riot::domain::PlatformRoute::Euw1)
         .summoner_v4()
         .summoner_by_puuid(account.puuid.clone())
         .await?;
@@ -124,7 +124,7 @@ pub async fn run_live_from_environment() -> Result<(), Box<dyn Error>> {
     );
 
     let league_entries = riot
-        .platform()
+        .platform(crate::riot::domain::PlatformRoute::Euw1)
         .league_v4()
         .league_entries_by_puuid(account.puuid.clone())
         .await?;
@@ -137,7 +137,7 @@ pub async fn run_live_from_environment() -> Result<(), Box<dyn Error>> {
     }
 
     let top_masteries = riot
-        .platform()
+        .platform(crate::riot::domain::PlatformRoute::Euw1)
         .champion_mastery_v4()
         .top_masteries_by_puuid(account.puuid.clone())
         .set_count(5)
@@ -146,7 +146,7 @@ pub async fn run_live_from_environment() -> Result<(), Box<dyn Error>> {
     println!("Top champion masteries: {}", top_masteries.len());
 
     let match_ids = riot
-        .regional()
+        .regional(crate::riot::domain::RegionalRoute::Europe)
         .match_v5()
         .match_ids_by_puuid(account.puuid.clone())
         .set_match_type(MatchType::Ranked)
@@ -158,7 +158,7 @@ pub async fn run_live_from_environment() -> Result<(), Box<dyn Error>> {
 
     if let Some(match_id) = match_ids.first() {
         let response = riot
-            .regional()
+            .regional(crate::riot::domain::RegionalRoute::Europe)
             .match_v5()
             .match_by_id(match_id.clone())
             .response()
@@ -174,7 +174,7 @@ pub async fn run_live_from_environment() -> Result<(), Box<dyn Error>> {
         );
 
         let timeline = riot
-            .regional()
+            .regional(crate::riot::domain::RegionalRoute::Europe)
             .match_v5()
             .timeline_by_id(match_id.clone())
             .await?;
@@ -183,7 +183,7 @@ pub async fn run_live_from_environment() -> Result<(), Box<dyn Error>> {
     }
 
     match riot
-        .platform()
+        .platform(crate::riot::domain::PlatformRoute::Euw1)
         .spectator_v5()
         .active_game_by_puuid(account.puuid.clone())
         .await
@@ -198,7 +198,7 @@ pub async fn run_live_from_environment() -> Result<(), Box<dyn Error>> {
     }
 
     let status = riot
-        .platform()
+        .platform(crate::riot::domain::PlatformRoute::Euw1)
         .status_v4()
         .platform_data()
         .response()

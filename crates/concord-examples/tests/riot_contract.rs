@@ -13,8 +13,6 @@ const API_KEY_SENTINEL: &str = "riot-api-key-sentinel-phase11-a91f";
 
 fn client() -> RiotApi {
     RiotApi::builder()
-        .set_platform(PlatformRoute::Na1)
-        .set_regional(RegionalRoute::Americas)
         .api_key(SecretString::try_new(API_KEY_SENTINEL).expect("bounded Riot test key"))
         .build()
         .expect("Riot client")
@@ -23,7 +21,10 @@ fn client() -> RiotApi {
 #[test]
 fn platform_and_regional_plans_compose_hosts_limits_and_redacted_auth() {
     let client = client();
-    let platform = riot_api::platform::summoner_v4::SummonerByPuuid::new("public-puuid".to_owned());
+    let platform = riot_api::platform::summoner_v4::SummonerByPuuid::new(
+        PlatformRoute::Euw1,
+        "public-puuid".to_owned(),
+    );
     let platform_plan = client.plan(&platform).expect("platform plan");
     assert!(
         platform_plan
@@ -33,6 +34,7 @@ fn platform_and_regional_plans_compose_hosts_limits_and_redacted_auth() {
     assert_eq!(platform_plan.rate_limit_rule_count(), 2);
 
     let regional = riot_api::regional::account_v1::AccountByRiotId::new(
+        RegionalRoute::Europe,
         "Example Name".to_owned(),
         "TAG".to_owned(),
     );
@@ -61,8 +63,10 @@ fn platform_and_regional_plans_compose_hosts_limits_and_redacted_auth() {
 #[test]
 fn optional_defaults_pagination_binding_and_explicit_description_are_predictable() {
     let client = client();
-    let default_endpoint =
-        riot_api::regional::match_v5::MatchIdsByPuuid::new("public-puuid".to_owned());
+    let default_endpoint = riot_api::regional::match_v5::MatchIdsByPuuid::new(
+        RegionalRoute::Europe,
+        "public-puuid".to_owned(),
+    );
     let default_plan = client.plan(&default_endpoint).expect("default query plan");
     assert!(default_plan.safe_url().contains("start=%3Credacted%3E"));
     assert!(default_plan.safe_url().contains("count=%3Credacted%3E"));
@@ -71,10 +75,13 @@ fn optional_defaults_pagination_binding_and_explicit_description_are_predictable
     assert!(!default_plan.safe_url().contains("queue="));
     assert!(!default_plan.safe_url().contains("type="));
 
-    let endpoint = riot_api::regional::match_v5::MatchIdsByPuuid::new("public-puuid".to_owned())
-        .set_match_type(MatchType::Ranked)
-        .set_start(40)
-        .set_count(NonZeroU32::new(10).expect("positive page size"));
+    let endpoint = riot_api::regional::match_v5::MatchIdsByPuuid::new(
+        RegionalRoute::Europe,
+        "public-puuid".to_owned(),
+    )
+    .set_match_type(MatchType::Ranked)
+    .set_start(40)
+    .set_count(NonZeroU32::new(10).expect("positive page size"));
     let description = endpoint.description();
     assert_eq!(description.method(), Method::GET);
     assert!(

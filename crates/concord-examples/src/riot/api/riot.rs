@@ -18,8 +18,7 @@ api! {
         base "https://riotgames.com/";
 
         vars {
-            platform: crate::riot::domain::PlatformRoute = crate::riot::domain::PlatformRoute::Euw1;
-            regional: crate::riot::domain::RegionalRoute = crate::riot::domain::RegionalRoute::Europe;
+
         }
 
         credentials {
@@ -32,8 +31,8 @@ api! {
         timeout 20s;
     }
 
-    scope platform() {
-        host [vars.platform, "api"];
+    scope platform( platform: crate::riot::domain::PlatformRoute) {
+        host [scope.platform, "api"];
         path ["lol"];
         rate_limit {
             by [host];
@@ -253,8 +252,8 @@ api! {
     }
 
 
-    scope regional() {
-        host [vars.regional, "api"];
+    scope regional(regional: crate::riot::domain::RegionalRoute) {
+        host [scope.regional, "api"];
         rate_limit {
             by [host];
             500 / 10s;
