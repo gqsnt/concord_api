@@ -71,10 +71,14 @@ tests prove users cannot forge generated endpoint implementations.
 
 At all times:
 
-- the resolved macro model owns generated names and capabilities;
+- the resolved macro model owns generated names and capabilities, including
+  exact `set_*`, optional `clear_*`, and defaulted `reset_*` value controls;
 - rate-limit declarations resolve applicability and ordered key dimensions in
   the lexical owner; inherited rules never re-resolve against descendant-only
   values;
+- the final endpoint validates every effective rate rule after pagination and
+  host shaping are resolved, rejecting direct or host-derived
+  pagination-controlled partition dependencies;
 - direct/explicit construction share one endpoint model;
 - planning/execution share public-head construction;
 - generated/default limiter selection has one façade owner;
@@ -101,6 +105,10 @@ boundary.
 
 Generated keyed rules format only referenced public values through core's
 bounded key constructor. Global rules retain the allocation-minimal fast path.
+Generated declaration rule IDs are deterministic inside one generated client
+contract but do not create a global namespace across unrelated macro
+expansions; applications explicitly sharing a limiter across such contracts
+own namespace compatibility.
 The façade selects a fresh default `LocalRateLimiter` for each built client;
 extras owns its token buckets, safe fully-replenished idle pruning, and
 recoverable `StateCapacity` policy. Core and macros never depend on that

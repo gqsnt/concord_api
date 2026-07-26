@@ -67,6 +67,20 @@ and recoverable `RateLimitErrorKind::StateCapacity`. The unpublished
 selected-feature Rustdoc checks must preserve the core custom-`RateLimiter`
 contract when the first-party implementation is disabled.
 
+The release-facing generated value-control surface uses `set_*` for every
+public value mutation, `clear_*` for optional absence, and `reset_*` for
+default restoration. Client/scope/endpoint construction and navigation retain
+their domain names. Package examples, façade UI, and Rust 1.85 semantic UI
+must compile the new names and prove the unpublished bare mutation methods are
+absent; do not add compatibility aliases.
+
+Rate-limit partition validation is final-endpoint authoritative. Every
+effective inherited or local direct value dimension must be independent of
+pagination-controlled values, and `by [host]` must be rejected when final host
+shaping recursively depends on one. Generated declaration rule IDs remain
+source-derived and deterministic within one generated client contract, not
+globally namespaced across unrelated `api!` expansions.
+
 Build the source ZIP with:
 
 ```text
@@ -85,7 +99,9 @@ The generated contract version is **27** in `concord-macros` and
 `concord-core`. The façade reexports the handshake through its hidden bridge.
 Any emitted bridge path or signature change requires an atomic version bump
 and the retained contract-mismatch fixture. The bridge is compiler/runtime
-plumbing, not a public extension API.
+plumbing, not a public extension API. The `set_*` public method rename and
+final semantic pagination validation change no private bridge symbol or
+signature, so they retain version 27.
 
 ## Release checklist
 
@@ -103,11 +119,19 @@ Before enabling publication:
 9. confirm `rate-limit` remains a default façade feature, its selected façade
    and extras Rustdoc is warning-free, and the removed unpublished names are
    absent;
-10. confirm request and response empty-chunk limits appear once in the generated
+10. confirm generated value mutation uses only `set_*`, optional `clear_*`,
+    and defaulted `reset_*`; inspect the compile-fail proof that a bare value
+    method is absent;
+11. confirm effective direct and final-host-derived rate partitions reject
+    pagination-controlled dependencies under current and Rust 1.85 semantic UI
+    owners;
+12. confirm generated Rustdoc says “deterministic declaration rule ID” and the
+    manual records the non-global namespace boundary for shared limiters;
+13. confirm request and response empty-chunk limits appear once in the generated
    limits reference and remain available without default features;
-11. record the exact branch, commit, and clean worktree status;
-12. obtain successful remote Linux, Windows, and macOS CI results;
-13. publish only after an explicit instruction naming the packages and order.
+14. record the exact branch, commit, and clean worktree status;
+15. obtain successful remote Linux, Windows, and macOS CI results;
+16. publish only after an explicit instruction naming the packages and order.
 
 See the [changelog](../../CHANGELOG.md), [compatibility reference](../reference/compatibility.md),
 and [unsupported capabilities](../reference/unsupported.md).
