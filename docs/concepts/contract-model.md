@@ -21,6 +21,11 @@ the runtime builder. A request path, response representation, or
 authentication placement is remote-contract policy and belongs in the
 declaration.
 
+Within a rate-limit declaration, lexical placement selects applicability and
+an optional ordered `by` clause selects bucket partitioning. Omission means
+one bucket for that declaration, not a process-global bucket. The compiler
+does not infer method, path, query, or URL dimensions.
+
 The resolved compiler model is the single source of generated names and
 capabilities. Direct methods and explicit endpoint values bind that same
 model. Safe planning and execution share public-head preparation. This avoids

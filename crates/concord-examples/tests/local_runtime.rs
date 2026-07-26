@@ -198,12 +198,114 @@ async fn actual_rate_limit_example_honors_an_explicit_downstream_limiter() {
         .expect("rate-limit client");
 
     let value = client
+        .region("eu".to_owned())
         .item("record-42".to_owned())
         .await
         .expect("rate-limited request");
     assert_eq!(value, concord::Bytes::from_static(b"limited response"));
     assert_eq!(limiter.acquisitions(), 1);
     assert_eq!(server.request_count(), 1);
+}
+
+#[cfg(feature = "rate-limit")]
+#[tokio::test]
+async fn local_state_capacity_is_recoverable_without_evicting_an_existing_bucket() {
+    use std::sync::Arc;
+
+    use concord::rate_limit::{LocalRateLimiter, RateLimiter};
+    use concord_examples::rate_limiting::partitioning::{
+        ResourceStateApi, is_recoverable_state_capacity,
+    };
+
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"first".to_vec()),
+        ResponseScript::ok(b"retained".to_vec()),
+    ])
+    .expect("bounded local-state server");
+    let proxy = proxy(&server);
+    let limiter: Arc<dyn RateLimiter> = Arc::new(
+        LocalRateLimiter::new()
+            .quota_capacity(1)
+            .expect("positive quota-state capacity"),
+    );
+    let client = ResourceStateApi::builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(move |runtime| runtime.rate_limiter(limiter))
+        .build()
+        .expect("bounded local-state client");
+
+    assert_eq!(
+        client
+            .channel("first-key".to_owned())
+            .await
+            .expect("first bucket"),
+        concord::Bytes::from_static(b"first")
+    );
+    let error = client
+        .channel("new-high-cardinality-key".to_owned())
+        .await
+        .expect_err("new bucket must fail while bounded state is full");
+    assert!(is_recoverable_state_capacity(&error));
+    assert_eq!(
+        server.request_count(),
+        1,
+        "capacity failure must happen before transport"
+    );
+
+    assert_eq!(
+        client
+            .channel("first-key".to_owned())
+            .await
+            .expect("existing bucket remains operational"),
+        concord::Bytes::from_static(b"retained")
+    );
+    assert_eq!(server.request_count(), 2);
+}
+
+#[cfg(feature = "rate-limit")]
+#[tokio::test(start_paused = true)]
+async fn independently_built_clients_can_share_one_local_limiter_object() {
+    use std::sync::Arc;
+
+    use concord::rate_limit::{LocalRateLimiter, RateLimiter};
+    use concord_examples::rate_limiting::partitioning::SharedStateApi;
+
+    let server = ScriptedServer::start([ResponseScript::ok(b"first".to_vec())])
+        .expect("shared local-state server");
+    let limiter: Arc<dyn RateLimiter> = Arc::new(LocalRateLimiter::new());
+    let first = SharedStateApi::builder()
+        .configure_http({
+            let proxy = proxy(&server);
+            move |http| http.proxy(proxy)
+        })
+        .configure_runtime({
+            let limiter = Arc::clone(&limiter);
+            move |runtime| runtime.rate_limiter(limiter)
+        })
+        .build()
+        .expect("first shared-limiter client");
+    let second = SharedStateApi::builder()
+        .configure_http({
+            let proxy = proxy(&server);
+            move |http| http.proxy(proxy)
+        })
+        .configure_runtime(move |runtime| runtime.rate_limiter(limiter))
+        .build()
+        .expect("second shared-limiter client");
+
+    assert_eq!(
+        first.ping().await.expect("first shared bucket request"),
+        concord::Bytes::from_static(b"first")
+    );
+    let repeated = tokio::spawn(async move { second.ping().await });
+    tokio::task::yield_now().await;
+    assert!(
+        !repeated.is_finished(),
+        "the second build must observe quota consumed through the shared limiter"
+    );
+    assert_eq!(server.request_count(), 1);
+    repeated.abort();
+    let _ = repeated.await;
 }
 
 #[cfg(all(feature = "records", feature = "csv", feature = "ndjson"))]

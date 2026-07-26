@@ -3,6 +3,8 @@
 //! Required features: `json` and `rate-limit`. Mode: deterministic
 //! planning plus optional manual live execution. Documentation owner:
 //! `docs/recipes/riot.md`. Proving test: `tests/riot_contract.rs`.
+//! Rate windows and partitioning are illustrative Concord policy, not a
+//! verified statement of Riot's current service quotas.
 
 use std::collections::HashMap;
 
@@ -34,6 +36,7 @@ api! {
         host [vars.platform, "api"];
         path ["lol"];
         rate_limit {
+            by [host];
             500 / 10s;
             30000 / 10m;
         }
@@ -253,6 +256,7 @@ api! {
     scope regional() {
         host [vars.regional, "api"];
         rate_limit {
+            by [host];
             500 / 10s;
             30000 / 10m;
         }

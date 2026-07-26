@@ -10,7 +10,6 @@ Safe surfaces include:
 - hooks and completion events;
 - errors and build diagnostics;
 - response-head observation;
-- rate-limit plans and keys;
 - `Debug` output for public runtime values.
 
 These surfaces contain endpoint identity, public method/URL/header projections,
@@ -18,6 +17,15 @@ body category and length hints, timeout selection, status category, and bounded
 timing where appropriate. They do not contain credentials, protected
 authentication headers/query values, provider payloads, native requests or
 responses, response bodies, or body-factory output.
+
+The selected rate limiter and its observer receive the bounded resolved
+rate-limit plan as correctness input. Key values may be operationally
+sensitive even though the DSL forbids secrets and credentials. Concord gives
+`RateLimitKey` and `RateLimitPlan` no `Debug` or `Display`, lists only
+dimension names in generated Rustdoc, and does not copy values into errors,
+user hooks, completion, endpoint descriptions, safe request plans, or other
+safe output. Custom limiters and observers must apply equivalent protection to
+their own storage and logging.
 
 The URL on these surfaces is a **credential-sanitized URL**: native-only
 authentication query material is absent or redacted. It is not an anonymized

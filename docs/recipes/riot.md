@@ -22,6 +22,13 @@ without duplicating an API. It also makes routing choices explicit: platform
 routes and regional routes are distinct typed values rather than arbitrary
 strings scattered through call sites.
 
+The example's platform and regional declarations use `by [host]` so the
+illustrative local policy follows the final shaped route host. Its numeric
+windows and custom `X-Rate-Limit-Type` interpretation demonstrate Concord
+composition only; they are not asserted as Riot's current quota or header
+contract. The custom `RiotRateLimitObserver` delegates baseline final-429
+`Retry-After` parsing to Concord's `RetryAfterObserver`.
+
 No example or CI test contacts Riot. The
 [contract test](../../crates/concord-examples/tests/riot_contract.rs) imports
 the real modules and checks construction. Runtime behavior uses local scripted

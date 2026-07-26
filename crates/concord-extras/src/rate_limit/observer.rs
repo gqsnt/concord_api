@@ -5,12 +5,14 @@ use concord_core::rate_limit::{Cooldown, CooldownScope, RateLimitObserver, RateL
 use http::StatusCode;
 use http::header::RETRY_AFTER;
 
-/// Default final-429 `Retry-After` observer.
+/// Built-in final-429 `Retry-After` observer.
 ///
 /// Decimal delta-seconds and HTTP dates are accepted after trimming. Malformed,
 /// past, and zero values are ignored. Positive values target current buckets,
-/// or the logical host when the effective plan is empty. The local limiter clamps
-/// every proposal to the runtime cap supplied by core.
+/// or the logical host when the effective plan is empty. The local limiter
+/// clamps every proposal to the runtime cap supplied by core. Supplying
+/// [`LocalRateLimiter::observer`](super::LocalRateLimiter::observer) replaces
+/// this policy unless the custom observer delegates back to it.
 #[derive(Default)]
 pub struct RetryAfterObserver;
 

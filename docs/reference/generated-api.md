@@ -76,6 +76,12 @@ Every generated endpoint value exposes:
 endpoint.description() -> &concord::endpoint::EndpointDescription
 ```
 
+Generated endpoint Rustdoc lists every applicable rate-limit rule in inherited
+order. Each entry includes its lexical origin, stable generated rule ID,
+`Bucketed by` dimension names (or `declaration-global`), cost, and ordered
+windows. Resolved key values never enter Rustdoc or
+`EndpointDescription`.
+
 The scope root defines a sealed generated `Endpoint` trait with associated
 `Request` and `Response` types and a safe description. It supports bounded
 generic composition; applications cannot implement it.

@@ -20,6 +20,12 @@ failing afterward. Pagination is sequential and cycle-detecting, returns all
 items only on success, and never exposes a partial result under its existing
 terminal.
 
+Generated rate-limit keys stop at the first excess part, name, or aggregate
+byte and never retain unbounded formatted values. The first-party local
+limiter similarly preflights every missing entry for a plan: capacity failure
+inserts none, preserves active quota and unexpired cooldown history, returns
+recoverable `StateCapacity`, and leaves existing buckets operational.
+
 Empty chunks do not represent application body bytes and are never yielded or
 forwarded. Core bounds their total count independently for one request body
 and one response body; neither total resets after nonempty data. Request

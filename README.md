@@ -66,6 +66,13 @@ stream polling, hooks, and completion begin only when a terminal is awaited.
 Built clients are immutable runtime snapshots shared safely by clones. Native
 transport objects and authentication material stay inside the runtime.
 
+Ordinary default features install
+`concord::rate_limit::LocalRateLimiter`, Concord's bounded process-local
+rate-limit policy. A rule's lexical location determines where it applies. Its
+optional `by` clause determines how applicable requests are partitioned into
+local buckets; Concord never infers dimensions from a path or method. See
+[Pagination and rate limits](docs/guide/06-pagination-and-rate-limits.md).
+
 ## Documentation
 
 Start with:

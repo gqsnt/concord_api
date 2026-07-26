@@ -41,13 +41,23 @@ credential inspection. Attach endpoint ID, operation ID, attempt, safe status,
 and elapsed time. Keep application labels finite and do not reflect arbitrary
 remote values into metric cardinality.
 
-Generated rate plans use the façade local limiter under ordinary defaults. Supply a
-custom limiter explicitly when process-local enforcement is insufficient; it
-takes precedence and must bound its own state. Concord does not claim
-distributed strict quota enforcement.
+Generated rate plans use `LocalRateLimiter` under ordinary defaults. It is a
+continuously refilling token bucket local to one process and one limiter
+object; it does not claim exact remote fixed/sliding-window or distributed
+quota enforcement. Client clones share the built client's object.
+Independently built clients can share by receiving the same
+`Arc<dyn RateLimiter>`.
+
+Choose `by` dimensions conservatively because their cardinality determines
+local state demand. `StateCapacity` is a recoverable pre-transport signal that
+a new key did not fit; existing buckets were not evicted. Increase a finite
+capacity from workload evidence, reduce partition cardinality, wait for safely
+prunable state, or supply a custom bounded limiter. A custom limiter takes
+precedence and must bound its own state.
 
 The importable
-[custom limiter example](../../crates/concord-examples/src/rate_limiting/custom_limiter.rs)
+[custom limiter example](../../crates/concord-examples/src/rate_limiting/custom_limiter.rs),
+[partitioning example](../../crates/concord-examples/src/rate_limiting/partitioning.rs),
 and
 [authentication example](../../crates/concord-examples/src/authentication/usage.rs)
 are exercised by

@@ -48,5 +48,12 @@ The client produced by `.build()` is an immutable runtime snapshot. Clones
 share that snapshot, so hooks, limiter state, transport policy, and providers
 cannot silently diverge between cloned clients.
 
+Rate-limit applicability is resolved lexically before execution. At step 1,
+the generated head resolves each applicable rule's ordered `by` dimensions:
+the final shaped host, stable endpoint contract ID, or referenced public
+values. At step 7, the selected limiter authorizes the complete plan before
+private authentication. The first-party local limiter treats each
+limiter-object/rule/key/window tuple as a continuously refilling token bucket.
+
 See [Finite behavior](finite-behavior.md) and
 [Security and redaction](security-and-redaction.md).

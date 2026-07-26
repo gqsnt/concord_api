@@ -72,6 +72,9 @@ tests prove users cannot forge generated endpoint implementations.
 At all times:
 
 - the resolved macro model owns generated names and capabilities;
+- rate-limit declarations resolve applicability and ordered key dimensions in
+  the lexical owner; inherited rules never re-resolve against descendant-only
+  values;
 - direct/explicit construction share one endpoint model;
 - planning/execution share public-head construction;
 - generated/default limiter selection has one façade owner;
@@ -95,6 +98,13 @@ remain separate: public head construction finishes first, generic
 authentication cannot target a request- or transport-owned header, and
 private material is attached only after limiter authority at the native
 boundary.
+
+Generated keyed rules format only referenced public values through core's
+bounded key constructor. Global rules retain the allocation-minimal fast path.
+The façade selects a fresh default `LocalRateLimiter` for each built client;
+extras owns its token buckets, safe fully-replenished idle pruning, and
+recoverable `StateCapacity` policy. Core and macros never depend on that
+concrete implementation.
 
 For received responses, core constructs the sanitized head, awaits limiter
 observation under the remaining operation deadline, and only then invokes the

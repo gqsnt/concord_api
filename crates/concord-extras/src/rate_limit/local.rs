@@ -60,6 +60,9 @@ struct LocalLimiterConfig {
 )]
 impl LocalRateLimiter {
     /// Creates an independent local limiter with the normative finite defaults.
+    ///
+    /// Share the same `Arc<dyn RateLimiter>` explicitly when independently
+    /// built clients should share local quota and cooldown state.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -88,6 +91,9 @@ impl LocalRateLimiter {
     }
 
     /// Sets the positive finite quota-entry capacity.
+    ///
+    /// An acquisition whose complete missing state does not fit returns
+    /// [`RateLimitErrorKind::StateCapacity`] without inserting or evicting.
     pub fn quota_capacity(mut self, entries: usize) -> Result<Self, RateLimitError> {
         if entries == 0 {
             return Err(invalid_configuration());
@@ -96,7 +102,11 @@ impl LocalRateLimiter {
         Ok(self)
     }
 
-    /// Sets the positive finite cooldown-entry capacity.
+    /// Sets the positive finite keyed cooldown-entry capacity.
+    ///
+    /// A new host or bucket cooldown that does not fit returns
+    /// [`RateLimitErrorKind::StateCapacity`] without evicting an unexpired
+    /// cooldown.
     pub fn cooldown_capacity(mut self, entries: usize) -> Result<Self, RateLimitError> {
         if entries == 0 {
             return Err(invalid_configuration());
@@ -106,6 +116,9 @@ impl LocalRateLimiter {
     }
 
     /// Sets the positive finite idle quota-entry lifetime.
+    ///
+    /// An entry is prunable only after it is fully replenished and has
+    /// remained idle for at least this duration.
     pub fn idle_ttl(mut self, duration: Duration) -> Result<Self, RateLimitError> {
         if duration.is_zero() {
             return Err(invalid_configuration());

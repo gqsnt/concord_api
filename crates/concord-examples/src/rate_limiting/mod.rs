@@ -8,3 +8,4 @@
 pub mod custom_limiter;
 pub mod lexical;
 pub mod observer;
+pub mod partitioning;

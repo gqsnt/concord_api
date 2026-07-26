@@ -76,17 +76,20 @@ Hardening proofs stay with the lowest semantic owner:
 
 - macro semantic/UI tests own statically knowable authentication-header and
   request-head rejection, normalized DNS/IP host-shaping acceptance, exact
-  diagnostics, and generated documentation capabilities;
+  diagnostics, rate-limit dimension grammar/visibility, and generated
+  documentation capabilities;
 - core unit tests own capped arithmetic, JSON-independent body defense,
   startup retention, reader-buffer reuse, shared response-progress arithmetic,
   streaming/buffered/status/provider empty-chunk totals and fairness,
   managed-request empty-chunk totals, wake behavior, exact-length ordering,
   pagination identity bytes, and lifecycle event order;
-- extras unit tests own capped JSON serialization and concrete downstream
-  codec/provider behavior;
+- extras unit tests own capped JSON serialization, concrete downstream
+  codec/provider behavior, and paused-time local limiter quota/cooldown
+  capacity, pruning, transactional admission, poisoning, and object-sharing
+  proofs;
 - façade integration tests own generated/runtime parity, public namespace
-  reachability, and custom `RequestBodySpec` suppression before loopback
-  transport;
+  reachability, generated key construction/client-clone sharing, and custom
+  `RequestBodySpec` suppression before loopback transport;
 - documentation, fixture, analyzer, package, and archive behavior remains in
   its repository-level command owner.
 

@@ -151,6 +151,38 @@ consuming an iterator tail. A limiter may select a lower preparation-key
 limit, including zero for global-only keys, but client construction rejects a
 selection above `MAX_RATE_LIMIT_KEY_BYTES`.
 
+Generated value dimensions are formatted directly into the remaining hard
+aggregate key budget. Concord retains no unbounded intermediate formatting;
+the first excess or formatting failure becomes a redacted invalid-rate-limit
+configuration. `host` and `endpoint` require no application formatting, and
+only referenced `vars.*`, `scope.*`, or `ep.*` types require `Display`.
+
+`LocalRateLimiter` defaults to 4,096 quota entries, 4,096 keyed cooldown
+entries, a 15-minute idle quota TTL, and the 1,024-byte selected key limit.
+Its builders replace those positive finite capacities and TTL. Each distinct
+rule ID, ordered resolved key, and window consumes one quota entry, so a
+single plan can require several entries.
+
+Local quota entries are continuously refilling token buckets. A new entry
+starts full, refills at `capacity / duration`, never exceeds capacity, and
+charges the rule cost to every window. These semantics pace local attempts;
+they do not claim exact emulation of an arbitrary server fixed or sliding
+window.
+
+State pressure is fail-closed and recoverable. Before admitting missing
+current-plan state, the limiter refills pruning candidates and removes only
+entries that are both fully replenished and idle for at least the configured
+TTL. If every missing entry does not fit, insertion is all-or-none and returns
+`RateLimitErrorKind::StateCapacity`; active history is not evicted and the
+limiter is not poisoned. Cooldown pressure prunes only expired entries,
+extends an existing key in place, and returns the same recoverable error rather
+than evicting an unexpired cooldown.
+
+These maps belong to one limiter object in one process. Built-client clones
+share that object; independent builds do not share automatically. Applications
+may explicitly reuse one `Arc<dyn RateLimiter>` or supply a custom
+distributed limiter whose own state and work remain application-owned bounds.
+
 Terminal status-body capture is enabled at its finite default. The builder can
 disable capture entirely; that does not create an unbounded mode.
 

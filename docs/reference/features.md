@@ -31,7 +31,9 @@ task.
 ## Capability notes
 
 - Ordinary defaults preserve default TLS, HTTP/2, and the process-local
-  local limiter.
+  `LocalRateLimiter`. The limiter is created per built client; clones share it,
+  while independent builds do not share unless configured with the same
+  `Arc<dyn RateLimiter>`.
 - JSON remains opt-in. Its request serializer writes through the active body
   cap, and its failures use the same finite codec categories as downstream
   codecs. CSV and NDJSON imply generic record support.
@@ -47,6 +49,10 @@ task.
   recipe construction is fallible and structurally bounded.
 - OAuth2 client credentials, JSON, CSV, NDJSON, and local rate-limit ecosystem
   dependencies are enabled only by their named façade features.
+- `rate-limit` exposes `LocalRateLimiter` and `RetryAfterObserver` through
+  `concord::rate_limit`. Calling `.observer(...)` replaces the built-in
+  observer, so custom policy must delegate when bounded `Retry-After`
+  handling should remain.
 - Dangerous features never join the default set.
 - The façade passes dangerous capability tokens to generated code; proc-macro
   crate features are not used to infer a downstream application's feature

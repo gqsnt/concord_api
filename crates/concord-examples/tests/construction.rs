@@ -52,7 +52,11 @@ fn imports_and_constructs_every_enabled_canonical_declaration() {
     concord_examples::authentication::usage::construct().expect("authentication construction");
 
     #[cfg(feature = "rate-limit")]
-    concord_examples::rate_limiting::lexical::construct().expect("rate-limit construction");
+    {
+        concord_examples::rate_limiting::lexical::construct().expect("rate-limit construction");
+        concord_examples::rate_limiting::partitioning::construct()
+            .expect("rate-limit partitioning construction");
+    }
 
     #[cfg(all(feature = "records", feature = "csv", feature = "ndjson"))]
     concord_examples::request_response::records::construct().expect("record construction");

@@ -1,4 +1,10 @@
 //! Stable rate-limit contracts and private execution support.
+//!
+//! One bucket is identified by a selected limiter object, stable rule ID,
+//! ordered resolved key, and window. Resolved key values may be operationally
+//! sensitive: plans and keys intentionally have no `Debug` or `Display`, and
+//! core does not copy their values into lifecycle errors, user hook events, or
+//! completion events.
 
 mod error;
 mod limiter;

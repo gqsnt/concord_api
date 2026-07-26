@@ -17,6 +17,12 @@
 - First-party JSON, record codecs, pagination policies, rate limiting, and
   OAuth2 client credentials as downstream implementations of public semantic
   contracts.
+- Explicit ordered rate-limit bucket dimensions through `by [...]`, supporting
+  final `host`, stable `endpoint`, and required/defaulted scalar `vars.*`,
+  visible `scope.*`, and `ep.*` values.
+- Recoverable `RateLimitErrorKind::StateCapacity` reporting when bounded local
+  quota or cooldown state cannot admit a new key without discarding active
+  history.
 - Generated endpoint Rustdoc backed by one semantic documentation model, with
   named value inputs, flattened scope inputs, safe query/header names, route
   shape, human-readable deadlines, and only the terminals each endpoint
@@ -78,6 +84,13 @@
   the generated bridge.
 - Ordered rate-limit key generation now formats referenced dimensions through
   the core-owned bounded bridge, raising the generated-contract version to 27.
+- The default façade feature set now installs the first-party
+  `LocalRateLimiter`; `RetryAfterObserver` is its built-in final-429 observer.
+  These replace the unpublished `rate-limit-governor`,
+  `GovernorRateLimiter`, and `DefaultRateLimitObserver` names without aliases.
+- Local quota state now prunes only fully replenished idle entries and returns
+  recoverable `StateCapacity` pressure instead of evicting active quota or
+  unexpired cooldown history.
 - A sanitized response head reaches limiter observation before the user
   response hook. Observation uses the remaining operation deadline, and its
   failure prevents the hook and body acquisition.
@@ -106,6 +119,8 @@
 - The façade `advanced` namespace, the core prelude, and the public benchmark
   bridge and partial-lifecycle conversions.
 - Unbounded or partially managed response acquisition.
+- The unpublished `rate-limit-governor`, `GovernorRateLimiter`, and
+  `DefaultRateLimitObserver` public names.
 
 ### Safety guarantees
 

@@ -20,15 +20,16 @@ use concord::rate_limit::{
 use super::api::{DDragonApi, RiotApi, d_dragon_api, riot_api};
 use super::domain::MatchType;
 
-/// Interprets Riot's final `429` response headers for future acquisitions.
+/// Illustratively interprets final `429` response headers for future acquisitions.
 ///
-/// Static Concord buckets prevent ordinary bursts. Riot's `Retry-After` and
-/// `X-Rate-Limit-Type` headers refine the cooldown after the platform rejects a
-/// request. Method cooldowns conservatively cool the current lexical plan.
+/// Static Concord buckets pace ordinary bursts. This example lets
+/// `Retry-After` and `X-Rate-Limit-Type` refine a cooldown after a rejection;
+/// it is not a verified statement of Riot's current header contract. Method
+/// cooldowns conservatively cool the current lexical plan.
 #[derive(Default)]
-pub struct RiotRateLimitHeaders;
+pub struct RiotRateLimitObserver;
 
-impl RateLimitObserver for RiotRateLimitHeaders {
+impl RateLimitObserver for RiotRateLimitObserver {
     fn observe(&self, response: &RateLimitResponseHead<'_>) -> Option<Cooldown> {
         let default = RetryAfterObserver.observe(response)?;
         let rate_limit_type = HeaderName::from_static("x-rate-limit-type");
@@ -92,7 +93,7 @@ pub async fn run_live_from_environment() -> Result<(), Box<dyn Error>> {
     let game_name = std::env::var("RIOT_GAME_NAME")?;
     let tag_line = std::env::var("RIOT_TAG_LINE")?;
 
-    let limiter = LocalRateLimiter::new().observer(Arc::new(RiotRateLimitHeaders));
+    let limiter = LocalRateLimiter::new().observer(Arc::new(RiotRateLimitObserver));
     let riot = RiotApi::builder()
         .api_key(concord::SecretString::try_from(api_key)?)
         .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(limiter)))

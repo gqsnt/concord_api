@@ -74,7 +74,9 @@ impl RateLimitKeyPart {
         &self.name
     }
 
-    /// Returns the resolved dimension value.
+    /// Returns the potentially sensitive resolved dimension value.
+    ///
+    /// Custom limiters must protect this value in their storage and logging.
     #[must_use]
     pub fn value(&self) -> &str {
         &self.value
@@ -238,6 +240,9 @@ impl RateLimitWindow {
 }
 
 /// One resolved rate-limit rule and all of its windows.
+///
+/// A limiter combines the rule ID and ordered key with each window to select
+/// independent quota state.
 pub struct RateLimitRule {
     id: RateLimitId,
     key: RateLimitKey,

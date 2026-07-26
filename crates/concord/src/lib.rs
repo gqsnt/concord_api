@@ -2,6 +2,8 @@
 //!
 //! Applications depend on this crate to declare APIs with [`api`], use the
 //! generated Rust surface, and access semantic runtime extension contracts.
+//! Ordinary default features include the bounded process-local rate-limit
+//! policy exposed as `rate_limit::LocalRateLimiter`.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -142,6 +144,11 @@ pub mod pagination {
 }
 
 /// Core rate-limit contracts and the enabled first-party implementation.
+///
+/// A declaration's lexical location selects applicability; optional ordered
+/// `by [...]` dimensions select bucket partitioning. With the `rate-limit`
+/// feature, `LocalRateLimiter` and `RetryAfterObserver` are available here and
+/// the local limiter is installed by default for generated clients.
 pub mod rate_limit {
     pub use concord_core::contracts::{BoxFuture, RateLimitErrorKind};
     pub use concord_core::rate_limit::{

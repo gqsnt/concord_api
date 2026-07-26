@@ -32,7 +32,7 @@ tokio = { workspace = true, optional = true, features = ["macros", "rt-multi-thr
 [dev-dependencies]
 concord-test-support = { path = "../concord-test-support", default-features = false, features = ["loopback"] }
 futures-core.workspace = true
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util", "time"] }
 
 [[example]]
 name = "minimal"

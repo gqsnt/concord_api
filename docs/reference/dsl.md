@@ -428,19 +428,86 @@ all-or-error `.paginate(limit)` terminal.
 
 ```rust
 rate_limit {
+    by [host, endpoint, vars.tenant, scope.region, ep.account];
     cost 2;
     100 / 1m;
-    1000 / 1h;
+    1_000 / 1h;
 }
 ```
 
-`cost` is optional and defaults to 1. It is positive and cannot exceed any
-window capacity. A rule has at least one positive window. Window order is
-preserved.
+The exact clause grammar is:
+
+```text
+rate_limit {
+    [by [DIMENSION, ...];]
+    [cost POSITIVE;]
+    WINDOW+
+}
+```
+
+`by` and `cost` may occur in either order. Each may occur at most once, and
+both must precede the first window. `by` must be nonempty, preserves source
+order, rejects duplicate dimensions, and accepts at most
+`MAX_RATE_LIMIT_KEY_PARTS` dimensions. Omitting `by` is the declaration-global
+form: all requests to which that declaration applies share one bucket. There
+is no `by global` spelling.
+
+`cost` defaults to 1. It is positive and cannot exceed any window capacity. A
+rule has at least one positive window. Window order is preserved.
 
 At most one rule exists at each client, scope, or endpoint layer. Effective
 plan order is client, outer scopes, inner scopes, then endpoint. Rules are
 additive; descendants cannot replace or disable ancestors.
+
+The declaration location and key dimensions have separate jobs:
+
+```text
+declaration location = where the rule applies
+by [...]             = how applicable requests share buckets
+```
+
+Concord never infers dimensions. Exactly these dimension forms are supported:
+
+| Dimension | Resolution |
+|---|---|
+| `host` | final logical host after all host shaping |
+| `endpoint` | stable endpoint contract ID |
+| `vars.name` | required or defaulted scalar client value |
+| `scope.name` | required or defaulted scalar visible scope value |
+| `ep.name` | required or defaulted scalar endpoint value |
+
+Lexical availability is:
+
+| Declaration owner | Available dimensions |
+|---|---|
+| client | `host`, `endpoint`, `vars.*` |
+| scope | `host`, `endpoint`, `vars.*`, visible `scope.*` |
+| endpoint | `host`, `endpoint`, `vars.*`, visible `scope.*`, `ep.*` |
+
+References are resolved at the declaration site. An inherited client or scope
+rule retains those resolved references and cannot begin using values available
+only in a descendant. Ambiguous or unavailable scope references are rejected.
+
+Value dimensions must be required or defaulted scalars. Optional values,
+vectors, optional vectors, pagination-controlled endpoint values, secrets,
+credentials, formatted expressions, and literals are rejected. Bare
+`method`, `path`, `query`, `safe_url`, and `body` dimensions are unsupported,
+as are unknown namespaces. `secret.*` and `credential.*` cannot enter a key.
+
+Only value types actually referenced by `vars.*`, `scope.*`, or `ep.*` gain a
+`Display` bound. Their `Display` output must be stable and canonical for local
+quota identity. Formatting is captured incrementally into the remaining hard
+aggregate key budget; the first excess fails with a redacted configuration
+error. `host` and `endpoint` are already canonical strings and add no
+application type bound.
+
+Bucket identity is the selected limiter object, stable generated rule ID,
+ordered resolved dimensions, and window. Dimension order is significant.
+Concrete values may be operationally sensitive. They are supplied to the
+selected limiter but do not appear in errors, `Debug`, `Display`, hooks,
+completion, endpoint descriptions, generated Rustdoc, or safe request plans.
+Generated endpoint Rustdoc lists the rule origin, stable rule ID, dimension
+names (or `declaration-global`), cost, and windows—never resolved values.
 
 Observer and concrete limiter selection are runtime policy:
 
@@ -452,9 +519,9 @@ let client = ExampleApi::builder()
     .build()?;
 ```
 
-With the façade rate-limit feature, the façade composes the generated default
-limiter. An explicitly configured limiter takes precedence. Without either,
-non-empty generated plans fail closed.
+With the façade `rate-limit` feature, the façade composes a new
+`LocalRateLimiter` into each built client. An explicitly configured limiter
+takes precedence. Without either, non-empty generated plans fail closed.
 
 ## Diagnostics
 

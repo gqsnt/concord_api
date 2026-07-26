@@ -50,10 +50,17 @@ Applications and extensions must bound their own retained message storage.
 
 For a received response, error precedence is core limiter observation, then the
 user response-head hook, then authentication challenge, status, and acquisition
-handling. A limiter observation failure is `ErrorCategory::RateLimit` with
-`RateLimitErrorKind::Observe`; an observation timeout is
-`ErrorCategory::Timeout`. Both retain the final response status for completion
-metadata without acquiring the response body.
+handling. A limiter-reported observation failure is
+`ErrorCategory::RateLimit` and retains the limiter's typed
+`RateLimitErrorKind`; an observation timeout is `ErrorCategory::Timeout`.
+Both retain the final response status for completion metadata without
+acquiring the response body.
+
+`RateLimitErrorKind::StateCapacity` means a bounded limiter could not retain
+new quota or cooldown state without discarding active history. The first-party
+`LocalRateLimiter` treats it as recoverable: it rejects that operation before
+transport, does not poison itself, does not evict active state, and leaves
+existing buckets operational.
 
 Debug/display representations are redaction-aware but are not intended as
 stable parsing formats. Treat the typed category/kind accessors as the

@@ -42,8 +42,14 @@ Primitive bytes, text, media types, streams, multipart control, response
 acquisition, records execution, pagination execution, authentication
 placement, limiter contracts, transport, errors, and completion are runtime
 kernel concerns. JSON, CSV, NDJSON, built-in pagination policies, the default
-process-local limiter, its observer, and the OAuth2 client-credentials helper
-are first-party downstream implementations.
+process-local `LocalRateLimiter`, `RetryAfterObserver`, and the OAuth2
+client-credentials helper are first-party downstream implementations.
+
+`LocalRateLimiter` is one bounded continuously refilling token-bucket policy,
+not a universal model of remote fixed/sliding windows. Its state belongs to
+one limiter object. Applications can share that object explicitly across
+clients or implement `RateLimiter` for a bounded distributed policy; neither
+the compiler nor core depends on the concrete extras implementation.
 
 That split is a proof: the first-party implementations compile entirely
 through public contracts available to any downstream crate. The declaration

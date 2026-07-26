@@ -26,25 +26,133 @@ runtime page ceiling bounds the number of retained identities; allocator and
 container overhead is not included in the byte total. Construction withholds
 the first encoded byte that would exceed the configured identity limit.
 
-Rate-limit declarations form an ordered lexical plan:
+## Applicability and bucket partitioning
+
+A rule's lexical location determines where it applies. Its optional `by`
+clause determines how applicable requests are partitioned into local buckets.
+
+For example, omission means one declaration-global bucket shared by every
+request to which that declaration applies:
 
 ```rust
 rate_limit {
-    cost 2;
-    100 / 1m;
-    1_000 / 1h;
+    1_000 / 1m;
 }
 ```
 
-Client, outer-scope, inner-scope, and endpoint rules are additive. With the
-default façade features, Concord installs the downstream local limiter
-implementation. Without a configured/default limiter, a non-empty plan fails
-closed during client construction, before a request lifecycle can begin. A
-user-supplied limiter always wins.
+This is declaration-global, not process-global: a different declaration has a
+different stable rule ID. Client, outer-scope, inner-scope, and endpoint rules
+are additive in that order. Descendants inherit applicable ancestor rules,
+but each rule retains the dimensions resolved where it was declared.
 
-Limiters and observers receive safe semantic plans, keys, and response-head
-context—not native requests, responses, or credentials. Key preparation and
-server-directed cooldowns are bounded. Exact syntax is in the
+Add only the dimensions that define the intended partition:
+
+```rust
+// The same client declaration has one bucket per endpoint contract ID.
+rate_limit {
+    by [endpoint];
+    100 / 1m;
+}
+
+// Requests are separated by the final logical host after host shaping.
+rate_limit {
+    by [host];
+    100 / 1m;
+}
+
+// A scope declaration has one bucket per required/defaulted account.
+rate_limit {
+    by [scope.account];
+    100 / 1m;
+}
+
+// An endpoint declaration has one bucket per required/defaulted channel.
+rate_limit {
+    by [ep.channel];
+    20 / 1s;
+}
+
+// Dimension order is part of the key.
+rate_limit {
+    by [host, scope.region, ep.account];
+    cost 2;
+    100 / 1m;
+}
+```
+
+Concord does not infer `method`, path, query, URL, or other dimensions.
+Supported value dimensions must be required or defaulted scalars with stable,
+canonical `Display` output. Optional values, vectors, pagination-controlled
+endpoint values, formatted expressions, secrets, and credentials are
+rejected. Only referenced value types gain a `Display` bound.
+
+A resolved bucket is identified by the selected limiter object, the generated
+stable rule ID, the ordered resolved dimensions, and the window. `host` is the
+final logical host; `endpoint` is the stable endpoint contract ID. Resolved
+values are bounded operational identifiers supplied only to the selected
+limiter. Concord does not include them in errors, `Debug`, `Display`, hooks,
+completion, endpoint descriptions, generated Rustdoc, or safe plans.
+
+## Default local policy
+
+With the default façade features, each built client receives a
+`LocalRateLimiter` from `concord-extras`. It is a continuously refilling token
+bucket for every resolved rule/window, not an exact emulation of arbitrary
+remote fixed- or sliding-window servers. A rule's cost is charged to every one
+of its windows, and admission waits for the longest applicable deficit without
+partially reserving the others.
+
+The limiter is process-local and limiter-object-local. Client clones share the
+built client's limiter object. Independently built clients receive independent
+objects unless the application supplies the same `Arc<dyn RateLimiter>` to
+both:
+
+```rust
+let limiter: std::sync::Arc<dyn concord::rate_limit::RateLimiter> =
+    std::sync::Arc::new(concord::rate_limit::LocalRateLimiter::new());
+
+let first = ExampleApi::builder()
+    .configure_runtime({
+        let limiter = std::sync::Arc::clone(&limiter);
+        move |runtime| runtime.rate_limiter(limiter)
+    })
+    .build()?;
+
+let second = ExampleApi::builder()
+    .configure_runtime(move |runtime| runtime.rate_limiter(limiter))
+    .build()?;
+```
+
+Quota and cooldown maps are finite. When a request needs new state that does
+not fit, acquisition fails before transport with recoverable
+`RateLimitErrorKind::StateCapacity`. Existing buckets remain operational; the
+limiter is not poisoned. Quota entries are eligible for pruning only when
+fully replenished and idle for the configured TTL. Expired cooldowns may be
+pruned, while active quota history and unexpired cooldowns are never evicted.
+Applications can reduce key cardinality, select a larger finite capacity, wait
+for safely prunable state, or install a custom distributed limiter.
+
+```rust
+if error.rate_limit_kind()
+    == Some(concord::rate_limit::RateLimitErrorKind::StateCapacity)
+{
+    // Apply bounded backoff or capacity/cardinality policy. Existing keys
+    // remain usable; an immediate retry of the new key may still be full.
+}
+```
+
+`RetryAfterObserver` is the built-in final-429 observer. Calling
+`LocalRateLimiter::observer(...)` replaces it. A custom observer must delegate
+to `RetryAfterObserver` if built-in bounded `Retry-After` handling should
+remain.
+
+Without a configured or feature-provided limiter, a non-empty plan fails
+closed during client construction, before a request lifecycle can begin. An
+explicit user-supplied limiter always wins.
+
+Limiters and observers receive bounded semantic plans and sanitized
+response-head context—not native requests, responses, or credentials. Key
+preparation and server-directed cooldowns are bounded. Exact syntax is in the
 [DSL reference](../reference/dsl.md#rate-limits); defaults are in
 [Limits](../reference/limits.md).
 
@@ -66,7 +174,8 @@ state and its release protocol itself.
 The importable
 [pagination modules](../../crates/concord-examples/src/pagination/mod.rs) and
 [rate-limit modules](../../crates/concord-examples/src/rate_limiting/mod.rs)
-cover built-in and custom contracts. The
+cover global, host, endpoint, scope-value, endpoint-value, composite, shared,
+capacity-pressure, observer, and custom-limiter contracts. The
 [local runtime test](../../crates/concord-examples/tests/local_runtime.rs)
 executes deterministic pages and limits; the
 [construction test](../../crates/concord-examples/tests/construction.rs)
