@@ -44,8 +44,15 @@ msrv:
 fixtures:
     cargo run --locked -p concord-xtask -- fixtures --locked
 
-docs:
+site:
     cargo run --locked -p concord-xtask -- docs --locked
+    mdbook build
+
+site-serve:
+    cargo run --locked -p concord-xtask -- docs --locked
+    mdbook serve
+
+docs: site
     cargo test --workspace --doc --all-features --locked
     cargo rustdoc -p concord-core --no-default-features --locked -- -D warnings
     cargo rustdoc -p concord-extras --no-default-features --locked -- -D warnings

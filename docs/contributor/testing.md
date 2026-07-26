@@ -24,7 +24,9 @@ just test           # default and all-feature Rust tests
 just ui             # stable exact façade/core compiler contracts
 just msrv           # Rust 1.85 product libraries and semantic JSON diagnostics
 just fixtures       # isolated Cargo-graph contracts
-just docs           # generated tables, links, doctests, and warning-denied rustdoc
+just site           # validate and build the complete mdBook site
+just site-serve     # validate once and serve the site with file watching
+just docs           # site, doctests, and warning-denied rustdoc
 just package        # product archives and extracted-manifest verification
 just deny           # dependency and license policy
 just workflow       # actionlint for the GitHub Actions workflow
@@ -49,7 +51,9 @@ owner is `cargo run --locked -p concord-xtask -- source-archive`; it creates
 xtask commands serially on Windows.
 
 Clippy, cargo-deny, and explicitly selected toolchains must be installed for
-their recipes. Never report a missing tool/component as a passing check.
+their recipes. Documentation builds require mdBook 0.5.4, installed with
+`cargo install mdbook --version 0.5.4 --locked`. Never report a missing
+tool/component as a passing check.
 
 ## Executable CI
 

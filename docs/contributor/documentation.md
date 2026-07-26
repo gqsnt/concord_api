@@ -1,5 +1,18 @@
 # Documentation ownership
 
+The complete site is an mdBook rooted at `book.toml`, with Markdown source in
+`docs/` and rendered output in `target/concord-docs/`. Install the pinned
+generator before building it:
+
+```text
+cargo install mdbook --version 0.5.4 --locked
+```
+
+Run `just site` to validate generated fragments, links, navigation, and
+includes before building HTML. Run `just site-serve` for a local live preview.
+Neither command rewrites tracked fragments; use the explicit `--write` command
+below when their canonical inputs change.
+
 The manual follows the product transformation:
 
 1. represent a remote contract;

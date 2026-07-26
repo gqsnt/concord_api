@@ -1,0 +1,38 @@
+:root {
+    --content-max-width: 52rem;
+}
+
+.content main {
+    max-width: var(--content-max-width);
+}
+
+main h2,
+main h3,
+main h4 {
+    margin-top: 2rem;
+}
+
+main pre {
+    line-height: 1.5;
+}
+
+main .table-wrapper {
+    margin-block: 1.25rem;
+    overflow-x: auto;
+}
+
+main table {
+    width: 100%;
+}
+
+main blockquote {
+    border-inline-start: 0.25rem solid var(--quote-border, currentColor);
+    margin-inline: 0;
+    padding: 0.25rem 1rem;
+}
+
+@media (max-width: 700px) {
+    main table {
+        min-width: 36rem;
+    }
+}

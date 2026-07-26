@@ -1,0 +1,29 @@
+[book]
+title = "Concord"
+authors = ["Concord contributors"]
+description = "Typed, managed HTTP API clients generated from explicit Rust contracts."
+language = "en"
+src = "docs"
+
+[rust]
+edition = "2024"
+
+[build]
+build-dir = "target/concord-docs"
+create-missing = false
+extra-watch-dirs = ["crates/concord-examples/src"]
+
+[output.html]
+additional-css = ["docs/theme/concord.css"]
+
+[output.html.fold]
+enable = true
+level = 1
+
+[output.html.search]
+enable = true
+limit-results = 30
+use-boolean-and = true
+boost-title = 2
+boost-hierarchy = 1
+boost-paragraph = 1

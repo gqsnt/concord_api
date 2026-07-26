@@ -35,6 +35,15 @@ const GENERATED_FEATURES_START: &str = "<!-- BEGIN GENERATED FEATURES -->";
 const GENERATED_FEATURES_END: &str = "<!-- END GENERATED FEATURES -->";
 const GENERATED_LIMITS_START: &str = "<!-- BEGIN GENERATED LIMITS -->";
 const GENERATED_LIMITS_END: &str = "<!-- END GENERATED LIMITS -->";
+// D11 enables the final all-pages, outside-link, and wording gates after the
+// phased migration has removed the old pages.
+const STRICT_SITE_INVENTORY: bool = false;
+const USER_PAGE_DIRECTORIES: &[&str] = &["start", "guide", "features", "recipes", "extending"];
+const TEMPORARY_EXECUTION_AIDS: &[&str] = &[
+    "CONCORD_DOCUMENTATION_SITE_AGENT_PROMPT.md",
+    "CONCORD_DOCUMENTATION_SITE_IMPLEMENTATION_PLAN.md",
+    "CONCORD_DOCUMENTATION_MIGRATION_CHECKLIST.md",
+];
 
 const FEATURES: &[(&str, &str)] = &[
     (
@@ -90,7 +99,12 @@ pub(crate) fn run(root: &Path, write: bool) -> Result<(), String> {
         &generated_limit_table(),
         write,
     )?;
-    check_markdown_links(root)?;
+    check_summary(root, STRICT_SITE_INVENTORY)?;
+    check_includes(root)?;
+    check_markdown_links(root, STRICT_SITE_INVENTORY)?;
+    if STRICT_SITE_INVENTORY {
+        check_user_page_wording(root)?;
+    }
     println!("documentation checks passed");
     Ok(())
 }
@@ -446,7 +460,7 @@ fn synchronize_generated_section(
         Ok(())
     } else {
         Err(format!(
-            "{} is stale; run `cargo run --locked -p concord-xtask -- docs --write`",
+            "{} is stale; run `cargo run --locked -p concord-xtask -- docs --write --locked`",
             path.display()
         ))
     }
@@ -475,7 +489,336 @@ fn replace_section(
     Ok(output)
 }
 
-fn check_markdown_links(root: &Path) -> Result<(), String> {
+fn check_summary(root: &Path, require_all_pages: bool) -> Result<(), String> {
+    let docs = root.join("docs");
+    let summary = docs.join("SUMMARY.md");
+    let canonical_docs = canonicalize(&docs)?;
+    let parsed = parse_markdown(&summary)?;
+    let mut listed = BTreeSet::<PathBuf>::new();
+
+    for target in parsed.links {
+        if is_external_link(&target) {
+            return Err(format!(
+                "{} contains external chapter target `{target}`",
+                summary.display()
+            ));
+        }
+        let file_target = target
+            .split_once('#')
+            .map_or(target.as_str(), |(file, _)| file);
+        if file_target.is_empty() {
+            return Err(format!(
+                "{} contains a chapter link without a file target",
+                summary.display()
+            ));
+        }
+        let resolved = summary
+            .parent()
+            .expect("SUMMARY.md has a parent directory")
+            .join(file_target);
+        if !resolved.exists() {
+            return Err(format!(
+                "{} links to missing SUMMARY target `{file_target}`",
+                summary.display()
+            ));
+        }
+        let canonical_target = canonicalize(&resolved)?;
+        if !canonical_target.starts_with(&canonical_docs) {
+            return Err(format!(
+                "{} target `{file_target}` escapes docs/",
+                summary.display()
+            ));
+        }
+        if canonical_target.extension() != Some(OsStr::new("md")) {
+            return Err(format!(
+                "{} target `{file_target}` is not a Markdown page",
+                summary.display()
+            ));
+        }
+        if canonical_target == canonicalize(&summary)? {
+            return Err(format!(
+                "{} must not list itself as a chapter",
+                summary.display()
+            ));
+        }
+        if !listed.insert(canonical_target) {
+            return Err(format!(
+                "{} lists `{file_target}` more than once",
+                summary.display()
+            ));
+        }
+    }
+
+    if require_all_pages {
+        let mut expected = BTreeSet::<PathBuf>::new();
+        for path in markdown_files(&docs)? {
+            if path != summary {
+                expected.insert(canonicalize(&path)?);
+            }
+        }
+        if listed != expected {
+            let missing = expected
+                .difference(&listed)
+                .map(|path| display_relative(&canonical_docs, path))
+                .collect::<Vec<_>>();
+            let unexpected = listed
+                .difference(&expected)
+                .map(|path| display_relative(&canonical_docs, path))
+                .collect::<Vec<_>>();
+            return Err(format!(
+                "{} does not match the docs Markdown inventory; missing {missing:?}, unexpected {unexpected:?}",
+                summary.display()
+            ));
+        }
+    }
+
+    println!(
+        "SUMMARY checked: {} unique chapter targets{}",
+        listed.len(),
+        if require_all_pages {
+            ", complete inventory required"
+        } else {
+            ""
+        }
+    );
+    Ok(())
+}
+
+fn check_includes(root: &Path) -> Result<(), String> {
+    let canonical_root = canonicalize(root)?;
+    let mut anchors = BTreeMap::<PathBuf, BTreeMap<String, SourceAnchor>>::new();
+    let mut include_count = 0_usize;
+    for markdown in markdown_files(&root.join("docs"))? {
+        let text = read(&markdown)?;
+        for (line, specification) in include_directives(&markdown, &text)? {
+            let (target, requested_anchor) = split_include_specification(&specification);
+            let resolved = markdown
+                .parent()
+                .unwrap_or(root)
+                .join(target.replace('/', std::path::MAIN_SEPARATOR_STR));
+            if !resolved.exists() {
+                return Err(format!(
+                    "{}:{line} includes missing `{target}`",
+                    markdown.display()
+                ));
+            }
+            let canonical_target = canonicalize(&resolved)?;
+            if !canonical_target.starts_with(&canonical_root) {
+                return Err(format!(
+                    "{}:{line} include `{target}` escapes the repository root",
+                    markdown.display()
+                ));
+            }
+            reject_forbidden_include_target(
+                &canonical_root,
+                &canonical_target,
+                &markdown,
+                line,
+                target,
+            )?;
+            let source_anchors = match anchors.get(&canonical_target) {
+                Some(source_anchors) => source_anchors,
+                None => {
+                    let parsed = parse_source_anchors(&canonical_target)?;
+                    anchors.insert(canonical_target.clone(), parsed);
+                    anchors
+                        .get(&canonical_target)
+                        .expect("inserted source anchors are available")
+                }
+            };
+            if let Some(anchor) = requested_anchor {
+                let Some(source_anchor) = source_anchors.get(anchor) else {
+                    return Err(format!(
+                        "{}:{line} includes missing anchor `{anchor}` from {}",
+                        markdown.display(),
+                        canonical_target.display()
+                    ));
+                };
+                if source_anchor.start >= source_anchor.end {
+                    return Err(format!(
+                        "{}:{line} includes reversed anchor `{anchor}` from {}",
+                        markdown.display(),
+                        canonical_target.display()
+                    ));
+                }
+            }
+            include_count += 1;
+        }
+    }
+    println!("mdBook includes checked: {include_count} directives");
+    Ok(())
+}
+
+fn include_directives(path: &Path, text: &str) -> Result<Vec<(usize, String)>, String> {
+    let mut directives = Vec::new();
+    for marker in ["{{#include ", "{{#rustdoc_include "] {
+        let mut cursor = 0_usize;
+        while let Some(relative_start) = text[cursor..].find(marker) {
+            let start = cursor + relative_start;
+            let body_start = start + marker.len();
+            let Some(relative_end) = text[body_start..].find("}}") else {
+                let line = text[..start].bytes().filter(|byte| *byte == b'\n').count() + 1;
+                return Err(format!(
+                    "{}:{line} has an unterminated mdBook include",
+                    path.display()
+                ));
+            };
+            let end = body_start + relative_end;
+            let specification = text[body_start..end].trim();
+            let line = text[..start].bytes().filter(|byte| *byte == b'\n').count() + 1;
+            if specification.is_empty() {
+                return Err(format!(
+                    "{}:{line} has an empty mdBook include",
+                    path.display()
+                ));
+            }
+            if specification.chars().any(char::is_whitespace) {
+                return Err(format!(
+                    "{}:{line} include `{specification}` contains unsupported whitespace",
+                    path.display()
+                ));
+            }
+            directives.push((line, specification.to_owned()));
+            cursor = end + 2;
+        }
+    }
+    directives.sort_by_key(|(line, _)| *line);
+    Ok(directives)
+}
+
+fn split_include_specification(specification: &str) -> (&str, Option<&str>) {
+    let Some((target, suffix)) = specification.rsplit_once(':') else {
+        return (specification, None);
+    };
+    let mut characters = suffix.chars();
+    let valid_start = characters
+        .next()
+        .is_some_and(|character| character.is_ascii_alphabetic() || character == '_');
+    let valid_rest = characters
+        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'));
+    if valid_start && valid_rest && !target.is_empty() {
+        (target, Some(suffix))
+    } else {
+        (specification, None)
+    }
+}
+
+fn reject_forbidden_include_target(
+    canonical_root: &Path,
+    target: &Path,
+    markdown: &Path,
+    line: usize,
+    written_target: &str,
+) -> Result<(), String> {
+    let relative = target
+        .strip_prefix(canonical_root)
+        .expect("include target was checked inside root");
+    if relative.components().any(|component| {
+        let value = component.as_os_str();
+        value == OsStr::new(".git") || value == OsStr::new("target")
+    }) {
+        return Err(format!(
+            "{}:{line} include `{written_target}` targets a forbidden repository directory",
+            markdown.display()
+        ));
+    }
+    if target.file_name().is_some_and(|name| {
+        TEMPORARY_EXECUTION_AIDS
+            .iter()
+            .any(|forbidden| name == OsStr::new(forbidden))
+    }) {
+        return Err(format!(
+            "{}:{line} include `{written_target}` targets a temporary execution aid",
+            markdown.display()
+        ));
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct SourceAnchor {
+    start: usize,
+    end: usize,
+}
+
+#[derive(Default)]
+struct SourceAnchorLines {
+    starts: Vec<usize>,
+    ends: Vec<usize>,
+}
+
+fn parse_source_anchors(path: &Path) -> Result<BTreeMap<String, SourceAnchor>, String> {
+    let text = read(path)?;
+    let mut markers = BTreeMap::<String, SourceAnchorLines>::new();
+    for (index, line) in text.lines().enumerate() {
+        let line_number = index + 1;
+        if let Some(name) = source_anchor_name(line, "ANCHOR_END:")? {
+            markers.entry(name).or_default().ends.push(line_number);
+        } else if let Some(name) = source_anchor_name(line, "ANCHOR:")? {
+            markers.entry(name).or_default().starts.push(line_number);
+        }
+    }
+
+    let mut anchors = BTreeMap::new();
+    for (name, lines) in markers {
+        if lines.starts.len() != 1 || lines.ends.len() != 1 {
+            return Err(format!(
+                "{} anchor `{name}` requires exactly one start and one end; starts {:?}, ends {:?}",
+                path.display(),
+                lines.starts,
+                lines.ends
+            ));
+        }
+        anchors.insert(
+            name,
+            SourceAnchor {
+                start: lines.starts[0],
+                end: lines.ends[0],
+            },
+        );
+    }
+    Ok(anchors)
+}
+
+fn source_anchor_name(line: &str, marker: &str) -> Result<Option<String>, String> {
+    let Some(offset) = line.find(marker) else {
+        return Ok(None);
+    };
+    let remainder = line[offset + marker.len()..].trim();
+    let name = remainder
+        .split_whitespace()
+        .next()
+        .ok_or_else(|| format!("empty `{marker}` marker"))?;
+    if name
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
+    {
+        Ok(Some(name.to_owned()))
+    } else {
+        Err(format!("invalid mdBook anchor name `{name}`"))
+    }
+}
+
+fn check_user_page_wording(root: &Path) -> Result<(), String> {
+    for directory in USER_PAGE_DIRECTORIES {
+        let path = root.join("docs").join(directory);
+        if !path.exists() {
+            continue;
+        }
+        for markdown in markdown_files(&path)? {
+            if read(&markdown)?.contains("Running proof") {
+                return Err(format!(
+                    "{} contains forbidden user-page wording `Running proof`",
+                    markdown.display()
+                ));
+            }
+        }
+    }
+    println!("user-page wording checked");
+    Ok(())
+}
+
+fn check_markdown_links(root: &Path, reject_outside_docs: bool) -> Result<(), String> {
     let mut paths = vec![root.join("README.md")];
     paths.extend(markdown_files(&root.join("docs"))?);
     let mut parsed = BTreeMap::<PathBuf, ParsedMarkdown>::new();
@@ -493,7 +836,7 @@ fn check_markdown_links(root: &Path) -> Result<(), String> {
             .links
             .clone();
         for target in links {
-            if target.contains("://") || target.starts_with("mailto:") {
+            if is_external_link(&target) {
                 external_urls += 1;
                 continue;
             }
@@ -512,6 +855,16 @@ fn check_markdown_links(root: &Path) -> Result<(), String> {
             if !resolved.exists() {
                 return Err(format!(
                     "{} links to missing `{file_target}`",
+                    path.display()
+                ));
+            }
+            let resolved = canonicalize(&resolved)?;
+            if reject_outside_docs
+                && canonicalize(&path)?.starts_with(canonicalize(&root.join("docs"))?)
+                && !resolved.starts_with(canonicalize(&root.join("docs"))?)
+            {
+                return Err(format!(
+                    "{} links outside docs/ to `{file_target}`",
                     path.display()
                 ));
             }
@@ -545,6 +898,21 @@ fn check_markdown_links(root: &Path) -> Result<(), String> {
         "markdown links checked: {local_files} local file links, {local_anchors} local anchors; {external_urls} external URLs were syntax-counted but not fetched"
     );
     Ok(())
+}
+
+fn is_external_link(target: &str) -> bool {
+    target.contains("://") || target.starts_with("mailto:")
+}
+
+fn canonicalize(path: &Path) -> Result<PathBuf, String> {
+    fs::canonicalize(path).map_err(|error| format!("{}: {error}", path.display()))
+}
+
+fn display_relative(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .display()
+        .to_string()
 }
 
 #[derive(Default)]
@@ -666,7 +1034,55 @@ fn read(path: &Path) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{github_heading_anchor, replace_section};
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::{
+        check_includes, check_markdown_links, check_summary, github_heading_anchor,
+        replace_section, synchronize_generated_section,
+    };
+
+    static NEXT_TEMPORARY_ROOT: AtomicUsize = AtomicUsize::new(0);
+
+    struct TemporaryRoot {
+        path: PathBuf,
+    }
+
+    impl TemporaryRoot {
+        fn new() -> Self {
+            let sequence = NEXT_TEMPORARY_ROOT.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "concord-xtask-docs-{}-{sequence}",
+                std::process::id()
+            ));
+            fs::create_dir(&path).expect("temporary root");
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+
+        fn write(&self, relative: &str, contents: &str) {
+            let path = self.path.join(relative);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).expect("temporary parent");
+            }
+            fs::write(path, contents).expect("temporary file");
+        }
+
+        fn outside_path(&self) -> PathBuf {
+            self.path.with_extension("outside.rs")
+        }
+    }
+
+    impl Drop for TemporaryRoot {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(self.outside_path());
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
 
     #[test]
     fn generated_sections_replace_only_owned_content() {
@@ -685,5 +1101,157 @@ mod tests {
             github_heading_anchor("Public API: `Request<T>`"),
             "public-api-requestt"
         );
+    }
+
+    #[test]
+    fn summary_rejects_duplicate_page() {
+        let root = TemporaryRoot::new();
+        root.write("docs/page.md", "# Page\n");
+        root.write(
+            "docs/SUMMARY.md",
+            "# Summary\n\n- [Page](page.md)\n- [Again](page.md)\n",
+        );
+        let error = check_summary(root.path(), false).expect_err("duplicate must fail");
+        assert!(error.contains("more than once"), "{error}");
+    }
+
+    #[test]
+    fn summary_rejects_missing_target() {
+        let root = TemporaryRoot::new();
+        root.write("docs/SUMMARY.md", "# Summary\n\n- [Missing](missing.md)\n");
+        let error = check_summary(root.path(), false).expect_err("missing target must fail");
+        assert!(error.contains("missing SUMMARY target"), "{error}");
+    }
+
+    #[test]
+    fn include_target_and_named_anchor_are_validated() {
+        let root = TemporaryRoot::new();
+        root.write(
+            "example.rs",
+            "// ANCHOR: sample\nlet value = 1;\n// ANCHOR_END: sample\n",
+        );
+        root.write(
+            "docs/page.md",
+            "# Page\n\n```rust,ignore\n{{#include ../example.rs:sample}}\n```\n",
+        );
+        check_includes(root.path()).expect("valid include");
+    }
+
+    #[test]
+    fn include_rejects_target_outside_repository() {
+        let root = TemporaryRoot::new();
+        fs::write(
+            root.outside_path(),
+            "// ANCHOR: sample\nlet value = 1;\n// ANCHOR_END: sample\n",
+        )
+        .expect("outside source");
+        let outside_name = root
+            .outside_path()
+            .file_name()
+            .expect("outside filename")
+            .to_string_lossy()
+            .into_owned();
+        root.write(
+            "docs/page.md",
+            &format!(
+                "# Page\n\n```rust,ignore\n{{{{#include ../../{outside_name}:sample}}}}\n```\n"
+            ),
+        );
+        let error = check_includes(root.path()).expect_err("escaping include must fail");
+        assert!(error.contains("escapes the repository root"), "{error}");
+    }
+
+    #[test]
+    fn include_rejects_missing_anchor() {
+        let root = TemporaryRoot::new();
+        root.write(
+            "example.rs",
+            "// ANCHOR: other\nlet value = 1;\n// ANCHOR_END: other\n",
+        );
+        root.write(
+            "docs/page.md",
+            "# Page\n\n{{#include ../example.rs:missing}}\n",
+        );
+        let error = check_includes(root.path()).expect_err("missing anchor must fail");
+        assert!(error.contains("missing anchor `missing`"), "{error}");
+    }
+
+    #[test]
+    fn include_rejects_duplicate_anchor() {
+        let root = TemporaryRoot::new();
+        root.write(
+            "example.rs",
+            "// ANCHOR: sample\n// ANCHOR: sample\n// ANCHOR_END: sample\n",
+        );
+        root.write(
+            "docs/page.md",
+            "# Page\n\n{{#include ../example.rs:sample}}\n",
+        );
+        let error = check_includes(root.path()).expect_err("duplicate anchor must fail");
+        assert!(error.contains("exactly one start and one end"), "{error}");
+    }
+
+    #[test]
+    fn include_rejects_reversed_anchor() {
+        let root = TemporaryRoot::new();
+        root.write(
+            "example.rs",
+            "// ANCHOR_END: sample\nlet value = 1;\n// ANCHOR: sample\n",
+        );
+        root.write(
+            "docs/page.md",
+            "# Page\n\n{{#include ../example.rs:sample}}\n",
+        );
+        let error = check_includes(root.path()).expect_err("reversed anchor must fail");
+        assert!(error.contains("reversed anchor `sample`"), "{error}");
+    }
+
+    #[test]
+    fn strict_link_check_rejects_outside_docs() {
+        let root = TemporaryRoot::new();
+        root.write("README.md", "# Repository\n");
+        root.write(
+            "docs/page.md",
+            "# Page\n\n[Repository readme](../README.md)\n",
+        );
+        let error =
+            check_markdown_links(root.path(), true).expect_err("outside-doc link must fail");
+        assert!(error.contains("links outside docs/"), "{error}");
+    }
+
+    #[test]
+    fn strict_link_check_allows_internal_document_anchor() {
+        let root = TemporaryRoot::new();
+        root.write("README.md", "# Repository\n");
+        root.write(
+            "docs/page.md",
+            "# Page\n\n[Target](target.md#exact-section)\n",
+        );
+        root.write("docs/target.md", "# Exact section\n");
+        check_markdown_links(root.path(), true).expect("internal documentation link");
+    }
+
+    #[test]
+    fn generated_fragment_synchronization_detects_and_updates_stale_content() {
+        let root = TemporaryRoot::new();
+        root.write(
+            "fragment.md",
+            "before\n<!-- start -->\nstale\n<!-- end -->\nafter\n",
+        );
+        let path = root.path().join("fragment.md");
+        let error = synchronize_generated_section(
+            &path,
+            "<!-- start -->",
+            "<!-- end -->",
+            "current\n",
+            false,
+        )
+        .expect_err("stale fragment must fail");
+        assert!(error.contains("is stale"), "{error}");
+
+        synchronize_generated_section(&path, "<!-- start -->", "<!-- end -->", "current\n", true)
+            .expect("write synchronized fragment");
+        synchronize_generated_section(&path, "<!-- start -->", "<!-- end -->", "current\n", false)
+            .expect("synchronized fragment");
     }
 }

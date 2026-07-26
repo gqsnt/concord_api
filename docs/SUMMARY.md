@@ -1,37 +1,47 @@
-# Documentation navigation
+# Summary
 
 - [Manual home](README.md)
-- Guides
-  - [Represent an API](guide/01-represent-an-api.md)
-  - [Understand generated Rust](guide/02-understand-generated-rust.md)
-  - [Build a client and make requests](guide/03-build-a-client-and-make-requests.md)
-  - [Authentication](guide/04-authentication.md)
-  - [Bodies, responses, and streams](guide/05-bodies-responses-and-streams.md)
-  - [Pagination and rate limits](guide/06-pagination-and-rate-limits.md)
-  - [Explicit and runtime endpoints](guide/07-explicit-and-runtime-endpoints.md)
-- Concepts
-  - [Contract model](concepts/contract-model.md)
-  - [Managed lifecycle](concepts/managed-lifecycle.md)
-  - [Finite behavior](concepts/finite-behavior.md)
-  - [Security and redaction](concepts/security-and-redaction.md)
-  - [Extension model](concepts/extension-model.md)
-- Recipes
-  - [Regional APIs](recipes/regional-apis.md)
-  - [Testing API clients](recipes/testing-api-clients.md)
-  - [Production configuration](recipes/production-configuration.md)
-  - [Riot API narrative](recipes/riot.md)
-- Reference
-  - [DSL](reference/dsl.md)
-  - [Generated API](reference/generated-api.md)
-  - [Features](reference/features.md)
-  - [Limits](reference/limits.md)
-  - [Errors](reference/errors.md)
-  - [Compatibility](reference/compatibility.md)
-  - [Dangerous capabilities](reference/dangerous.md)
-  - [Unsupported forms](reference/unsupported.md)
-- Contributors
-  - [Architecture](contributor/architecture.md)
-  - [Macro pipeline](contributor/macro-pipeline.md)
-  - [Testing](contributor/testing.md)
-  - [Documentation](contributor/documentation.md)
-  - [Release](contributor/release.md)
+
+# Guides
+
+- [Represent an API](guide/01-represent-an-api.md)
+- [Understand generated Rust](guide/02-understand-generated-rust.md)
+- [Build a client and make requests](guide/03-build-a-client-and-make-requests.md)
+- [Authentication](guide/04-authentication.md)
+- [Bodies, responses, and streams](guide/05-bodies-responses-and-streams.md)
+- [Pagination and rate limits](guide/06-pagination-and-rate-limits.md)
+- [Explicit and runtime endpoints](guide/07-explicit-and-runtime-endpoints.md)
+
+# Concepts
+
+- [Contract model](concepts/contract-model.md)
+- [Managed lifecycle](concepts/managed-lifecycle.md)
+- [Finite behavior](concepts/finite-behavior.md)
+- [Security and redaction](concepts/security-and-redaction.md)
+- [Extension model](concepts/extension-model.md)
+
+# Recipes
+
+- [Regional APIs](recipes/regional-apis.md)
+- [Testing API clients](recipes/testing-api-clients.md)
+- [Production configuration](recipes/production-configuration.md)
+- [Riot API narrative](recipes/riot.md)
+
+# Reference
+
+- [DSL](reference/dsl.md)
+- [Generated API](reference/generated-api.md)
+- [Features](reference/features.md)
+- [Limits](reference/limits.md)
+- [Errors](reference/errors.md)
+- [Compatibility](reference/compatibility.md)
+- [Dangerous capabilities](reference/dangerous.md)
+- [Unsupported forms](reference/unsupported.md)
+
+# Contributors
+
+- [Architecture](contributor/architecture.md)
+- [Macro pipeline](contributor/macro-pipeline.md)
+- [Testing](contributor/testing.md)
+- [Documentation](contributor/documentation.md)
+- [Release](contributor/release.md)
