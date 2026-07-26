@@ -2,7 +2,7 @@
 //!
 //! Required feature: `rate-limit`. Mode: construction and deterministic local
 //! execution. Documentation owner:
-//! `docs/guide/06-pagination-and-rate-limits.md`. Proving tests:
+//! `docs/features/rate-limiting.md`. Proving tests:
 //! `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use std::error::Error;
@@ -11,6 +11,7 @@ use std::sync::Arc;
 use concord::api;
 use concord::rate_limit::{LocalRateLimiter, RateLimiter};
 
+// ANCHOR: partitioning_contract
 api! {
     client PartitioningApi {
         base "http://partitioning.example.test/";
@@ -46,6 +47,7 @@ api! {
         }
     }
 }
+// ANCHOR_END: partitioning_contract
 
 api! {
     client ResourceStateApi {
@@ -73,6 +75,7 @@ api! {
 ///
 /// Ordinary clones of either built client also share its immutable runtime
 /// snapshot and limiter object.
+// ANCHOR: shared_limiter
 pub fn construct() -> Result<(), Box<dyn Error>> {
     let partitioned = PartitioningApi::builder().build()?;
     let account = partitioned
@@ -103,6 +106,7 @@ pub fn construct() -> Result<(), Box<dyn Error>> {
     let _: resource_state_api::ChannelRequest = high_cardinality.channel("first-key".to_owned());
     Ok(())
 }
+// ANCHOR_END: shared_limiter
 
 /// Returns whether an execution failure is recoverable local-state pressure.
 #[must_use]

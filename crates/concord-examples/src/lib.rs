@@ -20,6 +20,7 @@ pub mod contracts;
 pub mod getting_started;
 pub mod request_response;
 pub mod runtime_endpoints;
+pub mod runtime_policy;
 
 #[cfg(feature = "oauth2-client")]
 pub mod authentication;

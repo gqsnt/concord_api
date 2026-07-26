@@ -28,9 +28,12 @@
 - [Request bodies and buffered responses](features/bodies-and-buffered-responses.md)
 - [Streaming responses](features/streaming.md)
 - [Record streams](features/records.md)
-- [Pagination and rate limits](guide/06-pagination-and-rate-limits.md)
+- [Pagination](features/pagination.md)
+- [Rate limiting](features/rate-limiting.md)
 - [Multipart uploads](features/multipart.md)
-- [Explicit and runtime endpoints](guide/07-explicit-and-runtime-endpoints.md)
+- [Hooks and observability](features/hooks-and-observability.md)
+- [Runtime-defined endpoints](features/runtime-endpoints.md)
+- [Production HTTP](features/production-http.md)
 
 # Concepts
 

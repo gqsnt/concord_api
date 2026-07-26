@@ -34,3 +34,5 @@ boost-paragraph = 1
 "/guide/03-build-a-client-and-make-requests.html" = "/start/first-request.html"
 "/guide/04-authentication.html" = "/features/authentication.html"
 "/guide/05-bodies-responses-and-streams.html" = "/features/bodies-and-buffered-responses.html"
+"/guide/06-pagination-and-rate-limits.html" = "/features/pagination.html"
+"/guide/07-explicit-and-runtime-endpoints.html" = "/features/runtime-endpoints.html"

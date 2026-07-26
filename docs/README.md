@@ -66,8 +66,10 @@ this site teaches how the pieces fit together and which path to choose.
 | add authentication | [Authentication](features/authentication.md) |
 | send or decode buffered bodies | [Request bodies and buffered responses](features/bodies-and-buffered-responses.md) |
 | consume streaming data | [Streaming responses](features/streaming.md) |
-| paginate or apply rate limits | [Pagination and rate limits](guide/06-pagination-and-rate-limits.md) |
-| choose request shape at runtime | [Explicit and runtime endpoints](guide/07-explicit-and-runtime-endpoints.md) |
+| collect sequential pages | [Pagination](features/pagination.md) |
+| apply remote quota policy | [Rate limiting](features/rate-limiting.md) |
+| choose request shape at runtime | [Runtime-defined endpoints](features/runtime-endpoints.md) |
+| configure deployment transport | [Production HTTP](features/production-http.md) |
 | compose a realistic client | [Regional API recipe](recipes/regional-apis.md) |
 | implement a semantic extension | [Extension model](concepts/extension-model.md) |
 | inspect exact features and limits | [Feature reference](reference/features.md) and [limits](reference/limits.md) |

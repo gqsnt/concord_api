@@ -17,11 +17,11 @@ exhaustive tables.
 | decode JSON or buffered bytes | [Request bodies and buffered responses](../features/bodies-and-buffered-responses.md) |
 | stream response bytes | [Streaming responses](../features/streaming.md) |
 | stream CSV or NDJSON records | [Record streams](../features/records.md) |
-| fetch sequential pages | [Pagination and rate limits](../guide/06-pagination-and-rate-limits.md) |
-| partition and enforce local rate policy | [Pagination and rate limits](../guide/06-pagination-and-rate-limits.md) |
+| fetch sequential pages | [Pagination](../features/pagination.md) |
+| partition and enforce local rate policy | [Rate limiting](../features/rate-limiting.md) |
 | upload multipart text, bytes, or files | [Multipart uploads](../features/multipart.md) |
-| configure TLS, proxies, certificates, and finite limits | [Production configuration](../recipes/production-configuration.md) |
-| choose public endpoint shape at runtime | [Explicit and runtime endpoints](../guide/07-explicit-and-runtime-endpoints.md) |
+| configure TLS, proxies, certificates, and finite limits | [Production HTTP](../features/production-http.md) |
+| choose public endpoint shape at runtime | [Runtime-defined endpoints](../features/runtime-endpoints.md) |
 | implement a custom body, decoder, provider, controller, limiter, or hook | [Extension model](../concepts/extension-model.md) |
 | look up exact declaration syntax | [DSL reference](../reference/dsl.md) |
 | understand compiler and runtime internals | [Contributor architecture](../contributor/architecture.md) |

@@ -1,7 +1,7 @@
 //! A response observer that delegates bounded `Retry-After` interpretation.
 //!
 //! Required feature: `rate-limit`. Mode: construction-only.
-//! Documentation owner: `docs/guide/06-pagination-and-rate-limits.md`.
+//! Documentation owner: `docs/features/rate-limiting.md`.
 //! Proving test: `tests/construction.rs`.
 
 use concord::rate_limit::{Cooldown, RateLimitObserver, RateLimitResponseHead, RetryAfterObserver};

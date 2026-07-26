@@ -1,7 +1,7 @@
 //! The extras cursor controller derives continuation from the decoded page.
 //!
-//! Required feature: `json`. Mode: construction and deterministic local proof.
-//! Documentation owner: `docs/guide/06-pagination-and-rate-limits.md`.
+//! Required feature: `json`. Mode: construction and deterministic local execution.
+//! Documentation owner: `docs/features/pagination.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use concord::PageLimit;

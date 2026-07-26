@@ -2,7 +2,7 @@
 //!
 //! Required feature: `rate-limit`. Mode: deterministic local
 //! execution. Documentation owner:
-//! `docs/guide/06-pagination-and-rate-limits.md`.
+//! `docs/features/rate-limiting.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use std::sync::Arc;
@@ -10,6 +10,7 @@ use std::sync::Arc;
 use concord::api;
 use concord::rate_limit::LocalRateLimiter;
 
+// ANCHOR: rate_limit_contract
 api! {
     client RateLimitApi {
         base "http://rate-limit.example.test/";
@@ -37,8 +38,10 @@ api! {
 
     GET public() -> Bytes;
 }
+// ANCHOR_END: rate_limit_contract
 
 /// Installs the first-party limiter explicitly and constructs both plan shapes.
+// ANCHOR: configured_rate_limiter
 pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
     let limiter =
         LocalRateLimiter::new().observer(Arc::new(super::observer::DelegatingRetryAfterObserver));
@@ -51,3 +54,4 @@ pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
     let _: rate_limit_api::PublicRequest = client.public();
     Ok(())
 }
+// ANCHOR_END: configured_rate_limiter

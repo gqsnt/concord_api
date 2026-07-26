@@ -81,7 +81,7 @@ Ordinary default features install
 rate-limit policy. A rule's lexical location determines where it applies. Its
 optional `by` clause determines how applicable requests are partitioned into
 local buckets; Concord never infers dimensions from a path or method. See
-[Pagination and rate limits](docs/guide/06-pagination-and-rate-limits.md).
+[Rate limiting](docs/features/rate-limiting.md).
 Generated declaration rule IDs are deterministic within one generated client
 contract, not globally namespaced across unrelated `api!` expansions. Default
 builds remain isolated by separate limiter objects; sharing one limiter across

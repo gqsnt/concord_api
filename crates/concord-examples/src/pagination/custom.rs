@@ -1,7 +1,7 @@
 //! A downstream pagination controller implemented through façade contracts.
 //!
-//! Required feature: `json`. Mode: construction and deterministic local proof.
-//! Documentation owner: `docs/guide/06-pagination-and-rate-limits.md`.
+//! Required feature: `json`. Mode: construction and deterministic local execution.
+//! Documentation owner: `docs/extending/pagination.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use concord::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext};

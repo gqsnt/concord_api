@@ -2,7 +2,7 @@
 //!
 //! Required feature: `rate-limit`. Mode: deterministic local
 //! execution. Documentation owner:
-//! `docs/guide/06-pagination-and-rate-limits.md`.
+//! `docs/extending/rate-limiting.md`.
 //! Proving test: `tests/local_runtime.rs`.
 
 use std::sync::Arc;

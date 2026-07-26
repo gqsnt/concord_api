@@ -2,7 +2,7 @@
 //!
 //! Required feature: `json`. Mode: construction and deterministic local
 //! multi-page execution. Documentation owner:
-//! `docs/guide/06-pagination-and-rate-limits.md`.
+//! `docs/features/pagination.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use concord::api;
@@ -12,11 +12,13 @@ pub mod custom;
 pub mod offset;
 pub mod page_number;
 
+// ANCHOR: pagination_contract
 api! {
     client PaginationApi {
         base "http://pagination.example.test/";
     }
 
+    // ANCHOR: offset_endpoint
     GET offset(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
         query { "offset" = ep.offset; "limit" = ep.limit; }
         paginate concord::pagination::OffsetPagination {
@@ -24,6 +26,9 @@ api! {
             page_size: bind ep.limit,
         }
     }
+    // ANCHOR_END: offset_endpoint
+
+    // ANCHOR: page_endpoint
     GET page(page: std::num::NonZeroU64, per_page: std::num::NonZeroU32) -> Json<Vec<u32>> {
         query { "page" = ep.page; "per_page" = ep.per_page; }
         paginate concord::pagination::PagePagination {
@@ -31,6 +36,9 @@ api! {
             page_size: bind ep.per_page,
         }
     }
+    // ANCHOR_END: page_endpoint
+
+    // ANCHOR: cursor_endpoints
     GET cursor(
         cursor: Option<String>
     ) -> crate::pagination::custom::ExamplePageCodec {
@@ -47,4 +55,6 @@ api! {
             cursor: bind ep.cursor,
         }
     }
+    // ANCHOR_END: cursor_endpoints
 }
+// ANCHOR_END: pagination_contract

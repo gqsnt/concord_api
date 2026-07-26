@@ -25,6 +25,8 @@ fn imports_and_constructs_every_enabled_canonical_declaration() {
 
     concord_examples::request_response::specifications::construct()
         .expect("generic specification construction");
+    let _observed =
+        concord_examples::runtime_policy::hooks::construct().expect("observability construction");
     concord_examples::runtime_endpoints::generated_and_runtime::construct()
         .expect("runtime endpoint construction");
 

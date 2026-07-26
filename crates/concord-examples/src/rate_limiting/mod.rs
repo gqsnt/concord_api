@@ -2,7 +2,7 @@
 //!
 //! Required feature: `rate-limit`. Mode: construction and
 //! deterministic local execution. Documentation owner:
-//! `docs/guide/06-pagination-and-rate-limits.md`. Proving tests:
+//! `docs/features/rate-limiting.md`. Proving tests:
 //! `tests/construction.rs` and `tests/local_runtime.rs`.
 //!
 //! Generated declaration rule IDs are deterministic within each example
