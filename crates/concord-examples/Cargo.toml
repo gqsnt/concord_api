@@ -7,10 +7,10 @@ rust-version.workspace = true
 publish = false
 
 [features]
-default = ["default-tls", "http2", "rate-limit-governor", "json", "oauth2-client", "multipart"]
+default = ["default-tls", "http2", "rate-limit", "json", "oauth2-client", "multipart"]
 default-tls = ["concord/default-tls"]
 http2 = ["concord/http2"]
-rate-limit-governor = ["concord/rate-limit-governor"]
+rate-limit = ["concord/rate-limit"]
 json = ["concord/json", "serde", "serde_json", "serde/derive"]
 oauth2-client = ["concord/oauth2-client"]
 multipart = ["concord/multipart"]
@@ -20,7 +20,7 @@ ndjson = ["records", "concord/ndjson"]
 dangerous-raw-response = ["concord/dangerous-raw-response"]
 dangerous-custom-retry = ["concord/dangerous-custom-retry", "dep:reqwest"]
 tokio = ["dep:tokio"]
-riot-live = ["json", "rate-limit-governor", "default-tls", "http2", "tokio"]
+riot-live = ["json", "rate-limit", "default-tls", "http2", "tokio"]
 
 [dependencies]
 concord = { version = "=0.1.0", path = "../concord", default-features = false }

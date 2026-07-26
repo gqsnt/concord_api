@@ -40,7 +40,7 @@ fn rate_error<T>(result: Result<T, RateLimitError>, message: &str) -> RateLimitE
     }
 }
 
-async fn acquire(limiter: &GovernorRateLimiter, plan: &RateLimitPlan, host: Option<&str>) {
+async fn acquire(limiter: &LocalRateLimiter, plan: &RateLimitPlan, host: Option<&str>) {
     limiter
         .acquire(RateLimitRequest {
             endpoint: "RateApi::get",
@@ -55,7 +55,7 @@ async fn acquire(limiter: &GovernorRateLimiter, plan: &RateLimitPlan, host: Opti
 }
 
 fn spawn_acquire(
-    limiter: Arc<GovernorRateLimiter>,
+    limiter: Arc<LocalRateLimiter>,
     plan: Arc<RateLimitPlan>,
     host: Option<&'static str>,
 ) -> tokio::task::JoinHandle<Result<RateLimitPermit, RateLimitError>> {
@@ -108,7 +108,7 @@ impl RateLimitObserver for FixedObserver {
 }
 
 async fn observe(
-    limiter: &Arc<GovernorRateLimiter>,
+    limiter: &Arc<LocalRateLimiter>,
     plan: &RateLimitPlan,
     host: Option<&str>,
     status: StatusCode,
@@ -131,11 +131,11 @@ async fn observe(
             cooldown_cap: cap,
         })
         .await
-        .expect("governor observes response");
+        .expect("local limiter observes response");
 }
 
 async fn observe_headers(
-    limiter: &Arc<GovernorRateLimiter>,
+    limiter: &Arc<LocalRateLimiter>,
     plan: &RateLimitPlan,
     host: Option<&str>,
     status: StatusCode,
@@ -158,19 +158,19 @@ async fn observe_headers(
             cooldown_cap: cap,
         })
         .await
-        .expect("governor observes response headers");
+        .expect("local limiter observes response headers");
 }
 
 #[test]
 fn defaults_and_configuration_validation_are_finite() {
-    let limiter = GovernorRateLimiter::new();
+    let limiter = LocalRateLimiter::new();
     assert_eq!(limiter.config.quota_capacity, 4_096);
     assert_eq!(limiter.config.cooldown_capacity, 4_096);
     assert_eq!(limiter.config.idle_ttl, Duration::from_secs(15 * 60));
     assert_eq!(limiter.config.key_limit, 1_024);
     assert_eq!(
         rate_error(
-            GovernorRateLimiter::new().quota_capacity(0),
+            LocalRateLimiter::new().quota_capacity(0),
             "zero quota capacity unexpectedly succeeded",
         )
         .kind(),
@@ -178,7 +178,7 @@ fn defaults_and_configuration_validation_are_finite() {
     );
     assert_eq!(
         rate_error(
-            GovernorRateLimiter::new().cooldown_capacity(0),
+            LocalRateLimiter::new().cooldown_capacity(0),
             "zero cooldown capacity unexpectedly succeeded",
         )
         .kind(),
@@ -186,19 +186,19 @@ fn defaults_and_configuration_validation_are_finite() {
     );
     assert_eq!(
         rate_error(
-            GovernorRateLimiter::new().idle_ttl(Duration::ZERO),
+            LocalRateLimiter::new().idle_ttl(Duration::ZERO),
             "zero idle TTL unexpectedly succeeded",
         )
         .kind(),
         RateLimitErrorKind::InvalidConfiguration
     );
-    GovernorRateLimiter::new()
+    LocalRateLimiter::new()
         .key_limit(0)
         .expect("zero key limit is valid");
 }
 
 #[tokio::test(start_paused = true)]
-async fn governor_accepts_maximum_valid_plan() {
+async fn local_limiter_accepts_maximum_valid_plan() {
     let rules = (0..MAX_RATE_LIMIT_RULES_PER_PLAN)
         .map(|rule_index| {
             RateLimitRule::new(
@@ -217,7 +217,7 @@ async fn governor_accepts_maximum_valid_plan() {
         })
         .collect();
     let plan = plan(rules);
-    let limiter = GovernorRateLimiter::new()
+    let limiter = LocalRateLimiter::new()
         .key_limit(0)
         .expect("global keys fit a zero-byte preparation limit");
 
@@ -237,7 +237,7 @@ async fn governor_accepts_maximum_valid_plan() {
 
 #[tokio::test(start_paused = true)]
 async fn first_burst_is_immediate_and_refill_wait_is_controlled() {
-    let limiter = Arc::new(GovernorRateLimiter::new());
+    let limiter = Arc::new(LocalRateLimiter::new());
     let plan = Arc::new(plan(vec![rule(
         "tenant",
         "north",
@@ -262,7 +262,7 @@ async fn first_burst_is_immediate_and_refill_wait_is_controlled() {
 
 #[tokio::test(start_paused = true)]
 async fn page_varying_actual_keys_are_distinct_and_equivalent_keys_aggregate() {
-    let limiter = Arc::new(GovernorRateLimiter::new());
+    let limiter = Arc::new(LocalRateLimiter::new());
     let first = Arc::new(plan(vec![rule(
         "page",
         "offset-41082731",
@@ -281,7 +281,7 @@ async fn page_varying_actual_keys_are_distinct_and_equivalent_keys_aggregate() {
     assert_eq!(
         limiter.test_quota_entry_count(),
         2,
-        "progressed page keys must occupy distinct governor buckets"
+        "progressed page keys must occupy distinct local limiter buckets"
     );
 
     let repeated = spawn_acquire(
@@ -300,7 +300,7 @@ async fn page_varying_actual_keys_are_distinct_and_equivalent_keys_aggregate() {
 
 #[tokio::test(start_paused = true)]
 async fn multiple_rules_and_windows_wait_for_the_complete_maximum() {
-    let limiter = Arc::new(GovernorRateLimiter::new());
+    let limiter = Arc::new(LocalRateLimiter::new());
     let plan = Arc::new(plan(vec![
         rule(
             "tenant",
@@ -332,7 +332,7 @@ async fn multiple_rules_and_windows_wait_for_the_complete_maximum() {
 
 #[tokio::test(start_paused = true)]
 async fn unavailable_rule_causes_no_partial_reservation_or_lock_across_wait() {
-    let limiter = Arc::new(GovernorRateLimiter::new());
+    let limiter = Arc::new(LocalRateLimiter::new());
     let unavailable = Arc::new(plan(vec![rule(
         "slow",
         "north",
@@ -354,7 +354,7 @@ async fn unavailable_rule_causes_no_partial_reservation_or_lock_across_wait() {
     assert!(!waiting.is_finished());
     assert!(
         limiter.state.try_lock().is_ok(),
-        "governor lock must be released before sleeping"
+        "local limiter lock must be released before sleeping"
     );
     waiting.abort();
     let _ = waiting.await;
@@ -384,7 +384,7 @@ async fn unavailable_rule_causes_no_partial_reservation_or_lock_across_wait() {
 
 #[tokio::test(start_paused = true)]
 async fn cancellation_while_waiting_consumes_no_future_quota() {
-    let limiter = Arc::new(GovernorRateLimiter::new());
+    let limiter = Arc::new(LocalRateLimiter::new());
     let plan = Arc::new(plan(vec![rule(
         "tenant",
         "north",
@@ -409,7 +409,7 @@ async fn cancellation_while_waiting_consumes_no_future_quota() {
 
 #[tokio::test(start_paused = true)]
 async fn successful_reservation_is_not_refunded_after_later_cancellation() {
-    let limiter = Arc::new(GovernorRateLimiter::new());
+    let limiter = Arc::new(LocalRateLimiter::new());
     let plan = Arc::new(plan(vec![rule(
         "tenant",
         "north",
@@ -434,7 +434,7 @@ async fn successful_reservation_is_not_refunded_after_later_cancellation() {
 
 #[tokio::test(start_paused = true)]
 async fn duplicate_equivalent_contributions_cannot_undercount() {
-    let limiter = GovernorRateLimiter::new();
+    let limiter = LocalRateLimiter::new();
     let plan = plan(vec![rule(
         "same",
         "north",
@@ -461,7 +461,7 @@ async fn duplicate_equivalent_contributions_cannot_undercount() {
 
 #[tokio::test]
 async fn equivalent_contributions_above_capacity_fail_before_state_insertion() {
-    let limiter = GovernorRateLimiter::new();
+    let limiter = LocalRateLimiter::new();
     let plan = plan(vec![rule(
         "same",
         "north",
@@ -491,7 +491,7 @@ async fn equivalent_contributions_above_capacity_fail_before_state_insertion() {
 
 #[tokio::test(start_paused = true)]
 async fn quota_state_is_bounded_idle_pruned_and_eviction_allows_fresh_burst() {
-    let limiter = GovernorRateLimiter::new()
+    let limiter = LocalRateLimiter::new()
         .quota_capacity(2)
         .expect("quota capacity")
         .idle_ttl(Duration::from_secs(5))
@@ -545,7 +545,7 @@ async fn quota_state_is_bounded_idle_pruned_and_eviction_allows_fresh_burst() {
 
 #[tokio::test(start_paused = true)]
 async fn current_bucket_cooldown_is_exact_and_empty_plan_falls_back_to_host() {
-    let limiter = Arc::new(GovernorRateLimiter::new().observer(Arc::new(FixedObserver {
+    let limiter = Arc::new(LocalRateLimiter::new().observer(Arc::new(FixedObserver {
         duration: Duration::from_secs(10),
         scope: FixedScope::Buckets,
     })));
@@ -617,7 +617,7 @@ async fn host_and_client_cooldowns_affect_only_their_normative_scopes() {
         1,
         &[(100, Duration::from_secs(1))],
     )]));
-    let host_limiter = Arc::new(GovernorRateLimiter::new().observer(Arc::new(FixedObserver {
+    let host_limiter = Arc::new(LocalRateLimiter::new().observer(Arc::new(FixedObserver {
         duration: Duration::from_secs(10),
         scope: FixedScope::Host,
     })));
@@ -646,7 +646,7 @@ async fn host_and_client_cooldowns_affect_only_their_normative_scopes() {
     blocked.abort();
     let _ = blocked.await;
 
-    let client_limiter = Arc::new(GovernorRateLimiter::new().observer(Arc::new(FixedObserver {
+    let client_limiter = Arc::new(LocalRateLimiter::new().observer(Arc::new(FixedObserver {
         duration: Duration::from_secs(10),
         scope: FixedScope::Client,
     })));
@@ -672,7 +672,7 @@ async fn host_and_client_cooldowns_affect_only_their_normative_scopes() {
 #[tokio::test(start_paused = true)]
 async fn cooldown_is_clamped_extended_never_shortened_and_zero_is_noop() {
     let plan = Arc::new(RateLimitPlan::empty());
-    let long = Arc::new(GovernorRateLimiter::new().observer(Arc::new(FixedObserver {
+    let long = Arc::new(LocalRateLimiter::new().observer(Arc::new(FixedObserver {
         duration: Duration::from_secs(20),
         scope: FixedScope::Client,
     })));
@@ -758,7 +758,7 @@ async fn cooldown_is_clamped_extended_never_shortened_and_zero_is_noop() {
 #[tokio::test(start_paused = true)]
 async fn cooldown_state_capacity_uses_deterministic_eviction() {
     let limiter = Arc::new(
-        GovernorRateLimiter::new()
+        LocalRateLimiter::new()
             .cooldown_capacity(1)
             .expect("cooldown capacity")
             .observer(Arc::new(FixedObserver {
@@ -800,7 +800,7 @@ async fn cooldown_state_capacity_uses_deterministic_eviction() {
 
 #[tokio::test(start_paused = true)]
 async fn default_retry_after_cooldown_is_future_only_host_fallback_and_runtime_capped() {
-    let limiter = Arc::new(GovernorRateLimiter::new());
+    let limiter = Arc::new(LocalRateLimiter::new());
     let plan = Arc::new(RateLimitPlan::empty());
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -880,7 +880,7 @@ async fn default_retry_after_cooldown_is_future_only_host_fallback_and_runtime_c
 
 #[tokio::test(start_paused = true)]
 async fn configured_observer_replaces_rather_than_composes_with_default() {
-    let limiter = Arc::new(GovernorRateLimiter::new().observer(Arc::new(NoCooldownObserver)));
+    let limiter = Arc::new(LocalRateLimiter::new().observer(Arc::new(NoCooldownObserver)));
     let plan = RateLimitPlan::empty();
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -902,8 +902,8 @@ async fn configured_observer_replaces_rather_than_composes_with_default() {
 
 #[tokio::test]
 async fn zero_key_limit_accepts_global_and_rejects_nonempty_without_text() {
-    const KEY_SENTINEL: &str = "governor-key-private-ae7e93";
-    let limiter = GovernorRateLimiter::new().key_limit(0).expect("limit");
+    const KEY_SENTINEL: &str = "local-limiter-key-private-ae7e93";
+    let limiter = LocalRateLimiter::new().key_limit(0).expect("limit");
     let global = plan(vec![rule("global", "", 1, &[(1, Duration::from_secs(1))])]);
     acquire(&limiter, &global, None).await;
 
@@ -932,11 +932,11 @@ async fn zero_key_limit_accepts_global_and_rejects_nonempty_without_text() {
 }
 
 #[tokio::test]
-async fn governor_rejects_first_excess_without_sensitive_output() {
-    const ID_SENTINEL: &str = "configured-governor-id-private-b3f1";
-    const KEY_SENTINEL: &str = "configured-governor-key-private-781d32";
+async fn local_limiter_rejects_first_excess_without_sensitive_output() {
+    const ID_SENTINEL: &str = "configured-local-limiter-id-private-b3f1";
+    const KEY_SENTINEL: &str = "configured-local-limiter-key-private-781d32";
     let configuration_error = rate_error(
-        GovernorRateLimiter::new().key_limit(MAX_RATE_LIMIT_KEY_BYTES + 1),
+        LocalRateLimiter::new().key_limit(MAX_RATE_LIMIT_KEY_BYTES + 1),
         "key limit above the hard cap unexpectedly succeeded",
     );
     assert_eq!(
@@ -945,7 +945,7 @@ async fn governor_rejects_first_excess_without_sensitive_output() {
     );
 
     let limit = "tenant".len() + KEY_SENTINEL.len() - 1;
-    let limiter = GovernorRateLimiter::new()
+    let limiter = LocalRateLimiter::new()
         .key_limit(limit)
         .expect("configured key limit");
     let keyed = plan(vec![rule(
@@ -982,7 +982,7 @@ async fn governor_rejects_first_excess_without_sensitive_output() {
 
 #[test]
 fn poisoned_state_fails_future_acquisition_closed() {
-    let limiter = Arc::new(GovernorRateLimiter::new().observer(Arc::new(FixedObserver {
+    let limiter = Arc::new(LocalRateLimiter::new().observer(Arc::new(FixedObserver {
         duration: Duration::from_secs(1),
         scope: FixedScope::Client,
     })));
@@ -1058,7 +1058,7 @@ fn boundary_helpers_are_checked() {
         key.required_balance(*cost)
             .expect("maximum required balance")
     );
-    let mut state = GovernorState::new();
+    let mut state = LocalLimiterState::new();
     state.next_touch = u128::MAX;
     assert_eq!(
         state.next_touch().expect_err("touch overflow").kind(),

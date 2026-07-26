@@ -4,7 +4,7 @@ use runtime::{Bytes, api};
 
 api! {
     client EmptyGeneratedApi {
-        base "http://no-governor-empty.example.test/";
+        base "http://no-local-limiter-empty.example.test/";
     }
 
     GET read() -> Bytes {
@@ -14,7 +14,7 @@ api! {
 
 api! {
     client LimitedGeneratedApi {
-        base "http://no-governor-limited.example.test/";
+        base "http://no-local-limiter-limited.example.test/";
         rate_limit {
             cost 2;
             3 / 1m;

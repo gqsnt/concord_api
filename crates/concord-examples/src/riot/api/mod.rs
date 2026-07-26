@@ -1,6 +1,6 @@
 //! Importable Riot and Data Dragon contract declarations.
 //!
-//! Required features: `json` and `rate-limit-governor`. Mode: deterministic
+//! Required features: `json` and `rate-limit`. Mode: deterministic
 //! construction/planning. Documentation owner: `docs/recipes/riot.md`.
 //! Proving test: `tests/riot_contract.rs`.
 

@@ -1,4 +1,4 @@
-#![cfg(feature = "rate-limit-governor")]
+#![cfg(feature = "rate-limit")]
 
 use std::future::Future as _;
 use std::num::NonZeroU32;
@@ -11,7 +11,7 @@ use concord_core::rate_limit::{
     RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimitRule, RateLimitWindow,
     RateLimiter,
 };
-use concord_extras::rate_limit::GovernorRateLimiter;
+use concord_extras::rate_limit::LocalRateLimiter;
 use http::StatusCode;
 
 struct LongCooldown;
@@ -39,8 +39,8 @@ fn one_per_minute() -> RateLimitPlan {
 }
 
 #[tokio::test(start_paused = true)]
-async fn downstream_governor_uses_public_contracts_and_core_cooldown_cap() {
-    let limiter = GovernorRateLimiter::new().observer(Arc::new(LongCooldown));
+async fn downstream_local_limiter_uses_public_contracts_and_core_cooldown_cap() {
+    let limiter = LocalRateLimiter::new().observer(Arc::new(LongCooldown));
     assert_eq!(limiter.preparation_key_limit(), 1_024);
     assert_eq!(one_per_minute().rules().len(), 1);
 
@@ -62,7 +62,7 @@ async fn downstream_governor_uses_public_contracts_and_core_cooldown_cap() {
             cooldown_cap: Duration::from_secs(3),
         })
         .await
-        .expect("public governor observation");
+        .expect("public local limiter observation");
 
     let mut pending = Box::pin(limiter.acquire(request()));
     let waker = std::task::Waker::noop();

@@ -1,8 +1,8 @@
 mod contracts {
-    #[cfg(feature = "rate-limit-governor")]
-    mod governor;
     #[cfg(feature = "json")]
     mod json;
+    #[cfg(feature = "rate-limit")]
+    mod local;
     #[cfg(feature = "oauth2-client")]
     mod oauth2;
     mod pagination;

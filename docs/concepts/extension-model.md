@@ -42,7 +42,7 @@ Primitive bytes, text, media types, streams, multipart control, response
 acquisition, records execution, pagination execution, authentication
 placement, limiter contracts, transport, errors, and completion are runtime
 kernel concerns. JSON, CSV, NDJSON, built-in pagination policies, the default
-process-local governor, its observer, and the OAuth2 client-credentials helper
+process-local limiter, its observer, and the OAuth2 client-credentials helper
 are first-party downstream implementations.
 
 That split is a proof: the first-party implementations compile entirely

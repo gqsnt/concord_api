@@ -51,7 +51,7 @@ fn imports_and_constructs_every_enabled_canonical_declaration() {
     #[cfg(all(feature = "oauth2-client", feature = "default-tls"))]
     concord_examples::authentication::usage::construct().expect("authentication construction");
 
-    #[cfg(feature = "rate-limit-governor")]
+    #[cfg(feature = "rate-limit")]
     concord_examples::rate_limiting::lexical::construct().expect("rate-limit construction");
 
     #[cfg(all(feature = "records", feature = "csv", feature = "ndjson"))]
@@ -64,10 +64,6 @@ fn imports_and_constructs_every_enabled_canonical_declaration() {
     concord_examples::dangerous::raw_response::construct()
         .expect("dangerous raw-response construction");
 
-    #[cfg(all(
-        feature = "json",
-        feature = "rate-limit-governor",
-        feature = "default-tls"
-    ))]
+    #[cfg(all(feature = "json", feature = "rate-limit", feature = "default-tls"))]
     concord_examples::riot::usage::construct().expect("Riot construction");
 }

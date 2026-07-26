@@ -1,6 +1,6 @@
 //! Runtime composition and the explicitly manual live Riot workflow.
 //!
-//! Required features: `json` and `rate-limit-governor`; `riot-live` for the
+//! Required features: `json` and `rate-limit`; `riot-live` for the
 //! binary. Mode: deterministic construction plus explicit manual live access.
 //! Documentation owner: `docs/recipes/riot.md`.
 //! Proving tests: `tests/construction.rs` and `tests/riot_contract.rs`.
@@ -13,8 +13,8 @@ use concord::hooks::SanitizedHeaderValue;
 use concord::http::HeaderName;
 use concord::prelude::PageLimit;
 use concord::rate_limit::{
-    Cooldown, CooldownScope, DefaultRateLimitObserver, GovernorRateLimiter, RateLimitObserver,
-    RateLimitResponseHead,
+    Cooldown, CooldownScope, LocalRateLimiter, RateLimitObserver, RateLimitResponseHead,
+    RetryAfterObserver,
 };
 
 use super::api::{DDragonApi, RiotApi, d_dragon_api, riot_api};
@@ -30,7 +30,7 @@ pub struct RiotRateLimitHeaders;
 
 impl RateLimitObserver for RiotRateLimitHeaders {
     fn observe(&self, response: &RateLimitResponseHead<'_>) -> Option<Cooldown> {
-        let default = DefaultRateLimitObserver.observe(response)?;
+        let default = RetryAfterObserver.observe(response)?;
         let rate_limit_type = HeaderName::from_static("x-rate-limit-type");
 
         let scope = match response.headers.get(&rate_limit_type) {
@@ -92,7 +92,7 @@ pub async fn run_live_from_environment() -> Result<(), Box<dyn Error>> {
     let game_name = std::env::var("RIOT_GAME_NAME")?;
     let tag_line = std::env::var("RIOT_TAG_LINE")?;
 
-    let limiter = GovernorRateLimiter::new().observer(Arc::new(RiotRateLimitHeaders));
+    let limiter = LocalRateLimiter::new().observer(Arc::new(RiotRateLimitHeaders));
     let riot = RiotApi::builder()
         .api_key(concord::SecretString::try_from(api_key)?)
         .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(limiter)))

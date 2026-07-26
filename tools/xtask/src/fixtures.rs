@@ -91,6 +91,14 @@ pub(crate) fn run_all(root: &Path) -> Result<(), String> {
             &["no `OAuth2ClientCredentials` in `auth`"][..],
         ),
         (
+            "rate_limit_absent",
+            "fixture-absence",
+            &[
+                "could not find `LocalRateLimiter` in `rate_limit`",
+                "cannot find value `RetryAfterObserver` in module `runtime::rate_limit`",
+            ][..],
+        ),
+        (
             "multipart_absent",
             "fixture-absence",
             &["cannot find type `Multipart` in this scope"][..],
@@ -137,19 +145,19 @@ pub(crate) fn run_all(root: &Path) -> Result<(), String> {
         )?;
     }
 
-    verify_no_governor(root)?;
+    verify_no_local_limiter(root)?;
     println!("fixture graph checks passed");
     Ok(())
 }
 
-fn verify_no_governor(root: &Path) -> Result<(), String> {
+fn verify_no_local_limiter(root: &Path) -> Result<(), String> {
     let manifest = manifest(root);
     let manifest = manifest
         .to_str()
         .ok_or_else(|| "fixture manifest path is not valid UTF-8".to_owned())?;
     let output = run(
         root,
-        "features/no-governor-runtime",
+        "features/no-local-limiter-runtime",
         "test",
         [
             "--manifest-path",
@@ -158,25 +166,27 @@ fn verify_no_governor(root: &Path) -> Result<(), String> {
             "concord-fixture-features",
             "--no-default-features",
             "--test",
-            "no_governor",
+            "no_local_limiter",
             "--",
             "--nocapture",
         ],
     );
     let diagnostic = diagnostics(&output);
     if !output.status.success() {
-        return Err(format!("no-governor runtime fixture failed\n{diagnostic}"));
+        return Err(format!(
+            "no-local-limiter runtime fixture failed\n{diagnostic}"
+        ));
     }
-    let sentinel = "CONCORD_NO_GOVERNOR_RATE_LIMITS_OK generated=4 runtime=4 fallback_sends=0";
+    let sentinel = "CONCORD_NO_LOCAL_LIMITER_RATE_LIMITS_OK generated=4 runtime=4 fallback_sends=0";
     if !diagnostic.contains(sentinel) {
         return Err(format!(
-            "no-governor runtime omitted its post-assertion sentinel\n{diagnostic}"
+            "no-local-limiter runtime omitted its post-assertion sentinel\n{diagnostic}"
         ));
     }
 
     let graph = run(
         root,
-        "features/no-governor-tree",
+        "features/no-local-limiter-tree",
         "tree",
         [
             "--manifest-path",
@@ -191,12 +201,12 @@ fn verify_no_governor(root: &Path) -> Result<(), String> {
     let graph_diagnostic = diagnostics(&graph);
     if !graph.status.success() {
         return Err(format!(
-            "no-governor feature graph failed\n{graph_diagnostic}"
+            "no-local-limiter feature graph failed\n{graph_diagnostic}"
         ));
     }
-    if graph_diagnostic.contains("rate-limit-governor") {
+    if graph_diagnostic.contains("concord feature \"rate-limit\"") {
         return Err(format!(
-            "no-governor graph activated the governor\n{graph_diagnostic}"
+            "no-local-limiter graph activated the concrete limiter feature\n{graph_diagnostic}"
         ));
     }
     Ok(())

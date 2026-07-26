@@ -12,7 +12,7 @@ use concord_core::rate_limit::{
     RateLimitResponse, RateLimitResponseHead, RateLimitRule, RateLimitWindow, RateLimiter,
 };
 
-use super::DefaultRateLimitObserver;
+use super::RetryAfterObserver;
 
 const DEFAULT_QUOTA_CAPACITY: usize = 4_096;
 const DEFAULT_COOLDOWN_CAPACITY: usize = 4_096;
@@ -21,7 +21,7 @@ const NANOS_PER_SECOND: u128 = 1_000_000_000;
 
 /// A bounded best-effort process-local pacing limiter.
 ///
-/// New governors hold at most 4,096 quota entries and 4,096 cooldown entries,
+/// New local limiters hold at most 4,096 quota entries and 4,096 cooldown entries,
 /// prune quota entries idle for 15 minutes, and accept resolved keys up to
 /// 1,024 bytes. Builder methods can replace each bound.
 ///
@@ -32,21 +32,21 @@ const NANOS_PER_SECOND: u128 = 1_000_000_000;
 /// Internal quota and cooldown state is not exposed:
 ///
 /// ```compile_fail
-/// use concord_extras::rate_limit::GovernorRateLimiter;
+/// use concord_extras::rate_limit::LocalRateLimiter;
 ///
-/// let governor = GovernorRateLimiter::new();
-/// let _ = governor.state;
+/// let limiter = LocalRateLimiter::new();
+/// let _ = limiter.state;
 /// ```
-pub struct GovernorRateLimiter {
-    config: GovernorConfig,
+pub struct LocalRateLimiter {
+    config: LocalLimiterConfig,
     observer: Arc<dyn RateLimitObserver>,
-    state: Mutex<GovernorState>,
+    state: Mutex<LocalLimiterState>,
     internal_failed: AtomicBool,
     #[cfg(test)]
     acquisition_calls: AtomicUsize,
 }
 
-struct GovernorConfig {
+struct LocalLimiterConfig {
     quota_capacity: usize,
     cooldown_capacity: usize,
     idle_ttl: Duration,
@@ -57,26 +57,29 @@ struct GovernorConfig {
     clippy::new_without_default,
     reason = "the normative contract specifies an explicit constructor without a Default contract"
 )]
-impl GovernorRateLimiter {
-    /// Creates an independent governor with the normative finite defaults.
+impl LocalRateLimiter {
+    /// Creates an independent local limiter with the normative finite defaults.
     #[must_use]
     pub fn new() -> Self {
         Self {
-            config: GovernorConfig {
+            config: LocalLimiterConfig {
                 quota_capacity: DEFAULT_QUOTA_CAPACITY,
                 cooldown_capacity: DEFAULT_COOLDOWN_CAPACITY,
                 idle_ttl: DEFAULT_IDLE_TTL,
                 key_limit: DEFAULT_RATE_LIMIT_KEY_BYTES,
             },
-            observer: Arc::new(DefaultRateLimitObserver),
-            state: Mutex::new(GovernorState::new()),
+            observer: Arc::new(RetryAfterObserver),
+            state: Mutex::new(LocalLimiterState::new()),
             internal_failed: AtomicBool::new(false),
             #[cfg(test)]
             acquisition_calls: AtomicUsize::new(0),
         }
     }
 
-    /// Replaces the default response-head observer.
+    /// Replaces the built-in [`RetryAfterObserver`].
+    ///
+    /// The custom observer must delegate to it when built-in `Retry-After`
+    /// behavior should be retained.
     #[must_use]
     pub fn observer(mut self, observer: Arc<dyn RateLimitObserver>) -> Self {
         self.observer = observer;
@@ -129,7 +132,7 @@ impl GovernorRateLimiter {
 
     #[cfg(test)]
     pub(crate) fn test_quota_entry_count(&self) -> usize {
-        self.state.lock().expect("governor state").quota.len()
+        self.state.lock().expect("local limiter state").quota.len()
     }
 
     fn acquire_loop<'a>(
@@ -270,7 +273,7 @@ impl GovernorRateLimiter {
     }
 }
 
-impl RateLimiter for GovernorRateLimiter {
+impl RateLimiter for LocalRateLimiter {
     fn preparation_key_limit(&self) -> usize {
         self.config.key_limit
     }
@@ -395,14 +398,14 @@ enum CooldownKey {
     Bucket(RuleKey),
 }
 
-struct GovernorState {
+struct LocalLimiterState {
     quota: BTreeMap<BucketKey, QuotaEntry>,
     cooldowns: BTreeMap<CooldownKey, CooldownEntry>,
     client_cooldown: Option<tokio::time::Instant>,
     next_touch: u128,
 }
 
-impl GovernorState {
+impl LocalLimiterState {
     const fn new() -> Self {
         Self {
             quota: BTreeMap::new(),

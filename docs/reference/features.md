@@ -11,10 +11,10 @@ task.
 <!-- BEGIN GENERATED FEATURES -->
 | Feature | Enabled by `default` | Capability |
 |---|---:|---|
-| `default` | meta | Default TLS, HTTP/2, and process-local governor |
+| `default` | meta | Default TLS, HTTP/2, and process-local rate limiting |
 | `default-tls` | yes | HTTPS with the ordinary default TLS backend |
 | `http2` | yes | HTTP/2 transport support |
-| `rate-limit-governor` | yes | Process-local generated rate-plan enforcement |
+| `rate-limit` | yes | Process-local generated rate-plan enforcement |
 | `json` | no | `Json<T>` request and response codec |
 | `oauth2-client` | no | OAuth2 client-credentials provider helper |
 | `records` | no | Generic bounded record streaming |
@@ -31,7 +31,7 @@ task.
 ## Capability notes
 
 - Ordinary defaults preserve default TLS, HTTP/2, and the process-local
-  governor.
+  local limiter.
 - JSON remains opt-in. Its request serializer writes through the active body
   cap, and its failures use the same finite codec categories as downstream
   codecs. CSV and NDJSON imply generic record support.
@@ -45,7 +45,7 @@ task.
 - Multipart remains a runtime-kernel capability because native construction
   and replayability enforcement cannot cross the extension boundary. Part and
   recipe construction is fallible and structurally bounded.
-- OAuth2 client credentials, JSON, CSV, NDJSON, and governor ecosystem
+- OAuth2 client credentials, JSON, CSV, NDJSON, and local rate-limit ecosystem
   dependencies are enabled only by their named façade features.
 - Dangerous features never join the default set.
 - The façade passes dangerous capability tokens to generated code; proc-macro

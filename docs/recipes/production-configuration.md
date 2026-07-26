@@ -41,7 +41,7 @@ credential inspection. Attach endpoint ID, operation ID, attempt, safe status,
 and elapsed time. Keep application labels finite and do not reflect arbitrary
 remote values into metric cardinality.
 
-Generated rate plans use the façade governor under ordinary defaults. Supply a
+Generated rate plans use the façade local limiter under ordinary defaults. Supply a
 custom limiter explicitly when process-local enforcement is insufficient; it
 takes precedence and must bound its own state. Concord does not claim
 distributed strict quota enforcement.

@@ -212,7 +212,7 @@ fn explicit_runtime_endpoint() -> RuntimeEndpoint<Bytes> {
 }
 
 #[tokio::test]
-async fn generated_clients_fail_closed_without_governor_unless_limiter_is_deliberate() {
+async fn generated_clients_fail_closed_without_local_limiter_unless_limiter_is_deliberate() {
     let server = LoopbackServer::start(6).await;
 
     let empty = EmptyGeneratedApi::builder()
@@ -221,7 +221,7 @@ async fn generated_clients_fail_closed_without_governor_unless_limiter_is_delibe
             move |http| http.proxy(proxy)
         })
         .build()
-        .expect("empty generated client without governor");
+        .expect("empty generated client without the local limiter");
     assert_eq!(
         empty.read().await.expect("empty generated request"),
         Bytes::from_static(b"ok")
@@ -362,5 +362,5 @@ async fn generated_clients_fail_closed_without_governor_unless_limiter_is_delibe
         .expect("no-op runtime request");
     assert_eq!(server.request_count(), 6);
     server.finish().await;
-    eprintln!("CONCORD_NO_GOVERNOR_RATE_LIMITS_OK generated=4 runtime=4 fallback_sends=0");
+    eprintln!("CONCORD_NO_LOCAL_LIMITER_RATE_LIMITS_OK generated=4 runtime=4 fallback_sends=0");
 }

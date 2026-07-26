@@ -130,10 +130,11 @@ fn oauth_provider_is_exposed_by_the_auth_domain() {
     assert_eq!(concord::auth::MAX_OAUTH2_AUTHORIZATION_HEADER_BYTES, 32_768);
 }
 
-#[cfg(feature = "rate-limit-governor")]
+#[cfg(feature = "rate-limit")]
 #[test]
-fn governor_is_exposed_by_the_rate_limit_domain() {
-    assert!(!public_type::<concord::rate_limit::GovernorRateLimiter>().is_empty());
+fn local_limiter_is_exposed_by_the_rate_limit_domain() {
+    assert!(!public_type::<concord::rate_limit::LocalRateLimiter>().is_empty());
+    assert!(!public_type::<concord::rate_limit::RetryAfterObserver>().is_empty());
 }
 
 #[cfg(feature = "dangerous-raw-response")]

@@ -1,7 +1,7 @@
 //! Bounded first-party rate-limit policies built on core semantic contracts.
 
-mod governor;
+mod local;
 mod observer;
 
-pub use governor::GovernorRateLimiter;
-pub use observer::DefaultRateLimitObserver;
+pub use local::LocalRateLimiter;
+pub use observer::RetryAfterObserver;

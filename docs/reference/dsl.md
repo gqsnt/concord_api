@@ -452,7 +452,7 @@ let client = ExampleApi::builder()
     .build()?;
 ```
 
-With the façade governor feature, the façade composes the generated default
+With the façade rate-limit feature, the façade composes the generated default
 limiter. An explicitly configured limiter takes precedence. Without either,
 non-empty generated plans fail closed.
 

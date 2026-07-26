@@ -1,6 +1,6 @@
 //! The complete Riot platform and regional API declaration.
 //!
-//! Required features: `json` and `rate-limit-governor`. Mode: deterministic
+//! Required features: `json` and `rate-limit`. Mode: deterministic
 //! planning plus optional manual live execution. Documentation owner:
 //! `docs/recipes/riot.md`. Proving test: `tests/riot_contract.rs`.
 

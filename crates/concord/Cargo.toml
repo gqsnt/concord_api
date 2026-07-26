@@ -7,10 +7,10 @@ rust-version.workspace = true
 publish = false
 
 [features]
-default = ["default-tls", "http2", "rate-limit-governor"]
+default = ["default-tls", "http2", "rate-limit"]
 default-tls = ["concord_core/default-tls"]
 http2 = ["concord_core/http2"]
-rate-limit-governor = ["concord_extras/rate-limit-governor"]
+rate-limit = ["concord_extras/rate-limit"]
 json = ["concord_extras/json"]
 oauth2-client = ["concord_extras/oauth2-client"]
 records = ["concord_core/records"]

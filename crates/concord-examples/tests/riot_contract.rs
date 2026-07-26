@@ -1,9 +1,5 @@
 #![forbid(unsafe_code)]
-#![cfg(all(
-    feature = "json",
-    feature = "rate-limit-governor",
-    feature = "default-tls"
-))]
+#![cfg(all(feature = "json", feature = "rate-limit", feature = "default-tls"))]
 
 use std::num::NonZeroU32;
 

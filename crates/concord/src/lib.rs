@@ -152,8 +152,8 @@ pub mod rate_limit {
         RateLimitPermit, RateLimitPlan, RateLimitRequest, RateLimitResponse, RateLimitResponseHead,
         RateLimitRule, RateLimitWindow, RateLimiter,
     };
-    #[cfg(feature = "rate-limit-governor")]
-    pub use concord_extras::rate_limit::{DefaultRateLimitObserver, GovernorRateLimiter};
+    #[cfg(feature = "rate-limit")]
+    pub use concord_extras::rate_limit::{LocalRateLimiter, RetryAfterObserver};
 }
 
 /// Common imports for declarations and ordinary generated-client use.
@@ -241,13 +241,13 @@ pub mod __private {
     #[must_use]
     pub fn default_runtime_config() -> concord_core::contracts::RuntimeConfigBuilder {
         let runtime = concord_core::__private::default_runtime_config();
-        #[cfg(feature = "rate-limit-governor")]
+        #[cfg(feature = "rate-limit")]
         {
             let limiter: std::sync::Arc<dyn concord_core::rate_limit::RateLimiter> =
-                std::sync::Arc::new(concord_extras::rate_limit::GovernorRateLimiter::new());
+                std::sync::Arc::new(concord_extras::rate_limit::LocalRateLimiter::new());
             concord_core::__private::install_generated_default_limiter(runtime, limiter)
         }
-        #[cfg(not(feature = "rate-limit-governor"))]
+        #[cfg(not(feature = "rate-limit"))]
         {
             runtime
         }

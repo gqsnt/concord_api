@@ -1,6 +1,6 @@
 //! A minimal downstream limiter proving the public semantic contract is enough.
 //!
-//! Required feature: `rate-limit-governor`. Mode: deterministic local
+//! Required feature: `rate-limit`. Mode: deterministic local
 //! execution. Documentation owner:
 //! `docs/guide/06-pagination-and-rate-limits.md`.
 //! Proving test: `tests/local_runtime.rs`.

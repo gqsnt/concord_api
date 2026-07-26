@@ -28,7 +28,7 @@ facts or new user errors.
 hidden bridge calls, and feature assertions. Applications invoke only
 `concord::api!`; that façade passes its own dependency-renaming-safe path to
 the hidden implementation entry. Output never emits direct `::concord_core`
-paths and never recognizes JSON, CSV, NDJSON, OAuth2, governor, or
+paths and never recognizes JSON, CSV, NDJSON, OAuth2, local limiter, or
 pagination-controller type names.
 
 A source-language acceptance or diagnostic change does not by itself change

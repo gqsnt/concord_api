@@ -9,12 +9,12 @@ use http::header::RETRY_AFTER;
 ///
 /// Decimal delta-seconds and HTTP dates are accepted after trimming. Malformed,
 /// past, and zero values are ignored. Positive values target current buckets,
-/// or the logical host when the effective plan is empty. The governor clamps
+/// or the logical host when the effective plan is empty. The local limiter clamps
 /// every proposal to the runtime cap supplied by core.
 #[derive(Default)]
-pub struct DefaultRateLimitObserver;
+pub struct RetryAfterObserver;
 
-impl RateLimitObserver for DefaultRateLimitObserver {
+impl RateLimitObserver for RetryAfterObserver {
     fn observe(&self, response: &RateLimitResponseHead<'_>) -> Option<Cooldown> {
         if response.status != StatusCode::TOO_MANY_REQUESTS {
             return None;
@@ -94,7 +94,7 @@ mod tests {
             status: StatusCode::TOO_MANY_REQUESTS,
             headers: SanitizedHeaders::new(&headers),
         };
-        let cooldown = DefaultRateLimitObserver
+        let cooldown = RetryAfterObserver
             .observe(&response)
             .expect("positive 429 cooldown");
         assert_eq!(cooldown.duration, Duration::from_secs(7));
@@ -112,7 +112,7 @@ mod tests {
             plan: &nonempty,
             ..response
         };
-        let cooldown = DefaultRateLimitObserver
+        let cooldown = RetryAfterObserver
             .observe(&bucket_response)
             .expect("nonempty-plan cooldown");
         assert!(matches!(cooldown.scope, CooldownScope::CurrentBuckets));
@@ -121,6 +121,6 @@ mod tests {
             status: StatusCode::OK,
             ..bucket_response
         };
-        assert!(DefaultRateLimitObserver.observe(&response).is_none());
+        assert!(RetryAfterObserver.observe(&response).is_none());
     }
 }

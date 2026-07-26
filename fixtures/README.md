@@ -3,7 +3,7 @@
 This workspace contains only proofs whose subject is Cargo resolution.
 
 - `features` is invoked once per isolated absence/unification graph and owns the
-  no-governor fail-closed runtime proof.
+  no-local-limiter fail-closed runtime proof.
 - `dependency/renamed_facade` proves that generated paths resolve a renamed
   `concord` dependency.
 - `dependency/contract_mismatch` replaces the façade bridge with an

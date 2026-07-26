@@ -11,7 +11,7 @@ default = []
 json = ["dep:mime", "dep:serde", "dep:serde_json"]
 csv = ["concord_core/records", "dep:csv", "dep:mime", "dep:serde"]
 ndjson = ["concord_core/records", "dep:mime", "dep:serde", "dep:serde_json"]
-rate-limit-governor = ["dep:http", "dep:httpdate", "dep:tokio"]
+rate-limit = ["dep:http", "dep:httpdate", "dep:tokio"]
 oauth2-client = ["dep:bytes", "dep:http", "dep:serde_json", "dep:url"]
 
 [dependencies]

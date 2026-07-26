@@ -25,8 +25,8 @@ pub mod dangerous;
 #[cfg(feature = "json")]
 pub mod pagination;
 
-#[cfg(feature = "rate-limit-governor")]
+#[cfg(feature = "rate-limit")]
 pub mod rate_limiting;
 
-#[cfg(all(feature = "json", feature = "rate-limit-governor"))]
+#[cfg(all(feature = "json", feature = "rate-limit"))]
 pub mod riot;

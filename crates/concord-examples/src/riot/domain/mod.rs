@@ -1,6 +1,6 @@
 //! Domain-only Riot routing, request, and response types.
 //!
-//! Required features: `json` and `rate-limit-governor` through the Riot bundle.
+//! Required features: `json` and `rate-limit` through the Riot bundle.
 //! Mode: compile/serde support for deterministic planning and manual live use.
 //! Documentation owner: `docs/recipes/riot.md`.
 //! Proving test: `tests/riot_contract.rs`.

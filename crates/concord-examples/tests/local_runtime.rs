@@ -176,7 +176,7 @@ async fn actual_pagination_example_binds_each_next_offset_sequentially() {
     assert!(requests[1].target().contains("limit=2"));
 }
 
-#[cfg(feature = "rate-limit-governor")]
+#[cfg(feature = "rate-limit")]
 #[tokio::test]
 async fn actual_rate_limit_example_honors_an_explicit_downstream_limiter() {
     use std::sync::Arc;

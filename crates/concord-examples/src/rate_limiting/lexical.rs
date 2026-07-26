@@ -1,6 +1,6 @@
 //! Lexical rate windows compose from client and endpoint declarations.
 //!
-//! Required feature: `rate-limit-governor`. Mode: deterministic local
+//! Required feature: `rate-limit`. Mode: deterministic local
 //! execution. Documentation owner:
 //! `docs/guide/06-pagination-and-rate-limits.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use concord::api;
-use concord::rate_limit::GovernorRateLimiter;
+use concord::rate_limit::LocalRateLimiter;
 
 api! {
     client RateLimitApi {
@@ -31,7 +31,7 @@ api! {
 /// Installs the first-party limiter explicitly and constructs both plan shapes.
 pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
     let limiter =
-        GovernorRateLimiter::new().observer(Arc::new(super::observer::RetryAfterObserver));
+        LocalRateLimiter::new().observer(Arc::new(super::observer::DelegatingRetryAfterObserver));
     let client = RateLimitApi::builder()
         .tenant("example-tenant".to_owned())
         .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(limiter)))

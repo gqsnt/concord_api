@@ -678,7 +678,7 @@ async fn explicit_noop_authorizes_nonempty_generated_plan() {
 }
 
 #[tokio::test]
-async fn no_governor_private_fallback_executes_an_empty_generated_plan() {
+async fn no_local_limiter_private_fallback_executes_an_empty_generated_plan() {
     let server =
         ScriptedServer::start([ResponseScript::ok(b"empty".to_vec())]).expect("empty-plan server");
     let proxy = SafeProxy::parse(server.url("")).expect("local proxy");

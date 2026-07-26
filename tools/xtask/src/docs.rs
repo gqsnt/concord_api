@@ -37,11 +37,14 @@ const GENERATED_LIMITS_START: &str = "<!-- BEGIN GENERATED LIMITS -->";
 const GENERATED_LIMITS_END: &str = "<!-- END GENERATED LIMITS -->";
 
 const FEATURES: &[(&str, &str)] = &[
-    ("default", "Default TLS, HTTP/2, and process-local governor"),
+    (
+        "default",
+        "Default TLS, HTTP/2, and process-local rate limiting",
+    ),
     ("default-tls", "HTTPS with the ordinary default TLS backend"),
     ("http2", "HTTP/2 transport support"),
     (
-        "rate-limit-governor",
+        "rate-limit",
         "Process-local generated rate-plan enforcement",
     ),
     ("json", "`Json<T>` request and response codec"),

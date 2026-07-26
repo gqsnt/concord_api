@@ -19,9 +19,9 @@ fn extras_public_types_satisfy_only_semantic_core_contracts() {
     fn decoder<T: concord_core::records::RecordDecoder>() {}
     #[cfg(feature = "oauth2-client")]
     fn provider<T: concord_core::contracts::CredentialProvider>() {}
-    #[cfg(feature = "rate-limit-governor")]
+    #[cfg(feature = "rate-limit")]
     fn limiter<T: concord_core::rate_limit::RateLimiter>() {}
-    #[cfg(feature = "rate-limit-governor")]
+    #[cfg(feature = "rate-limit")]
     fn observer<T: concord_core::rate_limit::RateLimitObserver>() {}
 
     controller::<(), concord_extras::pagination::OffsetPagination>();
@@ -55,9 +55,9 @@ fn extras_public_types_satisfy_only_semantic_core_contracts() {
     decoder::<concord_extras::records::NdJson<String>>();
     #[cfg(feature = "oauth2-client")]
     provider::<concord_extras::auth::OAuth2ClientCredentials>();
-    #[cfg(feature = "rate-limit-governor")]
+    #[cfg(feature = "rate-limit")]
     {
-        limiter::<concord_extras::rate_limit::GovernorRateLimiter>();
-        observer::<concord_extras::rate_limit::DefaultRateLimitObserver>();
+        limiter::<concord_extras::rate_limit::LocalRateLimiter>();
+        observer::<concord_extras::rate_limit::RetryAfterObserver>();
     }
 }

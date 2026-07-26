@@ -37,7 +37,7 @@ rate_limit {
 ```
 
 Client, outer-scope, inner-scope, and endpoint rules are additive. With the
-default façade features, Concord installs the downstream governor
+default façade features, Concord installs the downstream local limiter
 implementation. Without a configured/default limiter, a non-empty plan fails
 closed during client construction, before a request lifecycle can begin. A
 user-supplied limiter always wins.

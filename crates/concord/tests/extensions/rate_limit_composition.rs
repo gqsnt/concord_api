@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-#[cfg(not(feature = "rate-limit-governor"))]
+#[cfg(not(feature = "rate-limit"))]
 use concord::error::ClientBuildErrorKind;
 use concord::http::SafeProxy;
 use concord::rate_limit::{
@@ -11,8 +11,8 @@ use concord::{Bytes, api};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 
 api! {
-    client DefaultGovernorApi {
-        base "http://default-governor.example.test/";
+    client DefaultLocalLimiterApi {
+        base "http://default-local-limiter.example.test/";
         rate_limit { 10 / 1s; }
     }
 
@@ -52,15 +52,15 @@ impl RateLimiter for CapturingLimiter {
     }
 }
 
-#[cfg(feature = "rate-limit-governor")]
+#[cfg(feature = "rate-limit")]
 #[tokio::test]
-async fn facade_installs_the_extras_governor_as_generated_default() {
+async fn facade_installs_the_extras_local_limiter_as_generated_default() {
     let server = ScriptedServer::start([ResponseScript::ok(b"default".to_vec())]).expect("server");
     let proxy = SafeProxy::parse(server.url("")).expect("proxy");
-    let client = DefaultGovernorApi::builder()
+    let client = DefaultLocalLimiterApi::builder()
         .configure_http(move |http| http.proxy(proxy))
         .build()
-        .expect("façade governor default");
+        .expect("façade local limiter default");
 
     assert_eq!(
         client.read().await.expect("default-governed request"),
@@ -69,10 +69,10 @@ async fn facade_installs_the_extras_governor_as_generated_default() {
     assert_eq!(server.request_count(), 1);
 }
 
-#[cfg(not(feature = "rate-limit-governor"))]
+#[cfg(not(feature = "rate-limit"))]
 #[test]
-fn generated_nonempty_plan_fails_closed_without_governor() {
-    let error = match DefaultGovernorApi::builder().build() {
+fn generated_nonempty_plan_fails_closed_without_local_limiter() {
+    let error = match DefaultLocalLimiterApi::builder().build() {
         Ok(_) => panic!("missing generated limiter unexpectedly built"),
         Err(error) => error,
     };

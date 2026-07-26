@@ -31,7 +31,7 @@ concord-core <--- concord-extras
   finite acquisition, lifecycle, security, and public extension traits under
   `concord_core::contracts`.
 - `crates/concord-extras` is an ordinary downstream consumer of those traits.
-  It owns JSON, CSV, NDJSON, built-in pagination policies, governor/observer,
+  It owns JSON, CSV, NDJSON, built-in pagination policies, local limiter/observer,
   and OAuth2 client credentials.
 - `crates/concord-macros` parses, resolves, validates, and emits declarations.
   It is extras-agnostic.
@@ -63,7 +63,7 @@ proc-macro feature. The compiler emits the final capability-specific inherent
 method directly.
 
 The façade bridge delegates semantics to core and installs approved
-feature-dependent composition such as the default governor. It is hidden,
+feature-dependent composition such as the default local limiter. It is hidden,
 version-checked, and not a downstream extension contract. Privacy compile
 tests prove users cannot forge generated endpoint implementations.
 
