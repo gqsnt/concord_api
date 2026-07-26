@@ -71,6 +71,9 @@ pub enum RateLimitErrorKind {
     InvalidConfiguration,
     /// A rate-limit key was invalid.
     InvalidKey,
+    /// Bounded rate-limit state capacity was exhausted without discarding
+    /// active history. This condition is recoverable.
+    StateCapacity,
     /// Rate-limit authority could not be acquired.
     Acquire,
     /// A received response head could not be observed.

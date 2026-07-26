@@ -129,6 +129,7 @@ fn extensions_construct_opaque_permits_and_typed_key_safe_errors() {
     for kind in [
         RateLimitErrorKind::InvalidConfiguration,
         RateLimitErrorKind::InvalidKey,
+        RateLimitErrorKind::StateCapacity,
         RateLimitErrorKind::Acquire,
         RateLimitErrorKind::Observe,
         RateLimitErrorKind::Internal,

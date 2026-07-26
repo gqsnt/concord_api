@@ -19,15 +19,16 @@ const DEFAULT_COOLDOWN_CAPACITY: usize = 4_096;
 const DEFAULT_IDLE_TTL: Duration = Duration::from_secs(15 * 60);
 const NANOS_PER_SECOND: u128 = 1_000_000_000;
 
-/// A bounded best-effort process-local pacing limiter.
+/// A bounded process-local, limiter-object-local token-bucket limiter.
 ///
 /// New local limiters hold at most 4,096 quota entries and 4,096 cooldown entries,
-/// prune quota entries idle for 15 minutes, and accept resolved keys up to
-/// 1,024 bytes. Builder methods can replace each bound.
+/// prune fully replenished quota entries after 15 idle minutes, and accept
+/// resolved keys up to 1,024 bytes. Builder methods can replace each bound.
 ///
-/// State eviction may forget local history and permit a fresh burst. Use an
-/// application-supplied custom limiter when strict or distributed enforcement
-/// is required.
+/// Capacity pressure fails with [`RateLimitErrorKind::StateCapacity`] rather
+/// than evicting active quota or cooldown history. Use an application-supplied
+/// custom limiter when distributed or exact remote-policy enforcement is
+/// required.
 ///
 /// Internal quota and cooldown state is not exposed:
 ///
@@ -143,25 +144,34 @@ impl LocalRateLimiter {
             if self.internal_failed.load(AtomicOrdering::Acquire) {
                 return Err(internal_error());
             }
-            let contributions = Contributions::from_plan(request.plan, self.config.key_limit)?;
+            let contributions = Contributions::from_plan(request.plan, self.config.key_limit)
+                .map_err(|error| self.record_failure(error))?;
             let rule_keys = RuleKeys::from_plan(request.plan);
             loop {
                 let now = tokio::time::Instant::now();
-                let evaluation = {
-                    let mut state = self.state.lock().map_err(|_| internal_error())?;
-                    state.prune(now, self.config.idle_ttl);
-                    state.evaluate(
-                        now,
-                        request.host,
-                        &rule_keys,
-                        &contributions,
-                        self.config.quota_capacity,
-                    )?
+                let evaluation = match self.state.lock() {
+                    Ok(mut state) => {
+                        let result = (|| {
+                            state.prune_expired_cooldowns(now);
+                            state.prune_quota(now, self.config.idle_ttl, &contributions)?;
+                            state.evaluate(
+                                now,
+                                request.host,
+                                &rule_keys,
+                                &contributions,
+                                self.config.quota_capacity,
+                            )
+                        })();
+                        result.map_err(|error| self.record_failure(error))?
+                    }
+                    Err(_) => return Err(self.fail_internal()),
                 };
                 match evaluation {
                     Evaluation::Granted => return Ok(RateLimitPermit::granted()),
                     Evaluation::Wait(duration) => {
-                        let wake = now.checked_add(duration).ok_or_else(internal_error)?;
+                        let wake = now
+                            .checked_add(duration)
+                            .ok_or_else(|| self.fail_internal())?;
                         tokio::time::sleep_until(wake).await;
                     }
                 }
@@ -229,47 +239,46 @@ impl LocalRateLimiter {
             Ok(state) => state,
             Err(_) => return Err(self.fail_internal()),
         };
-        state.prune(now, self.config.idle_ttl);
+        state.prune_expired_cooldowns(now);
         let result = match cooldown.scope {
-            CooldownScope::Client => state.extend_client_cooldown(expiration),
-            CooldownScope::Host => host.map_or(Ok(()), |host| {
-                state.extend_cooldown(
-                    CooldownKey::Host(host.to_owned()),
-                    expiration,
-                    self.config.cooldown_capacity,
-                )
-            }),
+            CooldownScope::Client => {
+                state.extend_client_cooldown(expiration);
+                Ok(())
+            }
+            CooldownScope::Host => state.extend_cooldowns(
+                host.map(|host| CooldownKey::Host(host.to_owned())),
+                expiration,
+                self.config.cooldown_capacity,
+            ),
             CooldownScope::CurrentBuckets => {
                 if plan.is_empty() {
-                    host.map_or(Ok(()), |host| {
-                        state.extend_cooldown(
-                            CooldownKey::Host(host.to_owned()),
-                            expiration,
-                            self.config.cooldown_capacity,
-                        )
-                    })
+                    state.extend_cooldowns(
+                        host.map(|host| CooldownKey::Host(host.to_owned())),
+                        expiration,
+                        self.config.cooldown_capacity,
+                    )
                 } else {
                     let rule_keys = RuleKeys::from_plan(plan);
-                    rule_keys.0.into_iter().try_for_each(|key| {
-                        state.extend_cooldown(
-                            CooldownKey::Bucket(key),
-                            expiration,
-                            self.config.cooldown_capacity,
-                        )
-                    })
+                    state.extend_cooldowns(
+                        rule_keys.0.into_iter().map(CooldownKey::Bucket),
+                        expiration,
+                        self.config.cooldown_capacity,
+                    )
                 }
             }
         };
-        if let Err(error) = result {
+        result.map_err(|error| self.record_failure(error))
+    }
+
+    fn record_failure(&self, error: RateLimitError) -> RateLimitError {
+        if error.kind() == RateLimitErrorKind::Internal {
             self.internal_failed.store(true, AtomicOrdering::Release);
-            return Err(error);
         }
-        Ok(())
+        error
     }
 
     fn fail_internal(&self) -> RateLimitError {
-        self.internal_failed.store(true, AtomicOrdering::Release);
-        internal_error()
+        self.record_failure(internal_error())
     }
 }
 
@@ -317,7 +326,7 @@ impl Contributions {
                 let cost = contributions.entry(key).or_default();
                 *cost = cost
                     .checked_add(u128::from(rule.cost().get()))
-                    .ok_or_else(invalid_configuration)?;
+                    .ok_or_else(internal_error)?;
             }
         }
         if contributions
@@ -381,14 +390,14 @@ impl BucketKey {
         self.duration
             .as_nanos()
             .checked_mul(u128::from(self.capacity))
-            .ok_or_else(invalid_configuration)
+            .ok_or_else(internal_error)
     }
 
     fn required_balance(&self, cost: u128) -> Result<u128, RateLimitError> {
         self.duration
             .as_nanos()
             .checked_mul(cost)
-            .ok_or_else(invalid_configuration)
+            .ok_or_else(internal_error)
     }
 }
 
@@ -402,7 +411,6 @@ struct LocalLimiterState {
     quota: BTreeMap<BucketKey, QuotaEntry>,
     cooldowns: BTreeMap<CooldownKey, CooldownEntry>,
     client_cooldown: Option<tokio::time::Instant>,
-    next_touch: u128,
 }
 
 impl LocalLimiterState {
@@ -411,16 +419,10 @@ impl LocalLimiterState {
             quota: BTreeMap::new(),
             cooldowns: BTreeMap::new(),
             client_cooldown: None,
-            next_touch: 0,
         }
     }
 
-    fn next_touch(&mut self) -> Result<u128, RateLimitError> {
-        self.next_touch = self.next_touch.checked_add(1).ok_or_else(internal_error)?;
-        Ok(self.next_touch)
-    }
-
-    fn prune(&mut self, now: tokio::time::Instant, idle_ttl: Duration) {
+    fn prune_expired_cooldowns(&mut self, now: tokio::time::Instant) {
         if self
             .client_cooldown
             .is_some_and(|expiration| expiration <= now)
@@ -428,8 +430,30 @@ impl LocalLimiterState {
             self.client_cooldown = None;
         }
         self.cooldowns.retain(|_, entry| entry.expiration > now);
-        self.quota
-            .retain(|_, entry| now.saturating_duration_since(entry.last_used) < idle_ttl);
+    }
+
+    fn prune_quota(
+        &mut self,
+        now: tokio::time::Instant,
+        idle_ttl: Duration,
+        protected: &Contributions,
+    ) -> Result<(), RateLimitError> {
+        let mut removable = Vec::new();
+        for (key, entry) in &mut self.quota {
+            if protected.0.contains_key(key) {
+                continue;
+            }
+            entry.refill(now, key)?;
+            if entry.balance == key.full_balance()?
+                && now.saturating_duration_since(entry.last_used) >= idle_ttl
+            {
+                removable.push(key.clone());
+            }
+        }
+        for key in removable {
+            self.quota.remove(&key);
+        }
+        Ok(())
     }
 
     fn evaluate(
@@ -440,34 +464,18 @@ impl LocalLimiterState {
         contributions: &Contributions,
         quota_capacity: usize,
     ) -> Result<Evaluation, RateLimitError> {
-        let cooldown_wait = self.cooldown_wait(now, host, rule_keys)?;
+        let cooldown_wait = self.cooldown_wait(now, host, rule_keys);
         if !cooldown_wait.is_zero() {
             return Ok(Evaluation::Wait(cooldown_wait));
         }
 
-        self.make_quota_space(contributions, quota_capacity)?;
-        for key in contributions.0.keys() {
-            if !self.quota.contains_key(key) {
-                let touch = self.next_touch()?;
-                self.quota.insert(
-                    key.clone(),
-                    QuotaEntry {
-                        balance: key.full_balance()?,
-                        last_refill: now,
-                        last_used: now,
-                        touch,
-                    },
-                );
-            }
-        }
+        self.insert_missing_quota(now, contributions, quota_capacity)?;
 
         let mut quota_wait = Duration::ZERO;
         for (key, cost) in &contributions.0 {
-            let touch = self.next_touch()?;
             let entry = self.quota.get_mut(key).ok_or_else(internal_error)?;
             entry.refill(now, key)?;
             entry.last_used = now;
-            entry.touch = touch;
             let required = key.required_balance(*cost)?;
             if entry.balance < required {
                 let deficit = required - entry.balance;
@@ -479,132 +487,124 @@ impl LocalLimiterState {
             return Ok(Evaluation::Wait(quota_wait));
         }
 
+        let mut balances = Vec::with_capacity(contributions.0.len());
         for (key, cost) in &contributions.0 {
             let required = key.required_balance(*cost)?;
-            let entry = self.quota.get_mut(key).ok_or_else(internal_error)?;
-            entry.balance = entry
+            let balance = self
+                .quota
+                .get(key)
+                .ok_or_else(internal_error)?
                 .balance
                 .checked_sub(required)
                 .ok_or_else(internal_error)?;
+            balances.push((key, balance));
+        }
+        for (key, balance) in balances {
+            self.quota.get_mut(key).ok_or_else(internal_error)?.balance = balance;
         }
         Ok(Evaluation::Granted)
     }
 
     fn cooldown_wait(
-        &mut self,
+        &self,
         now: tokio::time::Instant,
         host: Option<&str>,
         rule_keys: &RuleKeys,
-    ) -> Result<Duration, RateLimitError> {
+    ) -> Duration {
         let mut wait = self.client_cooldown.map_or(Duration::ZERO, |expiration| {
             expiration.saturating_duration_since(now)
         });
         if let Some(host) = host {
             let key = CooldownKey::Host(host.to_owned());
-            wait = wait.max(self.touch_cooldown(now, &key)?);
+            wait = wait.max(self.cooldown_duration(now, &key));
         }
         for rule_key in &rule_keys.0 {
             let key = CooldownKey::Bucket(rule_key.clone());
-            wait = wait.max(self.touch_cooldown(now, &key)?);
+            wait = wait.max(self.cooldown_duration(now, &key));
         }
-        Ok(wait)
+        wait
     }
 
-    fn touch_cooldown(
+    fn cooldown_duration(&self, now: tokio::time::Instant, key: &CooldownKey) -> Duration {
+        self.cooldowns.get(key).map_or(Duration::ZERO, |entry| {
+            entry.expiration.saturating_duration_since(now)
+        })
+    }
+
+    fn insert_missing_quota(
         &mut self,
         now: tokio::time::Instant,
-        key: &CooldownKey,
-    ) -> Result<Duration, RateLimitError> {
-        if !self.cooldowns.contains_key(key) {
-            return Ok(Duration::ZERO);
-        }
-        let touch = self.next_touch()?;
-        let entry = self.cooldowns.get_mut(key).ok_or_else(internal_error)?;
-        entry.touch = touch;
-        Ok(entry.expiration.saturating_duration_since(now))
-    }
-
-    fn make_quota_space(
-        &mut self,
         contributions: &Contributions,
         capacity: usize,
     ) -> Result<(), RateLimitError> {
-        if contributions.0.len() > capacity {
-            return Err(invalid_configuration());
-        }
         let missing = contributions
             .0
             .keys()
             .filter(|key| !self.quota.contains_key(*key))
-            .count();
-        while self
+            .cloned()
+            .collect::<Vec<_>>();
+        if self
             .quota
+            .len()
+            .checked_add(missing.len())
+            .ok_or_else(internal_error)?
+            > capacity
+        {
+            return Err(state_capacity());
+        }
+        let pending = missing
+            .into_iter()
+            .map(|key| {
+                let entry = QuotaEntry {
+                    balance: key.full_balance()?,
+                    last_refill: now,
+                    last_used: now,
+                };
+                Ok((key, entry))
+            })
+            .collect::<Result<Vec<_>, RateLimitError>>()?;
+        for (key, entry) in pending {
+            self.quota.insert(key, entry);
+        }
+        Ok(())
+    }
+
+    fn extend_client_cooldown(&mut self, expiration: tokio::time::Instant) {
+        self.client_cooldown = Some(
+            self.client_cooldown
+                .map_or(expiration, |current| current.max(expiration)),
+        );
+    }
+
+    fn extend_cooldowns<I>(
+        &mut self,
+        keys: I,
+        expiration: tokio::time::Instant,
+        capacity: usize,
+    ) -> Result<(), RateLimitError>
+    where
+        I: IntoIterator<Item = CooldownKey>,
+    {
+        let keys = keys.into_iter().collect::<BTreeSet<_>>();
+        let missing = keys
+            .iter()
+            .filter(|key| !self.cooldowns.contains_key(*key))
+            .count();
+        if self
+            .cooldowns
             .len()
             .checked_add(missing)
             .ok_or_else(internal_error)?
             > capacity
         {
-            let candidate = self
-                .quota
-                .iter()
-                .filter(|(key, _)| !contributions.0.contains_key(*key))
-                .min_by(|(first_key, first), (second_key, second)| {
-                    first
-                        .touch
-                        .cmp(&second.touch)
-                        .then_with(|| first_key.cmp(second_key))
-                })
-                .map(|(key, _)| key.clone())
-                .ok_or_else(internal_error)?;
-            self.quota.remove(&candidate);
+            return Err(state_capacity());
         }
-        Ok(())
-    }
-
-    fn extend_client_cooldown(
-        &mut self,
-        expiration: tokio::time::Instant,
-    ) -> Result<(), RateLimitError> {
-        self.client_cooldown = Some(
-            self.client_cooldown
-                .map_or(expiration, |current| current.max(expiration)),
-        );
-        Ok(())
-    }
-
-    fn extend_cooldown(
-        &mut self,
-        key: CooldownKey,
-        expiration: tokio::time::Instant,
-        capacity: usize,
-    ) -> Result<(), RateLimitError> {
-        if self.cooldowns.contains_key(&key) {
-            let touch = self.next_touch()?;
-            let entry = self.cooldowns.get_mut(&key).ok_or_else(internal_error)?;
-            entry.expiration = entry.expiration.max(expiration);
-            entry.touch = touch;
-            return Ok(());
+        for key in keys {
+            self.cooldowns
+                .entry(key)
+                .and_modify(|entry| entry.expiration = entry.expiration.max(expiration))
+                .or_insert(CooldownEntry { expiration });
         }
-        if self.cooldowns.len() == capacity {
-            let candidate = self
-                .cooldowns
-                .iter()
-                .min_by(|(first_key, first), (second_key, second)| {
-                    first
-                        .touch
-                        .cmp(&second.touch)
-                        .then_with(|| first_key.cmp(second_key))
-                })
-                .map(|(key, _)| match key {
-                    CooldownKey::Host(host) => CooldownKey::Host(host.clone()),
-                    CooldownKey::Bucket(rule) => CooldownKey::Bucket(rule.clone()),
-                })
-                .ok_or_else(internal_error)?;
-            self.cooldowns.remove(&candidate);
-        }
-        let touch = self.next_touch()?;
-        self.cooldowns
-            .insert(key, CooldownEntry { expiration, touch });
         Ok(())
     }
 }
@@ -613,7 +613,6 @@ struct QuotaEntry {
     balance: u128,
     last_refill: tokio::time::Instant,
     last_used: tokio::time::Instant,
-    touch: u128,
 }
 
 impl QuotaEntry {
@@ -639,7 +638,6 @@ impl QuotaEntry {
 
 struct CooldownEntry {
     expiration: tokio::time::Instant,
-    touch: u128,
 }
 
 enum Evaluation {
@@ -662,6 +660,10 @@ fn duration_from_nanos(nanos: u128) -> Result<Duration, RateLimitError> {
 
 fn invalid_configuration() -> RateLimitError {
     RateLimitError::new(RateLimitErrorKind::InvalidConfiguration)
+}
+
+fn state_capacity() -> RateLimitError {
+    RateLimitError::new(RateLimitErrorKind::StateCapacity)
 }
 
 fn internal_error() -> RateLimitError {

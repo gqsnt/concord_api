@@ -41,6 +41,14 @@ fn rate_error<T>(result: Result<T, RateLimitError>, message: &str) -> RateLimitE
 }
 
 async fn acquire(limiter: &LocalRateLimiter, plan: &RateLimitPlan, host: Option<&str>) {
+    try_acquire(limiter, plan, host).await.expect("acquire");
+}
+
+async fn try_acquire(
+    limiter: &LocalRateLimiter,
+    plan: &RateLimitPlan,
+    host: Option<&str>,
+) -> Result<RateLimitPermit, RateLimitError> {
     limiter
         .acquire(RateLimitRequest {
             endpoint: "RateApi::get",
@@ -51,7 +59,6 @@ async fn acquire(limiter: &LocalRateLimiter, plan: &RateLimitPlan, host: Option<
             plan,
         })
         .await
-        .expect("acquire");
 }
 
 fn spawn_acquire(
@@ -258,6 +265,77 @@ async fn first_burst_is_immediate_and_refill_wait_is_controlled() {
     assert!(!task.is_finished());
     tokio::time::advance(Duration::from_secs(1)).await;
     task.await.expect("waiting task");
+}
+
+#[tokio::test(start_paused = true)]
+async fn separately_built_limiters_have_separate_state() {
+    let first = Arc::new(LocalRateLimiter::new());
+    let second = LocalRateLimiter::new();
+    let plan = Arc::new(plan(vec![rule(
+        "shared-key",
+        "tenant",
+        1,
+        &[(1, Duration::from_secs(10))],
+    )]));
+
+    acquire(&first, &plan, Some("example.test")).await;
+    acquire(&second, &plan, Some("example.test")).await;
+
+    let repeated = spawn_acquire(Arc::clone(&first), Arc::clone(&plan), Some("example.test"));
+    tokio::task::yield_now().await;
+    assert!(!repeated.is_finished());
+    repeated.abort();
+    let _ = repeated.await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn shared_arc_shares_state() {
+    let limiter = Arc::new(LocalRateLimiter::new());
+    let shared = Arc::clone(&limiter);
+    let plan = Arc::new(plan(vec![rule(
+        "shared-key",
+        "tenant",
+        1,
+        &[(1, Duration::from_secs(10))],
+    )]));
+
+    acquire(&limiter, &plan, Some("example.test")).await;
+    let repeated = spawn_acquire(shared, Arc::clone(&plan), Some("example.test"));
+    tokio::task::yield_now().await;
+    assert!(!repeated.is_finished());
+    repeated.abort();
+    let _ = repeated.await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn same_resolved_key_shares_state() {
+    let limiter = Arc::new(LocalRateLimiter::new());
+    let first = Arc::new(plan(vec![rule(
+        "same-rule",
+        "same-value",
+        1,
+        &[(1, Duration::from_secs(10))],
+    )]));
+    let equivalent = Arc::new(plan(vec![rule(
+        "same-rule",
+        "same-value",
+        1,
+        &[(1, Duration::from_secs(10))],
+    )]));
+
+    acquire(&limiter, &first, Some("first-host.test")).await;
+    let repeated = spawn_acquire(
+        Arc::clone(&limiter),
+        equivalent,
+        Some("different-host.test"),
+    );
+    tokio::task::yield_now().await;
+    assert!(
+        !repeated.is_finished(),
+        "equal resolved rule IDs, key parts, and windows must share state"
+    );
+    repeated.abort();
+    let _ = repeated.await;
 }
 
 #[tokio::test(start_paused = true)]
@@ -490,9 +568,9 @@ async fn equivalent_contributions_above_capacity_fail_before_state_insertion() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn quota_state_is_bounded_idle_pruned_and_eviction_allows_fresh_burst() {
+async fn state_capacity_is_recoverable() {
     let limiter = LocalRateLimiter::new()
-        .quota_capacity(2)
+        .quota_capacity(1)
         .expect("quota capacity")
         .idle_ttl(Duration::from_secs(5))
         .expect("idle TTL");
@@ -500,7 +578,40 @@ async fn quota_state_is_bounded_idle_pruned_and_eviction_allows_fresh_burst() {
         "first",
         "one",
         1,
-        &[(1, Duration::from_secs(100))],
+        &[(1, Duration::from_secs(5))],
+    )]);
+    let second = plan(vec![rule(
+        "second",
+        "two",
+        1,
+        &[(1, Duration::from_secs(5))],
+    )]);
+
+    acquire(&limiter, &first, Some("example.test")).await;
+    let error = rate_error(
+        try_acquire(&limiter, &second, Some("example.test")).await,
+        "new state above capacity unexpectedly succeeded",
+    );
+    assert_eq!(error.kind(), RateLimitErrorKind::StateCapacity);
+
+    tokio::time::advance(Duration::from_secs(5)).await;
+    acquire(&limiter, &second, Some("example.test")).await;
+    assert!(
+        !limiter.internal_failed.load(AtomicOrdering::Acquire),
+        "recoverable capacity pressure must not poison the limiter"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn state_capacity_does_not_poison_limiter() {
+    let limiter = LocalRateLimiter::new()
+        .quota_capacity(1)
+        .expect("quota capacity");
+    let first = plan(vec![rule(
+        "first",
+        "one",
+        1,
+        &[(2, Duration::from_secs(100))],
     )]);
     let second = plan(vec![rule(
         "second",
@@ -508,43 +619,227 @@ async fn quota_state_is_bounded_idle_pruned_and_eviction_allows_fresh_burst() {
         1,
         &[(1, Duration::from_secs(100))],
     )]);
-    let third = plan(vec![rule(
-        "third",
-        "three",
+
+    acquire(&limiter, &first, Some("example.test")).await;
+    let error = rate_error(
+        try_acquire(&limiter, &second, Some("example.test")).await,
+        "new state above capacity unexpectedly succeeded",
+    );
+
+    assert_eq!(error.kind(), RateLimitErrorKind::StateCapacity);
+    assert!(!limiter.internal_failed.load(AtomicOrdering::Acquire));
+}
+
+#[tokio::test(start_paused = true)]
+async fn existing_bucket_works_after_new_bucket_capacity_failure() {
+    let limiter = LocalRateLimiter::new()
+        .quota_capacity(1)
+        .expect("quota capacity");
+    let existing = plan(vec![rule(
+        "existing",
+        "one",
+        1,
+        &[(2, Duration::from_secs(100))],
+    )]);
+    let new = plan(vec![rule(
+        "new",
+        "two",
         1,
         &[(1, Duration::from_secs(100))],
     )]);
-    acquire(&limiter, &first, Some("example.test")).await;
-    acquire(&limiter, &second, Some("example.test")).await;
-    acquire(&limiter, &third, Some("example.test")).await;
-    assert_eq!(limiter.state.lock().expect("state").quota.len(), 2);
 
-    acquire(&limiter, &first, Some("example.test")).await;
+    acquire(&limiter, &existing, Some("example.test")).await;
     assert_eq!(
-        limiter.state.lock().expect("state").quota.len(),
-        2,
-        "re-encountered evicted key receives a fresh local burst within the bound"
+        rate_error(
+            try_acquire(&limiter, &new, Some("example.test")).await,
+            "new bucket unexpectedly succeeded",
+        )
+        .kind(),
+        RateLimitErrorKind::StateCapacity
+    );
+    acquire(&limiter, &existing, Some("example.test")).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn active_quota_is_not_evicted() {
+    let limiter = LocalRateLimiter::new()
+        .quota_capacity(1)
+        .expect("quota capacity");
+    let active = plan(vec![rule(
+        "active",
+        "one",
+        1,
+        &[(1, Duration::from_secs(100))],
+    )]);
+    let incoming = plan(vec![rule(
+        "incoming",
+        "two",
+        1,
+        &[(1, Duration::from_secs(100))],
+    )]);
+
+    acquire(&limiter, &active, Some("example.test")).await;
+    let error = rate_error(
+        try_acquire(&limiter, &incoming, Some("example.test")).await,
+        "active state was unexpectedly evicted",
     );
 
-    tokio::time::advance(Duration::from_secs(5)).await;
-    acquire(&limiter, &third, Some("example.test")).await;
+    assert_eq!(error.kind(), RateLimitErrorKind::StateCapacity);
     let state = limiter.state.lock().expect("state");
-    assert_eq!(state.quota.len(), 1, "idle entries are pruned at the TTL");
+    assert_eq!(state.quota.len(), 1);
     assert_eq!(
         state
             .quota
             .keys()
             .next()
-            .expect("one entry")
+            .expect("active key")
             .rule
             .id
             .as_ref(),
-        "third"
+        "active"
     );
 }
 
 #[tokio::test(start_paused = true)]
-async fn current_bucket_cooldown_is_exact_and_empty_plan_falls_back_to_host() {
+async fn consumed_long_window_is_not_pruned_by_short_idle_ttl() {
+    let limiter = LocalRateLimiter::new()
+        .quota_capacity(1)
+        .expect("quota capacity")
+        .idle_ttl(Duration::from_secs(5))
+        .expect("idle TTL");
+    let long = plan(vec![rule(
+        "long",
+        "one",
+        1,
+        &[(1, Duration::from_secs(100))],
+    )]);
+    let incoming = plan(vec![rule(
+        "incoming",
+        "two",
+        1,
+        &[(1, Duration::from_secs(1))],
+    )]);
+
+    acquire(&limiter, &long, Some("example.test")).await;
+    tokio::time::advance(Duration::from_secs(5)).await;
+    let error = rate_error(
+        try_acquire(&limiter, &incoming, Some("example.test")).await,
+        "partially refilled long window was unexpectedly pruned",
+    );
+
+    assert_eq!(error.kind(), RateLimitErrorKind::StateCapacity);
+    let state = limiter.state.lock().expect("state");
+    assert_eq!(state.quota.len(), 1);
+    let (key, entry) = state.quota.first_key_value().expect("long entry");
+    assert_eq!(key.rule.id.as_ref(), "long");
+    assert!(entry.balance < key.full_balance().expect("full balance"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn fully_replenished_idle_bucket_is_pruned() {
+    let limiter = LocalRateLimiter::new()
+        .quota_capacity(1)
+        .expect("quota capacity")
+        .idle_ttl(Duration::from_secs(5))
+        .expect("idle TTL");
+    let first = plan(vec![rule(
+        "first",
+        "one",
+        1,
+        &[(1, Duration::from_secs(5))],
+    )]);
+
+    acquire(&limiter, &first, Some("example.test")).await;
+    tokio::time::advance(Duration::from_secs(5)).await;
+    acquire(&limiter, &RateLimitPlan::empty(), Some("example.test")).await;
+
+    assert!(limiter.state.lock().expect("state").quota.is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn pruning_frees_capacity_for_new_bucket() {
+    let limiter = LocalRateLimiter::new()
+        .quota_capacity(1)
+        .expect("quota capacity")
+        .idle_ttl(Duration::from_secs(5))
+        .expect("idle TTL");
+    let first = plan(vec![rule(
+        "first",
+        "one",
+        1,
+        &[(1, Duration::from_secs(5))],
+    )]);
+    let second = plan(vec![rule(
+        "second",
+        "two",
+        1,
+        &[(1, Duration::from_secs(5))],
+    )]);
+
+    acquire(&limiter, &first, Some("example.test")).await;
+    tokio::time::advance(Duration::from_secs(5)).await;
+    acquire(&limiter, &second, Some("example.test")).await;
+
+    let state = limiter.state.lock().expect("state");
+    assert_eq!(state.quota.len(), 1);
+    assert_eq!(
+        state
+            .quota
+            .keys()
+            .next()
+            .expect("second key")
+            .rule
+            .id
+            .as_ref(),
+        "second"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn quota_insert_is_transactional() {
+    let limiter = LocalRateLimiter::new()
+        .quota_capacity(1)
+        .expect("quota capacity");
+    let existing = plan(vec![rule(
+        "first",
+        "one",
+        1,
+        &[(2, Duration::from_secs(100))],
+    )]);
+    let combined = plan(vec![
+        rule("first", "one", 1, &[(2, Duration::from_secs(100))]),
+        rule("second", "two", 1, &[(1, Duration::from_secs(100))]),
+    ]);
+
+    acquire(&limiter, &existing, Some("example.test")).await;
+    let balance_before = limiter
+        .state
+        .lock()
+        .expect("state")
+        .quota
+        .values()
+        .next()
+        .expect("existing state")
+        .balance;
+    assert_eq!(
+        rate_error(
+            try_acquire(&limiter, &combined, Some("example.test")).await,
+            "one additional entry unexpectedly fit a full state map",
+        )
+        .kind(),
+        RateLimitErrorKind::StateCapacity
+    );
+    let state = limiter.state.lock().expect("state");
+    assert_eq!(state.quota.len(), 1);
+    assert_eq!(
+        state.quota.values().next().expect("retained state").balance,
+        balance_before,
+        "capacity failure must not reserve from an existing contribution"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn current_bucket_cooldown_uses_resolved_by_key() {
     let limiter = Arc::new(LocalRateLimiter::new().observer(Arc::new(FixedObserver {
         duration: Duration::from_secs(10),
         scope: FixedScope::Buckets,
@@ -610,7 +905,7 @@ async fn current_bucket_cooldown_is_exact_and_empty_plan_falls_back_to_host() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn host_and_client_cooldowns_affect_only_their_normative_scopes() {
+async fn host_cooldown_remains_host_scoped() {
     let plan = Arc::new(plan(vec![rule(
         "quota",
         "key",
@@ -645,7 +940,16 @@ async fn host_and_client_cooldowns_affect_only_their_normative_scopes() {
     free.await.expect("free task").expect("free host");
     blocked.abort();
     let _ = blocked.await;
+}
 
+#[tokio::test(start_paused = true)]
+async fn client_cooldown_remains_limiter_scoped() {
+    let plan = Arc::new(plan(vec![rule(
+        "quota",
+        "key",
+        1,
+        &[(100, Duration::from_secs(1))],
+    )]));
     let client_limiter = Arc::new(LocalRateLimiter::new().observer(Arc::new(FixedObserver {
         duration: Duration::from_secs(10),
         scope: FixedScope::Client,
@@ -756,7 +1060,7 @@ async fn cooldown_is_clamped_extended_never_shortened_and_zero_is_noop() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn cooldown_state_capacity_uses_deterministic_eviction() {
+async fn active_cooldown_is_not_evicted() {
     let limiter = Arc::new(
         LocalRateLimiter::new()
             .cooldown_capacity(1)
@@ -775,6 +1079,53 @@ async fn cooldown_state_capacity_uses_deterministic_eviction() {
         Duration::from_secs(60),
     )
     .await;
+    let error = limiter
+        .apply_cooldown(
+            Some("second.test"),
+            &plan,
+            Cooldown {
+                duration: Duration::from_secs(10),
+                scope: CooldownScope::Host,
+            },
+            Duration::from_secs(60),
+        )
+        .expect_err("active cooldown cannot be evicted");
+    assert_eq!(error.kind(), RateLimitErrorKind::StateCapacity);
+
+    let retained = spawn_acquire(Arc::clone(&limiter), Arc::clone(&plan), Some("first.test"));
+    let rejected = spawn_acquire(Arc::clone(&limiter), Arc::clone(&plan), Some("second.test"));
+    tokio::task::yield_now().await;
+    assert!(!retained.is_finished());
+    assert!(rejected.is_finished());
+    rejected
+        .await
+        .expect("rejected host task")
+        .expect("capacity failure installed no cooldown");
+    retained.abort();
+    let _ = retained.await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn expired_cooldown_is_pruned() {
+    let limiter = Arc::new(
+        LocalRateLimiter::new()
+            .cooldown_capacity(1)
+            .expect("cooldown capacity")
+            .observer(Arc::new(FixedObserver {
+                duration: Duration::from_secs(5),
+                scope: FixedScope::Host,
+            })),
+    );
+    let plan = Arc::new(RateLimitPlan::empty());
+    observe(
+        &limiter,
+        &plan,
+        Some("first.test"),
+        StatusCode::OK,
+        Duration::from_secs(60),
+    )
+    .await;
+    tokio::time::advance(Duration::from_secs(5)).await;
     observe(
         &limiter,
         &plan,
@@ -783,19 +1134,121 @@ async fn cooldown_state_capacity_uses_deterministic_eviction() {
         Duration::from_secs(60),
     )
     .await;
-    assert_eq!(limiter.state.lock().expect("state").cooldowns.len(), 1);
 
-    let evicted = spawn_acquire(Arc::clone(&limiter), Arc::clone(&plan), Some("first.test"));
-    let retained = spawn_acquire(Arc::clone(&limiter), Arc::clone(&plan), Some("second.test"));
+    assert_eq!(limiter.state.lock().expect("state").cooldowns.len(), 1);
+    let first = spawn_acquire(Arc::clone(&limiter), Arc::clone(&plan), Some("first.test"));
+    let second = spawn_acquire(Arc::clone(&limiter), Arc::clone(&plan), Some("second.test"));
     tokio::task::yield_now().await;
-    assert!(evicted.is_finished());
-    assert!(!retained.is_finished());
-    evicted
+    assert!(first.is_finished());
+    assert!(!second.is_finished());
+    first
         .await
-        .expect("evicted task")
-        .expect("evicted cooldown is forgotten");
-    retained.abort();
-    let _ = retained.await;
+        .expect("expired host task")
+        .expect("expired host cooldown was pruned");
+    second.abort();
+    let _ = second.await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn cooldown_capacity_failure_is_recoverable() {
+    let limiter = LocalRateLimiter::new()
+        .cooldown_capacity(1)
+        .expect("cooldown capacity");
+    let plan = RateLimitPlan::empty();
+    let cooldown = || Cooldown {
+        duration: Duration::from_secs(5),
+        scope: CooldownScope::Host,
+    };
+
+    limiter
+        .apply_cooldown(
+            Some("first.test"),
+            &plan,
+            cooldown(),
+            Duration::from_secs(60),
+        )
+        .expect("first cooldown");
+    let error = limiter
+        .apply_cooldown(
+            Some("second.test"),
+            &plan,
+            cooldown(),
+            Duration::from_secs(60),
+        )
+        .expect_err("second active cooldown exceeds capacity");
+    assert_eq!(error.kind(), RateLimitErrorKind::StateCapacity);
+    assert!(!limiter.internal_failed.load(AtomicOrdering::Acquire));
+
+    tokio::time::advance(Duration::from_secs(5)).await;
+    limiter
+        .apply_cooldown(
+            Some("second.test"),
+            &plan,
+            cooldown(),
+            Duration::from_secs(60),
+        )
+        .expect("capacity recovers after expiration");
+}
+
+#[tokio::test(start_paused = true)]
+async fn existing_cooldown_remains_after_capacity_failure() {
+    let limiter = Arc::new(
+        LocalRateLimiter::new()
+            .cooldown_capacity(1)
+            .expect("cooldown capacity"),
+    );
+    let plan = Arc::new(RateLimitPlan::empty());
+    limiter
+        .apply_cooldown(
+            Some("first.test"),
+            &plan,
+            Cooldown {
+                duration: Duration::from_secs(10),
+                scope: CooldownScope::Host,
+            },
+            Duration::from_secs(60),
+        )
+        .expect("first cooldown");
+    let expiration = limiter
+        .state
+        .lock()
+        .expect("state")
+        .cooldowns
+        .values()
+        .next()
+        .expect("first cooldown state")
+        .expiration;
+
+    let error = limiter
+        .apply_cooldown(
+            Some("second.test"),
+            &plan,
+            Cooldown {
+                duration: Duration::from_secs(20),
+                scope: CooldownScope::Host,
+            },
+            Duration::from_secs(60),
+        )
+        .expect_err("second cooldown exceeds capacity");
+    assert_eq!(error.kind(), RateLimitErrorKind::StateCapacity);
+    let state = limiter.state.lock().expect("state");
+    assert_eq!(state.cooldowns.len(), 1);
+    assert_eq!(
+        state
+            .cooldowns
+            .values()
+            .next()
+            .expect("retained cooldown")
+            .expiration,
+        expiration
+    );
+    drop(state);
+
+    let blocked = spawn_acquire(Arc::clone(&limiter), Arc::clone(&plan), Some("first.test"));
+    tokio::task::yield_now().await;
+    assert!(!blocked.is_finished());
+    blocked.abort();
+    let _ = blocked.await;
 }
 
 #[tokio::test(start_paused = true)]
@@ -1057,11 +1510,5 @@ fn boundary_helpers_are_checked() {
         key.full_balance().expect("maximum full balance"),
         key.required_balance(*cost)
             .expect("maximum required balance")
-    );
-    let mut state = LocalLimiterState::new();
-    state.next_touch = u128::MAX;
-    assert_eq!(
-        state.next_touch().expect_err("touch overflow").kind(),
-        RateLimitErrorKind::Internal
     );
 }

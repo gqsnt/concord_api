@@ -676,6 +676,52 @@ async fn composite_keys_are_ordered_and_distinct() {
     );
 }
 
+#[cfg(feature = "rate-limit")]
+#[tokio::test(start_paused = true)]
+async fn client_clones_share_state() {
+    let server = ScriptedServer::start([ResponseScript::ok(b"first".to_vec())])
+        .expect("shared-client limiter server");
+    let proxy = SafeProxy::parse(server.url("")).expect("shared-client limiter proxy");
+    let client = PartitionedRateApi::builder()
+        .tenant("tenant-a".to_owned())
+        .configure_http(move |http| http.proxy(proxy))
+        .build()
+        .expect("default-limited partitioned client");
+    let clone = client.clone();
+
+    client
+        .regional("eu".to_owned())
+        .read(DisplayOnly {
+            text: "resource-a",
+            calls: Arc::new(AtomicUsize::new(0)),
+        })
+        .await
+        .expect("first request");
+
+    let repeated = tokio::spawn(async move {
+        clone
+            .regional("eu".to_owned())
+            .read(DisplayOnly {
+                text: "resource-a",
+                calls: Arc::new(AtomicUsize::new(0)),
+            })
+            .await
+    });
+    tokio::task::yield_now().await;
+
+    assert!(
+        !repeated.is_finished(),
+        "a client clone must retain the built client's limiter object"
+    );
+    assert_eq!(
+        server.request_count(),
+        1,
+        "the repeated request must wait before transport"
+    );
+    repeated.abort();
+    let _ = repeated.await;
+}
+
 #[tokio::test]
 async fn client_rule_by_endpoint_separates_endpoints() {
     let server = ScriptedServer::start([
