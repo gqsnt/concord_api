@@ -1,12 +1,28 @@
 use std::collections::HashSet;
 
-use super::model::{Pagination, PaginationField, PaginationInitializer, PaginationValue, Value};
+use super::model::{
+    Pagination, PaginationField, PaginationInitializer, PaginationValue, Value, ValueReference,
+};
 use super::symbols::{ScopeFrame, resolve_default};
 use super::{Resolver, SpanError};
 use crate::syntax::ast::{
     PaginationDecl, PaginationInitializer as SourcePaginationInitializer,
     PaginationValue as SourcePaginationValue,
 };
+
+pub(super) fn pagination_bound_values(pagination: Option<&Pagination>) -> Vec<ValueReference> {
+    let mut values = Vec::new();
+    if let Some(pagination) = pagination {
+        for field in &pagination.fields {
+            if let PaginationInitializer::Bound(value) = &field.initializer
+                && !values.contains(&value.reference)
+            {
+                values.push(value.reference);
+            }
+        }
+    }
+    values
+}
 
 impl Resolver<'_> {
     pub(super) fn resolve_pagination(

@@ -429,11 +429,31 @@ pub(crate) struct NormalizedConfig {
 }
 
 #[derive(Clone)]
+#[allow(
+    dead_code,
+    reason = "RL2 resolves dimensions before the follow-up keyed code-generation phase consumes them"
+)]
 pub(crate) struct NormalizedRateLimitRule {
     pub(crate) id: String,
     pub(crate) origin: String,
+    pub(crate) dimensions: Vec<NormalizedRateLimitDimension>,
     pub(crate) cost: u32,
     pub(crate) windows: Vec<NormalizedRateLimitWindow>,
+}
+
+#[derive(Clone)]
+#[allow(
+    dead_code,
+    reason = "RL2 resolves dimensions before the follow-up keyed code-generation phase consumes them"
+)]
+pub(crate) enum NormalizedRateLimitDimension {
+    Host,
+    Endpoint,
+    Value {
+        public_name: String,
+        reference: ValueReference,
+        span: Span,
+    },
 }
 
 #[derive(Clone)]

@@ -1,0 +1,5 @@
+error: unknown rate-limit dimension namespace `other`; use only `vars.*`, `scope.*`, or `ep.*`
+ --> tests/ui/fail/rate_limits/rate_limit_unknown_namespace.rs:6:26
+  |
+6 |         rate_limit { by [other.tenant]; 1 / 1s; }
+  |                          ^^^^^

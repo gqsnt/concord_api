@@ -1,0 +1,5 @@
+error: a rate-limit key permits at most 32 dimensions
+  --> tests/ui/fail/rate_limits/rate_limit_dimension_limit.rs:16:17
+   |
+16 |                 vars.first_excess,
+   |                 ^^^^

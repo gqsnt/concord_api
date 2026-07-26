@@ -5,6 +5,7 @@ use super::model::{
 };
 use super::symbols::ScopeFrame;
 use super::{Resolver, SpanError};
+use crate::semantic::rate_limits::RateLimitDeclarationLayer;
 use crate::syntax::ast::{
     AuthChallenge as SourceChallenge, AuthOperation, AuthPlacementKind as SourceAuthPlacement,
     HeaderEntry, HeaderOperation, HostOperation, Layer, PathOperation, PublicExpr, QueryEntry,
@@ -45,6 +46,8 @@ impl Resolver<'_> {
         parent: &NormalizedConfig,
         scopes: &[ScopeFrame],
         endpoint: Option<&[Value]>,
+        pagination_values: &[super::model::ValueReference],
+        rate_limit_layer: RateLimitDeclarationLayer,
         rate_id_path: &str,
         rate_lexical_origin: &str,
     ) -> syn::Result<NormalizedConfig> {
@@ -200,8 +203,15 @@ impl Resolver<'_> {
                     "an effective rate-limit plan permits at most {MAX_RATE_LIMIT_RULES_PER_PLAN} rules"
                 )));
             }
-            let rule =
-                self.resolve_rate_limit(&declaration.value, rate_id_path, rate_lexical_origin);
+            let rule = self.resolve_rate_limit(
+                &declaration.value,
+                rate_id_path,
+                rate_lexical_origin,
+                scopes,
+                endpoint,
+                pagination_values,
+                rate_limit_layer,
+            )?;
             if rule.id.len() > MAX_RATE_LIMIT_ID_BYTES {
                 return Err(declaration.key_span.error(format!(
                     "a rate-limit rule ID permits at most {MAX_RATE_LIMIT_ID_BYTES} UTF-8 bytes"

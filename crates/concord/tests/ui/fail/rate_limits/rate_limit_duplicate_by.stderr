@@ -1,0 +1,5 @@
+error: a rate-limit rule permits at most one `by` clause
+ --> tests/ui/fail/rate_limits/rate_limit_duplicate_by.rs:8:13
+  |
+8 |             by [endpoint];
+  |             ^^

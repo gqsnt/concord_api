@@ -131,8 +131,51 @@ pub(crate) struct Layer {
 
 #[derive(Clone)]
 pub(crate) struct RateLimitDecl {
+    pub(crate) dimensions: Vec<RateLimitDimensionDecl>,
     pub(crate) cost: u32,
     pub(crate) windows: Vec<RateLimitWindowLiteral>,
+}
+
+#[derive(Clone)]
+pub(crate) enum RateLimitDimensionDecl {
+    Host {
+        span: Span,
+    },
+    Endpoint {
+        span: Span,
+    },
+    Value {
+        namespace: Ident,
+        name: Ident,
+        span: Span,
+    },
+}
+
+impl RateLimitDimensionDecl {
+    pub(crate) const fn span(&self) -> Span {
+        match self {
+            Self::Host { span } | Self::Endpoint { span } | Self::Value { span, .. } => *span,
+        }
+    }
+
+    pub(crate) fn public_name(&self) -> String {
+        match self {
+            Self::Host { .. } => "host".to_owned(),
+            Self::Endpoint { .. } => "endpoint".to_owned(),
+            Self::Value {
+                namespace, name, ..
+            } => format!(
+                "{}.{}",
+                canonical_dimension_ident(namespace),
+                canonical_dimension_ident(name)
+            ),
+        }
+    }
+}
+
+fn canonical_dimension_ident(ident: &Ident) -> String {
+    let text = ident.to_string();
+    text.strip_prefix("r#").unwrap_or(&text).to_owned()
 }
 
 #[derive(Clone)]

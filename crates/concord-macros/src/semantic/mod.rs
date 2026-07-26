@@ -29,7 +29,8 @@ use auth::{
     convert_credentials, resolve_endpoint_credentials, validate_credential_cycles,
     validate_credential_names,
 };
-use rate_limits::source_tree_declares_rate_limits;
+use pagination::pagination_bound_values;
+use rate_limits::{RateLimitDeclarationLayer, source_tree_declares_rate_limits};
 use symbols::{
     ScopeFrame, convert_values, validate_child_methods, validate_endpoint_setters,
     validate_setter_namespace,
@@ -96,6 +97,8 @@ pub(crate) fn resolve_with_capabilities(
             &NormalizedConfig::default(),
             &[],
             None,
+            &[],
+            RateLimitDeclarationLayer::Client,
             &client_id,
             "client",
         )?;
@@ -186,6 +189,8 @@ impl Resolver<'_> {
             parent,
             &frames,
             None,
+            &[],
+            RateLimitDeclarationLayer::Scope,
             &id_path,
             &lexical_origin,
         )?;
@@ -214,6 +219,12 @@ impl Resolver<'_> {
         self.next_endpoint_id += 1;
         let parameters = convert_values(source.parameters)?;
         validate_endpoint_setters(&parameters, visible_scopes)?;
+        let pagination = self.resolve_pagination(
+            source.pagination.map(|clause| clause.value),
+            visible_scopes,
+            &parameters,
+        )?;
+        let pagination_values = pagination_bound_values(pagination.as_ref());
 
         let dsl_path = scope_path
             .iter()
@@ -245,6 +256,8 @@ impl Resolver<'_> {
             parent,
             visible_scopes,
             Some(&parameters),
+            &pagination_values,
+            RateLimitDeclarationLayer::Endpoint,
             &contract_id.value,
             &lexical_origin,
         )?;
@@ -258,11 +271,6 @@ impl Resolver<'_> {
                 .map_or(EndpointDocTimeout::Disabled, EndpointDocTimeout::Inherited),
         };
         head_limits::validate_static_head(self.base, &config, source.name.span())?;
-        let pagination = self.resolve_pagination(
-            source.pagination.map(|clause| clause.value),
-            visible_scopes,
-            &parameters,
-        )?;
         let body_position = source.body.as_ref().map(|body| body.position);
         let body = source.body.map(|body| RequestBody {
             name: body.name,
