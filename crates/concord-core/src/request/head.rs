@@ -302,8 +302,9 @@ impl HeadBuilder {
 
     /// Appends one generated, structurally validated effective rate-limit rule.
     ///
-    /// Key name/value pairs are validated and copied incrementally inside the
-    /// builder; the first excess or duplicate part stops iteration.
+    /// Key names are validated and values are formatted into the remaining
+    /// aggregate key budget incrementally inside the builder. The first
+    /// excess or duplicate part stops iteration.
     #[doc(hidden)]
     pub fn push_rate_limit_rule<I, N, V, W>(
         &mut self,
@@ -315,7 +316,7 @@ impl HeadBuilder {
     where
         I: IntoIterator<Item = (N, V)>,
         N: AsRef<str>,
-        V: AsRef<str>,
+        V: Display,
         W: IntoIterator<Item = (u32, Duration)>,
     {
         let rule = (|| -> Result<RateLimitRule, RateLimitError> {
@@ -324,7 +325,7 @@ impl HeadBuilder {
             let cost = NonZeroU32::new(cost).ok_or_else(|| {
                 RateLimitError::new(crate::error::RateLimitErrorKind::InvalidConfiguration)
             })?;
-            let key = RateLimitKey::from_values(parts)?;
+            let key = RateLimitKey::from_display_values(parts)?;
             RateLimitRule::from_window_values(id, key, cost, windows)
         })()
         .map_err(|error| {
@@ -1050,6 +1051,16 @@ mod tests {
         }
     }
 
+    impl fmt::Display for GuardedRateText {
+        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            assert!(
+                self.may_inspect,
+                "generated key formatted the first excess part"
+            );
+            formatter.write_str(&self.text)
+        }
+    }
+
     struct GuardedRateParts {
         calls: Arc<AtomicUsize>,
     }
@@ -1628,6 +1639,29 @@ mod tests {
         assert!(!error.to_string().contains(RATE_KEY_SENTINEL));
         assert!(!format!("{error:?}").contains(RATE_ID_SENTINEL));
         assert!(!format!("{error:?}").contains(RATE_KEY_SENTINEL));
+
+        let mut excessive_formatted_key = builder("https://example.test/");
+        let error = excessive_formatted_key
+            .push_rate_limit_rule(
+                RATE_ID_SENTINEL,
+                [(
+                    "ep.resource",
+                    &FirstExcessDisplay {
+                        ignore_format_error: true,
+                    },
+                )],
+                1,
+                UnpolledRateWindows,
+            )
+            .expect_err("bounded generated key formatting must fail closed");
+        assert_eq!(
+            error.configuration_kind(),
+            Some(ConfigurationErrorKind::InvalidRateLimit)
+        );
+        assert!(!error.to_string().contains(RATE_ID_SENTINEL));
+        assert!(!error.to_string().contains(FORMAT_SENTINEL));
+        assert!(!format!("{error:?}").contains(RATE_ID_SENTINEL));
+        assert!(!format!("{error:?}").contains(FORMAT_SENTINEL));
 
         let mut plan_boundary = builder("https://example.test/");
         for index in 0..crate::rate_limit::MAX_RATE_LIMIT_RULES_PER_PLAN {

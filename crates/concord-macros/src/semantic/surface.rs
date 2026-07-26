@@ -10,9 +10,9 @@ use super::model::{
     EndpointDocHost, EndpointDocInput, EndpointDocInputKind, EndpointDocModel,
     EndpointDocNamespace, EndpointDocRateLimit, EndpointDocRateLimitWindow, EndpointDocResponse,
     EndpointDocRouteAtom, EndpointDocSetter, EndpointDocTerminals, EndpointDocTimeout,
-    EndpointSetter, EndpointSurface, NormalizedConfig, RequestBody, RequestTerminals,
-    RequiredArgument, ResolvedAuthPlacement, ResolvedChallengePolicy, ResolvedExpr, ResolvedMethod,
-    ResolvedRetry, Scope, ScopeSurface, Value, ValueReference,
+    EndpointSetter, EndpointSurface, NormalizedConfig, NormalizedRateLimitDimension, RequestBody,
+    RequestTerminals, RequiredArgument, ResolvedAuthPlacement, ResolvedChallengePolicy,
+    ResolvedExpr, ResolvedMethod, ResolvedRetry, Scope, ScopeSurface, Value, ValueReference,
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -279,6 +279,15 @@ pub(crate) fn endpoint_doc_model(
         .map(|rule| EndpointDocRateLimit {
             id: rule.id.clone(),
             origin: rule.origin.clone(),
+            dimensions: rule
+                .dimensions
+                .iter()
+                .map(|dimension| match dimension {
+                    NormalizedRateLimitDimension::Host => "host".to_owned(),
+                    NormalizedRateLimitDimension::Endpoint => "endpoint".to_owned(),
+                    NormalizedRateLimitDimension::Value { public_name, .. } => public_name.clone(),
+                })
+                .collect(),
             cost: rule.cost,
             windows: rule
                 .windows

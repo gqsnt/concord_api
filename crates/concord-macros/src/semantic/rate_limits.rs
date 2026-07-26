@@ -24,6 +24,13 @@ impl RateLimitDeclarationLayer {
     }
 }
 
+pub(super) struct RateLimitResolutionContext<'a> {
+    pub(super) pagination_values: &'a [ValueReference],
+    pub(super) layer: RateLimitDeclarationLayer,
+    pub(super) id_path: &'a str,
+    pub(super) lexical_origin: &'a str,
+}
+
 pub(super) fn source_tree_declares_rate_limits(layer: &Layer, children: &[SourceChild]) -> bool {
     let local = layer.rate_limit.is_some();
     local
@@ -39,12 +46,9 @@ impl Resolver<'_> {
     pub(super) fn resolve_rate_limit(
         &self,
         declaration: &RateLimitDecl,
-        id_path: &str,
-        origin: &str,
         scopes: &[ScopeFrame],
         endpoint: Option<&[super::model::Value]>,
-        pagination_values: &[ValueReference],
-        layer: RateLimitDeclarationLayer,
+        context: &RateLimitResolutionContext<'_>,
     ) -> syn::Result<NormalizedRateLimitRule> {
         let dimensions = declaration
             .dimensions
@@ -58,7 +62,7 @@ impl Resolver<'_> {
                     namespace, name, ..
                 } => {
                     let public_name = dimension.public_name();
-                    match (namespace.to_string().as_str(), layer) {
+                    match (namespace.to_string().as_str(), context.layer) {
                         ("scope", RateLimitDeclarationLayer::Client) => {
                             return Err(name.span().error(format!(
                                 "`{public_name}` is unavailable in a client rate-limit declaration"
@@ -70,7 +74,7 @@ impl Resolver<'_> {
                         ) => {
                             return Err(name.span().error(format!(
                                 "`{public_name}` is unavailable in a {} rate-limit declaration",
-                                layer.name()
+                                context.layer.name()
                             )));
                         }
                         _ => {}
@@ -91,7 +95,7 @@ impl Resolver<'_> {
                         ValueShape::Scalar => {}
                     }
                     if matches!(value.reference, ValueReference::Endpoint(_))
-                        && pagination_values.contains(&value.reference)
+                        && context.pagination_values.contains(&value.reference)
                     {
                         return Err(name.span().error(format!(
                             "pagination-controlled endpoint value `{public_name}` cannot be a rate-limit dimension"
@@ -117,8 +121,8 @@ impl Resolver<'_> {
             })
             .collect();
         Ok(NormalizedRateLimitRule {
-            id: format!("{id_path}.rate_limit"),
-            origin: origin.to_owned(),
+            id: format!("{}.rate_limit", context.id_path),
+            origin: context.lexical_origin.to_owned(),
             dimensions,
             cost: declaration.cost,
             windows,

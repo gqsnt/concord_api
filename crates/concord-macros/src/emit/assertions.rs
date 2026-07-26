@@ -68,6 +68,17 @@ pub(super) fn endpoint_where_clause(
             bounds.push(quote!(#ty: ::std::marker::Send + ::std::marker::Sync + 'static));
         }
     }
+    for rule in &endpoint.config.rate_limits {
+        for dimension in &rule.dimensions {
+            if let NormalizedRateLimitDimension::Value {
+                reference, span, ..
+            } = dimension
+            {
+                let ty = resolved_value_type(*reference, client, scopes, endpoint);
+                bounds.push(quote_spanned!(*span=> #ty: ::std::fmt::Display));
+            }
+        }
+    }
     let mut display_types = Vec::new();
     collect_config_display_types(
         &endpoint.config,
@@ -216,5 +227,42 @@ mod tests {
         assert!(output.contains("ResponseSpecification"));
         assert!(bounds.contains("RequestBodySpec"));
         assert!(bounds.contains("ResponseBodySpec"));
+    }
+
+    #[test]
+    fn only_referenced_dimension_types_require_display() {
+        let api = crate::semantic::test_support::resolve_tokens(quote! {
+            client RateApi {
+                base "https://example.test";
+                vars {
+                    tenant: crate::TenantKey;
+                    unrelated: crate::ClientWithoutDisplay;
+                }
+            }
+            GET read(
+                resource: crate::ResourceKey,
+                unrelated: crate::EndpointWithoutDisplay,
+            ) -> Bytes {
+                rate_limit {
+                    by [vars.tenant, ep.resource];
+                    1 / 1s;
+                }
+            }
+        });
+        let endpoint = crate::semantic::test_support::endpoint(&api.client.children, "read");
+        let bounds = endpoint_where_clause(
+            &api.client,
+            &[],
+            endpoint,
+            &test_support::core_path(),
+            &quote!(super),
+            false,
+        )
+        .to_string();
+
+        assert!(bounds.contains("crate :: TenantKey : :: std :: fmt :: Display"));
+        assert!(bounds.contains("crate :: ResourceKey : :: std :: fmt :: Display"));
+        assert!(!bounds.contains("ClientWithoutDisplay : :: std :: fmt :: Display"));
+        assert!(!bounds.contains("EndpointWithoutDisplay : :: std :: fmt :: Display"));
     }
 }

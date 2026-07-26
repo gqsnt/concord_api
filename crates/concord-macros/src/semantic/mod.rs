@@ -30,7 +30,9 @@ use auth::{
     validate_credential_names,
 };
 use pagination::pagination_bound_values;
-use rate_limits::{RateLimitDeclarationLayer, source_tree_declares_rate_limits};
+use rate_limits::{
+    RateLimitDeclarationLayer, RateLimitResolutionContext, source_tree_declares_rate_limits,
+};
 use symbols::{
     ScopeFrame, convert_values, validate_child_methods, validate_endpoint_setters,
     validate_setter_namespace,
@@ -97,10 +99,12 @@ pub(crate) fn resolve_with_capabilities(
             &NormalizedConfig::default(),
             &[],
             None,
-            &[],
-            RateLimitDeclarationLayer::Client,
-            &client_id,
-            "client",
+            &RateLimitResolutionContext {
+                pagination_values: &[],
+                layer: RateLimitDeclarationLayer::Client,
+                id_path: &client_id,
+                lexical_origin: "client",
+            },
         )?;
         let children = resolver.resolve_children(source_children, &config, &[], &[])?;
         (config, children)
@@ -189,10 +193,12 @@ impl Resolver<'_> {
             parent,
             &frames,
             None,
-            &[],
-            RateLimitDeclarationLayer::Scope,
-            &id_path,
-            &lexical_origin,
+            &RateLimitResolutionContext {
+                pagination_values: &[],
+                layer: RateLimitDeclarationLayer::Scope,
+                id_path: &id_path,
+                lexical_origin: &lexical_origin,
+            },
         )?;
         let children = self.resolve_children(source.children, &config, &frames, &path)?;
         validate_child_methods(&children, &parameters, "scope facade", false)?;
@@ -256,10 +262,12 @@ impl Resolver<'_> {
             parent,
             visible_scopes,
             Some(&parameters),
-            &pagination_values,
-            RateLimitDeclarationLayer::Endpoint,
-            &contract_id.value,
-            &lexical_origin,
+            &RateLimitResolutionContext {
+                pagination_values: &pagination_values,
+                layer: RateLimitDeclarationLayer::Endpoint,
+                id_path: &contract_id.value,
+                lexical_origin: &lexical_origin,
+            },
         )?;
         let timeout = match source.layer.timeout.as_ref() {
             Some(clause) => match &clause.value {

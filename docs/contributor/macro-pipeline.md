@@ -32,10 +32,11 @@ paths and never recognizes JSON, CSV, NDJSON, OAuth2, local limiter, or
 pagination-controller type names.
 
 A source-language acceptance or diagnostic change does not by itself change
-the hidden generated bridge. The DNS/IP host-shaping validation leaves
-generated-contract version 26 unchanged because emitted bridge calls, types,
-and semantics are unchanged. Bump the version only when generated code and
-the façade/core bridge must agree on a different private contract.
+the hidden generated bridge. The DNS/IP host-shaping validation required no
+bridge change. Generated-contract version 27 adds core-owned bounded
+formatting for emitted rate-limit key dimensions. Bump the version only when
+generated code and the façade/core bridge must agree on a different private
+contract.
 
 ## Diagnostic rules
 

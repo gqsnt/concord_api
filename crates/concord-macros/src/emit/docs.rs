@@ -250,7 +250,7 @@ fn render_request(docs: &EndpointDocModel) -> String {
         "Rate limits: none.".to_owned()
     } else {
         format!(
-            "Rate limits: {}.",
+            "Rate limits (applicable rules are listed in inherited order):\n{}",
             docs.rate_limits
                 .iter()
                 .map(|rule| {
@@ -262,13 +262,22 @@ fn render_request(docs: &EndpointDocModel) -> String {
                         })
                         .collect::<Vec<_>>()
                         .join(", ");
+                    let dimensions = if rule.dimensions.is_empty() {
+                        "declaration-global".to_owned()
+                    } else {
+                        rule.dimensions
+                            .iter()
+                            .map(|dimension| format!("`{dimension}`"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    };
                     format!(
-                        "{} (`{}`, cost {}; {windows})",
-                        rule.origin, rule.id, rule.cost
+                        "- {} (stable rule ID `{}`)\n  - Bucketed by: {dimensions}\n  - Cost: {}\n  - Windows: {windows}",
+                        rule.origin, rule.id, rule.cost,
                     )
                 })
                 .collect::<Vec<_>>()
-                .join("; ")
+                .join("\n")
         )
     };
     let timeout = match docs.timeout {
@@ -712,7 +721,10 @@ mod tests {
                         query { "compact" = ep.compact; }
                         headers { "X-View" = "public"; }
                         timeout 250ms;
-                        rate_limit { 10 / 1500ms; }
+                        rate_limit {
+                            by [endpoint, ep.region];
+                            10 / 1500ms;
+                        }
                     }
                 }
             }
@@ -734,6 +746,7 @@ mod tests {
             "Public header names: `X-View`",
             "Timeout: endpoint override 250ms",
             "10/1.5s",
+            "Bucketed by: `endpoint`, `ep.region`",
             "Stable contract ID: `d_dragon_api.version.data.realm`",
         ] {
             assert!(docs.contains(expected), "missing `{expected}` in:\n{docs}");
@@ -754,6 +767,34 @@ mod tests {
                 "forbidden `{forbidden}` in:\n{docs}"
             );
         }
+    }
+
+    #[test]
+    fn key_values_do_not_appear_in_generated_docs() {
+        let api = semantic::test_support::resolve_tokens(quote! {
+            client RateDocsApi {
+                base "https://example.test";
+                vars { tenant: String; }
+                rate_limit { 100 / 1m; }
+            }
+            scope accounts(account: String) {
+                GET read(resource: String) -> Bytes {
+                    rate_limit {
+                        by [host, endpoint, vars.tenant, scope.account, ep.resource];
+                        10 / 1s;
+                    }
+                }
+            }
+        });
+        let endpoint = semantic::test_support::endpoint(&api.client.children, "read");
+        let docs = endpoint_type_doc(endpoint);
+
+        assert!(docs.contains("applicable rules are listed in inherited order"));
+        assert!(docs.contains("Bucketed by: declaration-global"));
+        assert!(docs.contains(
+            "Bucketed by: `host`, `endpoint`, `vars.tenant`, `scope.account`, `ep.resource`"
+        ));
+        assert!(docs.contains("stable rule ID"));
     }
 
     #[test]

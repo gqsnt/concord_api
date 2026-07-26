@@ -16,7 +16,7 @@ pub(crate) use generated::pagination::{
     CountedOffset, CustomPageSpec, NOT_SYNC_MARKER, NonClonePageCodec, OneNonClonePage,
     ScopeBindingController, StablePolicy, VendorController, VendorPageCodec, ZeroController,
 };
-pub(crate) use generated::rate_limits::{DisplayOnly, RouteHost};
+pub(crate) use generated::rate_limits::{DisplayOnly, NoDisplay, RouteHost};
 #[cfg(feature = "dangerous-raw-response")]
 pub(crate) use generated::raw_response::ObservedCodec;
 #[cfg(feature = "multipart")]

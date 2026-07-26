@@ -1,0 +1,53 @@
+error[E0277]: `NoDisplay` doesn't implement `std::fmt::Display`
+  --> tests/ui/fail/rate_limits/rate_limit_dimension_requires_display.rs:10:24
+   |
+10 |       GET read(resource: crate::NoDisplay) -> Bytes {
+   |  ________________________^
+11 | |         rate_limit { by [ep.resource]; 1 / 1s; }
+   | |____________________________________^ unsatisfied trait bound
+   |
+help: the trait `std::fmt::Display` is not implemented for `NoDisplay`
+  --> tests/ui/fail/rate_limits/rate_limit_dimension_requires_display.rs:3:1
+   |
+ 3 | pub struct NoDisplay;
+   | ^^^^^^^^^^^^^^^^^^^^
+
+error[E0277]: `NoDisplay` doesn't implement `std::fmt::Display`
+  --> tests/ui/fail/rate_limits/rate_limit_dimension_requires_display.rs:5:1
+   |
+ 5 | / api! {
+ 6 | |     client Api {
+ 7 | |         base "https://example.test";
+...  |
+13 | | }
+   | |_^ unsatisfied trait bound
+   |
+help: the trait `std::fmt::Display` is not implemented for `NoDisplay`
+  --> tests/ui/fail/rate_limits/rate_limit_dimension_requires_display.rs:3:1
+   |
+ 3 | pub struct NoDisplay;
+   | ^^^^^^^^^^^^^^^^^^^^
+help: the trait `Endpoint` is implemented for `api::Read`
+  --> tests/ui/fail/rate_limits/rate_limit_dimension_requires_display.rs:5:1
+   |
+ 5 | / api! {
+ 6 | |     client Api {
+ 7 | |         base "https://example.test";
+...  |
+13 | | }
+   | |_^
+note: required for `api::Read` to implement `Endpoint`
+  --> tests/ui/fail/rate_limits/rate_limit_dimension_requires_display.rs:5:1
+   |
+ 5 | / api! {
+ 6 | |     client Api {
+ 7 | |         base "https://example.test";
+...  |
+10 | |     GET read(resource: crate::NoDisplay) -> Bytes {
+   | |         ^^^^
+11 | |         rate_limit { by [ep.resource]; 1 / 1s; }
+   | |                             -------- unsatisfied trait bound introduced here
+12 | |     }
+13 | | }
+   | |_^
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

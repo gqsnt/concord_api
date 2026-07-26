@@ -1,6 +1,8 @@
+use std::fmt::Display;
 use std::num::NonZeroU32;
 use std::time::Duration;
 
+use crate::construction::format_bounded;
 use crate::error::RateLimitErrorKind;
 use crate::limits::{
     MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES,
@@ -117,6 +119,42 @@ impl RateLimitKey {
         V: AsRef<str>,
     {
         Self::from_mapped_parts(parts, |(name, value)| RateLimitKeyPart::new(name, value))
+    }
+
+    pub(crate) fn from_display_values<I, N, V>(parts: I) -> Result<Self, RateLimitError>
+    where
+        I: IntoIterator<Item = (N, V)>,
+        N: AsRef<str>,
+        V: Display,
+    {
+        let mut retained: Vec<(Box<str>, String)> = Vec::new();
+        let mut total_bytes = 0_usize;
+        for (name, value) in parts {
+            if retained.len() >= MAX_RATE_LIMIT_KEY_PARTS {
+                return Err(invalid_key());
+            }
+            let name = name.as_ref();
+            if name.is_empty()
+                || name.len() > MAX_RATE_LIMIT_KEY_PART_NAME_BYTES
+                || retained.iter().any(|(earlier, _)| earlier.as_ref() == name)
+            {
+                return Err(invalid_key());
+            }
+            let bytes_before_value = total_bytes
+                .checked_add(name.len())
+                .ok_or_else(invalid_key)?;
+            let remaining = MAX_RATE_LIMIT_KEY_BYTES
+                .checked_sub(bytes_before_value)
+                .ok_or_else(invalid_key)?;
+            let value = format_bounded(&value, remaining).map_err(|_| invalid_key())?;
+            total_bytes = bytes_before_value
+                .checked_add(value.len())
+                .ok_or_else(invalid_key)?;
+            retained.push((name.into(), value));
+        }
+        let key = Self::from_values(retained)?;
+        debug_assert_eq!(key.total_bytes, total_bytes);
+        Ok(key)
     }
 
     fn from_mapped_parts<I, T, F>(parts: I, mut map: F) -> Result<Self, RateLimitError>

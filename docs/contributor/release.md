@@ -73,7 +73,7 @@ not substitute a ZIP of the working directory.
 
 ## Generated bridge contract
 
-The generated contract version is **26** in `concord-macros` and
+The generated contract version is **27** in `concord-macros` and
 `concord-core`. The façade reexports the handshake through its hidden bridge.
 Any emitted bridge path or signature change requires an atomic version bump
 and the retained contract-mismatch fixture. The bridge is compiler/runtime

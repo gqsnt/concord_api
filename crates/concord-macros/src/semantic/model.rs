@@ -189,6 +189,7 @@ pub(crate) struct EndpointDocAuthPlacement {
 pub(crate) struct EndpointDocRateLimit {
     pub(crate) id: String,
     pub(crate) origin: String,
+    pub(crate) dimensions: Vec<String>,
     pub(crate) cost: u32,
     pub(crate) windows: Vec<EndpointDocRateLimitWindow>,
 }
@@ -429,10 +430,6 @@ pub(crate) struct NormalizedConfig {
 }
 
 #[derive(Clone)]
-#[allow(
-    dead_code,
-    reason = "RL2 resolves dimensions before the follow-up keyed code-generation phase consumes them"
-)]
 pub(crate) struct NormalizedRateLimitRule {
     pub(crate) id: String,
     pub(crate) origin: String,
@@ -442,10 +439,6 @@ pub(crate) struct NormalizedRateLimitRule {
 }
 
 #[derive(Clone)]
-#[allow(
-    dead_code,
-    reason = "RL2 resolves dimensions before the follow-up keyed code-generation phase consumes them"
-)]
 pub(crate) enum NormalizedRateLimitDimension {
     Host,
     Endpoint,

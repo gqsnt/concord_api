@@ -74,8 +74,10 @@
 - `RecordDecoder` now documents the enforceable net staging-buffer contract:
   the resulting length cannot increase, `Some(record)` requires a strict net
   decrease, and `None` may consume bytes.
-- The IP host-shaping rule changes source-language acceptance but not emitted
-  bridge calls or types, so generated-contract version 26 remains unchanged.
+- The IP host-shaping rule changes source-language acceptance without changing
+  the generated bridge.
+- Ordered rate-limit key generation now formats referenced dimensions through
+  the core-owned bounded bridge, raising the generated-contract version to 27.
 - A sanitized response head reaches limiter observation before the user
   response hook. Observation uses the remaining operation deadline, and its
   failure prevents the hook and body acquisition.

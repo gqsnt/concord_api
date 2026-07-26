@@ -6,7 +6,7 @@ use std::{fmt, fmt::Display};
 
 use concord::Bytes;
 use concord::api;
-use concord::error::ClientBuildErrorKind;
+use concord::error::{ClientBuildErrorKind, ConfigurationErrorKind};
 use concord::http::SafeProxy;
 use concord::rate_limit::{
     BoxFuture, NoopRateLimiter, RateLimitError, RateLimitPermit, RateLimitPlan, RateLimitRequest,
@@ -60,12 +60,14 @@ impl Display for DisplayOnly {
     }
 }
 
+pub struct NoDisplay;
+
 api! {
     client MinimalBoundsApi {
         base "http://minimal-rate.example.test/";
     }
 
-    GET read(item: crate::DisplayOnly) -> Bytes {
+    GET read(item: crate::NoDisplay) -> Bytes {
         rate_limit { 1 / 1s; }
     }
 }
@@ -126,6 +128,35 @@ api! {
 }
 
 api! {
+    client HostBucketRateApi {
+        base "http://host-bucket.example.test/";
+    }
+
+    scope region(region: String) {
+        host [scope.region, "api"];
+        rate_limit {
+            by [host];
+            100 / 1h;
+        }
+        GET read() -> Bytes;
+    }
+}
+
+api! {
+    client ScopeValueBucketRateApi {
+        base "http://scope-value-bucket.example.test/";
+    }
+
+    scope account(account: String) {
+        rate_limit {
+            by [scope.account];
+            100 / 1h;
+        }
+        GET read() -> Bytes;
+    }
+}
+
+api! {
     client CollisionRateApi {
         base "http://collision-rate.example.test/";
     }
@@ -176,6 +207,45 @@ api! {
         host [vars.regional, "api"];
         rate_limit { 100 / 1h; }
         GET read() -> Bytes;
+    }
+}
+
+api! {
+    client PartitionedRateApi {
+        base "http://partitioned-rate.example.test/";
+        vars {
+            tenant: String;
+        }
+    }
+
+    scope regional(region: String) {
+        host [scope.region, "api"];
+
+        GET read(resource: crate::DisplayOnly) -> Bytes {
+            id "stable.partitioned.read";
+            rate_limit {
+                by [host, endpoint, vars.tenant, scope.region, ep.resource];
+                1 / 1h;
+            }
+        }
+    }
+}
+
+api! {
+    client EndpointBucketRateApi {
+        base "http://endpoint-bucket.example.test/";
+        rate_limit {
+            by [endpoint];
+            100 / 1h;
+        }
+    }
+
+    GET first() -> Bytes {
+        id "stable.endpoint.first";
+    }
+
+    GET second() -> Bytes {
+        id "stable.endpoint.second";
     }
 }
 
@@ -235,6 +305,11 @@ struct GatedLimiter {
     acquisitions: AtomicUsize,
 }
 
+#[derive(Default)]
+struct SmallKeyLimiter {
+    acquisitions: AtomicUsize,
+}
+
 impl GatedLimiter {
     fn new() -> Self {
         Self {
@@ -260,6 +335,20 @@ impl RateLimiter for GatedLimiter {
                 .forget();
             Ok(RateLimitPermit::granted())
         })
+    }
+}
+
+impl RateLimiter for SmallKeyLimiter {
+    fn preparation_key_limit(&self) -> usize {
+        4
+    }
+
+    fn acquire<'a>(
+        &'a self,
+        _request: RateLimitRequest<'a>,
+    ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
+        self.acquisitions.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 }
 
@@ -379,6 +468,322 @@ async fn sibling_route_families_resolve_distinct_hosts_and_lexical_rule_ids() {
             .ends_with("route_family_api.regional.rate_limit")
     );
     assert_ne!(acquisitions[0][0].id, acquisitions[1][0].id);
+}
+
+#[tokio::test]
+async fn client_global_rule_shares_one_bucket() {
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"direct".to_vec()),
+        ResponseScript::ok(b"nested".to_vec()),
+    ])
+    .expect("client-global server");
+    let proxy = SafeProxy::parse(server.url("")).expect("client-global proxy");
+    let limiter = Arc::new(CapturingLimiter::default());
+    let configured = Arc::clone(&limiter);
+    let client = ClientBucketRateApi::builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(move |runtime| runtime.rate_limiter(configured))
+        .build()
+        .expect("client-global client");
+
+    client.direct().await.expect("direct request");
+    client
+        .descendant("scope-a".to_owned())
+        .nested()
+        .await
+        .expect("nested request");
+
+    let acquisitions = limiter.acquisitions.lock().expect("client-global captures");
+    assert_eq!(acquisitions.len(), 2);
+    assert_eq!(acquisitions[0][0].id, acquisitions[1][0].id);
+    assert!(acquisitions[0][0].parts.is_empty());
+    assert!(acquisitions[1][0].parts.is_empty());
+}
+
+#[tokio::test]
+async fn scope_rule_without_by_shares_across_scope_values() {
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"first".to_vec()),
+        ResponseScript::ok(b"second".to_vec()),
+    ])
+    .expect("scope-global server");
+    let proxy = SafeProxy::parse(server.url("")).expect("scope-global proxy");
+    let limiter = Arc::new(CapturingLimiter::default());
+    let configured = Arc::clone(&limiter);
+    let client = ScopeBucketRateApi::builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(move |runtime| runtime.rate_limiter(configured))
+        .build()
+        .expect("scope-global client");
+
+    client
+        .branch("account-a".to_owned())
+        .immediate()
+        .await
+        .expect("first scope value");
+    client
+        .branch("account-b".to_owned())
+        .immediate()
+        .await
+        .expect("second scope value");
+
+    let acquisitions = limiter.acquisitions.lock().expect("scope-global captures");
+    assert_eq!(acquisitions.len(), 2);
+    assert_eq!(acquisitions[0][1].id, acquisitions[1][1].id);
+    assert!(acquisitions[0][1].parts.is_empty());
+    assert!(acquisitions[1][1].parts.is_empty());
+}
+
+#[tokio::test]
+async fn scope_rule_by_host_separates_hosts() {
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"eu".to_vec()),
+        ResponseScript::ok(b"us".to_vec()),
+    ])
+    .expect("host-bucket server");
+    let proxy = SafeProxy::parse(server.url("")).expect("host-bucket proxy");
+    let limiter = Arc::new(CapturingLimiter::default());
+    let configured = Arc::clone(&limiter);
+    let client = HostBucketRateApi::builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(move |runtime| runtime.rate_limiter(configured))
+        .build()
+        .expect("host-bucket client");
+
+    client
+        .region("eu".to_owned())
+        .read()
+        .await
+        .expect("EU host");
+    client
+        .region("us".to_owned())
+        .read()
+        .await
+        .expect("US host");
+
+    let acquisitions = limiter.acquisitions.lock().expect("host-bucket captures");
+    assert_eq!(acquisitions[0][0].id, acquisitions[1][0].id);
+    assert_eq!(
+        acquisitions[0][0].parts,
+        [(
+            "host".to_owned(),
+            "eu.api.host-bucket.example.test".to_owned()
+        )]
+    );
+    assert_eq!(
+        acquisitions[1][0].parts,
+        [(
+            "host".to_owned(),
+            "us.api.host-bucket.example.test".to_owned()
+        )]
+    );
+}
+
+#[tokio::test]
+async fn scope_rule_by_scope_value_separates_values() {
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"first".to_vec()),
+        ResponseScript::ok(b"second".to_vec()),
+    ])
+    .expect("scope-value server");
+    let proxy = SafeProxy::parse(server.url("")).expect("scope-value proxy");
+    let limiter = Arc::new(CapturingLimiter::default());
+    let configured = Arc::clone(&limiter);
+    let client = ScopeValueBucketRateApi::builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(move |runtime| runtime.rate_limiter(configured))
+        .build()
+        .expect("scope-value client");
+
+    client
+        .account("account-a".to_owned())
+        .read()
+        .await
+        .expect("first account");
+    client
+        .account("account-b".to_owned())
+        .read()
+        .await
+        .expect("second account");
+
+    let acquisitions = limiter.acquisitions.lock().expect("scope-value captures");
+    assert_eq!(acquisitions[0][0].id, acquisitions[1][0].id);
+    assert_eq!(
+        acquisitions[0][0].parts,
+        [("scope.account".to_owned(), "account-a".to_owned())]
+    );
+    assert_eq!(
+        acquisitions[1][0].parts,
+        [("scope.account".to_owned(), "account-b".to_owned())]
+    );
+}
+
+#[tokio::test]
+async fn composite_keys_are_ordered_and_distinct() {
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"first".to_vec()),
+        ResponseScript::ok(b"same".to_vec()),
+        ResponseScript::ok(b"different".to_vec()),
+    ])
+    .expect("partitioned-key server");
+    let proxy = SafeProxy::parse(server.url("")).expect("partitioned-key proxy");
+    let limiter = Arc::new(CapturingLimiter::default());
+    let configured = Arc::clone(&limiter);
+    let client = PartitionedRateApi::builder()
+        .tenant("tenant-a".to_owned())
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(move |runtime| runtime.rate_limiter(configured))
+        .build()
+        .expect("partitioned-key client");
+    let display_calls = Arc::new(AtomicUsize::new(0));
+
+    for (resource, expected) in [
+        ("resource-a", Bytes::from_static(b"first")),
+        ("resource-a", Bytes::from_static(b"same")),
+        ("resource-b", Bytes::from_static(b"different")),
+    ] {
+        let output = client
+            .regional("eu".to_owned())
+            .read(DisplayOnly {
+                text: resource,
+                calls: Arc::clone(&display_calls),
+            })
+            .await
+            .expect("partitioned request");
+        assert_eq!(output, expected);
+    }
+
+    assert_eq!(display_calls.load(Ordering::SeqCst), 3);
+    let acquisitions = limiter.acquisitions.lock().expect("partitioned captures");
+    assert_eq!(acquisitions.len(), 3);
+    assert!(acquisitions.iter().all(|plan| plan.len() == 1));
+    let expected_first = vec![
+        (
+            "host".to_owned(),
+            "eu.api.partitioned-rate.example.test".to_owned(),
+        ),
+        ("endpoint".to_owned(), "stable.partitioned.read".to_owned()),
+        ("vars.tenant".to_owned(), "tenant-a".to_owned()),
+        ("scope.region".to_owned(), "eu".to_owned()),
+        ("ep.resource".to_owned(), "resource-a".to_owned()),
+    ];
+    assert_eq!(acquisitions[0][0].parts, expected_first);
+    assert_eq!(acquisitions[0][0].parts, acquisitions[1][0].parts);
+    assert_ne!(acquisitions[0][0].parts, acquisitions[2][0].parts);
+    assert_eq!(
+        acquisitions[2][0].parts.last(),
+        Some(&("ep.resource".to_owned(), "resource-b".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn client_rule_by_endpoint_separates_endpoints() {
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"first".to_vec()),
+        ResponseScript::ok(b"second".to_vec()),
+    ])
+    .expect("endpoint-key server");
+    let proxy = SafeProxy::parse(server.url("")).expect("endpoint-key proxy");
+    let limiter = Arc::new(CapturingLimiter::default());
+    let configured = Arc::clone(&limiter);
+    let client = EndpointBucketRateApi::builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(move |runtime| runtime.rate_limiter(configured))
+        .build()
+        .expect("endpoint-key client");
+
+    client.first().await.expect("first endpoint");
+    client.second().await.expect("second endpoint");
+
+    let acquisitions = limiter.acquisitions.lock().expect("endpoint captures");
+    assert_eq!(acquisitions.len(), 2);
+    assert_eq!(acquisitions[0][0].id, acquisitions[1][0].id);
+    assert_eq!(
+        acquisitions[0][0].parts,
+        [("endpoint".to_owned(), "stable.endpoint.first".to_owned())]
+    );
+    assert_eq!(
+        acquisitions[1][0].parts,
+        [("endpoint".to_owned(), "stable.endpoint.second".to_owned())]
+    );
+}
+
+#[tokio::test]
+async fn endpoint_rule_by_argument_separates_values() {
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"first".to_vec()),
+        ResponseScript::ok(b"second".to_vec()),
+    ])
+    .expect("endpoint-value server");
+    let proxy = SafeProxy::parse(server.url("")).expect("endpoint-value proxy");
+    let limiter = Arc::new(CapturingLimiter::default());
+    let configured = Arc::clone(&limiter);
+    let client = PartitionedRateApi::builder()
+        .tenant("tenant-a".to_owned())
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(move |runtime| runtime.rate_limiter(configured))
+        .build()
+        .expect("endpoint-value client");
+
+    for resource in ["resource-a", "resource-b"] {
+        client
+            .regional("eu".to_owned())
+            .read(DisplayOnly {
+                text: resource,
+                calls: Arc::new(AtomicUsize::new(0)),
+            })
+            .await
+            .expect("endpoint-value request");
+    }
+
+    let acquisitions = limiter
+        .acquisitions
+        .lock()
+        .expect("endpoint-value captures");
+    assert_eq!(acquisitions[0][0].id, acquisitions[1][0].id);
+    assert_ne!(acquisitions[0][0].parts, acquisitions[1][0].parts);
+    assert_eq!(
+        acquisitions[0][0].parts.last(),
+        Some(&("ep.resource".to_owned(), "resource-a".to_owned()))
+    );
+    assert_eq!(
+        acquisitions[1][0].parts.last(),
+        Some(&("ep.resource".to_owned(), "resource-b".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn generated_key_limit_first_excess_is_redacted() {
+    const KEY_SENTINEL: &str = "resolved-key-private-7c41";
+
+    let server = ScriptedServer::start([ResponseScript::ok(b"unexpected".to_vec())])
+        .expect("key-limit server");
+    let proxy = SafeProxy::parse(server.url("")).expect("key-limit proxy");
+    let limiter = Arc::new(SmallKeyLimiter::default());
+    let configured = Arc::clone(&limiter);
+    let client = PartitionedRateApi::builder()
+        .tenant("tenant-a".to_owned())
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(move |runtime| runtime.rate_limiter(configured))
+        .build()
+        .expect("small-key-limit client");
+    let error = client
+        .regional("eu".to_owned())
+        .read(DisplayOnly {
+            text: KEY_SENTINEL,
+            calls: Arc::new(AtomicUsize::new(0)),
+        })
+        .await
+        .expect_err("resolved key above selected limit");
+
+    assert_eq!(
+        error.configuration_kind(),
+        Some(ConfigurationErrorKind::InvalidRateLimit)
+    );
+    assert!(!error.to_string().contains(KEY_SENTINEL));
+    assert!(!format!("{error:?}").contains(KEY_SENTINEL));
+    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 0);
+    assert_eq!(server.request_count(), 0);
 }
 
 #[tokio::test]
@@ -693,7 +1098,7 @@ async fn no_local_limiter_private_fallback_executes_an_empty_generated_plan() {
 }
 
 #[tokio::test]
-async fn generated_rate_limits_add_no_display_bound_or_runtime_formatting() {
+async fn unreferenced_non_display_values_remain_valid() {
     let server = ScriptedServer::start([ResponseScript::ok(b"display".to_vec())])
         .expect("display-bound server");
     let proxy = SafeProxy::parse(server.url("")).expect("local proxy");
@@ -702,16 +1107,10 @@ async fn generated_rate_limits_add_no_display_bound_or_runtime_formatting() {
         .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
         .build()
         .expect("minimal-bound client");
-    let calls = Arc::new(AtomicUsize::new(0));
-    let value = DisplayOnly {
-        text: "display-only-key",
-        calls: Arc::clone(&calls),
-    };
     assert_eq!(
-        client.read(value).await.expect("display-only request"),
+        client.read(NoDisplay).await.expect("displayless request"),
         Bytes::from_static(b"display")
     );
-    assert_eq!(calls.load(Ordering::SeqCst), 0);
 }
 
 #[test]

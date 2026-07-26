@@ -257,7 +257,7 @@ pub(super) fn auth_statements(
 
 pub(super) fn rate_limit_statements(
     client: &Client,
-    _scopes: &[&Scope],
+    scopes: &[&Scope],
     endpoint: &Endpoint,
     _core_path: &TokenStream,
     identity_path: &TokenStream,
@@ -267,7 +267,8 @@ pub(super) fn rate_limit_statements(
         .config
         .rate_limits
         .iter()
-        .map(|rule| {
+        .enumerate()
+        .map(|(ordinal, rule)| {
             let identity =
                 rate_limit_identity_const(&rate_limit_ids, &rule.id, &client.name.to_string());
             let cost = rule.cost;
@@ -284,9 +285,59 @@ pub(super) fn rate_limit_statements(
                     ))
                 })
                 .collect::<Vec<_>>();
+            if rule.dimensions.is_empty() {
+                return quote! {
+                    __concord_builder.push_generated_rate_limit_rule(
+                        #identity_path::#identity,
+                        #cost,
+                        [#(#windows,)*],
+                    )?;
+                };
+            }
+
+            let host_binding = Ident::new(
+                &format!("__concord_rate_limit_host_{ordinal}"),
+                Span::mixed_site(),
+            );
+            let capture_host = rule
+                .dimensions
+                .iter()
+                .any(|dimension| matches!(dimension, NormalizedRateLimitDimension::Host))
+                .then(|| {
+                    quote! {
+                        let #host_binding = __concord_builder.rate_limit_host().to_owned();
+                    }
+                });
+            let contract_id =
+                syn::LitStr::new(&endpoint.contract_id.value, endpoint.contract_id.span);
+            let parts = rule
+                .dimensions
+                .iter()
+                .map(|dimension| match dimension {
+                    NormalizedRateLimitDimension::Host => {
+                        quote!(("host", &#host_binding as &dyn ::std::fmt::Display))
+                    }
+                    NormalizedRateLimitDimension::Endpoint => {
+                        quote!(("endpoint", &#contract_id as &dyn ::std::fmt::Display))
+                    }
+                    NormalizedRateLimitDimension::Value {
+                        public_name,
+                        reference,
+                        span,
+                    } => {
+                        let name = syn::LitStr::new(public_name, *span);
+                        let access = resolved_value_access(*reference, client, scopes, endpoint);
+                        quote_spanned!(*span=>
+                            (#name, #access as &dyn ::std::fmt::Display)
+                        )
+                    }
+                })
+                .collect::<Vec<_>>();
             quote! {
-                __concord_builder.push_generated_rate_limit_rule(
+                #capture_host
+                __concord_builder.push_rate_limit_rule(
                     #identity_path::#identity,
+                    [#(#parts,)*],
                     #cost,
                     [#(#windows,)*],
                 )?;
@@ -535,6 +586,8 @@ pub(super) fn body_constructor(
 
 #[cfg(test)]
 mod tests {
+    use quote::quote;
+
     use super::super::test_support;
     use super::*;
 
@@ -546,5 +599,116 @@ mod tests {
 
         assert!(output.contains("push_value"));
         assert!(output.contains("__concord_client_values"));
+    }
+
+    #[test]
+    fn global_rule_uses_generated_global_fast_path() {
+        let api = crate::semantic::test_support::resolve_tokens(quote! {
+            client RateApi {
+                base "https://example.test";
+                rate_limit { 1 / 1s; }
+            }
+            GET read() -> Bytes;
+        });
+        let endpoint = crate::semantic::test_support::endpoint(&api.client.children, "read");
+        let output = rate_limit_statements(
+            &api.client,
+            &[],
+            endpoint,
+            &test_support::core_path(),
+            &quote!(super),
+        )
+        .to_string();
+
+        assert!(output.contains("push_generated_rate_limit_rule"));
+        assert!(!output.contains("push_rate_limit_rule"));
+        assert!(!output.contains("rate_limit_host"));
+    }
+
+    fn keyed_rule_output() -> String {
+        let api = crate::semantic::test_support::resolve_tokens(quote! {
+            client RateApi {
+                base "https://example.test";
+                vars { tenant: String; }
+            }
+            scope regional(region: String) {
+                host [scope.region, "api"];
+                GET read(account: String) -> Bytes {
+                    id "stable.rate.read";
+                    rate_limit {
+                        by [host, endpoint, vars.tenant, scope.region, ep.account];
+                        1 / 1s;
+                    }
+                }
+            }
+        });
+        let scope = api
+            .client
+            .children
+            .iter()
+            .find_map(|child| match child {
+                Child::Scope(scope) => Some(scope.as_ref()),
+                Child::Endpoint(_) => None,
+            })
+            .expect("regional scope");
+        let endpoint = crate::semantic::test_support::endpoint(&api.client.children, "read");
+        rate_limit_statements(
+            &api.client,
+            &[scope],
+            endpoint,
+            &test_support::core_path(),
+            &quote!(super),
+        )
+        .to_string()
+    }
+
+    #[test]
+    fn host_dimension_uses_final_logical_host() {
+        let output = keyed_rule_output();
+        assert!(output.contains("rate_limit_host"));
+        assert!(output.contains("push_rate_limit_rule"));
+    }
+
+    #[test]
+    fn endpoint_dimension_uses_contract_id() {
+        let output = keyed_rule_output();
+        assert!(output.contains("\"stable.rate.read\""));
+    }
+
+    #[test]
+    fn client_value_dimension_is_generated() {
+        let output = keyed_rule_output();
+        assert!(output.contains("\"vars.tenant\""));
+        assert!(output.contains("__concord_client_values"));
+    }
+
+    #[test]
+    fn scope_value_dimension_is_generated() {
+        let output = keyed_rule_output();
+        assert!(output.contains("\"scope.region\""));
+    }
+
+    #[test]
+    fn endpoint_value_dimension_is_generated() {
+        let output = keyed_rule_output();
+        assert!(output.contains("\"ep.account\""));
+    }
+
+    #[test]
+    fn composite_dimension_order_is_preserved() {
+        let output = keyed_rule_output();
+        let ordered = [
+            "\"host\"",
+            "\"endpoint\"",
+            "\"vars.tenant\"",
+            "\"scope.region\"",
+            "\"ep.account\"",
+        ]
+        .map(|name| output.find(name).expect("generated key-part name"));
+        assert!(
+            ordered.windows(2).all(|pair| pair[0] < pair[1]),
+            "generated dimensions lost declaration order: {output}"
+        );
+        assert!(output.contains("as & dyn :: std :: fmt :: Display"));
     }
 }
