@@ -1,163 +1,165 @@
-# Contributor architecture
+# Architecture overview
 
-## Product contract
+Concord turns a remote HTTP contract into ordinary typed Rust, then runs every
+generated and runtime-defined request through one bounded lifecycle. The
+compiler and runtime are deliberately separate: compile time decides which
+operations are valid and which Rust methods exist; runtime owns effects,
+deadlines, protected material, transport, and finite response acquisition.
 
-```text
-Remote HTTP API contract
-        |
-        v
-concord-macros declaration compiler
-        |
-        v
-ordinary typed Rust through concord
-        |
-        v
-concord-core managed lifecycle
-```
-
-The package dependency graph is:
+## System at a glance
 
 ```text
-concord-core <--- concord-extras
-      ^                ^
-      |                |
-      +---- concord ---+---- concord-macros
-               ^
-               |
-       concord-examples
+remote HTTP contract
+        |
+        | concord::api! declaration
+        v
+parse -> resolve and validate -> derive surface -> emit typed Rust
+        |                                  concord-macros
+        v
+client builder -> immutable client -> inert typed request
+        |                                  generated surface
+        | first poll / await
+        v
+public head -> policy -> private material -> native HTTP -> bounded response
+        |                                  concord-core
+        v
+typed output or safe ApiError
 ```
 
-- `crates/concord-core` owns the semantic runtime kernel, private native HTTP,
-  finite acquisition, lifecycle, security, and public extension traits under
-  `concord_core::contracts`.
-- `crates/concord-extras` is an ordinary downstream consumer of those traits.
-  It owns JSON, CSV, NDJSON, built-in pagination policies, local limiter/observer,
-  and OAuth2 client credentials.
-- `crates/concord-macros` parses, resolves, validates, and emits declarations.
-  It is extras-agnostic.
-- `crates/concord` is the application façade, public namespace owner, macro
-  reexport, feature-forwarding owner, and approved default-composition owner.
-- `crates/concord-examples` depends only on `concord`.
-- `crates/concord-test-support` contains deterministic runtime and loopback
-  infrastructure only.
-- `fixtures` contains the isolated renamed-façade, contract-mismatch, feature,
-  and MSRV Cargo graphs.
-- `tools/xtask` owns typed documentation, fixture, MSRV, policy, and package
-  orchestration; `tools/perf` observes public lifecycle behavior.
+`concord` is the single application-facing façade around that flow.
+`concord-extras` supplies first-party implementations of semantic extension
+traits, while `concord-core` remains the owner of the lifecycle itself. Native
+HTTP types stay behind core's private boundary.
 
-Core never depends on extras, macros, or façade. Extras depends only on core.
-Macros do not depend on extras or core at runtime. Examples do not import an
-implementation crate.
+The [compile-time to runtime trace](architecture/compile-runtime-flow.md)
+follows the real `MinimalApi::health` declaration through every layer.
 
-## Private generated bridge
+## The architectural boundaries
 
-A downstream package cannot address a transitive dependency. Applications
-therefore declare APIs only through `concord::api!`, including when the façade
-dependency is renamed, and generated semantic operations go through the
-façade's hidden `__private` bridge.
+| Boundary | Decides | Must not decide |
+|---|---|---|
+| Declaration compiler | grammar, inheritance, generated names, static capabilities, cross-declaration validity | runtime policy objects, credentials, native transport state |
+| Generated Rust | typed construction, immutable snapshots, endpoint identity, request capabilities, public-head instructions | a second executor, direct native HTTP, unbounded escape paths |
+| Façade | public namespaces, feature forwarding, macro handoff, approved default composition | core semantics duplicated in wrappers |
+| Semantic runtime | one deadline, effect ordering, bounds, error reduction, extension calls, response acquisition | application-specific codecs or policy implementations |
+| Extras | reusable codecs, providers, controllers, limiters, and observers | privileged access to core internals |
+| Native HTTP boundary | connection and protocol mechanics under resolved safe configuration | public request identity, extension APIs, user-visible native errors |
 
-The façade `api!` wrapper passes its own path and enabled capability tokens to
-the hidden declaration compiler. This makes a downstream façade feature, such
-as `dangerous-raw-response`, the source of truth without globally enabling a
-proc-macro feature. The compiler emits the final capability-specific inherent
-method directly.
+This separation makes two kinds of evolution independent. A declaration can
+gain a validation rule without changing the runtime bridge. A runtime
+implementation can change behind an existing semantic contract without
+changing generated Rust. When emitted code and runtime plumbing must agree on
+a new private operation, the
+[generated contract version](generated-contract.md) changes atomically.
 
-The façade bridge delegates semantics to core and installs approved
-feature-dependent composition such as the default local limiter. It is hidden,
-version-checked, and not a downstream extension contract. Privacy compile
-tests prove users cannot forge generated endpoint implementations.
+## Why generated requests are inert
 
-## Ownership rules
+Calling an endpoint constructs an owned snapshot. It does not allocate an
+operation ID, start a deadline, call a hook or provider, acquire limiter
+authority, encode a body, or open a connection. Effects begin only when the
+request future is polled.
 
-At all times:
+That boundary provides:
 
-- the resolved macro model owns generated names and capabilities, including
-  exact `set_*`, independently derived absence-capable `clear_*`, and
-  declaration-default `reset_*` value controls;
-- rate-limit declarations resolve applicability and ordered key dimensions in
-  the lexical owner; inherited rules never re-resolve against descendant-only
-  values;
-- the final endpoint validates every effective rate rule after pagination and
-  host shaping are resolved, rejecting direct or host-derived
-  pagination-controlled partition dependencies;
-- direct/explicit construction share one endpoint model;
-- planning/execution share public-head construction;
-- generated/default limiter selection has one façade owner;
-- exact numeric defaults have one core source;
-- examples own canonical declarations and tests import them;
-- each invariant has one primary test owner.
+- predictable composition before execution;
+- request-local timeout and debug selection without shared mutation;
+- safe planning through the real public-head path;
+- cancellation through ordinary future ownership;
+- one place to apply policy to generated and runtime-defined endpoints.
 
-When a semantic trait cannot support an extras implementation, improve the
-semantic contract. Do not expose Reqwest/native values or add friend-only
-access. When behavior could create a second lifecycle or unbounded mode,
-preserve the invariant and record a specification deviation.
+It also keeps the generated layer small. Generated endpoint types describe how
+to prepare a semantic request; they do not implement transport.
 
-Applications use semantic façade modules or the small `concord::prelude`;
-keep imports focused on the contract family being implemented.
+## Why there is one managed executor
 
-## Managed boundary ownership
+Authentication, rate limiting, hooks, bodies, pagination pages, status
+capture, and response decoding interact. Allowing each feature to send HTTP
+independently would make ordering and cancellation depend on which features
+were selected. Core instead sequences them under one operation deadline.
 
-Core finalizes every generated and runtime-defined public request head under
-one component, URL, header-count, and header-byte budget. Authentication plans
-remain separate: public head construction finishes first, generic
-authentication cannot target a request- or transport-owned header, and
-private material is attached only after limiter authority at the native
-boundary.
+The central ordering has security consequences. Public request shaping and
+validation finish before private authentication material is attached. Limiter
+authority is acquired before that attachment. Response limiter observation
+finishes before the response-head hook and before body acquisition. All
+terminal paths reduce to a safe result and then attempt one completion event.
 
-Generated keyed rules format only referenced public values through core's
-bounded key constructor. Global rules retain the allocation-minimal fast path.
-Generated declaration rule IDs are deterministic inside one generated client
-contract but do not create a global namespace across unrelated macro
-expansions; applications explicitly sharing a limiter across such contracts
-own namespace compatibility.
-The façade selects a fresh default `LocalRateLimiter` for each built client;
-extras owns its token buckets, safe fully-replenished idle pruning, and
-recoverable `StateCapacity` policy. Core and macros never depend on that
-concrete implementation.
+See [Managed executor](architecture/managed-executor.md) for the stage
+contract and the rationale for each ordering edge.
 
-For received responses, core constructs the sanitized head, awaits limiter
-observation under the remaining operation deadline, and only then invokes the
-user response hook. Challenge/status handling and body acquisition follow.
-Limiter failure or timeout therefore prevents later response hooks and body
-work.
+## Why native HTTP stays private
 
-Core also owns structural startup ceilings before native parsing or copying
-proxy and TLS inputs. Extras own concrete codec/provider behavior, but codec
-errors cross back into core only as finite categories. No extension may
-smuggle a native source error or an unbounded message into the managed
-lifecycle.
+The native client and request contain details that semantic extensions should
+not depend on:
 
-All outgoing application stream forms—direct `StreamBody`, body factories,
-and multipart/native serialization—converge on the final core-owned managed
-request stream. That boundary suppresses empty chunks, owns request-wide
-empty-chunk and byte totals, preserves exact-length accounting, and yields
-cooperatively during ready-empty runs.
+- credential-bearing URLs and headers;
+- transport error chains and configuration internals;
+- protocol-specific bodies and retry state;
+- objects that could bypass response limits or lifecycle hooks.
 
-Every core-owned response path that polls a native body uses one private
-response-progress owner. Streaming success applies its per-poll decision in
-the bounded response stream; buffered success, terminal status capture, and
-provider HTTP use the corresponding async helper and cooperative yield.
-Neither owner retains a chunk value or native error, and neither performs a
-background drain after terminal failure.
+Concord exposes bounded semantic traits instead. A codec receives bytes and a
+finite context. A provider receives a managed HTTP capability. A limiter sees
+a safe URL, a bounded plan, and sanitized response headers. Hooks receive
+sanitized lifecycle events. First-party extras use those same public
+contracts; they have no friend-only transport path.
 
-## Workspace
+The dangerous features relax selected guarantees without exposing the native
+response or creating another executor. Their exact scope belongs to
+[Dangerous capabilities](../reference/dangerous.md).
 
-Open the repository root in rust-analyzer. Use the normal workspace for
-product work; open `fixtures/Cargo.toml` separately only for Cargo-graph
-fixture development. Optional all-feature analysis can set:
+## Finite and safe by construction
 
-```json
-{ "rust-analyzer.cargo.features": "all" }
-```
+Bounds are applied where data first becomes owned or work first becomes
+repeatable. Compile time rejects structurally excessive declarations. Client
+construction validates fixed configuration. Request preparation caps public
+head construction. The executor controls body bytes, empty-chunk progress,
+provider HTTP, status capture, pagination, rate-limit keys, and streamed
+responses.
 
-Do not add nested product workspaces or package-local lockfiles. The only
-lockfiles are the root and `fixtures/Cargo.lock`.
+Error conversion happens at the same boundaries. Extension-authored or native
+messages are reduced to stable categories or finite safe kinds. Sanitized URLs
+and headers are prepared before observation. Exact public limits remain
+canonical in [Limits](../reference/limits.md); the architecture pages explain
+which layer owns them.
 
-The workspace Tokio dependency selects no global capability set. Each crate
-declares the features used by its ordinary code, while multi-thread runtimes
-and paused-time support stay in dev dependencies or explicit executable
-owners. Measure changes with `cargo tree -e features`; do not broaden the
-workspace entry for test convenience.
+## Change questions
 
-See [Macro pipeline](macro-pipeline.md), [Testing](testing.md), and
-[Release](release.md).
+Before changing a boundary, determine:
+
+1. Is this source-language meaning, generated public surface, private bridge
+   plumbing, runtime semantics, or a concrete extension implementation?
+2. Which layer has enough information to enforce the rule once?
+3. Could the change expose protected/native state or create a second effect
+   path?
+4. What happens at the first excess, timeout, extension failure, or
+   cancellation point?
+5. Which compiler, runtime, fixture, and public-surface proof owns the result?
+
+Moving behavior to a more convenient crate is not neutral. A macro dependency
+on core would couple compiler loading to runtime implementation. A core
+dependency on extras would make an optional implementation authoritative. A
+native type in an extension trait would make transport replacement and safe
+error reduction impossible.
+
+## Verification map
+
+The architecture is tested as behavior, not inferred from file layout:
+
+- `cargo run --locked -p concord-xtask -- policy --locked` checks product
+  dependency direction and generated path policy.
+- `cargo test -p concord-macros --lib --locked` owns parsing, semantic,
+  surface, emission, and bridge unit proofs.
+- `cargo test -p concord --test ui --all-features --locked` owns generated
+  public capability, privacy, and diagnostic proofs.
+- `cargo test -p concord-core --all-features --locked` owns executor ordering,
+  cancellation, bounds, and redaction.
+- `cargo run --locked -p concord-xtask -- fixtures --locked` owns Cargo-graph,
+  renamed-façade, feature-absence, and contract-mismatch proofs.
+
+## Related
+
+- [Crate boundaries](architecture/crate-boundaries.md)
+- [Compile-time to runtime flow](architecture/compile-runtime-flow.md)
+- [Generated surface and contract](architecture/generated-surface.md)
+- [Managed executor](architecture/managed-executor.md)
+- [Feature composition and evolution](architecture/feature-composition.md)
+- [Macro pipeline](macro-pipeline.md)

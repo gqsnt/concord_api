@@ -76,13 +76,13 @@ bytes.
 
 | Family | User behavior | Maintainer boundary |
 |---|---|---|
-| Request bodies, buffered/streamed responses, empty chunks | [Bodies and buffered responses](../features/bodies-and-buffered-responses.md), [Streaming](../features/streaming.md) | [Managed boundary ownership](../contributor/architecture.md#managed-boundary-ownership) |
-| Authentication material and provider HTTP | [Authentication](../features/authentication.md), [Credential providers](../features/credential-providers.md) | [Managed boundary ownership](../contributor/architecture.md#managed-boundary-ownership) |
-| Multipart structure and payload | [Multipart uploads](../features/multipart.md) | [Managed boundary ownership](../contributor/architecture.md#managed-boundary-ownership) |
-| Record staging and pagination | [Record streams](../features/records.md), [Pagination](../features/pagination.md) | [Managed boundary ownership](../contributor/architecture.md#managed-boundary-ownership) |
-| Rate plans, keys, cooldowns, local state | [Rate limiting](../features/rate-limiting.md) | [Managed boundary ownership](../contributor/architecture.md#managed-boundary-ownership) |
-| Public request heads and runtime endpoints | [Request shaping](../guide/request-shaping.md), [Runtime-defined endpoints](../features/runtime-endpoints.md) | [Managed boundary ownership](../contributor/architecture.md#managed-boundary-ownership) |
-| Proxy, roots, identity, and transport | [Production HTTP](../features/production-http.md) | [Managed boundary ownership](../contributor/architecture.md#managed-boundary-ownership) |
+| Request bodies, buffered/streamed responses, empty chunks | [Bodies and buffered responses](../features/bodies-and-buffered-responses.md), [Streaming](../features/streaming.md) | [Managed boundary ownership](../contributor/architecture/managed-executor.md#managed-boundary-ownership) |
+| Authentication material and provider HTTP | [Authentication](../features/authentication.md), [Credential providers](../features/credential-providers.md) | [Managed boundary ownership](../contributor/architecture/managed-executor.md#managed-boundary-ownership) |
+| Multipart structure and payload | [Multipart uploads](../features/multipart.md) | [Managed boundary ownership](../contributor/architecture/managed-executor.md#managed-boundary-ownership) |
+| Record staging and pagination | [Record streams](../features/records.md), [Pagination](../features/pagination.md) | [Managed boundary ownership](../contributor/architecture/managed-executor.md#managed-boundary-ownership) |
+| Rate plans, keys, cooldowns, local state | [Rate limiting](../features/rate-limiting.md) | [Managed boundary ownership](../contributor/architecture/managed-executor.md#managed-boundary-ownership) |
+| Public request heads and runtime endpoints | [Request shaping](../guide/request-shaping.md), [Runtime-defined endpoints](../features/runtime-endpoints.md) | [Managed boundary ownership](../contributor/architecture/managed-executor.md#managed-boundary-ownership) |
+| Proxy, roots, identity, and transport | [Production HTTP](../features/production-http.md) | [Managed boundary ownership](../contributor/architecture/managed-executor.md#managed-boundary-ownership) |
 
 ## Body and response progress
 

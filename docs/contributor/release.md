@@ -98,14 +98,12 @@ not substitute a ZIP of the working directory.
 
 ## Generated bridge contract
 
-The generated contract version is **27** in `concord-macros` and
-`concord-core`. The façade reexports the handshake through its hidden bridge.
-Any emitted bridge path or signature change requires an atomic version bump
-and the retained contract-mismatch fixture. The bridge is compiler/runtime
-plumbing, not a public extension API. The `set_*` public method rename and
-independent clear/reset semantic metadata, like final semantic pagination
-validation, change no private bridge symbol or signature, so they retain
-version 27.
+The canonical current version, owners, bump decision, atomic update sequence,
+and mismatch proofs are maintained in
+[Generated contract versioning](generated-contract.md). A release that changes
+the private compiler/runtime protocol must update every owner and the isolated
+contract-mismatch fixture together. The bridge remains implementation
+plumbing, not a downstream extension API.
 
 ## Release checklist
 

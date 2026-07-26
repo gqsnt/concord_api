@@ -71,10 +71,24 @@
 - [Dangerous capabilities](reference/dangerous.md)
 - [Unsupported forms](reference/unsupported.md)
 
-# Contributors
+# Maintaining Concord
 
-- [Architecture](contributor/architecture.md)
+# Architecture
+
+- [Architecture overview](contributor/architecture.md)
+- [Crate boundaries](contributor/architecture/crate-boundaries.md)
+- [Compile-time to runtime flow](contributor/architecture/compile-runtime-flow.md)
+- [Generated surface and contract](contributor/architecture/generated-surface.md)
+- [Managed executor](contributor/architecture/managed-executor.md)
+- [Feature composition and evolution](contributor/architecture/feature-composition.md)
+
+# Compiler
+
 - [Macro pipeline](contributor/macro-pipeline.md)
+- [Generated contract versioning](contributor/generated-contract.md)
+
+# Development
+
 - [Testing](contributor/testing.md)
 - [Documentation](contributor/documentation.md)
 - [Release](contributor/release.md)
