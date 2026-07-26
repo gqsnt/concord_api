@@ -63,8 +63,9 @@ this site teaches how the pieces fit together and which path to choose.
 | understand the declaration-to-request model | [Contract model](concepts/contract-model.md) |
 | learn the current declaration grammar | [DSL reference](reference/dsl.md) |
 | understand generated names and controls | [Generated API reference](reference/generated-api.md) |
-| add authentication | [Authentication guide](guide/04-authentication.md) |
-| send or receive bodies and streams | [Bodies, responses, and streams](guide/05-bodies-responses-and-streams.md) |
+| add authentication | [Authentication](features/authentication.md) |
+| send or decode buffered bodies | [Request bodies and buffered responses](features/bodies-and-buffered-responses.md) |
+| consume streaming data | [Streaming responses](features/streaming.md) |
 | paginate or apply rate limits | [Pagination and rate limits](guide/06-pagination-and-rate-limits.md) |
 | choose request shape at runtime | [Explicit and runtime endpoints](guide/07-explicit-and-runtime-endpoints.md) |
 | compose a realistic client | [Regional API recipe](recipes/regional-apis.md) |

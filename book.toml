@@ -32,3 +32,5 @@ boost-paragraph = 1
 "/guide/01-represent-an-api.html" = "/start/first-api.html"
 "/guide/02-understand-generated-rust.html" = "/guide/generated-rust.html"
 "/guide/03-build-a-client-and-make-requests.html" = "/start/first-request.html"
+"/guide/04-authentication.html" = "/features/authentication.html"
+"/guide/05-bodies-responses-and-streams.html" = "/features/bodies-and-buffered-responses.html"

@@ -2,10 +2,11 @@
 //!
 //! Required features: `records`, `csv`, and `ndjson`. Mode: locally runnable
 //! through scripted loopback responses only. Documentation owner:
-//! `docs/guide/05-bodies-responses-and-streams.md`. Proving test:
+//! `docs/features/records.md`. Proving test:
 //! `tests/local_runtime.rs`.
 
 use std::num::NonZeroUsize;
+use std::pin::Pin;
 
 use concord::api;
 use concord::codec::BytesMut;
@@ -14,6 +15,7 @@ use concord::records::{
     SemicolonDelimiter,
 };
 use concord::response::ResponseHead;
+use futures_core::Stream as _;
 
 /// Header-bearing, semicolon-delimited CSV used by the configured endpoint.
 pub type ConfCsv<T> = Csv<T, HasHeader, SemicolonDelimiter>;
@@ -64,6 +66,7 @@ impl RecordDecoder for PipeRecords {
     }
 }
 
+// ANCHOR: records_contract
 api! {
     client RecordsApi {
         base "http://records.example.test/";
@@ -74,8 +77,10 @@ api! {
     GET configured_csv_rows() -> Records<crate::request_response::records::ConfCsv<(String, u32)>>;
     GET nd_json_values() -> Records<NdJson<u32>>;
 }
+// ANCHOR_END: records_contract
 
 /// Constructs all record-stream requests without opening a connection.
+// ANCHOR: record_requests
 pub fn construct() -> Result<(), concord::ClientBuildError> {
     let client = RecordsApi::builder().build()?;
     let _: records_api::CustomRequest = client.custom();
@@ -84,3 +89,20 @@ pub fn construct() -> Result<(), concord::ClientBuildError> {
     let _: records_api::NdJsonValuesRequest = client.nd_json_values();
     Ok(())
 }
+// ANCHOR_END: record_requests
+
+/// Opens a CSV record stream and consumes every decoded row.
+// ANCHOR: consume_records
+pub async fn read_csv_rows(
+    client: &RecordsApi,
+) -> Result<Vec<(String, u32)>, Box<dyn std::error::Error>> {
+    let mut stream = client.csv_rows().await?;
+    let mut rows = Vec::new();
+    while let Some(row) =
+        std::future::poll_fn(|context| Pin::new(&mut stream).poll_next(context)).await
+    {
+        rows.push(row?);
+    }
+    Ok(rows)
+}
+// ANCHOR_END: consume_records

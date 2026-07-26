@@ -21,11 +21,15 @@
 - [Requests, planning, and errors](guide/requests-planning-errors.md)
 - [The managed lifecycle](concepts/managed-lifecycle.md)
 
-# Feature guides
+# Features
 
-- [Authentication](guide/04-authentication.md)
-- [Bodies, responses, and streams](guide/05-bodies-responses-and-streams.md)
+- [Authentication](features/authentication.md)
+- [Credential providers and OAuth2](features/credential-providers.md)
+- [Request bodies and buffered responses](features/bodies-and-buffered-responses.md)
+- [Streaming responses](features/streaming.md)
+- [Record streams](features/records.md)
 - [Pagination and rate limits](guide/06-pagination-and-rate-limits.md)
+- [Multipart uploads](features/multipart.md)
 - [Explicit and runtime endpoints](guide/07-explicit-and-runtime-endpoints.md)
 
 # Concepts

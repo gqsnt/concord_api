@@ -36,5 +36,5 @@ support in the
 [local runtime test](../../crates/concord-examples/tests/local_runtime.rs).
 
 For smaller pieces, read [Regional APIs](regional-apis.md),
-[Authentication](../guide/04-authentication.md), and
+[Authentication](../features/authentication.md), and
 [Pagination and rate limits](../guide/06-pagination-and-rate-limits.md).

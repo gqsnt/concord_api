@@ -1,7 +1,7 @@
 //! Custom credential material, response codec, and isolated provider HTTP.
 //!
-//! Required feature: `oauth2-client`. Mode: deterministic extension proof.
-//! Documentation owner: `docs/guide/04-authentication.md`.
+//! Required feature: `oauth2-client`. Mode: deterministic extension example.
+//! Documentation owner: `docs/extending/credentials-and-providers.md`.
 //! Proving tests: `tests/construction.rs` and façade provider tests.
 
 use std::fmt;

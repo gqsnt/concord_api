@@ -1,16 +1,19 @@
 //! Declares static, endpoint-backed, OAuth2, and custom-provider credentials.
 //!
 //! Required feature: `oauth2-client`; fixed-HTTPS execution also requires
-//! `default-tls`. Mode: construction and deterministic local proof.
-//! Documentation owner: `docs/guide/04-authentication.md`.
+//! `default-tls`. Mode: construction and deterministic local execution.
+//! Documentation owners: `docs/features/authentication.md` and
+//! `docs/features/credential-providers.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use concord::api;
 use concord::auth::OAuth2ClientCredentials;
 
+// ANCHOR: authentication_contract
 api! {
     client AuthenticationApi {
         base "https://localhost/authentication-example/";
+        // ANCHOR: credential_declarations
         credentials {
             secret api_key: String;
             secret bearer_token: String;
@@ -23,13 +26,20 @@ api! {
             credential acquired = endpoint login;
             credential custom = custom crate::authentication::extensions::ExampleProvider;
         }
+        // ANCHOR_END: credential_declarations
     }
 
+    // ANCHOR: static_authentication_endpoints
     GET login() -> crate::authentication::extensions::ExampleTokenCodec;
     GET api_key() -> NoContent { auth header "X-Api-Key" = application_key; }
     GET bearer() -> NoContent { auth bearer static_bearer; }
     GET basic() -> NoContent { auth basic login; }
+    // ANCHOR_END: static_authentication_endpoints
+
+    // ANCHOR: provider_authentication_endpoints
     GET o_auth() -> NoContent { auth bearer oauth challenge unauthorized; }
     GET endpoint_backed() -> NoContent { auth query "session" = acquired challenge never; }
     GET provider_backed() -> NoContent { auth bearer custom challenge never; }
+    // ANCHOR_END: provider_authentication_endpoints
 }
+// ANCHOR_END: authentication_contract

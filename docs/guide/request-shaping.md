@@ -101,7 +101,7 @@ to the [DSL reference](../reference/dsl.md#public-expressions-and-request-shapin
 ## Related
 
 - [Requests, planning, and errors](requests-planning-errors.md)
-- [Authentication](04-authentication.md)
+- [Authentication](../features/authentication.md)
 - [Complete DSL request-shaping reference](../reference/dsl.md#public-expressions-and-request-shaping)
 - [Limits reference](../reference/limits.md)
 - [Security and redaction](../concepts/security-and-redaction.md)

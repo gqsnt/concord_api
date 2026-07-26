@@ -24,6 +24,7 @@ riot-live = ["json", "rate-limit", "default-tls", "http2", "tokio"]
 
 [dependencies]
 concord = { version = "=0.1.0", path = "../concord", default-features = false }
+futures-core.workspace = true
 reqwest = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
@@ -31,7 +32,6 @@ tokio = { workspace = true, optional = true, features = ["macros", "rt-multi-thr
 
 [dev-dependencies]
 concord-test-support = { path = "../concord-test-support", default-features = false, features = ["loopback"] }
-futures-core.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util", "time"] }
 
 [[example]]

@@ -12,13 +12,14 @@ exhaustive tables.
 
 | Task | Continue with |
 |---|---|
-| authenticate with Bearer, Basic, API key, or a provider | [Authentication](../guide/04-authentication.md) |
-| send JSON or another buffered request body | [Bodies, responses, and streams](../guide/05-bodies-responses-and-streams.md) |
-| decode JSON or buffered bytes | [Bodies, responses, and streams](../guide/05-bodies-responses-and-streams.md) |
-| stream response bytes or CSV/NDJSON records | [Bodies, responses, and streams](../guide/05-bodies-responses-and-streams.md) |
+| authenticate with Bearer, Basic, API key, or a provider | [Authentication](../features/authentication.md) |
+| send JSON or another buffered request body | [Request bodies and buffered responses](../features/bodies-and-buffered-responses.md) |
+| decode JSON or buffered bytes | [Request bodies and buffered responses](../features/bodies-and-buffered-responses.md) |
+| stream response bytes | [Streaming responses](../features/streaming.md) |
+| stream CSV or NDJSON records | [Record streams](../features/records.md) |
 | fetch sequential pages | [Pagination and rate limits](../guide/06-pagination-and-rate-limits.md) |
 | partition and enforce local rate policy | [Pagination and rate limits](../guide/06-pagination-and-rate-limits.md) |
-| upload multipart text, bytes, or files | [Bodies, responses, and streams](../guide/05-bodies-responses-and-streams.md) |
+| upload multipart text, bytes, or files | [Multipart uploads](../features/multipart.md) |
 | configure TLS, proxies, certificates, and finite limits | [Production configuration](../recipes/production-configuration.md) |
 | choose public endpoint shape at runtime | [Explicit and runtime endpoints](../guide/07-explicit-and-runtime-endpoints.md) |
 | implement a custom body, decoder, provider, controller, limiter, or hook | [Extension model](../concepts/extension-model.md) |
