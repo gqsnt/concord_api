@@ -16,6 +16,7 @@ pub const DEFAULT_MATCH_PAGE_SIZE: NonZeroU32 = match NonZeroU32::new(20) {
     None => unreachable!(),
 };
 
+// ANCHOR: riot_routes
 #[derive(Clone, Copy, Debug)]
 pub enum PlatformRoute {
     Br1,
@@ -87,3 +88,4 @@ impl fmt::Display for RegionalRoute {
         })
     }
 }
+// ANCHOR_END: riot_routes

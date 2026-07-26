@@ -26,6 +26,7 @@ use super::domain::MatchType;
 /// `Retry-After` and `X-Rate-Limit-Type` refine a cooldown after a rejection;
 /// it is not a verified statement of Riot's current header contract. Method
 /// cooldowns conservatively cool the current lexical plan.
+// ANCHOR: riot_observer
 #[derive(Default)]
 pub struct RiotRateLimitObserver;
 
@@ -55,8 +56,10 @@ impl RateLimitObserver for RiotRateLimitObserver {
         })
     }
 }
+// ANCHOR_END: riot_observer
 
 /// Constructs representative platform, regional, paginated, and Data Dragon requests.
+// ANCHOR: riot_composition
 pub fn construct() -> Result<(), concord::ClientBuildError> {
     let riot = RiotApi::builder()
         .api_key(
@@ -82,6 +85,7 @@ pub fn construct() -> Result<(), concord::ClientBuildError> {
         data_dragon.version("15.1.1".to_owned()).data().champions();
     Ok(())
 }
+// ANCHOR_END: riot_composition
 
 /// Runs the live Riot workflow from `RIOT_API_KEY`, `RIOT_GAME_NAME`, and
 /// `RIOT_TAG_LINE`.

@@ -18,6 +18,7 @@
 
 pub mod contracts;
 pub mod getting_started;
+pub mod recipes;
 pub mod request_response;
 pub mod runtime_endpoints;
 pub mod runtime_policy;

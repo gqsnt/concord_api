@@ -10,11 +10,13 @@ fn proxy(server: &ScriptedServer) -> SafeProxy {
 // ANCHOR: first_request_loopback
 #[tokio::test]
 async fn getting_started_request_executes_against_loopback() {
+    use concord::http::SafeProxy;
     use concord_examples::getting_started::minimal::{MinimalApi, execute, minimal_api};
+    use concord_test_support::server::{ResponseScript, ScriptedServer};
 
     let server =
         ScriptedServer::start([ResponseScript::status(204, Vec::new())]).expect("health server");
-    let proxy = proxy(&server);
+    let proxy = SafeProxy::parse(server.url("")).expect("loopback proxy");
     let client = MinimalApi::builder()
         .configure_http(move |http| http.proxy(proxy))
         .build()

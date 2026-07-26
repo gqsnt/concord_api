@@ -33,3 +33,18 @@ pub async fn collect(client: &PaginationApi) -> Result<Vec<u32>, concord::ApiErr
         .await
 }
 // ANCHOR_END: execute_pagination
+
+/// Collects until natural termination with a finite fail-closed cap.
+// ANCHOR: paginate_all
+pub async fn collect_all(client: &PaginationApi) -> Result<Vec<u32>, concord::ApiError> {
+    client
+        .offset(
+            0,
+            std::num::NonZeroU32::new(50).expect("positive page size"),
+        )
+        .paginate(PageLimit::HardCap(
+            std::num::NonZeroU32::new(100).expect("positive hard cap"),
+        ))
+        .await
+}
+// ANCHOR_END: paginate_all

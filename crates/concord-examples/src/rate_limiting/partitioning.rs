@@ -11,6 +11,7 @@ use std::sync::Arc;
 use concord::api;
 use concord::rate_limit::{LocalRateLimiter, RateLimiter};
 
+// ANCHOR: rate_partitioning_recipe
 // ANCHOR: partitioning_contract
 api! {
     client PartitioningApi {
@@ -107,6 +108,7 @@ pub fn construct() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 // ANCHOR_END: shared_limiter
+// ANCHOR_END: rate_partitioning_recipe
 
 /// Returns whether an execution failure is recoverable local-state pressure.
 #[must_use]

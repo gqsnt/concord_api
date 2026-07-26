@@ -27,6 +27,8 @@ fn imports_and_constructs_every_enabled_canonical_declaration() {
         .expect("generic specification construction");
     let _observed =
         concord_examples::runtime_policy::hooks::construct().expect("observability construction");
+    let _api_key = concord_examples::recipes::api_key::build("recipe-api-key")
+        .expect("API-key recipe construction");
     concord_examples::runtime_endpoints::generated_and_runtime::construct()
         .expect("runtime endpoint construction");
 
@@ -51,7 +53,15 @@ fn imports_and_constructs_every_enabled_canonical_declaration() {
     concord_examples::request_response::bodies::construct().expect("body workflow construction");
 
     #[cfg(all(feature = "oauth2-client", feature = "default-tls"))]
-    concord_examples::authentication::usage::construct().expect("authentication construction");
+    {
+        concord_examples::authentication::usage::construct().expect("authentication construction");
+        let _oauth = concord_examples::recipes::oauth_refresh::build(
+            "https://localhost/oauth/token",
+            "recipe-client",
+            "recipe-secret",
+        )
+        .expect("OAuth recipe construction");
+    }
 
     #[cfg(feature = "rate-limit")]
     {

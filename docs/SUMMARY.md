@@ -44,9 +44,14 @@
 # Recipes
 
 - [Regional APIs](recipes/regional-apis.md)
+- [API-key authentication](recipes/api-key-authentication.md)
+- [Refresh OAuth credentials](recipes/oauth-refresh.md)
+- [Paginate all results](recipes/paginate-all.md)
+- [Per-host and per-account rate limits](recipes/rate-limit-partitioning.md)
+- [Stream CSV or NDJSON records](recipes/stream-records.md)
 - [Testing API clients](recipes/testing-api-clients.md)
 - [Production configuration](recipes/production-configuration.md)
-- [Riot API narrative](recipes/riot.md)
+- [Riot-style client](recipes/riot.md)
 
 # Reference
 

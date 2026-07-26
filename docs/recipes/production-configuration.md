@@ -1,64 +1,96 @@
 # Production configuration
 
-Treat the generated builder as the one composition root:
+## Goal
 
-```rust
-let client = ServiceApi::builder()
-    .set_tenant(settings.tenant)
-    .token(concord::SecretString::try_new(settings.token)?)
-    .configure_http(|http| {
-        http.connect_timeout(settings.connect_timeout)
-    })
-    .configure_runtime(|runtime| {
-        runtime
-            .runtime_endpoint_timeout(settings.runtime_endpoint_timeout)
-            .request_body_limit(settings.request_body_limit)
-            .response_body_limit(settings.response_body_limit)
-            .hooks(settings.hooks)
-    })
-    .build()?;
+Build one immutable HTTPS client with an explicit proxy, private trust root,
+transport liveness settings, and evidence-based finite body limits—without
+enabling broad native access or unsafe retry defaults.
+
+## Complete code
+
+The complete compiled recipe declares a generated endpoint and configures the
+deployment builder:
+
+```rust,ignore
+{{#include ../../crates/concord-examples/src/runtime_policy/production_http.rs:production_recipe}}
 ```
 
-Choose finite limits from workload evidence. Exact defaults and types are in
-[Limits](../reference/limits.md). A setter requiring `NonZeroUsize` or
-`NonZeroU32` cannot create an unbounded zero sentinel. Disabling terminal
-status capture or the default inherited by runtime endpoints is an explicit
-operation, not an infinite limit. Generated endpoints retain their resolved
-declaration timeout.
+The caller supplies a reviewed proxy origin and PEM trust root. `build()`
+parses the TLS material and fails before any request can execute when transport
+configuration is invalid.
 
-Keep one built client per stable configuration and clone it. The clone shares
-the immutable transport/runtime snapshot. Rebuild only when configuration
-changes intentionally.
+## Why these declarations
 
-An explicit proxy and custom root certificates configured through
-`configure_http` apply to both application traffic and isolated credential
-provider HTTP. A configured application client identity is installed only on
-the application client; provider HTTP never receives that identity. The two
-clients retain separate connection pools and lifecycle roles.
+`ProductionApi` keeps the service contract small: a fixed HTTPS base and a
+10-second endpoint timeout. Transport choices stay outside the declaration.
 
-Use lifecycle hooks for safe metrics and tracing, not request mutation or
-credential inspection. Attach endpoint ID, operation ID, attempt, safe status,
-and elapsed time. Keep application labels finite and do not reflect arbitrary
-remote values into metric cardinality.
+`https_only(true)` rejects non-HTTPS application transport. `SafeProxy::parse`
+makes proxy use explicit; Concord ignores environment proxy variables. The
+proxy and custom root apply to both application and isolated provider HTTP.
 
-Generated rate plans use `LocalRateLimiter` under ordinary defaults. It is a
-continuously refilling token bucket local to one process and one limiter
-object; it does not claim exact remote fixed/sliding-window or distributed
-quota enforcement. Client clones share the built client's object.
-Independently built clients can share by receiving the same
-`Arc<dyn RateLimiter>`.
+Connect and read timeouts bound native phases. Pool idle settings and TCP
+options describe connection reuse rather than endpoint semantics.
 
-Choose `by` dimensions conservatively because their cardinality determines
-local state demand. `StateCapacity` is a recoverable pre-transport signal that
-a new key did not fit; existing buckets were not evicted. Increase a finite
-capacity from workload evidence, reduce partition cardinality, wait for safely
-prunable state, or supply a custom bounded limiter. A custom limiter takes
-precedence and must bound its own state.
+`runtime_endpoint_timeout` supplies the default only for runtime-defined
+endpoints that inherit it. It does not replace the generated health endpoint's
+declared timeout.
 
-The importable
-[custom limiter example](../../crates/concord-examples/src/rate_limiting/custom_limiter.rs),
-[partitioning example](../../crates/concord-examples/src/rate_limiting/partitioning.rs),
-and
-[authentication example](../../crates/concord-examples/src/authentication/usage.rs)
-are exercised by
-[deterministic tests](../../crates/concord-examples/tests/local_runtime.rs).
+Separate request, buffered-response, and stream-response limits match their
+different retention modes. Positive `NonZeroUsize` inputs cannot smuggle an
+unbounded zero sentinel into runtime configuration.
+
+## Adaptations
+
+Add `.identity_pem(...)` when the application service requires client TLS.
+That identity is installed only on the application client; provider HTTP does
+not inherit it. Use a custom provider design when a token endpoint has a
+separate identity requirement.
+
+Enable `gzip`, `brotli`, or `deflate` only when needed. Corresponding
+`disable_*` methods can turn an enabled algorithm off for one client.
+Managed response limits count post-decompression bytes.
+
+Install bounded hooks with `configure_runtime(...hooks(...))` and choose a
+limiter appropriate to local or distributed quota ownership. Clones of the
+built client share both objects. Independently built clients are isolated
+unless given the same `Arc`.
+
+Add status-body, provider-body, pagination, authentication-cooldown, and
+rate-cooldown settings when defaults do not match measured workloads. Keep
+exact values in application configuration rather than duplicating Concord's
+default table.
+
+Use `retry_reqwest_default` only after reviewing idempotency and body
+replayability. Arbitrary native policy belongs behind
+`dangerous-custom-retry`; it can perform multiple physical sends inside one
+visible attempt.
+
+## Production notes
+
+At startup, verify the fixed base, proxy, trust roots, optional identity, TLS
+feature set, and every required protected input. Treat `ClientBuildError` as a
+deployment failure, not a per-request retry.
+
+Redirects remain disabled. A 3xx response is a typed final status rather than
+an automatic cross-origin request. Keep that property in security and
+availability tests.
+
+Choose limits and timeouts from payload distributions and service objectives.
+Endpoint execution, later stream polling, completion work, and provider HTTP
+have distinct liveness boundaries. Add application-owned timeouts to trusted
+callbacks and stream consumers where needed.
+
+Log stable endpoint and operation IDs, outcome categories, bounded timing, and
+approved labels. Sanitized public URLs and headers can still contain business
+or personal identifiers. Avoid dynamic high-cardinality metric keys.
+
+Rebuild when stable configuration changes and swap the client through the
+application's lifecycle. Do not mutate a built client's transport in place.
+
+## Related
+
+- [Production HTTP](../features/production-http.md)
+- [Build and share clients](../guide/client-construction.md)
+- [Hooks and observability](../features/hooks-and-observability.md)
+- [Limits reference](../reference/limits.md)
+- [Dangerous capabilities](../reference/dangerous.md)

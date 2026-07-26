@@ -7,6 +7,7 @@
 
 use concord::api;
 
+// ANCHOR: regional_api_recipe
 api! {
     client RegionalGameApi {
         base "https://regional-game.example.test/";
@@ -79,8 +80,10 @@ api! {
         }
     }
 }
+// ANCHOR_END: regional_api_recipe
 
 /// Constructs representative requests from each regional scope.
+// ANCHOR: regional_api_usage
 pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
     let client = RegionalGameApi::builder()
         .set_platform("euw1".to_owned())
@@ -100,3 +103,4 @@ pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
         .challenger("ranked-solo".to_owned());
     Ok(())
 }
+// ANCHOR_END: regional_api_usage

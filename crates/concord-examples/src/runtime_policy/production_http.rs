@@ -9,6 +9,7 @@ use std::time::Duration;
 use concord::api;
 use concord::http::SafeProxy;
 
+// ANCHOR: production_recipe
 api! {
     client ProductionApi {
         base "https://api.example.test/";
@@ -50,3 +51,4 @@ pub fn build_client(
     Ok(client)
 }
 // ANCHOR_END: production_client
+// ANCHOR_END: production_recipe

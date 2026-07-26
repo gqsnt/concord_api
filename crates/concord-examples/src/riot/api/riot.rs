@@ -14,6 +14,7 @@ use concord::prelude::*;
 use crate::riot::domain::*;
 
 api! {
+    // ANCHOR: riot_client
     client RiotApi {
         base "https://riotgames.com/";
 
@@ -30,6 +31,7 @@ api! {
         auth header "X-Riot-Token" = riot_api_key challenge never;
         timeout 20s;
     }
+    // ANCHOR_END: riot_client
 
     scope platform( platform: crate::riot::domain::PlatformRoute) {
         host [scope.platform, "api"];
