@@ -19,6 +19,11 @@ Do not copy a complete example into docs. Keep declarations canonical in the
 example crate and use small illustrative fragments only. Do not expose the
 private generated bridge in user-facing pages.
 
+Generated-control prose treats absence capability and a declaration default as
+independent facts. A defaulted `Option` must be described with `set_*`,
+`clear_*`, and `reset_*` together; examples pass the inner value to `set_*`
+and distinguish explicit absence from default restoration.
+
 Feature and limit tables are checked:
 
 ```text

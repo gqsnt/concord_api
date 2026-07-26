@@ -68,11 +68,14 @@ selected-feature Rustdoc checks must preserve the core custom-`RateLimiter`
 contract when the first-party implementation is disabled.
 
 The release-facing generated value-control surface uses `set_*` for every
-public value mutation, `clear_*` for optional absence, and `reset_*` for
-default restoration. Client/scope/endpoint construction and navigation retain
-their domain names. Package examples, façade UI, and Rust 1.85 semantic UI
-must compile the new names and prove the unpublished bare mutation methods are
-absent; do not add compatibility aliases.
+public value mutation, `clear_*` when a value is absence-capable, and `reset_*`
+when it has a declaration default. Those capabilities are independent:
+defaulted `Option<T>` and `Option<Vec<T>>` values expose all three controls,
+and `set_*` accepts the inner `T` or `Vec<T>`. Client/scope/endpoint
+construction and navigation retain their domain names. Package examples,
+façade UI, and Rust 1.85 semantic UI must compile the new names and prove the
+unpublished bare mutation methods are absent on client builders, scope façades,
+explicit endpoints, and named requests; do not add compatibility aliases.
 
 Rate-limit partition validation is final-endpoint authoritative. Every
 effective inherited or local direct value dimension must be independent of
@@ -100,8 +103,9 @@ The generated contract version is **27** in `concord-macros` and
 Any emitted bridge path or signature change requires an atomic version bump
 and the retained contract-mismatch fixture. The bridge is compiler/runtime
 plumbing, not a public extension API. The `set_*` public method rename and
-final semantic pagination validation change no private bridge symbol or
-signature, so they retain version 27.
+independent clear/reset semantic metadata, like final semantic pagination
+validation, change no private bridge symbol or signature, so they retain
+version 27.
 
 ## Release checklist
 
@@ -119,9 +123,11 @@ Before enabling publication:
 9. confirm `rate-limit` remains a default façade feature, its selected façade
    and extras Rustdoc is warning-free, and the removed unpublished names are
    absent;
-10. confirm generated value mutation uses only `set_*`, optional `clear_*`,
-    and defaulted `reset_*`; inspect the compile-fail proof that a bare value
-    method is absent;
+10. confirm generated value mutation uses only `set_*`, absence-capable
+    `clear_*`, and declaration-default `reset_*`; compile defaulted `Option`
+    and `Option<Vec<_>>` with all three controls, and inspect the four
+    compile-fail proofs that bare methods are absent from client builders,
+    scope façades, explicit endpoint snapshots, and named request wrappers;
 11. confirm effective direct and final-host-derived rate partitions reject
     pagination-controlled dependencies under current and Rust 1.85 semantic UI
     owners;
