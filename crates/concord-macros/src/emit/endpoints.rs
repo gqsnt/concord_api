@@ -486,7 +486,7 @@ pub(super) fn generate_pagination_impl(
         .map(|field| {
             let name = &field.name;
             let value = match &field.initializer {
-                PaginationInitializer::Bound(value) => {
+                PaginationInitializer::Bound { value, .. } => {
                     pagination_owned_value_access(value.reference, client, scopes, endpoint)
                 }
                 PaginationInitializer::Value(PaginationValue::Reference(value)) => {
@@ -503,13 +503,13 @@ pub(super) fn generate_pagination_impl(
         .fields
         .iter()
         .filter_map(|field| {
-            let PaginationInitializer::Bound(value) = &field.initializer else {
+            let PaginationInitializer::Bound { value, .. } = &field.initializer else {
                 return None;
             };
             let controller_field = &field.name;
             let endpoint_field = match value.reference {
                 ValueReference::Client(_) => {
-                    unreachable!("the parser rejects client values as pagination bindings")
+                    unreachable!("semantic validation rejects client pagination bindings")
                 }
                 ValueReference::Scope {
                     scope_id,

@@ -29,9 +29,10 @@ use auth::{
     convert_credentials, resolve_endpoint_credentials, validate_credential_cycles,
     validate_credential_names,
 };
-use pagination::pagination_bound_values;
+use pagination::{pagination_bound_values, validate_pagination_binding_destinations};
 use rate_limits::{
     RateLimitDeclarationLayer, RateLimitResolutionContext, source_tree_declares_rate_limits,
+    validate_effective_rate_limit_pagination_dependencies,
 };
 use symbols::{
     ScopeFrame, convert_values, validate_child_methods, validate_endpoint_setters,
@@ -100,7 +101,6 @@ pub(crate) fn resolve_with_capabilities(
             &[],
             None,
             &RateLimitResolutionContext {
-                pagination_values: &[],
                 layer: RateLimitDeclarationLayer::Client,
                 id_path: &client_id,
                 lexical_origin: "client",
@@ -194,7 +194,6 @@ impl Resolver<'_> {
             &frames,
             None,
             &RateLimitResolutionContext {
-                pagination_values: &[],
                 layer: RateLimitDeclarationLayer::Scope,
                 id_path: &id_path,
                 lexical_origin: &lexical_origin,
@@ -230,7 +229,12 @@ impl Resolver<'_> {
             visible_scopes,
             &parameters,
         )?;
-        let pagination_values = pagination_bound_values(pagination.as_ref());
+        let pagination_values = pagination_bound_values(
+            pagination.as_ref(),
+            self.client_values,
+            visible_scopes,
+            &parameters,
+        );
 
         let dsl_path = scope_path
             .iter()
@@ -263,12 +267,13 @@ impl Resolver<'_> {
             visible_scopes,
             Some(&parameters),
             &RateLimitResolutionContext {
-                pagination_values: &pagination_values,
                 layer: RateLimitDeclarationLayer::Endpoint,
                 id_path: &contract_id.value,
                 lexical_origin: &lexical_origin,
             },
         )?;
+        validate_effective_rate_limit_pagination_dependencies(&config, &pagination_values)?;
+        validate_pagination_binding_destinations(&pagination_values)?;
         let timeout = match source.layer.timeout.as_ref() {
             Some(clause) => match &clause.value {
                 TimeoutOperation::Off => EndpointDocTimeout::Disabled,

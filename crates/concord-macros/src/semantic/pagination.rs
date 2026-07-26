@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use super::model::{
     Pagination, PaginationField, PaginationInitializer, PaginationValue, Value, ValueReference,
 };
+use super::surface::canonical_ident;
 use super::symbols::{ScopeFrame, resolve_default};
 use super::{Resolver, SpanError};
 use crate::syntax::ast::{
@@ -10,18 +11,62 @@ use crate::syntax::ast::{
     PaginationValue as SourcePaginationValue,
 };
 
-pub(super) fn pagination_bound_values(pagination: Option<&Pagination>) -> Vec<ValueReference> {
+pub(super) struct PaginationBoundValue {
+    pub(super) reference: ValueReference,
+    pub(super) public_name: String,
+    pub(super) span: proc_macro2::Span,
+}
+
+pub(super) fn pagination_bound_values(
+    pagination: Option<&Pagination>,
+    client: &[Value],
+    scopes: &[ScopeFrame],
+    endpoint: &[Value],
+) -> Vec<PaginationBoundValue> {
     let mut values = Vec::new();
     if let Some(pagination) = pagination {
         for field in &pagination.fields {
-            if let PaginationInitializer::Bound(value) = &field.initializer {
-                if !values.contains(&value.reference) {
-                    values.push(value.reference);
+            if let PaginationInitializer::Bound { value, span } = &field.initializer {
+                if !values
+                    .iter()
+                    .any(|existing: &PaginationBoundValue| existing.reference == value.reference)
+                {
+                    values.push(PaginationBoundValue {
+                        reference: value.reference,
+                        public_name: public_value_name(value.reference, client, scopes, endpoint),
+                        span: *span,
+                    });
                 }
             }
         }
     }
     values
+}
+
+fn public_value_name(
+    reference: ValueReference,
+    client: &[Value],
+    scopes: &[ScopeFrame],
+    endpoint: &[Value],
+) -> String {
+    match reference {
+        ValueReference::Client(index) => {
+            format!("vars.{}", canonical_ident(&client[index].name))
+        }
+        ValueReference::Scope {
+            scope_id,
+            parameter,
+        } => {
+            let scope = scopes
+                .iter()
+                .find(|scope| scope.id == scope_id)
+                .expect("resolved pagination scope must remain visible");
+            format!("scope.{}", canonical_ident(&scope.values[parameter].name))
+        }
+        ValueReference::Endpoint(index) => {
+            format!("ep.{}", canonical_ident(&endpoint[index].name))
+        }
+    }
 }
 
 impl Resolver<'_> {
@@ -44,6 +89,7 @@ impl Resolver<'_> {
                         namespace,
                         destination,
                     } => {
+                        let span = namespace.span();
                         let value = self.resolve_value_reference(
                             &namespace,
                             &destination,
@@ -55,7 +101,7 @@ impl Resolver<'_> {
                                 "duplicate pagination binding destination after resolution",
                             ));
                         }
-                        PaginationInitializer::Bound(value)
+                        PaginationInitializer::Bound { value, span }
                     }
                     SourcePaginationInitializer::Value(value) => {
                         let value = match value {
@@ -82,6 +128,20 @@ impl Resolver<'_> {
             .collect::<syn::Result<Vec<_>>>()?;
         Ok(Some(Pagination { controller, fields }))
     }
+}
+
+pub(super) fn validate_pagination_binding_destinations(
+    pagination_values: &[PaginationBoundValue],
+) -> syn::Result<()> {
+    if let Some(value) = pagination_values
+        .iter()
+        .find(|value| matches!(value.reference, ValueReference::Client(_)))
+    {
+        return Err(value
+            .span
+            .error("`bind` accepts only direct `ep.FIELD` or `scope.FIELD` destinations"));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -113,10 +173,13 @@ mod tests {
         assert_eq!(pagination.fields.len(), 3);
         assert!(matches!(
             pagination.fields[0].initializer,
-            PaginationInitializer::Bound(ResolvedValue {
-                reference: ValueReference::Endpoint(0),
+            PaginationInitializer::Bound {
+                value: ResolvedValue {
+                    reference: ValueReference::Endpoint(0),
+                    ..
+                },
                 ..
-            })
+            }
         ));
         assert!(matches!(
             pagination.fields[1].initializer,
@@ -129,5 +192,27 @@ mod tests {
             pagination.fields[2].initializer,
             PaginationInitializer::Value(PaginationValue::Stable(_))
         ));
+    }
+
+    #[test]
+    fn client_binding_without_a_rate_dependency_remains_rejected() {
+        let error = test_support::try_resolve_tokens(quote! {
+            client PaginationApi {
+                base "https://example.test";
+                vars { cursor: String; }
+            }
+            GET list() -> PageSpec<Vec<u32>> {
+                paginate crate::Controller {
+                    cursor: bind vars.cursor,
+                }
+            }
+        })
+        .err()
+        .expect("client pagination bindings remain unsupported")
+        .to_string();
+
+        assert!(
+            error.contains("`bind` accepts only direct `ep.FIELD` or `scope.FIELD` destinations")
+        );
     }
 }

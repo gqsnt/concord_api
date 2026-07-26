@@ -715,15 +715,6 @@ fn pagination_rejects_old_forms_and_unsafe_initializers() {
             quote! {
                 client Api { base "https://example.test"; }
                 GET read(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
-                    paginate OffsetController { offset: bind vars.offset }
-                }
-            },
-            "accepts only direct `ep.FIELD` or `scope.FIELD`",
-        ),
-        (
-            quote! {
-                client Api { base "https://example.test"; }
-                GET read(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
                     paginate OffsetController { offset: bind ep.state.offset }
                 }
             },

@@ -283,8 +283,8 @@ pub(crate) fn endpoint_doc_model(
                 .dimensions
                 .iter()
                 .map(|dimension| match dimension {
-                    NormalizedRateLimitDimension::Host => "host".to_owned(),
-                    NormalizedRateLimitDimension::Endpoint => "endpoint".to_owned(),
+                    NormalizedRateLimitDimension::Host { .. } => "host".to_owned(),
+                    NormalizedRateLimitDimension::Endpoint { .. } => "endpoint".to_owned(),
                     NormalizedRateLimitDimension::Value { public_name, .. } => public_name.clone(),
                 })
                 .collect(),

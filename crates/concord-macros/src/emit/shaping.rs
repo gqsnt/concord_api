@@ -32,7 +32,7 @@ pub(super) fn pagination_continuation_values(endpoint: &Endpoint) -> Vec<ValueRe
     let mut values = Vec::new();
     if let Some(pagination) = &endpoint.pagination {
         for field in &pagination.fields {
-            if let PaginationInitializer::Bound(value) = &field.initializer {
+            if let PaginationInitializer::Bound { value, .. } = &field.initializer {
                 if !values.contains(&value.reference) {
                     values.push(value.reference);
                 }
@@ -302,7 +302,7 @@ pub(super) fn rate_limit_statements(
             let capture_host = rule
                 .dimensions
                 .iter()
-                .any(|dimension| matches!(dimension, NormalizedRateLimitDimension::Host))
+                .any(|dimension| matches!(dimension, NormalizedRateLimitDimension::Host { .. }))
                 .then(|| {
                     quote! {
                         let #host_binding = __concord_builder.rate_limit_host().to_owned();
@@ -314,11 +314,13 @@ pub(super) fn rate_limit_statements(
                 .dimensions
                 .iter()
                 .map(|dimension| match dimension {
-                    NormalizedRateLimitDimension::Host => {
+                    NormalizedRateLimitDimension::Host { .. } => {
                         quote!(("host", &#host_binding as &dyn ::std::fmt::Display))
                     }
-                    NormalizedRateLimitDimension::Endpoint => {
-                        quote!(("endpoint", &#contract_id as &dyn ::std::fmt::Display))
+                    NormalizedRateLimitDimension::Endpoint { span } => {
+                        quote_spanned!(*span=>
+                            ("endpoint", &#contract_id as &dyn ::std::fmt::Display)
+                        )
                     }
                     NormalizedRateLimitDimension::Value {
                         public_name,

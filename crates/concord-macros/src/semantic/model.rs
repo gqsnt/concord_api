@@ -289,7 +289,7 @@ pub(crate) struct PaginationField {
 
 #[derive(Clone)]
 pub(crate) enum PaginationInitializer {
-    Bound(ResolvedValue),
+    Bound { value: ResolvedValue, span: Span },
     Value(PaginationValue),
 }
 
@@ -440,8 +440,12 @@ pub(crate) struct NormalizedRateLimitRule {
 
 #[derive(Clone)]
 pub(crate) enum NormalizedRateLimitDimension {
-    Host,
-    Endpoint,
+    Host {
+        span: Span,
+    },
+    Endpoint {
+        span: Span,
+    },
     Value {
         public_name: String,
         reference: ValueReference,

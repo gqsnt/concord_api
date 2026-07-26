@@ -59,7 +59,7 @@ pub(super) fn parse_pagination(input: ParseStream<'_>) -> syn::Result<Pagination
             let namespace: Ident = fields_body.parse().map_err(|_| {
                 fields_body.error("`bind` requires direct `ep.FIELD` or `scope.FIELD`")
             })?;
-            if !matches!(namespace.to_string().as_str(), "ep" | "scope") {
+            if !matches!(namespace.to_string().as_str(), "vars" | "ep" | "scope") {
                 return Err(namespace
                     .span()
                     .error("`bind` accepts only direct `ep.FIELD` or `scope.FIELD` destinations"));

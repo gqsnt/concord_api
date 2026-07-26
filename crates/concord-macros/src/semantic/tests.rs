@@ -962,17 +962,23 @@ fn pagination_normalizes_one_controller_type_and_field_initializer_ir() {
     assert_eq!(pagination.fields.len(), 2);
     assert!(matches!(
         pagination.fields[0].initializer,
-        PaginationInitializer::Bound(ResolvedValue {
-            reference: ValueReference::Endpoint(0),
+        PaginationInitializer::Bound {
+            value: ResolvedValue {
+                reference: ValueReference::Endpoint(0),
+                ..
+            },
             ..
-        })
+        }
     ));
     assert!(matches!(
         pagination.fields[1].initializer,
-        PaginationInitializer::Bound(ResolvedValue {
-            reference: ValueReference::Endpoint(1),
+        PaginationInitializer::Bound {
+            value: ResolvedValue {
+                reference: ValueReference::Endpoint(1),
+                ..
+            },
             ..
-        })
+        }
     ));
 
     let Child::Endpoint(vendor) = &endpoints[1] else {
@@ -982,10 +988,13 @@ fn pagination_normalizes_one_controller_type_and_field_initializer_ir() {
     assert_eq!(pagination.fields.len(), 3);
     assert!(matches!(
         pagination.fields[0].initializer,
-        PaginationInitializer::Bound(ResolvedValue {
-            reference: ValueReference::Endpoint(0),
+        PaginationInitializer::Bound {
+            value: ResolvedValue {
+                reference: ValueReference::Endpoint(0),
+                ..
+            },
             ..
-        })
+        }
     ));
     assert!(matches!(
         pagination.fields[1].initializer,

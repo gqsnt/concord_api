@@ -1,9 +1,10 @@
 use super::Resolver;
 use super::SpanError;
 use super::model::{
-    NormalizedRateLimitDimension, NormalizedRateLimitRule, NormalizedRateLimitWindow,
-    ValueReference, ValueShape,
+    NormalizedConfig, NormalizedRateLimitDimension, NormalizedRateLimitRule,
+    NormalizedRateLimitWindow, ResolvedExpr, ValueReference, ValueShape,
 };
+use super::pagination::PaginationBoundValue;
 use super::symbols::ScopeFrame;
 use crate::syntax::ast::{Layer, RateLimitDecl, RateLimitDimensionDecl, SourceChild};
 
@@ -25,7 +26,6 @@ impl RateLimitDeclarationLayer {
 }
 
 pub(super) struct RateLimitResolutionContext<'a> {
-    pub(super) pagination_values: &'a [ValueReference],
     pub(super) layer: RateLimitDeclarationLayer,
     pub(super) id_path: &'a str,
     pub(super) lexical_origin: &'a str,
@@ -54,9 +54,11 @@ impl Resolver<'_> {
             .dimensions
             .iter()
             .map(|dimension| match dimension {
-                RateLimitDimensionDecl::Host { .. } => Ok(NormalizedRateLimitDimension::Host),
-                RateLimitDimensionDecl::Endpoint { .. } => {
-                    Ok(NormalizedRateLimitDimension::Endpoint)
+                RateLimitDimensionDecl::Host { span } => {
+                    Ok(NormalizedRateLimitDimension::Host { span: *span })
+                }
+                RateLimitDimensionDecl::Endpoint { span } => {
+                    Ok(NormalizedRateLimitDimension::Endpoint { span: *span })
                 }
                 RateLimitDimensionDecl::Value {
                     namespace, name, ..
@@ -94,13 +96,6 @@ impl Resolver<'_> {
                         }
                         ValueShape::Scalar => {}
                     }
-                    if matches!(value.reference, ValueReference::Endpoint(_))
-                        && context.pagination_values.contains(&value.reference)
-                    {
-                        return Err(name.span().error(format!(
-                            "pagination-controlled endpoint value `{public_name}` cannot be a rate-limit dimension"
-                        )));
-                    }
                     Ok(NormalizedRateLimitDimension::Value {
                         public_name,
                         reference: value.reference,
@@ -127,6 +122,88 @@ impl Resolver<'_> {
             cost: declaration.cost,
             windows,
         })
+    }
+}
+
+pub(super) fn validate_effective_rate_limit_pagination_dependencies(
+    config: &NormalizedConfig,
+    pagination_values: &[PaginationBoundValue],
+) -> syn::Result<()> {
+    if pagination_values.is_empty() {
+        return Ok(());
+    }
+
+    let uses_host = config.rate_limits.iter().any(|rule| {
+        rule.dimensions
+            .iter()
+            .any(|dimension| matches!(dimension, NormalizedRateLimitDimension::Host { .. }))
+    });
+    let host_dependencies = if uses_host {
+        resolved_expression_dependencies(&config.host)
+    } else {
+        Vec::new()
+    };
+
+    for rule in &config.rate_limits {
+        for dimension in &rule.dimensions {
+            match dimension {
+                NormalizedRateLimitDimension::Host { span } => {
+                    if let Some(pagination_value) = host_dependencies.iter().find_map(|reference| {
+                        pagination_values
+                            .iter()
+                            .find(|value| value.reference == *reference)
+                    }) {
+                        return Err(span.error(format!(
+                            "`host` cannot partition this rate-limit rule because final host shaping depends on pagination-controlled value `{}`",
+                            pagination_value.public_name
+                        )));
+                    }
+                }
+                NormalizedRateLimitDimension::Endpoint { .. } => {}
+                NormalizedRateLimitDimension::Value {
+                    public_name,
+                    reference,
+                    span,
+                } => {
+                    if pagination_values
+                        .iter()
+                        .any(|value| value.reference == *reference)
+                    {
+                        return Err(span.error(format!(
+                            "pagination-controlled value `{public_name}` cannot partition a rate-limit rule"
+                        )));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn resolved_expression_dependencies(expressions: &[ResolvedExpr]) -> Vec<ValueReference> {
+    let mut dependencies = Vec::new();
+    for expression in expressions {
+        collect_resolved_expression_dependencies(expression, &mut dependencies);
+    }
+    dependencies
+}
+
+fn collect_resolved_expression_dependencies(
+    expression: &ResolvedExpr,
+    dependencies: &mut Vec<ValueReference>,
+) {
+    match expression {
+        ResolvedExpr::Value(value) => {
+            if !dependencies.contains(&value.reference) {
+                dependencies.push(value.reference);
+            }
+        }
+        ResolvedExpr::Format(values) => {
+            for value in values {
+                collect_resolved_expression_dependencies(value, dependencies);
+            }
+        }
+        ResolvedExpr::String(_) | ResolvedExpr::Integer(_) => {}
     }
 }
 
@@ -230,10 +307,13 @@ mod tests {
         let endpoint = test_support::endpoint(&api.client.children, "read");
         let dimensions = &endpoint.config.rate_limits[0].dimensions;
 
-        assert!(matches!(dimensions[0], NormalizedRateLimitDimension::Host));
+        assert!(matches!(
+            dimensions[0],
+            NormalizedRateLimitDimension::Host { .. }
+        ));
         assert!(matches!(
             dimensions[1],
-            NormalizedRateLimitDimension::Endpoint
+            NormalizedRateLimitDimension::Endpoint { .. }
         ));
         assert!(matches!(
             &dimensions[2],
@@ -374,7 +454,7 @@ mod tests {
     }
 
     #[test]
-    fn pagination_bound_dimension_is_rejected() {
+    fn endpoint_rule_rejects_pagination_bound_endpoint_value() {
         let error = resolve_error(quote! {
             client RateApi { base "https://example.test"; }
             GET list(cursor: String) -> crate::PageSpec {
@@ -385,7 +465,259 @@ mod tests {
             }
         });
 
-        assert!(error.contains("pagination-controlled endpoint value `ep.cursor`"));
+        assert!(error.contains(
+            "pagination-controlled value `ep.cursor` cannot partition a rate-limit rule"
+        ));
+    }
+
+    #[test]
+    fn endpoint_rule_rejects_pagination_bound_scope_value() {
+        let error = resolve_error(quote! {
+            client RateApi { base "https://example.test"; }
+            scope pages(cursor: String) {
+                GET list() -> crate::PageSpec {
+                    rate_limit { by [scope.cursor]; 1 / 1s; }
+                    paginate crate::Cursor {
+                        cursor: bind scope.cursor,
+                    }
+                }
+            }
+        });
+
+        assert!(error.contains(
+            "pagination-controlled value `scope.cursor` cannot partition a rate-limit rule"
+        ));
+    }
+
+    #[test]
+    fn endpoint_rule_rejects_pagination_bound_client_value() {
+        let error = resolve_error(quote! {
+            client RateApi {
+                base "https://example.test";
+                vars { cursor: String; }
+            }
+            GET list() -> crate::PageSpec {
+                rate_limit { by [vars.cursor]; 1 / 1s; }
+                paginate crate::Cursor {
+                    cursor: bind vars.cursor,
+                }
+            }
+        });
+
+        assert!(error.contains(
+            "pagination-controlled value `vars.cursor` cannot partition a rate-limit rule"
+        ));
+    }
+
+    #[test]
+    fn inherited_scope_rule_rejects_pagination_bound_scope_value() {
+        let error = resolve_error(quote! {
+            client RateApi { base "https://example.test"; }
+            scope pages(cursor: String) {
+                rate_limit { by [scope.cursor]; 1 / 1s; }
+                GET list() -> crate::PageSpec {
+                    paginate crate::Cursor {
+                        cursor: bind scope.cursor,
+                    }
+                }
+            }
+        });
+
+        assert!(error.contains(
+            "pagination-controlled value `scope.cursor` cannot partition a rate-limit rule"
+        ));
+    }
+
+    #[test]
+    fn inherited_client_rule_rejects_pagination_bound_client_value() {
+        let error = resolve_error(quote! {
+            client RateApi {
+                base "https://example.test";
+                vars { cursor: String; }
+                rate_limit { by [vars.cursor]; 1 / 1s; }
+            }
+            GET list() -> crate::PageSpec {
+                paginate crate::Cursor {
+                    cursor: bind vars.cursor,
+                }
+            }
+        });
+
+        assert!(error.contains(
+            "pagination-controlled value `vars.cursor` cannot partition a rate-limit rule"
+        ));
+    }
+
+    #[test]
+    fn unrelated_pagination_leaves_client_scope_and_endpoint_dimensions_valid() {
+        let api = test_support::resolve_tokens(quote! {
+            client RateApi {
+                base "https://example.test";
+                vars {
+                    tenant: String;
+                }
+            }
+            scope pages(region: String) {
+                GET list(account: String, cursor: String) -> crate::PageSpec {
+                    rate_limit {
+                        by [vars.tenant, scope.region, ep.account];
+                        1 / 1s;
+                    }
+                    paginate crate::Cursor {
+                        endpoint_cursor: bind ep.cursor,
+                    }
+                }
+            }
+        });
+        let endpoint = test_support::endpoint(&api.client.children, "list");
+
+        assert_eq!(endpoint.config.rate_limits[0].dimensions.len(), 3);
+    }
+
+    #[test]
+    fn host_dimension_accepts_static_host_with_unrelated_pagination() {
+        let api = test_support::resolve_tokens(quote! {
+            client RateApi {
+                base "https://example.test";
+                rate_limit { by [host]; 1 / 1s; }
+            }
+            GET list(cursor: String) -> crate::PageSpec {
+                paginate crate::Cursor {
+                    cursor: bind ep.cursor,
+                }
+            }
+        });
+
+        assert_eq!(
+            test_support::endpoint(&api.client.children, "list")
+                .config
+                .rate_limits
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn host_dimension_accepts_dynamic_non_pagination_dependency() {
+        let api = test_support::resolve_tokens(quote! {
+            client RateApi { base "https://example.test"; }
+            scope pages(region: String, cursor: String) {
+                host [scope.region, "api"];
+                rate_limit { by [host]; 1 / 1s; }
+                GET list() -> crate::PageSpec {
+                    paginate crate::Cursor {
+                        cursor: bind scope.cursor,
+                    }
+                }
+            }
+        });
+
+        assert_eq!(
+            test_support::endpoint(&api.client.children, "list")
+                .config
+                .rate_limits
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn host_dimension_rejects_pagination_bound_client_host_input() {
+        let error = resolve_error(quote! {
+            client RateApi {
+                base "https://example.test";
+                vars { region: String; }
+                host [vars.region, "api"];
+                rate_limit { by [host]; 1 / 1s; }
+            }
+            GET list() -> crate::PageSpec {
+                paginate crate::Cursor {
+                    region: bind vars.region,
+                }
+            }
+        });
+
+        assert!(error.contains(
+            "`host` cannot partition this rate-limit rule because final host shaping depends on pagination-controlled value `vars.region`"
+        ));
+    }
+
+    #[test]
+    fn host_dimension_rejects_pagination_bound_scope_host_input() {
+        let error = resolve_error(quote! {
+            client RateApi { base "https://example.test"; }
+            scope pages(region: String) {
+                host [scope.region, "api"];
+                rate_limit { by [host]; 1 / 1s; }
+                GET list() -> crate::PageSpec {
+                    paginate crate::Cursor {
+                        region: bind scope.region,
+                    }
+                }
+            }
+        });
+
+        assert!(error.contains(
+            "`host` cannot partition this rate-limit rule because final host shaping depends on pagination-controlled value `scope.region`"
+        ));
+    }
+
+    #[test]
+    fn host_dimension_rejects_pagination_bound_endpoint_host_input() {
+        let error = resolve_error(quote! {
+            client RateApi { base "https://example.test"; }
+            GET list(region: String) -> crate::PageSpec {
+                host [ep.region, "api"];
+                rate_limit { by [host]; 1 / 1s; }
+                paginate crate::Cursor {
+                    region: bind ep.region,
+                }
+            }
+        });
+
+        assert!(error.contains(
+            "`host` cannot partition this rate-limit rule because final host shaping depends on pagination-controlled value `ep.region`"
+        ));
+    }
+
+    #[test]
+    fn formatted_host_dependency_is_detected_recursively() {
+        let error = resolve_error(quote! {
+            client RateApi { base "https://example.test"; }
+            scope pages(region: String) {
+                host [fmt["edge-", fmt["regional-", scope.region]]];
+                rate_limit { by [host]; 1 / 1s; }
+                GET list() -> crate::PageSpec {
+                    paginate crate::Cursor {
+                        region: bind scope.region,
+                    }
+                }
+            }
+        });
+
+        assert!(error.contains("pagination-controlled value `scope.region`"));
+    }
+
+    #[test]
+    fn inherited_host_dimension_is_revalidated_at_endpoint() {
+        let error = resolve_error(quote! {
+            client RateApi {
+                base "https://example.test";
+                rate_limit { by [host]; 1 / 1s; }
+            }
+            scope pages(region: String) {
+                host [scope.region, "api"];
+                GET list() -> crate::PageSpec {
+                    paginate crate::Cursor {
+                        region: bind scope.region,
+                    }
+                }
+            }
+        });
+
+        assert!(error.contains(
+            "`host` cannot partition this rate-limit rule because final host shaping depends on pagination-controlled value `scope.region`"
+        ));
     }
 
     #[test]
