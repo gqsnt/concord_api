@@ -84,6 +84,6 @@ optional/default syntax, inheritance, or diagnostics.
 ## Related
 
 - [Make the first request](first-request.md)
-- [Understand generated Rust](../guide/02-understand-generated-rust.md)
+- [Understand generated Rust](../guide/generated-rust.md)
 - [Complete DSL reference](../reference/dsl.md)
 - [Generated API reference](../reference/generated-api.md)

@@ -10,11 +10,19 @@
   - [Make the first request](start/first-request.md)
   - [Choose your next path](start/next.md)
 
-# Guides
+# Core guide
 
-- [Represent an API](guide/01-represent-an-api.md)
-- [Understand generated Rust](guide/02-understand-generated-rust.md)
-- [Build a client and make requests](guide/03-build-a-client-and-make-requests.md)
+- [The contract model](concepts/contract-model.md)
+- [Clients, scopes, and endpoints](guide/clients-scopes-endpoints.md)
+- [Values, defaults, and controls](guide/values-and-controls.md)
+- [Shape the public request](guide/request-shaping.md)
+- [Understand generated Rust](guide/generated-rust.md)
+- [Build and share clients](guide/client-construction.md)
+- [Requests, planning, and errors](guide/requests-planning-errors.md)
+- [The managed lifecycle](concepts/managed-lifecycle.md)
+
+# Feature guides
+
 - [Authentication](guide/04-authentication.md)
 - [Bodies, responses, and streams](guide/05-bodies-responses-and-streams.md)
 - [Pagination and rate limits](guide/06-pagination-and-rate-limits.md)
@@ -22,8 +30,6 @@
 
 # Concepts
 
-- [Contract model](concepts/contract-model.md)
-- [Managed lifecycle](concepts/managed-lifecycle.md)
 - [Finite behavior](concepts/finite-behavior.md)
 - [Security and redaction](concepts/security-and-redaction.md)
 - [Extension model](concepts/extension-model.md)

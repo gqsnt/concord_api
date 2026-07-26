@@ -99,6 +99,6 @@ deterministic local test.
 ## Related
 
 - [Choose your next path](next.md)
-- [Build a client and make requests](../guide/03-build-a-client-and-make-requests.md)
+- [Build and share clients](../guide/client-construction.md)
 - [Error reference](../reference/errors.md)
 - [Managed lifecycle](../concepts/managed-lifecycle.md)

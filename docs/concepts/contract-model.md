@@ -1,55 +1,97 @@
-# Contract model
+# The contract model
 
-Concord has one product transformation:
+Use Concord by describing the remote API once, then work with the Rust types
+generated from that description. The shortest useful mental model has four
+steps:
 
 ```text
-remote HTTP API contract
-    -> declaration compiler
-    -> ordinary predictable typed Rust
-    -> one managed HTTP lifecycle
+declaration -> generated Rust -> inert request -> managed execution
 ```
 
-The declaration contains representation: stable URL structure, public values,
-credential placement, media specifications, pagination bindings, lexical rate
-limits, and endpoint identity. The generated Rust surface contains named
-clients, builders, scopes, endpoint values, and request wrappers. The runtime
-contains operational policy and effects.
+Each step has a different job. Keeping those jobs separate makes a client
+predictable to call, safe to inspect, and consistent across features.
 
-Construction and navigation preserve declaration-domain names. Generated
-public value mutation is a distinct vocabulary: `set_*` selects a value,
-`clear_*` selects absence when the type permits it, and `reset_*` restores a
-DSL default when one exists. Absence and default capabilities are independent;
-a defaulted `Option` owns both controls. This keeps navigation from being
-confused with snapshot mutation.
+## Declare the remote contract
 
-Keeping those layers separate matters. A concrete rate limiter, hook object,
-transport retry policy, proxy, or observer is deployment policy and belongs on
-the runtime builder. A request path, response representation, or
-authentication placement is remote-contract policy and belongs in the
-declaration.
+The `api!` declaration records facts that belong to the service: its fixed
+base, public values, scopes and endpoints, request shaping, authentication
+placement, response representations, timeouts, pagination bindings, and
+declared rate limits. It is the place to express what an operation means, not
+how one deployment should observe or transport it.
 
-Within a rate-limit declaration, lexical placement selects applicability and
-an optional ordered `by` clause selects bucket partitioning. Omission means
-one bucket for that declaration, not a process-global bucket. The compiler
-does not infer method, path, query, or URL dimensions. It validates the final
-effective plan against pagination so neither a direct value dimension nor a
-final host dependency can change buckets as pagination mutates state.
+Here is the complete contract used throughout this guide:
 
-Source-derived rule IDs are deterministic within one generated client
-contract but are not a global namespace across unrelated macro expansions.
-Limiter-object ownership normally isolates those contracts; applications that
-explicitly share one limiter across unrelated generated contracts must ensure
-their declaration rule namespaces are compatible.
+## Complete example
 
-The resolved compiler model is the single source of generated names and
-capabilities. Direct methods and explicit endpoint values bind that same
-model. Safe planning and execution share public-head preparation. This avoids
-parallel interpretations that could drift.
+```rust,ignore
+{{#include ../../crates/concord-examples/src/contracts/full_dsl.rs:core_contract}}
+```
 
-The public extension boundary is semantic: bodies, responses, providers,
-pagination controllers, limiters, and observers describe their work without
-receiving native transport values. Concrete first-party integrations use the
-same boundary available to downstream applications.
+This declaration is compiled as part of `concord-examples`. Concord validates
+its structure during compilation, while ordinary Rust trait checking verifies
+that the selected value, body, and response types support the operations in
+which they are used.
 
-Read [Managed lifecycle](managed-lifecycle.md) for execution ordering and the
-[DSL reference](../reference/dsl.md) for exact representation syntax.
+## Use ordinary generated Rust
+
+The declaration produces a named client builder, an immutable client, scope
+values, explicit endpoint values, and named request wrappers. Required values
+stay visible as builder inputs or method arguments. Optional and defaulted
+values gain only the controls they can support. Endpoint-specific capabilities
+such as pagination or typed response metadata appear only on endpoints for
+which they are valid.
+
+You do not need to interpret the declaration again in application code.
+Direct methods such as `client.status()` and explicit endpoint values such as
+`reference_api::Status::new()` select the same endpoint contract.
+
+## Construct before executing
+
+Calling a generated endpoint creates an inert request value. You may adjust
+its endpoint-owned values, inspect its type, or create a safe request plan
+without opening a connection. Request construction does not fetch
+credentials, consume a rate-limit permit, run hooks, encode a body, or send
+HTTP.
+
+Execution begins when an async terminal is polled. The usual terminal is the
+request itself:
+
+```rust
+let bytes = client.status().await?;
+```
+
+Some endpoints also expose `.response()` for typed response metadata or
+`.paginate(...)` for a declared pagination contract. These methods are not a
+second execution system; they enter the same managed lifecycle with a
+different result shape.
+
+## Separate service policy from deployment policy
+
+Put stable service facts in the declaration. Put deployment choices on the
+generated builder:
+
+- the declaration owns paths, query entries, public headers, credential
+  placement, response types, and endpoint identity;
+- `configure_http` owns transport choices such as TLS material, an explicit
+  proxy, and safe connection settings;
+- `configure_runtime` owns limits, hooks, operational timeouts, and an
+  explicitly shared limiter.
+
+This boundary lets two applications use the same declared service contract
+with different operational policy. It also lets two independently built
+clients remain isolated, while clones of one built client deliberately share
+the same runtime state.
+
+Concord does not infer arbitrary service semantics from Rust type names, and
+it does not turn a request plan into an authenticated native request. Use the
+declaration for supported contract behavior and the builder for supported
+runtime configuration; application-specific behavior outside those
+boundaries remains application code.
+
+## Related
+
+- [Clients, scopes, and endpoints](../guide/clients-scopes-endpoints.md)
+- [Understand generated Rust](../guide/generated-rust.md)
+- [The managed lifecycle](managed-lifecycle.md)
+- [Complete DSL reference](../reference/dsl.md)
+- [Generated API reference](../reference/generated-api.md)

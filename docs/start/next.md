@@ -29,8 +29,8 @@ exhaustive tables.
 
 For an application client, continue through the current core path:
 
-1. [Understand generated Rust](../guide/02-understand-generated-rust.md).
-2. [Build a client and make requests](../guide/03-build-a-client-and-make-requests.md).
+1. [Understand generated Rust](../guide/generated-rust.md).
+2. [Build and share clients](../guide/client-construction.md).
 3. Pick only the feature guides used by your contract.
 4. Use a recipe when several features must compose.
 5. Consult reference pages for exact grammar, names, flags, limits, and error

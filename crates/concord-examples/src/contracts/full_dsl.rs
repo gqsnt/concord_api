@@ -1,7 +1,7 @@
 //! The complete DSL topology in one compile-checked, importable declaration.
 //!
 //! Required features: none. Mode: construction-only and safe planning.
-//! Documentation owner: `docs/reference/dsl.md`.
+//! Documentation owners: `docs/reference/dsl.md` and the Core Guide.
 //! Proving test: `tests/construction.rs`.
 
 use concord::api;
@@ -15,7 +15,9 @@ pub const DEFAULT_VERBOSE: Option<bool> = Some(false);
 /// Retained optional-vector endpoint default.
 pub const DEFAULT_TAGS: Option<Vec<&'static str>> = Some(Vec::new());
 
+// ANCHOR: core_contract
 api! {
+    // ANCHOR: client_declaration
     client ReferenceApi {
         base "https://reference.example.test/root/";
         vars {
@@ -43,7 +45,9 @@ api! {
             1000 / 1m;
         }
     }
+    // ANCHOR_END: client_declaration
 
+    // ANCHOR: status_endpoint
     GET status(
         verbose: Option<bool> = crate::contracts::full_dsl::DEFAULT_VERBOSE,
         tags: Option<Vec<&'static str>> = crate::contracts::full_dsl::DEFAULT_TAGS,
@@ -56,7 +60,9 @@ api! {
         auth off;
         timeout off;
     }
+    // ANCHOR_END: status_endpoint
 
+    // ANCHOR: regional_scope
     scope regions(
         region: String,
         language: Option<String>,
@@ -76,7 +82,9 @@ api! {
             headers { "Accept-Language" = scope.language; }
         }
     }
+    // ANCHOR_END: regional_scope
 }
+// ANCHOR_END: core_contract
 
 api! {
     client ReqwestRetryReference {
@@ -88,7 +96,9 @@ api! {
 }
 
 /// Constructs representative direct and explicit requests with `set_*` controls.
+// ANCHOR: value_controls
 pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
+    // ANCHOR: configured_client
     let client = ReferenceApi::builder()
         .set_tenant("tenant-a".to_owned())
         .set_locale("fr".to_owned())
@@ -102,6 +112,9 @@ pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
             concord::SecretString::try_new("example-api-key").expect("bounded example API key"),
         )
         .build()?;
+    // ANCHOR_END: configured_client
+
+    // ANCHOR: request_controls
     let _: reference_api::StatusRequest = client
         .status()
         .set_verbose(true)
@@ -110,6 +123,9 @@ pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
         .set_tags(vec!["stable", "documented"])
         .clear_tags()
         .reset_tags();
+    // ANCHOR_END: request_controls
+
+    // ANCHOR: direct_and_explicit
     let _: reference_api::regions::FetchRequest = client
         .regions("eu-west".to_owned())
         .set_language("fr".to_owned())
@@ -129,7 +145,9 @@ pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
             .clear_scope_label()
             .reset_scope_label(),
     );
+    // ANCHOR_END: direct_and_explicit
     let retry_client = ReqwestRetryReference::builder().build()?;
     let _: reqwest_retry_reference::HealthRequest = retry_client.health();
     Ok(())
 }
+// ANCHOR_END: value_controls

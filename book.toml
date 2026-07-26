@@ -27,3 +27,8 @@ use-boolean-and = true
 boost-title = 2
 boost-hierarchy = 1
 boost-paragraph = 1
+
+[output.html.redirect]
+"/guide/01-represent-an-api.html" = "/start/first-api.html"
+"/guide/02-understand-generated-rust.html" = "/guide/generated-rust.html"
+"/guide/03-build-a-client-and-make-requests.html" = "/start/first-request.html"
