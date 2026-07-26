@@ -87,8 +87,20 @@
 - [Macro pipeline](contributor/macro-pipeline.md)
 - [Generated contract versioning](contributor/generated-contract.md)
 
+# Runtime contracts
+
+- [Authentication](contributor/contracts/authentication.md)
+- [Bodies, responses, and finite progress](contributor/contracts/body-response-progress.md)
+- [Records and pagination](contributor/contracts/records-pagination.md)
+- [Rate limiting](contributor/contracts/rate-limits.md)
+- [Errors, redaction, hooks, and completion](contributor/contracts/errors-hooks-completion.md)
+- [Extension contracts](contributor/contracts/extensions.md)
+
 # Development
 
-- [Testing](contributor/testing.md)
-- [Documentation](contributor/documentation.md)
-- [Release](contributor/release.md)
+- [Workspace and adding a feature](contributor/workspace.md)
+  - [Adding a feature](contributor/adding-a-feature.md)
+- [Testing strategy](contributor/testing.md)
+- [Performance and scale](contributor/performance.md)
+- [Documentation maintenance](contributor/documentation.md)
+- [Release process](contributor/release.md)

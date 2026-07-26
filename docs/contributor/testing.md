@@ -1,4 +1,4 @@
-# Testing and validation
+# Testing strategy
 
 The test architecture follows contract ownership.
 
@@ -58,10 +58,14 @@ tool/component as a passing check.
 ## Executable CI
 
 `.github/workflows/ci.yml` runs on pushes, pull requests, and manual dispatch.
-Seven jobs own quality, tests/docs, stable UI, MSRV, fixtures/packages,
-three-platform smoke coverage, and blocking rust-analyzer checks. Lifecycle,
-security, extras, and feature proofs are not repeated in separate jobs after
-their workspace owner has run. Performance remains manual/local.
+Eight jobs own quality/policy, tests/examples, documentation, stable UI, MSRV,
+fixtures/packages, three-platform smoke coverage, and blocking rust-analyzer
+checks. The Documentation job installs mdBook 0.5.4, validates and builds the
+site, runs all-feature doctests, and generates warning-denied Rustdoc across
+the maintained feature sample. Lifecycle, security, extras, and feature proofs
+are not repeated in separate jobs after their workspace owner has run.
+Performance timing remains manual/local; benchmark compilation is a local
+gate.
 
 All third-party actions are pinned to immutable revisions. `actionlint`
 checks workflow syntax; xtask policy checks dependency direction and other
@@ -163,3 +167,10 @@ intentionally not an owner.
 GitHub execution, Linux/macOS behavior from a Windows host, graphical editor
 interaction, registry ownership, or legal approval. Record those scopes
 separately; never infer them from a local gate.
+
+## Related
+
+- [Workspace and adding a feature](workspace.md)
+- [Performance and scale](performance.md)
+- [Documentation maintenance](documentation.md)
+- [Release process](release.md)

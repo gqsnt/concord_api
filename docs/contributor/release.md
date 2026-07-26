@@ -1,9 +1,35 @@
-# Release and publication
+# Release process
 
 All packages retain `publish = false`. The repository has no approved license
 identifier or file, canonical repository URL, publication owner, or confirmed
 registry-name ownership. Do not infer or add that metadata, and do not publish
 without an explicit instruction for the exact operation.
+
+This page separates local release evidence from external authority. A clean
+local matrix can prove source, tests, documentation, packages, and archives at
+one exact commit. It cannot approve legal metadata, reserve registry names,
+establish remote CI on unobserved platforms, publish crates, or deploy the
+documentation site.
+
+## Release evidence
+
+Record the candidate before running release gates:
+
+```text
+git rev-parse --abbrev-ref HEAD
+git rev-parse HEAD
+git status --porcelain=v1 --untracked-files=all
+git remote -v
+```
+
+Use one exact commit for tests, rendered docs, packages, and source archive.
+If a tracked file changes after a gate, the evidence belongs to the earlier
+tree and the affected owner must be rerun.
+
+`CHANGELOG.md` is the human release summary. It should describe public
+capabilities, compatibility changes, migration requirements, and important
+fixes without copying the complete DSL, limit inventory, or internal
+lifecycle. Link readers to the canonical book or Rustdoc owner.
 
 ## Product order
 
@@ -20,8 +46,8 @@ the coordinated release.
 
 Internal workspace packages are not publication prerequisites:
 
-- `concord-examples` contains importable product examples and depends only on
-  the façade;
+- `concord-examples` contains importable product examples and uses the façade
+  as its only Concord product dependency;
 - `concord-test-support` contains deterministic and loopback test
   infrastructure;
 - `concord-perf` observes public façade behavior;
@@ -51,6 +77,8 @@ order. It:
 The simulation never patches test support. Passing this task proves local
 archive structure and dependency closure; it does not prove registry
 ownership or publication.
+
+## Release-facing compatibility review
 
 The release-facing body-progress contract has two feature-independent public
 ceilings: `concord::body::MAX_EMPTY_REQUEST_CHUNKS` and
@@ -84,6 +112,8 @@ shaping recursively depends on one. Generated declaration rule IDs remain
 source-derived and deterministic within one generated client contract, not
 globally namespaced across unrelated `api!` expansions.
 
+## Source archive
+
 Build the source ZIP with:
 
 ```text
@@ -96,6 +126,17 @@ tracked content from `HEAD` and no `.git` directory or ignored build output.
 Use `target/concord-source.zip` as the review or release source artifact; do
 not substitute a ZIP of the working directory.
 
+After creation, compare archive entries with:
+
+```text
+git ls-tree -r --name-only HEAD
+```
+
+The comparison must contain the same tracked entries exactly once. Inspect that
+the archive has no `.git`, rendered site, temporary execution aid, Trybuild
+`wip/`, or local review artifact. Because `git archive` reads `HEAD`, an
+uncommitted fix is deliberately absent.
+
 ## Generated bridge contract
 
 The canonical current version, owners, bump decision, atomic update sequence,
@@ -107,35 +148,56 @@ plumbing, not a downstream extension API.
 
 ## Release checklist
 
-Before enabling publication:
+For a local release candidate:
 
-1. approve and add legal and repository metadata;
-2. verify registry ownership for every selected public package;
-3. keep support and tooling packages private;
-4. run `just verify`;
-5. retain successful rust-analyzer diagnostics and analysis-statistics output;
-6. run `just package` and inspect every normalized product manifest;
-7. run `just source-archive`, compare ZIP entries with tracked `HEAD`, and
+1. update and review `CHANGELOG.md`;
+2. run `just verify`;
+3. run no-default, default, selected-feature, all-feature, doctest, and
+   warning-denied Rustdoc owners required by the changed surface;
+4. retain successful rust-analyzer diagnostics and analysis-statistics output;
+5. run `just package` and inspect every normalized product manifest;
+6. run `just source-archive`, compare ZIP entries with tracked `HEAD`, and
    inspect the ZIP;
-8. inspect no-default, selected-feature, and all-feature generated Rustdoc;
-9. confirm `rate-limit` remains a default façade feature, its selected façade
+7. build the mdBook with 0.5.4 and complete the rendered-site review from
+   [Documentation maintenance](documentation.md);
+8. compile the performance benchmark and record deliberate timing observations
+   separately;
+9. record the exact branch, commit, worktree, tool versions, command results,
+   unavailable checks, and external blockers.
+
+Before enabling publication or any other external release action:
+
+1. obtain an explicit instruction naming the action, packages, order, registry,
+   remote, or deployment target;
+2. approve and add legal and canonical repository metadata;
+3. verify registry ownership for every selected public package;
+4. keep support and tooling packages private;
+5. obtain successful remote Linux, Windows, and macOS CI results for the exact
+   candidate commit;
+6. inspect no-default, selected-feature, and all-feature generated Rustdoc;
+7. confirm `rate-limit` remains a default façade feature, its selected façade
    and extras Rustdoc is warning-free, and the removed unpublished names are
    absent;
-10. confirm generated value mutation uses only `set_*`, absence-capable
-    `clear_*`, and declaration-default `reset_*`; compile defaulted `Option`
-    and `Option<Vec<_>>` with all three controls, and inspect the four
-    compile-fail proofs that bare methods are absent from client builders,
-    scope façades, explicit endpoint snapshots, and named request wrappers;
-11. confirm effective direct and final-host-derived rate partitions reject
-    pagination-controlled dependencies under current and Rust 1.85 semantic UI
-    owners;
-12. confirm generated Rustdoc says “deterministic declaration rule ID” and the
-    manual records the non-global namespace boundary for shared limiters;
-13. confirm request and response empty-chunk limits appear once in the generated
+8. confirm generated value mutation uses only `set_*`, absence-capable
+   `clear_*`, and declaration-default `reset_*`; compile defaulted `Option`
+   and `Option<Vec<_>>` with all three controls, and inspect the four
+   compile-fail proofs that bare methods are absent from client builders,
+   scope façades, explicit endpoint snapshots, and named request wrappers;
+9. confirm effective direct and final-host-derived rate partitions reject
+   pagination-controlled dependencies under current and Rust 1.85 semantic UI
+   owners;
+10. confirm generated Rustdoc says “deterministic declaration rule ID” and the
+   manual records the non-global namespace boundary for shared limiters;
+11. confirm request and response empty-chunk limits appear once in the generated
    limits reference and remain available without default features;
-14. record the exact branch, commit, and clean worktree status;
-15. obtain successful remote Linux, Windows, and macOS CI results;
-16. publish only after an explicit instruction naming the packages and order.
+12. recheck the exact branch, commit, and clean worktree immediately before the
+   authorized external action;
+13. execute only the approved action and record its observed result.
 
-See the repository `CHANGELOG.md`, [compatibility reference](../reference/compatibility.md),
-and [unsupported capabilities](../reference/unsupported.md).
+## Related
+
+- repository `CHANGELOG.md`
+- [Compatibility and MSRV](../reference/compatibility.md)
+- [Unsupported forms](../reference/unsupported.md)
+- [Testing strategy](testing.md)
+- [Documentation maintenance](documentation.md)
