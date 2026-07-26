@@ -104,12 +104,7 @@ pub(super) fn request_wrapper_doc(endpoint: &Endpoint) -> String {
     let mut controls = docs
         .endpoint_setters
         .iter()
-        .flat_map(|setter| {
-            [
-                format!("`.{}`", setter.setter),
-                format!("`.{}()`", setter.helper),
-            ]
-        })
+        .map(render_request_control)
         .collect::<Vec<_>>();
     controls.extend([
         "`.timeout(...)`".to_owned(),
@@ -141,7 +136,7 @@ pub(super) fn request_wrapper_doc(endpoint: &Endpoint) -> String {
     }
 
     format!(
-        "Inert named request for [`{endpoint_name}`]. Construction and setters perform no request lifecycle work.\n\nControls: {}.\n\nTerminals:\n\n{}",
+        "Inert named request for [`{endpoint_name}`]. Construction and value controls perform no request lifecycle work.\n\nControls: {}.\n\nTerminals:\n\n{}",
         controls.join(", "),
         terminals
             .iter()
@@ -212,14 +207,39 @@ fn render_inputs(docs: &EndpointDocModel) -> String {
 }
 
 fn render_setter(setter: &EndpointDocSetter) -> String {
+    let controls = match setter.kind {
+        EndpointDocInputKind::Optional => format!(
+            "select with `.{}(...)`, clear with `.{}()`",
+            setter.setter, setter.helper
+        ),
+        EndpointDocInputKind::Defaulted => format!(
+            "override with `.{}(...)`, restore the retained default with `.{}()`",
+            setter.setter, setter.helper
+        ),
+        EndpointDocInputKind::Required => {
+            format!("set with `.{}(...)`", setter.setter)
+        }
+    };
     format!(
-        "- `ep.{}: {}` — {}; set with `.{}(...)`, restore with `.{}()`.",
+        "- `ep.{}: {}` — {}; {controls}.",
         setter.name,
         setter.type_name,
         input_kind_name(setter.kind),
-        setter.setter,
-        setter.helper,
     )
+}
+
+fn render_request_control(setter: &EndpointDocSetter) -> String {
+    match setter.kind {
+        EndpointDocInputKind::Optional => format!(
+            "select with `.{}(...)`; clear with `.{}()`",
+            setter.setter, setter.helper
+        ),
+        EndpointDocInputKind::Defaulted => format!(
+            "override with `.{}(...)`; restore the retained default with `.{}()`",
+            setter.setter, setter.helper
+        ),
+        EndpointDocInputKind::Required => format!("set with `.{}(...)`", setter.setter),
+    }
 }
 
 fn render_request(docs: &EndpointDocModel) -> String {
@@ -272,7 +292,7 @@ fn render_request(docs: &EndpointDocModel) -> String {
                             .join(", ")
                     };
                     format!(
-                        "- {} (stable rule ID `{}`)\n  - Bucketed by: {dimensions}\n  - Cost: {}\n  - Windows: {windows}",
+                        "- {} (deterministic declaration rule ID `{}`)\n  - Bucketed by: {dimensions}\n  - Cost: {}\n  - Windows: {windows}",
                         rule.origin, rule.id, rule.cost,
                     )
                 })
@@ -794,7 +814,37 @@ mod tests {
         assert!(docs.contains(
             "Bucketed by: `host`, `endpoint`, `vars.tenant`, `scope.account`, `ep.resource`"
         ));
-        assert!(docs.contains("stable rule ID"));
+        assert!(docs.contains("deterministic declaration rule ID"));
+    }
+
+    #[test]
+    fn value_controls_describe_optional_and_defaulted_semantics_exactly() {
+        let api = semantic::test_support::resolve_tokens(quote! {
+            client ControlDocsApi {
+                base "https://example.test";
+            }
+            GET read(
+                cursor: Option<String>,
+                limit: u32 = 25,
+            ) -> Bytes;
+        });
+        let endpoint = semantic::test_support::endpoint(&api.client.children, "read");
+        let endpoint_docs = endpoint_type_doc(endpoint);
+        assert!(
+            endpoint_docs
+                .contains("optional; select with `.set_cursor(...)`, clear with `.clear_cursor()`")
+        );
+        assert!(endpoint_docs.contains(
+            "defaulted; override with `.set_limit(...)`, restore the retained default with `.reset_limit()`"
+        ));
+
+        let request_docs = request_wrapper_doc(endpoint);
+        assert!(
+            request_docs.contains("select with `.set_cursor(...)`; clear with `.clear_cursor()`")
+        );
+        assert!(request_docs.contains(
+            "override with `.set_limit(...)`; restore the retained default with `.reset_limit()`"
+        ));
     }
 
     #[test]
@@ -856,7 +906,7 @@ mod tests {
         assert!(endpoint.contains("Timeout: inherited 20s"));
 
         let request = request_wrapper_doc(json);
-        assert!(request.contains("`.set_optional`"));
+        assert!(request.contains("`.set_optional(...)`"));
         assert!(request.contains("`.response()`"));
         assert!(request.contains("`.raw_response()`"));
         assert!(!request.contains("`.paginate(...)`"));

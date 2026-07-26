@@ -14,9 +14,12 @@ let client = CatalogApi::builder()
 ```
 
 Required configuration missing at `.build()` produces a focused,
-secret-safe `ClientBuildError`. Repeated setters are deterministic:
-replacement settings use the last value, while generated rate limits remain
-lexically additive. An explicitly configured limiter wins over façade default
+secret-safe `ClientBuildError`. Public value mutation always uses `set_*`;
+optional values additionally use `clear_*`, and defaulted values use
+`reset_*`. On this builder, reset discards the override so the DSL default is
+evaluated during `build()`. Repeated controls are deterministic: replacement
+settings use the last value, while generated rate limits remain lexically
+additive. An explicitly configured limiter wins over façade default
 composition.
 
 `runtime_endpoint_timeout` applies only when a `RuntimeEndpoint` selects
@@ -30,6 +33,12 @@ Calling an endpoint constructs an inert named request:
 let request = client.product(42).set_verbose(true);
 let value = request.await?;
 ```
+
+The endpoint call remains a domain-named constructor/navigation method.
+`set_verbose` is a consuming mutation of the request snapshot. Clearing an
+optional value selects `None`; resetting a defaulted scope, endpoint, or
+request value restores its retained evaluated default without re-running the
+DSL default expression.
 
 Construction does not run hooks, fetch credentials, acquire a limiter,
 materialize a body, poll a stream, or perform HTTP. Awaiting a valid terminal

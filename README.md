@@ -49,6 +49,14 @@ assert!(response.status().is_success());
 # }
 ```
 
+Generated construction and navigation keep their domain names:
+`UsersApi::builder()`, scope methods, endpoint methods, and endpoint
+constructors still construct or navigate. Public value mutation is explicit:
+use `.set_name(value)`, `.clear_name()` for an optional value, and
+`.reset_name()` for a defaulted value. There are no legacy bare mutation
+aliases. See the [generated API reference](docs/reference/generated-api.md)
+for the exact client/scope/endpoint/request matrix and reset semantics.
+
 Each endpoint has a predictable direct method, public endpoint value, named
 request wrapper, and safe description. Generated endpoints, explicit values,
 and runtime-defined endpoints all converge on the same executor:
@@ -72,6 +80,10 @@ rate-limit policy. A rule's lexical location determines where it applies. Its
 optional `by` clause determines how applicable requests are partitioned into
 local buckets; Concord never infers dimensions from a path or method. See
 [Pagination and rate limits](docs/guide/06-pagination-and-rate-limits.md).
+Generated declaration rule IDs are deterministic within one generated client
+contract, not globally namespaced across unrelated `api!` expansions. Default
+builds remain isolated by separate limiter objects; sharing one limiter across
+unrelated contracts requires compatible rule namespaces.
 
 ## Documentation
 

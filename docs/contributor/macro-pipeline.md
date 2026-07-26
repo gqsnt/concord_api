@@ -16,13 +16,17 @@ cross-declaration constraints. The resolved model is the only source for
 generated names and meanings. Host-base compatibility is checked against each
 endpoint's final normalized host shape: DNS-domain bases may receive labels,
 while IPv4 and IPv6 bases require the effective list to be empty.
+Pagination-bound references are likewise checked at the final endpoint against
+every effective rate rule and the dependencies of the final host expression.
 
 `crates/concord-macros/src/semantic/surface.rs` derives the public capability
 model: client construction, scope/endpoint names, request wrappers,
 descriptions, valid inherent terminals, and each endpoint's structured
 `EndpointDocModel`. Façade-selected capabilities are resolved into that model
-before emission. Emitters render the model and must not rediscover semantic
-facts or new user errors.
+before emission. It is also the single owner of `set_*` value-control names;
+collision validation, endpoint/request models, emitters, and generated
+Rustdoc consume those exact names. Emitters must not rediscover semantic facts
+or new user errors.
 
 `crates/concord-macros/src/emit` produces public artifacts, documentation,
 hidden bridge calls, and feature assertions. Applications invoke only
@@ -36,7 +40,8 @@ the hidden generated bridge. The DNS/IP host-shaping validation required no
 bridge change. Generated-contract version 27 adds core-owned bounded
 formatting for emitted rate-limit key dimensions. Bump the version only when
 generated code and the façade/core bridge must agree on a different private
-contract.
+contract. The public `set_*` rename and final semantic pagination validation
+do not change that private bridge, so the version remains 27.
 
 ## Diagnostic rules
 

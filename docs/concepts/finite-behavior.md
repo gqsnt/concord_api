@@ -26,6 +26,13 @@ limiter similarly preflights every missing entry for a plan: capacity failure
 inserts none, preserves active quota and unexpired cooldown history, returns
 recoverable `StateCapacity`, and leaves existing buckets operational.
 
+Pagination may update bound values between pages. The declaration compiler
+therefore rejects every effective inherited or local rate partition that
+depends directly on a pagination-controlled client, scope, or endpoint value.
+It also follows final formatted host dependencies recursively and rejects
+`by [host]` when pagination could change that host. A pagination sequence
+cannot silently migrate between local quota buckets through generated state.
+
 Empty chunks do not represent application body bytes and are never yielded or
 forwarded. Core bounds their total count independently for one request body
 and one response body; neither total resets after nonempty data. Request

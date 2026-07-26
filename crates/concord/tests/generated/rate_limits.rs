@@ -942,7 +942,7 @@ async fn inherited_lexical_declarations_keep_one_identity_across_descendant_modu
 }
 
 #[tokio::test]
-async fn declaration_identities_are_deterministic_and_collision_resistant() {
+async fn declaration_identities_repeat_within_one_contract_and_differ_by_source_path() {
     let server = ScriptedServer::start((0..6).map(|_| ResponseScript::ok(b"identity".to_vec())))
         .expect("identity collision server");
     let limiter = Arc::new(CapturingLimiter::default());

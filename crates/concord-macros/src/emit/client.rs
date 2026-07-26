@@ -28,7 +28,7 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
         client.base.value()
     );
     let builder_doc = format!(
-        "Builder for [`{client_name}`].\n\n# Inputs\n\n{value_summary} {credential_summary}\n\n# Defaults\n\nBase URL: `{}`. {timeout_summary} {retry_summary} {rate_summary} Default expressions are evaluated once by `build` unless overridden.\n\n# Configuration\n\nUse `configure_http` for transport policy and `configure_runtime` for hooks, limits, limiter selection, and runtime policy. Transformations apply immediately in call order.",
+        "Builder for [`{client_name}`].\n\n# Inputs\n\n{value_summary} {credential_summary}\n\n# Value controls\n\nMutate public values with `set_*`. Optional values also expose `clear_*`; defaulted values also expose `reset_*`. A builder reset discards the override so `build` evaluates the DSL default.\n\n# Defaults\n\nBase URL: `{}`. {timeout_summary} {retry_summary} {rate_summary} Default expressions are evaluated once by `build` unless overridden.\n\n# Configuration\n\nUse `configure_http` for transport policy and `configure_runtime` for hooks, limits, limiter selection, and runtime policy. Transformations apply immediately in call order.",
         client.base.value()
     );
     let support_doc = format!(

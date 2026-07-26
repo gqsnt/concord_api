@@ -84,6 +84,20 @@
   the generated bridge.
 - Ordered rate-limit key generation now formats referenced dimensions through
   the core-owned bounded bridge, raising the generated-contract version to 27.
+- Every generated public value mutation now uses
+  `value(value) -> set_value(value)`. Optional values retain `clear_value()`;
+  defaulted values retain `reset_value()`. Client/scope/endpoint construction
+  and navigation names, secret/credential/provider methods, timeout controls,
+  and handwritten builders are unchanged. The unpublished bare mutation
+  methods have no compatibility aliases.
+- Effective inherited and local rate-limit partitions now reject direct
+  `vars.*`, `scope.*`, or `ep.*` dimensions controlled by pagination. A
+  `by [host]` dimension is also rejected when final host shaping depends
+  recursively on a pagination-controlled value.
+- Generated documentation now calls each source-derived limiter identity a
+  deterministic declaration rule ID. It is deterministic within one generated
+  client contract, not a globally unique namespace across unrelated `api!`
+  expansions.
 - The default façade feature set now installs the first-party
   `LocalRateLimiter`; `RetryAfterObserver` is its built-in final-429 observer.
   These replace the unpublished `rate-limit-governor`,

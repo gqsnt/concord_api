@@ -40,10 +40,11 @@ rate_limit {
 }
 ```
 
-This is declaration-global, not process-global: a different declaration has a
-different stable rule ID. Client, outer-scope, inner-scope, and endpoint rules
-are additive in that order. Descendants inherit applicable ancestor rules,
-but each rule retains the dimensions resolved where it was declared.
+This is declaration-global, not process-global: a different source declaration
+has a different deterministic declaration rule ID within its generated client
+contract. Client, outer-scope, inner-scope, and endpoint rules are additive in
+that order. Descendants inherit applicable ancestor rules, but each rule
+retains the dimensions resolved where it was declared.
 
 Add only the dimensions that define the intended partition:
 
@@ -82,16 +83,30 @@ rate_limit {
 
 Concord does not infer `method`, path, query, URL, or other dimensions.
 Supported value dimensions must be required or defaulted scalars with stable,
-canonical `Display` output. Optional values, vectors, pagination-controlled
-endpoint values, formatted expressions, secrets, and credentials are
-rejected. Only referenced value types gain a `Display` bound.
+canonical `Display` output. Optional values, vectors, formatted expressions,
+secrets, and credentials are rejected. Pagination-controlled values are also
+rejected across the final effective plan: this includes inherited or local
+`vars.*`, `scope.*`, and `ep.*` dimensions. A `host` dimension is rejected
+when final host shaping recursively reads a pagination-controlled value.
+Unrelated pagination and static or non-pagination host dependencies remain
+valid. Only referenced value types gain a `Display` bound.
 
-A resolved bucket is identified by the selected limiter object, the generated
-stable rule ID, the ordered resolved dimensions, and the window. `host` is the
-final logical host; `endpoint` is the stable endpoint contract ID. Resolved
-values are bounded operational identifiers supplied only to the selected
-limiter. Concord does not include them in errors, `Debug`, `Display`, hooks,
-completion, endpoint descriptions, generated Rustdoc, or safe plans.
+A resolved bucket is identified by the selected limiter object, the
+deterministic declaration rule ID, the ordered resolved dimensions, and the
+window. `host` is the final logical host; `endpoint` is the stable endpoint
+contract ID. Resolved values are bounded operational identifiers supplied
+only to the selected limiter. Concord does not include them in errors,
+`Debug`, `Display`, hooks, completion, endpoint descriptions, generated
+Rustdoc, or safe plans.
+
+Declaration IDs are deterministic within one generated client contract.
+Renaming a source client/scope/endpoint identity changes the derived ID, and
+the ID is not globally unique across unrelated `api!` expansions. Default
+client builds receive separate limiter objects. Sharing one limiter across
+instances of the same generated client intentionally shares matching rule
+state. Sharing one limiter across unrelated generated client contracts
+requires compatible rule namespaces; Concord adds no global namespace or
+runtime rewriting.
 
 ## Default local policy
 

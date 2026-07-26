@@ -65,10 +65,14 @@ api! {
     GET health() -> NoContent;
 }
 
-/// Constructs representative direct and explicit endpoint requests.
+/// Constructs representative direct and explicit requests with `set_*` controls.
 pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
     let client = ReferenceApi::builder()
         .set_tenant("tenant-a".to_owned())
+        .set_locale("fr".to_owned())
+        .clear_locale()
+        .set_page_size(50)
+        .reset_page_size()
         .api_key(
             concord::SecretString::try_new("example-api-key").expect("bounded example API key"),
         )

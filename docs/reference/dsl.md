@@ -123,15 +123,16 @@ scope regions(region: String, locale: Option<String>) {
 
 Concord recognizes optionality syntactically, not semantically. Only
 `Option<T>` and `std::option::Option<T>` (optionally with a leading `::`) are
-optional declarations. The generated setter accepts `T`, and an absent value
-is omitted where the shaping operation permits it.
+optional declarations. The generated `.set_name(...)` control accepts `T`;
+`.clear_name()` selects `None`, which is omitted where the shaping operation
+permits it.
 
 A type alias remains required because a proc macro cannot resolve aliases:
 
 ```rust
 type MaybeLocale = Option<String>;
 
-// `locale` is a required argument, not an optional setter.
+// `locale` is a required argument, not an optional set/clear control.
 GET item(locale: MaybeLocale) -> Bytes;
 ```
 
@@ -143,11 +144,19 @@ Defaults use `name: Type = expression`. Accepted expressions are:
 - a Rust const path.
 
 Calls, methods, macros, blocks, and collection expressions are rejected.
-Default setters remain overridable; generated reset methods restore deferred
-evaluation of the declaration default.
+Defaulted values are overridden with `.set_name(...)`. On a client builder,
+`.reset_name()` discards the override so the declaration default is evaluated
+during `build()`. On an already evaluated scope, explicit endpoint, or named
+request snapshot, `.reset_name()` restores the retained default without
+re-evaluation.
 
-Required scope and endpoint arguments preserve declaration order. Optional and
-defaulted values become inherent setters on the named request wrapper.
+Required client values use `.set_name(...)`. Required scope and endpoint
+arguments preserve declaration order and remain constructor/navigation
+arguments. Optional and defaulted scope values gain `set_*` plus
+`clear_*`/`reset_*` controls on their scope and explicit endpoint snapshots.
+Optional and defaulted endpoint values gain the same controls on explicit
+endpoint snapshots and the named request wrapper. A wrapper does not gain
+inherited scope controls it did not already own.
 
 ## Explicit request bodies
 
@@ -489,8 +498,12 @@ rule retains those resolved references and cannot begin using values available
 only in a descendant. Ambiguous or unavailable scope references are rejected.
 
 Value dimensions must be required or defaulted scalars. Optional values,
-vectors, optional vectors, pagination-controlled endpoint values, secrets,
-credentials, formatted expressions, and literals are rejected. Bare
+vectors, optional vectors, any value controlled by pagination, secrets,
+credentials, formatted expressions, and literals are rejected. This
+pagination check covers effective inherited and local rules at the final
+endpoint: direct `vars.*`, `scope.*`, and `ep.*` dependencies are rejected.
+`host` is rejected when final host shaping recursively depends on any
+pagination-controlled value. Bare
 `method`, `path`, `query`, `safe_url`, and `body` dimensions are unsupported,
 as are unknown namespaces. `secret.*` and `credential.*` cannot enter a key.
 
@@ -501,13 +514,25 @@ aggregate key budget; the first excess fails with a redacted configuration
 error. `host` and `endpoint` are already canonical strings and add no
 application type bound.
 
-Bucket identity is the selected limiter object, stable generated rule ID,
-ordered resolved dimensions, and window. Dimension order is significant.
+Bucket identity is the selected limiter object, deterministic declaration
+rule ID, ordered resolved dimensions, and window. Dimension order is
+significant.
 Concrete values may be operationally sensitive. They are supplied to the
 selected limiter but do not appear in errors, `Debug`, `Display`, hooks,
 completion, endpoint descriptions, generated Rustdoc, or safe request plans.
-Generated endpoint Rustdoc lists the rule origin, stable rule ID, dimension
-names (or `declaration-global`), cost, and windows—never resolved values.
+Generated endpoint Rustdoc lists the rule origin, deterministic declaration
+rule ID, dimension names (or `declaration-global`), cost, and windows—never
+resolved values.
+
+A generated declaration rule ID is source-derived and deterministic within
+one generated client contract. Renaming its client/scope/endpoint source
+identity changes the ID. IDs are not globally unique across unrelated `api!`
+expansions. Default-built clients own separate limiter objects, so unrelated
+contracts do not share state by default. Reusing one limiter across instances
+of the same generated client intentionally shares matching declaration state;
+reusing one limiter across unrelated generated client contracts requires
+their rule namespaces to be compatible with the application's intended
+sharing.
 
 Observer and concrete limiter selection are runtime policy:
 

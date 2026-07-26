@@ -59,7 +59,8 @@ the endpoint does not exist there. A `scope.name` reference must identify one
 visible scope input unambiguously; declarations with ambiguous visible names
 are rejected instead of choosing one. Optional values omit the shaping
 operation when absent, while defaults are evaluated at construction and can be
-restored by generated reset methods.
+restored with generated `reset_*` controls. Value overrides use `set_*`, and
+optional absence is selected with `clear_*`.
 
 Use `fmt[...]` to concatenate public atoms into one host label, path segment,
 query value, or header value:

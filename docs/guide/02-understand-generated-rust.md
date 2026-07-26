@@ -28,8 +28,22 @@ client.request(catalog_api::products::ById::new(region, id))
 ```
 
 Required values are ordered constructor or method arguments. Optional and
-defaulted values are inherent setters on the scope, endpoint, or request value.
-No generated prelude or extension trait is required for normal use.
+defaulted values use explicit inherent controls on the scope, endpoint, or
+request value:
+
+```text
+construct or navigate  -> declaration-domain method name
+mutate a value         -> set_name(value)
+select absence         -> clear_name()
+restore a DSL default  -> reset_name()
+```
+
+Required client-builder values also use `set_name(value)` because they mutate
+builder state; required scope and endpoint values remain navigation or
+constructor arguments. A named request exposes only the non-required endpoint
+controls it owns, not inherited scope controls. No generated prelude,
+extension trait, legacy bare setter, `with_*` alias, or mutable setter is
+required or emitted for normal use.
 
 Every endpoint supplies:
 
@@ -47,7 +61,10 @@ for application code.
 
 Direct and explicit forms bind the same endpoint model and enter the same
 executor. Endpoint values are reusable or cloneable only when their stored
-fields permit it. See the exact [generated API reference](../reference/generated-api.md).
+fields permit it. Builder `reset_*` defers DSL-default evaluation to
+`build()`; scope/endpoint/request `reset_*` restores the retained evaluated
+default without re-evaluation. See the exact
+[generated API reference](../reference/generated-api.md).
 
 ## Running proof
 

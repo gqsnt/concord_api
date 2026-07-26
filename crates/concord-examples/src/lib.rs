@@ -5,6 +5,9 @@
 //! construction or local-runtime usage, documentation pointer, and acceptance
 //! test pointer. The targets under `examples/` only call these modules.
 //!
+//! Generated examples keep constructor/navigation names and use the public
+//! `set_*`, optional `clear_*`, and defaulted `reset_*` value-control model.
+//!
 //! Transport compression features are intentionally not separate examples:
 //! gzip, Brotli, and deflate do not alter a declaration or generated request
 //! surface, so their canonical proofs remain transport-owned. Internal

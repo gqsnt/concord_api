@@ -15,6 +15,11 @@ limits, and endpoint identity. The generated Rust surface contains named
 clients, builders, scopes, endpoint values, and request wrappers. The runtime
 contains operational policy and effects.
 
+Construction and navigation preserve declaration-domain names. Generated
+public value mutation is a distinct vocabulary: `set_*` selects a value,
+`clear_*` selects optional absence, and `reset_*` restores a DSL default.
+This keeps navigation from being confused with snapshot mutation.
+
 Keeping those layers separate matters. A concrete rate limiter, hook object,
 transport retry policy, proxy, or observer is deployment policy and belongs on
 the runtime builder. A request path, response representation, or
@@ -24,7 +29,15 @@ declaration.
 Within a rate-limit declaration, lexical placement selects applicability and
 an optional ordered `by` clause selects bucket partitioning. Omission means
 one bucket for that declaration, not a process-global bucket. The compiler
-does not infer method, path, query, or URL dimensions.
+does not infer method, path, query, or URL dimensions. It validates the final
+effective plan against pagination so neither a direct value dimension nor a
+final host dependency can change buckets as pagination mutates state.
+
+Source-derived rule IDs are deterministic within one generated client
+contract but are not a global namespace across unrelated macro expansions.
+Limiter-object ownership normally isolates those contracts; applications that
+explicitly share one limiter across unrelated generated contracts must ensure
+their declaration rule namespaces are compatible.
 
 The resolved compiler model is the single source of generated names and
 capabilities. Direct methods and explicit endpoint values bind that same

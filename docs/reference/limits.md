@@ -156,6 +156,10 @@ aggregate key budget. Concord retains no unbounded intermediate formatting;
 the first excess or formatting failure becomes a redacted invalid-rate-limit
 configuration. `host` and `endpoint` require no application formatting, and
 only referenced `vars.*`, `scope.*`, or `ep.*` types require `Display`.
+Effective dimensions may not depend on pagination-controlled values. The
+compiler also traverses final formatted host expressions before permitting a
+`host` dimension, so pagination cannot move one generated operation between
+quota keys.
 
 `LocalRateLimiter` defaults to 4,096 quota entries, 4,096 keyed cooldown
 entries, a 15-minute idle quota TTL, and the 1,024-byte selected key limit.
@@ -182,6 +186,10 @@ These maps belong to one limiter object in one process. Built-client clones
 share that object; independent builds do not share automatically. Applications
 may explicitly reuse one `Arc<dyn RateLimiter>` or supply a custom
 distributed limiter whose own state and work remain application-owned bounds.
+Generated declaration rule IDs are deterministic within a generated client
+contract, not globally namespaced across unrelated `api!` expansions; a
+limiter shared across unrelated contracts therefore requires compatible rule
+namespaces.
 
 Terminal status-body capture is enabled at its finite default. The builder can
 disable capture entirely; that does not create an unbounded mode.

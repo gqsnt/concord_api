@@ -49,7 +49,7 @@ pub(super) fn generate_scope_module(
     let client_name = &client.name;
     let scope_values = value_category_summary(&scope.parameters, "Scope");
     let facade_doc = format!(
-        "Immutable `{}` scope selection. {scope_values} Optional and defaulted inputs use consuming setters; reset methods restore retained defaults without re-evaluation.",
+        "Immutable `{}` scope selection. {scope_values} Optional and defaulted inputs use consuming `set_*` controls. Optional values also expose `clear_*`; defaulted values expose `reset_*`, which restores the retained default without re-evaluation.",
         scope.name
     );
 

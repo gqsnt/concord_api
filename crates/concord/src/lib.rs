@@ -4,11 +4,19 @@
 //! generated Rust surface, and access semantic runtime extension contracts.
 //! Ordinary default features include the bounded process-local rate-limit
 //! policy exposed as `rate_limit::LocalRateLimiter`.
+//!
+//! Generated construction and navigation use declaration-domain method names.
+//! Public value mutation uses `set_*`; optional values additionally use
+//! `clear_*`, and defaulted values use `reset_*`.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
 /// Declares a generated Concord client and its typed endpoints.
+///
+/// Generated constructors and navigation retain declaration-domain names.
+/// Public value mutations use `set_*`, with `clear_*` for optional values and
+/// `reset_*` for defaulted values.
 #[cfg(feature = "dangerous-raw-response")]
 #[macro_export]
 macro_rules! api {
@@ -22,6 +30,10 @@ macro_rules! api {
 }
 
 /// Declares a generated Concord client and its typed endpoints.
+///
+/// Generated constructors and navigation retain declaration-domain names.
+/// Public value mutations use `set_*`, with `clear_*` for optional values and
+/// `reset_*` for defaulted values.
 #[cfg(not(feature = "dangerous-raw-response"))]
 #[macro_export]
 macro_rules! api {
@@ -149,6 +161,11 @@ pub mod pagination {
 /// `by [...]` dimensions select bucket partitioning. With the `rate-limit`
 /// feature, `LocalRateLimiter` and `RetryAfterObserver` are available here and
 /// the local limiter is installed by default for generated clients.
+///
+/// Source-derived rule IDs are deterministic within one generated client
+/// contract, not globally unique across unrelated [`api!`](crate::api)
+/// expansions. Sharing one limiter across unrelated generated contracts
+/// requires compatible rule namespaces.
 pub mod rate_limit {
     pub use concord_core::contracts::{BoxFuture, RateLimitErrorKind};
     pub use concord_core::rate_limit::{

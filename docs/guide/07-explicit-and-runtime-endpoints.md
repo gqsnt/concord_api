@@ -11,7 +11,9 @@ let explicit = client.request(endpoint);
 
 Both produce the same named request wrapper, safe endpoint description, and
 managed execution. Explicit values are useful for storage, generic
-composition, and applying optional setters before binding a client.
+composition, and applying optional `set_*`/`clear_*` controls before binding a
+client. Defaulted snapshots additionally expose `reset_*`, which restores the
+retained evaluated default without re-evaluation.
 
 Use `concord::endpoint::RuntimeEndpoint` when method, public path, query, or
 headers are chosen at runtime:

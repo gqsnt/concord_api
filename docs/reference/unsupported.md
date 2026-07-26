@@ -26,6 +26,8 @@ Concord deliberately does not provide:
   body, secret, or credential key dimensions;
 - optional, vector, optional-vector, pagination-controlled, formatted, or
   literal rate-limit key dimensions;
+- `host` rate-limit partitioning when final host shaping depends on a
+  pagination-controlled value;
 - process-global limiter state, explicit generated rule IDs, repeatable named
   rules, or observer chains;
 - WebSocket management, an SSE reconnection framework, or multipart response
@@ -49,6 +51,7 @@ cannot be represented by the existing typed pagination contract.
 
 For rate limits, omission of `by` is the declaration-global form. Use only
 `host`, `endpoint`, and required/defaulted scalar `vars.*`, visible `scope.*`,
-or `ep.*` dimensions. Supply a custom bounded `RateLimiter` when the local
-token-bucket policy or process/object locality does not match deployment
-requirements.
+or `ep.*` dimensions, and keep every effective direct or host-derived
+dependency independent of pagination-controlled values. Supply a custom
+bounded `RateLimiter` when the local token-bucket policy or process/object
+locality does not match deployment requirements.
