@@ -1,20 +1,25 @@
 use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(feature = "default-tls")]
 use std::time::Duration;
 
 use concord::api;
+#[cfg(feature = "default-tls")]
+use concord::auth::AuthErrorKind;
 use concord::auth::{
-    AccessToken, AuthError, AuthErrorKind, BoxFuture, CredentialMaterial, CredentialProvider,
-    CredentialRequest, MAX_BASIC_PASSWORD_BYTES, MAX_BASIC_USERNAME_BYTES,
-    MAX_CREDENTIAL_SECRET_BYTES, SecretCredential,
+    AccessToken, AuthError, BoxFuture, CredentialMaterial, CredentialProvider, CredentialRequest,
+    MAX_BASIC_PASSWORD_BYTES, MAX_BASIC_USERNAME_BYTES, MAX_CREDENTIAL_SECRET_BYTES,
+    SecretCredential,
 };
 use concord::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext};
 use concord::error::{ClientBuildErrorKind, ClientInputKind, ErrorCategory};
 use concord::http::SafeProxy;
 use concord::{Bytes, ClientBuildError, SecretString};
+#[cfg(feature = "default-tls")]
 use concord_test_support::proxy::ConnectProxy;
 use concord_test_support::server::{ResponseScript, ScriptedServer};
+#[cfg(feature = "default-tls")]
 use concord_test_support::tls::TlsServer;
 
 pub struct SessionToken(SecretString);
@@ -374,6 +379,7 @@ fn one_declared_secret_can_feed_multiple_credentials_through_shared_clones() {
         .expect("one bounded secret can feed multiple built-in sources");
 }
 
+#[cfg(feature = "default-tls")]
 #[tokio::test]
 async fn non_clone_custom_material_compiles_and_executes_through_generated_storage() {
     let server = TlsServer::start().expect("non-Clone material TLS server");
@@ -405,6 +411,7 @@ async fn non_clone_custom_material_compiles_and_executes_through_generated_stora
     assert_eq!(requests[0].header("x-session"), Some("provider-token"));
 }
 
+#[cfg(feature = "default-tls")]
 #[test]
 fn custom_authorization_is_absent_from_generated_safe_plans() {
     const EXACT_SENTINEL: &str = "exact-plan-authorization-sentinel-8f73";
@@ -429,6 +436,7 @@ fn custom_authorization_is_absent_from_generated_safe_plans() {
     assert!(scheme.public_headers().get(&authorization).is_none());
 }
 
+#[cfg(feature = "default-tls")]
 #[tokio::test]
 async fn generated_exact_and_scheme_authorization_reach_only_the_tls_boundary() {
     const EXACT: &str = "Exact generated authorization 18d4";
@@ -484,6 +492,7 @@ fn auth_builder() -> AuthApiBuilder {
         .session_provider(SessionProvider)
 }
 
+#[cfg(feature = "default-tls")]
 fn credential_proof_builder() -> CredentialProofApiBuilder {
     CredentialProofApi::builder()
         .api_secret(secret("proof-api-key"))
@@ -578,6 +587,7 @@ async fn generated_handles_share_clone_state_keep_independent_builds_and_replace
     assert!(!client.credentials().session().is_set());
 }
 
+#[cfg(feature = "default-tls")]
 #[tokio::test]
 async fn credential_replace_exact_limit_succeeds() {
     let client = credential_proof_builder()
@@ -591,6 +601,7 @@ async fn credential_replace_exact_limit_succeeds() {
         .expect("exact API-key replacement limit");
 }
 
+#[cfg(feature = "default-tls")]
 #[tokio::test]
 async fn failed_static_replacement_preserves_previous_material_and_returns_safe_error() {
     const INITIAL_KEY: &str = "preserved-static-api-key";

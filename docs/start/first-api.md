@@ -14,7 +14,7 @@ The declaration has four important parts:
 - `client MinimalApi` chooses the generated client name.
 - `base` supplies the fixed URL shared by its endpoints.
 - `GET health()` names a bodyless endpoint and its HTTP method.
-- `-> NoContent` says a successful response has no application body value.
+- `-> NoContent` says an accepted response has no application body value.
 
 The endpoint-local `path ["health"]` appends one encoded segment to the base
 path. The resulting logical URL ends in `/v1/health`. The `.test` top-level

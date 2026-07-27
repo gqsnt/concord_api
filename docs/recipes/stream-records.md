@@ -28,7 +28,7 @@ never assumed to be record boundaries.
 ## Why these declarations
 
 `Records<D>` selects a streaming response specification. Awaiting
-`csv_rows()` validates the successful response head, creates the decoder, and
+`csv_rows()` validates the accepted response head, creates the decoder, and
 returns `RecordStream<Csv<(String, u32)>>`. Later polls yield either one typed
 row or a `RecordError`.
 

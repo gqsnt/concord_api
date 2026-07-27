@@ -14,7 +14,7 @@ use crate::response::{
 
 use super::{RecordDecoder, RecordError, RecordErrorKind};
 
-/// A streaming successful-response specification decoded by `D`.
+/// A streaming accepted-response specification decoded by `D`.
 ///
 /// It selects Concord's sealed streaming mode and returns a [`RecordStream`]
 /// without introducing another executor or acquisition mode.

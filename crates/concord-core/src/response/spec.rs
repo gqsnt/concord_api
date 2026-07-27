@@ -41,7 +41,7 @@ pub struct Buffered;
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Streaming;
 
-/// Successful response-body discard without polling the native body.
+/// Accepted response-body discard without polling the native body.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Discard;
 
@@ -147,7 +147,7 @@ pub struct ResponseHead<'a> {
     /// Credential-sanitized logical application URL. Public values may still
     /// contain operational identifiers or personally identifiable information.
     pub url: &'a Url,
-    /// Successful HTTP status.
+    /// Accepted HTTP status.
     pub status: StatusCode,
     /// Observed HTTP version.
     pub version: Version,

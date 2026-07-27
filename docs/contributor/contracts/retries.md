@@ -181,7 +181,7 @@ pagination aggregate completion account for the additional visible work.
 Authentication recovery remains globally limited to one and does not consume
 the policy-retry count.
 
-Accepted statuses are successful response candidates and are never offered to
+Accepted statuses are response candidates for application success and are never offered to
 the classifier. Timeout, hook, limiter, authentication, request-body,
 accepted-response, pagination-controller, and internal failures are likewise
 not classifier inputs.

@@ -361,7 +361,7 @@ impl<R> RuntimeEndpointBuilder<R> {
         })
     }
 
-    /// Selects an arbitrary successful response specification.
+    /// Selects an arbitrary accepted response specification.
     #[must_use]
     pub fn response<S>(self) -> RuntimeEndpointBuilder<S>
     where
@@ -370,19 +370,19 @@ impl<R> RuntimeEndpointBuilder<R> {
         self.with_response()
     }
 
-    /// Selects a complete bounded successful bytes response.
+    /// Selects a complete bounded accepted bytes response.
     #[must_use]
     pub fn response_bytes(self) -> RuntimeEndpointBuilder<bytes::Bytes> {
         self.with_response()
     }
 
-    /// Selects a successful response whose body is intentionally ignored.
+    /// Selects an accepted response whose body is intentionally ignored.
     #[must_use]
     pub fn response_no_content(self) -> RuntimeEndpointBuilder<NoContent> {
         self.with_response()
     }
 
-    /// Selects a lazy bounded successful response stream with media marker `M`.
+    /// Selects a lazy bounded accepted response stream with media marker `M`.
     #[must_use]
     pub fn response_stream<M>(self) -> RuntimeEndpointBuilder<Stream<M>>
     where

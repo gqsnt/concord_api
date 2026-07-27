@@ -88,9 +88,9 @@ then stops before hooks, body encoding/factories, credentials, limiter
 admission, native transport, and completion. Concord intentionally provides no
 API for previewing the final authenticated request.
 
-## Successful responses and trusted specifications
+## Accepted responses and trusted specifications
 
-An ordinary `ApiResponse<T>` owns the actual successful response headers and
+An ordinary `ApiResponse<T>` owns the actual accepted response headers and
 decoded application value. Its `Debug` output omits header values and the
 application value, but explicit accessors return them. Treat both as
 application data.

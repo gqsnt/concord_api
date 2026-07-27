@@ -138,7 +138,7 @@ pub struct PaginationCompletionEvent<'a> {
 pub enum CompletionOutcome {
     /// A buffered or no-content operation succeeded.
     Success,
-    /// A successful response stream was opened for the caller.
+    /// An accepted response stream was opened for the caller.
     StreamOpened,
     /// Request or runtime configuration was invalid.
     Configuration,
@@ -162,13 +162,13 @@ pub enum CompletionOutcome {
     Connect,
     /// Another native transport operation failed.
     Transport,
-    /// The final response status was not successful.
+    /// The final response status was not accepted.
     HttpStatus,
-    /// Successful response body collection or streaming failed.
+    /// Accepted response body collection or streaming failed.
     ResponseBody,
-    /// A successful buffered response decoder failed.
+    /// An accepted buffered response decoder failed.
     ResponseDecoding,
-    /// Successful response metadata violated the declared contract.
+    /// Accepted response metadata violated the declared contract.
     ResponseContract,
     /// Pagination preparation or controller work failed.
     Pagination,

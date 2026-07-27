@@ -2,7 +2,7 @@
 
 Record streaming and pagination both turn one declared response shape into
 multiple application items, but they have different ownership. Records decode
-one successful streaming body incrementally. Pagination executes a finite
+one accepted streaming body incrementally. Pagination executes a finite
 sequence of complete buffered page requests. They share response contracts and
 finite behavior without sharing an execution loop.
 
@@ -46,7 +46,7 @@ endpoint integration trait.
 
 ### Record stream
 
-After successful status handling and streaming known-length preflight, core
+After accepted status handling and streaming known-length preflight, core
 calls decoder `validate`, creates one decoder with `start`, and opens a
 `RecordStream`. Polling then alternates between decoder progress and bounded
 `ByteStream` input:

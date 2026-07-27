@@ -26,11 +26,11 @@ pub enum ErrorCategory {
     Transport,
     /// A terminal non-success HTTP status was received.
     HttpStatus,
-    /// A successful response body could not be read.
+    /// An accepted response body could not be read.
     ResponseBody,
-    /// A successful response body could not be decoded.
+    /// An accepted response body could not be decoded.
     ResponseDecoding,
-    /// A successful response violated its declared contract.
+    /// An accepted response violated its declared contract.
     ResponseContract,
     /// Pagination processing failed.
     Pagination,

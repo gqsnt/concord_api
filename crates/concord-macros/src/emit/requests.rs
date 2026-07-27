@@ -93,7 +93,7 @@ pub(super) fn generate_request_wrapper(
     });
     let response_method = endpoint.surface.terminals.response.then(|| {
         quote! {
-            /// Selects universal successful response metadata while retaining the declared output.
+            /// Selects universal accepted response metadata while retaining the declared output.
             #[must_use]
             pub fn response(self) -> #core_path::endpoint::ResponseRequest<#endpoint_name> {
                 #generated_core::__private::response_request(self.__concord_inner)

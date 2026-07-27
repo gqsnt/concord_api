@@ -97,7 +97,7 @@ impl fmt::Debug for ExecutionMeta {
 /// This is the single metadata wrapper for buffered values, bytes, no-content,
 /// byte streams, record streams, and application-defined outputs. Its `Debug`
 /// implementation is structural: it never formats `T`, the logical URL, or any
-/// response header value. Accessors intentionally expose the actual successful
+/// response header value. Accessors intentionally expose the actual accepted
 /// headers and credential-sanitized logical URL to application code, which owns
 /// later logging and storage. Public URL values may still contain operational
 /// identifiers or personally identifiable information.
@@ -138,7 +138,7 @@ impl<T> ApiResponse<T> {
     }
 
     #[must_use]
-    /// Returns the successful response status.
+    /// Returns the accepted response status.
     pub const fn status(&self) -> StatusCode {
         self.status
     }
@@ -150,7 +150,7 @@ impl<T> ApiResponse<T> {
     }
 
     #[must_use]
-    /// Returns the actual successful response headers.
+    /// Returns the actual accepted response headers.
     pub const fn headers(&self) -> &HeaderMap {
         &self.headers
     }

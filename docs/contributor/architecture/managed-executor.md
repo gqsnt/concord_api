@@ -361,7 +361,7 @@ elapsed time, page index, attempt/retry totals, authentication-recovery
 summary, and a structural outcome only.
 
 **Side effects:** debug output and application completion observation. A
-successful stream reports `StreamOpened`, describing handoff rather than later
+accepted stream reports `StreamOpened`, describing handoff rather than later
 consumption.
 
 ## Pagination wraps, but does not fork, the executor

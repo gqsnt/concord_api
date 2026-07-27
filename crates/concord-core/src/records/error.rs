@@ -67,7 +67,7 @@ impl Error for RecordError {}
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RecordErrorKind {
-    /// Successful response media metadata was not accepted.
+    /// Accepted response media metadata violated the declared contract.
     InvalidMediaType,
     /// Record boundaries or quoting were malformed.
     InvalidFraming,

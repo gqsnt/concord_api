@@ -33,7 +33,7 @@ pub fn construct() -> Result<minimal_api::HealthRequest, concord::ClientBuildErr
 }
 
 // ANCHOR: first_request
-/// Executes one health request and accepts a successful empty response.
+/// Executes one health request and accepts a declared empty response.
 pub async fn execute(client: &MinimalApi) -> Result<(), concord::ApiError> {
     let request = client.health();
     request.await

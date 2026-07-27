@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt;
 
-/// A safe failure reported by a successful-response specification.
+/// A safe failure reported by an accepted-response specification.
 ///
 /// Concord converts this value to a structural [`crate::contracts::ApiError`]
 /// category and discards application text before automatic diagnostics.
@@ -58,11 +58,11 @@ impl fmt::Debug for ResponseBodyError {
 
 impl Error for ResponseBodyError {}
 
-/// Stable structural kinds of successful-response specification failure.
+/// Stable structural kinds of accepted-response specification failure.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ResponseBodyErrorKind {
-    /// Successful response media metadata was not accepted.
+    /// Accepted response media metadata violated the declared contract.
     InvalidMediaType,
     /// Complete buffered bytes could not be decoded safely.
     Decode,

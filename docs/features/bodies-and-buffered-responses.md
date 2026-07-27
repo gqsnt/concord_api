@@ -112,7 +112,7 @@ bound because their bodies are deliberately caller-driven.
 
 A response specification can opt an operation into an accepted non-2xx
 status. This compiled example maps `404` to `None` while retaining normal
-buffered acquisition for a successful UTF-8 body:
+buffered acquisition for an accepted UTF-8 body:
 
 ```rust,ignore
 {{#include ../../crates/concord-examples/src/request_response/acquisition.rs:optional_response_spec}}

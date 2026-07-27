@@ -1,15 +1,17 @@
 mod crate_root_paths {
     use concord_core::{Request, ResponseBytesRequest, ResponseRequest};
 
+    type RequestVariants<E> = (
+        Option<Request<E>>,
+        Option<ResponseRequest<E>>,
+        Option<ResponseBytesRequest<E>>,
+    );
+
     pub fn names_are_available<E>(
         request: Option<Request<E>>,
         response: Option<ResponseRequest<E>>,
         response_bytes: Option<ResponseBytesRequest<E>>,
-    ) -> (
-        Option<Request<E>>,
-        Option<ResponseRequest<E>>,
-        Option<ResponseBytesRequest<E>>,
-    ) {
+    ) -> RequestVariants<E> {
         (request, response, response_bytes)
     }
 }

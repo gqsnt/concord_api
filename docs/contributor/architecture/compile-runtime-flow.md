@@ -11,7 +11,7 @@ Start path, and executed against loopback by the example tests.
 ```
 
 There is one client, one fixed base, one `GET` endpoint, one static path atom,
-no request body, and a successful response whose body is discarded.
+no request body, and an accepted response whose body is discarded.
 
 ```text
 source tokens
@@ -165,10 +165,10 @@ Core then:
 10. observes the sanitized response for limiter policy, then invokes the
     response-head hook;
 11. handles authentication challenge or terminal status behavior;
-12. applies the selected successful response acquisition;
+12. applies the selected accepted response acquisition;
 13. fixes the result and attempts one completion event.
 
-For `NoContent`, successful acquisition validates the response contract and
+For `NoContent`, accepted acquisition validates the response contract and
 drops the body without polling it. The final user value is `()`.
 
 The [managed executor](managed-executor.md) documents each stage's inputs,

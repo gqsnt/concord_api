@@ -23,7 +23,7 @@ inputs or deployment configuration use `Api::builder()` later.
 
 `client.health()` only constructs `minimal_api::HealthRequest`. It does not
 open a socket, run hooks, acquire rate-limit authority, or materialize a body.
-Awaiting the request starts the managed lifecycle. A successful `NoContent`
+Awaiting the request starts the managed lifecycle. An accepted `NoContent`
 response becomes `()`.
 
 A Tokio binary can connect the pieces like this after importing

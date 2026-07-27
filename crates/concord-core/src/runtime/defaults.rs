@@ -5,7 +5,7 @@
 
 /// Default aggregate request-body byte ceiling.
 pub const DEFAULT_REQUEST_BODY_BYTES: usize = 16_777_216;
-/// Default buffered successful-response byte ceiling.
+/// Default buffered accepted-response byte ceiling.
 pub const DEFAULT_RESPONSE_BODY_BYTES: usize = 16_777_216;
 /// Default cumulative streaming-response byte ceiling.
 pub const DEFAULT_STREAM_RESPONSE_BYTES: usize = 16_777_216;

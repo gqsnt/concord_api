@@ -134,7 +134,7 @@ pub(super) fn request_wrapper_doc(endpoint: &Endpoint) -> String {
         terminals.push(format!("`.await` returns `{}`", docs.response.output_type));
     }
     if docs.terminals.response {
-        terminals.push("`.response()` includes successful response metadata".to_owned());
+        terminals.push("`.response()` includes accepted response metadata".to_owned());
     }
     if docs.terminals.pagination {
         terminals.push("`.paginate(...)` runs bounded sequential pagination".to_owned());

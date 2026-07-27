@@ -30,7 +30,7 @@ Choose the smallest family that owns the behavior:
 | Complete buffered request encoding | `EncodeBody` | body limit, request lifecycle, transport |
 | Complete buffered response decoding | `DecodeBody` | status and finite acquisition |
 | Request metadata and managed preparation | `RequestBodySpec`, `BodyFactory` | final body convergence and native conversion |
-| Successful response conversion | `ResponseBodySpec` | sealed mode, status, body acquisition |
+| Accepted response conversion | `ResponseBodySpec` | sealed mode, status, body acquisition |
 | Incremental record framing | `RecordDecoder` | bounded byte stream and staging progress |
 | Credential material and acquisition | `CredentialMaterial`, `CredentialProvider` | slots, placement, attempts, provider HTTP |
 | Page continuation | `PaginationController` | page loop, identities, collection, policy |
@@ -59,7 +59,7 @@ finite semantic context -> extension callback -> approved semantic result
 ```
 
 The context contains only what the operation needs: an encode/decode limit,
-structural request metadata, a successful response head, bounded staged bytes,
+structural request metadata, an accepted response head, bounded staged bytes,
 credential-provider HTTP, immutable quota plans, or sanitized lifecycle
 events. Native request mutation, redirects, transport handles, authenticated
 URLs, native error chains, and completion dispatch stay inside core.

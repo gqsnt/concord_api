@@ -108,7 +108,7 @@ final status, and its own fixed outcome.
   authentication_recovery: false }`. Policy retry increments both the global
   index and policy-retry index. Authentication recovery increments the global
   index, retains the current policy-retry index, and sets its flag.
-- Ordinary successful metadata reports one attempt and zero policy retries.
+- Ordinary accepted response metadata reports one attempt and zero policy retries.
   Final request/page and aggregate completion report checked totals for every
   started policy retry and the independently bounded authentication recovery.
 - Cancellation while awaiting completion may prevent result delivery and does

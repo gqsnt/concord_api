@@ -8,7 +8,7 @@ use futures_core::Stream;
 use crate::error::ApiError;
 use crate::http::application::ApplicationByteStream;
 
-/// A bounded media-independent lazy successful response body.
+/// A bounded media-independent lazy accepted response body.
 ///
 /// The endpoint operation is complete once this value is returned. Later
 /// caller-driven polling is not governed by the endpoint deadline. Every

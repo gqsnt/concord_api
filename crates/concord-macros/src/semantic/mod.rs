@@ -39,13 +39,16 @@ use symbols::{
     validate_setter_namespace,
 };
 
+type RateLimitWindowSchema = (u32, std::time::Duration);
+type RateLimitSchema = (Vec<String>, Vec<RateLimitWindowSchema>, Span);
+
 struct Resolver<'a> {
     base: &'a syn::LitStr,
     client_name: &'a Ident,
     client_surface: &'a self::model::ClientSurface,
     client_values: &'a [Value],
     credentials: &'a [Credential],
-    rate_limit_ids: HashMap<String, (Vec<String>, Vec<(u32, std::time::Duration)>, Span)>,
+    rate_limit_ids: HashMap<String, RateLimitSchema>,
     next_scope_id: usize,
     next_endpoint_id: usize,
 }

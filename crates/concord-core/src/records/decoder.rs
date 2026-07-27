@@ -8,7 +8,7 @@ use super::RecordError;
 
 /// Incrementally frames and decodes typed records from bounded response bytes.
 ///
-/// `validate` and `start` run synchronously after successful status and
+/// `validate` and `start` run synchronously after accepted status and
 /// streaming known-length preflight but before the first body poll. Concord
 /// creates one decoder per returned record stream. Decoder methods run without
 /// a core lock and receive neither transport nor native-response access.
@@ -41,7 +41,7 @@ pub trait RecordDecoder: Sized + Send + 'static {
         None
     }
 
-    /// Validates the successful response head before the first body poll.
+    /// Validates the accepted response head before the first body poll.
     fn validate(_head: &ResponseHead<'_>) -> Result<(), RecordError> {
         Ok(())
     }

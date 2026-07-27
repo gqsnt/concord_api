@@ -183,7 +183,7 @@ fn documented_limits() -> Vec<Limit> {
             unit: "chunks",
         },
         Limit {
-            label: "Buffered successful response",
+            label: "Buffered accepted response",
             value: DEFAULT_RESPONSE_BODY_BYTES as u64,
             unit: "bytes",
         },

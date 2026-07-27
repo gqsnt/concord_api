@@ -66,7 +66,7 @@ impl<E> Request<E>
 where
     E: EndpointSpec,
 {
-    /// Selects universal successful response metadata.
+    /// Selects universal accepted response metadata.
     #[must_use]
     pub fn response(self) -> ResponseRequest<E> {
         ResponseRequest { request: self }
@@ -88,7 +88,7 @@ where
     }
 }
 
-/// An opaque pending request selecting successful response metadata.
+/// An opaque pending request selecting accepted response metadata.
 ///
 /// Fields are intentionally private:
 ///

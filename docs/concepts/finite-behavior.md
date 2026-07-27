@@ -14,7 +14,7 @@ Exact current numbers live only in the [Limits reference](../reference/limits.md
 |---|---|
 | Public request shaping | caps each formatted value, component count, logical URL, header count, and aggregate header bytes |
 | Request bodies | bounds cumulative nonempty bytes and successful empty chunks across bytes, streams, factories, and multipart |
-| Successful responses | bounds buffered or streamed post-decompression bytes and successful empty chunks |
+| Accepted responses | bounds buffered or streamed post-decompression bytes and accepted empty chunks |
 | Terminal status bodies | retains only a complete body within its cap; otherwise records a structural unavailable/omitted state |
 | Provider HTTP | separately bounds request and response bodies under the credential operation deadline |
 | Credential material | bounds retained strings and final private header/query encodings |

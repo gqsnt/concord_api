@@ -2,7 +2,7 @@ use concord::{Bytes, api};
 
 api! {
     client NamingApi {
-        base "https://example.test";
+        base "http://example.test";
     }
 
     GET raw_response() -> Bytes;

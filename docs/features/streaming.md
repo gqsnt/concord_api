@@ -22,7 +22,7 @@ bytes, an async reader, an application byte stream, or an opened file:
 {{#include ../../crates/concord-examples/src/request_response/bodies.rs:streaming_requests}}
 ```
 
-For downloads, awaiting the endpoint opens and validates the successful
+For downloads, awaiting the endpoint opens and validates the accepted
 response and returns `ByteStream`. Consume it as a Rust `Stream`:
 
 ```rust,ignore
@@ -36,7 +36,7 @@ forward it to another bounded application component.
 ## Opening and polling are different phases
 
 The endpoint operation deadline governs public preparation, authentication,
-limiter and hook work, the HTTP exchange, the final response head, successful
+limiter and hook work, the HTTP exchange, the final response head, accepted
 status classification, media validation, and opening the stream. It ends when
 the `ByteStream` is returned.
 

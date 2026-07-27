@@ -10,7 +10,7 @@ impl Default for CustomDefault {
 
 api! {
     client DefaultShorthandApi {
-        base "https://example.test";
+        base "http://example.test";
         vars {
             scalar: u32 = default;
             optional: Option<String> = default;

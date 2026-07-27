@@ -12,7 +12,7 @@ ceilings selected for finite construction.
 Runtime defaults can be reduced or replaced only through the corresponding
 typed client builder. A setter never disables the separate hard structural
 ceilings. Byte limits apply to the semantic representation named in the
-table—successful response limits, for example, count post-decompression
+table—accepted response limits, for example, count post-decompression
 bytes.
 
 <!-- BEGIN GENERATED LIMITS -->
@@ -20,7 +20,7 @@ bytes.
 |---|---:|---|
 | Request body | 16,777,216 | bytes |
 | Empty chunks in one managed request body | 1,024 | chunks |
-| Buffered successful response | 16,777,216 | bytes |
+| Buffered accepted response | 16,777,216 | bytes |
 | Streaming response | 16,777,216 | bytes |
 | Empty transport chunks in one acquired response body | 1,024 | chunks |
 | Captured terminal status body | 65,536 | bytes |
@@ -106,7 +106,7 @@ budgets return control to the executor, allowing existing operation and
 provider deadlines to regain control. The first empty-chunk excess produces
 one redacted terminal error before later byte, status, or decode processing.
 Nonempty first-excess byte withholding is unchanged. Caller-driven polling
-after a successful stream opens remains outside the endpoint deadline.
+after an accepted stream opens remains outside the endpoint deadline.
 
 ## Public shaping and the final request head
 

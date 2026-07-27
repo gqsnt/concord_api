@@ -187,7 +187,7 @@ pub enum RequestBodyCategory {
     Specification,
 }
 
-/// One core-owned successful-response acquisition category.
+/// One core-owned accepted-response acquisition category.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ResponseAcquisition {
     /// Complete bytes are acquired under the configured finite byte and
@@ -196,7 +196,7 @@ pub enum ResponseAcquisition {
     /// A lazy byte stream is exposed behind core-owned byte and
     /// empty-transport-chunk accounting.
     Streaming,
-    /// The successful response body is discarded without polling.
+    /// The accepted response body is discarded without polling.
     Discard,
 }
 
@@ -232,7 +232,7 @@ impl EndpointCapabilities {
         self.pagination
     }
 
-    /// Returns whether successful responses can update endpoint-backed
+    /// Returns whether accepted responses can update endpoint-backed
     /// credential storage.
     #[must_use]
     pub const fn credential_storage(self) -> bool {
@@ -391,7 +391,7 @@ impl EndpointDescription {
         self.body_specification
     }
 
-    /// Returns the core-owned successful-response acquisition category.
+    /// Returns the core-owned accepted-response acquisition category.
     #[must_use]
     pub const fn response_acquisition(&self) -> ResponseAcquisition {
         self.response_acquisition
@@ -512,7 +512,7 @@ impl SafeRequestPlan {
         self.description.body_specification()
     }
 
-    /// Returns the core-owned successful-response acquisition category.
+    /// Returns the core-owned accepted-response acquisition category.
     #[must_use]
     pub const fn response_acquisition(&self) -> ResponseAcquisition {
         self.description.response_acquisition()

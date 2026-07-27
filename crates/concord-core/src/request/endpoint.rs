@@ -9,7 +9,7 @@ use super::{HeadBuilder, PreparedHead, RequestMeta};
 pub trait EndpointSpec: Send + 'static {
     /// Selected request specification, including the private empty bodyless specification.
     type Body: RequestBodySpec;
-    /// Selected successful-response specification.
+    /// Selected accepted-response specification.
     type Response: ResponseBodySpec;
 
     /// Returns stable endpoint identity and inherited timeout metadata.

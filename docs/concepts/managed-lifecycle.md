@@ -62,7 +62,7 @@ known-safe protocol recovery remains inside a single visible attempt.
 
 The operation timeout covers the managed work needed to open and classify the
 response, including authentication and response-head policy. Buffered
-responses are fully acquired inside that operation. A successful streaming
+responses are fully acquired inside that operation. An accepted streaming
 terminal returns an open bounded stream; later user polling has its own
 consumer-progress rules and is no longer the original request operation.
 

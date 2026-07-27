@@ -4,7 +4,7 @@ error[E0609]: no field `body` on type `RateLimitRequest<'_>`
 4 |     let _ = request.body;
   |                     ^^^^ unknown field
   |
-  = note: available fields are: `endpoint`, `method`, `safe_url`, `host`, `page_index`, `plan`
+  = note: available fields are: `endpoint`, `method`, `safe_url`, `host`, `page_index` ... and 2 others
 
 error[E0609]: no field `credentials` on type `RateLimitRequest<'_>`
  --> tests/ui/fail/rate_limit_context_exclusions.rs:5:21
@@ -12,7 +12,7 @@ error[E0609]: no field `credentials` on type `RateLimitRequest<'_>`
 5 |     let _ = request.credentials;
   |                     ^^^^^^^^^^^ unknown field
   |
-  = note: available fields are: `endpoint`, `method`, `safe_url`, `host`, `page_index`, `plan`
+  = note: available fields are: `endpoint`, `method`, `safe_url`, `host`, `page_index` ... and 2 others
 
 error[E0609]: no field `headers` on type `RateLimitRequest<'_>`
  --> tests/ui/fail/rate_limit_context_exclusions.rs:6:21
@@ -20,7 +20,7 @@ error[E0609]: no field `headers` on type `RateLimitRequest<'_>`
 6 |     let _ = request.headers;
   |                     ^^^^^^^ unknown field
   |
-  = note: available fields are: `endpoint`, `method`, `safe_url`, `host`, `page_index`, `plan`
+  = note: available fields are: `endpoint`, `method`, `safe_url`, `host`, `page_index` ... and 2 others
 
 error[E0609]: no field `native_url` on type `RateLimitRequest<'_>`
  --> tests/ui/fail/rate_limit_context_exclusions.rs:7:21
@@ -28,7 +28,7 @@ error[E0609]: no field `native_url` on type `RateLimitRequest<'_>`
 7 |     let _ = request.native_url;
   |                     ^^^^^^^^^^ unknown field
   |
-  = note: available fields are: `endpoint`, `method`, `safe_url`, `host`, `page_index`, `plan`
+  = note: available fields are: `endpoint`, `method`, `safe_url`, `host`, `page_index` ... and 2 others
 
 error[E0609]: no field `native_request` on type `RateLimitRequest<'_>`
  --> tests/ui/fail/rate_limit_context_exclusions.rs:8:21
@@ -36,7 +36,7 @@ error[E0609]: no field `native_request` on type `RateLimitRequest<'_>`
 8 |     let _ = request.native_request;
   |                     ^^^^^^^^^^^^^^ unknown field
   |
-  = note: available fields are: `endpoint`, `method`, `safe_url`, `host`, `page_index`, `plan`
+  = note: available fields are: `endpoint`, `method`, `safe_url`, `host`, `page_index` ... and 2 others
 
 error[E0609]: no field `body` on type `RateLimitResponse<'_>`
   --> tests/ui/fail/rate_limit_context_exclusions.rs:12:22

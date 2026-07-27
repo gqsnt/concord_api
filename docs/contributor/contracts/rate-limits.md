@@ -105,7 +105,7 @@ matching value for every attempt.
 - Every managed policy retry and application-level authentication replay
   acquires a new permit.
 - Response observation precedes user hooks, authentication recovery, terminal
-  status conversion, and successful body work.
+  status conversion, and accepted-response body work.
 - Limiter failures use the ordinary completion path and cannot bypass
   redaction.
 - Limiter objects are shared by client clones. State partitioning follows

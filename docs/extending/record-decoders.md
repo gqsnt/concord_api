@@ -1,6 +1,6 @@
 # Record decoders
 
-Implement a record decoder when one successful response should yield typed
+Implement a record decoder when one accepted response should yield typed
 records incrementally and CSV or NDJSON does not match the framing contract.
 The decoder works over Concord's bounded semantic byte stream; it never sees a
 network response or assumes that transport chunks align with records.
@@ -27,7 +27,7 @@ staging, progress, EOF, and category-only error behavior.
 
 ## Opening the stream
 
-Concord handles successful status and streaming known-length preflight before
+Concord handles accepted status and streaming known-length preflight before
 the decoder runs. It then:
 
 1. calls `RecordDecoder::validate` with a borrowed `ResponseHead`;
@@ -41,7 +41,7 @@ already set one. `validate` should check the documented media contract before
 body polling. `start` may derive small bounded state from the response head,
 but should not retain arbitrary headers or URLs.
 
-The head contains the actual successful headers and a credential-sanitized
+The head contains the actual accepted headers and a credential-sanitized
 logical URL. It is not automatically free of sensitive application data.
 
 ## Decode by logical framing

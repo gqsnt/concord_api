@@ -53,7 +53,7 @@ error.
 
 ## Response decoding
 
-`DecodeBody::Output` is the successful endpoint output. `ACCEPT` supplies a
+`DecodeBody::Output` is the accepted endpoint output. `ACCEPT` supplies a
 default `Accept` value only when public request shaping has not already set
 one.
 
@@ -68,7 +68,7 @@ Concord handles a response in this order:
 7. collect the complete body under the configured buffered-response limit;
 8. call `decode`.
 
-`DecodeContext` exposes the endpoint ID, method, successful status, and parsed
+`DecodeContext` exposes the endpoint ID, method, accepted status, and parsed
 content type. The `Bytes` argument is already bounded and complete. It may
 still contain sensitive application data.
 
