@@ -45,6 +45,7 @@ pub(super) fn resolve_default(source: SourceDefault) -> ResolvedDefault {
         }
         SourceDefault::Boolean(value) => ResolvedDefault::Boolean(value),
         SourceDefault::Path(value) => ResolvedDefault::Path(value),
+        SourceDefault::TraitDefault(span) => ResolvedDefault::TraitDefault(span),
     }
 }
 

@@ -8,7 +8,8 @@
 //! Generated examples keep constructor/navigation names and use the public
 //! `set_*`, absence-capable `clear_*`, and declaration-default `reset_*`
 //! value-control model. The capabilities are independent: the full DSL
-//! example exercises all three controls on defaulted `Option` values.
+//! example exercises all three controls on defaulted `Option` values and the
+//! ordinary-value `= default` shorthand.
 //!
 //! Transport compression features are intentionally not separate examples:
 //! gzip, Brotli, and deflate do not alter a declaration or generated request

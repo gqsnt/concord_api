@@ -138,7 +138,7 @@ mod tests {
                 vars {
                     required_client_value: String;
                     optional_client_value: Option<String>;
-                    defaulted_client_value: u32 = 10;
+                    defaulted_client_value: u32 = default;
                     defaulted_optional_client_value: Option<String> = None;
                     build: String;
                     timeout: Option<u64>;
@@ -162,6 +162,11 @@ mod tests {
             }
         });
         let output = generate(&api, &quote!(::concord)).to_string();
+        assert!(matches!(
+            api.client.values[2].kind,
+            ResolvedValueKind::Defaulted(ResolvedDefault::TraitDefault(_))
+        ));
+        assert!(output.contains(":: core :: default :: Default :: default ()"));
 
         for method in [
             "set_required_client_value",

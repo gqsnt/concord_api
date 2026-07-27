@@ -63,7 +63,9 @@ use `.set_name(value)`, `.clear_name()` when the value is absence-capable, and
 independent: a defaulted `Option<T>` exposes all three controls, and its setter
 accepts `T`, not `Option<T>`. There are no legacy bare mutation aliases. See
 the [generated API reference](docs/reference/generated-api.md) for the exact
-client/scope/endpoint/request matrix and reset semantics.
+client/scope/endpoint/request matrix and reset semantics. Ordinary values may
+use `= default` to invoke their Rust `Default` implementation at the existing
+owner-specific evaluation point.
 
 Each endpoint has a predictable direct method, public endpoint value, named
 request wrapper, and safe description. Generated endpoints, explicit values,

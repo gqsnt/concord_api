@@ -67,6 +67,11 @@ uses `set_NAME(value)`; selecting absence uses `clear_NAME()`; restoring a DSL
 default uses `reset_NAME()`. Absence capability and a declaration default are
 independent properties.
 
+An ordinary value declared with `= default` uses a hygienic
+`::core::default::Default::default()` expression. It adds no generated helper
+or compatibility alias: Rust checks `Default` on the declared type, and the
+existing set/clear/reset matrix is unchanged.
+
 | Generated owner | Plain required value | Absence-capable, no default | Has a default, not absence-capable | Absence-capable and has a default |
 |---|---|---|---|---|
 | Client builder | `set_name` | `set_name` + `clear_name` | `set_name` + `reset_name` | `set_name` + `clear_name` + `reset_name` |
@@ -100,6 +105,15 @@ named request snapshot instead retains the evaluated default:
 `clear_name()` selects absence and `reset_name()` restores that retained value
 without re-evaluation. Repeated selection is last-write-wins. An explicit
 limiter takes precedence over generated façade composition.
+
+Trait-default evaluation uses the same owner timing as every other declaration
+default: client values during each non-overridden `build()`, scope values when
+their scope snapshot is created, and endpoint values when the direct or
+explicit endpoint snapshot is created. Builder reset removes an override and
+therefore permits later reevaluation; snapshot/request reset only restores the
+retained value. `Default` is application code and may have application-owned
+effects even though Concord itself performs no managed I/O during
+construction.
 
 Built-in static credential material is validated during `build()` before the
 immutable client snapshot and credential slots are created. Its generated

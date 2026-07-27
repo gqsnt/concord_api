@@ -99,3 +99,9 @@ error: pagination initializers accept only direct public value references, strin
     |
 183 |         paginate crate::Controller { state: format_args!("value") }
     |                                                        ^
+
+error: `default` shorthand is available only for ordinary client, scope, and endpoint value defaults, not pagination initializers
+   --> tests/ui/fail/pagination/pagination_syntax.rs:193:45
+    |
+193 |         paginate crate::Controller { state: default }
+    |                                             ^^^^^^^

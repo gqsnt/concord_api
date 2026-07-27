@@ -7,7 +7,7 @@ use syn::{Ident, LitBool, LitInt, LitStr, Token, Type, braced};
 use super::ast::{PaginationDecl, PaginationField, PaginationInitializer, PaginationValue};
 use super::diagnostics::SpanError;
 use super::keyword;
-use super::values::parse_default;
+use super::values::parse_stable_default;
 use crate::semantic::surface::canonical_ident;
 
 pub(super) fn parse_pagination(input: ParseStream<'_>) -> syn::Result<PaginationDecl> {
@@ -111,8 +111,14 @@ pub(super) fn parse_pagination(input: ParseStream<'_>) -> syn::Result<Pagination
 }
 
 fn parse_pagination_value(input: ParseStream<'_>) -> syn::Result<PaginationValue> {
+    if input.peek(Token![default]) {
+        let keyword: Token![default] = input.parse()?;
+        return Err(keyword.span.error(
+            "`default` shorthand is available only for ordinary client, scope, and endpoint value defaults, not pagination initializers",
+        ));
+    }
     if input.peek(LitStr) || input.peek(LitInt) || input.peek(LitBool) || input.peek(Token![-]) {
-        return parse_default(input).map(PaginationValue::Stable);
+        return parse_stable_default(input).map(PaginationValue::Stable);
     }
     let fork = input.fork();
     if let Ok(namespace) = fork.parse::<Ident>() {
@@ -133,11 +139,13 @@ fn parse_pagination_value(input: ParseStream<'_>) -> syn::Result<PaginationValue
             return Ok(PaginationValue::Reference { namespace, name });
         }
     }
-    parse_default(input).map(PaginationValue::Stable).map_err(|_| {
-        input.error(
-            "pagination initializers accept only direct public value references, string/integer/boolean literals, or Rust const paths; calls, methods, macros, closures, async blocks, blocks, and formatting expressions are not supported",
-        )
-    })
+    parse_stable_default(input)
+        .map(PaginationValue::Stable)
+        .map_err(|_| {
+            input.error(
+                "pagination initializers accept only direct public value references, string/integer/boolean literals, or Rust const paths; calls, methods, macros, closures, async blocks, blocks, and formatting expressions are not supported",
+            )
+        })
 }
 
 #[cfg(test)]

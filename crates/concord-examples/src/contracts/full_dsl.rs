@@ -12,8 +12,6 @@ pub const DEFAULT_CLIENT_LABEL: Option<&'static str> = Some("client-default");
 pub const DEFAULT_SCOPE_LABEL: Option<&'static str> = Some("scope-default");
 /// Retained endpoint default used by named request wrappers.
 pub const DEFAULT_VERBOSE: Option<bool> = Some(false);
-/// Retained optional-vector endpoint default.
-pub const DEFAULT_TAGS: Option<Vec<&'static str>> = Some(Vec::new());
 
 // ANCHOR: core_contract
 api! {
@@ -22,7 +20,7 @@ api! {
         base "https://reference.example.test/root/";
         vars {
             tenant: String;
-            locale: Option<String>;
+            locale: Option<String> = default;
             page_size: u32 = 25;
             client_label: Option<&'static str> =
                 crate::contracts::full_dsl::DEFAULT_CLIENT_LABEL;
@@ -49,7 +47,7 @@ api! {
     // ANCHOR: status_endpoint
     GET status(
         verbose: Option<bool> = crate::contracts::full_dsl::DEFAULT_VERBOSE,
-        tags: Option<Vec<&'static str>> = crate::contracts::full_dsl::DEFAULT_TAGS,
+        tags: Option<Vec<&'static str>> = default,
     ) -> Bytes {
         path ["status"];
         query {
@@ -93,6 +91,7 @@ pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
         .set_tenant("tenant-a".to_owned())
         .set_locale("fr".to_owned())
         .clear_locale()
+        .reset_locale()
         .set_page_size(50)
         .reset_page_size()
         .set_client_label("client-override")

@@ -23,6 +23,9 @@ static SCOPE_DEFAULT_DROPS: AtomicUsize = AtomicUsize::new(0);
 static ENDPOINT_DEFAULT_DROPS: AtomicUsize = AtomicUsize::new(0);
 static EXPLICIT_DROPS: AtomicUsize = AtomicUsize::new(0);
 static SHAPING_FORMATS: AtomicUsize = AtomicUsize::new(0);
+static CLIENT_TRAIT_DEFAULTS: AtomicUsize = AtomicUsize::new(0);
+static SCOPE_TRAIT_DEFAULTS: AtomicUsize = AtomicUsize::new(0);
+static ENDPOINT_TRAIT_DEFAULTS: AtomicUsize = AtomicUsize::new(0);
 static REQUEST_SHAPING_TEST_LOCK: Mutex<()> = Mutex::const_new(());
 
 async fn request_shaping_test_guard() -> MutexGuard<'static, ()> {
@@ -58,6 +61,33 @@ impl Display for ShapeProbe {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         SHAPING_FORMATS.fetch_add(1, Ordering::SeqCst);
         formatter.write_str(self.0)
+    }
+}
+
+pub struct ClientTraitDefaultProbe;
+
+impl Default for ClientTraitDefaultProbe {
+    fn default() -> Self {
+        CLIENT_TRAIT_DEFAULTS.fetch_add(1, Ordering::SeqCst);
+        Self
+    }
+}
+
+pub struct ScopeTraitDefaultProbe;
+
+impl Default for ScopeTraitDefaultProbe {
+    fn default() -> Self {
+        SCOPE_TRAIT_DEFAULTS.fetch_add(1, Ordering::SeqCst);
+        Self
+    }
+}
+
+pub struct EndpointTraitDefaultProbe;
+
+impl Default for EndpointTraitDefaultProbe {
+    fn default() -> Self {
+        ENDPOINT_TRAIT_DEFAULTS.fetch_add(1, Ordering::SeqCst);
+        Self
     }
 }
 
@@ -271,6 +301,22 @@ api! {
     }
 }
 
+api! {
+    client TraitDefaultTimingApi {
+        base "http://trait-default-timing.example.test/";
+        vars {
+            scalar: u32 = default;
+            optional: Option<String> = default;
+            vector: Vec<String> = default;
+            client_probe: crate::ClientTraitDefaultProbe = default;
+        }
+    }
+
+    scope group(scope_probe: crate::ScopeTraitDefaultProbe = default) {
+        GET read(endpoint_probe: crate::EndpointTraitDefaultProbe = default) -> Bytes;
+    }
+}
+
 fn proxy(server: &ScriptedServer) -> SafeProxy {
     SafeProxy::parse(server.url("")).expect("local proxy")
 }
@@ -380,6 +426,104 @@ fn defaulted_option_client_clear_and_reset_are_distinct_override_states() {
         .expect("reset client label");
     let reset_url = optional_control_url(&reset, &optional_control_api::groups::Inspect::new());
     assert!(reset_url.contains("client_label=client-default"));
+}
+
+#[test]
+fn trait_default_evaluation_preserves_owner_and_reset_timing() {
+    let client_before = CLIENT_TRAIT_DEFAULTS.load(Ordering::SeqCst);
+    let scope_before = SCOPE_TRAIT_DEFAULTS.load(Ordering::SeqCst);
+    let endpoint_before = ENDPOINT_TRAIT_DEFAULTS.load(Ordering::SeqCst);
+
+    let overridden = TraitDefaultTimingApi::builder()
+        .set_scalar(7)
+        .set_optional("chosen".to_owned())
+        .set_vector(vec!["chosen".to_owned()])
+        .set_client_probe(ClientTraitDefaultProbe)
+        .build()
+        .expect("overridden trait defaults");
+    assert_eq!(CLIENT_TRAIT_DEFAULTS.load(Ordering::SeqCst), client_before);
+    drop(overridden);
+
+    let reset = TraitDefaultTimingApi::builder()
+        .set_scalar(7)
+        .reset_scalar()
+        .set_optional("chosen".to_owned())
+        .clear_optional()
+        .reset_optional()
+        .set_vector(vec!["chosen".to_owned()])
+        .reset_vector()
+        .set_client_probe(ClientTraitDefaultProbe)
+        .reset_client_probe()
+        .build()
+        .expect("reset trait defaults");
+    assert_eq!(
+        CLIENT_TRAIT_DEFAULTS.load(Ordering::SeqCst),
+        client_before + 1
+    );
+    drop(reset);
+
+    let client = TraitDefaultTimingApi::new().expect("trait-default client");
+    assert_eq!(
+        CLIENT_TRAIT_DEFAULTS.load(Ordering::SeqCst),
+        client_before + 2
+    );
+    let clone = client.clone();
+    drop(clone);
+    assert_eq!(
+        CLIENT_TRAIT_DEFAULTS.load(Ordering::SeqCst),
+        client_before + 2
+    );
+
+    let scope = client.group();
+    assert_eq!(
+        SCOPE_TRAIT_DEFAULTS.load(Ordering::SeqCst),
+        scope_before + 1
+    );
+    let scope = scope
+        .set_scope_probe(ScopeTraitDefaultProbe)
+        .reset_scope_probe();
+    assert_eq!(
+        SCOPE_TRAIT_DEFAULTS.load(Ordering::SeqCst),
+        scope_before + 1
+    );
+
+    let request = scope.read();
+    assert_eq!(
+        ENDPOINT_TRAIT_DEFAULTS.load(Ordering::SeqCst),
+        endpoint_before + 1
+    );
+    let request = request
+        .set_endpoint_probe(EndpointTraitDefaultProbe)
+        .reset_endpoint_probe();
+    assert_eq!(
+        ENDPOINT_TRAIT_DEFAULTS.load(Ordering::SeqCst),
+        endpoint_before + 1
+    );
+    drop(request);
+
+    let explicit = trait_default_timing_api::group::Read::new();
+    assert_eq!(
+        SCOPE_TRAIT_DEFAULTS.load(Ordering::SeqCst),
+        scope_before + 2
+    );
+    assert_eq!(
+        ENDPOINT_TRAIT_DEFAULTS.load(Ordering::SeqCst),
+        endpoint_before + 2
+    );
+    let explicit = explicit
+        .set_scope_probe(ScopeTraitDefaultProbe)
+        .reset_scope_probe()
+        .set_endpoint_probe(EndpointTraitDefaultProbe)
+        .reset_endpoint_probe();
+    assert_eq!(
+        SCOPE_TRAIT_DEFAULTS.load(Ordering::SeqCst),
+        scope_before + 2
+    );
+    assert_eq!(
+        ENDPOINT_TRAIT_DEFAULTS.load(Ordering::SeqCst),
+        endpoint_before + 2
+    );
+    drop(explicit);
 }
 
 #[test]

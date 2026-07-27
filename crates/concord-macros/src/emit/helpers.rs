@@ -29,6 +29,9 @@ pub(super) fn default_expr(value: &ResolvedDefault) -> TokenStream {
         ResolvedDefault::Integer { literal, .. } => quote!(#literal),
         ResolvedDefault::Boolean(value) => quote!(#value),
         ResolvedDefault::Path(value) => quote!(#value),
+        ResolvedDefault::TraitDefault(span) => {
+            quote_spanned!(*span=> ::core::default::Default::default())
+        }
     }
 }
 

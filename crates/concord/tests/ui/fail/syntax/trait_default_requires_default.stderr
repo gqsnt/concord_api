@@ -1,0 +1,11 @@
+error[E0277]: the trait bound `NoDefault: Default` is not satisfied
+ --> tests/ui/fail/syntax/trait_default_requires_default.rs:9:32
+  |
+9 |             value: NoDefault = default;
+  |                                ^^^^^^^ the trait `Default` is not implemented for `NoDefault`
+  |
+help: consider annotating `NoDefault` with `#[derive(Default)]`
+  |
+3 + #[derive(Default)]
+4 | pub struct NoDefault;
+  |

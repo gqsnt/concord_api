@@ -32,13 +32,18 @@ These declaration forms are independent:
 tenant: String;                         // required
 locale: Option<String>;                 // may be absent
 page_size: u32 = 25;                    // has a default
+tags: Vec<String> = default;            // uses Vec::default()
+filters: Option<String> = default;      // uses Option::default()
 label: Option<&'static str> = DEFAULT;  // absent or defaulted
 ```
 
 Concord recognizes absence syntactically for `Option<T>` and the fully
 qualified standard-library spelling. A type alias to `Option<T>` is opaque to
 the macro and therefore remains required. Defaults may use only the bounded
-forms accepted by the DSL, such as literals and const paths.
+forms accepted by the DSL: literals, const paths, and the `default` shorthand.
+The shorthand emits a hygienic `Default::default()` call and lets Rust check
+the declared type's `Default` implementation. A missing implementation is
+reported at the `default` keyword.
 
 ## Use `set`, `clear`, and `reset`
 
@@ -64,17 +69,34 @@ Repeated controls are deterministic: the last selection wins. Here
 `reset_page_size()` discards the earlier `50`, and `reset_client_label()`
 discards both the override and explicit absence.
 
-There is one important timing distinction. A client builder has not evaluated
-its declaration defaults yet. Resetting a builder value removes the override,
-so `build()` evaluates the DSL default. Scope, explicit-endpoint, and request
-values are already snapshots; their `reset_*` controls restore the retained
-evaluated default without evaluating the expression again.
+Default timing follows the value owner:
+
+| Owner | Evaluation point |
+|---|---|
+| client value | each `build()` where the value is not overridden |
+| scope value | construction of that scope snapshot |
+| explicit endpoint value | explicit endpoint construction |
+| direct request value | endpoint snapshot construction |
+
+Resetting a client builder value removes its override, so a later `build()`
+evaluates the declaration again. Scope, explicit-endpoint, and request values
+are already snapshots; their `reset_*` controls restore the retained evaluated
+default without another evaluation.
+
+`Default::default()` is application-owned code. It may allocate, block, panic,
+or have side effects. Concord's construction guarantee is that Concord itself
+performs no managed I/O or request-lifecycle effects; it does not make
+arbitrary application trait code inert.
 
 The same rules apply to endpoint-owned values:
 
 ```rust,ignore
 {{#include ../../crates/concord-examples/src/contracts/full_dsl.rs:request_controls}}
 ```
+
+The shorthand is deliberately limited to ordinary client, scope, and endpoint
+values. It is not a request-body default, pagination-controller initializer,
+public shaping expression, credential clause, or rate-limit clause.
 
 ## Match values to their use
 

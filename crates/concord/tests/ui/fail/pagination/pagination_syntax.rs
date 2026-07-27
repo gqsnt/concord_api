@@ -184,4 +184,14 @@ api! {
     }
 }
 
+api! {
+    client TraitDefaultInitializer {
+        base "https://example.test";
+    }
+
+    GET read() -> crate::support::Json<Vec<u8>> {
+        paginate crate::Controller { state: default }
+    }
+}
+
 fn main() {}

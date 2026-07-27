@@ -1,0 +1,35 @@
+error: defaults accept a Rust const path, not a call, method, macro, block, or collection expression
+ --> tests/ui/fail/syntax/default_expression_restrictions.rs:7:40
+  |
+7 |             value: String = String::new();
+  |                                        ^
+
+error: defaults accept a Rust const path, not a call, method, macro, block, or collection expression
+  --> tests/ui/fail/syntax/default_expression_restrictions.rs:16:40
+   |
+16 |             value: String = crate::TEXT.to_owned();
+   |                                        ^
+
+error: defaults accept a Rust const path, not a call, method, macro, block, or collection expression
+  --> tests/ui/fail/syntax/default_expression_restrictions.rs:25:33
+   |
+25 |             value: Vec<u8> = vec![];
+   |                                 ^
+
+error: defaults accept only `default`, a string literal, signed integer literal, boolean literal, or Rust const path
+  --> tests/ui/fail/syntax/default_expression_restrictions.rs:34:25
+   |
+34 |             value: u8 = { 0 };
+   |                         ^
+
+error: defaults accept only `default`, a string literal, signed integer literal, boolean literal, or Rust const path
+  --> tests/ui/fail/syntax/default_expression_restrictions.rs:43:30
+   |
+43 |             value: Vec<u8> = [0];
+   |                              ^
+
+error: a request body parameter cannot have a default
+  --> tests/ui/fail/syntax/default_expression_restrictions.rs:53:38
+   |
+53 |     POST send(#[body] payload: Bytes = default) -> Bytes;
+   |                                      ^

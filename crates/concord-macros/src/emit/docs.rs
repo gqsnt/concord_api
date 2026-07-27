@@ -33,6 +33,7 @@ pub(super) fn endpoint_type_doc(endpoint: &Endpoint) -> String {
         format!("scope chain `{}`", docs.scope_chain.join("::"))
     };
     let inputs = render_inputs(docs);
+    let default_semantics = render_default_semantics(docs);
     let request = render_request(docs);
     let response = render_response(docs);
     let summary = render_location(docs);
@@ -45,7 +46,7 @@ pub(super) fn endpoint_type_doc(endpoint: &Endpoint) -> String {
         )
     };
     format!(
-        "Endpoint contract for `{} {}`.\n\n# Summary\n\n{summary}\n\n# Usage\n\nCall the `{}` direct scope method on {scope_chain}, or construct `{}` and bind it with `{}::request`. Both return `{}`.\n\n# Inputs\n\n{inputs}\n\n# Request\n\n{request}\n\n# Response\n\n{response}\n\n# Identity\n\n{identity}\n\nEndpoint type: `{}`.\n\nRequest type: `{}`.",
+        "Endpoint contract for `{} {}`.\n\n# Summary\n\n{summary}\n\n# Usage\n\nCall the `{}` direct scope method on {scope_chain}, or construct `{}` and bind it with `{}::request`. Both return `{}`.\n\n# Inputs\n\n{inputs}{default_semantics}\n\n# Request\n\n{request}\n\n# Response\n\n{response}\n\n# Identity\n\n{identity}\n\nEndpoint type: `{}`.\n\nRequest type: `{}`.",
         docs.http_method,
         render_route(docs),
         docs.direct_method_name,
@@ -55,6 +56,22 @@ pub(super) fn endpoint_type_doc(endpoint: &Endpoint) -> String {
         docs.endpoint_type_path,
         docs.request_type_path,
     )
+}
+
+fn render_default_semantics(docs: &EndpointDocModel) -> &'static str {
+    let has_default = docs
+        .scope_inputs
+        .iter()
+        .any(|input| input.kind == EndpointDocInputKind::Defaulted)
+        || docs
+            .endpoint_setters
+            .iter()
+            .any(|setter| setter.reset.is_some());
+    if has_default {
+        "\n\nEach declaration default is evaluated when its owning snapshot is constructed. The `= default` shorthand invokes application-owned `Default::default()` at that point; snapshot and request `reset_*` controls restore retained values without re-evaluation."
+    } else {
+        ""
+    }
 }
 
 fn render_location(docs: &EndpointDocModel) -> String {
@@ -829,7 +846,7 @@ mod tests {
             }
             GET read(
                 cursor: Option<String>,
-                limit: u32 = 25,
+                limit: u32 = default,
                 label: Option<String> = None,
                 values: Option<Vec<String>> = None,
             ) -> Bytes;
@@ -842,6 +859,11 @@ mod tests {
         assert!(endpoint_docs.contains(
             "has a declaration default; override with `.set_limit(...)`, restore the retained default with `.reset_limit()`"
         ));
+        assert!(
+            endpoint_docs.contains(
+                "The `= default` shorthand invokes application-owned `Default::default()`"
+            )
+        );
         assert!(endpoint_docs.contains(
             "`ep.label: Option < String >` — absence-capable and has a declaration default; set a present value with `.set_label(...)`, select absence with `.clear_label()`, restore the retained default with `.reset_label()`"
         ));

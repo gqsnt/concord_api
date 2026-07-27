@@ -397,6 +397,7 @@ pub(crate) enum ResolvedDefault {
     Integer { negative: bool, literal: LitInt },
     Boolean(LitBool),
     Path(Path),
+    TraitDefault(Span),
 }
 
 #[derive(Clone)]

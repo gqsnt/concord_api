@@ -12,6 +12,7 @@ exhaustive tables.
 
 | Task | Continue with |
 |---|---|
+| declare required, optional, literal, const-path, or trait-default values | [Values, defaults, and controls](../guide/values-and-controls.md) |
 | authenticate with Bearer, Basic, API key, or a provider | [Authentication](../features/authentication.md) |
 | send JSON or another buffered request body | [Request bodies and buffered responses](../features/bodies-and-buffered-responses.md) |
 | decode JSON or buffered bytes | [Request bodies and buffered responses](../features/bodies-and-buffered-responses.md) |

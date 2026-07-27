@@ -61,6 +61,7 @@ endpoint   = METHOD SNAKE_IDENT "(" parameters? ")" "->" TYPE
              (";" | "{" endpoint_clause* "}")
 parameters = parameter ("," parameter)* ","?
 parameter  = ("#[body]")? IDENT ":" TYPE ("=" DEFAULT)?
+DEFAULT    = "default" | STRING | SIGNED_INTEGER | BOOLEAN | CONST_PATH
 ```
 
 The client name defines the generated client type. Scope and endpoint source
@@ -173,6 +174,8 @@ vars {
     locale: Option<String>;
     qualified: std::option::Option<String>;
     page_size: u32 = 25;
+    empty_tags: Vec<String> = default;
+    default_locale: Option<String> = default;
     label: Option<&'static str> = crate::DEFAULT_LABEL;
     tags: Option<Vec<&'static str>> = crate::DEFAULT_TAGS;
 }
@@ -206,12 +209,20 @@ an `Option<T>` or `Option<Vec<T>>` with a default has both capabilities and
 therefore exposes `set_*`, `clear_*`, and `reset_*`. Accepted default
 expressions are:
 
+- the exact `default` shorthand, which emits
+  `::core::default::Default::default()`;
 - a string literal;
 - a signed base-10 integer literal;
 - a boolean literal;
 - a Rust const path.
 
 Calls, methods, macros, blocks, and collection expressions are rejected.
+`default` is valid only for ordinary client, scope, and endpoint values. It is
+not valid for request bodies, pagination stable initializers, public shaping
+expressions, credentials, or rate-limit clauses. Rust checks the declared
+type's `Default` implementation and reports a missing implementation at the
+keyword.
+
 Values with defaults are overridden with `.set_name(...)`. On a client
 builder, `.clear_name()` records explicit absence while `.reset_name()`
 discards the override so the declaration default is evaluated during
@@ -219,6 +230,22 @@ discards the override so the declaration default is evaluated during
 `Some(...)`. On an already evaluated scope, explicit endpoint, or named request
 snapshot, `.clear_name()` selects `None`, while `.reset_name()` restores the
 retained default without re-evaluation.
+
+Evaluation timing is fixed:
+
+| Owner | Evaluation |
+|---|---|
+| client default | each `build()` when not overridden |
+| scope default | scope snapshot construction |
+| explicit endpoint default | endpoint construction |
+| direct request default | endpoint snapshot construction |
+| client-builder `reset_*` | removes the override; a later build reevaluates |
+| snapshot/request `reset_*` | restores the retained value without reevaluation |
+
+The shorthand invokes trusted application `Default` code. That code may
+allocate, block, panic, or have side effects. Concord guarantees that its own
+construction path performs no managed I/O or request-lifecycle work, not that
+arbitrary application trait code is inert.
 
 Required client values use `.set_name(...)`. Required scope and endpoint
 arguments preserve declaration order and remain constructor/navigation
@@ -487,10 +514,10 @@ Stable initializers accept:
 - direct `vars`, `scope`, or `ep` references;
 - approved simple Rust paths/constants.
 
-Shorthand, struct rest, calls, methods, closures, async blocks, arbitrary
-blocks, secrets, credentials, and indirect bindings are rejected. Rust checks
-field visibility, field types, controller trait bounds, and `Send`/`Sync`
-requirements.
+The ordinary-value `default` shorthand, field shorthand, struct rest, calls,
+methods, closures, async blocks, arbitrary blocks, secrets, credentials, and
+indirect bindings are rejected. Rust checks field visibility, field types,
+controller trait bounds, and `Send`/`Sync` requirements.
 
 Pagination is available only to buffered, page-capable response
 specifications. Its request is either bodyless or uses a

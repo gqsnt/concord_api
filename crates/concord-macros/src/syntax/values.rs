@@ -120,7 +120,7 @@ fn parse_value_kind(input: ParseStream<'_>, ty: &Type) -> syn::Result<ValueKind>
     let optional = syntactic_option_inner(ty)?;
     if input.peek(Token![=]) {
         input.parse::<Token![=]>()?;
-        return Ok(ValueKind::Defaulted(parse_default(input)?));
+        return Ok(ValueKind::Defaulted(parse_value_default(input)?));
     }
     Ok(if optional.is_some() {
         ValueKind::Optional
@@ -129,7 +129,15 @@ fn parse_value_kind(input: ParseStream<'_>, ty: &Type) -> syn::Result<ValueKind>
     })
 }
 
-pub(super) fn parse_default(input: ParseStream<'_>) -> syn::Result<DefaultExpr> {
+fn parse_value_default(input: ParseStream<'_>) -> syn::Result<DefaultExpr> {
+    if input.peek(Token![default]) {
+        let keyword: Token![default] = input.parse()?;
+        return Ok(DefaultExpr::TraitDefault(keyword.span));
+    }
+    parse_stable_default(input)
+}
+
+pub(super) fn parse_stable_default(input: ParseStream<'_>) -> syn::Result<DefaultExpr> {
     if input.peek(LitStr) {
         return input.parse().map(DefaultExpr::String);
     }
@@ -170,7 +178,7 @@ pub(super) fn parse_default(input: ParseStream<'_>) -> syn::Result<DefaultExpr> 
         return Ok(DefaultExpr::Path(path));
     }
     Err(input.error(
-        "defaults accept only a string literal, signed integer literal, boolean literal, or Rust const path",
+        "defaults accept only `default`, a string literal, signed integer literal, boolean literal, or Rust const path",
     ))
 }
 
@@ -178,7 +186,7 @@ pub(super) fn parse_default(input: ParseStream<'_>) -> syn::Result<DefaultExpr> 
 mod tests {
     use quote::quote;
 
-    use crate::syntax::ast::SourceChild;
+    use crate::syntax::ast::{DefaultExpr, SourceChild, ValueKind};
 
     #[test]
     fn parses_required_optional_defaulted_and_explicit_body_roles() {
@@ -202,5 +210,50 @@ mod tests {
         assert_eq!(endpoint.parameters.len(), 2);
         assert_eq!(endpoint.body.as_ref().unwrap().name, "payload");
         assert_eq!(endpoint.body.as_ref().unwrap().position, 1);
+    }
+
+    #[test]
+    fn parses_trait_default_only_for_ordinary_values() {
+        let source = super::super::parse(quote! {
+            client ValuesApi {
+                base "https://example.test";
+                vars {
+                    scalar: u32 = default;
+                    optional: Option<String> = default;
+                    vector: Vec<String> = default;
+                }
+            }
+            scope resources(scope_value: String = default) {
+                GET read(endpoint_value: String = default) -> Bytes;
+            }
+        })
+        .expect("ordinary trait defaults");
+        assert!(
+            source
+                .client
+                .values
+                .as_ref()
+                .unwrap()
+                .value
+                .iter()
+                .all(|value| matches!(
+                    value.kind,
+                    ValueKind::Defaulted(DefaultExpr::TraitDefault(_))
+                ))
+        );
+        let SourceChild::Scope(scope) = &source.children[0] else {
+            panic!("scope");
+        };
+        assert!(matches!(
+            scope.parameters[0].kind,
+            ValueKind::Defaulted(DefaultExpr::TraitDefault(_))
+        ));
+        let SourceChild::Endpoint(endpoint) = &scope.children[0] else {
+            panic!("endpoint");
+        };
+        assert!(matches!(
+            endpoint.parameters[0].kind,
+            ValueKind::Defaulted(DefaultExpr::TraitDefault(_))
+        ));
     }
 }

@@ -130,6 +130,10 @@
   intentionally shared quota identity. Omitted IDs retain their prior derived
   bytes; compatible reuse requires identical ordered dimensions and windows,
   while costs may differ.
+- Ordinary client, scope, and endpoint values now accept `= default`, emitted
+  hygienically as `Default::default()` at the source keyword. It preserves the
+  existing set/clear/reset matrix and owner-specific evaluation timing and
+  remains unavailable to bodies and pagination initializers.
 - Every generated public value mutation now uses
   `value(value) -> set_value(value)`. Absence-capable values retain
   `clear_value()`; values with declaration defaults retain `reset_value()`.

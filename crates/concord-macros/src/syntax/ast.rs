@@ -109,6 +109,7 @@ pub(crate) enum DefaultExpr {
     Integer { negative: bool, literal: LitInt },
     Boolean(LitBool),
     Path(Path),
+    TraitDefault(Span),
 }
 
 #[derive(Clone, Default)]
