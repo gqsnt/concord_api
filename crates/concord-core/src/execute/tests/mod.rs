@@ -48,10 +48,11 @@ use crate::records::{
 };
 use crate::request::{HeadBuilder, PreparedHead, RequestMeta, RuntimeEndpoint};
 #[cfg(feature = "records")]
+use crate::response::ApiResponse;
 use crate::response::{
-    ApiResponse, Buffered, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec, ResponseHead,
+    Buffered, ByteStream, NoContent, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec,
+    ResponseHead, Streaming,
 };
-use crate::response::{ByteStream, NoContent};
 use crate::runtime::RuntimeConfigBuilder;
 
 const ENDPOINT: &str = "execution_api.health.bytes";
@@ -59,11 +60,53 @@ const NO_CONTENT_ENDPOINT: &str = "execution_api.health.ping";
 const CODEC_ENDPOINT: &str = "execution_api.codec.round_trip";
 const BODY_ENDPOINT: &str = "execution_api.body.upload";
 const STREAM_ENDPOINT: &str = "execution_api.stream.download";
+const RESPONSE_ENDPOINT: &str = "execution_api.response.selected";
 #[cfg(feature = "records")]
 const RECORD_ENDPOINT: &str = "execution_api.records.stream";
 
 struct StreamEndpoint<M> {
     marker: std::marker::PhantomData<fn() -> M>,
+}
+
+struct ResponseEndpoint<R> {
+    timeout: Option<Duration>,
+    marker: std::marker::PhantomData<fn() -> R>,
+}
+
+impl<R> ResponseEndpoint<R> {
+    fn new(timeout: Option<Duration>) -> Self {
+        Self {
+            timeout,
+            marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<R> EndpointSpec for ResponseEndpoint<R>
+where
+    R: ResponseBodySpec,
+{
+    type Body = EmptyBody;
+    type Response = R;
+
+    fn request_meta(&self) -> RequestMeta {
+        RequestMeta::new(RESPONSE_ENDPOINT, Method::GET, self.timeout)
+    }
+
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
+        builder.push_static("response")?;
+        builder.push_static("selected")?;
+        builder.finish()
+    }
+
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        EmptyBody::metadata(&(), context)
+    }
+
+    fn into_body(self) {}
 }
 
 impl<M> StreamEndpoint<M> {
@@ -1571,6 +1614,13 @@ where
     M: MediaType,
 {
     Request::new(core, StreamEndpoint::new())
+}
+
+fn response_request<R>(core: ClientCore, timeout: Option<Duration>) -> Request<ResponseEndpoint<R>>
+where
+    R: ResponseBodySpec,
+{
+    Request::new(core, ResponseEndpoint::new(timeout))
 }
 
 async fn next_stream_chunk(response: &mut ByteStream) -> Option<Result<Bytes, ApiError>> {

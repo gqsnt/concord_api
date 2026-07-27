@@ -7,6 +7,7 @@ use crate::error::{ApiError, ErrorCategory};
 use crate::http::application::ApplicationResponse;
 use crate::operation::OperationDeadline;
 
+use super::spec::ResponseSelection;
 use super::{ByteStream, ResponseBodyErrorKind, ResponseBodySpec, ResponseHead};
 
 pub struct ResponseInput {
@@ -18,16 +19,17 @@ pub struct ResponseInput {
     pub(crate) method: http::Method,
 }
 
-pub(crate) async fn execute_response<R>(
+pub(crate) async fn execute_response<R, S>(
     input: ResponseInput,
     head: &ResponseHead<'_>,
-) -> Result<R::Output, ApiError>
+) -> Result<S::Output, ApiError>
 where
     R: ResponseBodySpec,
+    S: ResponseSelection<R>,
 {
-    <R::Mode as super::spec::private::Sealed>::preflight(&input)?;
+    <S::Mode as super::spec::private::Sealed>::preflight(&input)?;
 
-    let validation = R::validate(head);
+    let validation = S::validate(head);
     input
         .deadline
         .check()
@@ -38,8 +40,8 @@ where
     let deadline = input.deadline;
     let endpoint = input.endpoint.clone();
     let method = input.method.clone();
-    let body = <R::Mode as super::spec::private::Sealed>::acquire(input).await?;
-    let output = R::from_body(body, head);
+    let body = <S::Mode as super::spec::private::Sealed>::acquire(input).await?;
+    let output = S::from_body(body, head);
     deadline.check().map_err(|_| timeout(&endpoint, &method))?;
     output.map_err(|error| response_spec_error(&endpoint, &method, error.kind()))
 }

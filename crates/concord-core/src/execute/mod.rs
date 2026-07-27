@@ -25,9 +25,11 @@ use crate::request::{
 };
 #[cfg(feature = "dangerous-raw-response")]
 use crate::response::RawResponse;
+#[cfg(feature = "dangerous-raw-response")]
+use crate::response::RawResponseSelection;
 use crate::response::{
-    ApiResponse, ExecutionMeta, ResponseBodySpec, ResponseHead, ResponseInput, completion_outcome,
-    execute_response,
+    ApiResponse, DeclaredResponse, ExecutionMeta, ResponseBodySpec, ResponseHead, ResponseInput,
+    ResponseSelection, completion_outcome, execute_response,
 };
 
 #[doc(hidden)]
@@ -68,7 +70,7 @@ where
 
     fn into_future(self) -> Self::IntoFuture {
         Box::pin(async move {
-            execute_request_as::<E, bytes::Bytes>(self.request)
+            execute_request_as::<E, RawResponseSelection<E::Response>>(self.request)
                 .await
                 .map(RawResponse::from_decoded)
         })
@@ -81,15 +83,13 @@ async fn execute_request<E>(
 where
     E: EndpointSpec,
 {
-    execute_request_as::<E, E::Response>(request).await
+    execute_request_as::<E, DeclaredResponse<E::Response>>(request).await
 }
 
-async fn execute_request_as<E, R>(
-    request: Request<E>,
-) -> Result<ApiResponse<<R as ResponseBodySpec>::Output>, ApiError>
+async fn execute_request_as<E, S>(request: Request<E>) -> Result<ApiResponse<S::Output>, ApiError>
 where
     E: EndpointSpec,
-    R: ResponseBodySpec,
+    S: ResponseSelection<E::Response>,
 {
     let prepared = match prepare_operation(request).await? {
         OperationPreparation::Ready(prepared) => prepared,
@@ -97,7 +97,7 @@ where
             return complete_preparation_failure(failure).await;
         }
     };
-    execute_prepared_operation::<E, R>(prepared, ExecutionContext::DIRECT)
+    execute_prepared_operation::<E, S>(prepared, ExecutionContext::DIRECT)
         .await
         .result
 }
@@ -175,27 +175,29 @@ where
             });
         }
     };
-    Ok(execute_prepared_operation::<E, E::Response>(
-        PreparedOperation {
-            core,
-            endpoint,
-            operation_id,
-            deadline,
-            head,
-            body_metadata,
-        },
-        context,
+    Ok(
+        execute_prepared_operation::<E, DeclaredResponse<E::Response>>(
+            PreparedOperation {
+                core,
+                endpoint,
+                operation_id,
+                deadline,
+                head,
+                body_metadata,
+            },
+            context,
+        )
+        .await,
     )
-    .await)
 }
 
-async fn execute_prepared_operation<E, R>(
+async fn execute_prepared_operation<E, S>(
     prepared: PreparedOperation<E>,
     context: ExecutionContext,
-) -> ExecutedPage<<R as ResponseBodySpec>::Output>
+) -> ExecutedPage<S::Output>
 where
     E: EndpointSpec,
-    R: ResponseBodySpec,
+    S: ResponseSelection<E::Response>,
 {
     let PreparedOperation {
         core,
@@ -359,7 +361,9 @@ where
         };
 
         let status = response.status();
-        if !status.is_success() {
+        let accepted = S::accepts_status(status);
+        check_deadline(deadline, head.endpoint_id(), head.method())?;
+        if !accepted {
             let failure = core
                 .application_http()
                 .terminal_status_managed(
@@ -391,7 +395,7 @@ where
             content_length,
             metadata: &metadata,
         };
-        let output = execute_response::<R>(
+        let output = execute_response::<E::Response, S>(
             ResponseInput {
                 response,
                 limit: core.response_body_limit(),
@@ -426,7 +430,7 @@ where
         head.debug(),
         elapsed,
         final_status,
-        completion_outcome::<R>(),
+        completion_outcome::<E::Response, S>(),
         recovered_authentication,
         result,
     )

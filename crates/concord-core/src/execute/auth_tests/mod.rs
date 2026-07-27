@@ -45,6 +45,7 @@ use crate::rate_limit::{
 use crate::request::{
     EndpointSpec, HeadBuilder, PreparedHead, Request, RequestMeta, RuntimeEndpoint,
 };
+use crate::response::{Buffered, ResponseBodyError, ResponseBodySpec, ResponseHead};
 use crate::runtime::RuntimeConfigBuilder;
 
 const ENDPOINT: &str = "authentication_api.protected";

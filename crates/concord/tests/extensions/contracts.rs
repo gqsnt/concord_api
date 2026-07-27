@@ -126,6 +126,10 @@ impl ResponseBodySpec for ExtensionBufferedSpec {
     type Output = usize;
     type Mode = Buffered;
 
+    fn accepts_status(status: StatusCode) -> bool {
+        status.is_success() || status == StatusCode::NOT_FOUND
+    }
+
     fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<usize, ResponseBodyError> {
         Ok(body.len())
     }
@@ -882,6 +886,37 @@ async fn public_request_body_spec_suppresses_empty_chunks_before_transport() {
     let requests = server.requests();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].body(), b"public-body");
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[allow(
+    clippy::await_holding_lock,
+    reason = "the process-global extension probes require whole-test serialization"
+)]
+async fn public_response_body_spec_can_accept_a_non_2xx_status() {
+    use concord_test_support::server::{ResponseScript, ScriptedServer};
+
+    let _guard = EXTENSION_TEST_LOCK
+        .lock()
+        .expect("extension test lock poisoned");
+    let server = ScriptedServer::start([ResponseScript::status(404, b"accepted-missing".to_vec())])
+        .expect("bounded accepted-status server");
+    let proxy = SafeProxy::parse(server.url("")).expect("credential-free loopback proxy URL");
+    let client = ExtensionApi::builder()
+        .set_construction(ExtensionConstructionProbe::new())
+        .session_provider(ExtensionProvider)
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(ExtensionLimiter)))
+        .build()
+        .expect("downstream generated client");
+
+    let response = client
+        .generic_body(Bytes::from_static(b"request"))
+        .response()
+        .await
+        .expect("public declared accepted status");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(*response.value(), b"accepted-missing".len());
 }
 
 #[cfg(feature = "records")]

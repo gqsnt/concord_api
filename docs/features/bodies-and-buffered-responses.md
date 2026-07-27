@@ -2,7 +2,7 @@
 
 Choose a request and response specification in the endpoint declaration.
 Concord delays request-body work until execution is authorized, bounds wire
-bytes, validates successful response media, buffers under the active limit,
+bytes, validates accepted response media, buffers under the active limit,
 and only then decodes the application value.
 
 ## Declare the representation
@@ -30,8 +30,8 @@ Core representations need no optional media feature:
 
 - `Bytes` sends or returns owned bytes without a media codec;
 - `Text` accepts and returns `String` with its text media contract;
-- `NoContent` is a response specification that returns `()` without polling a
-  successful response body.
+- `NoContent` is a response specification that returns `()` without polling an
+  accepted response body.
 
 `NoContent` is not a request-body specification. A bodyless endpoint simply
 has no `#[body]` parameter.
@@ -48,8 +48,8 @@ stream, or send it. During execution Concord:
 2. runs the before-send hook and acquires rate-limit authority;
 3. asks the request specification to prepare the managed body;
 4. enforces the request-body limit while the final stream crosses transport;
-5. accepts a successful 2xx response and acquires it under the selected
-   response mode;
+5. applies the declared status-acceptance policy (2xx by default) and acquires
+   an accepted response under the selected response mode;
 6. validates media and decodes the complete buffered bytes.
 
 This ordering prevents rejected hooks or limiters from triggering body
@@ -57,10 +57,16 @@ factories and keeps protected authentication placement later than safe
 observation. Known lengths that already exceed a limit fail before transport.
 Unknown-length bodies remain cumulatively bounded as they stream.
 
-For a non-2xx response, Concord does not run the declared success decoder.
-It returns the HTTP-status error category with sanitized response metadata and
-bounded status-body state when available. Redirects are disabled by default,
-so 3xx responses are final statuses rather than implicit navigation.
+A custom `ResponseBodySpec` can accept a non-2xx operation outcome such as
+`404`. It then follows ordinary declared acquisition, validation, and
+conversion under the response limit. Authentication challenge handling remains
+authoritative before this decision.
+
+For a rejected status, Concord does not run the declared response decoder. It
+returns the HTTP-status error category with sanitized response metadata and
+bounded status-body state when available. Redirects are disabled by default, so
+3xx responses are final statuses rather than implicit navigation unless the
+response specification explicitly accepts one.
 
 ## Get response metadata
 
@@ -70,7 +76,7 @@ Await the named request when only the application value is needed:
 let values: Vec<u32> = client.json_round_trip(vec![1, 2, 3]).await?;
 ```
 
-Select `.response()` before awaiting when status, version, successful headers,
+Select `.response()` before awaiting when status, version, accepted headers,
 the credential-sanitized logical URL, or safe execution metadata is needed:
 
 ```rust

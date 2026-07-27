@@ -64,8 +64,9 @@ acquisition, or transport. Response observation occurs in this order:
 2. built-in debug observes sanitized response structure;
 3. limiter response observation completes;
 4. `on_response_head` observes sanitized structure;
-5. challenge recovery, terminal status capture, or successful body acquisition
-   proceeds.
+5. authentication challenge handling runs;
+6. declared status acceptance selects accepted body acquisition or rejected
+   status capture.
 
 Once the terminal `Result` is fixed, core derives `CompletionOutcome`, records
 final status and elapsed executor time, emits built-in completion observation,
@@ -111,7 +112,7 @@ is represented by `StatusBodyState` without retaining a prefix as if it were
 complete.
 
 `StatusBody::bytes` and explicit decode operate only on a complete retained
-body. Status capture is not a logging channel and is separate from successful
+body. Status capture is not a logging channel and is separate from accepted
 response decoding. Exact bounds belong to the
 [limits reference](../../reference/limits.md).
 
@@ -141,6 +142,11 @@ Terminal HTTP failures retain sanitized response headers and the opaque finite
 status body. Authentication rejection uses the same terminal response wrapper
 with an authentication category only when the challenge was attributable to
 material used by the attempt.
+
+An accepted non-2xx response is not a terminal HTTP failure. It uses the
+declared response acquisition limit and can still fail as response-body,
+response-decoding, or response-contract work. Authentication challenge
+handling is authoritative before status acceptance.
 
 ## Extension boundary
 

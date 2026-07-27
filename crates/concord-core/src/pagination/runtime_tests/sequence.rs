@@ -1,6 +1,52 @@
 use super::*;
 
 #[tokio::test]
+async fn pagination_pages_use_the_declared_status_acceptance_policy() {
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_response(ScriptedResponse::status(
+            StatusCode::NOT_FOUND,
+            Bytes::from_static(b"accepted-page-item|-"),
+        ))
+        .expect("accepted pagination response");
+    let hooks = Arc::new(PaginationProbe::default());
+    let limiter = Arc::new(LimiterProbe::default());
+    let core = core(
+        &executor,
+        Arc::clone(&hooks),
+        Arc::clone(&limiter),
+        |runtime| runtime,
+    );
+    let endpoint = AcceptedPageEndpoint(PageEndpoint::get(
+        Some(Duration::from_secs(30)),
+        CursorController::new("initial"),
+    ));
+
+    let items = paginate_with(Request::new(core, endpoint), PageLimit::Take(1))
+        .await
+        .expect("accepted-status pagination page");
+    assert_eq!(items, ["accepted-page-item"]);
+    assert_eq!(
+        limiter
+            .observations
+            .lock()
+            .expect("observation lock")
+            .as_slice(),
+        [(0, StatusCode::NOT_FOUND)]
+    );
+    let completion = hooks.completion.lock().expect("completion lock");
+    assert_eq!(completion.len(), 1);
+    assert_eq!(completion[0].final_status, Some(StatusCode::NOT_FOUND));
+    assert_eq!(completion[0].outcome, CompletionOutcome::Success);
+    let aggregate = hooks.aggregate.lock().expect("aggregate lock");
+    assert_eq!(aggregate.len(), 1);
+    assert_eq!(aggregate[0].pages_completed, 1);
+    assert_eq!(aggregate[0].final_status, Some(StatusCode::NOT_FOUND));
+    assert_eq!(aggregate[0].outcome, CompletionOutcome::Success);
+}
+
+#[tokio::test]
 async fn page_lifecycle_is_sequential_correlated_and_limited_once_per_page() {
     const FIRST_CURSOR: &str = "first-cursor-sentinel-a271";
     const SECOND_CURSOR: &str = "second-cursor-sentinel-f804";

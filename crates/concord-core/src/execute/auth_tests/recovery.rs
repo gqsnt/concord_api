@@ -1,5 +1,113 @@
 use super::*;
 
+static CHALLENGE_PRECEDENCE_ACCEPTANCE_CALLS: AtomicUsize = AtomicUsize::new(0);
+static NEVER_CHALLENGE_ACCEPTANCE_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+struct ChallengePrecedenceAcceptance;
+
+impl ResponseBodySpec for ChallengePrecedenceAcceptance {
+    type Output = Bytes;
+    type Mode = Buffered;
+
+    fn accepts_status(status: StatusCode) -> bool {
+        CHALLENGE_PRECEDENCE_ACCEPTANCE_CALLS.fetch_add(1, Ordering::SeqCst);
+        status == StatusCode::UNAUTHORIZED
+    }
+
+    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
+        Ok(body)
+    }
+}
+
+struct NeverChallengeAcceptance;
+
+impl ResponseBodySpec for NeverChallengeAcceptance {
+    type Output = Bytes;
+    type Mode = Buffered;
+
+    fn accepts_status(status: StatusCode) -> bool {
+        NEVER_CHALLENGE_ACCEPTANCE_CALLS.fetch_add(1, Ordering::SeqCst);
+        status == StatusCode::UNAUTHORIZED
+    }
+
+    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
+        Ok(body)
+    }
+}
+
+#[tokio::test]
+async fn attributable_challenge_precedes_declared_status_acceptance() {
+    CHALLENGE_PRECEDENCE_ACCEPTANCE_CALLS.store(0, Ordering::SeqCst);
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_response(ScriptedResponse::status(
+            StatusCode::UNAUTHORIZED,
+            Bytes::from_static(b"attributable-challenge"),
+        ))
+        .expect("attributable challenge response");
+    let selector = SlotSelector::static_value(access_token(INITIAL), Duration::ZERO);
+    let (core, _) = core(&executor, Arc::new(AuthHooks::default()));
+    let endpoint = RuntimeEndpoint::builder(
+        EndpointId::from_static("runtime.challenge_precedence"),
+        Method::GET,
+    )
+    .path_segment("challenge-precedence")
+    .auth(
+        Auth::bearer(CredentialRef::new(Arc::clone(&selector)))
+            .challenge(ChallengePolicy::Unauthorized),
+    )
+    .response::<ChallengePrecedenceAcceptance>()
+    .build()
+    .expect("challenge precedence endpoint");
+
+    let error = Request::new(core, endpoint)
+        .await
+        .expect_err("attributable challenge remains authoritative");
+    assert_eq!(error.category(), ErrorCategory::AuthenticationRejected);
+    assert_eq!(
+        CHALLENGE_PRECEDENCE_ACCEPTANCE_CALLS.load(Ordering::SeqCst),
+        0
+    );
+    assert!(!selector.is_set());
+}
+
+#[tokio::test]
+async fn challenge_never_allows_the_response_specification_to_accept_401() {
+    NEVER_CHALLENGE_ACCEPTANCE_CALLS.store(0, Ordering::SeqCst);
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_response(ScriptedResponse::status(
+            StatusCode::UNAUTHORIZED,
+            Bytes::from_static(b"accepted-unauthorized"),
+        ))
+        .expect("accepted unauthorized response");
+    let selector = SlotSelector::static_value(access_token(INITIAL), Duration::ZERO);
+    let (core, _) = core(&executor, Arc::new(AuthHooks::default()));
+    let endpoint = RuntimeEndpoint::builder(
+        EndpointId::from_static("runtime.challenge_never_acceptance"),
+        Method::GET,
+    )
+    .path_segment("challenge-never-acceptance")
+    .auth(Auth::bearer(CredentialRef::new(Arc::clone(&selector))).challenge(ChallengePolicy::Never))
+    .response::<NeverChallengeAcceptance>()
+    .build()
+    .expect("challenge-never acceptance endpoint");
+
+    let response = Request::new(core, endpoint)
+        .response()
+        .await
+        .expect("declared accepted 401");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        response.value(),
+        &Bytes::from_static(b"accepted-unauthorized")
+    );
+    assert_eq!(NEVER_CHALLENGE_ACCEPTANCE_CALLS.load(Ordering::SeqCst), 1);
+    assert!(selector.is_set());
+}
+
 #[tokio::test]
 async fn real_tls_authentication_recovery_performs_two_visible_limiter_acquisitions() {
     let server = TlsServer::start().expect("TLS recovery loopback server");

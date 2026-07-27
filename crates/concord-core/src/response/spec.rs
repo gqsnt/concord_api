@@ -45,7 +45,7 @@ pub struct Streaming;
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Discard;
 
-/// A core-owned successful-response acquisition mode.
+/// A core-owned accepted-response acquisition mode.
 ///
 /// Applications may select one of Concord's public marker types but cannot
 /// implement another mode or obtain a native or unbounded response body.
@@ -133,12 +133,12 @@ impl RawResponseMode for Buffered {}
 #[cfg(feature = "dangerous-raw-response")]
 impl RawResponseMode for Discard {}
 
-/// Borrowed successful response-head facts supplied to a response extension.
+/// Borrowed accepted response-head facts supplied to a response extension.
 ///
 /// `url` is the credential-sanitized logical application URL and never the
 /// native authenticated URL. Public path/query values may still contain
 /// operational identifiers or personally identifiable information. Headers
-/// are the actual successful response headers and may contain sensitive values.
+/// are the actual accepted response headers and may contain sensitive values.
 /// The selected extension intentionally receives these documented inputs and
 /// owns their logging and storage behavior. No native response or transport
 /// handle is exposed.
@@ -154,7 +154,7 @@ pub struct ResponseHead<'a> {
     pub status: StatusCode,
     /// Observed HTTP version.
     pub version: Version,
-    /// Actual successful response headers.
+    /// Actual accepted response headers.
     pub headers: &'a HeaderMap,
     /// Known post-decompression content length, when available.
     pub content_length: Option<u64>,
@@ -162,19 +162,25 @@ pub struct ResponseHead<'a> {
     pub metadata: &'a ExecutionMeta,
 }
 
-/// Converts one core-owned successful-response acquisition mode into an
+/// Selects status acceptance and converts one core-owned acquisition mode into an
 /// application output.
 ///
-/// Concord first performs ordinary non-2xx status handling, then the selected
-/// mode's known-length preflight. `validate` runs next, before the first body
-/// poll. Concord alone acquires the complete bounded bytes, lazy bounded byte
-/// stream, or discard value, and only then calls `from_body`. Both callbacks are
-/// synchronous and are checked against the operation deadline immediately after
-/// return. They cannot replace status handling, limits, completion, native-body
-/// ownership, or the three sealed modes.
-/// No native response or transport handle is supplied to either callback.
+/// Concord first performs limiter and hook observation and authoritative
+/// authentication challenge handling. It then calls `accepts_status`, whose
+/// default accepts 2xx, and checks the operation deadline immediately after the
+/// synchronous callback returns. A rejected status stays on the bounded status
+/// error path.
 ///
-/// Calls for independent responses may overlap. The successful head and mode
+/// For an accepted status, Concord performs the selected mode's known-length
+/// preflight. `validate` runs next, before the first body poll. Concord alone
+/// acquires the complete bounded bytes, lazy bounded byte stream, or discard
+/// value, and only then calls `from_body`. The validation and conversion
+/// callbacks are also synchronous and followed by deadline checks. These
+/// callbacks cannot replace challenge ordering, limits, completion, native-body
+/// ownership, or the three sealed modes. No native response or transport handle
+/// is supplied to a callback.
+///
+/// Calls for independent responses may overlap. The accepted head and mode
 /// body can contain sensitive application data; implementations own their
 /// logging, storage, CPU, memory, metric cardinality, and external I/O behavior.
 /// Concord's acquisition limit bounds retained wire bytes, not the heap size of
@@ -182,7 +188,7 @@ pub struct ResponseHead<'a> {
 /// suppresses empty transport chunks and applies the same finite response-wide
 /// empty-chunk ceiling before extension conversion.
 pub trait ResponseBodySpec: Send + Sync + 'static {
-    /// Successful semantic output.
+    /// Accepted semantic output.
     type Output: Send + 'static;
     /// Core-owned acquisition mode selected by this specification.
     type Mode: ResponseMode;
@@ -192,7 +198,17 @@ pub trait ResponseBodySpec: Send + Sync + 'static {
         None
     }
 
-    /// Validates the successful response head before the first body poll.
+    /// Returns whether this specification accepts the received status.
+    ///
+    /// Authentication challenge handling remains authoritative and runs before
+    /// this callback. The default preserves the ordinary 2xx-only contract.
+    /// This synchronous callback is trusted application work; Concord checks
+    /// the operation deadline immediately after it returns.
+    fn accepts_status(status: StatusCode) -> bool {
+        status.is_success()
+    }
+
+    /// Validates the accepted response head before the first body poll.
     fn validate(_head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         Ok(())
     }
@@ -202,6 +218,75 @@ pub trait ResponseBodySpec: Send + Sync + 'static {
         body: <Self::Mode as ResponseMode>::Body,
         head: &ResponseHead<'_>,
     ) -> Result<Self::Output, ResponseBodyError>;
+}
+
+pub(crate) trait ResponseSelection<R>
+where
+    R: ResponseBodySpec,
+{
+    type Output: Send + 'static;
+    type Mode: ResponseMode;
+
+    fn accepts_status(status: StatusCode) -> bool;
+
+    fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError>;
+
+    fn from_body(
+        body: <Self::Mode as ResponseMode>::Body,
+        head: &ResponseHead<'_>,
+    ) -> Result<Self::Output, ResponseBodyError>;
+}
+
+pub(crate) struct DeclaredResponse<R>(std::marker::PhantomData<fn() -> R>);
+
+impl<R> ResponseSelection<R> for DeclaredResponse<R>
+where
+    R: ResponseBodySpec,
+{
+    type Output = R::Output;
+    type Mode = R::Mode;
+
+    fn accepts_status(status: StatusCode) -> bool {
+        R::accepts_status(status)
+    }
+
+    fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
+        R::validate(head)
+    }
+
+    fn from_body(
+        body: <Self::Mode as ResponseMode>::Body,
+        head: &ResponseHead<'_>,
+    ) -> Result<Self::Output, ResponseBodyError> {
+        R::from_body(body, head)
+    }
+}
+
+#[cfg(feature = "dangerous-raw-response")]
+pub(crate) struct RawResponseSelection<R>(std::marker::PhantomData<fn() -> R>);
+
+#[cfg(feature = "dangerous-raw-response")]
+impl<R> ResponseSelection<R> for RawResponseSelection<R>
+where
+    R: ResponseBodySpec,
+{
+    type Output = Bytes;
+    type Mode = Buffered;
+
+    fn accepts_status(status: StatusCode) -> bool {
+        status.is_success()
+    }
+
+    fn validate(_head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
+        Ok(())
+    }
+
+    fn from_body(
+        body: <Self::Mode as ResponseMode>::Body,
+        _head: &ResponseHead<'_>,
+    ) -> Result<Self::Output, ResponseBodyError> {
+        Ok(body)
+    }
 }
 
 impl<C> ResponseBodySpec for C
@@ -257,7 +342,7 @@ impl ResponseBodySpec for Bytes {
     }
 }
 
-/// A successful response whose body is discarded without polling.
+/// An accepted response whose body is discarded without polling.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct NoContent;
 
@@ -324,11 +409,12 @@ where
 {
 }
 
-pub(crate) fn completion_outcome<R>() -> CompletionOutcome
+pub(crate) fn completion_outcome<R, S>() -> CompletionOutcome
 where
     R: ResponseBodySpec,
+    S: ResponseSelection<R>,
 {
-    <R::Mode as private::Sealed>::COMPLETION_OUTCOME
+    <S::Mode as private::Sealed>::COMPLETION_OUTCOME
 }
 
 pub(crate) fn validate_accept(value: &str) -> Result<(), ResponseBodyError> {

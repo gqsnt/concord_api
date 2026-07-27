@@ -23,8 +23,8 @@ operation + deadline
     -> native send
     -> limiter response observation
     -> response-head hook
-    -> challenge/status handling
-    -> successful response acquisition
+    -> challenge and declared status acceptance
+    -> accepted response acquisition or rejected-status capture
     -> fixed result and completion
 ```
 
@@ -45,7 +45,7 @@ contract. Core owns:
 - rate-limit acquisition and response observation;
 - sanitized hook/debug inputs;
 - native application transport;
-- terminal status capture and successful response modes;
+- rejected-status capture and accepted response modes;
 - error reduction and completion outcome.
 
 Extensions can supply finite decisions or transformations at named points.
@@ -248,7 +248,7 @@ be hidden by later body work.
 The response-head hook sees each received attempt, including a challenge that
 will subsequently be recovered.
 
-## Stage 8: challenge and terminal status
+## Stage 8: challenge and declared status acceptance
 
 **Input and output:** after response observation, core checks whether an
 applied credential owns the challenge status. At most one recovery attempt is
@@ -258,15 +258,18 @@ again, the body is reconstructed, the attributed credential recovers, and the
 attempt sequence repeats.
 
 If recovery is unavailable or fails, the challenge becomes an authentication
-rejection. Any other non-success status becomes an HTTP status failure.
-Terminal response bodies are captured only through the bounded status path.
+rejection. Otherwise core calls `ResponseBodySpec::accepts_status` and checks
+the deadline immediately after the synchronous callback. The default accepts
+2xx. An explicitly accepted non-2xx proceeds as an ordinary accepted response;
+a rejected status becomes an HTTP status failure. Rejected response bodies are
+captured only through the bounded status path.
 
 **Errors:** authentication rejection/recovery, status acquisition,
 response-body progress, and timeout.
 
-**Deadline and cancellation:** recovery and terminal status capture consume
-the original deadline. There is no fresh timeout for the second attempt.
-Cancellation drops current recovery/response state.
+**Deadline and cancellation:** recovery, status acceptance, and rejected-status
+capture consume the original deadline. There is no fresh timeout for the
+second attempt. Cancellation drops current recovery/response state.
 
 **Protected material:** recovery can replace credential state, but errors and
 completion retain only safe identity, category, status, and bounded explicit
@@ -276,7 +279,7 @@ status-body state.
 be reconstructed; a second native attempt may run. One-shot bodies never
 recover by replay.
 
-## Stage 9: successful response acquisition
+## Stage 9: accepted response acquisition
 
 **Input and output:** core validates the selected `ResponseBodySpec` against a
 borrowed semantic response head, applies its sealed acquisition mode, then
@@ -284,7 +287,7 @@ converts the result:
 
 - `Buffered` completely acquires a post-decompression bounded body under the
   operation deadline.
-- `Discard` drops the successful body without polling it.
+- `Discard` drops the accepted body without polling it.
 - `Streaming` validates and returns a bounded `ByteStream` without polling
   unknown chunks.
 
@@ -299,7 +302,7 @@ governed by that deadline. It remains cumulatively byte/empty-chunk bounded,
 and callers add their own consumption timeout when needed. Dropping it drops
 the owned native body.
 
-**Protected material:** a response specification can inspect actual successful
+**Protected material:** a response specification can inspect actual accepted
 headers and body through its finite semantic context. It cannot retain a
 native response through the trait.
 

@@ -1,5 +1,144 @@
 use super::*;
 
+#[derive(Debug, Eq, PartialEq)]
+struct AcceptedStatusBody {
+    status: StatusCode,
+    body: Bytes,
+}
+
+struct AcceptedNotFound;
+
+impl ResponseBodySpec for AcceptedNotFound {
+    type Output = AcceptedStatusBody;
+    type Mode = Buffered;
+
+    fn accepts_status(status: StatusCode) -> bool {
+        status.is_success() || status == StatusCode::NOT_FOUND
+    }
+
+    fn from_body(body: Bytes, head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
+        Ok(AcceptedStatusBody {
+            status: head.status,
+            body,
+        })
+    }
+}
+
+struct AcceptedDecodeFailure;
+
+impl ResponseBodySpec for AcceptedDecodeFailure {
+    type Output = ();
+    type Mode = Buffered;
+
+    fn accepts_status(status: StatusCode) -> bool {
+        status == StatusCode::NOT_FOUND
+    }
+
+    fn from_body(
+        _body: Bytes,
+        _head: &ResponseHead<'_>,
+    ) -> Result<Self::Output, ResponseBodyError> {
+        Err(ResponseBodyError::new(ResponseBodyErrorKind::Decode))
+    }
+}
+
+static ACCEPTED_MEDIA_CONVERSIONS: AtomicUsize = AtomicUsize::new(0);
+
+struct AcceptedMediaFailure;
+
+impl ResponseBodySpec for AcceptedMediaFailure {
+    type Output = ();
+    type Mode = Buffered;
+
+    fn accepts_status(status: StatusCode) -> bool {
+        status == StatusCode::NOT_FOUND
+    }
+
+    fn validate(_head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
+        Err(ResponseBodyError::new(
+            ResponseBodyErrorKind::InvalidMediaType,
+        ))
+    }
+
+    fn from_body(
+        _body: Bytes,
+        _head: &ResponseHead<'_>,
+    ) -> Result<Self::Output, ResponseBodyError> {
+        ACCEPTED_MEDIA_CONVERSIONS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+struct SlowAcceptedStatus;
+
+impl ResponseBodySpec for SlowAcceptedStatus {
+    type Output = Bytes;
+    type Mode = Buffered;
+
+    fn accepts_status(status: StatusCode) -> bool {
+        std::thread::sleep(Duration::from_millis(40));
+        status == StatusCode::NOT_FOUND
+    }
+
+    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
+        Ok(body)
+    }
+}
+
+static ORDER_LIMITER_OBSERVED: AtomicBool = AtomicBool::new(false);
+static ORDER_HOOK_OBSERVED: AtomicBool = AtomicBool::new(false);
+static ORDER_ACCEPTANCE_CALLED: AtomicBool = AtomicBool::new(false);
+
+struct OrderedAcceptedStatus;
+
+impl ResponseBodySpec for OrderedAcceptedStatus {
+    type Output = Bytes;
+    type Mode = Buffered;
+
+    fn accepts_status(status: StatusCode) -> bool {
+        assert!(ORDER_LIMITER_OBSERVED.load(Ordering::SeqCst));
+        assert!(ORDER_HOOK_OBSERVED.load(Ordering::SeqCst));
+        ORDER_ACCEPTANCE_CALLED.store(true, Ordering::SeqCst);
+        status == StatusCode::NOT_FOUND
+    }
+
+    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
+        Ok(body)
+    }
+}
+
+struct AcceptanceOrderingHooks;
+
+impl RuntimeHooks for AcceptanceOrderingHooks {
+    fn on_response_head<'a>(
+        &'a self,
+        _context: ResponseHeadEvent<'a>,
+    ) -> BoxFuture<'a, Result<(), HookError>> {
+        assert!(ORDER_LIMITER_OBSERVED.load(Ordering::SeqCst));
+        ORDER_HOOK_OBSERVED.store(true, Ordering::SeqCst);
+        Box::pin(async { Ok(()) })
+    }
+}
+
+struct AcceptanceOrderingLimiter;
+
+impl RateLimiter for AcceptanceOrderingLimiter {
+    fn acquire<'a>(
+        &'a self,
+        _request: RateLimitRequest<'a>,
+    ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
+        Box::pin(async { Ok(RateLimitPermit::granted()) })
+    }
+
+    fn observe<'a>(
+        &'a self,
+        _response: RateLimitResponse<'a>,
+    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
+        ORDER_LIMITER_OBSERVED.store(true, Ordering::SeqCst);
+        Box::pin(async { Ok(()) })
+    }
+}
+
 #[tokio::test]
 async fn buffered_codec_direct_and_metadata_results_share_one_execution_path() {
     PROBE_DECODER_CALLS.store(0, Ordering::SeqCst);
@@ -50,6 +189,206 @@ async fn buffered_codec_direct_and_metadata_results_share_one_execution_path() {
         assert_eq!(capture.known_body_length(), Some(5));
     }
     assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn declared_status_acceptance_defaults_to_2xx_and_can_return_a_typed_404() {
+    let executor = DeterministicExecutor::new();
+    for body in ["default-missing", "typed-missing", "metadata-missing"] {
+        executor
+            .application()
+            .queue_response(ScriptedResponse::status(
+                StatusCode::NOT_FOUND,
+                Bytes::copy_from_slice(body.as_bytes()),
+            ))
+            .expect("404 response");
+    }
+    let hooks = Arc::new(ProbeHooks::new());
+    let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
+
+    let rejected = bytes_request(core.clone())
+        .await
+        .expect_err("the default response contract remains 2xx-only");
+    assert_eq!(rejected.category(), ErrorCategory::HttpStatus);
+    assert_eq!(rejected.http_status(), Some(StatusCode::NOT_FOUND));
+
+    let typed = response_request::<AcceptedNotFound>(core.clone(), Some(Duration::from_secs(30)))
+        .await
+        .expect("declared 404 output");
+    assert_eq!(
+        typed,
+        AcceptedStatusBody {
+            status: StatusCode::NOT_FOUND,
+            body: Bytes::from_static(b"typed-missing"),
+        }
+    );
+
+    let response = response_request::<AcceptedNotFound>(core, Some(Duration::from_secs(30)))
+        .response()
+        .await
+        .expect("declared 404 metadata");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(response.value().status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        response.value().body,
+        Bytes::from_static(b"metadata-missing")
+    );
+    assert_eq!(response.metadata().endpoint(), RESPONSE_ENDPOINT);
+
+    let completions = hooks
+        .records()
+        .into_iter()
+        .filter_map(|record| match record {
+            LifecycleRecord::Complete {
+                outcome, status, ..
+            } => Some((outcome, status)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        completions,
+        [
+            (CompletionOutcome::HttpStatus, Some(StatusCode::NOT_FOUND)),
+            (CompletionOutcome::Success, Some(StatusCode::NOT_FOUND)),
+            (CompletionOutcome::Success, Some(StatusCode::NOT_FOUND)),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn accepted_and_rejected_404_use_their_distinct_body_limits() {
+    let executor = DeterministicExecutor::new();
+    for _ in 0..2 {
+        executor
+            .application()
+            .queue_response(ScriptedResponse::status(
+                StatusCode::NOT_FOUND,
+                Bytes::from_static(b"12345"),
+            ))
+            .expect("bounded 404 response");
+    }
+    let core = development_core(
+        &executor,
+        Arc::new(ProbeHooks::new()),
+        RuntimeConfigBuilder::new()
+            .response_body_limit(NonZeroUsize::new(4).expect("positive accepted limit"))
+            .status_body_limit(NonZeroUsize::new(8).expect("positive status limit")),
+    );
+
+    let accepted =
+        response_request::<AcceptedNotFound>(core.clone(), Some(Duration::from_secs(30)))
+            .await
+            .expect_err("accepted body must use the declared response limit");
+    assert_eq!(accepted.category(), ErrorCategory::ResponseBody);
+    assert!(accepted.http_response().is_none());
+
+    let rejected = bytes_request(core)
+        .await
+        .expect_err("rejected body uses status capture");
+    assert_eq!(rejected.category(), ErrorCategory::HttpStatus);
+    assert_eq!(
+        rejected
+            .http_response()
+            .expect("terminal status response")
+            .body()
+            .bytes(),
+        Some(&Bytes::from_static(b"12345"))
+    );
+}
+
+#[tokio::test]
+async fn accepted_non_2xx_contract_and_decode_failures_keep_response_categories() {
+    ACCEPTED_MEDIA_CONVERSIONS.store(0, Ordering::SeqCst);
+    let media_body_polls = Arc::new(AtomicUsize::new(0));
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_response(ScriptedResponse::status(
+            StatusCode::NOT_FOUND,
+            Bytes::from_static(b"decode"),
+        ))
+        .expect("decode failure response");
+    executor
+        .application()
+        .queue_response(
+            ScriptedResponse::status(
+                StatusCode::NOT_FOUND,
+                Bytes::from_static(b"must-not-be-polled"),
+            )
+            .body_poll_counter(Arc::clone(&media_body_polls)),
+        )
+        .expect("media failure response");
+    let core = development_core(
+        &executor,
+        Arc::new(ProbeHooks::new()),
+        RuntimeConfigBuilder::new(),
+    );
+
+    let decode =
+        response_request::<AcceptedDecodeFailure>(core.clone(), Some(Duration::from_secs(30)))
+            .await
+            .expect_err("accepted response decode failure");
+    assert_eq!(decode.category(), ErrorCategory::ResponseDecoding);
+
+    let media = response_request::<AcceptedMediaFailure>(core, Some(Duration::from_secs(30)))
+        .await
+        .expect_err("accepted response media failure");
+    assert_eq!(media.category(), ErrorCategory::ResponseContract);
+    assert_eq!(media_body_polls.load(Ordering::SeqCst), 0);
+    assert_eq!(ACCEPTED_MEDIA_CONVERSIONS.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn limiter_and_response_hook_observation_precede_status_acceptance() {
+    ORDER_LIMITER_OBSERVED.store(false, Ordering::SeqCst);
+    ORDER_HOOK_OBSERVED.store(false, Ordering::SeqCst);
+    ORDER_ACCEPTANCE_CALLED.store(false, Ordering::SeqCst);
+
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_response(ScriptedResponse::status(
+            StatusCode::NOT_FOUND,
+            Bytes::from_static(b"accepted"),
+        ))
+        .expect("ordered acceptance response");
+    #[cfg(not(feature = "default-tls"))]
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let core = ClientCore::build_with_development(
+        "http://execution.example.test/v1/",
+        HttpConfigBuilder::new().http1_only(),
+        RuntimeConfigBuilder::new()
+            .hooks(Arc::new(AcceptanceOrderingHooks))
+            .rate_limiter(Arc::new(AcceptanceOrderingLimiter)),
+        &executor,
+    )
+    .expect("ordered acceptance core");
+
+    let output = response_request::<OrderedAcceptedStatus>(core, Some(Duration::from_secs(30)))
+        .await
+        .expect("ordered accepted response");
+    assert_eq!(output, Bytes::from_static(b"accepted"));
+    assert!(ORDER_ACCEPTANCE_CALLED.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn deadline_is_checked_immediately_after_status_acceptance_callback() {
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_response(ScriptedResponse::status(
+            StatusCode::NOT_FOUND,
+            Bytes::from_static(b"must-not-be-acquired"),
+        ))
+        .expect("slow acceptance response");
+    let hooks = Arc::new(ProbeHooks::new());
+    let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
+
+    let error = response_request::<SlowAcceptedStatus>(core, Some(Duration::from_millis(5)))
+        .await
+        .expect_err("acceptance callback consumed the operation deadline");
+    assert_eq!(error.category(), ErrorCategory::Timeout);
+    assert_eq!(completion(&hooks.records()).2, Some(StatusCode::NOT_FOUND));
 }
 
 #[tokio::test]

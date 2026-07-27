@@ -33,6 +33,10 @@ use crate::rate_limit::{
     RateLimitError, RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimiter,
 };
 use crate::request::{EndpointSpec, HeadBuilder, PreparedHead, Request, RequestMeta};
+use crate::response::{
+    Buffered, PageResponseSpec, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec,
+    ResponseHead,
+};
 use crate::runtime::RuntimeConfigBuilder;
 
 const ENDPOINT: &str = "pagination_runtime_api.items.list";
@@ -63,26 +67,46 @@ impl DecodeBody for PageCodec {
     }
 
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
-        let text =
-            std::str::from_utf8(&body).map_err(|_| CodecError::new(CodecErrorKind::Decode))?;
-        if text.is_empty() {
-            return Ok(TestPage {
-                items: Vec::new(),
-                next: None,
-            });
-        }
-        let (items, next) = text
-            .split_once('|')
-            .ok_or_else(|| CodecError::new(CodecErrorKind::Decode))?;
-        let items = if items.is_empty() {
-            Vec::new()
-        } else {
-            items.split(',').map(str::to_owned).collect()
-        };
-        let next = (next != "-").then(|| next.to_owned());
-        Ok(TestPage { items, next })
+        decode_test_page(body)
     }
 }
+
+fn decode_test_page(body: Bytes) -> Result<TestPage, CodecError> {
+    let text = std::str::from_utf8(&body).map_err(|_| CodecError::new(CodecErrorKind::Decode))?;
+    if text.is_empty() {
+        return Ok(TestPage {
+            items: Vec::new(),
+            next: None,
+        });
+    }
+    let (items, next) = text
+        .split_once('|')
+        .ok_or_else(|| CodecError::new(CodecErrorKind::Decode))?;
+    let items = if items.is_empty() {
+        Vec::new()
+    } else {
+        items.split(',').map(str::to_owned).collect()
+    };
+    let next = (next != "-").then(|| next.to_owned());
+    Ok(TestPage { items, next })
+}
+
+struct AcceptedPageSpec;
+
+impl ResponseBodySpec for AcceptedPageSpec {
+    type Output = TestPage;
+    type Mode = Buffered;
+
+    fn accepts_status(status: StatusCode) -> bool {
+        status == StatusCode::NOT_FOUND
+    }
+
+    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
+        decode_test_page(body).map_err(|_| ResponseBodyError::new(ResponseBodyErrorKind::Decode))
+    }
+}
+
+impl PageResponseSpec for AcceptedPageSpec {}
 
 #[derive(Clone)]
 struct PageEndpoint {
@@ -178,6 +202,47 @@ impl PaginatedEndpoint for PageEndpoint {
         endpoint.binding_calls.fetch_add(1, Ordering::SeqCst);
         endpoint.cursor.clone_from(&controller.state);
         Ok(())
+    }
+}
+
+#[derive(Clone)]
+struct AcceptedPageEndpoint(PageEndpoint);
+
+impl EndpointSpec for AcceptedPageEndpoint {
+    type Body = EmptyBody;
+    type Response = AcceptedPageSpec;
+
+    fn request_meta(&self) -> RequestMeta {
+        self.0.request_meta()
+    }
+
+    fn prepare_head(&self, builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
+        self.0.prepare_head(builder)
+    }
+
+    fn body_metadata(
+        &self,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, crate::body::BodyError> {
+        self.0.body_metadata(context)
+    }
+
+    fn into_body(self) {}
+}
+
+impl PaginatedEndpoint for AcceptedPageEndpoint {
+    type Item = String;
+    type Controller = CursorController;
+
+    fn initial_controller(&self) -> Result<Self::Controller, PaginationError> {
+        self.0.initial_controller()
+    }
+
+    fn bind_controller(
+        endpoint: &mut Self,
+        controller: &Self::Controller,
+    ) -> Result<(), PaginationError> {
+        PageEndpoint::bind_controller(&mut endpoint.0, controller)
     }
 }
 

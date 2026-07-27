@@ -20,10 +20,10 @@ formats.
 | `Timeout` | The selected operation deadline expired |
 | `Connect` | Native connection establishment failed |
 | `Transport` | Another native transport operation failed |
-| `HttpStatus` | A terminal non-success status was received |
-| `ResponseBody` | A successful response body could not be acquired or later streamed |
-| `ResponseDecoding` | A successful bounded response could not be decoded |
-| `ResponseContract` | Successful response metadata or specification output violated the declared contract |
+| `HttpStatus` | A rejected status was received |
+| `ResponseBody` | An accepted response body could not be acquired or later streamed |
+| `ResponseDecoding` | An accepted bounded response could not be decoded |
+| `ResponseContract` | Accepted response metadata or specification output violated the declared contract |
 | `Pagination` | Page limits, controller work, identity, or aggregate item limits failed |
 | `Internal` | Concord reduced an invariant failure without exposing internal state |
 
@@ -109,9 +109,9 @@ They must be bounded by the extension and contain no credential, body, cursor,
 key, header, URL, or backend diagnostic. `HookError` text is not retained by
 the resulting `ApiError`.
 
-## Terminal HTTP failures
+## Rejected HTTP statuses
 
-`HttpStatus` and final `AuthenticationRejected` errors retain an
+Rejected `HttpStatus` and final `AuthenticationRejected` errors retain an
 `HttpResponseFailure`. It owns:
 
 - endpoint and method;
@@ -154,8 +154,8 @@ For a received final head, ordering is:
 limiter observation
 → response-head hook
 → authentication challenge
-→ terminal status handling
-→ successful response validation and acquisition
+→ declared status acceptance
+→ accepted response validation and acquisition, or rejected-status capture
 ```
 
 A limiter observation error is `RateLimit`; an observation or hook timeout is
@@ -167,6 +167,11 @@ Authentication recovery may run one additional visible attempt. A second
 challenge becomes the final `AuthenticationRejected` response. Pagination
 wraps page failures in the aggregate operation without exposing accumulated
 items as partial success.
+
+`ResponseBodySpec::accepts_status` defaults to 2xx. An explicitly accepted
+non-2xx status returns through `Ok` and uses the declared buffered, streaming,
+or discard acquisition limit and completion outcome. The deadline is checked
+immediately after the synchronous acceptance callback.
 
 ## Construction and extension errors
 

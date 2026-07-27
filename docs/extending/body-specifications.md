@@ -84,19 +84,26 @@ this sequence.
 
 | Mode | Input to `from_body` | Completion meaning |
 |---|---|---|
-| `concord::response::Buffered` | complete bounded `Bytes` | successful conversion completes the request |
+| `concord::response::Buffered` | complete bounded `Bytes` | accepted conversion completes the request |
 | `concord::response::Streaming` | lazy bounded `ByteStream` | opening the stream completes endpoint execution |
-| `concord::response::Discard` | `()` | the successful body is not polled |
+| `concord::response::Discard` | `()` | the accepted body is not polled |
 
 `ResponseMode` is sealed. Applications can select a mode but cannot implement
 a fourth mode, replace core acquisition, or obtain the native response.
 
-Concord first handles non-success status and known-length preflight.
-`ResponseBodySpec::validate` then sees a borrowed `ResponseHead` before the
-first body poll. After core acquires the selected semantic body,
-`from_body` converts it to `Output`.
+After limiter and response-hook observation and authoritative authentication
+challenge handling, Concord calls `ResponseBodySpec::accepts_status`. Its
+default accepts 2xx. A specification can explicitly accept another operation
+outcome such as `404`; accepted non-2xx responses use the declared acquisition
+mode and limits. Rejected statuses remain on the bounded terminal status-error
+path.
 
-The head includes actual successful response headers and a
+For an accepted response, known-length preflight runs under the selected mode.
+`ResponseBodySpec::validate` then sees a borrowed `ResponseHead` before the
+first body poll. After core acquires the selected semantic body, `from_body`
+converts it to `Output`.
+
+The head includes actual accepted response headers and a
 credential-sanitized logical URL. Those values may still contain tokens issued
 by the service, cookies, account IDs, or personal data; the specification owns
 any logging and storage it performs.
@@ -126,9 +133,10 @@ Exercise metadata and preparation as a pair. Verify exact and incorrect length
 hints, content-type ownership, hook veto before preparation, one-shot versus
 factory behavior, cancellation, empty chunks, and exact body limits.
 
-For response specifications, test validation before polling, each selected
-mode, non-success status, known and unknown lengths, one-byte chunks, empty
-chunk runs, conversion failure, and completion outcome. Run the same
+For response specifications, test status acceptance and rejection, validation
+before polling, each selected mode, known and unknown lengths, one-byte chunks,
+empty chunk runs, conversion failure, and completion outcome. Include accepted
+non-2xx behavior and authentication-challenge precedence. Run the same
 specification through a generated endpoint and `RuntimeEndpoint`; both should
 cross the same public contract.
 

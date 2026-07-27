@@ -1,5 +1,23 @@
 use super::*;
 
+struct AcceptedNotFoundStream;
+
+impl ResponseBodySpec for AcceptedNotFoundStream {
+    type Output = ByteStream;
+    type Mode = Streaming;
+
+    fn accepts_status(status: StatusCode) -> bool {
+        status == StatusCode::NOT_FOUND
+    }
+
+    fn from_body(
+        body: ByteStream,
+        _head: &ResponseHead<'_>,
+    ) -> Result<Self::Output, ResponseBodyError> {
+        Ok(body)
+    }
+}
+
 fn stream_headers(content_type: &'static str) -> http::HeaderMap {
     let mut headers = http::HeaderMap::new();
     headers.insert(
@@ -7,6 +25,40 @@ fn stream_headers(content_type: &'static str) -> http::HeaderMap {
         http::HeaderValue::from_static(content_type),
     );
     headers
+}
+
+#[tokio::test]
+async fn accepted_non_2xx_stream_opens_with_its_actual_status() {
+    let executor = DeterministicExecutor::new();
+    let hooks = Arc::new(ProbeHooks::new());
+    let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
+    executor
+        .application()
+        .queue_response(ScriptedResponse::status(
+            StatusCode::NOT_FOUND,
+            Bytes::from_static(b"accepted-stream"),
+        ))
+        .expect("accepted stream response");
+
+    let response = response_request::<AcceptedNotFoundStream>(core, Some(Duration::from_secs(30)))
+        .response()
+        .await
+        .expect("accepted non-2xx stream");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        completion(&hooks.records()).1,
+        CompletionOutcome::StreamOpened
+    );
+
+    let mut stream = response.into_value();
+    assert_eq!(
+        next_stream_chunk(&mut stream)
+            .await
+            .expect("accepted stream chunk")
+            .expect("valid accepted stream chunk"),
+        Bytes::from_static(b"accepted-stream")
+    );
+    assert!(next_stream_chunk(&mut stream).await.is_none());
 }
 
 fn server_stream_headers(content_type: &str) -> Vec<(String, String)> {

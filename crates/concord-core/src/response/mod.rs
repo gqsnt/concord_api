@@ -1,4 +1,4 @@
-//! Successful response metadata and built-in response markers.
+//! Accepted response metadata and built-in response markers.
 //!
 //! Ordinary complete buffered codecs implement
 //! [`crate::codec::DecodeBody`]; its blanket implementation supplies
@@ -31,4 +31,6 @@ pub(crate) use handler::{ResponseInput, execute_response};
 #[cfg(feature = "dangerous-raw-response")]
 #[doc(hidden)]
 pub use spec::RawResponseMode;
-pub(crate) use spec::{completion_outcome, validate_accept};
+#[cfg(feature = "dangerous-raw-response")]
+pub(crate) use spec::RawResponseSelection;
+pub(crate) use spec::{DeclaredResponse, ResponseSelection, completion_outcome, validate_accept};

@@ -12,7 +12,7 @@ streaming, factory, multipart, discard, and decoded forms:
 
 - body work remains lazy until policy has approved the attempt;
 - every native byte path converges on core-owned size and progress checks;
-- successful response acquisition uses one of three sealed modes;
+- accepted response acquisition uses one of three sealed modes;
 - an extension cannot obtain a native or unbounded request or response.
 
 The user workflows are in
@@ -34,13 +34,14 @@ Request-side contracts are exposed through:
 
 Response-side contracts are exposed through:
 
-- `ResponseBodySpec`, with head `validate` and post-acquisition `from_body`;
+- `ResponseBodySpec`, with status `accepts_status`, head `validate`, and
+  post-acquisition `from_body`;
 - sealed `Buffered`, `Streaming`, and `Discard` response modes;
-- `ByteStream`, the lazy bounded successful-response stream;
+- `ByteStream`, the lazy bounded accepted-response stream;
 - `DecodeBody`, the ordinary complete-buffer codec contract;
 - `PageResponseSpec`, the explicit buffered capability needed by pagination.
 
-`ResponseHead` gives a selected response specification successful structural
+`ResponseHead` gives a selected response specification accepted structural
 metadata and actual headers, but never a native response or authenticated
 request URL. Its contents can still be application-sensitive and are trusted
 extension input.
@@ -60,19 +61,22 @@ share empty-chunk suppression, aggregate byte accounting, exact-length checks,
 error reduction, and cancellation behavior.
 
 On response, core first observes limiter policy and hooks, handles an
-authentication challenge when applicable, and rejects a terminal non-success
-status. Only a successful response reaches the declared mode:
+authentication challenge when applicable, and then calls the declared status
+acceptance callback. The callback defaults to 2xx, runs synchronously, and is
+followed immediately by a deadline check. A rejected status uses terminal
+status capture. An accepted status, including an explicitly accepted non-2xx,
+reaches the declared mode:
 
 - `Buffered` checks known length, collects finite bytes, then calls
   `from_body`;
 - `Streaming` checks known length, creates `ByteStream`, then calls
   `from_body` without draining it;
-- `Discard` drops the successful native body without polling it, then calls
+- `Discard` drops the accepted native body without polling it, then calls
   `from_body` with `()`.
 
-`validate` runs before the first successful body poll. Both response callbacks
-are synchronous and are checked against the operation deadline immediately
-after return.
+`validate` runs before the first accepted body poll. Acceptance, validation,
+and conversion callbacks are synchronous and are checked against the operation
+deadline immediately after return.
 
 ## Architectural invariants
 
@@ -85,8 +89,9 @@ after return.
   dimensions.
 - The first chunk that would exceed a byte or empty-chunk ceiling is rejected
   without exposing or retaining that excess.
-- Successful status handling is core-owned and precedes response
-  specification conversion.
+- Authentication challenge handling is core-owned and precedes declared status
+  acceptance. Accepted status handling precedes response specification
+  validation and conversion.
 - Response modes are sealed. Extensions can choose but cannot implement a
   fourth acquisition mode.
 - Decompression, when enabled, remains inside response acquisition, so the
@@ -119,14 +124,14 @@ failure must occur without sending the first excess data.
 ## Errors and redaction
 
 Request specification, producer, exact-length, and limit failures reduce to
-the request-body category with a focused `BodyErrorKind`. Successful-response
+the request-body category with a focused `BodyErrorKind`. Accepted-response
 collection, stream, contract, and conversion failures reduce to response-body,
 response-contract, or response-decoding categories as appropriate.
 
 Native body errors and extension error text do not cross the public boundary.
 The public error retains finite structural context and safe focused kinds.
 Status-body access is an explicit bounded terminal-error capability; it is not
-the successful-response acquisition path. See
+the accepted-response acquisition path. See
 [Errors](../../reference/errors.md) for the canonical reduction table.
 
 `Debug` implementations for managed bodies and streams omit body values,
@@ -137,8 +142,8 @@ confidentiality of data they log or retain.
 
 Use `EncodeBody` and `DecodeBody` for ordinary complete codecs. Implement
 `RequestBodySpec` only when structural metadata and lazy managed construction
-are required. Implement `ResponseBodySpec` when successful head validation or
-a sealed non-default mode is required.
+are required. Implement `ResponseBodySpec` when status acceptance, accepted
+head validation, or a sealed non-default mode is required.
 
 Callbacks receive finite semantic contexts, not request credentials, limiter
 state, native HTTP objects, or transport error chains. Synchronous callbacks
@@ -161,9 +166,10 @@ Maintainers should test at least:
 - aggregate or exact-length excess at the first violating chunk;
 - cancellation while preparing, sending, collecting, or awaiting completion;
 - known-length preflight failure before polling the response;
-- media-type validation or conversion failure after successful status;
+- media-type validation or conversion failure after an accepted status;
+- accepted non-2xx acquisition using response rather than status-body limits;
 - streaming error after the stream has already been returned;
-- discard behavior that never polls the successful body.
+- discard behavior that never polls the accepted body.
 
 A streaming error delivered after opening is a `ByteStream` item. It does not
 retroactively alter the already-fixed `StreamOpened` completion outcome or
