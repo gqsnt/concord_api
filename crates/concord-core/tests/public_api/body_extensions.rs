@@ -4,7 +4,7 @@ use std::task::{Context, Poll};
 
 use concord_core::contracts::{
     BodyError, BodyErrorKind, BodyFactory, BodyKind, Bytes, HeaderValue, MAX_EMPTY_REQUEST_CHUNKS,
-    RequestBody, StreamBody,
+    PageRequestBodySpec, RequestBody, StreamBody, Text,
 };
 use futures_core::Stream;
 
@@ -65,6 +65,15 @@ fn downstream_body_contracts_need_only_the_contract_surface() {
             .to_string()
             .contains("safe downstream body configuration")
     );
+
+    fn assert_page_body<B>()
+    where
+        B: PageRequestBodySpec,
+        B::Input: Clone,
+    {
+    }
+    assert_page_body::<Bytes>();
+    assert_page_body::<Text>();
 }
 
 #[tokio::test]

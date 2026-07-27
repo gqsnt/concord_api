@@ -30,6 +30,8 @@ The record surface consists of:
 The pagination surface consists of:
 
 - `PaginationController<Page>`, request-local continuation state;
+- `PageRequestBodySpec`, trusted opt-in for page-stable repeatable request
+  bodies;
 - `PageResponseSpec`, explicit opt-in for buffered iterable responses;
 - `PageLimit::Take` and `PageLimit::HardCap`, two different termination
   policies;
@@ -66,12 +68,14 @@ parent operation identity and one initial controller. For each page,
 sequentially:
 
 1. validate current controller state;
-2. bind it into a fresh typed endpoint snapshot;
-3. prepare a canonical credential-sanitized request identity;
+2. clone the original typed endpoint, including its trusted page-stable body
+   input, and bind the controller into that fresh snapshot;
+3. prepare the bounded public head and a canonical credential-sanitized
+   request identity;
 4. reject a repeated identity or an identity that exceeds retained-byte
    policy;
 5. execute the page through the ordinary managed executor with a child
-   operation identity;
+   operation identity, preparing its body once after hook approval;
 6. complete the page operation;
 7. collect its decoded items under the configured item ceiling;
 8. apply short-page and requested-limit rules;
@@ -95,7 +99,11 @@ per-page deadline and are trusted synchronous application work.
   drops its underlying byte stream.
 - Pagination pages execute sequentially and use the ordinary executor.
 - Cycle identity is derived from endpoint, method, logical URL, and public
-  headers, never private credential placement.
+  headers, never request-body bytes or private credential placement.
+- Pagination bindings cannot target the request-body field. The original body
+  input remains stable across pages.
+- A policy retry reuses the prepared page body; it does not re-run page input
+  encoding or specification preparation.
 - Every complete retained identity is charged to the configured identity-byte
   budget; the page limit also bounds identity count.
 - Pagination returns the complete collected vector on success or an error. It
@@ -157,10 +165,14 @@ request-local continuation value. It cannot send a page, override policy, or
 inspect private request state. Calls from distinct pagination operations may
 overlap even though one controller value only moves sequentially.
 
-Downstream buffered response specifications opt into pagination explicitly
-with `PageResponseSpec`; implementing `ResponseBodySpec` alone is not enough.
-Bytes, discard outputs, byte streams, and record streams do not accidentally
-become paginatable.
+Downstream request specifications opt into page stability explicitly with
+`PageRequestBodySpec`; `Input: Clone` or `RequestBodySpec` alone is not enough.
+The marker promises independently preparable clones with identical body
+semantics. One-shot streams, `RequestBody`, and multipart bodies remain
+excluded. Downstream buffered response specifications independently opt into
+pagination with `PageResponseSpec`; implementing `ResponseBodySpec` alone is
+not enough. Bytes, discard outputs, byte streams, and record streams do not
+accidentally become paginatable.
 
 See [Record decoders](../../extending/record-decoders.md) and
 [Pagination controllers](../../extending/pagination.md) for implementation
@@ -184,8 +196,13 @@ Pagination tests must cover:
 - zero/take/hard-cap termination differences;
 - short-page termination and controller natural termination;
 - repeated canonical identity, including credential changes that must not hide
-  a public cycle;
+  a public cycle and stable body bytes that must not enter identity;
 - first-excess page, item, and identity ceilings;
+- stable body bytes and per-page body limits;
+- one body preparation or encoding per page and prepared-body reuse for a
+  policy retry;
+- custom repeatable-body opt-in plus non-opted, non-clone, stream,
+  `RequestBody`, and multipart compile failures;
 - page failure without partial output;
 - authentication recovery and rate-limit policy on later pages;
 - direct page completion before aggregate completion;
@@ -200,8 +217,11 @@ assertions.
 
 Changing pagination binding or identity construction can silently weaken cycle
 detection. Review every public shaping component that affects the next URL or
-header, but never add credentials to identity. New per-page features must use
-the managed executor and preserve child/parent event correlation.
+header, but never add body bytes or credentials to identity. A new body
+implementation must not receive `PageRequestBodySpec` merely because its input
+is `Clone`; review the stable, independent preparation promise. New per-page
+features must use the managed executor and preserve child/parent event
+correlation.
 
 Collection semantics are intentionally all-or-error. Returning partial items
 would require a new public contract rather than an implementation-only change.

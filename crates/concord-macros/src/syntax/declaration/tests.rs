@@ -691,6 +691,29 @@ fn pagination_struct_forms_parse_with_restricted_initializers() {
 }
 
 #[test]
+fn pagination_accepts_an_explicit_request_body_for_rust_trait_validation() {
+    let api = parse_ok(quote! {
+        client Api {
+            base "https://example.test";
+        }
+        POST search(
+            offset: u64,
+            #[body] filter: Json<Filter>,
+        ) -> PageSpec<Vec<u32>> {
+            paginate OffsetController {
+                offset: bind ep.offset,
+                page_size: 25,
+            }
+        }
+    });
+    let SourceChild::Endpoint(endpoint) = &api.children[0] else {
+        panic!("body pagination endpoint");
+    };
+    assert!(endpoint.body.is_some());
+    assert!(endpoint.pagination.is_some());
+}
+
+#[test]
 fn pagination_rejects_old_forms_and_unsafe_initializers() {
     let cases = [
         (

@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use concord_core::codec::{
     CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext,
 };
-use concord_core::contracts::Bytes;
+use concord_core::contracts::{Bytes, PageRequestBodySpec};
 
 const INITIAL_JSON_CAPACITY: usize = 8 * 1024;
 
@@ -42,6 +42,8 @@ where
         }
     }
 }
+
+impl<T> PageRequestBodySpec for Json<T> where T: Clone + serde::Serialize + Send + 'static {}
 
 impl<T> DecodeBody for Json<T>
 where
@@ -322,5 +324,17 @@ mod tests {
         assert_decode::<Json<SendNotSync>>();
         assert_send_sync::<Json<SendNotSync>>();
         assert_eq!(std::mem::size_of::<Json<SendNotSync>>(), 0);
+    }
+
+    #[test]
+    fn cloneable_json_input_is_page_repeatable() {
+        fn assert_page_body<C>()
+        where
+            C: PageRequestBodySpec,
+            C::Input: Clone,
+        {
+        }
+
+        assert_page_body::<Json<Vec<u32>>>();
     }
 }

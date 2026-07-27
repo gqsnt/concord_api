@@ -105,7 +105,10 @@ api! {
         POST stream_upload(#[body] body: Stream<OctetStream>) -> Bytes;
         GET stream_download() -> Stream<OctetStream>;
         POST multipart_upload(#[body] body: Multipart) -> NoContent;
-        GET pages(cursor: Option<String>) -> crate::PageCodec {
+        POST pages(
+            cursor: Option<String>,
+            #[body] filter: Text,
+        ) -> crate::PageCodec {
             query { "cursor" = ep.cursor; }
             paginate crate::RenamedController {
                 cursor: bind ep.cursor,
@@ -188,7 +191,7 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
         .stream_download();
     let _: runtime::pagination::PaginatedRequest<_> = client
         .resources("renamed-scope".to_owned())
-        .pages()
+        .pages("renamed-page-body".to_owned())
         .paginate(runtime::prelude::PageLimit::Take(1));
     let multipart = runtime::body::MultipartBody::new()
         .part(

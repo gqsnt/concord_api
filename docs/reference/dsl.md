@@ -254,7 +254,9 @@ compatibility failures are ordinary trait-bound diagnostics at the declared
 type.
 
 `NoContent` is a response specification, not a request body specification.
-Pagination requires a bodyless endpoint.
+A paginated endpoint may be bodyless or use a body specification that
+implements the trusted `PageRequestBodySpec` contract. The macro remains
+type-neutral and lets Rust enforce that obligation.
 
 ## Endpoint identity
 
@@ -466,7 +468,8 @@ controller names.
 
 Live bindings accept only direct `ep.FIELD` or `scope.FIELD` destinations.
 Fields and destinations are unique. They initialize from request state and are
-copied into each fresh sequential page request.
+copied into each fresh sequential page request. A `#[body]` parameter is not
+an endpoint value and cannot be a pagination binding destination.
 
 Stable initializers accept:
 
@@ -479,9 +482,16 @@ blocks, secrets, credentials, and indirect bindings are rejected. Rust checks
 field visibility, field types, controller trait bounds, and `Send`/`Sync`
 requirements.
 
-Pagination is available only to bodyless, buffered, page-capable response
-specifications. It produces the bounded, sequential, cycle-detecting,
-all-or-error `.paginate(limit)` terminal.
+Pagination is available only to buffered, page-capable response
+specifications. Its request is either bodyless or uses a
+`PageRequestBodySpec`. That marker requires a cloneable input and promises
+that every clone independently prepares the same page-stable body; ordinary
+`Clone` or `RequestBodySpec` implementation is not sufficient. The macro does
+not recognize concrete body type names.
+
+The body remains unchanged while live endpoint/scope bindings advance. Body
+bytes are excluded from cycle identity. Pagination produces the bounded,
+sequential, cycle-detecting, all-or-error `.paginate(limit)` terminal.
 
 ## Rate limits
 

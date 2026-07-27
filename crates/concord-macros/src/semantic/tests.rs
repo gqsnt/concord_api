@@ -1209,6 +1209,30 @@ fn pagination_resolution_validates_destination_ownership_not_controller_semantic
             .to_string()
             .contains("unknown endpoint value `missing`")
     );
+
+    let body_binding = resolve(
+        parse::parse(quote! {
+            client Api {
+                base "https://example.test";
+            }
+            POST read(
+                offset: u64,
+                #[body] filter: Text,
+            ) -> PageSpec<Vec<u32>> {
+                paginate crate::Controller {
+                    state: bind ep.filter,
+                }
+            }
+        })
+        .expect("source AST"),
+    )
+    .err()
+    .expect("request body must not be a pagination binding destination");
+    assert!(
+        body_binding
+            .to_string()
+            .contains("unknown endpoint value `filter`")
+    );
 }
 
 #[test]

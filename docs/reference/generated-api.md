@@ -208,12 +208,20 @@ Capability absence is part of the API:
 |---|---|
 | no `paginate` declaration | `.paginate(...)` |
 | streaming, record, or otherwise non-page response | generated pagination |
+| request body without `PageRequestBodySpec` | generated pagination |
 | not used as an endpoint-backed credential source | `.store_as_NAME()` |
 | declared response mode not `Buffered` or `Discard` | callable `.response_bytes()` terminal |
 
 Named request wrappers retain controls only for their own non-required
 endpoint values. They do not gain inherited scope controls. Every control and
 terminal consumes the wrapper, so sibling request snapshots remain isolated.
+
+A paginated request body is an ordinary opaque specification selected by the
+declaration, but Rust additionally requires
+`concord::body::PageRequestBodySpec`. Its input is cloned from the original
+typed endpoint for each page and must independently prepare the same stable
+body. The request body is not a pagination-controlled field and its bytes are
+not part of cycle identity.
 
 ## Runtime endpoints
 

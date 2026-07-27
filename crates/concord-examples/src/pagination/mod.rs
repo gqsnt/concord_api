@@ -11,6 +11,7 @@ pub mod cursor;
 pub mod custom;
 pub mod offset;
 pub mod page_number;
+pub mod search;
 
 // ANCHOR: pagination_contract
 api! {
@@ -37,6 +38,21 @@ api! {
         }
     }
     // ANCHOR_END: page_endpoint
+
+    // ANCHOR: post_search_endpoint
+    POST search(
+        offset: u64,
+        limit: std::num::NonZeroU32,
+        #[body] filter: Json<crate::pagination::search::SearchFilter>,
+    ) -> Json<Vec<u32>> {
+        path ["search"];
+        query { "offset" = ep.offset; "limit" = ep.limit; }
+        paginate concord::pagination::OffsetPagination {
+            offset: bind ep.offset,
+            page_size: bind ep.limit,
+        }
+    }
+    // ANCHOR_END: post_search_endpoint
 
     // ANCHOR: cursor_endpoints
     GET cursor(

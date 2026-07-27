@@ -204,6 +204,51 @@ async fn actual_pagination_example_binds_each_next_offset_sequentially() {
     assert!(requests[1].target().contains("limit=2"));
 }
 
+#[cfg(feature = "json")]
+#[tokio::test]
+async fn post_pagination_repeats_one_stable_json_body_for_every_page() {
+    use std::num::NonZeroU32;
+
+    use concord::PageLimit;
+    use concord_examples::pagination::PaginationApi;
+    use concord_examples::pagination::search::SearchFilter;
+
+    let server = ScriptedServer::start([
+        ResponseScript::ok(br#"[1,2]"#.to_vec()).with_header("content-type", "application/json"),
+        ResponseScript::ok(br#"[3]"#.to_vec()).with_header("content-type", "application/json"),
+    ])
+    .expect("search pagination server");
+    let proxy = proxy(&server);
+    let client = PaginationApi::builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .build()
+        .expect("pagination client");
+    let filter = SearchFilter {
+        query: "rust".to_owned(),
+        include_archived: false,
+    };
+
+    let values = client
+        .search(0, NonZeroU32::new(2).expect("positive page size"), filter)
+        .paginate(PageLimit::Take(2))
+        .await
+        .expect("POST search pagination");
+    assert_eq!(values, [1, 2, 3]);
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2);
+    let expected_body = br#"{"query":"rust","include_archived":false}"#;
+    for request in &requests {
+        assert_eq!(request.method(), "POST");
+        assert_eq!(request.header("content-type"), Some("application/json"));
+        assert_eq!(request.body(), expected_body);
+        assert!(request.target().contains("/search"));
+        assert!(request.target().contains("limit=2"));
+    }
+    assert!(requests[0].target().contains("offset=0"));
+    assert!(requests[1].target().contains("offset=2"));
+}
+
 #[cfg(feature = "rate-limit")]
 #[tokio::test]
 async fn actual_rate_limit_example_honors_an_explicit_downstream_limiter() {

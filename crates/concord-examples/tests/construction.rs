@@ -49,6 +49,7 @@ fn imports_and_constructs_every_enabled_canonical_declaration() {
         concord_examples::pagination::page_number::construct(&pagination);
         concord_examples::pagination::cursor::construct(&pagination);
         concord_examples::pagination::custom::construct(&pagination);
+        concord_examples::pagination::search::construct(&pagination);
     }
 
     #[cfg(all(feature = "json", feature = "multipart"))]

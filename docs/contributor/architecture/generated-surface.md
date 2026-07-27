@@ -112,7 +112,7 @@ compiled emitted Rust and the runtime must agree on its meaning.
 
 ## Version and structural handshake
 
-Every expansion emits a const assertion for generated-contract version 29.
+Every expansion emits a const assertion for generated-contract version 30.
 It also emits equality assertions for structural values that the independent
 macro and core must enforce identically, including authentication placement,
 request-head, and generated rate-plan ceilings.

@@ -65,8 +65,8 @@ pub mod auth {
 pub mod body {
     pub use concord_core::contracts::{
         BodyError, BodyErrorKind, BodyFactory, BodyKind, LengthHint, MAX_EMPTY_REQUEST_CHUNKS,
-        RequestBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestContentType,
-        Stream, StreamBody,
+        PageRequestBodySpec, RequestBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec,
+        RequestContentType, Stream, StreamBody,
     };
     #[cfg(feature = "multipart")]
     pub use concord_core::contracts::{
@@ -232,8 +232,8 @@ pub mod __private {
         EmptyBody, EndpointCapabilities, EndpointDescription, EndpointId, EndpointSpec,
         GENERATED_CONTRACT_VERSION, GeneratedCredential, HeadBuilder, HeaderName,
         MAX_REQUEST_HEAD_COMPONENTS, MAX_REQUEST_HEADER_BYTES, MAX_REQUEST_HEADER_COUNT,
-        MAX_REQUEST_URL_BYTES, Method, PageResponseSpec, PaginatedEndpoint, PreparedHead,
-        RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitRule, RateLimitWindow,
+        MAX_REQUEST_URL_BYTES, Method, PageRequestBodySpec, PageResponseSpec, PaginatedEndpoint,
+        PreparedHead, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitRule, RateLimitWindow,
         RequestBodyCategory, RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestMeta,
         RequestOptions, ResponseAcquisition, ResponseBodySpec, SafeRequestPlan, TimeoutOverride,
         TimeoutSelection, Url, assert_generated_contract, basic_credential_input_error,

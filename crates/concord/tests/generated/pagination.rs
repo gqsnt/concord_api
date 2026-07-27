@@ -5,6 +5,11 @@ use std::sync::{Arc, Mutex};
 
 use concord::Bytes;
 use concord::api;
+#[cfg(feature = "json")]
+use concord::body::{
+    BodyError, BodyFactory, BodyKind, LengthHint, PageRequestBodySpec, RequestBody,
+    RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestContentType, StreamBody,
+};
 use concord::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext};
 use concord::error::HookError;
 use concord::hooks::{
@@ -12,6 +17,8 @@ use concord::hooks::{
     RuntimeHooks,
 };
 use concord::http::SafeProxy;
+#[cfg(feature = "json")]
+use concord::http::StatusCode;
 use concord::pagination::{PaginationController, PaginationError, PaginationErrorKind};
 use concord::rate_limit::{
     RateLimitError, RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimiter,
@@ -20,6 +27,8 @@ use concord::response::{
     Buffered, PageResponseSpec, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec,
     ResponseHead,
 };
+#[cfg(feature = "json")]
+use concord::retry::{RetryDecision, RetryFailure, RetryPolicy};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 
 use crate::support::NextCursor;
@@ -30,6 +39,182 @@ fn nz32(value: u32) -> NonZeroU32 {
 
 fn nz64(value: u64) -> NonZeroU64 {
     NonZeroU64::new(value).expect("positive u64")
+}
+
+#[cfg(feature = "json")]
+#[derive(Clone)]
+pub struct CountedSearchInput {
+    value: String,
+    encodes: Arc<AtomicUsize>,
+}
+
+#[cfg(feature = "json")]
+impl serde::Serialize for CountedSearchInput {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.encodes.fetch_add(1, Ordering::SeqCst);
+        serializer.serialize_str(&self.value)
+    }
+}
+
+#[cfg(feature = "json")]
+pub struct AcceptedSearchPageSpec;
+
+#[cfg(feature = "json")]
+impl ResponseBodySpec for AcceptedSearchPageSpec {
+    type Output = Vec<u32>;
+    type Mode = Buffered;
+
+    fn accepts_status(status: StatusCode) -> bool {
+        status.is_success() || status == StatusCode::NOT_FOUND
+    }
+
+    fn accept() -> Option<&'static str> {
+        Some("application/json")
+    }
+
+    fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
+        if head
+            .headers
+            .get("content-type")
+            .is_some_and(|value| value == "application/json")
+        {
+            Ok(())
+        } else {
+            Err(ResponseBodyError::new(
+                ResponseBodyErrorKind::InvalidMediaType,
+            ))
+        }
+    }
+
+    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
+        serde_json::from_slice(&body)
+            .map_err(|_| ResponseBodyError::new(ResponseBodyErrorKind::Decode))
+    }
+}
+
+#[cfg(feature = "json")]
+impl PageResponseSpec for AcceptedSearchPageSpec {}
+
+#[cfg(feature = "json")]
+#[derive(Clone)]
+pub struct RepeatableFactoryInput {
+    bytes: Bytes,
+    metadata_calls: Arc<AtomicUsize>,
+    prepare_calls: Arc<AtomicUsize>,
+    create_calls: Arc<AtomicUsize>,
+}
+
+#[cfg(feature = "json")]
+pub struct RepeatableFactorySpec;
+
+#[cfg(feature = "json")]
+impl RequestBodySpec for RepeatableFactorySpec {
+    type Input = RepeatableFactoryInput;
+
+    fn metadata(
+        input: &Self::Input,
+        _context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        input.metadata_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(RequestBodyMetadata {
+            length: LengthHint::Unknown,
+            content_type: RequestContentType::None,
+            kind: BodyKind::Stream,
+        })
+    }
+
+    fn prepare(
+        input: Self::Input,
+        _context: RequestBodyContext<'_>,
+    ) -> Result<RequestBody, BodyError> {
+        input.prepare_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(RequestBody::factory(RepeatableFactory {
+            bytes: input.bytes,
+            create_calls: input.create_calls,
+        }))
+    }
+}
+
+#[cfg(feature = "json")]
+impl PageRequestBodySpec for RepeatableFactorySpec {}
+
+#[cfg(feature = "json")]
+struct RepeatableFactory {
+    bytes: Bytes,
+    create_calls: Arc<AtomicUsize>,
+}
+
+#[cfg(feature = "json")]
+impl BodyFactory for RepeatableFactory {
+    fn create(&self) -> Result<StreamBody, BodyError> {
+        self.create_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(StreamBody::from_bytes(self.bytes.clone()))
+    }
+}
+
+#[cfg(feature = "json")]
+pub struct StableCycleController {
+    pub cursor: String,
+}
+
+#[cfg(feature = "json")]
+impl PaginationController<Vec<u32>> for StableCycleController {
+    fn next(self, _page: &Vec<u32>) -> Result<Option<Self>, PaginationError> {
+        Ok(Some(self))
+    }
+}
+
+#[cfg(feature = "json")]
+api! {
+    client BodyPaginationApi {
+        base "http://pagination-body.example.test/v1/";
+    }
+
+    POST json_pages(
+        offset: u64,
+        limit: std::num::NonZeroU32,
+        #[body] filter: concord::Json<crate::generated::pagination::CountedSearchInput>,
+    ) -> crate::generated::pagination::AcceptedSearchPageSpec {
+        path ["json-pages"];
+        query {
+            "offset" = ep.offset;
+            "limit" = ep.limit;
+        }
+        paginate crate::support::OffsetController {
+            offset: bind ep.offset,
+            page_size: bind ep.limit,
+        }
+    }
+
+    POST factory_pages(
+        offset: u64,
+        limit: std::num::NonZeroU32,
+        #[body] body: crate::generated::pagination::RepeatableFactorySpec,
+    ) -> crate::support::Json<Vec<u32>> {
+        path ["factory-pages"];
+        query {
+            "offset" = ep.offset;
+            "limit" = ep.limit;
+        }
+        paginate crate::support::OffsetController {
+            offset: bind ep.offset,
+            page_size: bind ep.limit,
+        }
+    }
+
+    POST stable_cycle(
+        cursor: String,
+        #[body] body: Text,
+    ) -> crate::support::Json<Vec<u32>> {
+        path ["stable-cycle"];
+        query { "cursor" = ep.cursor; }
+        paginate crate::generated::pagination::StableCycleController {
+            cursor: bind ep.cursor,
+        }
+    }
 }
 
 api! {
@@ -531,6 +716,65 @@ struct PaginationLimiterProbe {
     observations: Mutex<Vec<GeneratedLimiterContext>>,
 }
 
+#[cfg(feature = "json")]
+#[derive(Default)]
+struct BodyPaginationProbe {
+    before: AtomicUsize,
+    responses: AtomicUsize,
+    completions: AtomicUsize,
+    aggregates: AtomicUsize,
+    acquisitions: AtomicUsize,
+    observations: AtomicUsize,
+}
+
+#[cfg(feature = "json")]
+impl RateLimiter for BodyPaginationProbe {
+    fn acquire<'a>(
+        &'a self,
+        _request: RateLimitRequest<'a>,
+    ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
+        self.acquisitions.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { Ok(RateLimitPermit::granted()) })
+    }
+
+    fn observe<'a>(
+        &'a self,
+        _response: RateLimitResponse<'a>,
+    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
+        self.observations.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { Ok(()) })
+    }
+}
+
+#[cfg(feature = "json")]
+impl RuntimeHooks for BodyPaginationProbe {
+    fn before_send<'a>(&'a self, _context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
+        self.before.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { Ok(()) })
+    }
+
+    fn on_response_head<'a>(
+        &'a self,
+        _context: ResponseHeadEvent<'a>,
+    ) -> BoxFuture<'a, Result<(), HookError>> {
+        self.responses.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { Ok(()) })
+    }
+
+    fn on_complete<'a>(&'a self, _context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
+        self.completions.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async {})
+    }
+
+    fn on_pagination_complete<'a>(
+        &'a self,
+        _context: PaginationCompletionEvent<'a>,
+    ) -> BoxFuture<'a, ()> {
+        self.aggregates.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async {})
+    }
+}
+
 impl RateLimiter for PaginationLimiterProbe {
     fn acquire<'a>(
         &'a self,
@@ -623,6 +867,164 @@ impl RuntimeHooks for PaginationHooks {
                 .push(context.safe_url.to_owned());
         })
     }
+}
+
+#[cfg(feature = "json")]
+fn retry_rejected_statuses() -> RetryPolicy {
+    RetryPolicy::builder()
+        .without_budget()
+        .max_retries_per_operation(1)
+        .classify_fn(|attempt| match attempt.failure() {
+            RetryFailure::RejectedStatus { .. } => RetryDecision::Retry,
+            _ => RetryDecision::Stop,
+        })
+        .build()
+        .expect("bounded page retry policy")
+}
+
+#[cfg(feature = "json")]
+#[tokio::test]
+async fn repeatable_json_body_is_prepared_once_per_page_and_reused_for_policy_retry() {
+    let server = ScriptedServer::start([
+        ResponseScript::status(503, b"retry".to_vec()),
+        ResponseScript::ok(br#"[1,2]"#.to_vec()).with_header("content-type", "application/json"),
+        ResponseScript::status(404, br#"[3]"#.to_vec())
+            .with_header("content-type", "application/json"),
+    ])
+    .expect("repeatable JSON pagination server");
+    let proxy = SafeProxy::parse(server.url("")).expect("repeatable JSON proxy");
+    let probe = Arc::new(BodyPaginationProbe::default());
+    let hooks: Arc<dyn RuntimeHooks> = probe.clone();
+    let limiter: Arc<dyn RateLimiter> = probe.clone();
+    let payload = "x".repeat(2_048);
+    let encoded = format!("\"{payload}\"");
+    let body_limit = NonZeroUsize::new(encoded.len()).expect("positive JSON body limit");
+    let identity_limit =
+        NonZeroUsize::new(1_024).expect("positive identity limit below stable body bytes");
+    let client = BodyPaginationApi::builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .retry(retry_rejected_statuses())
+        .configure_runtime(move |runtime| {
+            runtime
+                .hooks(hooks)
+                .rate_limiter(limiter)
+                .request_body_limit(body_limit)
+                .pagination_identity_limit(identity_limit)
+        })
+        .build()
+        .expect("repeatable JSON pagination client");
+    let encodes = Arc::new(AtomicUsize::new(0));
+
+    let items = client
+        .json_pages(
+            0,
+            nz32(2),
+            CountedSearchInput {
+                value: payload,
+                encodes: Arc::clone(&encodes),
+            },
+        )
+        .paginate(3_u32)
+        .await
+        .expect("body pagination including accepted non-2xx page");
+
+    assert_eq!(items, [1, 2, 3]);
+    assert_eq!(encodes.load(Ordering::SeqCst), 2);
+    assert_eq!(probe.before.load(Ordering::SeqCst), 3);
+    assert_eq!(probe.responses.load(Ordering::SeqCst), 3);
+    assert_eq!(probe.acquisitions.load(Ordering::SeqCst), 3);
+    assert_eq!(probe.observations.load(Ordering::SeqCst), 3);
+    assert_eq!(probe.completions.load(Ordering::SeqCst), 2);
+    assert_eq!(probe.aggregates.load(Ordering::SeqCst), 1);
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 3);
+    assert!(requests[0].target().contains("offset=0&limit=2"));
+    assert!(requests[1].target().contains("offset=0&limit=2"));
+    assert!(requests[2].target().contains("offset=2&limit=2"));
+    assert!(
+        requests
+            .iter()
+            .all(|request| request.body() == encoded.as_bytes())
+    );
+    assert!(
+        requests
+            .iter()
+            .all(|request| request.header("content-type") == Some("application/json"))
+    );
+}
+
+#[cfg(feature = "json")]
+#[tokio::test]
+async fn custom_page_body_factory_opts_in_and_reconstructs_once_per_visible_attempt() {
+    let server = ScriptedServer::start([
+        ResponseScript::status(503, b"retry".to_vec()),
+        ResponseScript::ok(br#"[9]"#.to_vec()).with_header("content-type", "application/json"),
+    ])
+    .expect("repeatable factory pagination server");
+    let proxy = SafeProxy::parse(server.url("")).expect("repeatable factory proxy");
+    let client = BodyPaginationApi::builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .retry(retry_rejected_statuses())
+        .build()
+        .expect("repeatable factory pagination client");
+    let metadata_calls = Arc::new(AtomicUsize::new(0));
+    let prepare_calls = Arc::new(AtomicUsize::new(0));
+    let create_calls = Arc::new(AtomicUsize::new(0));
+    let stable_body = Bytes::from_static(b"repeatable-factory-page-body");
+
+    let items = client
+        .factory_pages(
+            0,
+            nz32(2),
+            RepeatableFactoryInput {
+                bytes: stable_body.clone(),
+                metadata_calls: Arc::clone(&metadata_calls),
+                prepare_calls: Arc::clone(&prepare_calls),
+                create_calls: Arc::clone(&create_calls),
+            },
+        )
+        .paginate(2_u32)
+        .await
+        .expect("custom repeatable factory page");
+
+    assert_eq!(items, [9]);
+    assert_eq!(metadata_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(create_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(server.request_count(), 2);
+    assert!(
+        server
+            .requests()
+            .iter()
+            .all(|request| request.body() == stable_body.as_ref())
+    );
+}
+
+#[cfg(feature = "json")]
+#[tokio::test]
+async fn stable_body_does_not_hide_repeated_public_page_identity() {
+    let server = ScriptedServer::start([
+        ResponseScript::ok(br#"[1]"#.to_vec()).with_header("content-type", "application/json")
+    ])
+    .expect("stable-body cycle server");
+    let proxy = SafeProxy::parse(server.url("")).expect("stable-body cycle proxy");
+    let client = BodyPaginationApi::builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .build()
+        .expect("stable-body cycle client");
+
+    let error = client
+        .stable_cycle("same".to_owned(), "stable request body".to_owned())
+        .paginate(2_u32)
+        .await
+        .expect_err("repeated public page identity must be rejected");
+
+    assert_eq!(
+        error.pagination_kind(),
+        Some(PaginationErrorKind::RepeatedRequest)
+    );
+    assert_eq!(server.request_count(), 1);
 }
 
 #[tokio::test]

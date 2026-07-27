@@ -14,8 +14,8 @@ pub use crate::auth::{
 };
 pub use crate::body::{
     BodyError, BodyErrorKind, BodyFactory, BodyKind, LengthHint, MAX_EMPTY_REQUEST_CHUNKS,
-    RequestBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestContentType,
-    Stream, StreamBody,
+    PageRequestBodySpec, RequestBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec,
+    RequestContentType, Stream, StreamBody,
 };
 #[cfg(feature = "multipart")]
 pub use crate::body::{

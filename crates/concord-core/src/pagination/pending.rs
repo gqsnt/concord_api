@@ -1,6 +1,7 @@
 use std::future::IntoFuture;
 use std::num::NonZeroU32;
 
+use crate::body::{PageRequestBodySpec, RequestBodySpec};
 use crate::error::ApiError;
 use crate::hooks::BoxFuture;
 use crate::request::Request;
@@ -50,6 +51,8 @@ impl<E> PaginatedRequest<E> {
 #[doc(hidden)]
 pub trait PaginatedEndpoint: crate::request::EndpointSpec + Clone + Sized
 where
+    Self::Body: PageRequestBodySpec,
+    <Self::Body as RequestBodySpec>::Input: Clone,
     Self::Response: PageResponseSpec,
     <Self::Response as ResponseBodySpec>::Output: IntoIterator<Item = Self::Item> + Send + 'static,
 {
@@ -73,6 +76,8 @@ where
 impl<E> IntoFuture for PaginatedRequest<E>
 where
     E: PaginatedEndpoint,
+    E::Body: PageRequestBodySpec,
+    <E::Body as RequestBodySpec>::Input: Clone,
     E::Response: PageResponseSpec,
     <E::Response as ResponseBodySpec>::Output: IntoIterator<Item = E::Item> + Send + 'static,
 {

@@ -297,11 +297,6 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
                 "unsupported endpoint clause; expected `id`, `host`, `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, or `paginate`",
             ));
         }
-        if pagination.is_some() && body.is_some() {
-            return Err(clauses
-                .span()
-                .error("pagination requires a bodyless endpoint"));
-        }
         Ok(SourceEndpoint {
             method,
             name,

@@ -23,8 +23,8 @@ pub use prepared::{BodyFactory, BodyKind, RequestBody};
 #[cfg(feature = "multipart")]
 pub use spec::Multipart;
 pub use spec::{
-    LengthHint, RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestContentType,
-    Stream,
+    LengthHint, PageRequestBodySpec, RequestBodyContext, RequestBodyMetadata, RequestBodySpec,
+    RequestContentType, Stream,
 };
 pub use stream::StreamBody;
 

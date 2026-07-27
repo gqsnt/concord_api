@@ -60,6 +60,11 @@ all-or-error. Concord does not provide:
 - a resumable page-stream terminal;
 - pagination over streaming, record, discard, or explicit response-bytes
   acquisition;
+- pagination with a one-shot stream, `RequestBody`, multipart, or another
+  request specification that lacks `PageRequestBodySpec`;
+- inferring repeatability from `Clone`, `RequestBodySpec`, or `EncodeBody`
+  without the trusted page-stability marker;
+- pagination-controller bindings that mutate a `#[body]` parameter;
 - runtime-defined pagination without a coherent generated binding contract;
 - controller access to transport or external I/O.
 

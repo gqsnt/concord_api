@@ -49,6 +49,17 @@ fn semantic_domains_are_available_without_implementation_crate_imports() {
     fn supports_response_bytes<T: response::ResponseBytesMode>() {}
     supports_response_bytes::<response::Buffered>();
     supports_response_bytes::<response::Discard>();
+
+    fn supports_page_body<B>()
+    where
+        B: body::PageRequestBodySpec,
+        B::Input: Clone,
+    {
+    }
+    supports_page_body::<codec::Bytes>();
+    supports_page_body::<codec::Text>();
+    #[cfg(feature = "json")]
+    supports_page_body::<codec::Json<Vec<u32>>>();
 }
 
 #[test]

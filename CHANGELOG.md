@@ -35,6 +35,9 @@
   hard per-operation maximum, body-replay gating, and a bounded
   logical-origin rolling load budget. The runtime default remains no managed
   retry policy.
+- Trusted `PageRequestBodySpec` opt-in for stable repeatable request bodies in
+  generated pagination, with narrow empty, bytes, text, and cloneable JSON
+  implementations.
 - Generated endpoint Rustdoc backed by one semantic documentation model, with
   named value inputs, flattened scope inputs, safe query/header names, route
   shape, human-readable deadlines, and only the terminals each endpoint
@@ -114,6 +117,11 @@
   Application HTTP uses private known-safe protocol recovery by default and
   can disable it with `protocol_recovery(false)`. Removing the old native
   retry DSL/baseline raises the generated-contract version to 29.
+- Generated pagination now accepts page-stable request bodies. Each page
+  clones the original body input, enforces its body limit independently, and
+  prepares it once; policy retries reuse that prepared page body. The hidden
+  body trait obligation and newly supported endpoint shape raise the
+  generated-contract version to 30.
 - Every generated public value mutation now uses
   `value(value) -> set_value(value)`. Absence-capable values retain
   `clear_value()`; values with declaration defaults retain `reset_value()`.

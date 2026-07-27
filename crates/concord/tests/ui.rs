@@ -25,6 +25,7 @@ fn pagination_contracts_reject_invalid_bindings_modes_and_terminals() {
     for path in [
         "tests/ui/fail/pagination/non_paginated_no_paginate.rs",
         "tests/ui/fail/pagination/pagination_bounds.rs",
+        "tests/ui/fail/pagination/pagination_non_clone_input.rs",
         "tests/ui/fail/pagination/pagination_syntax.rs",
         "tests/ui/fail/pagination/pagination_types.rs",
         "tests/ui/fail/pagination/stream_pagination_absent.rs",
@@ -32,7 +33,16 @@ fn pagination_contracts_reject_invalid_bindings_modes_and_terminals() {
         cases.compile_fail(path);
     }
     #[cfg(feature = "json")]
-    cases.compile_fail("tests/ui/fail/pagination/pagination_modes.rs");
+    for path in [
+        "tests/ui/fail/pagination/pagination_modes.rs",
+        "tests/ui/fail/pagination/pagination_non_repeatable_codec.rs",
+        "tests/ui/fail/pagination/pagination_request_body.rs",
+        "tests/ui/fail/pagination/pagination_stream_body.rs",
+    ] {
+        cases.compile_fail(path);
+    }
+    #[cfg(feature = "multipart")]
+    cases.compile_fail("tests/ui/fail/pagination/pagination_multipart_body.rs");
 }
 
 #[test]

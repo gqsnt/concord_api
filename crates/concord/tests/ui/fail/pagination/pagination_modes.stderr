@@ -1,9 +1,3 @@
-error: pagination requires a bodyless endpoint
-  --> tests/ui/fail/pagination/pagination_modes.rs:26:5
-   |
-26 |     }
-   |     ^
-
 error[E0277]: the trait bound `concord::Bytes: PageResponseSpec` is not satisfied
   --> tests/ui/fail/pagination/pagination_modes.rs:29:1
    |

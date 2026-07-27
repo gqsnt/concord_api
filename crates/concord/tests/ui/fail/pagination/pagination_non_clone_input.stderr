@@ -1,0 +1,81 @@
+error[E0277]: the trait bound `NonCloneInput: Clone` is not satisfied
+  --> tests/ui/fail/pagination/pagination_non_clone_input.rs:44:1
+   |
+44 | / api! {
+45 | |     client NonClonePageInputApi {
+46 | |         base "https://example.test";
+...  |
+54 | | }
+   | |_^ the trait `Clone` is not implemented for `NonCloneInput`
+   |
+note: required by a bound in `PageRequestBodySpec`
+  --> $WORKSPACE/crates/concord-core/src/body/spec.rs
+   |
+   | pub trait PageRequestBodySpec: RequestBodySpec
+   |           ------------------- required by a bound in this trait
+   | where
+   |     Self::Input: Clone,
+   |                  ^^^^^ required by this bound in `PageRequestBodySpec`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: consider annotating `NonCloneInput` with `#[derive(Clone)]`
+   |
+10 + #[derive(Clone)]
+11 | pub struct NonCloneInput;
+   |
+
+error[E0277]: the trait bound `NonCloneInput: Clone` is not satisfied
+  --> tests/ui/fail/pagination/pagination_non_clone_input.rs:44:1
+   |
+44 | / api! {
+45 | |     client NonClonePageInputApi {
+46 | |         base "https://example.test";
+...  |
+54 | | }
+   | |_^ the trait `Clone` is not implemented for `NonCloneInput`
+   |
+help: the trait `PageRequestBodySpec` is implemented for `ConditionalPageCodec<T>`
+  --> tests/ui/fail/pagination/pagination_non_clone_input.rs:27:1
+   |
+27 | / impl<T> PageRequestBodySpec for ConditionalPageCodec<T>
+28 | | where
+29 | |     T: Clone + Send + 'static,
+   | |______________________________^
+note: required for `ConditionalPageCodec<NonCloneInput>` to implement `PageRequestBodySpec`
+  --> tests/ui/fail/pagination/pagination_non_clone_input.rs:27:9
+   |
+27 | impl<T> PageRequestBodySpec for ConditionalPageCodec<T>
+   |         ^^^^^^^^^^^^^^^^^^^     ^^^^^^^^^^^^^^^^^^^^^^^
+28 | where
+29 |     T: Clone + Send + 'static,
+   |        ----- unsatisfied trait bound introduced here
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: consider annotating `NonCloneInput` with `#[derive(Clone)]`
+   |
+10 + #[derive(Clone)]
+11 | pub struct NonCloneInput;
+   |
+
+error[E0277]: the trait bound `NonCloneInput: Clone` is not satisfied
+  --> tests/ui/fail/pagination/pagination_non_clone_input.rs:44:1
+   |
+44 | / api! {
+45 | |     client NonClonePageInputApi {
+46 | |         base "https://example.test";
+...  |
+54 | | }
+   | |_^ the trait `Clone` is not implemented for `NonCloneInput`
+   |
+note: required by a bound in `concord::__private::PaginatedEndpoint`
+  --> $WORKSPACE/crates/concord-core/src/pagination/pending.rs
+   |
+   | pub trait PaginatedEndpoint: crate::request::EndpointSpec + Clone + Sized
+   |           ----------------- required by a bound in this trait
+...
+   |     <Self::Body as RequestBodySpec>::Input: Clone,
+   |                                             ^^^^^ required by this bound in `PaginatedEndpoint`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: consider annotating `NonCloneInput` with `#[derive(Clone)]`
+   |
+10 + #[derive(Clone)]
+11 | pub struct NonCloneInput;
+   |

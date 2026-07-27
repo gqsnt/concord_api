@@ -99,7 +99,11 @@ pub(super) fn endpoint_where_clause(
         },
     );
     if include_execution {
-        bounds.push(quote!(#body: #core_path::body::RequestBodySpec));
+        if endpoint.pagination.is_some() {
+            bounds.push(quote!(#body: #core_path::body::PageRequestBodySpec));
+        } else {
+            bounds.push(quote!(#body: #core_path::body::RequestBodySpec));
+        }
     }
     let response_specification = response_specification_name(endpoint);
     let response = quote!(#invocation_path::#specification_module::#response_specification);
@@ -227,6 +231,36 @@ mod tests {
         assert!(output.contains("ResponseSpecification"));
         assert!(bounds.contains("RequestBodySpec"));
         assert!(bounds.contains("ResponseBodySpec"));
+    }
+
+    #[test]
+    fn paginated_body_emits_the_trusted_repeatability_obligation() {
+        let api = crate::semantic::test_support::resolve_tokens(quote! {
+            client SearchApi {
+                base "https://example.test";
+            }
+            POST search(
+                offset: u64,
+                #[body] filter: crate::SearchCodec,
+            ) -> crate::PageCodec {
+                paginate crate::Controller {
+                    offset: bind ep.offset,
+                }
+            }
+        });
+        let endpoint = crate::semantic::test_support::endpoint(&api.client.children, "search");
+        let bounds = endpoint_where_clause(
+            &api.client,
+            &[],
+            endpoint,
+            &test_support::core_path(),
+            &quote!(super),
+            true,
+        )
+        .to_string();
+
+        assert!(bounds.contains("PageRequestBodySpec"));
+        assert!(!bounds.contains("SearchCodec : :: concord :: body :: RequestBodySpec"));
     }
 
     #[test]

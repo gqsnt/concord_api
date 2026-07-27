@@ -252,10 +252,17 @@ fn render_request(docs: &EndpointDocModel) -> String {
     let body = docs.body.as_ref().map_or_else(
         || "Body: none.".to_owned(),
         |body| {
-            format!(
+            let mut rendered = format!(
                 "Body argument: `ep.{}`. Specification: `{}`. Input type: `{}`.",
                 body.argument, body.specification, body.input_type
-            )
+            );
+            if docs.terminals.pagination {
+                rendered.push_str(
+                    " Pagination requires `PageRequestBodySpec`: every page clones the original \
+                     page-stable input and prepares a fresh managed body.",
+                );
+            }
+            rendered
         },
     );
     let authentication = if docs.authentication.is_empty() {
@@ -883,7 +890,10 @@ mod tests {
             GET discard() -> NoContent {
                 timeout off;
             }
-            GET pages(cursor: Option<String>) -> Json<Page> {
+            POST pages(
+                cursor: Option<String>,
+                #[body] filter: Json<Filter>,
+            ) -> Json<Page> {
                 paginate crate::Controller {
                     cursor: bind ep.cursor,
                 }
@@ -920,6 +930,8 @@ mod tests {
 
         let pages = semantic::test_support::endpoint(&api.client.children, "pages");
         assert!(request_wrapper_doc(pages).contains("`.paginate(...)`"));
+        assert!(endpoint_type_doc(pages).contains("`PageRequestBodySpec`"));
+        assert!(endpoint_type_doc(pages).contains("page-stable input"));
     }
 
     #[test]

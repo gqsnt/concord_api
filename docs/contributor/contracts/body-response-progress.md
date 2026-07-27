@@ -26,6 +26,8 @@ Request-side contracts are exposed through:
 
 - `RequestBodySpec`, with structural `metadata` followed by one synchronous
   `prepare`;
+- `PageRequestBodySpec`, a trusted page-stability and independent-clone
+  capability used by generated pagination;
 - `RequestBody`, the opaque empty, bytes, stream, factory, or multipart value;
 - `BodyFactory`, which creates a fresh complete stream for a replayable
   attempt;
@@ -60,6 +62,13 @@ streams, body factories, multipart streams, and multipart factories therefore
 share empty-chunk suppression, aggregate byte accounting, exact-length checks,
 error reduction, and cancellation behavior.
 
+For generated pagination, each page starts from a clone of the original typed
+endpoint. `PageRequestBodySpec` guarantees that its cloned input can
+independently prepare the same stable body. The page runs metadata and
+preparation under the ordinary lifecycle and body limit. Managed retries of
+that page reuse the prepared replayable body rather than preparing the
+specification again.
+
 On response, core first observes limiter policy and hooks, handles an
 authentication challenge when applicable, and then calls the declared status
 acceptance callback. The callback defaults to 2xx, runs synchronously, and is
@@ -82,6 +91,8 @@ deadline immediately after return.
 
 - Request construction is inert; metadata is structural; materialization
   follows hook approval.
+- Page-body cloneability is not inferred as repeatability. Only an explicit
+  `PageRequestBodySpec` promise admits a body to generated pagination.
 - One attempt has one final outgoing body owner. All stream-producing forms
   converge before native transport.
 - Empty chunks are never observable as successful public stream items.
@@ -142,7 +153,9 @@ confidentiality of data they log or retain.
 
 Use `EncodeBody` and `DecodeBody` for ordinary complete codecs. Implement
 `RequestBodySpec` only when structural metadata and lazy managed construction
-are required. Implement `ResponseBodySpec` when status acceptance, accepted
+are required. Implement `PageRequestBodySpec` only after proving stable,
+independent preparation from every input clone; there is no blanket marker for
+`EncodeBody`. Implement `ResponseBodySpec` when status acceptance, accepted
 head validation, or a sealed non-default mode is required.
 
 Callbacks receive finite semantic contexts, not request credentials, limiter
@@ -160,6 +173,8 @@ and [Codecs](../../extending/codecs.md).
 Maintainers should test at least:
 
 - pre-hook metadata rejection and hook veto without body materialization;
+- page-stable body cloning, one preparation per page, per-page first excess,
+  and prepared-body reuse across a page retry;
 - mismatch between structural metadata and the prepared body;
 - factory, multipart, or direct stream creation failure;
 - too many successful empty chunks, including ready-empty sources;

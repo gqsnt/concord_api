@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 use bytes::Bytes;
 use http::{HeaderValue, Method};
 
-use crate::codec::{EncodeBody, EncodeContext, MediaType};
+use crate::codec::{EncodeBody, EncodeContext, MediaType, Text};
 
 #[cfg(feature = "multipart")]
 use super::MultipartBody;
@@ -137,6 +137,22 @@ pub trait RequestBodySpec: Send + Sync + 'static {
     ) -> Result<RequestBody, BodyError>;
 }
 
+/// Trusted opt-in for a page-stable repeatable request-body specification.
+///
+/// Every clone of [`RequestBodySpec::Input`] must independently prepare the
+/// same request body. Preparing or consuming one clone must not invalidate any
+/// other clone. Generated pagination relies on that promise when it clones the
+/// original endpoint for each page.
+///
+/// `Clone` is necessary but does not establish this semantic contract by
+/// itself. Specifications backed by shared one-shot state must not implement
+/// this trait.
+pub trait PageRequestBodySpec: RequestBodySpec
+where
+    Self::Input: Clone,
+{
+}
+
 impl<C> RequestBodySpec for C
 where
     C: EncodeBody,
@@ -203,6 +219,10 @@ impl RequestBodySpec for Bytes {
         Ok(RequestBody::bytes(input))
     }
 }
+
+impl PageRequestBodySpec for Bytes {}
+
+impl PageRequestBodySpec for Text {}
 
 /// Request and response specification for one exact media type.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -307,6 +327,8 @@ impl RequestBodySpec for EmptyBody {
         Ok(RequestBody::empty())
     }
 }
+
+impl PageRequestBodySpec for EmptyBody {}
 
 trait ErasedRequestBody: Send {
     fn metadata(&self, context: RequestBodyContext<'_>) -> Result<RequestBodyMetadata, BodyError>;

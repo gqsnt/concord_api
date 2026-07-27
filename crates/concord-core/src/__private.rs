@@ -20,7 +20,9 @@ pub use url::Url;
 #[doc(hidden)]
 pub use crate::auth::Auth;
 #[doc(hidden)]
-pub use crate::body::{EmptyBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec};
+pub use crate::body::{
+    EmptyBody, PageRequestBodySpec, RequestBodyContext, RequestBodyMetadata, RequestBodySpec,
+};
 #[doc(hidden)]
 pub use crate::client::ClientCore;
 #[doc(hidden)]

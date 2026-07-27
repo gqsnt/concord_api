@@ -186,11 +186,14 @@ domain gains an independent invariant and test owner.
 
 ## Generated contract decision
 
-Current generated-contract version 29 removed the old generated native-retry
-baseline and added the managed `.retry(RetryPolicy)` builder surface. This
-prevents expansions that call the removed `retry_reqwest_default` operation
-from claiming compatibility with the new façade/core. The private contract
-does not change for:
+Current generated-contract version 30 adds the hidden
+`PageRequestBodySpec` obligation for generated pagination and admits the new
+repeatable-body endpoint shape. It prevents an older expansion, which assumed
+all pagination was bodyless, from claiming compatibility with the new
+façade/core protocol. Version 29 removed the old generated native-retry
+baseline and added the managed `.retry(RetryPolicy)` builder surface.
+
+The private contract does not change for:
 
 - a source-language acceptance/diagnostic change;
 - the public `set_*` rename and independently derived clear/reset controls;

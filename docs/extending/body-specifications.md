@@ -120,8 +120,24 @@ The public item paths are `concord::body::BodyError`,
 `concord::body::BodyErrorKind`, `concord::response::ResponseBodyError`, and
 `concord::response::ResponseBodyErrorKind`.
 
-A downstream buffered response specification does not automatically become
-page-compatible. Implement the marker
+Pagination has independent request and response capability markers.
+
+On the request side, implement `concord::body::PageRequestBodySpec` only when
+cloning the input creates independently preparable values that always produce
+the same page-stable body. `Input: Clone` is required but is not proof of that
+semantic promise: shared one-shot state must not opt in. Core implements the
+marker narrowly for empty, `Bytes`, and `Text`; extras implements it for
+`Json<T>` when `T: Clone + Serialize + Send + 'static`. There is no blanket
+implementation for arbitrary `EncodeBody` codecs.
+
+A custom factory-backed specification may opt in after proving that every
+input clone independently creates the same replayable source. Concord prepares
+the specification once per page after hook approval. Policy retries within
+that page use the prepared body or its factory and do not call the
+specification's encoder/preparation again.
+
+On the response side, a downstream buffered specification does not
+automatically become page-compatible. Implement
 `concord::response::PageResponseSpec` only when its output has the intended
 page-item semantics. Buffered `DecodeBody` outputs that implement
 `IntoIterator` receive that capability automatically. Streaming, discard,
@@ -131,7 +147,10 @@ byte-stream, and record-stream responses are not paginated by adding a marker.
 
 Exercise metadata and preparation as a pair. Verify exact and incorrect length
 hints, content-type ownership, hook veto before preparation, one-shot versus
-factory behavior, cancellation, empty chunks, and exact body limits.
+factory behavior, cancellation, empty chunks, and exact body limits. A
+`PageRequestBodySpec` additionally needs multi-page stability, independent
+per-page size enforcement, one preparation per page, and retry reuse of the
+prepared page body.
 
 For response specifications, test status acceptance and rejection, validation
 before polling, each selected mode, known and unknown lengths, one-byte chunks,
@@ -147,5 +166,6 @@ cross the same public contract.
 - [Multipart uploads](../features/multipart.md)
 - [Hooks, trusted work, and bounds](hooks-and-trusted-work.md)
 - [Limits reference](../reference/limits.md)
-- Rustdoc: `concord::body::RequestBodySpec` and
+- Rustdoc: `concord::body::RequestBodySpec`,
+  `concord::body::PageRequestBodySpec`, and
   `concord::response::ResponseBodySpec`

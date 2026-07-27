@@ -1,3 +1,4 @@
+use crate::body::{PageRequestBodySpec, RequestBodySpec};
 use crate::error::{ApiError, PaginationErrorKind};
 use crate::hooks::{BoxFuture, CompletionOutcome, PaginationCompletionEvent};
 use crate::request::{EndpointSpec, Request, prepare_pagination_page};
@@ -17,6 +18,8 @@ pub(super) fn paginate_with<E>(
 ) -> BoxFuture<'static, PaginationResult<E>>
 where
     E: PaginatedEndpoint,
+    E::Body: PageRequestBodySpec,
+    <E::Body as RequestBodySpec>::Input: Clone,
     E::Response: PageResponseSpec,
     DecodedPage<E>: IntoIterator<Item = E::Item> + Send + 'static,
     PageItem<E>: Send + 'static,
@@ -128,6 +131,8 @@ async fn run_pages<E>(
 ) -> PaginationResult<E>
 where
     E: PaginatedEndpoint,
+    E::Body: PageRequestBodySpec,
+    <E::Body as RequestBodySpec>::Input: Clone,
     E::Response: PageResponseSpec,
     DecodedPage<E>: IntoIterator<Item = E::Item> + Send + 'static,
     PageItem<E>: Send + 'static,
