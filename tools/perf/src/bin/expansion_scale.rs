@@ -133,13 +133,19 @@ use concord::{Bytes, api};
 api! {
     client ScaleApi {
         base "https://scale.example.test";
+        rate_limits {
+            rule shared_reads {
+                by [host, endpoint];
+                1_000_000 / 1s;
+            }
+        }
     }
 
 "#,
     );
     for index in 0..count {
         source.push_str(&format!(
-            "    GET endpoint_{index:04}(value: u64) -> Bytes {{ path [ep.value]; }}\n"
+            "    GET endpoint_{index:04}(value: u64) -> Bytes {{\n        path [ep.value];\n        rate_limit use shared_reads;\n    }}\n"
         ));
     }
     source.push_str("}\n");
@@ -156,4 +162,22 @@ fn declaration_shaped(line: &str) -> bool {
     ]
     .iter()
     .any(|prefix| line.starts_with(prefix))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scale_fixture_attaches_one_named_definition_to_every_endpoint() {
+        let source = fixture_source(3);
+        assert_eq!(source.matches("rule shared_reads").count(), 1);
+        assert_eq!(source.matches("rate_limit use shared_reads;").count(), 3);
+        assert_eq!(source.matches("GET endpoint_").count(), 3);
+    }
+
+    #[test]
+    fn default_scale_points_cover_four_orders_of_endpoint_count() {
+        assert_eq!(DEFAULT_COUNTS, [1, 10, 100, 1_000]);
+    }
 }

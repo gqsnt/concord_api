@@ -21,10 +21,18 @@ protocol recovery and uses `without_budget()` only to remove rolling-budget
 availability from the measurement. No benchmark-only runtime API or generated
 conversion is part of a product crate.
 
+The buffered-record category executes a generated
+`BufferedRecords<BenchRecords>` endpoint through the real managed executor and
+loopback response path. Each response contains 256 framed records, and the
+complete source is much larger than the decoder's 16-byte staging limit. The
+probe asserts the exact decoded count before recording the category. The
+existing direct record-framing category remains a separate decoder-only
+observation.
+
 `--smoke` forces one bounded iteration. The executable records each category
-only after its named operation completes and asserts that all sixteen distinct
-categories ran. Otherwise `CONCORD_BENCH_ITERATIONS` selects between 1 and
-1,000 iterations, with a default of 100. Timings are observational only.
+only after its named operation completes and asserts that all seventeen
+distinct categories ran. Otherwise `CONCORD_BENCH_ITERATIONS` selects between
+1 and 1,000 iterations, with a default of 100. Timings are observational only.
 
 Run the lifecycle probe with:
 
@@ -32,6 +40,7 @@ Run the lifecycle probe with:
 cargo bench --locked -p concord-perf --bench concord_overhead
 cargo bench --locked -p concord-perf --bench concord_overhead -- --smoke
 cargo bench --locked -p concord-perf --bench concord_overhead -- --category managed-retry --smoke
+cargo bench --locked -p concord-perf --bench concord_overhead -- --category buffered-records --smoke
 cargo bench --locked -p concord-perf --bench concord_overhead -- --list
 ```
 
@@ -50,5 +59,8 @@ threshold or commit generated result snapshots.
 1, 10, 100, and 1,000-endpoint contracts under `target/perf`, expands each
 with the installed `cargo-expand`, and prints comparable line, character,
 whitespace-fragment, declaration-shaped-item, and elapsed-time counters. Pass
-explicit endpoint counts to run a subset. Generated sources and build outputs
-remain disposable target artifacts.
+explicit endpoint counts to run a subset. Each generated contract owns one
+named `shared_reads` rate definition and attaches it to every endpoint, so the
+observation includes reusable-rule validation, generated endpoint docs, and
+runtime-plan emission at scale. Generated sources and build outputs remain
+disposable target artifacts.

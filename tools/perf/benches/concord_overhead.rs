@@ -17,13 +17,13 @@ use concord::endpoint::{EndpointId, RuntimeEndpoint};
 use concord::http::{Method, SafeProxy, StatusCode};
 use concord::pagination::PaginatedRequest;
 use concord::rate_limit::NoopRateLimiter;
-use concord::records::{RecordDecoder, RecordError};
+use concord::records::{BufferedRecords, RecordDecoder, RecordError};
 use concord::response::ResponseHead;
 use concord::retry::{RetryDecision, RetryFailure, RetryPolicy};
 use concord::{Bytes, PageLimit, SecretString};
 use concord_perf::overhead_cli::{
-    BenchmarkCommand, CategorySelection, MANAGED_RETRY_CATEGORY, help_text, list_text,
-    parse_arguments,
+    BUFFERED_RECORDS_CATEGORY, BenchmarkCommand, CategorySelection, MANAGED_RETRY_CATEGORY,
+    help_text, list_text, parse_arguments,
 };
 use concord_test_support::proxy::ConnectProxy;
 use concord_test_support::server::{ResponseScript, ScriptedServer};
@@ -86,7 +86,7 @@ impl RecordDecoder for BenchRecords {
     }
 
     fn max_buffered_bytes() -> NonZeroUsize {
-        NonZeroUsize::new(64 * 1024).expect("positive benchmark staging bound")
+        NonZeroUsize::new(16).expect("positive benchmark staging bound")
     }
 }
 
@@ -130,6 +130,9 @@ api! {
     GET streamed() -> Stream<OctetStream> {
         auth off;
     }
+    GET buffered_records() -> BufferedRecords<crate::BenchRecords> {
+        auth off;
+    }
 }
 
 api! {
@@ -146,7 +149,7 @@ api! {
     }
 }
 
-const EXPECTED_CATEGORIES: [&str; 16] = [
+const EXPECTED_CATEGORIES: [&str; 17] = [
     "core client construction",
     "generated endpoint construction",
     "request binding",
@@ -163,6 +166,7 @@ const EXPECTED_CATEGORIES: [&str; 16] = [
     "stream wrapping",
     "generic specification selection",
     "record framing",
+    BUFFERED_RECORDS_CATEGORY,
 ];
 
 struct CategoryAudit {
@@ -173,9 +177,11 @@ struct CategoryAudit {
 impl CategoryAudit {
     fn new(selection: CategorySelection) -> Self {
         const MANAGED_RETRY_ONLY: [&str; 1] = [MANAGED_RETRY_CATEGORY];
+        const BUFFERED_RECORDS_ONLY: [&str; 1] = [BUFFERED_RECORDS_CATEGORY];
         let expected: &'static [&'static str] = match selection {
             CategorySelection::All => &EXPECTED_CATEGORIES,
             CategorySelection::ManagedRetry => &MANAGED_RETRY_ONLY,
+            CategorySelection::BufferedRecords => &BUFFERED_RECORDS_ONLY,
         };
         Self {
             expected,
@@ -663,6 +669,34 @@ fn record_framing(iterations: usize, audit: &mut CategoryAudit) {
     report(audit, "record framing", iterations, started);
 }
 
+fn buffered_record_collection(
+    iterations: usize,
+    runtime: &tokio::runtime::Runtime,
+    audit: &mut CategoryAudit,
+) -> Result<(), Box<dyn std::error::Error>> {
+    const RECORDS_PER_RESPONSE: usize = 256;
+    let body = b"record\n".repeat(RECORDS_PER_RESPONSE);
+    let scripts = (0..iterations).map(|_| ResponseScript::ok(body.clone()));
+    let server = ScriptedServer::start(scripts)?;
+    let proxy = SafeProxy::parse(server.url(""))?;
+    let client = configured_builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .build()?;
+
+    let started = Instant::now();
+    for _ in 0..iterations {
+        let records = runtime.block_on(client.buffered_records().into_future())?;
+        assert_eq!(
+            records.len(),
+            RECORDS_PER_RESPONSE,
+            "buffered record benchmark decoded an incomplete response"
+        );
+        black_box(records);
+    }
+    report(audit, BUFFERED_RECORDS_CATEGORY, iterations, started);
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
     let command =
@@ -682,10 +716,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let runtime = tokio::runtime::Runtime::new()?;
     let mut audit = CategoryAudit::new(options.selection);
 
-    if options.selection == CategorySelection::ManagedRetry {
-        managed_retry_overhead(iterations, &runtime, &mut audit)?;
-        audit.finish();
-        return Ok(());
+    match options.selection {
+        CategorySelection::ManagedRetry => {
+            managed_retry_overhead(iterations, &runtime, &mut audit)?;
+            audit.finish();
+            return Ok(());
+        }
+        CategorySelection::BufferedRecords => {
+            buffered_record_collection(iterations, &runtime, &mut audit)?;
+            audit.finish();
+            return Ok(());
+        }
+        CategorySelection::All => {}
     }
 
     core_client_construction(iterations, &mut audit);
@@ -704,6 +746,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     stream_wrapping(iterations, &mut audit);
     generic_specification_selection(iterations, &mut audit);
     record_framing(iterations, &mut audit);
+    buffered_record_collection(iterations, &runtime, &mut audit)?;
     audit.finish();
 
     black_box(Duration::ZERO);

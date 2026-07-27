@@ -6,6 +6,12 @@ pub const MANAGED_RETRY_SELECTOR: &str = "managed-retry";
 /// Printed category name for one Concord-managed rejected-status retry.
 pub const MANAGED_RETRY_CATEGORY: &str = "managed retry: one rejected-status retry";
 
+/// Stable selector for complete buffered record collection.
+pub const BUFFERED_RECORDS_SELECTOR: &str = "buffered-records";
+
+/// Printed category name for complete buffered record collection.
+pub const BUFFERED_RECORDS_CATEGORY: &str = "buffered record collection";
+
 /// Benchmark category selection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CategorySelection {
@@ -13,6 +19,8 @@ pub enum CategorySelection {
     All,
     /// Runs only the isolated managed-retry category.
     ManagedRetry,
+    /// Runs only complete buffered record collection.
+    BufferedRecords,
 }
 
 /// Parsed benchmark execution settings.
@@ -89,10 +97,11 @@ pub fn parse_arguments(
         selection = match category {
             "all" => CategorySelection::All,
             MANAGED_RETRY_SELECTOR => CategorySelection::ManagedRetry,
+            BUFFERED_RECORDS_SELECTOR => CategorySelection::BufferedRecords,
             _ => {
                 return Err(format!(
-                    "unknown benchmark category `{category}`; expected `all` or \
-                     `{MANAGED_RETRY_SELECTOR}`"
+                    "unknown benchmark category `{category}`; expected `all`, \
+                     `{MANAGED_RETRY_SELECTOR}`, or `{BUFFERED_RECORDS_SELECTOR}`"
                 ));
             }
         };
@@ -115,20 +124,22 @@ pub const fn help_text() -> &'static str {
     "Concord runtime overhead probe\n\
      \n\
      Usage:\n\
-       concord_overhead [--smoke] [--category all|managed-retry]\n\
+       concord_overhead [--smoke] [--category all|managed-retry|buffered-records]\n\
        concord_overhead --list\n\
        concord_overhead --help\n\
      \n\
      --smoke                    Run one logical operation per selected category.\n\
      --category all             Run every maintained category (default).\n\
-     --category managed-retry   Run only one managed 503-to-success retry category.\n"
+     --category managed-retry   Run only one managed 503-to-success retry category.\n\
+     --category buffered-records Run only complete buffered record collection.\n"
 }
 
 /// Returns selectable benchmark category sets.
 #[must_use]
 pub const fn list_text() -> &'static str {
     "all\tall maintained benchmark categories\n\
-     managed-retry\tmanaged retry: one rejected-status retry\n"
+     managed-retry\tmanaged retry: one rejected-status retry\n\
+     buffered-records\tbuffered record collection\n"
 }
 
 #[cfg(test)]
@@ -179,6 +190,27 @@ mod tests {
     }
 
     #[test]
+    fn buffered_records_category_is_independently_selectable() {
+        assert_eq!(
+            parse_arguments(
+                &arguments(&["--category", BUFFERED_RECORDS_SELECTOR, "--smoke"]),
+                37,
+            ),
+            Ok(BenchmarkCommand::Run(RunOptions {
+                selection: CategorySelection::BufferedRecords,
+                iterations: 1,
+            }))
+        );
+        assert_eq!(
+            parse_arguments(&arguments(&["--category=buffered-records"]), 4),
+            Ok(BenchmarkCommand::Run(RunOptions {
+                selection: CategorySelection::BufferedRecords,
+                iterations: 4,
+            }))
+        );
+    }
+
+    #[test]
     fn help_list_and_invalid_category_are_explicit() {
         assert_eq!(
             parse_arguments(&arguments(&["--help", "--bench"]), 100),
@@ -189,7 +221,9 @@ mod tests {
             Ok(BenchmarkCommand::List)
         );
         assert!(help_text().contains("--category managed-retry"));
+        assert!(help_text().contains("--category buffered-records"));
         assert!(list_text().contains(MANAGED_RETRY_CATEGORY));
+        assert!(list_text().contains(BUFFERED_RECORDS_CATEGORY));
         assert!(
             parse_arguments(&arguments(&["--category", "unknown"]), 100)
                 .expect_err("invalid category")
