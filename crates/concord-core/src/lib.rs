@@ -31,6 +31,11 @@ pub mod rate_limit;
 mod redaction;
 mod request;
 mod response;
+#[allow(
+    dead_code,
+    reason = "retry primitives remain core-internal until executor integration in the next phase"
+)]
+mod retry;
 mod runtime;
 
 pub use pagination::{PageLimit, PaginatedRequest};

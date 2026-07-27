@@ -93,6 +93,7 @@
 - [Bodies, responses, and finite progress](contributor/contracts/body-response-progress.md)
 - [Records and pagination](contributor/contracts/records-pagination.md)
 - [Rate limiting](contributor/contracts/rate-limits.md)
+- [Managed retries](contributor/contracts/retries.md)
 - [Errors, redaction, hooks, and completion](contributor/contracts/errors-hooks-completion.md)
 - [Extension contracts](contributor/contracts/extensions.md)
 
