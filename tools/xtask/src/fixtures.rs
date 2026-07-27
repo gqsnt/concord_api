@@ -71,6 +71,11 @@ pub(crate) fn run_all(root: &Path) -> Result<(), String> {
 
     for (binary, features, expected) in [
         (
+            "buffered_records_absent",
+            "fixture-absence",
+            &["no `BufferedRecords` in `prelude`"][..],
+        ),
+        (
             "records_codecs_absent",
             "fixture-absence,records",
             &[

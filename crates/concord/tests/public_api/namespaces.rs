@@ -17,6 +17,42 @@ fn public_type<T>() -> &'static str {
     type_name::<T>()
 }
 
+#[cfg(feature = "records")]
+struct NonCloneRecord;
+
+#[cfg(feature = "records")]
+struct PublicRecordDecoder;
+
+#[cfg(feature = "records")]
+impl concord::records::RecordDecoder for PublicRecordDecoder {
+    type Record = NonCloneRecord;
+
+    fn start(_head: &response::ResponseHead<'_>) -> Result<Self, concord::records::RecordError> {
+        Ok(Self)
+    }
+
+    fn decode(
+        &mut self,
+        buffer: &mut concord::codec::BytesMut,
+    ) -> Result<Option<Self::Record>, concord::records::RecordError> {
+        Ok((!buffer.is_empty()).then(|| {
+            drop(buffer.split_to(1));
+            NonCloneRecord
+        }))
+    }
+
+    fn decode_eof(
+        &mut self,
+        buffer: &mut concord::codec::BytesMut,
+    ) -> Result<Option<Self::Record>, concord::records::RecordError> {
+        self.decode(buffer)
+    }
+
+    fn max_buffered_bytes() -> std::num::NonZeroUsize {
+        std::num::NonZeroUsize::new(8).expect("positive public decoder staging bound")
+    }
+}
+
 #[test]
 fn semantic_domains_are_available_without_implementation_crate_imports() {
     let names = [
@@ -126,6 +162,19 @@ fn hard_structural_limits_are_reachable_from_their_facade_domains() {
 #[test]
 fn records_contracts_are_exposed_by_the_records_domain() {
     assert!(!public_type::<concord::records::RecordError>().is_empty());
+    assert!(!public_type::<concord::records::BufferedRecords<PublicRecordDecoder>>().is_empty());
+    assert_eq!(
+        public_type::<concord::records::BufferedRecords<PublicRecordDecoder>>(),
+        public_type::<concord::prelude::BufferedRecords<PublicRecordDecoder>>()
+    );
+
+    fn buffered_page_spec<S>()
+    where
+        S: response::ResponseBodySpec<Output = Vec<NonCloneRecord>, Mode = response::Buffered>
+            + response::PageResponseSpec,
+    {
+    }
+    buffered_page_spec::<concord::records::BufferedRecords<PublicRecordDecoder>>();
 }
 
 #[cfg(feature = "json")]

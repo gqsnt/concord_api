@@ -541,6 +541,7 @@ async fn records_response_validates_starts_unpolled_and_completes_stream_opened_
 #[cfg(feature = "records")]
 #[tokio::test]
 async fn record_stream_body_and_decoder_failures_are_items_without_second_completion() {
+    let _failure_guard = FAILURE_TEST_LOCK.lock().await;
     FAILURE_VALIDATE_CALLS.store(0, Ordering::SeqCst);
     FAILURE_START_CALLS.store(0, Ordering::SeqCst);
     FAILURE_DECODE_CALLS.store(0, Ordering::SeqCst);

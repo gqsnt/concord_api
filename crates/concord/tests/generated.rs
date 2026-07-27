@@ -2,6 +2,8 @@ mod support;
 
 mod generated {
     pub(crate) mod authentication;
+    #[cfg(feature = "records")]
+    pub(crate) mod buffered_records;
     pub(crate) mod pagination;
     pub(crate) mod rate_limits;
     pub(crate) mod response_bytes;

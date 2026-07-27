@@ -63,7 +63,8 @@ pub use crate::rate_limit::{
 };
 #[cfg(feature = "records")]
 pub use crate::records::{
-    RecordBatches, RecordDecoder, RecordError, RecordErrorKind, RecordStream, Records,
+    BufferedRecords, RecordBatches, RecordDecoder, RecordError, RecordErrorKind, RecordStream,
+    Records,
 };
 pub use crate::redaction::{SanitizedHeaderMap, SanitizedHeaderValue, SanitizedHeaders};
 pub use crate::request::{ResponseBytesRequest, RuntimeEndpoint, RuntimeEndpointBuilder};

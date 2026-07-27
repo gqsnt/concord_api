@@ -44,7 +44,8 @@ use crate::rate_limit::{
 };
 #[cfg(feature = "records")]
 use crate::records::{
-    RecordBatches, RecordDecoder, RecordError, RecordErrorKind, RecordStream, Records,
+    BufferedRecords, RecordBatches, RecordDecoder, RecordError, RecordErrorKind, RecordStream,
+    Records,
 };
 use crate::request::{HeadBuilder, PreparedHead, RequestMeta, RuntimeEndpoint};
 #[cfg(feature = "records")]
@@ -303,6 +304,8 @@ static FAILURE_START_CALLS: AtomicUsize = AtomicUsize::new(0);
 static FAILURE_DECODE_CALLS: AtomicUsize = AtomicUsize::new(0);
 #[cfg(feature = "records")]
 static FAILURE_EOF_CALLS: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "records")]
+static FAILURE_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[cfg(feature = "records")]
 struct FailingRecordDecoder;
@@ -1705,6 +1708,8 @@ fn completion(
         .expect("completion record")
 }
 
+#[cfg(feature = "records")]
+mod buffered_records;
 mod cancellation;
 mod completion;
 mod laziness;

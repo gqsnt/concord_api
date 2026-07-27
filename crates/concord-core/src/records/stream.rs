@@ -7,11 +7,11 @@ use std::task::{Context, Poll};
 use futures_core::Stream;
 
 use crate::response::{
-    ByteStream, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec, ResponseHead,
-    ResponseMode, Streaming,
+    ByteStream, ResponseBodyError, ResponseBodySpec, ResponseHead, ResponseMode, Streaming,
 };
 
 use super::driver::{RecordDriver, RecordStep};
+use super::error::response_error;
 use super::{RecordDecoder, RecordError, RecordErrorKind};
 
 /// A streaming accepted-response specification decoded by `D`.
@@ -43,20 +43,6 @@ where
         let decoder = D::start(head).map_err(response_error)?;
         Ok(RecordStream::new(body, decoder, D::max_buffered_bytes()))
     }
-}
-
-fn response_error(error: RecordError) -> ResponseBodyError {
-    let kind = match error.kind() {
-        RecordErrorKind::InvalidMediaType => ResponseBodyErrorKind::InvalidMediaType,
-        RecordErrorKind::Internal => ResponseBodyErrorKind::Internal,
-        RecordErrorKind::InvalidFraming
-        | RecordErrorKind::Decode
-        | RecordErrorKind::IncompleteRecord
-        | RecordErrorKind::LimitExceeded
-        | RecordErrorKind::Body => ResponseBodyErrorKind::InvalidOutput,
-    };
-    drop(error);
-    ResponseBodyError::new(kind)
 }
 
 /// A lazy stream of incrementally framed typed records.
@@ -680,6 +666,45 @@ mod tests {
         assert!(next(&mut records).await.is_none());
         assert_eq!(polls.load(Ordering::SeqCst), 2);
         assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn buffered_and_streaming_delivery_have_one_byte_and_large_chunk_parity() {
+        const BODY: &[u8] = b"alpha\nb\ncharlie\nlast";
+        let buffered =
+            crate::records::buffered::collect_records(Bytes::from_static(BODY), LineDecoder)
+                .expect("buffered record collection");
+
+        let one_byte_chunks = BODY
+            .iter()
+            .copied()
+            .map(|byte| Ok(Bytes::copy_from_slice(&[byte])))
+            .collect::<Vec<_>>();
+        let one_byte_polls = Arc::new(AtomicUsize::new(0));
+        let one_byte_dropped = Arc::new(AtomicBool::new(false));
+        let mut one_byte_stream = stream(one_byte_chunks, &one_byte_polls, &one_byte_dropped, 8);
+        let mut one_byte = Vec::new();
+        while let Some(record) = next(&mut one_byte_stream).await {
+            one_byte.push(record.expect("one-byte streaming record"));
+        }
+
+        let large_polls = Arc::new(AtomicUsize::new(0));
+        let large_dropped = Arc::new(AtomicBool::new(false));
+        let mut large_stream = stream(
+            [Ok(Bytes::from_static(BODY))],
+            &large_polls,
+            &large_dropped,
+            8,
+        );
+        let mut large = Vec::new();
+        while let Some(record) = next(&mut large_stream).await {
+            large.push(record.expect("large-chunk streaming record"));
+        }
+
+        assert_eq!(one_byte, buffered);
+        assert_eq!(large, buffered);
+        assert!(one_byte_dropped.load(Ordering::SeqCst));
+        assert!(large_dropped.load(Ordering::SeqCst));
     }
 
     #[tokio::test]

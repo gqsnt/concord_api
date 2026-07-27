@@ -176,7 +176,7 @@ pub mod prelude {
     #[cfg(feature = "ndjson")]
     pub use crate::records::NdJson;
     #[cfg(feature = "records")]
-    pub use crate::records::Records;
+    pub use crate::records::{BufferedRecords, Records};
     pub use crate::{
         ApiError, ApiResponse, Bytes, ClientBuildError, NoContent, PageLimit, SecretString, Text,
         api,
@@ -187,7 +187,8 @@ pub mod prelude {
 #[cfg(feature = "records")]
 pub mod records {
     pub use concord_core::records::{
-        RecordBatches, RecordDecoder, RecordError, RecordErrorKind, RecordStream, Records,
+        BufferedRecords, RecordBatches, RecordDecoder, RecordError, RecordErrorKind, RecordStream,
+        Records,
     };
     #[cfg(feature = "ndjson")]
     pub use concord_extras::records::NdJson;

@@ -1,6 +1,8 @@
 use std::error::Error;
 use std::fmt;
 
+use crate::response::{ResponseBodyError, ResponseBodyErrorKind};
+
 /// A safe failure produced while opening or decoding a record response.
 ///
 /// Built-in decoders discard parser-authored text and never attach record bytes,
@@ -81,4 +83,47 @@ pub enum RecordErrorKind {
     Body,
     /// Concord could not classify an internal record failure more narrowly.
     Internal,
+}
+
+pub(super) fn response_error(error: RecordError) -> ResponseBodyError {
+    let kind = match error.kind() {
+        RecordErrorKind::InvalidMediaType => ResponseBodyErrorKind::InvalidMediaType,
+        RecordErrorKind::Internal => ResponseBodyErrorKind::Internal,
+        RecordErrorKind::InvalidFraming
+        | RecordErrorKind::Decode
+        | RecordErrorKind::IncompleteRecord
+        | RecordErrorKind::LimitExceeded
+        | RecordErrorKind::Body => ResponseBodyErrorKind::Decode,
+    };
+    drop(error);
+    ResponseBodyError::new(kind)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn opening_and_buffered_errors_map_to_structural_response_categories() {
+        for kind in [
+            RecordErrorKind::InvalidFraming,
+            RecordErrorKind::Decode,
+            RecordErrorKind::IncompleteRecord,
+            RecordErrorKind::LimitExceeded,
+            RecordErrorKind::Body,
+        ] {
+            assert_eq!(
+                response_error(RecordError::new(kind)).kind(),
+                ResponseBodyErrorKind::Decode
+            );
+        }
+        assert_eq!(
+            response_error(RecordError::new(RecordErrorKind::InvalidMediaType)).kind(),
+            ResponseBodyErrorKind::InvalidMediaType
+        );
+        assert_eq!(
+            response_error(RecordError::new(RecordErrorKind::Internal)).kind(),
+            ResponseBodyErrorKind::Internal
+        );
+    }
 }
