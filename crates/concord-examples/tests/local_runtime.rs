@@ -467,7 +467,7 @@ mod record_boundaries {
     }
 
     #[tokio::test]
-    async fn actual_csv_and_ndjson_declarations_survive_one_byte_and_arbitrary_chunks() {
+    async fn actual_csv_and_ndjson_delivery_forms_share_chunk_independent_results() {
         let csv = b"name,count\nalpha,1\nbeta,2\n";
         let configured_csv = b"name;count\nconfigured;3\n";
         let ndjson = b"1\n20\r\n3";
@@ -483,6 +483,14 @@ mod record_boundaries {
                 ],
             ),
             response("text/csv", one_byte(configured_csv)),
+            response(
+                "text/csv",
+                vec![
+                    b"name;".to_vec(),
+                    b"count\nconfigured".to_vec(),
+                    b";3\n".to_vec(),
+                ],
+            ),
             response("application/x-ndjson", one_byte(ndjson)),
             response(
                 "application/ndjson",
@@ -501,33 +509,35 @@ mod record_boundaries {
             .build()
             .expect("records client");
 
-        for expected in [
-            vec![("alpha".to_owned(), 1_u32), ("beta".to_owned(), 2)],
-            vec![("alpha".to_owned(), 1_u32), ("beta".to_owned(), 2)],
-        ] {
-            let values = collect(client.csv_rows().await.expect("CSV stream opens"))
-                .await
-                .expect("CSV stream decodes");
-            assert_eq!(values, expected);
-        }
+        let expected = vec![("alpha".to_owned(), 1_u32), ("beta".to_owned(), 2)];
+        assert_eq!(client.csv_rows().await.expect("buffered CSV"), expected);
+        let streamed = collect(client.csv_stream().await.expect("CSV stream opens"))
+            .await
+            .expect("CSV stream decodes");
+        assert_eq!(streamed, expected);
 
-        let configured = collect(
+        let configured = client
+            .configured_csv_rows()
+            .await
+            .expect("configured buffered CSV");
+        assert_eq!(configured, [("configured".to_owned(), 3)]);
+        let configured_streamed = collect(
             client
-                .configured_csv_rows()
+                .configured_csv_stream()
                 .await
                 .expect("configured CSV stream opens"),
         )
         .await
         .expect("configured CSV stream decodes");
-        assert_eq!(configured, [("configured".to_owned(), 3)]);
+        assert_eq!(configured_streamed, configured);
 
-        for _ in 0..2 {
-            let values = collect(client.nd_json_values().await.expect("NDJSON stream opens"))
-                .await
-                .expect("NDJSON stream decodes");
-            assert_eq!(values, [1, 20, 3]);
-        }
+        let ndjson_buffered = client.nd_json_values().await.expect("buffered NDJSON");
+        assert_eq!(ndjson_buffered, [1, 20, 3]);
+        let ndjson_streamed = collect(client.nd_json_stream().await.expect("NDJSON stream opens"))
+            .await
+            .expect("NDJSON stream decodes");
+        assert_eq!(ndjson_streamed, ndjson_buffered);
 
-        assert_eq!(server.request_count(), 5);
+        assert_eq!(server.request_count(), 6);
     }
 }

@@ -1,5 +1,6 @@
 #![cfg(any(feature = "csv", feature = "ndjson"))]
 
+use concord_core::contracts::{Buffered, PageResponseSpec, ResponseBodySpec};
 use concord_core::records::RecordDecoder;
 use serde::Deserialize;
 
@@ -25,8 +26,15 @@ type HeaderlessTsv<T> = concord_extras::records::Csv<
 
 #[test]
 fn concrete_record_decoders_expose_finite_public_core_contracts() {
+    fn complete_page_spec<S>()
+    where
+        S: ResponseBodySpec<Output = Vec<Row>, Mode = Buffered> + PageResponseSpec,
+    {
+    }
+
     #[cfg(feature = "csv")]
     {
+        complete_page_spec::<concord_extras::records::Csv<Row>>();
         assert_eq!(
             <concord_extras::records::Csv<Row> as RecordDecoder>::accept(),
             Some("text/csv")
@@ -46,6 +54,7 @@ fn concrete_record_decoders_expose_finite_public_core_contracts() {
     }
     #[cfg(feature = "ndjson")]
     {
+        complete_page_spec::<concord_extras::records::NdJson<Row>>();
         assert_eq!(
             <concord_extras::records::NdJson<Row> as RecordDecoder>::accept(),
             Some("application/x-ndjson")

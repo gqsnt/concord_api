@@ -1,7 +1,10 @@
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 
-use concord_core::contracts::{BytesMut, ResponseHead};
+use concord_core::contracts::{
+    Buffered, BufferedRecords, Bytes, BytesMut, PageResponseSpec, ResponseBodyError,
+    ResponseBodySpec, ResponseHead,
+};
 use concord_core::records::{RecordDecoder, RecordError, RecordErrorKind};
 use serde::de::DeserializeOwned;
 
@@ -77,7 +80,12 @@ impl CsvDelimiter for TabDelimiter {
     const BYTE: u8 = b'\t';
 }
 
-/// Typed incremental CSV decoding with type-level header and delimiter policies.
+/// Typed CSV responses with type-level header and delimiter policies.
+///
+/// As a response specification, `Csv<T, H, D>` completely acquires the bounded
+/// body and returns `Vec<T>`. Wrapping the same format in
+/// [`Records`](concord_core::records::Records) returns a lazy record stream.
+/// Both forms use the same [`RecordDecoder`] implementation and core driver.
 ///
 /// The record type `T` is the first generic parameter. Header mode `H` and
 /// delimiter `D` are trailing policies so [`Csv<T>`](Csv) remains source
@@ -385,6 +393,36 @@ where
         NonZeroUsize::new(MAX_STAGED_RECORD_BYTES)
             .expect("the built-in CSV staging bound is positive")
     }
+}
+
+impl<T, H, D> ResponseBodySpec for Csv<T, H, D>
+where
+    T: DeserializeOwned + Send + 'static,
+    H: CsvHeaderMode,
+    D: CsvDelimiter,
+{
+    type Output = Vec<T>;
+    type Mode = Buffered;
+
+    fn accept() -> Option<&'static str> {
+        <BufferedRecords<Self> as ResponseBodySpec>::accept()
+    }
+
+    fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
+        <BufferedRecords<Self> as ResponseBodySpec>::validate(head)
+    }
+
+    fn from_body(body: Bytes, head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
+        <BufferedRecords<Self> as ResponseBodySpec>::from_body(body, head)
+    }
+}
+
+impl<T, H, D> PageResponseSpec for Csv<T, H, D>
+where
+    T: DeserializeOwned + Send + 'static,
+    H: CsvHeaderMode,
+    D: CsvDelimiter,
+{
 }
 
 fn is_csv_media_type(value: &str) -> bool {
@@ -704,15 +742,23 @@ mod tests {
         assert!(!is_csv_media_type("text/tab-separated-values"));
         assert!(!is_csv_media_type("text/csv; broken=\"unterminated"));
 
-        assert_eq!(Csv::<Row>::accept(), Some("text/csv"));
+        assert_eq!(<Csv<Row> as RecordDecoder>::accept(), Some("text/csv"));
         assert_eq!(Csv::<Row>::max_buffered_bytes().get(), 1024 * 1024);
         assert_eq!(
-            Csv::<Row, NoHeader, SemicolonDelimiter>::accept(),
+            <Csv<Row, NoHeader, SemicolonDelimiter> as RecordDecoder>::accept(),
             Some("text/csv")
         );
         assert_eq!(
             Csv::<Row, HasHeader, TabDelimiter>::max_buffered_bytes().get(),
             1024 * 1024
         );
+
+        fn complete_page_spec<S>()
+        where
+            S: ResponseBodySpec<Output = Vec<Row>, Mode = Buffered> + PageResponseSpec,
+        {
+        }
+        complete_page_spec::<Csv<Row>>();
+        assert_eq!(<Csv<Row> as ResponseBodySpec>::accept(), Some("text/csv"));
     }
 }

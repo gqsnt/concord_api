@@ -1,16 +1,22 @@
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 
-use concord_core::contracts::{BytesMut, ResponseHead};
+use concord_core::contracts::{
+    Buffered, BufferedRecords, Bytes, BytesMut, PageResponseSpec, ResponseBodyError,
+    ResponseBodySpec, ResponseHead,
+};
 use concord_core::records::{RecordDecoder, RecordError, RecordErrorKind};
 use serde::de::DeserializeOwned;
 
 const MAX_STAGED_RECORD_BYTES: usize = 1024 * 1024;
 
-/// Typed incremental newline-delimited JSON decoding.
+/// Typed newline-delimited JSON responses and incremental record decoding.
 ///
 /// One typed JSON value is decoded from each non-empty UTF-8 LF or CRLF line;
 /// whitespace-only lines are ignored and the final line may omit its newline.
+/// A direct `NdJson<T>` response completely acquires the bounded body and
+/// returns `Vec<T>`; [`Records<NdJson<T>>`](concord_core::records::Records)
+/// returns a lazy record stream through the same decoder and core driver.
 /// Undecoded staging is bounded to 1 MiB. Parser text, raw lines, and JSON values
 /// are absent from errors. This type is available through the independent
 /// `ndjson` feature and does not require the general endpoint `json` feature.
@@ -120,6 +126,28 @@ where
     }
 }
 
+impl<T> ResponseBodySpec for NdJson<T>
+where
+    T: DeserializeOwned + Send + 'static,
+{
+    type Output = Vec<T>;
+    type Mode = Buffered;
+
+    fn accept() -> Option<&'static str> {
+        <BufferedRecords<Self> as ResponseBodySpec>::accept()
+    }
+
+    fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
+        <BufferedRecords<Self> as ResponseBodySpec>::validate(head)
+    }
+
+    fn from_body(body: Bytes, head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
+        <BufferedRecords<Self> as ResponseBodySpec>::from_body(body, head)
+    }
+}
+
+impl<T> PageResponseSpec for NdJson<T> where T: DeserializeOwned + Send + 'static {}
+
 fn is_ndjson_media_type(value: &str) -> bool {
     value.parse::<mime::Mime>().is_ok_and(|media| {
         media.type_() == mime::APPLICATION
@@ -213,7 +241,21 @@ mod tests {
         assert!(!is_ndjson_media_type(
             "application/ndjson; broken=\"unterminated"
         ));
-        assert_eq!(NdJson::<Value>::accept(), Some("application/x-ndjson"));
+        assert_eq!(
+            <NdJson<Value> as RecordDecoder>::accept(),
+            Some("application/x-ndjson")
+        );
         assert_eq!(NdJson::<Value>::max_buffered_bytes().get(), 1024 * 1024);
+
+        fn complete_page_spec<S>()
+        where
+            S: ResponseBodySpec<Output = Vec<Value>, Mode = Buffered> + PageResponseSpec,
+        {
+        }
+        complete_page_spec::<NdJson<Value>>();
+        assert_eq!(
+            <NdJson<Value> as ResponseBodySpec>::accept(),
+            Some("application/x-ndjson")
+        );
     }
 }

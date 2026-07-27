@@ -1,4 +1,4 @@
-//! Generic bounded record streaming with custom, CSV, and NDJSON decoders.
+//! Generic bounded buffered and streaming record delivery.
 //!
 //! Required features: `records`, `csv`, and `ndjson`. Mode: locally runnable
 //! through scripted loopback responses only. Documentation owners:
@@ -12,7 +12,7 @@ use std::pin::Pin;
 use concord::api;
 use concord::codec::BytesMut;
 use concord::records::{
-    Csv, HasHeader, NdJson, RecordDecoder, RecordError, RecordErrorKind, Records,
+    BufferedRecords, Csv, HasHeader, NdJson, RecordDecoder, RecordError, RecordErrorKind, Records,
     SemicolonDelimiter,
 };
 use concord::response::ResponseHead;
@@ -76,9 +76,13 @@ api! {
     }
 
     GET custom() -> Records<crate::request_response::records::PipeRecords>;
-    GET csv_rows() -> Records<Csv<(String, u32)>>;
-    GET configured_csv_rows() -> Records<crate::request_response::records::ConfCsv<(String, u32)>>;
-    GET nd_json_values() -> Records<NdJson<u32>>;
+    GET buffered_custom() -> BufferedRecords<crate::request_response::records::PipeRecords>;
+    GET csv_rows() -> Csv<(String, u32)>;
+    GET csv_stream() -> Records<Csv<(String, u32)>>;
+    GET configured_csv_rows() -> crate::request_response::records::ConfCsv<(String, u32)>;
+    GET configured_csv_stream() -> Records<crate::request_response::records::ConfCsv<(String, u32)>>;
+    GET nd_json_values() -> NdJson<u32>;
+    GET nd_json_stream() -> Records<NdJson<u32>>;
 }
 // ANCHOR_END: records_contract
 
@@ -87,9 +91,13 @@ api! {
 pub fn construct() -> Result<(), concord::ClientBuildError> {
     let client = RecordsApi::builder().build()?;
     let _: records_api::CustomRequest = client.custom();
+    let _: records_api::BufferedCustomRequest = client.buffered_custom();
     let _: records_api::CsvRowsRequest = client.csv_rows();
+    let _: records_api::CsvStreamRequest = client.csv_stream();
     let _: records_api::ConfiguredCsvRowsRequest = client.configured_csv_rows();
+    let _: records_api::ConfiguredCsvStreamRequest = client.configured_csv_stream();
     let _: records_api::NdJsonValuesRequest = client.nd_json_values();
+    let _: records_api::NdJsonStreamRequest = client.nd_json_stream();
     Ok(())
 }
 // ANCHOR_END: record_requests
@@ -99,7 +107,7 @@ pub fn construct() -> Result<(), concord::ClientBuildError> {
 pub async fn read_csv_rows(
     client: &RecordsApi,
 ) -> Result<Vec<(String, u32)>, Box<dyn std::error::Error>> {
-    let mut stream = client.csv_rows().await?;
+    let mut stream = client.csv_stream().await?;
     let mut rows = Vec::new();
     while let Some(row) =
         std::future::poll_fn(|context| Pin::new(&mut stream).poll_next(context)).await
@@ -109,3 +117,10 @@ pub async fn read_csv_rows(
     Ok(rows)
 }
 // ANCHOR_END: consume_records
+
+/// Collects a complete CSV response through the ordinary buffered lifecycle.
+pub async fn read_buffered_csv_rows(
+    client: &RecordsApi,
+) -> Result<Vec<(String, u32)>, concord::ApiError> {
+    client.csv_rows().await
+}

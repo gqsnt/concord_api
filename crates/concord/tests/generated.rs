@@ -6,6 +6,8 @@ mod generated {
     pub(crate) mod buffered_records;
     pub(crate) mod pagination;
     pub(crate) mod rate_limits;
+    #[cfg(any(feature = "csv", feature = "ndjson"))]
+    pub(crate) mod record_formats;
     pub(crate) mod response_bytes;
     #[cfg(feature = "multipart")]
     pub(crate) mod shaping;

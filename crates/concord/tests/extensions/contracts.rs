@@ -43,6 +43,8 @@ use concord::records::NdJson;
 use concord::records::{Csv, HasHeader, NoHeader, SemicolonDelimiter, TabDelimiter};
 #[cfg(feature = "records")]
 use concord::records::{RecordDecoder, RecordError, Records};
+#[cfg(feature = "csv")]
+use concord::response::PageResponseSpec;
 use concord::response::{
     Buffered, ByteStream, Discard, ResponseBodyError, ResponseBodySpec, ResponseHead, Streaming,
 };
@@ -639,9 +641,11 @@ concord::api! {
         base "http://csv-extension.example.test/";
     }
 
-    GET rows() -> Records<Csv<Vec<String>>>;
-    GET configured_rows() -> Records<ConfCsv<Row>>;
-    GET headerless_rows() -> Records<HeaderlessTsv<Row>>;
+    GET rows() -> Csv<Vec<String>>;
+    GET rows_stream() -> Records<Csv<Vec<String>>>;
+    GET configured_rows() -> ConfCsv<Row>;
+    GET configured_rows_stream() -> Records<ConfCsv<Row>>;
+    GET headerless_rows() -> HeaderlessTsv<Row>;
 }
 
 #[cfg(feature = "csv")]
@@ -652,6 +656,11 @@ fn facade_reexports_the_complete_csv_policy_surface() {
     fn header_mode<H: CsvHeaderMode>() {}
     fn delimiter<D: CsvDelimiter>() {}
     fn decoder<D: RecordDecoder>() {}
+    fn complete_page<S>()
+    where
+        S: ResponseBodySpec<Output = Vec<Row>, Mode = Buffered> + PageResponseSpec,
+    {
+    }
 
     header_mode::<HasHeader>();
     header_mode::<NoHeader>();
@@ -660,6 +669,8 @@ fn facade_reexports_the_complete_csv_policy_surface() {
     delimiter::<TabDelimiter>();
     decoder::<ConfCsv<Row>>();
     decoder::<HeaderlessTsv<Row>>();
+    complete_page::<ConfCsv<Row>>();
+    complete_page::<HeaderlessTsv<Row>>();
 }
 
 #[cfg(feature = "ndjson")]
@@ -668,7 +679,8 @@ concord::api! {
         base "http://ndjson-extension.example.test/";
     }
 
-    GET values() -> Records<NdJson<u32>>;
+    GET values() -> NdJson<u32>;
+    GET values_stream() -> Records<NdJson<u32>>;
 }
 
 /// Compiles every stable extension workflow without private or native integration imports.
@@ -791,7 +803,9 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
     {
         let records = CsvExtensionApi::new().expect("CSV extension client");
         let _: csv_extension_api::RowsRequest = records.rows();
+        let _: csv_extension_api::RowsStreamRequest = records.rows_stream();
         let _: csv_extension_api::ConfiguredRowsRequest = records.configured_rows();
+        let _: csv_extension_api::ConfiguredRowsStreamRequest = records.configured_rows_stream();
         let _: csv_extension_api::HeaderlessRowsRequest = records.headerless_rows();
     }
 
@@ -799,6 +813,7 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
     {
         let records = NdJsonExtensionApi::new().expect("NDJSON extension client");
         let _: nd_json_extension_api::ValuesRequest = records.values();
+        let _: nd_json_extension_api::ValuesStreamRequest = records.values_stream();
     }
 
     Ok(())

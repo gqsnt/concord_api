@@ -1,4 +1,4 @@
-//! Concrete ecosystem-backed decoders for core's bounded record stream.
+//! Concrete ecosystem-backed formats for buffered and streaming records.
 //!
 //! With the `csv` feature, `Csv` and its sealed header and delimiter policies
 //! provide compile-time CSV dialect selection without runtime configuration.
