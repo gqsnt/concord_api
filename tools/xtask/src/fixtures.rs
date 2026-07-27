@@ -73,7 +73,10 @@ pub(crate) fn run_all(root: &Path) -> Result<(), String> {
         (
             "buffered_records_absent",
             "fixture-absence",
-            &["no `BufferedRecords` in `prelude`"][..],
+            &[
+                "no `BufferedRecords` in `prelude`",
+                "could not find `records` in `runtime`",
+            ][..],
         ),
         (
             "records_codecs_absent",

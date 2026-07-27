@@ -54,6 +54,7 @@ fn generated_privacy_and_capability_boundaries_are_compiler_enforced() {
         "tests/ui/fail/capabilities/bare_endpoint_value_setter_absent.rs",
         "tests/ui/fail/capabilities/bare_scope_value_setter_absent.rs",
         "tests/ui/fail/capabilities/bare_value_setter_absent.rs",
+        "tests/ui/fail/capabilities/any_media_is_not_media_type.rs",
         "tests/ui/fail/capabilities/non_clone_body_endpoint.rs",
         "tests/ui/fail/capabilities/runtime_endpoint_builder_capabilities_absent.rs",
         "tests/ui/fail/capabilities/runtime_endpoint_pagination_absent.rs",

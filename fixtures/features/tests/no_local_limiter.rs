@@ -262,10 +262,9 @@ async fn generated_clients_fail_closed_without_local_limiter_unless_limiter_is_d
     let generated_plan = limiter.plans.lock().expect("generated plan capture");
     assert_eq!(generated_plan.len(), 1);
     assert_eq!(generated_plan[0].len(), 1);
-    assert!(
-        generated_plan[0][0]
-            .id
-            .ends_with("limited_generated_api.rate_limit")
+    assert_eq!(
+        generated_plan[0][0].id,
+        "limited_generated_api.rate_limit.fixture_limit"
     );
     assert!(generated_plan[0][0].parts.is_empty());
     assert_eq!(generated_plan[0][0].cost, 2);

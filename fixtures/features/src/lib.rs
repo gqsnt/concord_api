@@ -15,14 +15,17 @@ api! {
 api! {
     client LimitedGeneratedApi {
         base "http://no-local-limiter-limited.example.test/";
-        rate_limit {
-            cost 2;
-            3 / 1m;
-            30 / 10m;
+        rate_limits {
+            rule fixture_limit {
+                cost 2;
+                3 / 1m;
+                30 / 10m;
+            }
         }
     }
 
     GET read() -> Bytes {
         path ["read"];
+        rate_limit use fixture_limit;
     }
 }

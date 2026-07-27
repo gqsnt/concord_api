@@ -17,6 +17,9 @@ check:
     cargo check --workspace --all-targets --no-default-features --locked
     cargo check --workspace --all-targets --all-features --locked
     cargo check -p concord --lib --no-default-features --features rate-limit --locked
+    cargo check -p concord --lib --no-default-features --features records --locked
+    cargo check -p concord --lib --no-default-features --features csv --locked
+    cargo check -p concord --lib --no-default-features --features ndjson --locked
     cargo check -p concord --lib --no-default-features --features json --locked
     cargo check -p concord --lib --no-default-features --features oauth2-client --locked
     cargo check -p concord --lib --no-default-features --features multipart --locked
