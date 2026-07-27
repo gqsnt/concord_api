@@ -93,7 +93,6 @@ It does not support:
 - `host` partitioning when final host shaping depends on a
   pagination-controlled value;
 - descendant replacement or disabling of an inherited rule;
-- repeatable named rules at one lexical owner;
 - a built-in observer chain;
 - implicit process-global limiter state;
 - a first-party distributed strict-quota implementation.

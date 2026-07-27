@@ -124,10 +124,20 @@ api! {
         vars {
             tenant: String;
         }
+        rate_limits {
+            rule tenant_reads {
+                by [tenant];
+                10 / 1m;
+            }
+        }
         rate_limit { 10 / 1m; }
     }
 
-    GET read() -> Bytes;
+    GET read() -> Bytes {
+        rate_limit use tenant_reads {
+            tenant = vars.tenant;
+        }
+    }
 }
 
 pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {

@@ -15,7 +15,7 @@ use super::diagnostics::{
 };
 use super::keyword;
 use super::pagination::parse_pagination;
-use super::rate_limits::parse_rate_limit;
+use super::rate_limits::{parse_rate_limit, parse_rate_limits};
 use super::request::{parse_headers, parse_host, parse_path, parse_query, parse_timeout};
 use super::values::{parse_parameters, parse_vars};
 use crate::semantic::surface::canonical_ident;
@@ -76,6 +76,7 @@ impl Parse for SourceClient {
         let mut base = None;
         let mut values = None;
         let mut credentials = None;
+        let mut rate_limits = None;
         let mut layer = Layer::default();
 
         while !body.is_empty() {
@@ -105,6 +106,17 @@ impl Parse for SourceClient {
                 )?;
                 continue;
             }
+            if body.peek(keyword::rate_limits) {
+                let key_span = body.span();
+                let value = parse_rate_limits(&body)?;
+                insert_clause(
+                    &mut rate_limits,
+                    Clause { key_span, value },
+                    "rate_limits",
+                    &owner,
+                )?;
+                continue;
+            }
             if body.peek(keyword::retry) {
                 return Err(removed_retry_diagnostic(&body));
             }
@@ -117,7 +129,7 @@ impl Parse for SourceClient {
                 );
             }
             return Err(body.error(
-                "unsupported client clause; expected `base`, `vars`, `credentials`, `host`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit`",
+                "unsupported client clause; expected `base`, `vars`, `credentials`, `rate_limits`, `host`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit`",
             ));
         }
         let base = base.ok_or_else(|| {
@@ -130,6 +142,7 @@ impl Parse for SourceClient {
             base,
             values,
             credentials,
+            rate_limits,
             layer,
         })
     }
@@ -422,12 +435,22 @@ fn parse_layer_clause(
         }
         let key_span = input.span();
         let value = parse_rate_limit(input)?;
-        insert_clause(
-            &mut layer.rate_limit,
-            Clause { key_span, value },
-            "rate_limit",
-            owner,
-        )?;
+        if matches!(&value, super::ast::RateLimitAttachmentDecl::Inline(_)) {
+            if let Some(first) = layer.rate_limits.iter().find(|clause| {
+                matches!(clause.value, super::ast::RateLimitAttachmentDecl::Inline(_))
+            }) {
+                let mut error = key_span.error(format!(
+                    "a {owner} permits at most one anonymous direct `rate_limit {{ ... }}` rule; use a named reusable rule for additional local policies"
+                ));
+                error.combine(
+                    first
+                        .key_span
+                        .error("the first anonymous direct rate-limit rule is here"),
+                );
+                return Err(error);
+            }
+        }
+        layer.rate_limits.push(Clause { key_span, value });
         return Ok(true);
     }
     Ok(false)
@@ -448,6 +471,7 @@ fn is_client_only_declaration_start(input: ParseStream<'_>) -> bool {
     input.peek(keyword::base)
         || input.peek(keyword::vars)
         || input.peek(keyword::credentials)
+        || input.peek(keyword::rate_limits)
         || input.peek(keyword::retry)
 }
 

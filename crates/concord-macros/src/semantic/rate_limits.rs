@@ -5,8 +5,40 @@ use super::model::{
     NormalizedRateLimitWindow, ResolvedExpr, ValueReference, ValueShape,
 };
 use super::pagination::PaginationBoundValue;
+use super::surface::{canonical_ident, to_snake_case};
 use super::symbols::ScopeFrame;
-use crate::syntax::ast::{Layer, RateLimitDecl, RateLimitDimensionDecl, SourceChild};
+use crate::syntax::ast::{
+    Layer, RateLimitAttachmentDecl, RateLimitDecl, RateLimitDefinitionDecl,
+    RateLimitDefinitionDimensionDecl, RateLimitDimensionDecl, RateLimitUseDecl, SourceChild,
+};
+use crate::{MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES};
+
+#[derive(Clone)]
+pub(super) struct RateLimitDefinition {
+    name: String,
+    name_span: proc_macro2::Span,
+    id: String,
+    explicit_id: bool,
+    id_span: proc_macro2::Span,
+    dimensions: Vec<ResolvedDefinitionDimension>,
+    cost: u32,
+    windows: Vec<NormalizedRateLimitWindow>,
+    uses: usize,
+}
+
+#[derive(Clone)]
+enum ResolvedDefinitionDimension {
+    Host {
+        span: proc_macro2::Span,
+    },
+    Endpoint {
+        span: proc_macro2::Span,
+    },
+    Formal {
+        public_name: String,
+        span: proc_macro2::Span,
+    },
+}
 
 #[derive(Clone, Copy)]
 pub(super) enum RateLimitDeclarationLayer {
@@ -32,18 +64,119 @@ pub(super) struct RateLimitResolutionContext<'a> {
 }
 
 pub(super) fn source_tree_declares_rate_limits(layer: &Layer, children: &[SourceChild]) -> bool {
-    let local = layer.rate_limit.is_some();
+    let local = !layer.rate_limits.is_empty();
     local
         || children.iter().any(|child| match child {
             SourceChild::Scope(scope) => {
                 source_tree_declares_rate_limits(&scope.layer, &scope.children)
             }
-            SourceChild::Endpoint(endpoint) => endpoint.layer.rate_limit.is_some(),
+            SourceChild::Endpoint(endpoint) => !endpoint.layer.rate_limits.is_empty(),
         })
+}
+
+pub(super) fn resolve_rate_limit_definitions(
+    client_name: &syn::Ident,
+    definitions: Vec<RateLimitDefinitionDecl>,
+) -> syn::Result<Vec<RateLimitDefinition>> {
+    let client_name = to_snake_case(&canonical_ident(client_name));
+    definitions
+        .into_iter()
+        .map(|definition| {
+            let name = canonical_ident(&definition.name);
+            let name_span = definition.name.span();
+            let (id, explicit_id, id_span) = definition.id.as_ref().map_or_else(
+                || {
+                    (
+                        format!("{client_name}.rate_limit.{name}"),
+                        false,
+                        definition.name.span(),
+                    )
+                },
+                |id| (id.value.value(), true, id.value.span()),
+            );
+            if id.len() > MAX_RATE_LIMIT_ID_BYTES {
+                return Err(id_span.error(format!(
+                    "a rate-limit rule ID permits at most {MAX_RATE_LIMIT_ID_BYTES} UTF-8 bytes"
+                )));
+            }
+            let dimensions = definition
+                .dimensions
+                .iter()
+                .map(|dimension| match dimension {
+                    RateLimitDefinitionDimensionDecl::Host { span } => {
+                        ResolvedDefinitionDimension::Host { span: *span }
+                    }
+                    RateLimitDefinitionDimensionDecl::Endpoint { span } => {
+                        ResolvedDefinitionDimension::Endpoint { span: *span }
+                    }
+                    RateLimitDefinitionDimensionDecl::Formal { name } => {
+                        ResolvedDefinitionDimension::Formal {
+                            public_name: canonical_ident(name),
+                            span: name.span(),
+                        }
+                    }
+                })
+                .collect();
+            let windows = definition
+                .windows
+                .iter()
+                .map(|window| NormalizedRateLimitWindow {
+                    capacity: window.capacity,
+                    duration: window.duration.value,
+                })
+                .collect();
+            let _ = definition.cost_span;
+            Ok(RateLimitDefinition {
+                name,
+                name_span,
+                id,
+                explicit_id,
+                id_span,
+                dimensions,
+                cost: definition.cost,
+                windows,
+                uses: 0,
+            })
+        })
+        .collect()
+}
+
+pub(super) fn validate_rate_limit_definitions_used(
+    definitions: &[RateLimitDefinition],
+) -> syn::Result<()> {
+    if let Some(definition) = definitions.iter().find(|definition| definition.uses == 0) {
+        return Err(definition.name_span.error(format!(
+            "reusable rate-limit rule `{}` is never attached",
+            definition.name
+        )));
+    }
+    Ok(())
 }
 
 impl Resolver<'_> {
     pub(super) fn resolve_rate_limit(
+        &mut self,
+        attachment: &RateLimitAttachmentDecl,
+        declaration_span: proc_macro2::Span,
+        scopes: &[ScopeFrame],
+        endpoint: Option<&[super::model::Value]>,
+        context: &RateLimitResolutionContext<'_>,
+    ) -> syn::Result<NormalizedRateLimitRule> {
+        match attachment {
+            RateLimitAttachmentDecl::Inline(declaration) => self.resolve_inline_rate_limit(
+                declaration,
+                declaration_span,
+                scopes,
+                endpoint,
+                context,
+            ),
+            RateLimitAttachmentDecl::Named(attachment) => {
+                self.resolve_named_rate_limit(attachment, scopes, endpoint, context)
+            }
+        }
+    }
+
+    fn resolve_inline_rate_limit(
         &self,
         declaration: &RateLimitDecl,
         declaration_span: proc_macro2::Span,
@@ -51,6 +184,7 @@ impl Resolver<'_> {
         endpoint: Option<&[super::model::Value]>,
         context: &RateLimitResolutionContext<'_>,
     ) -> syn::Result<NormalizedRateLimitRule> {
+        let _ = declaration.cost_span;
         let dimensions = declaration
             .dimensions
             .iter()
@@ -65,43 +199,17 @@ impl Resolver<'_> {
                     namespace, name, ..
                 } => {
                     let public_name = dimension.public_name();
-                    match (namespace.to_string().as_str(), context.layer) {
-                        ("scope", RateLimitDeclarationLayer::Client) => {
-                            return Err(name.span().error(format!(
-                                "`{public_name}` is unavailable in a client rate-limit declaration"
-                            )));
-                        }
-                        (
-                            "ep",
-                            RateLimitDeclarationLayer::Client | RateLimitDeclarationLayer::Scope,
-                        ) => {
-                            return Err(name.span().error(format!(
-                                "`{public_name}` is unavailable in a {} rate-limit declaration",
-                                context.layer.name()
-                            )));
-                        }
-                        _ => {}
-                    }
-                    let value =
-                        self.resolve_value_reference(namespace, name, scopes, endpoint)?;
-                    match &value.shape {
-                        ValueShape::Option { .. } | ValueShape::OptionVec { .. } => {
-                            return Err(name.span().error(format!(
-                                "rate-limit dimension `{public_name}` must be a required or defaulted scalar; optional values are unsupported"
-                            )));
-                        }
-                        ValueShape::Vec { .. } => {
-                            return Err(name.span().error(format!(
-                                "rate-limit dimension `{public_name}` must be a scalar; vector values are unsupported"
-                            )));
-                        }
-                        ValueShape::Scalar => {}
-                    }
-                    Ok(NormalizedRateLimitDimension::Value {
-                        public_name,
-                        reference: value.reference,
-                        span: name.span(),
-                    })
+                    self.resolve_rate_limit_value(
+                        &public_name,
+                        &public_name,
+                        namespace,
+                        name,
+                        name.span(),
+                        scopes,
+                        endpoint,
+                        context,
+                        false,
+                    )
                 }
             })
             .collect::<syn::Result<Vec<_>>>()?;
@@ -134,6 +242,196 @@ impl Resolver<'_> {
             dimensions,
             cost: declaration.cost,
             windows,
+        })
+    }
+
+    fn resolve_named_rate_limit(
+        &mut self,
+        attachment: &RateLimitUseDecl,
+        scopes: &[ScopeFrame],
+        endpoint: Option<&[super::model::Value]>,
+        context: &RateLimitResolutionContext<'_>,
+    ) -> syn::Result<NormalizedRateLimitRule> {
+        let attachment_name = canonical_ident(&attachment.name);
+        let Some(definition_index) = self
+            .rate_limit_definitions
+            .iter()
+            .position(|definition| definition.name == attachment_name)
+        else {
+            return Err(attachment.name.span().error(format!(
+                "unknown reusable rate-limit rule `{attachment_name}`"
+            )));
+        };
+        self.rate_limit_definitions[definition_index].uses += 1;
+        let definition = self.rate_limit_definitions[definition_index].clone();
+
+        for binding in &attachment.bindings {
+            let binding_name = canonical_ident(&binding.name);
+            if matches!(binding_name.as_str(), "host" | "endpoint") {
+                return Err(binding.name.span().error(format!(
+                    "built-in rate-limit dimension `{binding_name}` cannot be bound"
+                )));
+            }
+            if !definition.dimensions.iter().any(|dimension| {
+                matches!(
+                    dimension,
+                    ResolvedDefinitionDimension::Formal { public_name, .. }
+                        if public_name == &binding_name
+                )
+            }) {
+                return Err(binding.name.span().error(format!(
+                    "unknown binding `{binding_name}` for reusable rate-limit rule `{attachment_name}`"
+                )));
+            }
+        }
+
+        let dimensions = definition
+            .dimensions
+            .iter()
+            .map(|dimension| match dimension {
+                ResolvedDefinitionDimension::Host { span } => {
+                    Ok(NormalizedRateLimitDimension::Host { span: *span })
+                }
+                ResolvedDefinitionDimension::Endpoint { span } => {
+                    Ok(NormalizedRateLimitDimension::Endpoint { span: *span })
+                }
+                ResolvedDefinitionDimension::Formal { public_name, span } => {
+                    let Some(binding) = attachment
+                        .bindings
+                        .iter()
+                        .find(|binding| canonical_ident(&binding.name) == *public_name)
+                    else {
+                        return Err(attachment.name.span().error(format!(
+                            "reusable rate-limit rule `{attachment_name}` requires a binding for dimension `{public_name}`"
+                        )));
+                    };
+                    let source_name = format!(
+                        "{}.{}",
+                        canonical_ident(&binding.value.namespace),
+                        canonical_ident(&binding.value.name)
+                    );
+                    let dimension = self.resolve_rate_limit_value(
+                        public_name,
+                        &source_name,
+                        &binding.value.namespace,
+                        &binding.value.name,
+                        binding.value.span,
+                        scopes,
+                        endpoint,
+                        context,
+                        true,
+                    )?;
+                    let _ = span;
+                    Ok(dimension)
+                }
+            })
+            .collect::<syn::Result<Vec<_>>>()?;
+
+        let cost = attachment
+            .cost
+            .as_ref()
+            .map_or(definition.cost, |cost| cost.value);
+        if definition
+            .windows
+            .iter()
+            .any(|window| cost > window.capacity)
+        {
+            let span = attachment
+                .cost
+                .as_ref()
+                .map_or(attachment.name.span(), |cost| cost.key_span);
+            return Err(span.error(format!(
+                "cost override for reusable rate-limit rule `{attachment_name}` must not exceed any window capacity"
+            )));
+        }
+        Ok(NormalizedRateLimitRule {
+            id: definition.id,
+            explicit_id: definition.explicit_id,
+            id_span: definition.id_span,
+            origin: format!(
+                "named rule `{attachment_name}` attached at {}",
+                context.lexical_origin
+            ),
+            dimensions,
+            cost,
+            windows: definition.windows,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn resolve_rate_limit_value(
+        &self,
+        logical_name: &str,
+        source_name: &str,
+        namespace: &syn::Ident,
+        name: &syn::Ident,
+        span: proc_macro2::Span,
+        scopes: &[ScopeFrame],
+        endpoint: Option<&[super::model::Value]>,
+        context: &RateLimitResolutionContext<'_>,
+        named_binding: bool,
+    ) -> syn::Result<NormalizedRateLimitDimension> {
+        if logical_name.is_empty() || logical_name.len() > MAX_RATE_LIMIT_KEY_PART_NAME_BYTES {
+            return Err(span.error(format!(
+                "a rate-limit key-part name permits 1-{MAX_RATE_LIMIT_KEY_PART_NAME_BYTES} UTF-8 bytes"
+            )));
+        }
+        match (canonical_ident(namespace).as_str(), context.layer) {
+            ("scope", RateLimitDeclarationLayer::Client) => {
+                let owner = if named_binding {
+                    "attachment"
+                } else {
+                    "declaration"
+                };
+                return Err(name.span().error(format!(
+                    "`{source_name}` is unavailable in a client rate-limit {owner}"
+                )));
+            }
+            ("ep", RateLimitDeclarationLayer::Client | RateLimitDeclarationLayer::Scope) => {
+                let owner = if named_binding {
+                    "attachment"
+                } else {
+                    "declaration"
+                };
+                return Err(name.span().error(format!(
+                    "`{source_name}` is unavailable in a {} rate-limit {owner}",
+                    context.layer.name()
+                )));
+            }
+            _ => {}
+        }
+        let value = self.resolve_value_reference(namespace, name, scopes, endpoint)?;
+        match &value.shape {
+            ValueShape::Option { .. } | ValueShape::OptionVec { .. } => {
+                let message = if named_binding {
+                    format!(
+                        "rate-limit dimension `{logical_name}` bound to `{source_name}` must be a required or defaulted scalar; optional values are unsupported"
+                    )
+                } else {
+                    format!(
+                        "rate-limit dimension `{logical_name}` must be a required or defaulted scalar; optional values are unsupported"
+                    )
+                };
+                return Err(name.span().error(message));
+            }
+            ValueShape::Vec { .. } => {
+                let message = if named_binding {
+                    format!(
+                        "rate-limit dimension `{logical_name}` bound to `{source_name}` must be a scalar; vector values are unsupported"
+                    )
+                } else {
+                    format!(
+                        "rate-limit dimension `{logical_name}` must be a scalar; vector values are unsupported"
+                    )
+                };
+                return Err(name.span().error(message));
+            }
+            ValueShape::Scalar => {}
+        }
+        Ok(NormalizedRateLimitDimension::Value {
+            public_name: logical_name.to_owned(),
+            reference: value.reference,
+            span,
         })
     }
 
@@ -268,6 +566,321 @@ mod tests {
             .err()
             .expect("rate-limit semantic error")
             .to_string()
+    }
+
+    #[test]
+    fn definition_registry_alone_does_not_request_a_runtime_limiter() {
+        let source = crate::syntax::parse(quote! {
+            client Api {
+                base "https://example.test";
+                rate_limits {
+                    rule unused_here { 1 / 1s; }
+                }
+            }
+            GET read() -> Bytes;
+        })
+        .expect("definition-only syntax");
+
+        assert!(!super::source_tree_declares_rate_limits(
+            &source.client.layer,
+            &source.children
+        ));
+    }
+
+    #[test]
+    fn reusable_rule_owns_stable_identity_dimensions_and_attachment_cost() {
+        let api = test_support::resolve_tokens(quote! {
+            client ReusableApi {
+                base "https://example.test";
+                vars { tenant: String; }
+                rate_limit use service_reads;
+                rate_limits {
+                    rule account_reads {
+                        id "service.account.read";
+                        by [host, endpoint, account];
+                        100 / 1m;
+                    }
+                    rule service_reads {
+                        10_000 / 1m;
+                    }
+                }
+            }
+            scope accounts(account: String) {
+                rate_limit use account_reads {
+                    account = scope.account;
+                }
+                GET read() -> Bytes;
+            }
+            GET lookup(account: String) -> Bytes {
+                rate_limit use account_reads {
+                    cost 2;
+                    account = ep.account;
+                }
+            }
+        });
+        let scoped = test_support::endpoint(&api.client.children, "read");
+        let root = test_support::endpoint(&api.client.children, "lookup");
+
+        assert_eq!(scoped.config.rate_limits.len(), 2);
+        assert_eq!(root.config.rate_limits.len(), 2);
+        let scoped_rule = &scoped.config.rate_limits[1];
+        let root_rule = &root.config.rate_limits[1];
+        assert_eq!(scoped_rule.id, "service.account.read");
+        assert_eq!(root_rule.id, "service.account.read");
+        assert!(scoped_rule.explicit_id);
+        assert_eq!(scoped_rule.cost, 1);
+        assert_eq!(root_rule.cost, 2);
+        assert_eq!(
+            scoped_rule.origin,
+            "named rule `account_reads` attached at scope accounts"
+        );
+        assert_eq!(
+            root_rule.origin,
+            "named rule `account_reads` attached at endpoint lookup"
+        );
+        assert!(matches!(
+            scoped_rule.dimensions[0],
+            NormalizedRateLimitDimension::Host { .. }
+        ));
+        assert!(matches!(
+            scoped_rule.dimensions[1],
+            NormalizedRateLimitDimension::Endpoint { .. }
+        ));
+        assert!(matches!(
+            &scoped_rule.dimensions[2],
+            NormalizedRateLimitDimension::Value {
+                public_name,
+                reference: ValueReference::Scope {
+                    scope_id: 0,
+                    parameter: 0,
+                },
+                ..
+            } if public_name == "account"
+        ));
+        assert!(matches!(
+            &root_rule.dimensions[2],
+            NormalizedRateLimitDimension::Value {
+                public_name,
+                reference: ValueReference::Endpoint(0),
+                ..
+            } if public_name == "account"
+        ));
+        assert_eq!(
+            scoped.config.rate_limits[0].id,
+            "reusable_api.rate_limit.service_reads"
+        );
+    }
+
+    #[test]
+    fn local_named_and_inline_attachments_preserve_source_order() {
+        let api = test_support::resolve_tokens(quote! {
+            client OrderedApi {
+                base "https://example.test";
+                rate_limits {
+                    rule first { 10 / 1m; }
+                    rule second { 20 / 1m; }
+                }
+            }
+            GET read() -> Bytes {
+                rate_limit use first;
+                rate_limit { 5 / 1s; }
+                rate_limit use second { cost 2; }
+            }
+        });
+        let endpoint = test_support::endpoint(&api.client.children, "read");
+        assert_eq!(
+            endpoint
+                .config
+                .rate_limits
+                .iter()
+                .map(|rule| rule.id.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "ordered_api.rate_limit.first",
+                "ordered_api.read.rate_limit",
+                "ordered_api.rate_limit.second",
+            ]
+        );
+        assert_eq!(endpoint.config.rate_limits[2].cost, 2);
+    }
+
+    #[test]
+    fn reusable_rule_registry_rejects_unknown_unused_and_invalid_bindings() {
+        let unknown = resolve_error(quote! {
+            client Api {
+                base "https://example.test";
+                rate_limit use missing;
+            }
+        });
+        assert!(unknown.contains("unknown reusable rate-limit rule `missing`"));
+
+        let unused = resolve_error(quote! {
+            client Api {
+                base "https://example.test";
+                rate_limits {
+                    rule unused { 1 / 1s; }
+                }
+            }
+            GET read() -> Bytes;
+        });
+        assert!(unused.contains("reusable rate-limit rule `unused` is never attached"));
+
+        let missing = resolve_error(quote! {
+            client Api {
+                base "https://example.test";
+                rate_limits {
+                    rule shared { by [account]; 1 / 1s; }
+                }
+                rate_limit use shared;
+            }
+        });
+        assert!(missing.contains("requires a binding for dimension `account`"));
+
+        let unknown_binding = resolve_error(quote! {
+            client Api {
+                base "https://example.test";
+                vars { tenant: String; }
+                rate_limits {
+                    rule shared { by [account]; 1 / 1s; }
+                }
+                rate_limit use shared {
+                    tenant = vars.tenant;
+                }
+            }
+        });
+        assert!(unknown_binding.contains("unknown binding `tenant`"));
+
+        let builtin_binding = resolve_error(quote! {
+            client Api {
+                base "https://example.test";
+                vars { tenant: String; }
+                rate_limits {
+                    rule shared { by [host, account]; 1 / 1s; }
+                }
+                rate_limit use shared {
+                    host = vars.tenant;
+                    account = vars.tenant;
+                }
+            }
+        });
+        assert!(builtin_binding.contains("built-in rate-limit dimension `host` cannot be bound"));
+    }
+
+    #[test]
+    fn reusable_bindings_enforce_visibility_shape_pagination_and_cost() {
+        let client_scope = resolve_error(quote! {
+            client Api {
+                base "https://example.test";
+                rate_limits {
+                    rule shared { by [account]; 1 / 1s; }
+                }
+                rate_limit use shared {
+                    account = scope.account;
+                }
+            }
+            scope accounts(account: String) { GET read() -> Bytes; }
+        });
+        assert!(client_scope.contains("`scope.account` is unavailable in a client"));
+
+        let scope_endpoint = resolve_error(quote! {
+            client Api {
+                base "https://example.test";
+                rate_limits {
+                    rule shared { by [account]; 1 / 1s; }
+                }
+            }
+            scope accounts() {
+                rate_limit use shared {
+                    account = ep.account;
+                }
+                GET read(account: String) -> Bytes;
+            }
+        });
+        assert!(scope_endpoint.contains("`ep.account` is unavailable in a scope"));
+
+        let client_endpoint = resolve_error(quote! {
+            client Api {
+                base "https://example.test";
+                rate_limits {
+                    rule shared { by [account]; 1 / 1s; }
+                }
+                rate_limit use shared {
+                    account = ep.account;
+                }
+            }
+            GET read(account: String) -> Bytes;
+        });
+        assert!(client_endpoint.contains("`ep.account` is unavailable in a client"));
+
+        let ambiguous_scope = resolve_error(quote! {
+            client Api {
+                base "https://example.test";
+                rate_limits {
+                    rule shared { by [account]; 1 / 1s; }
+                }
+            }
+            scope outer(account: String) {
+                scope inner(account: String) {
+                    rate_limit use shared {
+                        account = scope.account;
+                    }
+                    GET read() -> Bytes;
+                }
+            }
+        });
+        assert!(ambiguous_scope.contains("ambiguous visible scope value `account`"));
+
+        for (ty, expected) in [
+            (quote!(Option<String>), "optional values are unsupported"),
+            (quote!(Vec<String>), "vector values are unsupported"),
+        ] {
+            let error = resolve_error(quote! {
+                client Api {
+                    base "https://example.test";
+                    vars { account: #ty; }
+                    rate_limits {
+                        rule shared { by [account]; 1 / 1s; }
+                    }
+                    rate_limit use shared {
+                        account = vars.account;
+                    }
+                }
+            });
+            assert!(error.contains(expected), "unexpected error: {error}");
+        }
+
+        let pagination = resolve_error(quote! {
+            client Api {
+                base "https://example.test";
+                rate_limits {
+                    rule shared { by [account]; 1 / 1s; }
+                }
+            }
+            GET list(account: String) -> crate::PageSpec {
+                rate_limit use shared {
+                    account = ep.account;
+                }
+                paginate crate::Cursor {
+                    account: bind ep.account,
+                }
+            }
+        });
+        assert!(
+            pagination.contains(
+                "pagination-controlled value `account` cannot partition a rate-limit rule"
+            )
+        );
+
+        let cost = resolve_error(quote! {
+            client Api {
+                base "https://example.test";
+                rate_limits {
+                    rule shared { 2 / 1s; }
+                }
+                rate_limit use shared { cost 3; }
+            }
+        });
+        assert!(cost.contains("cost override"));
     }
 
     #[test]

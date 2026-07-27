@@ -1,10 +1,19 @@
 use quote::{format_ident, quote};
 
-use super::super::ast::{AuthOperation, DefaultExpr, ValueKind};
+use super::super::ast::{
+    AuthOperation, DefaultExpr, RateLimitAttachmentDecl, RateLimitDecl, ValueKind,
+};
 use super::*;
 
 fn parse_ok(tokens: TokenStream) -> SourceApi {
     parse(tokens).expect("source AST")
+}
+
+fn inline_rate_limit(layer: &Layer) -> &RateLimitDecl {
+    match &layer.rate_limits[0].value {
+        RateLimitAttachmentDecl::Inline(rule) => rule,
+        RateLimitAttachmentDecl::Named(_) => panic!("anonymous direct rate-limit rule"),
+    }
 }
 
 #[test]
@@ -536,29 +545,19 @@ fn lexical_rate_limit_declarations_parse_in_order() {
         }
     });
     let client = &api.client;
-    assert_eq!(
-        client
-            .layer
-            .rate_limit
-            .as_ref()
-            .unwrap()
-            .value
-            .windows
-            .len(),
-        2
-    );
+    assert_eq!(inline_rate_limit(&client.layer).windows.len(), 2);
     let SourceChild::Scope(scope) = &api.children[0] else {
         panic!("scope")
     };
-    assert!(scope.layer.rate_limit.is_some());
+    assert_eq!(scope.layer.rate_limits.len(), 1);
     let SourceChild::Endpoint(read) = &scope.children[0] else {
         panic!("read endpoint")
     };
-    assert_eq!(read.layer.rate_limit.as_ref().unwrap().value.cost, 2);
+    assert_eq!(inline_rate_limit(&read.layer).cost, 2);
     let SourceChild::Endpoint(public) = &scope.children[1] else {
         panic!("public endpoint")
     };
-    assert!(public.layer.rate_limit.is_none());
+    assert!(public.layer.rate_limits.is_empty());
 }
 
 #[test]
@@ -579,11 +578,11 @@ fn rate_limit_cost_defaults_and_equal_capacity_is_valid() {
             GET read() -> Bytes;
         }
     });
-    assert_eq!(api.client.layer.rate_limit.as_ref().unwrap().value.cost, 1);
+    assert_eq!(inline_rate_limit(&api.client.layer).cost, 1);
     let SourceChild::Scope(scope) = &api.children[0] else {
         panic!("scope")
     };
-    let rule = &scope.layer.rate_limit.as_ref().unwrap().value;
+    let rule = inline_rate_limit(&scope.layer);
     assert_eq!(rule.cost, 2);
     assert_eq!(rule.windows.len(), 2);
     assert_eq!(rule.windows[0].capacity, 2);
@@ -604,7 +603,7 @@ fn rate_limit_syntax_rejects_invalid_structure_values_dimensions_and_order() {
     assert!(
         duplicate_rule
             .to_string()
-            .contains("duplicate `rate_limit` clause")
+            .contains("at most one anonymous direct")
     );
 
     for (tokens, expected) in [

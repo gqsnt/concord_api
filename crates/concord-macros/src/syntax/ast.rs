@@ -22,6 +22,7 @@ pub(crate) struct SourceClient {
     pub(crate) base: Clause<LitStr>,
     pub(crate) values: Option<Clause<Vec<ValueDecl>>>,
     pub(crate) credentials: Option<Clause<CredentialsBlock>>,
+    pub(crate) rate_limits: Option<Clause<Vec<RateLimitDefinitionDecl>>>,
     pub(crate) layer: Layer,
 }
 
@@ -120,7 +121,67 @@ pub(crate) struct Layer {
     pub(crate) headers: Option<Clause<HeaderOperation>>,
     pub(crate) auth: Option<AuthOperation>,
     pub(crate) timeout: Option<Clause<TimeoutOperation>>,
-    pub(crate) rate_limit: Option<Clause<RateLimitDecl>>,
+    pub(crate) rate_limits: Vec<Clause<RateLimitAttachmentDecl>>,
+}
+
+#[derive(Clone)]
+pub(crate) enum RateLimitAttachmentDecl {
+    Inline(RateLimitDecl),
+    Named(RateLimitUseDecl),
+}
+
+#[derive(Clone)]
+pub(crate) struct RateLimitDefinitionDecl {
+    pub(crate) name: Ident,
+    pub(crate) id: Option<Clause<LitStr>>,
+    pub(crate) dimensions: Vec<RateLimitDefinitionDimensionDecl>,
+    pub(crate) cost: u32,
+    pub(crate) cost_span: Option<Span>,
+    pub(crate) windows: Vec<RateLimitWindowLiteral>,
+}
+
+#[derive(Clone)]
+pub(crate) enum RateLimitDefinitionDimensionDecl {
+    Host { span: Span },
+    Endpoint { span: Span },
+    Formal { name: Ident },
+}
+
+impl RateLimitDefinitionDimensionDecl {
+    pub(crate) fn span(&self) -> Span {
+        match self {
+            Self::Host { span } | Self::Endpoint { span } => *span,
+            Self::Formal { name } => name.span(),
+        }
+    }
+
+    pub(crate) fn public_name(&self) -> String {
+        match self {
+            Self::Host { .. } => "host".to_owned(),
+            Self::Endpoint { .. } => "endpoint".to_owned(),
+            Self::Formal { name } => canonical_dimension_ident(name),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct RateLimitUseDecl {
+    pub(crate) name: Ident,
+    pub(crate) bindings: Vec<RateLimitBindingDecl>,
+    pub(crate) cost: Option<Clause<u32>>,
+}
+
+#[derive(Clone)]
+pub(crate) struct RateLimitBindingDecl {
+    pub(crate) name: Ident,
+    pub(crate) value: RateLimitBindingValue,
+}
+
+#[derive(Clone)]
+pub(crate) struct RateLimitBindingValue {
+    pub(crate) namespace: Ident,
+    pub(crate) name: Ident,
+    pub(crate) span: Span,
 }
 
 #[derive(Clone)]
@@ -128,6 +189,7 @@ pub(crate) struct RateLimitDecl {
     pub(crate) id: Option<Clause<LitStr>>,
     pub(crate) dimensions: Vec<RateLimitDimensionDecl>,
     pub(crate) cost: u32,
+    pub(crate) cost_span: Option<Span>,
     pub(crate) windows: Vec<RateLimitWindowLiteral>,
 }
 
@@ -176,6 +238,7 @@ fn canonical_dimension_ident(ident: &Ident) -> String {
 #[derive(Clone)]
 pub(crate) struct RateLimitWindowLiteral {
     pub(crate) capacity: u32,
+    pub(crate) capacity_span: Span,
     pub(crate) duration: DurationLiteral,
 }
 

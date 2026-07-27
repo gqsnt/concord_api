@@ -1,5 +1,5 @@
-error: rate-limit rules are now direct `rate_limit { ... }` declarations; named attachments, `replace`, and `off` were removed
- --> tests/ui/fail/rate_limits/rate_limit_undefined_attachment.rs:6:20
+error: unknown reusable rate-limit rule `missing`
+ --> tests/ui/fail/rate_limits/rate_limit_undefined_attachment.rs:6:24
   |
-6 |         rate_limit missing;
-  |                    ^^^^^^^
+6 |         rate_limit use missing;
+  |                        ^^^^^^^

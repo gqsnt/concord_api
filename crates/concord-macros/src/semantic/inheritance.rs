@@ -197,7 +197,7 @@ impl Resolver<'_> {
                 }
             };
         }
-        if let Some(declaration) = &layer.rate_limit {
+        for declaration in &layer.rate_limits {
             if normalized.rate_limits.len() >= MAX_RATE_LIMIT_RULES_PER_PLAN {
                 return Err(declaration.key_span.error(format!(
                     "an effective rate-limit plan permits at most {MAX_RATE_LIMIT_RULES_PER_PLAN} rules"

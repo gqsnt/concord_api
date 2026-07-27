@@ -3,7 +3,7 @@ use concord::api;
 api! {
     client Api {
         base "https://example.test";
-        rate_limit missing;
+        rate_limit use missing;
     }
 
     GET read() -> Bytes;

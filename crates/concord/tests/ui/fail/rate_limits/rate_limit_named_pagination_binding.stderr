@@ -1,0 +1,5 @@
+error: pagination-controlled value `account` cannot partition a rate-limit rule
+  --> tests/ui/fail/rate_limits/rate_limit_named_pagination_binding.rs:16:26
+   |
+16 |             account = ep.account;
+   |                          ^^^^^^^

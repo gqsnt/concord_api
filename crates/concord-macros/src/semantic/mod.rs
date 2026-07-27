@@ -31,8 +31,9 @@ use auth::{
 };
 use pagination::{pagination_bound_values, validate_pagination_binding_destinations};
 use rate_limits::{
-    RateLimitDeclarationLayer, RateLimitResolutionContext, source_tree_declares_rate_limits,
-    validate_effective_rate_limit_pagination_dependencies,
+    RateLimitDeclarationLayer, RateLimitDefinition, RateLimitResolutionContext,
+    resolve_rate_limit_definitions, source_tree_declares_rate_limits,
+    validate_effective_rate_limit_pagination_dependencies, validate_rate_limit_definitions_used,
 };
 use symbols::{
     ScopeFrame, convert_values, validate_child_methods, validate_endpoint_setters,
@@ -48,6 +49,7 @@ struct Resolver<'a> {
     client_surface: &'a self::model::ClientSurface,
     client_values: &'a [Value],
     credentials: &'a [Credential],
+    rate_limit_definitions: Vec<RateLimitDefinition>,
     rate_limit_ids: HashMap<String, RateLimitSchema>,
     next_scope_id: usize,
     next_endpoint_id: usize,
@@ -60,6 +62,13 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
     } = source;
     let source_declares_limiter =
         source_tree_declares_rate_limits(&source_client.layer, &source_children);
+    let rate_limit_definitions = resolve_rate_limit_definitions(
+        &source_client.name,
+        source_client
+            .rate_limits
+            .map(|clause| clause.value)
+            .unwrap_or_default(),
+    )?;
     let values = convert_values(
         source_client
             .values
@@ -81,6 +90,7 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
             client_surface: &surface,
             client_values: &values,
             credentials: &credentials,
+            rate_limit_definitions,
             rate_limit_ids: HashMap::new(),
             next_scope_id: 0,
             next_endpoint_id: 0,
@@ -98,6 +108,7 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
             },
         )?;
         let children = resolver.resolve_children(source_children, &config, &[], &[])?;
+        validate_rate_limit_definitions_used(&resolver.rate_limit_definitions)?;
         (config, children)
     };
     validate_contract_ids(&children)?;

@@ -1,4 +1,4 @@
-error: rate-limit rules are now direct `rate_limit { ... }` declarations; named attachments, `replace`, and `off` were removed
+error: a rate-limit attachment must be `rate_limit { ... }` or `rate_limit use RULE ...`
  --> tests/ui/fail/rate_limits/rate_limit_off_exclusive.rs:6:20
   |
 6 |         rate_limit off;

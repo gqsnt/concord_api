@@ -127,6 +127,42 @@ api! {
 }
 
 api! {
+    client NamedRuleRateApi {
+        base "http://named-rule-rate.example.test/";
+
+        rate_limits {
+            rule account_reads {
+                by [account];
+                2 / 1h;
+            }
+        }
+    }
+
+    scope accounts(account: String) {
+        rate_limit use account_reads {
+            account = scope.account;
+        }
+
+        GET read() -> Bytes;
+    }
+
+    scope profiles(account: String) {
+        rate_limit use account_reads {
+            account = scope.account;
+        }
+
+        GET inspect() -> Bytes;
+    }
+
+    GET lookup(account: String) -> Bytes {
+        rate_limit use account_reads {
+            account = ep.account;
+            cost 2;
+        }
+    }
+}
+
+api! {
     client FirstSharedIdApi {
         base "http://first-shared-id.example.test/";
     }
@@ -1045,6 +1081,106 @@ async fn explicit_id_is_exact_and_survives_source_renames_and_cost_changes() {
     assert_eq!(acquisitions[0][0].cost, 1);
     assert_eq!(acquisitions[1][0].cost, 2);
     assert_eq!(acquisitions[0][0].windows, acquisitions[1][0].windows);
+}
+
+#[tokio::test]
+async fn named_rule_bindings_emit_one_stable_logical_schema_across_branches() {
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"scope".to_vec()),
+        ResponseScript::ok(b"sibling".to_vec()),
+        ResponseScript::ok(b"endpoint".to_vec()),
+    ])
+    .expect("named-rule capture server");
+    let limiter = Arc::new(CapturingLimiter::default());
+    let client = NamedRuleRateApi::builder()
+        .configure_http({
+            let proxy = SafeProxy::parse(server.url("")).expect("named-rule capture proxy");
+            move |http| http.proxy(proxy)
+        })
+        .configure_runtime({
+            let limiter = Arc::clone(&limiter);
+            move |runtime| runtime.rate_limiter(limiter)
+        })
+        .build()
+        .expect("named-rule capture client");
+
+    client
+        .accounts("shared-account".to_owned())
+        .read()
+        .await
+        .expect("scope attachment");
+    client
+        .profiles("shared-account".to_owned())
+        .inspect()
+        .await
+        .expect("sibling-scope attachment");
+    client
+        .lookup("shared-account".to_owned())
+        .await
+        .expect("endpoint attachment");
+
+    let acquisitions = limiter
+        .acquisitions
+        .lock()
+        .expect("named-rule acquisitions");
+    assert_eq!(acquisitions.len(), 3);
+    assert!(acquisitions.iter().all(|plan| plan.len() == 1));
+    assert_eq!(
+        acquisitions[0][0].id,
+        "named_rule_rate_api.rate_limit.account_reads"
+    );
+    assert_eq!(acquisitions[0][0].id, acquisitions[1][0].id);
+    assert_eq!(acquisitions[0][0].id, acquisitions[2][0].id);
+    assert_eq!(
+        acquisitions[0][0].parts,
+        [("account".to_owned(), "shared-account".to_owned())]
+    );
+    assert_eq!(acquisitions[0][0].parts, acquisitions[1][0].parts);
+    assert_eq!(acquisitions[0][0].parts, acquisitions[2][0].parts);
+    assert_eq!(acquisitions[0][0].cost, 1);
+    assert_eq!(acquisitions[1][0].cost, 1);
+    assert_eq!(acquisitions[2][0].cost, 2);
+    assert_eq!(acquisitions[0][0].windows, acquisitions[1][0].windows);
+    assert_eq!(acquisitions[0][0].windows, acquisitions[2][0].windows);
+}
+
+#[cfg(feature = "rate-limit")]
+#[tokio::test(start_paused = true)]
+async fn named_rule_attachments_share_actual_local_limiter_bucket_state() {
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"first".to_vec()),
+        ResponseScript::ok(b"different".to_vec()),
+    ])
+    .expect("named-rule shared-state server");
+    let client = NamedRuleRateApi::builder()
+        .configure_http({
+            let proxy = SafeProxy::parse(server.url("")).expect("named-rule shared-state proxy");
+            move |http| http.proxy(proxy)
+        })
+        .build()
+        .expect("named-rule shared-state client");
+
+    client
+        .accounts("shared-account".to_owned())
+        .read()
+        .await
+        .expect("first unit from shared bucket");
+    let waiting_client = client.clone();
+    let waiting =
+        tokio::spawn(async move { waiting_client.lookup("shared-account".to_owned()).await });
+    tokio::task::yield_now().await;
+
+    assert!(!waiting.is_finished());
+    assert_eq!(server.request_count(), 1);
+
+    client
+        .lookup("different-account".to_owned())
+        .await
+        .expect("different logical key retains its own capacity");
+    assert_eq!(server.request_count(), 2);
+
+    waiting.abort();
+    let _ = waiting.await;
 }
 
 #[tokio::test]

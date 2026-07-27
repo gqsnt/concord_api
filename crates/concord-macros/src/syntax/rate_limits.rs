@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use syn::ext::IdentExt;
@@ -7,25 +7,173 @@ use syn::spanned::Spanned;
 use syn::{Ident, LitInt, LitStr, Token, braced, bracketed};
 
 use super::ast::{
-    Clause, DurationLiteral, RateLimitDecl, RateLimitDimensionDecl, RateLimitWindowLiteral,
+    Clause, DurationLiteral, RateLimitAttachmentDecl, RateLimitBindingDecl, RateLimitBindingValue,
+    RateLimitDecl, RateLimitDefinitionDecl, RateLimitDefinitionDimensionDecl,
+    RateLimitDimensionDecl, RateLimitUseDecl, RateLimitWindowLiteral,
 };
-use super::diagnostics::{SpanError, validate_duration_integer, validate_integer};
+use super::diagnostics::{
+    SpanError, validate_duration_integer, validate_integer, validate_snake_source_identifier,
+};
 use super::keyword;
-use crate::{MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_PARTS, MAX_RATE_LIMIT_WINDOWS_PER_RULE};
+use crate::{
+    MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES, MAX_RATE_LIMIT_KEY_PARTS,
+    MAX_RATE_LIMIT_WINDOWS_PER_RULE,
+};
 
-pub(super) fn parse_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitDecl> {
-    input.parse::<keyword::rate_limit>()?;
-    if !input.peek(syn::token::Brace) {
-        return Err(input.error(
-            "rate-limit rules are now direct `rate_limit { ... }` declarations; named attachments, `replace`, and `off` were removed",
-        ));
+pub(super) fn parse_rate_limits(
+    input: ParseStream<'_>,
+) -> syn::Result<Vec<RateLimitDefinitionDecl>> {
+    input.parse::<keyword::rate_limits>()?;
+    let body;
+    braced!(body in input);
+    let mut definitions = Vec::new();
+    let mut names = HashMap::new();
+    while !body.is_empty() {
+        let _marker: keyword::rule = body.parse().map_err(|_| {
+            body.error("a `rate_limits` block accepts only `rule NAME { ... }` definitions")
+        })?;
+        let name: Ident = body
+            .parse()
+            .map_err(|_| body.error("a reusable rate-limit rule requires a name"))?;
+        validate_snake_source_identifier(&name, "rate-limit rule")?;
+        let canonical_name = canonical_ident(&name);
+        if let Some(first) = names.insert(canonical_name.clone(), name.span()) {
+            let mut error = name.span().error(format!(
+                "rate-limit rule `{canonical_name}` is defined more than once"
+            ));
+            error.combine(first.error("the first definition using this rule name is here"));
+            return Err(error);
+        }
+        definitions.push(parse_rate_limit_definition(&body, name)?);
     }
+    Ok(definitions)
+}
+
+pub(super) fn parse_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitAttachmentDecl> {
+    input.parse::<keyword::rate_limit>()?;
+    if input.peek(Token![use]) {
+        return parse_rate_limit_use(input).map(RateLimitAttachmentDecl::Named);
+    }
+    if input.peek(syn::token::Brace) {
+        return parse_inline_rate_limit(input).map(RateLimitAttachmentDecl::Inline);
+    }
+    Err(input
+        .error("a rate-limit attachment must be `rate_limit { ... }` or `rate_limit use RULE ...`"))
+}
+
+fn parse_rate_limit_use(input: ParseStream<'_>) -> syn::Result<RateLimitUseDecl> {
+    input.parse::<Token![use]>()?;
+    let name: Ident = input
+        .parse()
+        .map_err(|_| input.error("`rate_limit use` requires a reusable rule name"))?;
+    validate_snake_source_identifier(&name, "rate-limit rule")?;
+    if input.peek(Token![;]) {
+        input.parse::<Token![;]>()?;
+        return Ok(RateLimitUseDecl {
+            name,
+            bindings: Vec::new(),
+            cost: None,
+        });
+    }
+    if !input.peek(syn::token::Brace) {
+        return Err(input.error("a named rate-limit use requires `;` or a `{ ... }` binding body"));
+    }
+    let body;
+    braced!(body in input);
+    let mut bindings = Vec::new();
+    let mut binding_names = HashMap::new();
+    let mut cost: Option<Clause<u32>> = None;
+    while !body.is_empty() {
+        let is_cost = if body.peek(keyword::cost) {
+            let fork = body.fork();
+            fork.parse::<keyword::cost>()?;
+            !fork.peek(Token![=])
+        } else {
+            false
+        };
+        if is_cost {
+            let marker: keyword::cost = body.parse()?;
+            if let Some(first) = &cost {
+                let mut error = marker
+                    .span()
+                    .error("a named rate-limit use permits at most one `cost` override");
+                error.combine(first.key_span.error("the first `cost` override is here"));
+                return Err(error);
+            }
+            let literal: LitInt = body.parse().map_err(|_| {
+                body.error("a named rate-limit cost requires a positive unsuffixed base-10 integer")
+            })?;
+            let value = parse_positive_u32(&literal, "rate-limit cost")?;
+            body.parse::<Token![;]>()?;
+            cost = Some(Clause {
+                key_span: marker.span(),
+                value,
+            });
+            continue;
+        }
+
+        let binding_name = body.call(Ident::parse_any).map_err(|_| {
+            body.error("a named rate-limit binding must be `FORMAL = vars.NAME`, `scope.NAME`, or `ep.NAME`")
+        })?;
+        let canonical_binding = canonical_ident(&binding_name);
+        if let Some(first) = binding_names.insert(canonical_binding.clone(), binding_name.span()) {
+            let mut error = binding_name.span().error(format!(
+                "duplicate binding for rate-limit dimension `{canonical_binding}`"
+            ));
+            error.combine(first.error("the first binding for this dimension is here"));
+            return Err(error);
+        }
+        body.parse::<Token![=]>().map_err(|_| {
+            body.error("a named rate-limit binding requires `=` before its value reference")
+        })?;
+        let value = parse_binding_value(&body)?;
+        body.parse::<Token![;]>()?;
+        bindings.push(RateLimitBindingDecl {
+            name: binding_name,
+            value,
+        });
+    }
+    Ok(RateLimitUseDecl {
+        name,
+        bindings,
+        cost,
+    })
+}
+
+fn parse_binding_value(input: ParseStream<'_>) -> syn::Result<RateLimitBindingValue> {
+    let namespace = input.call(Ident::parse_any).map_err(|_| {
+        input.error(
+            "a named rate-limit binding value must be exactly `vars.NAME`, `scope.NAME`, or `ep.NAME`",
+        )
+    })?;
+    let namespace_name = canonical_ident(&namespace);
+    if !matches!(namespace_name.as_str(), "vars" | "scope" | "ep") {
+        return Err(namespace.span().error(format!(
+            "unknown rate-limit binding namespace `{namespace_name}`; use only `vars.*`, `scope.*`, or `ep.*`"
+        )));
+    }
+    input.parse::<Token![.]>().map_err(|_| {
+        namespace.span().error(
+            "a named rate-limit binding value must be exactly `vars.NAME`, `scope.NAME`, or `ep.NAME`",
+        )
+    })?;
+    let name = input.call(Ident::parse_any).map_err(|_| {
+        input.error("a named rate-limit binding value requires a name after its namespace")
+    })?;
+    Ok(RateLimitBindingValue {
+        span: name.span(),
+        namespace,
+        name,
+    })
+}
+
+fn parse_inline_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitDecl> {
     let body;
     braced!(body in input);
 
     let mut id: Option<Clause<LitStr>> = None;
     let mut dimensions = None;
-    let mut cost = None;
+    let mut cost: Option<Clause<u32>> = None;
     let mut windows = Vec::new();
     while !body.is_empty() {
         if body.peek(keyword::id) {
@@ -82,6 +230,7 @@ pub(super) fn parse_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitD
                     )));
                 }
                 let name = dimension.public_name();
+                validate_key_part_name(&name, dimension.span())?;
                 if !names.insert(name.clone()) {
                     return Err(dimension
                         .span()
@@ -114,7 +263,10 @@ pub(super) fn parse_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitD
             let literal: LitInt = body.parse().map_err(|_| {
                 body.error("rate-limit cost requires a positive unsuffixed base-10 integer")
             })?;
-            cost = Some(parse_positive_u32(&literal, "rate-limit cost")?);
+            cost = Some(Clause {
+                key_span: marker.span(),
+                value: parse_positive_u32(&literal, "rate-limit cost")?,
+            });
             body.parse::<Token![;]>()?;
             continue;
         }
@@ -135,6 +287,7 @@ pub(super) fn parse_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitD
         body.parse::<Token![;]>()?;
         windows.push(RateLimitWindowLiteral {
             capacity,
+            capacity_span: capacity_literal.span(),
             duration: DurationLiteral {
                 value: duration,
                 span: duration_literal.span(),
@@ -144,8 +297,8 @@ pub(super) fn parse_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitD
     if windows.is_empty() {
         return Err(input.error("a rate-limit declaration requires at least one positive window"));
     }
-    let cost = cost.unwrap_or(1);
-    if let Some(window) = windows.iter().find(|window| cost > window.capacity) {
+    let cost_value = cost.as_ref().map_or(1, |cost| cost.value);
+    if let Some(window) = windows.iter().find(|window| cost_value > window.capacity) {
         return Err(window
             .duration
             .span
@@ -154,9 +307,217 @@ pub(super) fn parse_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitD
     Ok(RateLimitDecl {
         id,
         dimensions: dimensions.unwrap_or_default(),
-        cost,
+        cost: cost_value,
+        cost_span: cost.map(|cost| cost.key_span),
         windows,
     })
+}
+
+fn parse_rate_limit_definition(
+    input: ParseStream<'_>,
+    name: Ident,
+) -> syn::Result<RateLimitDefinitionDecl> {
+    let body;
+    braced!(body in input);
+
+    let mut id: Option<Clause<LitStr>> = None;
+    let mut dimensions = None;
+    let mut cost: Option<Clause<u32>> = None;
+    let mut windows = Vec::new();
+    while !body.is_empty() {
+        if body.peek(keyword::id) {
+            if !windows.is_empty() {
+                return Err(body.error(
+                    "`id`, `by`, and `cost` clauses must appear before rate-limit windows",
+                ));
+            }
+            let marker: keyword::id = body.parse()?;
+            if let Some(first) = &id {
+                let mut error = marker
+                    .span()
+                    .error("a reusable rate-limit rule permits at most one `id` clause");
+                error.combine(first.key_span.error("the first `id` clause is here"));
+                return Err(error);
+            }
+            let value: LitStr = body.parse().map_err(|_| {
+                body.error("a reusable rate-limit `id` clause requires a string literal")
+            })?;
+            validate_rate_limit_id(&value)?;
+            body.parse::<Token![;]>()?;
+            id = Some(Clause {
+                key_span: marker.span(),
+                value,
+            });
+            continue;
+        }
+        if body.peek(keyword::by) {
+            if !windows.is_empty() {
+                return Err(body.error(
+                    "`id`, `by`, and `cost` clauses must appear before rate-limit windows",
+                ));
+            }
+            let marker: keyword::by = body.parse()?;
+            if dimensions.is_some() {
+                return Err(marker
+                    .span()
+                    .error("a reusable rate-limit rule permits at most one `by` clause"));
+            }
+            let dimension_body;
+            bracketed!(dimension_body in body);
+            if dimension_body.is_empty() {
+                return Err(marker.span().error(
+                    "omit `by` for a definition-global bucket; `by [...]` requires at least one dimension",
+                ));
+            }
+            let mut parsed = Vec::new();
+            let mut names = HashSet::new();
+            while !dimension_body.is_empty() {
+                let dimension = parse_definition_dimension(&dimension_body)?;
+                if parsed.len() >= MAX_RATE_LIMIT_KEY_PARTS {
+                    return Err(dimension.span().error(format!(
+                        "a rate-limit key permits at most {MAX_RATE_LIMIT_KEY_PARTS} dimensions"
+                    )));
+                }
+                let public_name = dimension.public_name();
+                validate_key_part_name(&public_name, dimension.span())?;
+                if !names.insert(public_name.clone()) {
+                    return Err(dimension.span().error(format!(
+                        "duplicate reusable rate-limit dimension `{public_name}`"
+                    )));
+                }
+                parsed.push(dimension);
+                if dimension_body.is_empty() {
+                    break;
+                }
+                dimension_body.parse::<Token![,]>().map_err(|_| {
+                    dimension_body
+                        .error("reusable rate-limit dimensions must be separated by commas")
+                })?;
+            }
+            body.parse::<Token![;]>()?;
+            dimensions = Some(parsed);
+            continue;
+        }
+        if body.peek(keyword::cost) {
+            if !windows.is_empty() {
+                return Err(body.error(
+                    "`id`, `by`, and `cost` clauses must appear before rate-limit windows",
+                ));
+            }
+            let marker: keyword::cost = body.parse()?;
+            if let Some(first) = &cost {
+                let mut error = marker
+                    .span()
+                    .error("a reusable rate-limit rule permits at most one `cost` clause");
+                error.combine(first.key_span.error("the first `cost` clause is here"));
+                return Err(error);
+            }
+            let literal: LitInt = body.parse().map_err(|_| {
+                body.error("rate-limit cost requires a positive unsuffixed base-10 integer")
+            })?;
+            cost = Some(Clause {
+                key_span: marker.span(),
+                value: parse_positive_u32(&literal, "rate-limit cost")?,
+            });
+            body.parse::<Token![;]>()?;
+            continue;
+        }
+        let capacity_literal: LitInt = body.parse().map_err(|_| {
+            body.error("a reusable rate-limit rule requires `CAPACITY / DURATION;` windows")
+        })?;
+        if windows.len() >= MAX_RATE_LIMIT_WINDOWS_PER_RULE {
+            return Err(capacity_literal.span().error(format!(
+                "a rate-limit rule permits at most {MAX_RATE_LIMIT_WINDOWS_PER_RULE} windows"
+            )));
+        }
+        let capacity = parse_positive_u32(&capacity_literal, "rate-limit window capacity")?;
+        body.parse::<Token![/]>()?;
+        let duration_literal: LitInt = body.parse().map_err(|_| {
+            body.error("a rate-limit window requires a positive duration after `/`")
+        })?;
+        let duration = parse_rate_duration(&duration_literal)?;
+        body.parse::<Token![;]>()?;
+        windows.push(RateLimitWindowLiteral {
+            capacity,
+            capacity_span: capacity_literal.span(),
+            duration: DurationLiteral {
+                value: duration,
+                span: duration_literal.span(),
+            },
+        });
+    }
+    if windows.is_empty() {
+        return Err(name
+            .span()
+            .error("a reusable rate-limit rule requires at least one positive window"));
+    }
+    let cost_value = cost.as_ref().map_or(1, |cost| cost.value);
+    if let Some(window) = windows.iter().find(|window| cost_value > window.capacity) {
+        return Err(window
+            .capacity_span
+            .error("rate-limit cost must not exceed any window capacity"));
+    }
+    Ok(RateLimitDefinitionDecl {
+        name,
+        id,
+        dimensions: dimensions.unwrap_or_default(),
+        cost: cost_value,
+        cost_span: cost.map(|cost| cost.key_span),
+        windows,
+    })
+}
+
+fn parse_definition_dimension(
+    input: ParseStream<'_>,
+) -> syn::Result<RateLimitDefinitionDimensionDecl> {
+    if input.peek(LitStr) || input.peek(LitInt) {
+        let span = input
+            .parse::<proc_macro2::TokenTree>()
+            .map_err(|_| input.error("invalid reusable rate-limit dimension"))?
+            .span();
+        return Err(span.error(
+            "reusable `by` dimensions accept only `host`, `endpoint`, or bare formal names",
+        ));
+    }
+    if input.peek(keyword::fmt) {
+        let marker: keyword::fmt = input.parse()?;
+        return Err(marker
+            .span()
+            .error("reusable `by` dimensions do not accept formatted expressions"));
+    }
+    if input.peek(keyword::host) {
+        let marker: keyword::host = input.parse()?;
+        return Ok(RateLimitDefinitionDimensionDecl::Host {
+            span: marker.span(),
+        });
+    }
+    if input.peek(keyword::endpoint) {
+        let marker: keyword::endpoint = input.parse()?;
+        return Ok(RateLimitDefinitionDimensionDecl::Endpoint {
+            span: marker.span(),
+        });
+    }
+    let name = input.call(Ident::parse_any).map_err(|_| {
+        input.error(
+            "a reusable rate-limit dimension must be `host`, `endpoint`, or a bare formal name",
+        )
+    })?;
+    if input.peek(Token![.]) {
+        return Err(name.span().error(
+            "reusable rate-limit definitions cannot capture lexical values; use a bare formal name and bind it at each attachment",
+        ));
+    }
+    validate_snake_source_identifier(&name, "rate-limit dimension")?;
+    Ok(RateLimitDefinitionDimensionDecl::Formal { name })
+}
+
+fn validate_key_part_name(name: &str, span: proc_macro2::Span) -> syn::Result<()> {
+    if name.is_empty() || name.len() > MAX_RATE_LIMIT_KEY_PART_NAME_BYTES {
+        return Err(span.error(format!(
+            "a rate-limit key-part name permits 1-{MAX_RATE_LIMIT_KEY_PART_NAME_BYTES} UTF-8 bytes"
+        )));
+    }
+    Ok(())
 }
 
 fn validate_rate_limit_id(id: &LitStr) -> syn::Result<()> {
@@ -299,9 +660,13 @@ mod tests {
     use quote::{format_ident, quote};
     use syn::LitStr;
 
-    use crate::syntax::ast::{RateLimitDimensionDecl, SourceChild};
+    use crate::syntax::ast::{
+        Layer, RateLimitAttachmentDecl, RateLimitDecl, RateLimitDefinitionDimensionDecl,
+        RateLimitDimensionDecl, SourceChild,
+    };
     use crate::{
-        MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_PARTS, MAX_RATE_LIMIT_WINDOWS_PER_RULE,
+        MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES, MAX_RATE_LIMIT_KEY_PARTS,
+        MAX_RATE_LIMIT_WINDOWS_PER_RULE,
     };
 
     fn parse_error(tokens: proc_macro2::TokenStream) -> String {
@@ -309,6 +674,224 @@ mod tests {
             .err()
             .expect("rate-limit syntax error")
             .to_string()
+    }
+
+    fn inline_rate_limit(layer: &Layer) -> &RateLimitDecl {
+        match &layer.rate_limits[0].value {
+            RateLimitAttachmentDecl::Inline(rule) => rule,
+            RateLimitAttachmentDecl::Named(_) => panic!("anonymous direct rate-limit rule"),
+        }
+    }
+
+    #[test]
+    fn parses_reusable_definitions_and_source_ordered_named_uses() {
+        let source = super::super::parse(quote! {
+            client RateApi {
+                base "https://example.test";
+                rate_limit use service_reads;
+                rate_limits {
+                    rule account_reads {
+                        id "service.account.read";
+                        by [host, endpoint, account];
+                        cost 1;
+                        100 / 1m;
+                        1_000 / 1h;
+                    }
+                    rule service_reads {
+                        10_000 / 1m;
+                    }
+                }
+            }
+            scope accounts(account: String) {
+                rate_limit use account_reads {
+                    cost 2;
+                    account = scope.account;
+                }
+                rate_limit { 5 / 1s; }
+                rate_limit use service_reads;
+                GET read() -> Bytes;
+            }
+        })
+        .expect("reusable rate-limit syntax");
+
+        let definitions = &source.client.rate_limits.as_ref().unwrap().value;
+        assert_eq!(definitions.len(), 2);
+        assert_eq!(
+            super::canonical_ident(&definitions[0].name),
+            "account_reads"
+        );
+        assert_eq!(definitions[0].cost, 1);
+        assert_eq!(
+            definitions[0]
+                .dimensions
+                .iter()
+                .map(RateLimitDefinitionDimensionDecl::public_name)
+                .collect::<Vec<_>>(),
+            ["host", "endpoint", "account"]
+        );
+        assert_eq!(source.client.layer.rate_limits.len(), 1);
+        let SourceChild::Scope(scope) = &source.children[0] else {
+            panic!("accounts scope");
+        };
+        assert_eq!(scope.layer.rate_limits.len(), 3);
+        assert!(matches!(
+            scope.layer.rate_limits[0].value,
+            RateLimitAttachmentDecl::Named(_)
+        ));
+        assert!(matches!(
+            scope.layer.rate_limits[1].value,
+            RateLimitAttachmentDecl::Inline(_)
+        ));
+        let RateLimitAttachmentDecl::Named(last) = &scope.layer.rate_limits[2].value else {
+            panic!("last named attachment");
+        };
+        assert_eq!(super::canonical_ident(&last.name), "service_reads");
+        let RateLimitAttachmentDecl::Named(first) = &scope.layer.rate_limits[0].value else {
+            panic!("first named attachment");
+        };
+        assert_eq!(first.cost.as_ref().map(|cost| cost.value), Some(2));
+        assert_eq!(super::canonical_ident(&first.bindings[0].name), "account");
+        assert_eq!(
+            super::canonical_ident(&first.bindings[0].value.namespace),
+            "scope"
+        );
+    }
+
+    #[test]
+    fn reusable_definition_and_binding_diagnostics_are_focused() {
+        let invalid_rule_name = parse_error(quote! {
+            client Api {
+                base "https://example.test";
+                rate_limits {
+                    rule NotSnakeCase { 1 / 1s; }
+                }
+            }
+        });
+        assert!(invalid_rule_name.contains("rate-limit rule source identifier"));
+
+        let duplicate_definition = parse_error(quote! {
+            client Api {
+                base "https://example.test";
+                rate_limits {
+                    rule shared { 1 / 1s; }
+                    rule shared { 1 / 1s; }
+                }
+            }
+        });
+        assert!(duplicate_definition.contains("is defined more than once"));
+
+        let duplicate_formal = parse_error(quote! {
+            client Api {
+                base "https://example.test";
+                rate_limits {
+                    rule shared { by [account, account]; 1 / 1s; }
+                }
+            }
+        });
+        assert!(duplicate_formal.contains("duplicate reusable rate-limit dimension `account`"));
+
+        let captured_value = parse_error(quote! {
+            client Api {
+                base "https://example.test";
+                rate_limits {
+                    rule shared { by [scope.account]; 1 / 1s; }
+                }
+            }
+        });
+        assert!(captured_value.contains("cannot capture lexical values"));
+
+        let duplicate_binding = parse_error(quote! {
+            client Api {
+                base "https://example.test";
+                rate_limit use shared {
+                    account = vars.first;
+                    account = vars.second;
+                }
+            }
+        });
+        assert!(duplicate_binding.contains("duplicate binding"));
+
+        let invalid_value = parse_error(quote! {
+            client Api {
+                base "https://example.test";
+                rate_limit use shared {
+                    account = "literal";
+                }
+            }
+        });
+        assert!(invalid_value.contains("must be exactly `vars.NAME`"));
+
+        let dimensions = (0..=MAX_RATE_LIMIT_KEY_PARTS)
+            .map(|index| format_ident!("dimension_{index}"))
+            .collect::<Vec<_>>();
+        let too_many_dimensions = parse_error(quote! {
+            client Api {
+                base "https://example.test";
+                rate_limits {
+                    rule shared {
+                        by [#(#dimensions),*];
+                        1 / 1s;
+                    }
+                }
+            }
+        });
+        assert!(too_many_dimensions.contains("permits at most 32 dimensions"));
+
+        for (cost, expected) in [
+            (quote!(0), "greater than zero"),
+            (quote!(4_294_967_296), "not representable as `u32`"),
+        ] {
+            let error = parse_error(quote! {
+                client Api {
+                    base "https://example.test";
+                    rate_limits {
+                        rule shared {
+                            cost #cost;
+                            1 / 1s;
+                        }
+                    }
+                }
+            });
+            assert!(error.contains(expected), "unexpected error: {error}");
+        }
+
+        let excessive_cost = parse_error(quote! {
+            client Api {
+                base "https://example.test";
+                rate_limits {
+                    rule shared {
+                        cost 2;
+                        1 / 1s;
+                    }
+                }
+            }
+        });
+        assert!(excessive_cost.contains("must not exceed any window capacity"));
+    }
+
+    #[test]
+    fn reusable_formal_name_enforces_the_runtime_key_part_name_limit() {
+        let exact = format_ident!("{}", "a".repeat(MAX_RATE_LIMIT_KEY_PART_NAME_BYTES));
+        super::super::parse(quote! {
+            client Api {
+                base "https://example.test";
+                rate_limits {
+                    rule shared { by [#exact]; 1 / 1s; }
+                }
+            }
+        })
+        .expect("exact formal-name byte limit");
+
+        let excess = format_ident!("{}", "a".repeat(MAX_RATE_LIMIT_KEY_PART_NAME_BYTES + 1));
+        let error = parse_error(quote! {
+            client Api {
+                base "https://example.test";
+                rate_limits {
+                    rule shared { by [#excess]; 1 / 1s; }
+                }
+            }
+        });
+        assert!(error.contains("key-part name permits 1-128 UTF-8 bytes"));
     }
 
     #[test]
@@ -327,19 +910,8 @@ mod tests {
             panic!("endpoint");
         };
 
-        assert_eq!(
-            source
-                .client
-                .layer
-                .rate_limit
-                .as_ref()
-                .unwrap()
-                .value
-                .windows
-                .len(),
-            2
-        );
-        assert_eq!(endpoint.layer.rate_limit.as_ref().unwrap().value.cost, 2);
+        assert_eq!(inline_rate_limit(&source.client.layer).windows.len(), 2);
+        assert_eq!(inline_rate_limit(&endpoint.layer).cost, 2);
     }
 
     #[test]
@@ -364,11 +936,11 @@ mod tests {
             }
         })
         .expect("explicit rate-limit IDs");
-        let client = &source.client.layer.rate_limit.as_ref().unwrap().value;
+        let client = inline_rate_limit(&source.client.layer);
         let SourceChild::Endpoint(endpoint) = &source.children[0] else {
             panic!("endpoint");
         };
-        let endpoint = &endpoint.layer.rate_limit.as_ref().unwrap().value;
+        let endpoint = inline_rate_limit(&endpoint.layer);
 
         assert_eq!(
             client.id.as_ref().map(|id| id.value.value()).as_deref(),
@@ -454,7 +1026,7 @@ mod tests {
             }
         })
         .expect("by before cost");
-        let rule = &source.client.layer.rate_limit.as_ref().unwrap().value;
+        let rule = inline_rate_limit(&source.client.layer);
 
         assert_eq!(
             rule.dimensions
@@ -479,7 +1051,7 @@ mod tests {
             }
         })
         .expect("cost before by");
-        let rule = &source.client.layer.rate_limit.as_ref().unwrap().value;
+        let rule = inline_rate_limit(&source.client.layer);
 
         assert_eq!(
             rule.dimensions
@@ -502,13 +1074,7 @@ mod tests {
         .expect("declaration-global rule");
 
         assert!(
-            source
-                .client
-                .layer
-                .rate_limit
-                .as_ref()
-                .unwrap()
-                .value
+            inline_rate_limit(&source.client.layer)
                 .dimensions
                 .is_empty()
         );

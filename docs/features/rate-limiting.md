@@ -7,8 +7,8 @@ clones share it.
 
 ## Declare applicability and partitioning
 
-This compiled contract has one client rule, one host-partitioned scope rule,
-and one endpoint-value rule:
+This compiled contract combines anonymous lexical rules with a client-owned
+reusable rule attached in unrelated branches:
 
 ## Complete example
 
@@ -21,11 +21,41 @@ applies to every endpoint. A scope rule applies to its descendants. An
 endpoint rule applies only to that endpoint. Applicable rules are additive in
 client-to-endpoint order.
 
+Reusable rules are defined once in the client's `rate_limits` block. A bare
+name in their `by [...]` list is a formal logical dimension:
+
+```text
+rate_limits {
+    rule account_reads {
+        by [host, account];
+        100 / 1m;
+    }
+}
+```
+
+Attach one with `rate_limit use account_reads;`, or bind every formal to an
+exact visible scalar reference:
+
+```text
+rate_limit use account_reads {
+    account = scope.account;
+    cost 2;
+}
+```
+
+The definition owns the logical key-part name (`account`) and the stable
+derived ID (`<client>.rate_limit.account_reads`). Attachment lexical paths and
+source names such as `scope.account` or `ep.account` do not enter bucket
+identity. Definitions default to cost 1; an attachment may override cost
+without changing the bucket schema. Named uses may repeat at one layer in
+source order, alongside at most one anonymous direct rule.
+
 An optional `id "service.quota";` inside a rule gives that rule one exact
 stable identity. Put it before the first window; `id`, `by`, and `cost` may
 otherwise appear in any order. Omitted IDs retain their existing deterministic
-source-derived form. Use an explicit ID when remote quota identity must survive
-client, scope, or endpoint renames or intentionally span compatible contracts.
+source-derived form for anonymous rules and derive from client plus rule name
+for reusable definitions. Use an explicit ID when remote quota identity must
+survive client or rule renames or intentionally span compatible contracts.
 
 The optional `by [...]` list answers “which requests share quota state?”
 Omitting it creates one bucket for that declaration. It does not create one

@@ -305,7 +305,7 @@ fn render_request(docs: &EndpointDocModel) -> String {
                     let identity = if rule.explicit_id {
                         "explicit stable rule ID"
                     } else {
-                        "derived deterministic declaration rule ID"
+                        "derived deterministic rule ID"
                     };
                     let windows = rule
                         .windows
@@ -834,8 +834,40 @@ mod tests {
         assert!(docs.contains(
             "Bucketed by: `host`, `endpoint`, `vars.tenant`, `scope.account`, `ep.resource`"
         ));
-        assert!(docs.contains("derived deterministic declaration rule ID"));
+        assert!(docs.contains("derived deterministic rule ID"));
         assert!(docs.contains("explicit stable rule ID `service.account.read`"));
+    }
+
+    #[test]
+    fn named_rule_docs_report_definition_attachment_and_logical_dimensions() {
+        let api = semantic::test_support::resolve_tokens(quote! {
+            client RateDocsApi {
+                base "https://example.test";
+                rate_limits {
+                    rule account_reads {
+                        by [host, account];
+                        10 / 1m;
+                    }
+                }
+            }
+            scope accounts(account: String) {
+                rate_limit use account_reads {
+                    account = scope.account;
+                    cost 2;
+                }
+                GET read() -> Bytes;
+            }
+        });
+        let endpoint = semantic::test_support::endpoint(&api.client.children, "read");
+        let docs = endpoint_type_doc(endpoint);
+
+        assert!(docs.contains("named rule `account_reads` attached at scope accounts"));
+        assert!(
+            docs.contains("derived deterministic rule ID `rate_docs_api.rate_limit.account_reads`")
+        );
+        assert!(docs.contains("Bucketed by: `host`, `account`"));
+        assert!(docs.contains("Cost: 2"));
+        assert!(!docs.contains("Bucketed by: `host`, `scope.account`"));
     }
 
     #[test]

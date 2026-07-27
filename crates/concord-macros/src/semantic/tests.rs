@@ -100,7 +100,7 @@ fn rate_limit_normalization_does_not_resolve_request_values() {
 }
 
 #[test]
-fn rate_limit_requires_direct_complete_declarations() {
+fn rate_limit_requires_a_complete_inline_or_named_attachment() {
     let syntax = parse::parse(quote! {
         client Api {
             base "https://example.test";
@@ -108,8 +108,12 @@ fn rate_limit_requires_direct_complete_declarations() {
         }
     })
     .err()
-    .expect("named declaration is removed");
-    assert!(syntax.to_string().contains("direct `rate_limit { ... }`"));
+    .expect("incomplete attachment");
+    assert!(
+        syntax
+            .to_string()
+            .contains("`rate_limit { ... }` or `rate_limit use RULE")
+    );
 }
 
 #[test]

@@ -1,0 +1,5 @@
+error: built-in rate-limit dimension `host` cannot be bound
+  --> tests/ui/fail/rate_limits/rate_limit_bind_builtin_dimension.rs:16:13
+   |
+16 |             host = vars.tenant;
+   |             ^^^^

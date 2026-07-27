@@ -21,10 +21,21 @@ api! {
             id "example.application";
             500 / 10s;
         }
+        rate_limits {
+            rule account_reads {
+                id "example.account.read";
+                by [account];
+                100 / 1m;
+                1_000 / 1h;
+            }
+        }
     }
 
     scope region(region: String) {
         host [scope.region, "api"];
+        rate_limit use account_reads {
+            account = scope.region;
+        }
         rate_limit {
             by [host];
             200 / 1m;
@@ -36,6 +47,13 @@ api! {
                 cost 2;
                 100 / 1m;
             }
+        }
+    }
+
+    GET lookup(account: String) -> Bytes {
+        rate_limit use account_reads {
+            account = ep.account;
+            cost 2;
         }
     }
 
@@ -54,6 +72,7 @@ pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
         .build()?;
     let _: rate_limit_api::region::ItemRequest =
         client.region("eu".to_owned()).item("record-42".to_owned());
+    let _: rate_limit_api::LookupRequest = client.lookup("account-7".to_owned());
     let _: rate_limit_api::PublicRequest = client.public();
     Ok(())
 }

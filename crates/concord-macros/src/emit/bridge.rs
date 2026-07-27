@@ -13,6 +13,7 @@ pub(super) fn generated_contract_assertion() -> TokenStream {
     let max_request_header_count = crate::MAX_REQUEST_HEADER_COUNT;
     let max_request_header_bytes = crate::MAX_REQUEST_HEADER_BYTES;
     let max_rate_limit_id_bytes = crate::MAX_RATE_LIMIT_ID_BYTES;
+    let max_rate_limit_key_part_name_bytes = crate::MAX_RATE_LIMIT_KEY_PART_NAME_BYTES;
     let max_rate_limit_key_parts = crate::MAX_RATE_LIMIT_KEY_PARTS;
     let max_rate_limit_windows_per_rule = crate::MAX_RATE_LIMIT_WINDOWS_PER_RULE;
     let max_rate_limit_rules_per_plan = crate::MAX_RATE_LIMIT_RULES_PER_PLAN;
@@ -51,6 +52,11 @@ pub(super) fn generated_contract_assertion() -> TokenStream {
             "Concord macro/core rate-limit ID limits differ",
         );
         const _: () = assert!(
+            __core::rate_limit::MAX_RATE_LIMIT_KEY_PART_NAME_BYTES
+                == #max_rate_limit_key_part_name_bytes,
+            "Concord macro/core rate-limit key-part-name limits differ",
+        );
+        const _: () = assert!(
             __core::rate_limit::MAX_RATE_LIMIT_KEY_PARTS == #max_rate_limit_key_parts,
             "Concord macro/core rate-limit key-part limits differ",
         );
@@ -85,10 +91,12 @@ mod tests {
         assert!(output.contains("__core :: endpoint :: MAX_REQUEST_HEADER_COUNT"));
         assert!(output.contains("__core :: endpoint :: MAX_REQUEST_HEADER_BYTES"));
         assert!(output.contains("__core :: rate_limit :: MAX_RATE_LIMIT_ID_BYTES"));
+        assert!(output.contains("__core :: rate_limit :: MAX_RATE_LIMIT_KEY_PART_NAME_BYTES"));
         assert!(output.contains("__core :: rate_limit :: MAX_RATE_LIMIT_KEY_PARTS"));
         assert!(output.contains("__core :: rate_limit :: MAX_RATE_LIMIT_WINDOWS_PER_RULE"));
         assert!(output.contains("__core :: rate_limit :: MAX_RATE_LIMIT_RULES_PER_PLAN"));
         assert!(output.contains(&crate::MAX_RATE_LIMIT_ID_BYTES.to_string()));
+        assert!(output.contains(&crate::MAX_RATE_LIMIT_KEY_PART_NAME_BYTES.to_string()));
         assert!(output.contains(&crate::MAX_RATE_LIMIT_KEY_PARTS.to_string()));
         assert!(output.contains(&crate::MAX_RATE_LIMIT_WINDOWS_PER_RULE.to_string()));
         assert!(output.contains(&crate::MAX_RATE_LIMIT_RULES_PER_PLAN.to_string()));

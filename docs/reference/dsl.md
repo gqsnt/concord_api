@@ -127,7 +127,7 @@ duplicate and original spans. The supported clauses are:
 
 | Owner | Clauses |
 |---|---|
-| client | `base`, `vars`, `credentials`, `host`, `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit` |
+| client | `base`, `vars`, `credentials`, `rate_limits`, `host`, `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit` |
 | scope | `host`, `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, plus child scopes/endpoints |
 | endpoint | `id`, `host`, `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, `paginate` |
 
@@ -532,6 +532,42 @@ sequential, cycle-detecting, all-or-error `.paginate(limit)` terminal.
 
 ## Rate limits
 
+Client-owned reusable definitions use bare formal logical dimensions:
+
+```rust
+client ServiceApi {
+    base "https://api.example.com/";
+
+    rate_limits {
+        rule account_reads {
+            id "service.account.read";
+            by [host, account];
+            cost 1;
+            100 / 1m;
+            1_000 / 1h;
+        }
+    }
+}
+```
+
+Attach a definition at any lexical layer and bind every formal dimension to
+one exact visible scalar reference:
+
+```rust
+rate_limit use account_reads {
+    account = scope.account;
+    cost 2;
+}
+```
+
+Definitions without formals use the short attachment form:
+
+```rust
+rate_limit use service_reads;
+```
+
+An anonymous direct rule remains available:
+
 ```rust
 rate_limit {
     id "service.account.read";
@@ -542,9 +578,26 @@ rate_limit {
 }
 ```
 
-The exact clause grammar is:
+The exact forms are:
 
 ```text
+rate_limits {
+    rule RULE {
+        [id "stable.id";]
+        [by [BUILTIN_OR_FORMAL, ...];]
+        [cost POSITIVE;]
+        WINDOW+
+    }
+    ...
+}
+
+rate_limit use RULE;
+rate_limit use RULE {
+    FORMAL = vars.NAME | scope.NAME | ep.NAME;
+    ...
+    [cost POSITIVE;]
+}
+
 rate_limit {
     [id "stable.id";]
     [by [DIMENSION, ...];]
@@ -553,18 +606,33 @@ rate_limit {
 }
 ```
 
-`id`, `by`, and `cost` may occur in any order. Each may occur at most once,
-and all must precede the first window. `by` must be nonempty, preserves source
-order, rejects duplicate dimensions, and accepts at most
-`MAX_RATE_LIMIT_KEY_PARTS` dimensions. Omitting `by` is the declaration-global
-form: all requests to which that declaration applies share one bucket. There
-is no `by global` spelling.
+`rate_limits` is client-only, appears at most once, and contains uniquely named
+snake-case rules. A definition is rejected when it is never attached.
+`id`, `by`, and definition/default `cost` have the same ordering, uniqueness,
+window, and ceiling rules as anonymous direct rules.
+
+In a definition, `host` and `endpoint` are built-ins. Every other bare
+identifier in `by [...]` is a formal logical dimension; definitions cannot
+capture `vars.*`, `scope.*`, or `ep.*` directly. Each attachment must bind
+every formal exactly once, may not bind a built-in, and may override cost.
+Unknown, missing, or duplicate bindings are rejected. Attachment lexical
+names never enter the rule ID or key-part names: binding either
+`scope.account` or `ep.account` to formal `account` emits key part `account`.
+
+For all rule forms, `id`, `by`, and `cost` may occur in any order. Each may
+occur at most once, and all must precede the first window. `by` must be
+nonempty, preserves source order, rejects duplicate dimensions, and accepts
+at most `MAX_RATE_LIMIT_KEY_PARTS` dimensions. Omitting `by` is the
+definition/declaration-global form: all requests to which that attachment
+applies share one bucket. There is no `by global` spelling.
 
 An explicit ID is exactly the declared value; Concord does not append
 `.rate_limit`. It is 1–256 ASCII bytes in dot-separated segments. Every
 segment begins and ends with a lowercase ASCII letter or digit; internal
-characters may additionally be `_` or `-`. When omitted, the prior
-source-derived ID remains byte-for-byte unchanged.
+characters may additionally be `_` or `-`. An omitted reusable-definition ID
+is `<client>.rate_limit.<rule>`, independent of attachment location. An
+omitted anonymous-rule ID retains the prior source-derived identity
+byte-for-byte.
 
 The same explicit ID may appear in disjoint branches of one contract only
 when its ordered dimension public names and ordered windows are identical.
@@ -576,8 +644,9 @@ windows, and remote quota meaning.
 `cost` defaults to 1. It is positive and cannot exceed any window capacity. A
 rule has at least one positive window. Window order is preserved.
 
-At most one rule exists at each client, scope, or endpoint layer. Effective
-plan order is client, outer scopes, inner scopes, then endpoint. Rules are
+Each client, scope, or endpoint layer permits source-ordered named uses plus at
+most one anonymous direct rule. Effective plan order is client, outer scopes,
+inner scopes, then endpoint, preserving local source order. Rules are
 additive; descendants cannot replace or disable ancestors.
 
 The declaration location and key dimensions have separate jobs:
@@ -605,9 +674,10 @@ Lexical availability is:
 | scope | `host`, `endpoint`, `vars.*`, visible `scope.*` |
 | endpoint | `host`, `endpoint`, `vars.*`, visible `scope.*`, `ep.*` |
 
-References are resolved at the declaration site. An inherited client or scope
-rule retains those resolved references and cannot begin using values available
-only in a descendant. Ambiguous or unavailable scope references are rejected.
+Anonymous references and named bindings are resolved at the attachment site.
+An inherited client or scope attachment retains those resolved references and
+cannot begin using values available only in a descendant. Ambiguous or
+unavailable scope references are rejected.
 
 Value dimensions must be required or defaulted scalars. Optional values,
 vectors, optional vectors, any value controlled by pagination, secrets,
@@ -636,14 +706,16 @@ Generated endpoint Rustdoc lists the rule origin, whether its ID is explicit
 or derived, the exact rule ID, dimension names (or `declaration-global`),
 cost, and windows—never resolved values.
 
-A derived generated declaration rule ID is deterministic within one generated
-client contract. Renaming its client/scope/endpoint source identity changes
-the ID. Derived IDs are not globally unique across unrelated `api!`
-expansions. An explicit ID is stable across those renames and may intentionally
-align compatible contracts. Default-built clients own separate limiter
-objects, so matching IDs do not share state by default. Reusing one limiter
-intentionally shares matching rule/key/window state and requires compatible
-contract meaning.
+An anonymous derived rule ID is deterministic within one generated client
+contract; renaming its client/scope/endpoint source identity changes it. A
+named derived ID depends only on client and rule name, not attachment paths.
+Derived IDs are not globally unique across unrelated `api!` expansions. An
+explicit ID is stable across those renames and may intentionally align
+compatible contracts. Default-built clients own separate limiter objects, so
+matching IDs do not share state by default. Reusing one limiter intentionally
+shares matching rule/key/window state and requires compatible contract
+meaning. Definitions alone do not require a runtime limiter; any attachment
+does.
 
 Observer and concrete limiter selection are runtime policy:
 
@@ -674,7 +746,8 @@ Structural diagnostics include:
 - invalid, defaulted, or multiple body roles;
 - invalid public expression namespaces and shaping literals;
 - host-prefix shaping over an IPv4 or IPv6 fixed base;
-- duplicate query, header, authentication, pagination, and rate-limit entries;
+- duplicate query, header, authentication, pagination, and anonymous
+  rate-limit entries;
 
 Rust diagnostics cover:
 

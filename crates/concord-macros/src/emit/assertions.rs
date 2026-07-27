@@ -309,4 +309,44 @@ mod tests {
         assert!(!bounds.contains("ClientWithoutDisplay : :: std :: fmt :: Display"));
         assert!(!bounds.contains("EndpointWithoutDisplay : :: std :: fmt :: Display"));
     }
+
+    #[test]
+    fn named_binding_types_receive_only_the_existing_display_obligation() {
+        let api = crate::semantic::test_support::resolve_tokens(quote! {
+            client RateApi {
+                base "https://example.test";
+                vars { unrelated: crate::ClientWithoutDisplay; }
+                rate_limits {
+                    rule account_reads {
+                        by [account];
+                        1 / 1s;
+                    }
+                }
+            }
+            GET read(
+                resource: crate::ResourceKey,
+                unrelated: crate::EndpointWithoutDisplay,
+            ) -> Bytes {
+                rate_limit use account_reads {
+                    account = ep.resource;
+                }
+            }
+        });
+        let endpoint = crate::semantic::test_support::endpoint(&api.client.children, "read");
+        let bounds = endpoint_where_clause(
+            &api.client,
+            &[],
+            endpoint,
+            &test_support::core_path(),
+            &quote!(super),
+            false,
+        )
+        .to_string();
+
+        assert!(bounds.contains("crate :: ResourceKey : :: std :: fmt :: Display"));
+        assert!(!bounds.contains("ClientWithoutDisplay : :: std :: fmt :: Display"));
+        assert!(!bounds.contains("EndpointWithoutDisplay : :: std :: fmt :: Display"));
+        assert!(!bounds.contains("Clone"));
+        assert!(!bounds.contains("Serialize"));
+    }
 }

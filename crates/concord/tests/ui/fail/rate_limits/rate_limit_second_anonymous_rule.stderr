@@ -1,0 +1,11 @@
+error: a client `Api` permits at most one anonymous direct `rate_limit { ... }` rule; use a named reusable rule for additional local policies
+ --> tests/ui/fail/rate_limits/rate_limit_second_anonymous_rule.rs:8:9
+  |
+8 |         rate_limit { 2 / 1s; }
+  |         ^^^^^^^^^^
+
+error: the first anonymous direct rate-limit rule is here
+ --> tests/ui/fail/rate_limits/rate_limit_second_anonymous_rule.rs:6:9
+  |
+6 |         rate_limit { 1 / 1s; }
+  |         ^^^^^^^^^^

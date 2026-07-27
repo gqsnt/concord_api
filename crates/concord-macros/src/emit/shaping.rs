@@ -712,6 +712,50 @@ mod tests {
     }
 
     #[test]
+    fn named_rule_emits_logical_formal_name_with_bound_lexical_access() {
+        let api = crate::semantic::test_support::resolve_tokens(quote! {
+            client RateApi {
+                base "https://example.test";
+                rate_limits {
+                    rule account_reads {
+                        by [account];
+                        10 / 1m;
+                    }
+                }
+            }
+            scope accounts(account: String) {
+                rate_limit use account_reads {
+                    account = scope.account;
+                }
+                GET read() -> Bytes;
+            }
+        });
+        let scope = api
+            .client
+            .children
+            .iter()
+            .find_map(|child| match child {
+                Child::Scope(scope) => Some(scope.as_ref()),
+                Child::Endpoint(_) => None,
+            })
+            .expect("accounts scope");
+        let endpoint = crate::semantic::test_support::endpoint(&api.client.children, "read");
+        let output = rate_limit_statements(
+            &api.client,
+            &[scope],
+            endpoint,
+            &test_support::core_path(),
+            &quote!(super),
+        )
+        .to_string();
+
+        assert!(output.contains("(\"account\""));
+        assert!(!output.contains("\"scope.account\""));
+        assert!(output.contains("__concord_scope_0_0_account"));
+        assert!(output.contains("push_rate_limit_rule"));
+    }
+
+    #[test]
     fn composite_dimension_order_is_preserved() {
         let output = keyed_rule_output();
         let ordered = [
