@@ -6,10 +6,12 @@ use syn::parse::ParseStream;
 use syn::spanned::Spanned;
 use syn::{Ident, LitInt, LitStr, Token, braced, bracketed};
 
-use super::ast::{DurationLiteral, RateLimitDecl, RateLimitDimensionDecl, RateLimitWindowLiteral};
+use super::ast::{
+    Clause, DurationLiteral, RateLimitDecl, RateLimitDimensionDecl, RateLimitWindowLiteral,
+};
 use super::diagnostics::{SpanError, validate_duration_integer, validate_integer};
 use super::keyword;
-use crate::{MAX_RATE_LIMIT_KEY_PARTS, MAX_RATE_LIMIT_WINDOWS_PER_RULE};
+use crate::{MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_PARTS, MAX_RATE_LIMIT_WINDOWS_PER_RULE};
 
 pub(super) fn parse_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitDecl> {
     input.parse::<keyword::rate_limit>()?;
@@ -21,15 +23,41 @@ pub(super) fn parse_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitD
     let body;
     braced!(body in input);
 
+    let mut id: Option<Clause<LitStr>> = None;
     let mut dimensions = None;
     let mut cost = None;
     let mut windows = Vec::new();
     while !body.is_empty() {
+        if body.peek(keyword::id) {
+            if !windows.is_empty() {
+                return Err(body.error(
+                    "`id`, `by`, and `cost` clauses must appear before rate-limit windows",
+                ));
+            }
+            let marker: keyword::id = body.parse()?;
+            if let Some(first) = &id {
+                let mut error = marker
+                    .span()
+                    .error("a rate-limit rule permits at most one `id` clause");
+                error.combine(first.key_span.error("the first `id` clause is here"));
+                return Err(error);
+            }
+            let value: LitStr = body
+                .parse()
+                .map_err(|_| body.error("a rate-limit `id` clause requires a string literal"))?;
+            validate_rate_limit_id(&value)?;
+            body.parse::<Token![;]>()?;
+            id = Some(Clause {
+                key_span: marker.span(),
+                value,
+            });
+            continue;
+        }
         if body.peek(keyword::by) {
             if !windows.is_empty() {
-                return Err(
-                    body.error("`by` and `cost` clauses must appear before rate-limit windows")
-                );
+                return Err(body.error(
+                    "`id`, `by`, and `cost` clauses must appear before rate-limit windows",
+                ));
             }
             let marker: keyword::by = body.parse()?;
             if dimensions.is_some() {
@@ -73,9 +101,9 @@ pub(super) fn parse_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitD
         }
         if body.peek(keyword::cost) {
             if !windows.is_empty() {
-                return Err(
-                    body.error("`by` and `cost` clauses must appear before rate-limit windows")
-                );
+                return Err(body.error(
+                    "`id`, `by`, and `cost` clauses must appear before rate-limit windows",
+                ));
             }
             let marker: keyword::cost = body.parse()?;
             if cost.is_some() {
@@ -124,10 +152,34 @@ pub(super) fn parse_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitD
             .error("rate-limit cost must not exceed any window capacity"));
     }
     Ok(RateLimitDecl {
+        id,
         dimensions: dimensions.unwrap_or_default(),
         cost,
         windows,
     })
+}
+
+fn validate_rate_limit_id(id: &LitStr) -> syn::Result<()> {
+    let value = id.value();
+    let valid = (1..=MAX_RATE_LIMIT_ID_BYTES).contains(&value.len())
+        && value.is_ascii()
+        && value.split('.').all(|segment| {
+            let bytes = segment.as_bytes();
+            !bytes.is_empty()
+                && bytes.iter().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || matches!(byte, b'_' | b'-')
+                })
+                && bytes.first().is_some_and(u8::is_ascii_alphanumeric)
+                && bytes.last().is_some_and(u8::is_ascii_alphanumeric)
+        });
+    if !valid {
+        return Err(id.span().error(format!(
+            "a generated rate-limit ID must be 1-{MAX_RATE_LIMIT_ID_BYTES} ASCII bytes in dot-separated segments; each segment begins and ends with a lowercase letter or digit and may also contain `_` or `-`"
+        )));
+    }
+    Ok(())
 }
 
 fn parse_rate_limit_dimension(input: ParseStream<'_>) -> syn::Result<RateLimitDimensionDecl> {
@@ -245,9 +297,12 @@ fn parse_rate_duration(literal: &LitInt) -> syn::Result<Duration> {
 #[cfg(test)]
 mod tests {
     use quote::{format_ident, quote};
+    use syn::LitStr;
 
     use crate::syntax::ast::{RateLimitDimensionDecl, SourceChild};
-    use crate::{MAX_RATE_LIMIT_KEY_PARTS, MAX_RATE_LIMIT_WINDOWS_PER_RULE};
+    use crate::{
+        MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_PARTS, MAX_RATE_LIMIT_WINDOWS_PER_RULE,
+    };
 
     fn parse_error(tokens: proc_macro2::TokenStream) -> String {
         super::super::parse(tokens)
@@ -285,6 +340,105 @@ mod tests {
             2
         );
         assert_eq!(endpoint.layer.rate_limit.as_ref().unwrap().value.cost, 2);
+    }
+
+    #[test]
+    fn parses_explicit_id_by_and_cost_in_any_pre_window_order() {
+        let source = super::super::parse(quote! {
+            client RateApi {
+                base "https://example.test";
+                rate_limit {
+                    cost 2;
+                    id "riot.application";
+                    by [host];
+                    2 / 1s;
+                }
+            }
+            GET read() -> Bytes {
+                rate_limit {
+                    by [endpoint];
+                    id "riot.endpoint";
+                    cost 1;
+                    1 / 1s;
+                }
+            }
+        })
+        .expect("explicit rate-limit IDs");
+        let client = &source.client.layer.rate_limit.as_ref().unwrap().value;
+        let SourceChild::Endpoint(endpoint) = &source.children[0] else {
+            panic!("endpoint");
+        };
+        let endpoint = &endpoint.layer.rate_limit.as_ref().unwrap().value;
+
+        assert_eq!(
+            client.id.as_ref().map(|id| id.value.value()).as_deref(),
+            Some("riot.application")
+        );
+        assert_eq!(
+            endpoint.id.as_ref().map(|id| id.value.value()).as_deref(),
+            Some("riot.endpoint")
+        );
+    }
+
+    #[test]
+    fn validates_explicit_id_grammar_and_exact_byte_limit() {
+        let exact = LitStr::new(
+            &format!("a{}", "b".repeat(MAX_RATE_LIMIT_ID_BYTES - 1)),
+            proc_macro2::Span::call_site(),
+        );
+        super::validate_rate_limit_id(&exact).expect("exact rate-limit ID byte limit");
+
+        for invalid in [
+            "",
+            "Uppercase",
+            ".leading",
+            "trailing.",
+            "double..dot",
+            "_leading",
+            "trailing-",
+            "contains space",
+            "nonascii-é",
+        ] {
+            let literal = LitStr::new(invalid, proc_macro2::Span::call_site());
+            let error = super::validate_rate_limit_id(&literal)
+                .expect_err("invalid generated rate-limit ID");
+            assert_eq!(
+                error.to_string(),
+                "a generated rate-limit ID must be 1-256 ASCII bytes in dot-separated segments; each segment begins and ends with a lowercase letter or digit and may also contain `_` or `-`"
+            );
+        }
+
+        let first_excess = LitStr::new(
+            &format!("a{}", "b".repeat(MAX_RATE_LIMIT_ID_BYTES)),
+            proc_macro2::Span::call_site(),
+        );
+        super::validate_rate_limit_id(&first_excess).expect_err("first excess rate-limit ID byte");
+    }
+
+    #[test]
+    fn rejects_duplicate_and_late_explicit_id_clauses() {
+        let duplicate = parse_error(quote! {
+            client RateApi {
+                base "https://example.test";
+                rate_limit {
+                    id "riot.first";
+                    id "riot.second";
+                    1 / 1s;
+                }
+            }
+        });
+        assert!(duplicate.contains("at most one `id` clause"));
+
+        let late = parse_error(quote! {
+            client RateApi {
+                base "https://example.test";
+                rate_limit {
+                    1 / 1s;
+                    id "riot.late";
+                }
+            }
+        });
+        assert!(late.contains("must appear before rate-limit windows"));
     }
 
     #[test]

@@ -8,10 +8,13 @@ use concord::Bytes;
 use concord::api;
 use concord::error::{ClientBuildErrorKind, ConfigurationErrorKind};
 use concord::http::SafeProxy;
+#[cfg(feature = "rate-limit")]
+use concord::rate_limit::LocalRateLimiter;
 use concord::rate_limit::{
     BoxFuture, NoopRateLimiter, RateLimitError, RateLimitPermit, RateLimitPlan, RateLimitRequest,
     RateLimitResponse, RateLimiter,
 };
+use concord::retry::{RetryDecision, RetryFailure, RetryPolicy};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 
 api! {
@@ -97,6 +100,56 @@ api! {
         }
     }
     GET outside() -> Bytes;
+}
+
+api! {
+    client ExplicitStableRateApi {
+        base "http://explicit-stable-rate.example.test/";
+    }
+
+    scope legacy_branch() {
+        rate_limit {
+            id "service.shared.quota";
+            cost 1;
+            2 / 1h;
+        }
+        GET first() -> Bytes;
+    }
+
+    scope renamed_branch() {
+        rate_limit {
+            cost 2;
+            id "service.shared.quota";
+            2 / 1h;
+        }
+        GET second() -> Bytes;
+    }
+}
+
+api! {
+    client FirstSharedIdApi {
+        base "http://first-shared-id.example.test/";
+    }
+
+    GET read() -> Bytes {
+        rate_limit {
+            id "service.cross_contract.quota";
+            1 / 1h;
+        }
+    }
+}
+
+api! {
+    client SecondSharedIdApi {
+        base "http://second-shared-id.example.test/";
+    }
+
+    GET renamed_read() -> Bytes {
+        rate_limit {
+            id "service.cross_contract.quota";
+            1 / 1h;
+        }
+    }
 }
 
 api! {
@@ -911,22 +964,32 @@ async fn inherited_lexical_declarations_keep_one_identity_across_descendant_modu
     let acquisitions = limiter.acquisitions.lock().expect("identity captures");
     assert_eq!(acquisitions.len(), 5);
     let direct_client_id = &acquisitions[0][0].id;
+    assert_eq!(direct_client_id, "identity_rate_api.rate_limit");
     assert_eq!(direct_client_id, &acquisitions[1][0].id);
     assert_eq!(direct_client_id, &acquisitions[2][0].id);
     assert_eq!(direct_client_id, &acquisitions[3][0].id);
     assert_eq!(direct_client_id, &acquisitions[4][0].id);
 
     let outer_id = &acquisitions[1][1].id;
+    assert_eq!(outer_id, "identity_rate_api.outer.rate_limit");
     assert_eq!(outer_id, &acquisitions[2][1].id);
     assert_ne!(outer_id, &acquisitions[3][1].id);
     assert_ne!(outer_id, direct_client_id);
     assert!(!acquisitions[2][2].id.is_empty());
+    assert_eq!(
+        acquisitions[2][2].id,
+        "identity_rate_api.outer.inner.rate_limit"
+    );
     assert_eq!(acquisitions[2][2].cost, 1);
     assert_eq!(
         acquisitions[2][2].windows,
         [(10, std::time::Duration::from_secs(3600))]
     );
     assert_eq!(acquisitions[2][3].cost, 2);
+    assert_eq!(
+        acquisitions[2][3].id,
+        "identity_rate_api.outer.inner.nested.rate_limit"
+    );
     assert_eq!(
         acquisitions[2][3].windows,
         [(30, std::time::Duration::from_secs(3600))]
@@ -939,6 +1002,168 @@ async fn inherited_lexical_declarations_keep_one_identity_across_descendant_modu
             .iter()
             .all(|plan| plan.iter().all(|rule| rule.parts.is_empty()))
     );
+}
+
+#[tokio::test]
+async fn explicit_id_is_exact_and_survives_source_renames_and_cost_changes() {
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"legacy".to_vec()),
+        ResponseScript::ok(b"renamed".to_vec()),
+    ])
+    .expect("explicit-ID server");
+    let limiter = Arc::new(CapturingLimiter::default());
+    let client = ExplicitStableRateApi::builder()
+        .configure_http({
+            let proxy = SafeProxy::parse(server.url("")).expect("explicit-ID proxy");
+            move |http| http.proxy(proxy)
+        })
+        .configure_runtime({
+            let limiter = Arc::clone(&limiter);
+            move |runtime| runtime.rate_limiter(limiter)
+        })
+        .build()
+        .expect("explicit-ID client");
+
+    client
+        .legacy_branch()
+        .first()
+        .await
+        .expect("legacy branch request");
+    client
+        .renamed_branch()
+        .second()
+        .await
+        .expect("renamed branch request");
+
+    let acquisitions = limiter
+        .acquisitions
+        .lock()
+        .expect("explicit-ID acquisitions");
+    assert_eq!(acquisitions.len(), 2);
+    assert_eq!(acquisitions[0][0].id, "service.shared.quota");
+    assert_eq!(acquisitions[1][0].id, "service.shared.quota");
+    assert_eq!(acquisitions[0][0].cost, 1);
+    assert_eq!(acquisitions[1][0].cost, 2);
+    assert_eq!(acquisitions[0][0].windows, acquisitions[1][0].windows);
+}
+
+#[tokio::test]
+async fn policy_retry_reacquires_the_same_explicit_rule_identity() {
+    let server = ScriptedServer::start([
+        ResponseScript::status(503, b"retry".to_vec()),
+        ResponseScript::ok(b"accepted".to_vec()),
+    ])
+    .expect("explicit-ID retry server");
+    let limiter = Arc::new(CapturingLimiter::default());
+    let policy = RetryPolicy::builder()
+        .max_retries_per_operation(1)
+        .without_budget()
+        .classify_fn(|attempt| match attempt.failure() {
+            RetryFailure::RejectedStatus { status, .. }
+                if status == concord::http::StatusCode::SERVICE_UNAVAILABLE =>
+            {
+                RetryDecision::Retry
+            }
+            _ => RetryDecision::Stop,
+        })
+        .build()
+        .expect("explicit-ID retry policy");
+    let client = ExplicitStableRateApi::builder()
+        .configure_http({
+            let proxy = SafeProxy::parse(server.url("")).expect("explicit-ID retry proxy");
+            move |http| http.proxy(proxy)
+        })
+        .retry(policy)
+        .configure_runtime({
+            let limiter = Arc::clone(&limiter);
+            move |runtime| runtime.rate_limiter(limiter)
+        })
+        .build()
+        .expect("explicit-ID retry client");
+
+    assert_eq!(
+        client
+            .legacy_branch()
+            .first()
+            .await
+            .expect("retried explicit-ID request"),
+        Bytes::from_static(b"accepted")
+    );
+    let acquisitions = limiter
+        .acquisitions
+        .lock()
+        .expect("explicit-ID retry acquisitions");
+    assert_eq!(acquisitions.len(), 2);
+    assert_eq!(acquisitions[0][0].id, "service.shared.quota");
+    assert_eq!(acquisitions[0][0], acquisitions[1][0]);
+}
+
+#[cfg(feature = "rate-limit")]
+#[tokio::test(start_paused = true)]
+async fn shared_limiter_reuses_one_explicit_id_across_generated_contracts() {
+    let server = ScriptedServer::start([ResponseScript::ok(b"first".to_vec())])
+        .expect("cross-contract shared limiter server");
+    let limiter: Arc<dyn RateLimiter> = Arc::new(LocalRateLimiter::new());
+    let first = FirstSharedIdApi::builder()
+        .configure_http({
+            let proxy = SafeProxy::parse(server.url("")).expect("first shared-ID proxy");
+            move |http| http.proxy(proxy)
+        })
+        .configure_runtime({
+            let limiter = Arc::clone(&limiter);
+            move |runtime| runtime.rate_limiter(limiter)
+        })
+        .build()
+        .expect("first shared-ID client");
+    let second = SecondSharedIdApi::builder()
+        .configure_http({
+            let proxy = SafeProxy::parse(server.url("")).expect("second shared-ID proxy");
+            move |http| http.proxy(proxy)
+        })
+        .configure_runtime(move |runtime| runtime.rate_limiter(limiter))
+        .build()
+        .expect("second shared-ID client");
+
+    first.read().await.expect("first cross-contract request");
+    let waiting = tokio::spawn(async move { second.renamed_read().await });
+    tokio::task::yield_now().await;
+
+    assert!(!waiting.is_finished());
+    assert_eq!(server.request_count(), 1);
+    waiting.abort();
+    let _ = waiting.await;
+}
+
+#[cfg(feature = "rate-limit")]
+#[tokio::test]
+async fn independent_clients_with_the_same_explicit_id_keep_isolated_state() {
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"first".to_vec()),
+        ResponseScript::ok(b"second".to_vec()),
+    ])
+    .expect("independent explicit-ID server");
+    let first = FirstSharedIdApi::builder()
+        .configure_http({
+            let proxy = SafeProxy::parse(server.url("")).expect("first independent proxy");
+            move |http| http.proxy(proxy)
+        })
+        .build()
+        .expect("first independent client");
+    let second = SecondSharedIdApi::builder()
+        .configure_http({
+            let proxy = SafeProxy::parse(server.url("")).expect("second independent proxy");
+            move |http| http.proxy(proxy)
+        })
+        .build()
+        .expect("second independent client");
+
+    first.read().await.expect("first independent request");
+    second
+        .renamed_read()
+        .timeout(std::time::Duration::from_secs(5))
+        .await
+        .expect("second independent request must not inherit first-client quota debt");
+    assert_eq!(server.request_count(), 2);
 }
 
 #[tokio::test]

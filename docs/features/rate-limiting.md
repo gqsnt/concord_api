@@ -21,6 +21,12 @@ applies to every endpoint. A scope rule applies to its descendants. An
 endpoint rule applies only to that endpoint. Applicable rules are additive in
 client-to-endpoint order.
 
+An optional `id "service.quota";` inside a rule gives that rule one exact
+stable identity. Put it before the first window; `id`, `by`, and `cost` may
+otherwise appear in any order. Omitted IDs retain their existing deterministic
+source-derived form. Use an explicit ID when remote quota identity must survive
+client, scope, or endpoint renames or intentionally span compatible contracts.
+
 The optional `by [...]` list answers “which requests share quota state?”
 Omitting it creates one bucket for that declaration. It does not create one
 process-global bucket. Supported dimensions are:
@@ -64,10 +70,13 @@ clients, pass the same `Arc<dyn RateLimiter>` to each
 `configure_runtime` call.
 
 Sharing one limiter across instances of the same generated contract preserves
-matching declaration rule identities. Rule IDs are deterministic only within
-one generated client contract; unrelated `api!` expansions do not receive a
-global namespace. Share across unrelated contracts only when the application
-has verified compatible rule namespaces.
+matching declaration rule identities. Derived rule IDs are deterministic only
+within one generated client contract; unrelated `api!` expansions do not
+receive a global namespace. An explicit ID is exact and can intentionally
+align separate contracts, but the macro cannot compare separate `api!`
+invocations. Share across contracts only when ordered dimension names,
+ordered windows, and remote quota meaning are compatible. Costs may differ
+because operations can consume different amounts from the same bucket.
 
 Quota and cooldown state has finite capacity. If a new quota key cannot fit
 without discarding active history, acquisition fails before transport with

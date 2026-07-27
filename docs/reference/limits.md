@@ -182,6 +182,11 @@ consuming an iterator tail. A limiter may select a lower preparation-key
 limit, including zero for global-only keys, but client construction rejects a
 selection above `MAX_RATE_LIMIT_KEY_BYTES`.
 
+Generated explicit rule IDs use the same 256-byte ceiling plus a stricter
+stable ASCII segment grammar. They are emitted exactly. Reused explicit IDs
+within one macro invocation require identical ordered dimension names and
+ordered windows; costs may differ. Derived IDs retain their prior bytes.
+
 Generated value dimensions are formatted directly into the remaining hard
 aggregate key budget. Concord retains no unbounded intermediate formatting;
 the first excess or formatting failure becomes a redacted invalid-rate-limit
@@ -217,10 +222,11 @@ These maps belong to one limiter object in one process. Built-client clones
 share that object; independent builds do not share automatically. Applications
 may explicitly reuse one `Arc<dyn RateLimiter>` or supply a custom
 distributed limiter whose own state and work remain application-owned bounds.
-Generated declaration rule IDs are deterministic within a generated client
-contract, not globally namespaced across unrelated `api!` expansions; a
-limiter shared across unrelated contracts therefore requires compatible rule
-namespaces.
+Derived generated declaration rule IDs are deterministic within a generated
+client contract, not globally namespaced across unrelated `api!` expansions.
+Explicit IDs can align contracts, but a limiter shared across separate macro
+invocations still requires application-verified dimensions, windows, and
+remote quota meaning.
 
 ## Managed retry state
 

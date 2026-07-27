@@ -1,0 +1,11 @@
+error: rate-limit ID `service.shared` is reused with incompatible ordered dimensions or windows
+  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_incompatible_windows.rs:19:16
+   |
+19 |             id "service.shared";
+   |                ^^^^^^^^^^^^^^^^
+
+error: the first declaration using this rule ID is here
+  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_incompatible_windows.rs:10:16
+   |
+10 |             id "service.shared";
+   |                ^^^^^^^^^^^^^^^^

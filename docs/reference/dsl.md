@@ -285,8 +285,8 @@ snake_case_client_name.scope_name.endpoint_name
 Renaming any source component changes that default. Endpoint-local generated
 rate-limit identity derives from the contract ID by appending `.rate_limit`.
 Client and scope rate-limit identities derive from their deterministic source
-paths. Use an explicit ID whenever telemetry or rate state must survive source
-renames.
+paths. A rule-local explicit rate-limit ID, documented below, overrides this
+derivation without changing endpoint identity.
 
 ## Public expressions and request shaping
 
@@ -507,6 +507,7 @@ sequential, cycle-detecting, all-or-error `.paginate(limit)` terminal.
 
 ```rust
 rate_limit {
+    id "service.account.read";
     by [host, endpoint, vars.tenant, scope.region, ep.account];
     cost 2;
     100 / 1m;
@@ -518,18 +519,32 @@ The exact clause grammar is:
 
 ```text
 rate_limit {
+    [id "stable.id";]
     [by [DIMENSION, ...];]
     [cost POSITIVE;]
     WINDOW+
 }
 ```
 
-`by` and `cost` may occur in either order. Each may occur at most once, and
-both must precede the first window. `by` must be nonempty, preserves source
+`id`, `by`, and `cost` may occur in any order. Each may occur at most once,
+and all must precede the first window. `by` must be nonempty, preserves source
 order, rejects duplicate dimensions, and accepts at most
 `MAX_RATE_LIMIT_KEY_PARTS` dimensions. Omitting `by` is the declaration-global
 form: all requests to which that declaration applies share one bucket. There
 is no `by global` spelling.
+
+An explicit ID is exactly the declared value; Concord does not append
+`.rate_limit`. It is 1–256 ASCII bytes in dot-separated segments. Every
+segment begins and ends with a lowercase ASCII letter or digit; internal
+characters may additionally be `_` or `-`. When omitted, the prior
+source-derived ID remains byte-for-byte unchanged.
+
+The same explicit ID may appear in disjoint branches of one contract only
+when its ordered dimension public names and ordered windows are identical.
+Costs may differ. The same ID may never appear twice in one effective endpoint
+plan. Separate `api!` invocations cannot be compared by the macro; an
+application sharing one limiter across them owns compatible dimensions,
+windows, and remote quota meaning.
 
 `cost` defaults to 1. It is positive and cannot exceed any window capacity. A
 rule has at least one positive window. Window order is preserved.
@@ -584,25 +599,24 @@ aggregate key budget; the first excess fails with a redacted configuration
 error. `host` and `endpoint` are already canonical strings and add no
 application type bound.
 
-Bucket identity is the selected limiter object, deterministic declaration
+Bucket identity is the selected limiter object, effective explicit-or-derived
 rule ID, ordered resolved dimensions, and window. Dimension order is
 significant.
 Concrete values may be operationally sensitive. They are supplied to the
 selected limiter but do not appear in errors, `Debug`, `Display`, hooks,
 completion, endpoint descriptions, generated Rustdoc, or safe request plans.
-Generated endpoint Rustdoc lists the rule origin, deterministic declaration
-rule ID, dimension names (or `declaration-global`), cost, and windows—never
-resolved values.
+Generated endpoint Rustdoc lists the rule origin, whether its ID is explicit
+or derived, the exact rule ID, dimension names (or `declaration-global`),
+cost, and windows—never resolved values.
 
-A generated declaration rule ID is source-derived and deterministic within
-one generated client contract. Renaming its client/scope/endpoint source
-identity changes the ID. IDs are not globally unique across unrelated `api!`
-expansions. Default-built clients own separate limiter objects, so unrelated
-contracts do not share state by default. Reusing one limiter across instances
-of the same generated client intentionally shares matching declaration state;
-reusing one limiter across unrelated generated client contracts requires
-their rule namespaces to be compatible with the application's intended
-sharing.
+A derived generated declaration rule ID is deterministic within one generated
+client contract. Renaming its client/scope/endpoint source identity changes
+the ID. Derived IDs are not globally unique across unrelated `api!`
+expansions. An explicit ID is stable across those renames and may intentionally
+align compatible contracts. Default-built clients own separate limiter
+objects, so matching IDs do not share state by default. Reusing one limiter
+intentionally shares matching rule/key/window state and requires compatible
+contract meaning.
 
 Observer and concrete limiter selection are runtime policy:
 

@@ -109,8 +109,10 @@ Rate-limit partition validation is final-endpoint authoritative. Every
 effective inherited or local direct value dimension must be independent of
 pagination-controlled values, and `by [host]` must be rejected when final host
 shaping recursively depends on one. Generated declaration rule IDs remain
-source-derived and deterministic within one generated client contract, not
-globally namespaced across unrelated `api!` expansions.
+source-derived and deterministic when `id` is omitted. Explicit generated IDs
+remain exact across source renames; reuse within one invocation requires
+identical ordered dimensions and windows, while cross-invocation compatibility
+remains application-owned.
 
 ## Source archive
 
@@ -186,8 +188,9 @@ Before enabling publication or any other external release action:
 9. confirm effective direct and final-host-derived rate partitions reject
    pagination-controlled dependencies under current and Rust 1.85 semantic UI
    owners;
-10. confirm generated Rustdoc says “deterministic declaration rule ID” and the
-   manual records the non-global namespace boundary for shared limiters;
+10. confirm generated Rustdoc distinguishes explicit stable rule IDs from
+   derived deterministic declaration IDs and the manual records the
+   cross-contract compatibility boundary for shared limiters;
 11. confirm request and response empty-chunk limits appear once in the generated
    limits reference and remain available without default features;
 12. recheck the exact branch, commit, and clean worktree immediately before the

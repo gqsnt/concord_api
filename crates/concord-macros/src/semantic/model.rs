@@ -186,6 +186,7 @@ pub(crate) struct EndpointDocAuthPlacement {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct EndpointDocRateLimit {
     pub(crate) id: String,
+    pub(crate) explicit_id: bool,
     pub(crate) origin: String,
     pub(crate) dimensions: Vec<String>,
     pub(crate) cost: u32,
@@ -438,6 +439,8 @@ pub(crate) struct NormalizedConfig {
 #[derive(Clone)]
 pub(crate) struct NormalizedRateLimitRule {
     pub(crate) id: String,
+    pub(crate) explicit_id: bool,
+    pub(crate) id_span: Span,
     pub(crate) origin: String,
     pub(crate) dimensions: Vec<NormalizedRateLimitDimension>,
     pub(crate) cost: u32,

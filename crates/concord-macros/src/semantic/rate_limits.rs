@@ -46,6 +46,7 @@ impl Resolver<'_> {
     pub(super) fn resolve_rate_limit(
         &self,
         declaration: &RateLimitDecl,
+        declaration_span: proc_macro2::Span,
         scopes: &[ScopeFrame],
         endpoint: Option<&[super::model::Value]>,
         context: &RateLimitResolutionContext<'_>,
@@ -115,13 +116,61 @@ impl Resolver<'_> {
                 }
             })
             .collect();
+        let (id, explicit_id, id_span) = declaration.id.as_ref().map_or_else(
+            || {
+                (
+                    format!("{}.rate_limit", context.id_path),
+                    false,
+                    declaration_span,
+                )
+            },
+            |id| (id.value.value(), true, id.value.span()),
+        );
         Ok(NormalizedRateLimitRule {
-            id: format!("{}.rate_limit", context.id_path),
+            id,
+            explicit_id,
+            id_span,
             origin: context.lexical_origin.to_owned(),
             dimensions,
             cost: declaration.cost,
             windows,
         })
+    }
+
+    pub(super) fn validate_rate_limit_id_compatibility(
+        &mut self,
+        rule: &NormalizedRateLimitRule,
+    ) -> syn::Result<()> {
+        let dimensions = rule
+            .dimensions
+            .iter()
+            .map(|dimension| match dimension {
+                NormalizedRateLimitDimension::Host { .. } => "host".to_owned(),
+                NormalizedRateLimitDimension::Endpoint { .. } => "endpoint".to_owned(),
+                NormalizedRateLimitDimension::Value { public_name, .. } => public_name.clone(),
+            })
+            .collect::<Vec<_>>();
+        let windows = rule
+            .windows
+            .iter()
+            .map(|window| (window.capacity, window.duration))
+            .collect::<Vec<_>>();
+        if let Some((first_dimensions, first_windows, first_span)) =
+            self.rate_limit_ids.get(&rule.id)
+        {
+            if *first_dimensions != dimensions || *first_windows != windows {
+                let mut error = rule.id_span.error(format!(
+                    "rate-limit ID `{}` is reused with incompatible ordered dimensions or windows",
+                    rule.id
+                ));
+                error.combine(first_span.error("the first declaration using this rule ID is here"));
+                return Err(error);
+            }
+        } else {
+            self.rate_limit_ids
+                .insert(rule.id.clone(), (dimensions, windows, rule.id_span));
+        }
+        Ok(())
     }
 }
 
@@ -259,6 +308,186 @@ mod tests {
                 .iter()
                 .all(|rule| rule.dimensions.is_empty())
         );
+    }
+
+    #[test]
+    fn explicit_ids_are_exact_and_stable_across_source_renames() {
+        let original = test_support::resolve_tokens(quote! {
+            client OriginalApi {
+                base "https://example.test";
+            }
+            scope old_branch() {
+                GET old_endpoint() -> Bytes {
+                    rate_limit {
+                        id "riot.application";
+                        1 / 1s;
+                    }
+                }
+            }
+        });
+        let renamed = test_support::resolve_tokens(quote! {
+            client RenamedApi {
+                base "https://example.test";
+            }
+            scope new_branch() {
+                GET new_endpoint() -> Bytes {
+                    rate_limit {
+                        id "riot.application";
+                        1 / 1s;
+                    }
+                }
+            }
+        });
+        let original = test_support::endpoint(&original.client.children, "old_endpoint");
+        let renamed = test_support::endpoint(&renamed.client.children, "new_endpoint");
+
+        assert_eq!(original.config.rate_limits[0].id, "riot.application");
+        assert_eq!(renamed.config.rate_limits[0].id, "riot.application");
+        assert!(original.config.rate_limits[0].explicit_id);
+        assert!(renamed.config.rate_limits[0].explicit_id);
+    }
+
+    #[test]
+    fn disjoint_explicit_id_reuse_accepts_identical_schema_and_different_costs() {
+        let api = test_support::resolve_tokens(quote! {
+            client SharedRateApi {
+                base "https://example.test";
+            }
+            scope first() {
+                rate_limit {
+                    id "riot.shared";
+                    by [host, endpoint];
+                    cost 1;
+                    10 / 1s;
+                    100 / 1m;
+                }
+                GET read() -> Bytes;
+            }
+            scope second() {
+                rate_limit {
+                    cost 2;
+                    by [host, endpoint];
+                    id "riot.shared";
+                    10 / 1s;
+                    100 / 1m;
+                }
+                GET write() -> Bytes;
+            }
+        });
+        let first = test_support::endpoint(&api.client.children, "read");
+        let second = test_support::endpoint(&api.client.children, "write");
+        assert_eq!(first.config.rate_limits[0].id, "riot.shared");
+        assert_eq!(second.config.rate_limits[0].id, "riot.shared");
+        assert_eq!(first.config.rate_limits[0].cost, 1);
+        assert_eq!(second.config.rate_limits[0].cost, 2);
+    }
+
+    #[test]
+    fn explicit_id_reuse_rejects_different_dimension_names_or_order() {
+        for second_dimensions in [quote!(endpoint, host), quote!(host, vars.tenant)] {
+            let error = resolve_error(quote! {
+                client SharedRateApi {
+                    base "https://example.test";
+                    vars { tenant: String; }
+                }
+                scope first() {
+                    rate_limit {
+                        id "riot.shared";
+                        by [host, endpoint];
+                        10 / 1s;
+                    }
+                    GET read() -> Bytes;
+                }
+                scope second() {
+                    rate_limit {
+                        id "riot.shared";
+                        by [#second_dimensions];
+                        10 / 1s;
+                    }
+                    GET write() -> Bytes;
+                }
+            });
+            assert!(error.contains(
+                "rate-limit ID `riot.shared` is reused with incompatible ordered dimensions or windows"
+            ));
+        }
+    }
+
+    #[test]
+    fn explicit_id_reuse_rejects_different_windows_or_window_order() {
+        for second_windows in [quote!(10 / 1s; 101 / 1m;), quote!(100 / 1m; 10 / 1s;)] {
+            let error = resolve_error(quote! {
+                client SharedRateApi {
+                    base "https://example.test";
+                }
+                scope first() {
+                    rate_limit {
+                        id "riot.shared";
+                        10 / 1s;
+                        100 / 1m;
+                    }
+                    GET read() -> Bytes;
+                }
+                scope second() {
+                    rate_limit {
+                        id "riot.shared";
+                        #second_windows
+                    }
+                    GET write() -> Bytes;
+                }
+            });
+            assert!(error.contains(
+                "rate-limit ID `riot.shared` is reused with incompatible ordered dimensions or windows"
+            ));
+        }
+    }
+
+    #[test]
+    fn explicit_id_cannot_incompatibly_reuse_a_disjoint_derived_id() {
+        let error = resolve_error(quote! {
+            client SharedRateApi {
+                base "https://example.test";
+            }
+            scope first() {
+                rate_limit {
+                    10 / 1s;
+                }
+                GET read() -> Bytes;
+            }
+            scope second() {
+                rate_limit {
+                    id "shared_rate_api.first.rate_limit";
+                    20 / 1s;
+                }
+                GET write() -> Bytes;
+            }
+        });
+
+        assert!(error.contains(
+            "rate-limit ID `shared_rate_api.first.rate_limit` is reused with incompatible ordered dimensions or windows"
+        ));
+    }
+
+    #[test]
+    fn repeated_explicit_id_in_one_effective_plan_is_rejected_first() {
+        let error = resolve_error(quote! {
+            client SharedRateApi {
+                base "https://example.test";
+                rate_limit {
+                    id "riot.shared";
+                    10 / 1s;
+                }
+            }
+            GET read() -> Bytes {
+                rate_limit {
+                    id "riot.shared";
+                    cost 2;
+                    10 / 1s;
+                }
+            }
+        });
+
+        assert!(error.contains("an effective rate-limit plan contains a duplicate rule ID"));
     }
 
     #[test]

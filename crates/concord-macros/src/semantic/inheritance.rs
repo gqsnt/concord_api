@@ -44,7 +44,7 @@ fn resolve_challenge(source: SourceChallenge) -> ResolvedChallengePolicy {
 
 impl Resolver<'_> {
     pub(super) fn normalize_layer(
-        &self,
+        &mut self,
         layer: &Layer,
         parent: &NormalizedConfig,
         scopes: &[ScopeFrame],
@@ -203,22 +203,34 @@ impl Resolver<'_> {
                     "an effective rate-limit plan permits at most {MAX_RATE_LIMIT_RULES_PER_PLAN} rules"
                 )));
             }
-            let rule =
-                self.resolve_rate_limit(&declaration.value, scopes, endpoint, rate_limit_context)?;
+            let rule = self.resolve_rate_limit(
+                &declaration.value,
+                declaration.key_span,
+                scopes,
+                endpoint,
+                rate_limit_context,
+            )?;
             if rule.id.len() > MAX_RATE_LIMIT_ID_BYTES {
                 return Err(declaration.key_span.error(format!(
                     "a rate-limit rule ID permits at most {MAX_RATE_LIMIT_ID_BYTES} UTF-8 bytes"
                 )));
             }
-            if normalized
+            if let Some(existing) = normalized
                 .rate_limits
                 .iter()
-                .any(|existing| existing.id == rule.id)
+                .find(|existing| existing.id == rule.id)
             {
-                return Err(declaration
-                    .key_span
-                    .error("an effective rate-limit plan contains a duplicate rule ID"));
+                let mut error = rule
+                    .id_span
+                    .error("an effective rate-limit plan contains a duplicate rule ID");
+                error.combine(
+                    existing
+                        .id_span
+                        .error("the first effective rule using this ID is here"),
+                );
+                return Err(error);
             }
+            self.validate_rate_limit_id_compatibility(&rule)?;
             normalized.rate_limits.push(rule);
         }
         Ok(normalized)

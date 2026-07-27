@@ -126,6 +126,10 @@
   private late materialization, exclusive ownership, and redaction for
   request-independent custom values. The new generated authentication call
   raises the generated-contract version to 31.
+- Generated rate-limit rules now accept exact stable IDs for rename-safe and
+  intentionally shared quota identity. Omitted IDs retain their prior derived
+  bytes; compatible reuse requires identical ordered dimensions and windows,
+  while costs may differ.
 - Every generated public value mutation now uses
   `value(value) -> set_value(value)`. Absence-capable values retain
   `clear_value()`; values with declaration defaults retain `reset_value()`.
@@ -144,10 +148,10 @@
   `vars.*`, `scope.*`, or `ep.*` dimensions controlled by pagination. A
   `by [host]` dimension is also rejected when final host shaping depends
   recursively on a pagination-controlled value.
-- Generated documentation now calls each source-derived limiter identity a
-  deterministic declaration rule ID. It is deterministic within one generated
-  client contract, not a globally unique namespace across unrelated `api!`
-  expansions.
+- Generated documentation labels omitted source-derived limiter identities as
+  derived deterministic declaration IDs and explicit identities as stable
+  rule IDs. Derived IDs remain scoped to one generated client contract rather
+  than a globally unique namespace across unrelated `api!` expansions.
 - The default façade feature set now installs the first-party
   `LocalRateLimiter`; `RetryAfterObserver` is its built-in final-429 observer.
   These replace the unpublished `rate-limit-governor`,

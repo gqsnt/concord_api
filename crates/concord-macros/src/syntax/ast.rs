@@ -124,6 +124,7 @@ pub(crate) struct Layer {
 
 #[derive(Clone)]
 pub(crate) struct RateLimitDecl {
+    pub(crate) id: Option<Clause<LitStr>>,
     pub(crate) dimensions: Vec<RateLimitDimensionDecl>,
     pub(crate) cost: u32,
     pub(crate) windows: Vec<RateLimitWindowLiteral>,

@@ -285,6 +285,11 @@ fn render_request(docs: &EndpointDocModel) -> String {
             docs.rate_limits
                 .iter()
                 .map(|rule| {
+                    let identity = if rule.explicit_id {
+                        "explicit stable rule ID"
+                    } else {
+                        "derived deterministic declaration rule ID"
+                    };
                     let windows = rule
                         .windows
                         .iter()
@@ -303,7 +308,7 @@ fn render_request(docs: &EndpointDocModel) -> String {
                             .join(", ")
                     };
                     format!(
-                        "- {} (deterministic declaration rule ID `{}`)\n  - Bucketed by: {dimensions}\n  - Cost: {}\n  - Windows: {windows}",
+                        "- {} ({identity} `{}`)\n  - Bucketed by: {dimensions}\n  - Cost: {}\n  - Windows: {windows}",
                         rule.origin, rule.id, rule.cost,
                     )
                 })
@@ -797,6 +802,7 @@ mod tests {
             scope accounts(account: String) {
                 GET read(resource: String) -> Bytes {
                     rate_limit {
+                        id "service.account.read";
                         by [host, endpoint, vars.tenant, scope.account, ep.resource];
                         10 / 1s;
                     }
@@ -811,7 +817,8 @@ mod tests {
         assert!(docs.contains(
             "Bucketed by: `host`, `endpoint`, `vars.tenant`, `scope.account`, `ep.resource`"
         ));
-        assert!(docs.contains("deterministic declaration rule ID"));
+        assert!(docs.contains("derived deterministic declaration rule ID"));
+        assert!(docs.contains("explicit stable rule ID `service.account.read`"));
     }
 
     #[test]

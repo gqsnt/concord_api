@@ -155,16 +155,17 @@ effective rate limits exist. It contains no bound runtime, body input,
 credentials, resolved rate keys, detailed rule values, or native request.
 
 Generated endpoint Rustdoc lists every applicable rate-limit rule in inherited
-order. Each entry includes its lexical origin, deterministic declaration rule
-ID, `Bucketed by` dimension names (or `declaration-global`), cost, and ordered
-windows. Resolved key values never enter Rustdoc or `EndpointDescription`.
+order. Each entry includes its lexical origin, whether its exact rule ID is
+explicit or source-derived, `Bucketed by` dimension names (or
+`declaration-global`), cost, and ordered windows. Resolved key values never
+enter Rustdoc or `EndpointDescription`.
 
-That declaration ID is deterministic within one generated client contract and
-changes when its source identity changes. It is not a globally unique
-namespace across unrelated `api!` expansions. Default-built clients have
-separate limiter objects. Sharing one limiter across instances of the same
-generated client intentionally shares matching rule state; sharing one across
-unrelated generated contracts requires compatible rule namespaces.
+A derived declaration ID is deterministic within one generated client
+contract and changes when its source identity changes. An explicit ID is
+stable across source renames and is emitted exactly without a suffix.
+Default-built clients have separate limiter objects. Sharing one limiter
+across matching explicit IDs intentionally shares rule/key/window state;
+separate `api!` invocations require an application-owned compatibility check.
 
 Planning is a client operation on an unbound endpoint:
 

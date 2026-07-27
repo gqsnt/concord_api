@@ -5,9 +5,9 @@
 //! `docs/features/rate-limiting.md`. Proving tests:
 //! `tests/construction.rs` and `tests/local_runtime.rs`.
 //!
-//! Generated declaration rule IDs are deterministic within each example
-//! client contract; examples share limiter objects only when sharing state is
-//! intentional.
+//! Derived declaration rule IDs are deterministic within each example client
+//! contract. Explicit IDs remain exact; examples share limiter objects only
+//! when sharing state is intentional and schemas are compatible.
 
 pub mod custom_limiter;
 pub mod lexical;

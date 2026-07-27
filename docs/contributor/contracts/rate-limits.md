@@ -96,6 +96,10 @@ matching value for every attempt.
   pagination-controlled values.
 - Generated rule IDs are deterministic within one generated client contract;
   they are not a global namespace across unrelated macro expansions.
+- Omitted rule IDs preserve the established source-derived bytes. Explicit
+  generated IDs are exact bounded literals; compatible reuse compares ordered
+  dimension public names and ordered windows while deliberately ignoring cost.
+- One effective endpoint plan never contains the same rule ID twice.
 - Limiter preparation happens before any attempt effects, and admission
   happens before protected credential attachment.
 - Every managed policy retry and application-level authentication replay
@@ -190,6 +194,10 @@ Compiler changes to key dimensions require semantic validation against final
 endpoint shaping, deterministic ID generation, generated code, runtime plan
 construction, UI diagnostics, and Rust 1.85 semantic checks. Do not solve a
 new rule form by making `RateLimitPlan` unbounded or debuggable.
+
+The compiler validates explicit-ID reuse only inside one `api!` invocation.
+Cross-contract compatibility and intentional sharing of one limiter remain
+application responsibilities.
 
 A new concrete algorithm belongs in `concord-extras` when the existing public
 traits are sufficient. A required new lifecycle privilege or context field is

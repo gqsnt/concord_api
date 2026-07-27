@@ -17,7 +17,10 @@ api! {
         vars {
             tenant: String;
         }
-        rate_limit { 500 / 10s; }
+        rate_limit {
+            id "example.application";
+            500 / 10s;
+        }
     }
 
     scope region(region: String) {

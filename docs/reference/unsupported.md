@@ -93,20 +93,21 @@ It does not support:
 - `host` partitioning when final host shaping depends on a
   pagination-controlled value;
 - descendant replacement or disabling of an inherited rule;
-- explicit user-authored generated rate-rule IDs;
 - repeatable named rules at one lexical owner;
 - a built-in observer chain;
 - implicit process-global limiter state;
 - a first-party distributed strict-quota implementation.
 
 Omitting `by` is the declaration-global form; there is no `by global`
-spelling. Rules from client, scopes, and endpoint are additive.
+spelling. Rules from client, scopes, and endpoint are additive. An explicit
+rule ID is supported, but it does not let the macro validate compatibility
+across separate `api!` invocations.
 
 Install a custom bounded `RateLimiter` for distributed or non-token-bucket
 policy. Compose multiple response policies inside one custom
 `RateLimitObserver` if an observer chain is needed. Sharing one limiter across
-unrelated generated contracts requires deliberately compatible rule
-namespaces.
+unrelated generated contracts requires deliberately compatible ordered
+dimensions, windows, IDs, and remote quota semantics.
 
 ## Compiler and generated surface
 

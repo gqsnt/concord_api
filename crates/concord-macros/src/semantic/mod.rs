@@ -45,6 +45,7 @@ struct Resolver<'a> {
     client_surface: &'a self::model::ClientSurface,
     client_values: &'a [Value],
     credentials: &'a [Credential],
+    rate_limit_ids: HashMap<String, (Vec<String>, Vec<(u32, std::time::Duration)>, Span)>,
     next_scope_id: usize,
     next_endpoint_id: usize,
 }
@@ -77,6 +78,7 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
             client_surface: &surface,
             client_values: &values,
             credentials: &credentials,
+            rate_limit_ids: HashMap::new(),
             next_scope_id: 0,
             next_endpoint_id: 0,
         };

@@ -277,6 +277,7 @@ pub(crate) fn endpoint_doc_model(
         .iter()
         .map(|rule| EndpointDocRateLimit {
             id: rule.id.clone(),
+            explicit_id: rule.explicit_id,
             origin: rule.origin.clone(),
             dimensions: rule
                 .dimensions

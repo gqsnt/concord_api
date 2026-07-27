@@ -32,6 +32,13 @@ closure. Clones of the resulting client share the object. Give the same `Arc`
 to independently built clients only when their generated rule namespaces and
 quota ownership are intentionally compatible.
 
+Generated rules may declare an exact explicit ID. Reusing one limiter then
+shares state for matching ID, ordered key, and window even across separate
+generated contracts. Concord validates compatible dimensions and windows
+within one `api!` invocation, but the application owns that check across
+invocations. Different rule costs are compatible and consume different token
+amounts from the same bucket.
+
 ## Admission input
 
 `RateLimiter::acquire` receives a borrowed `RateLimitRequest` for one visible
@@ -51,7 +58,8 @@ retry index, and sets its flag. Use this bounded structure for correlation
 instead of inferring retry state from call counts.
 
 The plan contains applicable rules in declaration order. Each rule has its
-stable ID, ordered resolved key parts, positive cost, and finite windows.
+stable ID—exactly an explicit declared value when present—ordered resolved key
+parts, positive cost, and finite windows.
 Dimension order is part of the key. Treat host and key values as potentially
 sensitive even though credentials have been removed.
 
