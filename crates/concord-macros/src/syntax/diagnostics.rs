@@ -261,6 +261,48 @@ pub(super) fn validate_auth_query_name(name: &LitStr) -> syn::Result<()> {
     validate_auth_placement_name_bytes(name, "query")
 }
 
+pub(super) fn validate_authorization_scheme(scheme: &LitStr) -> syn::Result<()> {
+    let value = scheme.value();
+    if value.is_empty() {
+        return Err(scheme
+            .span()
+            .error("an Authorization scheme cannot be empty"));
+    }
+    if value.len() > crate::MAX_AUTHORIZATION_SCHEME_BYTES {
+        return Err(scheme.span().error(format!(
+            "an Authorization scheme permits at most {} ASCII bytes",
+            crate::MAX_AUTHORIZATION_SCHEME_BYTES
+        )));
+    }
+    if !value.bytes().all(is_http_token_byte) {
+        return Err(scheme
+            .span()
+            .error("an Authorization scheme must contain only ASCII HTTP token characters"));
+    }
+    Ok(())
+}
+
+fn is_http_token_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric()
+        || matches!(
+            byte,
+            b'!' | b'#'
+                | b'$'
+                | b'%'
+                | b'&'
+                | b'\''
+                | b'*'
+                | b'+'
+                | b'-'
+                | b'.'
+                | b'^'
+                | b'_'
+                | b'`'
+                | b'|'
+                | b'~'
+        )
+}
+
 fn validate_auth_placement_name_bytes(name: &LitStr, kind: &str) -> syn::Result<()> {
     if name.value().len() > crate::MAX_AUTH_PLACEMENT_NAME_BYTES {
         return Err(name.span().error(format!(

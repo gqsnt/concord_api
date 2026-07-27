@@ -1,5 +1,6 @@
 syn::custom_keyword!(api_key);
 syn::custom_keyword!(auth);
+syn::custom_keyword!(authorization);
 syn::custom_keyword!(base);
 syn::custom_keyword!(basic);
 syn::custom_keyword!(bind);

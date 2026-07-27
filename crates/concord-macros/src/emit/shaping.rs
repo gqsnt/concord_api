@@ -208,6 +208,21 @@ pub(super) fn auth_statements(
                     ),
                     false,
                 ),
+                ResolvedAuthPlacement::Authorization(None) => (
+                    quote_spanned!(source_span=>
+                        #core_path::__private::Auth::authorization::<#material>(#reference)
+                    ),
+                    false,
+                ),
+                ResolvedAuthPlacement::Authorization(Some(scheme)) => (
+                    quote_spanned!(source_span=>
+                        #core_path::__private::Auth::authorization_with_scheme::<#material>(
+                            #scheme,
+                            #reference,
+                        )
+                    ),
+                    true,
+                ),
                 ResolvedAuthPlacement::Header(name) => {
                     let canonical =
                         syn::LitStr::new(&name.value().to_ascii_lowercase(), name.span());

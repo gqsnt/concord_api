@@ -4,6 +4,7 @@ const _: usize = runtime::endpoint::MAX_FORMATTED_PUBLIC_VALUE_BYTES;
 const _: usize = runtime::endpoint::MAX_RUNTIME_ENDPOINT_COMPONENTS;
 const _: usize = runtime::endpoint::MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES;
 const _: usize = runtime::auth::MAX_AUTH_PLACEMENTS;
+const _: usize = runtime::auth::MAX_AUTHORIZATION_SCHEME_BYTES;
 const _: usize = runtime::rate_limit::MAX_RATE_LIMIT_ID_BYTES;
 const _: usize = runtime::rate_limit::MAX_RATE_LIMIT_KEY_PARTS;
 const _: usize = runtime::rate_limit::MAX_RATE_LIMIT_KEY_PART_NAME_BYTES;
@@ -99,7 +100,7 @@ api! {
             #[body] body: Text,
         ) -> Text {
             path [ep.endpoint_value];
-            auth header "X-Api-Key" = application_key;
+            auth authorization "Token" = application_key;
         }
         POST custom(#[body] body: crate::WireCodec) -> crate::WireCodec;
         POST stream_upload(#[body] body: Stream<OctetStream>) -> Bytes;

@@ -102,10 +102,15 @@ pub(super) fn validate_auth_compatibility(
         CredentialSource::ApiKey { .. } => {
             matches!(
                 placement,
-                SourceAuthPlacement::Header(_) | SourceAuthPlacement::Query(_)
+                SourceAuthPlacement::Authorization(_)
+                    | SourceAuthPlacement::Header(_)
+                    | SourceAuthPlacement::Query(_)
             )
         }
-        CredentialSource::Bearer { .. } => matches!(placement, SourceAuthPlacement::Bearer),
+        CredentialSource::Bearer { .. } => matches!(
+            placement,
+            SourceAuthPlacement::Bearer | SourceAuthPlacement::Authorization(_)
+        ),
         CredentialSource::Basic { .. } => matches!(placement, SourceAuthPlacement::Basic),
         CredentialSource::Endpoint { .. } | CredentialSource::Custom { .. } => true,
     };
@@ -142,7 +147,9 @@ pub(super) fn validate_effective_auth(config: &NormalizedConfig) -> syn::Result<
     }
     for (index, placement) in config.auth.iter().enumerate() {
         match &placement.kind {
-            ResolvedAuthPlacement::Bearer | ResolvedAuthPlacement::Basic => {
+            ResolvedAuthPlacement::Bearer
+            | ResolvedAuthPlacement::Basic
+            | ResolvedAuthPlacement::Authorization(_) => {
                 if config
                     .auth
                     .iter()
@@ -151,7 +158,9 @@ pub(super) fn validate_effective_auth(config: &NormalizedConfig) -> syn::Result<
                         other != index
                             && (matches!(
                                 &candidate.kind,
-                                ResolvedAuthPlacement::Bearer | ResolvedAuthPlacement::Basic
+                                ResolvedAuthPlacement::Bearer
+                                    | ResolvedAuthPlacement::Basic
+                                    | ResolvedAuthPlacement::Authorization(_)
                             ) || matches!(
                                 &candidate.kind,
                                 ResolvedAuthPlacement::Header(name)

@@ -119,6 +119,8 @@ async fn basic_and_custom_header_material_exist_only_at_the_native_boundary() {
 async fn prepared_bearer_basic_header_and_query_auth_use_only_the_native_boundary() {
     const BEARER: &str = "prepared-bearer-69da8bc87d53";
     const API_KEY: &str = "prepared-api-key-f22b7940bd61";
+    const EXACT_AUTHORIZATION: &str = "Exact prepared authorization 4cf90a";
+    const SCHEME_AUTHORIZATION: &str = "prepared-scheme-authorization-36e81b";
     let executor = DeterministicExecutor::new();
     executor
         .application()
@@ -170,10 +172,35 @@ async fn prepared_bearer_basic_header_and_query_auth_use_only_the_native_boundar
             ScriptedResponse::success(Bytes::from_static(b"query")),
         )
         .expect("prepared query response");
+    executor
+        .application()
+        .queue_expected_response(
+            ExpectedRequest::new()
+                .safe_url("https://protected.example.test/v1/authorization-exact")
+                .native_url("https://protected.example.test/v1/authorization-exact")
+                .header(AUTHORIZATION, HeaderValue::from_static(EXACT_AUTHORIZATION)),
+            ScriptedResponse::success(Bytes::from_static(b"authorization-exact")),
+        )
+        .expect("prepared exact Authorization response");
+    executor
+        .application()
+        .queue_expected_response(
+            ExpectedRequest::new()
+                .safe_url("https://protected.example.test/v1/authorization-scheme")
+                .native_url("https://protected.example.test/v1/authorization-scheme")
+                .header(
+                    AUTHORIZATION,
+                    HeaderValue::from_static("tOkEn prepared-scheme-authorization-36e81b"),
+                ),
+            ScriptedResponse::success(Bytes::from_static(b"authorization-scheme")),
+        )
+        .expect("prepared scheme Authorization response");
     let (core, debug) = core(&executor, Arc::new(AuthHooks::default()));
     let bearer = SlotSelector::static_value(access_token(BEARER), Duration::ZERO);
     let basic = SlotSelector::static_value(basic_credential("user", "password"), Duration::ZERO);
     let key = SlotSelector::static_value(api_key(API_KEY), Duration::ZERO);
+    let exact = SlotSelector::static_value(api_key(EXACT_AUTHORIZATION), Duration::ZERO);
+    let scheme = SlotSelector::static_value(access_token(SCHEME_AUTHORIZATION), Duration::ZERO);
 
     let cases = [
         (
@@ -200,6 +227,17 @@ async fn prepared_bearer_basic_header_and_query_auth_use_only_the_native_boundar
             Auth::query("access", CredentialRef::new(key)).expect("valid query placement"),
             Bytes::from_static(b"query"),
         ),
+        (
+            "authorization-exact",
+            Auth::authorization(CredentialRef::new(exact)),
+            Bytes::from_static(b"authorization-exact"),
+        ),
+        (
+            "authorization-scheme",
+            Auth::authorization_with_scheme("tOkEn", CredentialRef::new(scheme))
+                .expect("valid static Authorization scheme"),
+            Bytes::from_static(b"authorization-scheme"),
+        ),
     ];
     for (segment, auth, expected) in cases {
         let endpoint =
@@ -223,7 +261,13 @@ async fn prepared_bearer_basic_header_and_query_auth_use_only_the_native_boundar
             .captures()
             .expect("prepared auth captures")
     );
-    for secret in [BEARER, API_KEY, "dXNlcjpwYXNzd29yZA=="] {
+    for secret in [
+        BEARER,
+        API_KEY,
+        EXACT_AUTHORIZATION,
+        SCHEME_AUTHORIZATION,
+        "dXNlcjpwYXNzd29yZA==",
+    ] {
         assert!(!diagnostics.contains(secret));
     }
 }

@@ -49,6 +49,7 @@ bytes.
 | Basic authentication username | 8,192 | bytes |
 | Basic authentication password | 32,768 | bytes |
 | Native authentication header value | 65,536 | bytes |
+| Static Authorization scheme | 256 | bytes |
 | Encoded authentication query value | 65,536 | bytes |
 | Multipart recipe | 128 | parts |
 | Multipart part name | 256 | bytes |
@@ -137,9 +138,9 @@ and Basic limits before creating the immutable snapshot or credential slots;
 generated replacement validates before slot mutation. After limiter authority
 and credential finalization, core defensively validates borrowed secret
 material from every source, computes Bearer and Basic output with checked
-arithmetic, and bounds the final private header or percent-encoded query value
-before mutating the native request. These hard limits are exposed under
-`concord::auth`.
+arithmetic, validates and prefixes static custom Authorization schemes, and
+bounds the final private header or percent-encoded query value before mutating
+the native request. These hard limits are exposed under `concord::auth`.
 
 Multipart constructors validate borrowed names, filenames, content types, and
 inline text before copying them. Recipes retain at most 128 parts and track

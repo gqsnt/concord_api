@@ -22,6 +22,7 @@ use syn::{Token, parenthesized};
 // the same exact first-excess behavior without coupling this crate to core.
 const MAX_AUTH_PLACEMENTS: usize = 64;
 const MAX_AUTH_PLACEMENT_NAME_BYTES: usize = 256;
+const MAX_AUTHORIZATION_SCHEME_BYTES: usize = 256;
 const MAX_REQUEST_HEAD_COMPONENTS: usize = 256;
 const MAX_REQUEST_URL_BYTES: usize = 131_072;
 const MAX_REQUEST_HEADER_COUNT: usize = 256;

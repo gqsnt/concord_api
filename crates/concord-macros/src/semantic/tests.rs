@@ -2,7 +2,7 @@ use quote::quote;
 
 use super::model::{
     CloneEligibility, PaginationInitializer, PaginationValue, RequiredArgument,
-    ResolvedChallengePolicy, ResolvedValue, ValueReference, ValueShape,
+    ResolvedAuthPlacement, ResolvedChallengePolicy, ResolvedValue, ValueReference, ValueShape,
 };
 use super::*;
 use crate::syntax as parse;
@@ -599,6 +599,103 @@ fn authentication_normalization_appends_replaces_clears_and_resolves_defaults() 
         panic!("public endpoint")
     };
     assert!(public.config.auth.is_empty());
+}
+
+#[test]
+fn custom_authorization_normalizes_source_compatibility_defaults_and_collisions() {
+    let api = resolve_ok(quote! {
+        client AuthApi {
+            base "https://example.test";
+            credentials {
+                secret key_value: String;
+                secret token_value: String;
+                credential key = api_key(secret.key_value);
+                credential token = bearer(secret.token_value);
+                credential acquired = endpoint login;
+                credential custom = custom crate::SessionProvider;
+            }
+        }
+        GET login() -> Bytes;
+        GET exact() -> Bytes {
+            auth authorization = key;
+        }
+        GET scheme() -> Bytes {
+            auth authorization "tOkEn" = token;
+        }
+        GET endpoint_backed() -> Bytes {
+            auth authorization "Session" = acquired;
+        }
+        GET provider_backed() -> Bytes {
+            auth authorization = custom challenge never;
+        }
+    });
+
+    for (name, expected_scheme) in [
+        ("exact", None),
+        ("scheme", Some("tOkEn")),
+        ("endpoint_backed", Some("Session")),
+        ("provider_backed", None),
+    ] {
+        let endpoint = test_support::endpoint(&api.client.children, name);
+        assert_eq!(
+            endpoint.config.auth[0].challenge,
+            ResolvedChallengePolicy::Never
+        );
+        assert!(matches!(
+            &endpoint.config.auth[0].kind,
+            ResolvedAuthPlacement::Authorization(scheme)
+                if scheme.as_ref().map(syn::LitStr::value).as_deref() == expected_scheme
+        ));
+    }
+
+    fn semantic_error(tokens: proc_macro2::TokenStream) -> String {
+        match parse::parse(tokens) {
+            Ok(source) => resolve(source)
+                .err()
+                .expect("custom Authorization semantic error")
+                .to_string(),
+            Err(error) => error.to_string(),
+        }
+    }
+
+    let basic = semantic_error(quote! {
+        client Api {
+            base "https://example.test";
+            credentials {
+                secret username: String;
+                secret password: String;
+                credential login = basic(secret.username, secret.password);
+            }
+        }
+        GET read() -> Bytes { auth authorization = login; }
+    });
+    assert!(basic.contains("incompatible"));
+
+    let custom_default = semantic_error(quote! {
+        client Api {
+            base "https://example.test";
+            credentials { credential custom = custom crate::SessionProvider; }
+        }
+        GET read() -> Bytes { auth authorization "Token" = custom; }
+    });
+    assert!(custom_default.contains("requires an explicit challenge suffix"));
+
+    let collision = semantic_error(quote! {
+        client Api {
+            base "https://example.test";
+            credentials {
+                secret first_value: String;
+                secret second_value: String;
+                credential first = bearer(secret.first_value);
+                credential second = api_key(secret.second_value);
+            }
+            auth bearer first;
+        }
+        GET read() -> Bytes {
+            auth authorization "Token" = second;
+        }
+    });
+    assert!(collision.contains("collide on `Authorization`"));
 }
 
 #[test]

@@ -37,10 +37,10 @@ deadline, limiter, hook, error, and completion rules as every other request.
 - `AccessToken`, `ApiKey`, `BasicCredential`, and `SecretString` are bounded
   built-in material types.
 
-Placement is a separate concern. Bearer, Basic, named-header, and query
-placement describe how compatible material is serialized after policy
-approval. A provider does not choose its endpoint placement, and a declaration
-does not gain access to provider state.
+Placement is a separate concern. Bearer, Basic, exact/static-scheme
+Authorization, named-header, and query placement describe how compatible
+material is serialized after policy approval. A provider does not choose its
+endpoint placement, and a declaration does not gain access to provider state.
 
 The exact application workflow belongs to
 [Authentication](../../features/authentication.md), while implementation
@@ -103,6 +103,10 @@ The complete lifecycle position is documented in
   uses those same totals without emitting an intermediate event.
 - Authentication errors cross the public boundary only after reduction to safe
   categories and finite structural context.
+- Bearer, Basic, exact, and static-scheme Authorization placements share one
+  exclusive target. Scheme metadata is a bounded case-preserving HTTP token;
+  the final value is rendered with checked arithmetic and exactly one space
+  only after admission.
 
 These are semantic invariants. The current slot types and helper-function
 layout are implementation details and may change without changing the
@@ -111,9 +115,9 @@ contract.
 ## Bounds
 
 Core bounds retained secret strings, built-in credential fields, placement
-counts and names, formatted placement values, provider HTTP bodies, refresh
-skew, recovery count, and provider-failure cooldown state. The canonical
-values and configuration points are in the
+counts and names, static Authorization schemes, formatted placement values,
+provider HTTP bodies, refresh skew, recovery count, and provider-failure
+cooldown state. The canonical values and configuration points are in the
 [limits reference](../../reference/limits.md).
 
 Those core bounds do not make an arbitrary provider finite. A provider owns
@@ -152,6 +156,12 @@ Calls for independent operations may overlap. Implementations must protect
 their inputs, avoid holding application locks across external I/O, and bound
 work that Concord cannot measure. Recovery behavior must be selected through
 `RecoveryMode`; an extension must not create its own hidden replay loop.
+
+Exact/static-scheme Authorization requires `SecretCredential` and therefore
+accepts built-in API-key or Bearer material, compatible endpoint output, or
+compatible custom-provider output. Basic material is deliberately
+incompatible. This placement capability does not expose request-signing
+inputs.
 
 First-party OAuth2 support in `concord-extras` uses the same public contracts.
 That downstream implementation is evidence that the trait boundary is

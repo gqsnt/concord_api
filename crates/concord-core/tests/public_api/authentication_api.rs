@@ -77,6 +77,9 @@ fn exact_handle_and_auth_signatures(
     let _: CredentialRef<SessionToken> = handle.credential();
     let _: bool = handle.is_set();
     let _: Auth = Auth::bearer(secret.clone());
+    let _: Auth = Auth::authorization(secret.clone());
+    let _: Auth = Auth::authorization_with_scheme("Token", secret.clone())
+        .expect("valid static Authorization scheme");
     let _: Auth = Auth::header(HeaderName::from_static("x-session"), secret.clone())
         .expect("valid header placement");
     let _: Auth = Auth::query("session", secret)

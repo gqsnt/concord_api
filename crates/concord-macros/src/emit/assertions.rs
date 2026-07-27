@@ -90,6 +90,16 @@ pub(super) fn endpoint_where_clause(
     for ty in display_types {
         bounds.push(quote!(#ty: ::std::fmt::Display));
     }
+    for placement in &endpoint.config.auth {
+        if matches!(placement.kind, ResolvedAuthPlacement::Authorization(_)) {
+            let credential = &client.credentials[placement.credential];
+            let material = credential_material_type(client, credential, core_path);
+            bounds.push(quote_spanned! {
+                placement.span=>
+                #material: #core_path::auth::SecretCredential
+            });
+        }
+    }
     let specification_module = specification_module_name(client);
     let body = endpoint.body.as_ref().map_or_else(
         || quote!(#core_path::__private::EmptyBody),

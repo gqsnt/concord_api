@@ -70,6 +70,7 @@ fn hard_structural_limits_are_reachable_from_their_facade_domains() {
         auth::MAX_CREDENTIAL_SECRET_BYTES,
         auth::MAX_BASIC_USERNAME_BYTES,
         auth::MAX_BASIC_PASSWORD_BYTES,
+        auth::MAX_AUTHORIZATION_SCHEME_BYTES,
         auth::MAX_AUTHORIZATION_VALUE_BYTES,
         auth::MAX_AUTH_QUERY_VALUE_BYTES,
     ];

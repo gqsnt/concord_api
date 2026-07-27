@@ -1,0 +1,64 @@
+error[E0277]: the trait bound `NonSecretMaterial: SecretCredential` is not satisfied
+  --> tests/ui/fail/authentication/authorization_endpoint_material_incompatible.rs:26:1
+   |
+26 | / api! {
+27 | |     client Api {
+28 | |         base "https://example.test";
+29 | |         credentials {
+...  |
+38 | | }
+   | |_^ unsatisfied trait bound
+   |
+help: the trait `SecretCredential` is not implemented for `NonSecretMaterial`
+  --> tests/ui/fail/authentication/authorization_endpoint_material_incompatible.rs:6:1
+   |
+ 6 | struct NonSecretMaterial;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
+help: the following other types implement trait `SecretCredential`
+  --> $WORKSPACE/crates/concord-core/src/auth/material.rs
+   |
+   | impl SecretCredential for AccessToken {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `AccessToken`
+...
+   | impl SecretCredential for ApiKey {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `ApiKey`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `NonSecretMaterial: SecretCredential` is not satisfied
+  --> tests/ui/fail/authentication/authorization_endpoint_material_incompatible.rs:26:1
+   |
+26 | / api! {
+27 | |     client Api {
+28 | |         base "https://example.test";
+29 | |         credentials {
+...  |
+38 | | }
+   | |_^ unsatisfied trait bound
+   |
+help: the trait `SecretCredential` is not implemented for `NonSecretMaterial`
+  --> tests/ui/fail/authentication/authorization_endpoint_material_incompatible.rs:6:1
+   |
+ 6 | struct NonSecretMaterial;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
+help: the following other types implement trait `SecretCredential`
+  --> $WORKSPACE/crates/concord-core/src/auth/material.rs
+   |
+   | impl SecretCredential for AccessToken {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `AccessToken`
+...
+   | impl SecretCredential for ApiKey {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `ApiKey`
+note: required for `Protected` to implement `Endpoint`
+  --> tests/ui/fail/authentication/authorization_endpoint_material_incompatible.rs:26:1
+   |
+26 | / api! {
+27 | |     client Api {
+28 | |         base "https://example.test";
+29 | |         credentials {
+...  |
+35 | |     GET protected() -> Bytes {
+   | |         ^^^^^^^^^
+...  |
+38 | | }
+   | |_^ unsatisfied trait bound introduced here
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

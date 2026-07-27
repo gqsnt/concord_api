@@ -111,6 +111,139 @@ async fn challenge_never_allows_the_response_specification_to_accept_401() {
     assert!(selector.is_set());
 }
 
+#[tokio::test]
+async fn custom_authorization_recovery_rechecks_exact_current_and_rerenders_scheme() {
+    let executor = DeterministicExecutor::new();
+    for (token, status) in [
+        (INITIAL, StatusCode::UNAUTHORIZED),
+        (REFRESHED, StatusCode::OK),
+    ] {
+        executor
+            .application()
+            .queue_expected_response(
+                ExpectedRequest::new().header(
+                    AUTHORIZATION,
+                    HeaderValue::from_str(&format!("tOkEn {token}"))
+                        .expect("custom Authorization header"),
+                ),
+                ScriptedResponse::status(status, Bytes::new()),
+            )
+            .expect("custom Authorization recovery response");
+    }
+    let acquires = Arc::new(AtomicUsize::new(0));
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let exact_current_seen = Arc::new(AtomicBool::new(false));
+    let selector = SlotSelector::provider(
+        RotatingProvider {
+            acquires: Arc::clone(&acquires),
+            refreshes: Arc::clone(&refreshes),
+            exact_current_seen: Arc::clone(&exact_current_seen),
+        },
+        Duration::ZERO,
+    );
+    let (core, _) = core(&executor, Arc::new(AuthHooks::default()));
+    let endpoint = RuntimeEndpoint::builder(
+        EndpointId::from_static("runtime.custom_authorization_recovery"),
+        Method::GET,
+    )
+    .path_segment("custom-authorization-recovery")
+    .auth(
+        Auth::authorization_with_scheme("tOkEn", CredentialRef::new(selector))
+            .expect("valid static Authorization scheme")
+            .challenge(ChallengePolicy::Unauthorized),
+    )
+    .response_bytes()
+    .build()
+    .expect("custom Authorization recovery endpoint");
+
+    let response = Request::new(core, endpoint)
+        .response()
+        .await
+        .expect("custom Authorization recovery");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.metadata().attempts_started(), 2);
+    assert!(response.metadata().recovered_authentication());
+    assert_eq!(acquires.load(Ordering::SeqCst), 1);
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+    assert!(exact_current_seen.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn custom_authorization_is_absent_from_retry_classifier_and_safe_diagnostics() {
+    const SENTINEL: &str = "custom-authorization-retry-sentinel-9f02";
+    let executor = DeterministicExecutor::new();
+    for status in [StatusCode::SERVICE_UNAVAILABLE, StatusCode::OK] {
+        executor
+            .application()
+            .queue_expected_response(
+                ExpectedRequest::new().header(
+                    AUTHORIZATION,
+                    HeaderValue::from_static("Token custom-authorization-retry-sentinel-9f02"),
+                ),
+                ScriptedResponse::status(status, Bytes::new()),
+            )
+            .expect("custom Authorization policy-retry response");
+    }
+    let classifier_observations = Arc::new(Mutex::new(Vec::new()));
+    let selected_observations = Arc::clone(&classifier_observations);
+    let policy = RetryPolicy::builder()
+        .without_budget()
+        .classify_fn(move |attempt| {
+            selected_observations
+                .lock()
+                .expect("classifier observations")
+                .push(format!("{attempt:?}"));
+            RetryDecision::Retry
+        })
+        .build()
+        .expect("custom Authorization retry policy");
+    let selector = SlotSelector::static_value(api_key(SENTINEL), Duration::ZERO);
+    let hooks = Arc::new(AuthHooks::default());
+    let (core, debug) = core_with_runtime(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new().retry_policy(policy),
+    );
+    let endpoint = RuntimeEndpoint::builder(
+        EndpointId::from_static("runtime.custom_authorization_retry"),
+        Method::GET,
+    )
+    .path_segment("custom-authorization-retry")
+    .auth(
+        Auth::authorization_with_scheme("Token", CredentialRef::new(selector))
+            .expect("valid static Authorization scheme"),
+    )
+    .response_bytes()
+    .build()
+    .expect("custom Authorization retry endpoint");
+
+    let response = Request::new(core, endpoint)
+        .response()
+        .await
+        .expect("custom Authorization policy retry");
+    assert_eq!(response.metadata().attempts_started(), 2);
+    assert_eq!(response.metadata().policy_retries(), 1);
+    assert!(
+        hooks
+            .before
+            .lock()
+            .expect("before hooks")
+            .iter()
+            .all(|record| !record.safe_url.contains(SENTINEL))
+    );
+
+    let diagnostics = format!(
+        "{:?}\n{}\n{:?}\n{:?}",
+        classifier_observations
+            .lock()
+            .expect("classifier observations"),
+        debug.lock().expect("debug output").join("\n"),
+        hooks.before.lock().expect("before hooks").len(),
+        hooks.completion.lock().expect("completion hooks").len(),
+    );
+    assert!(!diagnostics.contains(SENTINEL));
+}
+
 fn status_retry_policy(classifications: Arc<AtomicUsize>) -> RetryPolicy {
     RetryPolicy::builder()
         .max_retries_per_operation(2)

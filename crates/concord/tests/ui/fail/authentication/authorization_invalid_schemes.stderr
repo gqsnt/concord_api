@@ -1,0 +1,23 @@
+error: an Authorization scheme cannot be empty
+  --> tests/ui/fail/authentication/authorization_invalid_schemes.rs:12:28
+   |
+12 |         auth authorization "" = key;
+   |                            ^^
+
+error: an Authorization scheme must contain only ASCII HTTP token characters
+  --> tests/ui/fail/authentication/authorization_invalid_schemes.rs:25:28
+   |
+25 |         auth authorization "Token value" = key;
+   |                            ^^^^^^^^^^^^^
+
+error: an Authorization scheme must contain only ASCII HTTP token characters
+  --> tests/ui/fail/authentication/authorization_invalid_schemes.rs:38:28
+   |
+38 |         auth authorization "Tökén" = key;
+   |                            ^^^^^^^
+
+error: an Authorization scheme permits at most 256 ASCII bytes
+  --> tests/ui/fail/authentication/authorization_invalid_schemes.rs:51:28
+   |
+51 | ...on "ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt" = ...
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

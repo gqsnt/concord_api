@@ -250,6 +250,12 @@ pub(crate) fn endpoint_doc_model(
             placement: match &auth.kind {
                 ResolvedAuthPlacement::Bearer => "Bearer authorization".to_owned(),
                 ResolvedAuthPlacement::Basic => "Basic authorization".to_owned(),
+                ResolvedAuthPlacement::Authorization(None) => {
+                    "exact Authorization value".to_owned()
+                }
+                ResolvedAuthPlacement::Authorization(Some(scheme)) => {
+                    format!("{} Authorization scheme", scheme.value())
+                }
                 ResolvedAuthPlacement::Header(name) => {
                     format!("private header {}", name.value())
                 }

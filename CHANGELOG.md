@@ -122,6 +122,10 @@
   prepares it once; policy retries reuse that prepared page body. The hidden
   body trait obligation and newly supported endpoint shape raise the
   generated-contract version to 30.
+- Dedicated exact and static-scheme `Authorization` placements now preserve
+  private late materialization, exclusive ownership, and redaction for
+  request-independent custom values. The new generated authentication call
+  raises the generated-contract version to 31.
 - Every generated public value mutation now uses
   `value(value) -> set_value(value)`. Absence-capable values retain
   `clear_value()`; values with declaration defaults retain `reset_value()`.

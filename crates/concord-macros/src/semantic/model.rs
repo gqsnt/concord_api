@@ -477,6 +477,7 @@ pub(crate) struct NormalizedAuth {
 pub(crate) enum ResolvedAuthPlacement {
     Bearer,
     Basic,
+    Authorization(Option<LitStr>),
     Header(LitStr),
     Query(LitStr),
 }

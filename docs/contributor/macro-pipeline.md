@@ -186,12 +186,12 @@ domain gains an independent invariant and test owner.
 
 ## Generated contract decision
 
-Current generated-contract version 30 adds the hidden
-`PageRequestBodySpec` obligation for generated pagination and admits the new
-repeatable-body endpoint shape. It prevents an older expansion, which assumed
-all pagination was bodyless, from claiming compatibility with the new
-façade/core protocol. Version 29 removed the old generated native-retry
-baseline and added the managed `.retry(RetryPolicy)` builder surface.
+Current generated-contract version 31 adds dedicated exact/static-scheme
+Authorization construction and the mirrored static-scheme ceiling to
+generated authentication. Version 30 added the hidden `PageRequestBodySpec`
+obligation for generated pagination and admitted the repeatable-body endpoint
+shape. Version 29 removed the old generated native-retry baseline and added
+the managed `.retry(RetryPolicy)` builder surface.
 
 The private contract does not change for:
 

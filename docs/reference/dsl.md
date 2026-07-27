@@ -413,6 +413,8 @@ Place credentials lexically:
 ```rust
 auth bearer bearer_token challenge unauthorized;
 auth basic login challenge unauthorized_or_forbidden;
+auth authorization = keyed challenge never;
+auth authorization "Token" = keyed challenge unauthorized;
 auth header "X-Key" = keyed challenge never;
 auth query "token" = keyed;
 ```
@@ -421,17 +423,25 @@ Material types must match their placement. Public/authentication target
 collisions fail during request preparation. Native credential values are never
 available to the macro or semantic extensions.
 
-Bearer and Basic are the only built-in placements that own `Authorization`.
-Generic private-header placement supports ordinary custom names such as
-`X-API-Key` but rejects `Authorization`; private authentication query
-placement remains supported. Therefore complete custom `Authorization`
-schemes such as `Signature`, `AWS4-HMAC-SHA256`, and `MAC` cannot be expressed
-through the current semantic placement model. They must not be placed in
-public headers.
+`auth authorization = CREDENTIAL` uses the credential as the complete
+`Authorization` value. `auth authorization "SCHEME" = CREDENTIAL` preserves
+the declared scheme case and inserts exactly one ASCII space before the
+credential. A scheme is a non-empty ASCII HTTP token of at most 256 bytes.
+API-key and Bearer sources are compatible; Basic sources are not.
+Endpoint-backed and custom-provider material is accepted when its Rust type
+implements `SecretCredential`. Static and endpoint sources default to
+`challenge never`; custom providers still require an explicit challenge
+suffix.
 
-The restriction preserves one private `Authorization` owner, collision
-prevention, limiter-before-authentication ordering, and redaction. A future
-dedicated authorization or request-signing contract is a separate design.
+Bearer, Basic, exact Authorization, and static-scheme Authorization are
+mutually exclusive owners of the one private `Authorization` header. Generic
+private-header placement supports ordinary custom names such as `X-API-Key`
+but rejects `Authorization`; private authentication query placement remains
+supported.
+
+Exact/static-scheme placement is request-independent formatting, not request
+signing. It provides no method, path, query, header, or body digest to the
+credential source. Request-dependent signing remains outside this contract.
 
 ## Timeout
 

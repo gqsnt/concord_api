@@ -25,15 +25,20 @@ The DSL accepts secrets and credentials only in `credentials` and `auth`
 clauses. Public `host`, `path`, `query`, and `headers` expressions accept
 restricted public references and reject `secret.*` and `credential.*`.
 
-Bearer and Basic placements exclusively own `Authorization`. Generic private
-header placement rejects that header; private query placement remains
-supported. Collision checks prevent public and private owners from writing the
-same target.
+Bearer, Basic, exact-value, and static-scheme placements are mutually
+exclusive owners of `Authorization`. Generic private header placement rejects
+that header; private query placement remains supported. Collision checks
+prevent public and private owners from writing the same target.
 
 Credential material is exposed only at the private placement boundary.
 Providers receive bounded isolated `ProviderHttp`, not the application client
 or request. Hooks and limiters run before private header/query mutation and
 cannot inspect the authenticated native request.
+
+Custom Authorization formatting is also late and request-independent. The
+static scheme is bounded public structure, while the final value is sensitive
+and absent from plans, hooks, limiter and retry-classifier input, completion,
+errors, and built-in debug output.
 
 ## Observation surfaces
 

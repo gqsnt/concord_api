@@ -1,12 +1,13 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
-pub(super) const GENERATED_CONTRACT_VERSION: u32 = 30;
+pub(super) const GENERATED_CONTRACT_VERSION: u32 = 31;
 
 pub(super) fn generated_contract_assertion() -> TokenStream {
     let version = GENERATED_CONTRACT_VERSION;
     let max_auth_placements = crate::MAX_AUTH_PLACEMENTS;
     let max_auth_placement_name_bytes = crate::MAX_AUTH_PLACEMENT_NAME_BYTES;
+    let max_authorization_scheme_bytes = crate::MAX_AUTHORIZATION_SCHEME_BYTES;
     let max_request_head_components = crate::MAX_REQUEST_HEAD_COMPONENTS;
     let max_request_url_bytes = crate::MAX_REQUEST_URL_BYTES;
     let max_request_header_count = crate::MAX_REQUEST_HEADER_COUNT;
@@ -24,6 +25,10 @@ pub(super) fn generated_contract_assertion() -> TokenStream {
         const _: () = assert!(
             __core::auth::MAX_AUTH_PLACEMENT_NAME_BYTES == #max_auth_placement_name_bytes,
             "Concord macro/core authentication placement-name limits differ",
+        );
+        const _: () = assert!(
+            __core::auth::MAX_AUTHORIZATION_SCHEME_BYTES == #max_authorization_scheme_bytes,
+            "Concord macro/core Authorization scheme limits differ",
         );
         const _: () = assert!(
             __core::endpoint::MAX_REQUEST_HEAD_COMPONENTS == #max_request_head_components,
@@ -74,6 +79,7 @@ mod tests {
         assert!(output.contains("__core :: auth :: MAX_AUTH_PLACEMENTS"));
         assert!(output.contains(&crate::MAX_AUTH_PLACEMENTS.to_string()));
         assert!(output.contains("__core :: auth :: MAX_AUTH_PLACEMENT_NAME_BYTES"));
+        assert!(output.contains("__core :: auth :: MAX_AUTHORIZATION_SCHEME_BYTES"));
         assert!(output.contains("__core :: endpoint :: MAX_REQUEST_HEAD_COMPONENTS"));
         assert!(output.contains("__core :: endpoint :: MAX_REQUEST_URL_BYTES"));
         assert!(output.contains("__core :: endpoint :: MAX_REQUEST_HEADER_COUNT"));

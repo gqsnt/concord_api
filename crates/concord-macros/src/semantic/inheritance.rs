@@ -24,6 +24,9 @@ fn resolve_auth_placement(source: &SourceAuthPlacement) -> ResolvedAuthPlacement
     match source {
         SourceAuthPlacement::Bearer => ResolvedAuthPlacement::Bearer,
         SourceAuthPlacement::Basic => ResolvedAuthPlacement::Basic,
+        SourceAuthPlacement::Authorization(scheme) => {
+            ResolvedAuthPlacement::Authorization(scheme.clone())
+        }
         SourceAuthPlacement::Header(name) => ResolvedAuthPlacement::Header(name.clone()),
         SourceAuthPlacement::Query(name) => ResolvedAuthPlacement::Query(name.clone()),
     }

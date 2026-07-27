@@ -43,10 +43,11 @@ slot. It must be `Send + Sync + 'static`. Implement `expires_at` when the
 provider can supply a monotonic expiration instant; Concord can then acquire
 new material after expiry and may refresh within its configured skew.
 
-Material used by Bearer, custom-header, or private-query placement implements
-`SecretCredential::expose_secret`. Concord invokes that method only at the
-private authentication boundary. The implementation still owns how its bytes
-are stored, copied, destroyed, logged, or exposed elsewhere.
+Material used by Bearer, exact/static-scheme Authorization, custom-header, or
+private-query placement implements `SecretCredential::expose_secret`. Concord
+invokes that method only at the private authentication boundary. The
+implementation still owns how its bytes are stored, copied, destroyed, logged,
+or exposed elsewhere.
 
 Give custom material explicitly redacted `Debug` and `Display`
 implementations. The example wraps `SecretString` and renders only its type
@@ -114,13 +115,18 @@ provider client. Review the exact deployment behavior in
 A custom provider supplies credential material. It cannot inspect or mutate
 the final native request. Public shaping occurs before private authentication,
 and the declaration owns whether material becomes a Bearer value, Basic
-credential, custom header, or private query parameter.
+credential, complete request-independent Authorization value, statically
+prefixed Authorization value, custom header, or private query parameter.
+
+For example, `auth authorization "Token" = custom challenge never` formats
+the final value only after limiter admission. The provider supplies only the
+single-string credential; it does not receive the scheme or request data.
 
 This interface does not support arbitrary native request signing, middleware,
-redirect interception, or transport replacement. If a protocol needs a
-signature over a canonical public value, compute that bounded value in
-application code and pass it through an explicitly modeled supported
-placement. Do not imply that a provider can reach hidden transport state.
+redirect interception, or transport replacement. A request-independent,
+already-complete value can use exact Authorization placement. A protocol that
+must compute a signature from the final request needs a separate client
+contract; do not imply that a provider can reach hidden transport state.
 
 An endpoint-backed credential is often a better fit when acquisition is an
 ordinary declared Concord endpoint. Use a custom provider when the protocol

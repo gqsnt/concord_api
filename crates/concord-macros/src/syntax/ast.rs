@@ -226,6 +226,7 @@ pub(crate) struct AuthPlacement {
 pub(crate) enum AuthPlacementKind {
     Bearer,
     Basic,
+    Authorization(Option<LitStr>),
     Header(LitStr),
     Query(LitStr),
 }

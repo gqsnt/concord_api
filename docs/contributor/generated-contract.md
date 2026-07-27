@@ -7,7 +7,7 @@ crate version, or an extension API.
 
 ## Current contract
 
-The current generated-contract version is **30**.
+The current generated-contract version is **31**.
 
 | Owner | Current source of truth | Responsibility |
 |---|---|---|
@@ -17,11 +17,13 @@ The current generated-contract version is **30**.
 | generated expansion | private support module inside each `api!` expansion | const handshake against the façade path |
 
 Every expansion calls the façade-relative
-`__private::assert_generated_contract(30)` during const evaluation. It also
+`__private::assert_generated_contract(31)` during const evaluation. It also
 asserts that the independent compiler and runtime agree on structural ceilings
 the compiler must enforce before generated Rust reaches core.
 
-Version 30 added the hidden `PageRequestBodySpec` obligation to generated
+Version 31 added dedicated exact/static-scheme Authorization construction and
+the mirrored Authorization-scheme ceiling to the generated authentication
+bridge. Version 30 added the hidden `PageRequestBodySpec` obligation to generated
 pagination and permits newly emitted paginated endpoints to carry a trusted
 repeatable request body. Version 29 removed the generated native-retry
 baseline, whose old expansion called the removed `retry_reqwest_default`
@@ -134,7 +136,7 @@ It must not:
 - succeed merely because the incompatible endpoint is never executed.
 
 The contract-mismatch fixture substitutes a façade reporting version 999 while
-the generated consumer expects 30. `concord-xtask fixtures` requires the
+the generated consumer expects 31. `concord-xtask fixtures` requires the
 focused mismatch diagnostic and treats unexpected compilation success as a
 failure.
 
@@ -160,7 +162,7 @@ unavailable.
 | Claim | Owner |
 |---|---|
 | compiler emits version and limit assertions | macro bridge unit tests |
-| core implements exactly version 30 | `crates/concord-core/tests/public_api/generated_contract.rs` |
+| core implements exactly version 31 | `crates/concord-core/tests/public_api/generated_contract.rs` |
 | mismatch fails early and clearly | `fixtures/dependency/contract_mismatch` |
 | renamed façade works | `fixtures/dependency/renamed_facade` |
 | emitted code has no direct core path | xtask policy plus macro emission tests |

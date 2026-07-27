@@ -321,6 +321,35 @@ mod tests {
     }
 
     #[test]
+    fn custom_authorization_emits_dedicated_calls_bounds_and_safe_docs() {
+        let api = semantic::test_support::resolve_tokens(quote! {
+            client AuthorizationApi {
+                base "https://example.test";
+                credentials {
+                    secret key: String;
+                    credential exact = api_key(secret.key);
+                    credential custom = custom crate::SessionProvider;
+                }
+            }
+            GET exact() -> Bytes {
+                auth authorization = exact;
+            }
+            GET scheme() -> Bytes {
+                auth authorization "tOkEn" = custom challenge unauthorized;
+            }
+        });
+        let output = generate(&api, &quote!(::concord)).to_string();
+
+        assert!(output.contains("Auth :: authorization :: < :: concord :: auth :: ApiKey >"));
+        assert!(output.contains("Auth :: authorization_with_scheme"));
+        assert!(output.contains("\"tOkEn\""));
+        assert!(output.contains("SecretCredential"));
+        assert!(output.contains("exact Authorization value"));
+        assert!(output.contains("tOkEn Authorization scheme"));
+        assert!(!output.contains("Authorization : tOkEn"));
+    }
+
+    #[test]
     fn production_emit_is_grammar_independent_and_uses_facade_feature_terms() {
         let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let emit_dir = manifest.join("src/emit");

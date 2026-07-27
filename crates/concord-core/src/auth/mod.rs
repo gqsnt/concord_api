@@ -20,7 +20,7 @@ pub use material::{
 };
 pub use placement::{
     Auth, ChallengePolicy, MAX_AUTH_PLACEMENT_NAME_BYTES, MAX_AUTH_QUERY_VALUE_BYTES,
-    MAX_AUTHORIZATION_VALUE_BYTES,
+    MAX_AUTHORIZATION_SCHEME_BYTES, MAX_AUTHORIZATION_VALUE_BYTES,
 };
 pub use provider::{CredentialProvider, CredentialReason, CredentialRequest, RecoveryMode};
 pub use slot::{CredentialHandle, CredentialRef};

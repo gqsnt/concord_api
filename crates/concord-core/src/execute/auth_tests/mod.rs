@@ -536,6 +536,21 @@ struct ExposureEndpoint {
     credential: CredentialRef<ExposureToken>,
 }
 
+#[derive(Clone)]
+struct CountedExposureToken {
+    value: SecretString,
+    exposures: Arc<AtomicUsize>,
+}
+
+impl CredentialMaterial for CountedExposureToken {}
+
+impl SecretCredential for CountedExposureToken {
+    fn expose_secret(&self) -> &str {
+        self.exposures.fetch_add(1, Ordering::SeqCst);
+        self.value.expose_secret()
+    }
+}
+
 impl EndpointSpec for ExposureEndpoint {
     type Body = RequestBody;
     type Response = Bytes;

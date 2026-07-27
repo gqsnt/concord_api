@@ -25,6 +25,10 @@ For the usual static cases:
 
 - `auth bearer token` owns the `Authorization: Bearer ...` placement;
 - `auth basic login` owns the Basic `Authorization` placement;
+- `auth authorization = application_key` treats one credential as the complete
+  `Authorization` value;
+- `auth authorization "Token" = application_key` emits
+  `Authorization: Token <credential>`;
 - `auth header "X-Api-Key" = application_key` places a credential in an
   ordinary private custom header;
 - `auth query "session" = acquired` adds a private authentication query
@@ -78,16 +82,21 @@ expiry, refresh, and OAuth2 behavior.
 
 ## Know the supported placements
 
-The built-in model intentionally supports dedicated Bearer and Basic
-placements, ordinary private custom headers, and private authentication query
-values. A generic private header cannot use `Authorization`. Complete custom
-schemes such as request signing, `Signature`, `AWS4-HMAC-SHA256`, or `MAC`
-therefore cannot be represented by smuggling a value through public headers.
+The model supports dedicated Bearer and Basic placements, complete
+request-independent `Authorization` values, static custom schemes, ordinary
+private custom headers, and private authentication query values. Exact and
+static-scheme material must implement `SecretCredential`. API-key and Bearer
+sources are compatible; Basic material is not.
 
-This limitation preserves one semantic owner for `Authorization`, collision
-checking, limiter-before-authentication ordering, and automatic redaction. A
-new signing model needs a dedicated extension contract rather than access to a
-native request.
+A generic private header still cannot use `Authorization`. Bearer, Basic,
+exact, and static-scheme placements are mutually exclusive owners of that
+header. The scheme is a case-preserving, non-empty ASCII HTTP token of at most
+256 bytes and Concord inserts exactly one space before the credential.
+
+These forms do not provide request signing. A provider cannot inspect the
+method, path, query, headers, or body digest at the private boundary.
+Request-dependent `Signature`, `AWS4-HMAC-SHA256`, or `MAC` generation needs a
+separate semantic contract rather than access to a native request.
 
 Authentication plans and protected strings are finite. Use the canonical
 [limits reference](../reference/limits.md) for exact ceilings instead of

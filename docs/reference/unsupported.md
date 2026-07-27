@@ -29,19 +29,25 @@ Concord does not support:
 
 - unlimited authentication recovery;
 - arbitrary access to the final request from a credential provider;
-- complete custom `Authorization` schemes such as `Signature`,
-  `AWS4-HMAC-SHA256`, or `MAC`;
+- request-dependent `Authorization` signing over the final method, path,
+  query, headers, or body;
 - placing `Authorization` through a generic public or private custom-header
   clause;
 - secret or credential expressions in public URL/header shaping;
 - automatic propagation of the application client identity to provider HTTP.
 
-Bearer and Basic are the dedicated `Authorization` owners. API keys and other
-single-string material can use a private custom header or query placement.
-Supporting another complete authorization or request-signing scheme needs a
-dedicated semantic design that preserves one private owner, collision
-prevention, limiter-before-placement ordering, replay semantics, and
-redaction.
+Bearer, Basic, exact complete values, and static-scheme values are dedicated,
+mutually exclusive `Authorization` owners. API keys and other single-string
+material can also use a private custom header or query placement. A
+request-independent precomputed value may use
+`auth authorization = credential`; a static prefix may use
+`auth authorization "Token" = credential`.
+
+These forms do not turn a credential provider into a request signer.
+Supporting request-dependent `Signature`, `AWS4-HMAC-SHA256`, `MAC`, or
+similar protocols needs a dedicated semantic design that preserves one
+private owner, collision prevention, limiter-before-placement ordering, replay
+semantics, and redaction.
 
 Do not work around the limitation with a public header. That would expose the
 value to plans, hooks, descriptions, pagination identity, and other public
@@ -137,8 +143,10 @@ uses:
 - ordinary hooks, authentication boundary, limiter, status, acquisition, and
   completion.
 
-It does not supply native mutation, custom auth signing, unbounded values, a
-different executor, or partial runtime pagination.
+It supports the same request-independent exact/static-scheme Authorization
+placements through `Auth`, but does not supply native mutation, request
+signing, unbounded values, a different executor, or partial runtime
+pagination.
 
 ## Choosing an extension
 

@@ -26,6 +26,8 @@ use super::{
 pub const MAX_AUTH_PLACEMENT_NAME_BYTES: usize = 256;
 /// Maximum byte length of one final native authentication header value.
 pub const MAX_AUTHORIZATION_VALUE_BYTES: usize = 65_536;
+/// Maximum byte length of one static custom Authorization scheme.
+pub const MAX_AUTHORIZATION_SCHEME_BYTES: usize = 256;
 /// Maximum encoded byte length of one private authentication query value.
 pub const MAX_AUTH_QUERY_VALUE_BYTES: usize = 65_536;
 
@@ -74,21 +76,44 @@ impl Auth {
         }
     }
 
+    /// Places a single-string credential as the complete Authorization value.
+    #[must_use]
+    pub fn authorization<M>(credential: CredentialRef<M>) -> Self
+    where
+        M: SecretCredential,
+    {
+        Self::secret(PlacementKind::Authorization, credential)
+    }
+
+    /// Places a single-string credential after one static Authorization scheme.
+    ///
+    /// The scheme is a non-empty HTTP token of at most
+    /// [`MAX_AUTHORIZATION_SCHEME_BYTES`] ASCII bytes. Its declaration case is
+    /// preserved, and the final value contains exactly one ASCII space between
+    /// the scheme and credential.
+    pub fn authorization_with_scheme<M>(
+        scheme: impl AsRef<str>,
+        credential: CredentialRef<M>,
+    ) -> Result<Self, AuthError>
+    where
+        M: SecretCredential,
+    {
+        let scheme = scheme.as_ref();
+        validate_authorization_scheme(scheme)?;
+        Ok(Self::secret(
+            PlacementKind::AuthorizationWithScheme(scheme.to_owned()),
+            credential,
+        ))
+    }
+
     /// Places a single-string credential in one ordinary custom private header.
     ///
     /// Concord rejects transport- and request-owned names, including generic
     /// `Authorization`, media headers, cookies, proxy authorization, and
-    /// connection/framing headers. [`Auth::bearer`] and [`Auth::basic`] are the
-    /// only built-in placements that own `Authorization`; ordinary custom
-    /// private headers such as `X-API-Key` and private authentication query
-    /// values remain supported.
-    ///
-    /// Consequently, a complete custom `Authorization` scheme such as
-    /// `Signature`, `AWS4-HMAC-SHA256`, or `MAC` is not representable through
-    /// the current semantic placement model. Do not place it in public
-    /// headers. A dedicated authorization or request-signing contract requires
-    /// a separate design so Concord can preserve one private owner, collision
-    /// prevention, limiter-before-authentication ordering, and redaction.
+    /// connection/framing headers. Dedicated Bearer, Basic, exact
+    /// Authorization, and static-scheme Authorization placements own
+    /// `Authorization`; ordinary custom private headers such as `X-API-Key`
+    /// and private authentication query values remain supported.
     pub fn header<M>(name: HeaderName, credential: CredentialRef<M>) -> Result<Self, AuthError>
     where
         M: SecretCredential,
@@ -123,7 +148,12 @@ impl Auth {
 
     pub(crate) fn public_name_bytes(&self) -> usize {
         match &self.kind {
-            PlacementKind::Bearer | PlacementKind::Basic => AUTHORIZATION.as_str().len(),
+            PlacementKind::Bearer | PlacementKind::Basic | PlacementKind::Authorization => {
+                AUTHORIZATION.as_str().len()
+            }
+            PlacementKind::AuthorizationWithScheme(scheme) => {
+                AUTHORIZATION.as_str().len() + scheme.len()
+            }
             PlacementKind::Header(name) => name.as_str().len(),
             PlacementKind::Query(name) => name.len(),
         }
@@ -148,6 +178,8 @@ impl Auth {
 enum PlacementKind {
     Bearer,
     Basic,
+    Authorization,
+    AuthorizationWithScheme(String),
     Header(HeaderName),
     Query(String),
 }
@@ -412,7 +444,10 @@ fn validate_public_collision(
     public_headers: &HeaderMap,
 ) -> Result<(), AuthError> {
     let collision = match kind {
-        PlacementKind::Bearer | PlacementKind::Basic => public_headers.contains_key(AUTHORIZATION),
+        PlacementKind::Bearer
+        | PlacementKind::Basic
+        | PlacementKind::Authorization
+        | PlacementKind::AuthorizationWithScheme(_) => public_headers.contains_key(AUTHORIZATION),
         PlacementKind::Header(name) => *name == AUTHORIZATION || public_headers.contains_key(name),
         PlacementKind::Query(name) => {
             name.is_empty()
@@ -430,20 +465,23 @@ fn validate_public_collision(
 
 fn placements_collide(left: &PlacementKind, right: &PlacementKind) -> bool {
     match (left, right) {
-        (
-            PlacementKind::Bearer | PlacementKind::Basic,
-            PlacementKind::Bearer | PlacementKind::Basic,
-        ) => true,
-        (PlacementKind::Bearer | PlacementKind::Basic, PlacementKind::Header(right)) => {
-            right == AUTHORIZATION
-        }
-        (PlacementKind::Header(left), PlacementKind::Bearer | PlacementKind::Basic) => {
-            left == AUTHORIZATION
-        }
+        (left, right) if owns_authorization(left) && owns_authorization(right) => true,
+        (left, PlacementKind::Header(right)) if owns_authorization(left) => right == AUTHORIZATION,
+        (PlacementKind::Header(left), right) if owns_authorization(right) => left == AUTHORIZATION,
         (PlacementKind::Header(left), PlacementKind::Header(right)) => left == right,
         (PlacementKind::Query(left), PlacementKind::Query(right)) => left == right,
         _ => false,
     }
+}
+
+fn owns_authorization(kind: &PlacementKind) -> bool {
+    matches!(
+        kind,
+        PlacementKind::Bearer
+            | PlacementKind::Basic
+            | PlacementKind::Authorization
+            | PlacementKind::AuthorizationWithScheme(_)
+    )
 }
 
 struct PreparedPlacement {
@@ -625,6 +663,19 @@ impl FinalizedAuthPlan {
                         .map_err(|error| auth_error(endpoint, method, error))?;
                     request.insert_auth_header(AUTHORIZATION, value);
                 }
+                (PlacementKind::Authorization, NativeMaterial::Secret(secret)) => {
+                    let value = plain_header_value(secret)
+                        .map_err(|error| auth_error(endpoint, method, error))?;
+                    request.insert_auth_header(AUTHORIZATION, value);
+                }
+                (
+                    PlacementKind::AuthorizationWithScheme(scheme),
+                    NativeMaterial::Secret(secret),
+                ) => {
+                    let value = scheme_header_value(scheme, secret)
+                        .map_err(|error| auth_error(endpoint, method, error))?;
+                    request.insert_auth_header(AUTHORIZATION, value);
+                }
                 (PlacementKind::Header(name), NativeMaterial::Secret(secret)) => {
                     let value = plain_header_value(secret)
                         .map_err(|error| auth_error(endpoint, method, error))?;
@@ -698,10 +749,43 @@ fn validate_placement_name(name: &str) -> Result<(), AuthError> {
 
 fn validate_placement_kind(kind: &PlacementKind) -> Result<(), AuthError> {
     match kind {
-        PlacementKind::Bearer | PlacementKind::Basic => Ok(()),
+        PlacementKind::Bearer | PlacementKind::Basic | PlacementKind::Authorization => Ok(()),
+        PlacementKind::AuthorizationWithScheme(scheme) => validate_authorization_scheme(scheme),
         PlacementKind::Header(name) => validate_auth_header_name(name),
         PlacementKind::Query(name) => validate_placement_name(name),
     }
+}
+
+fn validate_authorization_scheme(scheme: &str) -> Result<(), AuthError> {
+    if scheme.is_empty()
+        || scheme.len() > MAX_AUTHORIZATION_SCHEME_BYTES
+        || !scheme.bytes().all(is_http_token_byte)
+    {
+        Err(AuthError::new(AuthErrorKind::InvalidConfiguration))
+    } else {
+        Ok(())
+    }
+}
+
+fn is_http_token_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric()
+        || matches!(
+            byte,
+            b'!' | b'#'
+                | b'$'
+                | b'%'
+                | b'&'
+                | b'\''
+                | b'*'
+                | b'+'
+                | b'-'
+                | b'.'
+                | b'^'
+                | b'_'
+                | b'`'
+                | b'|'
+                | b'~'
+        )
 }
 
 fn validate_auth_header_name(name: &HeaderName) -> Result<(), AuthError> {
@@ -736,6 +820,22 @@ fn prefixed_header_value(prefix: &[u8], secret: &str) -> Result<HeaderValue, Aut
     validate_native_header_value(secret.as_bytes())?;
     let mut output = BytesMut::with_capacity(output_len);
     output.extend_from_slice(prefix);
+    output.extend_from_slice(secret.as_bytes());
+    sensitive_header_value(output.freeze())
+}
+
+fn scheme_header_value(scheme: &str, secret: &str) -> Result<HeaderValue, AuthError> {
+    validate_authorization_scheme(scheme)?;
+    let output_len = scheme
+        .len()
+        .checked_add(1)
+        .and_then(|length| length.checked_add(secret.len()))
+        .ok_or_else(|| AuthError::new(AuthErrorKind::MaterialTooLarge))?;
+    validate_material_len(output_len, MAX_AUTHORIZATION_VALUE_BYTES)?;
+    validate_native_header_value(secret.as_bytes())?;
+    let mut output = BytesMut::with_capacity(output_len);
+    output.extend_from_slice(scheme.as_bytes());
+    output.extend_from_slice(b" ");
     output.extend_from_slice(secret.as_bytes());
     sensitive_header_value(output.freeze())
 }
@@ -989,6 +1089,118 @@ mod tests {
         assert_eq!(error.kind(), AuthErrorKind::MaterialTooLarge);
         assert!(!error.to_string().contains("credential-sentinel"));
         assert!(!format!("{error:?}").contains("credential-sentinel"));
+    }
+
+    #[test]
+    fn custom_authorization_scheme_validation_is_exact_and_redacted() {
+        let exact = "T".repeat(MAX_AUTHORIZATION_SCHEME_BYTES);
+        let placement = Auth::authorization_with_scheme(exact.as_str(), credential())
+            .expect("exact Authorization scheme limit");
+        assert_eq!(
+            placement.public_name_bytes(),
+            AUTHORIZATION.as_str().len() + MAX_AUTHORIZATION_SCHEME_BYTES
+        );
+
+        for invalid in ["", "Token value", "Token:", "Tökén"] {
+            let error = Auth::authorization_with_scheme(invalid, credential())
+                .err()
+                .expect("invalid Authorization scheme");
+            assert_eq!(error.kind(), AuthErrorKind::InvalidConfiguration);
+            if !invalid.is_empty() {
+                assert!(!error.to_string().contains(invalid));
+                assert!(!format!("{error:?}").contains(invalid));
+            }
+        }
+
+        let sentinel = format!(
+            "{}scheme-first-excess-sentinel",
+            "T".repeat(MAX_AUTHORIZATION_SCHEME_BYTES)
+        );
+        let error = Auth::authorization_with_scheme(sentinel.as_str(), credential())
+            .err()
+            .expect("first excess Authorization scheme");
+        assert_eq!(error.kind(), AuthErrorKind::InvalidConfiguration);
+        assert!(!error.to_string().contains("scheme-first-excess-sentinel"));
+        assert!(!format!("{error:?}").contains("scheme-first-excess-sentinel"));
+
+        for valid in ["Token", "tOkEn", "!#$%&'*+-.^_`|~", "a0"] {
+            Auth::authorization_with_scheme(valid, credential())
+                .expect("valid HTTP token Authorization scheme");
+        }
+    }
+
+    #[test]
+    fn exact_and_scheme_authorization_values_are_sensitive_and_bounded() {
+        let exact =
+            plain_header_value("Complete credential").expect("valid exact Authorization value");
+        assert_eq!(exact.as_bytes(), b"Complete credential");
+        assert!(exact.is_sensitive());
+
+        let scheme =
+            scheme_header_value("tOkEn", "credential").expect("valid scheme Authorization value");
+        assert_eq!(scheme.as_bytes(), b"tOkEn credential");
+        assert!(scheme.is_sensitive());
+
+        let exact_limit = "x".repeat(MAX_AUTHORIZATION_VALUE_BYTES - "Token ".len());
+        let value = scheme_header_value("Token", exact_limit.as_str())
+            .expect("exact final Authorization value limit");
+        assert_eq!(value.as_bytes().len(), MAX_AUTHORIZATION_VALUE_BYTES);
+        let first_excess = format!("{exact_limit}x");
+        let error = scheme_header_value("Token", first_excess.as_str())
+            .expect_err("first excess final Authorization value");
+        assert_eq!(error.kind(), AuthErrorKind::MaterialTooLarge);
+
+        for invalid in ["line\r\nbreak", "delete\u{7f}"] {
+            let error = plain_header_value(invalid)
+                .expect_err("invalid exact native Authorization header value");
+            assert_eq!(error.kind(), AuthErrorKind::InvalidConfiguration);
+            assert!(!error.to_string().contains(invalid));
+        }
+    }
+
+    #[test]
+    fn every_authorization_owner_collides_and_public_authorization_is_rejected() {
+        let logical_url = Url::parse("https://example.test/").expect("validation URL");
+        let constructors: [fn() -> Auth; 4] = [
+            || Auth::bearer(credential()),
+            || {
+                let basic = CredentialRef::new(SlotSelector::static_value(
+                    BasicCredential::try_new("user", "password").expect("bounded Basic credential"),
+                    Duration::from_secs(1),
+                ));
+                Auth::basic(basic)
+            },
+            || Auth::authorization(credential()),
+            || {
+                Auth::authorization_with_scheme("Token", credential())
+                    .expect("valid Authorization scheme")
+            },
+        ];
+        for (left_index, left) in constructors.iter().enumerate() {
+            for (right_index, right) in constructors.iter().enumerate() {
+                let mut plan = AuthPlan::default();
+                plan.push(left(), &logical_url, &HeaderMap::new())
+                    .expect("first Authorization owner");
+                let error = plan
+                    .push(right(), &logical_url, &HeaderMap::new())
+                    .expect_err("second Authorization owner must collide");
+                assert_eq!(
+                    error.kind(),
+                    AuthErrorKind::InvalidConfiguration,
+                    "owner pair {left_index}/{right_index}"
+                );
+            }
+        }
+
+        let mut public_headers = HeaderMap::new();
+        public_headers.insert(AUTHORIZATION, HeaderValue::from_static("public"));
+        for constructor in constructors {
+            let mut plan = AuthPlan::default();
+            let error = plan
+                .push(constructor(), &logical_url, &public_headers)
+                .expect_err("public Authorization collision");
+            assert_eq!(error.kind(), AuthErrorKind::InvalidConfiguration);
+        }
     }
 
     #[test]

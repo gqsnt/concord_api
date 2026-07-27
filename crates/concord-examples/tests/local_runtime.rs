@@ -53,6 +53,9 @@ async fn actual_authentication_example_stores_and_applies_endpoint_credentials_o
         .expect("token response");
     server
         .queue_response(200, Vec::new())
+        .expect("custom Authorization response");
+    server
+        .queue_response(200, Vec::new())
         .expect("application response");
     let tunnel = ConnectProxy::start(server.address()).expect("CONNECT tunnel");
     let proxy = SafeProxy::parse(tunnel.url()).expect("safe CONNECT proxy");
@@ -84,6 +87,10 @@ async fn actual_authentication_example_stores_and_applies_endpoint_credentials_o
         .expect("endpoint credential acquisition");
     assert!(client.credentials().acquired().is_set());
     client
+        .token_authorization()
+        .await
+        .expect("custom Authorization placement");
+    client
         .endpoint_backed()
         .await
         .expect("credential application");
@@ -91,11 +98,15 @@ async fn actual_authentication_example_stores_and_applies_endpoint_credentials_o
     tokio::task::yield_now().await;
 
     let requests = server.requests();
-    assert_eq!(requests.len(), 2);
+    assert_eq!(requests.len(), 3);
     assert_eq!(requests[0].method(), "GET");
     assert!(!requests[0].target().contains(ACQUIRED_SENTINEL));
+    assert_eq!(
+        requests[1].header("authorization"),
+        Some("Token local-api-key")
+    );
     assert!(
-        requests[1]
+        requests[2]
             .target()
             .contains(&format!("session={ACQUIRED_SENTINEL}"))
     );

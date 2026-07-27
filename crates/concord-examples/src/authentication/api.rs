@@ -32,6 +32,9 @@ api! {
     // ANCHOR: static_authentication_endpoints
     GET login() -> crate::authentication::extensions::ExampleTokenCodec;
     GET api_key() -> NoContent { auth header "X-Api-Key" = application_key; }
+    GET token_authorization() -> NoContent {
+        auth authorization "Token" = application_key;
+    }
     GET bearer() -> NoContent { auth bearer static_bearer; }
     GET basic() -> NoContent { auth basic login; }
     // ANCHOR_END: static_authentication_endpoints

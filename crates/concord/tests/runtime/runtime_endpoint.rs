@@ -586,6 +586,29 @@ async fn prepared_protected_http_fails_before_hooks_or_body_materialization() {
     assert_eq!(hook_calls.load(Ordering::SeqCst), 0);
     assert_eq!(factory_calls.load(Ordering::SeqCst), 0);
     assert_eq!(server.request_count(), 0);
+
+    let custom_factory_calls = Arc::new(AtomicUsize::new(0));
+    let endpoint = RuntimeEndpoint::builder(
+        runtime_id("runtime.custom_authorization_http"),
+        Method::POST,
+    )
+    .body(RequestBody::factory(FreshFactory {
+        calls: Arc::clone(&custom_factory_calls),
+    }))
+    .auth(
+        Auth::authorization_with_scheme("Token", client.credentials().api_key().credential())
+            .expect("valid static Authorization scheme"),
+    )
+    .build()
+    .expect("structurally valid custom Authorization endpoint");
+    let error = client
+        .request(endpoint)
+        .await
+        .expect_err("custom Authorization over cleartext must fail");
+    assert_eq!(error.category(), ErrorCategory::Configuration);
+    assert_eq!(hook_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(custom_factory_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(server.request_count(), 0);
 }
 
 #[tokio::test]
@@ -788,6 +811,32 @@ fn prepared_authentication_uses_canonical_collision_and_challenge_validation() {
         .expect("two challenge placements");
     assert_eq!(
         two_challenges.kind(),
+        ConfigurationErrorKind::InvalidAuthentication
+    );
+
+    let authorization_collision = RuntimeEndpoint::builder(runtime_id("runtime.auth"), Method::GET)
+        .auth(Auth::authorization(credential.clone()))
+        .auth(
+            Auth::authorization_with_scheme("Token", credential.clone())
+                .expect("valid static Authorization scheme"),
+        )
+        .build()
+        .err()
+        .expect("two custom Authorization owners");
+    assert_eq!(
+        authorization_collision.kind(),
+        ConfigurationErrorKind::InvalidAuthentication
+    );
+
+    let bearer_authorization_collision =
+        RuntimeEndpoint::builder(runtime_id("runtime.auth"), Method::GET)
+            .auth(Auth::bearer(credential.clone()))
+            .auth(Auth::authorization(credential.clone()))
+            .build()
+            .err()
+            .expect("Bearer and exact Authorization collide");
+    assert_eq!(
+        bearer_authorization_collision.kind(),
         ConfigurationErrorKind::InvalidAuthentication
     );
 

@@ -35,6 +35,7 @@ pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
 
     // ANCHOR: authenticated_requests
     let _: authentication_api::ApiKeyRequest = client.api_key();
+    let _: authentication_api::TokenAuthorizationRequest = client.token_authorization();
     let _: authentication_api::BearerRequest = client.bearer();
     let _: authentication_api::BasicRequest = client.basic();
     let _: authentication_api::OAuthRequest = client.o_auth();

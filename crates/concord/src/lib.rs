@@ -47,10 +47,10 @@ pub mod auth {
         CredentialMaterial, CredentialMaterialError, CredentialMaterialErrorKind,
         CredentialProvider, CredentialReason, CredentialRef, CredentialRequest,
         MAX_AUTH_PLACEMENT_NAME_BYTES, MAX_AUTH_PLACEMENTS, MAX_AUTH_QUERY_VALUE_BYTES,
-        MAX_AUTHORIZATION_VALUE_BYTES, MAX_BASIC_PASSWORD_BYTES, MAX_BASIC_USERNAME_BYTES,
-        MAX_CREDENTIAL_SECRET_BYTES, MAX_SECRET_STRING_BYTES, ProviderBody, ProviderBodyFactory,
-        ProviderHttp, ProviderRequest, ProviderResponse, ProviderRetry, RecoveryMode,
-        SecretCredential,
+        MAX_AUTHORIZATION_SCHEME_BYTES, MAX_AUTHORIZATION_VALUE_BYTES, MAX_BASIC_PASSWORD_BYTES,
+        MAX_BASIC_USERNAME_BYTES, MAX_CREDENTIAL_SECRET_BYTES, MAX_SECRET_STRING_BYTES,
+        ProviderBody, ProviderBodyFactory, ProviderHttp, ProviderRequest, ProviderResponse,
+        ProviderRetry, RecoveryMode, SecretCredential,
     };
     #[cfg(feature = "oauth2-client")]
     pub use concord_extras::auth::{

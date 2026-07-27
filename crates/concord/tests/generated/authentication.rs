@@ -180,6 +180,12 @@ api! {
     GET session_endpoint() -> Bytes {
         auth header "X-Session" = session challenge never;
     }
+    GET exact_authorization() -> Bytes {
+        auth authorization = application_key;
+    }
+    GET scheme_authorization() -> Bytes {
+        auth authorization "tOkEn" = session challenge never;
+    }
 }
 
 #[test]
@@ -397,6 +403,74 @@ async fn non_clone_custom_material_compiles_and_executes_through_generated_stora
     let requests = server.requests();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].header("x-session"), Some("provider-token"));
+}
+
+#[test]
+fn custom_authorization_is_absent_from_generated_safe_plans() {
+    const EXACT_SENTINEL: &str = "exact-plan-authorization-sentinel-8f73";
+    let client = credential_proof_builder()
+        .api_secret(secret(EXACT_SENTINEL))
+        .build()
+        .expect("custom Authorization planning client");
+
+    let exact = client
+        .plan(&credential_proof_api::ExactAuthorization::new())
+        .expect("exact Authorization safe plan");
+    let scheme = client
+        .plan(&credential_proof_api::SchemeAuthorization::new())
+        .expect("scheme Authorization safe plan");
+    for rendered in [format!("{exact:?}"), format!("{scheme:?}")] {
+        assert!(!rendered.contains(EXACT_SENTINEL));
+        assert!(!rendered.contains("provider-token"));
+        assert!(!rendered.contains("tOkEn "));
+    }
+    let authorization = concord::http::HeaderName::from_static("authorization");
+    assert!(exact.public_headers().get(&authorization).is_none());
+    assert!(scheme.public_headers().get(&authorization).is_none());
+}
+
+#[tokio::test]
+async fn generated_exact_and_scheme_authorization_reach_only_the_tls_boundary() {
+    const EXACT: &str = "Exact generated authorization 18d4";
+    let server = TlsServer::start().expect("custom Authorization TLS server");
+    server
+        .queue_response(200, b"exact".to_vec())
+        .expect("exact Authorization response");
+    server
+        .queue_response(200, b"scheme".to_vec())
+        .expect("scheme Authorization response");
+    let tunnel =
+        ConnectProxy::start(server.address()).expect("custom Authorization CONNECT tunnel");
+    let proxy = SafeProxy::parse(tunnel.url()).expect("safe CONNECT proxy");
+    let certificate = server.certificate_pem();
+    let client = credential_proof_builder()
+        .api_secret(secret(EXACT))
+        .configure_http(move |http| {
+            http.http1_only()
+                .proxy(proxy)
+                .add_root_certificate_pem(certificate)
+        })
+        .build()
+        .expect("custom Authorization client");
+
+    client
+        .exact_authorization()
+        .await
+        .expect("exact Authorization request");
+    client
+        .scheme_authorization()
+        .await
+        .expect("scheme Authorization request");
+
+    server
+        .wait_for_requests(2, Duration::from_secs(10))
+        .expect("custom Authorization requests");
+    let requests = server.requests();
+    assert_eq!(requests[0].header("authorization"), Some(EXACT));
+    assert_eq!(
+        requests[1].header("authorization"),
+        Some("tOkEn provider-token")
+    );
 }
 
 fn auth_builder() -> AuthApiBuilder {

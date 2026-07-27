@@ -10,6 +10,7 @@ use super::ast::{
 };
 use super::diagnostics::{
     SpanError, is_named_marker, validate_auth_header_name, validate_auth_query_name,
+    validate_authorization_scheme,
 };
 use super::keyword;
 use crate::semantic::surface::canonical_ident;
@@ -157,6 +158,17 @@ pub(super) fn parse_auth(input: ParseStream<'_>) -> syn::Result<AuthOperation> {
     } else if input.peek(keyword::basic) {
         input.parse::<keyword::basic>()?;
         (AuthPlacementKind::Basic, input.parse()?)
+    } else if input.peek(keyword::authorization) {
+        input.parse::<keyword::authorization>()?;
+        let scheme = if input.peek(LitStr) {
+            let scheme: LitStr = input.parse()?;
+            validate_authorization_scheme(&scheme)?;
+            Some(scheme)
+        } else {
+            None
+        };
+        input.parse::<Token![=]>()?;
+        (AuthPlacementKind::Authorization(scheme), input.parse()?)
     } else if input.peek(keyword::header) {
         input.parse::<keyword::header>()?;
         let name: LitStr = input.parse()?;
@@ -171,7 +183,9 @@ pub(super) fn parse_auth(input: ParseStream<'_>) -> syn::Result<AuthOperation> {
         (AuthPlacementKind::Query(name), input.parse()?)
     } else {
         return Err(
-            input.error("auth placement must be `bearer`, `basic`, `header`, `query`, or `off`")
+            input.error(
+                "auth placement must be `bearer`, `basic`, `authorization`, `header`, `query`, or `off`",
+            )
         );
     };
     let challenge = if input.peek(keyword::challenge) {
@@ -211,7 +225,7 @@ mod tests {
     use quote::quote;
     use syn::LitStr;
 
-    use crate::MAX_AUTH_PLACEMENT_NAME_BYTES;
+    use crate::{MAX_AUTH_PLACEMENT_NAME_BYTES, MAX_AUTHORIZATION_SCHEME_BYTES};
 
     #[test]
     fn parses_secret_sources_generic_providers_and_auth_placements() {
@@ -292,5 +306,95 @@ mod tests {
         assert_eq!(excess_value.len(), MAX_AUTH_PLACEMENT_NAME_BYTES + 1);
         let excess = LitStr::new(&excess_value, Span::call_site());
         super::validate_auth_query_name(&excess).expect_err("first excess UTF-8 byte");
+    }
+
+    #[test]
+    fn parses_exact_and_static_scheme_authorization_placements() {
+        let source = super::super::parse(quote! {
+            client AuthApi {
+                base "https://example.test";
+                credentials {
+                    secret token: String;
+                    credential key = api_key(secret.token);
+                }
+            }
+            GET exact() -> Bytes {
+                auth authorization = key;
+            }
+            GET scheme() -> Bytes {
+                auth authorization "tOkEn" = key challenge unauthorized;
+            }
+        })
+        .expect("custom Authorization syntax");
+
+        let exact = match &source.children[0] {
+            super::super::ast::SourceChild::Endpoint(endpoint) => endpoint,
+            _ => panic!("exact endpoint"),
+        };
+        let scheme = match &source.children[1] {
+            super::super::ast::SourceChild::Endpoint(endpoint) => endpoint,
+            _ => panic!("scheme endpoint"),
+        };
+        assert!(matches!(
+            exact.layer.auth.as_ref(),
+            Some(super::super::ast::AuthOperation::Modify { placements, .. })
+                if matches!(
+                    &placements[0].kind,
+                    super::super::ast::AuthPlacementKind::Authorization(None)
+                )
+        ));
+        assert!(matches!(
+            scheme.layer.auth.as_ref(),
+            Some(super::super::ast::AuthOperation::Modify { placements, .. })
+                if matches!(
+                    &placements[0].kind,
+                    super::super::ast::AuthPlacementKind::Authorization(Some(value))
+                        if value.value() == "tOkEn"
+                )
+        ));
+    }
+
+    #[test]
+    fn authorization_scheme_exact_limit_and_invalid_forms_are_diagnosed() {
+        let exact = LitStr::new(
+            &"T".repeat(MAX_AUTHORIZATION_SCHEME_BYTES),
+            Span::call_site(),
+        );
+        super::validate_authorization_scheme(&exact).expect("exact scheme limit");
+
+        let excess = LitStr::new(
+            &"T".repeat(MAX_AUTHORIZATION_SCHEME_BYTES + 1),
+            Span::call_site(),
+        );
+        assert_eq!(
+            super::validate_authorization_scheme(&excess)
+                .expect_err("first excess scheme")
+                .to_string(),
+            "an Authorization scheme permits at most 256 ASCII bytes"
+        );
+
+        for (invalid, expected) in [
+            ("", "an Authorization scheme cannot be empty"),
+            (
+                "Token value",
+                "an Authorization scheme must contain only ASCII HTTP token characters",
+            ),
+            (
+                "Tökén",
+                "an Authorization scheme must contain only ASCII HTTP token characters",
+            ),
+            (
+                "Token:",
+                "an Authorization scheme must contain only ASCII HTTP token characters",
+            ),
+        ] {
+            let literal = LitStr::new(invalid, Span::call_site());
+            assert_eq!(
+                super::validate_authorization_scheme(&literal)
+                    .expect_err("invalid scheme")
+                    .to_string(),
+                expected
+            );
+        }
     }
 }

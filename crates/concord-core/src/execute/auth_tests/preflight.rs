@@ -203,6 +203,52 @@ async fn limiter_failure_is_typed_and_prevents_finalization_debug_and_send() {
 }
 
 #[tokio::test]
+async fn limiter_rejection_precedes_custom_authorization_materialization() {
+    let executor = DeterministicExecutor::new();
+    let exposures = Arc::new(AtomicUsize::new(0));
+    let selector = SlotSelector::static_value(
+        CountedExposureToken {
+            value: secret_string("unexposed-custom-authorization-6fb2"),
+            exposures: Arc::clone(&exposures),
+        },
+        Duration::ZERO,
+    );
+    let limiter_acquires = Arc::new(AtomicUsize::new(0));
+    let (core, debug) = core_with_runtime(
+        &executor,
+        Arc::new(AuthHooks::default()),
+        RuntimeConfigBuilder::new()
+            .rate_limiter(Arc::new(AuthRateLimiter::failing(&limiter_acquires))),
+    );
+    let endpoint = RuntimeEndpoint::builder(
+        EndpointId::from_static("runtime.authorization_limiter_order"),
+        Method::GET,
+    )
+    .auth(
+        Auth::authorization_with_scheme("Token", CredentialRef::new(selector))
+            .expect("valid static Authorization scheme"),
+    )
+    .response_bytes()
+    .build()
+    .expect("custom Authorization endpoint");
+
+    let error = Request::new(core, endpoint)
+        .await
+        .expect_err("limiter rejection");
+    assert_eq!(error.category(), ErrorCategory::RateLimit);
+    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 1);
+    assert_eq!(exposures.load(Ordering::SeqCst), 0);
+    assert_eq!(executor.application().request_count().expect("count"), 0);
+    assert!(
+        debug
+            .lock()
+            .expect("debug output")
+            .iter()
+            .all(|line| !line.contains("unexposed-custom-authorization-6fb2"))
+    );
+}
+
+#[tokio::test]
 async fn clear_during_limiter_wait_prevents_stale_credential_send() {
     let executor = DeterministicExecutor::new();
     let selector = SlotSelector::static_value(access_token(INITIAL), Duration::ZERO);
