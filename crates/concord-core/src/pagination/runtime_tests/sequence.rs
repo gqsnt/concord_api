@@ -237,6 +237,152 @@ async fn page_lifecycle_is_sequential_correlated_and_limited_once_per_page() {
 }
 
 #[tokio::test]
+async fn one_page_retry_preserves_page_progress_and_aggregates_visible_attempts() {
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_response(ScriptedResponse::status(
+            StatusCode::SERVICE_UNAVAILABLE,
+            Bytes::from_static(b"intermediate-page-body"),
+        ))
+        .expect("first page retry status");
+    executor
+        .application()
+        .queue_response(ScriptedResponse::success(Bytes::from_static(
+            b"first-item|second",
+        )))
+        .expect("first page success");
+    executor
+        .application()
+        .queue_response(ScriptedResponse::success(Bytes::from_static(
+            b"second-item|-",
+        )))
+        .expect("second page success");
+    let classifications = Arc::new(Mutex::new(Vec::new()));
+    let classifications_for_policy = Arc::clone(&classifications);
+    let policy = RetryPolicy::builder()
+        .max_retries_per_operation(1)
+        .without_budget()
+        .classify_fn(move |attempt| {
+            classifications_for_policy
+                .lock()
+                .expect("pagination classifier records")
+                .push((
+                    attempt.page_index(),
+                    attempt.attempt(),
+                    attempt.host().map(str::to_owned),
+                ));
+            match attempt.failure() {
+                RetryFailure::RejectedStatus {
+                    status: StatusCode::SERVICE_UNAVAILABLE,
+                    ..
+                } => RetryDecision::Retry,
+                _ => RetryDecision::Stop,
+            }
+        })
+        .build()
+        .expect("pagination retry policy");
+    let hooks = Arc::new(PaginationProbe::default());
+    let limiter = Arc::new(LimiterProbe::default());
+    let core = core(
+        &executor,
+        Arc::clone(&hooks),
+        Arc::clone(&limiter),
+        |runtime| runtime.retry_policy(policy),
+    );
+    let controller = CursorController::new("first");
+    let validate_calls = Arc::clone(&controller.validate_calls);
+    let next_calls = Arc::clone(&controller.next_calls);
+    let endpoint = PageEndpoint::get(Some(Duration::from_secs(30)), controller);
+    let construction_calls = Arc::clone(&endpoint.construction_calls);
+    let binding_calls = Arc::clone(&endpoint.binding_calls);
+
+    let items = paginate_with(Request::new(core, endpoint), PageLimit::Take(5))
+        .await
+        .expect("one page retries without advancing the controller");
+    assert_eq!(items, ["first-item", "second-item"]);
+    assert_eq!(construction_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(validate_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(binding_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(next_calls.load(Ordering::SeqCst), 2);
+
+    let before = hooks.before.lock().expect("before lock").clone();
+    assert_eq!(
+        before
+            .iter()
+            .map(|record| (record.page_index, record.attempt))
+            .collect::<Vec<_>>(),
+        [
+            (0, INITIAL_ATTEMPT),
+            (
+                0,
+                AttemptInfo {
+                    index: 1,
+                    policy_retry_index: 1,
+                    authentication_recovery: false,
+                },
+            ),
+            (1, INITIAL_ATTEMPT),
+        ]
+    );
+    assert_eq!(before[0].operation_id, before[1].operation_id);
+    assert_ne!(before[1].operation_id, before[2].operation_id);
+    assert_eq!(
+        classifications
+            .lock()
+            .expect("pagination classifier records")
+            .as_slice(),
+        [(
+            0,
+            INITIAL_ATTEMPT,
+            Some("pagination-runtime.example.test".to_owned()),
+        )]
+    );
+
+    let completion = hooks.completion.lock().expect("completion lock").clone();
+    assert_eq!(completion.len(), 2);
+    assert_eq!(
+        completion
+            .iter()
+            .map(|record| (
+                record.page_index,
+                record.attempts_started,
+                record.policy_retries
+            ))
+            .collect::<Vec<_>>(),
+        [(0, 2, 1), (1, 1, 0)]
+    );
+    let aggregate = hooks.aggregate.lock().expect("aggregate lock").clone();
+    assert_eq!(aggregate.len(), 1);
+    assert_eq!(aggregate[0].pages_completed, 2);
+    assert_eq!(aggregate[0].items_collected, 2);
+    assert_eq!(aggregate[0].attempts_started, 3);
+    assert_eq!(aggregate[0].policy_retries, 1);
+    assert_eq!(
+        limiter
+            .acquisitions
+            .lock()
+            .expect("acquisition lock")
+            .iter()
+            .map(|(page, _)| *page)
+            .collect::<Vec<_>>(),
+        [0, 0, 1]
+    );
+    assert_eq!(
+        limiter
+            .observations
+            .lock()
+            .expect("observation lock")
+            .as_slice(),
+        [
+            (0, StatusCode::SERVICE_UNAVAILABLE),
+            (0, StatusCode::OK),
+            (1, StatusCode::OK),
+        ]
+    );
+}
+
+#[tokio::test]
 async fn non_clone_non_sync_controller_is_constructed_once_validated_and_bound_per_page() {
     let executor = DeterministicExecutor::new();
     executor

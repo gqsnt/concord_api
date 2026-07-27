@@ -1,4 +1,5 @@
 use super::*;
+use crate::retry::{RetryDecision, RetryFailure, RetryPolicy};
 
 static CHALLENGE_PRECEDENCE_ACCEPTANCE_CALLS: AtomicUsize = AtomicUsize::new(0);
 static NEVER_CHALLENGE_ACCEPTANCE_CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -108,6 +109,420 @@ async fn challenge_never_allows_the_response_specification_to_accept_401() {
     assert_eq!(response.metadata().policy_retries(), 0);
     assert_eq!(NEVER_CHALLENGE_ACCEPTANCE_CALLS.load(Ordering::SeqCst), 1);
     assert!(selector.is_set());
+}
+
+fn status_retry_policy(classifications: Arc<AtomicUsize>) -> RetryPolicy {
+    RetryPolicy::builder()
+        .max_retries_per_operation(2)
+        .without_budget()
+        .classify_fn(move |attempt| {
+            classifications.fetch_add(1, Ordering::SeqCst);
+            match attempt.failure() {
+                RetryFailure::RejectedStatus {
+                    status: StatusCode::SERVICE_UNAVAILABLE,
+                    ..
+                } => RetryDecision::Retry,
+                _ => RetryDecision::Stop,
+            }
+        })
+        .build()
+        .expect("authentication retry policy")
+}
+
+#[tokio::test]
+async fn authentication_recovery_after_policy_retry_has_independent_attempt_identity() {
+    let executor = DeterministicExecutor::new();
+    for (token, status) in [
+        (INITIAL, StatusCode::SERVICE_UNAVAILABLE),
+        (INITIAL, StatusCode::UNAUTHORIZED),
+        (REFRESHED, StatusCode::OK),
+    ] {
+        executor
+            .application()
+            .queue_expected_response(
+                ExpectedRequest::new().header(
+                    AUTHORIZATION,
+                    HeaderValue::from_str(&format!("Bearer {token}")).expect("header"),
+                ),
+                ScriptedResponse::status(status, Bytes::new()),
+            )
+            .expect("policy/authentication response");
+    }
+    let acquires = Arc::new(AtomicUsize::new(0));
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let selector = SlotSelector::provider(
+        RotatingProvider {
+            acquires: Arc::clone(&acquires),
+            refreshes: Arc::clone(&refreshes),
+            exact_current_seen: Arc::new(AtomicBool::new(false)),
+        },
+        Duration::ZERO,
+    );
+    let classifications = Arc::new(AtomicUsize::new(0));
+    let hooks = Arc::new(AuthHooks::default());
+    let (core, _) = core_with_runtime(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new().retry_policy(status_retry_policy(Arc::clone(&classifications))),
+    );
+
+    let response = request(
+        core,
+        &selector,
+        ChallengePolicy::Unauthorized,
+        RequestBody::bytes(Bytes::new()),
+    )
+    .response()
+    .await
+    .expect("policy retry followed by authentication recovery");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.metadata().attempts_started(), 3);
+    assert_eq!(response.metadata().policy_retries(), 1);
+    assert!(response.metadata().recovered_authentication());
+    assert_eq!(acquires.load(Ordering::SeqCst), 1);
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+    assert_eq!(classifications.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        hooks
+            .before
+            .lock()
+            .expect("before records")
+            .iter()
+            .map(|record| record.attempt)
+            .collect::<Vec<_>>(),
+        [
+            INITIAL_ATTEMPT,
+            AttemptInfo {
+                index: 1,
+                policy_retry_index: 1,
+                authentication_recovery: false,
+            },
+            AttemptInfo {
+                index: 2,
+                policy_retry_index: 1,
+                authentication_recovery: true,
+            },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn policy_retry_after_authentication_recovery_reuses_current_material() {
+    let executor = DeterministicExecutor::new();
+    for (token, status) in [
+        (INITIAL, StatusCode::UNAUTHORIZED),
+        (REFRESHED, StatusCode::SERVICE_UNAVAILABLE),
+        (REFRESHED, StatusCode::OK),
+    ] {
+        executor
+            .application()
+            .queue_expected_response(
+                ExpectedRequest::new().header(
+                    AUTHORIZATION,
+                    HeaderValue::from_str(&format!("Bearer {token}")).expect("header"),
+                ),
+                ScriptedResponse::status(status, Bytes::new()),
+            )
+            .expect("authentication/policy response");
+    }
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let selector = SlotSelector::provider(
+        RotatingProvider {
+            acquires: Arc::new(AtomicUsize::new(0)),
+            refreshes: Arc::clone(&refreshes),
+            exact_current_seen: Arc::new(AtomicBool::new(false)),
+        },
+        Duration::ZERO,
+    );
+    let classifications = Arc::new(AtomicUsize::new(0));
+    let hooks = Arc::new(AuthHooks::default());
+    let (core, _) = core_with_runtime(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new().retry_policy(status_retry_policy(Arc::clone(&classifications))),
+    );
+
+    let response = request(
+        core,
+        &selector,
+        ChallengePolicy::Unauthorized,
+        RequestBody::bytes(Bytes::new()),
+    )
+    .response()
+    .await
+    .expect("authentication recovery followed by policy retry");
+    assert_eq!(response.metadata().attempts_started(), 3);
+    assert_eq!(response.metadata().policy_retries(), 1);
+    assert!(response.metadata().recovered_authentication());
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+    assert_eq!(classifications.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        hooks
+            .before
+            .lock()
+            .expect("before records")
+            .iter()
+            .map(|record| record.attempt)
+            .collect::<Vec<_>>(),
+        [
+            INITIAL_ATTEMPT,
+            AUTHENTICATION_RECOVERY_ATTEMPT,
+            AttemptInfo {
+                index: 2,
+                policy_retry_index: 1,
+                authentication_recovery: false,
+            },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn authentication_recovery_is_globally_limited_across_policy_retries() {
+    let executor = DeterministicExecutor::new();
+    for (token, status) in [
+        (INITIAL, StatusCode::UNAUTHORIZED),
+        (REFRESHED, StatusCode::SERVICE_UNAVAILABLE),
+        (REFRESHED, StatusCode::UNAUTHORIZED),
+    ] {
+        executor
+            .application()
+            .queue_expected_response(
+                ExpectedRequest::new().header(
+                    AUTHORIZATION,
+                    HeaderValue::from_str(&format!("Bearer {token}")).expect("header"),
+                ),
+                ScriptedResponse::status(status, Bytes::new()),
+            )
+            .expect("bounded authentication response");
+    }
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let selector = SlotSelector::provider(
+        RotatingProvider {
+            acquires: Arc::new(AtomicUsize::new(0)),
+            refreshes: Arc::clone(&refreshes),
+            exact_current_seen: Arc::new(AtomicBool::new(false)),
+        },
+        Duration::ZERO,
+    );
+    let classifications = Arc::new(AtomicUsize::new(0));
+    let hooks = Arc::new(AuthHooks::default());
+    let (core, _) = core_with_runtime(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new().retry_policy(status_retry_policy(Arc::clone(&classifications))),
+    );
+
+    let error = request(
+        core,
+        &selector,
+        ChallengePolicy::Unauthorized,
+        RequestBody::bytes(Bytes::new()),
+    )
+    .await
+    .expect_err("a second attributable challenge is terminal");
+    assert_eq!(error.category(), ErrorCategory::AuthenticationRejected);
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+    assert_eq!(classifications.load(Ordering::SeqCst), 1);
+    assert_eq!(executor.application().request_count().expect("count"), 3);
+    let completion = hooks.completion.lock().expect("completion records");
+    assert_eq!((completion[0].6, completion[0].7), (3, 1));
+    assert!(completion[0].1);
+}
+
+#[tokio::test]
+async fn policy_retry_selects_concurrently_replaced_current_material() {
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_expected_response(
+            ExpectedRequest::new().header(
+                AUTHORIZATION,
+                HeaderValue::from_static("Bearer initial-auth-token-1148c7"),
+            ),
+            ScriptedResponse::status(StatusCode::SERVICE_UNAVAILABLE, Bytes::new()),
+        )
+        .expect("initial status");
+    executor
+        .application()
+        .queue_expected_response(
+            ExpectedRequest::new().header(
+                AUTHORIZATION,
+                HeaderValue::from_static("Bearer newer-auth-token-265f0a"),
+            ),
+            ScriptedResponse::success(Bytes::from_static(b"newer")),
+        )
+        .expect("replacement status");
+    let acquires = Arc::new(AtomicUsize::new(0));
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let selector = SlotSelector::provider(
+        RotatingProvider {
+            acquires: Arc::clone(&acquires),
+            refreshes: Arc::clone(&refreshes),
+            exact_current_seen: Arc::new(AtomicBool::new(false)),
+        },
+        Duration::ZERO,
+    );
+    let hooks = Arc::new(AuthHooks::default());
+    hooks.observe(Arc::clone(&selector));
+    hooks.replace_on_first_response();
+    let (core, _) = core_with_runtime(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new()
+            .retry_policy(status_retry_policy(Arc::new(AtomicUsize::new(0)))),
+    );
+
+    let output = request(
+        core,
+        &selector,
+        ChallengePolicy::Unauthorized,
+        RequestBody::bytes(Bytes::new()),
+    )
+    .await
+    .expect("policy retry selects response-hook replacement");
+    assert_eq!(output, Bytes::from_static(b"newer"));
+    assert_eq!(acquires.load(Ordering::SeqCst), 1);
+    assert_eq!(refreshes.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn authentication_preflight_failure_after_retry_reservation_is_final() {
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_response(ScriptedResponse::status(
+            StatusCode::SERVICE_UNAVAILABLE,
+            Bytes::new(),
+        ))
+        .expect("retry status");
+    let selector = SlotSelector::endpoint(Duration::ZERO);
+    selector
+        .set(access_token(INITIAL))
+        .expect("initial endpoint credential");
+    let selector_for_policy = Arc::clone(&selector);
+    let policy = RetryPolicy::builder()
+        .without_budget()
+        .classify_fn(move |_| {
+            selector_for_policy
+                .clear()
+                .expect("classifier clears endpoint credential");
+            RetryDecision::Retry
+        })
+        .build()
+        .expect("auth-failure retry policy");
+    let hooks = Arc::new(AuthHooks::default());
+    let (core, _) = core_with_runtime(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new().retry_policy(policy),
+    );
+
+    let error = request(
+        core,
+        &selector,
+        ChallengePolicy::Never,
+        RequestBody::bytes(Bytes::new()),
+    )
+    .await
+    .expect_err("retry current-material preflight fails");
+    assert_eq!(error.category(), ErrorCategory::AuthenticationUnavailable);
+    assert_eq!(executor.application().request_count().expect("count"), 1);
+    let completion = hooks.completion.lock().expect("completion records");
+    assert_eq!((completion[0].6, completion[0].7), (2, 1));
+}
+
+struct GatedRetryPreflightProvider {
+    calls: Arc<AtomicUsize>,
+    retry_gate: Gate,
+}
+
+impl CredentialProvider for GatedRetryPreflightProvider {
+    type Material = AccessToken;
+
+    fn acquire<'a>(
+        &'a self,
+        _context: CredentialRequest<'a>,
+    ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
+        let call = self.calls.fetch_add(1, Ordering::SeqCst);
+        let gate = self.retry_gate.clone();
+        Box::pin(async move {
+            if call != 0 {
+                gate.wait().await;
+                Ok(access_token(NEWER))
+            } else {
+                Ok(access_token(INITIAL))
+            }
+        })
+    }
+}
+
+#[tokio::test]
+async fn cancellation_during_retry_authentication_preflight_prevents_later_attempt_work() {
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_response(ScriptedResponse::status(
+            StatusCode::SERVICE_UNAVAILABLE,
+            Bytes::new(),
+        ))
+        .expect("retry status");
+    executor
+        .application()
+        .queue_response(ScriptedResponse::success(Bytes::from_static(b"unused")))
+        .expect("unused retry response");
+    let gate = Gate::closed();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let selector = SlotSelector::provider(
+        GatedRetryPreflightProvider {
+            calls: Arc::clone(&calls),
+            retry_gate: gate.clone(),
+        },
+        Duration::ZERO,
+    );
+    let selector_for_policy = Arc::clone(&selector);
+    let policy = RetryPolicy::builder()
+        .without_budget()
+        .classify_fn(move |_| {
+            selector_for_policy
+                .clear()
+                .expect("classifier clears provider credential");
+            RetryDecision::Retry
+        })
+        .build()
+        .expect("retry preflight policy");
+    let hooks = Arc::new(AuthHooks::default());
+    let (core, _) = core_with_runtime(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new().retry_policy(policy),
+    );
+    let operation = tokio::spawn({
+        let selector = Arc::clone(&selector);
+        async move {
+            request(
+                core,
+                &selector,
+                ChallengePolicy::Never,
+                RequestBody::bytes(Bytes::new()),
+            )
+            .await
+        }
+    });
+    gate.wait_until_reached().await;
+
+    operation.abort();
+    gate.open();
+    assert!(operation.await.is_err());
+    tokio::task::yield_now().await;
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(executor.application().request_count().expect("count"), 1);
+    assert!(
+        hooks
+            .completion
+            .lock()
+            .expect("completion records")
+            .is_empty()
+    );
 }
 
 #[tokio::test]

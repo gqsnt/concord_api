@@ -77,12 +77,13 @@ Observation cannot replace or mutate the received response. Its failure or
 timeout nevertheless determines the operation before application response
 handling proceeds.
 
-Before managed policy retry exists, the initial request carries
-`AttemptInfo { index: 0, policy_retry_index: 0,
-authentication_recovery: false }`; the one authentication replay carries
-`{ index: 1, policy_retry_index: 0, authentication_recovery: true }`.
-Acquisition, asynchronous response observation, hooks, and synchronous local
-observation see the matching value.
+The initial request carries `AttemptInfo { index: 0, policy_retry_index: 0,
+authentication_recovery: false }`. Each admitted policy retry increments both
+the visible index and policy-retry index. The one possible authentication
+recovery increments only the visible index, retains the current policy-retry
+index, and sets `authentication_recovery: true`. Acquisition, asynchronous
+response observation, hooks, and synchronous local observation see the
+matching value for every attempt.
 
 ## Architectural invariants
 
@@ -97,7 +98,8 @@ observation see the matching value.
   they are not a global namespace across unrelated macro expansions.
 - Limiter preparation happens before any attempt effects, and admission
   happens before protected credential attachment.
-- Every application-level authentication replay acquires a new permit.
+- Every managed policy retry and application-level authentication replay
+  acquires a new permit.
 - Response observation precedes user hooks, authentication recovery, terminal
   status conversion, and successful body work.
 - Limiter failures use the ordinary completion path and cannot bypass

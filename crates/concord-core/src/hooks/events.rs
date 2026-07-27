@@ -23,12 +23,6 @@ impl AttemptInfo {
         policy_retry_index: 0,
         authentication_recovery: false,
     };
-
-    pub(crate) const AUTHENTICATION_RECOVERY: Self = Self {
-        index: 1,
-        policy_retry_index: 0,
-        authentication_recovery: true,
-    };
 }
 
 /// Sanitized metadata supplied before expensive request work begins.

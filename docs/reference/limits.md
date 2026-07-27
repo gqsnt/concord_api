@@ -65,6 +65,7 @@ bytes.
 | Rate-limit hard aggregate key | 65,536 | bytes |
 | Rate-limit rule | 16 | windows |
 | Rate-limit plan | 64 | rules |
+| Managed policy retries per request or page | 16 | retries |
 | OAuth2 token URL text | 8,192 | bytes |
 | OAuth2 client identifier | 8,192 | bytes |
 | OAuth2 client secret | 8,192 | bytes |
@@ -81,6 +82,7 @@ bytes.
 | Multipart structure and payload | [Multipart uploads](../features/multipart.md) | [Managed boundary ownership](../contributor/architecture/managed-executor.md#managed-boundary-ownership) |
 | Record staging and pagination | [Record streams](../features/records.md), [Pagination](../features/pagination.md) | [Managed boundary ownership](../contributor/architecture/managed-executor.md#managed-boundary-ownership) |
 | Rate plans, keys, cooldowns, local state | [Rate limiting](../features/rate-limiting.md) | [Managed boundary ownership](../contributor/architecture/managed-executor.md#managed-boundary-ownership) |
+| Managed retry attempts and origin budget state | [Hooks and observability](../features/hooks-and-observability.md) | [Managed retry contract](../contributor/contracts/retries.md) |
 | Public request heads and runtime endpoints | [Request shaping](../guide/request-shaping.md), [Runtime-defined endpoints](../features/runtime-endpoints.md) | [Managed boundary ownership](../contributor/architecture/managed-executor.md#managed-boundary-ownership) |
 | Proxy, roots, identity, and transport | [Production HTTP](../features/production-http.md) | [Managed boundary ownership](../contributor/architecture/managed-executor.md#managed-boundary-ownership) |
 
@@ -218,6 +220,21 @@ Generated declaration rule IDs are deterministic within a generated client
 contract, not globally namespaced across unrelated `api!` expansions; a
 limiter shared across unrelated contracts therefore requires compatible rule
 namespaces.
+
+## Managed retry state
+
+Managed retry is absent by default. An installed `RetryPolicy` permits at most
+`concord::retry::MAX_POLICY_RETRIES_PER_OPERATION` policy retries for one
+request or pagination page; the independent authentication-recovery ceiling
+remains one. The configured per-operation maximum may be lower but cannot
+raise the structural ceiling.
+
+The default shared budget retains at most 4,096 logical-origin scopes with a
+15-minute idle TTL and exactly ten one-second rolling buckets per scope.
+Applications may replace the positive capacity and TTL or explicitly disable
+shared budget admission, but disabling it does not disable the per-operation
+maximum. Capacity pressure declines retry for an untracked origin and
+preserves the current failure instead of evicting active state.
 
 ## Status bodies, records, authentication recovery, and pagination
 

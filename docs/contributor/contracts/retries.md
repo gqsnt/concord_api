@@ -22,6 +22,31 @@ contract therefore combines:
 There is no policy by default. Enabling private protocol recovery does not
 enable status or application-failure retry.
 
+## Runtime installation
+
+The public semantic surface is `concord::retry`. A policy is installed on the
+immutable client runtime:
+
+```rust
+let policy = concord::retry::RetryPolicy::builder()
+    .classify_fn(|attempt| match attempt.failure() {
+        concord::retry::RetryFailure::RejectedStatus { status, .. }
+            if status == concord::http::StatusCode::SERVICE_UNAVAILABLE =>
+        {
+            concord::retry::RetryDecision::Retry
+        }
+        _ => concord::retry::RetryDecision::Stop,
+    })
+    .build()?;
+
+let builder = builder.configure_runtime(|runtime| runtime.retry_policy(policy));
+```
+
+`RuntimeConfigBuilder::disable_retry_policy` restores the no-policy runtime
+selection. Replacing or disabling a policy affects only the client snapshot
+being built. It does not add DSL structure and does not expose Reqwest, Tower,
+or native retry types.
+
 ## Semantic model
 
 `RetryPolicy::builder` configures:
@@ -132,7 +157,8 @@ separates targets.
 
 ## Managed lifecycle integration
 
-An admitted policy retry will re-enter:
+The executor now admits policy retry inside the same request/page operation.
+An admitted policy retry re-enters:
 
 ```text
 before_send
@@ -156,6 +182,30 @@ Accepted statuses are successful response candidates and are never offered to
 the classifier. Timeout, hook, limiter, authentication, request-body,
 accepted-response, pagination-controller, and internal failures are likewise
 not classifier inputs.
+
+Connect and transport failures are classified while the original `ApiError`
+remains owned by the executor. A stop or suppression returns that same safe
+structural result. Rejected responses are classified only after limiter
+observation, response hook, challenge handling, and status acceptance. An
+admitted response retry drops the intermediate body without polling it;
+suppression instead uses the ordinary bounded terminal capture path.
+
+After `Retry`, authority is checked in this exact order:
+
+1. configured per-operation maximum;
+2. non-consuming prepared-body replayability;
+3. shared budget reservation.
+
+The reservation occurs before retry `before_send` and is not rolled back.
+That retry then increments the visible index and policy-retry index, while a
+later authentication recovery increments only the visible index and sets its
+authentication flag. The maximum visible total is one initial attempt, 16
+policy retries, and one authentication recovery.
+
+`RequestBodySpec::prepare` and a buffered encoder run once. Reusable bytes are
+cloned into each native request; stream and multipart factories reconstruct
+once per admitted visible attempt after its hook. A one-shot body causes
+optional retry suppression before budget admission.
 
 ## Redaction and formatting
 
@@ -197,6 +247,11 @@ clones. Lifecycle integration tests must additionally prove attempt order,
 deadline reuse, one completion, body replay suppression, rate-limit
 re-admission, authentication interaction, and preservation of the original
 failure on budget denial.
+
+Executor integration proofs live in
+`crates/concord-core/src/execute/tests/retry.rs`, authentication interleaving
+proofs in `execute/auth_tests/recovery.rs`, and page/aggregate accounting in
+`pagination/runtime_tests/sequence.rs`.
 
 After focused tests, run all-feature core tests, workspace doctests, strict
 documentation checks, warning-denied Rustdoc, and the Rust 1.85 semantic gate.

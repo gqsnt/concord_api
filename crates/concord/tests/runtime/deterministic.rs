@@ -4,8 +4,11 @@ use std::time::Duration;
 
 use concord::codec::{CodecError, EncodeBody, EncodeContext};
 use concord::error::HookError;
-use concord::hooks::{BeforeSend, BoxFuture, CompletionEvent, ResponseHeadEvent, RuntimeHooks};
+use concord::hooks::{
+    AttemptInfo, BeforeSend, BoxFuture, CompletionEvent, ResponseHeadEvent, RuntimeHooks,
+};
 use concord::http::SafeProxy;
+use concord::retry::{RetryDecision, RetryFailure, RetryPolicy};
 use concord::{Bytes, api};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 
@@ -54,6 +57,8 @@ struct LifecycleCounts {
     response: AtomicUsize,
     complete: AtomicUsize,
     endpoints: Mutex<Vec<String>>,
+    attempts: Mutex<Vec<AttemptInfo>>,
+    completion_totals: Mutex<Vec<(u32, u32, bool)>>,
 }
 
 impl RuntimeHooks for LifecycleCounts {
@@ -63,6 +68,10 @@ impl RuntimeHooks for LifecycleCounts {
             .lock()
             .expect("endpoint capture")
             .push(context.endpoint.to_owned());
+        self.attempts
+            .lock()
+            .expect("attempt capture")
+            .push(context.attempt);
         Box::pin(async { Ok(()) })
     }
 
@@ -74,8 +83,16 @@ impl RuntimeHooks for LifecycleCounts {
         Box::pin(async { Ok(()) })
     }
 
-    fn on_complete<'a>(&'a self, _context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
+    fn on_complete<'a>(&'a self, context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
         self.complete.fetch_add(1, Ordering::SeqCst);
+        self.completion_totals
+            .lock()
+            .expect("completion totals")
+            .push((
+                context.attempts_started,
+                context.policy_retries,
+                context.recovered_authentication,
+            ));
         Box::pin(async {})
     }
 }
@@ -162,4 +179,86 @@ async fn direct_and_explicit_named_wrappers_preserve_inertness_and_lifecycle_equ
     assert_eq!(requests[0].header("X-Limit"), requests[1].header("X-Limit"));
     assert_eq!(requests[0].body(), BODY_SENTINEL.as_bytes());
     assert_eq!(requests[0].body(), requests[1].body());
+}
+
+#[tokio::test]
+async fn facade_runtime_policy_retries_rejected_status_with_visible_attempts() {
+    let server = ScriptedServer::start([
+        ResponseScript::status(503, b"intermediate".to_vec()),
+        ResponseScript::ok(b"recovered".to_vec()),
+    ])
+    .expect("scripted retry server");
+    let proxy = SafeProxy::parse(server.url("")).expect("loopback proxy");
+    let hooks = Arc::new(LifecycleCounts::default());
+    let hook_object: Arc<dyn RuntimeHooks> = hooks.clone();
+    let classifications = Arc::new(AtomicUsize::new(0));
+    let classifications_for_policy = Arc::clone(&classifications);
+    let policy = RetryPolicy::builder()
+        .max_retries_per_operation(1)
+        .without_budget()
+        .classify_fn(move |attempt| {
+            classifications_for_policy.fetch_add(1, Ordering::SeqCst);
+            match attempt.failure() {
+                RetryFailure::RejectedStatus { status, .. }
+                    if status == concord::http::StatusCode::SERVICE_UNAVAILABLE =>
+                {
+                    RetryDecision::Retry
+                }
+                _ => RetryDecision::Stop,
+            }
+        })
+        .build()
+        .expect("managed retry policy");
+    let client = RuntimeApi::builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(move |runtime| runtime.hooks(hook_object).retry_policy(policy))
+        .build()
+        .expect("retry runtime client");
+    let encodes = Arc::new(AtomicUsize::new(0));
+
+    let response = client
+        .resources("retry-scope".to_owned())
+        .submit(
+            "retry-id".to_owned(),
+            BodyInput {
+                value: "encoded-once".to_owned(),
+                encodes: Arc::clone(&encodes),
+            },
+        )
+        .response()
+        .await
+        .expect("managed retry succeeds");
+    assert_eq!(response.value(), &Bytes::from_static(b"recovered"));
+    assert_eq!(response.metadata().attempts_started(), 2);
+    assert_eq!(response.metadata().policy_retries(), 1);
+    assert!(!response.metadata().recovered_authentication());
+    assert_eq!(server.request_count(), 2);
+    assert_eq!(encodes.load(Ordering::SeqCst), 1);
+    assert_eq!(classifications.load(Ordering::SeqCst), 1);
+    assert_eq!(hooks.before.load(Ordering::SeqCst), 2);
+    assert_eq!(hooks.response.load(Ordering::SeqCst), 2);
+    assert_eq!(hooks.complete.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        hooks.attempts.lock().expect("attempt capture").as_slice(),
+        [
+            AttemptInfo {
+                index: 0,
+                policy_retry_index: 0,
+                authentication_recovery: false,
+            },
+            AttemptInfo {
+                index: 1,
+                policy_retry_index: 1,
+                authentication_recovery: false,
+            },
+        ]
+    );
+    assert_eq!(
+        hooks
+            .completion_totals
+            .lock()
+            .expect("completion totals")
+            .as_slice(),
+        [(2, 1, false)]
+    );
 }

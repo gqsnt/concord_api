@@ -23,8 +23,8 @@ operation + deadline
     -> native send
     -> limiter response observation
     -> response-head hook
-    -> challenge and declared status acceptance
-    -> accepted response acquisition or rejected-status capture
+    -> challenge handling and declared status acceptance
+    -> accepted response acquisition, managed retry, or rejected-status capture
     -> fixed result and completion
 ```
 
@@ -126,10 +126,11 @@ bytes.
 before body preparation for the attempt.
 
 The initial invocation carries `AttemptInfo { index: 0,
-policy_retry_index: 0, authentication_recovery: false }`. Authentication
-recovery invokes this stage again with `{ index: 1, policy_retry_index: 0,
-authentication_recovery: true }` before reconstructing a replayable body or
-refreshing credentials.
+policy_retry_index: 0, authentication_recovery: false }`. Every admitted
+policy retry and the one possible authentication recovery invoke this stage
+again. The global `index` increases for either transition; only policy retry
+increments `policy_retry_index`, while the authentication transition sets
+`authentication_recovery`.
 
 ## Stage 3: request-body preparation
 
@@ -156,6 +157,11 @@ errors, debug formatting, or hook events.
 
 **Side effects:** an approved codec or factory may run. A vetoed hook means
 the encoder/factory is never called and a source stream is never polled.
+
+The specification prepares once for the whole request or page. A policy retry
+reuses buffered bytes or reconstructs a factory/multipart recipe only after
+its retry `before_send`; it does not rerun the buffered encoder. One-shot
+bodies suppress optional policy retry and preserve the current failure.
 
 ## Stage 4: authentication preflight
 
@@ -222,9 +228,10 @@ after limiter authority and after safe debug observation. They are never
 copied back into public head state.
 
 **Side effects:** provider work may finish, body sources may be polled, and
-native HTTP may execute. Configured native retry policy remains inside this
-transport operation; it does not create additional public hook/completion
-attempts.
+native HTTP may execute. The retained native retry configuration remains
+inside this transport operation; it does not create additional public
+hook/completion attempts. Concord-managed policy retry is outside this private
+transport boundary and therefore creates another visible attempt.
 
 ## Stage 7: response policy and observation
 
@@ -252,7 +259,7 @@ be hidden by later body work.
 The response-head hook sees each received attempt, including a challenge that
 will subsequently be recovered.
 
-## Stage 8: challenge and declared status acceptance
+## Stage 8: challenge, acceptance, and retry authority
 
 **Input and output:** after response observation, core checks whether an
 applied credential owns the challenge status. At most one recovery attempt is
@@ -264,24 +271,43 @@ attempt sequence repeats.
 If recovery is unavailable or fails, the challenge becomes an authentication
 rejection. Otherwise core calls `ResponseBodySpec::accepts_status` and checks
 the deadline immediately after the synchronous callback. The default accepts
-2xx. An explicitly accepted non-2xx proceeds as an ordinary accepted response;
-a rejected status becomes an HTTP status failure. Rejected response bodies are
-captured only through the bounded status path.
+2xx. An explicitly accepted non-2xx proceeds as an ordinary accepted response
+and is never a retry candidate.
+
+Eligible connect/transport failures and rejected statuses are offered to the
+optional synchronous `RetryClassifier`. For a rejected status this happens
+only after limiter observation, the response hook, challenge handling, and
+declared acceptance. Core checks the deadline immediately after the
+classifier. A `Retry` decision is then gated, in order, by the per-operation
+maximum, managed-body replayability, and the origin-scoped shared budget.
+Budget reservation fixes the retry as started. The rejected response is
+dropped unpolled before retry work, then the retry runs `before_send`,
+reconstruction, current credential preflight, limiter admission,
+materialization, and native execution again.
+
+Classifier stop, maximum denial, one-shot suppression, or budget denial
+preserves the current transport error or performs ordinary bounded terminal
+status capture. Once a budget reservation succeeds, a later hook, body,
+authentication, limiter, deadline, or transport failure is the final ordinary
+category; core does not synthesize a retry error.
 
 **Errors:** authentication rejection/recovery, status acquisition,
 response-body progress, and timeout.
 
-**Deadline and cancellation:** recovery, status acceptance, and rejected-status
-capture consume the original deadline. There is no fresh timeout for the
-second attempt. Cancellation drops current recovery/response state.
+**Deadline and cancellation:** recovery, status acceptance, classification,
+retry attempts, and rejected-status capture consume the original deadline.
+No transition creates a fresh timeout. Cancellation drops current
+retry/recovery/response state.
 
 **Protected material:** recovery can replace credential state, but errors and
 completion retain only safe identity, category, status, and bounded explicit
 status-body state.
 
-**Side effects:** one attributed credential may refresh; a replayable body may
-be reconstructed; a second native attempt may run. One-shot bodies never
-recover by replay.
+**Side effects:** one attributed credential may refresh. Each admitted policy
+retry conservatively consumes one budget reservation, reruns current
+credential preflight without invalidating material merely because of
+transport/503, and reacquires limiter authority. Authentication recovery is
+globally limited to one across all of those attempts.
 
 ## Stage 9: accepted response acquisition
 
@@ -366,6 +392,11 @@ added with the maintenance manual.
   ambiguity.
 - Treating stream consumption as endpoint completion would either duplicate
   completion or require background ownership.
+- Reserving retry authority after `before_send` permits unbudgeted application
+  work; reserving before maximum/replay checks consumes authority for an
+  impossible retry.
+- Polling an intermediate rejected body before retry changes both work and
+  confidentiality semantics.
 - Adding a feature-specific send loop creates different ordering guarantees
   for the same endpoint.
 
@@ -378,7 +409,10 @@ The primary deterministic proofs live in:
 - `crates/concord-core/src/execute/tests/cancellation.rs`
 - `crates/concord-core/src/execute/tests/completion.rs`
 - `crates/concord-core/src/execute/tests/status.rs`
+- `crates/concord-core/src/execute/tests/retry.rs`
 - `crates/concord-core/src/execute/tests/streaming.rs`
+- `crates/concord-core/src/execute/auth_tests/recovery.rs`
+- `crates/concord-core/src/pagination/runtime_tests/sequence.rs`
 
 Run:
 

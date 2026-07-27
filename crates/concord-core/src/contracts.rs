@@ -71,4 +71,8 @@ pub use crate::response::{
     NoContent, PageResponseSpec, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec,
     ResponseBytesMode, ResponseHead, ResponseMode, Streaming,
 };
+pub use crate::retry::{
+    MAX_POLICY_RETRIES_PER_OPERATION, RetryAttempt, RetryClassifier, RetryDecision, RetryFailure,
+    RetryPolicy, RetryPolicyBuildError, RetryPolicyBuildErrorKind, RetryPolicyBuilder,
+};
 pub use crate::runtime::RuntimeConfigBuilder;

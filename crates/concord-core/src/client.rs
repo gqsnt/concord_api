@@ -120,6 +120,10 @@ impl ClientCore {
         self.inner.runtime.rate_limit_key_limit
     }
 
+    pub(crate) fn retry_policy(&self) -> Option<&crate::retry::RetryPolicy> {
+        self.inner.runtime.retry_policy.as_ref()
+    }
+
     pub(crate) fn hooks(&self) -> &Arc<dyn RuntimeHooks> {
         &self.inner.runtime.hooks
     }

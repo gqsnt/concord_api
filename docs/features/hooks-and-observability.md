@@ -39,7 +39,9 @@ body length when available. `AttemptInfo::index` identifies each visible
 attempt, `policy_retry_index` identifies managed policy retries, and
 `authentication_recovery` marks the one authentication-recovery replay. Before
 managed policy retry is configured, an initial attempt is `{0, 0, false}` and
-authentication recovery is `{1, 0, true}`.
+authentication recovery is `{1, 0, true}`. With managed retry, each transition
+increments `index`; a policy retry also increments `policy_retry_index`, while
+authentication recovery retains the current retry index and sets its flag.
 
 Use it for admission policy, correlation, and structural telemetry. It cannot
 inspect a request body value or authenticated native request. Public URLs and
@@ -69,8 +71,9 @@ after Concord has fixed success or failure. It receives safe identity and
 timing data, final status when available, `attempts_started`,
 `policy_retries`, whether authentication recovered, and a structural
 `CompletionOutcome`. It cannot replace the result. One ordinary result reports
-one attempt and zero policy retries; authentication recovery reports two
-attempts and zero policy retries.
+one attempt and zero policy retries. Admitted policy retries and the one
+possible authentication recovery contribute independently to the final
+attempt total.
 
 Completion is outside the operation deadline and is awaited before that fixed
 result is delivered. It is not detached background telemetry. A completion

@@ -3,7 +3,8 @@
 use std::any::type_name;
 
 use concord::{
-    auth, body, codec, endpoint, error, hooks, http, pagination, rate_limit, response, runtime,
+    auth, body, codec, endpoint, error, hooks, http, pagination, rate_limit, response, retry,
+    runtime,
 };
 
 const _: () = assert!(
@@ -36,6 +37,9 @@ fn semantic_domains_are_available_without_implementation_crate_imports() {
         public_type::<pagination::PaginatedRequest<()>>(),
         public_type::<rate_limit::NoopRateLimiter>(),
         public_type::<response::NoContent>(),
+        public_type::<retry::RetryPolicy>(),
+        public_type::<retry::RetryAttempt<'static>>(),
+        public_type::<retry::RetryFailure<'static>>(),
         public_type::<runtime::OperationId>(),
         public_type::<runtime::RuntimeConfigBuilder>(),
     ];
@@ -93,6 +97,7 @@ fn hard_structural_limits_are_reachable_from_their_facade_domains() {
         rate_limit::MAX_RATE_LIMIT_RULES_PER_PLAN,
     ];
     let response_limits = [response::MAX_EMPTY_RESPONSE_CHUNKS];
+    let retry_limits = [retry::MAX_POLICY_RETRIES_PER_OPERATION as usize];
 
     assert!(auth_limits.into_iter().all(|limit| limit > 0));
     assert!(body_limits.into_iter().all(|limit| limit > 0));
@@ -102,6 +107,7 @@ fn hard_structural_limits_are_reachable_from_their_facade_domains() {
     assert!(http_limits.into_iter().all(|limit| limit > 0));
     assert!(rate_limits.into_iter().all(|limit| limit > 0));
     assert!(response_limits.into_iter().all(|limit| limit > 0));
+    assert!(retry_limits.into_iter().all(|limit| limit > 0));
 }
 
 #[cfg(feature = "records")]

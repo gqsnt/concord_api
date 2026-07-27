@@ -31,6 +31,10 @@
 - Recoverable `RateLimitErrorKind::StateCapacity` reporting when bounded local
   quota or cooldown state cannot admit a new key without discarding active
   history.
+- Explicit Concord-managed `RetryPolicy` with a required safe classifier,
+  hard per-operation maximum, body-replay gating, and a bounded
+  logical-origin rolling load budget. The runtime default remains no managed
+  retry policy.
 - Generated endpoint Rustdoc backed by one semantic documentation model, with
   named value inputs, flattened scope inputs, safe query/header names, route
   shape, human-readable deadlines, and only the terminals each endpoint
@@ -102,6 +106,10 @@
   authentication recovery. Successful metadata and request/page completion
   report started-attempt and policy-retry totals; pagination completion reports
   checked aggregate totals.
+- Managed policy retries now re-enter the ordinary hook, body reconstruction,
+  current-authentication preflight, limiter, private materialization,
+  response observation, and challenge/status lifecycle under one operation
+  deadline and completion.
 - Every generated public value mutation now uses
   `value(value) -> set_value(value)`. Absence-capable values retain
   `clear_value()`; values with declaration defaults retain `reset_value()`.
@@ -177,6 +185,9 @@
   nonempty data; the first excess produces one redacted terminal error, while
   bounded per-poll/per-turn work preserves executor fairness.
 - Authentication recovery permits at most one additional attempt.
+- Managed policy retry is bounded per operation and by default across each
+  logical origin; capacity or replayability suppression preserves the current
+  failure.
 - Limiter response observation is core-first and deadline-governed.
 - Pagination is sequential, finite, cycle-detecting, first-excess
   withholding, and all-or-error.

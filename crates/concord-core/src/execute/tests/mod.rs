@@ -1709,5 +1709,6 @@ mod cancellation;
 mod completion;
 mod laziness;
 mod ordering;
+mod retry;
 mod status;
 mod streaming;

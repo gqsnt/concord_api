@@ -94,11 +94,13 @@ The complete lifecycle position is documented in
   admission, materialization, and response observation. The enclosing request
   or page still produces one fixed completion event.
 - The initial attempt reports `AttemptInfo { index: 0, policy_retry_index: 0,
-  authentication_recovery: false }`. The single authentication replay reports
-  `{ index: 1, policy_retry_index: 0, authentication_recovery: true }`.
+  authentication_recovery: false }`. Authentication recovery increments the
+  current global attempt index, retains the number of policy retries already
+  started, and sets `authentication_recovery: true`.
 - A successful ordinary result reports one started attempt and zero policy
-  retries in `ExecutionMeta`; a recovered result reports two and zero.
-  Completion uses the same totals without emitting an intermediate event.
+  retries in `ExecutionMeta`. Policy retries and the one authentication
+  recovery contribute independently to the final checked totals. Completion
+  uses those same totals without emitting an intermediate event.
 - Authentication errors cross the public boundary only after reduction to safe
   categories and finite structural context.
 

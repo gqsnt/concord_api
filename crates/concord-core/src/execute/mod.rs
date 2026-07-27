@@ -26,6 +26,7 @@ use crate::response::{
     ApiResponse, DeclaredResponse, ExecutionMeta, ResponseBodySpec, ResponseBytesSelection,
     ResponseHead, ResponseInput, ResponseSelection, completion_outcome, execute_response,
 };
+use crate::retry::{RetryAttempt, RetryDecision, RetryFailure, RetryPolicy};
 
 #[doc(hidden)]
 impl<E> IntoFuture for Request<E>
@@ -207,8 +208,10 @@ where
     } = prepared;
     let mut final_status = None;
     let mut attempts_started = 1_u32;
-    let policy_retries = 0_u32;
+    let mut policy_retries = 0_u32;
     let mut recovered_authentication = false;
+    let mut authentication_recovery_used = false;
+    let retry_policy = core.retry_policy().cloned();
 
     let result = async {
         let mut attempt_info = AttemptInfo::INITIAL;
@@ -257,7 +260,7 @@ where
             let attempt_metadata = materialized_metadata
                 .clone()
                 .with_known_length(prepared_body.known_length());
-            let attempt = send_attempt(
+            let attempt = match send_attempt(
                 &core,
                 operation_id,
                 deadline,
@@ -269,114 +272,214 @@ where
                 &mut final_status,
                 context,
             )
-            .await?;
+            .await
+            {
+                Ok(attempt) => attempt,
+                Err(error) => {
+                    let failure = match error.category() {
+                        ErrorCategory::Connect => Some(RetryFailure::Connect),
+                        ErrorCategory::Transport => Some(RetryFailure::Transport),
+                        _ => None,
+                    };
+                    if let Some(failure) = failure {
+                        let decision = classify_retry(
+                            retry_policy.as_ref(),
+                            deadline,
+                            &head,
+                            context,
+                            attempt_info,
+                            policy_retries,
+                            failure,
+                        )?;
+                        if decision == RetryDecision::Retry
+                            && admit_policy_retry(
+                                retry_policy.as_ref(),
+                                &head,
+                                &prepared_body,
+                                &mut attempt_info,
+                                &mut attempts_started,
+                                &mut policy_retries,
+                            )?
+                        {
+                            prepared_auth = prepare_policy_retry(
+                                &core,
+                                operation_id,
+                                context,
+                                deadline,
+                                &head,
+                                &body_metadata,
+                                &mut prepared_body,
+                                attempt_info,
+                            )
+                            .await?;
+                            continue;
+                        }
+                    }
+                    return Err(error);
+                }
+            };
             let status = attempt.response.status();
 
-            let Some(challenge_index) = attempt.applied_auth.challenge_index(status) else {
-                break attempt.response;
-            };
+            if let Some(challenge_index) = attempt.applied_auth.challenge_index(status) {
+                let reusable = prepared_body.replayability() != Replayability::OneShot;
+                let can_recover = !authentication_recovery_used
+                    && reusable
+                    && attempt
+                        .applied_auth
+                        .challenge_can_recover(challenge_index)
+                        .map_err(|error| auth_api_error(&head, error))?;
+                if !can_recover {
+                    attempt
+                        .applied_auth
+                        .apply_terminal_challenge(challenge_index)
+                        .map_err(|error| auth_api_error(&head, error))?;
+                    let failure = core
+                        .application_http()
+                        .terminal_status_managed(
+                            head.endpoint_id().clone(),
+                            head.method().clone(),
+                            attempt.response,
+                            deadline.expires_at(),
+                        )
+                        .await;
+                    return Err(ApiError::authentication_rejected(failure));
+                }
 
-            let reusable = prepared_body.replayability() != Replayability::OneShot;
-            let can_recover = !attempt_info.authentication_recovery
-                && reusable
-                && attempt
-                    .applied_auth
-                    .challenge_can_recover(challenge_index)
-                    .map_err(|error| auth_api_error(&head, error))?;
-            if !can_recover {
-                attempt
-                    .applied_auth
-                    .apply_terminal_challenge(challenge_index)
-                    .map_err(|error| auth_api_error(&head, error))?;
-                let failure = core
-                    .application_http()
-                    .terminal_status_managed(
+                // A response selected for recovery is dropped without polling its body.
+                drop(attempt.response);
+                authentication_recovery_used = true;
+                let next_attempts_started = attempts_started
+                    .checked_add(1)
+                    .ok_or_else(|| internal_error(head.endpoint_id(), head.method()))?;
+                attempt_info = AttemptInfo {
+                    index: attempts_started,
+                    policy_retry_index: policy_retries,
+                    authentication_recovery: true,
+                };
+                attempts_started = next_attempts_started;
+                if let Err(error) = run_before_send(
+                    &core,
+                    operation_id,
+                    context,
+                    deadline,
+                    &head,
+                    &body_metadata,
+                    attempt_info,
+                )
+                .await
+                {
+                    let _ = attempt
+                        .applied_auth
+                        .apply_terminal_challenge(challenge_index);
+                    return Err(error);
+                }
+                if let Err(error) =
+                    prepared_body.reconstruct_for_next_attempt(core.request_body_limit())
+                {
+                    drop(error);
+                    let primary = ApiError::classified(
                         head.endpoint_id().clone(),
                         head.method().clone(),
-                        attempt.response,
-                        deadline.expires_at(),
-                    )
-                    .await;
-                return Err(ApiError::authentication_rejected(failure));
+                        ErrorCategory::RequestBody,
+                    );
+                    let _ = attempt
+                        .applied_auth
+                        .apply_terminal_challenge(challenge_index);
+                    return Err(primary);
+                }
+                if let Err(error) = check_deadline(deadline, head.endpoint_id(), head.method()) {
+                    let _ = attempt
+                        .applied_auth
+                        .apply_terminal_challenge(challenge_index);
+                    return Err(error);
+                }
+                if let Err(error) = run_auth(
+                    &core,
+                    deadline,
+                    &head,
+                    attempt
+                        .applied_auth
+                        .recover_attributed(challenge_index, core.provider_http(Some(deadline))),
+                )
+                .await
+                {
+                    let _ = attempt
+                        .applied_auth
+                        .apply_terminal_challenge(challenge_index);
+                    return Err(error);
+                }
+                prepared_auth = run_auth(
+                    &core,
+                    deadline,
+                    &head,
+                    attempt
+                        .applied_auth
+                        .preflight_current(core.provider_http(Some(deadline))),
+                )
+                .await?;
+                recovered_authentication = true;
+                continue;
             }
 
-            // A response selected for recovery is dropped without polling its body.
-            drop(attempt.response);
-            attempt_info = AttemptInfo::AUTHENTICATION_RECOVERY;
-            attempts_started = 2;
-            if let Err(error) = run_before_send(
-                &core,
-                operation_id,
+            let accepted = S::accepts_status(status);
+            check_deadline(deadline, head.endpoint_id(), head.method())?;
+            if accepted {
+                break attempt.response;
+            }
+
+            let failure = RetryFailure::RejectedStatus {
+                status,
+                headers: SanitizedHeaders::new(attempt.response.headers()),
+            };
+            let retry_decision = classify_retry(
+                retry_policy.as_ref(),
+                deadline,
+                &head,
                 context,
-                deadline,
-                &head,
-                &body_metadata,
                 attempt_info,
-            )
-            .await
+                policy_retries,
+                failure,
+            )?;
+            if retry_decision == RetryDecision::Retry
+                && admit_policy_retry(
+                    retry_policy.as_ref(),
+                    &head,
+                    &prepared_body,
+                    &mut attempt_info,
+                    &mut attempts_started,
+                    &mut policy_retries,
+                )?
             {
-                let _ = attempt
-                    .applied_auth
-                    .apply_terminal_challenge(challenge_index);
-                return Err(error);
+                // A rejected response selected for retry is dropped without
+                // polling its body.
+                drop(attempt.response);
+                prepared_auth = prepare_policy_retry(
+                    &core,
+                    operation_id,
+                    context,
+                    deadline,
+                    &head,
+                    &body_metadata,
+                    &mut prepared_body,
+                    attempt_info,
+                )
+                .await?;
+                continue;
             }
-            if let Err(error) =
-                prepared_body.reconstruct_for_next_attempt(core.request_body_limit())
-            {
-                drop(error);
-                let primary = ApiError::classified(
-                    head.endpoint_id().clone(),
-                    head.method().clone(),
-                    ErrorCategory::RequestBody,
-                );
-                let _ = attempt
-                    .applied_auth
-                    .apply_terminal_challenge(challenge_index);
-                return Err(primary);
-            }
-            if let Err(error) = run_auth(
-                &core,
-                deadline,
-                &head,
-                attempt
-                    .applied_auth
-                    .recover_attributed(challenge_index, core.provider_http(Some(deadline))),
-            )
-            .await
-            {
-                let _ = attempt
-                    .applied_auth
-                    .apply_terminal_challenge(challenge_index);
-                return Err(error);
-            }
-            prepared_auth = run_auth(
-                &core,
-                deadline,
-                &head,
-                attempt
-                    .applied_auth
-                    .preflight_current(core.provider_http(Some(deadline))),
-            )
-            .await?;
-            recovered_authentication = true;
-        };
 
-        let status = response.status();
-        let accepted = S::accepts_status(status);
-        check_deadline(deadline, head.endpoint_id(), head.method())?;
-        if !accepted {
             let failure = core
                 .application_http()
                 .terminal_status_managed(
                     head.endpoint_id().clone(),
                     head.method().clone(),
-                    response,
+                    attempt.response,
                     deadline.expires_at(),
                 )
                 .await;
             return Err(ApiError::from_http_response(failure));
-        }
+        };
 
+        let status = response.status();
         let version = response.version();
         let headers = response.headers().clone();
         let content_length = response.content_length();
@@ -447,6 +550,118 @@ where
         policy_retries,
         recovered_authentication,
     }
+}
+
+fn classify_retry(
+    policy: Option<&RetryPolicy>,
+    deadline: OperationDeadline,
+    head: &crate::request::PreparedHead,
+    context: ExecutionContext,
+    attempt: AttemptInfo,
+    policy_retries: u32,
+    failure: RetryFailure<'_>,
+) -> Result<RetryDecision, ApiError> {
+    let Some(policy) = policy else {
+        return Ok(RetryDecision::Stop);
+    };
+    check_deadline(deadline, head.endpoint_id(), head.method())?;
+    let decision = policy.classify(RetryAttempt::new(
+        head.endpoint(),
+        head.method(),
+        head.logical_url().host_str(),
+        context.page_index,
+        attempt,
+        policy_retries,
+        failure,
+    ));
+    check_deadline(deadline, head.endpoint_id(), head.method())?;
+    Ok(decision)
+}
+
+fn admit_policy_retry(
+    policy: Option<&RetryPolicy>,
+    head: &crate::request::PreparedHead,
+    prepared_body: &crate::request::PreparedBody,
+    attempt: &mut AttemptInfo,
+    attempts_started: &mut u32,
+    policy_retries: &mut u32,
+) -> Result<bool, ApiError> {
+    let Some(policy) = policy else {
+        return Ok(false);
+    };
+
+    // Retry authority is intentionally ordered: the per-operation maximum,
+    // body replayability, then shared budget admission.
+    if *policy_retries >= policy.max_retries_per_operation() {
+        return Ok(false);
+    }
+    if prepared_body.replayability() == Replayability::OneShot {
+        return Ok(false);
+    }
+
+    let next_policy_retries = policy_retries
+        .checked_add(1)
+        .ok_or_else(|| internal_error(head.endpoint_id(), head.method()))?;
+    let next_attempts_started = attempts_started
+        .checked_add(1)
+        .ok_or_else(|| internal_error(head.endpoint_id(), head.method()))?;
+    if !policy.reserve_retry(head.logical_url()) {
+        return Ok(false);
+    }
+
+    *attempt = AttemptInfo {
+        index: *attempts_started,
+        policy_retry_index: next_policy_retries,
+        authentication_recovery: false,
+    };
+    *attempts_started = next_attempts_started;
+    *policy_retries = next_policy_retries;
+    Ok(true)
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "retry preparation receives the exact bounded operation state"
+)]
+async fn prepare_policy_retry(
+    core: &ClientCore,
+    operation_id: OperationId,
+    context: ExecutionContext,
+    deadline: OperationDeadline,
+    head: &crate::request::PreparedHead,
+    body_metadata: &RequestBodyMetadata,
+    prepared_body: &mut crate::request::PreparedBody,
+    attempt: AttemptInfo,
+) -> Result<PreparedAuthPlan, ApiError> {
+    run_before_send(
+        core,
+        operation_id,
+        context,
+        deadline,
+        head,
+        body_metadata,
+        attempt,
+    )
+    .await?;
+    prepared_body
+        .reconstruct_for_next_attempt(core.request_body_limit())
+        .map_err(|error| {
+            drop(error);
+            ApiError::classified(
+                head.endpoint_id().clone(),
+                head.method().clone(),
+                ErrorCategory::RequestBody,
+            )
+        })?;
+    check_deadline(deadline, head.endpoint_id(), head.method())?;
+    let prepared_auth = run_auth(
+        core,
+        deadline,
+        head,
+        head.auth().preflight(core.provider_http(Some(deadline))),
+    )
+    .await?;
+    Ok(prepared_auth)
 }
 
 async fn complete_preparation_failure<E>(
@@ -653,6 +868,12 @@ async fn send_attempt(
         .request_ready(&request_event);
     check_deadline(deadline, head.endpoint_id(), head.method())?;
     finalized_auth.materialize(&mut request, head.endpoint_id(), head.method())?;
+    check_deadline(deadline, head.endpoint_id(), head.method())?;
+    if attempt.index == 0 {
+        if let Some(policy) = core.retry_policy() {
+            policy.record_initial_dispatch(head.logical_url());
+        }
+    }
 
     let response = deadline
         .run(core.application_http().execute(
@@ -806,6 +1027,10 @@ fn check_deadline(
 
 fn timeout_error(endpoint: &EndpointId, method: &Method) -> ApiError {
     ApiError::classified(endpoint.clone(), method.clone(), ErrorCategory::Timeout)
+}
+
+fn internal_error(endpoint: &EndpointId, method: &Method) -> ApiError {
+    ApiError::classified(endpoint.clone(), method.clone(), ErrorCategory::Internal)
 }
 
 #[cfg(test)]

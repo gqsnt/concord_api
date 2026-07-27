@@ -207,6 +207,15 @@ pub mod response {
     };
 }
 
+/// Concord-managed application retry policy and classifier contracts.
+pub mod retry {
+    pub use concord_core::contracts::{
+        MAX_POLICY_RETRIES_PER_OPERATION, RetryAttempt, RetryClassifier, RetryDecision,
+        RetryFailure, RetryPolicy, RetryPolicyBuildError, RetryPolicyBuildErrorKind,
+        RetryPolicyBuilder,
+    };
+}
+
 /// Immutable client-runtime configuration and safe operation identity.
 pub mod runtime {
     pub use concord_core::contracts::{OperationId, RuntimeConfigBuilder};

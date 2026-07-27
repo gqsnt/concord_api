@@ -1,7 +1,7 @@
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::time::Duration;
 
-use concord_core::contracts::RuntimeConfigBuilder;
+use concord_core::contracts::{RetryDecision, RetryPolicy, RuntimeConfigBuilder};
 
 fn finite_methods(
     builder: RuntimeConfigBuilder,
@@ -27,4 +27,18 @@ fn finite_methods(
 fn downstream_runtime_configuration_requires_nonzero_ordinary_limits() {
     let _: fn(RuntimeConfigBuilder, NonZeroUsize, NonZeroU32) -> RuntimeConfigBuilder =
         finite_methods;
+}
+
+#[test]
+fn downstream_runtime_configuration_selects_or_disables_managed_retry() {
+    fn retry_methods(builder: RuntimeConfigBuilder, policy: RetryPolicy) -> RuntimeConfigBuilder {
+        builder.retry_policy(policy).disable_retry_policy()
+    }
+
+    let _: fn(RuntimeConfigBuilder, RetryPolicy) -> RuntimeConfigBuilder = retry_methods;
+    let _ = RetryPolicy::builder()
+        .without_budget()
+        .classify_fn(|_| RetryDecision::Stop)
+        .build()
+        .expect("retry policy");
 }

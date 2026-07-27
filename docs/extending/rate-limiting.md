@@ -45,10 +45,10 @@ Concord attempt. It contains:
 - the immutable effective `RateLimitPlan`.
 
 The initial attempt is `{ index: 0, policy_retry_index: 0,
-authentication_recovery: false }`. The current authentication replay is
-`{ index: 1, policy_retry_index: 0, authentication_recovery: true }`. Use this
-bounded structure for correlation instead of inferring retry state from call
-counts.
+authentication_recovery: false }`. Policy retries increment both indices.
+Authentication recovery increments the global index, keeps the current policy
+retry index, and sets its flag. Use this bounded structure for correlation
+instead of inferring retry state from call counts.
 
 The plan contains applicable rules in declaration order. Each rule has its
 stable ID, ordered resolved key parts, positive cost, and finite windows.

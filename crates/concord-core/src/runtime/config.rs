@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use crate::hooks::{DebugLevel, RuntimeHooks, default_hooks};
 use crate::rate_limit::{MAX_RATE_LIMIT_KEY_BYTES, RateLimiter};
+use crate::retry::RetryPolicy;
 use crate::runtime::defaults::{
     DEFAULT_AUTH_FAILURE_COOLDOWN_SECONDS, DEFAULT_PAGINATION_IDENTITY_BYTES,
     DEFAULT_PAGINATION_MAX_ITEMS, DEFAULT_PAGINATION_MAX_PAGES, DEFAULT_PROVIDER_REQUEST_BYTES,
@@ -29,6 +30,7 @@ pub(crate) struct RuntimeConfig {
     pub(crate) rate_limit_cooldown_cap: Duration,
     pub(crate) rate_limit_key_limit: usize,
     pub(crate) rate_limiter: Arc<dyn RateLimiter>,
+    pub(crate) retry_policy: Option<RetryPolicy>,
     pub(crate) hooks: Arc<dyn RuntimeHooks>,
     pub(crate) debug: DebugLevel,
 }
@@ -70,6 +72,7 @@ impl RuntimeConfigBuilder {
                 rate_limit_cooldown_cap: Duration::from_secs(DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS),
                 rate_limit_key_limit,
                 rate_limiter,
+                retry_policy: None,
                 hooks: default_hooks(),
                 debug: DebugLevel::None,
             },
@@ -191,6 +194,20 @@ impl RuntimeConfigBuilder {
         self.config.rate_limit_key_limit = limiter.preparation_key_limit();
         self.config.rate_limiter = limiter;
         self.limiter_selection = LimiterSelection::Explicit;
+        self
+    }
+
+    /// Installs the explicit Concord-managed application retry policy.
+    #[must_use]
+    pub fn retry_policy(mut self, policy: RetryPolicy) -> Self {
+        self.config.retry_policy = Some(policy);
+        self
+    }
+
+    /// Disables Concord-managed application retry.
+    #[must_use]
+    pub fn disable_retry_policy(mut self) -> Self {
+        self.config.retry_policy = None;
         self
     }
 
@@ -316,6 +333,7 @@ mod tests {
             crate::rate_limit::DEFAULT_RATE_LIMIT_KEY_BYTES
         );
         assert_eq!(config.debug, DebugLevel::None);
+        assert!(config.retry_policy.is_none());
     }
 
     #[test]
@@ -447,5 +465,46 @@ mod tests {
         assert!(!Arc::ptr_eq(&config.hooks, &first));
         assert!(Arc::ptr_eq(&config.hooks, &second));
         assert_eq!(config.debug, DebugLevel::Headers);
+    }
+
+    #[test]
+    fn retry_policy_is_opt_in_replaceable_and_disableable() {
+        let first = RetryPolicy::builder()
+            .max_retries_per_operation(1)
+            .without_budget()
+            .classify_fn(|_| crate::retry::RetryDecision::Stop)
+            .build()
+            .expect("first retry policy");
+        let second = RetryPolicy::builder()
+            .max_retries_per_operation(3)
+            .without_budget()
+            .classify_fn(|_| crate::retry::RetryDecision::Stop)
+            .build()
+            .expect("second retry policy");
+
+        let configured = RuntimeConfigBuilder::new()
+            .retry_policy(first)
+            .retry_policy(second)
+            .resolve();
+        assert_eq!(
+            configured
+                .retry_policy
+                .as_ref()
+                .expect("retry policy")
+                .max_retries_per_operation(),
+            3
+        );
+
+        let disabled = RuntimeConfigBuilder::new()
+            .retry_policy(
+                RetryPolicy::builder()
+                    .without_budget()
+                    .classify_fn(|_| crate::retry::RetryDecision::Stop)
+                    .build()
+                    .expect("retry policy"),
+            )
+            .disable_retry_policy()
+            .resolve();
+        assert!(disabled.retry_policy.is_none());
     }
 }

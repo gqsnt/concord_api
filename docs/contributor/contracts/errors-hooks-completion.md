@@ -98,10 +98,12 @@ final status, and its own fixed outcome.
 - Completion runs after the result is fixed, outside that deadline, exactly
   once for every executor result that reaches delivery.
 - The initial attempt is `{ index: 0, policy_retry_index: 0,
-  authentication_recovery: false }`; current authentication recovery is
-  `{ index: 1, policy_retry_index: 0, authentication_recovery: true }`.
-- Ordinary successful metadata reports one attempt and zero policy retries;
-  authentication recovery reports two attempts and zero policy retries.
+  authentication_recovery: false }`. Policy retry increments both the global
+  index and policy-retry index. Authentication recovery increments the global
+  index, retains the current policy-retry index, and sets its flag.
+- Ordinary successful metadata reports one attempt and zero policy retries.
+  Final request/page and aggregate completion report checked totals for every
+  started policy retry and the independently bounded authentication recovery.
 - Cancellation while awaiting completion may prevent result delivery and does
   not roll back prior hook effects.
 - Streaming success completes as `StreamOpened`. Later stream-item failures do
