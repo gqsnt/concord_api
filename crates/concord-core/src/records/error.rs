@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt;
 
-/// A safe failure produced while opening or consuming a record stream.
+/// A safe failure produced while opening or decoding a record response.
 ///
 /// Built-in decoders discard parser-authored text and never attach record bytes,
 /// response headers, filenames, JSON values, or CSV fields as sources. A
@@ -63,7 +63,7 @@ impl fmt::Debug for RecordError {
 
 impl Error for RecordError {}
 
-/// Stable structural kinds of record-stream failure.
+/// Stable structural kinds of record-decoding failure.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RecordErrorKind {
@@ -77,7 +77,7 @@ pub enum RecordErrorKind {
     IncompleteRecord,
     /// The independent undecoded-record staging limit was exceeded.
     LimitExceeded,
-    /// The underlying bounded byte stream failed.
+    /// The underlying bounded response body or byte stream failed.
     Body,
     /// Concord could not classify an internal record failure more narrowly.
     Internal,

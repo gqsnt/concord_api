@@ -4,7 +4,6 @@ use std::num::NonZeroUsize;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use bytes::BytesMut;
 use futures_core::Stream;
 
 use crate::response::{
@@ -12,6 +11,7 @@ use crate::response::{
     ResponseMode, Streaming,
 };
 
+use super::driver::{RecordDriver, RecordStep};
 use super::{RecordDecoder, RecordError, RecordErrorKind};
 
 /// A streaming accepted-response specification decoded by `D`.
@@ -61,23 +61,20 @@ fn response_error(error: RecordError) -> ResponseBodyError {
 
 /// A lazy stream of incrementally framed typed records.
 ///
-/// Staging is bounded independently of the cumulative [`ByteStream`] limit. An
-/// append that would first exceed the decoder's bound is rejected without
-/// retaining its bytes, and the oversized record is not yielded. Body and
-/// decode failures after opening are stream items. Dropping this value drops
-/// the underlying byte stream and cancels native body consumption. `Debug`
-/// omits the byte stream, decoder state, and staged bytes and never formats
-/// records.
+/// Staging is bounded independently of the cumulative [`ByteStream`] limit.
+/// Large source chunks are retained separately and copied into decoder staging
+/// only as records make room. A logical record's first excess staging byte is
+/// rejected without being retained, and the oversized record is not yielded.
+/// Body and decode failures after opening are stream items. Dropping this value
+/// drops the underlying byte stream and cancels native body consumption.
+/// `Debug` omits the byte stream, decoder state, pending source bytes, and
+/// staged bytes and never formats records.
 pub struct RecordStream<D>
 where
     D: RecordDecoder,
 {
     body: Option<ByteStream>,
-    decoder: D,
-    buffer: BytesMut,
-    max_buffered_bytes: usize,
-    eof: bool,
-    done: bool,
+    driver: RecordDriver<D>,
 }
 
 impl<D> RecordStream<D>
@@ -87,11 +84,7 @@ where
     pub(crate) fn new(body: ByteStream, decoder: D, max_buffered_bytes: NonZeroUsize) -> Self {
         Self {
             body: Some(body),
-            decoder,
-            buffer: BytesMut::new(),
-            max_buffered_bytes: max_buffered_bytes.get(),
-            eof: false,
-            done: false,
+            driver: RecordDriver::new(decoder, max_buffered_bytes),
         }
     }
 
@@ -106,11 +99,9 @@ where
         }
     }
 
-    fn fail(&mut self, kind: RecordErrorKind) -> Poll<Option<Result<D::Record, RecordError>>> {
-        self.done = true;
-        self.buffer.clear();
+    fn fail(&mut self, error: RecordError) -> Poll<Option<Result<D::Record, RecordError>>> {
         self.body = None;
-        Poll::Ready(Some(Err(RecordError::new(kind))))
+        Poll::Ready(Some(Err(error)))
     }
 }
 
@@ -124,69 +115,43 @@ where
 
     fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
-        if this.done {
-            return Poll::Ready(None);
-        }
 
         loop {
-            let before = this.buffer.len();
-            let decoded = if this.eof {
-                this.decoder.decode_eof(&mut this.buffer)
-            } else {
-                this.decoder.decode(&mut this.buffer)
-            };
-            let after = this.buffer.len();
-            if after > before || matches!(&decoded, Ok(Some(_)) if after >= before) {
-                return this.fail(RecordErrorKind::Internal);
-            }
-            if this.buffer.len() > this.max_buffered_bytes {
-                return this.fail(RecordErrorKind::LimitExceeded);
-            }
-            match decoded {
-                Ok(Some(record)) => return Poll::Ready(Some(Ok(record))),
-                Err(error) => {
-                    this.done = true;
-                    this.buffer.clear();
-                    this.body = None;
-                    return Poll::Ready(Some(Err(error)));
-                }
-                Ok(None) if this.eof => {
-                    this.done = true;
-                    if this.buffer.is_empty() {
-                        return Poll::Ready(None);
+            if this.driver.needs_input() {
+                let Some(body) = this.body.as_mut() else {
+                    let error = this.driver.terminate(RecordErrorKind::Internal);
+                    return this.fail(error);
+                };
+                match Pin::new(body).poll_next(context) {
+                    Poll::Pending => return Poll::Pending,
+                    Poll::Ready(None) => {
+                        this.body = None;
+                        if let Err(error) = this.driver.finish_input() {
+                            return this.fail(error);
+                        }
                     }
-                    this.buffer.clear();
-                    return Poll::Ready(Some(Err(RecordError::new(
-                        RecordErrorKind::IncompleteRecord,
-                    ))));
+                    Poll::Ready(Some(Err(error))) => {
+                        drop(error);
+                        let error = this.driver.terminate(RecordErrorKind::Body);
+                        return this.fail(error);
+                    }
+                    Poll::Ready(Some(Ok(chunk))) => {
+                        if let Err(error) = this.driver.supply_input(chunk) {
+                            return this.fail(error);
+                        }
+                    }
                 }
-                Ok(None) if this.buffer.len() < before => continue,
-                Ok(None) => {}
+                continue;
             }
 
-            let Some(body) = this.body.as_mut() else {
-                this.eof = true;
-                continue;
-            };
-            match Pin::new(body).poll_next(context) {
-                Poll::Pending => return Poll::Pending,
-                Poll::Ready(None) => {
+            match this.driver.advance() {
+                Ok(RecordStep::Record(record)) => return Poll::Ready(Some(Ok(record))),
+                Ok(RecordStep::NeedInput) => {}
+                Ok(RecordStep::Done) => {
                     this.body = None;
-                    this.eof = true;
+                    return Poll::Ready(None);
                 }
-                Poll::Ready(Some(Err(error))) => {
-                    drop(error);
-                    return this.fail(RecordErrorKind::Body);
-                }
-                Poll::Ready(Some(Ok(chunk))) => {
-                    let Some(staged) = this.buffer.len().checked_add(chunk.len()) else {
-                        return this.fail(RecordErrorKind::LimitExceeded);
-                    };
-                    if staged > this.max_buffered_bytes {
-                        return this.fail(RecordErrorKind::LimitExceeded);
-                    }
-                    this.buffer.extend_from_slice(&chunk);
-                }
+                Err(error) => return this.fail(error),
             }
         }
     }
@@ -199,11 +164,8 @@ where
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("RecordStream")
-            .field("body", &"<byte stream omitted>")
-            .field("decoder", &"<record decoder omitted>")
-            .field("staging", &"<record bytes omitted>")
-            .field("eof", &self.eof)
-            .field("done", &self.done)
+            .field("body_open", &self.body.is_some())
+            .field("driver", &self.driver)
             .finish()
     }
 }
@@ -271,9 +233,9 @@ where
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("RecordBatches")
-            .field("stream", &"<record stream omitted>")
+            .field("stream", &self.stream)
             .field("batch_size", &self.size)
-            .field("pending", &"<records omitted>")
+            .field("pending_records", &self.pending.len())
             .field("done", &self.done)
             .finish()
     }
@@ -561,7 +523,7 @@ mod tests {
             .expect_err("decoder growth");
         assert_eq!(error.kind(), RecordErrorKind::Internal);
         assert_eq!(polls.load(Ordering::SeqCst), 0);
-        assert!(records.buffer.is_empty());
+        assert!(records.driver.staging_is_empty());
     }
 
     #[tokio::test]
@@ -605,7 +567,7 @@ mod tests {
             .expect_err("EOF decoder growth");
         assert_eq!(error.kind(), RecordErrorKind::Internal);
         assert_eq!(polls.load(Ordering::SeqCst), 1);
-        assert!(records.buffer.is_empty());
+        assert!(records.driver.staging_is_empty());
     }
 
     #[tokio::test]
@@ -626,8 +588,8 @@ mod tests {
             b"y"
         );
         assert_eq!(polls.load(Ordering::SeqCst), 1);
-        assert_eq!(calls.load(Ordering::SeqCst), 3);
-        assert!(records.buffer.is_empty());
+        assert_eq!(calls.load(Ordering::SeqCst), 4);
+        assert!(records.driver.staging_is_empty());
     }
 
     #[tokio::test]
@@ -699,6 +661,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn one_source_chunk_larger_than_staging_yields_all_small_records() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let mut records = stream(
+            [Ok(Bytes::from_static(b"a\nb\nc\nd\ne\nf\n"))],
+            &polls,
+            &dropped,
+            2,
+        );
+
+        for expected in [b"a", b"b", b"c", b"d", b"e", b"f"] {
+            assert_eq!(
+                next(&mut records).await.expect("record").expect("valid"),
+                expected
+            );
+        }
+        assert!(next(&mut records).await.is_none());
+        assert_eq!(polls.load(Ordering::SeqCst), 2);
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
     async fn contract_failure_is_terminal() {
         let polls = Arc::new(AtomicUsize::new(0));
         let dropped = Arc::new(AtomicBool::new(false));
@@ -733,7 +717,7 @@ mod tests {
 
         assert!(next(&mut records).await.expect("one error").is_err());
         assert!(records.body.is_none());
-        assert!(records.buffer.is_empty());
+        assert!(records.driver.staging_is_empty());
         assert!(dropped.load(Ordering::SeqCst));
     }
 

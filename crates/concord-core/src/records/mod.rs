@@ -1,6 +1,7 @@
 //! Incremental bounded record decoding over Concord's one byte-stream lifecycle.
 
 mod decoder;
+mod driver;
 mod error;
 mod stream;
 
