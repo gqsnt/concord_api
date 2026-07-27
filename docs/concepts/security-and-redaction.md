@@ -43,7 +43,7 @@ Different public values have different disclosure contracts:
 |---|---|---|
 | `EndpointDescription` | stable identity, route/body/response categories, timeout and capability flags | bound values, bodies, credentials, resolved/detailed rule keys, runtime |
 | `SafeRequestPlan` | final public method, logical URL, public headers, timeout/body shape | hooks, credentials, limiter effects, encoded body, native request |
-| `BeforeSend` | public head, operation/page/recovery IDs, body kind and known length | body bytes, private auth, native transport |
+| `BeforeSend` | public head, operation/page IDs, finite `AttemptInfo`, body kind and known length | body bytes, private auth, native transport |
 | `ResponseHeadEvent` | status and sanitized response headers | body and protected header values |
 | rate limiter request | safe logical URL plus complete resolved rate plan | credentials, body, native request |
 | rate observer input | sanitized response head plus resolved plan | response body and native response |

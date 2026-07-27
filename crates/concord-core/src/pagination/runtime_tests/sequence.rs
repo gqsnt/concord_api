@@ -39,11 +39,15 @@ async fn pagination_pages_use_the_declared_status_acceptance_policy() {
     assert_eq!(completion.len(), 1);
     assert_eq!(completion[0].final_status, Some(StatusCode::NOT_FOUND));
     assert_eq!(completion[0].outcome, CompletionOutcome::Success);
+    assert_eq!(completion[0].attempts_started, 1);
+    assert_eq!(completion[0].policy_retries, 0);
     let aggregate = hooks.aggregate.lock().expect("aggregate lock");
     assert_eq!(aggregate.len(), 1);
     assert_eq!(aggregate[0].pages_completed, 1);
     assert_eq!(aggregate[0].final_status, Some(StatusCode::NOT_FOUND));
     assert_eq!(aggregate[0].outcome, CompletionOutcome::Success);
+    assert_eq!(aggregate[0].attempts_started, 1);
+    assert_eq!(aggregate[0].policy_retries, 0);
 }
 
 #[tokio::test]
@@ -156,7 +160,11 @@ async fn page_lifecycle_is_sequential_correlated_and_limited_once_per_page() {
             .collect::<Vec<_>>(),
         [0, 1]
     );
-    assert!(before.iter().all(|record| record.recovery_index == 0));
+    assert!(
+        before
+            .iter()
+            .all(|record| record.attempt == INITIAL_ATTEMPT)
+    );
     assert_ne!(before[0].operation_id, before[1].operation_id);
     assert_eq!(before[0].parent_operation_id, before[1].parent_operation_id);
     assert!(before[0].parent_operation_id.is_some());
@@ -174,6 +182,8 @@ async fn page_lifecycle_is_sequential_correlated_and_limited_once_per_page() {
         assert!(!completion.recovered_authentication);
         assert_eq!(completion.final_status, Some(StatusCode::OK));
         assert_eq!(completion.outcome, CompletionOutcome::Success);
+        assert_eq!(completion.attempts_started, 1);
+        assert_eq!(completion.policy_retries, 0);
         assert!(completion.elapsed <= Duration::from_secs(30));
         assert!(!completion.safe.contains(FIRST_CURSOR));
         assert!(!completion.safe.contains(SECOND_CURSOR));
@@ -188,6 +198,8 @@ async fn page_lifecycle_is_sequential_correlated_and_limited_once_per_page() {
     assert!(!aggregate.recovered_authentication);
     assert_eq!(aggregate.final_status, Some(StatusCode::OK));
     assert_eq!(aggregate.outcome, CompletionOutcome::Success);
+    assert_eq!(aggregate.attempts_started, 2);
+    assert_eq!(aggregate.policy_retries, 0);
     assert!(aggregate.elapsed >= completion[0].elapsed);
 
     assert_eq!(

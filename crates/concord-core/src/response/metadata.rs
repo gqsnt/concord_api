@@ -10,6 +10,8 @@ pub struct ExecutionMeta {
     endpoint: EndpointId,
     method: Method,
     page_index: u32,
+    attempts_started: u32,
+    policy_retries: u32,
     recovered_authentication: bool,
 }
 
@@ -19,12 +21,16 @@ impl ExecutionMeta {
         endpoint: EndpointId,
         method: Method,
         page_index: u32,
+        attempts_started: u32,
+        policy_retries: u32,
         recovered_authentication: bool,
     ) -> Self {
         Self {
             endpoint,
             method,
             page_index,
+            attempts_started,
+            policy_retries,
             recovered_authentication,
         }
     }
@@ -54,6 +60,18 @@ impl ExecutionMeta {
     }
 
     #[must_use]
+    /// Returns the number of visible attempts whose before-send stage began.
+    pub const fn attempts_started(&self) -> u32 {
+        self.attempts_started
+    }
+
+    #[must_use]
+    /// Returns the number of policy retries started for this operation.
+    pub const fn policy_retries(&self) -> u32 {
+        self.policy_retries
+    }
+
+    #[must_use]
     /// Returns whether the result followed one authentication recovery.
     pub const fn recovered_authentication(&self) -> bool {
         self.recovered_authentication
@@ -67,6 +85,8 @@ impl fmt::Debug for ExecutionMeta {
             .field("endpoint", &self.endpoint)
             .field("method", &self.method)
             .field("page_index", &self.page_index)
+            .field("attempts_started", &self.attempts_started)
+            .field("policy_retries", &self.policy_retries)
             .field("recovered_authentication", &self.recovered_authentication)
             .finish()
     }
@@ -189,6 +209,8 @@ mod tests {
             ExecutionMeta::new(
                 EndpointId::from_static("metadata_api.value"),
                 Method::GET,
+                0,
+                1,
                 0,
                 false,
             ),

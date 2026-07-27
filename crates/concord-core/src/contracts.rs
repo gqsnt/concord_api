@@ -40,7 +40,7 @@ pub use crate::error::{
     PaginationErrorKind, RateLimitErrorKind, StatusBody, StatusBodyDecodeError, StatusBodyState,
 };
 pub use crate::hooks::{
-    BeforeSend, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel,
+    AttemptInfo, BeforeSend, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel,
     PaginationCompletionEvent, ResponseHeadEvent, RuntimeHooks,
 };
 pub use crate::http::provider::{

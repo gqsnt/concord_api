@@ -92,6 +92,11 @@ mod tests {
             safe_url: "https://example.test/get",
             host: Some("example.test"),
             page_index: 0,
+            attempt: concord_core::contracts::AttemptInfo {
+                index: 0,
+                policy_retry_index: 0,
+                authentication_recovery: false,
+            },
             plan: &plan,
             status: StatusCode::TOO_MANY_REQUESTS,
             headers: SanitizedHeaders::new(&headers),

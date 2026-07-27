@@ -4,7 +4,7 @@ use std::time::Duration;
 use http::{Method, StatusCode};
 
 use crate::error::RateLimitErrorKind;
-use crate::hooks::BoxFuture;
+use crate::hooks::{AttemptInfo, BoxFuture};
 use crate::redaction::SanitizedHeaders;
 
 use super::{RateLimitError, RateLimitPermit, RateLimitPlan};
@@ -25,6 +25,8 @@ pub struct RateLimitRequest<'a> {
     pub host: Option<&'a str>,
     /// Zero-based page index; direct endpoint execution uses zero.
     pub page_index: u32,
+    /// Structural identity of this visible managed attempt.
+    pub attempt: AttemptInfo,
     /// Canonical immutable effective plan.
     pub plan: &'a RateLimitPlan,
 }
@@ -121,6 +123,8 @@ pub struct RateLimitResponseHead<'a> {
     pub host: Option<&'a str>,
     /// Zero-based page index; direct endpoint execution uses zero.
     pub page_index: u32,
+    /// Structural identity of the attempt that produced this head.
+    pub attempt: AttemptInfo,
     /// Canonical immutable effective plan.
     pub plan: &'a RateLimitPlan,
     /// Final response status for this Concord attempt.
@@ -214,6 +218,7 @@ mod tests {
                 safe_url: "https://example.test/get",
                 host: Some("example.test"),
                 page_index: 0,
+                attempt: AttemptInfo::INITIAL,
                 plan: &empty,
             })
             .await
@@ -225,6 +230,7 @@ mod tests {
                 safe_url: "https://example.test/get",
                 host: Some("example.test"),
                 page_index: 0,
+                attempt: AttemptInfo::INITIAL,
                 plan: &empty,
             })
             .await

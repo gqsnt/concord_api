@@ -113,8 +113,8 @@ pub mod error {
 /// Sanitized lifecycle observation contracts and completion events.
 pub mod hooks {
     pub use concord_core::contracts::{
-        BeforeSend, BodyKind, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel,
-        PaginationCompletionEvent, ResponseHeadEvent, RuntimeHooks, SanitizedHeaderMap,
+        AttemptInfo, BeforeSend, BodyKind, BoxFuture, CompletionEvent, CompletionOutcome,
+        DebugLevel, PaginationCompletionEvent, ResponseHeadEvent, RuntimeHooks, SanitizedHeaderMap,
         SanitizedHeaderValue, SanitizedHeaders,
     };
 }

@@ -29,7 +29,7 @@ use crate::codec::{CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeCont
 use crate::endpoint::EndpointId;
 use crate::error::{ApiError, AuthErrorKind, ErrorCategory};
 use crate::hooks::{
-    BeforeSend, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel,
+    AttemptInfo, BeforeSend, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel,
     PaginationCompletionEvent, ResponseHeadEvent, RuntimeHooks,
 };
 use crate::http::HttpConfigBuilder;
@@ -52,6 +52,16 @@ const ENDPOINT: &str = "authentication_api.protected";
 const INITIAL: &str = "initial-auth-token-1148c7";
 const REFRESHED: &str = "refreshed-auth-token-709fe2";
 const NEWER: &str = "newer-auth-token-265f0a";
+const INITIAL_ATTEMPT: AttemptInfo = AttemptInfo {
+    index: 0,
+    policy_retry_index: 0,
+    authentication_recovery: false,
+};
+const AUTHENTICATION_RECOVERY_ATTEMPT: AttemptInfo = AttemptInfo {
+    index: 1,
+    policy_retry_index: 0,
+    authentication_recovery: true,
+};
 
 fn secret_string(value: impl AsRef<str>) -> SecretString {
     SecretString::try_new(value).expect("bounded test protected string")
@@ -627,12 +637,18 @@ struct HookRecord {
     operation_id: OperationId,
     parent_operation_id: Option<OperationId>,
     page_index: u32,
-    recovery_index: u8,
+    attempt: AttemptInfo,
     safe_url: String,
     known_body_length: Option<u64>,
 }
 
-type AuthResponseRecord = (OperationId, u8, StatusCode, Option<OperationId>, u32);
+type AuthResponseRecord = (
+    OperationId,
+    AttemptInfo,
+    StatusCode,
+    Option<OperationId>,
+    u32,
+);
 type AuthCompletionRecord = (
     OperationId,
     bool,
@@ -640,6 +656,8 @@ type AuthCompletionRecord = (
     Option<OperationId>,
     u32,
     CompletionOutcome,
+    u32,
+    u32,
 );
 type AuthPaginationRecord = (
     OperationId,
@@ -648,6 +666,8 @@ type AuthPaginationRecord = (
     bool,
     Option<StatusCode>,
     CompletionOutcome,
+    u32,
+    u32,
 );
 
 #[derive(Default)]
@@ -689,11 +709,12 @@ impl RuntimeHooks for AuthHooks {
                 operation_id: context.operation_id,
                 parent_operation_id: context.parent_operation_id,
                 page_index: context.page_index,
-                recovery_index: context.recovery_index,
+                attempt: context.attempt,
                 safe_url: context.safe_url.to_owned(),
                 known_body_length: context.known_body_length,
             });
-        let veto = context.recovery_index == 1 && self.veto_recovery.load(Ordering::SeqCst);
+        let veto =
+            context.attempt.authentication_recovery && self.veto_recovery.load(Ordering::SeqCst);
         Box::pin(async move {
             if veto {
                 Err(crate::error::HookError::new("recovery veto"))
@@ -709,7 +730,7 @@ impl RuntimeHooks for AuthHooks {
     ) -> BoxFuture<'a, Result<(), crate::error::HookError>> {
         self.response.lock().expect("response records").push((
             context.operation_id,
-            context.recovery_index,
+            context.attempt,
             context.status,
             context.parent_operation_id,
             context.page_index,
@@ -729,7 +750,7 @@ impl RuntimeHooks for AuthHooks {
             self.observed_ready_during_response_hook
                 .store(true, Ordering::SeqCst);
         }
-        if context.recovery_index == 0
+        if !context.attempt.authentication_recovery
             && self.replace_on_first_response.swap(false, Ordering::SeqCst)
         {
             selector
@@ -748,6 +769,8 @@ impl RuntimeHooks for AuthHooks {
             context.parent_operation_id,
             context.page_index,
             context.outcome,
+            context.attempts_started,
+            context.policy_retries,
         ));
         Box::pin(async {})
     }
@@ -763,6 +786,8 @@ impl RuntimeHooks for AuthHooks {
             context.recovered_authentication,
             context.final_status,
             context.outcome,
+            context.attempts_started,
+            context.policy_retries,
         ));
         Box::pin(async {})
     }
@@ -896,12 +921,14 @@ type CapturedAuthRule = (String, Vec<(String, String)>, u32, Vec<(u32, Duration)
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct CapturedAuthPlan {
     page_index: u32,
+    attempt: AttemptInfo,
     rules: Vec<CapturedAuthRule>,
 }
 
 fn capture_auth_plan(request: &RateLimitRequest<'_>) -> CapturedAuthPlan {
     CapturedAuthPlan {
         page_index: request.page_index,
+        attempt: request.attempt,
         rules: request
             .plan
             .rules()

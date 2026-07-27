@@ -9,7 +9,8 @@ mod events;
 pub use crate::body::BodyKind;
 pub(crate) use debug::DebugDispatcher;
 pub use events::{
-    BeforeSend, CompletionEvent, CompletionOutcome, PaginationCompletionEvent, ResponseHeadEvent,
+    AttemptInfo, BeforeSend, CompletionEvent, CompletionOutcome, PaginationCompletionEvent,
+    ResponseHeadEvent,
 };
 
 use crate::error::HookError;
@@ -164,7 +165,7 @@ mod tests {
             method,
             safe_url: "https://hooks.example.test/health",
             page_index: 0,
-            recovery_index: 0,
+            attempt: AttemptInfo::INITIAL,
             headers: SanitizedHeaders::new(headers),
             body_kind: BodyKind::Empty,
             known_body_length: Some(0),
@@ -197,7 +198,7 @@ mod tests {
                 method: &method,
                 safe_url: "https://hooks.example.test/health",
                 page_index: 0,
-                recovery_index: 0,
+                attempt: AttemptInfo::INITIAL,
                 status: StatusCode::NO_CONTENT,
                 headers: SanitizedHeaders::new(&headers),
             })
@@ -211,6 +212,8 @@ mod tests {
                 method: &method,
                 safe_url: "https://hooks.example.test/health",
                 page_index: 0,
+                attempts_started: 1,
+                policy_retries: 0,
                 recovered_authentication: false,
                 elapsed: std::time::Duration::ZERO,
                 final_status: Some(StatusCode::NO_CONTENT),
@@ -224,6 +227,8 @@ mod tests {
                 method: &method,
                 pages_completed: 0,
                 items_collected: 0,
+                attempts_started: 0,
+                policy_retries: 0,
                 recovered_authentication: false,
                 elapsed: std::time::Duration::ZERO,
                 final_status: None,
@@ -245,6 +250,8 @@ mod tests {
             method: &method,
             pages_completed: 3,
             items_collected: 7,
+            attempts_started: 3,
+            policy_retries: 0,
             recovered_authentication: false,
             elapsed: std::time::Duration::from_millis(4),
             final_status: Some(StatusCode::OK),

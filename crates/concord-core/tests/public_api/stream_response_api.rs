@@ -18,6 +18,11 @@ fn accessors(response: &ApiResponse<ByteStream>) -> &ExecutionMeta {
     let _: Version = response.version();
     let _: &HeaderMap = response.headers();
     let _: &ByteStream = response.value();
+    let _: (u32, u32, bool) = (
+        response.metadata().attempts_started(),
+        response.metadata().policy_retries(),
+        response.metadata().recovered_authentication(),
+    );
     response.metadata()
 }
 

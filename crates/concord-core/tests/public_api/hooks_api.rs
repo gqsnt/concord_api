@@ -1,32 +1,52 @@
 use concord_core::contracts::{
-    BeforeSend, BoxFuture, CompletionEvent, HookError, PaginationCompletionEvent,
+    AttemptInfo, BeforeSend, BoxFuture, CompletionEvent, HookError, PaginationCompletionEvent,
     ResponseHeadEvent, RuntimeHooks,
 };
 
 struct PublicHooks;
 
 impl RuntimeHooks for PublicHooks {
-    fn before_send<'a>(&'a self, _context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
+    fn before_send<'a>(&'a self, context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
+        inspect_attempt(context.attempt);
         Box::pin(async { Ok(()) })
     }
 
     fn on_response_head<'a>(
         &'a self,
-        _context: ResponseHeadEvent<'a>,
+        context: ResponseHeadEvent<'a>,
     ) -> BoxFuture<'a, Result<(), HookError>> {
+        inspect_attempt(context.attempt);
         Box::pin(async { Ok(()) })
     }
 
-    fn on_complete<'a>(&'a self, _context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
+    fn on_complete<'a>(&'a self, context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
+        let _: (u32, u32, bool) = (
+            context.attempts_started,
+            context.policy_retries,
+            context.recovered_authentication,
+        );
         Box::pin(async {})
     }
 
     fn on_pagination_complete<'a>(
         &'a self,
-        _context: PaginationCompletionEvent<'a>,
+        context: PaginationCompletionEvent<'a>,
     ) -> BoxFuture<'a, ()> {
+        let _: (u32, u32, bool) = (
+            context.attempts_started,
+            context.policy_retries,
+            context.recovered_authentication,
+        );
         Box::pin(async {})
     }
+}
+
+fn inspect_attempt(attempt: AttemptInfo) {
+    let _: (u32, u32, bool) = (
+        attempt.index,
+        attempt.policy_retry_index,
+        attempt.authentication_recovery,
+    );
 }
 
 fn assert_send_sync_static<T: Send + Sync + 'static>() {}

@@ -509,6 +509,7 @@ impl RateLimiter for ExtensionLimiter {
     ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
         EXTENSION_LIMITER_ACQUIRES.fetch_add(1, Ordering::SeqCst);
         let _bounded_rule_count = request.plan.rules().len();
+        let _attempt = request.attempt;
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 
@@ -518,6 +519,7 @@ impl RateLimiter for ExtensionLimiter {
     ) -> BoxFuture<'a, Result<(), RateLimitError>> {
         EXTENSION_LIMITER_OBSERVATIONS.fetch_add(1, Ordering::SeqCst);
         let _status = response.status;
+        let _attempt = response.request.attempt;
         Box::pin(async { Ok(()) })
     }
 }
@@ -527,6 +529,7 @@ pub struct ExtensionObserver;
 
 impl RateLimitObserver for ExtensionObserver {
     fn observe(&self, response: &RateLimitResponseHead<'_>) -> Option<Cooldown> {
+        let _attempt = response.attempt;
         (response.status == StatusCode::TOO_MANY_REQUESTS).then_some(Cooldown {
             duration: Duration::from_secs(1),
             scope: CooldownScope::CurrentBuckets,
@@ -537,28 +540,32 @@ impl RateLimitObserver for ExtensionObserver {
 pub struct ExtensionHooks;
 
 impl RuntimeHooks for ExtensionHooks {
-    fn before_send<'a>(&'a self, _context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
+    fn before_send<'a>(&'a self, context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
         EXTENSION_HOOK_BEFORE.fetch_add(1, Ordering::SeqCst);
+        let _attempt = context.attempt;
         Box::pin(async { Ok(()) })
     }
 
     fn on_response_head<'a>(
         &'a self,
-        _context: ResponseHeadEvent<'a>,
+        context: ResponseHeadEvent<'a>,
     ) -> BoxFuture<'a, Result<(), HookError>> {
         EXTENSION_HOOK_RESPONSE.fetch_add(1, Ordering::SeqCst);
+        let _attempt = context.attempt;
         Box::pin(async { Ok(()) })
     }
 
-    fn on_complete<'a>(&'a self, _context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
+    fn on_complete<'a>(&'a self, context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
         EXTENSION_HOOK_COMPLETION.fetch_add(1, Ordering::SeqCst);
+        let _attempt_totals = (context.attempts_started, context.policy_retries);
         Box::pin(async {})
     }
 
     fn on_pagination_complete<'a>(
         &'a self,
-        _context: PaginationCompletionEvent<'a>,
+        context: PaginationCompletionEvent<'a>,
     ) -> BoxFuture<'a, ()> {
+        let _attempt_totals = (context.attempts_started, context.policy_retries);
         Box::pin(async {})
     }
 }

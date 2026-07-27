@@ -37,6 +37,8 @@ where
 
         let mut pages_completed = 0_u32;
         let mut items_collected = 0_usize;
+        let mut attempts_started = 0_u32;
+        let mut policy_retries = 0_u32;
         let mut recovered_authentication = false;
         let mut final_status = None;
 
@@ -67,6 +69,8 @@ where
                         identity_limit,
                         &mut pages_completed,
                         &mut items_collected,
+                        &mut attempts_started,
+                        &mut policy_retries,
                         &mut recovered_authentication,
                         &mut final_status,
                     )
@@ -87,6 +91,8 @@ where
             method: meta.method(),
             pages_completed,
             items_collected,
+            attempts_started,
+            policy_retries,
             recovered_authentication,
             elapsed,
             final_status,
@@ -115,6 +121,8 @@ async fn run_pages<E>(
     identity_limit: usize,
     pages_completed: &mut u32,
     items_collected: &mut usize,
+    attempts_started: &mut u32,
+    policy_retries: &mut u32,
     recovered_authentication: &mut bool,
     final_status: &mut Option<http::StatusCode>,
 ) -> PaginationResult<E>
@@ -164,6 +172,14 @@ where
         let executed =
             crate::execute::execute_pagination_page(page, aggregate_operation_id, page_index)
                 .await?;
+        let next_attempts_started = (*attempts_started)
+            .checked_add(executed.attempts_started)
+            .ok_or_else(|| pagination_kind_error(&meta, PaginationErrorKind::Overflow))?;
+        let next_policy_retries = (*policy_retries)
+            .checked_add(executed.policy_retries)
+            .ok_or_else(|| pagination_kind_error(&meta, PaginationErrorKind::Overflow))?;
+        *attempts_started = next_attempts_started;
+        *policy_retries = next_policy_retries;
         *recovered_authentication |= executed.recovered_authentication;
         if executed.final_status.is_some() {
             *final_status = executed.final_status;

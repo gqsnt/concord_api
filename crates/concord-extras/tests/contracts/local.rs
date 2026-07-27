@@ -5,7 +5,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 
-use concord_core::contracts::{HeaderMap, Method, SanitizedHeaders};
+use concord_core::contracts::{AttemptInfo, HeaderMap, Method, SanitizedHeaders};
 use concord_core::rate_limit::{
     Cooldown, CooldownScope, RateLimitId, RateLimitKey, RateLimitObserver, RateLimitPlan,
     RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimitRule, RateLimitWindow,
@@ -51,6 +51,11 @@ async fn downstream_local_limiter_uses_public_contracts_and_core_cooldown_cap() 
         safe_url: "https://example.test/limited",
         host: Some("example.test"),
         page_index: 0,
+        attempt: AttemptInfo {
+            index: 0,
+            policy_retry_index: 0,
+            authentication_recovery: false,
+        },
         plan: &plan,
     };
     let headers = HeaderMap::new();

@@ -33,20 +33,24 @@ impl DebugDispatcher {
         match self.level {
             DebugLevel::None => {}
             DebugLevel::Basic => self.emit(format_args!(
-                "request-ready endpoint={} method={} url={} page={} recovery={}",
+                "request-ready endpoint={} method={} url={} page={} attempt={} policy-retry={} authentication-recovery={}",
                 event.endpoint,
                 event.method,
                 event.safe_url,
                 event.page_index,
-                event.recovery_index
+                event.attempt.index,
+                event.attempt.policy_retry_index,
+                event.attempt.authentication_recovery
             )),
             DebugLevel::Headers => self.emit(format_args!(
-                "request-ready endpoint={} method={} url={} page={} recovery={} headers={:?}",
+                "request-ready endpoint={} method={} url={} page={} attempt={} policy-retry={} authentication-recovery={} headers={:?}",
                 event.endpoint,
                 event.method,
                 event.safe_url,
                 event.page_index,
-                event.recovery_index,
+                event.attempt.index,
+                event.attempt.policy_retry_index,
+                event.attempt.authentication_recovery,
                 event.headers
             )),
         }
@@ -56,22 +60,26 @@ impl DebugDispatcher {
         match self.level {
             DebugLevel::None => {}
             DebugLevel::Basic => self.emit(format_args!(
-                "response-head endpoint={} method={} url={} status={} page={} recovery={}",
+                "response-head endpoint={} method={} url={} status={} page={} attempt={} policy-retry={} authentication-recovery={}",
                 event.endpoint,
                 event.method,
                 event.safe_url,
                 event.status,
                 event.page_index,
-                event.recovery_index
+                event.attempt.index,
+                event.attempt.policy_retry_index,
+                event.attempt.authentication_recovery
             )),
             DebugLevel::Headers => self.emit(format_args!(
-                "response-head endpoint={} method={} url={} status={} page={} recovery={} headers={:?}",
+                "response-head endpoint={} method={} url={} status={} page={} attempt={} policy-retry={} authentication-recovery={} headers={:?}",
                 event.endpoint,
                 event.method,
                 event.safe_url,
                 event.status,
                 event.page_index,
-                event.recovery_index,
+                event.attempt.index,
+                event.attempt.policy_retry_index,
+                event.attempt.authentication_recovery,
                 event.headers
             )),
         }
@@ -80,11 +88,14 @@ impl DebugDispatcher {
     pub(crate) fn completion(&self, event: &CompletionEvent<'_>) {
         if self.level != DebugLevel::None {
             self.emit(format_args!(
-                "completion endpoint={} method={} url={} page={} status={:?} outcome={:?} elapsed={:?}",
+                "completion endpoint={} method={} url={} page={} attempts={} policy-retries={} recovered-authentication={} status={:?} outcome={:?} elapsed={:?}",
                 event.endpoint,
                 event.method,
                 event.safe_url,
                 event.page_index,
+                event.attempts_started,
+                event.policy_retries,
+                event.recovered_authentication,
                 event.final_status,
                 event.outcome,
                 event.elapsed
@@ -95,11 +106,14 @@ impl DebugDispatcher {
     pub(crate) fn pagination_completion(&self, event: &PaginationCompletionEvent<'_>) {
         if self.level != DebugLevel::None {
             self.emit(format_args!(
-                "pagination-completion endpoint={} method={} pages={} items={} status={:?} outcome={:?} elapsed={:?}",
+                "pagination-completion endpoint={} method={} pages={} items={} attempts={} policy-retries={} recovered-authentication={} status={:?} outcome={:?} elapsed={:?}",
                 event.endpoint,
                 event.method,
                 event.pages_completed,
                 event.items_collected,
+                event.attempts_started,
+                event.policy_retries,
+                event.recovered_authentication,
                 event.final_status,
                 event.outcome,
                 event.elapsed
@@ -130,7 +144,7 @@ mod tests {
     use http::{HeaderMap, Method, StatusCode};
 
     use super::*;
-    use crate::hooks::{BodyKind, CompletionOutcome};
+    use crate::hooks::{AttemptInfo, BodyKind, CompletionOutcome};
     use crate::operation::OperationId;
     use crate::redaction::SanitizedHeaders;
 
@@ -159,7 +173,7 @@ mod tests {
             method: &method,
             safe_url: "https://debug.example.test/health",
             page_index: 0,
-            recovery_index: 0,
+            attempt: AttemptInfo::INITIAL,
             headers: SanitizedHeaders::new(&headers),
             body_kind: BodyKind::Empty,
             known_body_length: Some(0),
@@ -171,7 +185,7 @@ mod tests {
             method: &method,
             safe_url: before.safe_url,
             page_index: 0,
-            recovery_index: 0,
+            attempt: AttemptInfo::INITIAL,
             status: StatusCode::OK,
             headers: SanitizedHeaders::new(&headers),
         };
@@ -182,6 +196,8 @@ mod tests {
             method: &method,
             safe_url: before.safe_url,
             page_index: 0,
+            attempts_started: 1,
+            policy_retries: 0,
             recovered_authentication: false,
             elapsed: Duration::from_millis(2),
             final_status: Some(StatusCode::OK),
@@ -203,6 +219,11 @@ mod tests {
             let joined = output.join("\n");
             assert!(!joined.contains(SECRET));
             assert!(!joined.contains("body-sentinel"));
+            if level != DebugLevel::None {
+                assert!(joined.contains("attempt=0"));
+                assert!(joined.contains("policy-retr"));
+                assert!(joined.contains("recovered-authentication=false"));
+            }
             if level == DebugLevel::Headers {
                 assert!(joined.contains("Redacted"));
                 assert!(joined.contains("visible"));

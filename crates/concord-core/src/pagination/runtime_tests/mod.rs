@@ -24,7 +24,7 @@ use crate::client::ClientCore;
 use crate::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext};
 use crate::error::{ApiError, ErrorCategory, HookError, PaginationErrorKind, RateLimitErrorKind};
 use crate::hooks::{
-    BeforeSend, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel,
+    AttemptInfo, BeforeSend, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel,
     PaginationCompletionEvent, ResponseHeadEvent, RuntimeHooks,
 };
 use crate::http::HttpConfigBuilder;
@@ -40,6 +40,11 @@ use crate::response::{
 use crate::runtime::RuntimeConfigBuilder;
 
 const ENDPOINT: &str = "pagination_runtime_api.items.list";
+const INITIAL_ATTEMPT: AttemptInfo = AttemptInfo {
+    index: 0,
+    policy_retry_index: 0,
+    authentication_recovery: false,
+};
 
 struct PageCodec;
 
@@ -483,7 +488,7 @@ struct BeforeRecord {
     operation_id: OperationId,
     parent_operation_id: Option<OperationId>,
     page_index: u32,
-    recovery_index: u8,
+    attempt: AttemptInfo,
     safe: String,
 }
 
@@ -495,6 +500,8 @@ struct CompletionRecord {
     recovered_authentication: bool,
     final_status: Option<StatusCode>,
     outcome: CompletionOutcome,
+    attempts_started: u32,
+    policy_retries: u32,
     elapsed: Duration,
     safe: String,
 }
@@ -507,6 +514,8 @@ struct AggregateRecord {
     recovered_authentication: bool,
     final_status: Option<StatusCode>,
     outcome: CompletionOutcome,
+    attempts_started: u32,
+    policy_retries: u32,
     elapsed: Duration,
 }
 
@@ -514,7 +523,7 @@ type ResponseRecord = (
     OperationId,
     Option<OperationId>,
     u32,
-    u8,
+    AttemptInfo,
     StatusCode,
     String,
 );
@@ -554,7 +563,7 @@ impl RuntimeHooks for PaginationProbe {
             operation_id: context.operation_id,
             parent_operation_id: context.parent_operation_id,
             page_index: context.page_index,
-            recovery_index: context.recovery_index,
+            attempt: context.attempt,
             safe: format!("{} {:?}", context.safe_url, context.headers),
         });
         Box::pin(async { Ok(()) })
@@ -568,7 +577,7 @@ impl RuntimeHooks for PaginationProbe {
             context.operation_id,
             context.parent_operation_id,
             context.page_index,
-            context.recovery_index,
+            context.attempt,
             context.status,
             format!("{} {:?}", context.safe_url, context.headers),
         ));
@@ -586,6 +595,8 @@ impl RuntimeHooks for PaginationProbe {
                 recovered_authentication: context.recovered_authentication,
                 final_status: context.final_status,
                 outcome: context.outcome,
+                attempts_started: context.attempts_started,
+                policy_retries: context.policy_retries,
                 elapsed: context.elapsed,
                 safe: context.safe_url.to_owned(),
             });
@@ -613,6 +624,8 @@ impl RuntimeHooks for PaginationProbe {
                 recovered_authentication: context.recovered_authentication,
                 final_status: context.final_status,
                 outcome: context.outcome,
+                attempts_started: context.attempts_started,
+                policy_retries: context.policy_retries,
                 elapsed: context.elapsed,
             });
         let gate = self.aggregate_gate.clone();

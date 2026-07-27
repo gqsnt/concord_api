@@ -48,9 +48,17 @@ event.
 ## Event identity and redaction
 
 Events expose stable endpoint and operation IDs, method, credential-sanitized
-logical URL, page and recovery indices where relevant, structural body facts,
-status, elapsed duration, and a bounded outcome category. Use these stable
-fields rather than parsing generated type names or error strings.
+logical URL, page index, `AttemptInfo` where relevant, structural body facts,
+status, elapsed duration, and a bounded outcome category. `AttemptInfo`
+separates the zero-based visible-attempt index, managed policy-retry index, and
+authentication-recovery flag. The initial attempt is `{0, 0, false}` and the
+current authentication replay is `{1, 0, true}`.
+
+Direct/page completion events report `attempts_started`, `policy_retries`, and
+the authentication-recovery summary once the result is fixed. Aggregate
+pagination completion reports checked sums of the page totals. These counters
+are correlation facts, not a license to use operation or URL values as metric
+labels.
 
 Request and response headers use `SanitizedHeaders`; private authentication
 placements are absent. The logical URL is also credential-sanitized.
@@ -123,6 +131,8 @@ Use deterministic gates and paused time instead of sleeps. Verify:
   decoding;
 - veto before transport and response-hook rejection after a received head;
 - one completion for success and every stable error category;
+- exact attempt identity for initial and authentication-recovery callbacks,
+  with one completion carrying two attempts and zero policy retries;
 - page and aggregate pagination completion;
 - stream-open completion without a second event on stream failure or drop;
 - cancellation drops pending futures and does not claim rollback;

@@ -34,8 +34,12 @@ return a safe `HookError` to stop the attempt.
 
 The event contains the operation and optional parent operation IDs, stable
 endpoint ID, application method, credential-sanitized logical URL, zero-based
-page and recovery indexes, sanitized public headers, body category, and known
-body length when available.
+page index, `AttemptInfo`, sanitized public headers, body category, and known
+body length when available. `AttemptInfo::index` identifies each visible
+attempt, `policy_retry_index` identifies managed policy retries, and
+`authentication_recovery` marks the one authentication-recovery replay. Before
+managed policy retry is configured, an initial attempt is `{0, 0, false}` and
+authentication recovery is `{1, 0, true}`.
 
 Use it for admission policy, correlation, and structural telemetry. It cannot
 inspect a request body value or authenticated native request. Public URLs and
@@ -47,8 +51,8 @@ policy remains the application's responsibility.
 `on_response_head` runs for every final response head after the core-selected
 limiter has observed it and before authentication challenge, status
 classification, or response-body handling. It receives safe operation
-identity, method, sanitized URL and headers, page/recovery indexes, and final
-status.
+identity, method, sanitized URL and headers, page index, the same
+`AttemptInfo`, and final status.
 
 Returning `HookError` rejects the operation. Because this callback precedes
 status and body work, its failure takes precedence over a received non-success
@@ -62,8 +66,11 @@ returning their futures cannot be preempted, so keep that work small.
 
 `on_complete` runs exactly once for each direct request or pagination page
 after Concord has fixed success or failure. It receives safe identity and
-timing data, final status when available, whether authentication recovered,
-and a structural `CompletionOutcome`. It cannot replace the result.
+timing data, final status when available, `attempts_started`,
+`policy_retries`, whether authentication recovered, and a structural
+`CompletionOutcome`. It cannot replace the result. One ordinary result reports
+one attempt and zero policy retries; authentication recovery reports two
+attempts and zero policy retries.
 
 Completion is outside the operation deadline and is awaited before that fixed
 result is delivered. It is not detached background telemetry. A completion
@@ -72,8 +79,9 @@ application-owned timeout, bounded queue, or loss policy when exporting
 telemetry.
 
 `on_pagination_complete` similarly observes the fixed aggregate result with
-page and item counts after page-level completions. Use the parent operation ID
-to correlate page attempts with the aggregate without placing raw cursor or
+page and item counts plus the checked sums of page-level attempt and policy
+retry totals after page-level completions. Use the parent operation ID to
+correlate page attempts with the aggregate without placing raw cursor or
 credential values into metrics.
 
 Cancellation drops in-progress hook futures and prevents later Concord work,

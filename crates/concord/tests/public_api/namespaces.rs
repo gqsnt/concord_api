@@ -29,6 +29,7 @@ fn semantic_domains_are_available_without_implementation_crate_imports() {
         public_type::<endpoint::ResponseRequest<()>>(),
         public_type::<error::ApiError>(),
         public_type::<error::ClientInputKind>(),
+        public_type::<hooks::AttemptInfo>(),
         public_type::<hooks::DebugLevel>(),
         public_type::<http::Method>(),
         public_type::<pagination::OffsetPagination>(),

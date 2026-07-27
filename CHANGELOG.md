@@ -97,6 +97,11 @@
   `ApiResponse<Bytes>`, and works for generated, explicit, and runtime
   endpoints. Removing the old raw-terminal bridge raises the generated-contract
   version to 28.
+- Lifecycle hooks, limiter callbacks, and built-in diagnostics now use
+  `AttemptInfo` to distinguish visible-attempt order, policy-retry order, and
+  authentication recovery. Successful metadata and request/page completion
+  report started-attempt and policy-retry totals; pagination completion reports
+  checked aggregate totals.
 - Every generated public value mutation now uses
   `value(value) -> set_value(value)`. Absence-capable values retain
   `clear_value()`; values with declaration defaults retain `reset_value()`.

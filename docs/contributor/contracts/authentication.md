@@ -93,6 +93,12 @@ The complete lifecycle position is documented in
 - Every replay is another visible attempt: it passes attempt hooks, limiter
   admission, materialization, and response observation. The enclosing request
   or page still produces one fixed completion event.
+- The initial attempt reports `AttemptInfo { index: 0, policy_retry_index: 0,
+  authentication_recovery: false }`. The single authentication replay reports
+  `{ index: 1, policy_retry_index: 0, authentication_recovery: true }`.
+- A successful ordinary result reports one started attempt and zero policy
+  retries in `ExecutionMeta`; a recovered result reports two and zero.
+  Completion uses the same totals without emitting an intermediate event.
 - Authentication errors cross the public boundary only after reduction to safe
   categories and finite structural context.
 
@@ -165,7 +171,8 @@ Important terminal cases include:
 
 Each case must retain the normal lifecycle ordering and emit at most one
 completion event for the enclosing request or page, not one per recovery
-attempt.
+attempt. Pagination aggregate completion sums the page attempt and policy
+retry totals with checked arithmetic.
 
 ## Change hazards
 

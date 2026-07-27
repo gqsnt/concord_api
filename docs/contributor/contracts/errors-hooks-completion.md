@@ -42,8 +42,10 @@ preserve them across the executor.
   result.
 
 Events carry operation correlation, endpoint, method, credential-sanitized
-logical URL, page/recovery structure, finite timing/status facts, and
-`CompletionOutcome`. Header-bearing events use sanitized views.
+logical URL, page structure, finite `AttemptInfo`, timing/status facts, and
+`CompletionOutcome`. `AttemptInfo` separates the visible-attempt index,
+policy-retry index, and authentication-recovery flag. Header-bearing events
+use sanitized views.
 
 Built-in debug levels use the same semantic event boundary and never expose
 body bytes or native request/response objects.
@@ -69,13 +71,16 @@ acquisition, or transport. Response observation occurs in this order:
    status capture.
 
 Once the terminal `Result` is fixed, core derives `CompletionOutcome`, records
-final status and elapsed executor time, emits built-in completion observation,
+final status, elapsed executor time, started-attempt count, policy-retry count,
+and authentication-recovery summary, emits built-in completion observation,
 and awaits `on_complete`. That callback runs outside the operation deadline.
-It delays delivery but cannot modify the fixed value or error.
+It delays delivery but cannot modify the fixed value or error. Intermediate
+attempts do not emit completion.
 
 Pagination completes each page through that path before invoking one
 aggregate completion callback. The aggregate event records pages completed,
-items retained, recovery summary, final status, and its own fixed outcome.
+items retained, checked sums of page attempt/retry totals, recovery summary,
+final status, and its own fixed outcome.
 
 ## Architectural invariants
 
@@ -92,6 +97,11 @@ items retained, recovery summary, final status, and its own fixed outcome.
 - Result-determining hooks run under the remaining operation deadline.
 - Completion runs after the result is fixed, outside that deadline, exactly
   once for every executor result that reaches delivery.
+- The initial attempt is `{ index: 0, policy_retry_index: 0,
+  authentication_recovery: false }`; current authentication recovery is
+  `{ index: 1, policy_retry_index: 0, authentication_recovery: true }`.
+- Ordinary successful metadata reports one attempt and zero policy retries;
+  authentication recovery reports two attempts and zero policy retries.
 - Cancellation while awaiting completion may prevent result delivery and does
   not roll back prior hook effects.
 - Streaming success completes as `StreamOpened`. Later stream-item failures do

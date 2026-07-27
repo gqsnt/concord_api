@@ -104,6 +104,8 @@ async fn challenge_never_allows_the_response_specification_to_accept_401() {
         response.value(),
         &Bytes::from_static(b"accepted-unauthorized")
     );
+    assert_eq!(response.metadata().attempts_started(), 1);
+    assert_eq!(response.metadata().policy_retries(), 0);
     assert_eq!(NEVER_CHALLENGE_ACCEPTANCE_CALLS.load(Ordering::SeqCst), 1);
     assert!(selector.is_set());
 }
@@ -244,13 +246,24 @@ async fn paginated_tls_recovery_reuses_lexical_plan_across_recovery_and_later_pa
     assert_eq!(limiter_observations.load(Ordering::SeqCst), 3);
     let captured_plans = plans.lock().expect("captured pagination recovery plans");
     assert_eq!(captured_plans.len(), 3);
-    assert_eq!(captured_plans[0], captured_plans[1]);
+    assert_eq!(captured_plans[0].rules, captured_plans[1].rules);
     assert_eq!(
         captured_plans
             .iter()
             .map(|plan| plan.page_index)
             .collect::<Vec<_>>(),
         [0, 0, 1]
+    );
+    assert_eq!(
+        captured_plans
+            .iter()
+            .map(|plan| plan.attempt)
+            .collect::<Vec<_>>(),
+        [
+            INITIAL_ATTEMPT,
+            AUTHENTICATION_RECOVERY_ATTEMPT,
+            INITIAL_ATTEMPT,
+        ]
     );
     for plan in captured_plans.iter() {
         assert_eq!(plan.rules.len(), 1);
@@ -278,19 +291,26 @@ async fn paginated_tls_recovery_reuses_lexical_plan_across_recovery_and_later_pa
         [0, 0, 1]
     );
     assert_eq!(
+        [before[0].attempt, before[1].attempt, before[2].attempt,],
         [
-            before[0].recovery_index,
-            before[1].recovery_index,
-            before[2].recovery_index,
-        ],
-        [0, 1, 0]
+            INITIAL_ATTEMPT,
+            AUTHENTICATION_RECOVERY_ATTEMPT,
+            INITIAL_ATTEMPT,
+        ]
     );
 
     let responses = hooks.response.lock().expect("response records");
     assert_eq!(responses.len(), 3);
     assert_eq!(responses[0].0, responses[1].0);
     assert_ne!(responses[0].0, responses[2].0);
-    assert_eq!([responses[0].1, responses[1].1, responses[2].1], [0, 1, 0]);
+    assert_eq!(
+        [responses[0].1, responses[1].1, responses[2].1],
+        [
+            INITIAL_ATTEMPT,
+            AUTHENTICATION_RECOVERY_ATTEMPT,
+            INITIAL_ATTEMPT,
+        ]
+    );
     assert_eq!([responses[0].4, responses[1].4, responses[2].4], [0, 0, 1]);
     assert_eq!(responses[0].3, responses[1].3);
     assert_eq!(responses[0].3, responses[2].3);
@@ -303,11 +323,13 @@ async fn paginated_tls_recovery_reuses_lexical_plan_across_recovery_and_later_pa
     assert_eq!(completion[0].2, Some(StatusCode::OK));
     assert_eq!(completion[0].3, before[0].parent_operation_id);
     assert_eq!(completion[0].4, 0);
+    assert_eq!((completion[0].6, completion[0].7), (2, 0));
     assert_eq!(completion[1].0, before[2].operation_id);
     assert!(!completion[1].1);
     assert_eq!(completion[1].2, Some(StatusCode::OK));
     assert_eq!(completion[1].3, before[2].parent_operation_id);
     assert_eq!(completion[1].4, 1);
+    assert_eq!((completion[1].6, completion[1].7), (1, 0));
     drop(completion);
 
     let pagination = hooks.pagination.lock().expect("pagination records");
@@ -318,6 +340,7 @@ async fn paginated_tls_recovery_reuses_lexical_plan_across_recovery_and_later_pa
     assert!(pagination[0].3);
     assert_eq!(pagination[0].4, Some(StatusCode::OK));
     assert_eq!(pagination[0].5, CompletionOutcome::Success);
+    assert_eq!((pagination[0].6, pagination[0].7), (3, 0));
 }
 
 #[tokio::test]
@@ -362,6 +385,7 @@ async fn paginated_authentication_failure_keeps_its_ordinary_category_and_correl
     assert_eq!(completion[0].3, Some(aggregate_operation_id));
     assert_eq!(completion[0].4, 0);
     assert_eq!(completion[0].5, CompletionOutcome::AuthenticationProvider);
+    assert_eq!((completion[0].6, completion[0].7), (1, 0));
     drop(completion);
 
     let pagination = hooks.pagination.lock().expect("pagination records");
@@ -371,6 +395,7 @@ async fn paginated_authentication_failure_keeps_its_ordinary_category_and_correl
     assert_eq!(pagination[0].2, 0);
     assert_eq!(pagination[0].4, None);
     assert_eq!(pagination[0].5, CompletionOutcome::AuthenticationProvider);
+    assert_eq!((pagination[0].6, pagination[0].7), (1, 0));
 }
 
 #[tokio::test]
@@ -444,6 +469,8 @@ async fn challenge_recovery_still_observes_each_received_response_once() {
     .expect("one bounded recovery");
     assert_eq!(response.value(), &Bytes::from_static(b"ok"));
     assert!(response.metadata().recovered_authentication());
+    assert_eq!(response.metadata().attempts_started(), 2);
+    assert_eq!(response.metadata().policy_retries(), 0);
     assert_eq!(acquires.load(Ordering::SeqCst), 1);
     assert_eq!(refreshes.load(Ordering::SeqCst), 1);
     assert!(exact.load(Ordering::SeqCst));
@@ -467,7 +494,10 @@ async fn challenge_recovery_still_observes_each_received_response_once() {
     let before = hooks.before.lock().expect("before records").clone();
     assert_eq!(before.len(), 2);
     assert_eq!(before[0].operation_id, before[1].operation_id);
-    assert_eq!([before[0].recovery_index, before[1].recovery_index], [0, 1]);
+    assert_eq!(
+        [before[0].attempt, before[1].attempt],
+        [INITIAL_ATTEMPT, AUTHENTICATION_RECOVERY_ATTEMPT]
+    );
     for record in before {
         assert_eq!(
             record.safe_url,
@@ -479,13 +509,17 @@ async fn challenge_recovery_still_observes_each_received_response_once() {
     let responses = hooks.response.lock().expect("response records");
     assert_eq!(responses.len(), 2);
     assert_eq!(responses[0].0, responses[1].0);
-    assert_eq!([responses[0].1, responses[1].1], [0, 1]);
+    assert_eq!(
+        [responses[0].1, responses[1].1],
+        [INITIAL_ATTEMPT, AUTHENTICATION_RECOVERY_ATTEMPT]
+    );
     drop(responses);
     let completion = hooks.completion.lock().expect("completion records");
     assert_eq!(completion.len(), 1);
     assert_eq!(completion[0].0, before_operation_id(&hooks));
     assert!(completion[0].1);
     assert_eq!(completion[0].2, Some(StatusCode::OK));
+    assert_eq!((completion[0].6, completion[0].7), (2, 0));
 
     let rendered = debug.lock().expect("debug output").join("\n");
     assert!(!rendered.contains(INITIAL));
@@ -580,6 +614,8 @@ async fn response_bytes_preserves_authentication_recovery_and_logical_native_url
         "https://protected.example.test/v1/protected"
     );
     assert!(response.metadata().recovered_authentication());
+    assert_eq!(response.metadata().attempts_started(), 2);
+    assert_eq!(response.metadata().policy_retries(), 0);
     assert_eq!(acquires.load(Ordering::SeqCst), 1);
     assert_eq!(refreshes.load(Ordering::SeqCst), 1);
     assert!(exact.load(Ordering::SeqCst));
@@ -600,8 +636,14 @@ async fn response_bytes_preserves_authentication_recovery_and_logical_native_url
 
     let before = hooks.before.lock().expect("before records");
     assert_eq!(before.len(), 3);
-    assert_eq!([before[0].recovery_index, before[1].recovery_index], [0, 1]);
-    assert_eq!(before[2].recovery_index, 0);
+    assert_eq!(
+        [before[0].attempt, before[1].attempt, before[2].attempt],
+        [
+            INITIAL_ATTEMPT,
+            AUTHENTICATION_RECOVERY_ATTEMPT,
+            INITIAL_ATTEMPT,
+        ]
+    );
     assert!(before.iter().all(|record| {
         !record.safe_url.contains(INITIAL)
             && !record.safe_url.contains(REFRESHED)
@@ -613,6 +655,13 @@ async fn response_bytes_preserves_authentication_recovery_and_logical_native_url
     assert!(completion.iter().all(|record| {
         record.2 == Some(StatusCode::OK) && record.5 == CompletionOutcome::Success
     }));
+    assert_eq!(
+        completion
+            .iter()
+            .map(|record| (record.6, record.7))
+            .collect::<Vec<_>>(),
+        [(2, 0), (1, 0)]
+    );
     drop(completion);
     let automatic = format!(
         "{}\n{response:?}\n{query_response:?}",
@@ -728,6 +777,8 @@ async fn prepared_codec_recovery_reuses_encoding_and_reenters_the_ordinary_limit
         .expect("prepared bounded recovery");
     assert_eq!(response.value(), &Bytes::from_static(b"ok"));
     assert!(response.metadata().recovered_authentication());
+    assert_eq!(response.metadata().attempts_started(), 2);
+    assert_eq!(response.metadata().policy_retries(), 0);
     assert_eq!(encode_calls.load(Ordering::SeqCst), 1);
     assert_eq!(acquires.load(Ordering::SeqCst), 1);
     assert_eq!(refreshes.load(Ordering::SeqCst), 1);
@@ -739,7 +790,10 @@ async fn prepared_codec_recovery_reuses_encoding_and_reenters_the_ordinary_limit
     let before = hooks.before.lock().expect("prepared before records");
     assert_eq!(before.len(), 2);
     assert_eq!(before[0].operation_id, before[1].operation_id);
-    assert_eq!([before[0].recovery_index, before[1].recovery_index], [0, 1]);
+    assert_eq!(
+        [before[0].attempt, before[1].attempt],
+        [INITIAL_ATTEMPT, AUTHENTICATION_RECOVERY_ATTEMPT]
+    );
     assert!(before.iter().all(|record| {
         record.safe_url == "https://protected.example.test/v1/prepared?session_token=%3Credacted%3E"
             && !record.safe_url.contains(INITIAL)
@@ -751,6 +805,7 @@ async fn prepared_codec_recovery_reuses_encoding_and_reenters_the_ordinary_limit
     assert_eq!(completion.len(), 1);
     assert!(completion[0].1);
     assert_eq!(completion[0].2, Some(StatusCode::OK));
+    assert_eq!((completion[0].6, completion[0].7), (2, 0));
     drop(completion);
     let diagnostics = format!(
         "{}\n{:?}",
@@ -892,6 +947,8 @@ async fn recovered_stream_reports_recovery_in_owned_metadata() {
     .await
     .expect("recovered stream should open");
     assert!(response.metadata().recovered_authentication());
+    assert_eq!(response.metadata().attempts_started(), 2);
+    assert_eq!(response.metadata().policy_retries(), 0);
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(executor.application().request_count().expect("count"), 2);
 }

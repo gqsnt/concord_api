@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 use http::{HeaderMap, Method, StatusCode};
 
 use super::*;
-use concord_core::contracts::SanitizedHeaders;
+use concord_core::contracts::{AttemptInfo, SanitizedHeaders};
 use concord_core::rate_limit::{
     MAX_RATE_LIMIT_RULES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_RULE, RateLimitId, RateLimitKey,
     RateLimitKeyPart, RateLimitRule, RateLimitWindow,
@@ -33,6 +33,14 @@ fn plan(rules: Vec<RateLimitRule>) -> RateLimitPlan {
     RateLimitPlan::try_from_rules(rules).expect("valid test plan")
 }
 
+const fn initial_attempt() -> AttemptInfo {
+    AttemptInfo {
+        index: 0,
+        policy_retry_index: 0,
+        authentication_recovery: false,
+    }
+}
+
 fn rate_error<T>(result: Result<T, RateLimitError>, message: &str) -> RateLimitError {
     match result {
         Ok(_) => panic!("{message}"),
@@ -56,6 +64,7 @@ async fn try_acquire(
             safe_url: "https://example.test/get",
             host,
             page_index: 0,
+            attempt: initial_attempt(),
             plan,
         })
         .await
@@ -74,6 +83,7 @@ fn spawn_acquire(
                 safe_url: "https://example.test/get",
                 host,
                 page_index: 0,
+                attempt: initial_attempt(),
                 plan: &plan,
             })
             .await
@@ -131,6 +141,7 @@ async fn observe(
                 safe_url: "https://example.test/get",
                 host,
                 page_index: 0,
+                attempt: initial_attempt(),
                 plan,
             },
             status,
@@ -158,6 +169,7 @@ async fn observe_headers(
                 safe_url: "https://example.test/get",
                 host,
                 page_index: 0,
+                attempt: initial_attempt(),
                 plan,
             },
             status,
@@ -526,6 +538,7 @@ async fn duplicate_equivalent_contributions_cannot_undercount() {
         safe_url: "https://example.test/get",
         host: Some("example.test"),
         page_index: 0,
+        attempt: initial_attempt(),
         plan: &plan,
     });
     tokio::pin!(request);
@@ -558,6 +571,7 @@ async fn equivalent_contributions_above_capacity_fail_before_state_insertion() {
                 safe_url: "https://example.test/get",
                 host: Some("example.test"),
                 page_index: 0,
+                attempt: initial_attempt(),
                 plan: &plan,
             })
             .await,
@@ -1375,6 +1389,7 @@ async fn zero_key_limit_accepts_global_and_rejects_nonempty_without_text() {
                 safe_url: "https://example.test/get",
                 host: Some("example.test"),
                 page_index: 0,
+                attempt: initial_attempt(),
                 plan: &keyed,
             })
             .await,
@@ -1416,6 +1431,7 @@ async fn local_limiter_rejects_first_excess_without_sensitive_output() {
                 safe_url: "https://example.test/get",
                 host: Some("example.test"),
                 page_index: 0,
+                attempt: initial_attempt(),
                 plan: &keyed,
             })
             .await,
@@ -1456,6 +1472,7 @@ fn poisoned_state_fails_future_acquisition_closed() {
                 safe_url: "https://example.test/get",
                 host: Some("example.test"),
                 page_index: 0,
+                attempt: initial_attempt(),
                 plan: &empty,
             },
             status: StatusCode::OK,
@@ -1473,6 +1490,7 @@ fn poisoned_state_fails_future_acquisition_closed() {
             safe_url: "https://example.test/get",
             host: Some("example.test"),
             page_index: 0,
+            attempt: initial_attempt(),
             plan: &empty,
         })),
         "poisoned state unexpectedly granted",

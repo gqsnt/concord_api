@@ -40,7 +40,15 @@ Concord attempt. It contains:
 - stable endpoint ID and HTTP method;
 - credential-sanitized logical URL and final logical host;
 - zero-based page index;
+- `AttemptInfo` with the visible-attempt index, policy-retry index, and
+  authentication-recovery flag;
 - the immutable effective `RateLimitPlan`.
+
+The initial attempt is `{ index: 0, policy_retry_index: 0,
+authentication_recovery: false }`. The current authentication replay is
+`{ index: 1, policy_retry_index: 0, authentication_recovery: true }`. Use this
+bounded structure for correlation instead of inferring retry state from call
+counts.
 
 The plan contains applicable rules in declaration order. Each rule has its
 stable ID, ordered resolved key parts, positive cost, and finite windows.
@@ -70,7 +78,7 @@ all keyed rules.
 `RateLimiter::observe` receives a `RateLimitResponse` after one final response
 head and before the user response hook, authentication challenge handling,
 status reduction, or body acquisition. It can update distributed state using
-the sanitized head and the same request plan.
+the sanitized head, the same request plan, and the same `AttemptInfo`.
 
 Observation cannot replace the received response. Returning an error or
 remaining pending until the operation deadline does determine the operation,
@@ -93,6 +101,8 @@ future cooldown state through `RateLimitObserver`:
 An observer is synchronous. It returns either no change or a `Cooldown` with a
 duration and `CooldownScope` for current buckets, the current host, or the
 limiter object. Runtime configuration clamps the proposed duration.
+`RateLimitResponseHead` also carries the page index and `AttemptInfo` that
+produced the observed response.
 
 Calling `LocalRateLimiter::observer` replaces its built-in
 `RetryAfterObserver`. Delegate to `RetryAfterObserver` first when standard
@@ -135,6 +145,8 @@ Test through generated requests and the actual managed ordering. Verify:
 - transport cannot begin before acquisition succeeds;
 - applicable rules, ordered dimensions, cost, and windows arrive unchanged;
 - direct and paginated page indices;
+- exact attempt identity on acquisition and response observation, including
+  both authentication attempts;
 - concurrent calls and atomic capacity behavior;
 - exact key limit and first excess before protected work;
 - acquisition and observation timeout/cancellation;

@@ -6,6 +6,31 @@ use crate::body::BodyKind;
 use crate::operation::OperationId;
 use crate::redaction::SanitizedHeaders;
 
+/// Safe structural identity of one visible managed attempt.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AttemptInfo {
+    /// Zero-based index across all visible attempts for this request or page.
+    pub index: u32,
+    /// Number of policy retries started through this attempt.
+    pub policy_retry_index: u32,
+    /// Whether this attempt is the single authentication recovery.
+    pub authentication_recovery: bool,
+}
+
+impl AttemptInfo {
+    pub(crate) const INITIAL: Self = Self {
+        index: 0,
+        policy_retry_index: 0,
+        authentication_recovery: false,
+    };
+
+    pub(crate) const AUTHENTICATION_RECOVERY: Self = Self {
+        index: 1,
+        policy_retry_index: 0,
+        authentication_recovery: true,
+    };
+}
+
 /// Sanitized metadata supplied before expensive request work begins.
 #[derive(Debug)]
 pub struct BeforeSend<'a> {
@@ -22,8 +47,8 @@ pub struct BeforeSend<'a> {
     pub safe_url: &'a str,
     /// Zero-based page index; direct requests use zero.
     pub page_index: u32,
-    /// Authentication recovery index; the initial attempt uses zero.
-    pub recovery_index: u8,
+    /// Structural identity of this visible managed attempt.
+    pub attempt: AttemptInfo,
     /// Sanitized public request headers.
     pub headers: SanitizedHeaders<'a>,
     /// Structural request-body category.
@@ -48,8 +73,8 @@ pub struct ResponseHeadEvent<'a> {
     pub safe_url: &'a str,
     /// Zero-based page index; direct requests use zero.
     pub page_index: u32,
-    /// Authentication recovery index that produced this head.
-    pub recovery_index: u8,
+    /// Structural identity of the attempt that produced this head.
+    pub attempt: AttemptInfo,
     /// Final status for this Concord attempt.
     pub status: StatusCode,
     /// Sanitized actual response headers.
@@ -72,6 +97,10 @@ pub struct CompletionEvent<'a> {
     pub safe_url: &'a str,
     /// Zero-based page index; direct requests use zero.
     pub page_index: u32,
+    /// Number of visible attempts whose before-send stage began.
+    pub attempts_started: u32,
+    /// Number of policy retries started for this operation.
+    pub policy_retries: u32,
     /// Whether this result followed one authentication recovery.
     pub recovered_authentication: bool,
     /// Elapsed Concord operation time before completion observation began.
@@ -95,6 +124,10 @@ pub struct PaginationCompletionEvent<'a> {
     pub pages_completed: u32,
     /// Number of items retained for the caller.
     pub items_collected: usize,
+    /// Total visible attempts started across all page operations.
+    pub attempts_started: u32,
+    /// Total policy retries started across all page operations.
+    pub policy_retries: u32,
     /// Whether any completed page used authentication recovery.
     pub recovered_authentication: bool,
     /// Elapsed aggregate time before pagination completion observation began.

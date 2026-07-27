@@ -108,8 +108,8 @@ reaching completion delivery.
 ## Stage 2: before-send approval
 
 **Input and output:** `RuntimeHooks::before_send` receives operation identity,
-safe URL, sanitized public headers, page/recovery indexes, and structural body
-metadata. It returns approval or `HookError`.
+safe URL, sanitized public headers, page index, `AttemptInfo`, and structural
+body metadata. It returns approval or `HookError`.
 
 **Errors:** a hook error becomes `ApiError` category `Hook`; its authored text
 is not retained. A veto prevents encoding, provider work, limiter work, and
@@ -125,8 +125,11 @@ bytes.
 **Side effects:** only application hook work. This is the last veto point
 before body preparation for the attempt.
 
-Authentication recovery invokes this stage again with `recovery_index = 1`
-before reconstructing a replayable body or refreshing credentials.
+The initial invocation carries `AttemptInfo { index: 0,
+policy_retry_index: 0, authentication_recovery: false }`. Authentication
+recovery invokes this stage again with `{ index: 1, policy_retry_index: 0,
+authentication_recovery: true }` before reconstructing a replayable body or
+refreshing credentials.
 
 ## Stage 3: request-body preparation
 
@@ -179,8 +182,8 @@ application executor recursively.
 ## Stage 5: limiter authority
 
 **Input and output:** the selected `RateLimiter` receives endpoint/method,
-sanitized URL, safe host, page index, and the bounded effective plan. A granted
-permit authorizes the attempt.
+sanitized URL, safe host, page index, `AttemptInfo`, and the bounded effective
+plan. A granted permit authorizes the attempt.
 
 **Errors:** limiter failures become finite `RateLimitError` kinds. A fallback
 limiter rejects a nonempty runtime plan, so missing policy fails before send.
@@ -227,7 +230,8 @@ attempts.
 
 **Input and output:** when a response head arrives, core fixes the current
 status, emits sanitized structural debug output, runs limiter response
-observation, and then invokes `RuntimeHooks::on_response_head`.
+observation, and then invokes `RuntimeHooks::on_response_head`. Both receive
+the `AttemptInfo` of the dispatch that produced the head.
 
 **Errors:** limiter observation can produce `RateLimit`; the hook can produce
 `Hook`; either can time out. Those failures stop challenge/status handling and
@@ -313,7 +317,8 @@ event.
 ## Stage 10: fixed result and completion
 
 **Input and output:** core fixes elapsed time, final status, recovery flag, and
-the structural outcome from the already-determined result. It emits built-in
+the structural outcome from the already-determined result. It also records the
+number of attempts started and policy retries started. It emits built-in
 completion debug output and awaits `RuntimeHooks::on_complete`, then delivers
 the original result.
 
@@ -326,7 +331,8 @@ Cancellation while completion is pending can prevent the hook from returning
 and prevent result delivery.
 
 **Protected material:** the event contains safe identity, safe URL, status,
-elapsed time, page/recovery indexes, and a structural outcome only.
+elapsed time, page index, attempt/retry totals, authentication-recovery
+summary, and a structural outcome only.
 
 **Side effects:** debug output and application completion observation. A
 successful stream reports `StreamOpened`, describing handoff rather than later
@@ -342,8 +348,10 @@ special transport path.
 
 The outer loop enforces page/item/identity bounds, applies one controller
 transition at a time, and produces its own aggregate completion after the
-result is fixed. Pagination details belong to the runtime contract page added
-with the maintenance manual.
+result is fixed. The aggregate uses checked arithmetic to sum page
+`attempts_started` and `policy_retries`; no intermediate attempt creates a
+second page completion. Pagination details belong to the runtime contract page
+added with the maintenance manual.
 
 ## Change hazards
 

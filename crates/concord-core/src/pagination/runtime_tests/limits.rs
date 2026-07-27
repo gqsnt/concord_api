@@ -38,6 +38,8 @@ async fn zero_page_and_configured_ceilings_cut_off_the_first_forbidden_work() {
     assert_eq!(zero_aggregate[0].pages_completed, 0);
     assert_eq!(zero_aggregate[0].items_collected, 0);
     assert!(!zero_aggregate[0].recovered_authentication);
+    assert_eq!(zero_aggregate[0].attempts_started, 0);
+    assert_eq!(zero_aggregate[0].policy_retries, 0);
     assert_eq!(zero_aggregate[0].final_status, None);
     assert_eq!(zero_aggregate[0].outcome, CompletionOutcome::Success);
 

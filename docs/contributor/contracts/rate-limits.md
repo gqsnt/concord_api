@@ -35,8 +35,10 @@ The semantic plan uses:
 
 `RateLimiter` supplies asynchronous `acquire` and `observe` callbacks.
 `RateLimitRequest` contains endpoint, method, credential-sanitized URL, logical
-host, page index, and the immutable plan. `RateLimitResponse` adds status,
-sanitized headers, and the centrally configured cooldown cap.
+host, page index, `AttemptInfo`, and the immutable plan. `RateLimitResponse`
+adds status, sanitized headers, and the centrally configured cooldown cap.
+`RateLimitResponseHead` exposes the same attempt identity to synchronous local
+observers.
 
 The returned `RateLimitPermit` is proof that one visible attempt was admitted.
 It is not a concurrency lease retained until response completion.
@@ -74,6 +76,13 @@ For each visible attempt, core:
 Observation cannot replace or mutate the received response. Its failure or
 timeout nevertheless determines the operation before application response
 handling proceeds.
+
+Before managed policy retry exists, the initial request carries
+`AttemptInfo { index: 0, policy_retry_index: 0,
+authentication_recovery: false }`; the one authentication replay carries
+`{ index: 1, policy_retry_index: 0, authentication_recovery: true }`.
+Acquisition, asynchronous response observation, hooks, and synchronous local
+observation see the matching value.
 
 ## Architectural invariants
 
@@ -161,6 +170,7 @@ Important proofs include:
 - global, host, and ordered multi-part key separation;
 - cancellation or timeout while waiting for admission or observation;
 - an authentication recovery obtaining a second permit;
+- both limiter phases seeing the exact initial/recovery `AttemptInfo` values;
 - response observation failure preventing later hooks and body work;
 - sequential pagination pages sharing the selected limiter correctly;
 - local bucket/cooldown capacity failure with no partial state;

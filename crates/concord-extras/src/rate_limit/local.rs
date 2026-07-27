@@ -211,6 +211,7 @@ impl LocalRateLimiter {
             safe_url,
             host,
             page_index,
+            attempt,
             plan,
         } = request;
         let response_head = RateLimitResponseHead {
@@ -219,6 +220,7 @@ impl LocalRateLimiter {
             safe_url,
             host,
             page_index,
+            attempt,
             plan,
             status,
             headers,
