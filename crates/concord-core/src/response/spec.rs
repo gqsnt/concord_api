@@ -4,7 +4,7 @@ use http::{HeaderMap, Method, StatusCode, Version};
 use url::Url;
 
 use crate::body::Stream;
-use crate::codec::{DecodeBody, DecodeContext, MediaType};
+use crate::codec::{AnyMedia, DecodeBody, DecodeContext, MediaType};
 use crate::endpoint::ResponseAcquisition;
 use crate::hooks::{BoxFuture, CompletionOutcome};
 
@@ -353,6 +353,18 @@ impl ResponseBodySpec for NoContent {
     }
 }
 
+impl ResponseBodySpec for Stream<AnyMedia> {
+    type Output = ByteStream;
+    type Mode = Streaming;
+
+    fn from_body(
+        body: <Self::Mode as ResponseMode>::Body,
+        _head: &ResponseHead<'_>,
+    ) -> Result<Self::Output, ResponseBodyError> {
+        Ok(body)
+    }
+}
+
 impl<M> ResponseBodySpec for Stream<M>
 where
     M: MediaType,
@@ -476,6 +488,8 @@ fn exact_media_matches(required: &mime::Mime, actual: &mime::Mime) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::endpoint::EndpointId;
+    use http::HeaderValue;
 
     #[test]
     fn accept_validation_supports_lists_parameters_and_quoted_commas() {
@@ -520,5 +534,36 @@ mod tests {
         assert!(exact_media_matches(&required, &with_extra));
         assert!(!exact_media_matches(&required, &wrong_parameter));
         assert!(parse_exact_media_type("application/*").is_err());
+    }
+
+    #[test]
+    fn media_unconstrained_stream_has_no_accept_or_content_type_validation() {
+        assert_eq!(<Stream as ResponseBodySpec>::accept(), None);
+
+        let endpoint = EndpointId::from_static("stream.any_media");
+        let method = Method::GET;
+        let url = Url::parse("http://stream.example.test/").expect("test URL");
+        let metadata = ExecutionMeta::new(endpoint, method.clone(), 0, 1, 0, false);
+        for content_type in [None, Some("not a media type"), Some("text/plain")] {
+            let mut headers = HeaderMap::new();
+            if let Some(content_type) = content_type {
+                headers.insert(
+                    CONTENT_TYPE,
+                    HeaderValue::from_str(content_type).expect("valid header value"),
+                );
+            }
+            let head = ResponseHead {
+                endpoint: "stream.any_media",
+                method: &method,
+                url: &url,
+                status: StatusCode::OK,
+                version: Version::HTTP_11,
+                headers: &headers,
+                content_length: None,
+                metadata: &metadata,
+            };
+            <Stream as ResponseBodySpec>::validate(&head)
+                .expect("bare stream makes no media assertion");
+        }
     }
 }

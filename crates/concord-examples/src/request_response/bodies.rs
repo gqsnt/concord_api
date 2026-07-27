@@ -32,8 +32,10 @@ api! {
     // ANCHOR_END: buffered_endpoints
 
     // ANCHOR: streaming_endpoints
-    POST upload(#[body] body: Stream<OctetStream>) -> Bytes;
-    GET download() -> Stream<OctetStream>;
+    POST upload(#[body] body: Stream) -> Bytes;
+    GET download() -> Stream;
+    POST exact_upload(#[body] body: Stream<OctetStream>) -> Bytes;
+    GET exact_download() -> Stream<OctetStream>;
     // ANCHOR_END: streaming_endpoints
 
     // ANCHOR: multipart_endpoint
@@ -57,6 +59,10 @@ pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
         b"stream payload",
     )));
     let _: body_api::DownloadRequest = client.download();
+    let _: body_api::ExactUploadRequest = client.exact_upload(StreamBody::from_bytes(
+        Bytes::from_static(b"binary payload"),
+    ));
+    let _: body_api::ExactDownloadRequest = client.exact_download();
     // ANCHOR_END: streaming_requests
 
     // ANCHOR: multipart_recipe

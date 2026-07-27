@@ -7,7 +7,7 @@ api! {
 
     scope transfers() {
         path ["transfers"];
-        GET download() -> Stream<OctetStream>;
+        GET download() -> Stream;
     }
 }
 

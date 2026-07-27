@@ -29,8 +29,8 @@ use crate::body::{
 #[cfg(feature = "multipart")]
 use crate::body::{MultipartBody, MultipartFactory, MultipartPart};
 use crate::codec::{
-    CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType,
-    OctetStream, Text,
+    AnyMedia, CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext,
+    MediaType, OctetStream, Text,
 };
 use crate::endpoint::EndpointId;
 use crate::error::{ErrorCategory, HookError, StatusBodyState};
@@ -120,7 +120,7 @@ impl<M> StreamEndpoint<M> {
 
 impl<M> EndpointSpec for StreamEndpoint<M>
 where
-    M: MediaType,
+    StreamSpec<M>: ResponseBodySpec,
 {
     type Body = EmptyBody;
     type Response = StreamSpec<M>;
@@ -1610,7 +1610,7 @@ fn body_request(core: ClientCore, body: RequestBody) -> Request<BodyEndpoint> {
 
 fn stream_request<M>(core: ClientCore) -> Request<StreamEndpoint<M>>
 where
-    M: MediaType,
+    StreamSpec<M>: ResponseBodySpec,
 {
     Request::new(core, StreamEndpoint::new())
 }

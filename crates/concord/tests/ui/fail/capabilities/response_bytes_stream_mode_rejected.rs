@@ -1,13 +1,12 @@
 use concord::api;
 use concord::body::Stream;
-use concord::codec::OctetStream;
 
 api! {
     client StreamApi {
         base "http://stream.example.test/";
     }
 
-    GET download() -> Stream<OctetStream>;
+    GET download() -> Stream;
 }
 
 fn main() {

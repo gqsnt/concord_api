@@ -66,6 +66,82 @@ fn server_stream_headers(content_type: &str) -> Vec<(String, String)> {
 }
 
 #[tokio::test]
+async fn media_unconstrained_stream_keeps_streaming_lifecycle_and_limits() {
+    let executor = DeterministicExecutor::new();
+    let hooks = Arc::new(ProbeHooks::new());
+    let core = development_core(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new()
+            .stream_response_limit(NonZeroUsize::new(4).expect("positive stream limit")),
+    );
+    let mut headers = stream_headers("not a media type");
+    headers.insert(
+        "x-stream-sentinel",
+        http::HeaderValue::from_static("bare-stream-header"),
+    );
+    executor
+        .application()
+        .queue_response(ScriptedResponse::success("bare").headers(headers))
+        .expect("media-unconstrained stream response");
+
+    let response = stream_request::<AnyMedia>(core)
+        .response()
+        .await
+        .expect("media-unconstrained stream opens");
+    assert_eq!(
+        response.headers()["x-stream-sentinel"],
+        "bare-stream-header"
+    );
+    assert_eq!(
+        completion(&hooks.records()).1,
+        CompletionOutcome::StreamOpened
+    );
+    let captures = executor
+        .application()
+        .captures()
+        .expect("media-unconstrained stream capture");
+    assert_eq!(captures.len(), 1);
+    assert!(
+        captures[0]
+            .headers()
+            .iter()
+            .all(|header| header.name() != http::header::ACCEPT),
+        "bare Stream must not insert Accept"
+    );
+    let mut stream = response.into_value();
+    assert_eq!(
+        next_stream_chunk(&mut stream)
+            .await
+            .expect("bare stream chunk")
+            .expect("valid bare stream chunk"),
+        Bytes::from_static(b"bare")
+    );
+    assert!(next_stream_chunk(&mut stream).await.is_none());
+
+    let limited_executor = DeterministicExecutor::new();
+    let limited_hooks = Arc::new(ProbeHooks::new());
+    let limited_core = development_core(
+        &limited_executor,
+        Arc::clone(&limited_hooks),
+        RuntimeConfigBuilder::new()
+            .stream_response_limit(NonZeroUsize::new(4).expect("positive stream limit")),
+    );
+    limited_executor
+        .application()
+        .queue_response(ScriptedResponse::success("excess"))
+        .expect("known-length excess response");
+    let error = stream_request::<AnyMedia>(limited_core)
+        .await
+        .expect_err("known-length bare stream excess");
+    assert_eq!(error.category(), ErrorCategory::ResponseBody);
+    assert_eq!(
+        completion(&limited_hooks.records()).1,
+        CompletionOutcome::ResponseBody
+    );
+}
+
+#[tokio::test]
 async fn stream_response_carries_metadata_and_completes_once_when_opened() {
     let executor = DeterministicExecutor::new();
     let hooks = Arc::new(ProbeHooks::new());
@@ -388,9 +464,8 @@ async fn caller_stream_polling_is_outside_operation_deadline_and_drop_is_termina
             chunks: vec![b"after-deadline".to_vec()],
             gate: deadline_gate.clone(),
         },
-        ResponseScript::GatedChunkedWithHeaders {
+        ResponseScript::GatedChunked {
             status: 200,
-            headers: server_stream_headers("application/octet-stream"),
             first_chunk: b"first".to_vec(),
             remaining_chunk: b"must-not-be-observed".to_vec(),
             gate: drop_gate.clone(),
@@ -414,9 +489,9 @@ async fn caller_stream_polling_is_outside_operation_deadline_and_drop_is_termina
     );
     assert!(next_stream_chunk(&mut after_deadline).await.is_none());
 
-    let mut dropped = stream_request::<OctetStream>(core)
+    let mut dropped = stream_request::<AnyMedia>(core)
         .await
-        .expect("drop stream opens");
+        .expect("media-unconstrained drop stream opens");
     assert_eq!(
         next_stream_chunk(&mut dropped).await.unwrap().unwrap(),
         b"first"[..]

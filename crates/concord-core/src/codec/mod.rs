@@ -24,6 +24,15 @@ pub trait MediaType: Send + Sync + 'static {
     const MEDIA_TYPE: &'static str;
 }
 
+/// Marker selecting no request or response media assertion.
+///
+/// This marker intentionally does not implement [`MediaType`]. Bare
+/// [`Stream`](crate::body::Stream) request bodies therefore insert no
+/// `Content-Type`, and bare stream responses insert no `Accept` or validate
+/// `Content-Type`.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct AnyMedia;
+
 /// Built-in `application/octet-stream` media marker.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct OctetStream;

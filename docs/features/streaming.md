@@ -7,7 +7,13 @@ application state its consumption retains.
 
 ## Declare streaming media
 
-`Stream<OctetStream>` is a media-aware request or response specification:
+Bare `Stream` is media-unconstrained. A request body inserts no
+`Content-Type`; a response inserts no `Accept` and accepts missing, malformed,
+or arbitrary response `Content-Type`.
+
+Use `Stream<OctetStream>` or `Stream<MyMedia>` when the protocol requires one
+exact media type. Exact-media uploads own `Content-Type`, and exact-media
+downloads insert `Accept` and validate the returned `Content-Type`.
 
 ## Complete example
 

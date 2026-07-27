@@ -79,7 +79,7 @@ pub mod body {
 /// Buffered codec contracts, primitives, and enabled ecosystem codecs.
 pub mod codec {
     pub use concord_core::codec::{
-        CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext,
+        AnyMedia, CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext,
         MediaType, OctetStream, Text,
     };
     pub use concord_core::contracts::{Bytes, BytesMut};
@@ -170,7 +170,7 @@ pub mod prelude {
     #[cfg(feature = "multipart")]
     pub use crate::body::Multipart;
     pub use crate::body::Stream;
-    pub use crate::codec::OctetStream;
+    pub use crate::codec::{AnyMedia, OctetStream};
     #[cfg(feature = "csv")]
     pub use crate::records::Csv;
     #[cfg(feature = "ndjson")]

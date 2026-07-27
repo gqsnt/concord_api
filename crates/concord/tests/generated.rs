@@ -1,6 +1,7 @@
 mod support;
 
 mod generated {
+    pub(crate) mod any_stream;
     pub(crate) mod authentication;
     #[cfg(feature = "records")]
     pub(crate) mod buffered_records;

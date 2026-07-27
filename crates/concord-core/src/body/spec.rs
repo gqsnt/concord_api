@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 use bytes::Bytes;
 use http::{HeaderValue, Method};
 
-use crate::codec::{EncodeBody, EncodeContext, MediaType, Text};
+use crate::codec::{AnyMedia, EncodeBody, EncodeContext, MediaType, Text};
 
 #[cfg(feature = "multipart")]
 use super::MultipartBody;
@@ -224,9 +224,41 @@ impl PageRequestBodySpec for Bytes {}
 
 impl PageRequestBodySpec for Text {}
 
-/// Request and response specification for one exact media type.
+/// Bounded streaming request and response specification.
+///
+/// Bare `Stream` is media-unconstrained. `Stream<M>` for a [`MediaType`]
+/// marker owns one exact request `Content-Type` and response media assertion.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Stream<M>(PhantomData<M>);
+pub struct Stream<M = AnyMedia>(PhantomData<M>);
+
+impl RequestBodySpec for Stream<AnyMedia> {
+    type Input = StreamBody;
+
+    fn metadata(
+        input: &Self::Input,
+        _context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        input.validate_metadata()?;
+        let length = match input.exact_length_value() {
+            Some(length) => LengthHint::Exact(length),
+            None => input
+                .lower_bound()
+                .map_or(LengthHint::Unknown, LengthHint::AtLeast),
+        };
+        Ok(RequestBodyMetadata {
+            length,
+            content_type: RequestContentType::None,
+            kind: BodyKind::Stream,
+        })
+    }
+
+    fn prepare(
+        input: Self::Input,
+        _context: RequestBodyContext<'_>,
+    ) -> Result<RequestBody, BodyError> {
+        Ok(RequestBody::stream(input))
+    }
+}
 
 impl<M> RequestBodySpec for Stream<M>
 where
@@ -423,4 +455,57 @@ pub(crate) fn validate_produced_body(
         return Err(BodyError::new(BodyErrorKind::InvalidContentType));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::codec::OctetStream;
+
+    fn context() -> RequestBodyContext<'static> {
+        RequestBodyContext {
+            endpoint: "stream.metadata",
+            method: &Method::POST,
+            body_limit: NonZeroUsize::new(1024).expect("positive test body limit"),
+        }
+    }
+
+    #[test]
+    fn media_unconstrained_stream_owns_no_content_type() {
+        let input = StreamBody::from_bytes(Bytes::from_static(b"bare-stream"));
+        let metadata =
+            <Stream as RequestBodySpec>::metadata(&input, context()).expect("bare stream metadata");
+        assert_eq!(metadata.length, LengthHint::Exact(11));
+        assert_eq!(metadata.content_type, RequestContentType::None);
+        assert_eq!(metadata.kind, BodyKind::Stream);
+
+        let body =
+            <Stream as RequestBodySpec>::prepare(input, context()).expect("bare stream body");
+        assert_eq!(
+            body.structural_metadata()
+                .expect("prepared bare stream metadata")
+                .content_type,
+            RequestContentType::None
+        );
+    }
+
+    #[test]
+    fn exact_media_stream_keeps_its_owned_content_type() {
+        let input = StreamBody::from_bytes(Bytes::from_static(b"exact-stream"));
+        let metadata = <Stream<OctetStream> as RequestBodySpec>::metadata(&input, context())
+            .expect("exact stream metadata");
+        assert_eq!(
+            metadata.content_type,
+            RequestContentType::Exact(HeaderValue::from_static("application/octet-stream"))
+        );
+
+        let body = <Stream<OctetStream> as RequestBodySpec>::prepare(input, context())
+            .expect("exact stream body");
+        assert_eq!(
+            body.structural_metadata()
+                .expect("prepared exact stream metadata")
+                .content_type,
+            RequestContentType::Exact(HeaderValue::from_static("application/octet-stream"))
+        );
+    }
 }
