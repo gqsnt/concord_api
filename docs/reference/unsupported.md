@@ -18,6 +18,7 @@ public contract.
 | WebSocket management | use a protocol-specific client outside Concord |
 | an SSE reconnection framework | consume a bounded byte/record stream and own a finite application reconnection policy |
 | multipart response parsing | implement an appropriate bounded response/record design outside the request-only multipart helper |
+| CSV or NDJSON request encoding | use another `EncodeBody`/`RequestBodySpec`; built-in CSV and NDJSON are response-only |
 
 `response_bytes()` stays inside this boundary. It returns accepted response
 headers and complete bounded bytes in a Concord-owned `ApiResponse<Bytes>`,
@@ -64,8 +65,8 @@ all-or-error. Concord does not provide:
 - parallel page execution;
 - implicit partial results after a later page failure;
 - a resumable page-stream terminal;
-- pagination over streaming, record, discard, or explicit response-bytes
-  acquisition;
+- pagination over byte streams, `Records<D>` record streams, discard, or
+  explicit response-bytes acquisition;
 - pagination with a one-shot stream, `RequestBody`, multipart, or another
   request specification that lacks `PageRequestBodySpec`;
 - inferring repeatability from `Clone`, `RequestBodySpec`, or `EncodeBody`
@@ -98,9 +99,13 @@ It does not support:
 - a first-party distributed strict-quota implementation.
 
 Omitting `by` is the declaration-global form; there is no `by global`
-spelling. Rules from client, scopes, and endpoint are additive. An explicit
-rule ID is supported, but it does not let the macro validate compatibility
-across separate `api!` invocations.
+spelling. Anonymous inline rules from client, scopes, and endpoint are
+additive. Client-owned reusable definitions and source-ordered
+`rate_limit use` attachments are supported; definitions cannot capture
+branch-local values, and attachments bind their formal logical dimensions to
+exact visible scalar references. An explicit rule ID is supported, but it
+does not let the macro validate compatibility across separate `api!`
+invocations.
 
 Install a custom bounded `RateLimiter` for distributed or non-token-bucket
 policy. Compose multiple response policies inside one custom

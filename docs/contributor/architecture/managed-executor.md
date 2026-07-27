@@ -336,9 +336,12 @@ the owned native body.
 headers and body through its finite semantic context. It cannot retain a
 native response through the trait.
 
-**Side effects:** codec conversion or stream creation. Record decoding happens
-as the returned stream is consumed and cannot emit another endpoint completion
-event.
+**Side effects:** codec conversion or stream creation. Record decoding uses
+one private driver in either lifecycle. `BufferedRecords<D>` and direct
+CSV/NDJSON drive complete all-or-error collection during buffered conversion
+under the operation deadline. `Records<D>` starts before handoff and continues
+only as the returned stream is consumed; later polling cannot emit another
+endpoint completion event.
 
 ## Stage 10: fixed result and completion
 
@@ -360,7 +363,7 @@ and prevent result delivery.
 elapsed time, page index, attempt/retry totals, authentication-recovery
 summary, and a structural outcome only.
 
-**Side effects:** debug output and application completion observation. A
+**Side effects:** debug output and application completion observation. An
 accepted stream reports `StreamOpened`, describing handoff rather than later
 consumption.
 

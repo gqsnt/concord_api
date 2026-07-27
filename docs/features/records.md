@@ -1,13 +1,14 @@
-# Record streams
+# Record delivery
 
-Decode CSV, NDJSON, or another framed format incrementally when the response
-contains many typed records. Concord layers record staging and progress checks
-on the bounded byte stream without buffering the complete response.
+Decode CSV, NDJSON, or another framed format either as one complete vector or
+as a lazy record stream. Both choices use the same `RecordDecoder` and the
+same bounded framing driver; choose between them for lifecycle semantics, not
+for parser behavior.
 
-## Declare the decoder
+## Choose buffered or streaming delivery
 
 Enable `records` plus the format feature you need. `csv` and `ndjson` both
-enable the shared record-stream surface:
+enable the shared record surface.
 
 ## Complete example
 
@@ -15,28 +16,49 @@ enable the shared record-stream surface:
 {{#include ../../crates/concord-examples/src/request_response/records.rs:records_contract}}
 ```
 
-`Records<D>` is the response specification. `D` selects media validation,
-framing, and the record type:
+The response declaration selects the output and lifecycle:
 
-- `Csv<(String, u32)>` returns a stream of typed tuple rows;
-- `NdJson<u32>` returns one decoded JSON value per logical line;
-- an application `RecordDecoder` can support another finite framing format.
+| Declaration | Output | Lifecycle |
+|---|---|---|
+| `BufferedRecords<D>` | `Vec<D::Record>` | complete, buffered, all-or-error |
+| `Records<D>` | `RecordStream<D>` | lazy, streaming |
+| `Csv<T, H, D>` | `Vec<T>` | complete, buffered, all-or-error |
+| `Records<Csv<T, H, D>>` | `RecordStream<Csv<T, H, D>>` | lazy, streaming |
+| `NdJson<T>` | `Vec<T>` | complete, buffered, all-or-error |
+| `Records<NdJson<T>>` | `RecordStream<NdJson<T>>` | lazy, streaming |
 
-Awaiting the endpoint opens a `RecordStream<D>`. Poll that stream for
-individual decoded values:
+Use `BufferedRecords<MyDecoder>` for an application-defined decoder when the
+caller needs a complete vector. Direct `Csv<T>` and `NdJson<T>` are the
+first-party shorthand for that complete form:
+
+```rust,ignore
+{{#include ../../crates/concord-examples/src/request_response/records.rs:collect_buffered_records}}
+```
+
+The complete operation remains active through bounded body acquisition, EOF,
+and decoding. It returns every record or one `ApiError`; no partial vector is
+delivered. It supports `.response()`, `.response_bytes()`, and generated
+pagination when the endpoint declares pagination. The response-bytes terminal
+preserves status acceptance and `Accept` but deliberately skips record media
+validation and decoding.
+
+Use `Records<D>` when the caller should process values as they arrive.
+Awaiting the endpoint validates the head, starts one decoder, completes with
+`StreamOpened`, and returns a `RecordStream<D>`:
 
 ```rust,ignore
 {{#include ../../crates/concord-examples/src/request_response/records.rs:consume_records}}
 ```
 
-The opening can fail with `ApiError`; later body and framing failures are
-`RecordError` items from the stream. Dropping the stream cancels the underlying
-response body.
+Later body, framing, or decode failures are `RecordError` stream items. A
+successfully yielded prefix may already be application-owned, and dropping the
+stream cancels the unread response. Record streams do not support
+`.response_bytes()` or pagination.
 
 ## Configure CSV
 
 The default `Csv<T>` has a header row and comma delimiter. Trailing type
-policies select other supported behavior:
+policies select other supported behavior in both complete and streaming forms:
 
 ```rust
 use concord::records::{Csv, HasHeader, SemicolonDelimiter};
@@ -64,16 +86,20 @@ newline. Exact policy and staging ceilings remain in Rustdoc and the
 
 `NdJson<T>` uses Serde JSON for one value per logical line. It accepts the
 documented NDJSON media types, tolerates LF and CRLF framing, and can decode a
-final record without a trailing newline. One JSON value is one stream item;
-the complete response is never first collected into a JSON array.
+final record without a trailing newline. Direct buffered delivery collects
+those framed values into a vector; it does not switch to a separate
+whole-document JSON-array parser.
 
-## Batch at the consumer boundary
+CSV and NDJSON currently decode responses only. They do not implement request
+encoding.
 
-One-record streaming is the primitive. Group successful records into
-nonempty bounded batches when downstream work is more efficient in chunks:
+## Batch a stream at the consumer boundary
+
+Group successful streamed records into nonempty bounded batches when
+downstream work is more efficient in chunks:
 
 ```rust
-let stream = client.csv_rows().await?;
+let stream = client.csv_stream().await?;
 let batches = stream.batches(
     std::num::NonZeroUsize::new(100).expect("positive batch size"),
 );
@@ -85,20 +111,24 @@ presenting incomplete success.
 
 ## Progress and limits
 
-Record staging has an independent positive limit in addition to the
-cumulative `ByteStream` limit. Network chunks are not record boundaries.
-Concord repeatedly lets the decoder consume complete records before polling
-for more bytes.
+Decoder staging and pending source bytes are separate. Network chunks are
+never record boundaries: a large transport chunk containing many small
+records succeeds as long as each undecoded logical record fits the decoder's
+positive staging limit. The driver feeds only bounded slices into staging and
+decodes between slices.
 
-At a user level, every returned record must consume staged input, and a
-decoder that needs more data must not grow the staging buffer. Concord rejects
-violations as an internal record error. An oversized or incomplete record
-fails the stream without yielding a partial value.
+A single logical record that first exceeds the staging limit fails before the
+first excess staging bytes are retained. Returning a record without consuming
+staged bytes or growing the staging buffer is an internal contract failure.
+The same private driver enforces these rules for buffered collection and
+streaming.
 
-The built-in decoders bound staged bytes, but a decoded application value can
-allocate more memory than its wire representation. Consumers and custom
-decoders remain responsible for bounded CPU, retained values, and downstream
-queues.
+Complete delivery is bounded first by the aggregate buffered response-body
+limit and then by decoder staging and progress. Streaming uses the cumulative
+byte-stream limit plus the same staging contract. These wire and staging
+limits do not bound heap allocation inside decoded values; consumers and
+custom decoders remain responsible for bounded CPU, decoded expansion,
+retained values, and downstream queues.
 
 ## Related
 

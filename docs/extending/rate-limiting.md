@@ -39,6 +39,14 @@ within one `api!` invocation, but the application owns that check across
 invocations. Different rule costs are compatible and consume different token
 amounts from the same bucket.
 
+A client-owned named definition can be attached in unrelated branches. Its
+formal dimension names become the final `RateLimitKeyPart` names, while each
+attachment binds those formals to exact visible scalar values. The derived ID
+is `<client>.rate_limit.<rule>` and is independent of attachment location.
+Consequently, scope and endpoint attachments can intentionally reach the same
+limiter bucket when ID, resolved logical key, and windows match; an attachment
+cost override changes only the charge.
+
 ## Admission input
 
 `RateLimiter::acquire` receives a borrowed `RateLimitRequest` for one visible
@@ -57,9 +65,9 @@ Authentication recovery increments the global index, keeps the current policy
 retry index, and sets its flag. Use this bounded structure for correlation
 instead of inferring retry state from call counts.
 
-The plan contains applicable rules in declaration order. Each rule has its
-stable ID—exactly an explicit declared value when present—ordered resolved key
-parts, positive cost, and finite windows.
+The plan contains applicable rules in inherited and local source order. Each
+rule has its stable ID—exactly an explicit declared value when present—ordered
+resolved logical key parts, positive cost, and finite windows.
 Dimension order is part of the key. Treat host and key values as potentially
 sensitive even though credentials have been removed.
 

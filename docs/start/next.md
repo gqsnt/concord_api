@@ -17,7 +17,7 @@ exhaustive tables.
 | send JSON or another buffered request body | [Request bodies and buffered responses](../features/bodies-and-buffered-responses.md) |
 | decode JSON or buffered bytes | [Request bodies and buffered responses](../features/bodies-and-buffered-responses.md) |
 | stream response bytes | [Streaming responses](../features/streaming.md) |
-| stream CSV or NDJSON records | [Record streams](../features/records.md) |
+| collect or stream CSV or NDJSON records | [Record delivery](../features/records.md) |
 | fetch sequential pages | [Pagination](../features/pagination.md) |
 | partition and enforce local rate policy | [Rate limiting](../features/rate-limiting.md) |
 | upload multipart text, bytes, or files | [Multipart uploads](../features/multipart.md) |

@@ -119,8 +119,10 @@ pub async fn read_csv_rows(
 // ANCHOR_END: consume_records
 
 /// Collects a complete CSV response through the ordinary buffered lifecycle.
+// ANCHOR: collect_buffered_records
 pub async fn read_buffered_csv_rows(
     client: &RecordsApi,
 ) -> Result<Vec<(String, u32)>, concord::ApiError> {
     client.csv_rows().await
 }
+// ANCHOR_END: collect_buffered_records

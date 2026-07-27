@@ -37,6 +37,13 @@ api! {
         }
         headers { "X-Client" = "canonical-reference"; }
         timeout 15s;
+        rate_limits {
+            rule regional_reads {
+                by [host, region];
+                cost 1;
+                200 / 1m;
+            }
+        }
         rate_limit {
             100 / 1s;
             1000 / 1m;
@@ -72,6 +79,9 @@ api! {
         headers { "X-Region" = scope.region; }
         auth header "X-Api-Key" = application_key challenge never;
         timeout 5s;
+        rate_limit use regional_reads {
+            region = scope.region;
+        }
 
         METHOD("PROPFIND") fetch(id: String, tags: Vec<String>) -> Text {
             path [fmt["resource-", ep.id]];

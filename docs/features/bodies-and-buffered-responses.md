@@ -36,8 +36,14 @@ Core representations need no optional media feature:
 `NoContent` is not a request-body specification. A bodyless endpoint simply
 has no `#[body]` parameter.
 
-The `csv` feature is intentionally a streaming record decoder, not a buffered
-body codec. Use [Record streams](records.md) for CSV and NDJSON.
+With `records`, `BufferedRecords<D>` collects any `RecordDecoder` into
+`Vec<D::Record>` through this same buffered response mode. The `csv` and
+`ndjson` features add direct `Csv<T>` and `NdJson<T>` response
+specifications, each returning `Vec<T>`. Wrap either decoder in `Records<...>`
+when delivery should instead be lazy. All forms share one framing driver;
+there is no separate whole-document CSV or NDJSON parser. These first-party
+formats currently decode responses only and do not encode request bodies. See
+[Record delivery](records.md).
 
 ## What happens automatically
 
@@ -154,6 +160,6 @@ bound their own work and emit only safe errors.
 
 - [Streaming responses](streaming.md)
 - [Multipart uploads](multipart.md)
-- [Record streams](records.md)
+- [Record delivery](records.md)
 - [Limits reference](../reference/limits.md)
 - [Error reference](../reference/errors.md)

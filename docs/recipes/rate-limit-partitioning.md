@@ -44,6 +44,31 @@ from the client rule, account rule, and endpoint rule before transport.
 Concord does not infer account identity from a path or header; every
 partition is explicit.
 
+When unrelated branches implement the same remote quota, define one reusable
+rule in the client instead of duplicating anonymous rules:
+
+```text
+rate_limits {
+    rule account_reads {
+        by [host, account];
+        cost 1;
+        100 / 1m;
+    }
+}
+
+rate_limit use account_reads {
+    account = scope.account;
+    cost 2;
+}
+```
+
+The formal `account` owns the final key-part name. Another attachment may bind
+`ep.account` and still share the same bucket when host, formatted account
+value, windows, and limiter object match. The omitted named ID is
+`<client>.rate_limit.account_reads`; attachment location never enters it.
+Use the cost override only when one branch consumes a different number of
+tokens from that same remote quota.
+
 The shared-limiter region passes the same object to two independently built
 clients. Ordinary clones already share the original client's limiter, so an
 explicit `Arc` is needed only when separate builds should coordinate.

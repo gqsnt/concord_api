@@ -50,10 +50,20 @@ use that helper.
 
 ## Internal flow
 
-Generated code resolves inherited declarations, endpoint attachments, costs,
-windows, and allowed public key dimensions into an immutable plan. Runtime
-endpoint construction uses public plan builders but is validated against the
-same structural ceilings.
+The compiler first registers every client-owned named definition as a semantic
+template, then resolves source-ordered attachments before normalizing each
+endpoint's runtime-shaped rules. Definitions own optional exact IDs, formal
+logical dimensions, default cost, and windows. Attachments select one
+definition, bind every non-built-in formal to an exact visible scalar
+reference, and may override cost. This preserves the distinction long enough
+to diagnose unknown, missing, duplicate, invalid, or unused definitions and
+bindings.
+
+Anonymous inline rules remain lexical shorthand and retain their established
+source-derived identities. Each layer may contain multiple named attachments
+in source order and at most one anonymous inline rule. Additive inheritance
+then produces the immutable endpoint plan. Runtime endpoint construction uses
+public plan builders but is validated against the same structural ceilings.
 
 Client construction asks the selected limiter for
 `preparation_key_limit`, snapshots that value with the limiter object, and
@@ -94,11 +104,19 @@ matching value for every attempt.
 - Final endpoint validation is authoritative for generated dimensions,
   including inherited rules and host expressions that depend on
   pagination-controlled values.
+- Definition formal names own the final generated key-part names. Binding
+  `scope.account` or `ep.account` to formal `account` emits `account`; the
+  attachment's lexical source spelling and path never enter bucket identity.
+- A named definition without an explicit ID derives exactly
+  `<client>.rate_limit.<rule>`, independent of attachment movement.
+- Every named definition must be attached at least once. Definitions alone do
+  not require a configured limiter; any effective attachment does.
 - Generated rule IDs are deterministic within one generated client contract;
   they are not a global namespace across unrelated macro expansions.
-- Omitted rule IDs preserve the established source-derived bytes. Explicit
-  generated IDs are exact bounded literals; compatible reuse compares ordered
-  dimension public names and ordered windows while deliberately ignoring cost.
+- Omitted anonymous rule IDs preserve the established source-derived bytes.
+  Explicit generated IDs are exact bounded literals; compatible reuse compares
+  ordered dimension public names and ordered windows while deliberately
+  ignoring cost.
 - One effective endpoint plan never contains the same rule ID twice.
 - Limiter preparation happens before any attempt effects, and admission
   happens before protected credential attachment.
@@ -174,6 +192,11 @@ Important proofs include:
 - a preparation key limit of zero, the exact boundary, and above-hard-cap
   client construction;
 - global, host, and ordered multi-part key separation;
+- one definition attached through `scope.account` and `ep.account` sharing
+  actual limiter state under logical key name `account`, including a different
+  attachment cost;
+- unknown, unused, missing, duplicate, optional/vector, and
+  pagination-controlled binding rejection;
 - cancellation or timeout while waiting for admission or observation;
 - an authentication recovery obtaining a second permit;
 - both limiter phases seeing the exact initial/recovery `AttemptInfo` values;
@@ -194,6 +217,12 @@ Compiler changes to key dimensions require semantic validation against final
 endpoint shaping, deterministic ID generation, generated code, runtime plan
 construction, UI diagnostics, and Rust 1.85 semantic checks. Do not solve a
 new rule form by making `RateLimitPlan` unbounded or debuggable.
+
+Do not normalize a named attachment into the anonymous source form before
+registry resolution. Doing so loses formal-name ownership, attachment spans,
+usage accounting, and local source order. Definition and binding names must
+also remain checked against the core
+`MAX_RATE_LIMIT_KEY_PART_NAME_BYTES` contract mirrored by the macro.
 
 The compiler validates explicit-ID reuse only inside one `api!` invocation.
 Cross-contract compatibility and intentional sharing of one limiter remain

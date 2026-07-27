@@ -25,6 +25,7 @@ api! {
             rule account_reads {
                 id "example.account.read";
                 by [account];
+                cost 1;
                 100 / 1m;
                 1_000 / 1h;
             }

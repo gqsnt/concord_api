@@ -62,9 +62,9 @@ rules must still receive a limiter; without a feature-provided or explicitly
 configured limiter, client construction fails closed.
 
 Use the [feature reference](../reference/features.md) for the exact list and
-feature implications. CSV and NDJSON enable generic record support;
-managed application retry remains an explicit runtime policy rather than a
-Cargo feature.
+feature implications. CSV and NDJSON enable generic buffered and streaming
+record support; both formats are response-only. Managed application retry
+remains an explicit runtime policy rather than a Cargo feature.
 
 ## Async runtime ownership
 

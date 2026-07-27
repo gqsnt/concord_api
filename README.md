@@ -84,16 +84,26 @@ stream polling, hooks, and completion begin only when a terminal is awaited.
 Built clients are immutable runtime snapshots shared safely by clones. Native
 transport objects and authentication material stay inside the runtime.
 
+Response declarations choose delivery explicitly. `BufferedRecords<D>`
+collects any record decoder into `Vec<D::Record>` through the buffered
+lifecycle; `Records<D>` returns a lazy `RecordStream<D>`. First-party
+`Csv<T>` and `NdJson<T>` are complete buffered response formats directly, and
+their `Records<Csv<T>>` / `Records<NdJson<T>>` forms stream the same framing.
+Bare `Stream` accepts any response media type, while `Stream<M>` preserves an
+exact `MediaType` contract. CSV and NDJSON are response decoders only; Concord
+does not provide CSV or NDJSON request encoding.
+
 Ordinary default features install
 `concord::rate_limit::LocalRateLimiter`, Concord's bounded process-local
-rate-limit policy. A rule's lexical location determines where it applies. Its
-optional `by` clause determines how applicable requests are partitioned into
-local buckets; Concord never infers dimensions from a path or method. See
-[Rate limiting](docs/features/rate-limiting.md).
-Generated declaration rule IDs are deterministic within one generated client
-contract, not globally namespaced across unrelated `api!` expansions. Default
-builds remain isolated by separate limiter objects; sharing one limiter across
-unrelated contracts requires compatible rule namespaces.
+rate-limit policy. Inline rules remain lexical shorthand. A client can also
+define a reusable named rule once and attach it in unrelated branches with
+`rate_limit use name`. Definition formals own the final logical key-part
+names, so binding either `scope.account` or `ep.account` to formal `account`
+uses the same bucket schema. A named rule's omitted ID derives as
+`<client>.rate_limit.<rule>` and never depends on attachment location. See
+[Rate limiting](docs/features/rate-limiting.md). Default builds remain
+isolated by separate limiter objects; sharing one limiter across unrelated
+contracts requires compatible rule namespaces.
 
 ## Documentation
 

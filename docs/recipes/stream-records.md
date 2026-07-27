@@ -1,50 +1,78 @@
-# Stream CSV or NDJSON records
+# Collect or stream CSV and NDJSON records
 
 ## Goal
 
-Open a large CSV or NDJSON response, decode typed records incrementally, and
-consume them without buffering the complete response or creating an unbounded
-downstream queue.
+Choose complete all-or-error collection for ordinary CSV or NDJSON responses,
+or incremental delivery when the caller should process records as they
+arrive.
 
 ## Complete code
 
-The compiled contract declares default CSV, configured semicolon CSV, NDJSON,
-and a custom decoder:
+The compiled contract declares direct CSV and NDJSON response formats,
+streaming wrappers, configured CSV, and a custom decoder in both modes:
 
 ```rust,ignore
 {{#include ../../crates/concord-examples/src/request_response/records.rs:records_contract}}
 ```
 
-This consumer opens the CSV stream and handles every item:
+Collect a direct CSV response as one vector:
+
+```rust,ignore
+{{#include ../../crates/concord-examples/src/request_response/records.rs:collect_buffered_records}}
+```
+
+Or consume the streaming form item by item:
 
 ```rust,ignore
 {{#include ../../crates/concord-examples/src/request_response/records.rs:consume_records}}
 ```
 
-The local runtime test feeds both CSV and NDJSON through one-byte and arbitrary
-chunk boundaries and verifies the same decoded values. Network chunks are
-never assumed to be record boundaries.
+The deterministic runtime tests feed CSV and NDJSON through complete,
+one-byte, and arbitrary chunk boundaries and verify the same decoded values.
+Network chunks are never record boundaries.
 
-## Why these declarations
+## Choose a declaration
 
-`Records<D>` selects a streaming response specification. Awaiting
-`csv_rows()` validates the accepted response head, creates the decoder, and
-returns `RecordStream<Csv<(String, u32)>>`. Later polls yield either one typed
-row or a `RecordError`.
+| Declaration | Awaited result | Lifecycle |
+|---|---|---|
+| `Csv<Row>` | `Vec<Row>` | buffered, complete, all-or-error |
+| `NdJson<Event>` | `Vec<Event>` | buffered, complete, all-or-error |
+| `BufferedRecords<MyDecoder>` | `Vec<MyDecoder::Record>` | buffered, complete, all-or-error |
+| `Records<Csv<Row>>` | `RecordStream<Csv<Row>>` | lazy streaming |
+| `Records<NdJson<Event>>` | `RecordStream<NdJson<Event>>` | lazy streaming |
+| `Records<MyDecoder>` | `RecordStream<MyDecoder>` | lazy streaming |
+
+Use direct `Csv<T>` or `NdJson<T>` when one accepted response comfortably fits
+the configured aggregate buffered-response limit and the caller should receive
+only a complete vector. These direct formats and `BufferedRecords<D>` also
+implement `PageResponseSpec`, so they can be page outputs.
+
+Use `Records<D>` when early processing or lower record-retention pressure
+matters. Awaiting `csv_stream()` validates the accepted head, starts the
+decoder, and returns the stream. Later polls yield one row or a
+`RecordError`; record streams are not page outputs.
 
 The default `Csv<T>` expects a header and comma delimiter. The configured type
 alias uses `HasHeader` and `SemicolonDelimiter` while retaining the
-`text/csv` media contract. `NdJson<u32>` accepts the documented NDJSON media
+`text/csv` media contract. `NdJson<T>` accepts the documented NDJSON media
 types and frames one JSON value per logical line.
 
-The consumer uses `poll_fn` and the standard `Stream` contract directly, so it
-needs only `futures-core`. It returns a vector for demonstration. A genuinely
-large production flow should process or forward each row as it arrives rather
-than retain them all.
+CSV and NDJSON are response formats only. These declarations do not encode
+request bodies.
 
-Record staging is bounded separately from the underlying cumulative byte
-stream. A decoder can consume across arbitrary transport chunks, but every
-returned record must make strict staged-byte progress.
+## Bounds and chunk behavior
+
+Both delivery forms use one private record driver. Pending source bytes are
+separate from decoder staging. A source chunk larger than the staging limit
+can contain many small records and still succeed; a single logical record
+that first exceeds staging fails before the first excess staging byte is
+retained.
+
+Buffered delivery first obeys the aggregate buffered-response byte limit and
+then returns all decoded values or one `ApiError`. Streaming delivery obeys
+the aggregate stream-response byte limit and yields later source/decode
+failures as `RecordError` items. Neither byte limit bounds decoded object
+graphs, consumer queues, or records retained by application code.
 
 ## Adaptations
 
@@ -57,9 +85,9 @@ Target-type deserialization decides CSV width acceptance. Structs and tuples
 normally reject incompatible rows, while `Vec<String>` may accept varying
 widths.
 
-Use `.batches(NonZeroUsize)` when downstream work benefits from bounded
-nonempty vectors. The adapter retains at most that many records and discards a
-partial batch if the underlying stream fails.
+Use `.batches(NonZeroUsize)` on a record stream when downstream work benefits
+from bounded nonempty vectors. The adapter retains at most that many records
+and discards a partial batch if the underlying stream fails.
 
 Implement `RecordDecoder` only for another finite framing format. It must
 choose an independent positive staging limit, handle EOF explicitly, and emit
@@ -67,18 +95,14 @@ category-safe errors without exposing record content.
 
 ## Production notes
 
-Opening and later polling have different liveness boundaries. The endpoint
-timeout governs opening; wrap stream consumption in an application timeout or
-cancellation policy when the complete transfer needs a deadline.
+Buffered decoding remains inside the endpoint deadline. Streaming opening is
+covered by that deadline, but later polling is caller-owned; wrap consumption
+in an application timeout or cancellation policy when the whole transfer
+needs a deadline.
 
-The byte-stream limit and decoder staging limit do not bound memory in decoded
-application values or downstream queues. Bound batch size, concurrency,
-retained records, serializer work, and metric cardinality separately.
-
-After opening, body and decode failures arrive as stream items. Do not treat
-an early prefix as complete success unless the application explicitly owns a
-partial-result protocol. Dropping the stream cancels the underlying response
-body and emits no second completion event.
+Do not treat an early streaming prefix as complete success unless the
+application explicitly owns a partial-result protocol. Dropping the stream
+cancels the underlying response body and emits no second completion event.
 
 Never include raw records, cursors, or arbitrary field values in unbounded
 logs or metric labels. Test media types, CRLF/LF, quoted newlines, EOF without
@@ -87,8 +111,9 @@ locally.
 
 ## Related
 
-- [Record streams](../features/records.md)
+- [Record delivery](../features/records.md)
 - [Streaming responses](../features/streaming.md)
+- [Pagination](../features/pagination.md)
 - [Limits reference](../reference/limits.md)
 - [Finite behavior](../concepts/finite-behavior.md)
 - [Testing API clients](testing-api-clients.md)

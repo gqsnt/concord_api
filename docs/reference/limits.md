@@ -81,7 +81,7 @@ bytes.
 | Request bodies, buffered/streamed responses, empty chunks | [Bodies and buffered responses](../features/bodies-and-buffered-responses.md), [Streaming](../features/streaming.md) | [Managed boundary ownership](../contributor/architecture/managed-executor.md#managed-boundary-ownership) |
 | Authentication material and provider HTTP | [Authentication](../features/authentication.md), [Credential providers](../features/credential-providers.md) | [Managed boundary ownership](../contributor/architecture/managed-executor.md#managed-boundary-ownership) |
 | Multipart structure and payload | [Multipart uploads](../features/multipart.md) | [Managed boundary ownership](../contributor/architecture/managed-executor.md#managed-boundary-ownership) |
-| Record staging and pagination | [Record streams](../features/records.md), [Pagination](../features/pagination.md) | [Managed boundary ownership](../contributor/architecture/managed-executor.md#managed-boundary-ownership) |
+| Record delivery and pagination | [Record delivery](../features/records.md), [Pagination](../features/pagination.md) | [Managed boundary ownership](../contributor/architecture/managed-executor.md#managed-boundary-ownership) |
 | Rate plans, keys, cooldowns, local state | [Rate limiting](../features/rate-limiting.md) | [Managed boundary ownership](../contributor/architecture/managed-executor.md#managed-boundary-ownership) |
 | Managed retry attempts and origin budget state | [Hooks and observability](../features/hooks-and-observability.md) | [Managed retry contract](../contributor/contracts/retries.md) |
 | Public request heads and runtime endpoints | [Request shaping](../guide/request-shaping.md), [Runtime-defined endpoints](../features/runtime-endpoints.md) | [Managed boundary ownership](../contributor/architecture/managed-executor.md#managed-boundary-ownership) |
@@ -187,6 +187,13 @@ stable ASCII segment grammar. They are emitted exactly. Reused explicit IDs
 within one macro invocation require identical ordered dimension names and
 ordered windows; costs may differ. Derived IDs retain their prior bytes.
 
+Client-owned named definitions derive
+`<client>.rate_limit.<rule>` when no explicit ID is present. Their formal
+dimension names are checked against
+`MAX_RATE_LIMIT_KEY_PART_NAME_BYTES` and become the final key-part names;
+attachment paths and bound source names do not enter identity. Anonymous
+inline rules retain their established source-derived IDs.
+
 Generated value dimensions are formatted directly into the remaining hard
 aggregate key budget. Concord retains no unbounded intermediate formatting;
 the first excess or formatting failure becomes a redacted invalid-rate-limit
@@ -248,9 +255,19 @@ preserves the current failure instead of evicting active state.
 Terminal status-body capture is enabled at its finite default. The builder can
 disable capture entirely; that does not create an unbounded mode.
 
-Record decoders declare their own positive finite staging bound. Body
-factories, providers, pagination controllers, limiters, observers, and hooks
-must also bound their internal work and state; the runtime cannot infer
+Record decoders declare their own positive finite staging bound. The shared
+record driver tracks pending source bytes separately and moves only enough
+input into staging to make decode progress. A large source chunk containing
+many small logical records can therefore succeed even when the chunk is
+larger than staging. The first logical record that cannot make progress
+within the staging ceiling fails before retaining the first excess staging
+byte. Buffered record collection is still subject to the aggregate buffered
+response limit; record streaming uses the aggregate stream-response limit.
+Neither bound measures decoded-record heap allocation or downstream
+retention.
+
+Body factories, providers, pagination controllers, limiters, observers, and
+hooks must also bound their internal work and state; the runtime cannot infer
 arbitrary extension storage.
 
 Authentication challenge recovery permits at most one additional attempt.

@@ -1,258 +1,234 @@
-# Records and pagination contract
+# Record delivery and pagination contract
 
-Record streaming and pagination both turn one declared response shape into
-multiple application items, but they have different ownership. Records decode
-one accepted streaming body incrementally. Pagination executes a finite
-sequence of complete buffered page requests. They share response contracts and
-finite behavior without sharing an execution loop.
+Record delivery turns one accepted response body into typed logical records.
+Pagination executes a finite sequence of complete page requests and
+accumulates each page's iterable output. Buffered record delivery can serve as
+a page response; streaming record delivery cannot.
 
 ## Purpose
 
-This distinction prevents two easy architectural mistakes:
+The contract prevents three architectural mistakes:
 
-- treating transport chunks as records, which would make framing depend on
-  network behavior;
-- treating pagination as one transport request, which would bypass per-page
+- treating transport chunks as record boundaries;
+- treating a large source chunk as one staged logical record;
+- treating pagination as one transport request and bypassing per-page
   authentication, limiter, hook, deadline, and completion policy.
 
-`RecordStream` is therefore layered over `ByteStream`, while pagination wraps
-the managed executor and invokes it once per page.
+One private record driver owns framing progress for both buffered collection
+and `RecordStream`. Pagination wraps the managed executor and invokes it once
+per page; it does not share the record driver's loop.
 
 ## Public model
 
 The record surface consists of:
 
 - `RecordDecoder`, a request-local incremental framing and decode contract;
-- `Records<D>`, a streaming `ResponseBodySpec` selecting decoder `D`;
-- `RecordStream<D>`, which yields one `Result<Record, RecordError>` at a time;
-- `RecordBatches<D>`, an optional positive-size consumer adapter.
+- `BufferedRecords<D>`, a buffered `ResponseBodySpec` whose output is
+  `Vec<D::Record>`;
+- `Records<D>`, a streaming `ResponseBodySpec`;
+- `RecordStream<D>`, yielding `Result<D::Record, RecordError>`;
+- `RecordBatches<D>`, an optional positive-size stream adapter.
+
+`BufferedRecords<D>` implements `PageResponseSpec`. There is deliberately no
+blanket `ResponseBodySpec` for every `RecordDecoder`: the wrapper expresses
+the lifecycle choice.
+
+First-party `Csv<T, H, Delimiter>` and `NdJson<T>` remain
+`RecordDecoder`s. Their direct `ResponseBodySpec` implementations delegate to
+`BufferedRecords<Self>`, return `Vec<T>`, and implement `PageResponseSpec`.
+Wrapping either in `Records<D>` selects streaming without a separate framing
+engine.
 
 The pagination surface consists of:
 
 - `PaginationController<Page>`, request-local continuation state;
-- `PageRequestBodySpec`, trusted opt-in for page-stable repeatable request
-  bodies;
-- `PageResponseSpec`, explicit opt-in for buffered iterable responses;
-- `PageLimit::Take` and `PageLimit::HardCap`, two different termination
-  policies;
-- the generated `.paginate(...)` operation, which resolves to a collected
-  `Vec<Item>`.
+- `PageRequestBodySpec`, trusted opt-in for stable independently preparable
+  page bodies;
+- `PageResponseSpec`, explicit opt-in for complete iterable page outputs;
+- `PageLimit::Take` and `PageLimit::HardCap`;
+- generated `.paginate(...)`, returning one collected `Vec<Item>`.
 
-The generated pagination binding remains private plumbing. Application and
-extension code use the stable controller and request surface, not the hidden
-endpoint integration trait.
+## Shared record driver
 
-## Internal flow
+The private `RecordDriver<D>` owns:
 
-### Record stream
+- one decoder started for the accepted response;
+- decoder-visible staging;
+- pending source bytes that have not entered staging;
+- EOF and terminal state;
+- net-progress, staging-limit, and invariant checks.
 
-After accepted status handling and streaming known-length preflight, core
-calls decoder `validate`, creates one decoder with `start`, and opens a
-`RecordStream`. Polling then alternates between decoder progress and bounded
-`ByteStream` input:
+Pending source and staging are intentionally distinct. The driver feeds only
+enough pending input to let the decoder make progress. A transport or
+aggregate chunk larger than the staging limit can therefore contain many
+small records and succeed. If one logical record cannot progress at the exact
+staging ceiling, the first excess staging byte is rejected before retention.
 
-1. call `decode` on currently staged bytes;
-2. yield one record when strict net buffer consumption produced it;
-3. poll the byte stream only when the decoder needs more data;
-4. append a nonempty chunk only if it fits the independent staging bound;
-5. after body EOF, call `decode_eof` until the final framing decision;
-6. report incomplete trailing data or finish.
+For each callback:
 
-Network chunks are never record boundaries. The decoder owns framing, and one
-logical output must correspond to staged-byte consumption.
+- staging length must not grow;
+- `Some(record)` requires a strict net decrease;
+- `None` may consume bytes;
+- unchanged `None` asks for more pending/source input;
+- EOF uses `decode_eof` under the same rules.
 
-### Pagination
+Some-without-consumption and decoder growth are invariant failures, not
+ordinary format errors. Network chunks never define record boundaries.
 
-The aggregate pagination future is inert until first poll. It then creates one
-parent operation identity and one initial controller. For each page,
-sequentially:
+## Buffered record flow
 
-1. validate current controller state;
-2. clone the original typed endpoint, including its trusted page-stable body
-   input, and bind the controller into that fresh snapshot;
-3. prepare the bounded public head and a canonical credential-sanitized
-   request identity;
-4. reject a repeated identity or an identity that exceeds retained-byte
-   policy;
-5. execute the page through the ordinary managed executor with a child
-   operation identity, preparing its body once after hook approval;
-6. complete the page operation;
-7. collect its decoded items under the configured item ceiling;
-8. apply short-page and requested-limit rules;
-9. call `next` only when another page may be requested.
+After status acceptance:
 
-After success or failure is fixed, pagination invokes the aggregate completion
-hook outside page deadlines. Controller callbacks are also outside the
-per-page deadline and are trusted synchronous application work.
+1. buffered known-length preflight and `BufferedRecords<D>::validate` run
+   before body polling;
+2. core acquires the complete aggregate-bounded body;
+3. `D::start` creates one request-local decoder in `from_body`;
+4. complete bounded bytes become pending driver input;
+5. the driver collects records in order until clean EOF;
+6. the complete vector is returned, or all accumulated records are dropped on
+   error.
+
+This work occurs during `Buffered` conversion under the operation deadline.
+Completion reports `Success` on a complete vector, not `StreamOpened`.
+`.response()` retains accepted metadata. `.response_bytes()` preserves status
+acceptance and `Accept`, but bypasses record validation, startup, and decoding.
+
+## Streaming record flow
+
+After status acceptance:
+
+1. streaming known-length preflight and `Records<D>::validate` run before
+   source polling;
+2. core creates an unpolled bounded `ByteStream`;
+3. `D::start` creates one decoder during `from_body`;
+4. core opens `RecordStream<D>` over that source plus the same driver;
+5. later caller polls alternate driver progress with bounded source polling;
+6. source EOF invokes the shared EOF path.
+
+Opening completes the endpoint with `StreamOpened`. Later source or decoder
+errors are `RecordError` items and emit no second completion. Dropping the
+record stream drops its underlying byte stream.
+
+Batching does not change the primitive contract. It retains at most its
+positive batch size, drops a partial batch on underlying failure, and cannot
+bound records retained after yield.
+
+## Pagination flow
+
+The aggregate pagination future is inert until first poll. For each page it:
+
+1. validates controller state;
+2. clones the original typed endpoint and its trusted stable body input;
+3. binds only declared pagination fields;
+4. prepares the bounded public head and canonical credential-sanitized
+   identity;
+5. rejects repeated or over-limit identity;
+6. executes the page through the ordinary managed executor;
+7. completes the page operation;
+8. accumulates decoded iterable items under the item ceiling;
+9. applies short-page and requested-limit rules;
+10. calls `next` only if another page is permitted.
+
+After the aggregate result is fixed, the pagination completion hook runs
+outside page deadlines. Controller callbacks also run synchronously outside
+the per-page deadline.
+
+`BufferedRecords<D>`, direct CSV, and direct NDJSON are eligible page outputs.
+`Records<D>`, byte streams, discard responses, and response-bytes acquisition
+are not. Pagination requires a complete decoded page before state transition.
 
 ## Architectural invariants
 
-- A decoder cannot increase the staging buffer.
-- Returning `Some(record)` requires a strict net decrease in staged bytes.
-- Returning `None` may consume bytes; no progress causes core to poll the body
-  or resolve EOF rather than spin on the decoder.
-- Record staging has its own bound in addition to the cumulative byte-stream
-  bound.
-- An append that would first exceed staging capacity retains none of the
-  excess chunk and yields no oversized record.
-- Record errors after opening are stream items; dropping the record stream
-  drops its underlying byte stream.
-- Pagination pages execute sequentially and use the ordinary executor.
-- Cycle identity is derived from endpoint, method, logical URL, and public
-  headers, never request-body bytes or private credential placement.
-- Pagination bindings cannot target the request-body field. The original body
-  input remains stable across pages.
-- A policy retry reconstructs a complete attempt body from the prepared page
-  body; it does not re-run page input encoding or specification preparation.
-- Every complete retained identity is charged to the configured identity-byte
-  budget; the page limit also bounds identity count.
-- Pagination returns the complete collected vector on success or an error. It
-  does not return a partial accumulated result.
-- Page and aggregate operation identities, completion events, and recovery
-  metadata remain correlated.
+- Buffered collection and streaming use one record progress engine.
+- Record staging has its own bound in addition to the applicable aggregate
+  buffered/streamed response bound.
+- Buffered collection is complete all-or-error; no partial vector escapes.
+- Streaming errors after opening are items; dropping stops source polling.
+- Decoder state, pending bytes, and staging bytes are absent from automatic
+  formatting.
+- Pagination pages execute sequentially through the ordinary executor.
+- Cycle identity includes endpoint, method, logical URL, and public headers,
+  never request body bytes or private credentials.
+- Pagination bindings cannot target the request-body field.
+- A policy retry reconstructs a complete attempt from the prepared page body
+  rather than re-running page input encoding.
+- Every retained identity and item is charged before first excess.
+- Page and aggregate operation identities and completion events remain
+  correlated.
 
-Batching does not change the primitive record contract. The adapter holds at
-most its positive batch size, drops a partial batch on underlying failure, and
-cannot bound memory retained by the caller after a batch is yielded.
+## Bounds and trusted work
 
-## Bounds
+Buffered records obey the configured buffered-response byte limit; streaming
+records obey the stream-response byte and empty-chunk limits. Every decoder
+adds a positive staging limit. These limits do not measure decoded object
+graphs, decoder side tables, callback CPU, consumer queues, or application
+retention.
 
-`ByteStream` applies the response-wide nonempty-byte and empty-chunk bounds.
-Each `RecordDecoder` additionally declares a positive staging limit.
-Pagination has independent page, collected-item, and retained-identity-byte
-ceilings. The exact defaults, hard limits, and configuration methods belong to
-the [limits reference](../../reference/limits.md).
+Pagination has independent page, item, and retained-identity byte ceilings.
+`PageLimit::Take(n)` succeeds with no more than `n` pages without asking for
+another continuation after page `n`. `HardCap(n)` requires natural
+termination within the cap.
 
-Controller and decoder state are downstream-owned. Concord does not measure
-their heap allocation, callback duration, metrics, caches, or spawned work.
-`PaginationController` callbacks must be non-blocking and perform no external
-I/O because they run synchronously outside the page deadline.
-
-`PageLimit::Take(n)` means “collect no more than `n` pages and succeed after
-the last allowed page without asking for another continuation.”
-`PageLimit::HardCap(n)` means “allow natural termination through page `n`, but
-fail if continuation still exists at the cap.” Conflating these policies
-changes user-visible success behavior.
+Controller and decoder callbacks are synchronous trusted work. They must
+perform no external I/O and must bound CPU and allocation.
 
 ## Errors and redaction
 
-Record framing, decode, incomplete-tail, body, staging-limit, and internal
-progress violations become finite `RecordErrorKind` values. A body failure
-after stream opening is deliberately reduced to the record contract rather
-than leaking the underlying `ApiError`.
+For buffered records:
 
-Pagination preparation, controller, cycle, page-limit, item-limit, and
-identity-limit failures reduce to `ErrorCategory::Pagination` with focused
-`PaginationErrorKind` where available. A page's ordinary authentication,
-limiter, hook, timeout, transport, status, or decode failure retains its normal
-top-level category while aggregate completion stays correlated.
+- aggregate body read and body-limit failures remain `ResponseBody`;
+- media validation is `ResponseContract`;
+- framing, staging, and ordinary decode errors are `ResponseDecoding`;
+- driver invariant failures are `Internal`.
 
-Identity diagnostics and ordinary error formatting must not reveal private
-credential material or retained controller state. Public URL and header values
-can still contain identifiers, so extensions and hooks retain their own
-logging obligations. The canonical reduction behavior is in
-[Errors](../../reference/errors.md).
+For an opened stream, corresponding later failures are finite
+`RecordErrorKind` values. Neither route retains parser source errors or
+record bytes.
+
+Pagination structural failures reduce to `Pagination`; an ordinary page
+authentication, limiter, hook, timeout, transport, status, or response error
+retains its category. Later-page failure never exposes the accumulated prefix.
 
 ## Extension boundary
 
 A `RecordDecoder` receives `ResponseHead` and a bounded `BytesMut` staging
-buffer. It receives no native response, transport stream, credentials, or
-hooks. It must implement exact EOF semantics and obey the net-progress
-contract on every return path.
+buffer, never native transport or credentials. It owns exact framing and EOF
+semantics.
 
-A `PaginationController` receives the decoded page and owns only its
-request-local continuation value. It cannot send a page, override policy, or
-inspect private request state. Calls from distinct pagination operations may
-overlap even though one controller value only moves sequentially.
+A `PaginationController` receives the decoded page and its own continuation
+state. It cannot send requests or inspect private request state. Downstream
+bodies opt into pagination only through `PageRequestBodySpec`; cloneability
+alone is insufficient. Downstream responses opt in through
+`PageResponseSpec`; `ResponseBodySpec` alone is insufficient.
 
-Downstream request specifications opt into page stability explicitly with
-`PageRequestBodySpec`; `Input: Clone` or `RequestBodySpec` alone is not enough.
-The marker promises independently preparable clones with identical body
-semantics. One-shot streams, `RequestBody`, and multipart bodies remain
-excluded. Downstream buffered response specifications independently opt into
-pagination with `PageResponseSpec`; implementing `ResponseBodySpec` alone is
-not enough. Bytes, discard outputs, byte streams, and record streams do not
-accidentally become paginatable.
+## Failure modes and verification
 
-See [Record decoders](../../extending/record-decoders.md) and
-[Pagination controllers](../../extending/pagination.md) for implementation
-skeletons.
+Record proofs cover complete and one-byte input, every framing boundary, a
+source chunk larger than staging with many small records, exact staging and
+first excess, consuming `None`, invariant failures, multi-record EOF,
+incomplete tails, source failure/drop, buffered/streaming parity, and
+all-or-error collection.
 
-## Failure modes
-
-Record tests must cover:
-
-- a record split across arbitrary network chunks;
-- several records in one chunk;
-- consumption followed by `None`;
-- `Some` without net consumption and any buffer growth;
-- first-excess staging behavior;
-- clean EOF, final record at EOF, and incomplete trailing framing;
-- upstream body failure and decoder failure after stream opening;
-- batching success, partial-batch failure, and drop behavior.
-
-Pagination tests must cover:
-
-- zero/take/hard-cap termination differences;
-- short-page termination and controller natural termination;
-- repeated canonical identity, including credential changes that must not hide
-  a public cycle and stable body bytes that must not enter identity;
-- first-excess page, item, and identity ceilings;
-- stable body bytes and per-page body limits;
-- one body preparation or encoding per page and prepared-body reuse for a
-  policy retry;
-- custom repeatable-body opt-in plus non-opted, non-clone, stream,
-  `RequestBody`, and multipart compile failures;
-- page failure without partial output;
-- authentication recovery and rate-limit policy on later pages;
-- direct page completion before aggregate completion;
-- cancellation before another page begins.
-
-## Change hazards
-
-Changing record progress checks can introduce a busy loop, retain an excess
-chunk, or convert framing behavior into transport-dependent behavior. Review
-decoder changes with manually polled ready-empty sources and exact staged-byte
-assertions.
-
-Changing pagination binding or identity construction can silently weaken cycle
-detection. Review every public shaping component that affects the next URL or
-header, but never add body bytes or credentials to identity. A new body
-implementation must not receive `PageRequestBodySpec` merely because its input
-is `Clone`; review the stable, independent preparation promise. New per-page
-features must use the managed executor and preserve child/parent event
-correlation.
-
-Collection semantics are intentionally all-or-error. Returning partial items
-would require a new public contract rather than an implementation-only change.
-
-## Verification
+Pagination proofs cover zero/take/hard-cap behavior, natural and short-page
+termination, cycle identity, first-excess page/item/identity bounds, stable
+page bodies and retry reuse, buffered-record/CSV/NDJSON page outputs, rejected
+streaming page outputs, later-page failure, authentication recovery, limiter
+policy, and page-before-aggregate completion.
 
 Primary owners are:
 
-- `crates/concord-core/src/records/stream.rs` for progress, staging, EOF,
-  batching, and drop semantics;
-- `crates/concord-core/src/pagination/tests.rs` for controller binding and
-  structural preparation;
-- `crates/concord-core/src/pagination/runtime_tests/` for sequencing, limits,
-  identity, and completion;
-- `crates/concord-core/tests/public_api/pagination_api.rs` and record public
-  API tests for stable reachability;
-- `crates/concord-extras/src/records/` for CSV and NDJSON downstream decoder
-  behavior;
-- `crates/concord/tests/generated/pagination.rs` and pagination UI cases for
-  generated surface and diagnostics;
-- `crates/concord-examples/src/request_response/`,
-  `crates/concord-examples/src/pagination/`, and the pagination recipe for
-  compiled end-to-end compositions.
-
-After focused owners, run all-feature core, extras, façade, examples, workspace
-doctests, and the maintained UI suites from
-[Testing strategy](../testing.md).
+- `crates/concord-core/src/records/driver.rs` for progress, pending/staging,
+  EOF, and collection;
+- `crates/concord-core/src/records/stream.rs` and `buffered.rs` for delivery
+  adapters;
+- `crates/concord-core/src/pagination/` for sequencing and limits;
+- `crates/concord-extras/src/records/` for CSV and NDJSON;
+- façade generated/runtime/public/UI tests for response and pagination
+  composition.
 
 ## Related
 
-- [Record streams](../../features/records.md)
+- [Record delivery](../../features/records.md)
 - [Pagination](../../features/pagination.md)
 - [Bodies, responses, and finite progress](body-response-progress.md)
 - [Managed executor](../architecture/managed-executor.md)

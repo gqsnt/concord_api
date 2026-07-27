@@ -97,9 +97,10 @@ application data.
 
 A `ResponseBodySpec` receives actual accepted headers and a bounded semantic
 body (`Bytes`, `ByteStream`, or `()`) after core-owned acquisition. A
-`RecordDecoder` receives response-head metadata and staged response bytes.
-These are trusted extension boundaries, not automatically safe logging
-surfaces.
+`RecordDecoder` receives response-head metadata and staged response bytes
+during buffered collection or stream polling. Pending source, staging, and
+decoded records are omitted from automatic driver/stream formatting. These
+are trusted extension boundaries, not automatically safe logging surfaces.
 
 Byte and record stream failures are redacted, but successfully yielded bytes
 or records belong to the application. Dropping a stream cancels later polling;

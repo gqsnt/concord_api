@@ -115,8 +115,10 @@ instrumented waker. Async response collectors additionally use explicit poll
 boundaries, yield observation, and paused time for deadline control.
 `ByteStream`, buffered success, status capture, and provider tests own
 response suppression, the shared total ceiling, terminal redaction, and
-unchanged nonempty-byte limits; `RecordStream` owns the no-spin composition
-proof. Managed request-stream tests own suppression before native transport,
+unchanged nonempty-byte limits; the private record driver owns shared buffered
+and streaming no-spin, pending/staging, large-source-chunk, and first
+logical-record excess proofs. Managed request-stream tests own suppression
+before native transport,
 the total/per-poll contract, source drop, body-factory/multipart convergence,
 and exact-length error ordering. Host-base semantic unit tests own inheritance
 and `host off`; façade Trybuild cases own the IPv4/IPv6 user-facing spans and

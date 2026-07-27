@@ -7,9 +7,11 @@ application state its consumption retains.
 
 ## Declare streaming media
 
-Bare `Stream` is media-unconstrained. A request body inserts no
-`Content-Type`; a response inserts no `Accept` and accepts missing, malformed,
-or arbitrary response `Content-Type`.
+Bare `Stream` is the defaulted form `Stream<AnyMedia>` and is
+media-unconstrained. `AnyMedia` deliberately does not implement `MediaType`,
+so it cannot accidentally enter the exact-media generic path. A bare request
+body inserts no `Content-Type`; a bare response inserts no `Accept` and
+accepts missing, malformed, or arbitrary response `Content-Type`.
 
 Use `Stream<OctetStream>` or `Stream<MyMedia>` when the protocol requires one
 exact media type. Exact-media uploads own `Content-Type`, and exact-media
@@ -99,7 +101,7 @@ an `ApiResponse<ByteStream>`.
 ## Related
 
 - [Request bodies and buffered responses](bodies-and-buffered-responses.md)
-- [Record streams](records.md)
+- [Record delivery](records.md)
 - [The managed lifecycle](../concepts/managed-lifecycle.md)
 - [Finite behavior](../concepts/finite-behavior.md)
 - [Limits reference](../reference/limits.md)

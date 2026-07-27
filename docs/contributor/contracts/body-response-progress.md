@@ -41,6 +41,8 @@ Response-side contracts are exposed through:
 - sealed `Buffered`, `Streaming`, and `Discard` response modes;
 - `ByteStream`, the lazy bounded accepted-response stream;
 - `DecodeBody`, the ordinary complete-buffer codec contract;
+- `BufferedRecords<D>` and `Records<D>`, explicit buffered and streaming
+  selections for one `RecordDecoder`;
 - `PageResponseSpec`, the explicit buffered capability needed by pagination.
 
 `ResponseHead` gives a selected response specification accepted structural
@@ -87,6 +89,13 @@ reaches the declared mode:
 and conversion callbacks are synchronous and are checked against the operation
 deadline immediately after return.
 
+`BufferedRecords<D>` receives the complete aggregate-bounded body and drives
+it to a complete vector during `from_body`. `Records<D>` starts the same
+decoder while opening and returns a `RecordStream` that drives later source
+bytes. Both use one private driver with pending source bytes separate from
+decoder staging. Direct CSV and NDJSON responses delegate to the buffered
+wrapper; their `Records<...>` forms use the streaming wrapper.
+
 ## Architectural invariants
 
 - Request construction is inert; metadata is structural; materialization
@@ -107,6 +116,12 @@ deadline immediately after return.
   fourth acquisition mode.
 - Decompression, when enabled, remains inside response acquisition, so the
   public response bound applies to post-decompression bytes.
+- The record staging ceiling applies to one undecoded logical record, not one
+  transport chunk. Large source chunks are fed incrementally from pending
+  bytes, and the first logical-record excess is rejected before excess staging
+  retention.
+- Buffered record delivery is complete all-or-error. Streaming record
+  delivery may expose a prefix before a later typed stream error.
 - A streaming response completes when a bounded `ByteStream` is opened, not
   when the caller later finishes polling it.
 
@@ -128,6 +143,11 @@ unbounded application state; a stream source can remain pending forever when
 the operation timeout is disabled. Those behaviors remain trusted extension
 responsibilities.
 
+Record delivery adds a decoder-selected positive staging limit. Pending source
+bytes remain subject to the aggregate buffered or streaming response limit
+and are not counted again as staging. Neither limit bounds decoded vectors,
+decoder-owned state, or downstream queues.
+
 Exact-length handling is ordered with aggregate enforcement. A body cannot
 evade the configured byte ceiling by declaring a larger exact length, and
 failure must occur without sending the first excess data.
@@ -139,15 +159,22 @@ the request-body category with a focused `BodyErrorKind`. Accepted-response
 collection, stream, contract, and conversion failures reduce to response-body,
 response-contract, or response-decoding categories as appropriate.
 
+For buffered records, aggregate acquisition failures remain `ResponseBody`,
+media validation is `ResponseContract`, framing/staging/decoder errors are
+`ResponseDecoding`, and driver invariant failures are `Internal`.
+`response_bytes()` skips record validation and decoding. After a record stream
+opens, later failures are `RecordError` items instead of a second `ApiError`.
+
 Native body errors and extension error text do not cross the public boundary.
 The public error retains finite structural context and safe focused kinds.
 Status-body access is an explicit bounded terminal-error capability; it is not
 the accepted-response acquisition path. See
 [Errors](../../reference/errors.md) for the canonical reduction table.
 
-`Debug` implementations for managed bodies and streams omit body values,
-factory state, native handles, and staged bytes. Extensions still own
-confidentiality of data they log or retain.
+`Debug` implementations for managed bodies, record drivers, and streams omit
+body values, factory state, native handles, pending source, staged bytes, and
+decoded records. Extensions still own confidentiality of data they log or
+retain.
 
 ## Extension boundary
 
@@ -157,6 +184,11 @@ are required. Implement `PageRequestBodySpec` only after proving stable,
 independent preparation from every input clone; there is no blanket marker for
 `EncodeBody`. Implement `ResponseBodySpec` when status acceptance, accepted
 head validation, or a sealed non-default mode is required.
+
+Implement `RecordDecoder` for framed response values. Select it explicitly
+with `BufferedRecords<D>` or `Records<D>`; do not add a blanket response
+implementation or a parallel whole-document parser. Implement
+`PageResponseSpec` only for complete iterable outputs.
 
 Callbacks receive finite semantic contexts, not request credentials, limiter
 state, native HTTP objects, or transport error chains. Synchronous callbacks
@@ -183,6 +215,10 @@ Maintainers should test at least:
 - known-length preflight failure before polling the response;
 - media-type validation or conversion failure after an accepted status;
 - accepted non-2xx acquisition using response rather than status-body limits;
+- buffered/streaming record parity across one-byte input and a source chunk
+  larger than staging, exact staging, first logical excess, and driver
+  invariants;
+- buffered records returning no partial vector and completing as `Success`;
 - streaming error after the stream has already been returned;
 - discard behavior that never polls the accepted body.
 
@@ -214,6 +250,8 @@ The primary owners are:
 - `crates/concord-core/src/response/handler.rs` and
   `crates/concord-core/src/response/stream.rs` for sealed acquisition and
   streaming progress;
+- `crates/concord-core/src/records/driver.rs`, `buffered.rs`, and `stream.rs`
+  for shared record progress and delivery adapters;
 - `crates/concord-core/src/execute/tests/status.rs` and
   `crates/concord-core/src/execute/tests/streaming.rs` for lifecycle
   integration;
@@ -233,5 +271,5 @@ warning-denied Rustdoc, and relevant UI checks. The maintained matrix is in
 
 - [Finite behavior](../../concepts/finite-behavior.md)
 - [Security and redaction](../../concepts/security-and-redaction.md)
-- [Records and pagination contract](records-pagination.md)
+- [Record delivery and pagination contract](records-pagination.md)
 - [Managed executor](../architecture/managed-executor.md)

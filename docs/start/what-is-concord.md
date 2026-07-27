@@ -58,7 +58,7 @@ Concord works well for typed HTTP APIs with stable endpoint families,
 including:
 
 - JSON or buffered binary request/response APIs;
-- bounded byte or record streams;
+- bounded byte streams plus buffered or streaming record delivery;
 - API-key, Bearer, Basic, provider-backed, or OAuth2 credentials;
 - sequential page, offset, or cursor pagination;
 - lexical per-client, per-scope, or per-endpoint rate policy;

@@ -92,8 +92,10 @@ polling; decoder failure is reduced to the stable response-decoding category.
 
 If the response output implements `IntoIterator`, the codec also gets
 `concord::response::PageResponseSpec` and can back generated pagination. A
-streaming format whose records should arrive incrementally belongs behind
-`RecordDecoder`, not a buffered codec.
+framed sequence belongs behind `RecordDecoder`: select
+`BufferedRecords<D>` for complete collection or `Records<D>` for incremental
+delivery. First-party `Csv<T>` and `NdJson<T>` provide those response choices
+directly, but deliberately do not implement request encoding.
 
 ## Trusted work and bounds
 

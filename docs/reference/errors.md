@@ -90,6 +90,10 @@ Subsystem errors reduce predictably:
 | `ResponseBodyErrorKind::InvalidMediaType` or `InvalidOutput` | `ResponseContract` |
 | `ResponseBodyErrorKind::Decode` | `ResponseDecoding` |
 | `ResponseBodyErrorKind::Internal` | `Internal` |
+| buffered-record aggregate collection/read/byte-limit failure | `ResponseBody` |
+| buffered-record media validation failure | `ResponseContract` |
+| buffered-record framing, staging, or decoder failure | `ResponseDecoding` |
+| buffered-record driver progress invariant failure | `Internal` |
 | managed request-source or native request-body failure | `RequestBody` |
 | native timeout | `Timeout` |
 | native connect failure | `Connect` |
@@ -98,10 +102,16 @@ Subsystem errors reduce predictably:
 
 An `EncodeBody` error becomes `RequestEncoding`; a full
 `RequestBodySpec` producer/materialization error becomes `RequestBody`.
-Record opening errors reduce through the response contract, while failures
-after a `RecordStream` opens are typed `RecordError` stream items.
-`ByteStream` body failures remain `ApiError` items, normally
-`ResponseBody`.
+`BufferedRecords<D>` returns a complete vector or one `ApiError`; it never
+returns a decoded prefix. `Records<D>` opening media/start errors reduce
+through the same response mapping, while body, framing, staging, and decoder
+failures after `RecordStream` opens are typed `RecordError` stream items.
+`ByteStream` body failures remain `ApiError` items, normally `ResponseBody`.
+
+`.response_bytes()` preserves status acceptance and the specification's
+`Accept` header but intentionally skips accepted-response media validation,
+record decoder startup, framing, and decoding. It can therefore succeed for
+bytes that the declared record response would reject.
 
 Safe messages on `AuthError`, `RateLimitError`, and `PaginationError` are
 explicit application trust boundaries and may be retained by `ApiError`.

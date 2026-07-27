@@ -31,6 +31,17 @@
 
 ### Added
 
+- Client-owned reusable named rate-limit definitions with source-ordered
+  `rate_limit use` attachments. Definition formals own logical key-part names,
+  omitted named IDs derive as `<client>.rate_limit.<rule>`, and attachment
+  cost overrides can charge the same shared bucket differently.
+- `BufferedRecords<D>` for complete all-or-error `Vec<D::Record>` responses,
+  including pagination support. Direct `Csv<T, H, D>` and `NdJson<T>`
+  response declarations now collect complete vectors while
+  `Records<Csv<...>>` and `Records<NdJson<...>>` retain incremental delivery.
+- Media-unconstrained byte streams through bare `Stream`, implemented as
+  `Stream<AnyMedia>`. Exact `Stream<M: MediaType>` request and response media
+  behavior is unchanged.
 - Focused verification that poisoned managed-retry budget state fails closed
   without replacing the original result, plus an isolated observational
   benchmark for one Concord-managed 503-to-success retry.
@@ -80,6 +91,11 @@
 
 ### Changed
 
+- Buffered and streaming record delivery now share one private progress
+  driver. Pending source bytes are separate from decoder staging, so one large
+  transport chunk containing many individually bounded records succeeds,
+  while the first logical record that exceeds the staging limit fails before
+  retaining excess staging bytes.
 - Built-in credential constructors are fallible and bounded before storage;
   generated static construction and replacement validate before slot mutation,
   and protected-string clones share immutable storage.

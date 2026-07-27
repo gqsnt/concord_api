@@ -126,6 +126,14 @@ declaration when the endpoint needs generated `.paginate(...)`, or write an
 application loop with its own explicit bounds when the entire protocol is
 truly dynamic.
 
+The response specification must implement `PageResponseSpec`. Ordinary
+buffered codecs qualify when their output is iterable.
+`BufferedRecords<D>`, direct `Csv<T, H, D>`, and direct `NdJson<T>` explicitly
+qualify and contribute their decoded rows or values. `Records<D>`, byte
+streams, discard responses, and explicit response-bytes acquisition do not:
+pagination needs one complete all-or-error page value before deriving the
+next request.
+
 One-shot stream bodies, `RequestBody`, and multipart bodies do not implement
 the page-stable marker. Supporting those forms directly would require a
 separate repeatability contract rather than inferring safety from `Clone` or

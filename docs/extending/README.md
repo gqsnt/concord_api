@@ -19,7 +19,7 @@ Start with the operation your extension performs:
 | Decode one complete buffered response | `concord::codec::DecodeBody` | Bounded bytes can be converted synchronously |
 | Define request metadata and preparation | `concord::body::RequestBodySpec` | The body is streamed, factory-backed, multipart, or needs structural metadata |
 | Select a response acquisition mode | `concord::response::ResponseBodySpec` | The result needs buffered, streaming, or discard behavior beyond a codec |
-| Frame a response into records | `concord::records::RecordDecoder` | One bounded byte stream should yield typed records incrementally |
+| Frame a response into records | `concord::records::RecordDecoder` | Bounded response bytes should yield typed records in buffered or streaming delivery |
 | Acquire renewable credentials | `concord::auth::CredentialProvider` | Credential material comes from a bounded asynchronous provider workflow |
 | Derive the next page state | `concord::pagination::PaginationController` | Offset, page-number, or cursor helpers cannot express the service |
 | Own admission and quota state | `concord::rate_limit::RateLimiter` | Local or distributed policy must authorize each attempt |
@@ -51,8 +51,9 @@ body. Implement `ResponseBodySpec` directly to choose one of Concord's sealed
 `Buffered`, `Streaming`, or `Discard` modes. Applications can select those
 modes but cannot add an acquisition mode or obtain the underlying response.
 
-Record decoding is a separate incremental contract layered on a bounded byte
-stream. It is not a fourth response acquisition mode.
+Record decoding is a separate incremental contract layered on bounded source
+bytes. `BufferedRecords<D>` selects `Buffered`; `Records<D>` selects
+`Streaming`. It is not a fourth response acquisition mode.
 
 ## How types enter a declaration
 
@@ -119,7 +120,8 @@ Use the façade paths in application code and Rustdoc:
   `concord::codec::DecodeBody`;
 - body lifecycle: `concord::body::RequestBodySpec` and
   `concord::response::ResponseBodySpec`;
-- records: `concord::records::RecordDecoder`;
+- records: `concord::records::RecordDecoder`, `BufferedRecords`, and
+  `Records`;
 - credentials: `concord::auth::CredentialProvider` and
   `concord::auth::CredentialMaterial`;
 - pagination: `concord::pagination::PaginationController`;

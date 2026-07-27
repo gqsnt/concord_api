@@ -31,7 +31,7 @@ Choose the smallest family that owns the behavior:
 | Complete buffered response decoding | `DecodeBody` | status and finite acquisition |
 | Request metadata and managed preparation | `RequestBodySpec`, `BodyFactory` | final body convergence and native conversion |
 | Accepted response conversion | `ResponseBodySpec` | sealed mode, status, body acquisition |
-| Incremental record framing | `RecordDecoder` | bounded byte stream and staging progress |
+| Record framing | `RecordDecoder` | bounded buffered/streamed source and shared staging progress |
 | Credential material and acquisition | `CredentialMaterial`, `CredentialProvider` | slots, placement, attempts, provider HTTP |
 | Page continuation | `PaginationController` | page loop, identities, collection, policy |
 | Admission and response policy | `RateLimiter`, `RateLimitObserver` | plan validation and lifecycle ordering |
@@ -61,8 +61,10 @@ finite semantic context -> extension callback -> approved semantic result
 The context contains only what the operation needs: an encode/decode limit,
 structural request metadata, an accepted response head, bounded staged bytes,
 credential-provider HTTP, immutable quota plans, or sanitized lifecycle
-events. Native request mutation, redirects, transport handles, authenticated
-URLs, native error chains, and completion dispatch stay inside core.
+events. Record decoders use the same private progress driver whether their
+source is a complete buffered body or a returned stream. Native request
+mutation, redirects, transport handles, authenticated URLs, native error
+chains, and completion dispatch stay inside core.
 
 Generated endpoints and runtime-defined endpoints converge before these calls.
 An extension does not need a generated adapter and must not infer which
@@ -209,7 +211,7 @@ matrix in [Testing strategy](../testing.md).
 
 - [Authentication contract](authentication.md)
 - [Bodies, responses, and finite progress](body-response-progress.md)
-- [Records and pagination contract](records-pagination.md)
+- [Record delivery and pagination contract](records-pagination.md)
 - [Rate-limit contract](rate-limits.md)
 - [Managed retry contract](retries.md)
 - [Errors, redaction, hooks, and completion](errors-hooks-completion.md)

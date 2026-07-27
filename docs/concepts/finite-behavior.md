@@ -18,7 +18,7 @@ Exact current numbers live only in the [Limits reference](../reference/limits.md
 | Terminal status bodies | retains only a complete body within its cap; otherwise records a structural unavailable/omitted state |
 | Provider HTTP | separately bounds request and response bodies under the credential operation deadline |
 | Credential material | bounds retained strings and final private header/query encodings |
-| Record streams | combines the response-wide byte limit with a decoder-selected positive staging limit |
+| Record delivery | combines the applicable buffered/streamed response limit with a decoder-selected positive staging limit |
 | Pagination | runs sequentially with call-site, page, item, retained-identity, and repeated-request bounds |
 | Rate plans | bounds rule IDs, rule count, key parts, formatted aggregate keys, and windows |
 | First-party local limiter | uses finite quota/cooldown capacities, cooldown caps, and idle pruning |
@@ -37,7 +37,8 @@ A limit is checked before an excess unit becomes a successful result:
   bytes;
 - streaming response consumers do not receive a chunk that would cross the
   cumulative byte ceiling;
-- record staging rejects an append that would cross the decoder's limit;
+- record delivery keeps source bytes separate from staging and rejects the
+  first byte that would make one logical record exceed the decoder's limit;
 - public formatting stops retaining output at its hard capture ceiling and
   returns an error rather than a truncated value;
 - pagination never returns an item beyond the aggregate item ceiling and does
@@ -76,7 +77,9 @@ Record decoding has an additional progress rule. A decoder cannot grow the
 staging buffer, and returning `Some(record)` requires a strict net decrease.
 That prevents an implementation from emitting an infinite sequence from the
 same staged bytes, although the decoder must still bound its own synchronous
-CPU.
+CPU. Pending source bytes are separate from decoder staging. Core can feed a
+large transport chunk incrementally, yielding many small records, without
+requiring the whole source chunk to fit the staging limit.
 
 ## Pagination and quota coherence
 
@@ -128,7 +131,7 @@ work inside application callbacks:
 |---|---|---|
 | buffered codec | bounded bytes and finite context | CPU, expansion, decoded heap, caches |
 | request/response specification | sealed managed body modes and configured byte caps | synchronous preparation/conversion and owned state |
-| record decoder | bounded stream and staging buffer | parsing CPU, decoded values, side tables |
+| record decoder | bounded source bytes and staging buffer in buffered or streaming delivery | parsing CPU, decoded values, side tables |
 | credential provider | finite slot plus bounded `ProviderHttp` | caches, internal retries, tasks, external effects |
 | pagination controller | one decoded page and operation-local state | callback time and controller allocation |
 | limiter/observer | bounded immutable plan and sanitized head | quota storage, backend calls, overload policy |

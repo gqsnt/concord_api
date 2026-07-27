@@ -59,12 +59,18 @@ const FEATURES: &[(&str, &str)] = &[
     ),
     ("json", "`Json<T>` request and response codec"),
     ("oauth2-client", "OAuth2 client-credentials provider helper"),
-    ("records", "Generic bounded record streaming"),
+    (
+        "records",
+        "Generic bounded buffered and streaming record delivery",
+    ),
     (
         "csv",
-        "Type-configurable CSV record decoder (also enables `records`)",
+        "Type-configurable CSV buffered/streaming response decoder (also enables `records`)",
     ),
-    ("ndjson", "NDJSON record decoder (also enables `records`)"),
+    (
+        "ndjson",
+        "NDJSON buffered/streaming response decoder (also enables `records`)",
+    ),
     ("multipart", "Managed multipart request construction"),
     ("gzip", "Gzip response decompression"),
     ("brotli", "Brotli response decompression"),

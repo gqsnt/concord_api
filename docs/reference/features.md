@@ -17,9 +17,9 @@ task.
 | `rate-limit` | yes | Bounded process-local `LocalRateLimiter` policy |
 | `json` | no | `Json<T>` request and response codec |
 | `oauth2-client` | no | OAuth2 client-credentials provider helper |
-| `records` | no | Generic bounded record streaming |
-| `csv` | no | Type-configurable CSV record decoder (also enables `records`) |
-| `ndjson` | no | NDJSON record decoder (also enables `records`) |
+| `records` | no | Generic bounded buffered and streaming record delivery |
+| `csv` | no | Type-configurable CSV buffered/streaming response decoder (also enables `records`) |
+| `ndjson` | no | NDJSON buffered/streaming response decoder (also enables `records`) |
 | `multipart` | no | Managed multipart request construction |
 | `gzip` | no | Gzip response decompression |
 | `brotli` | no | Brotli response decompression |
@@ -60,9 +60,9 @@ dependency can keep a capability private.
 | Selection | Implied capability |
 |---|---|
 | `default` | `default-tls`, `http2`, and `rate-limit` |
-| `csv` | `records` plus the CSV decoder |
-| `ndjson` | `records` plus the NDJSON decoder |
-| `records` alone | generic `Records<D>` and downstream decoder contracts |
+| `csv` | `records` plus direct buffered and streaming CSV response decoding |
+| `ndjson` | `records` plus direct buffered and streaming NDJSON response decoding |
+| `records` alone | generic `BufferedRecords<D>`, `Records<D>`, and downstream decoder contracts |
 | `oauth2-client` | helper types only; provider HTTP still needs a TLS-capable build to call an HTTPS token endpoint |
 | all decompression features | independent gzip, Brotli, and deflate response decoding |
 
@@ -74,7 +74,9 @@ dependency can keep a capability private.
   `Arc<dyn RateLimiter>`.
 - JSON remains opt-in. Its request serializer writes through the active body
   cap, and its failures use the same finite codec categories as downstream
-  codecs. CSV and NDJSON imply generic record support.
+  codecs. CSV and NDJSON imply generic record support. Direct `Csv<T>` and
+  `NdJson<T>` responses collect complete vectors; wrap either in `Records<D>`
+  for streaming. Neither format implements request encoding.
 - `default-tls` exposes structurally bounded custom-root and application
   identity configuration. Native TLS parsing may reject bounded input more
   strictly. Proxy URL text is bounded independently of the TLS feature.

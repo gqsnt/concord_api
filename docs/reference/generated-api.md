@@ -178,17 +178,21 @@ effective rate limits exist. It contains no bound runtime, body input,
 credentials, resolved rate keys, detailed rule values, or native request.
 
 Generated endpoint Rustdoc lists every applicable rate-limit rule in inherited
-order. Each entry includes its lexical origin, whether its exact rule ID is
-explicit or source-derived, `Bucketed by` dimension names (or
-`declaration-global`), cost, and ordered windows. Resolved key values never
-enter Rustdoc or `EndpointDescription`.
+and local source order. Each entry identifies an anonymous lexical rule or its
+named definition and attachment, whether its exact rule ID is explicit or
+derived, `Bucketed by` logical dimension names (or `declaration-global`),
+cost, and ordered windows. A named definition owns those logical names:
+binding `scope.account` or `ep.account` to formal `account` still documents and
+emits key part `account`. Resolved key values never enter Rustdoc or
+`EndpointDescription`.
 
-A derived declaration ID is deterministic within one generated client
-contract and changes when its source identity changes. An explicit ID is
-stable across source renames and is emitted exactly without a suffix.
-Default-built clients have separate limiter objects. Sharing one limiter
-across matching explicit IDs intentionally shares rule/key/window state;
-separate `api!` invocations require an application-owned compatibility check.
+An anonymous derived declaration ID retains its lexical source identity. A
+named definition instead derives `<client>.rate_limit.<rule>`, independent of
+every attachment path. An explicit ID is stable across source renames and is
+emitted exactly without a suffix. Default-built clients have separate limiter
+objects. Sharing one limiter across matching ID, ordered logical key, and
+window intentionally shares bucket state; separate `api!` invocations require
+an application-owned compatibility check.
 
 Planning is a client operation on an unbound endpoint:
 
@@ -231,7 +235,7 @@ Capability absence is part of the API:
 | Endpoint shape | Deliberately absent |
 |---|---|
 | no `paginate` declaration | `.paginate(...)` |
-| streaming, record, or otherwise non-page response | generated pagination |
+| byte stream, record stream, discard, or otherwise non-page response | generated pagination |
 | request body without `PageRequestBodySpec` | generated pagination |
 | not used as an endpoint-backed credential source | `.store_as_NAME()` |
 | declared response mode not `Buffered` or `Discard` | callable `.response_bytes()` terminal |
@@ -264,6 +268,24 @@ executor. Eligible runtime endpoint requests support both `.response()` and
 `.response_bytes()` through the generic request type. They do not provide
 partial runtime pagination.
 
+Common response selections are:
+
+| Response specification | Output | Mode | Page capable |
+|---|---|---|---:|
+| `BufferedRecords<D>` | `Vec<D::Record>` | `Buffered` | yes |
+| `Records<D>` | `RecordStream<D>` | `Streaming` | no |
+| `Csv<T, H, D>` / `NdJson<T>` | `Vec<T>` | `Buffered` | yes |
+| `Stream` (`Stream<AnyMedia>`) | `ByteStream` without media validation | `Streaming` | no |
+| `Stream<M: MediaType>` | `ByteStream` with exact media validation | `Streaming` | no |
+
+The same specifications can be selected by a runtime endpoint builder.
+`response_bytes()` is callable only for the buffered rows above; it keeps
+status acceptance and `Accept`, but deliberately skips record media
+validation and decoding.
+
+`AnyMedia` does not implement `MediaType`; exact generic behavior remains
+available only through `Stream<M: MediaType>`.
+
 ## Public namespaces
 
 Ordinary imports come from `concord`:
@@ -279,7 +301,7 @@ Ordinary imports come from `concord`:
 | `http` | safe HTTP value/configuration types |
 | `pagination` | contracts, limits, controllers |
 | `rate_limit` | plans, keys, limiters, observers |
-| `records` | bounded record streams/decoders |
+| `records` | bounded buffered and streaming record delivery |
 | `response` | modes, metadata, specifications |
 | `retry` | managed retry policy and classifiers |
 | `runtime` | finite runtime configuration |

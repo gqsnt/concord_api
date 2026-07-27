@@ -151,8 +151,8 @@ builder methods available:
 | Façade feature | Declaration effect |
 |---|---|
 | `json` | exposes `Json<T>` as a request/response codec; there is no `json` DSL clause |
-| `records` | exposes generic `Records<D>` streaming response support |
-| `csv` / `ndjson` | expose concrete record decoders and also enable `records` |
+| `records` | exposes `BufferedRecords<D>` collection and `Records<D>` streaming response support |
+| `csv` / `ndjson` | expose direct complete response formats and concrete record decoders; both also enable `records` |
 | `multipart` | exposes the request-only `Multipart` body specification |
 | `rate-limit` | installs the first-party local limiter by default; `rate_limit { ... }` grammar itself remains core |
 | `oauth2-client` | exposes an OAuth2 provider type supplied through `credential ... = custom TYPE` |
@@ -163,6 +163,21 @@ feature. Feature-disabled helper types fail through ordinary Rust name or
 trait diagnostics. The proc macro does not inspect concrete type names to
 infer a feature, implementation, or response mode. The normal
 `.response_bytes()` request terminal requires no feature or DSL clause.
+
+Response types select lifecycle behavior through ordinary Rust traits:
+
+| Declaration | Output and mode |
+|---|---|
+| `BufferedRecords<D>` | complete `Vec<D::Record>` through `Buffered` |
+| `Records<D>` | lazy `RecordStream<D>` through `Streaming` |
+| `Csv<T, H, D>` / `NdJson<T>` | complete `Vec<T>` through `Buffered` |
+| `Records<Csv<T, H, D>>` / `Records<NdJson<T>>` | lazy typed record stream |
+| `Stream` (`Stream<AnyMedia>`) | media-unconstrained bounded byte stream |
+| `Stream<M: MediaType>` | bounded byte stream with exact request/response media semantics |
+
+CSV and NDJSON support response decoding only. Neither implements request
+encoding. `AnyMedia` is only the default marker for bare `Stream`; it does not
+implement `MediaType`.
 
 ## Values, optionality, and defaults
 
@@ -309,10 +324,11 @@ change. If omitted, Concord derives:
 snake_case_client_name.scope_name.endpoint_name
 ```
 
-Renaming any source component changes that default. Endpoint-local generated
-rate-limit identity derives from the contract ID by appending `.rate_limit`.
-Client and scope rate-limit identities derive from their deterministic source
-paths. A rule-local explicit rate-limit ID, documented below, overrides this
+Renaming any source component changes that default. Anonymous endpoint-local
+rate-limit identity derives from the contract ID by appending `.rate_limit`;
+anonymous client and scope identities derive from deterministic source paths.
+Reusable named definitions instead derive from client plus rule name. A
+rule-local explicit rate-limit ID, documented below, overrides either
 derivation without changing endpoint identity.
 
 ## Public expressions and request shaping

@@ -39,8 +39,10 @@ Users can reason about the lifecycle in these observable stages:
 7. **Resolve or repeat the result.** Concord may perform at most one allowed
    authentication recovery across the whole operation. An explicitly
    configured retry policy may admit another visible attempt; otherwise
-   Concord applies declared status acceptance and acquires the buffered,
-   streaming, or record response mode.
+   Concord applies declared status acceptance and acquires one of the three
+   sealed response modes: buffered, streaming, or discard. Record response
+   specifications deliberately select buffered collection or streaming
+   delivery.
 8. **Complete once.** After success or failure is fixed, completion receives a
    safe outcome event exactly once before the result is delivered.
 
@@ -62,9 +64,11 @@ known-safe protocol recovery remains inside a single visible attempt.
 
 The operation timeout covers the managed work needed to open and classify the
 response, including authentication and response-head policy. Buffered
-responses are fully acquired inside that operation. An accepted streaming
-terminal returns an open bounded stream; later user polling has its own
-consumer-progress rules and is no longer the original request operation.
+responses, including `BufferedRecords<D>`, `Csv<T>`, and `NdJson<T>`, are
+fully acquired and decoded inside that operation. An accepted streaming
+terminal, including `Records<D>`, returns an open bounded stream; later user
+polling has its own consumer-progress rules and is no longer the original
+request operation.
 
 Completion is intentionally outside the operation timeout because it observes
 an already fixed outcome. It is awaited rather than detached, so application

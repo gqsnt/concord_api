@@ -41,7 +41,8 @@ external telemetry.
 
 Completion is dispatched exactly once for each visible direct/page operation
 that reaches the completion owner. Pagination has page completions plus one
-aggregate completion. Opening a byte or record stream fixes a
+aggregate completion. Buffered record collection fixes `Success` or a decode
+failure before completion. Opening a byte or record stream instead fixes a
 `StreamOpened` outcome; later stream polling does not emit a second completion
 event.
 
@@ -90,14 +91,14 @@ remain trusted:
 |---|---|---|---|
 | `EncodeBody`, `DecodeBody`, body-spec callbacks | synchronous; deadline checked after return | managed request/response bytes and structural validation | CPU, output expansion, state, blocking I/O |
 | request body factories and producers | factory is synchronous; stream is polled under managed execution | total bytes and successful empty chunks | producer state, source I/O, tasks, internal retries |
-| `RecordDecoder` | synchronous during caller polling | staging bytes, response bytes, net progress | decoded allocation, parsing CPU, retained records |
+| `RecordDecoder` | synchronous during buffered conversion or caller polling | pending source bytes, staging bytes, response bytes, net progress | decoded allocation, parsing CPU, retained records |
 | `CredentialProvider` | future under operation deadline | credential slots and provider HTTP bodies | provider caches, queues, retries, tasks, external effects |
 | `PaginationController` | synchronous between pages, outside page deadline | page/item/identity ceilings and repeated request identity | controller state and callback time |
 | `RateLimiter` | acquisition/observation futures under operation deadline | plan/key structure before callbacks | quota state, backend calls, overload behavior |
 | `RateLimitObserver` | synchronous response policy | cooldown clamping after return | callback time and observer state |
 | result-determining hooks | future under operation deadline | event shape and ordinary deadline | external work, queues, labels |
 | completion hooks | awaited outside operation deadline | event shape and exactly-once dispatch | their own timeout and delivery policy |
-| returned byte/record streams | caller-driven after opening | wire bytes, empty chunks, and record staging | consumption deadline, downstream queues, decoded objects |
+| returned byte/record streams | caller-driven after opening | wire bytes, empty chunks, pending source, and record staging | consumption deadline, downstream queues, decoded objects |
 
 Synchronous work cannot be preempted. A timeout can be observed only after the
 callback returns. Avoid filesystem access, DNS, blocking locks, sleeps, and
