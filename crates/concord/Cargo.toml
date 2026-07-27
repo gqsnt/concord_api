@@ -20,7 +20,6 @@ multipart = ["concord_core/multipart"]
 gzip = ["concord_core/gzip"]
 brotli = ["concord_core/brotli"]
 deflate = ["concord_core/deflate"]
-dangerous-raw-response = ["concord_core/dangerous-raw-response"]
 dangerous-custom-retry = ["concord_core/dangerous-custom-retry"]
 
 [dependencies]

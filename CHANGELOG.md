@@ -92,6 +92,11 @@
   the generated bridge.
 - Ordered rate-limit key generation now formats referenced dimensions through
   the core-owned bounded bridge, raising the generated-contract version to 27.
+- Normal `.response_bytes()` acquisition now preserves declared status
+  acceptance and `Accept`, skips validation and decoding, returns
+  `ApiResponse<Bytes>`, and works for generated, explicit, and runtime
+  endpoints. Removing the old raw-terminal bridge raises the generated-contract
+  version to 28.
 - Every generated public value mutation now uses
   `value(value) -> set_value(value)`. Absence-capable values retain
   `clear_value()`; values with declaration defaults retain `reset_value()`.
@@ -134,8 +139,6 @@
   detection.
 - Tokio capabilities are selected per crate; multi-thread test runtimes no
   longer enlarge ordinary production dependency declarations.
-- Dangerous raw-response methods are emitted directly by the declaration
-  compiler only when the calling façade passes the feature capability.
 - Generated direct methods, explicit endpoint values, runtime endpoints, and
   every pagination page use the same lifecycle and completion protocol.
 - External dependencies use compatible semver requirements; Concord sibling
@@ -151,6 +154,9 @@
 - Unbounded or partially managed response acquisition.
 - The unpublished `rate-limit-governor`, `GovernorRateLimiter`, and
   `DefaultRateLimitObserver` public names.
+- The `dangerous-raw-response` feature, `.raw_response()` terminal, raw response
+  wrapper, and generated capability-token protocol. The normal
+  `.response_bytes()` terminal replaces them without compatibility aliases.
 
 ### Safety guarantees
 

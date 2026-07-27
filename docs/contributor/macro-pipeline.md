@@ -24,13 +24,12 @@ Applications call `concord::api!`. The wrapper invokes the hidden proc macro
 with:
 
 - `@concord_facade($crate)`, the dependency-renaming-safe emission root;
-- `@concord_capabilities(...)`, the façade-selected generated-surface
-  capabilities;
 - the original declaration tokens.
 
 The hidden proc macro is the implementation crate's only proc-macro entry.
-Reject unknown or duplicate internal capability tokens; they are private
-compiler protocol, not user grammar.
+The generated inherent surface is feature-neutral. Cargo-selected
+implementations remain ordinary Rust items and trait implementations rather
+than a second private proc-macro protocol.
 
 ## Parsing
 
@@ -100,7 +99,7 @@ The surface layer converts resolved meaning into exact Rust API facts:
 - required constructor arguments;
 - consuming `set_*`, `clear_*`, and `reset_*` controls;
 - clone eligibility;
-- direct/response/pagination/credential-storage/raw terminals;
+- direct/response/response-bytes/pagination/credential-storage terminals;
 - sealed endpoint associations;
 - structured `EndpointDescription` and generated Rustdoc content.
 
@@ -109,9 +108,9 @@ independent facts. A defaulted `Option<T>` therefore receives all of
 `set_name(T)`, `clear_name()`, and `reset_name()`. Collision validation uses
 those exact derived identifiers.
 
-Façade capability tokens are resolved here before emission. The dangerous raw
-terminal is not emitted and later hidden; it is absent from the surface model
-when the feature is absent.
+The normal response-bytes terminal is always part of the surface. Its sealed
+`ResponseBytesMode` bound admits buffered and discard response modes and makes
+streaming use fail during Rust type checking.
 
 ### Surface change test owners
 
@@ -187,9 +186,10 @@ domain gains an independent invariant and test owner.
 
 ## Generated contract decision
 
-Current generated-contract version 27 introduced core-owned bounded formatting
-for emitted rate-limit key dimensions. The private contract does not change
-for:
+Current generated-contract version 28 replaced the removed raw-response
+helper/type with the normal response-bytes request bridge. This prevents Rust
+emitted for the old raw terminal from claiming compatibility with the new
+façade/core. The private contract does not change for:
 
 - a source-language acceptance/diagnostic change;
 - the public `set_*` rename and independently derived clear/reset controls;

@@ -25,7 +25,7 @@ use concord::rate_limit::{
     RateLimitRequest, RateLimitRule, RateLimitWindow, RateLimiter,
 };
 use concord::response::ByteStream;
-use concord::{Bytes, NoContent};
+use concord::{ApiResponse, Bytes, NoContent};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 use futures_core::Stream;
 
@@ -330,6 +330,32 @@ async fn prepared_modes_use_the_ordinary_generated_client_runtime() {
     assert_eq!(requests[1].method(), "GET");
     assert_eq!(requests[2].method(), "DELETE");
     assert_eq!(requests[3].method(), "GET");
+}
+
+#[tokio::test]
+async fn runtime_endpoint_requests_can_select_complete_bounded_response_bytes() {
+    let server = ScriptedServer::start([ResponseScript::ok(b"runtime-undecoded".to_vec())
+        .with_header("content-type", "application/x-intentionally-different")])
+    .expect("runtime response-bytes server");
+    let client = alpha(&server);
+    let endpoint = RuntimeEndpoint::builder(runtime_id("runtime.response_bytes"), Method::GET)
+        .path_segment("response-bytes")
+        .response::<EchoCodec>()
+        .build()
+        .expect("runtime response-bytes endpoint");
+
+    let response: ApiResponse<Bytes> = client
+        .request(endpoint)
+        .response_bytes()
+        .await
+        .expect("runtime endpoint response bytes");
+    assert_eq!(response.value(), b"runtime-undecoded".as_slice());
+    assert_eq!(response.status(), concord::http::StatusCode::OK);
+    assert_eq!(response.metadata().endpoint(), "runtime.response_bytes");
+    assert_eq!(
+        server.requests()[0].header("accept"),
+        Some("application/x-concord-prepared")
+    );
 }
 
 #[tokio::test]

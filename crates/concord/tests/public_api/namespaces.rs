@@ -25,6 +25,7 @@ fn semantic_domains_are_available_without_implementation_crate_imports() {
         public_type::<codec::Text>(),
         public_type::<endpoint::RuntimeEndpoint>(),
         public_type::<endpoint::Request<()>>(),
+        public_type::<endpoint::ResponseBytesRequest<()>>(),
         public_type::<endpoint::ResponseRequest<()>>(),
         public_type::<error::ApiError>(),
         public_type::<error::ClientInputKind>(),
@@ -39,6 +40,10 @@ fn semantic_domains_are_available_without_implementation_crate_imports() {
     ];
 
     assert!(names.iter().all(|name| !name.is_empty()));
+
+    fn supports_response_bytes<T: response::ResponseBytesMode>() {}
+    supports_response_bytes::<response::Buffered>();
+    supports_response_bytes::<response::Discard>();
 }
 
 #[test]
@@ -135,12 +140,6 @@ fn oauth_provider_is_exposed_by_the_auth_domain() {
 fn local_limiter_is_exposed_by_the_rate_limit_domain() {
     assert!(!public_type::<concord::rate_limit::LocalRateLimiter>().is_empty());
     assert!(!public_type::<concord::rate_limit::RetryAfterObserver>().is_empty());
-}
-
-#[cfg(feature = "dangerous-raw-response")]
-#[test]
-fn dangerous_raw_response_requires_the_explicit_domain_and_feature() {
-    assert!(!public_type::<concord::dangerous::RawResponse>().is_empty());
 }
 
 #[cfg(feature = "dangerous-custom-retry")]

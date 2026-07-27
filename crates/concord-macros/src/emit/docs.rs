@@ -128,12 +128,10 @@ pub(super) fn request_wrapper_doc(endpoint: &Endpoint) -> String {
             .iter()
             .map(|method| format!("`.{method}()` stores the decoded credential")),
     );
-    if docs.terminals.raw_response {
-        terminals.push(
-            "`.raw_response()` selects bounded undecoded bytes when the response mode permits it"
-                .to_owned(),
-        );
-    }
+    terminals.push(
+        "`.response_bytes()` selects bounded undecoded bytes when the response mode permits it"
+            .to_owned(),
+    );
 
     format!(
         "Inert named request for [`{endpoint_name}`]. Construction and value controls perform no request lifecycle work.\n\nControls: {}.\n\nTerminals:\n\n{}",
@@ -484,7 +482,6 @@ mod tests {
     use super::super::test_support;
     use super::*;
     use crate::semantic;
-    use crate::semantic::surface::SurfaceCapabilities;
 
     fn emitted_endpoint_docs(tokens: TokenStream, endpoint_name: &str) -> String {
         let api = semantic::test_support::resolve_tokens(tokens);
@@ -869,50 +866,42 @@ mod tests {
     }
 
     #[test]
-    fn request_docs_list_only_feature_selected_and_endpoint_terminals() {
-        let without_raw = test_support::api();
-        let endpoint = test_support::endpoint(&without_raw);
+    fn request_docs_list_endpoint_terminals() {
+        let api = test_support::api();
+        let endpoint = test_support::endpoint(&api);
         let docs = request_wrapper_doc(endpoint);
         assert!(docs.contains("`.response()`"));
+        assert!(docs.contains("`.response_bytes()`"));
         assert!(!docs.contains("`.paginate(...)`"));
-        assert!(!docs.contains("`.raw_response()`"));
-
-        let with_raw =
-            test_support::api_with_capabilities(SurfaceCapabilities { raw_response: true });
-        let docs = request_wrapper_doc(test_support::endpoint(&with_raw));
-        assert!(docs.contains("`.raw_response()`"));
     }
 
     #[test]
     fn emitted_markdown_separates_direct_endpoint_and_request_ownership() {
-        let api = semantic::test_support::resolve_tokens_with_capabilities(
-            quote! {
-                client DocsApi {
-                    base "https://docs.example.test";
-                    credentials {
-                        secret token: String;
-                        credential bearer = bearer(secret.token);
-                    }
-                    timeout 20s;
+        let api = semantic::test_support::resolve_tokens(quote! {
+            client DocsApi {
+                base "https://docs.example.test";
+                credentials {
+                    secret token: String;
+                    credential bearer = bearer(secret.token);
                 }
-                POST submit(
-                    #[body] body: Json<Input>,
-                    optional: Option<bool>,
-                ) -> Json<Output> {
-                    auth bearer bearer;
+                timeout 20s;
+            }
+            POST submit(
+                #[body] body: Json<Input>,
+                optional: Option<bool>,
+            ) -> Json<Output> {
+                auth bearer bearer;
+            }
+            GET stream() -> Stream<OctetStream>;
+            GET discard() -> NoContent {
+                timeout off;
+            }
+            GET pages(cursor: Option<String>) -> Json<Page> {
+                paginate crate::Controller {
+                    cursor: bind ep.cursor,
                 }
-                GET stream() -> Stream<OctetStream>;
-                GET discard() -> NoContent {
-                    timeout off;
-                }
-                GET pages(cursor: Option<String>) -> Json<Page> {
-                    paginate crate::Controller {
-                        cursor: bind ep.cursor,
-                    }
-                }
-            },
-            SurfaceCapabilities { raw_response: true },
-        );
+            }
+        });
         let json = semantic::test_support::endpoint(&api.client.children, "submit");
         let direct = endpoint_method_doc(json);
         assert!(direct.starts_with("`POST /`"));
@@ -929,7 +918,7 @@ mod tests {
         let request = request_wrapper_doc(json);
         assert!(request.contains("`.set_optional(...)`"));
         assert!(request.contains("`.response()`"));
-        assert!(request.contains("`.raw_response()`"));
+        assert!(request.contains("`.response_bytes()`"));
         assert!(!request.contains("`.paginate(...)`"));
 
         let stream = semantic::test_support::endpoint(&api.client.children, "stream");

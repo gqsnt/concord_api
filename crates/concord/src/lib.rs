@@ -19,30 +19,10 @@
 /// Public value mutations use `set_*`, with `clear_*` for absence-capable
 /// values and `reset_*` for values with declaration defaults. A value may have
 /// both capabilities.
-#[cfg(feature = "dangerous-raw-response")]
 #[macro_export]
 macro_rules! api {
     ($($declaration:tt)*) => {
         $crate::__concord_api! {
-            @concord_capabilities(raw_response)
-            @concord_facade($crate)
-            $($declaration)*
-        }
-    };
-}
-
-/// Declares a generated Concord client and its typed endpoints.
-///
-/// Generated constructors and navigation retain declaration-domain names.
-/// Public value mutations use `set_*`, with `clear_*` for absence-capable
-/// values and `reset_*` for values with declaration defaults. A value may have
-/// both capabilities.
-#[cfg(not(feature = "dangerous-raw-response"))]
-#[macro_export]
-macro_rules! api {
-    ($($declaration:tt)*) => {
-        $crate::__concord_api! {
-            @concord_capabilities()
             @concord_facade($crate)
             $($declaration)*
         }
@@ -116,7 +96,7 @@ pub mod endpoint {
         MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, RequestBodyCategory, ResponseAcquisition,
         RuntimeEndpoint, RuntimeEndpointBuilder, SafeRequestPlan, TimeoutSelection,
     };
-    pub use concord_core::{Request, ResponseRequest};
+    pub use concord_core::{Request, ResponseBytesRequest, ResponseRequest};
 }
 
 /// Safe runtime, configuration, lifecycle, and decoding errors.
@@ -223,7 +203,7 @@ pub mod response {
     pub use concord_core::contracts::{
         ApiResponse, Buffered, ByteStream, Discard, ExecutionMeta, MAX_EMPTY_RESPONSE_CHUNKS,
         NoContent, PageResponseSpec, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec,
-        ResponseHead, ResponseMode, Streaming,
+        ResponseBytesMode, ResponseHead, ResponseMode, Streaming,
     };
 }
 
@@ -233,20 +213,16 @@ pub mod runtime {
 }
 
 /// Explicitly feature-gated capabilities with reduced ordinary safety guarantees.
-#[cfg(any(feature = "dangerous-custom-retry", feature = "dangerous-raw-response"))]
+#[cfg(feature = "dangerous-custom-retry")]
 pub mod dangerous {
-    #[cfg(feature = "dangerous-custom-retry")]
     pub use concord_core::dangerous::ReqwestRetryBuilder;
-    #[cfg(feature = "dangerous-raw-response")]
-    pub use concord_core::dangerous::{RawResponse, RawResponseMode, RawResponseRequest};
 }
 
 /// Generated-code bridge. This is not a user extension surface.
 #[doc(hidden)]
 pub mod __private {
-    #[cfg(feature = "dangerous-raw-response")]
     #[doc(hidden)]
-    pub use concord_core::__private::raw_response_request;
+    pub use concord_core::__private::response_bytes_request;
     #[doc(hidden)]
     pub use concord_core::__private::{
         ApiError, ApiResponse, Auth, ClientBuildError, ClientCore, ClientInputKind, DebugLevel,
@@ -255,13 +231,12 @@ pub mod __private {
         MAX_REQUEST_HEAD_COMPONENTS, MAX_REQUEST_HEADER_BYTES, MAX_REQUEST_HEADER_COUNT,
         MAX_REQUEST_URL_BYTES, Method, PageResponseSpec, PaginatedEndpoint, PreparedHead,
         RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitRule, RateLimitWindow,
-        RawResponseEndpoint, RequestBodyCategory, RequestBodyContext, RequestBodyMetadata,
-        RequestBodySpec, RequestMeta, RequestOptions, ResponseAcquisition, ResponseBodySpec,
-        SafeRequestPlan, TimeoutOverride, TimeoutSelection, Url, assert_generated_contract,
-        basic_credential_input_error, build_client_core, credential_input_error,
-        credential_store_error, default_http_config, endpoint_id_from_static, inspect_endpoint,
-        map_endpoint, missing_input_error, paginate_request, request, response_request,
-        safe_request_plan,
+        RequestBodyCategory, RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestMeta,
+        RequestOptions, ResponseAcquisition, ResponseBodySpec, SafeRequestPlan, TimeoutOverride,
+        TimeoutSelection, Url, assert_generated_contract, basic_credential_input_error,
+        build_client_core, credential_input_error, credential_store_error, default_http_config,
+        endpoint_id_from_static, inspect_endpoint, map_endpoint, missing_input_error,
+        paginate_request, request, response_request, safe_request_plan,
     };
     /// Creates the façade-owned generated-client runtime baseline.
     #[doc(hidden)]

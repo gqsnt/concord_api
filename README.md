@@ -45,6 +45,12 @@ let user = client.user(42).await?;
 let endpoint = users_api::User::new(42);
 let response = client.request(endpoint).response().await?;
 assert!(response.status().is_success());
+
+let bytes = client
+    .request(users_api::User::new(42))
+    .response_bytes()
+    .await?;
+assert!(!bytes.value().is_empty());
 # Ok(())
 # }
 ```
@@ -68,7 +74,8 @@ remote contract
     -> declaration compiler
     -> typed client / endpoint / request API
     -> preparation, hooks, credentials, limiter, private HTTP
-    -> bounded acquisition, typed result, completion
+    -> declared status acceptance
+    -> bounded typed or explicit-byte acquisition, completion
 ```
 
 Construction is inert. HTTP, credentials, limiter acquisition, body factories,

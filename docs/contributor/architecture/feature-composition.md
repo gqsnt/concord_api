@@ -2,8 +2,8 @@
 
 Cargo features select available implementations and transport capabilities.
 They must not select competing semantic lifecycles. Whether an endpoint uses
-JSON, records, OAuth2, multipart, compression, or a dangerous terminal, its
-request still enters the same core executor.
+JSON, records, OAuth2, multipart, compression, or an explicitly dangerous
+builder option, its request still enters the same core executor.
 
 The exact public feature table belongs to [Feature flags](../../reference/features.md).
 This page explains which layer composes each feature and how to evolve that
@@ -16,13 +16,12 @@ composition safely.
 | `concord-core` | compile native/runtime capability and expose semantic contracts | TLS, HTTP/2, multipart transport, decompression, records |
 | `concord-extras` | compile an optional first-party trait implementation | JSON, CSV, NDJSON, OAuth2 client credentials, local limiter |
 | `concord` façade | forward features, reexport enabled items, install approved defaults | default TLS/HTTP2/rate-limit bundle |
-| `concord::api!` handoff | tell the declaration compiler when generated inherent surface changes | dangerous raw-response terminal |
 | application Cargo graph | unify all requests for the final package | downstream default/no-default selection |
 
-Most features do not need a macro capability. A declaration that names
-`Json<T>` or a custom `MyCodec` is the same syntax: Rust trait checking decides
-whether the type is available and implements the contract. The macro receives
-a capability token only when Cargo selection changes the methods it must emit.
+A declaration that names `Json<T>` or a custom `MyCodec` is the same syntax:
+Rust trait checking decides whether the type is available and implements the
+contract. The generated inherent surface is feature-neutral, so the façade
+passes only its dependency-renaming-safe path to the declaration compiler.
 
 ## Default bundle
 
@@ -58,8 +57,10 @@ product:
   fails with a rate-limit configuration error before transport;
 - first-party codecs/providers/policies are absent, while their public
   semantic traits remain available when owned by core;
-- unavailable transport builder methods and generated terminals are absent at
-  compile time.
+- unavailable transport and feature-gated builder methods are absent at
+  compile time;
+- the normal `.response_bytes()` terminal remains available without a feature
+  and is restricted by its sealed response-mode bound.
 
 `fixtures/features/tests/no_local_limiter.rs` proves both fail-closed paths and
 the deliberate custom/no-op alternatives in an isolated Cargo graph.
@@ -77,9 +78,7 @@ Design consequences:
 - a dangerous feature is crate-wide once unified and must remain explicit in
   its name and documentation;
 - absence claims require an isolated fixture, not a test inside an
-  all-feature workspace build;
-- proc-macro behavior cannot rely on an independently unified proc-macro
-  feature, so the façade passes explicit capability tokens.
+  all-feature workspace build.
 
 Inspect unexpected composition with:
 
@@ -137,8 +136,8 @@ compiler path below.
 2. Resolve and validate it before surface derivation.
 3. Put exact names and availability in the surface model.
 4. Emit through the façade-relative path.
-5. Pass a façade capability token only when Cargo selection changes emitted
-   inherent Rust.
+5. Keep emitted inherent Rust feature-neutral; express type-specific
+   availability through ordinary items and semantic trait bounds.
 6. Decide whether the existing hidden bridge suffices. Bump the generated
    contract only when private compiler/runtime agreement changes.
 7. Add macro unit, facade UI, runtime, Rustdoc, and feature-fixture proofs in

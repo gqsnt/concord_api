@@ -49,33 +49,25 @@ mod test_support {
 
     use super::*;
     use crate::semantic;
-    use crate::semantic::surface::SurfaceCapabilities;
 
     pub(super) fn api() -> Api {
-        api_with_capabilities(SurfaceCapabilities::default())
-    }
-
-    pub(super) fn api_with_capabilities(capabilities: SurfaceCapabilities) -> Api {
-        semantic::test_support::resolve_tokens_with_capabilities(
-            quote! {
-                client ArtifactApi {
-                    base "https://example.test";
-                    vars { tenant: String; }
-                    credentials {
-                        secret bearer_value: String;
-                        credential bearer = bearer(secret.bearer_value);
-                    }
+        semantic::test_support::resolve_tokens(quote! {
+            client ArtifactApi {
+                base "https://example.test";
+                vars { tenant: String; }
+                credentials {
+                    secret bearer_value: String;
+                    credential bearer = bearer(secret.bearer_value);
                 }
-                GET fetch_item(id: String, verbose: Option<bool>) -> Bytes {
-                    path [vars.tenant, ep.id];
-                    auth bearer bearer;
-                }
-                scope resources(region: String) {
-                    GET list() -> NoContent;
-                }
-            },
-            capabilities,
-        )
+            }
+            GET fetch_item(id: String, verbose: Option<bool>) -> Bytes {
+                path [vars.tenant, ep.id];
+                auth bearer bearer;
+            }
+            scope resources(region: String) {
+                GET list() -> NoContent;
+            }
+        })
     }
 
     pub(super) fn endpoint(api: &Api) -> &Endpoint {

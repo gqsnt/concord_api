@@ -36,66 +36,27 @@ const MAX_RATE_LIMIT_RULES_PER_PLAN: usize = 64;
 #[proc_macro]
 pub fn __api(input: TokenStream) -> TokenStream {
     syn::parse::<FacadeInput>(input)
-        .and_then(|input| {
-            expand_with_runtime(input.declaration, input.capabilities, &input.runtime_path)
-        })
+        .and_then(|input| expand_with_runtime(input.declaration, &input.runtime_path))
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }
 
 fn expand_with_runtime(
     input: TokenStream2,
-    capabilities: semantic::surface::SurfaceCapabilities,
     runtime_path: &TokenStream2,
 ) -> syn::Result<TokenStream2> {
     syntax::parse(input)
-        .and_then(|source| semantic::resolve_with_capabilities(source, capabilities))
+        .and_then(semantic::resolve)
         .map(|model| emit::generate(&model, runtime_path))
 }
 
 struct FacadeInput {
-    capabilities: semantic::surface::SurfaceCapabilities,
     runtime_path: TokenStream2,
     declaration: TokenStream2,
 }
 
 impl Parse for FacadeInput {
     fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
-        input.parse::<Token![@]>()?;
-        let prefix: Ident = input.parse()?;
-        if prefix != "concord_capabilities" {
-            return Err(syn::Error::new(
-                prefix.span(),
-                "invalid internal Concord macro capability prefix",
-            ));
-        }
-        let content;
-        parenthesized!(content in input);
-        let mut capabilities = semantic::surface::SurfaceCapabilities::default();
-        while !content.is_empty() {
-            let capability: Ident = content.parse()?;
-            match capability.to_string().as_str() {
-                "raw_response" if !capabilities.raw_response => {
-                    capabilities.raw_response = true;
-                }
-                "raw_response" => {
-                    return Err(syn::Error::new(
-                        capability.span(),
-                        "duplicate internal Concord macro capability",
-                    ));
-                }
-                _ => {
-                    return Err(syn::Error::new(
-                        capability.span(),
-                        "unknown internal Concord macro capability",
-                    ));
-                }
-            }
-            if content.is_empty() {
-                break;
-            }
-            content.parse::<Token![,]>()?;
-        }
         input.parse::<Token![@]>()?;
         let prefix: Ident = input.parse()?;
         if prefix != "concord_facade" {
@@ -108,7 +69,6 @@ impl Parse for FacadeInput {
         parenthesized!(content in input);
         let runtime_path = content.parse()?;
         Ok(Self {
-            capabilities,
             runtime_path,
             declaration: input.parse()?,
         })

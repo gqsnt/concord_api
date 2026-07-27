@@ -451,7 +451,6 @@ impl<R> RuntimeEndpointBuilder<R> {
             EndpointCapabilities::generated(
                 false,
                 false,
-                false,
                 !auth_plan.is_empty(),
                 !rate_limits.is_empty(),
             ),

@@ -25,18 +25,15 @@ source tokens
 ## 1. Façade handoff
 
 The application invokes `concord::api!`, not the proc-macro crate directly.
-The façade wrapper adds two compiler inputs:
+The façade wrapper adds one compiler input:
 
-- a dependency-renaming-safe path using `$crate`;
-- capability tokens selected by façade features.
+- a dependency-renaming-safe path using `$crate`.
 
 For this declaration the path resolves to the application's `concord`
-dependency, even when that dependency has been renamed in `Cargo.toml`.
-`dangerous-raw-response` is the current capability that changes emitted
-inherent surface; when disabled, the wrapper passes an empty capability set.
-
-This handoff lets Cargo-selected façade features control generated methods
-without making a proc-macro feature globally authoritative.
+dependency, even when that dependency has been renamed in `Cargo.toml`. The
+generated inherent surface is feature-neutral; Cargo-selected implementations
+remain ordinary Rust items and trait implementations rather than private
+proc-macro capability tokens.
 
 ## 2. Parse
 
@@ -88,7 +85,7 @@ For this declaration it owns:
 | direct bound request | `minimal_api::HealthRequest` |
 | client navigation | `MinimalApi::health()` |
 | explicit endpoint path | `Health::new()` then `client.request(endpoint)` |
-| response selection | direct await and `.response()` |
+| response selection | direct await, `.response()`, and `.response_bytes()` |
 | absent declarations | no pagination or credential-storage terminal |
 
 It also constructs the endpoint documentation model consumed by generated

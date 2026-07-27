@@ -6,4 +6,4 @@ rust-version = "1.85"
 publish = false
 
 [dependencies]
-runtime = { package = "concord", path = "../../../crates/concord", default-features = false, features = ["dangerous-raw-response", "multipart"] }
+runtime = { package = "concord", path = "../../../crates/concord", default-features = false, features = ["multipart"] }

@@ -368,7 +368,6 @@ fn safe_planning_uses_real_head_shaping_without_any_lifecycle_effect() {
     assert!(description.capabilities().authentication());
     assert!(description.capabilities().rate_limits());
     assert!(!description.capabilities().pagination());
-    assert!(description.capabilities().raw_response());
     assert_eq!(description.timeout(), TimeoutSelection::Disabled);
 
     assert_eq!(plan.description().id(), description.id());

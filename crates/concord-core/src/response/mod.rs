@@ -18,19 +18,15 @@ mod stream;
 
 pub use crate::limits::MAX_EMPTY_RESPONSE_CHUNKS;
 pub use error::{ResponseBodyError, ResponseBodyErrorKind};
-#[cfg(feature = "dangerous-raw-response")]
-pub use metadata::RawResponse;
 pub use metadata::{ApiResponse, ExecutionMeta};
 pub use spec::{
-    Buffered, Discard, NoContent, PageResponseSpec, ResponseBodySpec, ResponseHead, ResponseMode,
-    Streaming,
+    Buffered, Discard, NoContent, PageResponseSpec, ResponseBodySpec, ResponseBytesMode,
+    ResponseHead, ResponseMode, Streaming,
 };
 pub use stream::ByteStream;
 
 pub(crate) use handler::{ResponseInput, execute_response};
-#[cfg(feature = "dangerous-raw-response")]
-#[doc(hidden)]
-pub use spec::RawResponseMode;
-#[cfg(feature = "dangerous-raw-response")]
-pub(crate) use spec::RawResponseSelection;
-pub(crate) use spec::{DeclaredResponse, ResponseSelection, completion_outcome, validate_accept};
+pub(crate) use spec::{
+    DeclaredResponse, ResponseBytesSelection, ResponseSelection, completion_outcome,
+    validate_accept,
+};

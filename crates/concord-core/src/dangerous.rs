@@ -1,8 +1,8 @@
 //! Feature-gated APIs whose use reduces ordinary Concord safety guarantees.
 //!
-//! Cargo features are unified for the compiled crate, so enabling either
+//! Cargo features are unified for the compiled crate, so enabling this
 //! dangerous capability in one dependency enables its public surface for the
-//! whole resolved binary. Neither capability is enabled by default.
+//! whole resolved binary. It is not enabled by default.
 
 /// Reqwest's native retry builder.
 ///
@@ -11,8 +11,3 @@
 /// outside Concord's redaction boundary.
 #[cfg(feature = "dangerous-custom-retry")]
 pub use reqwest::retry::Builder as ReqwestRetryBuilder;
-
-#[cfg(feature = "dangerous-raw-response")]
-pub use crate::request::RawResponseRequest;
-#[cfg(feature = "dangerous-raw-response")]
-pub use crate::response::{RawResponse, RawResponseMode};

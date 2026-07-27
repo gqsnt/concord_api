@@ -15,11 +15,6 @@ use super::model::{
     ResolvedExpr, ResolvedMethod, ResolvedRetry, Scope, ScopeSurface, Value, ValueReference,
 };
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct SurfaceCapabilities {
-    pub(crate) raw_response: bool,
-}
-
 pub(crate) struct VisibleScopeDoc<'a> {
     pub(crate) id: usize,
     pub(crate) name: &'a Ident,
@@ -51,7 +46,7 @@ pub(crate) const RESERVED_GENERATED_METHODS: &[&str] = &[
     "credentials",
     "request",
     "response",
-    "raw_response",
+    "response_bytes",
     "paginate",
     "timeout",
     "disable_timeout",
@@ -91,7 +86,6 @@ pub(crate) fn endpoint_surface(
     parameters: &[Value],
     body_position: Option<usize>,
     paginated: bool,
-    capabilities: SurfaceCapabilities,
 ) -> EndpointSurface {
     let endpoint_type_name = pascal_ident(endpoint_name);
     let mut required_arguments = parameters
@@ -138,7 +132,6 @@ pub(crate) fn endpoint_surface(
         terminals: RequestTerminals {
             response: true,
             pagination: paginated,
-            raw_response: capabilities.raw_response,
             credential_storage: Vec::new(),
         },
         clone_eligibility: if body_position.is_some() {
@@ -336,7 +329,6 @@ pub(crate) fn endpoint_doc_model(
             direct_await: true,
             response: surface.terminals.response,
             pagination: surface.terminals.pagination,
-            raw_response: surface.terminals.raw_response,
             credential_storage: Vec::new(),
         },
         native_retry,
@@ -776,7 +768,6 @@ mod tests {
         assert_eq!(endpoint.surface.setters.len(), 1);
         assert!(endpoint.surface.terminals.response);
         assert!(!endpoint.surface.terminals.pagination);
-        assert!(!endpoint.surface.terminals.raw_response);
         assert_eq!(endpoint.docs.direct_method_name, "get_http_status");
         assert_eq!(
             endpoint.docs.endpoint_type_path,
@@ -1052,45 +1043,41 @@ mod tests {
         assert!(docs.terminals.direct_await);
         assert!(docs.terminals.response);
         assert!(!docs.terminals.pagination);
-        assert!(!docs.terminals.raw_response);
         assert_eq!(docs.contract_id, "d_dragon_api.version.assets.image");
         assert!(!docs.explicit_contract_id);
     }
 
     #[test]
     fn endpoint_doc_model_tracks_bodies_auth_timeouts_and_actual_terminals() {
-        let api = test_support::resolve_tokens_with_capabilities(
-            quote! {
-                client DocsApi {
-                    base "https://docs.example.test";
-                    credentials {
-                        secret token: String;
-                        credential bearer = bearer(secret.token);
-                        credential session = endpoint login;
-                    }
-                    timeout 20s;
+        let api = test_support::resolve_tokens(quote! {
+            client DocsApi {
+                base "https://docs.example.test";
+                credentials {
+                    secret token: String;
+                    credential bearer = bearer(secret.token);
+                    credential session = endpoint login;
                 }
-                POST login(
-                    #[body] body: Json<Login>,
-                    remember: Option<bool>,
-                    attempts: u32 = 3,
-                ) -> Json<Session> {
-                    id "stable.login";
-                    auth bearer bearer;
-                    timeout off;
+                timeout 20s;
+            }
+            POST login(
+                #[body] body: Json<Login>,
+                remember: Option<bool>,
+                attempts: u32 = 3,
+            ) -> Json<Session> {
+                id "stable.login";
+                auth bearer bearer;
+                timeout off;
+            }
+            GET page(cursor: Option<String>) -> Json<Page> {
+                paginate crate::Controller {
+                    cursor: bind ep.cursor,
                 }
-                GET page(cursor: Option<String>) -> Json<Page> {
-                    paginate crate::Controller {
-                        cursor: bind ep.cursor,
-                    }
-                }
-                GET stream() -> Stream<OctetStream>;
-                GET discard() -> NoContent {
-                    timeout 250ms;
-                }
-            },
-            SurfaceCapabilities { raw_response: true },
-        );
+            }
+            GET stream() -> Stream<OctetStream>;
+            GET discard() -> NoContent {
+                timeout 250ms;
+            }
+        });
         let login = test_support::endpoint(&api.client.children, "login");
         assert!(login.docs.body.as_ref().is_some_and(|body| {
             body.argument == "body"
@@ -1118,7 +1105,6 @@ mod tests {
         );
         assert_eq!(login.docs.authentication.len(), 1);
         assert_eq!(login.docs.timeout, EndpointDocTimeout::Disabled);
-        assert!(login.docs.terminals.raw_response);
         assert_eq!(
             login.docs.terminals.credential_storage,
             ["store_as_session"]

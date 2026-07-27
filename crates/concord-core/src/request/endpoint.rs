@@ -27,13 +27,3 @@ pub trait EndpointSpec: Send + 'static {
     /// Transfers the selected request-specification input exactly once.
     fn into_body(self) -> <Self::Body as RequestBodySpec>::Input;
 }
-
-/// Generated-private capability for endpoints whose shape permits the
-/// dangerous raw-success terminal.
-///
-/// Every generated endpoint implements this structural capability. Core then
-/// combines it with the selected response specification's private acquisition-
-/// mode capability. Public runtime endpoints intentionally do not implement
-/// it.
-#[doc(hidden)]
-pub trait RawResponseEndpoint: EndpointSpec {}

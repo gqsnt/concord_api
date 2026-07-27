@@ -200,21 +200,11 @@ pub enum ResponseAcquisition {
     Discard,
 }
 
-impl ResponseAcquisition {
-    /// Returns whether this category is structurally eligible for the bounded
-    /// dangerous raw-success terminal.
-    #[must_use]
-    pub const fn raw_response_eligible(self) -> bool {
-        matches!(self, Self::Buffered | Self::Discard)
-    }
-}
-
 /// Compile-time endpoint capabilities and declared policy presence.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct EndpointCapabilities {
     pagination: bool,
     credential_storage: bool,
-    raw_response: bool,
     authentication: bool,
     rate_limits: bool,
 }
@@ -225,14 +215,12 @@ impl EndpointCapabilities {
     pub const fn generated(
         pagination: bool,
         credential_storage: bool,
-        raw_response: bool,
         authentication: bool,
         rate_limits: bool,
     ) -> Self {
         Self {
             pagination,
             credential_storage,
-            raw_response,
             authentication,
             rate_limits,
         }
@@ -249,13 +237,6 @@ impl EndpointCapabilities {
     #[must_use]
     pub const fn credential_storage(self) -> bool {
         self.credential_storage
-    }
-
-    /// Returns whether the endpoint is structurally eligible for bounded raw
-    /// success when the dangerous feature is enabled.
-    #[must_use]
-    pub const fn raw_response(self) -> bool {
-        self.raw_response
     }
 
     /// Returns whether the effective declaration includes authentication.

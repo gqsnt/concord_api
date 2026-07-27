@@ -36,10 +36,25 @@ println!("status: {}", response.status());
 let bytes = response.into_value();
 ```
 
-`ApiResponse<T>` also exposes the successful HTTP version, actual successful
+`ApiResponse<T>` also exposes the accepted HTTP version, actual accepted
 headers, credential-sanitized logical URL, and safe execution metadata.
 Those public URL values and headers may still contain identifiers chosen by
 your application, so decide separately what is appropriate to log.
+
+For complete bounded bytes without validation or decoding, select
+`response_bytes()`:
+
+```rust
+let response: concord::ApiResponse<concord::Bytes> =
+    client.status().response_bytes().await?;
+let bytes = response.into_value();
+```
+
+This terminal preserves the response specification's declared status
+acceptance and `Accept` header. It is available for buffered and discard
+declarations, including runtime endpoints, but not streaming modes. Actual
+headers and returned bytes are explicitly accessed application data;
+`ApiResponse` formatting omits their values.
 
 ## Plan an explicit endpoint
 
@@ -88,10 +103,12 @@ Do not parse formatted error text. `ApiError` keeps endpoint context safe and
 does not expose an authenticated URL, native request/response, credential
 material, or unbounded response body.
 
-All non-2xx final statuses use the HTTP-status category. When available, the
-typed status failure exposes the status, sanitized headers, bounded status
-body state, and parsed `Retry-After` metadata. Redirects are not followed by
-default, so a received 3xx is handled as a final non-success status.
+Statuses rejected by the declared response specification use the HTTP-status
+category. When available, the typed status failure exposes the status,
+sanitized headers, bounded status body state, and parsed `Retry-After`
+metadata. Redirects are not followed by default, so a received 3xx is final;
+it becomes an accepted response only when the response specification declares
+that acceptance.
 
 ## Choose explicit endpoints deliberately
 

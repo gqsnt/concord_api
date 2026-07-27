@@ -17,19 +17,13 @@ use crate::hooks::{
 use crate::operation::{OperationDeadline, OperationId};
 use crate::rate_limit::{RateLimitRequest, RateLimitResponse};
 use crate::redaction::SanitizedHeaders;
-#[cfg(feature = "dangerous-raw-response")]
-use crate::request::RawResponseRequest;
 use crate::request::{
     EndpointSpec, OperationPreparation, PreparationFailure, PreparedOperation,
-    PreparedPaginationPage, Request, ResponseRequest, prepare_operation,
+    PreparedPaginationPage, Request, ResponseBytesRequest, ResponseRequest, prepare_operation,
 };
-#[cfg(feature = "dangerous-raw-response")]
-use crate::response::RawResponse;
-#[cfg(feature = "dangerous-raw-response")]
-use crate::response::RawResponseSelection;
 use crate::response::{
-    ApiResponse, DeclaredResponse, ExecutionMeta, ResponseBodySpec, ResponseHead, ResponseInput,
-    ResponseSelection, completion_outcome, execute_response,
+    ApiResponse, DeclaredResponse, ExecutionMeta, ResponseBodySpec, ResponseBytesSelection,
+    ResponseHead, ResponseInput, ResponseSelection, completion_outcome, execute_response,
 };
 
 #[doc(hidden)]
@@ -58,21 +52,18 @@ where
     }
 }
 
-#[cfg(feature = "dangerous-raw-response")]
 #[doc(hidden)]
-impl<E> IntoFuture for RawResponseRequest<E>
+impl<E> IntoFuture for ResponseBytesRequest<E>
 where
     E: EndpointSpec,
-    <E::Response as ResponseBodySpec>::Mode: crate::response::RawResponseMode,
+    <E::Response as ResponseBodySpec>::Mode: crate::response::ResponseBytesMode,
 {
-    type Output = Result<RawResponse, ApiError>;
+    type Output = Result<ApiResponse<bytes::Bytes>, ApiError>;
     type IntoFuture = BoxFuture<'static, Self::Output>;
 
     fn into_future(self) -> Self::IntoFuture {
         Box::pin(async move {
-            execute_request_as::<E, RawResponseSelection<E::Response>>(self.request)
-                .await
-                .map(RawResponse::from_decoded)
+            execute_request_as::<E, ResponseBytesSelection<E::Response>>(self.request).await
         })
     }
 }

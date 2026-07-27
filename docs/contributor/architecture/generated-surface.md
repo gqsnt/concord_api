@@ -52,10 +52,10 @@ The [Generated API reference](../../reference/generated-api.md) is the
 canonical user-facing inventory of names, controls, and terminals. This page
 focuses on why their compiler ownership matters.
 
-## Capability absence is part of the API
+## Type-level availability is part of the API
 
-The compiler emits inherent methods only when the resolved declaration and
-façade capabilities make them coherent:
+The compiler uses inherent methods and sealed bounds to make incoherent
+operations fail at compile time:
 
 - pagination exists only for a declared paginated endpoint with a compatible
   response;
@@ -64,8 +64,9 @@ façade capabilities make them coherent:
 - endpoint value controls exist only for the value's lexical owner;
 - clear and reset are independently derived from absence and default
   capability;
-- raw success exists only when its feature is enabled and the sealed response
-  mode supports it.
+- `.response_bytes()` is emitted on every named request, while its sealed
+  `ResponseBytesMode` bound admits buffered and discard modes and rejects
+  streaming modes.
 
 An unsupported operation should fail as an ordinary Rust method/type error.
 Do not replace capability absence with one broad trait whose methods fail at
@@ -111,7 +112,7 @@ compiled emitted Rust and the runtime must agree on its meaning.
 
 ## Version and structural handshake
 
-Every expansion emits a const assertion for generated-contract version 27.
+Every expansion emits a const assertion for generated-contract version 28.
 It also emits equality assertions for structural values that the independent
 macro and core must enforce identically, including authentication placement,
 request-head, and generated rate-plan ceilings.

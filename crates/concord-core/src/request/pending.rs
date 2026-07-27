@@ -73,21 +73,18 @@ where
     }
 }
 
-#[cfg(feature = "dangerous-raw-response")]
 #[doc(hidden)]
 #[allow(private_bounds)]
 impl<E> Request<E>
 where
-    E: EndpointSpec + super::RawResponseEndpoint,
-    <E::Response as crate::response::ResponseBodySpec>::Mode: crate::response::RawResponseMode,
+    E: EndpointSpec,
+    <E::Response as crate::response::ResponseBodySpec>::Mode: crate::response::ResponseBytesMode,
 {
-    /// Selects the complete bounded successful response without invoking the
-    /// endpoint decoder.
-    ///
-    /// Requires the Cargo feature `dangerous-raw-response`.
+    /// Selects complete bounded bytes while preserving the declared status
+    /// acceptance and `Accept` header and skipping validation and decoding.
     #[must_use]
-    pub fn raw_response(self) -> RawResponseRequest<E> {
-        RawResponseRequest { request: self }
+    pub fn response_bytes(self) -> ResponseBytesRequest<E> {
+        ResponseBytesRequest { request: self }
     }
 }
 
@@ -108,26 +105,24 @@ impl<E> ResponseRequest<E> {
     }
 }
 
-/// An opaque pending request selecting a dangerous buffered raw success.
+/// An opaque pending request selecting complete bounded response bytes.
 ///
-/// Execution retains ordinary status classification, limits, authentication,
-/// limiting, hooks, retry containment, deadlines, cancellation, and completion.
-/// The successful response's actual headers and complete bounded body may hold
-/// secrets, so callers assume responsibility for every later diagnostic and
-/// storage surface.
+/// Execution preserves the response specification's declared status
+/// acceptance and `Accept` header while skipping its validation and decoding.
+/// Limiting, authentication, hooks, deadlines, cancellation, and completion
+/// remain managed. Actual response headers and complete bounded body bytes may
+/// hold secrets, so callers own every later diagnostic and storage surface.
 ///
 /// Fields are intentionally private:
 ///
 /// ```compile_fail
-/// let _ = concord_core::dangerous::RawResponseRequest::<()> {};
+/// let _ = concord_core::ResponseBytesRequest::<()> {};
 /// ```
-#[cfg(feature = "dangerous-raw-response")]
-pub struct RawResponseRequest<E> {
+pub struct ResponseBytesRequest<E> {
     pub(crate) request: Request<E>,
 }
 
-#[cfg(feature = "dangerous-raw-response")]
-impl<E> RawResponseRequest<E> {
+impl<E> ResponseBytesRequest<E> {
     pub(crate) fn from_generated(request: Request<E>) -> Self {
         Self { request }
     }

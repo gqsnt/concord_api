@@ -168,10 +168,10 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
     .build()
     .expect("valid renamed runtime endpoint");
     let _: runtime::endpoint::Request<_> = client.request(runtime_endpoint);
-    let raw_request: renamed_api::resources::CustomRequest = client
+    let bytes_request: renamed_api::resources::CustomRequest = client
         .resources("renamed-scope".to_owned())
         .custom("custom-body".to_owned());
-    let _: runtime::dangerous::RawResponseRequest<_> = raw_request.raw_response();
+    let _: runtime::endpoint::ResponseBytesRequest<_> = bytes_request.response_bytes();
     let _: renamed_api::resources::StreamUploadRequest =
         client.resources("renamed-scope".to_owned()).stream_upload(
             runtime::body::StreamBody::from_bytes(runtime::Bytes::from_static(b"renamed stream")),

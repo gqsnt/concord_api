@@ -65,10 +65,10 @@ pub use crate::records::{
     RecordBatches, RecordDecoder, RecordError, RecordErrorKind, RecordStream, Records,
 };
 pub use crate::redaction::{SanitizedHeaderMap, SanitizedHeaderValue, SanitizedHeaders};
-pub use crate::request::{RuntimeEndpoint, RuntimeEndpointBuilder};
+pub use crate::request::{ResponseBytesRequest, RuntimeEndpoint, RuntimeEndpointBuilder};
 pub use crate::response::{
     ApiResponse, Buffered, ByteStream, Discard, ExecutionMeta, MAX_EMPTY_RESPONSE_CHUNKS,
     NoContent, PageResponseSpec, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec,
-    ResponseHead, ResponseMode, Streaming,
+    ResponseBytesMode, ResponseHead, ResponseMode, Streaming,
 };
 pub use crate::runtime::RuntimeConfigBuilder;

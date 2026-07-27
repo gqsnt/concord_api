@@ -66,7 +66,7 @@ pub(crate) fn run_all(root: &Path) -> Result<(), String> {
         "concord-fixture-contract-mismatch",
         "dependency/contract-mismatch",
         &[],
-        &["concord macro/facade contract mismatch: facade 999, generated 27"],
+        &["concord macro/facade contract mismatch: facade 999, generated 28"],
     )?;
 
     for (binary, features, expected) in [
@@ -106,10 +106,7 @@ pub(crate) fn run_all(root: &Path) -> Result<(), String> {
         (
             "dangerous_absent",
             "fixture-absence",
-            &[
-                "no method named `raw_response`",
-                "no method named `dangerous_custom_retry`",
-            ][..],
+            &["no method named `dangerous_custom_retry`"][..],
         ),
         (
             "transport_absent",

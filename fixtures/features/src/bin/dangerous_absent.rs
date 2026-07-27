@@ -20,7 +20,6 @@ fn configure(builder: HttpConfigBuilder) -> HttpConfigBuilder {
 fn main() {
     #[cfg(feature = "fixture-absence")]
     {
-        let client = DangerousAbsentApi::new().expect("client construction");
-        let _ = client.read().raw_response();
+        let _client = DangerousAbsentApi::new().expect("client construction");
     }
 }

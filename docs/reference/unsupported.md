@@ -13,15 +13,15 @@ public contract.
 | exact authenticated/native request preview | use `SafeRequestPlan` for the real public head and test private placement at controlled loopback |
 | unbounded request, buffered response, stream, status body, record staging, or provider HTTP | configure evidence-based finite limits within hard structural ceilings |
 | automatic redirects or redirect interception | handle the typed terminal 3xx status according to application policy |
-| a second executor for runtime endpoints, providers, pagination, raw success, or extensions | use the one managed lifecycle and its semantic extension contracts |
+| a second executor for runtime endpoints, providers, pagination, explicit response bytes, or extensions | use the one managed lifecycle and its semantic extension contracts |
 | arbitrary native response modes | select the sealed `Buffered`, `Streaming`, or `Discard` mode |
 | WebSocket management | use a protocol-specific client outside Concord |
 | an SSE reconnection framework | consume a bounded byte/record stream and own a finite application reconnection policy |
 | multipart response parsing | implement an appropriate bounded response/record design outside the request-only multipart helper |
 
-`dangerous-raw-response` does not change this boundary. It returns actual
-successful headers and complete bounded bytes in a Concord-owned value, not a
-Reqwest response or live native body.
+`response_bytes()` stays inside this boundary. It returns accepted response
+headers and complete bounded bytes in a Concord-owned `ApiResponse<Bytes>`,
+not a Reqwest response or live native body.
 
 ## Authentication
 
@@ -58,7 +58,8 @@ all-or-error. Concord does not provide:
 - parallel page execution;
 - implicit partial results after a later page failure;
 - a resumable page-stream terminal;
-- pagination over streaming, record, discard, or raw response modes;
+- pagination over streaming, record, discard, or explicit response-bytes
+  acquisition;
 - runtime-defined pagination without a coherent generated binding contract;
 - controller access to transport or external I/O.
 

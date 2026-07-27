@@ -20,7 +20,6 @@ oauth2-client = ["runtime/oauth2-client"]
 gzip = ["runtime/gzip"]
 brotli = ["runtime/brotli"]
 deflate = ["runtime/deflate"]
-dangerous-raw-response = ["runtime/dangerous-raw-response"]
 dangerous-custom-retry = ["runtime/dangerous-custom-retry"]
 
 [dependencies]

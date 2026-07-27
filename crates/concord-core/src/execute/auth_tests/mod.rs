@@ -622,8 +622,6 @@ impl EndpointSpec for ProtectedEndpoint {
     }
 }
 
-impl crate::request::RawResponseEndpoint for ProtectedEndpoint {}
-
 #[derive(Clone)]
 struct HookRecord {
     operation_id: OperationId,

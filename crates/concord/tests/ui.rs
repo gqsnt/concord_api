@@ -47,6 +47,7 @@ fn generated_privacy_and_capability_boundaries_are_compiler_enforced() {
         "tests/ui/fail/capabilities/non_clone_body_endpoint.rs",
         "tests/ui/fail/capabilities/runtime_endpoint_builder_capabilities_absent.rs",
         "tests/ui/fail/capabilities/runtime_endpoint_pagination_absent.rs",
+        "tests/ui/fail/capabilities/response_bytes_stream_mode_rejected.rs",
         "tests/ui/fail/capabilities/storage_terminal_source_only.rs",
         "tests/ui/fail/capabilities/vector_public_header.rs",
         "tests/ui/fail/capabilities/wrong_endpoint_setter_absent.rs",
@@ -55,19 +56,13 @@ fn generated_privacy_and_capability_boundaries_are_compiler_enforced() {
     }
     #[cfg(feature = "csv")]
     cases.compile_fail("tests/ui/fail/capabilities/csv_policy_traits_sealed.rs");
-    #[cfg(all(feature = "json", feature = "dangerous-raw-response"))]
+    #[cfg(feature = "json")]
     {
         cases.compile_fail("tests/ui/fail/capabilities/no_content_request_spec.rs");
         cases.compile_fail("tests/ui/fail/capabilities/response_only_request_spec.rs");
     }
-    #[cfg(all(
-        feature = "json",
-        feature = "multipart",
-        feature = "dangerous-raw-response"
-    ))]
+    #[cfg(all(feature = "json", feature = "multipart"))]
     cases.compile_fail("tests/ui/fail/capabilities/multipart_response.rs");
-    #[cfg(feature = "dangerous-raw-response")]
-    cases.compile_fail("tests/ui/fail/capabilities/raw_stream_mode_rejected.rs");
 }
 
 #[cfg(all(feature = "brotli", feature = "default-tls"))]

@@ -1,7 +1,5 @@
 use std::fmt;
 
-#[cfg(feature = "dangerous-raw-response")]
-use bytes::Bytes;
 use http::{HeaderMap, Method, StatusCode, Version};
 use url::Url;
 
@@ -164,119 +162,6 @@ impl<T> fmt::Debug for ApiResponse<T> {
             .field("header_count", &self.headers.len())
             .field("metadata", &self.metadata)
             .field("value", &"<application value omitted>")
-            .finish()
-    }
-}
-
-/// A complete bounded successful response whose declared decoder was skipped.
-///
-/// This value is available only with `dangerous-raw-response`. Its logical URL
-/// is credential-sanitized, and it never exposes a Reqwest response. Public URL
-/// values may still contain operational identifiers or personally identifiable
-/// information. Unlike ordinary decoded results, its actual successful headers
-/// and body bytes may contain secrets. Concord excludes those values from its
-/// own automatic diagnostics; callers assume responsibility for all later
-/// logging, formatting, storage, and disclosure.
-///
-/// Fields are intentionally private:
-///
-/// ```compile_fail
-/// fn inspect(response: concord_core::dangerous::RawResponse) {
-///     let concord_core::dangerous::RawResponse { body, .. } = response;
-///     let _ = body;
-/// }
-/// ```
-#[cfg(feature = "dangerous-raw-response")]
-pub struct RawResponse {
-    url: Url,
-    status: StatusCode,
-    version: Version,
-    headers: HeaderMap,
-    metadata: ExecutionMeta,
-    body: Bytes,
-}
-
-#[cfg(feature = "dangerous-raw-response")]
-impl RawResponse {
-    pub(crate) fn from_decoded(response: ApiResponse<Bytes>) -> Self {
-        let ApiResponse {
-            url,
-            status,
-            version,
-            headers,
-            metadata,
-            value: body,
-        } = response;
-        Self {
-            url,
-            status,
-            version,
-            headers,
-            metadata,
-            body,
-        }
-    }
-
-    #[must_use]
-    /// Returns the credential-sanitized logical URL. Public values may still
-    /// contain operational identifiers or personally identifiable information.
-    pub fn url(&self) -> &Url {
-        &self.url
-    }
-
-    #[must_use]
-    /// Returns the successful response status.
-    pub fn status(&self) -> StatusCode {
-        self.status
-    }
-
-    #[must_use]
-    /// Returns the response HTTP version.
-    pub fn version(&self) -> Version {
-        self.version
-    }
-
-    #[must_use]
-    /// Returns the actual successful response headers.
-    ///
-    /// Header values may contain secrets and have reduced secrecy guarantees.
-    pub fn headers(&self) -> &HeaderMap {
-        &self.headers
-    }
-
-    #[must_use]
-    /// Returns the safe structural execution metadata.
-    pub fn metadata(&self) -> &ExecutionMeta {
-        &self.metadata
-    }
-
-    #[must_use]
-    /// Borrows the complete bounded successful response bytes.
-    ///
-    /// Body bytes may contain secrets and have reduced secrecy guarantees.
-    pub fn body(&self) -> &Bytes {
-        &self.body
-    }
-
-    #[must_use]
-    /// Extracts the complete bounded successful response bytes.
-    ///
-    /// Body bytes may contain secrets and have reduced secrecy guarantees.
-    pub fn into_body(self) -> Bytes {
-        self.body
-    }
-}
-
-#[cfg(feature = "dangerous-raw-response")]
-impl fmt::Debug for RawResponse {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("RawResponse")
-            .field("status", &self.status)
-            .field("version", &self.version)
-            .field("header_count", &self.headers.len())
-            .field("metadata", &self.metadata)
-            .field("body_len", &self.body.len())
             .finish()
     }
 }

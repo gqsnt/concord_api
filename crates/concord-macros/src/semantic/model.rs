@@ -212,7 +212,6 @@ pub(crate) struct EndpointDocTerminals {
     pub(crate) direct_await: bool,
     pub(crate) response: bool,
     pub(crate) pagination: bool,
-    pub(crate) raw_response: bool,
     pub(crate) credential_storage: Vec<String>,
 }
 
@@ -260,7 +259,6 @@ pub(crate) struct EndpointSetter {
 pub(crate) struct RequestTerminals {
     pub(crate) response: bool,
     pub(crate) pagination: bool,
-    pub(crate) raw_response: bool,
     pub(crate) credential_storage: Vec<CredentialStorageTerminal>,
 }
 

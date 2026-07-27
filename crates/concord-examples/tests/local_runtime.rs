@@ -436,29 +436,3 @@ mod record_boundaries {
         assert_eq!(server.request_count(), 5);
     }
 }
-
-#[cfg(all(feature = "dangerous-raw-response", feature = "json"))]
-#[tokio::test]
-async fn actual_dangerous_raw_example_still_acquires_a_bounded_complete_body() {
-    use concord_examples::dangerous::raw_response::RawResponseApi;
-
-    let server = ScriptedServer::start([ResponseScript::ok(br#"{"value":7}"#.to_vec())
-        .with_header("content-type", "application/json")])
-    .expect("raw-response server");
-    let proxy = proxy(&server);
-    let client = RawResponseApi::builder()
-        .configure_http(move |http| http.proxy(proxy))
-        .build()
-        .expect("raw-response client");
-
-    let response = client
-        .record()
-        .raw_response()
-        .await
-        .expect("bounded raw response");
-    assert_eq!(
-        response.body(),
-        &concord::Bytes::from_static(br#"{"value":7}"#)
-    );
-    assert_eq!(server.request_count(), 1);
-}

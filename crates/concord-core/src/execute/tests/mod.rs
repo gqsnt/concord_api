@@ -967,8 +967,6 @@ impl EndpointSpec for BytesEndpoint {
     fn into_body(self) {}
 }
 
-impl crate::request::RawResponseEndpoint for BytesEndpoint {}
-
 struct RateLimitedBytesEndpoint {
     inherited_timeout: Option<Duration>,
     key: String,
@@ -1016,8 +1014,6 @@ impl EndpointSpec for RateLimitedBytesEndpoint {
 
     fn into_body(self) {}
 }
-
-impl crate::request::RawResponseEndpoint for RateLimitedBytesEndpoint {}
 
 struct GlobalRateLimitedBytesEndpoint;
 

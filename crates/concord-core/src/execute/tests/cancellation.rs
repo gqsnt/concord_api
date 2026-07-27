@@ -182,9 +182,8 @@ async fn cancellation_while_awaiting_completion_may_prevent_delivery() {
     assert_eq!(hooks.records().len(), 3);
 }
 
-#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test(start_paused = true)]
-async fn raw_response_keeps_the_fixed_deadline_and_cancellation_contract() {
+async fn response_bytes_keeps_the_fixed_deadline_and_cancellation_contract() {
     let timeout_executor = DeterministicExecutor::new();
     let before_gate = Gate::closed();
     let completion_gate = Gate::closed();
@@ -201,7 +200,7 @@ async fn raw_response_keeps_the_fixed_deadline_and_cancellation_contract() {
     let timeout_task = tokio::spawn(async move {
         bytes_request(timeout_core)
             .timeout(Duration::from_secs(5))
-            .raw_response()
+            .response_bytes()
             .await
     });
     before_gate.wait_until_reached().await;
@@ -215,8 +214,8 @@ async fn raw_response_keeps_the_fixed_deadline_and_cancellation_contract() {
     completion_gate.open();
     let error = timeout_task
         .await
-        .expect("raw timeout join")
-        .expect_err("raw fixed timeout");
+        .expect("response-bytes timeout join")
+        .expect_err("response-bytes fixed timeout");
     assert_eq!(error.category(), ErrorCategory::Timeout);
     assert_eq!(
         timeout_executor
@@ -230,7 +229,7 @@ async fn raw_response_keeps_the_fixed_deadline_and_cancellation_contract() {
     cancellation_executor
         .application()
         .queue_response(ScriptedResponse::success(Bytes::from_static(b"fixed raw")))
-        .expect("raw cancellation response");
+        .expect("response-bytes cancellation response");
     let cancellation_gate = Gate::closed();
     let cancellation_hooks = Arc::new(ProbeHooks {
         completion_gate: Some(cancellation_gate.clone()),
@@ -242,13 +241,13 @@ async fn raw_response_keeps_the_fixed_deadline_and_cancellation_contract() {
         RuntimeConfigBuilder::new(),
     );
     let cancellation_task =
-        tokio::spawn(async move { bytes_request(cancellation_core).raw_response().await });
+        tokio::spawn(async move { bytes_request(cancellation_core).response_bytes().await });
     cancellation_gate.wait_until_reached().await;
     cancellation_task.abort();
     assert!(
         cancellation_task
             .await
-            .expect_err("raw request task must be cancelled")
+            .expect_err("response-bytes request task must be cancelled")
             .is_cancelled()
     );
     cancellation_gate.open();

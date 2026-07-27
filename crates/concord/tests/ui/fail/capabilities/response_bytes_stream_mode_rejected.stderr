@@ -1,0 +1,25 @@
+error[E0277]: the trait bound `concord::response::Streaming: ResponseBytesMode` is not satisfied
+  --> tests/ui/fail/capabilities/response_bytes_stream_mode_rejected.rs:15:31
+   |
+15 |     let _ = client.download().response_bytes();
+   |                               ^^^^^^^^^^^^^^ the trait `ResponseBytesMode` is not implemented for `concord::response::Streaming`
+   |
+help: the following other types implement trait `ResponseBytesMode`
+  --> $WORKSPACE/crates/concord-core/src/response/spec.rs
+   |
+   | impl ResponseBytesMode for Buffered {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::response::Buffered`
+   |
+   | impl ResponseBytesMode for Discard {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::response::Discard`
+note: required by a bound in `DownloadRequest::response_bytes`
+  --> tests/ui/fail/capabilities/response_bytes_stream_mode_rejected.rs:5:1
+   |
+ 5 | / api! {
+ 6 | |     client StreamApi {
+ 7 | |         base "http://stream.example.test/";
+...  |
+10 | |     GET download() -> Stream<OctetStream>;
+11 | | }
+   | |_^ required by this bound in `DownloadRequest::response_bytes`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

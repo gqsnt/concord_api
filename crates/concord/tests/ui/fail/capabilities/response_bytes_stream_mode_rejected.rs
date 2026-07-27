@@ -12,5 +12,5 @@ api! {
 
 fn main() {
     let client = StreamApi::new().unwrap();
-    let _ = client.download().raw_response();
+    let _ = client.download().response_bytes();
 }

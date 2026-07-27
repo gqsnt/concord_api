@@ -24,7 +24,6 @@ task.
 | `gzip` | no | Gzip response decompression |
 | `brotli` | no | Brotli response decompression |
 | `deflate` | no | Deflate response decompression |
-| `dangerous-raw-response` | no | Bounded undecoded successful-response terminal |
 | `dangerous-custom-retry` | no | Custom native transport retry policy |
 <!-- END GENERATED FEATURES -->
 
@@ -67,7 +66,7 @@ dependency can keep a capability private.
 | `records` alone | generic `Records<D>` and downstream decoder contracts |
 | `oauth2-client` | helper types only; provider HTTP still needs a TLS-capable build to call an HTTPS token endpoint |
 | all decompression features | independent gzip, Brotli, and deflate response decoding |
-| either dangerous feature | only that explicitly named reduced-guarantee capability |
+| `dangerous-custom-retry` | the custom native transport retry capability |
 
 ## Capability notes
 
@@ -95,9 +94,7 @@ dependency can keep a capability private.
   observer, so custom policy must delegate when bounded `Retry-After`
   handling should remain.
 - Dangerous features never join the default set.
-- The façade passes dangerous capability tokens to generated code; proc-macro
-  crate features are not used to infer a downstream application's feature
-  selection.
+- Generated request terminals do not depend on façade feature tokens.
 - Feature selection changes available capabilities; it never disables the
   core request-head, lifecycle, redaction, or acquisition ceilings.
 

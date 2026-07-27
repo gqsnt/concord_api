@@ -17,8 +17,8 @@ use self::model::{
     RequestBody, ResolvedMethod, ResolvedRetry, Scope, Value,
 };
 use self::surface::{
-    EndpointDocContext, SurfaceCapabilities, VisibleScopeDoc, canonical_ident, client_surface,
-    endpoint_doc_model, endpoint_surface, finalize_endpoint_surfaces, scope_surface, to_snake_case,
+    EndpointDocContext, VisibleScopeDoc, canonical_ident, client_surface, endpoint_doc_model,
+    endpoint_surface, finalize_endpoint_surfaces, scope_surface, to_snake_case,
     validate_surface_modules,
 };
 use crate::syntax::ast::{
@@ -46,20 +46,11 @@ struct Resolver<'a> {
     client_values: &'a [Value],
     credentials: &'a [Credential],
     retry: ResolvedRetry,
-    surface_capabilities: SurfaceCapabilities,
     next_scope_id: usize,
     next_endpoint_id: usize,
 }
 
-#[cfg(test)]
 pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
-    resolve_with_capabilities(source, SurfaceCapabilities::default())
-}
-
-pub(crate) fn resolve_with_capabilities(
-    source: SourceApi,
-    surface_capabilities: SurfaceCapabilities,
-) -> syn::Result<Api> {
     let SourceApi {
         client: source_client,
         children: source_children,
@@ -90,7 +81,6 @@ pub(crate) fn resolve_with_capabilities(
             client_values: &values,
             credentials: &credentials,
             retry,
-            surface_capabilities,
             next_scope_id: 0,
             next_endpoint_id: 0,
         };
@@ -298,7 +288,6 @@ impl Resolver<'_> {
             &parameters,
             body_position,
             pagination.is_some(),
-            self.surface_capabilities,
         );
         let visible_scope_docs = scope_path
             .iter()
@@ -416,27 +405,12 @@ pub(crate) mod test_support {
     use super::*;
 
     pub(crate) fn resolve_tokens(tokens: proc_macro2::TokenStream) -> Api {
-        resolve_tokens_with_capabilities(tokens, SurfaceCapabilities::default())
-    }
-
-    pub(crate) fn resolve_tokens_with_capabilities(
-        tokens: proc_macro2::TokenStream,
-        capabilities: SurfaceCapabilities,
-    ) -> Api {
-        try_resolve_tokens_with_capabilities(tokens, capabilities)
-            .expect("normalized semantic model")
+        try_resolve_tokens(tokens).expect("normalized semantic model")
     }
 
     pub(crate) fn try_resolve_tokens(tokens: proc_macro2::TokenStream) -> syn::Result<Api> {
-        try_resolve_tokens_with_capabilities(tokens, SurfaceCapabilities::default())
-    }
-
-    fn try_resolve_tokens_with_capabilities(
-        tokens: proc_macro2::TokenStream,
-        capabilities: SurfaceCapabilities,
-    ) -> syn::Result<Api> {
         let source = crate::syntax::parse(tokens)?;
-        resolve_with_capabilities(source, capabilities)
+        resolve(source)
     }
 
     fn find_endpoint<'a>(children: &'a [Child], name: &str) -> Option<&'a Endpoint> {

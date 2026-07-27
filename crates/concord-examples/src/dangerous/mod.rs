@@ -4,6 +4,3 @@
 
 #[cfg(feature = "dangerous-custom-retry")]
 pub mod custom_retry;
-
-#[cfg(all(feature = "dangerous-raw-response", feature = "json"))]
-pub mod raw_response;

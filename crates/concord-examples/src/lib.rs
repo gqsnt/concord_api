@@ -26,7 +26,7 @@ pub mod runtime_policy;
 #[cfg(feature = "oauth2-client")]
 pub mod authentication;
 
-#[cfg(any(feature = "dangerous-custom-retry", feature = "dangerous-raw-response"))]
+#[cfg(feature = "dangerous-custom-retry")]
 pub mod dangerous;
 
 #[cfg(feature = "json")]

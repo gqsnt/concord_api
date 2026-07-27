@@ -183,19 +183,22 @@ ordinary await terminal:
 | Capability | Generated surface | Result |
 |---|---|
 | Declared output | `.await` / `IntoFuture` | `Result<Response::Output, ApiError>` |
-| Successful metadata plus output | `.response().await` | `Result<ApiResponse<Response::Output>, ApiError>` |
+| Accepted metadata plus output | `.response().await` | `Result<ApiResponse<Response::Output>, ApiError>` |
+| Accepted metadata plus bounded bytes | `.response_bytes().await` | `Result<ApiResponse<Bytes>, ApiError>` for `Buffered` or `Discard` declarations |
 | Explicit timeout | `.timeout(Duration)` | replaces the generated selection |
 | No deadline | `.disable_timeout()` | explicitly disables it for this request |
 | Declared deadline | `.inherit_timeout()` | restores the endpoint selection |
 | Built-in structural debug | `.debug(DebugLevel)` | request-local debug selection |
 | Pagination | `.paginate(PageLimit)` | only for a declared paginated endpoint |
 | Endpoint-backed credential storage | `.store_as_NAME().await` | only on the endpoint that supplies credential `NAME` |
-| Bounded raw success | `.raw_response().await` | feature-gated and type-valid only for a supported sealed mode |
 
 Invalid terminals are absent instead of being hidden behind a broad extension
-trait, except that the dangerous raw selector also carries an explicit
-sealed-mode trait bound. Body input, response output, pagination controller,
-and provider types remain ordinary trait-driven Rust types.
+trait. `response_bytes()` is always emitted and carries a sealed
+`ResponseBytesMode` bound, so streaming declarations fail during type checking.
+It preserves the response specification's status acceptance and `Accept`
+header, skips validation and decoding, and uses the ordinary response-body
+limit. Body input, response output, pagination controller, and provider types
+remain ordinary trait-driven Rust types.
 
 Capability absence is part of the API:
 
@@ -204,8 +207,7 @@ Capability absence is part of the API:
 | no `paginate` declaration | `.paginate(...)` |
 | streaming, record, or otherwise non-page response | generated pagination |
 | not used as an endpoint-backed credential source | `.store_as_NAME()` |
-| dangerous feature disabled | `.raw_response()` |
-| declared response mode not `Buffered` or `Discard` | callable raw-success terminal |
+| declared response mode not `Buffered` or `Discard` | callable `.response_bytes()` terminal |
 
 Named request wrappers retain controls only for their own non-required
 endpoint values. They do not gain inherited scope controls. Every control and
@@ -224,7 +226,9 @@ withheld excess; and a latched structural error prevents later formatting or
 iterator consumption before `build()` returns its safe category.
 
 Runtime endpoints have the same safe description, planning shape, and
-executor. They do not provide partial runtime pagination.
+executor. Eligible runtime endpoint requests support both `.response()` and
+`.response_bytes()` through the generic request type. They do not provide
+partial runtime pagination.
 
 ## Public namespaces
 

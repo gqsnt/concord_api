@@ -89,7 +89,7 @@ decoded application value. Its `Debug` output omits header values and the
 application value, but explicit accessors return them. Treat both as
 application data.
 
-A `ResponseBodySpec` receives actual successful headers and a bounded semantic
+A `ResponseBodySpec` receives actual accepted headers and a bounded semantic
 body (`Bytes`, `ByteStream`, or `()`) after core-owned acquisition. A
 `RecordDecoder` receives response-head metadata and staged response bytes.
 These are trusted extension boundaries, not automatically safe logging
@@ -134,18 +134,20 @@ sensitive. Provider HTTP is isolated and bounded, but a provider's own logs,
 caches, retries, and external systems remain outside Concord's redaction
 control.
 
+`response_bytes()` returns `ApiResponse<Bytes>` and intentionally makes the
+actual accepted headers and complete bounded body available through explicit
+accessors. Its `Debug` output omits the logical URL, header values, and body
+value. Once accessed, those values are application-owned data subject to the
+same policy as decoded output.
+
 ## Dangerous capabilities
 
-Dangerous features stay bounded but intentionally reduce guarantees:
+A custom native retry classifier can observe native materialized URLs,
+including private query authentication.
 
-- raw success exposes actual successful headers and complete bounded body bytes
-  through explicit accessors;
-- a custom native retry classifier can observe native materialized URLs,
-  including private query authentication.
-
-Neither value appears in Concord's automatic diagnostics. Application code
-inside these capabilities owns confidentiality. See
-[Dangerous capabilities](../reference/dangerous.md) before enabling either
+That value does not appear in Concord's automatic diagnostics. Application
+code inside this capability owns confidentiality. See
+[Dangerous capabilities](../reference/dangerous.md) before enabling the
 feature.
 
 ## Verification

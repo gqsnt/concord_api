@@ -253,9 +253,8 @@ async fn limiter_observation_uses_sanitized_head() {
     assert!(!responses[0].headers.contains(RESPONSE_SECRET));
 }
 
-#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
-async fn raw_response_reuses_limiter_hooks_observation_and_success_completion() {
+async fn response_bytes_reuses_limiter_hooks_observation_and_success_completion() {
     const RAW_BODY: &[u8] = b"raw-lifecycle-body-secret-2f5e";
     const RATE_KEY: &str = "raw-lifecycle-rate-key-secret-e3b1";
     let executor = DeterministicExecutor::new();
@@ -276,17 +275,17 @@ async fn raw_response_reuses_limiter_hooks_observation_and_success_completion() 
     )
     .with_debug_output(Arc::clone(&debug));
 
-    let raw = rate_limited_bytes_request(core, Some(Duration::from_secs(30)), RATE_KEY)
-        .raw_response()
+    let response = rate_limited_bytes_request(core, Some(Duration::from_secs(30)), RATE_KEY)
+        .response_bytes()
         .await
-        .expect("raw lifecycle success");
-    assert_eq!(raw.body(), RAW_BODY);
-    assert_eq!(raw.status(), StatusCode::OK);
+        .expect("response-bytes lifecycle success");
+    assert_eq!(response.value(), RAW_BODY);
+    assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
-        raw.url().as_str(),
+        response.url().as_str(),
         "http://execution.example.test/v1/health/bytes"
     );
-    assert_eq!(raw.metadata().endpoint(), ENDPOINT);
+    assert_eq!(response.metadata().endpoint(), ENDPOINT);
     assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 1);
     assert_eq!(limiter.observations.load(Ordering::SeqCst), 1);
     assert_eq!(executor.application().request_count().expect("count"), 1);
@@ -303,7 +302,7 @@ async fn raw_response_reuses_limiter_hooks_observation_and_success_completion() 
         ]
     ));
     let automatic = format!(
-        "{}\n{:?}\n{raw:?}",
+        "{}\n{:?}\n{response:?}",
         debug.lock().expect("debug output").join("\n"),
         hooks.records(),
     );
@@ -906,9 +905,9 @@ async fn hidden_reqwest_retry_does_not_reenter_custom_limiter_or_lifecycle() {
     );
 }
 
-#[cfg(all(feature = "http2", feature = "dangerous-raw-response"))]
+#[cfg(feature = "http2")]
 #[tokio::test]
-async fn raw_response_contains_hidden_reqwest_retry_inside_one_logical_attempt() {
+async fn response_bytes_contains_hidden_reqwest_retry_inside_one_logical_attempt() {
     let server = crate::http::test_support::H2RefusedServer::start(1, 2).await;
     let physical_attempts = server.physical_attempts();
     let hooks = Arc::new(ProbeHooks::new());
@@ -925,11 +924,11 @@ async fn raw_response_contains_hidden_reqwest_retry_inside_one_logical_attempt()
     )
     .expect("raw HTTP/2 core");
 
-    let raw = bytes_request(core)
-        .raw_response()
+    let response = bytes_request(core)
+        .response_bytes()
         .await
-        .expect("raw native retry recovery");
-    assert!(raw.body().is_empty());
+        .expect("response-bytes native retry recovery");
+    assert!(response.value().is_empty());
     server.finish().await;
     assert_eq!(physical_attempts.load(Ordering::SeqCst), 2);
     assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 1);

@@ -26,6 +26,18 @@ semantic rate-limit rules.
 `client.request(endpoint)` returns the ordinary `Request<_>` for `R`; awaiting
 that request enters the same executor as a generated endpoint.
 
+Eligible buffered or discard responses can select complete bounded bytes:
+
+```rust
+let response: concord::ApiResponse<concord::Bytes> =
+    client.request(endpoint).response_bytes().await?;
+```
+
+This preserves `R::accepts_status` and the declared `Accept` header, skips
+`R::validate` and `R::from_body`, and uses the same response-body limit as a
+generated endpoint. Streaming response modes reject the selector at compile
+time.
+
 ## What remains automatic
 
 Runtime-defined requests use the selected client's:
@@ -83,7 +95,7 @@ after a stream opens remains caller-controlled either way.
 
 Prefer the DSL when operation shape is part of the stable service contract.
 Generated endpoints provide domain-named methods, compile-time value
-ownership, generated Rustdoc, capability-specific request wrappers, and
+ownership, generated Rustdoc, typed request wrappers, and
 declarative pagination.
 
 Choose `RuntimeEndpoint` for plugin data, operator configuration, or another

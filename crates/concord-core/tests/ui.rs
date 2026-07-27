@@ -14,6 +14,4 @@ fn source_only_public_surface_failures_use_trybuild() {
     cases.compile_fail("tests/ui/fail/request_spec_metadata_signature.rs");
     #[cfg(not(feature = "records"))]
     cases.compile_fail("tests/ui/fail/response_mode_is_sealed.rs");
-    #[cfg(feature = "dangerous-raw-response")]
-    cases.compile_fail("tests/ui/fail/dangerous_raw_response_fields_private.rs");
 }

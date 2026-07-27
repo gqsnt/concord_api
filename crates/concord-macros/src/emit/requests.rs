@@ -100,27 +100,20 @@ pub(super) fn generate_request_wrapper(
             }
         }
     });
-    let raw_response_method = if endpoint.surface.terminals.raw_response {
-        quote! {
-            /// Selects the complete bounded successful response without decoding it.
-            ///
-            /// This method is generated only with the `dangerous-raw-response`
-            /// feature and can be called only when the response specification
-            /// supports bounded raw acquisition.
-            #[must_use]
-            pub fn raw_response<Mode>(
-                self,
-            ) -> #generated_core::dangerous::RawResponseRequest<#endpoint_name>
-            where
-                <#endpoint_name as #support_path::Endpoint>::Response:
-                    #generated_core::response::ResponseBodySpec<Mode = Mode>,
-                Mode: #generated_core::dangerous::RawResponseMode,
-            {
-                #generated_core::__private::raw_response_request(self.__concord_inner)
-            }
+    let response_bytes_method = quote! {
+        /// Selects complete bounded bytes while preserving declared status
+        /// acceptance and `Accept` and skipping validation and decoding.
+        #[must_use]
+        pub fn response_bytes<Mode>(
+            self,
+        ) -> #core_path::endpoint::ResponseBytesRequest<#endpoint_name>
+        where
+            <#endpoint_name as #support_path::Endpoint>::Response:
+                #generated_core::response::ResponseBodySpec<Mode = Mode>,
+            Mode: #generated_core::response::ResponseBytesMode,
+        {
+            #generated_core::__private::response_bytes_request(self.__concord_inner)
         }
-    } else {
-        quote!()
     };
     let storage_impl = (!storage_methods.is_empty()).then(|| {
         quote! {
@@ -176,7 +169,7 @@ pub(super) fn generate_request_wrapper(
             #(#setter_methods)*
             #pagination_method
             #response_method
-            #raw_response_method
+            #response_bytes_method
         }
 
         #storage_impl
@@ -316,27 +309,9 @@ mod tests {
         assert!(output.contains("IntoFuture"));
         assert!(!output.contains("__concord_into_development_request"));
         assert!(!output.contains("emit_generated_development_method"));
-        assert!(!output.contains("raw_response"));
-        assert!(!output.contains("emit_generated_raw_response_method"));
-
-        let raw_api =
-            test_support::api_with_capabilities(crate::semantic::surface::SurfaceCapabilities {
-                raw_response: true,
-            });
-        let raw_endpoint = test_support::endpoint(&raw_api);
-        let raw_output = generate_request_wrapper(
-            &raw_api.client,
-            raw_endpoint,
-            RequestBridge {
-                support_path: &quote!(super),
-                generated_core: &core,
-            },
-            &core,
-            &quote!(),
-        )
-        .to_string();
-        assert!(raw_output.contains("pub fn raw_response"));
-        assert!(raw_output.contains("__private :: raw_response_request"));
-        assert!(!raw_output.contains("emit_generated_raw_response_method"));
+        assert!(output.contains("pub fn response_bytes"));
+        assert!(output.contains("ResponseBytesRequest"));
+        assert!(output.contains("ResponseBytesMode"));
+        assert!(output.contains("__private :: response_bytes_request"));
     }
 }

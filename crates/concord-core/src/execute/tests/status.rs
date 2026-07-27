@@ -194,7 +194,12 @@ async fn buffered_codec_direct_and_metadata_results_share_one_execution_path() {
 #[tokio::test]
 async fn declared_status_acceptance_defaults_to_2xx_and_can_return_a_typed_404() {
     let executor = DeterministicExecutor::new();
-    for body in ["default-missing", "typed-missing", "metadata-missing"] {
+    for body in [
+        "default-missing",
+        "typed-missing",
+        "metadata-missing",
+        "bytes-missing",
+    ] {
         executor
             .application()
             .queue_response(ScriptedResponse::status(
@@ -223,10 +228,11 @@ async fn declared_status_acceptance_defaults_to_2xx_and_can_return_a_typed_404()
         }
     );
 
-    let response = response_request::<AcceptedNotFound>(core, Some(Duration::from_secs(30)))
-        .response()
-        .await
-        .expect("declared 404 metadata");
+    let response =
+        response_request::<AcceptedNotFound>(core.clone(), Some(Duration::from_secs(30)))
+            .response()
+            .await
+            .expect("declared 404 metadata");
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_eq!(response.value().status, StatusCode::NOT_FOUND);
     assert_eq!(
@@ -234,6 +240,13 @@ async fn declared_status_acceptance_defaults_to_2xx_and_can_return_a_typed_404()
         Bytes::from_static(b"metadata-missing")
     );
     assert_eq!(response.metadata().endpoint(), RESPONSE_ENDPOINT);
+
+    let bytes = response_request::<AcceptedNotFound>(core, Some(Duration::from_secs(30)))
+        .response_bytes()
+        .await
+        .expect("declared accepted 404 response bytes");
+    assert_eq!(bytes.status(), StatusCode::NOT_FOUND);
+    assert_eq!(bytes.value(), &Bytes::from_static(b"bytes-missing"));
 
     let completions = hooks
         .records()
@@ -249,6 +262,7 @@ async fn declared_status_acceptance_defaults_to_2xx_and_can_return_a_typed_404()
         completions,
         [
             (CompletionOutcome::HttpStatus, Some(StatusCode::NOT_FOUND)),
+            (CompletionOutcome::Success, Some(StatusCode::NOT_FOUND)),
             (CompletionOutcome::Success, Some(StatusCode::NOT_FOUND)),
             (CompletionOutcome::Success, Some(StatusCode::NOT_FOUND)),
         ]

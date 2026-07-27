@@ -118,20 +118,17 @@ impl private::Sealed for Discard {
     }
 }
 
-#[cfg(feature = "dangerous-raw-response")]
-/// Sealed response-acquisition capability accepted by the dangerous bounded
-/// raw-success terminal.
+/// Sealed response-acquisition capability accepted by
+/// [`Request::response_bytes`](crate::Request::response_bytes).
 ///
 /// Concord implements this trait only for [`Buffered`] and [`Discard`].
 /// Applications cannot implement new response modes because [`ResponseMode`]
 /// is itself sealed.
-pub trait RawResponseMode: ResponseMode {}
+pub trait ResponseBytesMode: ResponseMode {}
 
-#[cfg(feature = "dangerous-raw-response")]
-impl RawResponseMode for Buffered {}
+impl ResponseBytesMode for Buffered {}
 
-#[cfg(feature = "dangerous-raw-response")]
-impl RawResponseMode for Discard {}
+impl ResponseBytesMode for Discard {}
 
 /// Borrowed accepted response-head facts supplied to a response extension.
 ///
@@ -262,11 +259,9 @@ where
     }
 }
 
-#[cfg(feature = "dangerous-raw-response")]
-pub(crate) struct RawResponseSelection<R>(std::marker::PhantomData<fn() -> R>);
+pub(crate) struct ResponseBytesSelection<R>(std::marker::PhantomData<fn() -> R>);
 
-#[cfg(feature = "dangerous-raw-response")]
-impl<R> ResponseSelection<R> for RawResponseSelection<R>
+impl<R> ResponseSelection<R> for ResponseBytesSelection<R>
 where
     R: ResponseBodySpec,
 {
@@ -274,7 +269,7 @@ where
     type Mode = Buffered;
 
     fn accepts_status(status: StatusCode) -> bool {
-        status.is_success()
+        R::accepts_status(status)
     }
 
     fn validate(_head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {

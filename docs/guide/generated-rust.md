@@ -55,14 +55,15 @@ A named request exposes only terminals and controls valid for that endpoint:
 - awaiting it returns the declared response value;
 - `.response()` returns `ApiResponse<T>` when typed response metadata is
   supported;
+- `.response_bytes()` returns `ApiResponse<Bytes>` for buffered and discard
+  response modes while preserving declared acceptance and `Accept`;
 - `.paginate(PageLimit)` exists only for a paginated endpoint;
-- request-local timeout controls exist according to the generated contract;
-- dangerous raw-response access exists only behind its explicit feature and
-  only where coherent.
+- request-local timeout controls exist according to the generated contract.
 
 Invalid operations are absent from the type rather than deferred to a runtime
 flag. A bodyless endpoint cannot acquire a body setter, and a non-paginated
-endpoint does not have `.paginate()`.
+endpoint does not have `.paginate()`. Streaming response modes reject
+`.response_bytes()` at compile time through a sealed mode bound.
 
 Request wrappers expose controls for their own non-required endpoint values.
 They do not copy controls from an enclosing scope. Explicit endpoint snapshots

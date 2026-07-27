@@ -45,8 +45,7 @@ pub use crate::rate_limit::{
 };
 #[doc(hidden)]
 pub use crate::request::{
-    EndpointSpec, HeadBuilder, PreparedHead, RawResponseEndpoint, RequestMeta, RequestOptions,
-    TimeoutOverride,
+    EndpointSpec, HeadBuilder, PreparedHead, RequestMeta, RequestOptions, TimeoutOverride,
 };
 #[doc(hidden)]
 pub use crate::response::{ApiResponse, PageResponseSpec, ResponseBodySpec};
@@ -344,14 +343,11 @@ pub fn response_request<E>(request: crate::Request<E>) -> crate::ResponseRequest
     crate::ResponseRequest::from_generated(request)
 }
 
-/// Selects bounded raw acquisition for one generated named request wrapper.
-#[cfg(feature = "dangerous-raw-response")]
+/// Selects complete bounded bytes for one generated named request wrapper.
 #[doc(hidden)]
 #[must_use]
-pub fn raw_response_request<E>(
-    request: crate::Request<E>,
-) -> crate::dangerous::RawResponseRequest<E> {
-    crate::dangerous::RawResponseRequest::from_generated(request)
+pub fn response_bytes_request<E>(request: crate::Request<E>) -> crate::ResponseBytesRequest<E> {
+    crate::ResponseBytesRequest::from_generated(request)
 }
 
 /// Creates one side-effect-free stable pagination wrapper.

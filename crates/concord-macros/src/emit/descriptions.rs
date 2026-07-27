@@ -55,7 +55,6 @@ pub(super) fn generate_endpoint_description(
                     #core_path::endpoint::EndpointCapabilities::generated(
                         #pagination,
                         #credential_storage,
-                        __concord_response_acquisition.raw_response_eligible(),
                         #authentication,
                         #rate_limit,
                     ),

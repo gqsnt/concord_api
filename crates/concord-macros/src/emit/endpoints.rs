@@ -409,11 +409,6 @@ pub(super) fn generate_endpoint(
             }
         }
 
-        #[doc(hidden)]
-        impl #generated_core::__private::RawResponseEndpoint for #endpoint_name
-        #where_clause
-        {}
-
         #pagination_impl
         #request_wrapper
     }

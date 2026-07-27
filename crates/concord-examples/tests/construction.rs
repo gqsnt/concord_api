@@ -76,10 +76,6 @@ fn imports_and_constructs_every_enabled_canonical_declaration() {
     #[cfg(all(feature = "dangerous-custom-retry", feature = "default-tls"))]
     concord_examples::dangerous::custom_retry::construct().expect("dangerous retry construction");
 
-    #[cfg(all(feature = "dangerous-raw-response", feature = "json"))]
-    concord_examples::dangerous::raw_response::construct()
-        .expect("dangerous raw-response construction");
-
     #[cfg(all(feature = "json", feature = "rate-limit", feature = "default-tls"))]
     concord_examples::riot::usage::construct().expect("Riot construction");
 }

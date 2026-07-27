@@ -17,7 +17,6 @@ check:
     cargo check -p concord --lib --no-default-features --features json --locked
     cargo check -p concord --lib --no-default-features --features oauth2-client --locked
     cargo check -p concord --lib --no-default-features --features multipart --locked
-    cargo check -p concord --lib --no-default-features --features dangerous-raw-response --locked
     cargo check -p concord --lib --no-default-features --features dangerous-custom-retry --locked
     cargo run --locked -p concord-xtask -- policy --locked
 
@@ -62,7 +61,6 @@ docs: site
     cargo rustdoc -p concord-extras --features rate-limit --locked -- -D warnings
     cargo rustdoc -p concord --features csv --locked -- -D warnings
     cargo rustdoc -p concord --features json --locked -- -D warnings
-    cargo rustdoc -p concord --features dangerous-raw-response --locked -- -D warnings
     cargo rustdoc -p concord --all-features --locked -- -D warnings
     cargo rustdoc -p concord-core --all-features --locked -- -D warnings
     cargo rustdoc -p concord-extras --all-features --locked -- -D warnings

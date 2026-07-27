@@ -4,8 +4,7 @@ mod generated {
     pub(crate) mod authentication;
     pub(crate) mod pagination;
     pub(crate) mod rate_limits;
-    #[cfg(feature = "dangerous-raw-response")]
-    pub(crate) mod raw_response;
+    pub(crate) mod response_bytes;
     #[cfg(feature = "multipart")]
     pub(crate) mod shaping;
     mod surface;
@@ -17,8 +16,7 @@ pub(crate) use generated::pagination::{
     ScopeBindingController, StablePolicy, VendorController, VendorPageCodec, ZeroController,
 };
 pub(crate) use generated::rate_limits::{DisplayOnly, NoDisplay, RouteHost};
-#[cfg(feature = "dangerous-raw-response")]
-pub(crate) use generated::raw_response::ObservedCodec;
+pub(crate) use generated::response_bytes::{AcceptedMissing, ObservedCodec};
 #[cfg(feature = "multipart")]
 pub(crate) use generated::shaping::{
     CLIENT_DEFAULT, DropProbe, ENDPOINT_DEFAULT, OPTIONAL_CLIENT_DEFAULT,

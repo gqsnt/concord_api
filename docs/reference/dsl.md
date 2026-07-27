@@ -145,7 +145,7 @@ literal, or an IPv6 literal.
 
 The macro grammar does not change by recognizing concrete helper names.
 Cargo features make Rust types, implementations, transport capabilities, or
-generated terminals available:
+builder methods available:
 
 | Façade feature | Declaration effect |
 |---|---|
@@ -155,14 +155,14 @@ generated terminals available:
 | `multipart` | exposes the request-only `Multipart` body specification |
 | `rate-limit` | installs the first-party local limiter by default; `rate_limit { ... }` grammar itself remains core |
 | `oauth2-client` | exposes an OAuth2 provider type supplied through `credential ... = custom TYPE` |
-| `dangerous-raw-response` | adds the feature-gated request terminal; it adds no DSL clause |
 | `dangerous-custom-retry` | adds a Rust HTTP-builder method; it adds no DSL clause |
 | `default-tls`, `http2`, `gzip`, `brotli`, `deflate` | select managed transport capabilities outside declaration grammar |
 
 Built-in offset, page-number, and cursor controllers require no optional
 feature. Feature-disabled helper types fail through ordinary Rust name or
 trait diagnostics. The proc macro does not inspect concrete type names to
-infer a feature, implementation, or response mode.
+infer a feature, implementation, or response mode. The normal
+`.response_bytes()` request terminal requires no feature or DSL clause.
 
 ## Values, optionality, and defaults
 

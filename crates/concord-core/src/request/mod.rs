@@ -5,9 +5,7 @@ mod pending;
 mod prepare;
 mod prepared;
 
-#[cfg(feature = "dangerous-raw-response")]
-pub use pending::RawResponseRequest;
-pub use pending::{Request, ResponseRequest};
+pub use pending::{Request, ResponseBytesRequest, ResponseRequest};
 pub use prepared::{RuntimeEndpoint, RuntimeEndpointBuilder};
 
 pub(crate) use prepare::{
@@ -17,7 +15,7 @@ pub(crate) use prepare::{
 
 pub(crate) use crate::body::PreparedBody;
 #[doc(hidden)]
-pub use endpoint::{EndpointSpec, RawResponseEndpoint};
+pub use endpoint::EndpointSpec;
 #[doc(hidden)]
 pub use head::{HeadBuilder, PreparedHead, RequestMeta};
 pub(crate) use head::{

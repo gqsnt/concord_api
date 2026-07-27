@@ -69,10 +69,6 @@ const FEATURES: &[(&str, &str)] = &[
     ("brotli", "Brotli response decompression"),
     ("deflate", "Deflate response decompression"),
     (
-        "dangerous-raw-response",
-        "Bounded undecoded successful-response terminal",
-    ),
-    (
         "dangerous-custom-retry",
         "Custom native transport retry policy",
     ),

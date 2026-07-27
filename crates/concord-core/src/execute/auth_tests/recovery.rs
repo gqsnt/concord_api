@@ -501,9 +501,8 @@ async fn challenge_recovery_still_observes_each_received_response_once() {
     }));
 }
 
-#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
-async fn raw_response_preserves_authentication_recovery_and_logical_native_url_separation() {
+async fn response_bytes_preserves_authentication_recovery_and_logical_native_url_separation() {
     let executor = DeterministicExecutor::new();
     let challenge_body_polls = Arc::new(AtomicUsize::new(0));
     executor
@@ -566,36 +565,36 @@ async fn raw_response_preserves_authentication_recovery_and_logical_native_url_s
     hooks.observe(Arc::clone(&selector));
     let (core, debug) = core(&executor, Arc::clone(&hooks));
 
-    let raw = request(
+    let response = request(
         core.clone(),
         &selector,
         ChallengePolicy::Unauthorized,
         RequestBody::bytes(Bytes::from_static(b"raw-auth-body")),
     )
-    .raw_response()
+    .response_bytes()
     .await
-    .expect("raw response after one authentication recovery");
-    assert_eq!(raw.body(), b"raw-auth-success-secret".as_slice());
+    .expect("response bytes after one authentication recovery");
+    assert_eq!(response.value(), b"raw-auth-success-secret".as_slice());
     assert_eq!(
-        raw.url().as_str(),
+        response.url().as_str(),
         "https://protected.example.test/v1/protected"
     );
-    assert!(raw.metadata().recovered_authentication());
+    assert!(response.metadata().recovered_authentication());
     assert_eq!(acquires.load(Ordering::SeqCst), 1);
     assert_eq!(refreshes.load(Ordering::SeqCst), 1);
     assert!(exact.load(Ordering::SeqCst));
     assert_eq!(challenge_body_polls.load(Ordering::SeqCst), 0);
 
-    let query_raw = query_request(core.clone(), &selector)
-        .raw_response()
+    let query_response = query_request(core.clone(), &selector)
+        .response_bytes()
         .await
-        .expect("raw query-auth response");
-    assert_eq!(query_raw.body(), b"raw-query-success".as_slice());
+        .expect("response-bytes query-auth response");
+    assert_eq!(query_response.value(), b"raw-query-success".as_slice());
     assert_eq!(
-        query_raw.url().as_str(),
+        query_response.url().as_str(),
         "https://protected.example.test/v1/protected"
     );
-    assert!(!query_raw.url().as_str().contains("access="));
+    assert!(!query_response.url().as_str().contains("access="));
     assert_eq!(core.operation_allocations(), 2);
     assert_eq!(executor.application().request_count().expect("count"), 3);
 
@@ -616,7 +615,7 @@ async fn raw_response_preserves_authentication_recovery_and_logical_native_url_s
     }));
     drop(completion);
     let automatic = format!(
-        "{}\n{raw:?}\n{query_raw:?}",
+        "{}\n{response:?}\n{query_response:?}",
         debug.lock().expect("debug output").join("\n")
     );
     for forbidden in [

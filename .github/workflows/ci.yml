@@ -37,7 +37,6 @@ jobs:
       - run: cargo check -p concord --lib --no-default-features --features json --locked
       - run: cargo check -p concord --lib --no-default-features --features oauth2-client --locked
       - run: cargo check -p concord --lib --no-default-features --features multipart --locked
-      - run: cargo check -p concord --lib --no-default-features --features dangerous-raw-response --locked
       - run: cargo check -p concord --lib --no-default-features --features dangerous-custom-retry --locked
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo run --locked -p concord-xtask -- policy --locked
@@ -85,7 +84,6 @@ jobs:
       - run: cargo rustdoc -p concord-extras --features rate-limit --locked -- -D warnings
       - run: cargo rustdoc -p concord --features csv --locked -- -D warnings
       - run: cargo rustdoc -p concord --features json --locked -- -D warnings
-      - run: cargo rustdoc -p concord --features dangerous-raw-response --locked -- -D warnings
       - run: cargo rustdoc -p concord --all-features --locked -- -D warnings
       - run: cargo rustdoc -p concord-core --all-features --locked -- -D warnings
       - run: cargo rustdoc -p concord-extras --all-features --locked -- -D warnings

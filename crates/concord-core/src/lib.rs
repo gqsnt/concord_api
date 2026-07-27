@@ -9,7 +9,7 @@
 #![deny(missing_docs)]
 
 pub mod contracts;
-#[cfg(any(feature = "dangerous-custom-retry", feature = "dangerous-raw-response"))]
+#[cfg(feature = "dangerous-custom-retry")]
 pub mod dangerous;
 #[cfg(feature = "records")]
 pub mod records;
@@ -34,7 +34,7 @@ mod response;
 mod runtime;
 
 pub use pagination::{PageLimit, PaginatedRequest};
-pub use request::{Request, ResponseRequest};
+pub use request::{Request, ResponseBytesRequest, ResponseRequest};
 
 mod execute;
 
