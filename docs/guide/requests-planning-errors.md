@@ -30,10 +30,8 @@ let text = request.await?;
 The ordinary terminal returns the declared application value. If the endpoint
 supports typed response metadata, select it before awaiting:
 
-```rust
-let response = client.status().response().await?;
-println!("status: {}", response.status());
-let bytes = response.into_value();
+```rust,ignore
+{{#include ../../crates/concord-examples/src/request_response/acquisition.rs:metadata_response}}
 ```
 
 `ApiResponse<T>` also exposes the accepted HTTP version, actual accepted
@@ -44,10 +42,8 @@ your application, so decide separately what is appropriate to log.
 For complete bounded bytes without validation or decoding, select
 `response_bytes()`:
 
-```rust
-let response: concord::ApiResponse<concord::Bytes> =
-    client.status().response_bytes().await?;
-let bytes = response.into_value();
+```rust,ignore
+{{#include ../../crates/concord-examples/src/request_response/acquisition.rs:response_bytes}}
 ```
 
 This terminal preserves the response specification's declared status

@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Concord surgical evolution
+
+- Simplified the unpublished managed API in one coordinated cutover. The
+  `dangerous-raw-response` and `dangerous-custom-retry` features, native
+  Reqwest escape/retry surfaces, old terminals, and retry DSL were removed
+  without compatibility aliases. Normal `.response_bytes()` now preserves
+  the declared `Accept` header and status acceptance, skips response
+  validation and decoding, and returns bounded `ApiResponse<Bytes>` for
+  generated, explicit, and runtime endpoints; `ResponseBodySpec` can
+  explicitly accept non-2xx statuses, with 2xx as its default. Application
+  retry is now an explicit Concord-managed `RetryPolicy` with a required
+  classifier, replay gating, a hard per-operation maximum, and a bounded
+  origin-scoped rolling load budget, while private known-safe protocol
+  recovery remains enabled by default inside one visible attempt and can be
+  disabled with `protocol_recovery(false)`. Hooks, limiter callbacks,
+  response metadata, and completion now report structural visible-attempt and
+  policy-retry accounting. Generated pagination accepts only
+  trusted `PageRequestBodySpec` bodies and keeps one stable body across pages;
+  exact and static-scheme custom `Authorization` placements remain late,
+  exclusive, and request-independent; rate rules may declare exact stable IDs
+  while omitted IDs preserve their derived bytes; and ordinary declaration
+  values support hygienic `= default` shorthand. Client construction now
+  reports precise value-free, source-less HTTP/TLS/runtime failure kinds.
+  These generated bridge changes advanced the contract from 27 to 28 for
+  response bytes, 29 for managed retry, 30 for repeatable-body pagination,
+  and 31 for custom Authorization.
+
 ### Added
 
 - One complete mdBook documentation site for new users, feature users,
@@ -31,13 +58,6 @@
 - Recoverable `RateLimitErrorKind::StateCapacity` reporting when bounded local
   quota or cooldown state cannot admit a new key without discarding active
   history.
-- Explicit Concord-managed `RetryPolicy` with a required safe classifier,
-  hard per-operation maximum, body-replay gating, and a bounded
-  logical-origin rolling load budget. The runtime default remains no managed
-  retry policy.
-- Trusted `PageRequestBodySpec` opt-in for stable repeatable request bodies in
-  generated pagination, with narrow empty, bytes, text, and cloneable JSON
-  implementations.
 - Generated endpoint Rustdoc backed by one semantic documentation model, with
   named value inputs, flattened scope inputs, safe query/header names, route
   shape, human-readable deadlines, and only the terminals each endpoint
@@ -99,45 +119,6 @@
   the generated bridge.
 - Ordered rate-limit key generation now formats referenced dimensions through
   the core-owned bounded bridge, raising the generated-contract version to 27.
-- Normal `.response_bytes()` acquisition now preserves declared status
-  acceptance and `Accept`, skips validation and decoding, returns
-  `ApiResponse<Bytes>`, and works for generated, explicit, and runtime
-  endpoints. Removing the old raw-terminal bridge raises the generated-contract
-  version to 28.
-- Lifecycle hooks, limiter callbacks, and built-in diagnostics now use
-  `AttemptInfo` to distinguish visible-attempt order, policy-retry order, and
-  authentication recovery. Successful metadata and request/page completion
-  report started-attempt and policy-retry totals; pagination completion reports
-  checked aggregate totals.
-- Managed policy retries now re-enter the ordinary hook, body reconstruction,
-  current-authentication preflight, limiter, private materialization,
-  response observation, and challenge/status lifecycle under one operation
-  deadline and completion.
-- Generated builders now install managed policy with `.retry(RetryPolicy)`.
-  Application HTTP uses private known-safe protocol recovery by default and
-  can disable it with `protocol_recovery(false)`. Removing the old native
-  retry DSL/baseline raises the generated-contract version to 29.
-- Generated pagination now accepts page-stable request bodies. Each page
-  clones the original body input, enforces its body limit independently, and
-  prepares it once; policy retries reuse that prepared page body. The hidden
-  body trait obligation and newly supported endpoint shape raise the
-  generated-contract version to 30.
-- Dedicated exact and static-scheme `Authorization` placements now preserve
-  private late materialization, exclusive ownership, and redaction for
-  request-independent custom values. The new generated authentication call
-  raises the generated-contract version to 31.
-- Generated rate-limit rules now accept exact stable IDs for rename-safe and
-  intentionally shared quota identity. Omitted IDs retain their prior derived
-  bytes; compatible reuse requires identical ordered dimensions and windows,
-  while costs may differ.
-- Ordinary client, scope, and endpoint values now accept `= default`, emitted
-  hygienically as `Default::default()` at the source keyword. It preserves the
-  existing set/clear/reset matrix and owner-specific evaluation timing and
-  remains unavailable to bodies and pagination initializers.
-- Client construction now reports precise source-less failure kinds for base
-  URL, HTTPS policy, TLS availability, proxy installation, root certificates,
-  client identity, final native client build, runtime configuration, and
-  limiter availability instead of a broad HTTP-configuration category.
 - Every generated public value mutation now uses
   `value(value) -> set_value(value)`. Absence-capable values retain
   `clear_value()`; values with declaration defaults retain `reset_value()`.
@@ -195,12 +176,6 @@
 - Unbounded or partially managed response acquisition.
 - The unpublished `rate-limit-governor`, `GovernorRateLimiter`, and
   `DefaultRateLimitObserver` public names.
-- The `dangerous-raw-response` feature, `.raw_response()` terminal, raw response
-  wrapper, and generated capability-token protocol. The normal
-  `.response_bytes()` terminal replaces them without compatibility aliases.
-- The `dangerous-custom-retry` feature, `concord::dangerous` namespace,
-  Reqwest retry-builder reexport, native retry builder methods, and retry DSL.
-  Managed `RetryPolicy` is the application retry surface.
 
 ### Safety guarantees
 

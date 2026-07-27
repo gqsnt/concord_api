@@ -71,10 +71,11 @@ auth bearer oauth challenge unauthorized;
 ```
 
 Provider-backed material can then recover according to its provider contract.
-Concord permits at most one authentication recovery attempt for the operation.
-The exact current credential version is attributed, so unrelated credentials
-are not invalidated. Static credentials do not become refreshable merely
-because a challenge policy is present.
+Concord permits at most one authentication recovery attempt across the whole
+operation, including any managed policy retries. The exact current credential
+version is attributed, so unrelated credentials are not invalidated. Static
+credentials do not become refreshable merely because a challenge policy is
+present.
 
 Use `challenge never` when the service status must remain an ordinary HTTP
 failure. The [credential provider guide](credential-providers.md) explains

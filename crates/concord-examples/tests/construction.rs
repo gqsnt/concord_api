@@ -14,6 +14,9 @@ fn imports_and_constructs_every_enabled_canonical_declaration() {
     {
         use concord_examples::contracts::full_dsl::ReferenceApi;
 
+        let _single_dispatch =
+            concord_examples::runtime_policy::production_http::build_single_dispatch_client()
+                .expect("protocol recovery configuration");
         concord_examples::contracts::full_dsl::construct().expect("full DSL construction");
         let reference = ReferenceApi::builder()
             .set_tenant("tenant-a".to_owned())
@@ -25,10 +28,13 @@ fn imports_and_constructs_every_enabled_canonical_declaration() {
 
     concord_examples::request_response::specifications::construct()
         .expect("generic specification construction");
+    let _response_client = concord_examples::request_response::acquisition::construct()
+        .expect("response acquisition construction");
     let _observed =
         concord_examples::runtime_policy::hooks::construct().expect("observability construction");
     let _retrying =
         concord_examples::runtime_policy::retries::construct().expect("managed retry construction");
+    #[cfg(feature = "default-tls")]
     let _api_key = concord_examples::recipes::api_key::build("recipe-api-key")
         .expect("API-key recipe construction");
     concord_examples::runtime_endpoints::generated_and_runtime::construct()

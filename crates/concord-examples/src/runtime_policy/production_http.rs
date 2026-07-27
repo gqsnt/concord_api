@@ -52,3 +52,13 @@ pub fn build_client(
 }
 // ANCHOR_END: production_client
 // ANCHOR_END: production_recipe
+
+// ANCHOR: protocol_recovery_toggle
+/// Disables private known-safe protocol recovery when deployment policy
+/// requires one physical dispatch for each visible Concord attempt.
+pub fn build_single_dispatch_client() -> Result<ProductionApi, concord::ClientBuildError> {
+    ProductionApi::builder()
+        .configure_http(|http| http.protocol_recovery(false))
+        .build()
+}
+// ANCHOR_END: protocol_recovery_toggle

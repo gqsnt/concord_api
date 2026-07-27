@@ -88,8 +88,9 @@ The complete lifecycle position is documented in
 - Expiration, proactive refresh, and challenge recovery compare exact-current
   material rather than invalidating a newer value produced by another
   operation.
-- One request gets at most one Concord-owned authentication recovery replay.
-  Private protocol recovery does not call the provider or body factory.
+- One operation gets at most one Concord-owned authentication recovery replay
+  across all policy attempts. Private protocol recovery does not call the
+  provider or body factory.
 - Every replay is another visible attempt: it passes attempt hooks, limiter
   admission, materialization, and response observation. The enclosing request
   or page still produces one fixed completion event.

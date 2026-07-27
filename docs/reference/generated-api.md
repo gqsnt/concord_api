@@ -35,6 +35,15 @@ module's ordinary visibility remains authoritative.
 
 ## Client construction
 
+When the declaration has no required public values, secrets, or providers,
+the shortest generated path is:
+
+```rust
+let client: CatalogApi = CatalogApi::new()?;
+```
+
+Use the builder for required inputs or deployment policy:
+
 ```rust
 let builder: CatalogApiBuilder = CatalogApi::builder();
 let client: CatalogApi = builder
@@ -48,9 +57,9 @@ let client: CatalogApi = builder
 ```
 
 Required client values use `set_NAME`; secret and provider methods retain their
-declared generated names. `CatalogApi::new()` exists only when none are
-required. Missing inputs are runtime-validated at `build()` using
-`ClientBuildError` and safe `ClientInputKind`.
+declared generated names. Missing inputs are runtime-validated at `build()`
+using `ClientBuildError` and safe `ClientInputKind`. `CatalogApi::new()` runs
+the same build validation with the generated default builder.
 
 Repeated `retry`, `configure_http`, and `configure_runtime` transformations
 apply immediately in call order. `build()` validates the fixed base, required

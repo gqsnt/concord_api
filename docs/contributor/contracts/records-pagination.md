@@ -102,8 +102,8 @@ per-page deadline and are trusted synchronous application work.
   headers, never request-body bytes or private credential placement.
 - Pagination bindings cannot target the request-body field. The original body
   input remains stable across pages.
-- A policy retry reuses the prepared page body; it does not re-run page input
-  encoding or specification preparation.
+- A policy retry reconstructs a complete attempt body from the prepared page
+  body; it does not re-run page input encoding or specification preparation.
 - Every complete retained identity is charged to the configured identity-byte
   budget; the page limit also bounds identity count.
 - Pagination returns the complete collected vector on success or an error. It

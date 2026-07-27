@@ -58,6 +58,7 @@
 - [Credentials and providers](extending/credentials-and-providers.md)
 - [Pagination controllers](extending/pagination.md)
 - [Rate limiters and observers](extending/rate-limiting.md)
+- [Retry classifiers](extending/retry-classifiers.md)
 - [Hooks, trusted work, and bounds](extending/hooks-and-trusted-work.md)
 
 # Reference

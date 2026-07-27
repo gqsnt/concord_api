@@ -159,6 +159,7 @@ Supported semantic extension families are:
 - `CredentialProvider`;
 - `PaginationController`;
 - `RateLimiter` / `RateLimitObserver`;
+- `RetryClassifier`;
 - `RuntimeHooks`.
 
 If the required implementation cannot fit one of those contracts without

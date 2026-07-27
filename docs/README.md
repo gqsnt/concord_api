@@ -10,14 +10,13 @@ endpoint:
 {{#include ../crates/concord-examples/src/getting_started/minimal.rs:first_api}}
 ```
 
-That declaration generates a `MinimalApi` builder, a client, an endpoint type,
-and a named request wrapper. Application code builds the client and constructs
-requests with ordinary inherent methods:
+That declaration generates a client, builder, endpoint type, and named request
+wrapper. Because it has no required client inputs, application code can use
+the direct constructor and ordinary inherent endpoint method:
 
 ```rust
-let client = MinimalApi::builder().build()?;
-let request = client.health();
-request.await?;
+let client = MinimalApi::new()?;
+client.health().await?;
 ```
 
 Request construction is inert. Awaiting the request starts Concord's managed
@@ -45,16 +44,15 @@ response.
 
 One declaration produces a domain-shaped Rust surface:
 
-- a named client builder and immutable client;
-- nested scope methods for reusable portions of a remote contract;
-- direct endpoint methods and reusable explicit endpoint values;
+- an immutable client and a builder when configuration is needed;
+- direct endpoint methods and typed request values;
 - named request wrappers with only their valid controls and terminals;
-- safe endpoint descriptions and request plans.
+- typed decoded, metadata, and bounded-byte response terminals.
 
 The compiler checks declaration structure and generated capability
-composition. Rust's type system checks body, response, provider, pagination,
-and extension implementations. Exact signatures remain in generated Rustdoc;
-this site teaches how the pieces fit together and which path to choose.
+composition. Rust's type system checks declared body and response types. Exact
+signatures remain in generated Rustdoc; this site teaches how the pieces fit
+together and which path to choose.
 
 ## Find your task
 

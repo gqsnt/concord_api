@@ -62,8 +62,9 @@ implement the marker after proving that promise.
 For each page, Concord clones the original typed endpoint, applies only the
 declared pagination bindings, and prepares that page's body once after hook
 approval. A managed policy retry of that page reuses the already prepared
-replayable body, so a buffered encoder runs once per page rather than once per
-attempt. Body size is checked independently for every page.
+replayable body and reconstructs a fresh complete attempt body after the retry
+hook. A buffered encoder runs once per page rather than once per attempt. Body
+size is checked independently for every page.
 
 ## Choose the matching controller
 

@@ -5,9 +5,17 @@ share that built value across tasks. The builder collects required contract
 inputs and deployment policy; `build()` validates them and fixes an immutable
 runtime snapshot.
 
-## Prefer the named builder
+## Start with the smallest constructor
 
-`ReferenceApi::builder()` is always the predictable entry point:
+When a declaration has no required public values, secrets, or providers and
+needs no custom deployment configuration, use its direct constructor:
+
+```rust
+let client = MinimalApi::new()?;
+```
+
+Use the named builder as soon as the client needs contract inputs or runtime
+configuration. `ReferenceApi::builder()` is the predictable configured path:
 
 ## Complete example
 
@@ -27,8 +35,8 @@ declaration. Their methods keep declaration names rather than using the public
 value `set_*` vocabulary.
 
 `Client::new()` exists only when the declaration has no required public
-values, secrets, or providers. The builder remains clearer when examples may
-grow or when runtime configuration matters.
+values, secrets, or providers. It uses the same validation and runtime
+defaults as `Client::builder().build()`.
 
 ## Configure runtime policy before `build`
 

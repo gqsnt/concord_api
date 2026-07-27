@@ -74,8 +74,9 @@ text, task names, metric labels, or an unbounded history.
 provider action, invalidation only, or refresh. The endpoint's `challenge`
 clause independently decides which final status constitutes a challenge.
 Concord attributes the rejection to the exact current material, coalesces work
-for one slot, and permits at most one managed application recovery. A provider
-must not add an unbounded retry loop inside `acquire` or `refresh`.
+for one slot, and permits at most one managed authentication recovery across
+the whole operation, including all policy retries. A provider must not add an
+unbounded retry loop inside `acquire` or `refresh`.
 
 Calls can overlap across credential slots, clients, or independent provider
 instances. Bound and synchronize provider-owned caches explicitly. Client

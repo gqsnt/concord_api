@@ -133,8 +133,9 @@ implementation for arbitrary `EncodeBody` codecs.
 A custom factory-backed specification may opt in after proving that every
 input clone independently creates the same replayable source. Concord prepares
 the specification once per page after hook approval. Policy retries within
-that page use the prepared body or its factory and do not call the
-specification's encoder/preparation again.
+that page reconstruct a complete attempt body from the prepared bytes or
+factory after each retry hook. They do not call the specification's
+encoder/preparation again.
 
 On the response side, a downstream buffered specification does not
 automatically become page-compatible. Implement

@@ -53,6 +53,7 @@ not classify statuses or consume managed retry budget.
 ## Related
 
 - [Managed retries](../features/retries.md)
+- [Retry classifiers](../extending/retry-classifiers.md)
 - [Testing API clients](testing-api-clients.md)
 - [Rate limiting](../features/rate-limiting.md)
 - [Managed retry contract](../contributor/contracts/retries.md)

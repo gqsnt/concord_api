@@ -27,20 +27,17 @@ At a high level, the compiler emits:
 
 ```text
 MinimalApi
-MinimalApiBuilder
-minimal_api::Health
 minimal_api::HealthRequest
 ```
 
-`MinimalApi::builder()` is the predictable construction entry. A direct call
-to `client.health()` produces `HealthRequest`. The explicit
-`minimal_api::Health` endpoint value is useful for planning, storage, and
-generic composition. Both forms bind the same endpoint contract and enter the
-same executor.
+Because this declaration has no required client inputs, `MinimalApi::new()` is
+the shortest construction entry. A direct call to `client.health()` produces
+`HealthRequest`.
 
 Exact signatures are visible in generated Rustdoc. The
 [generated API reference](../reference/generated-api.md) owns the stable
-naming and capability matrix; this page focuses on the first working path.
+naming and capability matrix, including builders and reusable endpoint values;
+this page focuses on the first working path.
 
 ## What the compiler checks
 

@@ -11,7 +11,7 @@ fn proxy(server: &ScriptedServer) -> SafeProxy {
 #[tokio::test]
 async fn getting_started_request_executes_against_loopback() {
     use concord::http::SafeProxy;
-    use concord_examples::getting_started::minimal::{MinimalApi, execute, minimal_api};
+    use concord_examples::getting_started::minimal::{MinimalApi, execute};
     use concord_test_support::server::{ResponseScript, ScriptedServer};
 
     let server =
@@ -22,10 +22,6 @@ async fn getting_started_request_executes_against_loopback() {
         .build()
         .expect("minimal client");
 
-    let endpoint = minimal_api::Health::new();
-    let plan = client.plan(&endpoint).expect("safe health plan");
-    assert_eq!(plan.endpoint_id(), "minimal_api.health");
-
     execute(&client).await.expect("successful health request");
 
     let requests = server.requests();
@@ -34,6 +30,49 @@ async fn getting_started_request_executes_against_loopback() {
     assert!(requests[0].target().ends_with("/v1/health"));
 }
 // ANCHOR_END: first_request_loopback
+
+#[tokio::test]
+async fn response_acquisition_examples_execute_locally() {
+    use concord::http::StatusCode;
+    use concord_examples::request_response::acquisition::{
+        ResponseApi, as_bytes, decoded, optional, with_metadata,
+    };
+
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"decoded".to_vec()).with_header("content-type", "text/plain"),
+        ResponseScript::ok(b"metadata".to_vec()).with_header("content-type", "text/plain"),
+        ResponseScript::ok(vec![0, 1, 2]).with_header("content-type", "application/octet-stream"),
+        ResponseScript::status(404, Vec::new()),
+    ])
+    .expect("response acquisition server");
+    let proxy = proxy(&server);
+    let client = ResponseApi::builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .build()
+        .expect("response acquisition client");
+
+    assert_eq!(decoded(&client).await.expect("decoded response"), "decoded");
+
+    let metadata = with_metadata(&client).await.expect("metadata response");
+    assert_eq!(metadata.status(), StatusCode::OK);
+    assert_eq!(metadata.value(), "metadata");
+
+    let bytes = as_bytes(&client).await.expect("explicit response bytes");
+    assert_eq!(bytes.status(), StatusCode::OK);
+    assert_eq!(bytes.value().as_ref(), [0, 1, 2]);
+
+    assert_eq!(
+        optional(&client)
+            .await
+            .expect("accepted not-found response"),
+        None
+    );
+    let requests = server.requests();
+    assert_eq!(requests.len(), 4);
+    for request in requests {
+        assert_eq!(request.header("accept"), Some("text/plain"));
+    }
+}
 
 #[cfg(all(feature = "oauth2-client", feature = "default-tls"))]
 #[tokio::test]

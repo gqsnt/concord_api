@@ -59,11 +59,14 @@ one.
 
 Concord handles a response in this order:
 
-1. reduce non-success status;
-2. preflight a known post-decompression length;
-3. call `validate_content_type`;
-4. collect the complete body under the configured buffered-response limit;
-5. call `decode`.
+1. complete limiter response observation and the response-head hook;
+2. perform authoritative authentication challenge handling;
+3. call the declared status-acceptance policy, which defaults to 2xx;
+4. send a rejected status through bounded terminal capture without decoding;
+5. for an accepted status, preflight a known post-decompression length;
+6. call `validate_content_type`;
+7. collect the complete body under the configured buffered-response limit;
+8. call `decode`.
 
 `DecodeContext` exposes the endpoint ID, method, successful status, and parsed
 content type. The `Bytes` argument is already bounded and complete. It may

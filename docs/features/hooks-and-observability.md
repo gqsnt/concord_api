@@ -37,8 +37,8 @@ endpoint ID, application method, credential-sanitized logical URL, zero-based
 page index, `AttemptInfo`, sanitized public headers, body category, and known
 body length when available. `AttemptInfo::index` identifies each visible
 attempt, `policy_retry_index` identifies managed policy retries, and
-`authentication_recovery` marks the one authentication-recovery replay. Before
-managed policy retry is configured, an initial attempt is `{0, 0, false}` and
+`authentication_recovery` marks the one authentication-recovery replay.
+Without a managed policy retry, an initial attempt is `{0, 0, false}` and
 authentication recovery is `{1, 0, true}`. With managed retry, each transition
 increments `index`; a policy retry also increments `policy_retry_index`, while
 authentication recovery retains the current retry index and sets its flag.

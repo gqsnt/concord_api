@@ -67,6 +67,7 @@ retry without consuming budget or replacing the original result.
 ## Related
 
 - [Retry recipe](../recipes/retries.md)
+- [Retry classifiers](../extending/retry-classifiers.md)
 - [Production HTTP](production-http.md)
 - [Hooks and observability](hooks-and-observability.md)
 - [Managed retry contract](../contributor/contracts/retries.md)

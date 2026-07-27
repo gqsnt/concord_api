@@ -35,6 +35,7 @@ Choose the smallest family that owns the behavior:
 | Credential material and acquisition | `CredentialMaterial`, `CredentialProvider` | slots, placement, attempts, provider HTTP |
 | Page continuation | `PaginationController` | page loop, identities, collection, policy |
 | Admission and response policy | `RateLimiter`, `RateLimitObserver` | plan validation and lifecycle ordering |
+| Eligible failure classification | `RetryClassifier` | replay checks, maximum, shared budget, attempt lifecycle |
 | Lifecycle observation and veto | `RuntimeHooks` | effects, result, completion dispatch |
 
 Application crates reach these contracts through `concord::*` façade paths.
@@ -96,7 +97,7 @@ bytes, key components, headers, provider bodies, and staged records, but it
 cannot automatically cap:
 
 - output heap size or internal representation expansion;
-- caches, maps, queues, retry counters, or batch retention;
+- caches, maps, queues, classifier state, retry counters, or batch retention;
 - metric label cardinality;
 - synchronous CPU or blocking work;
 - spawned tasks and their lifetime;
@@ -210,4 +211,5 @@ matrix in [Testing strategy](../testing.md).
 - [Bodies, responses, and finite progress](body-response-progress.md)
 - [Records and pagination contract](records-pagination.md)
 - [Rate-limit contract](rate-limits.md)
+- [Managed retry contract](retries.md)
 - [Errors, redaction, hooks, and completion](errors-hooks-completion.md)

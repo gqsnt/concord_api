@@ -45,17 +45,24 @@ Constructing a named request retains the body input but does not encode,
 stream, or send it. During execution Concord:
 
 1. prepares and validates the public request and structural body metadata;
-2. runs the before-send hook and acquires rate-limit authority;
-3. asks the request specification to prepare the managed body;
-4. enforces the request-body limit while the final stream crosses transport;
-5. applies the declared status-acceptance policy (2xx by default) and acquires
+2. runs the before-send hook;
+3. prepares or reconstructs the managed body;
+4. performs current authentication preflight without placing credentials;
+5. acquires rate-limit authority;
+6. materializes private authentication and enforces the request-body limit
+   while the final body crosses transport;
+7. runs limiter response observation, the response-head hook, and
+   authentication challenge handling;
+8. applies the declared status-acceptance policy (2xx by default) and acquires
    an accepted response under the selected response mode;
-6. validates media and decodes the complete buffered bytes.
+9. validates media and decodes the complete buffered bytes.
 
-This ordering prevents rejected hooks or limiters from triggering body
-factories and keeps protected authentication placement later than safe
-observation. Known lengths that already exceed a limit fail before transport.
-Unknown-length bodies remain cumulatively bounded as they stream.
+This ordering lets a hook veto body work, keeps limiter admission before
+credential placement, and ensures response policy observes every received
+head before acceptance or decoding. A limiter can reject after the body has
+been prepared, but before private materialization and transport. Known
+lengths that already exceed a limit fail before transport. Unknown-length
+bodies remain cumulatively bounded as they stream.
 
 A custom `ResponseBodySpec` can accept a non-2xx operation outcome such as
 `404`. It then follows ordinary declared acquisition, validation, and
@@ -72,21 +79,60 @@ response specification explicitly accepts one.
 
 Await the named request when only the application value is needed:
 
-```rust
-let values: Vec<u32> = client.json_round_trip(vec![1, 2, 3]).await?;
+```rust,ignore
+{{#include ../../crates/concord-examples/src/request_response/acquisition.rs:decoded_response}}
 ```
 
 Select `.response()` before awaiting when status, version, accepted headers,
 the credential-sanitized logical URL, or safe execution metadata is needed:
 
-```rust
-let response = client.text_round_trip("hello".to_owned()).response().await?;
-println!("{} {}", response.status(), response.value());
+```rust,ignore
+{{#include ../../crates/concord-examples/src/request_response/acquisition.rs:metadata_response}}
 ```
 
 The returned headers and public URL may still contain application identifiers.
 Redaction protects credential-owned data; it is not a promise that every
 public business value is suitable for logs.
+
+## Get explicit response bytes
+
+Use `.response_bytes()` when the endpoint's declared status acceptance and
+`Accept` header are right but the caller needs the complete bounded bytes
+instead of validation and decoding:
+
+```rust,ignore
+{{#include ../../crates/concord-examples/src/request_response/acquisition.rs:response_bytes}}
+```
+
+This returns `ApiResponse<Bytes>` without a DSL clause or Cargo feature.
+Streaming response modes reject this terminal through a sealed Rust trait
+bound because their bodies are deliberately caller-driven.
+
+## Accept an optional not-found result
+
+A response specification can opt an operation into an accepted non-2xx
+status. This compiled example maps `404` to `None` while retaining normal
+buffered acquisition for a successful UTF-8 body:
+
+```rust,ignore
+{{#include ../../crates/concord-examples/src/request_response/acquisition.rs:optional_response_spec}}
+```
+
+The endpoint selects that specification in the same compiled module:
+
+```rust,ignore
+{{#include ../../crates/concord-examples/src/request_response/acquisition.rs:response_acquisition_contract}}
+```
+
+The ordinary generated call then returns the optional output:
+
+```rust,ignore
+{{#include ../../crates/concord-examples/src/request_response/acquisition.rs:accepted_not_found}}
+```
+
+Accepted `404` uses the declared buffered-response limit and is never a retry
+candidate. Limiter observation, the response hook, and authentication
+challenge handling still precede acceptance.
 
 ## Codec versus body specification
 

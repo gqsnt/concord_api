@@ -10,9 +10,10 @@ declaration.
 {{#include ../../crates/concord-examples/src/getting_started/minimal.rs:build_client}}
 ```
 
-`build()` validates required configuration and creates an immutable runtime
-snapshot. This minimal declaration has no required values, secrets, or
-providers, so the default builder succeeds without additional setters.
+`MinimalApi::new()` validates the default configuration and creates an
+immutable runtime snapshot. It exists because this declaration has no
+required client values, secrets, or providers. Declarations that require
+inputs or deployment configuration use `Api::builder()` later.
 
 ## Execute the request
 
@@ -77,28 +78,10 @@ non-success status is an HTTP-status category; connection, timeout,
 authentication, limiter, hook, body, and decoding failures retain their own
 categories.
 
-## Inspect a safe plan first
-
-Planning is an optional diagnostic path for an explicit endpoint value:
-
-```rust
-let endpoint = minimal_api::Health::new();
-let plan = client.plan(&endpoint)?;
-assert_eq!(plan.endpoint_id(), "minimal_api.health");
-```
-
-A plan reuses real public-head preparation and reports the method,
-credential-sanitized URL, public headers, timeout selection, endpoint
-identity, and capabilities. It does not run hooks, fetch credentials, acquire
-a limiter, encode a body, perform transport, or produce an authenticated
-native request.
-
-Use planning to inspect public shape, not as a substitute for executing a
-deterministic local test.
-
 ## Related
 
 - [Choose your next path](next.md)
 - [Build and share clients](../guide/client-construction.md)
+- [Requests, planning, and errors](../guide/requests-planning-errors.md)
 - [Error reference](../reference/errors.md)
 - [Managed lifecycle](../concepts/managed-lifecycle.md)

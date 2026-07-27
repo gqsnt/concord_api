@@ -23,7 +23,7 @@ api! {
 // ANCHOR: build_client
 /// Builds the minimal client with Concord's default runtime components.
 pub fn build_client() -> Result<MinimalApi, concord::ClientBuildError> {
-    MinimalApi::builder().build()
+    MinimalApi::new()
 }
 // ANCHOR_END: build_client
 

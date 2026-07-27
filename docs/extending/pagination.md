@@ -110,8 +110,8 @@ accumulated items are not returned as implicit partial success.
 The response specification must implement
 `concord::response::PageResponseSpec`, and its output must implement
 `IntoIterator`. Buffered codecs gain the marker automatically when their
-output is iterable. Byte streams, record streams, discard responses, and raw
-responses are not valid page outputs.
+output is iterable. Byte streams, record streams, discard responses, and the
+explicit response-bytes acquisition path are not pagination page outputs.
 
 ## Safe errors
 

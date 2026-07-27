@@ -64,10 +64,13 @@ Recipe construction checks the number of parts, each metadata value, aggregate
 metadata bytes, and inline text size. During execution Concord:
 
 1. prepares structural body metadata without serializing private part values;
-2. waits for the before-send hook and limiter to approve the attempt;
-3. creates the native multipart form and random boundary;
-4. streams every part through the final managed request-body boundary;
-5. enforces the active aggregate request-body limit across multipart framing
+2. waits for the before-send hook to approve the attempt;
+3. prepares and validates the reusable recipe or current factory output;
+4. performs current authentication preflight, then obtains limiter admission;
+5. creates the private native multipart form and random boundary;
+6. attaches authentication and streams every part through the final managed
+   request-body boundary;
+7. enforces the active aggregate request-body limit across multipart framing
    and payload bytes.
 
 Known lower bounds can fail before transport. Unknown streaming bytes remain

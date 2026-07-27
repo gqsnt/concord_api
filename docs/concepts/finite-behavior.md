@@ -22,6 +22,7 @@ Exact current numbers live only in the [Limits reference](../reference/limits.md
 | Pagination | runs sequentially with call-site, page, item, retained-identity, and repeated-request bounds |
 | Rate plans | bounds rule IDs, rule count, key parts, formatted aggregate keys, and windows |
 | First-party local limiter | uses finite quota/cooldown capacities, cooldown caps, and idle pruning |
+| Managed retry | combines a hard per-operation maximum with bounded origin-scoped rolling-budget state |
 | Runtime endpoints | incrementally bounds structure and aggregate public shape before a request can execute |
 
 The configured runtime setters can replace selected defaults. They cannot
@@ -131,6 +132,7 @@ work inside application callbacks:
 | credential provider | finite slot plus bounded `ProviderHttp` | caches, internal retries, tasks, external effects |
 | pagination controller | one decoded page and operation-local state | callback time and controller allocation |
 | limiter/observer | bounded immutable plan and sanitized head | quota storage, backend calls, overload policy |
+| retry classifier | finite failure context | synchronous policy work, shared state, labels |
 | runtime hooks | sanitized finite event structs | queues, exporters, labels, completion timeout |
 | application stream consumer | cumulative wire/staging bounds | consumption deadline, concurrency, retained items |
 

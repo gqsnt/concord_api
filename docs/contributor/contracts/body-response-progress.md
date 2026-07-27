@@ -66,8 +66,8 @@ For generated pagination, each page starts from a clone of the original typed
 endpoint. `PageRequestBodySpec` guarantees that its cloned input can
 independently prepare the same stable body. The page runs metadata and
 preparation under the ordinary lifecycle and body limit. Managed retries of
-that page reuse the prepared replayable body rather than preparing the
-specification again.
+that page reconstruct a complete attempt body from the prepared replayable
+body rather than preparing the specification again.
 
 On response, core first observes limiter policy and hooks, handles an
 authentication challenge when applicable, and then calls the declared status

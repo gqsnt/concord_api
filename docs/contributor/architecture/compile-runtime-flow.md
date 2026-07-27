@@ -111,7 +111,7 @@ At this point the API is fully compiled, but no client or request exists.
 
 ## 6. Build the immutable client
 
-`MinimalApi::builder().build()` creates the façade-selected HTTP and runtime
+`MinimalApi::new()` creates the façade-selected HTTP and runtime
 baselines, validates them, parses the fixed base, and builds one shared core
 snapshot. With default features, the façade installs a fresh local limiter;
 this declaration has no rate-limit rules, so that policy is simply available

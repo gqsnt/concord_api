@@ -29,8 +29,9 @@ Build a new client snapshot when those deployment choices change.
 ## TLS and protocol selection
 
 Enable `default-tls` for ordinary HTTPS with Concord's reviewed TLS backend.
-`https_only(true)` rejects non-HTTPS application URLs at transport use; the
-OAuth2 helper and provider HTTP already require HTTPS.
+`https_only(true)` rejects an HTTP fixed base during client construction and
+rejects a non-HTTPS runtime route during request preflight. The OAuth2 helper
+and provider HTTP already require HTTPS.
 
 `add_root_certificate_pem` installs a structurally bounded trust root for both
 application and provider clients. Parsing occurs during `build()`, so malformed
@@ -88,6 +89,12 @@ one visible Concord attempt, performs no status retry, does not invoke the
 managed retry classifier, and cannot resend a non-cloneable native body.
 `.protocol_recovery(false)` disables it. Provider recovery uses the separate
 reviewed `ProviderRetry` selection.
+
+The compiled single-dispatch configuration is:
+
+```rust,ignore
+{{#include ../../crates/concord-examples/src/runtime_policy/production_http.rs:protocol_recovery_toggle}}
+```
 
 Application retry is the distinct Concord-managed `RetryPolicy` surface. It is
 off by default and is documented under [Managed retries](retries.md).

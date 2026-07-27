@@ -24,6 +24,7 @@ Start with the operation your extension performs:
 | Derive the next page state | `concord::pagination::PaginationController` | Offset, page-number, or cursor helpers cannot express the service |
 | Own admission and quota state | `concord::rate_limit::RateLimiter` | Local or distributed policy must authorize each attempt |
 | Interpret response cooldowns | `concord::rate_limit::RateLimitObserver` | A limiter needs service-specific response-head policy |
+| Classify eligible managed failures | `concord::retry::RetryClassifier` | Application semantics decide whether a bounded retry may be requested |
 | Observe or veto lifecycle points | `concord::hooks::RuntimeHooks` | Bounded application telemetry or policy belongs at stable lifecycle events |
 
 Use the first matching row. Do not implement a full body specification merely
@@ -65,9 +66,10 @@ Generated and runtime-defined endpoints converge on the same body and response
 contracts. A custom implementation therefore does not need a second adapter
 for `RuntimeEndpoint`.
 
-Install runtime-wide objects through the generated client's
-`configure_runtime` builder method. The focused rate-limiter and hooks pages
-include compiler-owned construction examples.
+Install runtime-wide objects through the generated client's builder. Retry
+policy has the focused `.retry(policy)` path; `configure_runtime` composes
+lower-level policy and hooks/limiter selections. The focused pages include
+compiler-owned construction examples.
 
 The objects are shared by clones of that built client. Independently built
 clients share state only when the application deliberately gives them the same
@@ -100,11 +102,12 @@ values, resolved quota keys, or native errors to them. Dropping a source error
 before constructing `CodecError`, `RecordError`, `AuthError`,
 `PaginationError`, or `RateLimitError` is intentional.
 
-Synchronous callbacks cannot be preempted. Asynchronous provider, limiter, and
-result-determining hook futures normally run under the remaining operation
-deadline, while completion hooks run after the result is fixed and outside
-that deadline. Cancellation stops later Concord work but cannot undo extension
-side effects that already happened. The
+Synchronous codec, body, pagination, retry-classifier, and observer callbacks
+cannot be preempted. Asynchronous provider, limiter, and result-determining
+hook futures normally run under the remaining operation deadline, while
+completion hooks run after the result is fixed and outside that deadline.
+Cancellation stops later Concord work but cannot undo extension side effects
+that already happened. The
 [hooks, trusted work, and bounds](hooks-and-trusted-work.md) page owns the
 cross-cutting liveness contract.
 
@@ -122,6 +125,7 @@ Use the façade paths in application code and Rustdoc:
 - pagination: `concord::pagination::PaginationController`;
 - rate policy: `concord::rate_limit::RateLimiter` and
   `concord::rate_limit::RateLimitObserver`;
+- retry policy: `concord::retry::RetryClassifier`;
 - lifecycle: `concord::hooks::RuntimeHooks`.
 
 Ordinary application crates should not depend on `concord-core` or
@@ -132,6 +136,7 @@ Ordinary application crates should not depend on `concord-core` or
 - [Codecs](codecs.md)
 - [Request and response body specifications](body-specifications.md)
 - [Credentials and providers](credentials-and-providers.md)
+- [Retry classifiers](retry-classifiers.md)
 - [Hooks, trusted work, and bounds](hooks-and-trusted-work.md)
 - [Generated API reference](../reference/generated-api.md)
 - Rustdoc paths: `concord::codec`, `concord::body`,

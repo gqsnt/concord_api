@@ -23,7 +23,7 @@ exhaustive tables.
 | upload multipart text, bytes, or files | [Multipart uploads](../features/multipart.md) |
 | configure TLS, proxies, certificates, and finite limits | [Production HTTP](../features/production-http.md) |
 | choose public endpoint shape at runtime | [Runtime-defined endpoints](../features/runtime-endpoints.md) |
-| implement a custom body, decoder, provider, controller, limiter, or hook | [Extension model](../extending/README.md) |
+| implement a custom body, decoder, provider, controller, limiter, retry classifier, or hook | [Extension model](../extending/README.md) |
 | look up exact declaration syntax | [DSL reference](../reference/dsl.md) |
 | understand compiler and runtime internals | [Contributor architecture](../contributor/architecture.md) |
 
@@ -44,7 +44,10 @@ then move to the extension model for the relevant trait family.
 
 ## Defaults to keep
 
-Start with the generated builder and façade defaults:
+Start with `Api::new()` when the declaration has no required client inputs.
+Move to the generated builder when inputs or deployment configuration require
+it. Keep the façade defaults unless the service gives you a reason to change
+them:
 
 - one built client per stable configuration, cloned where needed;
 - finite runtime limits;

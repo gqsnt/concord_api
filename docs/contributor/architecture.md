@@ -20,7 +20,8 @@ client builder -> immutable client -> inert typed request
         |                                  generated surface
         | first poll / await
         v
-public head -> policy -> private material -> native HTTP -> bounded response
+public head -> hook/body/auth preflight -> limiter -> private HTTP
+        -> response policy -> bounded acquisition
         |                                  concord-core
         v
 typed output or safe ApiError
@@ -78,10 +79,12 @@ independently would make ordering and cancellation depend on which features
 were selected. Core instead sequences them under one operation deadline.
 
 The central ordering has security consequences. Public request shaping and
-validation finish before private authentication material is attached. Limiter
-authority is acquired before that attachment. Response limiter observation
-finishes before the response-head hook and before body acquisition. All
-terminal paths reduce to a safe result and then attempt one completion event.
+validation finish before private authentication material is attached. Each
+visible attempt runs its hook, body reconstruction, current authentication
+preflight, and limiter admission before that attachment. Response limiter
+observation finishes before the response-head hook, authentication challenge,
+declared status acceptance, and body acquisition. All terminal paths reduce
+to a safe result and then attempt one completion event.
 
 See [Managed executor](architecture/managed-executor.md) for the stage
 contract and the rationale for each ordering edge.

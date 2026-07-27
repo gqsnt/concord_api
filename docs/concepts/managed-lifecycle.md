@@ -26,17 +26,21 @@ Users can reason about the lifecycle in these observable stages:
    inspects bounded structural metadata before materializing its byte stream.
 3. **Run before-send policy.** The before-send hook sees only safe public
    operation data. A hook failure stops the request before transport.
-4. **Acquire private and operational authority.** Concord prepares provider
-   credentials, acquires every applicable rate-limit rule, and only then
-   places private authentication on the transport request.
+4. **Prepare the body and authority.** Concord prepares or reconstructs the
+   managed body, resolves current provider credentials without placing them,
+   and acquires every applicable rate-limit rule.
 5. **Perform HTTP.** The transport runs under the selected operation deadline.
-   Managed request streams suppress and bound non-progressing empty chunks.
+   Only after limiter admission does Concord finalize private authentication
+   and materialize the native request. Managed request streams suppress and
+   bound non-progressing empty chunks.
 6. **Observe the response head.** The selected limiter sees a safe final
    response head before the user response hook. Either may reject the
    operation before response acquisition.
-7. **Resolve the result.** Concord may perform at most one allowed
-   authentication recovery, then classifies status and acquires the declared
-   buffered, streaming, or record response mode.
+7. **Resolve or repeat the result.** Concord may perform at most one allowed
+   authentication recovery across the whole operation. An explicitly
+   configured retry policy may admit another visible attempt; otherwise
+   Concord applies declared status acceptance and acquires the buffered,
+   streaming, or record response mode.
 8. **Complete once.** After success or failure is fixed, completion receives a
    safe outcome event exactly once before the result is delivered.
 
@@ -46,6 +50,13 @@ placed. Once a final response arrives, limiter observation happens before the
 user response-head hook, and both happen before status or body handling. This
 ordering explains why a limiter or hook error can take precedence over a
 received HTTP status.
+
+Every admitted managed policy retry reruns the visible attempt stages under
+the original operation deadline: before-send, body reconstruction, current
+authentication preflight, limiter admission, private materialization,
+transport, and response observation. The enclosing request still has one
+operation identity, one final result, and one completion event. Private
+known-safe protocol recovery remains inside a single visible attempt.
 
 ## Deadlines and later polling
 

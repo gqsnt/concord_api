@@ -39,30 +39,29 @@ api! {
 }
 
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-let client = UsersApi::builder().build()?;
+let client = UsersApi::new()?;
 let user = client.user(42).await?;
 
-let endpoint = users_api::User::new(42);
-let response = client.request(endpoint).response().await?;
+let response = client.user(42).response().await?;
 assert!(response.status().is_success());
 
-let bytes = client
-    .request(users_api::User::new(42))
-    .response_bytes()
-    .await?;
+let bytes = client.user(42).response_bytes().await?;
 assert!(!bytes.value().is_empty());
 # Ok(())
 # }
 ```
 
-Generated construction and navigation keep their domain names:
-`UsersApi::builder()`, scope methods, endpoint methods, and endpoint
-constructors still construct or navigate. Public value mutation is explicit:
-use `.set_name(value)`, `.clear_name()` when the value is absence-capable, and
-`.reset_name()` when it has a declaration default. These capabilities are
-independent: a defaulted `Option<T>` exposes all three controls, and its setter
-accepts `T`, not `Option<T>`. There are no legacy bare mutation aliases. See
-the [generated API reference](docs/reference/generated-api.md) for the exact
+Use `Api::new()` for a declaration with no required client inputs. Use the
+generated builder when the contract requires values, secrets, providers, or
+deployment configuration. Generated construction and navigation keep their
+domain names: `UsersApi::builder()`, scope methods, endpoint methods, and
+endpoint constructors still construct or navigate. Public value mutation is
+explicit: use `.set_name(value)`, `.clear_name()` when the value is
+absence-capable, and `.reset_name()` when it has a declaration default. These
+capabilities are independent: a defaulted `Option<T>` exposes all three
+controls, and its setter accepts `T`, not `Option<T>`. There are no legacy
+bare mutation aliases. See the
+[generated API reference](docs/reference/generated-api.md) for the exact
 client/scope/endpoint/request matrix and reset semantics. Ordinary values may
 use `= default` to invoke their Rust `Default` implementation at the existing
 owner-specific evaluation point.

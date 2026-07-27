@@ -3,6 +3,7 @@
 //! Child modules list their required features, execution mode, documentation
 //! owner, and proving acceptance test.
 
+pub mod acquisition;
 pub mod specifications;
 
 #[cfg(all(feature = "json", feature = "multipart"))]

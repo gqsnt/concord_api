@@ -8,7 +8,7 @@ use concord::retry::{RetryDecision, RetryFailure, RetryPolicy};
 
 api! {
     client RetryApi {
-        base "https://retry.example.test/";
+        base "http://retry.example.test/";
     }
 
     GET health() -> Bytes;
