@@ -20,14 +20,6 @@ pub enum ProviderRetry {
 }
 
 #[allow(dead_code, reason = "consumed by managed Reqwest construction")]
-pub(crate) enum ApplicationRetry {
-    Disabled,
-    ReqwestDefault,
-    #[cfg(feature = "dangerous-custom-retry")]
-    Dangerous(crate::dangerous::ReqwestRetryBuilder),
-}
-
-#[allow(dead_code, reason = "consumed by managed Reqwest construction")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ProtocolMode {
     Negotiated,
@@ -37,8 +29,7 @@ pub(crate) enum ProtocolMode {
 }
 
 /// Plain resolved HTTP configuration. It contains no Reqwest client or
-/// `reqwest::ClientBuilder`; the dangerous feature may retain only its exact
-/// reviewed native retry-builder value.
+/// `reqwest::ClientBuilder`.
 #[allow(dead_code, reason = "consumed by managed Reqwest construction")]
 pub(crate) struct HttpConfig {
     pub(crate) connect_timeout: Option<Duration>,
@@ -50,7 +41,7 @@ pub(crate) struct HttpConfig {
     pub(crate) https_only: bool,
     pub(crate) protocol: ProtocolMode,
     pub(crate) proxy: Option<SafeProxy>,
-    pub(crate) application_retry: ApplicationRetry,
+    pub(crate) protocol_recovery: bool,
     pub(crate) provider_retry: ProviderRetry,
     #[cfg(feature = "default-tls")]
     pub(crate) root_certificates_pem: Vec<Vec<u8>>,
@@ -90,7 +81,7 @@ impl HttpConfigBuilder {
                 https_only: false,
                 protocol: ProtocolMode::Negotiated,
                 proxy: None,
-                application_retry: ApplicationRetry::Disabled,
+                protocol_recovery: true,
                 provider_retry: ProviderRetry::ProtocolRecovery,
                 #[cfg(feature = "default-tls")]
                 root_certificates_pem: Vec::new(),
@@ -181,21 +172,14 @@ impl HttpConfigBuilder {
         self
     }
 
-    /// Enables Reqwest's native default retry policy for application traffic.
+    /// Enables or disables Reqwest's private known-safe protocol recovery.
     ///
-    /// Native retry may perform multiple physical sends inside one visible
-    /// Concord attempt. Those sends share one limiter admission, lifecycle-hook
-    /// accounting unit, and exactly-once completion event.
+    /// Protocol recovery is enabled by default. It never enables status retry,
+    /// exposes no native policy type, and remains inside one visible Concord
+    /// attempt.
     #[must_use]
-    pub fn retry_reqwest_default(mut self) -> Self {
-        self.config.application_retry = ApplicationRetry::ReqwestDefault;
-        self
-    }
-
-    /// Disables native retry for application traffic.
-    #[must_use]
-    pub fn retry_off(mut self) -> Self {
-        self.config.application_retry = ApplicationRetry::Disabled;
+    pub fn protocol_recovery(mut self, enabled: bool) -> Self {
+        self.config.protocol_recovery = enabled;
         self
     }
 
@@ -279,21 +263,6 @@ impl HttpConfigBuilder {
         self
     }
 
-    /// Selects an application-owned native Reqwest retry builder.
-    ///
-    /// Native retry may perform multiple physical sends inside one visible
-    /// Concord attempt. Those sends share one limiter admission, lifecycle-hook
-    /// accounting unit, and exactly-once completion event.
-    #[cfg(feature = "dangerous-custom-retry")]
-    #[must_use]
-    pub fn dangerous_custom_retry(
-        mut self,
-        builder: crate::dangerous::ReqwestRetryBuilder,
-    ) -> Self {
-        self.config.application_retry = ApplicationRetry::Dangerous(builder);
-        self
-    }
-
     #[allow(dead_code, reason = "consumed by managed Reqwest construction")]
     pub(crate) fn resolve(self) -> Result<HttpConfig, ClientBuildError> {
         if self.invalid_startup_material {
@@ -344,7 +313,7 @@ mod tests {
     }
 
     #[test]
-    fn defaults_are_plain_and_application_retry_is_disabled() {
+    fn defaults_are_plain_and_protocol_recovery_is_enabled() {
         let config = HttpConfigBuilder::new()
             .resolve()
             .expect("default HTTP configuration");
@@ -357,10 +326,7 @@ mod tests {
         assert!(!config.https_only);
         assert_eq!(config.protocol, ProtocolMode::Negotiated);
         assert!(config.proxy.is_none());
-        assert!(matches!(
-            config.application_retry,
-            ApplicationRetry::Disabled
-        ));
+        assert!(config.protocol_recovery);
         assert_eq!(config.provider_retry, ProviderRetry::ProtocolRecovery);
     }
 
@@ -376,7 +342,7 @@ mod tests {
             .https_only(true)
             .http1_only()
             .proxy(SafeProxy::parse("https://proxy.example").expect("safe proxy"))
-            .retry_reqwest_default()
+            .protocol_recovery(false)
             .provider_retry(ProviderRetry::Disabled)
             .resolve()
             .expect("configured HTTP configuration");
@@ -392,24 +358,18 @@ mod tests {
             config.proxy.as_ref().map(SafeProxy::as_str),
             Some("https://proxy.example/")
         );
-        assert!(matches!(
-            config.application_retry,
-            ApplicationRetry::ReqwestDefault
-        ));
+        assert!(!config.protocol_recovery);
         assert_eq!(config.provider_retry, ProviderRetry::Disabled);
     }
 
     #[test]
-    fn retry_off_overrides_an_explicit_opt_in() {
+    fn protocol_recovery_selection_replaces_in_call_order() {
         let config = HttpConfigBuilder::new()
-            .retry_reqwest_default()
-            .retry_off()
+            .protocol_recovery(false)
+            .protocol_recovery(true)
             .resolve()
-            .expect("disabled application retry");
-        assert!(matches!(
-            config.application_retry,
-            ApplicationRetry::Disabled
-        ));
+            .expect("re-enabled protocol recovery");
+        assert!(config.protocol_recovery);
     }
 
     #[cfg(feature = "http2")]
@@ -579,18 +539,5 @@ mod tests {
         assert!(config.disable_gzip);
         assert!(config.disable_brotli);
         assert!(config.disable_deflate);
-    }
-
-    #[cfg(feature = "dangerous-custom-retry")]
-    #[test]
-    fn dangerous_retry_selection_retains_only_the_reviewed_native_builder_type() {
-        let config = HttpConfigBuilder::new()
-            .dangerous_custom_retry(reqwest::retry::never())
-            .resolve()
-            .expect("reviewed native retry");
-        assert!(matches!(
-            config.application_retry,
-            ApplicationRetry::Dangerous(_)
-        ));
     }
 }

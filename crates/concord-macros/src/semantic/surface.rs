@@ -12,7 +12,7 @@ use super::model::{
     EndpointDocRouteAtom, EndpointDocSetter, EndpointDocTerminals, EndpointDocTimeout,
     EndpointSetter, EndpointSurface, NormalizedConfig, NormalizedRateLimitDimension, RequestBody,
     RequestTerminals, RequiredArgument, ResolvedAuthPlacement, ResolvedChallengePolicy,
-    ResolvedExpr, ResolvedMethod, ResolvedRetry, Scope, ScopeSurface, Value, ValueReference,
+    ResolvedExpr, ResolvedMethod, Scope, ScopeSurface, Value, ValueReference,
 };
 
 pub(crate) struct VisibleScopeDoc<'a> {
@@ -33,7 +33,6 @@ pub(crate) struct EndpointDocContext<'a> {
     pub(crate) config: &'a NormalizedConfig,
     pub(crate) response: &'a Type,
     pub(crate) timeout: EndpointDocTimeout,
-    pub(crate) native_retry: ResolvedRetry,
     pub(crate) contract_id: &'a ContractId,
 }
 
@@ -43,6 +42,7 @@ pub(crate) const RESERVED_GENERATED_METHODS: &[&str] = &[
     "build",
     "configure_http",
     "configure_runtime",
+    "retry",
     "credentials",
     "request",
     "response",
@@ -159,7 +159,6 @@ pub(crate) fn endpoint_doc_model(
         config,
         response,
         timeout,
-        native_retry,
         contract_id,
     } = context;
     let mut endpoint_type_path = canonical_ident(&client_surface.support_name);
@@ -331,7 +330,6 @@ pub(crate) fn endpoint_doc_model(
             pagination: surface.terminals.pagination,
             credential_storage: Vec::new(),
         },
-        native_retry,
         contract_id: contract_id.value.clone(),
         explicit_contract_id: contract_id.explicit,
     }

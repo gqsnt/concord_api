@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
-pub(super) const GENERATED_CONTRACT_VERSION: u32 = 28;
+pub(super) const GENERATED_CONTRACT_VERSION: u32 = 29;
 
 pub(super) fn generated_contract_assertion() -> TokenStream {
     let version = GENERATED_CONTRACT_VERSION;

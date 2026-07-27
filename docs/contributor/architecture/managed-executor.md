@@ -228,10 +228,10 @@ after limiter authority and after safe debug observation. They are never
 copied back into public head state.
 
 **Side effects:** provider work may finish, body sources may be polled, and
-native HTTP may execute. The retained native retry configuration remains
-inside this transport operation; it does not create additional public
-hook/completion attempts. Concord-managed policy retry is outside this private
-transport boundary and therefore creates another visible attempt.
+native HTTP may execute. Known-safe protocol recovery remains inside this
+transport operation; it does not create additional public hook/completion
+attempts or retry statuses. Concord-managed policy retry is outside this
+private transport boundary and therefore creates another visible attempt.
 
 ## Stage 7: response policy and observation
 

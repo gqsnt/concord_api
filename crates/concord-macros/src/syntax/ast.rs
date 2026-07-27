@@ -22,7 +22,6 @@ pub(crate) struct SourceClient {
     pub(crate) base: Clause<LitStr>,
     pub(crate) values: Option<Clause<Vec<ValueDecl>>>,
     pub(crate) credentials: Option<Clause<CredentialsBlock>>,
-    pub(crate) retry: Option<Clause<RetrySelection>>,
     pub(crate) layer: Layer,
 }
 
@@ -110,12 +109,6 @@ pub(crate) enum DefaultExpr {
     Integer { negative: bool, literal: LitInt },
     Boolean(LitBool),
     Path(Path),
-}
-
-#[derive(Clone)]
-pub(crate) enum RetrySelection {
-    Disabled,
-    ReqwestDefault,
 }
 
 #[derive(Clone, Default)]

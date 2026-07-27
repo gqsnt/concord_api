@@ -63,7 +63,8 @@ configured limiter, client construction fails closed.
 
 Use the [feature reference](../reference/features.md) for the exact list and
 feature implications. CSV and NDJSON enable generic record support;
-dangerous capabilities remain non-default and separately gated.
+managed application retry remains an explicit runtime policy rather than a
+Cargo feature.
 
 ## Async runtime ownership
 

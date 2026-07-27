@@ -60,10 +60,10 @@ rate-cooldown settings when defaults do not match measured workloads. Keep
 exact values in application configuration rather than duplicating Concord's
 default table.
 
-Use `retry_reqwest_default` only after reviewing idempotency and body
-replayability. Arbitrary native policy belongs behind
-`dangerous-custom-retry`; it can perform multiple physical sends inside one
-visible attempt.
+Known-safe protocol recovery is enabled by default and remains inside one
+visible Concord attempt. Use `protocol_recovery(false)` only when the
+deployment requires exactly one physical send. Install application retry
+separately through an explicit managed `RetryPolicy`.
 
 ## Production notes
 
@@ -93,4 +93,4 @@ application's lifecycle. Do not mutate a built client's transport in place.
 - [Build and share clients](../guide/client-construction.md)
 - [Hooks and observability](../features/hooks-and-observability.md)
 - [Limits reference](../reference/limits.md)
-- [Dangerous capabilities](../reference/dangerous.md)
+- [Managed retries](retries.md)

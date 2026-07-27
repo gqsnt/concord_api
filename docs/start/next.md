@@ -60,8 +60,8 @@ representation in the declaration.
 ## When to use reference or Rustdoc
 
 Use the book reference for exact DSL grammar, generated naming, feature flags,
-numeric limits, error taxonomy, compatibility, security summary, dangerous
-capabilities, and unsupported forms.
+numeric limits, error taxonomy, compatibility, security summary, retry
+policy, and unsupported forms.
 
 Use Rustdoc when implementing a trait or checking an exact method, associated
 type, bound, or generated item signature. The advanced pages name the relevant

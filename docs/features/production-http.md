@@ -2,8 +2,8 @@
 
 Configure transport and runtime policy on the generated client builder before
 sharing the built client. Concord starts from conservative transport behavior:
-redirects and environment proxy discovery are disabled, application native
-retry is off unless selected, and provider HTTP remains isolated.
+redirects and environment proxy discovery are disabled, only private
+known-safe protocol recovery is enabled, and provider HTTP remains isolated.
 
 ## Build an explicit deployment configuration
 
@@ -67,24 +67,21 @@ supported transport decompression. A small compressed payload cannot expand
 past the configured managed limit. Application values produced by a decoder
 still own their own allocation and CPU bounds.
 
-## Timeouts, pools, and retries
+## Timeouts, pools, and protocol recovery
 
 Native connection and per-read timeouts complement the Concord operation
 timeout; they do not replace it. Pool idle timeout and maximum idle
 connections per host bound reuse policy. TCP keepalive and no-delay are
 explicit deployment choices.
 
-Application retry is off by default. `retry_reqwest_default()` or the DSL
-`retry reqwest_default` enables the reviewed native default policy. A native
-retry may perform more than one physical send inside one visible Concord
-attempt, sharing one limiter admission, hook accounting unit, and exactly-once
-completion.
+Private known-safe protocol recovery is enabled by default. It remains inside
+one visible Concord attempt, performs no status retry, does not invoke the
+managed retry classifier, and cannot resend a non-cloneable native body.
+`.protocol_recovery(false)` disables it. Provider recovery uses the separate
+reviewed `ProviderRetry` selection.
 
-Arbitrary native retry builders require `dangerous-custom-retry` and
-`.dangerous_custom_retry(...)`. Their attempt count, backoff, idempotency, and
-interaction with one-shot bodies are application-owned risks. Provider retry
-uses the separate reviewed `ProviderRetry` selection and never reuses the
-application retry object.
+Application retry is the distinct Concord-managed `RetryPolicy` surface. It is
+off by default and is documented under [Managed retries](retries.md).
 
 ## Deployment checklist
 
@@ -98,8 +95,8 @@ Before releasing a client configuration, verify:
   liveness phases;
 - body, stream, status, pagination, provider, limiter, and hook bounds match
   expected payload and cardinality;
-- retry is enabled only for operations whose body and remote semantics permit
-  repeated physical sends;
+- managed retry is installed only for operations whose remote semantics permit
+  repeated sends;
 - logging treats sanitized public URLs and headers as potentially sensitive
   application data.
 
@@ -114,4 +111,4 @@ reaching around the managed lifecycle.
 - [Hooks and observability](hooks-and-observability.md)
 - [Feature flags](../reference/features.md)
 - [Limits reference](../reference/limits.md)
-- [Dangerous capabilities](../reference/dangerous.md)
+- [Managed retries](retries.md)

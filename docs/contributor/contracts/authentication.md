@@ -89,7 +89,7 @@ The complete lifecycle position is documented in
   material rather than invalidating a newer value produced by another
   operation.
 - One request gets at most one Concord-owned authentication recovery replay.
-  Native transport retry policy does not call the provider or body factory.
+  Private protocol recovery does not call the provider or body factory.
 - Every replay is another visible attempt: it passes attempt hooks, limiter
   admission, materialization, and response observation. The enclosing request
   or page still produces one fixed completion event.

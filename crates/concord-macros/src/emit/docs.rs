@@ -317,13 +317,7 @@ fn render_request(docs: &EndpointDocModel) -> String {
             human_duration(duration)
         ),
     };
-    let retry = match docs.native_retry {
-        ResolvedRetry::Disabled => String::new(),
-        ResolvedRetry::ReqwestDefault => "\n\nNative retry: enabled.".to_owned(),
-    };
-    format!(
-        "{query}\n\n{headers}\n\n{body}\n\n{authentication}\n\n{rate_limits}\n\n{timeout}{retry}"
-    )
+    format!("{query}\n\n{headers}\n\n{body}\n\n{authentication}\n\n{rate_limits}\n\n{timeout}")
 }
 
 fn render_response(docs: &EndpointDocModel) -> String {
@@ -439,13 +433,6 @@ pub(super) fn value_category_summary(values: &[Value], owner: &str) -> String {
         format!("{owner} inputs: none.")
     } else {
         categories.join(" ")
-    }
-}
-
-pub(super) fn retry_summary(retry: ResolvedRetry) -> &'static str {
-    match retry {
-        ResolvedRetry::Disabled => "Native retry: disabled.",
-        ResolvedRetry::ReqwestDefault => "Native retry: enabled.",
     }
 }
 

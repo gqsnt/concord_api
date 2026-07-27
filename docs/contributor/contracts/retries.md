@@ -19,7 +19,8 @@ contract therefore combines:
 - the ordinary hook, authentication, limiter, observation, and completion
   lifecycle for every admitted retry.
 
-There is no policy by default. Enabling private protocol recovery does not
+There is no managed policy by default. Private protocol recovery is enabled
+by default, can be disabled with `protocol_recovery(false)`, and does not
 enable status or application-failure retry.
 
 ## Runtime installation
@@ -39,9 +40,11 @@ let policy = concord::retry::RetryPolicy::builder()
     })
     .build()?;
 
-let builder = builder.configure_runtime(|runtime| runtime.retry_policy(policy));
+let builder = builder.retry(policy);
 ```
 
+The lower-level equivalent is
+`configure_runtime(|runtime| runtime.retry_policy(policy))`.
 `RuntimeConfigBuilder::disable_retry_policy` restores the no-policy runtime
 selection. Replacing or disabling a policy affects only the client snapshot
 being built. It does not add DSL structure and does not expose Reqwest, Tower,

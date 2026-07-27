@@ -17,14 +17,12 @@ multipart = ["concord/multipart"]
 records = ["concord/records"]
 csv = ["records", "concord/csv"]
 ndjson = ["records", "concord/ndjson"]
-dangerous-custom-retry = ["concord/dangerous-custom-retry", "dep:reqwest"]
 tokio = ["dep:tokio"]
 riot-live = ["json", "rate-limit", "default-tls", "http2", "tokio"]
 
 [dependencies]
 concord = { version = "=0.1.0", path = "../concord", default-features = false }
 futures-core.workspace = true
-reqwest = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = ["macros", "rt-multi-thread"] }

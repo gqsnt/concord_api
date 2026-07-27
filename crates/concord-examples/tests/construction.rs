@@ -27,6 +27,8 @@ fn imports_and_constructs_every_enabled_canonical_declaration() {
         .expect("generic specification construction");
     let _observed =
         concord_examples::runtime_policy::hooks::construct().expect("observability construction");
+    let _retrying =
+        concord_examples::runtime_policy::retries::construct().expect("managed retry construction");
     let _api_key = concord_examples::recipes::api_key::build("recipe-api-key")
         .expect("API-key recipe construction");
     concord_examples::runtime_endpoints::generated_and_runtime::construct()
@@ -72,9 +74,6 @@ fn imports_and_constructs_every_enabled_canonical_declaration() {
 
     #[cfg(all(feature = "records", feature = "csv", feature = "ndjson"))]
     concord_examples::request_response::records::construct().expect("record construction");
-
-    #[cfg(all(feature = "dangerous-custom-retry", feature = "default-tls"))]
-    concord_examples::dangerous::custom_retry::construct().expect("dangerous retry construction");
 
     #[cfg(all(feature = "json", feature = "rate-limit", feature = "default-tls"))]
     concord_examples::riot::usage::construct().expect("Riot construction");

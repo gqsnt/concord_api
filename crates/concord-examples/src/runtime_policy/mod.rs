@@ -4,6 +4,7 @@
 //! contract declaration.
 
 pub mod hooks;
+pub mod retries;
 
 #[cfg(feature = "default-tls")]
 pub mod production_http;

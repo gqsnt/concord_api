@@ -26,9 +26,6 @@ pub mod runtime_policy;
 #[cfg(feature = "oauth2-client")]
 pub mod authentication;
 
-#[cfg(feature = "dangerous-custom-retry")]
-pub mod dangerous;
-
 #[cfg(feature = "json")]
 pub mod pagination;
 

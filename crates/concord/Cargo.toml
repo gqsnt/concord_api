@@ -20,7 +20,6 @@ multipart = ["concord_core/multipart"]
 gzip = ["concord_core/gzip"]
 brotli = ["concord_core/brotli"]
 deflate = ["concord_core/deflate"]
-dangerous-custom-retry = ["concord_core/dangerous-custom-retry"]
 
 [dependencies]
 concord_core = { package = "concord-core", version = "=0.1.0", path = "../concord-core", default-features = false }

@@ -156,5 +156,4 @@ outside Concord's current managed-runtime model.
 - [Extension model](../extending/README.md)
 - [Complete DSL reference](dsl.md)
 - [Generated API reference](generated-api.md)
-- [Dangerous capabilities](dangerous.md)
 - [Finite behavior](../concepts/finite-behavior.md)

@@ -276,13 +276,13 @@ fn h2_builder() -> reqwest::ClientBuilder {
 }
 
 #[tokio::test]
-async fn retry_is_off_by_default() {
+async fn explicit_never_policy_sends_once() {
     let server = H2RefusedServer::start(1, 1).await;
     let attempts = Arc::clone(&server.physical_attempts);
     let connections = Arc::clone(&server.connections);
     let result = h2_builder()
         .build()
-        .expect("retry-free HTTP/2 client should build")
+        .expect("protocol-recovery-disabled HTTP/2 client should build")
         .get(server.url())
         .send()
         .await;
@@ -292,11 +292,13 @@ async fn retry_is_off_by_default() {
     let connection_count = connections.load(Ordering::SeqCst);
     assert_eq!(physical, 1);
     assert_eq!(connection_count, 1);
-    println!("retry_off_physical_attempts={physical} connections={connection_count}");
+    println!(
+        "protocol_recovery_disabled_physical_attempts={physical} connections={connection_count}"
+    );
 }
 
 #[tokio::test]
-async fn reqwest_default_retry_requires_explicit_opt_in() {
+async fn reqwest_known_safe_protocol_recovery_handles_refused_stream() {
     let server = H2RefusedServer::start(1, 2).await;
     let attempts = Arc::clone(&server.physical_attempts);
     let connections = Arc::clone(&server.connections);

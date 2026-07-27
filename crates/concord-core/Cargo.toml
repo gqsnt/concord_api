@@ -15,7 +15,6 @@ multipart = ["reqwest/multipart"]
 gzip = ["reqwest/gzip"]
 brotli = ["reqwest/brotli"]
 deflate = ["reqwest/deflate"]
-dangerous-custom-retry = []
 
 [dependencies]
 bytes.workspace = true

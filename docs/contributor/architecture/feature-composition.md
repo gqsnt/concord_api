@@ -2,8 +2,8 @@
 
 Cargo features select available implementations and transport capabilities.
 They must not select competing semantic lifecycles. Whether an endpoint uses
-JSON, records, OAuth2, multipart, compression, or an explicitly dangerous
-builder option, its request still enters the same core executor.
+JSON, records, OAuth2, multipart, or compression, its request still enters the
+same core executor.
 
 The exact public feature table belongs to [Feature flags](../../reference/features.md).
 This page explains which layer composes each feature and how to evolve that
@@ -75,8 +75,6 @@ Design consequences:
 
 - enabling an implementation may add reexports, but must not silently change
   unrelated endpoint semantics;
-- a dangerous feature is crate-wide once unified and must remain explicit in
-  its name and documentation;
 - absence claims require an isolated fixture, not a test inside an
   all-feature workspace build.
 
@@ -151,7 +149,6 @@ Do not use a feature to:
 - let the macro recognize first-party type names;
 - make core depend on extras;
 - turn a finite mode into an unbounded alternative;
-- hide dangerous behavior inside a broad convenience bundle;
 - change existing behavior based on feature unification when simple item
   availability is sufficient;
 - add a default merely to make one test graph pass.

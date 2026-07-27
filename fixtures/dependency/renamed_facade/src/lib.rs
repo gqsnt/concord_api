@@ -10,6 +10,7 @@ const _: usize = runtime::rate_limit::MAX_RATE_LIMIT_KEY_PART_NAME_BYTES;
 const _: usize = runtime::rate_limit::MAX_RATE_LIMIT_KEY_BYTES;
 const _: usize = runtime::rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_RULE;
 const _: usize = runtime::rate_limit::MAX_RATE_LIMIT_RULES_PER_PLAN;
+const _: u32 = runtime::retry::MAX_POLICY_RETRIES_PER_OPERATION;
 
 pub struct WireCodec;
 
@@ -126,11 +127,17 @@ api! {
 }
 
 pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
+    let retry_policy = runtime::retry::RetryPolicy::builder()
+        .without_budget()
+        .classify_fn(|_| runtime::retry::RetryDecision::Stop)
+        .build()
+        .expect("valid renamed-facade retry policy");
     let client = RenamedApi::builder()
         .set_tenant("tenant".to_owned())
         .api_key(
             runtime::SecretString::try_new("protected-api-key").expect("bounded protected API key"),
         )
+        .retry(retry_policy)
         .build()?;
     let _ = client.credentials().application_key().credential();
     let request = client

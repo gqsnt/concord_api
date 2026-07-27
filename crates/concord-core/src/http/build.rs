@@ -2,7 +2,7 @@ use crate::error::{ClientBuildError, ClientBuildErrorKind};
 use crate::runtime::RuntimeConfig;
 
 use super::application::ApplicationHttp;
-use super::config::{ApplicationRetry, HttpConfig, ProtocolMode, ProviderRetry};
+use super::config::{HttpConfig, ProtocolMode, ProviderRetry};
 use super::provider::ProviderHttp;
 use super::provider::ProviderHttpInner;
 use crate::operation::OperationDeadline;
@@ -78,12 +78,9 @@ impl ManagedHttp {
 
         let mut application = base_builder(&http, false)?;
         let mut provider = base_builder(&http, true)?;
-        application = match http.application_retry {
-            ApplicationRetry::Disabled => application.retry(reqwest::retry::never()),
-            ApplicationRetry::ReqwestDefault => application,
-            #[cfg(feature = "dangerous-custom-retry")]
-            ApplicationRetry::Dangerous(retry) => application.retry(retry),
-        };
+        if !http.protocol_recovery {
+            application = application.retry(reqwest::retry::never());
+        }
         provider = match http.provider_retry {
             ProviderRetry::ProtocolRecovery => provider,
             ProviderRetry::Disabled => provider.retry(reqwest::retry::never()),
@@ -662,10 +659,33 @@ mod tests {
 
     #[cfg(feature = "http2")]
     #[tokio::test]
-    async fn application_retry_is_off_by_default_at_one_boundary_call() {
-        let server = H2RefusedServer::start(1, 1).await;
+    async fn application_protocol_recovery_is_enabled_by_default() {
+        let server = H2RefusedServer::start(1, 2).await;
         let attempts = server.physical_attempts();
         let managed = managed(HttpConfigBuilder::new().http2_prior_knowledge());
+        let boundary_calls = AtomicUsize::new(0);
+        boundary_calls.fetch_add(1, Ordering::SeqCst);
+        let response = managed
+            .application
+            .get("managed.retry", &server.url())
+            .await
+            .expect("known-safe protocol recovery should recover REFUSED_STREAM");
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        server.finish().await;
+        assert_eq!(boundary_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    }
+
+    #[cfg(feature = "http2")]
+    #[tokio::test]
+    async fn protocol_recovery_can_be_disabled_at_one_boundary_call() {
+        let server = H2RefusedServer::start(1, 1).await;
+        let attempts = server.physical_attempts();
+        let managed = managed(
+            HttpConfigBuilder::new()
+                .http2_prior_knowledge()
+                .protocol_recovery(false),
+        );
         let boundary_calls = AtomicUsize::new(0);
         boundary_calls.fetch_add(1, Ordering::SeqCst);
         let result = managed
@@ -678,26 +698,22 @@ mod tests {
         assert_eq!(attempts.load(Ordering::SeqCst), 1);
     }
 
-    #[cfg(feature = "http2")]
     #[tokio::test]
-    async fn reqwest_default_retry_requires_opt_in_and_stays_inside_boundary() {
-        let server = H2RefusedServer::start(1, 2).await;
-        let attempts = server.physical_attempts();
-        let managed = managed(
-            HttpConfigBuilder::new()
-                .http2_prior_knowledge()
-                .retry_reqwest_default(),
-        );
-        let boundary_calls = AtomicUsize::new(0);
-        boundary_calls.fetch_add(1, Ordering::SeqCst);
+    async fn protocol_recovery_never_retries_status_responses() {
+        let server = ScriptedServer::start([
+            ResponseScript::status(503, b"terminal".to_vec()),
+            ResponseScript::ok(b"must-remain".to_vec()),
+        ])
+        .expect("status server should start");
+        let managed = managed(HttpConfigBuilder::new());
+
         let response = managed
             .application
-            .get("managed.retry", &server.url())
+            .get("managed.status", &server.url("/status"))
             .await
-            .expect("native default retry should recover REFUSED_STREAM");
-        assert_eq!(response.status(), reqwest::StatusCode::OK);
-        server.finish().await;
-        assert_eq!(boundary_calls.load(Ordering::SeqCst), 1);
-        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+            .expect("status response should be returned");
+
+        assert_eq!(response.status(), reqwest::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(server.request_count(), 1);
     }
 }

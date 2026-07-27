@@ -69,10 +69,6 @@ const FEATURES: &[(&str, &str)] = &[
     ("gzip", "Gzip response decompression"),
     ("brotli", "Brotli response decompression"),
     ("deflate", "Deflate response decompression"),
-    (
-        "dangerous-custom-retry",
-        "Custom native transport retry policy",
-    ),
 ];
 
 struct Limit {

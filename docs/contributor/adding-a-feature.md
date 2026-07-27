@@ -16,7 +16,6 @@ Decide which category describes the change:
 | semantic runtime capability | core public contract, executor, public API and lifecycle tests |
 | concrete reusable implementation | extras feature, unit tests, façade re-export |
 | transport configuration | core HTTP boundary, configuration tests, production HTTP guide |
-| dangerous opt-in | core gated capability, absence fixture, dangerous reference |
 | documentation/tooling policy | xtask, Justfile or CI, maintenance documentation |
 
 If the proposed implementation needs native transport only because an existing

@@ -41,6 +41,7 @@ let client: CatalogApi = builder
     .set_required_value(value)
     .required_secret(concord::SecretString::try_new(secret)?)
     .provider(provider)
+    .retry(policy)
     .configure_http(|http| /* safe transport configuration */ http)
     .configure_runtime(|runtime| /* limits/hooks/limiter */ runtime)
     .build()?;
@@ -51,12 +52,13 @@ declared generated names. `CatalogApi::new()` exists only when none are
 required. Missing inputs are runtime-validated at `build()` using
 `ClientBuildError` and safe `ClientInputKind`.
 
-Repeated `configure_http` and `configure_runtime` closures apply immediately
-in call order. `build()` validates the fixed base, required values, protected
-material, HTTP configuration, runtime configuration, and selected limiter
-before producing an immutable client. Client clones share that runtime and its
-credential slots, hooks, transport, and limiter. Independent builds remain
-separate unless the application explicitly shares an extension object.
+Repeated `retry`, `configure_http`, and `configure_runtime` transformations
+apply immediately in call order. `build()` validates the fixed base, required
+values, protected material, HTTP configuration, runtime configuration, and
+selected limiter before producing an immutable client. Client clones share
+that runtime and its retry policy, credential slots, hooks, transport, and
+limiter. Independent builds remain separate unless the application explicitly
+shares a policy or another stateful extension object.
 
 ## Generated value controls
 
@@ -247,8 +249,8 @@ Ordinary imports come from `concord`:
 | `rate_limit` | plans, keys, limiters, observers |
 | `records` | bounded record streams/decoders |
 | `response` | modes, metadata, specifications |
+| `retry` | managed retry policy and classifiers |
 | `runtime` | finite runtime configuration |
-| `dangerous` | explicit feature-gated capabilities |
 
 `concord::prelude` is optional convenience for common handwritten code; it is
 not required to make generated methods appear.
@@ -259,5 +261,5 @@ not required to make generated methods appear.
 - [Build and share clients](../guide/client-construction.md)
 - [Requests, planning, and errors](../guide/requests-planning-errors.md)
 - [Feature flags](features.md)
-- [Dangerous capabilities](dangerous.md)
+- [Managed retries](../features/retries.md)
 - Rustdoc: the generated client and its `catalog_api`-style module

@@ -236,7 +236,6 @@ dependencies = [
  "concord",
  "concord-test-support",
  "futures-core",
- "reqwest",
  "serde",
  "serde_json",
  "tokio",

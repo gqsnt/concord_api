@@ -104,9 +104,10 @@ buckets operational.
 
 ## Authentication and attempts
 
-A visible Concord attempt may contain a finite native retry policy, but native
-retries do not create new limiter admissions, hook attempts, or completion
-events. The ordinary DSL default is no native retry.
+A visible Concord attempt may contain Reqwest's private known-safe protocol
+recovery. That recovery is enabled by default, performs no status retry, and
+does not create new limiter admissions, hook attempts, or completion events.
+An explicit managed policy retry is instead a new visible attempt.
 
 Authentication challenge recovery permits at most one additional visible
 application attempt and only when exact-current credential material is

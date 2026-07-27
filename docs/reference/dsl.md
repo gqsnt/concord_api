@@ -20,7 +20,7 @@ names and terminals are catalogued separately in the
 - [Endpoint identity](#endpoint-identity)
 - [Public expressions and request shaping](#public-expressions-and-request-shaping)
 - [Authentication](#authentication)
-- [Retry and timeout](#retry-and-timeout)
+- [Timeout](#timeout)
 - [Pagination](#pagination)
 - [Rate limits](#rate-limits)
 - [Diagnostics](#diagnostics)
@@ -126,7 +126,7 @@ duplicate and original spans. The supported clauses are:
 
 | Owner | Clauses |
 |---|---|
-| client | `base`, `vars`, `credentials`, `retry`, `host`, `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit` |
+| client | `base`, `vars`, `credentials`, `host`, `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit` |
 | scope | `host`, `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, plus child scopes/endpoints |
 | endpoint | `id`, `host`, `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, `paginate` |
 
@@ -155,7 +155,6 @@ builder methods available:
 | `multipart` | exposes the request-only `Multipart` body specification |
 | `rate-limit` | installs the first-party local limiter by default; `rate_limit { ... }` grammar itself remains core |
 | `oauth2-client` | exposes an OAuth2 provider type supplied through `credential ... = custom TYPE` |
-| `dangerous-custom-retry` | adds a Rust HTTP-builder method; it adds no DSL clause |
 | `default-tls`, `http2`, `gzip`, `brotli`, `deflate` | select managed transport capabilities outside declaration grammar |
 
 Built-in offset, page-number, and cursor controllers require no optional
@@ -432,31 +431,11 @@ The restriction preserves one private `Authorization` owner, collision
 prevention, limiter-before-authentication ordering, and redaction. A future
 dedicated authorization or request-signing contract is a separate design.
 
-## Retry and timeout
+## Timeout
 
-Client declarations support:
-
-```rust
-retry off;
-retry reqwest_default;
-```
-
-Omission defaults to off. Custom transport retry is runtime policy and is not
-valid DSL:
-
-```rust
-let client = ExampleApi::builder()
-    .configure_http(|http| {
-        http.dangerous_custom_retry(retry_policy())
-    })
-    .build()?;
-```
-
-That builder method requires the explicit `dangerous-custom-retry` feature.
-Native transport retry remains inside one Concord attempt and is distinct from
-the one-additional-attempt authentication recovery limit. It may perform
-multiple physical wire sends inside one visible Concord attempt; those sends
-share one limiter admission, hook attempt, and completion accounting unit.
+Retry is intentionally not declaration grammar. Install a managed
+`RetryPolicy` with the generated `.retry(policy)` builder method or through
+`configure_runtime`. See [Managed retries](../features/retries.md).
 
 Timeouts are available at client, scope, and endpoint layers:
 

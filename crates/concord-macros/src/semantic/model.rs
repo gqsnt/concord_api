@@ -16,7 +16,6 @@ pub(crate) struct Client {
     pub(crate) values: Vec<Value>,
     pub(crate) secrets: Vec<Secret>,
     pub(crate) credentials: Vec<Credential>,
-    pub(crate) retry: ResolvedRetry,
     pub(crate) requires_limiter: bool,
     #[allow(dead_code, reason = "retained as the normalized client-layer IR root")]
     pub(crate) config: NormalizedConfig,
@@ -113,7 +112,6 @@ pub(crate) struct EndpointDocModel {
     pub(crate) rate_limits: Vec<EndpointDocRateLimit>,
     pub(crate) timeout: EndpointDocTimeout,
     pub(crate) terminals: EndpointDocTerminals,
-    pub(crate) native_retry: ResolvedRetry,
     pub(crate) contract_id: String,
     pub(crate) explicit_contract_id: bool,
 }
@@ -398,12 +396,6 @@ pub(crate) enum ResolvedDefault {
     Integer { negative: bool, literal: LitInt },
     Boolean(LitBool),
     Path(Path),
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ResolvedRetry {
-    Disabled,
-    ReqwestDefault,
 }
 
 #[derive(Clone)]

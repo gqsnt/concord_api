@@ -11,7 +11,7 @@ use crate::semantic::model::{
     EndpointDocRouteAtom, EndpointDocSetter, EndpointDocTimeout, NormalizedConfig,
     NormalizedRateLimitDimension, PaginationInitializer, PaginationValue, RequiredArgument,
     ResolvedAuthPlacement, ResolvedChallengePolicy, ResolvedDefault, ResolvedExpr, ResolvedMethod,
-    ResolvedRetry, ResolvedValueKind, Scope, Value, ValueReference, ValueShape,
+    ResolvedValueKind, Scope, Value, ValueReference, ValueShape,
 };
 use crate::semantic::surface::{canonical_ident, public_ident, to_snake_case, value_setter_ident};
 
@@ -284,7 +284,6 @@ mod tests {
                     secret token: String;
                     credential bearer = bearer(secret.token);
                 }
-                retry reqwest_default;
             }
             METHOD("PROPFIND") inspect() -> NoContent {
                 auth bearer bearer challenge unauthorized_or_forbidden;
@@ -292,7 +291,6 @@ mod tests {
         });
         let endpoint = test_support::endpoint(&api);
 
-        assert_eq!(api.client.retry, ResolvedRetry::ReqwestDefault);
         assert!(matches!(
             api.client.values[0].kind,
             ResolvedValueKind::Defaulted(ResolvedDefault::String(_))
@@ -314,13 +312,7 @@ mod tests {
         );
 
         let output = generate(&api, &quote!(::concord)).to_string();
-        for expected in [
-            "retry_reqwest_default",
-            "PROPFIND",
-            "UnauthorizedOrForbidden",
-            "\"eu\"",
-            "true",
-        ] {
+        for expected in ["PROPFIND", "UnauthorizedOrForbidden", "\"eu\"", "true"] {
             assert!(
                 output.contains(expected),
                 "normalized emission omitted `{expected}`"
@@ -372,7 +364,6 @@ mod tests {
             "AuthPlacementKind",
             "DefaultExpr",
             "MethodKind",
-            "RetrySelection",
             "ValueKind",
         ] {
             assert!(

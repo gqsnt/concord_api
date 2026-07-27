@@ -3,11 +3,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use concord::codec::{CodecError, EncodeBody, EncodeContext};
+use concord::endpoint::{EndpointId, RuntimeEndpoint};
 use concord::error::HookError;
 use concord::hooks::{
     AttemptInfo, BeforeSend, BoxFuture, CompletionEvent, ResponseHeadEvent, RuntimeHooks,
 };
-use concord::http::SafeProxy;
+use concord::http::{Method, SafeProxy};
 use concord::retry::{RetryDecision, RetryFailure, RetryPolicy};
 use concord::{Bytes, api};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
@@ -182,10 +183,14 @@ async fn direct_and_explicit_named_wrappers_preserve_inertness_and_lifecycle_equ
 }
 
 #[tokio::test]
-async fn facade_runtime_policy_retries_rejected_status_with_visible_attempts() {
+async fn generated_retry_method_has_direct_explicit_and_runtime_endpoint_parity() {
     let server = ScriptedServer::start([
         ResponseScript::status(503, b"intermediate".to_vec()),
-        ResponseScript::ok(b"recovered".to_vec()),
+        ResponseScript::ok(b"direct".to_vec()),
+        ResponseScript::status(503, b"intermediate".to_vec()),
+        ResponseScript::ok(b"explicit".to_vec()),
+        ResponseScript::status(503, b"intermediate".to_vec()),
+        ResponseScript::ok(b"runtime".to_vec()),
     ])
     .expect("scripted retry server");
     let proxy = SafeProxy::parse(server.url("")).expect("loopback proxy");
@@ -211,12 +216,13 @@ async fn facade_runtime_policy_retries_rejected_status_with_visible_attempts() {
         .expect("managed retry policy");
     let client = RuntimeApi::builder()
         .configure_http(move |http| http.proxy(proxy))
-        .configure_runtime(move |runtime| runtime.hooks(hook_object).retry_policy(policy))
+        .retry(policy)
+        .configure_runtime(move |runtime| runtime.hooks(hook_object))
         .build()
         .expect("retry runtime client");
     let encodes = Arc::new(AtomicUsize::new(0));
 
-    let response = client
+    let direct = client
         .resources("retry-scope".to_owned())
         .submit(
             "retry-id".to_owned(),
@@ -228,19 +234,69 @@ async fn facade_runtime_policy_retries_rejected_status_with_visible_attempts() {
         .response()
         .await
         .expect("managed retry succeeds");
-    assert_eq!(response.value(), &Bytes::from_static(b"recovered"));
-    assert_eq!(response.metadata().attempts_started(), 2);
-    assert_eq!(response.metadata().policy_retries(), 1);
-    assert!(!response.metadata().recovered_authentication());
-    assert_eq!(server.request_count(), 2);
-    assert_eq!(encodes.load(Ordering::SeqCst), 1);
-    assert_eq!(classifications.load(Ordering::SeqCst), 1);
-    assert_eq!(hooks.before.load(Ordering::SeqCst), 2);
-    assert_eq!(hooks.response.load(Ordering::SeqCst), 2);
-    assert_eq!(hooks.complete.load(Ordering::SeqCst), 1);
+    let explicit = client
+        .request(runtime_api::resources::Submit::new(
+            "retry-scope".to_owned(),
+            "retry-id".to_owned(),
+            BodyInput {
+                value: "encoded-once".to_owned(),
+                encodes: Arc::clone(&encodes),
+            },
+        ))
+        .response()
+        .await
+        .expect("explicit managed retry succeeds");
+    let runtime_endpoint = RuntimeEndpoint::builder(
+        EndpointId::new("runtime.retry").expect("runtime endpoint ID"),
+        Method::GET,
+    )
+    .path_segment("runtime-retry")
+    .response::<Bytes>()
+    .build()
+    .expect("runtime retry endpoint");
+    let runtime = client
+        .request(runtime_endpoint)
+        .response()
+        .await
+        .expect("runtime endpoint managed retry succeeds");
+
+    assert_eq!(direct.value(), &Bytes::from_static(b"direct"));
+    assert_eq!(explicit.value(), &Bytes::from_static(b"explicit"));
+    assert_eq!(runtime.value(), &Bytes::from_static(b"runtime"));
+    for response in [&direct, &explicit, &runtime] {
+        assert_eq!(response.metadata().attempts_started(), 2);
+        assert_eq!(response.metadata().policy_retries(), 1);
+        assert!(!response.metadata().recovered_authentication());
+    }
+    assert_eq!(server.request_count(), 6);
+    assert_eq!(encodes.load(Ordering::SeqCst), 2);
+    assert_eq!(classifications.load(Ordering::SeqCst), 3);
+    assert_eq!(hooks.before.load(Ordering::SeqCst), 6);
+    assert_eq!(hooks.response.load(Ordering::SeqCst), 6);
+    assert_eq!(hooks.complete.load(Ordering::SeqCst), 3);
     assert_eq!(
         hooks.attempts.lock().expect("attempt capture").as_slice(),
         [
+            AttemptInfo {
+                index: 0,
+                policy_retry_index: 0,
+                authentication_recovery: false,
+            },
+            AttemptInfo {
+                index: 1,
+                policy_retry_index: 1,
+                authentication_recovery: false,
+            },
+            AttemptInfo {
+                index: 0,
+                policy_retry_index: 0,
+                authentication_recovery: false,
+            },
+            AttemptInfo {
+                index: 1,
+                policy_retry_index: 1,
+                authentication_recovery: false,
+            },
             AttemptInfo {
                 index: 0,
                 policy_retry_index: 0,
@@ -259,6 +315,139 @@ async fn facade_runtime_policy_retries_rejected_status_with_visible_attempts() {
             .lock()
             .expect("completion totals")
             .as_slice(),
-        [(2, 1, false)]
+        [(2, 1, false), (2, 1, false), (2, 1, false)]
     );
+}
+
+fn retry_rejected_status_policy(classifications: &Arc<AtomicUsize>) -> RetryPolicy {
+    let classifications = Arc::clone(classifications);
+    RetryPolicy::builder()
+        .max_retries_per_operation(1)
+        .classify_fn(move |attempt| {
+            classifications.fetch_add(1, Ordering::SeqCst);
+            match attempt.failure() {
+                RetryFailure::RejectedStatus { .. } => RetryDecision::Retry,
+                _ => RetryDecision::Stop,
+            }
+        })
+        .build()
+        .expect("bounded retry-sharing policy")
+}
+
+fn retry_client(server: &ScriptedServer, policy: RetryPolicy) -> RuntimeApi {
+    let proxy = SafeProxy::parse(server.url("")).expect("loopback proxy");
+    RuntimeApi::builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .retry(policy)
+        .build()
+        .expect("retry client")
+}
+
+async fn execute_retry_probe(
+    client: &RuntimeApi,
+    label: &str,
+) -> Result<Bytes, concord::error::ApiError> {
+    client
+        .resources("sharing".to_owned())
+        .submit(
+            label.to_owned(),
+            BodyInput {
+                value: label.to_owned(),
+                encodes: Arc::new(AtomicUsize::new(0)),
+            },
+        )
+        .await
+}
+
+#[tokio::test]
+async fn client_clones_share_the_selected_policy_budget() {
+    let server = ScriptedServer::start([
+        ResponseScript::status(503, b"first".to_vec()),
+        ResponseScript::ok(b"first-recovered".to_vec()),
+        ResponseScript::status(503, b"second-terminal".to_vec()),
+        ResponseScript::ok(b"must-remain".to_vec()),
+    ])
+    .expect("clone-sharing server");
+    let classifications = Arc::new(AtomicUsize::new(0));
+    let client = retry_client(&server, retry_rejected_status_policy(&classifications));
+    let clone = client.clone();
+
+    assert_eq!(
+        execute_retry_probe(&client, "first")
+            .await
+            .expect("first low-volume retry"),
+        Bytes::from_static(b"first-recovered")
+    );
+    let second = execute_retry_probe(&clone, "second")
+        .await
+        .expect_err("shared low-volume budget suppresses the second retry");
+
+    assert_eq!(second.category(), concord::error::ErrorCategory::HttpStatus);
+    assert_eq!(server.request_count(), 3);
+    assert_eq!(classifications.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn explicit_policy_clones_share_while_independent_policy_builds_isolate() {
+    let shared_first = ScriptedServer::start([
+        ResponseScript::status(503, b"first".to_vec()),
+        ResponseScript::ok(b"shared-first".to_vec()),
+    ])
+    .expect("first shared-policy server");
+    let shared_second = ScriptedServer::start([
+        ResponseScript::status(503, b"second".to_vec()),
+        ResponseScript::ok(b"must-remain".to_vec()),
+    ])
+    .expect("second shared-policy server");
+    let shared_classifications = Arc::new(AtomicUsize::new(0));
+    let shared_policy = retry_rejected_status_policy(&shared_classifications);
+    let first_client = retry_client(&shared_first, shared_policy.clone());
+    let second_proxy = SafeProxy::parse(shared_second.url("")).expect("second shared proxy");
+    let second_client = RuntimeApi::builder()
+        .configure_http(move |http| http.proxy(second_proxy))
+        .configure_runtime(move |runtime| runtime.retry_policy(shared_policy))
+        .build()
+        .expect("lower-level runtime retry client");
+
+    execute_retry_probe(&first_client, "shared-first")
+        .await
+        .expect("first explicit policy clone retries");
+    execute_retry_probe(&second_client, "shared-second")
+        .await
+        .expect_err("second explicit policy clone shares consumed budget");
+    assert_eq!(shared_first.request_count(), 2);
+    assert_eq!(shared_second.request_count(), 1);
+    assert_eq!(shared_classifications.load(Ordering::SeqCst), 2);
+
+    let isolated_first = ScriptedServer::start([
+        ResponseScript::status(503, b"first".to_vec()),
+        ResponseScript::ok(b"isolated-first".to_vec()),
+    ])
+    .expect("first isolated-policy server");
+    let isolated_second = ScriptedServer::start([
+        ResponseScript::status(503, b"second".to_vec()),
+        ResponseScript::ok(b"isolated-second".to_vec()),
+    ])
+    .expect("second isolated-policy server");
+    let first_classifications = Arc::new(AtomicUsize::new(0));
+    let second_classifications = Arc::new(AtomicUsize::new(0));
+    let first_isolated_client = retry_client(
+        &isolated_first,
+        retry_rejected_status_policy(&first_classifications),
+    );
+    let second_isolated_client = retry_client(
+        &isolated_second,
+        retry_rejected_status_policy(&second_classifications),
+    );
+
+    execute_retry_probe(&first_isolated_client, "isolated-first")
+        .await
+        .expect("first independent policy retries");
+    execute_retry_probe(&second_isolated_client, "isolated-second")
+        .await
+        .expect("second independent policy retries");
+    assert_eq!(isolated_first.request_count(), 2);
+    assert_eq!(isolated_second.request_count(), 2);
+    assert_eq!(first_classifications.load(Ordering::SeqCst), 1);
+    assert_eq!(second_classifications.load(Ordering::SeqCst), 1);
 }

@@ -141,10 +141,6 @@ documented, or observe the supplied event. It may not:
 - return a native response, transport client, or unbounded stream;
 - rely on core-private or generated-private paths.
 
-Dangerous feature flags relax only the exact capabilities documented in
-[Dangerous capabilities](../../reference/dangerous.md). They do not turn
-extension traits into native transport hooks.
-
 ## Failure modes
 
 Every extension family needs proofs for:

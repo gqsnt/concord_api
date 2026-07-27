@@ -270,6 +270,112 @@ async fn runtime_default_has_no_managed_retry_policy() {
     );
 }
 
+#[cfg(feature = "http2")]
+#[tokio::test]
+async fn private_protocol_recovery_is_one_visible_attempt_and_consumes_no_policy_retry_budget() {
+    let server = crate::http::test_support::H2RefusedServer::start(1, 2).await;
+    let physical_attempts = server.physical_attempts();
+    let base_url = server.base_url();
+    let classifications = Arc::new(AtomicUsize::new(0));
+    let classifications_for_policy = Arc::clone(&classifications);
+    let policy = RetryPolicy::builder()
+        .max_retries_per_operation(1)
+        .classify_fn(move |_| {
+            classifications_for_policy.fetch_add(1, Ordering::SeqCst);
+            RetryDecision::Retry
+        })
+        .build()
+        .expect("bounded protocol-recovery observation policy");
+    let shared_policy = policy.clone();
+    let probe = Arc::new(RetryLifecycleProbe::default());
+    let hooks: Arc<dyn RuntimeHooks> = probe.clone();
+    let limiter: Arc<dyn RateLimiter> = probe.clone();
+    let core = ClientCore::build(
+        &base_url,
+        HttpConfigBuilder::new().http2_prior_knowledge(),
+        RuntimeConfigBuilder::new()
+            .hooks(hooks)
+            .rate_limiter(limiter)
+            .retry_policy(policy),
+    )
+    .expect("HTTP/2 protocol-recovery core");
+
+    let response = retry_request(core, Duration::from_secs(30))
+        .response()
+        .await
+        .expect("private protocol recovery succeeds");
+
+    server.finish().await;
+    assert_eq!(physical_attempts.load(Ordering::SeqCst), 2);
+    assert_eq!(classifications.load(Ordering::SeqCst), 0);
+    assert_eq!(probe.before_attempts().len(), 1);
+    assert_eq!(probe.before_attempts()[0].1, AttemptInfo::INITIAL);
+    assert_eq!(probe.acquisitions(), [AttemptInfo::INITIAL]);
+    assert_eq!(
+        probe.observations(),
+        [(AttemptInfo::INITIAL, StatusCode::OK)]
+    );
+    assert_eq!(probe.response_attempts().len(), 1);
+    assert_eq!(
+        probe.completions(),
+        [CompletionSnapshot {
+            operation_id: probe.before_attempts()[0].0,
+            attempts_started: 1,
+            policy_retries: 0,
+            recovered_authentication: false,
+            outcome: CompletionOutcome::Success,
+            final_status: Some(StatusCode::OK),
+        }]
+    );
+    assert_eq!(response.metadata().attempts_started(), 1);
+    assert_eq!(response.metadata().policy_retries(), 0);
+    let logical_origin = url::Url::parse(&base_url).expect("logical retry origin");
+    assert!(
+        shared_policy.reserve_retry(&logical_origin),
+        "a hidden protocol recovery must not consume managed retry reservation"
+    );
+}
+
+#[cfg(feature = "http2")]
+#[tokio::test]
+async fn private_protocol_recovery_does_not_resend_a_one_shot_native_body() {
+    let server = crate::http::test_support::H2RefusedServer::start(1, 1).await;
+    let physical_attempts = server.physical_attempts();
+    let probe = Arc::new(RetryLifecycleProbe::default());
+    let hooks: Arc<dyn RuntimeHooks> = probe.clone();
+    let limiter: Arc<dyn RateLimiter> = probe.clone();
+    let core = ClientCore::build(
+        &server.base_url(),
+        HttpConfigBuilder::new().http2_prior_knowledge(),
+        RuntimeConfigBuilder::new()
+            .hooks(hooks)
+            .rate_limiter(limiter),
+    )
+    .expect("HTTP/2 one-shot core");
+    let polls = Arc::new(AtomicUsize::new(0));
+    let body = RequestBody::stream(StreamBody::from_stream(BodyPollProbe::new(
+        [ProbeFrame::Data(b"one-shot-protocol-body")],
+        &polls,
+    )));
+
+    let error = body_request(core, body)
+        .await
+        .expect_err("REFUSED_STREAM cannot replay a one-shot native body");
+
+    server.finish().await;
+    assert!(matches!(
+        error.category(),
+        ErrorCategory::Connect | ErrorCategory::Transport
+    ));
+    assert_eq!(physical_attempts.load(Ordering::SeqCst), 1);
+    assert_eq!(probe.before_attempts().len(), 1);
+    assert_eq!(probe.acquisitions(), [AttemptInfo::INITIAL]);
+    assert!(probe.observations().is_empty());
+    assert!(probe.response_attempts().is_empty());
+    assert_eq!(probe.completions()[0].attempts_started, 1);
+    assert_eq!(probe.completions()[0].policy_retries, 0);
+}
+
 #[tokio::test]
 async fn connect_and_transport_failures_retry_with_one_visible_lifecycle() {
     for failure in [TransportFailure::Connect, TransportFailure::Transport] {

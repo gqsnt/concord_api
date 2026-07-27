@@ -26,7 +26,6 @@ syn::custom_keyword!(query);
 syn::custom_keyword!(rate_limit);
 syn::custom_keyword!(remove);
 syn::custom_keyword!(replace);
-syn::custom_keyword!(reqwest_default);
 syn::custom_keyword!(retry);
 syn::custom_keyword!(scope);
 syn::custom_keyword!(secret);

@@ -7,7 +7,7 @@ crate version, or an extension API.
 
 ## Current contract
 
-The current generated-contract version is **28**.
+The current generated-contract version is **29**.
 
 | Owner | Current source of truth | Responsibility |
 |---|---|---|
@@ -17,15 +17,16 @@ The current generated-contract version is **28**.
 | generated expansion | private support module inside each `api!` expansion | const handshake against the façade path |
 
 Every expansion calls the façade-relative
-`__private::assert_generated_contract(28)` during const evaluation. It also
+`__private::assert_generated_contract(29)` during const evaluation. It also
 asserts that the independent compiler and runtime agree on structural ceilings
 the compiler must enforce before generated Rust reaches core.
 
-Version 28 replaced the removed raw-response helper and request type with the
-normal response-bytes request bridge. Old generated Rust calls a private
-operation that no longer exists, so it must not claim compatibility with the
-new façade/core. Version 27 introduced core-owned bounded formatting for
-generated rate-limit key dimensions.
+Version 29 removed the generated native-retry baseline, whose old expansion
+called the removed `retry_reqwest_default` bridge, and added the generated
+`.retry(RetryPolicy)` builder surface. Version 28 replaced the removed
+raw-response helper and request type with the normal response-bytes request
+bridge. Version 27 introduced core-owned bounded formatting for generated
+rate-limit key dimensions.
 
 ## What the contract covers
 
@@ -130,7 +131,7 @@ It must not:
 - succeed merely because the incompatible endpoint is never executed.
 
 The contract-mismatch fixture substitutes a façade reporting version 999 while
-the generated consumer expects 28. `concord-xtask fixtures` requires the
+the generated consumer expects 29. `concord-xtask fixtures` requires the
 focused mismatch diagnostic and treats unexpected compilation success as a
 failure.
 
@@ -156,7 +157,7 @@ unavailable.
 | Claim | Owner |
 |---|---|
 | compiler emits version and limit assertions | macro bridge unit tests |
-| core implements exactly version 28 | `crates/concord-core/tests/public_api/generated_contract.rs` |
+| core implements exactly version 29 | `crates/concord-core/tests/public_api/generated_contract.rs` |
 | mismatch fails early and clearly | `fixtures/dependency/contract_mismatch` |
 | renamed façade works | `fixtures/dependency/renamed_facade` |
 | emitted code has no direct core path | xtask policy plus macro emission tests |

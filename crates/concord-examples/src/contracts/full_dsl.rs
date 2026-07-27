@@ -31,7 +31,6 @@ api! {
             secret api_key: String;
             credential application_key = api_key(secret.api_key);
         }
-        retry off;
         host ["api"];
         path ["v1"];
         query {
@@ -86,15 +85,6 @@ api! {
 }
 // ANCHOR_END: core_contract
 
-api! {
-    client ReqwestRetryReference {
-        base "https://retry-reference.example.test/";
-        retry reqwest_default;
-    }
-
-    GET health() -> NoContent;
-}
-
 /// Constructs representative direct and explicit requests with `set_*` controls.
 // ANCHOR: value_controls
 pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
@@ -146,8 +136,6 @@ pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
             .reset_scope_label(),
     );
     // ANCHOR_END: direct_and_explicit
-    let retry_client = ReqwestRetryReference::builder().build()?;
-    let _: reqwest_retry_reference::HealthRequest = retry_client.health();
     Ok(())
 }
 // ANCHOR_END: value_controls

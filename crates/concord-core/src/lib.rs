@@ -9,8 +9,6 @@
 #![deny(missing_docs)]
 
 pub mod contracts;
-#[cfg(feature = "dangerous-custom-retry")]
-pub mod dangerous;
 #[cfg(feature = "records")]
 pub mod records;
 

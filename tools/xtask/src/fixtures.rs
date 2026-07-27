@@ -66,7 +66,7 @@ pub(crate) fn run_all(root: &Path) -> Result<(), String> {
         "concord-fixture-contract-mismatch",
         "dependency/contract-mismatch",
         &[],
-        &["concord macro/facade contract mismatch: facade 999, generated 28"],
+        &["concord macro/facade contract mismatch: facade 999, generated 29"],
     )?;
 
     for (binary, features, expected) in [
@@ -102,11 +102,6 @@ pub(crate) fn run_all(root: &Path) -> Result<(), String> {
             "multipart_absent",
             "fixture-absence",
             &["cannot find type `Multipart` in this scope"][..],
-        ),
-        (
-            "dangerous_absent",
-            "fixture-absence",
-            &["no method named `dangerous_custom_retry`"][..],
         ),
         (
             "transport_absent",

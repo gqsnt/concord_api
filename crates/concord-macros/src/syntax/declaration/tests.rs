@@ -17,7 +17,6 @@ fn parses_singular_client_root_children_values_and_all_shaping_layers() {
                 locale: Option<String>;
                 limit: u32 = 50;
             }
-            retry reqwest_default;
             host ["api"];
             path ["v1"];
             query { "tenant" = vars.tenant; }
@@ -160,6 +159,31 @@ fn singular_api_structure_and_vars_diagnostics_are_focused() {
             .to_string()
             .contains("inside the `client` block")
     );
+}
+
+#[test]
+fn removed_retry_dsl_has_a_focused_migration_diagnostic() {
+    for declaration in [
+        quote! {
+            client Api {
+                base "https://example.test";
+                retry off;
+            }
+        },
+        quote! {
+            client Api {
+                base "https://example.test";
+                retry reqwest_default;
+            }
+        },
+    ] {
+        let error = parse(declaration)
+            .err()
+            .expect("removed retry DSL must fail");
+        let diagnostic = error.to_string();
+        assert!(diagnostic.contains("`retry` DSL clause was removed"));
+        assert!(diagnostic.contains("`.retry(policy)`"));
+    }
 }
 
 #[test]
@@ -804,7 +828,6 @@ fn named_client_scope_and_endpoint_entries_are_order_independent() {
     let client_clauses = [
         quote!(base "https://example.test";),
         quote!(vars { tenant: String; }),
-        quote!(retry reqwest_default;),
         quote!(timeout 3s;),
         quote!(headers { "X-Static" = "one"; }),
     ];

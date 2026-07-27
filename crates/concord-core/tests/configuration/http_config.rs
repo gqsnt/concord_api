@@ -13,8 +13,7 @@ fn always_available_methods(builder: HttpConfigBuilder, proxy: SafeProxy) -> Htt
         .https_only(true)
         .http1_only()
         .proxy(proxy)
-        .retry_reqwest_default()
-        .retry_off()
+        .protocol_recovery(false)
         .provider_retry(ProviderRetry::Disabled)
 }
 

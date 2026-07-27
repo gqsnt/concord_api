@@ -81,10 +81,10 @@ chunks remain unpolled. This is the normal way to stop a download early.
 
 Request streams cross a similar final managed boundary. Empty request chunks
 are suppressed and bounded before native transport, and nonempty bytes remain
-under the request-body limit. A one-shot stream may not be replayable for an
-authentication recovery or explicitly enabled transport retry; Concord fails
-according to the body contract rather than silently recreating application
-input.
+under the request-body limit. A one-shot stream suppresses authentication
+recovery and optional managed policy retry rather than silently recreating
+application input. Private protocol recovery cannot resend a non-cloneable
+native body.
 
 `ByteStream` is deliberately media-independent and does not expose a native
 response. Use `.response()` when the endpoint supports metadata and you need

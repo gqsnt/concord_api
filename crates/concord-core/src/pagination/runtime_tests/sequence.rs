@@ -420,7 +420,7 @@ async fn non_clone_non_sync_controller_is_constructed_once_validated_and_bound_p
 
 #[cfg(feature = "http2")]
 #[tokio::test]
-async fn hidden_reqwest_retry_does_not_repeat_pagination_preparation_or_page_lifecycle() {
+async fn protocol_recovery_does_not_repeat_pagination_preparation_or_page_lifecycle() {
     let server = crate::http::test_support::H2RefusedServer::start(1, 2).await;
     let physical_attempts = server.physical_attempts();
     let hooks = Arc::new(PaginationProbe::default());
@@ -429,9 +429,7 @@ async fn hidden_reqwest_retry_does_not_repeat_pagination_preparation_or_page_lif
     let configured_limiter: Arc<dyn RateLimiter> = limiter.clone();
     let core = ClientCore::build(
         &server.base_url(),
-        HttpConfigBuilder::new()
-            .http2_prior_knowledge()
-            .retry_reqwest_default(),
+        HttpConfigBuilder::new().http2_prior_knowledge(),
         RuntimeConfigBuilder::new()
             .hooks(configured_hooks)
             .rate_limiter(configured_limiter),
@@ -445,7 +443,7 @@ async fn hidden_reqwest_retry_does_not_repeat_pagination_preparation_or_page_lif
 
     let items = paginate_with(Request::new(core, endpoint), PageLimit::Take(1))
         .await
-        .expect("native retry pagination");
+        .expect("private protocol-recovery pagination");
     assert!(items.is_empty());
     server.finish().await;
 

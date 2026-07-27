@@ -37,7 +37,6 @@ jobs:
       - run: cargo check -p concord --lib --no-default-features --features json --locked
       - run: cargo check -p concord --lib --no-default-features --features oauth2-client --locked
       - run: cargo check -p concord --lib --no-default-features --features multipart --locked
-      - run: cargo check -p concord --lib --no-default-features --features dangerous-custom-retry --locked
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo run --locked -p concord-xtask -- policy --locked
       - name: Workflow syntax

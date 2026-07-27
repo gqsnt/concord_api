@@ -221,12 +221,6 @@ pub mod runtime {
     pub use concord_core::contracts::{OperationId, RuntimeConfigBuilder};
 }
 
-/// Explicitly feature-gated capabilities with reduced ordinary safety guarantees.
-#[cfg(feature = "dangerous-custom-retry")]
-pub mod dangerous {
-    pub use concord_core::dangerous::ReqwestRetryBuilder;
-}
-
 /// Generated-code bridge. This is not a user extension surface.
 #[doc(hidden)]
 pub mod __private {

@@ -102,10 +102,6 @@ a safe URL, a bounded plan, and sanitized response headers. Hooks receive
 sanitized lifecycle events. First-party extras use those same public
 contracts; they have no friend-only transport path.
 
-The dangerous features relax selected guarantees without exposing the native
-response or creating another executor. Their exact scope belongs to
-[Dangerous capabilities](../reference/dangerous.md).
-
 ## Finite and safe by construction
 
 Bounds are applied where data first becomes owned or work first becomes

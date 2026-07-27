@@ -93,7 +93,6 @@ api! {
             locale: Option<String>;
             client_marker: crate::DropProbe = crate::CLIENT_DEFAULT;
         }
-        retry off;
         host ["api"];
         path ["v1"];
         query {

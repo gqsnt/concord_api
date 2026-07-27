@@ -6,7 +6,7 @@
 
 - One complete mdBook documentation site for new users, feature users,
   extension authors, and maintainers. It includes a request-executing Start
-  path, the Core Guide, focused feature guides, nine compiled-example recipes,
+  path, the Core Guide, focused feature guides, ten compiled-example recipes,
   public extension paths, exact reference navigation, architecture/compiler
   internals, runtime contracts, and maintenance procedures. The root
   `book.toml`, `just site`, `just site-serve`, strict xtask inventory/link/include
@@ -110,6 +110,10 @@
   current-authentication preflight, limiter, private materialization,
   response observation, and challenge/status lifecycle under one operation
   deadline and completion.
+- Generated builders now install managed policy with `.retry(RetryPolicy)`.
+  Application HTTP uses private known-safe protocol recovery by default and
+  can disable it with `protocol_recovery(false)`. Removing the old native
+  retry DSL/baseline raises the generated-contract version to 29.
 - Every generated public value mutation now uses
   `value(value) -> set_value(value)`. Absence-capable values retain
   `clear_value()`; values with declaration defaults retain `reset_value()`.
@@ -170,6 +174,9 @@
 - The `dangerous-raw-response` feature, `.raw_response()` terminal, raw response
   wrapper, and generated capability-token protocol. The normal
   `.response_bytes()` terminal replaces them without compatibility aliases.
+- The `dangerous-custom-retry` feature, `concord::dangerous` namespace,
+  Reqwest retry-builder reexport, native retry builder methods, and retry DSL.
+  Managed `RetryPolicy` is the application retry surface.
 
 ### Safety guarantees
 

@@ -148,9 +148,3 @@ fn local_limiter_is_exposed_by_the_rate_limit_domain() {
     assert!(!public_type::<concord::rate_limit::LocalRateLimiter>().is_empty());
     assert!(!public_type::<concord::rate_limit::RetryAfterObserver>().is_empty());
 }
-
-#[cfg(feature = "dangerous-custom-retry")]
-#[test]
-fn dangerous_retry_requires_the_explicit_domain_and_feature() {
-    assert!(!public_type::<concord::dangerous::ReqwestRetryBuilder>().is_empty());
-}

@@ -338,11 +338,11 @@ fn repeated_configuration_closures_compose_immediately_in_call_order() {
     let builder = ExampleApi::builder()
         .configure_http(|http| {
             assert_eq!(http_order.fetch_add(1, Ordering::SeqCst), 0);
-            http.https_only(true).retry_reqwest_default()
+            http.https_only(true).protocol_recovery(false)
         })
         .configure_http(|http| {
             assert_eq!(http_order.fetch_add(1, Ordering::SeqCst), 1);
-            http.https_only(false).retry_off()
+            http.https_only(false).protocol_recovery(true)
         });
     assert_eq!(http_order.load(Ordering::SeqCst), 2);
     builder

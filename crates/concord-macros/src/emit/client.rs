@@ -12,7 +12,6 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
     let contract_assertion = generated_contract_assertion();
 
     let value_summary = value_category_summary(&client.values, "Client vars");
-    let retry_summary = retry_summary(client.retry);
     let credential_summary = credential_summary(client);
     let timeout_summary = client.config.timeout.map_or_else(
         || "Default operation timeout: disabled.".to_owned(),
@@ -28,7 +27,7 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
         client.base.value()
     );
     let builder_doc = format!(
-        "Builder for [`{client_name}`].\n\n# Inputs\n\n{value_summary} {credential_summary}\n\n# Value controls\n\nMutate public values with `set_*`. Optional values also expose `clear_*`; defaulted values also expose `reset_*`. A builder reset discards the override so `build` evaluates the DSL default.\n\n# Defaults\n\nBase URL: `{}`. {timeout_summary} {retry_summary} {rate_summary} Default expressions are evaluated once by `build` unless overridden.\n\n# Configuration\n\nUse `configure_http` for transport policy and `configure_runtime` for hooks, limits, limiter selection, and runtime policy. Transformations apply immediately in call order.",
+        "Builder for [`{client_name}`].\n\n# Inputs\n\n{value_summary} {credential_summary}\n\n# Value controls\n\nMutate public values with `set_*`. Optional values also expose `clear_*`; defaulted values also expose `reset_*`. A builder reset discards the override so `build` evaluates the DSL default.\n\n# Defaults\n\nBase URL: `{}`. {timeout_summary} {rate_summary} Default expressions are evaluated once by `build` unless overridden.\n\n# Configuration\n\nUse `retry` for a Concord-managed retry policy, `configure_http` for transport policy, and `configure_runtime` for hooks, limits, limiter selection, and runtime policy. Transformations apply immediately in call order.",
         client.base.value()
     );
     let support_doc = format!(
@@ -157,14 +156,6 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
     let credentials_module = generate_credentials_module(client, core_path);
     let credentials_method = generate_credentials_method(client);
 
-    let retry_baseline = match &client.retry {
-        ResolvedRetry::Disabled => {
-            quote!(__concord_generated::__core::__private::default_http_config())
-        }
-        ResolvedRetry::ReqwestDefault => quote!(
-            __concord_generated::__core::__private::default_http_config().retry_reqwest_default()
-        ),
-    };
     let runtime_baseline = client.config.timeout.map_or_else(
         || quote!(__concord_generated::__core::__private::default_runtime_config()),
         |duration| {
@@ -365,7 +356,9 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
                         #(#builder_value_initializers)*
                         #(#secret_builder_initializers)*
                         #(#provider_builder_initializers)*
-                        __concord_http: ::std::option::Option::Some(#retry_baseline),
+                        __concord_http: ::std::option::Option::Some(
+                            __concord_generated::__core::__private::default_http_config()
+                        ),
                         __concord_runtime: ::std::option::Option::Some(#runtime_baseline),
                     }
                 }
@@ -405,6 +398,19 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
                         unreachable!("generated runtime builder state is internally consistent");
                     };
                     self.__concord_runtime = ::std::option::Option::Some(configure(runtime));
+                    self
+                }
+
+                #[must_use]
+                /// Installs a Concord-managed retry policy immediately and in call order.
+                ///
+                /// A later `retry` call or runtime configuration transformation replaces it.
+                pub fn retry(mut self, policy: #core_path::retry::RetryPolicy) -> Self {
+                    let Some(runtime) = self.__concord_runtime.take() else {
+                        unreachable!("generated runtime builder state is internally consistent");
+                    };
+                    self.__concord_runtime =
+                        ::std::option::Option::Some(runtime.retry_policy(policy));
                     self
                 }
 
@@ -579,6 +585,8 @@ mod tests {
         assert!(output.contains("pub struct ArtifactApi"));
         assert!(output.contains("pub struct ArtifactApiBuilder"));
         assert!(output.contains("pub fn builder"));
+        assert!(output.contains("pub fn retry"));
+        assert!(output.contains("retry_policy"));
         assert!(output.contains("pub trait Endpoint"));
     }
 }

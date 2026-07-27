@@ -24,7 +24,6 @@ task.
 | `gzip` | no | Gzip response decompression |
 | `brotli` | no | Brotli response decompression |
 | `deflate` | no | Deflate response decompression |
-| `dangerous-custom-retry` | no | Custom native transport retry policy |
 <!-- END GENERATED FEATURES -->
 
 ## Select a feature set
@@ -52,8 +51,8 @@ HTTP/2 requires `http2`; and a declaration with nonempty rate rules requires
 an explicitly configured limiter when `rate-limit` is absent.
 
 Cargo features are additive and unified for each resolved package. Enabling a
-dangerous feature through any dependency enables its public surface for the
-whole binary. Audit the resolved feature graph rather than assuming one leaf
+feature through any dependency enables its public surface for the whole
+binary. Audit the resolved feature graph rather than assuming one leaf
 dependency can keep a capability private.
 
 ## Feature composition
@@ -66,7 +65,6 @@ dependency can keep a capability private.
 | `records` alone | generic `Records<D>` and downstream decoder contracts |
 | `oauth2-client` | helper types only; provider HTTP still needs a TLS-capable build to call an HTTPS token endpoint |
 | all decompression features | independent gzip, Brotli, and deflate response decoding |
-| `dangerous-custom-retry` | the custom native transport retry capability |
 
 ## Capability notes
 
@@ -93,7 +91,6 @@ dependency can keep a capability private.
   `concord::rate_limit`. Calling `.observer(...)` replaces the built-in
   observer, so custom policy must delegate when bounded `Retry-After`
   handling should remain.
-- Dangerous features never join the default set.
 - Generated request terminals do not depend on façade feature tokens.
 - Feature selection changes available capabilities; it never disables the
   core request-head, lifecycle, redaction, or acquisition ceilings.
@@ -115,4 +112,4 @@ bounds. The macro does not infer that a type called `Json`, `Csv`, or
 - [Complete DSL reference](dsl.md#feature-dependent-capabilities)
 - [Limits](limits.md)
 - [Compatibility and MSRV](compatibility.md)
-- [Dangerous capabilities](dangerous.md)
+- [Managed retries](../features/retries.md)

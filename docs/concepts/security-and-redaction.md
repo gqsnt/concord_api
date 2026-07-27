@@ -140,22 +140,12 @@ accessors. Its `Debug` output omits the logical URL, header values, and body
 value. Once accessed, those values are application-owned data subject to the
 same policy as decoded output.
 
-## Dangerous capabilities
-
-A custom native retry classifier can observe native materialized URLs,
-including private query authentication.
-
-That value does not appear in Concord's automatic diagnostics. Application
-code inside this capability owns confidentiality. See
-[Dangerous capabilities](../reference/dangerous.md) before enabling the
-feature.
-
 ## Verification
 
 Use unique sentinels in tests and search every formatting and observation
 surface recursively. Cover plans, descriptions, generated request `Debug`,
 hooks, completion, errors and their sources, rate metadata, provider failures,
-terminal status states, and dangerous-capability formatting.
+and terminal status states.
 
 Also test the positive boundary: private authentication must reach the
 controlled loopback server even though it is absent from the public plan and
@@ -169,4 +159,4 @@ never authenticated.
 - [Hooks and observability](../features/hooks-and-observability.md)
 - [Error reference](../reference/errors.md)
 - [Finite behavior](finite-behavior.md)
-- [Dangerous capabilities](../reference/dangerous.md)
+- [Managed retries](../features/retries.md)

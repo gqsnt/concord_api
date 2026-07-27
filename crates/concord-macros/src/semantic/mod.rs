@@ -14,7 +14,7 @@ use syn::Ident;
 
 use self::model::{
     Api, Child, Client, ContractId, Credential, Endpoint, EndpointDocTimeout, NormalizedConfig,
-    RequestBody, ResolvedMethod, ResolvedRetry, Scope, Value,
+    RequestBody, ResolvedMethod, Scope, Value,
 };
 use self::surface::{
     EndpointDocContext, VisibleScopeDoc, canonical_ident, client_surface, endpoint_doc_model,
@@ -22,8 +22,8 @@ use self::surface::{
     validate_surface_modules,
 };
 use crate::syntax::ast::{
-    MethodKind as SourceMethod, RetrySelection as SourceRetry, SourceApi, SourceChild,
-    SourceEndpoint, SourceScope, TimeoutOperation,
+    MethodKind as SourceMethod, SourceApi, SourceChild, SourceEndpoint, SourceScope,
+    TimeoutOperation,
 };
 use auth::{
     convert_credentials, resolve_endpoint_credentials, validate_credential_cycles,
@@ -45,7 +45,6 @@ struct Resolver<'a> {
     client_surface: &'a self::model::ClientSurface,
     client_values: &'a [Value],
     credentials: &'a [Credential],
-    retry: ResolvedRetry,
     next_scope_id: usize,
     next_endpoint_id: usize,
 }
@@ -71,8 +70,6 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
     let client_name = source_client.name;
     let base = source_client.base.value;
     let surface = client_surface(&client_name);
-    let retry = resolve_retry(source_client.retry.map(|clause| clause.value));
-
     let (config, children) = {
         let mut resolver = Resolver {
             base: &base,
@@ -80,7 +77,6 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
             client_surface: &surface,
             client_values: &values,
             credentials: &credentials,
-            retry,
             next_scope_id: 0,
             next_endpoint_id: 0,
         };
@@ -114,7 +110,6 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
         values,
         secrets,
         credentials,
-        retry,
         requires_limiter: source_declares_limiter,
         config,
         children,
@@ -312,7 +307,6 @@ impl Resolver<'_> {
                 config: &config,
                 response: &response,
                 timeout,
-                native_retry: self.retry,
                 contract_id: &contract_id,
             },
         );
@@ -330,13 +324,6 @@ impl Resolver<'_> {
             pagination,
             dsl_path,
         })
-    }
-}
-
-fn resolve_retry(source: Option<SourceRetry>) -> ResolvedRetry {
-    match source.unwrap_or(SourceRetry::Disabled) {
-        SourceRetry::Disabled => ResolvedRetry::Disabled,
-        SourceRetry::ReqwestDefault => ResolvedRetry::ReqwestDefault,
     }
 }
 

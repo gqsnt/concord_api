@@ -186,10 +186,11 @@ domain gains an independent invariant and test owner.
 
 ## Generated contract decision
 
-Current generated-contract version 28 replaced the removed raw-response
-helper/type with the normal response-bytes request bridge. This prevents Rust
-emitted for the old raw terminal from claiming compatibility with the new
-façade/core. The private contract does not change for:
+Current generated-contract version 29 removed the old generated native-retry
+baseline and added the managed `.retry(RetryPolicy)` builder surface. This
+prevents expansions that call the removed `retry_reqwest_default` operation
+from claiming compatibility with the new façade/core. The private contract
+does not change for:
 
 - a source-language acceptance/diagnostic change;
 - the public `set_*` rename and independently derived clear/reset controls;

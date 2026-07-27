@@ -17,7 +17,6 @@ check:
     cargo check -p concord --lib --no-default-features --features json --locked
     cargo check -p concord --lib --no-default-features --features oauth2-client --locked
     cargo check -p concord --lib --no-default-features --features multipart --locked
-    cargo check -p concord --lib --no-default-features --features dangerous-custom-retry --locked
     cargo run --locked -p concord-xtask -- policy --locked
 
 lint:

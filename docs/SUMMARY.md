@@ -32,6 +32,7 @@
 - [Rate limiting](features/rate-limiting.md)
 - [Multipart uploads](features/multipart.md)
 - [Hooks and observability](features/hooks-and-observability.md)
+- [Managed retries](features/retries.md)
 - [Runtime-defined endpoints](features/runtime-endpoints.md)
 - [Production HTTP](features/production-http.md)
 
@@ -45,6 +46,7 @@
 - [Stream CSV or NDJSON records](recipes/stream-records.md)
 - [Testing API clients](recipes/testing-api-clients.md)
 - [Production configuration](recipes/production-configuration.md)
+- [Retry transient failures](recipes/retries.md)
 - [Riot-style client](recipes/riot.md)
 
 # Extending Concord
@@ -68,7 +70,6 @@
 - [Compatibility and MSRV](reference/compatibility.md)
 - [Finite behavior](concepts/finite-behavior.md)
 - [Security and redaction](concepts/security-and-redaction.md)
-- [Dangerous capabilities](reference/dangerous.md)
 - [Unsupported forms](reference/unsupported.md)
 
 ---

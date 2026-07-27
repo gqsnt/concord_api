@@ -818,7 +818,7 @@ async fn private_fallback_rejects_a_nonempty_runtime_plan_before_send() {
 
 #[cfg(feature = "http2")]
 #[tokio::test]
-async fn hidden_reqwest_retry_does_not_reenter_custom_limiter_or_lifecycle() {
+async fn private_protocol_recovery_does_not_reenter_custom_limiter_or_lifecycle() {
     let server = crate::http::test_support::H2RefusedServer::start(1, 2).await;
     let physical_attempts = server.physical_attempts();
     let hooks = Arc::new(ProbeHooks::new());
@@ -826,16 +826,16 @@ async fn hidden_reqwest_retry_does_not_reenter_custom_limiter_or_lifecycle() {
     let configured: Arc<dyn RateLimiter> = limiter.clone();
     let core = ClientCore::build(
         &server.base_url(),
-        HttpConfigBuilder::new()
-            .http2_prior_knowledge()
-            .retry_reqwest_default(),
+        HttpConfigBuilder::new().http2_prior_knowledge(),
         RuntimeConfigBuilder::new()
             .hooks(hooks.clone())
             .rate_limiter(configured),
     )
     .expect("real HTTP/2 core");
     assert_eq!(
-        bytes_request(core).await.expect("native retry recovery"),
+        bytes_request(core)
+            .await
+            .expect("private protocol recovery"),
         Bytes::new()
     );
     server.finish().await;
@@ -865,9 +865,7 @@ async fn hidden_reqwest_retry_does_not_reenter_custom_limiter_or_lifecycle() {
     let configured: Arc<dyn RateLimiter> = prepared_limiter.clone();
     let prepared_core = ClientCore::build(
         &prepared_server.base_url(),
-        HttpConfigBuilder::new()
-            .http2_prior_knowledge()
-            .retry_reqwest_default(),
+        HttpConfigBuilder::new().http2_prior_knowledge(),
         RuntimeConfigBuilder::new()
             .hooks(prepared_hooks.clone())
             .rate_limiter(configured),
@@ -877,11 +875,11 @@ async fn hidden_reqwest_retry_does_not_reenter_custom_limiter_or_lifecycle() {
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.hidden_retry"), Method::GET)
             .response_bytes()
             .build()
-            .expect("prepared hidden-retry endpoint");
+            .expect("prepared protocol-recovery endpoint");
     assert_eq!(
         Request::new(prepared_core, endpoint)
             .await
-            .expect("prepared native retry recovery"),
+            .expect("prepared private protocol recovery"),
         Bytes::new()
     );
     prepared_server.finish().await;
@@ -907,7 +905,7 @@ async fn hidden_reqwest_retry_does_not_reenter_custom_limiter_or_lifecycle() {
 
 #[cfg(feature = "http2")]
 #[tokio::test]
-async fn response_bytes_contains_hidden_reqwest_retry_inside_one_logical_attempt() {
+async fn response_bytes_contains_protocol_recovery_inside_one_logical_attempt() {
     let server = crate::http::test_support::H2RefusedServer::start(1, 2).await;
     let physical_attempts = server.physical_attempts();
     let hooks = Arc::new(ProbeHooks::new());
@@ -915,19 +913,17 @@ async fn response_bytes_contains_hidden_reqwest_retry_inside_one_logical_attempt
     let configured: Arc<dyn RateLimiter> = limiter.clone();
     let core = ClientCore::build(
         &server.base_url(),
-        HttpConfigBuilder::new()
-            .http2_prior_knowledge()
-            .retry_reqwest_default(),
+        HttpConfigBuilder::new().http2_prior_knowledge(),
         RuntimeConfigBuilder::new()
             .hooks(hooks.clone())
             .rate_limiter(configured),
     )
-    .expect("raw HTTP/2 core");
+    .expect("response-bytes HTTP/2 core");
 
     let response = bytes_request(core)
         .response_bytes()
         .await
-        .expect("response-bytes native retry recovery");
+        .expect("response-bytes private protocol recovery");
     assert!(response.value().is_empty());
     server.finish().await;
     assert_eq!(physical_attempts.load(Ordering::SeqCst), 2);

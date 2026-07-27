@@ -6,8 +6,7 @@ use syn::parse::{Parse, ParseStream};
 use syn::{Ident, LitStr, Token, braced, parenthesized};
 
 use super::ast::{
-    Clause, Layer, MethodKind, RetrySelection, SourceApi, SourceChild, SourceClient,
-    SourceEndpoint, SourceScope,
+    Clause, Layer, MethodKind, SourceApi, SourceChild, SourceClient, SourceEndpoint, SourceScope,
 };
 use super::credentials::{parse_auth, parse_credentials};
 use super::diagnostics::{
@@ -77,7 +76,6 @@ impl Parse for SourceClient {
         let mut base = None;
         let mut values = None;
         let mut credentials = None;
-        let mut retry = None;
         let mut layer = Layer::default();
 
         while !body.is_empty() {
@@ -108,10 +106,7 @@ impl Parse for SourceClient {
                 continue;
             }
             if body.peek(keyword::retry) {
-                let key_span = body.span();
-                let value = parse_retry(&body)?;
-                insert_clause(&mut retry, Clause { key_span, value }, "retry", &owner)?;
-                continue;
+                return Err(removed_retry_diagnostic(&body));
             }
             if parse_layer_clause(&body, &mut layer, true, &owner)? {
                 continue;
@@ -122,7 +117,7 @@ impl Parse for SourceClient {
                 );
             }
             return Err(body.error(
-                "unsupported client clause; expected `base`, `vars`, `credentials`, `retry`, `host`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit`",
+                "unsupported client clause; expected `base`, `vars`, `credentials`, `host`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit`",
             ));
         }
         let base = base.ok_or_else(|| {
@@ -135,7 +130,6 @@ impl Parse for SourceClient {
             base,
             values,
             credentials,
-            retry,
             layer,
         })
     }
@@ -209,7 +203,7 @@ fn parse_scope(input: ParseStream<'_>, depth: usize) -> syn::Result<SourceScope>
             continue;
         }
         if body.peek(keyword::retry) {
-            return Err(body.error("`retry` is client-only and cannot be declared in a scope"));
+            return Err(removed_retry_diagnostic(&body));
         }
         if is_client_only_declaration_start(&body) {
             return Err(body.error("this declaration is client-only and cannot appear in a scope"));
@@ -293,9 +287,7 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
                 continue;
             }
             if clauses.peek(keyword::retry) {
-                return Err(
-                    clauses.error("`retry` is client-only and cannot be declared on an endpoint")
-                );
+                return Err(removed_retry_diagnostic(&clauses));
             }
             if is_client_only_declaration_start(&clauses) {
                 return Err(clauses
@@ -373,19 +365,10 @@ fn parse_method(input: ParseStream<'_>) -> syn::Result<MethodKind> {
     }
 }
 
-fn parse_retry(input: ParseStream<'_>) -> syn::Result<RetrySelection> {
-    input.parse::<keyword::retry>()?;
-    let selection = if input.peek(keyword::off) {
-        input.parse::<keyword::off>()?;
-        RetrySelection::Disabled
-    } else if input.peek(keyword::reqwest_default) {
-        input.parse::<keyword::reqwest_default>()?;
-        RetrySelection::ReqwestDefault
-    } else {
-        return Err(input.error("retry must be `off` or `reqwest_default`"));
-    };
-    input.parse::<Token![;]>()?;
-    Ok(selection)
+fn removed_retry_diagnostic(input: ParseStream<'_>) -> syn::Error {
+    input.error(
+        "the `retry` DSL clause was removed; install a managed `RetryPolicy` with the generated builder `.retry(policy)`",
+    )
 }
 
 fn parse_layer_clause(

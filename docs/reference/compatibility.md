@@ -98,9 +98,6 @@ redaction, or finite head/body contracts. It does remove the default TLS,
 HTTP/2, and local-limiter implementations. A declaration that needs an absent
 helper or default must select it explicitly or provide a public extension.
 
-Dangerous features are not compatibility shims. They deliberately expose a
-reduced-guarantee capability and remain independently opt-in.
-
 ## Change expectations
 
 Until a published compatibility policy exists, any public declaration syntax,

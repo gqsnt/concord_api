@@ -832,6 +832,20 @@ fn endpoint_backed_dependency_and_authentication_cycles_are_rejected() {
 
 #[test]
 fn generated_name_collisions_cover_request_types_and_inherent_methods() {
+    let retry_method = resolve(
+        parse::parse(quote! {
+            client Api {
+                base "https://example.test";
+            }
+            GET r#retry() -> Bytes;
+        })
+        .expect("AST"),
+    )
+    .err()
+    .expect("generated retry method collision");
+    assert!(retry_method.to_string().contains("retry"));
+    assert!(retry_method.to_string().contains("reserved Concord method"));
+
     let trait_item = resolve(
         parse::parse(quote! {
             client Api {
