@@ -16,7 +16,7 @@ There are two complementary probes:
 
 | Probe | Measures | Does not establish |
 |---|---|---|
-| `concord_overhead` | runtime construction, planning, codec, body, execution, authentication, limiting, pagination, streaming, and record operations | latency SLO, throughput capacity, production network behavior |
+| `concord_overhead` | runtime construction, planning, codec, body, direct and managed-retry execution, authentication, limiting, pagination, streaming, and record operations | latency SLO, throughput capacity, production network behavior |
 | `expansion_scale` | generated expansion size and local expansion elapsed time for growing endpoint counts | compiler-wide regression threshold, downstream incremental-build time |
 
 The implementations and their command-specific notes remain in
@@ -43,12 +43,21 @@ Run its default observation:
 cargo bench --locked -p concord-perf --bench concord_overhead
 ```
 
+Run only the isolated managed-retry category:
+
+```text
+cargo bench --locked -p concord-perf --bench concord_overhead -- --category managed-retry
+```
+
+Add `--smoke` for one logical operation, or use `--list` to print selectable
+category sets. An unknown category or argument fails the command.
+
 The harness is a normal executable rather than the unstable built-in benchmark
 harness. `--smoke` forces one iteration. Otherwise
 `CONCORD_BENCH_ITERATIONS` selects from 1 through 1,000, with 100 as the
 default.
 
-The executable audits that all fifteen distinct categories ran:
+The default executable audits that all sixteen distinct categories ran:
 
 1. core client construction;
 2. generated endpoint construction;
@@ -57,19 +66,32 @@ The executable audits that all fifteen distinct categories ran:
 5. codec encoding and decoding;
 6. body-limit polling;
 7. direct execution overhead;
-8. explicit generated endpoint execution overhead;
-9. runtime endpoint execution overhead;
-10. authenticated managed execution;
-11. rate-limited managed execution;
-12. pagination loop overhead;
-13. stream wrapping;
-14. generic specification selection;
-15. record framing.
+8. managed retry: one rejected-status retry;
+9. explicit generated endpoint execution overhead;
+10. runtime endpoint execution overhead;
+11. authenticated managed execution;
+12. rate-limited managed execution;
+13. pagination loop overhead;
+14. stream wrapping;
+15. generic specification selection;
+16. record framing.
 
 Each timer stops only after its named operation completes. Planning uses
 `client.plan(...)` and the real credential-sanitized public-head path.
 Managed-execution categories use generated requests, the ordinary lifecycle,
 and bounded local transport. There is no hidden fast-path executor.
+
+The managed-retry category runs a bodyless generated `GET` through the public
+façade and real managed executor. An untimed correctness preflight proves one
+503 classification, two started attempts, one performed policy retry, no
+authentication recovery, two physical application sends, and a final small
+successful body. Timed logical operations then run sequentially against
+ordered 503/success response pairs and verify aggregate classifier and
+physical-send counts before reporting. Private protocol recovery is disabled.
+The policy uses `max_retries_per_operation(1)` and `without_budget()` only so
+each observation deterministically measures one visible managed retry rather
+than rolling-budget availability. It remains an observational local result
+with no regression threshold.
 
 ## Expansion-scale probe
 
@@ -132,6 +154,9 @@ change affects one stage:
 - compare safe planning for public-head shaping and validation;
 - compare direct, explicit, and runtime endpoint execution together to detect
   divergent paths;
+- compare the isolated managed-retry category with itself to localize one
+  visible retry lifecycle without conflating private protocol recovery or
+  budget availability;
 - compare authentication, limiting, and pagination against direct execution
   to localize policy overhead;
 - compare body-limit polling and record framing for finite-progress changes.
@@ -182,10 +207,12 @@ Before interpreting timings:
 
 1. run the relevant correctness owner;
 2. compile the benchmark with `just bench`;
-3. run `--smoke` and confirm the 15/15 category audit;
-4. run the chosen repeated observation;
-5. rerun the baseline under the same conditions;
-6. record any missing expansion tool or environmental limitation.
+3. run `--smoke` and confirm the 16/16 category audit;
+4. run `--category managed-retry --smoke` and confirm its 1/1 audit plus two
+   expected physical sends;
+5. run the chosen repeated observation;
+6. rerun the baseline under the same conditions;
+7. record any missing expansion tool or environmental limitation.
 
 Benchmark compilation is part of `just verify`; timing execution and
 `expansion_scale` are deliberate manual observations. CI does not claim a

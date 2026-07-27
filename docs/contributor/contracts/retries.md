@@ -150,7 +150,14 @@ pressure, Concord:
 
 Capacity pressure and poisoned internal synchronization fail closed for retry
 admission; they do not replace a useful remote failure with a new public
-error.
+error. A poisoned budget declines initial-dispatch accounting and every retry
+reservation without recovering or replacing the poisoned state. The
+classifier may still request retry, but no second attempt, hook, body
+reconstruction, limiter admission, authentication work, or native send begins.
+The executor preserves the original transport failure or performs ordinary
+terminal rejected-status capture, reports zero performed policy retries, and
+emits one completion. Public error formatting contains no synchronization
+detail.
 
 `RetryPolicy::clone` shares the classifier and budget state. Client clones
 therefore share budget when configured with the same policy. Independently
@@ -246,10 +253,12 @@ confidentiality boundary.
 Primitive proofs belong in `crates/concord-core/src/retry/` and use Tokio
 paused time for bucket rotation, window expiry, TTL, capacity, and origin
 isolation. Concurrency tests must prove atomic reservation across policy
-clones. Lifecycle integration tests must additionally prove attempt order,
-deadline reuse, one completion, body replay suppression, rate-limit
-re-admission, authentication interaction, and preservation of the original
-failure on budget denial.
+clones. The budget owner directly poisons the production mutex to prove
+repeated initial accounting and reservation remain fail-closed without
+changing retained counters. Lifecycle integration tests must additionally
+prove attempt order, deadline reuse, one completion, body replay suppression,
+rate-limit re-admission, authentication interaction, and preservation of the
+original failure on budget denial or poisoned state.
 
 Executor integration proofs live in
 `crates/concord-core/src/execute/tests/retry.rs`, authentication interleaving

@@ -31,6 +31,9 @@
 
 ### Added
 
+- Focused verification that poisoned managed-retry budget state fails closed
+  without replacing the original result, plus an isolated observational
+  benchmark for one Concord-managed 503-to-success retry.
 - One complete mdBook documentation site for new users, feature users,
   extension authors, and maintainers. It includes a request-executing Start
   path, the Core Guide, focused feature guides, ten compiled-example recipes,

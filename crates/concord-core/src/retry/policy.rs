@@ -62,6 +62,14 @@ impl RetryPolicy {
     }
 
     #[cfg(test)]
+    pub(crate) fn poison_budget_state_for_test(&self) -> bool {
+        self.inner
+            .budget
+            .as_ref()
+            .is_some_and(RetryBudget::poison_state_for_test)
+    }
+
+    #[cfg(test)]
     pub(super) fn shares_state_with(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
     }

@@ -616,6 +616,116 @@ async fn accepted_non_success_status_is_never_classified() {
 }
 
 #[tokio::test]
+async fn poisoned_retry_budget_preserves_the_original_rejected_status() {
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_response(ScriptedResponse::status(
+            StatusCode::SERVICE_UNAVAILABLE,
+            Bytes::from_static(b"ordinary-terminal-status"),
+        ))
+        .expect("terminal rejected status");
+    executor
+        .application()
+        .queue_response(ScriptedResponse::success(Bytes::from_static(b"unused")))
+        .expect("unused retry response");
+
+    let classifications = Arc::new(AtomicUsize::new(0));
+    let classifications_for_policy = Arc::clone(&classifications);
+    let policy = RetryPolicy::builder()
+        .max_retries_per_operation(1)
+        .classify_fn(move |attempt| {
+            classifications_for_policy.fetch_add(1, Ordering::SeqCst);
+            assert!(matches!(
+                attempt.failure(),
+                RetryFailure::RejectedStatus {
+                    status: StatusCode::SERVICE_UNAVAILABLE,
+                    ..
+                }
+            ));
+            RetryDecision::Retry
+        })
+        .build()
+        .expect("budgeted retry policy");
+    assert!(policy.poison_budget_state_for_test());
+    let retained_policy = policy.clone();
+    let probe = Arc::new(RetryLifecycleProbe::default());
+    let core = retry_core(&executor, Arc::clone(&probe), policy);
+
+    let error = retry_request(core, Duration::from_secs(30))
+        .await
+        .expect_err("poisoned budget suppresses the requested retry");
+
+    assert_eq!(classifications.load(Ordering::SeqCst), 1);
+    assert_eq!(executor.application().request_count().expect("count"), 1);
+    assert_eq!(
+        executor
+            .application()
+            .remaining_scripts()
+            .expect("remaining scripts"),
+        1
+    );
+    assert_eq!(probe.before_attempts().len(), 1);
+    assert_eq!(probe.before_attempts()[0].1, AttemptInfo::INITIAL);
+    assert_eq!(probe.acquisitions(), [AttemptInfo::INITIAL]);
+    assert_eq!(
+        probe.observations(),
+        [(AttemptInfo::INITIAL, StatusCode::SERVICE_UNAVAILABLE)]
+    );
+    assert_eq!(probe.response_attempts().len(), 1);
+    assert_eq!(
+        probe.trace(),
+        [
+            "before_send",
+            "limiter_acquire",
+            "limiter_observe",
+            "response_hook",
+            "complete",
+        ]
+    );
+
+    assert_eq!(error.category(), ErrorCategory::HttpStatus);
+    let response = error.http_response().expect("captured terminal status");
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(response.body().state(), StatusBodyState::Complete);
+    assert_eq!(
+        response.body().bytes(),
+        Some(&Bytes::from_static(b"ordinary-terminal-status"))
+    );
+    assert_eq!(
+        probe.completions(),
+        [CompletionSnapshot {
+            operation_id: probe.before_attempts()[0].0,
+            attempts_started: 1,
+            policy_retries: 0,
+            recovered_authentication: false,
+            outcome: CompletionOutcome::HttpStatus,
+            final_status: Some(StatusCode::SERVICE_UNAVAILABLE),
+        }]
+    );
+
+    let rendered = format!("{error}\n{error:?}").to_ascii_lowercase();
+    for forbidden in [
+        "mutex",
+        "poison",
+        "lock",
+        "thread",
+        "panic",
+        "synchronization",
+        "internal",
+    ] {
+        assert!(
+            !rendered.contains(forbidden),
+            "public error formatting exposed {forbidden}"
+        );
+    }
+
+    let logical_origin =
+        url::Url::parse("http://execution.example.test/v1/").expect("logical retry origin");
+    assert!(!retained_policy.reserve_retry(&logical_origin));
+}
+
+#[tokio::test]
 async fn stop_and_every_retry_suppression_preserve_the_current_result() {
     let stop_executor = DeterministicExecutor::new();
     stop_executor

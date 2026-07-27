@@ -5,6 +5,7 @@ use std::future::IntoFuture;
 use std::hint::black_box;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use concord::api;
@@ -18,7 +19,12 @@ use concord::pagination::PaginatedRequest;
 use concord::rate_limit::NoopRateLimiter;
 use concord::records::{RecordDecoder, RecordError};
 use concord::response::ResponseHead;
+use concord::retry::{RetryDecision, RetryFailure, RetryPolicy};
 use concord::{Bytes, PageLimit, SecretString};
+use concord_perf::overhead_cli::{
+    BenchmarkCommand, CategorySelection, MANAGED_RETRY_CATEGORY, help_text, list_text,
+    parse_arguments,
+};
 use concord_test_support::proxy::ConnectProxy;
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 use concord_test_support::tls::TlsServer;
@@ -140,7 +146,7 @@ api! {
     }
 }
 
-const EXPECTED_CATEGORIES: [&str; 15] = [
+const EXPECTED_CATEGORIES: [&str; 16] = [
     "core client construction",
     "generated endpoint construction",
     "request binding",
@@ -148,6 +154,7 @@ const EXPECTED_CATEGORIES: [&str; 15] = [
     "codec encoding and decoding",
     "body-limit polling",
     "direct execution overhead",
+    MANAGED_RETRY_CATEGORY,
     "explicit generated endpoint execution overhead",
     "runtime endpoint execution overhead",
     "authenticated managed execution",
@@ -158,15 +165,27 @@ const EXPECTED_CATEGORIES: [&str; 15] = [
     "record framing",
 ];
 
-#[derive(Default)]
 struct CategoryAudit {
+    expected: &'static [&'static str],
     executed: BTreeSet<&'static str>,
 }
 
 impl CategoryAudit {
+    fn new(selection: CategorySelection) -> Self {
+        const MANAGED_RETRY_ONLY: [&str; 1] = [MANAGED_RETRY_CATEGORY];
+        let expected: &'static [&'static str] = match selection {
+            CategorySelection::All => &EXPECTED_CATEGORIES,
+            CategorySelection::ManagedRetry => &MANAGED_RETRY_ONLY,
+        };
+        Self {
+            expected,
+            executed: BTreeSet::new(),
+        }
+    }
+
     fn record(&mut self, name: &'static str) {
         assert!(
-            EXPECTED_CATEGORIES.contains(&name),
+            self.expected.contains(&name),
             "unregistered benchmark category {name}"
         );
         assert!(
@@ -178,23 +197,23 @@ impl CategoryAudit {
     fn finish(self) {
         assert_eq!(
             self.executed.len(),
-            EXPECTED_CATEGORIES.len(),
+            self.expected.len(),
             "not every benchmark category executed"
         );
-        for expected in EXPECTED_CATEGORIES {
+        for expected in self.expected {
             assert!(
                 self.executed.contains(expected),
                 "benchmark category did not execute: {expected}"
             );
         }
-        println!("benchmark operation audit: 15/15 named categories executed");
+        println!(
+            "benchmark operation audit: {0}/{0} named categories executed",
+            self.expected.len()
+        );
     }
 }
 
-fn iterations() -> usize {
-    if std::env::args().any(|argument| argument == "--smoke") {
-        return 1;
-    }
+fn configured_iterations() -> usize {
     std::env::var("CONCORD_BENCH_ITERATIONS")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
@@ -410,6 +429,97 @@ fn runtime_endpoint_execution_overhead(
     Ok(())
 }
 
+fn managed_retry_policy(classifications: Arc<AtomicUsize>) -> RetryPolicy {
+    RetryPolicy::builder()
+        .max_retries_per_operation(1)
+        .without_budget()
+        .classify_fn(move |attempt| {
+            classifications.fetch_add(1, Ordering::SeqCst);
+            match attempt.failure() {
+                RetryFailure::RejectedStatus { status, .. }
+                    if status == StatusCode::SERVICE_UNAVAILABLE =>
+                {
+                    RetryDecision::Retry
+                }
+                _ => RetryDecision::Stop,
+            }
+        })
+        .build()
+        .expect("valid managed-retry benchmark policy")
+}
+
+fn managed_retry_client(
+    server: &ScriptedServer,
+    classifications: Arc<AtomicUsize>,
+) -> Result<BenchApi, Box<dyn std::error::Error>> {
+    let proxy = SafeProxy::parse(server.url(""))?;
+    Ok(configured_builder()
+        .configure_http(move |http| http.proxy(proxy).protocol_recovery(false))
+        .retry(managed_retry_policy(classifications))
+        .build()?)
+}
+
+fn prove_managed_retry_scenario(
+    runtime: &tokio::runtime::Runtime,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let server = ScriptedServer::start([
+        ResponseScript::status(503, b"proof-rejected".to_vec()),
+        ResponseScript::ok(b"proof-success".to_vec()),
+    ])?;
+    let classifications = Arc::new(AtomicUsize::new(0));
+    let client = managed_retry_client(&server, Arc::clone(&classifications))?;
+
+    let response = runtime.block_on(client.bounded().response().into_future())?;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.value(), &Bytes::from_static(b"proof-success"));
+    assert_eq!(response.metadata().attempts_started(), 2);
+    assert_eq!(response.metadata().policy_retries(), 1);
+    assert!(!response.metadata().recovered_authentication());
+    assert_eq!(classifications.load(Ordering::SeqCst), 1);
+    assert_eq!(server.request_count(), 2);
+    Ok(())
+}
+
+fn managed_retry_overhead(
+    iterations: usize,
+    runtime: &tokio::runtime::Runtime,
+    audit: &mut CategoryAudit,
+) -> Result<(), Box<dyn std::error::Error>> {
+    prove_managed_retry_scenario(runtime)?;
+
+    let scripts = (0..iterations).flat_map(|_| {
+        [
+            ResponseScript::status(503, b"retry".to_vec()),
+            ResponseScript::ok(b"ok".to_vec()),
+        ]
+    });
+    let server = ScriptedServer::start(scripts)?;
+    let classifications = Arc::new(AtomicUsize::new(0));
+    let client = managed_retry_client(&server, Arc::clone(&classifications))?;
+    let expected_physical_sends = iterations
+        .checked_mul(2)
+        .expect("bounded benchmark send count");
+
+    let started = Instant::now();
+    for _ in 0..iterations {
+        black_box(runtime.block_on(client.bounded().response().into_future())?);
+    }
+    let elapsed = started.elapsed();
+
+    assert_eq!(classifications.load(Ordering::SeqCst), iterations);
+    assert_eq!(server.request_count(), expected_physical_sends);
+    audit.record(MANAGED_RETRY_CATEGORY);
+    let divisor = u32::try_from(iterations).expect("bounded benchmark iteration count");
+    println!(
+        "{MANAGED_RETRY_CATEGORY}: {iterations} logical operation(s), one managed retry per \
+         operation, {expected_physical_sends} expected physical application send(s), {elapsed:?} \
+         total, {:?} per operation",
+        elapsed / divisor
+    );
+    Ok(())
+}
+
 fn authenticated_managed_execution(
     iterations: usize,
     runtime: &tokio::runtime::Runtime,
@@ -554,9 +664,29 @@ fn record_framing(iterations: usize, audit: &mut CategoryAudit) {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let iterations = iterations();
+    let arguments = std::env::args().skip(1).collect::<Vec<_>>();
+    let command =
+        parse_arguments(&arguments, configured_iterations()).map_err(std::io::Error::other)?;
+    let options = match command {
+        BenchmarkCommand::Help => {
+            print!("{}", help_text());
+            return Ok(());
+        }
+        BenchmarkCommand::List => {
+            print!("{}", list_text());
+            return Ok(());
+        }
+        BenchmarkCommand::Run(options) => options,
+    };
+    let iterations = options.iterations;
     let runtime = tokio::runtime::Runtime::new()?;
-    let mut audit = CategoryAudit::default();
+    let mut audit = CategoryAudit::new(options.selection);
+
+    if options.selection == CategorySelection::ManagedRetry {
+        managed_retry_overhead(iterations, &runtime, &mut audit)?;
+        audit.finish();
+        return Ok(());
+    }
 
     core_client_construction(iterations, &mut audit);
     generated_endpoint_construction(iterations, &mut audit);
@@ -565,6 +695,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     codec_encoding_and_decoding(iterations, &mut audit);
     body_limit_polling(iterations, &runtime, &mut audit)?;
     direct_execution_overhead(iterations, &runtime, &mut audit)?;
+    managed_retry_overhead(iterations, &runtime, &mut audit)?;
     explicit_generated_endpoint_execution_overhead(iterations, &runtime, &mut audit)?;
     runtime_endpoint_execution_overhead(iterations, &runtime, &mut audit)?;
     authenticated_managed_execution(iterations, &runtime, &mut audit)?;

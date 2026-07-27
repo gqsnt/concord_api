@@ -93,6 +93,19 @@ impl RetryBudget {
     }
 
     #[cfg(test)]
+    pub(crate) fn poison_state_for_test(&self) -> bool {
+        std::thread::scope(|scope| {
+            scope
+                .spawn(|| {
+                    let _guard = self.state.lock().expect("retry budget test lock");
+                    panic!("intentional retry budget test poison");
+                })
+                .join()
+                .is_err()
+        })
+    }
+
+    #[cfg(test)]
     pub(super) fn tracked_scope_count(&self) -> usize {
         self.state.lock().map_or(0, |state| state.scopes.len())
     }
@@ -324,4 +337,47 @@ enum OriginHost {
     Domain(Box<str>),
     Ipv4(Ipv4Addr),
     Ipv6(Ipv6Addr),
+}
+
+#[cfg(test)]
+mod tests {
+    use std::panic;
+    use std::sync::{Arc, PoisonError};
+
+    use super::*;
+
+    fn retained_totals(budget: &RetryBudget, url: &Url) -> (u64, u64) {
+        let key = OriginScopeKey::from_url(url).expect("test URL has an origin");
+        let state = budget.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state
+            .scopes
+            .get(&key)
+            .and_then(|scope| scope.window.totals())
+            .expect("retained test scope has valid counters")
+    }
+
+    #[test]
+    fn poisoned_budget_state_fails_closed_without_granting_retry() {
+        let budget = Arc::new(RetryBudget::new(
+            FixedRatio::from_f64(1.0).expect("valid test ratio"),
+            1,
+            Duration::from_secs(60),
+        ));
+        let target = Url::parse("https://poisoned-budget.example.test/data").expect("test URL");
+        budget.record_initial_dispatch(&target);
+        assert_eq!(retained_totals(&budget, &target), (1, 0));
+
+        assert!(budget.poison_state_for_test());
+        assert!(budget.state.is_poisoned());
+
+        for _ in 0..3 {
+            let recorded = panic::catch_unwind(|| budget.record_initial_dispatch(&target));
+            assert!(matches!(recorded, Ok(())));
+
+            let reservation = panic::catch_unwind(|| budget.reserve_retry(&target));
+            assert_eq!(reservation.ok(), Some(false));
+            assert!(budget.state.is_poisoned());
+            assert_eq!(retained_totals(&budget, &target), (1, 0));
+        }
+    }
 }
