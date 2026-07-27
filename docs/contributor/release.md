@@ -189,13 +189,16 @@ Before enabling publication or any other external release action:
    pagination-controlled dependencies under current and Rust 1.85 semantic UI
    owners;
 10. confirm generated Rustdoc distinguishes explicit stable rule IDs from
-   derived deterministic declaration IDs and the manual records the
-   cross-contract compatibility boundary for shared limiters;
-11. confirm request and response empty-chunk limits appear once in the generated
-   limits reference and remain available without default features;
-12. recheck the exact branch, commit, and clean worktree immediately before the
-   authorized external action;
-13. execute only the approved action and record its observed result.
+    derived deterministic declaration IDs and the manual records the
+    cross-contract compatibility boundary for shared limiters;
+11. confirm every precise `ClientBuildErrorKind` remains public, value-free
+    except for optional static generated input metadata, and source-less; retain
+    sentinel proofs for proxy, root PEM, identity PEM, and native build failures;
+12. confirm request and response empty-chunk limits appear once in the generated
+    limits reference and remain available without default features;
+13. recheck the exact branch, commit, and clean worktree immediately before the
+    authorized external action;
+14. execute only the approved action and record its observed result.
 
 ## Related
 

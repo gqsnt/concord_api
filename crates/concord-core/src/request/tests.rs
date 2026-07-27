@@ -372,7 +372,7 @@ fn fixed_tls_preflights_fail_during_core_construction() {
         Ok(_) => panic!("https-only must reject a fixed HTTP base"),
         Err(error) => error,
     };
-    assert_eq!(http_only.kind(), ClientBuildErrorKind::HttpConfiguration);
+    assert_eq!(http_only.kind(), ClientBuildErrorKind::HttpsRequired);
 
     #[cfg(not(feature = "default-tls"))]
     {

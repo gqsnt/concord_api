@@ -357,9 +357,7 @@ impl ApplicationHttp {
 
     pub(crate) fn validate_fixed_base(&self, url: &url::Url) -> Result<(), ClientBuildError> {
         if self.https_only && url.scheme() != "https" {
-            return Err(ClientBuildError::new(
-                ClientBuildErrorKind::HttpConfiguration,
-            ));
+            return Err(ClientBuildError::new(ClientBuildErrorKind::HttpsRequired));
         }
         if url.scheme() == "https" && self.tls == TlsCapability::Unavailable {
             return Err(ClientBuildError::new(ClientBuildErrorKind::TlsUnavailable));

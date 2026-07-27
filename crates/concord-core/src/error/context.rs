@@ -126,6 +126,23 @@ impl Error for ConfigurationError {}
 mod tests {
     use super::*;
 
+    fn exact_client_build_kind_index(kind: ClientBuildErrorKind) -> usize {
+        match kind {
+            ClientBuildErrorKind::MissingInput => 0,
+            ClientBuildErrorKind::InvalidCredential => 1,
+            ClientBuildErrorKind::InvalidBaseUrl => 2,
+            ClientBuildErrorKind::HttpsRequired => 3,
+            ClientBuildErrorKind::TlsUnavailable => 4,
+            ClientBuildErrorKind::InvalidProxy => 5,
+            ClientBuildErrorKind::InvalidRootCertificate => 6,
+            ClientBuildErrorKind::InvalidClientIdentity => 7,
+            ClientBuildErrorKind::HttpClientBuild => 8,
+            ClientBuildErrorKind::RuntimeConfiguration => 9,
+            ClientBuildErrorKind::LimiterUnavailable => 10,
+            ClientBuildErrorKind::Internal => 11,
+        }
+    }
+
     #[test]
     fn missing_input_metadata_is_structured_and_never_formats_a_supplied_value() {
         const SENTINEL: &str = "protected-builder-value-sentinel-7f32";
@@ -138,5 +155,45 @@ mod tests {
             assert!(rendered.contains("api_key"));
             assert!(!rendered.contains(SENTINEL));
         }
+        assert!(Error::source(&error).is_none());
+    }
+
+    #[test]
+    fn every_client_build_kind_is_distinct_and_source_less() {
+        let kinds = [
+            ClientBuildErrorKind::MissingInput,
+            ClientBuildErrorKind::InvalidCredential,
+            ClientBuildErrorKind::InvalidBaseUrl,
+            ClientBuildErrorKind::HttpsRequired,
+            ClientBuildErrorKind::TlsUnavailable,
+            ClientBuildErrorKind::InvalidProxy,
+            ClientBuildErrorKind::InvalidRootCertificate,
+            ClientBuildErrorKind::InvalidClientIdentity,
+            ClientBuildErrorKind::HttpClientBuild,
+            ClientBuildErrorKind::RuntimeConfiguration,
+            ClientBuildErrorKind::LimiterUnavailable,
+            ClientBuildErrorKind::Internal,
+        ];
+
+        for (index, kind) in kinds.iter().copied().enumerate() {
+            assert_eq!(exact_client_build_kind_index(kind), index);
+            let error = ClientBuildError::new(kind);
+            assert_eq!(error.kind(), kind);
+            assert_eq!(error.input_field(), None);
+            assert_eq!(error.input_kind(), None);
+            assert!(Error::source(&error).is_none());
+            assert!(
+                kinds[index + 1..]
+                    .iter()
+                    .all(|candidate| *candidate != kind),
+                "client-build kinds must remain structurally distinct"
+            );
+        }
+
+        let invalid = ClientBuildError::invalid_credential("api_key");
+        assert_eq!(invalid.kind(), ClientBuildErrorKind::InvalidCredential);
+        assert_eq!(invalid.input_field(), Some("api_key"));
+        assert_eq!(invalid.input_kind(), Some(ClientInputKind::Secret));
+        assert!(Error::source(&invalid).is_none());
     }
 }

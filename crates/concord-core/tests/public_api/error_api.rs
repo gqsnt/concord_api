@@ -150,3 +150,28 @@ fn pagination_ceiling_kinds_are_public_and_structured() {
         PaginationErrorKind::IdentityStorageCeilingExceeded
     );
 }
+
+#[test]
+fn client_build_kinds_are_public_exact_and_structurally_distinct() {
+    let kinds = [
+        ClientBuildErrorKind::MissingInput,
+        ClientBuildErrorKind::InvalidCredential,
+        ClientBuildErrorKind::InvalidBaseUrl,
+        ClientBuildErrorKind::HttpsRequired,
+        ClientBuildErrorKind::TlsUnavailable,
+        ClientBuildErrorKind::InvalidProxy,
+        ClientBuildErrorKind::InvalidRootCertificate,
+        ClientBuildErrorKind::InvalidClientIdentity,
+        ClientBuildErrorKind::HttpClientBuild,
+        ClientBuildErrorKind::RuntimeConfiguration,
+        ClientBuildErrorKind::LimiterUnavailable,
+        ClientBuildErrorKind::Internal,
+    ];
+
+    for (index, kind) in kinds.iter().enumerate() {
+        assert!(
+            kinds[index + 1..].iter().all(|candidate| candidate != kind),
+            "named client-build classifications must remain structurally distinct"
+        );
+    }
+}

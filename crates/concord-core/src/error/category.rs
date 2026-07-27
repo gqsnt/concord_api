@@ -114,10 +114,18 @@ pub enum ClientBuildErrorKind {
     InvalidCredential,
     /// The generated client's base URL was invalid.
     InvalidBaseUrl,
+    /// HTTPS-only policy rejected the generated client's fixed HTTP base.
+    HttpsRequired,
     /// The requested TLS capability was unavailable.
     TlsUnavailable,
-    /// Managed HTTP configuration was invalid or could not be applied.
-    HttpConfiguration,
+    /// The explicit proxy could not be installed by the native transport.
+    InvalidProxy,
+    /// A configured root certificate was structurally invalid or could not be parsed.
+    InvalidRootCertificate,
+    /// A configured client identity was structurally invalid or could not be parsed.
+    InvalidClientIdentity,
+    /// The private native HTTP client could not be built.
+    HttpClientBuild,
     /// Runtime configuration was invalid.
     RuntimeConfiguration,
     /// A required rate limiter was unavailable.

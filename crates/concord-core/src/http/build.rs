@@ -13,6 +13,16 @@ pub(super) enum TlsCapability {
     Unavailable,
 }
 
+impl TlsCapability {
+    const fn compiled() -> Self {
+        if cfg!(feature = "default-tls") {
+            Self::Available
+        } else {
+            Self::Unavailable
+        }
+    }
+}
+
 pub(crate) struct ManagedHttp {
     pub(crate) application: ApplicationHttp,
     pub(super) provider: ProviderHttpInner,
@@ -51,26 +61,14 @@ impl ManagedHttp {
         http: &HttpConfig,
         base_url: &url::Url,
     ) -> Result<(), ClientBuildError> {
-        if http.https_only && base_url.scheme() != "https" {
-            return Err(ClientBuildError::new(
-                ClientBuildErrorKind::HttpConfiguration,
-            ));
-        }
-        #[cfg(not(feature = "default-tls"))]
-        if base_url.scheme() == "https" {
-            return Err(ClientBuildError::new(ClientBuildErrorKind::TlsUnavailable));
-        }
-        Ok(())
+        validate_fixed_base_with_tls(http, base_url, TlsCapability::compiled())
     }
 
     pub(crate) fn build(
         http: HttpConfig,
         runtime: &RuntimeConfig,
     ) -> Result<Self, ClientBuildError> {
-        #[cfg(feature = "default-tls")]
-        let tls = TlsCapability::Available;
-        #[cfg(not(feature = "default-tls"))]
-        let tls = TlsCapability::Unavailable;
+        let tls = TlsCapability::compiled();
 
         #[cfg(feature = "default-tls")]
         let tls_material = parse_tls_material(&http)?;
@@ -97,8 +95,8 @@ impl ManagedHttp {
             }
         }
 
-        let application = application.build().map_err(safe_client_build_error)?;
-        let provider = provider.build().map_err(safe_client_build_error)?;
+        let application = build_native_client(application)?;
+        let provider = build_native_client(provider)?;
         Ok(Self {
             application: ApplicationHttp::new(
                 application,
@@ -128,6 +126,20 @@ impl ManagedHttp {
             provider: managed.provider.with_development(executor.provider()),
         })
     }
+}
+
+fn validate_fixed_base_with_tls(
+    http: &HttpConfig,
+    base_url: &url::Url,
+    tls: TlsCapability,
+) -> Result<(), ClientBuildError> {
+    if http.https_only && base_url.scheme() != "https" {
+        return Err(ClientBuildError::new(ClientBuildErrorKind::HttpsRequired));
+    }
+    if base_url.scheme() == "https" && tls == TlsCapability::Unavailable {
+        return Err(ClientBuildError::new(ClientBuildErrorKind::TlsUnavailable));
+    }
+    Ok(())
 }
 
 fn base_builder(
@@ -165,10 +177,7 @@ fn base_builder(
         ProtocolMode::Http2PriorKnowledge => builder.http2_prior_knowledge(),
     };
     if let Some(proxy) = &config.proxy {
-        let proxy = reqwest::Proxy::all(proxy.as_str()).map_err(|error| {
-            drop(error);
-            ClientBuildError::new(ClientBuildErrorKind::HttpConfiguration)
-        })?;
+        let proxy = native_proxy(proxy.as_str())?;
         builder = builder.proxy(proxy);
     }
     #[cfg(feature = "gzip")]
@@ -186,9 +195,22 @@ fn base_builder(
     Ok(builder)
 }
 
-fn safe_client_build_error(error: reqwest::Error) -> ClientBuildError {
+fn native_proxy(value: &str) -> Result<reqwest::Proxy, ClientBuildError> {
+    reqwest::Proxy::all(value).map_err(|error| {
+        drop(error);
+        ClientBuildError::new(ClientBuildErrorKind::InvalidProxy)
+    })
+}
+
+fn build_native_client(
+    builder: reqwest::ClientBuilder,
+) -> Result<reqwest::Client, ClientBuildError> {
+    builder.build().map_err(http_client_build_error)
+}
+
+fn http_client_build_error(error: reqwest::Error) -> ClientBuildError {
     drop(error);
-    ClientBuildError::new(ClientBuildErrorKind::HttpConfiguration)
+    ClientBuildError::new(ClientBuildErrorKind::HttpClientBuild)
 }
 
 #[cfg(feature = "default-tls")]
@@ -204,11 +226,11 @@ fn parse_tls_material(config: &HttpConfig) -> Result<TlsMaterial, ClientBuildErr
     for pem in &config.root_certificates_pem {
         let parsed = reqwest::Certificate::from_pem_bundle(pem).map_err(|error| {
             drop(error);
-            ClientBuildError::new(ClientBuildErrorKind::HttpConfiguration)
+            ClientBuildError::new(ClientBuildErrorKind::InvalidRootCertificate)
         })?;
         if parsed.is_empty() {
             return Err(ClientBuildError::new(
-                ClientBuildErrorKind::HttpConfiguration,
+                ClientBuildErrorKind::InvalidRootCertificate,
             ));
         }
         certificates.extend(parsed);
@@ -219,7 +241,7 @@ fn parse_tls_material(config: &HttpConfig) -> Result<TlsMaterial, ClientBuildErr
         .map(|pem| {
             reqwest::Identity::from_pem(pem).map_err(|error| {
                 drop(error);
-                ClientBuildError::new(ClientBuildErrorKind::HttpConfiguration)
+                ClientBuildError::new(ClientBuildErrorKind::InvalidClientIdentity)
             })
         })
         .transpose()?;
@@ -245,9 +267,7 @@ mod tests {
     use http::Method;
 
     use super::*;
-    #[cfg(feature = "default-tls")]
-    use crate::error::ClientBuildErrorKind;
-    use crate::error::{ConfigurationErrorKind, ErrorCategory};
+    use crate::error::{ClientBuildErrorKind, ConfigurationErrorKind, ErrorCategory};
     #[cfg(feature = "default-tls")]
     use crate::http::provider::ProviderRequest;
     #[cfg(feature = "http2")]
@@ -270,11 +290,94 @@ mod tests {
 
     fn assert_send_sync_static<T: Send + Sync + 'static>() {}
 
+    fn assert_safe_client_build_error(
+        error: &ClientBuildError,
+        expected: ClientBuildErrorKind,
+        sentinel: &str,
+    ) {
+        assert_eq!(error.kind(), expected);
+        assert_eq!(error.input_field(), None);
+        assert_eq!(error.input_kind(), None);
+        for formatted in [error.to_string(), format!("{error:?}")] {
+            assert!(!formatted.contains(sentinel));
+        }
+        assert!(std::error::Error::source(error).is_none());
+    }
+
     #[test]
     fn managed_owners_are_send_sync_static_and_private_by_construction() {
         assert_send_sync_static::<ApplicationHttp>();
         assert_send_sync_static::<ProviderHttpInner>();
         assert_send_sync_static::<ManagedHttp>();
+    }
+
+    #[test]
+    fn fixed_base_policy_failures_have_exact_safe_kinds() {
+        let http = HttpConfigBuilder::new()
+            .https_only(true)
+            .resolve()
+            .expect("HTTP configuration");
+        let cleartext = url::Url::parse("http://example.test").expect("cleartext URL");
+        let error = validate_fixed_base_with_tls(&http, &cleartext, TlsCapability::Available)
+            .expect_err("HTTPS-only policy must reject cleartext");
+        assert_eq!(error.kind(), ClientBuildErrorKind::HttpsRequired);
+        assert!(std::error::Error::source(&error).is_none());
+
+        let http = HttpConfigBuilder::new()
+            .resolve()
+            .expect("HTTP configuration");
+        let https = url::Url::parse("https://example.test").expect("HTTPS URL");
+        let error = validate_fixed_base_with_tls(&http, &https, TlsCapability::Unavailable)
+            .expect_err("HTTPS requires compiled TLS");
+        assert_eq!(error.kind(), ClientBuildErrorKind::TlsUnavailable);
+        assert!(std::error::Error::source(&error).is_none());
+    }
+
+    #[test]
+    fn native_proxy_installation_error_is_exact_and_drops_input() {
+        const SENTINEL: &str = "proxy-native-input-sentinel-a7d4";
+        let input = format!("http://{SENTINEL}:not-a-port");
+        let error = native_proxy(&input).expect_err("invalid native proxy input");
+        assert_safe_client_build_error(&error, ClientBuildErrorKind::InvalidProxy, SENTINEL);
+    }
+
+    #[test]
+    fn native_client_build_error_is_exact() {
+        const SENTINEL: &str = "native-build-input-sentinel-3b8c";
+        let builder = reqwest::Client::builder().user_agent(format!("{SENTINEL}\n"));
+        let error = build_native_client(builder).expect_err("invalid native builder input");
+        assert_safe_client_build_error(&error, ClientBuildErrorKind::HttpClientBuild, SENTINEL);
+    }
+
+    #[tokio::test]
+    async fn native_client_build_reducer_drops_a_reqwest_error_with_sentinel_context() {
+        const SENTINEL: &str = "native-build-source-sentinel-d19e";
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .expect("closed-port reservation should bind");
+        let address = listener.local_addr().expect("reserved address");
+        drop(listener);
+        let url = format!(
+            "http://user-{SENTINEL}:password-{SENTINEL}@{address}/private?token={SENTINEL}"
+        );
+        let native = reqwest::Client::builder()
+            .no_proxy()
+            .retry(reqwest::retry::never())
+            .build()
+            .expect("probe client")
+            .get(url)
+            .send()
+            .await
+            .expect_err("closed port should fail");
+        assert!(
+            native
+                .url()
+                .is_some_and(|url| url.as_str().contains(SENTINEL)),
+            "the native Reqwest error must carry the sentinel before reduction"
+        );
+
+        let error = http_client_build_error(native);
+        assert_safe_client_build_error(&error, ClientBuildErrorKind::HttpClientBuild, SENTINEL);
     }
 
     #[tokio::test]
@@ -632,7 +735,11 @@ mod tests {
                 .expect("structurally valid root certificate"),
             &RuntimeConfigBuilder::new().resolve(),
         );
-        assert_safe_pem_error(invalid_root, ROOT_SENTINEL);
+        assert_safe_pem_error(
+            invalid_root,
+            ClientBuildErrorKind::InvalidRootCertificate,
+            ROOT_SENTINEL,
+        );
 
         let invalid_identity = ManagedHttp::build(
             HttpConfigBuilder::new()
@@ -641,20 +748,24 @@ mod tests {
                 .expect("structurally valid identity"),
             &RuntimeConfigBuilder::new().resolve(),
         );
-        assert_safe_pem_error(invalid_identity, IDENTITY_SENTINEL);
+        assert_safe_pem_error(
+            invalid_identity,
+            ClientBuildErrorKind::InvalidClientIdentity,
+            IDENTITY_SENTINEL,
+        );
     }
 
     #[cfg(feature = "default-tls")]
-    fn assert_safe_pem_error(result: Result<ManagedHttp, ClientBuildError>, sentinel: &str) {
+    fn assert_safe_pem_error(
+        result: Result<ManagedHttp, ClientBuildError>,
+        expected: ClientBuildErrorKind,
+        sentinel: &str,
+    ) {
         let error = match result {
             Ok(_) => panic!("invalid PEM must fail construction"),
             Err(error) => error,
         };
-        assert_eq!(error.kind(), ClientBuildErrorKind::HttpConfiguration);
-        for formatted in [error.to_string(), format!("{error:?}")] {
-            assert!(!formatted.contains(sentinel));
-        }
-        assert!(std::error::Error::source(&error).is_none());
+        assert_safe_client_build_error(&error, expected, sentinel);
     }
 
     #[cfg(feature = "http2")]

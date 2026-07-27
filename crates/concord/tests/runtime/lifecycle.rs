@@ -370,13 +370,13 @@ fn repeated_configuration_closures_compose_immediately_in_call_order() {
 }
 
 #[test]
-fn fixed_base_and_http_configuration_fail_during_generated_build() {
+fn fixed_base_https_policy_failure_is_precise_during_generated_build() {
     let error = build_error(
         ExampleApi::builder()
             .configure_http(|http| http.https_only(true))
             .build(),
     );
-    assert_eq!(error.kind(), ClientBuildErrorKind::HttpConfiguration);
+    assert_eq!(error.kind(), ClientBuildErrorKind::HttpsRequired);
 }
 
 #[tokio::test]

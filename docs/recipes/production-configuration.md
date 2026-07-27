@@ -17,7 +17,11 @@ deployment builder:
 
 The caller supplies a reviewed proxy origin and PEM trust root. `build()`
 parses the TLS material and fails before any request can execute when transport
-configuration is invalid.
+configuration is invalid. `ClientBuildErrorKind` distinguishes
+`InvalidRootCertificate`, `InvalidClientIdentity`, `InvalidProxy`,
+`HttpsRequired`, `TlsUnavailable`, and `HttpClientBuild` so startup handling
+can report the remediation category without logging supplied material or a
+native error.
 
 ## Why these declarations
 
@@ -69,7 +73,9 @@ separately through an explicit managed `RetryPolicy`.
 
 At startup, verify the fixed base, proxy, trust roots, optional identity, TLS
 feature set, and every required protected input. Treat `ClientBuildError` as a
-deployment failure, not a per-request retry.
+deployment failure, not a per-request retry. Match `error.kind()` with a
+fallback rather than parsing its formatting; the non-exhaustive kind is the
+stable diagnostic surface and `error.source()` is intentionally absent.
 
 Redirects remain disabled. A 3xx response is a typed final status rather than
 an automatic cross-origin request. Keep that property in security and

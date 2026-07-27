@@ -285,6 +285,7 @@ mod tests {
             assert_eq!(error.kind(), ClientBuildErrorKind::InvalidBaseUrl);
             assert!(!error.to_string().contains(invalid));
             assert!(!format!("{error:?}").contains(invalid));
+            assert!(std::error::Error::source(&error).is_none());
         }
     }
 

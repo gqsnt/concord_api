@@ -176,9 +176,32 @@ immediately after the synchronous acceptance callback.
 ## Construction and extension errors
 
 `ClientBuildError` is separate from `ApiError` because no endpoint execution
-exists yet. It reports a safe `ClientBuildErrorKind` and, for missing generated
-input, a public generated input name plus `ClientInputKind` (`Value`,
-`Secret`, or `CredentialProvider`). It never retains the missing value.
+exists yet. It reports one safe `ClientBuildErrorKind`:
+
+| `ClientBuildErrorKind` | Meaning |
+|---|---|
+| `MissingInput` | a required generated input was absent |
+| `InvalidCredential` | built-in credential material violated its finite contract |
+| `InvalidBaseUrl` | the generated fixed base was malformed or structurally unsafe |
+| `HttpsRequired` | HTTPS-only policy rejected a fixed HTTP base |
+| `TlsUnavailable` | the fixed HTTPS base requires a TLS feature that is not compiled |
+| `InvalidProxy` | the explicit proxy could not be installed by the private transport |
+| `InvalidRootCertificate` | a root PEM exceeded its structural bounds or failed parsing |
+| `InvalidClientIdentity` | an identity PEM exceeded its structural bound or failed parsing |
+| `HttpClientBuild` | final private native client construction failed |
+| `RuntimeConfiguration` | runtime configuration violated a construction invariant |
+| `LimiterUnavailable` | generated rate limits require a limiter that is not installed |
+| `Internal` | construction failed a safe internal invariant |
+
+Missing generated inputs and invalid built-in credentials may also report the
+public generated input name plus `ClientInputKind` (`Value`, `Secret`, or
+`CredentialProvider`). No supplied value is retained. The other kinds are
+value-free.
+
+`ClientBuildError::source()` is always `None`. Its `Display` and `Debug` output
+never retain proxy URL text, PEM bytes, parser diagnostics, certificate or
+identity details, Reqwest errors, or native source chains. Branch on `kind()`
+for remediation; do not parse formatting.
 
 Extension-level `BodyError`, `CodecError`, `RecordError`, `AuthError`,
 `RateLimitError`, and `PaginationError` are category-safe contracts at their

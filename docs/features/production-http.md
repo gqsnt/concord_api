@@ -34,9 +34,16 @@ OAuth2 helper and provider HTTP already require HTTPS.
 
 `add_root_certificate_pem` installs a structurally bounded trust root for both
 application and provider clients. Parsing occurs during `build()`, so malformed
-PEM fails before requests can run. `identity_pem` installs a bounded client
-identity only on the application client. Provider HTTP deliberately does not
-present the application identity.
+PEM fails before requests can run as `InvalidRootCertificate`.
+`identity_pem` installs a bounded client identity only on the application
+client; structural or parsing failure is `InvalidClientIdentity`. Provider
+HTTP deliberately does not present the application identity. Neither failure
+retains PEM bytes or parser details.
+
+An HTTP fixed base rejected by `https_only(true)` is `HttpsRequired`. An HTTPS
+fixed base without a compiled TLS backend is `TlsUnavailable`. These distinct
+construction failures identify policy versus feature remediation without
+retaining the base URL.
 
 Negotiated protocol selection is the default. `http1_only()` restricts both
 managed clients to HTTP/1. With the `http2` feature,
@@ -54,7 +61,9 @@ Environment proxy discovery is also disabled. Parse one reviewed proxy origin
 with `SafeProxy::parse` and install it explicitly with `.proxy(...)`. The
 explicit proxy applies to application and provider HTTP. Keep proxy
 credentials and configuration under application control; safe plans describe
-the logical request rather than the proxy exchange.
+the logical request rather than the proxy exchange. If the private native
+installation rejects the already reviewed origin, client construction reports
+`InvalidProxy` without retaining the proxy text or native cause.
 
 ## Compression and byte limits
 
@@ -103,7 +112,9 @@ Before releasing a client configuration, verify:
 Concord intentionally does not expose the Reqwest client or builder through
 ordinary configuration. If a deployment requirement cannot be expressed by
 the reviewed surface, treat it as an extension/design decision rather than
-reaching around the managed lifecycle.
+reaching around the managed lifecycle. A final private client-construction
+failure is `HttpClientBuild`; the underlying Reqwest error and its source chain
+are deliberately discarded.
 
 ## Related
 

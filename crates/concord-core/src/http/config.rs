@@ -64,7 +64,7 @@ pub struct HttpConfigBuilder {
     config: HttpConfig,
     #[cfg(feature = "default-tls")]
     root_certificates_total_bytes: usize,
-    invalid_startup_material: bool,
+    startup_error: Option<ClientBuildErrorKind>,
 }
 
 impl HttpConfigBuilder {
@@ -96,7 +96,7 @@ impl HttpConfigBuilder {
             },
             #[cfg(feature = "default-tls")]
             root_certificates_total_bytes: 0,
-            invalid_startup_material: false,
+            startup_error: None,
         }
     }
 
@@ -199,7 +199,7 @@ impl HttpConfigBuilder {
     #[cfg(feature = "default-tls")]
     #[must_use]
     pub fn add_root_certificate_pem(mut self, pem: impl AsRef<[u8]>) -> Self {
-        if self.invalid_startup_material {
+        if self.startup_error.is_some() {
             return self;
         }
         let pem = pem.as_ref();
@@ -208,7 +208,7 @@ impl HttpConfigBuilder {
             && pem.len() <= MAX_ROOT_CERTIFICATE_BYTES
             && next_total.is_some_and(|total| total <= MAX_ROOT_CERTIFICATES_TOTAL_BYTES);
         if !valid {
-            self.invalid_startup_material = true;
+            self.startup_error = Some(ClientBuildErrorKind::InvalidRootCertificate);
             return self;
         }
         self.config.root_certificates_pem.push(pem.to_vec());
@@ -227,12 +227,12 @@ impl HttpConfigBuilder {
     #[cfg(feature = "default-tls")]
     #[must_use]
     pub fn identity_pem(mut self, pem: impl AsRef<[u8]>) -> Self {
-        if self.invalid_startup_material {
+        if self.startup_error.is_some() {
             return self;
         }
         let pem = pem.as_ref();
         if pem.len() > MAX_IDENTITY_PEM_BYTES {
-            self.invalid_startup_material = true;
+            self.startup_error = Some(ClientBuildErrorKind::InvalidClientIdentity);
             return self;
         }
         self.config.identity_pem = Some(pem.to_vec());
@@ -265,12 +265,9 @@ impl HttpConfigBuilder {
 
     #[allow(dead_code, reason = "consumed by managed Reqwest construction")]
     pub(crate) fn resolve(self) -> Result<HttpConfig, ClientBuildError> {
-        if self.invalid_startup_material {
-            Err(ClientBuildError::new(
-                ClientBuildErrorKind::HttpConfiguration,
-            ))
-        } else {
-            Ok(self.config)
+        match self.startup_error {
+            Some(kind) => Err(ClientBuildError::new(kind)),
+            None => Ok(self.config),
         }
     }
 }
@@ -288,14 +285,19 @@ mod tests {
     }
 
     #[cfg(feature = "default-tls")]
-    fn assert_redacted_startup_material_error(builder: HttpConfigBuilder, sentinel: &str) {
+    fn assert_redacted_startup_material_error(
+        builder: HttpConfigBuilder,
+        expected: ClientBuildErrorKind,
+        sentinel: &str,
+    ) {
         let error = startup_material_error(builder);
-        assert_eq!(error.kind(), ClientBuildErrorKind::HttpConfiguration);
+        assert_eq!(error.kind(), expected);
         assert_eq!(error.input_field(), None);
         assert_eq!(error.input_kind(), None);
         for rendered in [error.to_string(), format!("{error:?}")] {
             assert!(!rendered.contains(sentinel));
         }
+        assert!(std::error::Error::source(&error).is_none());
     }
 
     #[cfg(feature = "default-tls")]
@@ -423,6 +425,7 @@ mod tests {
         assert_eq!(oversized.root_certificates_total_bytes, 0);
         assert_redacted_startup_material_error(
             oversized,
+            ClientBuildErrorKind::InvalidRootCertificate,
             std::str::from_utf8(SENTINEL).expect("ASCII sentinel"),
         );
     }
@@ -440,7 +443,7 @@ mod tests {
             MAX_ROOT_CERTIFICATES
         );
         assert_eq!(builder.root_certificates_total_bytes, MAX_ROOT_CERTIFICATES);
-        assert!(!builder.invalid_startup_material);
+        assert!(builder.startup_error.is_none());
 
         builder = builder.add_root_certificate_pem(SENTINEL);
         assert_eq!(
@@ -457,6 +460,7 @@ mod tests {
         );
         assert_redacted_startup_material_error(
             builder,
+            ClientBuildErrorKind::InvalidRootCertificate,
             std::str::from_utf8(SENTINEL).expect("ASCII sentinel"),
         );
     }
@@ -501,6 +505,7 @@ mod tests {
         );
         assert_redacted_startup_material_error(
             builder,
+            ClientBuildErrorKind::InvalidRootCertificate,
             std::str::from_utf8(SENTINEL).expect("ASCII sentinel"),
         );
     }
@@ -523,7 +528,31 @@ mod tests {
         assert!(oversized.config.identity_pem.is_none());
         assert_redacted_startup_material_error(
             oversized,
+            ClientBuildErrorKind::InvalidClientIdentity,
             std::str::from_utf8(SENTINEL).expect("ASCII sentinel"),
+        );
+    }
+
+    #[cfg(feature = "default-tls")]
+    #[test]
+    fn first_structural_startup_failure_kind_wins_without_retaining_later_material() {
+        let oversized_root = vec![b'r'; MAX_ROOT_CERTIFICATE_BYTES + 1];
+        let oversized_identity = vec![b'i'; MAX_IDENTITY_PEM_BYTES + 1];
+
+        let root_first = HttpConfigBuilder::new()
+            .add_root_certificate_pem(&oversized_root)
+            .identity_pem(&oversized_identity);
+        assert_eq!(
+            startup_material_error(root_first).kind(),
+            ClientBuildErrorKind::InvalidRootCertificate
+        );
+
+        let identity_first = HttpConfigBuilder::new()
+            .identity_pem(&oversized_identity)
+            .add_root_certificate_pem(&oversized_root);
+        assert_eq!(
+            startup_material_error(identity_first).kind(),
+            ClientBuildErrorKind::InvalidClientIdentity
         );
     }
 

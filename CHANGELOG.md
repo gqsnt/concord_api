@@ -134,6 +134,10 @@
   hygienically as `Default::default()` at the source keyword. It preserves the
   existing set/clear/reset matrix and owner-specific evaluation timing and
   remains unavailable to bodies and pagination initializers.
+- Client construction now reports precise source-less failure kinds for base
+  URL, HTTPS policy, TLS availability, proxy installation, root certificates,
+  client identity, final native client build, runtime configuration, and
+  limiter availability instead of a broad HTTP-configuration category.
 - Every generated public value mutation now uses
   `value(value) -> set_value(value)`. Absence-capable values retain
   `clear_value()`; values with declaration defaults retain `reset_value()`.

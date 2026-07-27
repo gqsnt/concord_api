@@ -382,6 +382,47 @@ mod tests {
     }
 
     #[test]
+    fn runtime_and_generated_limiter_build_failures_have_exact_kinds() {
+        struct ExcessiveKeyLimiter;
+
+        impl RateLimiter for ExcessiveKeyLimiter {
+            fn preparation_key_limit(&self) -> usize {
+                MAX_RATE_LIMIT_KEY_BYTES + 1
+            }
+
+            fn acquire<'a>(
+                &'a self,
+                _request: crate::rate_limit::RateLimitRequest<'a>,
+            ) -> crate::hooks::BoxFuture<
+                'a,
+                Result<crate::rate_limit::RateLimitPermit, crate::rate_limit::RateLimitError>,
+            > {
+                Box::pin(async { Ok(crate::rate_limit::RateLimitPermit::granted()) })
+            }
+        }
+
+        let runtime = RuntimeConfigBuilder::new().rate_limiter(Arc::new(ExcessiveKeyLimiter));
+        let error = runtime
+            .validate_rate_limit_key_limit()
+            .expect_err("excessive limiter key bound");
+        assert_eq!(
+            error.kind(),
+            crate::error::ClientBuildErrorKind::RuntimeConfiguration
+        );
+        assert!(std::error::Error::source(&error).is_none());
+
+        let error = match RuntimeConfigBuilder::new().prepare_generated_rate_limits(true) {
+            Ok(_) => panic!("generated rate limits require an installed limiter"),
+            Err(error) => error,
+        };
+        assert_eq!(
+            error.kind(),
+            crate::error::ClientBuildErrorKind::LimiterUnavailable
+        );
+        assert!(std::error::Error::source(&error).is_none());
+    }
+
+    #[test]
     fn setters_preserve_positive_finite_types_and_zero_duration_caps() {
         let one = NonZeroUsize::MIN;
         let one_page = NonZeroU32::MIN;

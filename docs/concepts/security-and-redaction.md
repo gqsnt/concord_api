@@ -53,6 +53,7 @@ Different public values have different disclosure contracts:
 | rate limiter request | safe logical URL plus complete resolved rate plan | credentials, body, native request |
 | rate observer input | sanitized response head plus resolved plan | response body and native response |
 | `ApiError` formatting | endpoint, method, categories, focused safe kinds, status | native causes, protected values, body bytes, header values |
+| `ClientBuildError` | exact value-free construction kind; optional static generated input metadata | base/proxy text, PEM bytes, parser or Reqwest diagnostics, native source chains |
 | generated request `Debug` | safe structural type/state | body input and secrets |
 | completion events | IDs, category, status, bounded timing/counts | bodies, cursors, credentials, native diagnostics |
 
@@ -110,6 +111,14 @@ it does not erase values already retained downstream.
 categories rather than native causes. Parser errors, Reqwest errors, provider
 payloads, credential values, body producer errors, and hook messages are
 dropped or reduced according to the [Error reference](../reference/errors.md).
+
+Client construction distinguishes malformed base, HTTPS policy, missing TLS,
+proxy installation, root certificate, client identity, final native build,
+runtime, limiter, generated-input, credential, and internal failures without
+retaining their inputs. Root and identity structural checks latch the first
+safe kind and withhold first-excess bytes. `ClientBuildError::source()` remains
+`None`; do not separately log the discarded proxy, PEM parser, Reqwest, or
+native error to “add context.”
 
 A terminal `HttpResponseFailure` can own a complete bounded `StatusBody`.
 Formatting exposes only its structural state and length. Explicit

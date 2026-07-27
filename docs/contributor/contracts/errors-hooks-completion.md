@@ -50,6 +50,13 @@ use sanitized views.
 Built-in debug levels use the same semantic event boundary and never expose
 body bytes or native request/response objects.
 
+`ClientBuildError` is the separate pre-execution construction contract. Its
+non-exhaustive kind distinguishes missing input, invalid credential, base URL,
+HTTPS policy, unavailable TLS, proxy installation, root certificate, client
+identity, final native client build, runtime configuration, unavailable
+limiter, and internal failure. Only generated input metadata is optional;
+transport and TLS kinds remain value-free and source-less.
+
 ## Internal flow
 
 Core reduces failures at the stage that owns them. Configuration, request
@@ -140,6 +147,15 @@ structural timeout, connect, request-body, or transport category and are then
 dropped. Codec, body, record, provider, limiter, pagination, and hook failures
 expose only their contract-approved kinds or safe fields.
 
+Construction reduction happens at the owner: fixed-base parsing produces
+`InvalidBaseUrl`; HTTPS-only policy produces `HttpsRequired`; missing compiled
+TLS produces `TlsUnavailable`; native proxy installation produces
+`InvalidProxy`; structural and parsed PEM failures produce
+`InvalidRootCertificate` or `InvalidClientIdentity`; and final Reqwest client
+creation produces `HttpClientBuild`. Runtime and generated-limiter validation
+retain their dedicated kinds. The HTTP configuration builder stores only the
+first safe startup failure kind, never the rejected bytes.
+
 `HookError` accepts application-designated safe text so the hook itself can be
 diagnosed locally, but executor reduction drops that text from `ApiError`.
 Changing this behavior would require a deliberate public confidentiality
@@ -202,6 +218,12 @@ Adding an `ErrorCategory` requires mapping every terminal owner,
 `CompletionOutcome`, public formatting, Rustdoc, reference documentation, and
 exhaustiveness-sensitive tests. Adding a focused kind requires proving why its
 extra structure is stable and safe.
+
+Changing `ClientBuildErrorKind` requires one deterministic proof for every
+named variant plus public API coverage. Proxy, root PEM, identity PEM, and
+native build probes must use unique sentinels and prove absence from
+`Display`, `Debug`, and `Error::source`. Never retain a native source merely to
+make the kind more descriptive.
 
 A new event field expands what application code can retain. Review its
 cardinality, sensitivity, lifetime, ownership cost, and behavior on retries
