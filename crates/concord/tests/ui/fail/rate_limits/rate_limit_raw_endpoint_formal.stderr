@@ -1,0 +1,5 @@
+error: reusable rate-limit formal `endpoint` is reserved; use built-in dimension `endpoint` without `r#`
+ --> tests/ui/fail/rate_limits/rate_limit_raw_endpoint_formal.rs:8:21
+  |
+8 |                 by [r#endpoint];
+  |                     ^^^^^^^^^^

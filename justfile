@@ -62,9 +62,12 @@ docs: site
     cargo rustdoc -p concord-core --no-default-features --locked -- -D warnings
     cargo rustdoc -p concord-extras --no-default-features --locked -- -D warnings
     cargo rustdoc -p concord --no-default-features --locked -- -D warnings
+    cargo rustdoc -p concord-core --features records --locked -- -D warnings
+    cargo rustdoc -p concord --features records --locked -- -D warnings
     cargo rustdoc -p concord --features rate-limit --locked -- -D warnings
     cargo rustdoc -p concord-extras --features rate-limit --locked -- -D warnings
     cargo rustdoc -p concord --features csv --locked -- -D warnings
+    cargo rustdoc -p concord --features ndjson --locked -- -D warnings
     cargo rustdoc -p concord --features json --locked -- -D warnings
     cargo rustdoc -p concord --all-features --locked -- -D warnings
     cargo rustdoc -p concord-core --all-features --locked -- -D warnings

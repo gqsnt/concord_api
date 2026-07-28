@@ -1,0 +1,5 @@
+error: reusable rate-limit formal `host` is reserved; use built-in dimension `host` without `r#`
+ --> tests/ui/fail/rate_limits/rate_limit_raw_host_formal.rs:8:21
+  |
+8 |                 by [r#host];
+  |                     ^^^^^^

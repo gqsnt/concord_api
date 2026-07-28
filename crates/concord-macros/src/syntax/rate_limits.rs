@@ -502,6 +502,12 @@ fn parse_definition_dimension(
             "a reusable rate-limit dimension must be `host`, `endpoint`, or a bare formal name",
         )
     })?;
+    let canonical_name = canonical_ident(&name);
+    if matches!(canonical_name.as_str(), "host" | "endpoint") {
+        return Err(name.span().error(format!(
+            "reusable rate-limit formal `{canonical_name}` is reserved; use built-in dimension `{canonical_name}` without `r#`"
+        )));
+    }
     if input.peek(Token![.]) {
         return Err(name.span().error(
             "reusable rate-limit definitions cannot capture lexical values; use a bare formal name and bind it at each attachment",
@@ -867,6 +873,29 @@ mod tests {
             }
         });
         assert!(excessive_cost.contains("must not exceed any window capacity"));
+    }
+
+    #[test]
+    fn raw_builtin_names_are_rejected_as_reusable_formals() {
+        for (formal, canonical) in [(quote!(r#host), "host"), (quote!(r#endpoint), "endpoint")] {
+            let error = parse_error(quote! {
+                client Api {
+                    base "https://example.test";
+                    rate_limits {
+                        rule shared {
+                            by [#formal];
+                            1 / 1s;
+                        }
+                    }
+                }
+            });
+            assert_eq!(
+                error,
+                format!(
+                    "reusable rate-limit formal `{canonical}` is reserved; use built-in dimension `{canonical}` without `r#`"
+                )
+            );
+        }
     }
 
     #[test]
