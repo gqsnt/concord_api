@@ -39,8 +39,8 @@ use requests::*;
 use scopes::*;
 use shaping::*;
 
-pub(crate) fn generate(api: &Api, core_path: &TokenStream) -> TokenStream {
-    generate_client(&api.client, core_path)
+pub(crate) fn generate(api: &Api, facade_path: &TokenStream) -> TokenStream {
+    generate_client(&api.client, facade_path)
 }
 
 #[cfg(test)]
@@ -92,7 +92,7 @@ mod test_support {
             .expect("root scope")
     }
 
-    pub(super) fn core_path() -> TokenStream {
+    pub(super) fn facade_path() -> TokenStream {
         quote!(::concord)
     }
 }

@@ -38,22 +38,22 @@ const MAX_RATE_LIMIT_RULES_PER_PLAN: usize = 64;
 #[proc_macro]
 pub fn __api(input: TokenStream) -> TokenStream {
     syn::parse::<FacadeInput>(input)
-        .and_then(|input| expand_with_runtime(input.declaration, &input.runtime_path))
+        .and_then(|input| expand_with_facade(input.declaration, &input.facade_path))
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }
 
-fn expand_with_runtime(
+fn expand_with_facade(
     input: TokenStream2,
-    runtime_path: &TokenStream2,
+    facade_path: &TokenStream2,
 ) -> syn::Result<TokenStream2> {
     syntax::parse(input)
         .and_then(semantic::resolve)
-        .map(|model| emit::generate(&model, runtime_path))
+        .map(|model| emit::generate(&model, facade_path))
 }
 
 struct FacadeInput {
-    runtime_path: TokenStream2,
+    facade_path: TokenStream2,
     declaration: TokenStream2,
 }
 
@@ -69,9 +69,9 @@ impl Parse for FacadeInput {
         }
         let content;
         parenthesized!(content in input);
-        let runtime_path = content.parse()?;
+        let facade_path = content.parse()?;
         Ok(Self {
-            runtime_path,
+            facade_path,
             declaration: input.parse()?,
         })
     }

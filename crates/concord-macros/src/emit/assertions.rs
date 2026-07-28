@@ -52,7 +52,7 @@ pub(super) fn endpoint_where_clause(
     client: &Client,
     scopes: &[&Scope],
     endpoint: &Endpoint,
-    core_path: &TokenStream,
+    facade_path: &TokenStream,
     invocation_path: &TokenStream,
     include_execution: bool,
 ) -> TokenStream {
@@ -93,16 +93,16 @@ pub(super) fn endpoint_where_clause(
     for placement in &endpoint.config.auth {
         if matches!(placement.kind, ResolvedAuthPlacement::Authorization(_)) {
             let credential = &client.credentials[placement.credential];
-            let material = credential_material_type(client, credential, core_path);
+            let material = credential_material_type(client, credential, facade_path);
             bounds.push(quote_spanned! {
                 placement.span=>
-                #material: #core_path::auth::SecretCredential
+                #material: #facade_path::auth::SecretCredential
             });
         }
     }
     let specification_module = specification_module_name(client);
     let body = endpoint.body.as_ref().map_or_else(
-        || quote!(#core_path::__private::EmptyBody),
+        || quote!(#facade_path::__private::EmptyBody),
         |_| {
             let body_specification = body_specification_name(endpoint);
             quote!(#invocation_path::#specification_module::#body_specification)
@@ -110,27 +110,27 @@ pub(super) fn endpoint_where_clause(
     );
     if include_execution {
         if endpoint.pagination.is_some() {
-            bounds.push(quote!(#body: #core_path::body::PageRequestBodySpec));
+            bounds.push(quote!(#body: #facade_path::body::PageRequestBodySpec));
         } else {
-            bounds.push(quote!(#body: #core_path::body::RequestBodySpec));
+            bounds.push(quote!(#body: #facade_path::body::RequestBodySpec));
         }
     }
     let response_specification = response_specification_name(endpoint);
     let response = quote!(#invocation_path::#specification_module::#response_specification);
     if include_execution {
-        bounds.push(quote!(#response: #core_path::response::ResponseBodySpec));
+        bounds.push(quote!(#response: #facade_path::response::ResponseBodySpec));
         if let Some(pagination) = &endpoint.pagination {
-            let page = quote!(<#response as #core_path::response::ResponseBodySpec>::Output);
+            let page = quote!(<#response as #facade_path::response::ResponseBodySpec>::Output);
             let controller =
                 pagination_controller_type(&pagination.controller, invocation_path, false);
-            bounds.push(quote!(#response: #core_path::response::PageResponseSpec));
+            bounds.push(quote!(#response: #facade_path::response::PageResponseSpec));
             bounds.push(quote!(#page: ::std::iter::IntoIterator));
             bounds.push(quote! {
                 <#page as ::std::iter::IntoIterator>::Item:
                     ::std::marker::Send + 'static
             });
             bounds.push(quote! {
-                #controller: #core_path::pagination::PaginationController<#page>
+                #controller: #facade_path::pagination::PaginationController<#page>
             });
         }
     }
@@ -231,7 +231,7 @@ mod tests {
             &api.client,
             &[],
             endpoint,
-            &test_support::core_path(),
+            &test_support::facade_path(),
             &quote!(super),
             true,
         )
@@ -263,7 +263,7 @@ mod tests {
             &api.client,
             &[],
             endpoint,
-            &test_support::core_path(),
+            &test_support::facade_path(),
             &quote!(super),
             true,
         )
@@ -298,7 +298,7 @@ mod tests {
             &api.client,
             &[],
             endpoint,
-            &test_support::core_path(),
+            &test_support::facade_path(),
             &quote!(super),
             false,
         )
@@ -337,7 +337,7 @@ mod tests {
             &api.client,
             &[],
             endpoint,
-            &test_support::core_path(),
+            &test_support::facade_path(),
             &quote!(super),
             false,
         )

@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> TokenStream {
+pub(super) fn generate_client(client: &Client, facade_path: &TokenStream) -> TokenStream {
     let client_name = &client.name;
     let builder_name = &client.surface.builder_name;
     let support_name = &client.surface.support_name;
@@ -66,7 +66,7 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
         .enumerate()
         .map(|(index, secret)| {
             let field = secret_builder_field(index, &secret.name);
-            quote!(#field: ::std::option::Option<#core_path::auth::SecretString>,)
+            quote!(#field: ::std::option::Option<#facade_path::auth::SecretString>,)
         })
         .collect::<Vec<_>>();
     let provider_builder_fields = client
@@ -78,8 +78,8 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
                 let field = provider_builder_field(index, &credential.name);
                 Some(quote!(
                     #field: ::std::option::Option<::std::sync::Arc<
-                        dyn #core_path::auth::CredentialProvider<
-                            Material = <#provider as #core_path::auth::CredentialProvider>::Material
+                        dyn #facade_path::auth::CredentialProvider<
+                            Material = <#provider as #facade_path::auth::CredentialProvider>::Material
                         >
                     >>,
                 ))
@@ -121,12 +121,12 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
         .enumerate()
         .map(|(index, value)| generate_builder_value_methods(index, value))
         .collect::<Vec<_>>();
-    let secret_builder_methods = generate_secret_builder_methods(client, core_path);
-    let provider_builder_methods = generate_provider_builder_methods(client, core_path);
+    let secret_builder_methods = generate_secret_builder_methods(client, facade_path);
+    let provider_builder_methods = generate_provider_builder_methods(client, facade_path);
     let client_constructor = (!client.has_required_construction_inputs()).then(|| {
         quote! {
             #[doc = #constructor_doc]
-            pub fn new() -> ::std::result::Result<Self, #core_path::ClientBuildError> {
+            pub fn new() -> ::std::result::Result<Self, #facade_path::ClientBuildError> {
                 Self::builder().build()
             }
         }
@@ -137,10 +137,10 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
         .enumerate()
         .map(|(index, value)| generate_client_value_resolution(index, value))
         .collect::<Vec<_>>();
-    let build_secret_statements = generate_secret_resolution(client, core_path);
-    let build_provider_statements = generate_provider_resolution(client, core_path);
+    let build_secret_statements = generate_secret_resolution(client, facade_path);
+    let build_provider_statements = generate_provider_resolution(client, facade_path);
     let build_static_credential_statements =
-        generate_static_credential_resolution(client, core_path);
+        generate_static_credential_resolution(client, facade_path);
     let snapshot_fields = client
         .values
         .iter()
@@ -151,9 +151,9 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
             quote!(#field: #source,)
         })
         .collect::<Vec<_>>();
-    let credential_store_fields = generate_credential_store_fields(client, core_path);
-    let credential_store_initializers = generate_credential_store_initializers(client, core_path);
-    let credentials_module = generate_credentials_module(client, core_path);
+    let credential_store_fields = generate_credential_store_fields(client, facade_path);
+    let credential_store_initializers = generate_credential_store_initializers(client, facade_path);
+    let credentials_module = generate_credentials_module(client, facade_path);
     let credentials_method = generate_credentials_method(client);
 
     let runtime_baseline = client.config.timeout.map_or_else(
@@ -175,8 +175,8 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
         )?
     );
 
-    let scope_tree = generate_scope_tree(client, &client.children, &[], core_path);
-    let client_child_methods = generate_client_child_methods(client, core_path);
+    let scope_tree = generate_scope_tree(client, &client.children, &[], facade_path);
+    let client_child_methods = generate_client_child_methods(client, facade_path);
     let rate_limit_identity_constants = rate_limit_identity_constants(client);
 
     quote! {
@@ -187,7 +187,7 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
             #[allow(unused_imports)]
             use super::*;
             #[allow(unused_imports)]
-            use #core_path::prelude::*;
+            use #facade_path::prelude::*;
 
             #specification_aliases
         }
@@ -203,7 +203,7 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
         #[doc = #client_doc]
         #[derive(Clone)]
         pub struct #client_name {
-            __concord_core: #core_path::__private::ClientCore,
+            __concord_core: #facade_path::__private::ClientCore,
             __concord_values: ::std::sync::Arc<#values_type>,
             __concord_credentials: ::std::sync::Arc<#credentials_store>,
         }
@@ -213,8 +213,8 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
             #(#builder_value_fields)*
             #(#secret_builder_fields)*
             #(#provider_builder_fields)*
-            __concord_http: ::std::option::Option<#core_path::http::HttpConfigBuilder>,
-            __concord_runtime: ::std::option::Option<#core_path::runtime::RuntimeConfigBuilder>,
+            __concord_http: ::std::option::Option<#facade_path::http::HttpConfigBuilder>,
+            __concord_runtime: ::std::option::Option<#facade_path::runtime::RuntimeConfigBuilder>,
         }
 
         #[doc = #support_doc]
@@ -223,7 +223,7 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
             use super::*;
 
             mod __concord_generated {
-                pub(super) use #core_path as __core;
+                pub(super) use #facade_path as __core;
 
                 #contract_assertion
             }
@@ -243,7 +243,7 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
                 /// Returns the safe static or bounded runtime endpoint description.
                 fn description(
                     &self,
-                ) -> &#core_path::endpoint::EndpointDescription;
+                ) -> &#facade_path::endpoint::EndpointDescription;
 
                 #[doc(hidden)]
                 fn __concord_bind(self, client: &super::#client_name) -> Self::Request;
@@ -253,29 +253,29 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
                     &self,
                     client: &super::#client_name,
                 ) -> ::std::result::Result<
-                    #core_path::endpoint::SafeRequestPlan,
-                    #core_path::ApiError,
+                    #facade_path::endpoint::SafeRequestPlan,
+                    #facade_path::ApiError,
                 >;
             }
 
             #[doc(hidden)]
             impl<R> __concord_endpoint_seal::Sealed
-                for #core_path::endpoint::RuntimeEndpoint<R>
+                for #facade_path::endpoint::RuntimeEndpoint<R>
             where
-                R: #core_path::response::ResponseBodySpec,
+                R: #facade_path::response::ResponseBodySpec,
             {}
 
             #[doc(hidden)]
-            impl<R> Endpoint for #core_path::endpoint::RuntimeEndpoint<R>
+            impl<R> Endpoint for #facade_path::endpoint::RuntimeEndpoint<R>
             where
-                R: #core_path::response::ResponseBodySpec,
+                R: #facade_path::response::ResponseBodySpec,
             {
-                type Request = #core_path::endpoint::Request<Self>;
+                type Request = #facade_path::endpoint::Request<Self>;
                 type Response = R;
 
                 fn description(
                     &self,
-                ) -> &#core_path::endpoint::EndpointDescription {
+                ) -> &#facade_path::endpoint::EndpointDescription {
                     self.description()
                 }
 
@@ -290,13 +290,13 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
                     &self,
                     client: &super::#client_name,
                 ) -> ::std::result::Result<
-                    #core_path::endpoint::SafeRequestPlan,
-                    #core_path::ApiError,
+                    #facade_path::endpoint::SafeRequestPlan,
+                    #facade_path::ApiError,
                 > {
                     __concord_generated::__core::__private::safe_request_plan(
                         &client.__concord_core,
                         self.description(),
-                        <R as #core_path::response::ResponseBodySpec>::accept(),
+                        <R as #facade_path::response::ResponseBodySpec>::accept(),
                         |builder| {
                             <Self as __concord_generated::__core::__private::EndpointSpec>::prepare_head(
                                 self,
@@ -338,8 +338,8 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
                     &self,
                     endpoint: &E,
                 ) -> ::std::result::Result<
-                    #core_path::endpoint::SafeRequestPlan,
-                    #core_path::ApiError,
+                    #facade_path::endpoint::SafeRequestPlan,
+                    #facade_path::ApiError,
                 >
                 where
                     E: Endpoint,
@@ -374,8 +374,8 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
                 pub fn configure_http<F>(mut self, configure: F) -> Self
                 where
                     F: ::std::ops::FnOnce(
-                        #core_path::http::HttpConfigBuilder,
-                    ) -> #core_path::http::HttpConfigBuilder,
+                        #facade_path::http::HttpConfigBuilder,
+                    ) -> #facade_path::http::HttpConfigBuilder,
                 {
                     let Some(http) = self.__concord_http.take() else {
                         unreachable!("generated HTTP builder state is internally consistent");
@@ -391,8 +391,8 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
                 pub fn configure_runtime<F>(mut self, configure: F) -> Self
                 where
                     F: ::std::ops::FnOnce(
-                        #core_path::runtime::RuntimeConfigBuilder,
-                    ) -> #core_path::runtime::RuntimeConfigBuilder,
+                        #facade_path::runtime::RuntimeConfigBuilder,
+                    ) -> #facade_path::runtime::RuntimeConfigBuilder,
                 {
                     let Some(runtime) = self.__concord_runtime.take() else {
                         unreachable!("generated runtime builder state is internally consistent");
@@ -405,7 +405,7 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
                 /// Installs a Concord-managed retry policy immediately and in call order.
                 ///
                 /// A later `retry` call or runtime configuration transformation replaces it.
-                pub fn retry(mut self, policy: #core_path::retry::RetryPolicy) -> Self {
+                pub fn retry(mut self, policy: #facade_path::retry::RetryPolicy) -> Self {
                     let Some(runtime) = self.__concord_runtime.take() else {
                         unreachable!("generated runtime builder state is internally consistent");
                     };
@@ -417,7 +417,7 @@ pub(super) fn generate_client(client: &Client, core_path: &TokenStream) -> Token
                 /// Resolves selected defaults once and builds the immutable generated client snapshot.
                 pub fn build(
                     self,
-                ) -> ::std::result::Result<super::#client_name, #core_path::ClientBuildError> {
+                ) -> ::std::result::Result<super::#client_name, #facade_path::ClientBuildError> {
                     #(#build_value_statements)*
                     #build_secret_statements
                     #build_provider_statements
@@ -580,7 +580,7 @@ mod tests {
     #[test]
     fn emits_client_builder_and_sealed_endpoint_contract() {
         let api = test_support::api();
-        let output = generate_client(&api.client, &test_support::core_path()).to_string();
+        let output = generate_client(&api.client, &test_support::facade_path()).to_string();
 
         assert!(output.contains("pub struct ArtifactApi"));
         assert!(output.contains("pub struct ArtifactApiBuilder"));

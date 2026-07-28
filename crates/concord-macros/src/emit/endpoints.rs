@@ -5,7 +5,7 @@ pub(super) fn generate_endpoint_method(
     scopes: &[&Scope],
     endpoint: &Endpoint,
     on_client: bool,
-    core_path: &TokenStream,
+    facade_path: &TokenStream,
 ) -> TokenStream {
     let method = &endpoint.surface.method_name;
     let endpoint_type = &endpoint.surface.endpoint_type_name;
@@ -20,7 +20,7 @@ pub(super) fn generate_endpoint_method(
         let body_specification = body_specification_name(endpoint);
         quote!(
             <#invocation_path::#specification_module::#body_specification
-                as #core_path::body::RequestBodySpec>::Input
+                as #facade_path::body::RequestBodySpec>::Input
         )
     });
     let parameters = endpoint
@@ -84,7 +84,7 @@ pub(super) fn generate_endpoint(
     client: &Client,
     scopes: &[&Scope],
     endpoint: &Endpoint,
-    core_path: &TokenStream,
+    facade_path: &TokenStream,
 ) -> TokenStream {
     let endpoint_name = &endpoint.surface.endpoint_type_name;
     let request_name = &endpoint.surface.request_type_name;
@@ -99,20 +99,20 @@ pub(super) fn generate_endpoint(
     let response_specification = response_specification_name(endpoint);
     let response = quote!(#invocation_path::#specification_module::#response_specification);
     let (description_static, description_declaration) =
-        generate_endpoint_description(endpoint, &response, core_path);
+        generate_endpoint_description(endpoint, &response, facade_path);
     let endpoint_doc = endpoint_type_doc(endpoint);
     let constructor_doc = endpoint_constructor_doc(endpoint);
 
     let scope_fields = endpoint_scope_fields(scopes);
     let endpoint_fields = endpoint_value_fields(endpoint);
     let body_type = endpoint.body.as_ref().map_or_else(
-        || quote!(#core_path::__private::EmptyBody),
+        || quote!(#facade_path::__private::EmptyBody),
         |_| {
             let body_specification = body_specification_name(endpoint);
             quote!(#invocation_path::#specification_module::#body_specification)
         },
     );
-    let body_input = request_body_input_type(&body_type, core_path);
+    let body_input = request_body_input_type(&body_type, facade_path);
     let body_storage = Ident::new("BodyInput", Span::mixed_site());
     let (struct_generics, body_field) = match endpoint.surface.clone_eligibility {
         CloneEligibility::Always => (quote!(), quote!(__concord_body: #body_input,)),
@@ -137,7 +137,7 @@ pub(super) fn generate_endpoint(
         &endpoint_bindings,
         body_binding.as_ref(),
         &body_type,
-        core_path,
+        facade_path,
     );
     let explicit_initialization = initialize_explicit_endpoint(
         scopes,
@@ -146,12 +146,12 @@ pub(super) fn generate_endpoint(
         &endpoint_bindings,
         body_binding.as_ref(),
         &generated_core,
-        core_path,
+        facade_path,
     );
     let facade_parameters =
-        endpoint_facade_constructor_parameters(scopes, endpoint, &body_type, core_path);
+        endpoint_facade_constructor_parameters(scopes, endpoint, &body_type, facade_path);
     let facade_initialization =
-        initialize_facade_endpoint(scopes, endpoint, &generated_core, core_path);
+        initialize_facade_endpoint(scopes, endpoint, &generated_core, facade_path);
     let inherent_setters = generate_explicit_endpoint_setters(scopes, endpoint);
     let clone_fields = endpoint_clone_field_initializers(scopes, endpoint);
     let clone_attribute = matches!(endpoint.surface.clone_eligibility, CloneEligibility::Always)
@@ -210,13 +210,25 @@ pub(super) fn generate_endpoint(
     let path_statements = path_statements(client, scopes, endpoint);
     let query_statements = query_statements(client, scopes, endpoint);
     let header_statements = header_statements(client, scopes, endpoint);
-    let auth_statements = auth_statements(client, endpoint, core_path);
+    let auth_statements = auth_statements(client, endpoint, facade_path);
     let rate_limit_statements =
-        rate_limit_statements(client, scopes, endpoint, core_path, &invocation_path);
-    let surface_where_clause =
-        endpoint_where_clause(client, scopes, endpoint, core_path, &invocation_path, false);
-    let where_clause =
-        endpoint_where_clause(client, scopes, endpoint, core_path, &invocation_path, true);
+        rate_limit_statements(client, scopes, endpoint, facade_path, &invocation_path);
+    let surface_where_clause = endpoint_where_clause(
+        client,
+        scopes,
+        endpoint,
+        facade_path,
+        &invocation_path,
+        false,
+    );
+    let where_clause = endpoint_where_clause(
+        client,
+        scopes,
+        endpoint,
+        facade_path,
+        &invocation_path,
+        true,
+    );
     let request_wrapper = generate_request_wrapper(
         client,
         endpoint,
@@ -224,7 +236,7 @@ pub(super) fn generate_endpoint(
             support_path: &support_path,
             generated_core: &generated_core,
         },
-        core_path,
+        facade_path,
         &where_clause,
     );
     let pagination_impl = generate_pagination_impl(
@@ -232,7 +244,7 @@ pub(super) fn generate_endpoint(
         scopes,
         endpoint,
         &generated_core,
-        core_path,
+        facade_path,
         &invocation_path,
         &where_clause,
     );
@@ -262,7 +274,7 @@ pub(super) fn generate_endpoint(
             #[must_use]
             pub fn description(
                 &self,
-            ) -> &'static #core_path::endpoint::EndpointDescription {
+            ) -> &'static #facade_path::endpoint::EndpointDescription {
                 ::std::sync::LazyLock::force(&#description_static)
             }
 
@@ -312,7 +324,7 @@ pub(super) fn generate_endpoint(
 
             fn description(
                 &self,
-            ) -> &#core_path::endpoint::EndpointDescription {
+            ) -> &#facade_path::endpoint::EndpointDescription {
                 ::std::sync::LazyLock::force(&#description_static)
             }
 
@@ -338,13 +350,13 @@ pub(super) fn generate_endpoint(
                 &self,
                 client: &#invocation_path::#client_name,
             ) -> ::std::result::Result<
-                #core_path::endpoint::SafeRequestPlan,
-                #core_path::ApiError,
+                #facade_path::endpoint::SafeRequestPlan,
+                #facade_path::ApiError,
             > {
                 #generated_core::__private::safe_request_plan(
                     &client.__concord_core,
                     ::std::sync::LazyLock::force(&#description_static),
-                    <#response as #core_path::response::ResponseBodySpec>::accept(),
+                    <#response as #facade_path::response::ResponseBodySpec>::accept(),
                     |builder| self.__concord_prepare_head(
                         &client.__concord_values,
                         &client.__concord_credentials,
@@ -461,7 +473,7 @@ pub(super) fn generate_pagination_impl(
     scopes: &[&Scope],
     endpoint: &Endpoint,
     generated_core: &TokenStream,
-    core_path: &TokenStream,
+    facade_path: &TokenStream,
     invocation_path: &TokenStream,
     where_clause: &TokenStream,
 ) -> TokenStream {
@@ -472,7 +484,7 @@ pub(super) fn generate_pagination_impl(
     let specification_module = specification_module_name(client);
     let response_specification = response_specification_name(endpoint);
     let response = quote!(#invocation_path::#specification_module::#response_specification);
-    let page_type = quote!(<#response as #core_path::response::ResponseBodySpec>::Output);
+    let page_type = quote!(<#response as #facade_path::response::ResponseBodySpec>::Output);
     let controller = &pagination.controller;
     let controller_type = pagination_controller_type(controller, invocation_path, false);
     let controller_fields = pagination
@@ -610,7 +622,7 @@ pub(super) fn explicit_constructor_parameters(
     endpoint_bindings: &[Ident],
     body_binding: Option<&Ident>,
     body_specification: &TokenStream,
-    core_path: &TokenStream,
+    facade_path: &TokenStream,
 ) -> TokenStream {
     let mut scope_index = 0;
     let scope_parameters = scopes
@@ -644,7 +656,7 @@ pub(super) fn explicit_constructor_parameters(
             }
             RequiredArgument::Body => {
                 let binding = body_binding.expect("body binding");
-                let ty = request_body_input_type(body_specification, core_path);
+                let ty = request_body_input_type(body_specification, facade_path);
                 quote!(#binding: #ty,)
             }
         })
@@ -659,7 +671,7 @@ pub(super) fn initialize_explicit_endpoint(
     endpoint_bindings: &[Ident],
     body_binding: Option<&Ident>,
     generated_core: &TokenStream,
-    core_path: &TokenStream,
+    facade_path: &TokenStream,
 ) -> TokenStream {
     let mut scope_binding_index = 0;
     let scope_statements = scopes
@@ -722,7 +734,7 @@ pub(super) fn initialize_explicit_endpoint(
         endpoint.body.as_ref().map(|body| &body.ty),
         body_binding,
         generated_core,
-        core_path,
+        facade_path,
     );
     quote! {
         #(#scope_statements)*
@@ -740,7 +752,7 @@ pub(super) fn endpoint_facade_constructor_parameters(
     scopes: &[&Scope],
     endpoint: &Endpoint,
     body_specification: &TokenStream,
-    core_path: &TokenStream,
+    facade_path: &TokenStream,
 ) -> TokenStream {
     let scope_parameters = facade_scope_fields_as_parameters(scopes);
     let endpoint_parameters = endpoint
@@ -755,7 +767,7 @@ pub(super) fn endpoint_facade_constructor_parameters(
                 quote!(#binding: #ty,)
             }
             RequiredArgument::Body => {
-                let ty = request_body_input_type(body_specification, core_path);
+                let ty = request_body_input_type(body_specification, facade_path);
                 quote!(__concord_body_input: #ty,)
             }
         })
@@ -767,7 +779,7 @@ pub(super) fn initialize_facade_endpoint(
     scopes: &[&Scope],
     endpoint: &Endpoint,
     generated_core: &TokenStream,
-    core_path: &TokenStream,
+    facade_path: &TokenStream,
 ) -> TokenStream {
     let statements = endpoint
         .parameters
@@ -831,7 +843,7 @@ pub(super) fn initialize_facade_endpoint(
         endpoint.body.as_ref().map(|body| &body.ty),
         body_binding.as_ref(),
         generated_core,
-        core_path,
+        facade_path,
     );
     quote! {
         #(#statements)*
@@ -1053,7 +1065,7 @@ mod tests {
         let api = test_support::api();
         let endpoint = test_support::endpoint(&api);
         let output =
-            generate_endpoint(&api.client, &[], endpoint, &test_support::core_path()).to_string();
+            generate_endpoint(&api.client, &[], endpoint, &test_support::facade_path()).to_string();
         let endpoint_name = endpoint.surface.endpoint_type_name.to_string();
 
         assert!(output.contains(&format!("pub struct {endpoint_name}")));

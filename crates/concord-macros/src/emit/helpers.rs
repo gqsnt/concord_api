@@ -1,25 +1,28 @@
 use super::*;
 
-pub(super) fn method_token(method: &ResolvedMethod, core_path: &TokenStream) -> TokenStream {
+pub(super) fn method_token(method: &ResolvedMethod, facade_path: &TokenStream) -> TokenStream {
     match method {
-        ResolvedMethod::Get => quote!(#core_path::__private::Method::GET),
-        ResolvedMethod::Post => quote!(#core_path::__private::Method::POST),
-        ResolvedMethod::Put => quote!(#core_path::__private::Method::PUT),
-        ResolvedMethod::Patch => quote!(#core_path::__private::Method::PATCH),
-        ResolvedMethod::Delete => quote!(#core_path::__private::Method::DELETE),
-        ResolvedMethod::Head => quote!(#core_path::__private::Method::HEAD),
-        ResolvedMethod::Options => quote!(#core_path::__private::Method::OPTIONS),
-        ResolvedMethod::Trace => quote!(#core_path::__private::Method::TRACE),
-        ResolvedMethod::Connect => quote!(#core_path::__private::Method::CONNECT),
+        ResolvedMethod::Get => quote!(#facade_path::__private::Method::GET),
+        ResolvedMethod::Post => quote!(#facade_path::__private::Method::POST),
+        ResolvedMethod::Put => quote!(#facade_path::__private::Method::PUT),
+        ResolvedMethod::Patch => quote!(#facade_path::__private::Method::PATCH),
+        ResolvedMethod::Delete => quote!(#facade_path::__private::Method::DELETE),
+        ResolvedMethod::Head => quote!(#facade_path::__private::Method::HEAD),
+        ResolvedMethod::Options => quote!(#facade_path::__private::Method::OPTIONS),
+        ResolvedMethod::Trace => quote!(#facade_path::__private::Method::TRACE),
+        ResolvedMethod::Connect => quote!(#facade_path::__private::Method::CONNECT),
         ResolvedMethod::Custom(value) => quote!(
-            #core_path::__private::Method::from_bytes(#value.as_bytes())
+            #facade_path::__private::Method::from_bytes(#value.as_bytes())
                 .expect("the Concord macro validates custom HTTP method tokens")
         ),
     }
 }
 
-pub(super) fn request_body_input_type(body: &TokenStream, core_path: &TokenStream) -> TokenStream {
-    quote!(<#body as #core_path::body::RequestBodySpec>::Input)
+pub(super) fn request_body_input_type(
+    body: &TokenStream,
+    facade_path: &TokenStream,
+) -> TokenStream {
+    quote!(<#body as #facade_path::body::RequestBodySpec>::Input)
 }
 
 pub(super) fn default_expr(value: &ResolvedDefault) -> TokenStream {

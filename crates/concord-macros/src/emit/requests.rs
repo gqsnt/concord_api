@@ -9,7 +9,7 @@ pub(super) fn generate_request_wrapper(
     client: &Client,
     endpoint: &Endpoint,
     bridge: RequestBridge<'_>,
-    core_path: &TokenStream,
+    facade_path: &TokenStream,
     where_clause: &TokenStream,
 ) -> TokenStream {
     let RequestBridge {
@@ -43,13 +43,13 @@ pub(super) fn generate_request_wrapper(
             let method = &terminal.method;
             let field = credential_store_field(terminal.credential, &credential.name);
             let identity = endpoint_identity(endpoint);
-            let native_method = method_token(&endpoint.method, core_path);
+            let native_method = method_token(&endpoint.method, facade_path);
             quote! {
                 /// Executes this endpoint and atomically stores its decoded output as the
                 /// endpoint-backed credential selected by the declaration.
                 pub async fn #method(
                     self,
-                ) -> ::std::result::Result<(), #core_path::ApiError> {
+                ) -> ::std::result::Result<(), #facade_path::ApiError> {
                     let __concord_credential = #generated_core::__private::inspect_endpoint(
                         &self.__concord_inner,
                         |endpoint| {
@@ -83,9 +83,9 @@ pub(super) fn generate_request_wrapper(
             pub fn paginate<L>(
                 self,
                 limit: L,
-            ) -> #core_path::pagination::PaginatedRequest<#endpoint_name>
+            ) -> #facade_path::pagination::PaginatedRequest<#endpoint_name>
             where
-                L: ::std::convert::Into<#core_path::PageLimit>,
+                L: ::std::convert::Into<#facade_path::PageLimit>,
             {
                 #generated_core::__private::paginate_request(self.__concord_inner, limit)
             }
@@ -95,7 +95,7 @@ pub(super) fn generate_request_wrapper(
         quote! {
             /// Selects universal accepted response metadata while retaining the declared output.
             #[must_use]
-            pub fn response(self) -> #core_path::endpoint::ResponseRequest<#endpoint_name> {
+            pub fn response(self) -> #facade_path::endpoint::ResponseRequest<#endpoint_name> {
                 #generated_core::__private::response_request(self.__concord_inner)
             }
         }
@@ -106,7 +106,7 @@ pub(super) fn generate_request_wrapper(
         #[must_use]
         pub fn response_bytes<Mode>(
             self,
-        ) -> #core_path::endpoint::ResponseBytesRequest<#endpoint_name>
+        ) -> #facade_path::endpoint::ResponseBytesRequest<#endpoint_name>
         where
             <#endpoint_name as #support_path::Endpoint>::Response:
                 #generated_core::response::ResponseBodySpec<Mode = Mode>,
@@ -131,7 +131,7 @@ pub(super) fn generate_request_wrapper(
         #[doc = #request_doc]
         #[must_use = "request construction is inert; await it or select a terminal"]
         pub struct #request_name {
-            __concord_inner: #core_path::endpoint::Request<#endpoint_name>,
+            __concord_inner: #facade_path::endpoint::Request<#endpoint_name>,
         }
 
         impl #request_name {
@@ -179,9 +179,9 @@ pub(super) fn generate_request_wrapper(
         #where_clause
         {
             type Output =
-                <#core_path::endpoint::Request<#endpoint_name> as ::std::future::IntoFuture>::Output;
+                <#facade_path::endpoint::Request<#endpoint_name> as ::std::future::IntoFuture>::Output;
             type IntoFuture =
-                <#core_path::endpoint::Request<#endpoint_name> as ::std::future::IntoFuture>::IntoFuture;
+                <#facade_path::endpoint::Request<#endpoint_name> as ::std::future::IntoFuture>::IntoFuture;
 
             fn into_future(self) -> Self::IntoFuture {
                 ::std::future::IntoFuture::into_future(self.__concord_inner)
@@ -284,15 +284,16 @@ mod tests {
     fn emits_named_request_with_inherent_setters_and_terminal() {
         let api = test_support::api();
         let endpoint = test_support::endpoint(&api);
-        let core = test_support::core_path();
+        let facade_path = quote!(::application_facade);
+        let generated_core = quote!(super::__concord_generated::__core);
         let output = generate_request_wrapper(
             &api.client,
             endpoint,
             RequestBridge {
                 support_path: &quote!(super),
-                generated_core: &core,
+                generated_core: &generated_core,
             },
-            &core,
+            &facade_path,
             &quote!(),
         )
         .to_string();
@@ -312,6 +313,11 @@ mod tests {
         assert!(output.contains("pub fn response_bytes"));
         assert!(output.contains("ResponseBytesRequest"));
         assert!(output.contains("ResponseBytesMode"));
-        assert!(output.contains("__private :: response_bytes_request"));
+        assert!(output.contains(
+            "__concord_inner : :: application_facade :: endpoint :: Request < FetchItem >"
+        ));
+        assert!(output.contains(
+            "super :: __concord_generated :: __core :: __private :: response_bytes_request"
+        ));
     }
 }

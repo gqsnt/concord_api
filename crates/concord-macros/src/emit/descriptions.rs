@@ -3,28 +3,28 @@ use super::*;
 pub(super) fn generate_endpoint_description(
     endpoint: &Endpoint,
     response: &TokenStream,
-    core_path: &TokenStream,
+    facade_path: &TokenStream,
 ) -> (Ident, TokenStream) {
     let description_static = private_ident("endpoint_description", endpoint.id, &endpoint.name);
     let contract_id = &endpoint.contract_id.value;
     let source_path = syn::LitStr::new(&endpoint.surface.docs_identity, endpoint.name.span());
     let route = syn::LitStr::new(&render_route(&endpoint.docs), endpoint.name.span());
-    let method = method_token(&endpoint.method, core_path);
+    let method = method_token(&endpoint.method, facade_path);
     let timeout = endpoint.config.timeout.map_or_else(
-        || quote!(#core_path::endpoint::TimeoutSelection::Disabled),
+        || quote!(#facade_path::endpoint::TimeoutSelection::Disabled),
         |duration| {
             let seconds = duration.as_secs();
             let nanos = duration.subsec_nanos();
             quote! {
-                #core_path::endpoint::TimeoutSelection::Explicit(
+                #facade_path::endpoint::TimeoutSelection::Explicit(
                     ::std::time::Duration::new(#seconds, #nanos)
                 )
             }
         },
     );
     let body_category = endpoint.body.as_ref().map_or_else(
-        || quote!(#core_path::endpoint::RequestBodyCategory::Empty),
-        |_| quote!(#core_path::endpoint::RequestBodyCategory::Specification),
+        || quote!(#facade_path::endpoint::RequestBodyCategory::Empty),
+        |_| quote!(#facade_path::endpoint::RequestBodyCategory::Specification),
     );
     let body_specification = endpoint.body.as_ref().map_or_else(
         || quote!(::std::option::Option::None),
@@ -39,20 +39,20 @@ pub(super) fn generate_endpoint_description(
     let rate_limit = !endpoint.config.rate_limits.is_empty();
     let tokens = quote! {
         static #description_static:
-            ::std::sync::LazyLock<#core_path::endpoint::EndpointDescription> =
+            ::std::sync::LazyLock<#facade_path::endpoint::EndpointDescription> =
             ::std::sync::LazyLock::new(|| {
                 let __concord_response_acquisition =
-                    <<#response as #core_path::response::ResponseBodySpec>::Mode
-                    as #core_path::response::ResponseMode>::ACQUISITION;
-                #core_path::endpoint::EndpointDescription::generated(
-                    #core_path::__private::endpoint_id_from_static(#contract_id),
+                    <<#response as #facade_path::response::ResponseBodySpec>::Mode
+                    as #facade_path::response::ResponseMode>::ACQUISITION;
+                #facade_path::endpoint::EndpointDescription::generated(
+                    #facade_path::__private::endpoint_id_from_static(#contract_id),
                     #method,
                     #source_path,
                     #route,
                     #body_category,
                     #body_specification,
                     __concord_response_acquisition,
-                    #core_path::endpoint::EndpointCapabilities::generated(
+                    #facade_path::endpoint::EndpointCapabilities::generated(
                         #pagination,
                         #credential_storage,
                         #authentication,
@@ -79,7 +79,7 @@ mod tests {
         let (_, tokens) = generate_endpoint_description(
             endpoint,
             &quote!(crate::ResponseSpec),
-            &test_support::core_path(),
+            &test_support::facade_path(),
         );
         let output = tokens.to_string();
 

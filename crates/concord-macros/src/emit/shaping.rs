@@ -177,7 +177,7 @@ pub(super) fn header_statements(
 pub(super) fn auth_statements(
     client: &Client,
     endpoint: &Endpoint,
-    core_path: &TokenStream,
+    facade_path: &TokenStream,
 ) -> TokenStream {
     if endpoint.config.auth.is_empty() {
         return quote!();
@@ -190,7 +190,7 @@ pub(super) fn auth_statements(
             let credential = &client.credentials[placement.credential];
             let field = credential_store_field(placement.credential, &credential.name);
             let reference = quote!(__concord_credentials.#field.credential());
-            let material = credential_material_type(client, credential, core_path);
+            let material = credential_material_type(client, credential, facade_path);
             let source_span = match &credential.source {
                 CredentialSource::Custom { provider } => provider.span(),
                 _ => credential.name.span(),
@@ -198,25 +198,25 @@ pub(super) fn auth_statements(
             let (constructor, fallible) = match &placement.kind {
                 ResolvedAuthPlacement::Bearer => (
                     quote_spanned!(source_span=>
-                        #core_path::__private::Auth::bearer::<#material>(#reference)
+                        #facade_path::__private::Auth::bearer::<#material>(#reference)
                     ),
                     false,
                 ),
                 ResolvedAuthPlacement::Basic => (
                     quote_spanned!(source_span=>
-                        #core_path::__private::Auth::basic(#reference)
+                        #facade_path::__private::Auth::basic(#reference)
                     ),
                     false,
                 ),
                 ResolvedAuthPlacement::Authorization(None) => (
                     quote_spanned!(source_span=>
-                        #core_path::__private::Auth::authorization::<#material>(#reference)
+                        #facade_path::__private::Auth::authorization::<#material>(#reference)
                     ),
                     false,
                 ),
                 ResolvedAuthPlacement::Authorization(Some(scheme)) => (
                     quote_spanned!(source_span=>
-                        #core_path::__private::Auth::authorization_with_scheme::<#material>(
+                        #facade_path::__private::Auth::authorization_with_scheme::<#material>(
                             #scheme,
                             #reference,
                         )
@@ -228,8 +228,8 @@ pub(super) fn auth_statements(
                         syn::LitStr::new(&name.value().to_ascii_lowercase(), name.span());
                     (
                         quote_spanned!(source_span=>
-                            #core_path::__private::Auth::header::<#material>(
-                                #core_path::__private::HeaderName::from_static(#canonical),
+                            #facade_path::__private::Auth::header::<#material>(
+                                #facade_path::__private::HeaderName::from_static(#canonical),
                                 #reference,
                             )
                         ),
@@ -238,20 +238,20 @@ pub(super) fn auth_statements(
                 }
                 ResolvedAuthPlacement::Query(name) => (
                     quote_spanned!(source_span=>
-                        #core_path::__private::Auth::query::<#material>(#name, #reference)
+                        #facade_path::__private::Auth::query::<#material>(#name, #reference)
                     ),
                     true,
                 ),
             };
             let policy = match placement.challenge {
                 ResolvedChallengePolicy::Unauthorized => quote!(
-                    #core_path::auth::ChallengePolicy::Unauthorized
+                    #facade_path::auth::ChallengePolicy::Unauthorized
                 ),
                 ResolvedChallengePolicy::UnauthorizedOrForbidden => quote!(
-                    #core_path::auth::ChallengePolicy::UnauthorizedOrForbidden
+                    #facade_path::auth::ChallengePolicy::UnauthorizedOrForbidden
                 ),
                 ResolvedChallengePolicy::Never => {
-                    quote!(#core_path::auth::ChallengePolicy::Never)
+                    quote!(#facade_path::auth::ChallengePolicy::Never)
                 }
             };
             if fallible {
@@ -274,7 +274,7 @@ pub(super) fn rate_limit_statements(
     client: &Client,
     scopes: &[&Scope],
     endpoint: &Endpoint,
-    _core_path: &TokenStream,
+    _facade_path: &TokenStream,
     identity_path: &TokenStream,
 ) -> TokenStream {
     let rate_limit_ids = rate_limit_identity_ids(client);
@@ -592,7 +592,7 @@ pub(super) fn body_constructor(
     body: Option<&Type>,
     binding: Option<&Ident>,
     _generated_core: &TokenStream,
-    _core_path: &TokenStream,
+    _facade_path: &TokenStream,
 ) -> TokenStream {
     match (body, binding) {
         (Some(_), Some(binding)) => quote!(#binding),
@@ -632,7 +632,7 @@ mod tests {
             &api.client,
             &[],
             endpoint,
-            &test_support::core_path(),
+            &test_support::facade_path(),
             &quote!(super),
         )
         .to_string();
@@ -673,7 +673,7 @@ mod tests {
             &api.client,
             &[scope],
             endpoint,
-            &test_support::core_path(),
+            &test_support::facade_path(),
             &quote!(super),
         )
         .to_string()
@@ -744,7 +744,7 @@ mod tests {
             &api.client,
             &[scope],
             endpoint,
-            &test_support::core_path(),
+            &test_support::facade_path(),
             &quote!(super),
         )
         .to_string();

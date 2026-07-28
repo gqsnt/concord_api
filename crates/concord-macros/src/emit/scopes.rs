@@ -2,15 +2,15 @@ use super::*;
 
 pub(super) fn generate_client_child_methods(
     client: &Client,
-    core_path: &TokenStream,
+    facade_path: &TokenStream,
 ) -> TokenStream {
     let methods = client
         .children
         .iter()
         .map(|child| match child {
-            Child::Scope(scope) => generate_scope_entry(client, &[], scope, true, core_path),
+            Child::Scope(scope) => generate_scope_entry(client, &[], scope, true, facade_path),
             Child::Endpoint(endpoint) => {
-                generate_endpoint_method(client, &[], endpoint, true, core_path)
+                generate_endpoint_method(client, &[], endpoint, true, facade_path)
             }
         })
         .collect::<Vec<_>>();
@@ -21,13 +21,15 @@ pub(super) fn generate_scope_tree(
     client: &Client,
     children: &[Child],
     ancestors: &[&Scope],
-    core_path: &TokenStream,
+    facade_path: &TokenStream,
 ) -> TokenStream {
     let items = children
         .iter()
         .map(|child| match child {
-            Child::Scope(scope) => generate_scope_module(client, scope, ancestors, core_path),
-            Child::Endpoint(endpoint) => generate_endpoint(client, ancestors, endpoint, core_path),
+            Child::Scope(scope) => generate_scope_module(client, scope, ancestors, facade_path),
+            Child::Endpoint(endpoint) => {
+                generate_endpoint(client, ancestors, endpoint, facade_path)
+            }
         })
         .collect::<Vec<_>>();
     quote!(#(#items)*)
@@ -37,7 +39,7 @@ pub(super) fn generate_scope_module(
     client: &Client,
     scope: &Scope,
     ancestors: &[&Scope],
-    core_path: &TokenStream,
+    facade_path: &TokenStream,
 ) -> TokenStream {
     let mut visible = ancestors.to_vec();
     visible.push(scope);
@@ -69,14 +71,14 @@ pub(super) fn generate_scope_module(
         .iter()
         .map(|child| match child {
             Child::Scope(child_scope) => {
-                generate_scope_entry(client, &visible, child_scope, false, core_path)
+                generate_scope_entry(client, &visible, child_scope, false, facade_path)
             }
             Child::Endpoint(endpoint) => {
-                generate_endpoint_method(client, &visible, endpoint, false, core_path)
+                generate_endpoint_method(client, &visible, endpoint, false, facade_path)
             }
         })
         .collect::<Vec<_>>();
-    let nested = generate_scope_tree(client, &scope.children, &visible, core_path);
+    let nested = generate_scope_tree(client, &scope.children, &visible, facade_path);
 
     quote! {
         pub mod #module_name {
@@ -114,7 +116,7 @@ pub(super) fn generate_scope_entry(
     ancestors: &[&Scope],
     scope: &Scope,
     on_client: bool,
-    _core_path: &TokenStream,
+    _facade_path: &TokenStream,
 ) -> TokenStream {
     let method = &scope.surface.method_name;
     let facade = &scope.surface.facade_name;
@@ -406,7 +408,7 @@ mod tests {
             &api.client,
             &api.client.children,
             &[],
-            &test_support::core_path(),
+            &test_support::facade_path(),
         )
         .to_string();
 

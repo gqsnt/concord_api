@@ -2,7 +2,7 @@ use super::*;
 
 pub(super) fn generate_secret_builder_methods(
     client: &Client,
-    core_path: &TokenStream,
+    facade_path: &TokenStream,
 ) -> TokenStream {
     let methods = client
         .secrets
@@ -16,7 +16,7 @@ pub(super) fn generate_secret_builder_methods(
                 #[doc = "Sets one required protected client secret; a later call replaces it."]
                 pub fn #method(
                     mut self,
-                    value: #core_path::auth::SecretString,
+                    value: #facade_path::auth::SecretString,
                 ) -> Self {
                     self.#field = ::std::option::Option::Some(value);
                     self
@@ -29,7 +29,7 @@ pub(super) fn generate_secret_builder_methods(
 
 pub(super) fn generate_provider_builder_methods(
     client: &Client,
-    core_path: &TokenStream,
+    facade_path: &TokenStream,
 ) -> TokenStream {
     let methods = client
         .credentials
@@ -46,8 +46,8 @@ pub(super) fn generate_provider_builder_methods(
                 #[doc = "Sets one required custom credential provider; a later call replaces it."]
                 pub fn #method<P>(mut self, provider: P) -> Self
                 where
-                    P: #core_path::auth::CredentialProvider<
-                        Material = <#provider as #core_path::auth::CredentialProvider>::Material
+                    P: #facade_path::auth::CredentialProvider<
+                        Material = <#provider as #facade_path::auth::CredentialProvider>::Material
                     >,
                 {
                     self.#field = ::std::option::Option::Some(::std::sync::Arc::new(provider));
@@ -59,7 +59,10 @@ pub(super) fn generate_provider_builder_methods(
     quote!(#(#methods)*)
 }
 
-pub(super) fn generate_secret_resolution(client: &Client, _core_path: &TokenStream) -> TokenStream {
+pub(super) fn generate_secret_resolution(
+    client: &Client,
+    _facade_path: &TokenStream,
+) -> TokenStream {
     let statements = client
         .secrets
         .iter()
@@ -88,7 +91,7 @@ pub(super) fn generate_secret_resolution(client: &Client, _core_path: &TokenStre
 
 pub(super) fn generate_provider_resolution(
     client: &Client,
-    _core_path: &TokenStream,
+    _facade_path: &TokenStream,
 ) -> TokenStream {
     let statements = client
         .credentials
@@ -119,7 +122,7 @@ pub(super) fn generate_provider_resolution(
 
 pub(super) fn generate_credential_store_fields(
     client: &Client,
-    core_path: &TokenStream,
+    facade_path: &TokenStream,
 ) -> TokenStream {
     let fields = client
         .credentials
@@ -127,8 +130,8 @@ pub(super) fn generate_credential_store_fields(
         .enumerate()
         .map(|(index, credential)| {
             let field = credential_store_field(index, &credential.name);
-            let material = credential_material_type(client, credential, core_path);
-            quote!(#field: #core_path::__private::GeneratedCredential<#material>,)
+            let material = credential_material_type(client, credential, facade_path);
+            quote!(#field: #facade_path::__private::GeneratedCredential<#material>,)
         })
         .collect::<Vec<_>>();
     quote!(#(#fields)*)
@@ -136,7 +139,7 @@ pub(super) fn generate_credential_store_fields(
 
 pub(super) fn generate_static_credential_resolution(
     client: &Client,
-    core_path: &TokenStream,
+    facade_path: &TokenStream,
 ) -> TokenStream {
     let statements = client
         .credentials
@@ -149,7 +152,7 @@ pub(super) fn generate_static_credential_resolution(
                     let source = resolved_secret(*secret, &client.secrets[*secret].name);
                     let field = &client.secrets[*secret].name;
                     quote! {
-                        let #resolved = #core_path::auth::ApiKey::try_from_secret(#source.clone())
+                        let #resolved = #facade_path::auth::ApiKey::try_from_secret(#source.clone())
                             .map_err(|error| {
                                 __concord_generated::__core::__private::credential_input_error(
                                     ::std::stringify!(#field),
@@ -163,7 +166,7 @@ pub(super) fn generate_static_credential_resolution(
                     let field = &client.secrets[*secret].name;
                     quote! {
                         let #resolved =
-                            #core_path::auth::AccessToken::try_from_secret(#source.clone())
+                            #facade_path::auth::AccessToken::try_from_secret(#source.clone())
                                 .map_err(|error| {
                                     __concord_generated::__core::__private::credential_input_error(
                                         ::std::stringify!(#field),
@@ -180,7 +183,7 @@ pub(super) fn generate_static_credential_resolution(
                     let username_field = &client.secrets[*username].name;
                     let password_field = &client.secrets[*password].name;
                     quote! {
-                        let #resolved = #core_path::auth::BasicCredential::try_from_secrets(
+                        let #resolved = #facade_path::auth::BasicCredential::try_from_secrets(
                             #username_source.clone(),
                             #password_source.clone(),
                         )
@@ -205,7 +208,7 @@ pub(super) fn generate_static_credential_resolution(
 
 pub(super) fn generate_credential_store_initializers(
     client: &Client,
-    core_path: &TokenStream,
+    facade_path: &TokenStream,
 ) -> TokenStream {
     let initializers = client
         .credentials
@@ -218,17 +221,17 @@ pub(super) fn generate_credential_store_initializers(
                 | CredentialSource::Bearer { .. }
                 | CredentialSource::Basic { .. } => {
                     let material = resolved_credential_material(index, &credential.name);
-                    quote!(#core_path::__private::GeneratedCredential::static_value(
+                    quote!(#facade_path::__private::GeneratedCredential::static_value(
                         &core,
                         #material,
                     ))
                 }
                 CredentialSource::Endpoint { .. } => {
-                    quote!(#core_path::__private::GeneratedCredential::endpoint(&core))
+                    quote!(#facade_path::__private::GeneratedCredential::endpoint(&core))
                 }
                 CredentialSource::Custom { .. } => {
                     let provider = resolved_provider(index, &credential.name);
-                    quote!(#core_path::__private::GeneratedCredential::provider_arc(
+                    quote!(#facade_path::__private::GeneratedCredential::provider_arc(
                         &core,
                         #provider,
                     ))
@@ -254,7 +257,10 @@ pub(super) fn generate_credentials_method(client: &Client) -> TokenStream {
     }
 }
 
-pub(super) fn generate_credentials_module(client: &Client, core_path: &TokenStream) -> TokenStream {
+pub(super) fn generate_credentials_module(
+    client: &Client,
+    facade_path: &TokenStream,
+) -> TokenStream {
     if client.credentials.is_empty() {
         return quote!();
     }
@@ -270,7 +276,7 @@ pub(super) fn generate_credentials_module(client: &Client, core_path: &TokenStre
                 credential.name.span(),
             );
             let field = credential_store_field(index, &credential.name);
-            let material = credential_material_type(client, credential, core_path);
+            let material = credential_material_type(client, credential, facade_path);
             let handle = credential_handle_type(credential, &material);
             let handle_constructor = credential_handle_constructor(credential);
             quote! {
@@ -284,7 +290,7 @@ pub(super) fn generate_credentials_module(client: &Client, core_path: &TokenStre
             }
         })
         .collect::<Vec<_>>();
-    let handle_types = generate_credential_handle_types(client, core_path);
+    let handle_types = generate_credential_handle_types(client, facade_path);
     quote! {
         /// Generated typed credential access and source-specific mutation capabilities.
         pub mod credentials {
@@ -311,7 +317,7 @@ pub(super) fn generate_credentials_module(client: &Client, core_path: &TokenStre
 
 pub(super) fn generate_credential_handle_types(
     client: &Client,
-    core_path: &TokenStream,
+    facade_path: &TokenStream,
 ) -> TokenStream {
     let api_key = client
         .credentials
@@ -320,18 +326,18 @@ pub(super) fn generate_credential_handle_types(
         .then(|| quote! {
             /// Handle for one static API-key source.
             pub struct ApiKeyCredentialHandle {
-                pub(super) inner: #core_path::__private::GeneratedCredential<#core_path::auth::ApiKey>,
+                pub(super) inner: #facade_path::__private::GeneratedCredential<#facade_path::auth::ApiKey>,
             }
             impl ApiKeyCredentialHandle {
                 #[must_use]
-                pub fn credential(&self) -> #core_path::auth::CredentialRef<#core_path::auth::ApiKey> {
+                pub fn credential(&self) -> #facade_path::auth::CredentialRef<#facade_path::auth::ApiKey> {
                     self.inner.credential()
                 }
                 pub async fn replace(
                     &self,
                     value: impl ::std::convert::AsRef<str>,
-                ) -> ::std::result::Result<(), #core_path::auth::AuthError> {
-                    self.inner.replace_static(#core_path::auth::ApiKey::try_new(value)).await
+                ) -> ::std::result::Result<(), #facade_path::auth::AuthError> {
+                    self.inner.replace_static(#facade_path::auth::ApiKey::try_new(value)).await
                 }
             }
         });
@@ -342,18 +348,18 @@ pub(super) fn generate_credential_handle_types(
         .then(|| quote! {
             /// Handle for one static bearer source.
             pub struct BearerCredentialHandle {
-                pub(super) inner: #core_path::__private::GeneratedCredential<#core_path::auth::AccessToken>,
+                pub(super) inner: #facade_path::__private::GeneratedCredential<#facade_path::auth::AccessToken>,
             }
             impl BearerCredentialHandle {
                 #[must_use]
-                pub fn credential(&self) -> #core_path::auth::CredentialRef<#core_path::auth::AccessToken> {
+                pub fn credential(&self) -> #facade_path::auth::CredentialRef<#facade_path::auth::AccessToken> {
                     self.inner.credential()
                 }
                 pub async fn replace(
                     &self,
                     value: impl ::std::convert::AsRef<str>,
-                ) -> ::std::result::Result<(), #core_path::auth::AuthError> {
-                    self.inner.replace_static(#core_path::auth::AccessToken::try_new(value)).await
+                ) -> ::std::result::Result<(), #facade_path::auth::AuthError> {
+                    self.inner.replace_static(#facade_path::auth::AccessToken::try_new(value)).await
                 }
             }
         });
@@ -364,20 +370,20 @@ pub(super) fn generate_credential_handle_types(
         .then(|| quote! {
             /// Handle for one atomic static Basic source.
             pub struct BasicCredentialHandle {
-                pub(super) inner: #core_path::__private::GeneratedCredential<#core_path::auth::BasicCredential>,
+                pub(super) inner: #facade_path::__private::GeneratedCredential<#facade_path::auth::BasicCredential>,
             }
             impl BasicCredentialHandle {
                 #[must_use]
-                pub fn credential(&self) -> #core_path::auth::CredentialRef<#core_path::auth::BasicCredential> {
+                pub fn credential(&self) -> #facade_path::auth::CredentialRef<#facade_path::auth::BasicCredential> {
                     self.inner.credential()
                 }
                 pub async fn replace(
                     &self,
                     username: impl ::std::convert::AsRef<str>,
                     password: impl ::std::convert::AsRef<str>,
-                ) -> ::std::result::Result<(), #core_path::auth::AuthError> {
+                ) -> ::std::result::Result<(), #facade_path::auth::AuthError> {
                     self.inner.replace_static(
-                        #core_path::auth::BasicCredential::try_new(username, password),
+                        #facade_path::auth::BasicCredential::try_new(username, password),
                     ).await
                 }
             }
@@ -390,22 +396,22 @@ pub(super) fn generate_credential_handle_types(
             /// Handle for one explicitly acquired endpoint-backed source.
             pub struct EndpointCredentialHandle<M>
             where
-                M: #core_path::auth::CredentialMaterial,
+                M: #facade_path::auth::CredentialMaterial,
             {
-                pub(super) inner: #core_path::__private::GeneratedCredential<M>,
+                pub(super) inner: #facade_path::__private::GeneratedCredential<M>,
             }
             impl<M> EndpointCredentialHandle<M>
             where
-                M: #core_path::auth::CredentialMaterial,
+                M: #facade_path::auth::CredentialMaterial,
             {
                 #[must_use]
-                pub fn credential(&self) -> #core_path::auth::CredentialRef<M> {
+                pub fn credential(&self) -> #facade_path::auth::CredentialRef<M> {
                     self.inner.credential()
                 }
-                pub async fn set(&self, value: M) -> ::std::result::Result<(), #core_path::auth::AuthError> {
+                pub async fn set(&self, value: M) -> ::std::result::Result<(), #facade_path::auth::AuthError> {
                     self.inner.set(value).await
                 }
-                pub async fn clear(&self) -> ::std::result::Result<(), #core_path::auth::AuthError> {
+                pub async fn clear(&self) -> ::std::result::Result<(), #facade_path::auth::AuthError> {
                     self.inner.clear().await
                 }
                 #[must_use]
@@ -422,27 +428,27 @@ pub(super) fn generate_credential_handle_types(
             /// Handle for one custom provider-backed source.
             pub struct CustomProviderCredentialHandle<M>
             where
-                M: #core_path::auth::CredentialMaterial,
+                M: #facade_path::auth::CredentialMaterial,
             {
-                pub(super) inner: #core_path::__private::GeneratedCredential<M>,
+                pub(super) inner: #facade_path::__private::GeneratedCredential<M>,
             }
             impl<M> CustomProviderCredentialHandle<M>
             where
-                M: #core_path::auth::CredentialMaterial,
+                M: #facade_path::auth::CredentialMaterial,
             {
                 #[must_use]
-                pub fn credential(&self) -> #core_path::auth::CredentialRef<M> {
+                pub fn credential(&self) -> #facade_path::auth::CredentialRef<M> {
                     self.inner.credential()
                 }
-                pub async fn clear(&self) -> ::std::result::Result<(), #core_path::auth::AuthError> {
+                pub async fn clear(&self) -> ::std::result::Result<(), #facade_path::auth::AuthError> {
                     self.inner.clear().await
                 }
                 pub async fn replace_provider<P>(
                     &self,
                     provider: P,
-                ) -> ::std::result::Result<(), #core_path::auth::AuthError>
+                ) -> ::std::result::Result<(), #facade_path::auth::AuthError>
                 where
-                    P: #core_path::auth::CredentialProvider<Material = M>,
+                    P: #facade_path::auth::CredentialProvider<Material = M>,
                 {
                     self.inner.replace_provider(provider).await
                 }
@@ -481,14 +487,14 @@ pub(super) fn credential_handle_constructor(credential: &Credential) -> TokenStr
 pub(super) fn credential_material_type(
     client: &Client,
     credential: &Credential,
-    core_path: &TokenStream,
+    facade_path: &TokenStream,
 ) -> TokenStream {
     match &credential.source {
-        CredentialSource::ApiKey { .. } => quote!(#core_path::auth::ApiKey),
-        CredentialSource::Bearer { .. } => quote!(#core_path::auth::AccessToken),
-        CredentialSource::Basic { .. } => quote!(#core_path::auth::BasicCredential),
+        CredentialSource::ApiKey { .. } => quote!(#facade_path::auth::ApiKey),
+        CredentialSource::Bearer { .. } => quote!(#facade_path::auth::AccessToken),
+        CredentialSource::Basic { .. } => quote!(#facade_path::auth::BasicCredential),
         CredentialSource::Custom { provider } => {
-            quote!(<#provider as #core_path::auth::CredentialProvider>::Material)
+            quote!(<#provider as #facade_path::auth::CredentialProvider>::Material)
         }
         CredentialSource::Endpoint {
             endpoint_id: Some(endpoint_id),
@@ -497,7 +503,7 @@ pub(super) fn credential_material_type(
             &find_endpoint_by_id(&client.children, *endpoint_id)
                 .expect("resolved endpoint credential")
                 .response,
-            core_path,
+            facade_path,
         ),
         CredentialSource::Endpoint {
             endpoint_id: None, ..
@@ -507,8 +513,8 @@ pub(super) fn credential_material_type(
     }
 }
 
-pub(super) fn response_output_type(response: &Type, core_path: &TokenStream) -> TokenStream {
-    quote!(<#response as #core_path::response::ResponseBodySpec>::Output)
+pub(super) fn response_output_type(response: &Type, facade_path: &TokenStream) -> TokenStream {
+    quote!(<#response as #facade_path::response::ResponseBodySpec>::Output)
 }
 
 pub(super) fn find_endpoint_by_id(children: &[Child], id: usize) -> Option<&Endpoint> {
@@ -535,7 +541,7 @@ mod tests {
     fn emits_typed_credential_facade_and_handle() {
         let api = test_support::api();
         let output =
-            generate_credentials_module(&api.client, &test_support::core_path()).to_string();
+            generate_credentials_module(&api.client, &test_support::facade_path()).to_string();
 
         assert!(output.contains("pub mod credentials"));
         assert!(output.contains("pub fn bearer"));
