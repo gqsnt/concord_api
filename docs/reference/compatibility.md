@@ -24,6 +24,14 @@ An optional dependency may still require a newer compiler if an application
 resolves a version outside the workspace lockfile; verify the application's
 own resolved graph.
 
+The private declaration compiler uses Syn 3 and exposes no Syn type in
+Concord's public API. Its normal dependency uses Syn's default compiler
+capabilities without the complete item/file AST; `full` is enabled only for
+macro-crate tests. The workspace lockfile may therefore contain both Syn 3 for
+Concord and Syn 2 for upstream procedural-macro dependencies until those
+dependencies migrate. That duplicate-major graph does not change the DSL,
+generated Rust contract, or Rust 1.85 support.
+
 ## Package and façade contract
 
 Applications depend on the single `concord` façade. The façade re-exports

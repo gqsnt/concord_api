@@ -92,12 +92,17 @@ Changes that normally do not require a bump:
   compatible bridge capability;
 - changing generated Rustdoc;
 - refactoring core behind identical bridge semantics;
+- upgrading a private parser or token dependency while preserving emitted
+  private operations;
 - adding an extras implementation or façade reexport that emitted Rust does
   not name.
 
 When uncertain, compare the generated consumer with the façade/core producer.
 Do not bump simply because a compiler file changed, and do not avoid a bump
 because a changed item is `#[doc(hidden)]`.
+
+The compiler's Syn 3 migration is in this no-bump category: the DSL and emitted
+private operations are unchanged, so the current contract remains 31.
 
 ## Atomic bump checklist
 

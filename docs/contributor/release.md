@@ -78,6 +78,14 @@ The simulation never patches test support. Passing this task proves local
 archive structure and dependency closure; it does not prove registry
 ownership or publication.
 
+For `concord-macros`, inspect the normalized manifest and resolved feature
+graph as well as archive closure. Its normal Syn requirement must be major 3
+without `full`; the macro crate alone may enable `full` as a dev dependency
+for its self-source parse test. Syn 2 and Syn 3 are an expected temporary
+duplicate-major pair while upstream procedural-macro dependencies still
+require Syn 2. Do not force those transitive dependencies forward or broadly
+relax duplicate-version policy.
+
 ## Release-facing compatibility review
 
 The release-facing body-progress contract has two feature-independent public

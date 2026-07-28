@@ -71,7 +71,10 @@ fn value_shape(ty: &Type) -> syn::Result<ValueShape> {
 }
 
 fn single_outer_argument(ty: &Type, expected: &str) -> syn::Result<Option<Type>> {
-    let Type::Path(TypePath { qself: None, path }) = ty else {
+    let Type::Path(TypePath {
+        qself: None, path, ..
+    }) = ty
+    else {
         return Ok(None);
     };
     if path.leading_colon.is_some()
@@ -296,11 +299,63 @@ impl Resolver<'_> {
 
 #[cfg(test)]
 mod tests {
-    use quote::quote;
+    use quote::{ToTokens, quote};
 
     use super::super::model::{ResolvedExpr, ValueReference};
     use super::super::test_support;
     use super::*;
+
+    #[test]
+    fn preserves_existing_type_shape_recognition_without_broadening_qualified_paths() {
+        let api = test_support::resolve_tokens(quote! {
+            client ShapeApi {
+                base "https://example.test";
+                vars {
+                    option: Option<T>;
+                    std_option: std::option::Option<T>;
+                    vector: Vec<T>;
+                    option_vector: Option<Vec<T>>;
+                    associated: <T as Trait>::Output;
+                    custom_option: crate::custom::Option<T>;
+                    core_option: core::option::Option<T>;
+                    std_vector: std::vec::Vec<T>;
+                    alloc_vector: alloc::vec::Vec<T>;
+                }
+            }
+        });
+        let values = &api.client.values;
+
+        assert!(matches!(values[0].shape, ValueShape::Option { .. }));
+        assert!(matches!(values[1].shape, ValueShape::Option { .. }));
+        assert!(matches!(values[2].shape, ValueShape::Vec { .. }));
+        assert!(matches!(values[3].shape, ValueShape::OptionVec { .. }));
+        for value in &values[4..] {
+            assert!(matches!(value.shape, ValueShape::Scalar));
+        }
+    }
+
+    #[test]
+    fn function_pointer_types_remain_opaque_scalars_with_complete_syntax() {
+        let api = test_support::resolve_tokens(quote! {
+            client FunctionPointerApi {
+                base "https://example.test";
+            }
+            GET process(callback: fn(u32) -> bool) -> Bytes;
+        });
+        let endpoint = test_support::endpoint(&api.client.children, "process");
+        let callback = &endpoint.parameters[0];
+
+        assert!(matches!(callback.shape, ValueShape::Scalar));
+        assert_eq!(
+            callback.ty.to_token_stream().to_string(),
+            quote!(fn(u32) -> bool).to_string()
+        );
+        assert!(
+            crate::emit::generate(&api, &quote!(::concord))
+                .to_string()
+                .contains(&quote!(fn(u32) -> bool).to_string())
+        );
+    }
 
     #[test]
     fn resolves_syntactic_shapes_and_lexical_symbol_owners_once() {

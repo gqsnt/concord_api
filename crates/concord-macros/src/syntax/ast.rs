@@ -377,7 +377,10 @@ pub(crate) enum MethodKind {
 }
 
 pub(crate) fn syntactic_option_inner(ty: &Type) -> syn::Result<Option<Type>> {
-    let Type::Path(TypePath { qself: None, path }) = ty else {
+    let Type::Path(TypePath {
+        qself: None, path, ..
+    }) = ty
+    else {
         return Ok(None);
     };
     let segments = path.segments.iter().collect::<Vec<_>>();

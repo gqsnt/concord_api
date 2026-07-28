@@ -91,6 +91,11 @@
 
 ### Changed
 
+- The declaration compiler now uses Syn 3. Its source grammar, emitted Rust,
+  diagnostics, Rust 1.85 support, and generated-contract version 31 are
+  unchanged. Syn's `full` feature is enabled only for macro-crate tests that
+  parse the crate's complete source; Syn 2 may remain in the locked graph
+  through upstream procedural-macro dependencies.
 - Buffered and streaming record delivery now share one private progress
   driver. Pending source bytes are separate from decoder staging, so one large
   transport chunk containing many individually bounded records succeeds,

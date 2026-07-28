@@ -49,6 +49,15 @@ runtime meaning. A parser error should point to the token that violates the
 grammar. When a clause is duplicated, diagnostics retain both the first and
 duplicate spans.
 
+The compiler uses Syn 3 internally and does not expose Syn nodes through any
+public Concord API. Production builds use Syn's default parsing, printing,
+derive, clone, and proc-macro capabilities. The `full` feature is a
+macro-crate dev dependency used only by the self-source
+`syn::parse_file(include_str!("lib.rs"))` test. Narrow `Option` and `Vec`
+recognition ignores type-node metadata while the complete parsed `syn::Type`
+continues through semantic IR and emission; other valid Rust types remain
+opaque scalars.
+
 ### Parser change test owners
 
 - focused syntax unit tests live beside the grammar domains;
