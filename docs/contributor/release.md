@@ -109,7 +109,7 @@ when it has a declaration default. Those capabilities are independent:
 defaulted `Option<T>` and `Option<Vec<T>>` values expose all three controls,
 and `set_*` accepts the inner `T` or `Vec<T>`. Client/scope/endpoint
 construction and navigation retain their domain names. Package examples,
-façade UI, and Rust 1.85 semantic UI must compile the new names and prove the
+façade UI, and Rust 1.86.0 semantic UI must compile the new names and prove the
 unpublished bare mutation methods are absent on client builders, scope façades,
 explicit endpoints, and named requests; do not add compatibility aliases.
 
@@ -162,8 +162,9 @@ For a local release candidate:
 
 1. update and review `CHANGELOG.md`;
 2. run `just verify`;
-3. run no-default, default, selected-feature, all-feature, doctest, and
-   warning-denied Rustdoc owners required by the changed surface;
+3. run no-default, default, selected-feature, and all-feature owners with
+   nextest, then run the separate Cargo doctest and warning-denied Rustdoc
+   owners required by the changed surface;
 4. retain successful rust-analyzer diagnostics and analysis-statistics output;
 5. run `just package` and inspect every normalized product manifest;
 6. run `just source-archive`, compare ZIP entries with tracked `HEAD`, and
@@ -194,7 +195,7 @@ Before enabling publication or any other external release action:
    compile-fail proofs that bare methods are absent from client builders,
    scope façades, explicit endpoint snapshots, and named request wrappers;
 9. confirm effective direct and final-host-derived rate partitions reject
-   pagination-controlled dependencies under current and Rust 1.85 semantic UI
+   pagination-controlled dependencies under current and Rust 1.86.0 semantic UI
    owners;
 10. confirm generated Rustdoc distinguishes explicit stable rule IDs from
     derived deterministic declaration IDs and the manual records the

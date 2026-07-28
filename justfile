@@ -28,22 +28,24 @@ lint:
     cargo clippy --workspace --all-targets --all-features  -- -D warnings
 
 test:
-    cargo test --workspace --exclude concord-macros --lib --tests --examples
-    cargo test --workspace --exclude concord-macros --lib --tests --examples --all-features
+    cargo nextest --version
+    cargo nextest run --workspace --exclude concord-macros --lib --tests --examples
+    cargo nextest run --workspace --exclude concord-macros --lib --tests --examples --all-features
 
 ui:
-    cargo test -p concord-macros --lib
-    cargo test -p concord --test ui --no-default-features
-    cargo test -p concord --test ui --all-features
-    cargo test -p concord-core --test ui --no-default-features
+    cargo nextest --version
+    cargo nextest run -p concord-macros --lib
+    cargo nextest run -p concord --test ui --no-default-features
+    cargo nextest run -p concord --test ui --all-features
+    cargo nextest run -p concord-core --test ui --no-default-features
 
 msrv:
-    cargo +1.85.0 check -p concord-core --lib --all-features
-    cargo +1.85.0 check -p concord-macros --lib
-    cargo +1.85.0 check -p concord-extras --lib --all-features
-    cargo +1.85.0 check -p concord --lib --all-features
-    cargo +1.85.0 check -p concord-core -p concord-macros -p concord-extras -p concord --lib --no-default-features
-    cargo +1.85.0 run  -p concord-xtask -- msrv-ui
+    cargo +1.86.0 check -p concord-core --lib --all-features
+    cargo +1.86.0 check -p concord-macros --lib
+    cargo +1.86.0 check -p concord-extras --lib --all-features
+    cargo +1.86.0 check -p concord --lib --all-features
+    cargo +1.86.0 check -p concord-core -p concord-macros -p concord-extras -p concord --lib --no-default-features
+    cargo +1.86.0 run  -p concord-xtask -- msrv-ui
 
 fixtures:
     cargo run  -p concord-xtask -- fixtures

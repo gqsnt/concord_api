@@ -157,8 +157,8 @@ Review generated-surface changes for all of these:
 ## Verification
 
 ```bash
-cargo test -p concord-macros --lib --locked
-cargo test -p concord --test ui --all-features --locked
+cargo nextest run -p concord-macros --lib --locked
+cargo nextest run -p concord --test ui --all-features --locked
 cargo run --locked -p concord-xtask -- fixtures --locked
 cargo run --locked -p concord-xtask -- policy --locked
 cargo rustdoc -p concord --no-default-features --locked -- -D warnings

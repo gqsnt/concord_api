@@ -215,7 +215,7 @@ with subsequent requests and changes which failure owns the operation.
 
 Compiler changes to key dimensions require semantic validation against final
 endpoint shaping, deterministic ID generation, generated code, runtime plan
-construction, UI diagnostics, and Rust 1.85 semantic checks. Do not solve a
+construction, UI diagnostics, and Rust 1.86.0 semantic checks. Do not solve a
 new rule form by making `RateLimitPlan` unbounded or debuggable.
 
 Do not normalize a named attachment into the anonymous source form before
@@ -253,7 +253,7 @@ Primary owners are:
   `crates/concord-examples/src/runtime_policy/` for downstream composition.
 
 Run focused core and extras owners, then all-feature workspace tests, UI,
-warning-denied no-default/selected/all-feature Rustdoc, and the Rust 1.85
+warning-denied no-default/selected/all-feature Rustdoc, and the Rust 1.86.0
 semantic checks in [Testing strategy](../testing.md).
 
 ## Related

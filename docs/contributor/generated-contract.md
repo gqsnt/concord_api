@@ -176,9 +176,10 @@ unavailable.
 Run:
 
 ```bash
-cargo test -p concord-macros --lib --locked
-cargo test -p concord-core --all-features --locked
-cargo test -p concord --test ui --all-features --locked
+cargo nextest run -p concord-macros --lib --locked
+cargo nextest run -p concord-core --lib --tests --all-features --locked
+cargo test -p concord-core --doc --all-features --locked
+cargo nextest run -p concord --test ui --all-features --locked
 cargo run --locked -p concord-xtask -- fixtures --locked
 cargo run --locked -p concord-xtask -- policy --locked
 ```

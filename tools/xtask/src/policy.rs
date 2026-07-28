@@ -13,7 +13,6 @@ const PRODUCT_PACKAGES: &[&str] = &[
 
 const FORBIDDEN_PROCESS_ARTIFACTS: &[&str] = &[
     ".codex",
-    ".config/nextest.toml",
     "docs/contributor/evidence",
     "crates/concord/wip",
     "crates/concord-core/wip",

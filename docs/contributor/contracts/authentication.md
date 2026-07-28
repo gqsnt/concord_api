@@ -219,7 +219,7 @@ The main proof owners are:
   `crates/concord-examples/src/authentication/` for downstream/provider usage.
 
 Use focused tests while editing, then run the workspace all-feature suite,
-warning-denied Rustdoc, UI owners, and the Rust 1.85 semantic checks described
+warning-denied Rustdoc, UI owners, and the Rust 1.86.0 semantic checks described
 in [Testing strategy](../testing.md).
 
 ## Related

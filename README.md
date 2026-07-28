@@ -152,6 +152,14 @@ that must be approved before publication.
 
 ## Contributor commands
 
+Unit, integration, example, and UI tests use cargo-nextest. Install a prebuilt
+cargo-nextest 0.9.140 or newer before running the test recipes; on Windows,
+`winget install nextest.cargo-nextest` installs the official prebuilt package.
+Linux and macOS contributors can use the
+[official prebuilt archive installer](https://nexte.st/docs/installation/pre-built-binaries/).
+The repository configuration rejects older nextest versions. Do not compile
+cargo-nextest from source with Concord's MSRV toolchain.
+
 Run `just --list` for the maintained inventory. The primary gates are:
 
 ```text
@@ -174,9 +182,11 @@ just verify
 just source-archive
 ```
 
-Tests are deterministic and make no external service calls. `just verify`
-includes workflow linting; its benchmark owner compiles the observational
-benchmark without running it. `just source-archive` creates the tracked-source
+Tests are deterministic and make no external service calls. `just test` and
+`just ui` use nextest with retries disabled; `just docs` keeps doctests under
+Cargo test because nextest does not execute them. `just verify` includes
+workflow linting; its benchmark owner compiles the observational benchmark
+without running it. `just source-archive` creates the tracked-source
 review/release artifact at `target/concord-source.zip`, including from a fresh
 clone. Share that Git source archive rather than a ZIP of the working
 directory. Local checks cannot prove remote Actions execution, other operating

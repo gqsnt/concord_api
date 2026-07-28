@@ -2,7 +2,7 @@
 name = "concord"
 version = "99.0.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.86"
 publish = false
 
 [lib]

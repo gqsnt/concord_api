@@ -420,9 +420,9 @@ The primary deterministic proofs live in:
 Run:
 
 ```bash
-cargo test -p concord-core --all-features --locked
-cargo test -p concord --all-features --locked
-cargo test -p concord-examples --all-features --locked
+cargo nextest run -p concord-core --lib --tests --all-features --locked
+cargo nextest run -p concord --lib --tests --examples --all-features --locked
+cargo nextest run -p concord-examples --lib --tests --examples --all-features --locked
 ```
 
 ## Related

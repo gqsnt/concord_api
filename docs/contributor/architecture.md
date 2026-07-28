@@ -145,11 +145,11 @@ The architecture is tested as behavior, not inferred from file layout:
 
 - `cargo run --locked -p concord-xtask -- policy --locked` checks product
   dependency direction and generated path policy.
-- `cargo test -p concord-macros --lib --locked` owns parsing, semantic,
+- `cargo nextest run -p concord-macros --lib --locked` owns parsing, semantic,
   surface, emission, and bridge unit proofs.
-- `cargo test -p concord --test ui --all-features --locked` owns generated
+- `cargo nextest run -p concord --test ui --all-features --locked` owns generated
   public capability, privacy, and diagnostic proofs.
-- `cargo test -p concord-core --all-features --locked` owns executor ordering,
+- `cargo nextest run -p concord-core --lib --tests --all-features --locked` owns executor ordering,
   cancellation, bounds, and redaction.
 - `cargo run --locked -p concord-xtask -- fixtures --locked` owns Cargo-graph,
   renamed-façade, feature-absence, and contract-mismatch proofs.

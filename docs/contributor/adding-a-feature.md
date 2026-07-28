@@ -95,7 +95,7 @@ Place each proof with the lowest owner:
 |---|---|
 | parser/resolver rule | macro unit test |
 | exact current diagnostic | façade/core Trybuild |
-| Rust 1.85 diagnostic meaning | xtask semantic compiler-JSON fixture |
+| Rust 1.86.0 diagnostic meaning | xtask semantic compiler-JSON fixture |
 | runtime ordering and cancellation | core executor test |
 | bound and first-excess state | owning core/extras unit test |
 | public reachability/privacy | public API or compile-fail test |
@@ -146,7 +146,7 @@ Before calling the change complete, review:
 - source compatibility and non-exhaustive enum strategy;
 - generated names and collision diagnostics;
 - no-default and feature-unification behavior;
-- Rust 1.85 language and dependency compatibility;
+- Rust 1.86.0 language and dependency compatibility;
 - error category and redaction stability;
 - allocation, cloning, state-cardinality, and hot-path work;
 - compile-time expansion size when declarations grow;
@@ -164,6 +164,8 @@ least:
 ```text
 cargo fmt --all -- --check
 cargo check --workspace --all-targets --all-features --locked
+cargo nextest run --workspace --exclude concord-macros --lib --tests --examples --all-features
+cargo test --workspace --doc --all-features --locked
 cargo run --locked -p concord-xtask -- docs --locked
 mdbook build
 git diff --check
@@ -186,6 +188,7 @@ of remote CI, other platforms, registry ownership, or publication.
 - [ ] Cancellation, deadlines, overlap, and clone sharing are tested.
 - [ ] Generated and runtime-defined endpoints converge where applicable.
 - [ ] No-default, selected, all-feature, and MSRV owners are updated.
+- [ ] Nextest unit/integration/example owners and separate Cargo doctests pass.
 - [ ] Canonical example code compiles and book includes resolve.
 - [ ] Rustdoc and one book owner describe each fact.
 - [ ] Changelog, package, analyzer, and performance impact were considered.

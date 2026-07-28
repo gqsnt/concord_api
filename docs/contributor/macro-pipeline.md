@@ -218,8 +218,8 @@ copying a partial bump procedure into a compiler change.
 ## Verification
 
 ```bash
-cargo test -p concord-macros --lib --locked
-cargo test -p concord --test ui --all-features --locked
+cargo nextest run -p concord-macros --lib --locked
+cargo nextest run -p concord --test ui --all-features --locked
 cargo run --locked -p concord-xtask -- fixtures --locked
 cargo run --locked -p concord-xtask -- policy --locked
 cargo rustdoc -p concord --all-features --locked -- -D warnings

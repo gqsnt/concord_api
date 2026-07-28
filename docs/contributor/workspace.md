@@ -48,11 +48,11 @@ avoid competing for the same target and package-cache locks.
 
 `rust-toolchain.toml` selects the current development toolchain and the
 rustfmt, Clippy, and rust-analyzer components. Workspace package metadata
-declares Rust 1.85 as the MSRV. These roles are distinct:
+declares Rust 1.86.0 as the MSRV. These roles are distinct:
 
 - current stable owns formatting, Clippy, exact Trybuild snapshots, ordinary
-  tests, docs, packages, and analyzer output;
-- Rust 1.85 owns product-library compilation and semantic compiler-JSON
+  nextest tests, Cargo doctests, docs, packages, and analyzer output;
+- Rust 1.86.0 owns product-library compilation and semantic compiler-JSON
   assertions;
 - fixtures own behaviors that require a separate Cargo graph.
 
@@ -103,7 +103,9 @@ The exact current inventory is generated in
 ## Maintained commands
 
 `just --list` is the runnable command inventory. During development, start with
-the narrow package and test owner, then use the maintained gates:
+the narrow package and test owner, then use the maintained gates. Install a
+prebuilt cargo-nextest 0.9.140 or newer before `just test`, `just ui`, or
+`just verify`; Cargo test remains the doctest owner:
 
 ```text
 just fmt
@@ -119,6 +121,9 @@ just analyzer
 just bench
 just verify
 ```
+
+See [Testing strategy](testing.md) for the prebuilt nextest installation
+options, direct commands, retry policy, and separate doctest command.
 
 Do not infer success from a workflow definition. Local commands establish only
 the local platform and installed-tool results that were actually observed;

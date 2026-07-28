@@ -20,9 +20,9 @@ The test architecture follows contract ownership.
 just fmt            # formatting check
 just check          # metadata, feature checks, and structural repository policy
 just lint           # all-target/all-feature Clippy with warnings denied
-just test           # default and all-feature Rust tests
+just test           # default and all-feature nextest unit/integration/example tests
 just ui             # stable exact façade/core compiler contracts
-just msrv           # Rust 1.85 product libraries and semantic JSON diagnostics
+just msrv           # Rust 1.86.0 product libraries and semantic JSON diagnostics
 just fixtures       # isolated Cargo-graph contracts
 just site           # validate and build the complete mdBook site
 just site-serve     # validate once and serve the site with file watching
@@ -43,6 +43,35 @@ workspace doctests remain the comprehensive executable documentation owner;
 selected feature builds are added only when an example itself is
 feature-sensitive.
 
+Cargo-nextest is the maintained unit, integration, example, and UI runner.
+The repository requires nextest 0.9.140 or newer, disables retries, and uses a
+CI profile that runs every selected test after failures. Install a prebuilt
+binary rather than compiling nextest with the MSRV toolchain. Windows
+contributors can run:
+
+```powershell
+winget install nextest.cargo-nextest
+cargo nextest --version
+```
+
+The
+[official nextest prebuilt-binary installer](https://nexte.st/docs/installation/pre-built-binaries/)
+provides archive commands for Linux, macOS, and Windows when Winget is not
+available. CI installs the pinned `nextest@0.9.140` binary with
+`taiki-e/install-action`; it does not add nextest to the workspace dependency
+graph. Direct maintained equivalents are:
+
+```text
+cargo nextest run --workspace --exclude concord-macros --lib --tests --examples
+cargo nextest run --workspace --exclude concord-macros --lib --tests --examples --all-features
+cargo test --workspace --doc --all-features
+```
+
+The final command remains separate because nextest does not run doctests.
+Standard Cargo-test compatibility for the generated façade remains observable
+with `cargo test -p concord --test generated --all-features`, but nextest is
+the normal repository runner.
+
 The repository-level subprocess owners are also directly available as
 `cargo run --locked -p concord-xtask -- fixtures --locked` and
 `cargo run --locked -p concord-xtask -- msrv-ui --locked`. The source artifact
@@ -60,10 +89,12 @@ tool/component as a passing check.
 `.github/workflows/ci.yml` runs on pushes, pull requests, and manual dispatch.
 Eight jobs own quality/policy, tests/examples, documentation, stable UI, MSRV,
 fixtures/packages, three-platform smoke coverage, and blocking rust-analyzer
-checks. The Documentation job installs mdBook 0.5.4, validates and builds the
-site, runs all-feature doctests, and generates warning-denied Rustdoc across
-the maintained feature sample. Lifecycle, security, extras, and feature proofs
-are not repeated in separate jobs after their workspace owner has run.
+checks. The Tests, Stable compiler contracts, and Platform smoke jobs install
+the pinned prebuilt nextest binary and use the no-fail-fast CI profile. The
+Documentation job installs mdBook 0.5.4, validates and builds the site, keeps
+all-feature doctests under Cargo test, and generates warning-denied Rustdoc
+across the maintained feature sample. Lifecycle, security, extras, and feature
+proofs are not repeated in separate jobs after their workspace owner has run.
 Performance timing remains manual/local; benchmark compilation is a local
 gate.
 
@@ -157,7 +188,7 @@ After generated-surface changes:
 7. open fixtures separately only when testing their graph.
 
 The exact current toolchain pinned by `rust-toolchain.toml` owns Trybuild
-snapshots and Clippy. Rust 1.85 owns separate semantic JSON checks that require
+snapshots and Clippy. Rust 1.86.0 owns separate semantic JSON checks that require
 compilation failure, user-facing message fragments, the expected primary source
 span, and absence of internal bridge names or protected sentinels. The
 generated-control MSRV cases also require the `set_*` replacement hint while

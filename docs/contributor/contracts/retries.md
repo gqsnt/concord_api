@@ -272,7 +272,7 @@ proofs in `execute/auth_tests/recovery.rs`, and page/aggregate accounting in
 `pagination/runtime_tests/sequence.rs`.
 
 After focused tests, run all-feature core tests, workspace doctests, strict
-documentation checks, warning-denied Rustdoc, and the Rust 1.85 semantic gate.
+documentation checks, warning-denied Rustdoc, and the Rust 1.86.0 semantic gate.
 
 ## Related
 

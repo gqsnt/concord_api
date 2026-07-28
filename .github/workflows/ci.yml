@@ -11,7 +11,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_STABLE: 1.97.1
-  RUST_MSRV: 1.85.0
+  RUST_MSRV: 1.86.0
   MDBOOK_VERSION: 0.5.4
 
 jobs:
@@ -56,11 +56,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
           toolchain: ${{ env.RUST_STABLE }}
+      - uses: taiki-e/install-action@41049aa56687c35e0afa74eed4f09cec4f9afabf # v2
+        with:
+          tool: nextest@0.9.140
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-test
-      - run: cargo test --workspace --exclude concord-macros --lib --tests --examples --locked
-      - run: cargo test --workspace --exclude concord-macros --lib --tests --examples --all-features --locked
+      - run: cargo nextest run --profile ci --workspace --exclude concord-macros --lib --tests --examples --locked
+      - run: cargo nextest run --profile ci --workspace --exclude concord-macros --lib --tests --examples --all-features --locked
 
   documentation:
     name: Documentation
@@ -102,13 +105,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
           toolchain: ${{ env.RUST_STABLE }}
+      - uses: taiki-e/install-action@41049aa56687c35e0afa74eed4f09cec4f9afabf # v2
+        with:
+          tool: nextest@0.9.140
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-ui
-      - run: cargo test -p concord-macros --lib --locked
-      - run: cargo test -p concord --test ui --no-default-features --locked
-      - run: cargo test -p concord --test ui --all-features --locked
-      - run: cargo test -p concord-core --test ui --no-default-features --locked
+      - run: cargo nextest run --profile ci -p concord-macros --lib --locked
+      - run: cargo nextest run --profile ci -p concord --test ui --no-default-features --locked
+      - run: cargo nextest run --profile ci -p concord --test ui --all-features --locked
+      - run: cargo nextest run --profile ci -p concord-core --test ui --no-default-features --locked
 
   msrv:
     name: MSRV product libraries
@@ -161,11 +167,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
           toolchain: ${{ env.RUST_STABLE }}
+      - uses: taiki-e/install-action@41049aa56687c35e0afa74eed4f09cec4f9afabf # v2
+        with:
+          tool: nextest@0.9.140
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-platform
       - run: cargo check --workspace --all-targets --all-features --locked
-      - run: 'cargo test -p concord --test runtime --all-features --locked runtime::deterministic::'
+      - run: 'cargo nextest run --profile ci -p concord --test runtime --all-features --locked -E "test(runtime::deterministic::)"'
 
   analyzer:
     name: Rust analyzer

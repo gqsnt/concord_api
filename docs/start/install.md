@@ -83,9 +83,9 @@ runtime for their callers.
 
 ## Toolchain and TLS
 
-The minimum supported Rust version is 1.85.0. The repository's current stable
-toolchain may be newer, but public product libraries are checked separately
-with Rust 1.85.
+The minimum supported Rust version is Rust 1.86.0. The repository's current
+stable toolchain may be newer, but public product libraries are checked
+separately with Rust 1.86.0.
 
 With ordinary defaults, HTTPS uses the configured default TLS backend.
 Redirects and environment proxies are not silently enabled. Custom roots,

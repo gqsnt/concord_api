@@ -8,18 +8,18 @@ long-term compatibility window beyond the checked source and tests.
 
 | Contract | Value |
 |---|---|
-| Minimum supported Rust version | Rust 1.85.0 |
+| Minimum supported Rust version | Rust 1.86.0 |
 | Workspace edition | Rust 2024 |
 | Maintained package version | `0.1.0` |
 | Cargo resolver | version 3 |
 
 The MSRV is a real build owner, not a claim that every development tool runs
-on 1.85. The maintained matrix checks the library targets for `concord-core`,
+on Rust 1.86.0. The maintained matrix checks the library targets for `concord-core`,
 `concord-macros`, `concord-extras`, and `concord`, then runs the dedicated
 MSRV UI fixture owner. Ordinary development and the full workspace matrix use
 the current stable toolchain.
 
-Applications should treat 1.85.0 as the minimum compiler for this checkout.
+Applications should treat Rust 1.86.0 as the minimum compiler for this checkout.
 An optional dependency may still require a newer compiler if an application
 resolves a version outside the workspace lockfile; verify the application's
 own resolved graph.
@@ -30,7 +30,7 @@ capabilities without the complete item/file AST; `full` is enabled only for
 macro-crate tests. The workspace lockfile may therefore contain both Syn 3 for
 Concord and Syn 2 for upstream procedural-macro dependencies until those
 dependencies migrate. That duplicate-major graph does not change the DSL,
-generated Rust contract, or Rust 1.85 support.
+generated Rust contract, or Rust 1.86.0 support.
 
 ## Package and façade contract
 

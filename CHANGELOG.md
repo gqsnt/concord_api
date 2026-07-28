@@ -91,11 +91,19 @@
 
 ### Changed
 
+- The workspace MSRV is now Rust 1.86.0. Product libraries and semantic
+  compiler-JSON fixtures are checked on that toolchain without a rust-version
+  override; this compatibility change does not alter generated-contract
+  version 31.
+- Cargo-nextest 0.9.140 is now the maintained unit, integration, example, and
+  UI runner with retries disabled. Doctests remain under Cargo test. The
+  loopback CONNECT proxy now owns concurrent tunnel workers, so a live
+  keep-alive tunnel cannot block a replacement connection or delay teardown.
 - The declaration compiler now uses Syn 3. Its source grammar, emitted Rust,
-  diagnostics, Rust 1.85 support, and generated-contract version 31 are
-  unchanged. Syn's `full` feature is enabled only for macro-crate tests that
-  parse the crate's complete source; Syn 2 may remain in the locked graph
-  through upstream procedural-macro dependencies.
+  diagnostics, and generated-contract version 31 are unchanged. Syn's `full`
+  feature is enabled only for macro-crate tests that parse the crate's
+  complete source; Syn 2 may remain in the locked graph through upstream
+  procedural-macro dependencies.
 - Buffered and streaming record delivery now share one private progress
   driver. Pending source bytes are separate from decoder staging, so one large
   transport chunk containing many individually bounded records succeeds,

@@ -58,14 +58,29 @@ impl Drop for ConnectProxy {
 }
 
 fn connect_accept_loop(listener: TcpListener, upstream: SocketAddr, stop: Arc<AtomicBool>) {
+    let mut workers = Vec::new();
     while !stop.load(Ordering::Acquire) {
+        reap_finished_tunnels(&mut workers);
         match listener.accept() {
             Ok((client, _)) => {
-                if let Err(error) = tunnel_connect(client, upstream) {
-                    if !stop.load(Ordering::Acquire) {
-                        panic!("CONNECT proxy tunnel failed: {error}");
-                    }
+                if stop.load(Ordering::Acquire) {
+                    break;
                 }
+                let tunnel_stop = Arc::clone(&stop);
+                workers.push(
+                    thread::Builder::new()
+                        .name("concord-connect-tunnel".into())
+                        .spawn(move || {
+                            if let Err(error) =
+                                tunnel_connect(client, upstream, Arc::clone(&tunnel_stop))
+                            {
+                                if !tunnel_stop.load(Ordering::Acquire) {
+                                    panic!("CONNECT proxy tunnel failed: {error}");
+                                }
+                            }
+                        })
+                        .expect("failed to spawn CONNECT tunnel worker"),
+                );
             }
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                 thread::sleep(Duration::from_millis(2));
@@ -73,9 +88,30 @@ fn connect_accept_loop(listener: TcpListener, upstream: SocketAddr, stop: Arc<At
             Err(error) => panic!("CONNECT proxy accept failed: {error}"),
         }
     }
+    for worker in workers {
+        worker.join().expect("CONNECT tunnel worker panicked");
+    }
 }
 
-fn tunnel_connect(mut client: TcpStream, upstream: SocketAddr) -> io::Result<()> {
+fn reap_finished_tunnels(workers: &mut Vec<JoinHandle<()>>) {
+    let mut index = 0;
+    while index < workers.len() {
+        if workers[index].is_finished() {
+            workers
+                .swap_remove(index)
+                .join()
+                .expect("CONNECT tunnel worker panicked");
+        } else {
+            index += 1;
+        }
+    }
+}
+
+fn tunnel_connect(
+    mut client: TcpStream,
+    upstream: SocketAddr,
+    stop: Arc<AtomicBool>,
+) -> io::Result<()> {
     const MAX_CONNECT_HEAD: usize = 16 * 1024;
 
     client.set_nonblocking(false)?;
@@ -83,6 +119,9 @@ fn tunnel_connect(mut client: TcpStream, upstream: SocketAddr) -> io::Result<()>
     let mut head = Vec::new();
     let mut byte = [0_u8; 1];
     while !head.ends_with(b"\r\n\r\n") {
+        if stop.load(Ordering::Acquire) {
+            return Ok(());
+        }
         if head.len() == MAX_CONNECT_HEAD {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -118,6 +157,11 @@ fn tunnel_connect(mut client: TcpStream, upstream: SocketAddr) -> io::Result<()>
     let mut last_progress = Instant::now();
     let mut buffer = [0_u8; 16 * 1024];
     while client_open || origin_open {
+        if stop.load(Ordering::Acquire) {
+            let _ = client.shutdown(Shutdown::Both);
+            let _ = origin.shutdown(Shutdown::Both);
+            return Ok(());
+        }
         let mut progressed = false;
         if client_open {
             match client.read(&mut buffer) {
@@ -201,5 +245,43 @@ impl ProxyTrap {
 
     pub fn wait_for_requests(&self, count: usize, timeout: Duration) -> Result<(), String> {
         self.server.wait_for_requests(count, timeout)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn services_a_second_tunnel_while_the_first_remains_open() {
+        let upstream =
+            TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).expect("loopback upstream");
+        let proxy = ConnectProxy::start(upstream.local_addr().expect("upstream address"))
+            .expect("CONNECT proxy");
+
+        let first = open_tunnel(proxy.address).expect("first CONNECT tunnel");
+        let second = open_tunnel(proxy.address);
+
+        drop(first);
+        drop(proxy);
+
+        second.expect("second CONNECT tunnel must not wait for the first tunnel to close");
+    }
+
+    fn open_tunnel(proxy: SocketAddr) -> io::Result<TcpStream> {
+        let mut stream = TcpStream::connect(proxy)?;
+        stream.set_read_timeout(Some(Duration::from_millis(750)))?;
+        stream.write_all(b"CONNECT example.test:443 HTTP/1.1\r\nHost: example.test:443\r\n\r\n")?;
+        stream.flush()?;
+
+        let mut response = [0_u8; 64];
+        let count = stream.read(&mut response)?;
+        if !response[..count].starts_with(b"HTTP/1.1 200 ") {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "CONNECT proxy did not return a success response",
+            ));
+        }
+        Ok(stream)
     }
 }
