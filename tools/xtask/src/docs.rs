@@ -38,7 +38,12 @@ const GENERATED_LIMITS_START: &str = "<!-- BEGIN GENERATED LIMITS -->";
 const GENERATED_LIMITS_END: &str = "<!-- END GENERATED LIMITS -->";
 const RETRY_GUIDE: &str = "docs/features/retries.md";
 const RETRY_POLICY_SOURCE: &str = "crates/concord-core/src/retry/policy.rs";
-const MISLEADING_RETRY_BUDGET_WORDING: &str = concat!("at most 20% extra ", "dispatch load");
+const FORBIDDEN_RETRY_BUDGET_WORDING: &[&str] = &[
+    concat!("at most 20% extra ", "dispatch load"),
+    concat!("realized ", "ratio"),
+    concat!("maximum extra ", "load"),
+    concat!("max extra ", "load"),
+];
 // The completed site keeps inventory, outside-link, and user-wording checks
 // enabled together so a later edit cannot recreate a migration-only gap.
 const STRICT_SITE_INVENTORY: bool = true;
@@ -837,20 +842,36 @@ fn check_retry_budget_wording(root: &Path) -> Result<(), String> {
     current_documentation.push(root.join(RETRY_POLICY_SOURCE));
 
     for path in current_documentation {
-        if read(&path)?
-            .to_ascii_lowercase()
-            .contains(MISLEADING_RETRY_BUDGET_WORDING)
-        {
-            return Err(format!(
-                "{} contains forbidden retry-budget wording `{MISLEADING_RETRY_BUDGET_WORDING}`",
-                path.display()
-            ));
+        let contents = read(&path)?.to_ascii_lowercase();
+        for forbidden in FORBIDDEN_RETRY_BUDGET_WORDING {
+            if contents.contains(forbidden) {
+                return Err(format!(
+                    "{} contains forbidden retry-budget wording `{forbidden}`",
+                    path.display()
+                ));
+            }
         }
     }
 
     for (relative, fragments) in [
-        (RETRY_GUIDE, ["ceil(", "single initial dispatch"]),
-        (RETRY_POLICY_SOURCE, ["ceil(", "one initial dispatch"]),
+        (
+            RETRY_GUIDE,
+            [
+                "ceil(",
+                "single initial dispatch",
+                "allowance ratio",
+                "approved retry",
+            ],
+        ),
+        (
+            RETRY_POLICY_SOURCE,
+            [
+                "ceil(",
+                "one initial dispatch",
+                "allowance ratio",
+                "approved retries",
+            ],
+        ),
     ] {
         let path = root.join(relative);
         let contents = read(&path)?;
@@ -1089,7 +1110,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::{
-        MISLEADING_RETRY_BUDGET_WORDING, check_includes, check_markdown_links,
+        FORBIDDEN_RETRY_BUDGET_WORDING, check_includes, check_markdown_links,
         check_retry_budget_wording, check_summary, github_heading_anchor, replace_section,
         synchronize_generated_section,
     };
@@ -1155,33 +1176,35 @@ mod tests {
     }
 
     #[test]
-    fn retry_budget_wording_requires_rounding_contract_and_rejects_strict_cap() {
+    fn retry_budget_wording_requires_allowance_contract_and_rejects_strict_terms() {
         let root = TemporaryRoot::new();
         root.write("README.md", "# Repository\n");
         root.write(
             "docs/features/retries.md",
-            "The budget uses ceil(initials × ratio) and permits one retry after a single initial dispatch.\n",
+            "The allowance ratio uses ceil(initials × ratio), permits one retry after a single initial dispatch, and bounds approved retry traffic.\n",
         );
         root.write(
             "crates/concord-core/src/retry/policy.rs",
-            "allowed retries = ceil(initials × ratio); one retry after one initial dispatch\n",
+            "The allowance ratio uses ceil(initials × ratio); one retry after one initial dispatch bounds approved retries.\n",
         );
-        check_retry_budget_wording(root.path()).expect("complete rounding contract");
+        check_retry_budget_wording(root.path()).expect("complete allowance contract");
+
+        for forbidden in FORBIDDEN_RETRY_BUDGET_WORDING {
+            root.write(
+                "docs/features/retries.md",
+                &format!("The budget claims {forbidden}.\n"),
+            );
+            let error = check_retry_budget_wording(root.path()).expect_err("strict term must fail");
+            assert!(error.contains(forbidden), "{error}");
+        }
 
         root.write(
             "docs/features/retries.md",
-            &format!("The budget permits {MISLEADING_RETRY_BUDGET_WORDING}.\n"),
-        );
-        let error = check_retry_budget_wording(root.path()).expect_err("strict cap must fail");
-        assert!(error.contains(MISLEADING_RETRY_BUDGET_WORDING), "{error}");
-
-        root.write(
-            "docs/features/retries.md",
-            "The budget uses ceil(initials × ratio) and permits one retry after a single initial dispatch.\n",
+            "The allowance ratio uses ceil(initials × ratio), permits one retry after a single initial dispatch, and bounds approved retry traffic.\n",
         );
         root.write(
             "crates/concord-core/src/retry/policy.rs",
-            "allowed retries = ceil(initials × ratio)\n",
+            "The allowance ratio uses ceil(initials × ratio) and bounds approved retries.\n",
         );
         let error =
             check_retry_budget_wording(root.path()).expect_err("example wording must remain");

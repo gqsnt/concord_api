@@ -92,6 +92,10 @@ fn every_invalid_builder_value_is_a_source_less_structural_error() {
             .build()
             .expect_err("invalid ratio");
         assert_eq!(error.kind(), RetryPolicyBuildErrorKind::InvalidMaxExtraLoad);
+        assert_eq!(
+            error.to_string(),
+            "managed retry policy configuration failed: extra-load target ratio must be finite and within 0.0 through 1000.0"
+        );
     }
     for maximum in [0, MAX_POLICY_RETRIES_PER_OPERATION + 1] {
         let error = RetryPolicy::builder()

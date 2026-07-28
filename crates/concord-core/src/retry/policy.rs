@@ -124,9 +124,12 @@ impl RetryPolicyBuilder {
     /// `allowed retries = ceil(initial dispatches × ratio)`.
     ///
     /// A ratio of `0.20` permits one retry after one initial dispatch.
-    /// Whole-retry upward rounding can exceed the configured ratio at low
-    /// volume; the realized ratio converges toward the configured value as
-    /// dispatch volume grows.
+    /// Whole-retry upward rounding can make the budget allowance ratio exceed
+    /// the configured ratio at low volume. The allowance ratio converges
+    /// toward the configured value as initial dispatch volume grows. Actual
+    /// approved retries may be lower because classifiers can stop, bodies can
+    /// be non-replayable, budget admission can deny, and per-operation limits
+    /// can intervene.
     ///
     /// Values must be finite and within `0.0..=1000.0`.
     #[must_use]
@@ -395,7 +398,7 @@ pub enum RetryDecision {
 pub enum RetryPolicyBuildErrorKind {
     /// A classifier is required.
     MissingClassifier,
-    /// The extra-load ratio was non-finite or outside `0.0..=1000.0`.
+    /// The extra-load target ratio was non-finite or outside `0.0..=1000.0`.
     InvalidMaxExtraLoad,
     /// The per-operation maximum was outside the supported range.
     InvalidMaxRetriesPerOperation,
@@ -428,7 +431,7 @@ impl fmt::Display for RetryPolicyBuildError {
         let detail = match self.kind {
             RetryPolicyBuildErrorKind::MissingClassifier => "a retry classifier is required",
             RetryPolicyBuildErrorKind::InvalidMaxExtraLoad => {
-                "maximum extra load must be finite and within 0.0 through 1000.0"
+                "extra-load target ratio must be finite and within 0.0 through 1000.0"
             }
             RetryPolicyBuildErrorKind::InvalidMaxRetriesPerOperation => {
                 "per-operation retry maximum must be within 1 through 16"

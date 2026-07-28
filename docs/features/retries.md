@@ -59,11 +59,15 @@ independent of the rolling budget.
 The default rolling budget uses a 20% target ratio per logical origin over ten
 seconds. Concord permits `ceil(initial dispatches × ratio)` managed retry
 reservations. Whole-retry upward rounding intentionally allows one retry after
-a single initial dispatch, so the realized ratio can exceed the configured
-ratio at low volume and converges toward it as request volume grows. This
-low-volume allowance lets an intermittent request recover without waiting for
-five initial dispatches. Budget denial, including bounded origin-state capacity
-pressure, suppresses the retry and preserves the current result.
+a single initial dispatch. It can make the budget allowance ratio exceed the
+configured ratio at low volume. The allowance ratio converges toward the
+configured value as initial dispatch volume grows. Actual approved retry
+traffic can be lower because a classifier may stop, a body may be
+non-replayable, budget admission may deny a reservation, or the independent
+per-operation maximum may intervene. The low-volume allowance lets an
+intermittent request recover without waiting for five initial dispatches.
+Budget denial, including bounded origin-state capacity pressure, suppresses the
+retry and preserves the current result.
 
 After a classifier returns `Retry`, Concord checks the per-operation maximum,
 body replayability, then shared budget admission. Buffered bytes and encoded

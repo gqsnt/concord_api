@@ -126,8 +126,12 @@ For fixed-point ratio `r` and `n` active initial dispatches:
 allowed retries = ceil(n × r)
 ```
 
-Whole-retry upward rounding is intentional: the realized ratio can exceed the
-configured ratio at low volume and converges toward it as initial volume grows.
+Whole-retry upward rounding is intentional: it can make the budget allowance
+ratio exceed the configured ratio at low volume. The allowance ratio converges
+toward the configured value as initial dispatch volume grows. Actual approved
+retry traffic may be lower because classifiers can stop, bodies can be
+non-replayable, budget admission can deny, and per-operation limits can
+intervene.
 A reservation succeeds only while active approved retries are below that
 limit. At the default ratio, one initial dispatch permits one low-volume
 retry, five permit one, six permit two, and 100 permit 20. Ratio zero permits
