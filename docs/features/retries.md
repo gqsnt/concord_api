@@ -53,10 +53,17 @@ response selected for retry is dropped without polling its body.
 ## Bounds and replayability
 
 `RetryPolicy` requires a classifier. Its default per-operation maximum is two
-policy retries, with a hard maximum of 16. Its default rolling budget permits
-at most 20% extra dispatch load per logical origin over ten seconds, using
-bounded origin state. Capacity pressure suppresses a retry and preserves the
-current failure.
+policy retries, with a hard maximum of 16. That per-operation maximum is
+independent of the rolling budget.
+
+The default rolling budget uses a 20% target ratio per logical origin over ten
+seconds. Concord permits `ceil(initial dispatches × ratio)` managed retry
+reservations. Whole-retry upward rounding intentionally allows one retry after
+a single initial dispatch, so the realized ratio can exceed the configured
+ratio at low volume and converges toward it as request volume grows. This
+low-volume allowance lets an intermittent request recover without waiting for
+five initial dispatches. Budget denial, including bounded origin-state capacity
+pressure, suppresses the retry and preserves the current result.
 
 After a classifier returns `Retry`, Concord checks the per-operation maximum,
 body replayability, then shared budget admission. Buffered bytes and encoded

@@ -117,7 +117,16 @@ impl RetryPolicyBuilder {
         }
     }
 
-    /// Replaces the maximum aggregate retry-to-initial-dispatch ratio.
+    /// Replaces the rolling-budget target retry-to-initial-dispatch ratio.
+    ///
+    /// For one logical origin in the active ten-second window:
+    ///
+    /// `allowed retries = ceil(initial dispatches × ratio)`.
+    ///
+    /// A ratio of `0.20` permits one retry after one initial dispatch.
+    /// Whole-retry upward rounding can exceed the configured ratio at low
+    /// volume; the realized ratio converges toward the configured value as
+    /// dispatch volume grows.
     ///
     /// Values must be finite and within `0.0..=1000.0`.
     #[must_use]

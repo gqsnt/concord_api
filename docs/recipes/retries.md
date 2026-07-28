@@ -18,8 +18,8 @@ an operation-specific idempotency condition when the same client contains
 non-repeatable remote operations.
 
 The policy keeps the default bounded ten-second origin budget and explicitly
-retains its 20% extra-load ratio. It permits at most two policy retries for
-one request or pagination page.
+retains its 20% extra-load target ratio. Independently, it permits at most two
+policy retries for one request or pagination page.
 
 ## Install it
 

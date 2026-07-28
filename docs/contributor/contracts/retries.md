@@ -56,7 +56,7 @@ or native retry types.
 
 | Setting | Default | Validation |
 |---|---:|---|
-| maximum extra load | `0.20` | finite, `0.0..=1000.0` |
+| extra-load target ratio | `0.20` | finite, `0.0..=1000.0` |
 | maximum policy retries per operation | `2` | `1..=16` |
 | budget window | 10 seconds | fixed |
 | budget bucket width | 1 second | fixed |
@@ -126,6 +126,8 @@ For fixed-point ratio `r` and `n` active initial dispatches:
 allowed retries = ceil(n × r)
 ```
 
+Whole-retry upward rounding is intentional: the realized ratio can exceed the
+configured ratio at low volume and converges toward it as initial volume grows.
 A reservation succeeds only while active approved retries are below that
 limit. At the default ratio, one initial dispatch permits one low-volume
 retry, five permit one, six permit two, and 100 permit 20. Ratio zero permits
