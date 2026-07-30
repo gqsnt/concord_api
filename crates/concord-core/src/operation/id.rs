@@ -8,7 +8,6 @@ static GLOBAL_OPERATION_IDS: OperationIdAllocator = OperationIdAllocator::new(1)
 pub struct OperationId(u64);
 
 impl OperationId {
-    #[allow(dead_code, reason = "allocated by the production executor")]
     pub(crate) fn allocate() -> Result<Self, OperationIdExhausted> {
         GLOBAL_OPERATION_IDS.allocate()
     }

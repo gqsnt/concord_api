@@ -6,7 +6,7 @@ use super::model::{
 };
 use super::*;
 use crate::syntax as parse;
-use crate::{MAX_AUTH_PLACEMENTS, MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_RULES_PER_PLAN};
+use crate::{MAX_AUTH_PLACEMENTS, MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_POLICIES_PER_PLAN};
 
 fn resolve_ok(tokens: proc_macro2::TokenStream) -> Api {
     resolve(parse::parse(tokens).expect("AST")).expect("normalized IR")
@@ -126,11 +126,11 @@ fn rate_limit_normalization_rejects_the_first_excess_effective_rule() {
             }
         "#,
     );
-    for _ in 1..MAX_RATE_LIMIT_RULES_PER_PLAN {
+    for _ in 1..MAX_RATE_LIMIT_POLICIES_PER_PLAN {
         source.push_str("scope s() { rate_limit { 1 / 1s; }");
     }
     source.push_str("GET read() -> Bytes { rate_limit { 1 / 1s; } }");
-    for _ in 1..MAX_RATE_LIMIT_RULES_PER_PLAN {
+    for _ in 1..MAX_RATE_LIMIT_POLICIES_PER_PLAN {
         source.push('}');
     }
     let tokens = source
@@ -144,7 +144,7 @@ fn rate_limit_normalization_rejects_the_first_excess_effective_rule() {
     assert!(
         error
             .to_string()
-            .contains("an effective rate-limit plan permits at most 64 rules")
+            .contains("an effective rate-limit plan permits at most 64 policies")
     );
 }
 
@@ -202,7 +202,7 @@ fn rate_limit_normalization_rejects_the_first_excess_id_byte() {
 }
 
 #[test]
-fn normalization_removes_layer_operations_and_preserves_order() {
+fn normalization_removes_attachment_site_operations_and_preserves_order() {
     let api = resolve_ok(quote! {
         client ShapeApi {
             base "https://example.test/root";
@@ -316,7 +316,7 @@ fn endpoint_surfaces_include_final_paths_names_and_capabilities() {
 #[test]
 fn normalization_resolves_replace_remove_off_and_type_shapes() {
     let api = resolve_ok(quote! {
-        client LayerApi {
+        client AttachmentApi {
             base "https://example.test/fixed";
             host ["client"];
             path ["client"];

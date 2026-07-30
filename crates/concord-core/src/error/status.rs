@@ -30,7 +30,6 @@ pub enum StatusBodyState {
     UnavailableDeadline,
 }
 
-#[allow(dead_code, reason = "constructed by the managed response collector")]
 enum StatusBodyInner {
     Disabled,
     Empty,
@@ -49,7 +48,6 @@ pub struct StatusBody {
     inner: StatusBodyInner,
 }
 
-#[allow(dead_code, reason = "constructed by the managed response collector")]
 impl StatusBody {
     pub(crate) const fn disabled() -> Self {
         Self {
@@ -225,7 +223,6 @@ pub struct HttpResponseFailure {
 }
 
 impl HttpResponseFailure {
-    #[allow(dead_code, reason = "constructed by the managed response collector")]
     pub(crate) fn new(
         endpoint: EndpointId,
         method: Method,
@@ -245,7 +242,6 @@ impl HttpResponseFailure {
         )
     }
 
-    #[allow(dead_code, reason = "supports deterministic Retry-After tests")]
     fn new_at(
         endpoint: EndpointId,
         method: Method,
@@ -369,7 +365,6 @@ impl fmt::Debug for HttpResponseFailure {
     }
 }
 
-#[allow(dead_code, reason = "used when managed responses are constructed")]
 fn parse_retry_after(headers: &HeaderMap, cap: Duration, now: SystemTime) -> Option<Duration> {
     let value = headers.get(RETRY_AFTER)?.to_str().ok()?.trim();
     if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) {

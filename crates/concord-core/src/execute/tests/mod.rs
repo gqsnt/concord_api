@@ -39,8 +39,8 @@ use crate::http::HttpConfigBuilder;
 #[cfg(feature = "records")]
 use crate::rate_limit::NoopRateLimiter;
 use crate::rate_limit::{
-    RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitRequest,
-    RateLimitResponse, RateLimitRule, RateLimitWindow, RateLimiter,
+    RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitPolicy,
+    RateLimitRequest, RateLimitResponse, RateLimitWindow, RateLimiter,
 };
 #[cfg(feature = "records")]
 use crate::records::{
@@ -189,7 +189,7 @@ where
         builder.push_static("records")?;
         builder.push_static("stream")?;
         builder.push_pagination_query_value("continuation", &self.query)?;
-        builder.push_rate_limit_rule(
+        builder.push_rate_limit_policy(
             "ExecutionApi::rate_limit::records",
             [("records.partition", "record-surface-rate-key")],
             1,
@@ -999,7 +999,7 @@ impl EndpointSpec for RateLimitedBytesEndpoint {
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("health")?;
         builder.push_static("bytes")?;
-        builder.push_rate_limit_rule(
+        builder.push_rate_limit_policy(
             "ExecutionApi::rate_limit::tenant",
             [("vars.tenant", self.key.as_str())],
             1,
@@ -1031,7 +1031,7 @@ impl EndpointSpec for GlobalRateLimitedBytesEndpoint {
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("health")?;
         builder.push_static("bytes")?;
-        builder.push_rate_limit_rule(
+        builder.push_rate_limit_policy(
             "ExecutionApi::rate_limit::global",
             std::iter::empty::<(&str, &str)>(),
             1,
@@ -1248,7 +1248,7 @@ impl RateLimiter for AutomaticSurfaceLimiter {
         self.acquisitions.fetch_add(1, Ordering::SeqCst);
         let keys = request
             .plan
-            .rules()
+            .policies()
             .iter()
             .flat_map(|rule| rule.key().parts())
             .map(|part| part.value().to_owned())
@@ -1339,13 +1339,13 @@ impl RateLimiter for ProbeRateLimiter {
                 page_index: request.page_index,
                 rule_ids: request
                     .plan
-                    .rules()
+                    .policies()
                     .iter()
                     .map(|rule| rule.id().as_str().to_owned())
                     .collect(),
                 key_values: request
                     .plan
-                    .rules()
+                    .policies()
                     .iter()
                     .flat_map(|rule| rule.key().parts())
                     .map(|part| part.value().to_owned())

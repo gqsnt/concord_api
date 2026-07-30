@@ -5,12 +5,12 @@ use http::{HeaderMap, Method, StatusCode};
 use super::*;
 use concord_core::contracts::{AttemptInfo, SanitizedHeaders};
 use concord_core::rate_limit::{
-    MAX_RATE_LIMIT_RULES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_RULE, RateLimitId, RateLimitKey,
-    RateLimitKeyPart, RateLimitRule, RateLimitWindow,
+    MAX_RATE_LIMIT_POLICIES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_POLICY, RateLimitId, RateLimitKey,
+    RateLimitKeyPart, RateLimitPolicy, RateLimitWindow,
 };
 
-fn rule(id: &str, key: &str, cost: u32, windows: &[(u32, Duration)]) -> RateLimitRule {
-    RateLimitRule::new(
+fn policy(id: &str, key: &str, cost: u32, windows: &[(u32, Duration)]) -> RateLimitPolicy {
+    RateLimitPolicy::new(
         RateLimitId::new(id).expect("ID"),
         if key.is_empty() {
             RateLimitKey::global()
@@ -26,11 +26,11 @@ fn rule(id: &str, key: &str, cost: u32, windows: &[(u32, Duration)]) -> RateLimi
                 .expect("window")
         }),
     )
-    .expect("rule")
+    .expect("policy")
 }
 
-fn plan(rules: Vec<RateLimitRule>) -> RateLimitPlan {
-    RateLimitPlan::try_from_rules(rules).expect("valid test plan")
+fn plan(rules: Vec<RateLimitPolicy>) -> RateLimitPlan {
+    RateLimitPlan::try_from_policies(rules).expect("valid test plan")
 }
 
 const fn initial_attempt() -> AttemptInfo {
@@ -218,13 +218,13 @@ fn defaults_and_configuration_validation_are_finite() {
 
 #[tokio::test(start_paused = true)]
 async fn local_limiter_accepts_maximum_valid_plan() {
-    let rules = (0..MAX_RATE_LIMIT_RULES_PER_PLAN)
+    let rules = (0..MAX_RATE_LIMIT_POLICIES_PER_PLAN)
         .map(|rule_index| {
-            RateLimitRule::new(
-                RateLimitId::new(format!("maximum-rule-{rule_index}")).expect("bounded ID"),
+            RateLimitPolicy::new(
+                RateLimitId::new(format!("maximum-policy-{rule_index}")).expect("bounded ID"),
                 RateLimitKey::global(),
                 NonZeroU32::MIN,
-                (0..MAX_RATE_LIMIT_WINDOWS_PER_RULE).map(|window_index| {
+                (0..MAX_RATE_LIMIT_WINDOWS_PER_POLICY).map(|window_index| {
                     RateLimitWindow::new(
                         NonZeroU32::MIN,
                         Duration::from_secs(u64::try_from(window_index + 1).expect("test index")),
@@ -232,7 +232,7 @@ async fn local_limiter_accepts_maximum_valid_plan() {
                     .expect("bounded window")
                 }),
             )
-            .expect("maximum-window rule")
+            .expect("maximum-window policy")
         })
         .collect();
     let plan = plan(rules);
@@ -242,22 +242,22 @@ async fn local_limiter_accepts_maximum_valid_plan() {
 
     acquire(&limiter, &plan, Some("example.test")).await;
 
-    assert_eq!(plan.rules().len(), MAX_RATE_LIMIT_RULES_PER_PLAN);
+    assert_eq!(plan.policies().len(), MAX_RATE_LIMIT_POLICIES_PER_PLAN);
     assert!(
-        plan.rules()
+        plan.policies()
             .iter()
-            .all(|rule| rule.windows().len() == MAX_RATE_LIMIT_WINDOWS_PER_RULE)
+            .all(|policy| policy.windows().len() == MAX_RATE_LIMIT_WINDOWS_PER_POLICY)
     );
     assert_eq!(
         limiter.test_quota_entry_count(),
-        MAX_RATE_LIMIT_RULES_PER_PLAN * MAX_RATE_LIMIT_WINDOWS_PER_RULE
+        MAX_RATE_LIMIT_POLICIES_PER_PLAN * MAX_RATE_LIMIT_WINDOWS_PER_POLICY
     );
 }
 
 #[tokio::test(start_paused = true)]
 async fn first_burst_is_immediate_and_refill_wait_is_controlled() {
     let limiter = Arc::new(LocalRateLimiter::new());
-    let plan = Arc::new(plan(vec![rule(
+    let plan = Arc::new(plan(vec![policy(
         "tenant",
         "north",
         1,
@@ -283,7 +283,7 @@ async fn first_burst_is_immediate_and_refill_wait_is_controlled() {
 async fn separately_built_limiters_have_separate_state() {
     let first = Arc::new(LocalRateLimiter::new());
     let second = LocalRateLimiter::new();
-    let plan = Arc::new(plan(vec![rule(
+    let plan = Arc::new(plan(vec![policy(
         "shared-key",
         "tenant",
         1,
@@ -304,7 +304,7 @@ async fn separately_built_limiters_have_separate_state() {
 async fn shared_arc_shares_state() {
     let limiter = Arc::new(LocalRateLimiter::new());
     let shared = Arc::clone(&limiter);
-    let plan = Arc::new(plan(vec![rule(
+    let plan = Arc::new(plan(vec![policy(
         "shared-key",
         "tenant",
         1,
@@ -322,14 +322,14 @@ async fn shared_arc_shares_state() {
 #[tokio::test(start_paused = true)]
 async fn same_resolved_key_shares_state() {
     let limiter = Arc::new(LocalRateLimiter::new());
-    let first = Arc::new(plan(vec![rule(
-        "same-rule",
+    let first = Arc::new(plan(vec![policy(
+        "same-policy",
         "same-value",
         1,
         &[(1, Duration::from_secs(10))],
     )]));
-    let equivalent = Arc::new(plan(vec![rule(
-        "same-rule",
+    let equivalent = Arc::new(plan(vec![policy(
+        "same-policy",
         "same-value",
         1,
         &[(1, Duration::from_secs(10))],
@@ -344,7 +344,7 @@ async fn same_resolved_key_shares_state() {
     tokio::task::yield_now().await;
     assert!(
         !repeated.is_finished(),
-        "equal resolved rule IDs, key parts, and windows must share state"
+        "equal resolved policy IDs, key parts, and windows must share state"
     );
     repeated.abort();
     let _ = repeated.await;
@@ -353,13 +353,13 @@ async fn same_resolved_key_shares_state() {
 #[tokio::test(start_paused = true)]
 async fn page_varying_actual_keys_are_distinct_and_equivalent_keys_aggregate() {
     let limiter = Arc::new(LocalRateLimiter::new());
-    let first = Arc::new(plan(vec![rule(
+    let first = Arc::new(plan(vec![policy(
         "page",
         "offset-41082731",
         1,
         &[(1, Duration::from_secs(60))],
     )]));
-    let second = Arc::new(plan(vec![rule(
+    let second = Arc::new(plan(vec![policy(
         "page",
         "offset-41082733",
         1,
@@ -392,13 +392,13 @@ async fn page_varying_actual_keys_are_distinct_and_equivalent_keys_aggregate() {
 async fn multiple_rules_and_windows_wait_for_the_complete_maximum() {
     let limiter = Arc::new(LocalRateLimiter::new());
     let plan = Arc::new(plan(vec![
-        rule(
+        policy(
             "tenant",
             "north",
             1,
             &[(2, Duration::from_secs(10)), (2, Duration::from_secs(20))],
         ),
-        rule("host", "example", 1, &[(2, Duration::from_secs(5))]),
+        policy("host", "example", 1, &[(2, Duration::from_secs(5))]),
     ]));
     acquire(&limiter, &plan, Some("example.test")).await;
     acquire(&limiter, &plan, Some("example.test")).await;
@@ -423,7 +423,7 @@ async fn multiple_rules_and_windows_wait_for_the_complete_maximum() {
 #[tokio::test(start_paused = true)]
 async fn unavailable_rule_causes_no_partial_reservation_or_lock_across_wait() {
     let limiter = Arc::new(LocalRateLimiter::new());
-    let unavailable = Arc::new(plan(vec![rule(
+    let unavailable = Arc::new(plan(vec![policy(
         "slow",
         "north",
         1,
@@ -432,8 +432,8 @@ async fn unavailable_rule_causes_no_partial_reservation_or_lock_across_wait() {
     acquire(&limiter, &unavailable, Some("example.test")).await;
 
     let combined = Arc::new(plan(vec![
-        rule("slow", "north", 1, &[(1, Duration::from_secs(10))]),
-        rule("available", "west", 1, &[(2, Duration::from_secs(100))]),
+        policy("slow", "north", 1, &[(1, Duration::from_secs(10))]),
+        policy("available", "west", 1, &[(2, Duration::from_secs(100))]),
     ]));
     let waiting = spawn_acquire(
         Arc::clone(&limiter),
@@ -449,7 +449,7 @@ async fn unavailable_rule_causes_no_partial_reservation_or_lock_across_wait() {
     waiting.abort();
     let _ = waiting.await;
 
-    let available = Arc::new(plan(vec![rule(
+    let available = Arc::new(plan(vec![policy(
         "available",
         "west",
         1,
@@ -475,7 +475,7 @@ async fn unavailable_rule_causes_no_partial_reservation_or_lock_across_wait() {
 #[tokio::test(start_paused = true)]
 async fn cancellation_while_waiting_consumes_no_future_quota() {
     let limiter = Arc::new(LocalRateLimiter::new());
-    let plan = Arc::new(plan(vec![rule(
+    let plan = Arc::new(plan(vec![policy(
         "tenant",
         "north",
         1,
@@ -500,7 +500,7 @@ async fn cancellation_while_waiting_consumes_no_future_quota() {
 #[tokio::test(start_paused = true)]
 async fn successful_reservation_is_not_refunded_after_later_cancellation() {
     let limiter = Arc::new(LocalRateLimiter::new());
-    let plan = Arc::new(plan(vec![rule(
+    let plan = Arc::new(plan(vec![policy(
         "tenant",
         "north",
         1,
@@ -525,7 +525,7 @@ async fn successful_reservation_is_not_refunded_after_later_cancellation() {
 #[tokio::test(start_paused = true)]
 async fn duplicate_equivalent_contributions_cannot_undercount() {
     let limiter = LocalRateLimiter::new();
-    let plan = plan(vec![rule(
+    let plan = plan(vec![policy(
         "same",
         "north",
         1,
@@ -553,7 +553,7 @@ async fn duplicate_equivalent_contributions_cannot_undercount() {
 #[tokio::test]
 async fn equivalent_contributions_above_capacity_fail_before_state_insertion() {
     let limiter = LocalRateLimiter::new();
-    let plan = plan(vec![rule(
+    let plan = plan(vec![policy(
         "same",
         "north",
         1,
@@ -588,13 +588,13 @@ async fn state_capacity_is_recoverable() {
         .expect("quota capacity")
         .idle_ttl(Duration::from_secs(5))
         .expect("idle TTL");
-    let first = plan(vec![rule(
+    let first = plan(vec![policy(
         "first",
         "one",
         1,
         &[(1, Duration::from_secs(5))],
     )]);
-    let second = plan(vec![rule(
+    let second = plan(vec![policy(
         "second",
         "two",
         1,
@@ -621,13 +621,13 @@ async fn state_capacity_does_not_poison_limiter() {
     let limiter = LocalRateLimiter::new()
         .quota_capacity(1)
         .expect("quota capacity");
-    let first = plan(vec![rule(
+    let first = plan(vec![policy(
         "first",
         "one",
         1,
         &[(2, Duration::from_secs(100))],
     )]);
-    let second = plan(vec![rule(
+    let second = plan(vec![policy(
         "second",
         "two",
         1,
@@ -649,13 +649,13 @@ async fn existing_bucket_works_after_new_bucket_capacity_failure() {
     let limiter = LocalRateLimiter::new()
         .quota_capacity(1)
         .expect("quota capacity");
-    let existing = plan(vec![rule(
+    let existing = plan(vec![policy(
         "existing",
         "one",
         1,
         &[(2, Duration::from_secs(100))],
     )]);
-    let new = plan(vec![rule(
+    let new = plan(vec![policy(
         "new",
         "two",
         1,
@@ -679,13 +679,13 @@ async fn active_quota_is_not_evicted() {
     let limiter = LocalRateLimiter::new()
         .quota_capacity(1)
         .expect("quota capacity");
-    let active = plan(vec![rule(
+    let active = plan(vec![policy(
         "active",
         "one",
         1,
         &[(1, Duration::from_secs(100))],
     )]);
-    let incoming = plan(vec![rule(
+    let incoming = plan(vec![policy(
         "incoming",
         "two",
         1,
@@ -707,7 +707,7 @@ async fn active_quota_is_not_evicted() {
             .keys()
             .next()
             .expect("active key")
-            .rule
+            .policy
             .id
             .as_ref(),
         "active"
@@ -721,13 +721,13 @@ async fn consumed_long_window_is_not_pruned_by_short_idle_ttl() {
         .expect("quota capacity")
         .idle_ttl(Duration::from_secs(5))
         .expect("idle TTL");
-    let long = plan(vec![rule(
+    let long = plan(vec![policy(
         "long",
         "one",
         1,
         &[(1, Duration::from_secs(100))],
     )]);
-    let incoming = plan(vec![rule(
+    let incoming = plan(vec![policy(
         "incoming",
         "two",
         1,
@@ -745,7 +745,7 @@ async fn consumed_long_window_is_not_pruned_by_short_idle_ttl() {
     let state = limiter.state.lock().expect("state");
     assert_eq!(state.quota.len(), 1);
     let (key, entry) = state.quota.first_key_value().expect("long entry");
-    assert_eq!(key.rule.id.as_ref(), "long");
+    assert_eq!(key.policy.id.as_ref(), "long");
     assert!(entry.balance < key.full_balance().expect("full balance"));
 }
 
@@ -756,7 +756,7 @@ async fn fully_replenished_idle_bucket_is_pruned() {
         .expect("quota capacity")
         .idle_ttl(Duration::from_secs(5))
         .expect("idle TTL");
-    let first = plan(vec![rule(
+    let first = plan(vec![policy(
         "first",
         "one",
         1,
@@ -777,13 +777,13 @@ async fn pruning_frees_capacity_for_new_bucket() {
         .expect("quota capacity")
         .idle_ttl(Duration::from_secs(5))
         .expect("idle TTL");
-    let first = plan(vec![rule(
+    let first = plan(vec![policy(
         "first",
         "one",
         1,
         &[(1, Duration::from_secs(5))],
     )]);
-    let second = plan(vec![rule(
+    let second = plan(vec![policy(
         "second",
         "two",
         1,
@@ -802,7 +802,7 @@ async fn pruning_frees_capacity_for_new_bucket() {
             .keys()
             .next()
             .expect("second key")
-            .rule
+            .policy
             .id
             .as_ref(),
         "second"
@@ -814,15 +814,15 @@ async fn quota_insert_is_transactional() {
     let limiter = LocalRateLimiter::new()
         .quota_capacity(1)
         .expect("quota capacity");
-    let existing = plan(vec![rule(
+    let existing = plan(vec![policy(
         "first",
         "one",
         1,
         &[(2, Duration::from_secs(100))],
     )]);
     let combined = plan(vec![
-        rule("first", "one", 1, &[(2, Duration::from_secs(100))]),
-        rule("second", "two", 1, &[(1, Duration::from_secs(100))]),
+        policy("first", "one", 1, &[(2, Duration::from_secs(100))]),
+        policy("second", "two", 1, &[(1, Duration::from_secs(100))]),
     ]);
 
     acquire(&limiter, &existing, Some("example.test")).await;
@@ -858,13 +858,13 @@ async fn current_bucket_cooldown_uses_resolved_by_key() {
         duration: Duration::from_secs(10),
         scope: FixedScope::Buckets,
     })));
-    let first = Arc::new(plan(vec![rule(
+    let first = Arc::new(plan(vec![policy(
         "first",
         "one",
         1,
         &[(10, Duration::from_secs(1))],
     )]));
-    let second = Arc::new(plan(vec![rule(
+    let second = Arc::new(plan(vec![policy(
         "second",
         "two",
         1,
@@ -920,7 +920,7 @@ async fn current_bucket_cooldown_uses_resolved_by_key() {
 
 #[tokio::test(start_paused = true)]
 async fn host_cooldown_remains_host_scoped() {
-    let plan = Arc::new(plan(vec![rule(
+    let plan = Arc::new(plan(vec![policy(
         "quota",
         "key",
         1,
@@ -958,7 +958,7 @@ async fn host_cooldown_remains_host_scoped() {
 
 #[tokio::test(start_paused = true)]
 async fn client_cooldown_remains_limiter_scoped() {
-    let plan = Arc::new(plan(vec![rule(
+    let plan = Arc::new(plan(vec![policy(
         "quota",
         "key",
         1,
@@ -1372,10 +1372,15 @@ async fn configured_observer_replaces_rather_than_composes_with_default() {
 async fn zero_key_limit_accepts_global_and_rejects_nonempty_without_text() {
     const KEY_SENTINEL: &str = "local-limiter-key-private-ae7e93";
     let limiter = LocalRateLimiter::new().key_limit(0).expect("limit");
-    let global = plan(vec![rule("global", "", 1, &[(1, Duration::from_secs(1))])]);
+    let global = plan(vec![policy(
+        "global",
+        "",
+        1,
+        &[(1, Duration::from_secs(1))],
+    )]);
     acquire(&limiter, &global, None).await;
 
-    let keyed = plan(vec![rule(
+    let keyed = plan(vec![policy(
         "keyed",
         KEY_SENTINEL,
         1,
@@ -1417,7 +1422,7 @@ async fn local_limiter_rejects_first_excess_without_sensitive_output() {
     let limiter = LocalRateLimiter::new()
         .key_limit(limit)
         .expect("configured key limit");
-    let keyed = plan(vec![rule(
+    let keyed = plan(vec![policy(
         ID_SENTINEL,
         KEY_SENTINEL,
         1,
@@ -1517,7 +1522,7 @@ fn boundary_helpers_are_checked() {
     if let Some(wake) = now.checked_add(Duration::MAX) {
         assert!(wake > now);
     }
-    let maximum = plan(vec![rule(
+    let maximum = plan(vec![policy(
         "maximum",
         "",
         u32::MAX,

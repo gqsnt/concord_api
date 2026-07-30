@@ -16,7 +16,6 @@ pub struct ExecutionMeta {
 }
 
 impl ExecutionMeta {
-    #[allow(dead_code, reason = "constructed by the production executor")]
     pub(crate) fn new(
         endpoint: EndpointId,
         method: Method,
@@ -111,7 +110,6 @@ pub struct ApiResponse<T> {
 }
 
 impl<T> ApiResponse<T> {
-    #[allow(dead_code, reason = "constructed by the production executor")]
     pub(crate) fn new(
         url: Url,
         status: StatusCode,

@@ -9,15 +9,15 @@ fn parse_ok(tokens: TokenStream) -> SourceApi {
     parse(tokens).expect("source AST")
 }
 
-fn inline_rate_limit(layer: &Layer) -> &RateLimitDecl {
-    match &layer.rate_limits[0].value {
+fn inline_rate_limit(attachment_site: &AttachmentSite) -> &RateLimitDecl {
+    match &attachment_site.rate_limits[0].value {
         RateLimitAttachmentDecl::Inline(rule) => rule,
         RateLimitAttachmentDecl::Named(_) => panic!("anonymous rate-limit attachment"),
     }
 }
 
 #[test]
-fn parses_singular_client_root_children_values_and_all_shaping_layers() {
+fn parses_singular_client_root_children_values_and_all_attachment_sites() {
     let api = parse_ok(quote! {
         client FirstApi {
             base "https://example.test:8443/fixed";
@@ -493,7 +493,7 @@ fn credentials_parse_all_sources_and_enforce_definition_order() {
 }
 
 #[test]
-fn authentication_layer_operations_and_challenge_suffixes_are_bounded() {
+fn authentication_attachment_site_operations_and_challenge_suffixes_are_bounded() {
     parse(quote! {
         client AuthApi {
             base "https://example.test";
@@ -596,19 +596,19 @@ fn lexical_rate_limit_declarations_parse_in_order() {
         }
     });
     let client = &api.client;
-    assert_eq!(inline_rate_limit(&client.layer).windows.len(), 2);
+    assert_eq!(inline_rate_limit(&client.attachment_site).windows.len(), 2);
     let SourceChild::Scope(scope) = &api.children[0] else {
         panic!("scope")
     };
-    assert_eq!(scope.layer.rate_limits.len(), 1);
+    assert_eq!(scope.attachment_site.rate_limits.len(), 1);
     let SourceChild::Endpoint(read) = &scope.children[0] else {
         panic!("read endpoint")
     };
-    assert_eq!(inline_rate_limit(&read.layer).cost, 2);
+    assert_eq!(inline_rate_limit(&read.attachment_site).cost, 2);
     let SourceChild::Endpoint(public) = &scope.children[1] else {
         panic!("public endpoint")
     };
-    assert!(public.layer.rate_limits.is_empty());
+    assert!(public.attachment_site.rate_limits.is_empty());
 }
 
 #[test]
@@ -629,11 +629,11 @@ fn rate_limit_cost_defaults_and_equal_capacity_is_valid() {
             GET read() -> Bytes;
         }
     });
-    assert_eq!(inline_rate_limit(&api.client.layer).cost, 1);
+    assert_eq!(inline_rate_limit(&api.client.attachment_site).cost, 1);
     let SourceChild::Scope(scope) = &api.children[0] else {
         panic!("scope")
     };
-    let rule = inline_rate_limit(&scope.layer);
+    let rule = inline_rate_limit(&scope.attachment_site);
     assert_eq!(rule.cost, 2);
     assert_eq!(rule.windows.len(), 2);
     assert_eq!(rule.windows[0].capacity, 2);
@@ -953,7 +953,7 @@ fn named_client_scope_and_endpoint_entries_are_order_independent() {
     let SourceChild::Endpoint(endpoint) = &auth.children[0] else {
         panic!("endpoint")
     };
-    let Some(AuthOperation::Modify { placements, .. }) = &endpoint.layer.auth else {
+    let Some(AuthOperation::Modify { placements, .. }) = &endpoint.attachment_site.auth else {
         panic!("auth placements")
     };
     assert_eq!(canonical_ident(&placements[0].credential), "first");

@@ -263,7 +263,7 @@ mod tests {
 
         assert_eq!(block.secrets.len(), 1);
         assert_eq!(block.credentials.len(), 2);
-        assert!(source.client.layer.auth.is_some());
+        assert!(source.client.attachment_site.auth.is_some());
     }
 
     #[test]
@@ -379,7 +379,7 @@ mod tests {
             _ => panic!("scheme endpoint"),
         };
         assert!(matches!(
-            exact.layer.auth.as_ref(),
+            exact.attachment_site.auth.as_ref(),
             Some(super::super::ast::AuthOperation::Modify { placements, .. })
                 if matches!(
                     &placements[0].kind,
@@ -387,7 +387,7 @@ mod tests {
                 )
         ));
         assert!(matches!(
-            scheme.layer.auth.as_ref(),
+            scheme.attachment_site.auth.as_ref(),
             Some(super::super::ast::AuthOperation::Modify { placements, .. })
                 if matches!(
                     &placements[0].kind,

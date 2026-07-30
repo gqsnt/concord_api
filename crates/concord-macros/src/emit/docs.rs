@@ -298,7 +298,7 @@ fn render_request(docs: &EndpointDocModel) -> String {
         "Rate limits: none.".to_owned()
     } else {
         format!(
-            "Rate limits (applicable rules are listed in inherited order):\n{}",
+            "Rate limits (applicable policies are listed in inherited order):\n{}",
             docs.rate_limits
                 .iter()
                 .map(|rule| {
@@ -829,7 +829,7 @@ mod tests {
         let endpoint = semantic::test_support::endpoint(&api.client.children, "read");
         let docs = endpoint_type_doc(endpoint);
 
-        assert!(docs.contains("applicable rules are listed in inherited order"));
+        assert!(docs.contains("applicable policies are listed in inherited order"));
         assert!(docs.contains("Bucketed by: declaration-global"));
         assert!(docs.contains(
             "Bucketed by: `host`, `endpoint`, `vars.tenant`, `scope.account`, `ep.resource`"

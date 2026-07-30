@@ -446,18 +446,6 @@ impl ExecutionModel {
         Ok(())
     }
 
-    pub(super) fn prepared(&self) -> Result<PreparedCredential, ModelError> {
-        match self.phase {
-            ExecutionPhase::Reserved(prepared) => Ok(prepared),
-            ExecutionPhase::Initial
-            | ExecutionPhase::PreflightComplete(_)
-            | ExecutionPhase::LimiterWaiting(_)
-            | ExecutionPhase::Finalized(_)
-            | ExecutionPhase::FinalizationFailed(_)
-            | ExecutionPhase::Sent(_) => Err(ModelError::InvalidTransition),
-        }
-    }
-
     pub(super) fn record_finalization(
         &mut self,
         decision: FinalizeDecision,

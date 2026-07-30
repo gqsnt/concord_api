@@ -1,10 +1,6 @@
 //! Reviewed plain HTTP configuration values.
 
 pub(crate) mod application;
-#[allow(
-    dead_code,
-    reason = "owns both managed clients for the private ClientCore"
-)]
 pub(crate) mod build;
 mod config;
 #[cfg(test)]
@@ -13,7 +9,6 @@ mod limits;
 pub(crate) mod provider;
 mod proxy;
 pub(crate) mod response_progress;
-#[allow(dead_code, reason = "called by the private managed response boundary")]
 mod status;
 #[cfg(all(test, feature = "http2"))]
 pub(crate) mod test_support;

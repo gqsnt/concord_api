@@ -13,7 +13,7 @@ use runtime::error::{ClientBuildErrorKind, ErrorCategory};
 use runtime::http::{Method, SafeProxy};
 use runtime::rate_limit::{
     BoxFuture, NoopRateLimiter, RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart,
-    RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimitRule, RateLimitWindow,
+    RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimitPolicy, RateLimitWindow,
     RateLimiter,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -40,7 +40,7 @@ impl CapturingLimiter {
     fn capture(request: &RateLimitRequest<'_>) -> Vec<CapturedRule> {
         request
             .plan
-            .rules()
+            .policies()
             .iter()
             .map(|rule| CapturedRule {
                 id: rule.id().as_str().to_owned(),
@@ -157,8 +157,8 @@ async fn read_request(stream: &mut TcpStream) -> io::Result<()> {
     Ok(())
 }
 
-fn runtime_rule(id: &str, key: RateLimitKey, cost: u32, windows: &[(u32, u64)]) -> RateLimitRule {
-    RateLimitRule::new(
+fn runtime_rule(id: &str, key: RateLimitKey, cost: u32, windows: &[(u32, u64)]) -> RateLimitPolicy {
+    RateLimitPolicy::new(
         RateLimitId::new(id).expect("runtime rate ID"),
         key,
         NonZeroU32::new(cost).expect("positive runtime cost"),

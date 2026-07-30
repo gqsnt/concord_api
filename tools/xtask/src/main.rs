@@ -3,9 +3,7 @@
 mod command;
 mod fixtures;
 mod msrv;
-mod package;
 mod policy;
-mod source_archive;
 
 use std::env;
 use std::path::{Path, PathBuf};
@@ -34,17 +32,9 @@ fn run() -> Result<(), String> {
             msrv::run(&root);
             Ok(())
         }
-        Some("package") => {
-            parse_options(&arguments[1..], false)?;
-            package::run(&root)
-        }
         Some("policy") => {
             parse_options(&arguments[1..], false)?;
             policy::run(&root)
-        }
-        Some("source-archive") => {
-            parse_options(&arguments[1..], false)?;
-            source_archive::run(&root)
         }
         _ => Err(usage()),
     }
@@ -73,7 +63,7 @@ fn workspace_root() -> Result<PathBuf, String> {
 }
 
 fn usage() -> String {
-    "usage: cargo run -p concord-xtask -- <fixtures [--locked] | msrv-ui [--locked] | package [--locked] | policy [--locked] | source-archive [--locked]>".to_owned()
+    "usage: cargo run -p concord-xtask -- <fixtures [--locked] | msrv-ui [--locked] | policy [--locked]>".to_owned()
 }
 
 #[cfg(test)]

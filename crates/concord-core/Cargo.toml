@@ -44,8 +44,5 @@ name = "ui"
 path = "tests/ui.rs"
 test = false
 
-[package.metadata.docs.rs]
-all-features = true
-
 [lints]
 workspace = true

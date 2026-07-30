@@ -214,18 +214,6 @@ impl Cohort {
         true
     }
 
-    pub(super) fn terminal_for(&self, waiter: WaiterIdentity) -> Option<CohortTerminal> {
-        let cell = self.handle.0.borrow();
-        cell.subscribers
-            .contains(&waiter)
-            .then_some(cell.terminal)
-            .flatten()
-    }
-
-    pub(super) fn publication_count(&self) -> u8 {
-        self.handle.0.borrow().publication_count
-    }
-
     pub(super) fn invariant(&self, active: bool) -> bool {
         let cell = self.handle.0.borrow();
         let publication_consistent = match cell.terminal {

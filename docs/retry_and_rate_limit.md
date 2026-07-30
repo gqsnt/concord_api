@@ -79,7 +79,7 @@ response.
 
 ## Identity and sharing
 
-Bucket identity includes the limiter object, effective rule ID, ordered key
+Bucket identity includes the limiter object, effective policy ID, ordered key
 values, and window. Key order is significant.
 
 An explicit ID permits intentional sharing across source renames or separate

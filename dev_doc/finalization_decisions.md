@@ -42,3 +42,14 @@ Each entry records a judgment not fixed by the finalization plan.
 - Treat duplicate behavior and behavior-key-scope cases as inapplicable because behavior profiles do not exist in the frozen DSL; ghost-syntax tests reject the `behavior` and `behaviors` spellings, and rate-limit visibility tests cover the surviving attachment semantics.
 - Add one consolidated `spec_rejections` trybuild fixture because it keeps related specification diagnostics reviewable while existing focused fixtures retain pagination, rate-limit visibility, and ghost-syntax coverage.
 - Treat generated secret input names and redacted input categories as safe Rustdoc metadata because the reviewed kitchen-sink Rustdoc contains no secret values, source expressions, or credential material.
+
+## Phase 4
+
+- Name public resolved rate-limit types, plan accessors, and limits with policy terminology because resolved semantic data is policy data and the private freeze keeps no compatibility aliases.
+- Name the private macro AST node `AttachmentSite` because it represents a client, scope, or endpoint attachment site.
+- Retain the existing `#![deny(missing_docs)]` attributes in `concord_core` and `concord_macros` because both crates already enforced the requested public documentation rule.
+- Remove release-package verification, source-archive generation, and docs.rs metadata because publication preparation is outside the private v1 state.
+- Set the workspace and exact internal package versions to `1.0.0` because the frozen package identity must match the requested `v1.0.0` tag.
+- Keep Rust 1.86 as the MSRV because the workspace already selected it and direct toolchain verification is part of the phase gate.
+- Replace the generated whole-crate `$crate` import with a module glob re-export because Rust 1.86 rejects importing `$crate` as a crate alias while accepting `$crate::*` with the same generated paths.
+- Delete unused proof-model methods and obsolete dead-code allowances because direct all-target compilation establishes which retained paths are live.

@@ -8,7 +8,7 @@ use std::time::Duration;
 use concord_core::contracts::{AttemptInfo, HeaderMap, Method, SanitizedHeaders};
 use concord_core::rate_limit::{
     Cooldown, CooldownScope, RateLimitId, RateLimitKey, RateLimitObserver, RateLimitPlan,
-    RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimitRule, RateLimitWindow,
+    RateLimitPolicy, RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimitWindow,
     RateLimiter,
 };
 use concord_extras::rate_limit::LocalRateLimiter;
@@ -28,21 +28,21 @@ impl RateLimitObserver for LongCooldown {
 fn one_per_minute() -> RateLimitPlan {
     let window = RateLimitWindow::new(NonZeroU32::MIN, Duration::from_secs(60))
         .expect("valid finite window");
-    let rule = RateLimitRule::new(
+    let policy = RateLimitPolicy::new(
         RateLimitId::new("public-contract").expect("valid ID"),
         RateLimitKey::global(),
         NonZeroU32::MIN,
         [window],
     )
-    .expect("valid public rule");
-    RateLimitPlan::try_from_rules([rule]).expect("valid public plan")
+    .expect("valid public policy");
+    RateLimitPlan::try_from_policies([policy]).expect("valid public plan")
 }
 
 #[tokio::test(start_paused = true)]
 async fn downstream_local_limiter_uses_public_contracts_and_core_cooldown_cap() {
     let limiter = LocalRateLimiter::new().observer(Arc::new(LongCooldown));
     assert_eq!(limiter.preparation_key_limit(), 1_024);
-    assert_eq!(one_per_minute().rules().len(), 1);
+    assert_eq!(one_per_minute().policies().len(), 1);
 
     let plan = RateLimitPlan::empty();
     let request = || RateLimitRequest {

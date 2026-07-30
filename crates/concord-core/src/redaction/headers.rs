@@ -109,7 +109,6 @@ pub struct SanitizedHeaderMap {
 }
 
 impl SanitizedHeaderMap {
-    #[allow(dead_code, reason = "used by later retained status errors")]
     pub(crate) fn from_headers(headers: &HeaderMap) -> Self {
         Self::from_headers_with_sensitive(headers, None)
     }

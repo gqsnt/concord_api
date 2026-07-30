@@ -276,7 +276,7 @@ impl EndpointSpec for HostRateEndpoint {
         builder.push_pagination_query_value("cursor", &self.host)?;
         builder.insert_pagination_header_value("x-page-cursor", &self.host)?;
         let rate_limit_host = builder.rate_limit_host().to_owned();
-        builder.push_rate_limit_rule(
+        builder.push_rate_limit_policy(
             "PaginationRuntimeApi::rate_limit::host_page_key",
             [
                 ("host", rate_limit_host.as_str()),
@@ -341,7 +341,7 @@ impl EndpointSpec for RateKeyEndpoint {
         builder.push_pagination_query_value("cursor", &self.key)?;
         builder.insert_pagination_header_value("x-page-cursor", &self.key)?;
         builder.push_auth(Auth::bearer(self.credential.clone()))?;
-        builder.push_rate_limit_rule(
+        builder.push_rate_limit_policy(
             "PaginationRuntimeApi::rate_limit::page_key",
             [("ep.cursor", self.key.as_str())],
             1,
@@ -689,7 +689,7 @@ impl HostLimiterProbe {
             request.host.map(str::to_owned),
             request
                 .plan
-                .rules()
+                .policies()
                 .iter()
                 .flat_map(|rule| rule.key().parts())
                 .map(|part| (part.name().to_owned(), part.value().to_owned()))

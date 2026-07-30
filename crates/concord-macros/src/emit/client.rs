@@ -223,7 +223,9 @@ pub(super) fn generate_client(client: &Client, facade_path: &TokenStream) -> Tok
             use super::*;
 
             mod __concord_generated {
-                pub(super) use #facade_path as __core;
+                pub(super) mod __core {
+                    pub use #facade_path::*;
+                }
 
                 #contract_assertion
             }

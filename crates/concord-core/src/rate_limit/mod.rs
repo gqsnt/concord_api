@@ -1,6 +1,6 @@
 //! Stable rate-limit contracts and private execution support.
 //!
-//! One bucket is identified by a selected limiter object, rule ID,
+//! One bucket is identified by a selected limiter object, policy ID,
 //! ordered resolved key, and window. Resolved key values may be operationally
 //! sensitive: plans and keys intentionally have no `Debug` or `Display`, and
 //! core does not copy their values into lifecycle errors, user hook events, or
@@ -12,7 +12,7 @@ mod types;
 
 pub use crate::limits::{
     MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES,
-    MAX_RATE_LIMIT_KEY_PARTS, MAX_RATE_LIMIT_RULES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_RULE,
+    MAX_RATE_LIMIT_KEY_PARTS, MAX_RATE_LIMIT_POLICIES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_POLICY,
 };
 pub use error::RateLimitError;
 pub use limiter::{
@@ -20,7 +20,7 @@ pub use limiter::{
     RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimiter,
 };
 pub use types::{
-    RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitPlan, RateLimitRule,
+    RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitPlan, RateLimitPolicy,
     RateLimitWindow,
 };
 

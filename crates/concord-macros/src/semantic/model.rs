@@ -437,11 +437,11 @@ pub(crate) struct NormalizedConfig {
     pub(crate) headers: Vec<NormalizedHeader>,
     pub(crate) auth: Vec<NormalizedAuth>,
     pub(crate) timeout: Option<Duration>,
-    pub(crate) rate_limits: Vec<NormalizedRateLimitRule>,
+    pub(crate) rate_limits: Vec<NormalizedRateLimitPolicy>,
 }
 
 #[derive(Clone)]
-pub(crate) struct NormalizedRateLimitRule {
+pub(crate) struct NormalizedRateLimitPolicy {
     pub(crate) id: String,
     pub(crate) explicit_id: bool,
     pub(crate) id_span: Span,

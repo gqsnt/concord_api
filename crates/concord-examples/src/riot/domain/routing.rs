@@ -10,7 +10,7 @@ use std::num::NonZeroU32;
 /// Riot's documented starting application limit for a production API key.
 ///
 /// Riot applies the application limit per routing host. The unified client
-/// declares separate lexical rules for its platform and regional route trees.
+/// declares separate lexical profiles for its platform and regional route trees.
 pub const DEFAULT_MATCH_PAGE_SIZE: NonZeroU32 = match NonZeroU32::new(20) {
     Some(value) => value,
     None => unreachable!(),

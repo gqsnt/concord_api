@@ -31,7 +31,7 @@ use auth::{
 };
 use pagination::{pagination_bound_values, validate_pagination_binding_destinations};
 use rate_limits::{
-    RateLimitDeclarationLayer, RateLimitDefinition, RateLimitResolutionContext,
+    RateLimitAttachmentSite, RateLimitDefinition, RateLimitResolutionContext,
     resolve_rate_limit_definitions, source_tree_declares_rate_limits,
     validate_effective_rate_limit_pagination_dependencies, validate_rate_limit_definitions_used,
 };
@@ -61,7 +61,7 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
         children: source_children,
     } = source;
     let source_declares_limiter =
-        source_tree_declares_rate_limits(&source_client.layer, &source_children);
+        source_tree_declares_rate_limits(&source_client.attachment_site, &source_children);
     let rate_limit_definitions = resolve_rate_limit_definitions(
         &source_client.name,
         source_client
@@ -96,13 +96,13 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
             next_endpoint_id: 0,
         };
         let client_id = contract_path(&client_name, &[]);
-        let config = resolver.normalize_layer(
-            &source_client.layer,
+        let config = resolver.normalize_attachment_site(
+            &source_client.attachment_site,
             &NormalizedConfig::default(),
             &[],
             None,
             &RateLimitResolutionContext {
-                layer: RateLimitDeclarationLayer::Client,
+                attachment_site: RateLimitAttachmentSite::Client,
                 id_path: &client_id,
                 lexical_origin: "client",
             },
@@ -189,13 +189,13 @@ impl Resolver<'_> {
                 .collect::<Vec<_>>()
                 .join("::")
         );
-        let config = self.normalize_layer(
-            &source.layer,
+        let config = self.normalize_attachment_site(
+            &source.attachment_site,
             parent,
             &frames,
             None,
             &RateLimitResolutionContext {
-                layer: RateLimitDeclarationLayer::Scope,
+                attachment_site: RateLimitAttachmentSite::Scope,
                 id_path: &id_path,
                 lexical_origin: &lexical_origin,
             },
@@ -262,20 +262,20 @@ impl Resolver<'_> {
                 .collect::<Vec<_>>()
                 .join("::")
         );
-        let config = self.normalize_layer(
-            &source.layer,
+        let config = self.normalize_attachment_site(
+            &source.attachment_site,
             parent,
             visible_scopes,
             Some(&parameters),
             &RateLimitResolutionContext {
-                layer: RateLimitDeclarationLayer::Endpoint,
+                attachment_site: RateLimitAttachmentSite::Endpoint,
                 id_path: &contract_id.value,
                 lexical_origin: &lexical_origin,
             },
         )?;
         validate_effective_rate_limit_pagination_dependencies(&config, &pagination_values)?;
         validate_pagination_binding_destinations(&pagination_values)?;
-        let timeout = match source.layer.timeout.as_ref() {
+        let timeout = match source.attachment_site.timeout.as_ref() {
             Some(clause) => match &clause.value {
                 TimeoutOperation::Off => EndpointDocTimeout::Disabled,
                 TimeoutOperation::Set(value) => EndpointDocTimeout::Overridden(value.value),

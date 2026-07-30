@@ -141,8 +141,8 @@ fn hard_structural_limits_are_reachable_from_their_facade_domains() {
         rate_limit::MAX_RATE_LIMIT_KEY_PARTS,
         rate_limit::MAX_RATE_LIMIT_KEY_PART_NAME_BYTES,
         rate_limit::MAX_RATE_LIMIT_KEY_BYTES,
-        rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_RULE,
-        rate_limit::MAX_RATE_LIMIT_RULES_PER_PLAN,
+        rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_POLICY,
+        rate_limit::MAX_RATE_LIMIT_POLICIES_PER_PLAN,
     ];
     let response_limits = [response::MAX_EMPTY_RESPONSE_CHUNKS];
     let retry_limits = [retry::MAX_POLICY_RETRIES_PER_OPERATION as usize];

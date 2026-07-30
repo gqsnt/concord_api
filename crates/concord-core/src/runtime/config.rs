@@ -14,7 +14,6 @@ use crate::runtime::defaults::{
 };
 
 /// Private immutable finite runtime configuration.
-#[allow(dead_code, reason = "assembled into the private production ClientCore")]
 pub(crate) struct RuntimeConfig {
     pub(crate) runtime_endpoint_timeout: Option<Duration>,
     pub(crate) request_body_limit: NonZeroUsize,
@@ -49,7 +48,6 @@ enum LimiterSelection {
 }
 
 impl RuntimeConfigBuilder {
-    #[allow(dead_code, reason = "initialized by later generated client builders")]
     pub(crate) fn new() -> Self {
         let rate_limiter = crate::rate_limit::fallback_limiter();
         let rate_limit_key_limit = rate_limiter.preparation_key_limit();
@@ -225,7 +223,6 @@ impl RuntimeConfigBuilder {
         self
     }
 
-    #[allow(dead_code, reason = "assembled into the private production ClientCore")]
     pub(crate) fn resolve(self) -> RuntimeConfig {
         self.config
     }

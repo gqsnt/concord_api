@@ -320,11 +320,11 @@ mod tests {
             panic!("endpoint");
         };
 
-        assert!(endpoint.layer.host.is_some());
-        assert!(endpoint.layer.path.is_some());
-        assert!(endpoint.layer.query.is_some());
-        assert!(endpoint.layer.headers.is_some());
-        assert!(endpoint.layer.timeout.is_some());
+        assert!(endpoint.attachment_site.host.is_some());
+        assert!(endpoint.attachment_site.path.is_some());
+        assert!(endpoint.attachment_site.query.is_some());
+        assert!(endpoint.attachment_site.headers.is_some());
+        assert!(endpoint.attachment_site.timeout.is_some());
     }
 
     #[test]

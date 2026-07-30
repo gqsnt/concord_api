@@ -43,7 +43,7 @@ pub use crate::limits::{
 pub use crate::pagination::PaginatedEndpoint;
 #[doc(hidden)]
 pub use crate::rate_limit::{
-    RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitRule, RateLimitWindow,
+    RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPolicy, RateLimitWindow,
 };
 #[doc(hidden)]
 pub use crate::request::{
@@ -334,7 +334,7 @@ pub fn safe_request_plan(
         public_headers,
         head.timeout(),
         0,
-        head.rate_limit_plan().rules().len(),
+        head.rate_limit_plan().policies().len(),
     ))
 }
 

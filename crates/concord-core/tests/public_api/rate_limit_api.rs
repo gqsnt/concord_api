@@ -6,8 +6,8 @@ use std::time::Duration;
 use concord_core::contracts::{
     BoxFuture, Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, NoopRateLimiter,
     RateLimitError, RateLimitErrorKind, RateLimitId, RateLimitKey, RateLimitKeyPart,
-    RateLimitObserver, RateLimitPermit, RateLimitPlan, RateLimitRequest, RateLimitResponse,
-    RateLimitResponseHead, RateLimitRule, RateLimitWindow, RateLimiter, RuntimeConfigBuilder,
+    RateLimitObserver, RateLimitPermit, RateLimitPlan, RateLimitPolicy, RateLimitRequest,
+    RateLimitResponse, RateLimitResponseHead, RateLimitWindow, RateLimiter, RuntimeConfigBuilder,
 };
 
 struct CustomLimiter;
@@ -17,7 +17,7 @@ impl RateLimiter for CustomLimiter {
         &'a self,
         request: RateLimitRequest<'a>,
     ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
-        for rule in request.plan.rules() {
+        for rule in request.plan.policies() {
             let _ = (
                 rule.id().as_str(),
                 rule.key().is_global(),
@@ -43,7 +43,7 @@ impl RateLimiter for CustomLimiter {
             request.attempt.index,
             request.attempt.policy_retry_index,
             request.attempt.authentication_recovery,
-            request.plan.rules(),
+            request.plan.policies(),
             request.plan.is_empty(),
         );
         Box::pin(async { Ok(RateLimitPermit::granted()) })
@@ -60,7 +60,7 @@ impl RateLimiter for CustomLimiter {
             response.request.host,
             response.request.page_index,
             response.request.attempt,
-            response.request.plan.rules(),
+            response.request.plan.policies(),
             response.status,
             response.headers,
             response.cooldown_cap,
@@ -73,7 +73,7 @@ struct CustomObserver;
 
 impl RateLimitObserver for CustomObserver {
     fn observe(&self, response: &RateLimitResponseHead<'_>) -> Option<Cooldown> {
-        for rule in response.plan.rules() {
+        for rule in response.plan.policies() {
             let _ = (
                 rule.id().as_str(),
                 rule.key()
@@ -97,7 +97,7 @@ impl RateLimitObserver for CustomObserver {
             response.attempt.index,
             response.attempt.policy_retry_index,
             response.attempt.authentication_recovery,
-            response.plan.rules(),
+            response.plan.policies(),
             response.status,
             &response.headers,
         );
@@ -186,13 +186,13 @@ fn exact_rate_limit_contract_constructors_accessors_and_traits_compile() {
     assert_eq!(window.capacity().get(), 100);
     assert_eq!(window.duration(), Duration::from_secs(60));
     let rule =
-        RateLimitRule::new(id, key, NonZeroU32::new(2).expect("cost"), [window]).expect("rule");
+        RateLimitPolicy::new(id, key, NonZeroU32::new(2).expect("cost"), [window]).expect("rule");
     assert_eq!(rule.id().as_str(), "application");
     assert_eq!(rule.key().parts().len(), 2);
     assert_eq!(rule.cost().get(), 2);
     assert_eq!(rule.windows().len(), 1);
-    let plan = RateLimitPlan::try_from_rules([rule]).expect("bounded plan");
-    assert_eq!(plan.rules().len(), 1);
+    let plan = RateLimitPlan::try_from_policies([rule]).expect("bounded plan");
+    assert_eq!(plan.policies().len(), 1);
 
     let safe = RateLimitError::with_safe_message(
         RateLimitErrorKind::Acquire,

@@ -30,8 +30,8 @@ const MAX_REQUEST_HEADER_BYTES: usize = 65_536;
 const MAX_RATE_LIMIT_ID_BYTES: usize = 256;
 const MAX_RATE_LIMIT_KEY_PART_NAME_BYTES: usize = 128;
 const MAX_RATE_LIMIT_KEY_PARTS: usize = 32;
-const MAX_RATE_LIMIT_WINDOWS_PER_RULE: usize = 16;
-const MAX_RATE_LIMIT_RULES_PER_PLAN: usize = 64;
+const MAX_RATE_LIMIT_WINDOWS_PER_POLICY: usize = 16;
+const MAX_RATE_LIMIT_POLICIES_PER_PLAN: usize = 64;
 
 /// Internal façade entry point carrying façade-selected capability tokens.
 #[doc(hidden)]

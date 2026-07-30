@@ -510,7 +510,7 @@ impl RateLimiter for ExtensionLimiter {
         request: RateLimitRequest<'a>,
     ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
         EXTENSION_LIMITER_ACQUIRES.fetch_add(1, Ordering::SeqCst);
-        let _bounded_rule_count = request.plan.rules().len();
+        let _bounded_rule_count = request.plan.policies().len();
         let _attempt = request.attempt;
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }

@@ -782,7 +782,7 @@ impl RateLimiter for PaginationLimiterProbe {
     ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
         let parts = request
             .plan
-            .rules()
+            .policies()
             .iter()
             .flat_map(|rule| rule.key().parts())
             .map(|part| (part.name().to_owned(), part.value().to_owned()))
@@ -803,7 +803,7 @@ impl RateLimiter for PaginationLimiterProbe {
         let request = response.request;
         let parts = request
             .plan
-            .rules()
+            .policies()
             .iter()
             .flat_map(|rule| rule.key().parts())
             .map(|part| (part.name().to_owned(), part.value().to_owned()))

@@ -24,7 +24,7 @@ use crate::endpoint::{
 };
 use crate::error::{ApiError, ConfigurationError, ConfigurationErrorKind};
 use crate::limits::MAX_AUTH_PLACEMENTS;
-use crate::rate_limit::{RateLimitPlan, RateLimitRule};
+use crate::rate_limit::{RateLimitPlan, RateLimitPolicy};
 use crate::response::{NoContent, ResponseBodySpec, ResponseMode};
 
 struct RuntimeEndpointParts {
@@ -38,7 +38,7 @@ struct RuntimeEndpointParts {
     body_specification: Option<&'static str>,
     auth: Vec<Auth>,
     timeout: TimeoutSelection,
-    rate_limits: Vec<RateLimitRule>,
+    rate_limits: Vec<RateLimitPolicy>,
     budget: StructuralBudget,
 }
 
@@ -342,21 +342,23 @@ impl<R> RuntimeEndpointBuilder<R> {
         })
     }
 
-    /// Appends one structurally validated rate-limit rule.
+    /// Appends one structurally validated rate-limit policy.
     #[must_use]
-    pub fn rate_limit(self, rule: RateLimitRule) -> Self {
+    pub fn rate_limit(self, policy: RateLimitPolicy) -> Self {
         self.update(move |mut parts| {
-            RateLimitPlan::validate_rule_append(&parts.rate_limits, &rule).map_err(|error| {
-                drop(error);
-                ConfigurationErrorKind::InvalidRateLimit
-            })?;
-            let retained_bytes = rule
+            RateLimitPlan::validate_policy_append(&parts.rate_limits, &policy).map_err(
+                |error| {
+                    drop(error);
+                    ConfigurationErrorKind::InvalidRateLimit
+                },
+            )?;
+            let retained_bytes = policy
                 .retained_structure_bytes()
                 .ok_or(ConfigurationErrorKind::InvalidRateLimit)?;
             let budget = reserve_runtime_structure(parts.budget, 1, retained_bytes)
                 .map_err(|_| ConfigurationErrorKind::InvalidRateLimit)?;
             parts.budget = budget;
-            parts.rate_limits.push(rule);
+            parts.rate_limits.push(policy);
             Ok(parts)
         })
     }
@@ -464,7 +466,7 @@ impl<R> RuntimeEndpointBuilder<R> {
             headers: validated_headers,
             body,
             auth: Arc::new(auth_plan),
-            rate_limit_plan: Arc::new(RateLimitPlan::from_validated_rules(rate_limits)),
+            rate_limit_plan: Arc::new(RateLimitPlan::from_validated_policies(rate_limits)),
             response: PhantomData,
         })
     }
@@ -600,7 +602,7 @@ mod tests {
     use crate::codec::{OctetStream, Text};
     use crate::hooks::DebugLevel;
     use crate::rate_limit::{
-        MAX_RATE_LIMIT_RULES_PER_PLAN, RateLimitId, RateLimitKey, RateLimitWindow,
+        MAX_RATE_LIMIT_POLICIES_PER_PLAN, RateLimitId, RateLimitKey, RateLimitWindow,
     };
     use crate::request::RequestOptions;
 
@@ -744,9 +746,9 @@ mod tests {
         endpoint.prepare_head(builder).expect("prepared head")
     }
 
-    fn rule(id: &str, value: &str) -> RateLimitRule {
-        RateLimitRule::new(
-            RateLimitId::new(id).expect("rule ID"),
+    fn rule(id: &str, value: &str) -> RateLimitPolicy {
+        RateLimitPolicy::new(
+            RateLimitId::new(id).expect("policy ID"),
             RateLimitKey::from_parts([
                 crate::rate_limit::RateLimitKeyPart::new("tenant", value).expect("tenant key part")
             ])
@@ -819,9 +821,15 @@ mod tests {
                 .expect("valid runtime endpoint");
 
         assert_eq!(endpoint.description.timeout(), TimeoutSelection::Disabled);
-        assert_eq!(endpoint.rate_limit_plan.rules().len(), 2);
-        assert_eq!(endpoint.rate_limit_plan.rules()[0].id().as_str(), "first");
-        assert_eq!(endpoint.rate_limit_plan.rules()[1].id().as_str(), "second");
+        assert_eq!(endpoint.rate_limit_plan.policies().len(), 2);
+        assert_eq!(
+            endpoint.rate_limit_plan.policies()[0].id().as_str(),
+            "first"
+        );
+        assert_eq!(
+            endpoint.rate_limit_plan.policies()[1].id().as_str(),
+            "second"
+        );
         let metadata = PreparedBodySpec::metadata(
             &endpoint.body,
             RequestBodyContext {
@@ -1140,21 +1148,21 @@ mod tests {
     fn runtime_endpoint_rate_limits_obey_same_structural_limits() {
         let mut boundary =
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.rate"), Method::GET);
-        for index in 0..MAX_RATE_LIMIT_RULES_PER_PLAN {
+        for index in 0..MAX_RATE_LIMIT_POLICIES_PER_PLAN {
             boundary = boundary.rate_limit(rule(&format!("rule-{index}"), "tenant"));
         }
         boundary.build().expect("rate-rule boundary");
 
         let mut excessive =
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.rate"), Method::GET);
-        for index in 0..MAX_RATE_LIMIT_RULES_PER_PLAN {
+        for index in 0..MAX_RATE_LIMIT_POLICIES_PER_PLAN {
             excessive = excessive.rate_limit(rule(&format!("rule-{index}"), "tenant"));
         }
         excessive = excessive.rate_limit(rule(RATE_ID_SENTINEL, RATE_KEY_SENTINEL));
         let error = excessive
             .build()
             .err()
-            .expect("first excess rate-limit rule");
+            .expect("first excess rate-limit policy");
         assert_eq!(error.kind(), ConfigurationErrorKind::InvalidRateLimit);
         assert!(!error.to_string().contains(RATE_ID_SENTINEL));
         assert!(!error.to_string().contains(RATE_KEY_SENTINEL));
@@ -1169,7 +1177,7 @@ mod tests {
         .rate_limit(rule(RATE_ID_SENTINEL, "second-value"))
         .build()
         .err()
-        .expect("duplicate runtime rate-limit rule ID");
+        .expect("duplicate runtime rate-limit policy ID");
         assert_eq!(error.kind(), ConfigurationErrorKind::InvalidRateLimit);
         assert!(!error.to_string().contains(RATE_ID_SENTINEL));
         assert!(!error.to_string().contains(RATE_KEY_SENTINEL));

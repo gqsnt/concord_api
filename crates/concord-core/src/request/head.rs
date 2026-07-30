@@ -18,7 +18,9 @@ use crate::limits::{
     MAX_FORMATTED_PUBLIC_VALUE_BYTES, MAX_REQUEST_HEAD_COMPONENTS, MAX_REQUEST_HEADER_BYTES,
     MAX_REQUEST_HEADER_COUNT, MAX_REQUEST_URL_BYTES,
 };
-use crate::rate_limit::{RateLimitError, RateLimitId, RateLimitKey, RateLimitPlan, RateLimitRule};
+use crate::rate_limit::{
+    RateLimitError, RateLimitId, RateLimitKey, RateLimitPlan, RateLimitPolicy,
+};
 use crate::redaction::render_safe_url;
 
 /// Static generated metadata required before public-head preparation.
@@ -225,7 +227,7 @@ pub struct HeadBuilder {
     debug: DebugLevel,
     appended_segment: bool,
     auth: Arc<AuthPlan>,
-    rate_limit_rules: Vec<RateLimitRule>,
+    rate_limit_policies: Vec<RateLimitPolicy>,
     prepared_rate_limit_plan: Option<Arc<RateLimitPlan>>,
     budget: RequestHeadBudget,
 }
@@ -258,7 +260,7 @@ impl HeadBuilder {
             pagination_sensitive_headers: HashSet::new(),
             appended_segment: false,
             auth: Arc::new(AuthPlan::default()),
-            rate_limit_rules: Vec::new(),
+            rate_limit_policies: Vec::new(),
             prepared_rate_limit_plan: None,
             budget: RequestHeadBudget::new(),
         }
@@ -300,13 +302,13 @@ impl HeadBuilder {
         self.push_auth(auth)
     }
 
-    /// Appends one generated, structurally validated effective rate-limit rule.
+    /// Appends one generated, structurally validated effective rate-limit policy.
     ///
     /// Key names are validated and values are formatted into the remaining
     /// aggregate key budget incrementally inside the builder. The first
     /// excess or duplicate part stops iteration.
     #[doc(hidden)]
-    pub fn push_rate_limit_rule<I, N, V, W>(
+    pub fn push_rate_limit_policy<I, N, V, W>(
         &mut self,
         id: &str,
         parts: I,
@@ -319,14 +321,14 @@ impl HeadBuilder {
         V: Display,
         W: IntoIterator<Item = (u32, Duration)>,
     {
-        let rule = (|| -> Result<RateLimitRule, RateLimitError> {
-            RateLimitPlan::validate_rule_id_append(&self.rate_limit_rules, id)?;
+        let policy = (|| -> Result<RateLimitPolicy, RateLimitError> {
+            RateLimitPlan::validate_policy_id_append(&self.rate_limit_policies, id)?;
             let id = RateLimitId::new(id)?;
             let cost = NonZeroU32::new(cost).ok_or_else(|| {
                 RateLimitError::new(crate::error::RateLimitErrorKind::InvalidConfiguration)
             })?;
             let key = RateLimitKey::from_display_values(parts)?;
-            RateLimitRule::from_window_values(id, key, cost, windows)
+            RateLimitPolicy::from_window_values(id, key, cost, windows)
         })()
         .map_err(|error| {
             drop(error);
@@ -336,19 +338,21 @@ impl HeadBuilder {
                 ConfigurationErrorKind::InvalidRateLimit,
             )
         })?;
-        RateLimitPlan::push_validated_rule(&mut self.rate_limit_rules, rule).map_err(|error| {
-            drop(error);
-            ApiError::configuration(
-                self.meta.endpoint_id().clone(),
-                self.meta.method().clone(),
-                ConfigurationErrorKind::InvalidRateLimit,
-            )
-        })
+        RateLimitPlan::push_validated_policy(&mut self.rate_limit_policies, policy).map_err(
+            |error| {
+                drop(error);
+                ApiError::configuration(
+                    self.meta.endpoint_id().clone(),
+                    self.meta.method().clone(),
+                    ConfigurationErrorKind::InvalidRateLimit,
+                )
+            },
+        )
     }
 
-    /// Adds one generated lexical rule with a declaration-scoped global key.
+    /// Adds one generated policy with a declaration-scoped global key.
     #[doc(hidden)]
-    pub fn push_generated_rate_limit_rule<W>(
+    pub fn push_generated_rate_limit_policy<W>(
         &mut self,
         id: &str,
         cost: u32,
@@ -357,13 +361,13 @@ impl HeadBuilder {
     where
         W: IntoIterator<Item = (u32, Duration)>,
     {
-        let rule = (|| -> Result<RateLimitRule, RateLimitError> {
-            RateLimitPlan::validate_rule_id_append(&self.rate_limit_rules, id)?;
+        let policy = (|| -> Result<RateLimitPolicy, RateLimitError> {
+            RateLimitPlan::validate_policy_id_append(&self.rate_limit_policies, id)?;
             let id = RateLimitId::new(id)?;
             let cost = NonZeroU32::new(cost).ok_or_else(|| {
                 RateLimitError::new(crate::error::RateLimitErrorKind::InvalidConfiguration)
             })?;
-            RateLimitRule::from_window_values(id, RateLimitKey::global(), cost, windows)
+            RateLimitPolicy::from_window_values(id, RateLimitKey::global(), cost, windows)
         })()
         .map_err(|error| {
             drop(error);
@@ -373,14 +377,16 @@ impl HeadBuilder {
                 ConfigurationErrorKind::InvalidRateLimit,
             )
         })?;
-        RateLimitPlan::push_validated_rule(&mut self.rate_limit_rules, rule).map_err(|error| {
-            drop(error);
-            ApiError::configuration(
-                self.meta.endpoint_id().clone(),
-                self.meta.method().clone(),
-                ConfigurationErrorKind::InvalidRateLimit,
-            )
-        })
+        RateLimitPlan::push_validated_policy(&mut self.rate_limit_policies, policy).map_err(
+            |error| {
+                drop(error);
+                ApiError::configuration(
+                    self.meta.endpoint_id().clone(),
+                    self.meta.method().clone(),
+                    ConfigurationErrorKind::InvalidRateLimit,
+                )
+            },
+        )
     }
 
     pub(crate) fn use_prepared_auth_plan(&mut self, auth: Arc<AuthPlan>) -> Result<(), ApiError> {
@@ -395,7 +401,7 @@ impl HeadBuilder {
     }
 
     pub(crate) fn use_prepared_rate_limit_plan(&mut self, plan: Arc<RateLimitPlan>) {
-        debug_assert!(self.rate_limit_rules.is_empty());
+        debug_assert!(self.rate_limit_policies.is_empty());
         self.prepared_rate_limit_plan = Some(plan);
     }
 
@@ -709,7 +715,9 @@ impl HeadBuilder {
             debug: self.debug,
             auth: self.auth,
             rate_limit_plan: self.prepared_rate_limit_plan.unwrap_or_else(|| {
-                Arc::new(RateLimitPlan::from_validated_rules(self.rate_limit_rules))
+                Arc::new(RateLimitPlan::from_validated_policies(
+                    self.rate_limit_policies,
+                ))
             }),
             budget: self.budget,
         })
@@ -1015,7 +1023,7 @@ mod tests {
         fn next(&mut self) -> Option<Self::Item> {
             let call = self.calls.fetch_add(1, Ordering::SeqCst);
             assert!(
-                call <= crate::rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_RULE,
+                call <= crate::rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_POLICY,
                 "generated window iterator consumed beyond the first excess"
             );
             Some((
@@ -1551,10 +1559,10 @@ mod tests {
     fn generated_rate_limits_obey_same_structural_limits() {
         let mut window_boundary = builder("https://example.test/");
         window_boundary
-            .push_generated_rate_limit_rule(
+            .push_generated_rate_limit_policy(
                 "window-boundary",
                 1,
-                (0..crate::rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_RULE).map(|index| {
+                (0..crate::rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_POLICY).map(|index| {
                     (
                         1,
                         Duration::from_secs(u64::try_from(index + 1).expect("test index")),
@@ -1567,16 +1575,16 @@ mod tests {
                 .finish()
                 .expect("bounded rate-limit head")
                 .rate_limit_plan()
-                .rules()[0]
+                .policies()[0]
                 .windows()
                 .len(),
-            crate::rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_RULE
+            crate::rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_POLICY
         );
 
         let calls = Arc::new(AtomicUsize::new(0));
         let mut excessive_windows = builder("https://example.test/");
         let error = excessive_windows
-            .push_generated_rate_limit_rule(
+            .push_generated_rate_limit_policy(
                 RATE_ID_SENTINEL,
                 1,
                 GuardedRateWindows {
@@ -1586,7 +1594,7 @@ mod tests {
             .expect_err("first excess generated window");
         assert_eq!(
             calls.load(Ordering::SeqCst),
-            crate::rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_RULE + 1
+            crate::rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_POLICY + 1
         );
         assert_eq!(
             error.configuration_kind(),
@@ -1598,7 +1606,7 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let mut excessive_parts = builder("https://example.test/");
         let error = excessive_parts
-            .push_rate_limit_rule(
+            .push_rate_limit_policy(
                 RATE_ID_SENTINEL,
                 GuardedRateParts {
                     calls: Arc::clone(&calls),
@@ -1624,7 +1632,7 @@ mod tests {
         let second = RATE_KEY_SENTINEL.to_owned();
         let mut excessive_key = builder("https://example.test/");
         let error = excessive_key
-            .push_rate_limit_rule(
+            .push_rate_limit_policy(
                 RATE_ID_SENTINEL,
                 [("a", first), ("b", second)],
                 1,
@@ -1642,7 +1650,7 @@ mod tests {
 
         let mut excessive_formatted_key = builder("https://example.test/");
         let error = excessive_formatted_key
-            .push_rate_limit_rule(
+            .push_rate_limit_policy(
                 RATE_ID_SENTINEL,
                 [(
                     "ep.resource",
@@ -1664,9 +1672,9 @@ mod tests {
         assert!(!format!("{error:?}").contains(FORMAT_SENTINEL));
 
         let mut plan_boundary = builder("https://example.test/");
-        for index in 0..crate::rate_limit::MAX_RATE_LIMIT_RULES_PER_PLAN {
+        for index in 0..crate::rate_limit::MAX_RATE_LIMIT_POLICIES_PER_PLAN {
             plan_boundary
-                .push_generated_rate_limit_rule(
+                .push_generated_rate_limit_policy(
                     &format!("generated-rule-{index}"),
                     1,
                     [(1, Duration::from_secs(1))],
@@ -1674,7 +1682,7 @@ mod tests {
                 .expect("maximum generated rule count");
         }
         let error = plan_boundary
-            .push_generated_rate_limit_rule(RATE_ID_SENTINEL, 1, UnpolledRateWindows)
+            .push_generated_rate_limit_policy(RATE_ID_SENTINEL, 1, UnpolledRateWindows)
             .expect_err("first excess generated rule");
         assert_eq!(
             error.configuration_kind(),
@@ -1687,18 +1695,18 @@ mod tests {
                 .finish()
                 .expect("bounded rate-limit head")
                 .rate_limit_plan()
-                .rules()
+                .policies()
                 .len(),
-            crate::rate_limit::MAX_RATE_LIMIT_RULES_PER_PLAN
+            crate::rate_limit::MAX_RATE_LIMIT_POLICIES_PER_PLAN
         );
 
         let mut duplicate = builder("https://example.test/");
         duplicate
-            .push_generated_rate_limit_rule(RATE_ID_SENTINEL, 1, [(1, Duration::from_secs(1))])
-            .expect("first generated rule ID");
+            .push_generated_rate_limit_policy(RATE_ID_SENTINEL, 1, [(1, Duration::from_secs(1))])
+            .expect("first generated policy ID");
         let error = duplicate
-            .push_generated_rate_limit_rule(RATE_ID_SENTINEL, 1, UnpolledRateWindows)
-            .expect_err("duplicate generated rule ID");
+            .push_generated_rate_limit_policy(RATE_ID_SENTINEL, 1, UnpolledRateWindows)
+            .expect_err("duplicate generated policy ID");
         assert_eq!(
             error.configuration_kind(),
             Some(ConfigurationErrorKind::InvalidRateLimit)

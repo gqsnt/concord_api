@@ -142,6 +142,6 @@ Phase 3 enforces DSL examples and rejection diagnostics.
 
 ## Frozen state
 
-The private v1 surface is frozen after the finalization commits and annotated
-tag. New syntax, generated capabilities, publication preparation, website
-machinery, and alternate executors are outside this project state.
+The private v1 surface is frozen by `FINAL.md` and the annotated `v1.0.0` tag.
+New syntax, generated capabilities, publication preparation, website
+machinery, and alternate executors are outside the frozen state.

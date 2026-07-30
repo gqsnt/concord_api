@@ -443,7 +443,7 @@ impl RateLimiter for SmallKeyLimiter {
 
 impl CapturingLimiter {
     fn capture(plan: &RateLimitPlan) -> Vec<CapturedRule> {
-        plan.rules()
+        plan.policies()
             .iter()
             .map(|rule| CapturedRule {
                 id: rule.id().as_str().to_owned(),

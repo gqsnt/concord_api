@@ -1,14 +1,14 @@
 use super::Resolver;
 use super::SpanError;
 use super::model::{
-    NormalizedConfig, NormalizedRateLimitDimension, NormalizedRateLimitRule,
+    NormalizedConfig, NormalizedRateLimitDimension, NormalizedRateLimitPolicy,
     NormalizedRateLimitWindow, ResolvedExpr, ValueReference, ValueShape,
 };
 use super::pagination::PaginationBoundValue;
 use super::surface::{canonical_ident, to_snake_case};
 use super::symbols::ScopeFrame;
 use crate::syntax::ast::{
-    Layer, RateLimitAttachmentDecl, RateLimitDecl, RateLimitDefinitionDecl,
+    AttachmentSite, RateLimitAttachmentDecl, RateLimitDecl, RateLimitDefinitionDecl,
     RateLimitDefinitionDimensionDecl, RateLimitDimensionDecl, RateLimitUseDecl, SourceChild,
 };
 use crate::{MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES};
@@ -41,13 +41,13 @@ enum ResolvedDefinitionDimension {
 }
 
 #[derive(Clone, Copy)]
-pub(super) enum RateLimitDeclarationLayer {
+pub(super) enum RateLimitAttachmentSite {
     Client,
     Scope,
     Endpoint,
 }
 
-impl RateLimitDeclarationLayer {
+impl RateLimitAttachmentSite {
     const fn name(self) -> &'static str {
         match self {
             Self::Client => "client",
@@ -58,19 +58,22 @@ impl RateLimitDeclarationLayer {
 }
 
 pub(super) struct RateLimitResolutionContext<'a> {
-    pub(super) layer: RateLimitDeclarationLayer,
+    pub(super) attachment_site: RateLimitAttachmentSite,
     pub(super) id_path: &'a str,
     pub(super) lexical_origin: &'a str,
 }
 
-pub(super) fn source_tree_declares_rate_limits(layer: &Layer, children: &[SourceChild]) -> bool {
-    let local = !layer.rate_limits.is_empty();
+pub(super) fn source_tree_declares_rate_limits(
+    attachment_site: &AttachmentSite,
+    children: &[SourceChild],
+) -> bool {
+    let local = !attachment_site.rate_limits.is_empty();
     local
         || children.iter().any(|child| match child {
             SourceChild::Scope(scope) => {
-                source_tree_declares_rate_limits(&scope.layer, &scope.children)
+                source_tree_declares_rate_limits(&scope.attachment_site, &scope.children)
             }
-            SourceChild::Endpoint(endpoint) => !endpoint.layer.rate_limits.is_empty(),
+            SourceChild::Endpoint(endpoint) => !endpoint.attachment_site.rate_limits.is_empty(),
         })
 }
 
@@ -161,7 +164,7 @@ impl Resolver<'_> {
         scopes: &[ScopeFrame],
         endpoint: Option<&[super::model::Value]>,
         context: &RateLimitResolutionContext<'_>,
-    ) -> syn::Result<NormalizedRateLimitRule> {
+    ) -> syn::Result<NormalizedRateLimitPolicy> {
         match attachment {
             RateLimitAttachmentDecl::Inline(declaration) => self.resolve_inline_rate_limit(
                 declaration,
@@ -183,7 +186,7 @@ impl Resolver<'_> {
         scopes: &[ScopeFrame],
         endpoint: Option<&[super::model::Value]>,
         context: &RateLimitResolutionContext<'_>,
-    ) -> syn::Result<NormalizedRateLimitRule> {
+    ) -> syn::Result<NormalizedRateLimitPolicy> {
         let _ = declaration.cost_span;
         let dimensions = declaration
             .dimensions
@@ -234,7 +237,7 @@ impl Resolver<'_> {
             },
             |id| (id.value.value(), true, id.value.span()),
         );
-        Ok(NormalizedRateLimitRule {
+        Ok(NormalizedRateLimitPolicy {
             id,
             explicit_id,
             id_span,
@@ -251,7 +254,7 @@ impl Resolver<'_> {
         scopes: &[ScopeFrame],
         endpoint: Option<&[super::model::Value]>,
         context: &RateLimitResolutionContext<'_>,
-    ) -> syn::Result<NormalizedRateLimitRule> {
+    ) -> syn::Result<NormalizedRateLimitPolicy> {
         let attachment_name = canonical_ident(&attachment.name);
         let Some(definition_index) = self
             .rate_limit_definitions
@@ -345,7 +348,7 @@ impl Resolver<'_> {
                 "cost override for rate-limit profile `{attachment_name}` must not exceed any window capacity"
             )));
         }
-        Ok(NormalizedRateLimitRule {
+        Ok(NormalizedRateLimitPolicy {
             id: definition.id,
             explicit_id: definition.explicit_id,
             id_span: definition.id_span,
@@ -377,8 +380,8 @@ impl Resolver<'_> {
                 "a rate-limit key-part name permits 1-{MAX_RATE_LIMIT_KEY_PART_NAME_BYTES} UTF-8 bytes"
             )));
         }
-        match (canonical_ident(namespace).as_str(), context.layer) {
-            ("scope", RateLimitDeclarationLayer::Client) => {
+        match (canonical_ident(namespace).as_str(), context.attachment_site) {
+            ("scope", RateLimitAttachmentSite::Client) => {
                 let owner = if named_binding {
                     "attachment"
                 } else {
@@ -388,7 +391,7 @@ impl Resolver<'_> {
                     "`{source_name}` is unavailable in a client rate-limit {owner}"
                 )));
             }
-            ("ep", RateLimitDeclarationLayer::Client | RateLimitDeclarationLayer::Scope) => {
+            ("ep", RateLimitAttachmentSite::Client | RateLimitAttachmentSite::Scope) => {
                 let owner = if named_binding {
                     "attachment"
                 } else {
@@ -396,7 +399,7 @@ impl Resolver<'_> {
                 };
                 return Err(name.span().error(format!(
                     "`{source_name}` is unavailable in a {} rate-limit {owner}",
-                    context.layer.name()
+                    context.attachment_site.name()
                 )));
             }
             _ => {}
@@ -438,7 +441,7 @@ impl Resolver<'_> {
 
     pub(super) fn validate_rate_limit_id_compatibility(
         &mut self,
-        rule: &NormalizedRateLimitRule,
+        rule: &NormalizedRateLimitPolicy,
     ) -> syn::Result<()> {
         let dimensions = rule
             .dimensions
@@ -585,7 +588,7 @@ mod tests {
         .expect("definition-only syntax");
 
         assert!(!super::source_tree_declares_rate_limits(
-            &source.client.layer,
+            &source.client.attachment_site,
             &source.children
         ));
     }

@@ -6,7 +6,8 @@ use syn::parse::{Parse, ParseStream};
 use syn::{Ident, LitStr, Token, braced, parenthesized};
 
 use super::ast::{
-    Clause, Layer, MethodKind, SourceApi, SourceChild, SourceClient, SourceEndpoint, SourceScope,
+    AttachmentSite, Clause, MethodKind, SourceApi, SourceChild, SourceClient, SourceEndpoint,
+    SourceScope,
 };
 use super::credentials::{parse_auth, parse_credentials};
 use super::diagnostics::{
@@ -77,7 +78,7 @@ impl Parse for SourceClient {
         let mut values = None;
         let mut credentials = None;
         let mut rate_limits = None;
-        let mut layer = Layer::default();
+        let mut attachment_site = AttachmentSite::default();
 
         while !body.is_empty() {
             if body.peek(keyword::base) {
@@ -120,7 +121,7 @@ impl Parse for SourceClient {
             if body.peek(keyword::retry) {
                 return Err(removed_retry_diagnostic(&body));
             }
-            if parse_layer_clause(&body, &mut layer, true, &owner)? {
+            if parse_attachment_site_clause(&body, &mut attachment_site, true, &owner)? {
                 continue;
             }
             if body.peek(keyword::scope) || endpoint_starts(&body) {
@@ -146,7 +147,7 @@ impl Parse for SourceClient {
             values,
             credentials,
             rate_limits,
-            layer,
+            attachment_site,
         })
     }
 }
@@ -204,7 +205,7 @@ fn parse_scope(input: ParseStream<'_>, depth: usize) -> syn::Result<SourceScope>
     let body;
     braced!(body in input);
     let owner = format!("scope `{}`", canonical_ident(&name));
-    let mut layer = Layer::default();
+    let mut attachment_site = AttachmentSite::default();
     let mut children = Vec::new();
     while !body.is_empty() {
         if body.peek(keyword::scope) {
@@ -215,7 +216,7 @@ fn parse_scope(input: ParseStream<'_>, depth: usize) -> syn::Result<SourceScope>
             children.push(SourceChild::Endpoint(parse_endpoint(&body)?));
             continue;
         }
-        if parse_layer_clause(&body, &mut layer, true, &owner)? {
+        if parse_attachment_site_clause(&body, &mut attachment_site, true, &owner)? {
             continue;
         }
         if body.peek(keyword::retry) {
@@ -239,7 +240,7 @@ fn parse_scope(input: ParseStream<'_>, depth: usize) -> syn::Result<SourceScope>
     Ok(SourceScope {
         name,
         parameters,
-        layer,
+        attachment_site,
         children,
     })
 }
@@ -267,7 +268,7 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
             name,
             parameters,
             body,
-            layer: Layer::default(),
+            attachment_site: AttachmentSite::default(),
             response,
             pagination: None,
             contract_id: None,
@@ -276,7 +277,7 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
         let clauses;
         braced!(clauses in input);
         let owner = format!("endpoint `{}`", canonical_ident(&name));
-        let mut layer = Layer::default();
+        let mut attachment_site = AttachmentSite::default();
         let mut pagination = None;
         let mut contract_id = None;
         while !clauses.is_empty() {
@@ -302,7 +303,7 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
                 insert_clause(&mut contract_id, Clause { key_span, value }, "id", &owner)?;
                 continue;
             }
-            if parse_layer_clause(&clauses, &mut layer, true, &owner)? {
+            if parse_attachment_site_clause(&clauses, &mut attachment_site, true, &owner)? {
                 continue;
             }
             if clauses.peek(keyword::retry) {
@@ -324,7 +325,7 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
             name,
             parameters,
             body,
-            layer,
+            attachment_site,
             response,
             pagination,
             contract_id,
@@ -433,35 +434,50 @@ fn retired_clause_diagnostic(input: ParseStream<'_>) -> Option<syn::Error> {
     Some(spelling.span().error(message))
 }
 
-fn parse_layer_clause(
+fn parse_attachment_site_clause(
     input: ParseStream<'_>,
-    layer: &mut Layer,
+    attachment_site: &mut AttachmentSite,
     include_rate_limit: bool,
     owner: &str,
 ) -> syn::Result<bool> {
     if input.peek(keyword::host) {
         let key_span = input.span();
         let value = parse_host(input)?;
-        insert_clause(&mut layer.host, Clause { key_span, value }, "host", owner)?;
+        insert_clause(
+            &mut attachment_site.host,
+            Clause { key_span, value },
+            "host",
+            owner,
+        )?;
         return Ok(true);
     }
     if input.peek(keyword::path) {
         let key_span = input.span();
         let value = parse_path(input)?;
-        insert_clause(&mut layer.path, Clause { key_span, value }, "path", owner)?;
+        insert_clause(
+            &mut attachment_site.path,
+            Clause { key_span, value },
+            "path",
+            owner,
+        )?;
         return Ok(true);
     }
     if input.peek(keyword::query) {
         let key_span = input.span();
         let value = parse_query(input)?;
-        insert_clause(&mut layer.query, Clause { key_span, value }, "query", owner)?;
+        insert_clause(
+            &mut attachment_site.query,
+            Clause { key_span, value },
+            "query",
+            owner,
+        )?;
         return Ok(true);
     }
     if input.peek(keyword::headers) {
         let key_span = input.span();
         let value = parse_headers(input)?;
         insert_clause(
-            &mut layer.headers,
+            &mut attachment_site.headers,
             Clause { key_span, value },
             "headers",
             owner,
@@ -469,14 +485,14 @@ fn parse_layer_clause(
         return Ok(true);
     }
     if input.peek(keyword::auth) {
-        merge_auth(&mut layer.auth, parse_auth(input)?, owner)?;
+        merge_auth(&mut attachment_site.auth, parse_auth(input)?, owner)?;
         return Ok(true);
     }
     if input.peek(keyword::timeout) {
         let key_span = input.span();
         let value = parse_timeout(input)?;
         insert_clause(
-            &mut layer.timeout,
+            &mut attachment_site.timeout,
             Clause { key_span, value },
             "timeout",
             owner,
@@ -490,7 +506,7 @@ fn parse_layer_clause(
         let key_span = input.span();
         let value = parse_rate_limit(input)?;
         if matches!(&value, super::ast::RateLimitAttachmentDecl::Inline(_)) {
-            if let Some(first) = layer.rate_limits.iter().find(|clause| {
+            if let Some(first) = attachment_site.rate_limits.iter().find(|clause| {
                 matches!(clause.value, super::ast::RateLimitAttachmentDecl::Inline(_))
             }) {
                 let mut error = key_span.error(format!(
@@ -504,7 +520,7 @@ fn parse_layer_clause(
                 return Err(error);
             }
         }
-        layer.rate_limits.push(Clause { key_span, value });
+        attachment_site.rate_limits.push(Clause { key_span, value });
         return Ok(true);
     }
     Ok(false)

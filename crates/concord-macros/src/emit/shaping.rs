@@ -302,7 +302,7 @@ pub(super) fn rate_limit_statements(
                 .collect::<Vec<_>>();
             if rule.dimensions.is_empty() {
                 return quote! {
-                    __concord_builder.push_generated_rate_limit_rule(
+                    __concord_builder.push_generated_rate_limit_policy(
                         #identity_path::#identity,
                         #cost,
                         [#(#windows,)*],
@@ -352,7 +352,7 @@ pub(super) fn rate_limit_statements(
                 .collect::<Vec<_>>();
             quote! {
                 #capture_host
-                __concord_builder.push_rate_limit_rule(
+                __concord_builder.push_rate_limit_policy(
                     #identity_path::#identity,
                     [#(#parts,)*],
                     #cost,
@@ -637,8 +637,8 @@ mod tests {
         )
         .to_string();
 
-        assert!(output.contains("push_generated_rate_limit_rule"));
-        assert!(!output.contains("push_rate_limit_rule"));
+        assert!(output.contains("push_generated_rate_limit_policy"));
+        assert!(!output.contains("push_rate_limit_policy"));
         assert!(!output.contains("rate_limit_host"));
     }
 
@@ -683,7 +683,7 @@ mod tests {
     fn host_dimension_uses_final_logical_host() {
         let output = keyed_rule_output();
         assert!(output.contains("rate_limit_host"));
-        assert!(output.contains("push_rate_limit_rule"));
+        assert!(output.contains("push_rate_limit_policy"));
     }
 
     #[test]
@@ -752,7 +752,7 @@ mod tests {
         assert!(output.contains("(\"account\""));
         assert!(!output.contains("\"scope.account\""));
         assert!(output.contains("__concord_scope_0_0_account"));
-        assert!(output.contains("push_rate_limit_rule"));
+        assert!(output.contains("push_rate_limit_policy"));
     }
 
     #[test]

@@ -17,7 +17,7 @@ use super::diagnostics::{
 use super::keyword;
 use crate::{
     MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES, MAX_RATE_LIMIT_KEY_PARTS,
-    MAX_RATE_LIMIT_WINDOWS_PER_RULE,
+    MAX_RATE_LIMIT_WINDOWS_PER_POLICY,
 };
 
 pub(super) fn parse_rate_limits(
@@ -41,7 +41,7 @@ pub(super) fn parse_rate_limits(
             let mut error = name.span().error(format!(
                 "rate-limit profile `{canonical_name}` is defined more than once"
             ));
-            error.combine(first.error("the first definition using this rule name is here"));
+            error.combine(first.error("the first profile using this name is here"));
             return Err(error);
         }
         definitions.push(parse_rate_limit_definition(&body, name)?);
@@ -278,9 +278,9 @@ fn parse_inline_rate_limit(
                 "an anonymous rate-limit attachment requires a `CAPACITY / DURATION;` window",
             )
         })?;
-        if windows.len() >= MAX_RATE_LIMIT_WINDOWS_PER_RULE {
+        if windows.len() >= MAX_RATE_LIMIT_WINDOWS_PER_POLICY {
             return Err(capacity_literal.span().error(format!(
-                "an anonymous rate-limit attachment permits at most {MAX_RATE_LIMIT_WINDOWS_PER_RULE} windows"
+                "an anonymous rate-limit attachment permits at most {MAX_RATE_LIMIT_WINDOWS_PER_POLICY} windows"
             )));
         }
         let capacity = parse_positive_u32(&capacity_literal, "rate-limit window capacity")?;
@@ -432,9 +432,9 @@ fn parse_rate_limit_definition(
         let capacity_literal: LitInt = body.parse().map_err(|_| {
             body.error("a rate-limit profile requires `CAPACITY / DURATION;` windows")
         })?;
-        if windows.len() >= MAX_RATE_LIMIT_WINDOWS_PER_RULE {
+        if windows.len() >= MAX_RATE_LIMIT_WINDOWS_PER_POLICY {
             return Err(capacity_literal.span().error(format!(
-                "a rate-limit profile permits at most {MAX_RATE_LIMIT_WINDOWS_PER_RULE} windows"
+                "a rate-limit profile permits at most {MAX_RATE_LIMIT_WINDOWS_PER_POLICY} windows"
             )));
         }
         let capacity = parse_positive_u32(&capacity_literal, "rate-limit window capacity")?;
@@ -674,12 +674,12 @@ mod tests {
     use syn::LitStr;
 
     use crate::syntax::ast::{
-        Layer, RateLimitAttachmentDecl, RateLimitDecl, RateLimitDefinitionDimensionDecl,
+        AttachmentSite, RateLimitAttachmentDecl, RateLimitDecl, RateLimitDefinitionDimensionDecl,
         RateLimitDimensionDecl, SourceChild,
     };
     use crate::{
         MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES, MAX_RATE_LIMIT_KEY_PARTS,
-        MAX_RATE_LIMIT_WINDOWS_PER_RULE,
+        MAX_RATE_LIMIT_WINDOWS_PER_POLICY,
     };
 
     fn parse_error(tokens: proc_macro2::TokenStream) -> String {
@@ -689,8 +689,8 @@ mod tests {
             .to_string()
     }
 
-    fn inline_rate_limit(layer: &Layer) -> &RateLimitDecl {
-        match &layer.rate_limits[0].value {
+    fn inline_rate_limit(attachment_site: &AttachmentSite) -> &RateLimitDecl {
+        match &attachment_site.rate_limits[0].value {
             RateLimitAttachmentDecl::Inline(rule) => rule,
             RateLimitAttachmentDecl::Named(_) => panic!("anonymous rate-limit attachment"),
         }
@@ -742,24 +742,26 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["host", "endpoint", "account"]
         );
-        assert_eq!(source.client.layer.rate_limits.len(), 1);
+        assert_eq!(source.client.attachment_site.rate_limits.len(), 1);
         let SourceChild::Scope(scope) = &source.children[0] else {
             panic!("accounts scope");
         };
-        assert_eq!(scope.layer.rate_limits.len(), 3);
+        assert_eq!(scope.attachment_site.rate_limits.len(), 3);
         assert!(matches!(
-            scope.layer.rate_limits[0].value,
+            scope.attachment_site.rate_limits[0].value,
             RateLimitAttachmentDecl::Named(_)
         ));
         assert!(matches!(
-            scope.layer.rate_limits[1].value,
+            scope.attachment_site.rate_limits[1].value,
             RateLimitAttachmentDecl::Inline(_)
         ));
-        let RateLimitAttachmentDecl::Named(last) = &scope.layer.rate_limits[2].value else {
+        let RateLimitAttachmentDecl::Named(last) = &scope.attachment_site.rate_limits[2].value
+        else {
             panic!("last named attachment");
         };
         assert_eq!(super::canonical_ident(&last.name), "service_reads");
-        let RateLimitAttachmentDecl::Named(first) = &scope.layer.rate_limits[0].value else {
+        let RateLimitAttachmentDecl::Named(first) = &scope.attachment_site.rate_limits[0].value
+        else {
             panic!("first named attachment");
         };
         assert_eq!(first.cost.as_ref().map(|cost| cost.value), Some(2));
@@ -946,8 +948,13 @@ mod tests {
             panic!("endpoint");
         };
 
-        assert_eq!(inline_rate_limit(&source.client.layer).windows.len(), 2);
-        assert_eq!(inline_rate_limit(&endpoint.layer).cost, 2);
+        assert_eq!(
+            inline_rate_limit(&source.client.attachment_site)
+                .windows
+                .len(),
+            2
+        );
+        assert_eq!(inline_rate_limit(&endpoint.attachment_site).cost, 2);
     }
 
     #[test]
@@ -972,11 +979,11 @@ mod tests {
             }
         })
         .expect("explicit rate-limit IDs");
-        let client = inline_rate_limit(&source.client.layer);
+        let client = inline_rate_limit(&source.client.attachment_site);
         let SourceChild::Endpoint(endpoint) = &source.children[0] else {
             panic!("endpoint");
         };
-        let endpoint = inline_rate_limit(&endpoint.layer);
+        let endpoint = inline_rate_limit(&endpoint.attachment_site);
 
         assert_eq!(
             client.id.as_ref().map(|id| id.value.value()).as_deref(),
@@ -1062,7 +1069,7 @@ mod tests {
             }
         })
         .expect("by before cost");
-        let rule = inline_rate_limit(&source.client.layer);
+        let rule = inline_rate_limit(&source.client.attachment_site);
 
         assert_eq!(
             rule.dimensions
@@ -1087,7 +1094,7 @@ mod tests {
             }
         })
         .expect("cost before by");
-        let rule = inline_rate_limit(&source.client.layer);
+        let rule = inline_rate_limit(&source.client.attachment_site);
 
         assert_eq!(
             rule.dimensions
@@ -1110,7 +1117,7 @@ mod tests {
         .expect("declaration-global rule");
 
         assert!(
-            inline_rate_limit(&source.client.layer)
+            inline_rate_limit(&source.client.attachment_site)
                 .dimensions
                 .is_empty()
         );
@@ -1243,7 +1250,7 @@ mod tests {
 
     #[test]
     fn rejects_the_first_excess_static_window() {
-        let windows = (0..=MAX_RATE_LIMIT_WINDOWS_PER_RULE).map(|_| quote! { 1 / 1s; });
+        let windows = (0..=MAX_RATE_LIMIT_WINDOWS_PER_POLICY).map(|_| quote! { 1 / 1s; });
         let error = super::super::parse(quote! {
             client RateApi {
                 base "https://example.test";

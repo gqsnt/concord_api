@@ -11,7 +11,6 @@ pub struct ClientBuildError {
 }
 
 impl ClientBuildError {
-    #[allow(dead_code, reason = "used by later managed client construction")]
     pub(crate) const fn new(kind: ClientBuildErrorKind) -> Self {
         Self {
             kind,
@@ -93,7 +92,6 @@ pub struct ConfigurationError {
 }
 
 impl ConfigurationError {
-    #[allow(dead_code, reason = "used by the managed configuration builders")]
     pub(crate) const fn new(kind: ConfigurationErrorKind) -> Self {
         Self { kind }
     }

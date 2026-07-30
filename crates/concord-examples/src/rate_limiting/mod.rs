@@ -5,7 +5,7 @@
 //! `docs/retry_and_rate_limit.md`. Proving tests:
 //! `tests/construction.rs` and `tests/local_runtime.rs`.
 //!
-//! Derived declaration rule IDs are deterministic within each example client
+//! Derived declaration policy IDs are deterministic within each example client
 //! contract. Explicit IDs remain exact; examples share limiter objects only
 //! when sharing state is intentional and schemas are compatible.
 

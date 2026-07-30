@@ -70,9 +70,6 @@ docs:
 docs-check:
     pwsh -NoLogo -NoProfile -File scripts/check_docs_examples.ps1
 
-package:
-    cargo run  -p concord-xtask -- package
-
 deny:
     cargo deny check
 
@@ -86,7 +83,4 @@ analyzer:
 bench:
     cargo bench -p concord-perf --bench concord_overhead --no-run
 
-verify: fmt check lint test ui msrv fixtures docs package deny workflow analyzer bench
-
-source-archive:
-    cargo run  -p concord-xtask -- source-archive
+verify: fmt check lint test ui msrv fixtures docs deny workflow analyzer bench

@@ -19,7 +19,6 @@ pub enum ProviderRetry {
     Disabled,
 }
 
-#[allow(dead_code, reason = "consumed by managed Reqwest construction")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ProtocolMode {
     Negotiated,
@@ -30,7 +29,6 @@ pub(crate) enum ProtocolMode {
 
 /// Plain resolved HTTP configuration. It contains no Reqwest client or
 /// `reqwest::ClientBuilder`.
-#[allow(dead_code, reason = "consumed by managed Reqwest construction")]
 pub(crate) struct HttpConfig {
     pub(crate) connect_timeout: Option<Duration>,
     pub(crate) read_timeout: Option<Duration>,
@@ -68,7 +66,6 @@ pub struct HttpConfigBuilder {
 }
 
 impl HttpConfigBuilder {
-    #[allow(dead_code, reason = "initialized by later generated client builders")]
     pub(crate) fn new() -> Self {
         Self {
             config: HttpConfig {
@@ -263,7 +260,6 @@ impl HttpConfigBuilder {
         self
     }
 
-    #[allow(dead_code, reason = "consumed by managed Reqwest construction")]
     pub(crate) fn resolve(self) -> Result<HttpConfig, ClientBuildError> {
         match self.startup_error {
             Some(kind) => Err(ClientBuildError::new(kind)),

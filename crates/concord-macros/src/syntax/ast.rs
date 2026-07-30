@@ -23,7 +23,7 @@ pub(crate) struct SourceClient {
     pub(crate) values: Option<Clause<Vec<ValueDecl>>>,
     pub(crate) credentials: Option<Clause<CredentialsBlock>>,
     pub(crate) rate_limits: Option<Clause<Vec<RateLimitDefinitionDecl>>>,
-    pub(crate) layer: Layer,
+    pub(crate) attachment_site: AttachmentSite,
 }
 
 #[derive(Clone)]
@@ -39,7 +39,7 @@ pub(crate) enum SourceChild {
 pub(crate) struct SourceScope {
     pub(crate) name: Ident,
     pub(crate) parameters: Vec<ValueDecl>,
-    pub(crate) layer: Layer,
+    pub(crate) attachment_site: AttachmentSite,
     pub(crate) children: Vec<SourceChild>,
 }
 
@@ -49,7 +49,7 @@ pub(crate) struct SourceEndpoint {
     pub(crate) name: Ident,
     pub(crate) parameters: Vec<ValueDecl>,
     pub(crate) body: Option<BodyDecl>,
-    pub(crate) layer: Layer,
+    pub(crate) attachment_site: AttachmentSite,
     pub(crate) response: Type,
     pub(crate) pagination: Option<Clause<PaginationDecl>>,
     pub(crate) contract_id: Option<Clause<LitStr>>,
@@ -114,7 +114,7 @@ pub(crate) enum DefaultExpr {
 }
 
 #[derive(Clone, Default)]
-pub(crate) struct Layer {
+pub(crate) struct AttachmentSite {
     pub(crate) host: Option<Clause<HostOperation>>,
     pub(crate) path: Option<Clause<PathOperation>>,
     pub(crate) query: Option<Clause<QueryOperation>>,

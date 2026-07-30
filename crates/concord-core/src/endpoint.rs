@@ -536,7 +536,7 @@ impl SafeRequestPlan {
         self.page_index
     }
 
-    /// Returns the number of declared effective rate-limit rules without
+    /// Returns the number of declared effective rate-limit policies without
     /// exposing their resolved keys.
     #[must_use]
     pub const fn rate_limit_rule_count(&self) -> usize {

@@ -392,9 +392,9 @@ async fn original_deadline_cancels_limiter_wait_without_native_send() {
 
 #[tokio::test]
 async fn prepared_plans_use_selected_limiter_metadata_and_configured_key_limit() {
-    fn rule(id: &str, key: RateLimitKey) -> RateLimitRule {
-        RateLimitRule::new(
-            RateLimitId::new(id).expect("prepared limiter rule ID"),
+    fn rule(id: &str, key: RateLimitKey) -> RateLimitPolicy {
+        RateLimitPolicy::new(
+            RateLimitId::new(id).expect("prepared limiter policy ID"),
             key,
             NonZeroU32::new(1).expect("prepared limiter cost"),
             [RateLimitWindow::new(
@@ -788,7 +788,7 @@ async fn private_fallback_rejects_a_nonempty_runtime_plan_before_send() {
     );
     assert_eq!(executor.application().request_count().expect("count"), 0);
 
-    let rule = RateLimitRule::new(
+    let rule = RateLimitPolicy::new(
         RateLimitId::new("Prepared::fallback").expect("prepared fallback ID"),
         RateLimitKey::global(),
         NonZeroU32::new(1).expect("prepared fallback cost"),

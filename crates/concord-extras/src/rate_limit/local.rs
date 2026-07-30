@@ -8,8 +8,8 @@ use std::time::Duration;
 use concord_core::contracts::{BoxFuture, RateLimitErrorKind};
 use concord_core::rate_limit::{
     Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_BYTES,
-    RateLimitError, RateLimitObserver, RateLimitPermit, RateLimitPlan, RateLimitRequest,
-    RateLimitResponse, RateLimitResponseHead, RateLimitRule, RateLimitWindow, RateLimiter,
+    RateLimitError, RateLimitObserver, RateLimitPermit, RateLimitPlan, RateLimitPolicy,
+    RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimitWindow, RateLimiter,
 };
 
 use super::RetryAfterObserver;
@@ -159,7 +159,7 @@ impl LocalRateLimiter {
             }
             let contributions = Contributions::from_plan(request.plan, self.config.key_limit)
                 .map_err(|error| self.record_failure(error))?;
-            let rule_keys = RuleKeys::from_plan(request.plan);
+            let rule_keys = PolicyKeys::from_plan(request.plan);
             loop {
                 let now = tokio::time::Instant::now();
                 let evaluation = match self.state.lock() {
@@ -273,7 +273,7 @@ impl LocalRateLimiter {
                         self.config.cooldown_capacity,
                     )
                 } else {
-                    let rule_keys = RuleKeys::from_plan(plan);
+                    let rule_keys = PolicyKeys::from_plan(plan);
                     state.extend_cooldowns(
                         rule_keys.0.into_iter().map(CooldownKey::Bucket),
                         expiration,
@@ -327,20 +327,20 @@ impl Contributions {
             return Err(invalid_configuration());
         }
         if plan
-            .rules()
+            .policies()
             .iter()
-            .any(|rule| rule.key().total_bytes() > key_limit)
+            .any(|policy| policy.key().total_bytes() > key_limit)
         {
             return Err(RateLimitError::new(RateLimitErrorKind::InvalidKey));
         }
         let mut contributions = BTreeMap::<BucketKey, u128>::new();
-        for rule in plan.rules() {
-            let rule_key = RuleKey::new(rule);
-            for window in rule.windows() {
+        for policy in plan.policies() {
+            let rule_key = PolicyKey::new(policy);
+            for window in policy.windows() {
                 let key = BucketKey::new(rule_key.clone(), window);
                 let cost = contributions.entry(key).or_default();
                 *cost = cost
-                    .checked_add(u128::from(rule.cost().get()))
+                    .checked_add(u128::from(policy.cost().get()))
                     .ok_or_else(internal_error)?;
             }
         }
@@ -354,27 +354,28 @@ impl Contributions {
     }
 }
 
-struct RuleKeys(BTreeSet<RuleKey>);
+struct PolicyKeys(BTreeSet<PolicyKey>);
 
-impl RuleKeys {
+impl PolicyKeys {
     fn from_plan(plan: &RateLimitPlan) -> Self {
-        let keys = plan.rules().iter().map(RuleKey::new).collect();
+        let keys = plan.policies().iter().map(PolicyKey::new).collect();
         Self(keys)
     }
 }
 
 #[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
-struct RuleKey {
+struct PolicyKey {
     id: Arc<str>,
     parts: Arc<[(Arc<str>, Arc<str>)]>,
 }
 
-impl RuleKey {
-    fn new(rule: &RateLimitRule) -> Self {
+impl PolicyKey {
+    fn new(policy: &RateLimitPolicy) -> Self {
         Self {
-            id: rule.id().as_str().into(),
+            id: policy.id().as_str().into(),
             parts: Arc::from(
-                rule.key()
+                policy
+                    .key()
                     .parts()
                     .iter()
                     .map(|part| (Arc::from(part.name()), Arc::from(part.value())))
@@ -387,15 +388,15 @@ impl RuleKey {
 
 #[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
 struct BucketKey {
-    rule: RuleKey,
+    policy: PolicyKey,
     capacity: u32,
     duration: Duration,
 }
 
 impl BucketKey {
-    fn new(rule: RuleKey, window: &RateLimitWindow) -> Self {
+    fn new(policy: PolicyKey, window: &RateLimitWindow) -> Self {
         Self {
-            rule,
+            policy,
             capacity: window.capacity().get(),
             duration: window.duration(),
         }
@@ -419,7 +420,7 @@ impl BucketKey {
 #[derive(Eq, Ord, PartialEq, PartialOrd)]
 enum CooldownKey {
     Host(String),
-    Bucket(RuleKey),
+    Bucket(PolicyKey),
 }
 
 struct LocalLimiterState {
@@ -475,7 +476,7 @@ impl LocalLimiterState {
         &mut self,
         now: tokio::time::Instant,
         host: Option<&str>,
-        rule_keys: &RuleKeys,
+        rule_keys: &PolicyKeys,
         contributions: &Contributions,
         quota_capacity: usize,
     ) -> Result<Evaluation, RateLimitError> {
@@ -524,7 +525,7 @@ impl LocalLimiterState {
         &self,
         now: tokio::time::Instant,
         host: Option<&str>,
-        rule_keys: &RuleKeys,
+        rule_keys: &PolicyKeys,
     ) -> Duration {
         let mut wait = self.client_cooldown.map_or(Duration::ZERO, |expiration| {
             expiration.saturating_duration_since(now)

@@ -71,36 +71,6 @@ pub fn diagnostics(output: &Output) -> String {
     )
 }
 
-/// Runs Cargo with inherited output for a repository task.
-pub fn cargo_status<I, S>(workspace_root: &Path, arguments: I) -> Result<(), String>
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<OsStr>,
-{
-    let arguments = arguments
-        .into_iter()
-        .map(|argument| argument.as_ref().to_owned())
-        .collect::<Vec<_>>();
-    println!(
-        "running cargo {}",
-        arguments
-            .iter()
-            .map(|argument| argument.to_string_lossy())
-            .collect::<Vec<_>>()
-            .join(" ")
-    );
-    let status = Command::new(env!("CARGO"))
-        .current_dir(workspace_root)
-        .args(&arguments)
-        .status()
-        .map_err(|error| format!("could not run Cargo: {error}"))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("Cargo exited with {status}"))
-    }
-}
-
 /// Compiles the listed fixture binaries and verifies compiler-independent
 /// semantic diagnostics.
 ///

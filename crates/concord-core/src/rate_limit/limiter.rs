@@ -94,7 +94,7 @@ pub trait RateLimiter: Send + Sync + 'static {
 
 /// The future-acquisition scope of an observed cooldown.
 pub enum CooldownScope {
-    /// Every exact rule/key pair in the current plan, or the host for an empty plan.
+    /// Every exact policy/key pair in the current plan, or the host for an empty plan.
     CurrentBuckets,
     /// Every later request to the current logical host through this limiter.
     Host,

@@ -1,7 +1,5 @@
 //! Credential material, providers, placement, and private slot state.
 
-#![cfg_attr(test, allow(dead_code))]
-
 mod error;
 mod material;
 mod placement;

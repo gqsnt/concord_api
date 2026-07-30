@@ -145,19 +145,19 @@ pub mod pagination {
 /// feature, `LocalRateLimiter` and `RetryAfterObserver` are available here and
 /// the local limiter is installed by default for generated clients.
 ///
-/// Source-derived rule IDs are deterministic within one generated client
+/// Source-derived policy IDs are deterministic within one generated client
 /// contract, not globally unique across unrelated [`api!`](crate::api)
 /// expansions. Sharing one limiter across unrelated generated contracts
-/// requires compatible rule namespaces.
+/// requires compatible policy namespaces.
 pub mod rate_limit {
     pub use concord_core::contracts::{BoxFuture, RateLimitErrorKind};
     pub use concord_core::rate_limit::{
         Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_ID_BYTES,
         MAX_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES, MAX_RATE_LIMIT_KEY_PARTS,
-        MAX_RATE_LIMIT_RULES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_RULE, NoopRateLimiter,
+        MAX_RATE_LIMIT_POLICIES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_POLICY, NoopRateLimiter,
         RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitObserver,
-        RateLimitPermit, RateLimitPlan, RateLimitRequest, RateLimitResponse, RateLimitResponseHead,
-        RateLimitRule, RateLimitWindow, RateLimiter,
+        RateLimitPermit, RateLimitPlan, RateLimitPolicy, RateLimitRequest, RateLimitResponse,
+        RateLimitResponseHead, RateLimitWindow, RateLimiter,
     };
     #[cfg(feature = "rate-limit")]
     pub use concord_extras::rate_limit::{LocalRateLimiter, RetryAfterObserver};
@@ -234,13 +234,14 @@ pub mod __private {
         GENERATED_CONTRACT_VERSION, GeneratedCredential, HeadBuilder, HeaderName,
         MAX_REQUEST_HEAD_COMPONENTS, MAX_REQUEST_HEADER_BYTES, MAX_REQUEST_HEADER_COUNT,
         MAX_REQUEST_URL_BYTES, Method, PageRequestBodySpec, PageResponseSpec, PaginatedEndpoint,
-        PreparedHead, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitRule, RateLimitWindow,
-        RequestBodyCategory, RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestMeta,
-        RequestOptions, ResponseAcquisition, ResponseBodySpec, SafeRequestPlan, TimeoutOverride,
-        TimeoutSelection, Url, assert_generated_contract, basic_credential_input_error,
-        build_client_core, credential_input_error, credential_store_error, default_http_config,
-        endpoint_id_from_static, inspect_endpoint, map_endpoint, missing_input_error,
-        paginate_request, request, response_request, safe_request_plan,
+        PreparedHead, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPolicy,
+        RateLimitWindow, RequestBodyCategory, RequestBodyContext, RequestBodyMetadata,
+        RequestBodySpec, RequestMeta, RequestOptions, ResponseAcquisition, ResponseBodySpec,
+        SafeRequestPlan, TimeoutOverride, TimeoutSelection, Url, assert_generated_contract,
+        basic_credential_input_error, build_client_core, credential_input_error,
+        credential_store_error, default_http_config, endpoint_id_from_static, inspect_endpoint,
+        map_endpoint, missing_input_error, paginate_request, request, response_request,
+        safe_request_plan,
     };
     /// Creates the façade-owned generated-client runtime baseline.
     #[doc(hidden)]

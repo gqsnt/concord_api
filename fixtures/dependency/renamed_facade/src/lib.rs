@@ -9,8 +9,8 @@ const _: usize = runtime::rate_limit::MAX_RATE_LIMIT_ID_BYTES;
 const _: usize = runtime::rate_limit::MAX_RATE_LIMIT_KEY_PARTS;
 const _: usize = runtime::rate_limit::MAX_RATE_LIMIT_KEY_PART_NAME_BYTES;
 const _: usize = runtime::rate_limit::MAX_RATE_LIMIT_KEY_BYTES;
-const _: usize = runtime::rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_RULE;
-const _: usize = runtime::rate_limit::MAX_RATE_LIMIT_RULES_PER_PLAN;
+const _: usize = runtime::rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_POLICY;
+const _: usize = runtime::rate_limit::MAX_RATE_LIMIT_POLICIES_PER_PLAN;
 const _: u32 = runtime::retry::MAX_POLICY_RETRIES_PER_OPERATION;
 
 pub struct WireCodec;

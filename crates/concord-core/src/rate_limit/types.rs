@@ -6,18 +6,18 @@ use crate::construction::format_bounded;
 use crate::error::RateLimitErrorKind;
 use crate::limits::{
     MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES,
-    MAX_RATE_LIMIT_KEY_PARTS, MAX_RATE_LIMIT_RULES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_RULE,
+    MAX_RATE_LIMIT_KEY_PARTS, MAX_RATE_LIMIT_POLICIES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_POLICY,
 };
 
 use super::RateLimitError;
 
-/// A stable logical identifier for one rate-limit rule.
+/// A stable logical identifier for one resolved rate-limit policy.
 pub struct RateLimitId {
     value: Box<str>,
 }
 
 impl RateLimitId {
-    /// Creates a nonempty rule identifier no larger than
+    /// Creates a nonempty policy identifier no larger than
     /// [`MAX_RATE_LIMIT_ID_BYTES`].
     pub fn new(value: impl AsRef<str>) -> Result<Self, RateLimitError> {
         let value = value.as_ref();
@@ -29,7 +29,7 @@ impl RateLimitId {
         })
     }
 
-    /// Returns the rule identifier text.
+    /// Returns the policy identifier text.
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.value
@@ -239,21 +239,21 @@ impl RateLimitWindow {
     }
 }
 
-/// One resolved rate-limit rule and all of its windows.
+/// One resolved rate-limit policy and all of its windows.
 ///
-/// A limiter combines the rule ID and ordered key with each window to select
+/// A limiter combines the policy ID and ordered key with each window to select
 /// independent quota state.
-pub struct RateLimitRule {
+pub struct RateLimitPolicy {
     id: RateLimitId,
     key: RateLimitKey,
     cost: NonZeroU32,
     windows: Box<[RateLimitWindow]>,
 }
 
-impl RateLimitRule {
-    /// Creates one rule after validating its window and cost invariants.
+impl RateLimitPolicy {
+    /// Creates one policy after validating its window and cost invariants.
     ///
-    /// At most [`MAX_RATE_LIMIT_WINDOWS_PER_RULE`] windows are retained, and
+    /// At most [`MAX_RATE_LIMIT_WINDOWS_PER_POLICY`] windows are retained, and
     /// the first excess window stops iteration immediately.
     pub fn new(
         id: RateLimitId,
@@ -292,7 +292,7 @@ impl RateLimitRule {
     {
         let mut retained = Vec::new();
         for item in windows {
-            if retained.len() >= MAX_RATE_LIMIT_WINDOWS_PER_RULE {
+            if retained.len() >= MAX_RATE_LIMIT_WINDOWS_PER_POLICY {
                 return Err(invalid_configuration());
             }
             let window = map(item)?;
@@ -312,7 +312,7 @@ impl RateLimitRule {
         })
     }
 
-    /// Returns the rule identifier.
+    /// Returns the policy identifier.
     #[must_use]
     pub const fn id(&self) -> &RateLimitId {
         &self.id
@@ -330,7 +330,7 @@ impl RateLimitRule {
         self.cost
     }
 
-    /// Returns the rule windows in declaration order.
+    /// Returns the policy windows in declaration order.
     #[must_use]
     pub const fn windows(&self) -> &[RateLimitWindow] {
         &self.windows
@@ -346,37 +346,37 @@ impl RateLimitRule {
 /// Plan values intentionally have no automatic `Debug` or `Display`
 /// implementation.
 pub struct RateLimitPlan {
-    rules: Box<[RateLimitRule]>,
+    policies: Box<[RateLimitPolicy]>,
 }
 
 impl RateLimitPlan {
     /// Creates an empty plan that requires no limiter authority.
     #[must_use]
     pub fn empty() -> Self {
-        Self::from_validated_rules(Vec::new())
+        Self::from_validated_policies(Vec::new())
     }
 
     /// Creates one bounded plan in effective declaration order.
     ///
-    /// At most [`MAX_RATE_LIMIT_RULES_PER_PLAN`] rules are retained. Duplicate
-    /// IDs and the first excess rule stop iteration immediately.
-    pub fn try_from_rules<I>(rules: I) -> Result<Self, RateLimitError>
+    /// At most [`MAX_RATE_LIMIT_POLICIES_PER_PLAN`] policies are retained.
+    /// Duplicate IDs and the first excess policy stop iteration immediately.
+    pub fn try_from_policies<I>(policies: I) -> Result<Self, RateLimitError>
     where
-        I: IntoIterator<Item = RateLimitRule>,
+        I: IntoIterator<Item = RateLimitPolicy>,
     {
         let mut retained = Vec::new();
-        for rule in rules {
-            Self::push_validated_rule(&mut retained, rule)?;
+        for policy in policies {
+            Self::push_validated_policy(&mut retained, policy)?;
         }
-        Ok(Self::from_validated_rules(retained))
+        Ok(Self::from_validated_policies(retained))
     }
 
-    pub(crate) fn validate_rule_id_append(
-        rules: &[RateLimitRule],
+    pub(crate) fn validate_policy_id_append(
+        policies: &[RateLimitPolicy],
         id: &str,
     ) -> Result<(), RateLimitError> {
-        if rules.len() >= MAX_RATE_LIMIT_RULES_PER_PLAN
-            || rules.iter().any(|rule| rule.id.as_str() == id)
+        if policies.len() >= MAX_RATE_LIMIT_POLICIES_PER_PLAN
+            || policies.iter().any(|policy| policy.id.as_str() == id)
         {
             Err(invalid_configuration())
         } else {
@@ -384,51 +384,55 @@ impl RateLimitPlan {
         }
     }
 
-    pub(crate) fn validate_rule_append(
-        rules: &[RateLimitRule],
-        rule: &RateLimitRule,
+    pub(crate) fn validate_policy_append(
+        policies: &[RateLimitPolicy],
+        policy: &RateLimitPolicy,
     ) -> Result<(), RateLimitError> {
-        Self::validate_rule_id_append(rules, rule.id.as_str())
+        Self::validate_policy_id_append(policies, policy.id.as_str())
     }
 
-    pub(crate) fn push_validated_rule(
-        rules: &mut Vec<RateLimitRule>,
-        rule: RateLimitRule,
+    pub(crate) fn push_validated_policy(
+        policies: &mut Vec<RateLimitPolicy>,
+        policy: RateLimitPolicy,
     ) -> Result<(), RateLimitError> {
-        Self::validate_rule_append(rules, &rule)?;
-        rules.push(rule);
+        Self::validate_policy_append(policies, &policy)?;
+        policies.push(policy);
         Ok(())
     }
 
-    pub(crate) fn from_validated_rules(rules: Vec<RateLimitRule>) -> Self {
-        debug_assert!(rules.len() <= MAX_RATE_LIMIT_RULES_PER_PLAN);
-        debug_assert!(rules.iter().enumerate().all(|(index, rule)| {
-            !rules[..index]
+    pub(crate) fn from_validated_policies(policies: Vec<RateLimitPolicy>) -> Self {
+        debug_assert!(policies.len() <= MAX_RATE_LIMIT_POLICIES_PER_PLAN);
+        debug_assert!(policies.iter().enumerate().all(|(index, policy)| {
+            !policies[..index]
                 .iter()
-                .any(|earlier| earlier.id.as_str() == rule.id.as_str())
+                .any(|earlier| earlier.id.as_str() == policy.id.as_str())
         }));
         Self {
-            rules: rules.into_boxed_slice(),
+            policies: policies.into_boxed_slice(),
         }
     }
 
-    /// Returns effective rules in normalized declaration order.
+    /// Returns effective policies in normalized declaration order.
     #[must_use]
-    pub const fn rules(&self) -> &[RateLimitRule] {
-        &self.rules
+    pub const fn policies(&self) -> &[RateLimitPolicy] {
+        &self.policies
     }
 
-    /// Returns whether no rate-limit rule applies.
+    /// Returns whether no rate-limit policy applies.
     #[must_use]
     pub const fn is_empty(&self) -> bool {
-        self.rules.is_empty()
+        self.policies.is_empty()
     }
 
     pub(crate) fn validate_key_limit(&self, limit: usize) -> Result<(), RateLimitError> {
         if limit > MAX_RATE_LIMIT_KEY_BYTES {
             return Err(invalid_configuration());
         }
-        if self.rules.iter().any(|rule| rule.key.total_bytes > limit) {
+        if self
+            .policies
+            .iter()
+            .any(|policy| policy.key.total_bytes > limit)
+        {
             return Err(invalid_key());
         }
         Ok(())
@@ -489,9 +493,9 @@ mod tests {
         RateLimitKeyPart::new(name, value).expect("valid key part")
     }
 
-    fn rule(id: impl AsRef<str>) -> RateLimitRule {
-        RateLimitRule::new(
-            RateLimitId::new(id).expect("valid rule ID"),
+    fn rule(id: impl AsRef<str>) -> RateLimitPolicy {
+        RateLimitPolicy::new(
+            RateLimitId::new(id).expect("valid policy ID"),
             RateLimitKey::global(),
             NonZeroU32::MIN,
             [window(1, 1)],
@@ -549,7 +553,7 @@ mod tests {
         fn next(&mut self) -> Option<Self::Item> {
             let call = self.calls.fetch_add(1, Ordering::SeqCst);
             assert!(
-                call <= MAX_RATE_LIMIT_WINDOWS_PER_RULE,
+                call <= MAX_RATE_LIMIT_WINDOWS_PER_POLICY,
                 "window iterator consumed beyond the first excess"
             );
             Some(window(100, u64::try_from(call + 1).expect("test index")))
@@ -561,12 +565,12 @@ mod tests {
     }
 
     impl Iterator for RuleLimitIterator {
-        type Item = RateLimitRule;
+        type Item = RateLimitPolicy;
 
         fn next(&mut self) -> Option<Self::Item> {
             let call = self.calls.fetch_add(1, Ordering::SeqCst);
             assert!(
-                call <= MAX_RATE_LIMIT_RULES_PER_PLAN,
+                call <= MAX_RATE_LIMIT_POLICIES_PER_PLAN,
                 "plan iterator consumed beyond the first excess"
             );
             Some(rule(format!("rule-{call}")))
@@ -578,7 +582,7 @@ mod tests {
     }
 
     impl Iterator for DuplicateRuleIterator {
-        type Item = RateLimitRule;
+        type Item = RateLimitPolicy;
 
         fn next(&mut self) -> Option<Self::Item> {
             let call = self.calls.fetch_add(1, Ordering::SeqCst);
@@ -601,7 +605,7 @@ mod tests {
         assert_eq!(key.total_bytes(), 4 + 16 + 11 + 5);
         assert!(!key.is_global());
 
-        let rule = RateLimitRule::new(
+        let rule = RateLimitPolicy::new(
             RateLimitId::new("tenant").expect("ID"),
             key,
             NonZeroU32::new(2).expect("cost"),
@@ -614,9 +618,9 @@ mod tests {
         assert_eq!(rule.windows()[0].capacity().get(), 100);
         assert_eq!(rule.windows()[0].duration(), Duration::from_secs(60));
 
-        let plan = RateLimitPlan::try_from_rules([rule]).expect("valid plan");
+        let plan = RateLimitPlan::try_from_policies([rule]).expect("valid plan");
         assert!(!plan.is_empty());
-        assert_eq!(plan.rules()[0].id().as_str(), "tenant");
+        assert_eq!(plan.policies()[0].id().as_str(), "tenant");
     }
 
     #[test]
@@ -726,19 +730,19 @@ mod tests {
 
     #[test]
     fn rate_limit_rule_window_iterator_stops_at_first_excess() {
-        let boundary = RateLimitRule::new(
+        let boundary = RateLimitPolicy::new(
             RateLimitId::new("window-boundary").expect("ID"),
             RateLimitKey::global(),
             NonZeroU32::MIN,
-            (0..MAX_RATE_LIMIT_WINDOWS_PER_RULE)
+            (0..MAX_RATE_LIMIT_WINDOWS_PER_POLICY)
                 .map(|index| window(100, u64::try_from(index + 1).expect("test index"))),
         )
         .expect("window count boundary");
-        assert_eq!(boundary.windows().len(), MAX_RATE_LIMIT_WINDOWS_PER_RULE);
+        assert_eq!(boundary.windows().len(), MAX_RATE_LIMIT_WINDOWS_PER_POLICY);
 
         let calls = Arc::new(AtomicUsize::new(0));
         let error = rate_error(
-            RateLimitRule::new(
+            RateLimitPolicy::new(
                 RateLimitId::new(ID_SENTINEL).expect("ID"),
                 RateLimitKey::global(),
                 NonZeroU32::MIN,
@@ -751,22 +755,22 @@ mod tests {
         assert_eq!(error.kind(), RateLimitErrorKind::InvalidConfiguration);
         assert_eq!(
             calls.load(Ordering::SeqCst),
-            MAX_RATE_LIMIT_WINDOWS_PER_RULE + 1
+            MAX_RATE_LIMIT_WINDOWS_PER_POLICY + 1
         );
         assert_redacted(&error, &[ID_SENTINEL]);
     }
 
     #[test]
     fn rate_limit_plan_rule_iterator_stops_at_first_excess() {
-        let boundary = RateLimitPlan::try_from_rules(
-            (0..MAX_RATE_LIMIT_RULES_PER_PLAN).map(|index| rule(format!("rule-{index}"))),
+        let boundary = RateLimitPlan::try_from_policies(
+            (0..MAX_RATE_LIMIT_POLICIES_PER_PLAN).map(|index| rule(format!("rule-{index}"))),
         )
         .expect("rule count boundary");
-        assert_eq!(boundary.rules().len(), MAX_RATE_LIMIT_RULES_PER_PLAN);
+        assert_eq!(boundary.policies().len(), MAX_RATE_LIMIT_POLICIES_PER_PLAN);
 
         let calls = Arc::new(AtomicUsize::new(0));
         let error = rate_error(
-            RateLimitPlan::try_from_rules(RuleLimitIterator {
+            RateLimitPlan::try_from_policies(RuleLimitIterator {
                 calls: Arc::clone(&calls),
             }),
             "first excess plan rule unexpectedly succeeded",
@@ -774,7 +778,7 @@ mod tests {
         assert_eq!(error.kind(), RateLimitErrorKind::InvalidConfiguration);
         assert_eq!(
             calls.load(Ordering::SeqCst),
-            MAX_RATE_LIMIT_RULES_PER_PLAN + 1
+            MAX_RATE_LIMIT_POLICIES_PER_PLAN + 1
         );
     }
 
@@ -782,10 +786,10 @@ mod tests {
     fn rate_limit_plan_rejects_duplicate_ids() {
         let calls = Arc::new(AtomicUsize::new(0));
         let error = rate_error(
-            RateLimitPlan::try_from_rules(DuplicateRuleIterator {
+            RateLimitPlan::try_from_policies(DuplicateRuleIterator {
                 calls: Arc::clone(&calls),
             }),
-            "duplicate rule ID unexpectedly succeeded",
+            "duplicate policy ID unexpectedly succeeded",
         );
         assert_eq!(error.kind(), RateLimitErrorKind::InvalidConfiguration);
         assert_eq!(calls.load(Ordering::SeqCst), 2);
@@ -815,7 +819,7 @@ mod tests {
         );
         assert_eq!(
             rate_error(
-                RateLimitRule::new(
+                RateLimitPolicy::new(
                     RateLimitId::new("empty").expect("ID"),
                     RateLimitKey::global(),
                     NonZeroU32::MIN,
@@ -828,7 +832,7 @@ mod tests {
         );
         assert_eq!(
             rate_error(
-                RateLimitRule::new(
+                RateLimitPolicy::new(
                     RateLimitId::new("cost").expect("ID"),
                     RateLimitKey::global(),
                     NonZeroU32::new(2).expect("cost"),
@@ -843,26 +847,26 @@ mod tests {
 
     #[test]
     fn plan_key_limit_is_key_safe_and_zero_allows_only_global() {
-        let global = RateLimitRule::new(
+        let global = RateLimitPolicy::new(
             RateLimitId::new("global").expect("ID"),
             RateLimitKey::global(),
             NonZeroU32::MIN,
             [window(1, 1)],
         )
         .expect("global rule");
-        RateLimitPlan::try_from_rules([global])
+        RateLimitPlan::try_from_policies([global])
             .expect("global plan")
             .validate_key_limit(0)
             .expect("global key fits zero");
 
-        let keyed = RateLimitRule::new(
+        let keyed = RateLimitPolicy::new(
             RateLimitId::new("keyed").expect("ID"),
             RateLimitKey::from_parts([part("tenant", KEY_SENTINEL)]).expect("key"),
             NonZeroU32::MIN,
             [window(1, 1)],
         )
         .expect("keyed rule");
-        let error = RateLimitPlan::try_from_rules([keyed])
+        let error = RateLimitPlan::try_from_policies([keyed])
             .expect("keyed plan")
             .validate_key_limit(0)
             .expect_err("nonempty key exceeds zero");

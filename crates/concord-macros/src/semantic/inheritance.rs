@@ -7,11 +7,11 @@ use super::symbols::ScopeFrame;
 use super::{Resolver, SpanError};
 use crate::semantic::rate_limits::RateLimitResolutionContext;
 use crate::syntax::ast::{
-    AuthChallenge as SourceChallenge, AuthOperation, AuthPlacementKind as SourceAuthPlacement,
-    HeaderEntry, HeaderOperation, HostOperation, Layer, PathOperation, PublicExpr, QueryEntry,
-    QueryOperation, TimeoutOperation,
+    AttachmentSite, AuthChallenge as SourceChallenge, AuthOperation,
+    AuthPlacementKind as SourceAuthPlacement, HeaderEntry, HeaderOperation, HostOperation,
+    PathOperation, PublicExpr, QueryEntry, QueryOperation, TimeoutOperation,
 };
-use crate::{MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_RULES_PER_PLAN};
+use crate::{MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_POLICIES_PER_PLAN};
 
 #[derive(Clone, Copy)]
 enum ExpressionUse {
@@ -43,9 +43,9 @@ fn resolve_challenge(source: SourceChallenge) -> ResolvedChallengePolicy {
 }
 
 impl Resolver<'_> {
-    pub(super) fn normalize_layer(
+    pub(super) fn normalize_attachment_site(
         &mut self,
-        layer: &Layer,
+        attachment_site: &AttachmentSite,
         parent: &NormalizedConfig,
         scopes: &[ScopeFrame],
         endpoint: Option<&[Value]>,
@@ -53,7 +53,7 @@ impl Resolver<'_> {
     ) -> syn::Result<NormalizedConfig> {
         let mut normalized = parent.clone();
 
-        if let Some(operation) = &layer.host {
+        if let Some(operation) = &attachment_site.host {
             normalized.host = match &operation.value {
                 HostOperation::Off => {
                     normalized.host_span = None;
@@ -65,7 +65,7 @@ impl Resolver<'_> {
                 }
             };
         }
-        if let Some(operation) = &layer.path {
+        if let Some(operation) = &attachment_site.path {
             let operation = &operation.value;
             match operation {
                 PathOperation::Off => normalized.path.clear(),
@@ -83,7 +83,7 @@ impl Resolver<'_> {
                 }
             }
         }
-        if let Some(operation) = &layer.query {
+        if let Some(operation) = &attachment_site.query {
             let operation = &operation.value;
             if matches!(operation, QueryOperation::Off | QueryOperation::Replace(_)) {
                 normalized.query.clear();
@@ -108,7 +108,7 @@ impl Resolver<'_> {
                 }
             }
         }
-        if let Some(operation) = &layer.headers {
+        if let Some(operation) = &attachment_site.headers {
             let operation = &operation.value;
             if matches!(
                 operation,
@@ -146,7 +146,7 @@ impl Resolver<'_> {
                 }
             }
         }
-        if let Some(operation) = &layer.auth {
+        if let Some(operation) = &attachment_site.auth {
             match operation {
                 AuthOperation::Off { .. } => normalized.auth.clear(),
                 AuthOperation::Modify {
@@ -187,7 +187,7 @@ impl Resolver<'_> {
             }
         }
         validate_effective_auth(&normalized)?;
-        if let Some(operation) = &layer.timeout {
+        if let Some(operation) = &attachment_site.timeout {
             let operation = &operation.value;
             normalized.timeout = match operation {
                 TimeoutOperation::Off => None,
@@ -197,10 +197,10 @@ impl Resolver<'_> {
                 }
             };
         }
-        for declaration in &layer.rate_limits {
-            if normalized.rate_limits.len() >= MAX_RATE_LIMIT_RULES_PER_PLAN {
+        for declaration in &attachment_site.rate_limits {
+            if normalized.rate_limits.len() >= MAX_RATE_LIMIT_POLICIES_PER_PLAN {
                 return Err(declaration.key_span.error(format!(
-                    "an effective rate-limit plan permits at most {MAX_RATE_LIMIT_RULES_PER_PLAN} rules"
+                    "an effective rate-limit plan permits at most {MAX_RATE_LIMIT_POLICIES_PER_PLAN} policies"
                 )));
             }
             let rule = self.resolve_rate_limit(

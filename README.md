@@ -54,6 +54,7 @@ The packages have `publish = false`.
 - [Design invariants](docs/design_invariants.md)
 - [Maintainer internals](dev_doc/internals.md)
 - [Finalization decisions](dev_doc/finalization_decisions.md)
+- [v1 freeze declaration](FINAL.md)
 
 ## Validation
 

@@ -22,7 +22,7 @@ use concord::hooks::{BeforeSend, BoxFuture, RuntimeHooks};
 use concord::http::{HeaderName, Method, SafeProxy};
 use concord::rate_limit::{
     NoopRateLimiter, RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit,
-    RateLimitRequest, RateLimitRule, RateLimitWindow, RateLimiter,
+    RateLimitPolicy, RateLimitRequest, RateLimitWindow, RateLimiter,
 };
 use concord::response::ByteStream;
 use concord::{ApiResponse, Bytes, NoContent};
@@ -156,7 +156,7 @@ impl RateLimiter for CapturingLimiter {
     ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
         let plan = request
             .plan
-            .rules()
+            .policies()
             .iter()
             .map(|rule| CapturedRule {
                 id: rule.id().as_str().to_owned(),
@@ -214,8 +214,8 @@ fn alpha(server: &ScriptedServer) -> PreparedAlphaApi {
         .expect("prepared alpha client")
 }
 
-fn rule(id: &str, key: RateLimitKey, cost: u32, windows: &[(u32, u64)]) -> RateLimitRule {
-    RateLimitRule::new(
+fn rule(id: &str, key: RateLimitKey, cost: u32, windows: &[(u32, u64)]) -> RateLimitPolicy {
+    RateLimitPolicy::new(
         RateLimitId::new(id).expect("rate ID"),
         key,
         NonZeroU32::new(cost).expect("rate cost"),

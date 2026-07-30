@@ -39,8 +39,8 @@ use crate::pagination::{
     PageLimit, PaginatedEndpoint, PaginatedRequest, PaginationController, PaginationError,
 };
 use crate::rate_limit::{
-    RateLimitError, RateLimitId, RateLimitKey, RateLimitPermit, RateLimitRequest,
-    RateLimitResponse, RateLimitRule, RateLimitWindow, RateLimiter,
+    RateLimitError, RateLimitId, RateLimitKey, RateLimitPermit, RateLimitPolicy, RateLimitRequest,
+    RateLimitResponse, RateLimitWindow, RateLimiter,
 };
 use crate::request::{
     EndpointSpec, HeadBuilder, PreparedHead, Request, RequestMeta, RuntimeEndpoint,
@@ -160,7 +160,7 @@ impl EndpointSpec for PaginatedProtectedEndpoint {
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("paginated-protected")?;
         builder.push_value(&self.page)?;
-        builder.push_rate_limit_rule(
+        builder.push_rate_limit_policy(
             "AuthenticationApi::rate_limit::pagination",
             std::iter::empty::<(&str, &str)>(),
             1,
@@ -586,7 +586,7 @@ impl EndpointSpec for FinalizationExpiryEndpoint {
     }
 
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
-        builder.push_rate_limit_rule(
+        builder.push_rate_limit_policy(
             "AuthenticationApi::rate_limit::finalization",
             std::iter::empty::<(&str, &str)>(),
             1,
@@ -625,7 +625,7 @@ impl EndpointSpec for ProtectedEndpoint {
         };
         builder.push_auth(auth.challenge(self.challenge))?;
         if let Some(rate_key) = &self.rate_key {
-            builder.push_rate_limit_rule(
+            builder.push_rate_limit_policy(
                 "AuthenticationApi::rate_limit::tenant",
                 [("vars.tenant", rate_key.as_str())],
                 1,
@@ -946,7 +946,7 @@ fn capture_auth_plan(request: &RateLimitRequest<'_>) -> CapturedAuthPlan {
         attempt: request.attempt,
         rules: request
             .plan
-            .rules()
+            .policies()
             .iter()
             .map(|rule| {
                 (
@@ -1255,8 +1255,8 @@ fn query_request(
     )
 }
 
-fn prepared_rate_rule() -> RateLimitRule {
-    RateLimitRule::new(
+fn prepared_rate_rule() -> RateLimitPolicy {
+    RateLimitPolicy::new(
         RateLimitId::new("Prepared::rate_limit::recovery").expect("prepared rate ID"),
         RateLimitKey::global(),
         NonZeroU32::new(1).expect("prepared rate cost"),

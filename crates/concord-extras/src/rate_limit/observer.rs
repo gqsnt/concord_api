@@ -55,7 +55,7 @@ mod tests {
 
     use concord_core::contracts::{HeaderMap, HeaderValue, Method, SanitizedHeaders};
     use concord_core::rate_limit::{
-        RateLimitId, RateLimitKey, RateLimitPlan, RateLimitRule, RateLimitWindow,
+        RateLimitId, RateLimitKey, RateLimitPlan, RateLimitPolicy, RateLimitWindow,
     };
 
     use super::*;
@@ -107,13 +107,13 @@ mod tests {
         assert_eq!(cooldown.duration, Duration::from_secs(7));
         assert!(matches!(cooldown.scope, CooldownScope::Host));
 
-        let nonempty = RateLimitPlan::try_from_rules([RateLimitRule::new(
+        let nonempty = RateLimitPlan::try_from_policies([RateLimitPolicy::new(
             RateLimitId::new("application").expect("ID"),
             RateLimitKey::global(),
             NonZeroU32::MIN,
             [RateLimitWindow::new(NonZeroU32::MIN, Duration::from_secs(1)).expect("window")],
         )
-        .expect("rule")])
+        .expect("policy")])
         .expect("plan");
         let bucket_response = RateLimitResponseHead {
             plan: &nonempty,
