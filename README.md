@@ -17,12 +17,12 @@ api! {
     }
 }
 
-# async fn run() -> Result<(), Box<dyn std::error::Error>> {
-let client = StatusApi::new()?;
-let bytes = client.status().await?;
-# let _ = bytes;
-# Ok(())
-# }
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let client = StatusApi::new()?;
+    let bytes = client.status().await?;
+    let _ = bytes;
+    Ok(())
+}
 ```
 
 Request construction is inert. Awaiting a request starts public request

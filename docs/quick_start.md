@@ -17,7 +17,7 @@ The `json` feature exposes the `Json<T>` request and response specification.
 
 ## Declare a client
 
-```concord
+```rust
 use concord::{Json, api};
 use serde::Deserialize;
 
@@ -44,13 +44,13 @@ defaults are method arguments in declaration order.
 ## Build and call
 
 ```rust
-# async fn run() -> Result<(), Box<dyn std::error::Error>> {
-let client = UsersApi::new()?;
-let user: User = client.user(42).await?;
-let response = client.user(42).response().await?;
-# let _ = (user, response);
-# Ok(())
-# }
+ async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let client = UsersApi::new()?;
+    let user: User = client.user(42).await?;
+    let response = client.user(42).response().await?;
+    let _ = (user, response);
+    Ok(())
+}
 ```
 
 `UsersApi::new()` exists because the declaration has no required client value,
@@ -62,7 +62,7 @@ response metadata with the declared output.
 
 ## Add a client value
 
-```concord
+```rust
 api! {
     client RegionalApi {
         base "https://example.test/";
@@ -88,7 +88,7 @@ let client = RegionalApi::builder()
 
 ## Add a secret
 
-```concord
+```rust
 api! {
     client PrivateApi {
         base "https://private.example.test/";
