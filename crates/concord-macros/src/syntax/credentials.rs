@@ -152,6 +152,21 @@ pub(super) fn parse_auth(input: ParseStream<'_>) -> syn::Result<AuthOperation> {
     if replace {
         input.parse::<keyword::replace>()?;
     }
+    if let Ok(spelling) = input.fork().parse::<Ident>() {
+        match canonical_ident(&spelling).as_str() {
+            "certificate" => {
+                return Err(spelling.span().error(
+                    "`auth certificate` is not DSL syntax; supply application client-identity PEM with `.configure_http(|http| http.identity_pem(pem))` on the generated builder",
+                ));
+            }
+            "all" | "any" | "one_of" | "optional" => {
+                return Err(spelling.span().error(
+                    "authentication combinators are not DSL syntax; write each ordered placement as an `auth ...;` clause",
+                ));
+            }
+            _ => {}
+        }
+    }
     let (kind, credential) = if input.peek(keyword::bearer) {
         input.parse::<keyword::bearer>()?;
         (AuthPlacementKind::Bearer, input.parse()?)
@@ -249,6 +264,34 @@ mod tests {
         assert_eq!(block.secrets.len(), 1);
         assert_eq!(block.credentials.len(), 2);
         assert!(source.client.layer.auth.is_some());
+    }
+
+    #[test]
+    fn rejects_certificate_and_authentication_combinator_ghost_syntax() {
+        for (spelling, expected) in [
+            (quote!(certificate), "`auth certificate` is not DSL syntax"),
+            (quote!(all), "authentication combinators are not DSL syntax"),
+            (quote!(any), "authentication combinators are not DSL syntax"),
+            (
+                quote!(one_of),
+                "authentication combinators are not DSL syntax",
+            ),
+            (
+                quote!(optional),
+                "authentication combinators are not DSL syntax",
+            ),
+        ] {
+            let source = quote! {
+                client AuthApi {
+                    base "https://example.test";
+                    auth #spelling;
+                }
+            };
+            let error = super::super::parse(source)
+                .err()
+                .expect("ghost authentication syntax must fail");
+            assert!(error.to_string().contains(expected), "{error}");
+        }
     }
 
     #[test]

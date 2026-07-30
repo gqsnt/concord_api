@@ -1,0 +1,101 @@
+error: a `secret` declaration is valid only inside the client `credentials { ... }` block
+ --> tests/ui/fail/syntax/ghost_syntax.rs:6:9
+  |
+6 |         secret token: String;
+  |         ^^^^^^
+
+error: a `credential` declaration is valid only inside the client `credentials { ... }` block
+  --> tests/ui/fail/syntax/ghost_syntax.rs:13:9
+   |
+13 |         credential token = bearer(secret.token);
+   |         ^^^^^^^^^^
+
+error: `default { ... }` is not DSL syntax; declare a value default with `name: Type = VALUE` in `vars { ... }` or a scope or endpoint parameter list
+  --> tests/ui/fail/syntax/ghost_syntax.rs:20:9
+   |
+20 |         default { timeout 1s; }
+   |         ^^^^^^^
+
+error: `defaults { ... }` is not DSL syntax; declare defaults with `name: Type = VALUE` in `vars { ... }` or a scope or endpoint parameter list
+  --> tests/ui/fail/syntax/ghost_syntax.rs:27:9
+   |
+27 |         defaults { timeout 1s; }
+   |         ^^^^^^^^
+
+error: `policies { ... }` is not DSL syntax; define reusable rate-limit rules in the client `rate_limits { ... }` block and install retry policy through the generated builder
+  --> tests/ui/fail/syntax/ghost_syntax.rs:34:9
+   |
+34 |         policies { }
+   |         ^^^^^^^^
+
+error: behavior profiles are not DSL syntax; configure hooks and runtime policy through the generated builder
+  --> tests/ui/fail/syntax/ghost_syntax.rs:41:9
+   |
+41 |         behaviors { }
+   |         ^^^^^^^^^
+
+error: behavior profiles are not DSL syntax; configure hooks and runtime policy through the generated builder
+  --> tests/ui/fail/syntax/ghost_syntax.rs:48:9
+   |
+48 |         behavior finite;
+   |         ^^^^^^^^
+
+error: `prefix` is not DSL syntax; use `path [...]` for path atoms or `host [...]` for host labels
+  --> tests/ui/fail/syntax/ghost_syntax.rs:55:9
+   |
+55 |         prefix ["v1"];
+   |         ^^^^^^
+
+error: `params { ... }` is not DSL syntax; declare values in a scope or endpoint parameter list and shape query parameters with `query { ... }`
+  --> tests/ui/fail/syntax/ghost_syntax.rs:62:9
+   |
+62 |         params { "id" = vars.id; }
+   |         ^^^^^^
+
+error: `profile` is not DSL syntax; define a named reusable rate-limit rule with `rate_limits { rule NAME { ... } }`
+  --> tests/ui/fail/syntax/ghost_syntax.rs:69:9
+   |
+69 |         profile standard { }
+   |         ^^^^^^^
+
+error: `access_token` is not DSL syntax; declare a secret and a bearer credential inside `credentials { ... }`
+  --> tests/ui/fail/syntax/ghost_syntax.rs:76:9
+   |
+76 |         access_token token: String;
+   |         ^^^^^^^^^^^^
+
+error: `auth certificate` is not DSL syntax; supply application client-identity PEM with `.configure_http(|http| http.identity_pem(pem))` on the generated builder
+  --> tests/ui/fail/syntax/ghost_syntax.rs:83:14
+   |
+83 |         auth certificate;
+   |              ^^^^^^^^^^^
+
+error: authentication combinators are not DSL syntax; write each ordered placement as an `auth ...;` clause
+  --> tests/ui/fail/syntax/ghost_syntax.rs:90:14
+   |
+90 |         auth any;
+   |              ^^^
+
+error: authentication combinators are not DSL syntax; write each ordered placement as an `auth ...;` clause
+  --> tests/ui/fail/syntax/ghost_syntax.rs:97:14
+   |
+97 |         auth all;
+   |              ^^^
+
+error: authentication combinators are not DSL syntax; write each ordered placement as an `auth ...;` clause
+   --> tests/ui/fail/syntax/ghost_syntax.rs:104:14
+    |
+104 |         auth one_of;
+    |              ^^^^^^
+
+error: authentication combinators are not DSL syntax; write each ordered placement as an `auth ...;` clause
+   --> tests/ui/fail/syntax/ghost_syntax.rs:111:14
+    |
+111 |         auth optional;
+    |              ^^^^^^^^
+
+error: bracketed interpolation is not DSL syntax; concatenate public expressions with `fmt[...]`
+   --> tests/ui/fail/syntax/ghost_syntax.rs:121:15
+    |
+121 |         path [["items-", ep.id]];
+    |               ^

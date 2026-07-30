@@ -128,6 +128,9 @@ impl Parse for SourceClient {
                     body.error("scopes and endpoints are declared after the `client` block")
                 );
             }
+            if let Some(error) = retired_clause_diagnostic(&body) {
+                return Err(error);
+            }
             return Err(body.error(
                 "unsupported client clause; expected `base`, `vars`, `credentials`, `rate_limits`, `host`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit`",
             ));
@@ -224,6 +227,9 @@ fn parse_scope(input: ParseStream<'_>, depth: usize) -> syn::Result<SourceScope>
         if body.peek(keyword::paginate) || body.peek(keyword::id) {
             return Err(body.error("`paginate` and `id` are endpoint-only clauses"));
         }
+        if let Some(error) = retired_clause_diagnostic(&body) {
+            return Err(error);
+        }
         return Err(body.error(
             "unsupported scope entry; expected a child scope, HTTP endpoint, or `host`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit` clause",
         ));
@@ -306,6 +312,9 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
                 return Err(clauses
                     .error("this declaration is client-only and cannot appear on an endpoint"));
             }
+            if let Some(error) = retired_clause_diagnostic(&clauses) {
+                return Err(error);
+            }
             return Err(clauses.error(
                 "unsupported endpoint clause; expected `id`, `host`, `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, or `paginate`",
             ));
@@ -377,6 +386,51 @@ fn removed_retry_diagnostic(input: ParseStream<'_>) -> syn::Error {
     input.error(
         "the `retry` DSL clause was removed; install a managed `RetryPolicy` with the generated builder `.retry(policy)`",
     )
+}
+
+fn retired_clause_diagnostic(input: ParseStream<'_>) -> Option<syn::Error> {
+    if input.peek(keyword::secret) {
+        return Some(input.error(
+            "a `secret` declaration is valid only inside the client `credentials { ... }` block",
+        ));
+    }
+    if input.peek(keyword::credential) {
+        return Some(input.error(
+            "a `credential` declaration is valid only inside the client `credentials { ... }` block",
+        ));
+    }
+    if input.peek(Token![default]) {
+        return Some(input.error(
+            "`default { ... }` is not DSL syntax; declare a value default with `name: Type = VALUE` in `vars { ... }` or a scope or endpoint parameter list",
+        ));
+    }
+
+    let spelling = input.fork().parse::<Ident>().ok()?;
+    let message = match canonical_ident(&spelling).as_str() {
+        "defaults" => {
+            "`defaults { ... }` is not DSL syntax; declare defaults with `name: Type = VALUE` in `vars { ... }` or a scope or endpoint parameter list"
+        }
+        "policies" => {
+            "`policies { ... }` is not DSL syntax; define reusable rate-limit rules in the client `rate_limits { ... }` block and install retry policy through the generated builder"
+        }
+        "behaviors" | "behavior" => {
+            "behavior profiles are not DSL syntax; configure hooks and runtime policy through the generated builder"
+        }
+        "prefix" => {
+            "`prefix` is not DSL syntax; use `path [...]` for path atoms or `host [...]` for host labels"
+        }
+        "params" => {
+            "`params { ... }` is not DSL syntax; declare values in a scope or endpoint parameter list and shape query parameters with `query { ... }`"
+        }
+        "profile" => {
+            "`profile` is not DSL syntax; define a named reusable rate-limit rule with `rate_limits { rule NAME { ... } }`"
+        }
+        "access_token" => {
+            "`access_token` is not DSL syntax; declare a secret and a bearer credential inside `credentials { ... }`"
+        }
+        _ => return None,
+    };
+    Some(spelling.span().error(message))
 }
 
 fn parse_layer_clause(
@@ -473,6 +527,8 @@ fn is_client_only_declaration_start(input: ParseStream<'_>) -> bool {
         || input.peek(keyword::credentials)
         || input.peek(keyword::rate_limits)
         || input.peek(keyword::retry)
+        || input.peek(keyword::secret)
+        || input.peek(keyword::credential)
 }
 
 #[cfg(test)]

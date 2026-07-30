@@ -196,6 +196,57 @@ fn removed_retry_dsl_has_a_focused_migration_diagnostic() {
 }
 
 #[test]
+fn retired_declarations_have_focused_replacement_diagnostics() {
+    let cases = [
+        (
+            quote! { client Api { base "https://example.test"; secret token: String; } },
+            "`credentials { ... }` block",
+        ),
+        (
+            quote! { client Api { base "https://example.test"; credential token = bearer(secret.token); } },
+            "`credentials { ... }` block",
+        ),
+        (
+            quote! { client Api { base "https://example.test"; default { timeout 1s; } } },
+            "`default { ... }` is not DSL syntax",
+        ),
+        (
+            quote! { client Api { base "https://example.test"; defaults { timeout 1s; } } },
+            "`defaults { ... }` is not DSL syntax",
+        ),
+        (
+            quote! { client Api { base "https://example.test"; policies { } } },
+            "`policies { ... }` is not DSL syntax",
+        ),
+        (
+            quote! { client Api { base "https://example.test"; behavior finite; } },
+            "behavior profiles are not DSL syntax",
+        ),
+        (
+            quote! { client Api { base "https://example.test"; prefix ["v1"]; } },
+            "`prefix` is not DSL syntax",
+        ),
+        (
+            quote! { client Api { base "https://example.test"; params { "id" = vars.id; } } },
+            "`params { ... }` is not DSL syntax",
+        ),
+        (
+            quote! { client Api { base "https://example.test"; profile standard { } } },
+            "`profile` is not DSL syntax",
+        ),
+        (
+            quote! { client Api { base "https://example.test"; access_token token: String; } },
+            "`access_token` is not DSL syntax",
+        ),
+    ];
+
+    for (tokens, expected) in cases {
+        let error = parse(tokens).err().expect("retired syntax must fail");
+        assert!(error.to_string().contains(expected), "{error}");
+    }
+}
+
+#[test]
 fn rejects_arbitrary_defaults_and_public_expressions() {
     let default_error = parse(quote! {
         client Api {

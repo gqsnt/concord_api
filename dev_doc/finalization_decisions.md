@@ -12,3 +12,12 @@ Each entry records a judgment not fixed by the finalization plan.
 - Delete `CHANGELOG.md`, `fixtures/README.md`, and `tools/perf/README.md` after their current-state facts are folded into maintainer documentation because history and peripheral instructions are outside the frozen user documentation set.
 - Remove the mdBook-specific configuration and generation path after Phase 2 because the final documentation set is raw Markdown and the project has no website deliverable.
 
+## Phase 1
+
+- Preserve the current `credentials { ... }` and `rate_limits { ... }` declaration blocks because this revision has no `auth { ... }`, `policies { ... }`, `behaviors { ... }`, or `defaults { ... }` configuration dialect and those prompt names do not map one-to-one onto the current language.
+- Keep client `auth ...;` and `rate_limit ...` clauses because they are attachment clauses in the current sole dialect, not flat declarations of credential or policy profiles.
+- Reject flat `secret` and `credential` declarations with a focused direction to `credentials { ... }` because removing their parser paths is already complete in this revision.
+- Reject both `default { ... }` and `defaults { ... }` blocks with directions to value-level defaults because the current language expresses defaults only as `name: Type = VALUE`.
+- Keep retry and behavior configuration out of the DSL because retry is already installed through the generated builder and behavior profiles do not exist.
+- Treat `auth certificate` as ghost syntax and direct users to `configure_http` because application client-certificate material is supported end to end by `HttpConfig::identity_pem`, but it is runtime configuration rather than an authentication attachment.
+- Use trybuild `.stderr` files under `crates/concord/tests/ui/` as the Phase 1 output snapshots because this revision has no `concord_macros/tests/snapshots/` directory and trybuild is the maintained diagnostic snapshot mechanism.

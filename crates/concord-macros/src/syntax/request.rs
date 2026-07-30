@@ -191,6 +191,11 @@ pub(super) fn parse_timeout(input: ParseStream<'_>) -> syn::Result<TimeoutOperat
 }
 
 fn parse_public_expr(input: ParseStream<'_>, depth: usize) -> syn::Result<PublicExpr> {
+    if input.peek(syn::token::Bracket) {
+        return Err(input.error(
+            "bracketed interpolation is not DSL syntax; concatenate public expressions with `fmt[...]`",
+        ));
+    }
     if input.peek(LitStr) {
         return input.parse().map(PublicExpr::String);
     }
@@ -320,5 +325,23 @@ mod tests {
         assert!(endpoint.layer.query.is_some());
         assert!(endpoint.layer.headers.is_some());
         assert!(endpoint.layer.timeout.is_some());
+    }
+
+    #[test]
+    fn rejects_bracketed_interpolation_with_fmt_replacement() {
+        let error = super::super::parse(quote! {
+            client RequestApi { base "https://example.test"; }
+            GET read(id: String) -> Bytes {
+                path [["items-", ep.id]];
+            }
+        })
+        .err()
+        .expect("bracketed interpolation must fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("concatenate public expressions with `fmt[...]`")
+        );
     }
 }
