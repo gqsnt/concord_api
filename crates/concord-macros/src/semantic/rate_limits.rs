@@ -96,7 +96,7 @@ pub(super) fn resolve_rate_limit_definitions(
             );
             if id.len() > MAX_RATE_LIMIT_ID_BYTES {
                 return Err(id_span.error(format!(
-                    "a rate-limit rule ID permits at most {MAX_RATE_LIMIT_ID_BYTES} UTF-8 bytes"
+                    "a rate-limit policy ID permits at most {MAX_RATE_LIMIT_ID_BYTES} UTF-8 bytes"
                 )));
             }
             let dimensions = definition
@@ -462,7 +462,9 @@ impl Resolver<'_> {
                     "rate-limit ID `{}` is reused with incompatible ordered dimensions or windows",
                     rule.id
                 ));
-                error.combine(first_span.error("the first declaration using this rule ID is here"));
+                error.combine(
+                    first_span.error("the first declaration using this policy ID is here"),
+                );
                 return Err(error);
             }
         } else {
@@ -502,7 +504,7 @@ pub(super) fn validate_effective_rate_limit_pagination_dependencies(
                             .find(|value| value.reference == *reference)
                     }) {
                         return Err(span.error(format!(
-                            "`host` cannot partition this rate-limit rule because final host shaping depends on pagination-controlled value `{}`",
+                            "`host` cannot partition this rate-limit policy because final host shaping depends on pagination-controlled value `{}`",
                             pagination_value.public_name
                         )));
                     }
@@ -518,7 +520,7 @@ pub(super) fn validate_effective_rate_limit_pagination_dependencies(
                         .any(|value| value.reference == *reference)
                     {
                         return Err(span.error(format!(
-                            "pagination-controlled value `{public_name}` cannot partition a rate-limit rule"
+                            "pagination-controlled value `{public_name}` cannot partition a rate-limit policy"
                         )));
                     }
                 }
@@ -866,11 +868,9 @@ mod tests {
                 }
             }
         });
-        assert!(
-            pagination.contains(
-                "pagination-controlled value `account` cannot partition a rate-limit rule"
-            )
-        );
+        assert!(pagination.contains(
+            "pagination-controlled value `account` cannot partition a rate-limit policy"
+        ));
 
         let cost = resolve_error(quote! {
             client Api {
@@ -1101,7 +1101,7 @@ mod tests {
             }
         });
 
-        assert!(error.contains("an effective rate-limit plan contains a duplicate rule ID"));
+        assert!(error.contains("an effective rate-limit plan contains a duplicate policy ID"));
     }
 
     #[test]
@@ -1309,7 +1309,7 @@ mod tests {
         });
 
         assert!(error.contains(
-            "pagination-controlled value `ep.cursor` cannot partition a rate-limit rule"
+            "pagination-controlled value `ep.cursor` cannot partition a rate-limit policy"
         ));
     }
 
@@ -1328,7 +1328,7 @@ mod tests {
         });
 
         assert!(error.contains(
-            "pagination-controlled value `scope.cursor` cannot partition a rate-limit rule"
+            "pagination-controlled value `scope.cursor` cannot partition a rate-limit policy"
         ));
     }
 
@@ -1348,7 +1348,7 @@ mod tests {
         });
 
         assert!(error.contains(
-            "pagination-controlled value `vars.cursor` cannot partition a rate-limit rule"
+            "pagination-controlled value `vars.cursor` cannot partition a rate-limit policy"
         ));
     }
 
@@ -1367,7 +1367,7 @@ mod tests {
         });
 
         assert!(error.contains(
-            "pagination-controlled value `scope.cursor` cannot partition a rate-limit rule"
+            "pagination-controlled value `scope.cursor` cannot partition a rate-limit policy"
         ));
     }
 
@@ -1387,7 +1387,7 @@ mod tests {
         });
 
         assert!(error.contains(
-            "pagination-controlled value `vars.cursor` cannot partition a rate-limit rule"
+            "pagination-controlled value `vars.cursor` cannot partition a rate-limit policy"
         ));
     }
 
@@ -1481,7 +1481,7 @@ mod tests {
         });
 
         assert!(error.contains(
-            "`host` cannot partition this rate-limit rule because final host shaping depends on pagination-controlled value `vars.region`"
+            "`host` cannot partition this rate-limit policy because final host shaping depends on pagination-controlled value `vars.region`"
         ));
     }
 
@@ -1501,7 +1501,7 @@ mod tests {
         });
 
         assert!(error.contains(
-            "`host` cannot partition this rate-limit rule because final host shaping depends on pagination-controlled value `scope.region`"
+            "`host` cannot partition this rate-limit policy because final host shaping depends on pagination-controlled value `scope.region`"
         ));
     }
 
@@ -1519,7 +1519,7 @@ mod tests {
         });
 
         assert!(error.contains(
-            "`host` cannot partition this rate-limit rule because final host shaping depends on pagination-controlled value `ep.region`"
+            "`host` cannot partition this rate-limit policy because final host shaping depends on pagination-controlled value `ep.region`"
         ));
     }
 
@@ -1559,7 +1559,7 @@ mod tests {
         });
 
         assert!(error.contains(
-            "`host` cannot partition this rate-limit rule because final host shaping depends on pagination-controlled value `scope.region`"
+            "`host` cannot partition this rate-limit policy because final host shaping depends on pagination-controlled value `scope.region`"
         ));
     }
 

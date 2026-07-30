@@ -87,6 +87,10 @@ behavior. Trybuild files own generated API absence and compiler diagnostics.
 Examples own documentation declarations. Cargo fixtures own dependency-graph
 and feature-isolation behavior.
 
+`pwsh -NoLogo -NoProfile -File scripts/check_docs_examples.ps1` requires every
+`concord` fence under `docs/` to match whitespace-normalized source in the compiled
+`crates/concord-examples/src/docs_spec.rs` fixture.
+
 The commit gate is:
 
 ```text
@@ -97,6 +101,18 @@ cargo doc --workspace --no-deps
 ```
 
 Snapshot changes are reviewed before `.stderr` files are updated.
+
+### Specification rejection coverage
+
+| Specification rule | Enforcement |
+|---|---|
+| unknown and ghost syntax | `crates/concord/tests/ui/fail/syntax/ghost_syntax.rs` |
+| defaults and public-expression grammar | `default_expression_restrictions.rs`, `spec_rejections.rs`, and `names/` |
+| fixed base, static host, static path, and reserved headers | `spec_rejections.rs`, `ipv4_host_prefix.rs`, and `ipv6_host_prefix.rs` |
+| credential compatibility and duplicate authentication targets | `authentication/` and `spec_rejections.rs` |
+| pagination syntax, bindings, bodies, modes, and terminal capabilities | `pagination/` |
+| rate-limit structure, visibility, bindings, keys, windows, and identity | `rate_limits/` and `spec_rejections.rs` |
+| dynamic host labels and path atoms | `concord_core::request::head` unit tests and `concord-core/tests/public_api/generated_contract.rs` |
 
 ## Security review
 

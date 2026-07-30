@@ -1,4 +1,4 @@
-error: pagination-controlled value `vars.cursor` cannot partition a rate-limit rule
+error: pagination-controlled value `vars.cursor` cannot partition a rate-limit policy
  --> tests/ui/fail/rate_limits/rate_limit_pagination_vars_dimension.rs:7:31
   |
 7 |         rate_limit { by [vars.cursor]; 1 / 1s; }

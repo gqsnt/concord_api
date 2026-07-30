@@ -18,6 +18,10 @@
 //! from the product narrative.
 
 pub mod contracts;
+#[cfg(all(feature = "json", feature = "rate-limit", feature = "oauth2-client"))]
+pub mod docs_spec;
+#[cfg(all(feature = "json", feature = "rate-limit", feature = "oauth2-client"))]
+pub use docs_spec::DEFAULT_LABEL;
 pub mod getting_started;
 pub mod recipes;
 pub mod request_response;

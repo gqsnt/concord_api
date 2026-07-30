@@ -30,3 +30,15 @@ Each entry records a judgment not fixed by the finalization plan.
 - Remove mdBook configuration, theme, commands, dependency, and workflow steps because the final documentation is raw Markdown and the project has no website deliverable.
 - Remove the pre-finalization changelog and peripheral fixture/performance READMEs after folding their current operational facts into `dev_doc/internals.md` because the frozen private project does not publish release history or peripheral manuals.
 - Keep the existing CI workflow while removing only website steps because the prompt forbids adding CI setup but does not direct deletion of the repository's existing validation workflow.
+
+## Phase 3
+
+- Mark DSL fences with the `concord` language tag and compare them after removing whitespace because token-preserving normalization allows readable formatting without accepting a semantic edit.
+- Keep all fenced DSL source in `crates/concord-examples/src/docs_spec.rs` because that module is compiled with the default example-crate features and provides one reviewable kitchen-sink fixture.
+- Implement the documentation checker in PowerShell because PowerShell is the configured workspace shell and Python is unavailable in the development environment.
+- Preserve paginated request bodies that implement `PageRequestBodySpec` because the current runtime deliberately supports stable repeatable page bodies; the existing `pagination_request_body` trybuild case rejects a non-repeatable body specification.
+- Preserve nonempty fixed-base paths because they are part of the frozen language and runtime model; the new spec rejection fixture covers user information, query, and fragment instead of asserting the prompt's incompatible path prohibition.
+- Enforce invalid dynamic path atoms and host labels with existing runtime tests because their values are unavailable to the compiler; the new compile-fail fixture covers the corresponding static forms.
+- Treat duplicate behavior and behavior-key-scope cases as inapplicable because behavior profiles do not exist in the frozen DSL; ghost-syntax tests reject the `behavior` and `behaviors` spellings, and rate-limit visibility tests cover the surviving attachment semantics.
+- Add one consolidated `spec_rejections` trybuild fixture because it keeps related specification diagnostics reviewable while existing focused fixtures retain pagination, rate-limit visibility, and ghost-syntax coverage.
+- Treat generated secret input names and redacted input categories as safe Rustdoc metadata because the reviewed kitchen-sink Rustdoc contains no secret values, source expressions, or credential material.

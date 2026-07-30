@@ -62,6 +62,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo doc --workspace --no-deps
+pwsh -NoLogo -NoProfile -File scripts/check_docs_examples.ps1
 ```
 
 Internal project. v1 final. Not published.

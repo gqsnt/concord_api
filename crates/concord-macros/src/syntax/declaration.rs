@@ -494,12 +494,12 @@ fn parse_layer_clause(
                 matches!(clause.value, super::ast::RateLimitAttachmentDecl::Inline(_))
             }) {
                 let mut error = key_span.error(format!(
-                    "a {owner} permits at most one anonymous direct `rate_limit {{ ... }}` rule; use a rate-limit profile for additional local policies"
+                    "a {owner} permits at most one anonymous `rate_limit {{ ... }}` attachment; use a rate-limit profile for additional policies"
                 ));
                 error.combine(
                     first
                         .key_span
-                        .error("the first anonymous direct rate-limit rule is here"),
+                        .error("the first anonymous rate-limit attachment is here"),
                 );
                 return Err(error);
             }

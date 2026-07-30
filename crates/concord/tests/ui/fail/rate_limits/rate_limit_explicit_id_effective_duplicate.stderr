@@ -1,10 +1,10 @@
-error: an effective rate-limit plan contains a duplicate rule ID
+error: an effective rate-limit plan contains a duplicate policy ID
   --> tests/ui/fail/rate_limits/rate_limit_explicit_id_effective_duplicate.rs:14:16
    |
 14 |             id "service.shared";
    |                ^^^^^^^^^^^^^^^^
 
-error: the first effective rule using this ID is here
+error: the first effective policy using this ID is here
  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_effective_duplicate.rs:7:16
   |
 7 |             id "service.shared";

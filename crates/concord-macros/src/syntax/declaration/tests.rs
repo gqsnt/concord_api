@@ -12,7 +12,7 @@ fn parse_ok(tokens: TokenStream) -> SourceApi {
 fn inline_rate_limit(layer: &Layer) -> &RateLimitDecl {
     match &layer.rate_limits[0].value {
         RateLimitAttachmentDecl::Inline(rule) => rule,
-        RateLimitAttachmentDecl::Named(_) => panic!("anonymous direct rate-limit rule"),
+        RateLimitAttachmentDecl::Named(_) => panic!("anonymous rate-limit attachment"),
     }
 }
 
@@ -654,7 +654,7 @@ fn rate_limit_syntax_rejects_invalid_structure_values_dimensions_and_order() {
     assert!(
         duplicate_rule
             .to_string()
-            .contains("at most one anonymous direct")
+            .contains("at most one anonymous `rate_limit")
     );
 
     for (tokens, expected) in [

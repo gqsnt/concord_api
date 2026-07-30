@@ -1,4 +1,4 @@
-error: pagination-controlled value `scope.cursor` cannot partition a rate-limit rule
+error: pagination-controlled value `scope.cursor` cannot partition a rate-limit policy
  --> tests/ui/fail/rate_limits/rate_limit_pagination_inherited_scope_rule.rs:9:32
   |
 9 |         rate_limit { by [scope.cursor]; 1 / 1s; }

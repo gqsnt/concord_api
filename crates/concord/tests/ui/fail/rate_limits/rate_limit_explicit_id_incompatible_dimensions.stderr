@@ -4,7 +4,7 @@ error: rate-limit ID `service.shared` is reused with incompatible ordered dimens
 19 |             id "service.shared";
    |                ^^^^^^^^^^^^^^^^
 
-error: the first declaration using this rule ID is here
+error: the first declaration using this policy ID is here
   --> tests/ui/fail/rate_limits/rate_limit_explicit_id_incompatible_dimensions.rs:10:16
    |
 10 |             id "service.shared";

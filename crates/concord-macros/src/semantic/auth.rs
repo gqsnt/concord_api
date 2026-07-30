@@ -169,7 +169,7 @@ pub(super) fn validate_effective_auth(config: &NormalizedConfig) -> syn::Result<
                     })
                 {
                     return Err(placement.span.error(
-                        "effective authentication placements collide on `Authorization`",
+                        "multiple effective authentication placements own `Authorization`; keep only one bearer, Basic, exact, or static-scheme placement",
                     ));
                 }
             }
@@ -185,7 +185,7 @@ pub(super) fn validate_effective_auth(config: &NormalizedConfig) -> syn::Result<
                     })
                 {
                     return Err(name.span().error(
-                        "authentication header collides with an effective public or authentication header",
+                        "an effective public or authentication header already owns this authentication target; remove one placement or use a distinct header name",
                     ));
                 }
             }
@@ -197,7 +197,7 @@ pub(super) fn validate_effective_auth(config: &NormalizedConfig) -> syn::Result<
                     matches!(&candidate.kind, ResolvedAuthPlacement::Query(other) if other.value() == name.value())
                 }) {
                     return Err(name.span().error(
-                        "authentication query key collides with an effective public or authentication query key",
+                        "an effective public or authentication query already owns this authentication target; remove one placement or use a distinct query name",
                     ));
                 }
             }

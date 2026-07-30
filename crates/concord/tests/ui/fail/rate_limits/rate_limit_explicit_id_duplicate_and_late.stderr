@@ -1,4 +1,4 @@
-error: a rate-limit rule permits at most one `id` clause
+error: an anonymous rate-limit attachment permits at most one `id` clause
  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_duplicate_and_late.rs:8:13
   |
 8 |             id "service.second";

@@ -139,7 +139,7 @@ fn rate_limit_normalization_rejects_the_first_excess_effective_rule() {
     let source = parse::parse(tokens).expect("source syntax");
     let error = resolve(source)
         .err()
-        .expect("first excess effective rate-limit rule");
+        .expect("first excess effective rate-limit policy");
 
     assert!(
         error
@@ -163,12 +163,12 @@ fn rate_limit_normalization_rejects_duplicate_effective_ids() {
     .expect("source syntax");
     let error = resolve(source)
         .err()
-        .expect("duplicate effective rate-limit rule ID");
+        .expect("duplicate effective rate-limit policy ID");
 
     assert!(
         error
             .to_string()
-            .contains("an effective rate-limit plan contains a duplicate rule ID")
+            .contains("an effective rate-limit plan contains a duplicate policy ID")
     );
 }
 
@@ -197,7 +197,7 @@ fn rate_limit_normalization_rejects_the_first_excess_id_byte() {
     assert!(
         error
             .to_string()
-            .contains("a rate-limit rule ID permits at most 256 UTF-8 bytes")
+            .contains("a rate-limit policy ID permits at most 256 UTF-8 bytes")
     );
 }
 
@@ -699,7 +699,7 @@ fn custom_authorization_normalizes_source_compatibility_defaults_and_collisions(
             auth authorization "Token" = second;
         }
     });
-    assert!(collision.contains("collide on `Authorization`"));
+    assert!(collision.contains("placements own `Authorization`"));
 }
 
 #[test]
@@ -838,7 +838,7 @@ fn authentication_semantics_reject_unknown_incompatible_ambiguous_and_colliding_
         }
         GET read() -> Bytes { auth header "x-key" = key; }
     });
-    assert!(header.contains("collides"));
+    assert!(header.contains("already owns this authentication target"));
 
     let query = error(quote! {
         client Api {
@@ -851,7 +851,7 @@ fn authentication_semantics_reject_unknown_incompatible_ambiguous_and_colliding_
         }
         GET read() -> Bytes { auth query "key" = key; }
     });
-    assert!(query.contains("collides"));
+    assert!(query.contains("already owns this authentication target"));
 
     let duplicate_auth = error(quote! {
         client Api {
@@ -868,7 +868,7 @@ fn authentication_semantics_reject_unknown_incompatible_ambiguous_and_colliding_
             auth header "x-key" = second;
         }
     });
-    assert!(duplicate_auth.contains("collides"));
+    assert!(duplicate_auth.contains("already owns this authentication target"));
 }
 
 #[test]

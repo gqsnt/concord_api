@@ -303,9 +303,9 @@ fn render_request(docs: &EndpointDocModel) -> String {
                 .iter()
                 .map(|rule| {
                     let identity = if rule.explicit_id {
-                        "explicit stable rule ID"
+                        "explicit stable policy ID"
                     } else {
-                        "derived deterministic rule ID"
+                        "derived deterministic policy ID"
                     };
                     let windows = rule
                         .windows
@@ -834,8 +834,8 @@ mod tests {
         assert!(docs.contains(
             "Bucketed by: `host`, `endpoint`, `vars.tenant`, `scope.account`, `ep.resource`"
         ));
-        assert!(docs.contains("derived deterministic rule ID"));
-        assert!(docs.contains("explicit stable rule ID `service.account.read`"));
+        assert!(docs.contains("derived deterministic policy ID"));
+        assert!(docs.contains("explicit stable policy ID `service.account.read`"));
     }
 
     #[test]
@@ -863,7 +863,9 @@ mod tests {
 
         assert!(docs.contains("rate-limit profile `account_reads` attached at scope accounts"));
         assert!(
-            docs.contains("derived deterministic rule ID `rate_docs_api.rate_limit.account_reads`")
+            docs.contains(
+                "derived deterministic policy ID `rate_docs_api.rate_limit.account_reads`"
+            )
         );
         assert!(docs.contains("Bucketed by: `host`, `account`"));
         assert!(docs.contains("Cost: 2"));

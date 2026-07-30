@@ -48,7 +48,7 @@ dimensions, and windows.
 
 ## Fixed base
 
-```rust
+```concord
 client ExampleApi {
     base "https://api.example.test/v1/";
 }
@@ -62,7 +62,7 @@ Its host may be a DNS domain, IPv4 literal, or IPv6 literal.
 
 Client values are declared in one `vars` block:
 
-```rust
+```concord
 vars {
     tenant: String;
     locale: Option<String>;
@@ -101,7 +101,7 @@ are arguments in declaration order.
 
 An endpoint request body uses exactly one `#[body]` parameter:
 
-```rust
+```concord
 POST update(
     id: String,
     #[body] payload: Json<UpdateInput>,
@@ -109,8 +109,8 @@ POST update(
 ```
 
 `#[body]` is endpoint-only, accepts no arguments, and may appear at any
-parameter position. A request body has no declaration default. An unannotated
-parameter named `body` is rejected.
+parameter position. A request body has no declaration default. A parameter
+without `#[body]` is an ordinary public value regardless of its name.
 
 The body type implements `RequestBodySpec`; its associated input type becomes
 the endpoint argument type. The response type implements `ResponseBodySpec`.
@@ -122,7 +122,7 @@ each clone prepares an independent page-stable body.
 
 ## Endpoint identity
 
-```rust
+```concord
 GET by_id(id: String) -> Json<Item> {
     id "catalog.item.by-id";
 }
@@ -142,7 +142,7 @@ changes a derived ID.
 Public request-shaping atoms are string literals, unsuffixed base-10 integer
 literals, `vars.name`, visible `scope.name`, and `ep.name`.
 
-```rust
+```concord
 fmt["item-", ep.id, "-", scope.region]
 ```
 
@@ -155,7 +155,7 @@ at its endpoint leaf.
 
 ## Host, path, query, and headers
 
-```rust
+```concord
 host [scope.region, "api"];
 path ["v1", "items", ep.id];
 query {
@@ -212,15 +212,15 @@ entries retain source order.
 
 Client authentication configuration defines secrets and credentials:
 
-```rust
+```concord
 credentials {
     secret token: String;
     secret user: String;
     secret password: String;
 
+    credential api_token = api_key(secret.token);
     credential bearer_token = bearer(secret.token);
     credential login = basic(secret.user, secret.password);
-    credential provider = custom crate::Provider;
 }
 ```
 
@@ -239,13 +239,25 @@ source type implements `CredentialProvider`.
 
 Credential placements are ordered:
 
-```rust
-auth bearer bearer_token challenge unauthorized;
-auth basic login challenge unauthorized_or_forbidden;
-auth authorization = bearer_token challenge never;
-auth authorization "Token" = bearer_token challenge unauthorized;
-auth header "X-API-Key" = bearer_token challenge never;
-auth query "token" = bearer_token;
+```concord
+GET bearer_auth() -> NoContent {
+    auth bearer bearer_token challenge unauthorized;
+}
+GET basic_auth() -> NoContent {
+    auth basic login challenge unauthorized_or_forbidden;
+}
+GET exact_auth() -> NoContent {
+    auth authorization = bearer_token challenge never;
+}
+GET scheme_auth() -> NoContent {
+    auth authorization "Token" = bearer_token challenge unauthorized;
+}
+GET header_auth() -> NoContent {
+    auth header "X-API-Key" = api_token challenge never;
+}
+GET query_auth() -> NoContent {
+    auth query "token" = api_token;
+}
 ```
 
 `auth replace` is the first authentication entry at its attachment site and
@@ -276,12 +288,12 @@ Application client-certificate material is runtime HTTP configuration through
 
 ## Timeout
 
-```rust
-timeout 250ms;
-timeout 5s;
-timeout 10m;
-timeout 1h;
-timeout off;
+```concord
+GET milliseconds() -> NoContent { timeout 250ms; }
+GET seconds() -> NoContent { timeout 5s; }
+GET minutes() -> NoContent { timeout 10m; }
+GET hours() -> NoContent { timeout 1h; }
+GET no_timeout() -> NoContent { timeout off; }
 ```
 
 A duration is a positive base-10 integer followed by `ms`, `s`, `m`, or `h`.
@@ -291,7 +303,7 @@ Retry is runtime policy configured through the generated builder.
 
 ## Pagination
 
-```rust
+```concord
 paginate concord::pagination::OffsetPagination {
     offset: bind ep.offset,
     page_size: bind ep.page_size,
@@ -317,7 +329,7 @@ while bound values advance.
 
 A rate-limit profile is a named reusable declaration in the client:
 
-```rust
+```concord
 rate_limits {
     rule account_reads {
         id "service.account.read";
@@ -331,7 +343,7 @@ rate_limits {
 
 Attach it and bind each formal logical dimension:
 
-```rust
+```concord
 rate_limit use account_reads {
     account = scope.account;
     cost 2;
@@ -342,7 +354,7 @@ A profile without formals uses `rate_limit use account_reads;`.
 
 An anonymous attachment declares the same semantic policy inline:
 
-```rust
+```concord
 rate_limit {
     id "service.item.read";
     by [host, endpoint, vars.tenant, scope.region, ep.item_id];

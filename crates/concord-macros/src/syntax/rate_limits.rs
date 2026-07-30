@@ -50,12 +50,12 @@ pub(super) fn parse_rate_limits(
 }
 
 pub(super) fn parse_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitAttachmentDecl> {
-    input.parse::<keyword::rate_limit>()?;
+    let marker: keyword::rate_limit = input.parse()?;
     if input.peek(Token![use]) {
         return parse_rate_limit_use(input).map(RateLimitAttachmentDecl::Named);
     }
     if input.peek(syn::token::Brace) {
-        return parse_inline_rate_limit(input).map(RateLimitAttachmentDecl::Inline);
+        return parse_inline_rate_limit(input, marker.span()).map(RateLimitAttachmentDecl::Inline);
     }
     Err(input
         .error("a rate-limit attachment must be `rate_limit { ... }` or `rate_limit use RULE ...`"))
@@ -167,7 +167,10 @@ fn parse_binding_value(input: ParseStream<'_>) -> syn::Result<RateLimitBindingVa
     })
 }
 
-fn parse_inline_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitDecl> {
+fn parse_inline_rate_limit(
+    input: ParseStream<'_>,
+    attachment_span: proc_macro2::Span,
+) -> syn::Result<RateLimitDecl> {
     let body;
     braced!(body in input);
 
@@ -186,7 +189,7 @@ fn parse_inline_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitDecl>
             if let Some(first) = &id {
                 let mut error = marker
                     .span()
-                    .error("a rate-limit rule permits at most one `id` clause");
+                    .error("an anonymous rate-limit attachment permits at most one `id` clause");
                 error.combine(first.key_span.error("the first `id` clause is here"));
                 return Err(error);
             }
@@ -211,7 +214,7 @@ fn parse_inline_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitDecl>
             if dimensions.is_some() {
                 return Err(marker
                     .span()
-                    .error("a rate-limit rule permits at most one `by` clause"));
+                    .error("an anonymous rate-limit attachment permits at most one `by` clause"));
             }
             let dimension_body;
             bracketed!(dimension_body in body);
@@ -256,9 +259,9 @@ fn parse_inline_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitDecl>
             }
             let marker: keyword::cost = body.parse()?;
             if cost.is_some() {
-                return Err(marker
-                    .span()
-                    .error("a rate-limit rule permits at most one `cost` clause"));
+                return Err(marker.span().error(
+                    "an anonymous rate-limit attachment permits at most one `cost` clause",
+                ));
             }
             let literal: LitInt = body.parse().map_err(|_| {
                 body.error("rate-limit cost requires a positive unsuffixed base-10 integer")
@@ -271,11 +274,13 @@ fn parse_inline_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitDecl>
             continue;
         }
         let capacity_literal: LitInt = body.parse().map_err(|_| {
-            body.error("a rate-limit rule requires at least one `CAPACITY / DURATION;` window")
+            body.error(
+                "an anonymous rate-limit attachment requires a `CAPACITY / DURATION;` window",
+            )
         })?;
         if windows.len() >= MAX_RATE_LIMIT_WINDOWS_PER_RULE {
             return Err(capacity_literal.span().error(format!(
-                "a rate-limit rule permits at most {MAX_RATE_LIMIT_WINDOWS_PER_RULE} windows"
+                "an anonymous rate-limit attachment permits at most {MAX_RATE_LIMIT_WINDOWS_PER_RULE} windows"
             )));
         }
         let capacity = parse_positive_u32(&capacity_literal, "rate-limit window capacity")?;
@@ -295,7 +300,9 @@ fn parse_inline_rate_limit(input: ParseStream<'_>) -> syn::Result<RateLimitDecl>
         });
     }
     if windows.is_empty() {
-        return Err(input.error("a rate-limit declaration requires at least one positive window"));
+        return Err(attachment_span.error(
+            "an anonymous rate-limit attachment requires at least one positive window; add a window such as `100 / 1m;`",
+        ));
     }
     let cost_value = cost.as_ref().map_or(1, |cost| cost.value);
     if let Some(window) = windows.iter().find(|window| cost_value > window.capacity) {
@@ -427,7 +434,7 @@ fn parse_rate_limit_definition(
         })?;
         if windows.len() >= MAX_RATE_LIMIT_WINDOWS_PER_RULE {
             return Err(capacity_literal.span().error(format!(
-                "a rate-limit rule permits at most {MAX_RATE_LIMIT_WINDOWS_PER_RULE} windows"
+                "a rate-limit profile permits at most {MAX_RATE_LIMIT_WINDOWS_PER_RULE} windows"
             )));
         }
         let capacity = parse_positive_u32(&capacity_literal, "rate-limit window capacity")?;
@@ -447,9 +454,9 @@ fn parse_rate_limit_definition(
         });
     }
     if windows.is_empty() {
-        return Err(name
-            .span()
-            .error("a rate-limit profile requires at least one positive window"));
+        return Err(name.span().error(
+            "a rate-limit profile requires at least one positive window; add a window such as `100 / 1m;`",
+        ));
     }
     let cost_value = cost.as_ref().map_or(1, |cost| cost.value);
     if let Some(window) = windows.iter().find(|window| cost_value > window.capacity) {
@@ -685,7 +692,7 @@ mod tests {
     fn inline_rate_limit(layer: &Layer) -> &RateLimitDecl {
         match &layer.rate_limits[0].value {
             RateLimitAttachmentDecl::Inline(rule) => rule,
-            RateLimitAttachmentDecl::Named(_) => panic!("anonymous direct rate-limit rule"),
+            RateLimitAttachmentDecl::Named(_) => panic!("anonymous rate-limit attachment"),
         }
     }
 
@@ -1249,7 +1256,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("a rate-limit rule permits at most 16 windows")
+                .contains("an anonymous rate-limit attachment permits at most 16 windows")
         );
     }
 }

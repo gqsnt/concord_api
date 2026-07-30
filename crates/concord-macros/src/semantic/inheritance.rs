@@ -212,7 +212,7 @@ impl Resolver<'_> {
             )?;
             if rule.id.len() > MAX_RATE_LIMIT_ID_BYTES {
                 return Err(declaration.key_span.error(format!(
-                    "a rate-limit rule ID permits at most {MAX_RATE_LIMIT_ID_BYTES} UTF-8 bytes"
+                    "a rate-limit policy ID permits at most {MAX_RATE_LIMIT_ID_BYTES} UTF-8 bytes"
                 )));
             }
             if let Some(existing) = normalized
@@ -222,11 +222,11 @@ impl Resolver<'_> {
             {
                 let mut error = rule
                     .id_span
-                    .error("an effective rate-limit plan contains a duplicate rule ID");
+                    .error("an effective rate-limit plan contains a duplicate policy ID");
                 error.combine(
                     existing
                         .id_span
-                        .error("the first effective rule using this ID is here"),
+                        .error("the first effective policy using this ID is here"),
                 );
                 return Err(error);
             }

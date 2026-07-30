@@ -17,14 +17,14 @@ The `json` feature exposes the `Json<T>` request and response specification.
 
 ## Declare a client
 
-```rust
+```concord
 use concord::{Json, api};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
-struct User {
-    id: u64,
-    name: String,
+pub struct User {
+    pub id: u64,
+    pub name: String,
 }
 
 api! {
@@ -62,7 +62,7 @@ response metadata with the declared output.
 
 ## Add a client value
 
-```rust
+```concord
 api! {
     client RegionalApi {
         base "https://example.test/";
@@ -88,7 +88,7 @@ let client = RegionalApi::builder()
 
 ## Add a secret
 
-```rust
+```concord
 api! {
     client PrivateApi {
         base "https://private.example.test/";

@@ -92,6 +92,6 @@ observers own equivalent protection in storage and logs.
 
 ## Related
 
-- [DSL rate-limit rules](spec.md#rate-limit-profiles-and-policy)
+- [DSL rate-limit profiles and policy](spec.md#rate-limit-profiles-and-policy)
 - [Runtime model](runtime.md)
 - [Customization](customization.md)
